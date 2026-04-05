@@ -1,0 +1,90 @@
+import { createConnection } from 'node:net';
+import { getVNCPort } from '../lib/vmManager.js';
+import { verifyJWT } from '../lib/auth.js';
+import { validateVMName } from '../lib/validation.js';
+
+export default async function consoleRoutes(fastify) {
+  // VNC: TCP proxy to QEMU VNC port. Token required (query.token) since WebSocket doesn't send Authorization header.
+  fastify.get('/console/:name/vnc', { websocket: true }, async (socket, request) => {
+    const { name } = request.params;
+    const log = request.log.child({ scope: 'vnc-console', vmName: name });
+
+    const token = request.query?.token;
+    const payload = token ? verifyJWT(token) : null;
+    if (!payload) {
+      log.warn({ reason: 'missing_or_invalid_token' }, 'VNC WebSocket rejected');
+      socket.close(4001, 'Authentication required');
+      return;
+    }
+
+    try {
+      validateVMName(name);
+    } catch (err) {
+      log.warn({ reason: 'invalid_vm_name', err: err.message }, 'VNC WebSocket rejected');
+      socket.close(4000, err.message || 'Invalid VM name');
+      return;
+    }
+    let port;
+    try {
+      port = await getVNCPort(name);
+    } catch (err) {
+      log.warn(
+        {
+          reason: 'get_vnc_port_failed',
+          code: err.code ?? 'UNKNOWN',
+          message: err.message,
+          detail: err.raw,
+        },
+        'VNC could not resolve graphics port (libvirt/XML or VM state)',
+      );
+      socket.close(4000, err.message || 'VNC not available');
+      return;
+    }
+
+    log.info({ port }, 'VNC opening TCP to QEMU');
+
+    const sock = createConnection(port, '127.0.0.1', () => {
+      log.info({ port }, 'VNC TCP connected to QEMU');
+    });
+
+    sock.on('data', (data) => {
+      if (socket.readyState === 1) socket.send(data);
+    });
+    sock.on('error', (err) => {
+      log.warn(
+        {
+          reason: 'qemu_tcp_error',
+          message: err.message,
+          code: err.code,
+          errno: err.errno,
+          syscall: err.syscall,
+        },
+        'VNC TCP socket error (QEMU side)',
+      );
+      if (socket.readyState === 1) socket.close(1011, 'TCP error');
+    });
+    sock.on('close', (hadError) => {
+      log.info({ port, hadError }, 'VNC TCP to QEMU closed');
+      if (socket.readyState === 1) socket.close();
+    });
+
+    socket.on('message', (data) => {
+      if (!sock.destroyed) sock.write(data);
+    });
+    socket.on('close', (code, reason) => {
+      log.info(
+        {
+          port,
+          wsCloseCode: code,
+          wsCloseReason: typeof reason === 'string' ? reason : reason?.toString?.() ?? '',
+        },
+        'VNC WebSocket closed',
+      );
+      sock.destroy();
+    });
+    socket.on('error', (err) => {
+      log.warn({ reason: 'websocket_error', message: err?.message }, 'VNC WebSocket error');
+      sock.destroy();
+    });
+  });
+}

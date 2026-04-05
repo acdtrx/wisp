@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Outputs smartctl JSON for one block device (e.g. sda, nvme0n1).
+# Must be run with sufficient privilege (root or sudo).
+# Usage: wisp-smartctl <block-device-name>
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo '{"error":"usage: wisp-smartctl <block-device-name>"}'
+  exit 1
+fi
+
+DEV_NAME="$1"
+if [[ ! "$DEV_NAME" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+  echo '{"error":"invalid-device-name"}'
+  exit 1
+fi
+
+DEV_PATH="/dev/$DEV_NAME"
+if [[ ! -b "$DEV_PATH" ]]; then
+  echo '{"error":"device-not-found"}'
+  exit 1
+fi
+
+SMARTCTL_BIN="${WISP_SMARTCTL_BIN:-smartctl}"
+if ! command -v "$SMARTCTL_BIN" >/dev/null 2>&1; then
+  echo '{"error":"smartctl-not-found"}'
+  exit 1
+fi
+
+# smartctl frequently exits non-zero for SMART states/warnings while still printing JSON.
+# We intentionally preserve stdout JSON and do not treat non-zero status as transport failure.
+out="$("$SMARTCTL_BIN" --json -a "$DEV_PATH" 2>/dev/null)" || true
+if [[ -z "$out" ]]; then
+  echo '{}'
+  exit 0
+fi
+
+printf '%s\n' "$out"

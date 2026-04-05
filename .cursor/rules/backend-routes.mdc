@@ -1,0 +1,12 @@
+---
+description: Route handlers — error shape, code→status mapping, file uploads, CORS
+globs: backend/src/routes/**/*.js
+alwaysApply: false
+---
+
+# Backend Routes Rules
+
+- **Error shape:** On failure, always return `{ error: string, detail: string }`. vmManager throws `{ code, message, raw? }`; map known codes to HTTP status (404, 409, 422, 500, 503). Include `detail: err.raw || err.message` in the response.
+- **SSE error payloads:** When sending an error over SSE (e.g. /vms/stream, /vms/:name/stats), use the same shape: `{ error, detail }` (and optionally `code`).
+- **File uploads:** Use Fastify multipart with pipeline to a write stream. Never buffer the entire file in memory.
+- **CORS:** Only backend/index.js configures CORS; allow `localhost:5173` in development only. Production uses frontend proxy for /api and /ws.

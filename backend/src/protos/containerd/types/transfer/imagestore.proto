@@ -1,0 +1,29 @@
+syntax = "proto3";
+package containerd.types.transfer;
+
+import "containerd/types/platform.proto";
+
+option go_package = "github.com/containerd/containerd/api/types/transfer";
+
+message ImageStore {
+  string name = 1;
+  map<string, string> labels = 2;
+  repeated containerd.types.Platform platforms = 3;
+  bool all_metadata = 4;
+  uint32 manifest_limit = 5;
+  repeated ImageReference extra_references = 6;
+  repeated UnpackConfiguration unpacks = 10;
+}
+
+message UnpackConfiguration {
+  containerd.types.Platform platform = 1;
+  string snapshotter = 2;
+}
+
+message ImageReference {
+  string name = 1;
+  bool is_prefix = 2;
+  bool allow_overwrite = 3;
+  bool add_digest = 4;
+  bool skip_named_digest = 5;
+}

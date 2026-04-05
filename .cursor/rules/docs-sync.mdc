@@ -1,0 +1,23 @@
+---
+description: Keep docs and docs/spec in sync with code; update relevant spec when changing behavior
+alwaysApply: true
+---
+
+# Docs and spec are source of truth
+
+When you change behavior, APIs, UI, or configuration, update the corresponding doc in the same edit.
+
+- **Architecture** (system overview, modules, data flow): `docs/ARCHITECTURE.md`
+- **Tech stack** (dependencies, versions): `docs/TECHSTACK.md`
+- **API** (routes, request/response, errors): `docs/spec/API.md`
+- **UI** (layout, components, views, empty states): `docs/spec/UI.md`
+- **Backend** (vmManager, lifecycle, XML): `docs/spec/VM-MANAGEMENT.md`, `docs/spec/ERROR-HANDLING.md`
+- **Containers** (containerManager, containerd, OCI, CNI): `docs/spec/CONTAINERS.md`
+- **Auth / login**: `docs/spec/AUTH.md`
+- **Config / env / paths**: `docs/spec/CONFIGURATION.md`
+- **Console / VNC**: `docs/spec/CONSOLE.md`, `docs/spec/noVNC.md`
+- **Host stats / monitoring**: `docs/spec/HOST-MONITORING.md`
+- **Backups, snapshots, cloud-init, USB, image library, deployment, etc.**: same-name spec in `docs/spec/`
+- **Project rules / coding standards**: `docs/CODING-RULES.md`, `docs/WISP-RULES.md`
+
+Update the relevant section(s); keep wording consistent with the existing spec style.

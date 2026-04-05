@@ -1,0 +1,10 @@
+---
+description: Wisp is deployable; fix issues in the app or setup pipeline, not by manual server fixes
+alwaysApply: true
+---
+
+# Deployability
+
+- **Wisp is a deployable application.** When you ask for a fix or a change, the intent is usually to fix it **in the app** (functionality or setup) so that it works out of the box for future installs, not to apply one-off fixes on the server.
+- **Setup and configuration:** Fix setup/configuration issues in the install and setup scripts (e.g. `scripts/install.sh`, `scripts/setup-server.sh`, `scripts/linux/setup/*.sh`) so that installing the app does the right thing. Prefer improving the pipeline over documenting manual server steps.
+- **Manual server fixes** (editing files on a live server, running one-off commands) are appropriate only when actively debugging or testing, not as the intended long-term resolution. The final resolution should be a change in the codebase or setup so that the next install or upgrade behaves correctly.

@@ -1,0 +1,202 @@
+import { useState, useEffect, useCallback } from 'react';
+import { Cpu, MemoryStick, RefreshCw } from 'lucide-react';
+import SectionCard from '../shared/SectionCard.jsx';
+import Toggle from '../shared/Toggle.jsx';
+
+/** Same control pattern as AdvancedSection (machine type, CPU model). */
+const RESTART_OPTIONS = [
+  { value: 'never', label: 'Never' },
+  { value: 'on-failure', label: 'On failure' },
+  { value: 'unless-stopped', label: 'Unless stopped' },
+  { value: 'always', label: 'Always' },
+];
+
+function RestartPolicySegmentedControl({ value, onChange }) {
+  return (
+    <div className="flex h-[2.25rem] max-w-full overflow-x-auto rounded-lg border border-surface-border bg-surface p-0.5">
+      {RESTART_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`flex shrink-0 items-center whitespace-nowrap rounded-md px-2.5 text-xs font-medium transition-colors duration-150 ${
+            value === opt.value
+              ? 'bg-surface-card text-text-primary shadow-sm'
+              : 'text-text-secondary hover:text-text-primary'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function buildGeneralFormDefaults(config) {
+  return {
+    name: config.name || '',
+    image: config.image || '',
+    command: config.command ? config.command.join(' ') : '',
+    cpuLimit: config.cpuLimit ?? '',
+    memoryLimitMiB: config.memoryLimitMiB ?? '',
+    restartPolicy: config.restartPolicy || 'unless-stopped',
+    autostart: config.autostart ?? false,
+    runAsRoot: config.runAsRoot ?? false,
+  };
+}
+
+export default function ContainerGeneralSection({ config, isCreating, onSave, onFormChange }) {
+  const [form, setForm] = useState(() => buildGeneralFormDefaults(config));
+  const [original, setOriginal] = useState(() => buildGeneralFormDefaults(config));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [requiresRestart, setRequiresRestart] = useState(false);
+
+  const init = useCallback(() => {
+    const d = buildGeneralFormDefaults(config);
+    setForm(d);
+    setOriginal(d);
+    setRequiresRestart(false);
+    setError(null);
+  }, [config?.name, config?.image, config?.cpuLimit, config?.memoryLimitMiB, config?.restartPolicy, config?.autostart, config?.runAsRoot]);
+
+  useEffect(() => {
+    if (!isCreating) init();
+  }, [init, isCreating]);
+
+  const isDirty = JSON.stringify(form) !== JSON.stringify(original);
+
+  const updateField = (key, value) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    if (isCreating && onFormChange) onFormChange({ [key]: value });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const changes = {};
+      if (form.image !== original.image) changes.image = form.image;
+      if (form.command !== original.command) {
+        changes.command = form.command.trim() ? form.command.trim().split(/\s+/) : null;
+      }
+      if (String(form.cpuLimit) !== String(original.cpuLimit)) {
+        changes.cpuLimit = form.cpuLimit ? parseFloat(form.cpuLimit) : null;
+      }
+      if (String(form.memoryLimitMiB) !== String(original.memoryLimitMiB)) {
+        changes.memoryLimitMiB = form.memoryLimitMiB ? parseInt(form.memoryLimitMiB, 10) : null;
+      }
+      if (form.restartPolicy !== original.restartPolicy) changes.restartPolicy = form.restartPolicy;
+      if (form.autostart !== original.autostart) changes.autostart = form.autostart;
+      if (form.runAsRoot !== original.runAsRoot) changes.runAsRoot = form.runAsRoot;
+
+      const result = await onSave(changes);
+      if (result?.requiresRestart) setRequiresRestart(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SectionCard title="General" isDirty={!isCreating && isDirty} onSave={isCreating ? undefined : handleSave} saving={saving} requiresRestart={requiresRestart} error={error}>
+      <div className="space-y-3">
+        <div className="flex items-end gap-4 flex-wrap">
+          <Field label="Name" className="w-[180px]">
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => updateField('name', e.target.value)}
+              disabled={!isCreating}
+              className="input-field"
+            />
+          </Field>
+          <Field label="Image" className="flex-1 min-w-[200px]">
+            <input
+              type="text"
+              value={form.image}
+              onChange={(e) => updateField('image', e.target.value)}
+              placeholder="e.g. nginx:latest"
+              className="input-field"
+            />
+          </Field>
+        </div>
+
+        {!isCreating && (
+        <>
+        <Field label="Command Override" className="w-full">
+          <input
+            type="text"
+            value={form.command}
+            onChange={(e) => updateField('command', e.target.value)}
+            placeholder="Leave empty for image default"
+            className="input-field"
+          />
+        </Field>
+
+        <div className="flex items-end gap-4 flex-wrap">
+          <Field label="CPU Cores" icon={Cpu} className="w-24">
+            <input
+              type="number"
+              min={0.1}
+              step={0.1}
+              value={form.cpuLimit}
+              onChange={(e) => updateField('cpuLimit', e.target.value)}
+              placeholder="∞"
+              className="input-field input-field-no-spinner w-full text-right text-sm"
+            />
+          </Field>
+
+          <Field label="Memory (MiB)" icon={MemoryStick} className="w-32">
+            <input
+              type="number"
+              min={32}
+              step={64}
+              value={form.memoryLimitMiB}
+              onChange={(e) => updateField('memoryLimitMiB', e.target.value)}
+              placeholder="∞"
+              className="input-field input-field-no-spinner w-full text-right text-sm"
+            />
+          </Field>
+
+          <div className="mx-0.5 h-6 w-px bg-surface-border" />
+
+          <Field label="Restart Policy" icon={RefreshCw}>
+            <RestartPolicySegmentedControl
+              value={form.restartPolicy}
+              onChange={(v) => updateField('restartPolicy', v)}
+            />
+          </Field>
+
+          <Field label="Auto Start">
+            <div className="flex h-[2.25rem] items-center">
+              <Toggle checked={form.autostart} onChange={(v) => updateField('autostart', v)} />
+            </div>
+          </Field>
+
+          <Field label="Run as Root">
+            <div className="flex h-[2.25rem] items-center">
+              <Toggle checked={form.runAsRoot} onChange={(v) => updateField('runAsRoot', v)} />
+            </div>
+          </Field>
+        </div>
+        </>
+        )}
+      </div>
+    </SectionCard>
+  );
+}
+
+
+function Field({ label, icon: Icon, className, children }) {
+  return (
+    <div className={className}>
+      <label className="flex items-center gap-1.5 text-xs font-medium text-text-secondary mb-1.5">
+        {Icon && <Icon size={12} />}
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}

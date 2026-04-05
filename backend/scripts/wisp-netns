@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Create or remove a network namespace under /var/run/netns (for Wisp macvlan + CNI).
+# Invoked via sudo -n as the deploy user. See install-helpers.sh / docs/spec/DEPLOYMENT.md.
+set -euo pipefail
+
+valid_name() {
+  [[ "${1:-}" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$ ]]
+}
+
+CMD="${1:-}"
+NAME="${2:-}"
+
+case "$CMD" in
+  add)
+    valid_name "$NAME" || { echo "wisp-netns: invalid name" >&2; exit 1; }
+    mkdir -p /var/run/netns
+    if [[ -e "/var/run/netns/$NAME" ]]; then
+      exit 0
+    fi
+    ip netns add "$NAME"
+    ;;
+  delete)
+    valid_name "$NAME" || { echo "wisp-netns: invalid name" >&2; exit 1; }
+    ip netns delete "$NAME" 2>/dev/null || true
+    ;;
+  ipv4)
+    # Print `ip addr` text for iface in netns — backend parses inet line. Used when CNI ADD omits
+    # ips[] (common with ipam.type=dhcp; cni-dhcp assigns asynchronously).
+    valid_name "$NAME" || { echo "wisp-netns: invalid name" >&2; exit 1; }
+    IFACE="${3:-eth0}"
+    if [[ ! -e "/var/run/netns/$NAME" ]]; then
+      echo "wisp-netns: no netns: $NAME" >&2
+      exit 1
+    fi
+    ip -n "$NAME" -4 addr show dev "$IFACE" 2>/dev/null || true
+    ;;
+  *)
+    echo "Usage: $0 add|delete <name> | ipv4 <name> [ifname]" >&2
+    exit 1
+    ;;
+esac

@@ -1,0 +1,21 @@
+syntax = "proto3";
+package containerd.services.transfer.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/containerd/containerd/api/services/transfer/v1;transfer";
+
+service Transfer {
+  rpc Transfer(TransferRequest) returns (google.protobuf.Empty);
+}
+
+message TransferRequest {
+  google.protobuf.Any source = 1;
+  google.protobuf.Any destination = 2;
+  TransferOptions options = 3;
+}
+
+message TransferOptions {
+  string progress = 1;
+}

@@ -1,0 +1,14 @@
+syntax = "proto3";
+package containerd.types.transfer;
+
+option go_package = "github.com/containerd/containerd/api/types/transfer;transfer";
+
+message OCIRegistry {
+  string reference = 1;
+  AuthConfig resolver = 2;
+}
+
+message AuthConfig {
+  string username = 1;
+  string secret = 2;
+}

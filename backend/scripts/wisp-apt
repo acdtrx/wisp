@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Usage: wisp-apt check | upgrade
+#   check   - runs apt-get update, then apt-get -s upgrade; prints one integer: packages
+#             that would be upgraded (same policy as apt-get upgrade, incl. phasing).
+#   upgrade - runs apt-get update and apt-get upgrade -y (non-interactive).
+# Must be run with sufficient privilege (root or sudo).
+set -euo pipefail
+
+CMD="${1:-}"
+case "$CMD" in
+  check)
+    apt-get update -qq >/dev/null 2>&1
+    # Simulate upgrade so count matches what apt-get upgrade would install (excludes phased-only, etc.).
+    OUT=$(LC_ALL=C apt-get -s upgrade 2>&1 || true)
+    SUMMARY=$(echo "$OUT" | grep -E '^[0-9]+ upgraded,' | tail -n1 || true)
+    if [[ -z "$SUMMARY" ]]; then
+      echo 0
+    else
+      # First comma-separated field is "N upgraded" (avoid matching "not upgraded" later in the line).
+      FIRST="${SUMMARY%%,*}"
+      echo "${FIRST%% upgraded}"
+    fi
+    ;;
+  upgrade)
+    apt-get update -qq
+    apt-get upgrade -y
+    ;;
+  *)
+    echo "Usage: $0 check|upgrade" >&2
+    exit 1
+    ;;
+esac

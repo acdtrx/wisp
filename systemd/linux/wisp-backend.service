@@ -1,0 +1,15 @@
+[Unit]
+Description=Wisp — Backend
+After=network.target libvirtd.service containerd.service
+
+[Service]
+User=WISP_USER
+WorkingDirectory=WISP_PATH/backend
+EnvironmentFile=-WISP_PATH/config/runtime.env
+ExecStart=/usr/bin/node src/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

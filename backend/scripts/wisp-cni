@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Run one CNI plugin with config on stdin (from a temp file). Invoked via sudo -n.
+# Usage: wisp-cni <ADD|DEL> <plugin_basename> <container_id> <netns_path> <config_json_file> [cni_bin_dir]
+# 6th arg is the plugin directory (passed from the backend; sudo resets env so we do not rely on CNI_PATH).
+set -euo pipefail
+
+CMD="${1:?command}"
+PLUGIN_NAME="${2:?plugin}"
+CID="${3:?container_id}"
+NETNS="${4:?netns}"
+CONF="${5:?config_file}"
+CNI_PATH="${6:-/opt/cni/bin}"
+
+[[ "$CID" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$ ]] || { echo "wisp-cni: invalid container id" >&2; exit 1; }
+[[ "$NETNS" =~ ^/ ]] || { echo "wisp-cni: netns must be absolute path" >&2; exit 1; }
+[[ -f "$CONF" ]] || { echo "wisp-cni: missing config file" >&2; exit 1; }
+PLUGIN="$CNI_PATH/$PLUGIN_NAME"
+[[ -x "$PLUGIN" ]] || { echo "wisp-cni: plugin not executable: $PLUGIN" >&2; exit 1; }
+
+export CNI_COMMAND="$CMD"
+export CNI_CONTAINERID="$CID"
+export CNI_NETNS="$NETNS"
+export CNI_IFNAME=eth0
+export CNI_PATH
+
+"$PLUGIN" < "$CONF"

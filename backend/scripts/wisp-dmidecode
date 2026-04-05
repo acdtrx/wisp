@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# Outputs JSON array of memory device info from dmidecode --type 17.
+# Must be run with sufficient privilege (root or sudo).
+# Usage: wisp-dmidecode
+set -euo pipefail
+
+DMIDECODE="${WISP_DMIDECODE_BIN:-dmidecode}"
+
+# Parse stdout even if dmidecode exits non-zero (warnings); empty stdout → []
+out="$("$DMIDECODE" --type 17 2>/dev/null)" || true
+if [[ -z "$out" ]]; then
+  echo '[]'
+  exit 0
+fi
+
+json_escape() {
+  printf '%s' "$1" | sed 's/\r$//; s/^[[:space:]]*//; s/[[:space:]]*$//; s/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g'
+}
+
+json_str_or_null() {
+  local s="$1"
+  if [[ -z "$s" ]]; then
+    printf 'null'
+  else
+    printf '"%s"' "$(json_escape "$s")"
+  fi
+}
+
+voltage_json_value() {
+  local v=""
+  if [[ -n "${volt_configured:-}" ]]; then
+    v="$volt_configured"
+  elif [[ -n "${volt_min:-}" && -n "${volt_max:-}" ]]; then
+    if [[ "$volt_min" == "$volt_max" ]]; then
+      v="$volt_min"
+    else
+      v="${volt_min}–${volt_max}"
+    fi
+  elif [[ -n "${volt_min:-}" ]]; then
+    v="$volt_min"
+  elif [[ -n "${volt_max:-}" ]]; then
+    v="$volt_max"
+  fi
+  json_str_or_null "$v"
+}
+
+echo '['
+first=1
+size_bytes=''
+type_str='Unknown'
+speed='null'
+locator=''
+form_factor=''
+manufacturer=''
+volt_min=''
+volt_max=''
+volt_configured=''
+
+flush_pending() {
+  if [[ -z "$size_bytes" || "$size_bytes" -eq 0 ]]; then
+    return 0
+  fi
+  ((first)) || echo ','
+  first=0
+  # shellcheck disable=SC2312
+  vj="$(voltage_json_value)"
+  printf '  {"type":%s,"sizeBytes":%d,"speedMts":%s,"slot":%s,"formFactor":%s,"manufacturer":%s,"voltage":%s}' \
+    "$(json_str_or_null "$type_str")" \
+    "$size_bytes" \
+    "$speed" \
+    "$(json_str_or_null "$locator")" \
+    "$(json_str_or_null "$form_factor")" \
+    "$(json_str_or_null "$manufacturer")" \
+    "$vj"
+  size_bytes=''
+  type_str='Unknown'
+  speed='null'
+  locator=''
+  form_factor=''
+  manufacturer=''
+  volt_min=''
+  volt_max=''
+  volt_configured=''
+}
+
+while IFS= read -r line || [[ -n "$line" ]]; do
+  if [[ "$line" =~ ^Handle[[:space:]]+0x[0-9A-Fa-f]+,.*[Dd][Mm][Ii][[:space:]]+type[[:space:]]+17 ]]; then
+    flush_pending
+    continue
+  fi
+
+  if [[ "$line" =~ ^[[:space:]]*Size:[[:space:]]+([0-9]+)[[:space:]]+MB ]]; then
+    flush_pending
+    n="${BASH_REMATCH[1]}"
+    size_bytes=$((n * 1024 * 1024))
+  elif [[ "$line" =~ ^[[:space:]]*Size:[[:space:]]+([0-9]+)[[:space:]]+MiB ]]; then
+    flush_pending
+    n="${BASH_REMATCH[1]}"
+    size_bytes=$((n * 1024 * 1024))
+  elif [[ "$line" =~ ^[[:space:]]*Size:[[:space:]]+([0-9]+)[[:space:]]+GB ]]; then
+    flush_pending
+    n="${BASH_REMATCH[1]}"
+    size_bytes=$((n * 1024 * 1024 * 1024))
+  elif [[ "$line" =~ ^[[:space:]]*Size:[[:space:]]+([0-9]+)[[:space:]]+GiB ]]; then
+    flush_pending
+    n="${BASH_REMATCH[1]}"
+    size_bytes=$((n * 1024 * 1024 * 1024))
+  elif [[ "$line" =~ ^[[:space:]]*Type:[[:space:]]+(.+) ]]; then
+    type_str="${BASH_REMATCH[1]}"
+  elif [[ "$line" =~ ^[[:space:]]*Form[[:space:]]+Factor:[[:space:]]+(.+) ]]; then
+    form_factor="${BASH_REMATCH[1]}"
+  elif [[ "$line" =~ ^[[:space:]]*Manufacturer:[[:space:]]+(.+) ]]; then
+    manufacturer="${BASH_REMATCH[1]}"
+  elif [[ "$line" =~ ^[[:space:]]*Minimum[[:space:]]+Voltage:[[:space:]]+(.+) ]]; then
+    volt_min="${BASH_REMATCH[1]}"
+  elif [[ "$line" =~ ^[[:space:]]*Maximum[[:space:]]+Voltage:[[:space:]]+(.+) ]]; then
+    volt_max="${BASH_REMATCH[1]}"
+  elif [[ "$line" =~ ^[[:space:]]*Configured[[:space:]]+Voltage:[[:space:]]+(.+) ]]; then
+    volt_configured="${BASH_REMATCH[1]}"
+  elif [[ "$line" =~ ^[[:space:]]*Speed:[[:space:]]+([0-9]+) ]]; then
+    speed="${BASH_REMATCH[1]}"
+  elif [[ "$line" =~ ^[[:space:]]*Configured[[:space:]]+Memory[[:space:]]+Speed:[[:space:]]+([0-9]+) ]] && [[ "$speed" == 'null' ]]; then
+    speed="${BASH_REMATCH[1]}"
+  elif [[ "$line" =~ ^[[:space:]]*Locator:[[:space:]]+(.+) ]]; then
+    locator="${BASH_REMATCH[1]}"
+  fi
+done <<< "$out"
+
+flush_pending
+echo
+echo ']'

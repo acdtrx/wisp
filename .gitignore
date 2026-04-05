@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+node_modules/
+dist/
+build/
+
+# noVNC + pako — copy in with scripts/vendor-novnc.sh or frontend ensure-novnc (see docs/spec/noVNC.md)
+frontend/public/vendor/
+.env
+.pids/
+.logs/
+*.log
+reports/
+config/wisp-config.json
+config/runtime.env
+config/wisp-password

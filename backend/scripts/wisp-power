@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Usage: wisp-power shutdown | reboot
+# Must be run with sufficient privilege (root or sudo).
+set -euo pipefail
+
+CMD="${1:-}"
+case "$CMD" in
+  shutdown)
+    shutdown -h now
+    ;;
+  reboot)
+    shutdown -r now
+    ;;
+  *)
+    echo "Usage: $0 shutdown|reboot" >&2
+    exit 1
+    ;;
+esac

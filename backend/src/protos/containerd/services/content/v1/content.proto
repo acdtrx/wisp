@@ -1,0 +1,95 @@
+syntax = "proto3";
+package containerd.services.content.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/containerd/containerd/api/services/content/v1;content";
+
+service Content {
+  rpc Info(InfoRequest) returns (InfoResponse);
+  rpc Update(UpdateRequest) returns (UpdateResponse);
+  rpc List(ListContentRequest) returns (stream ListContentResponse);
+  rpc Delete(DeleteContentRequest) returns (google.protobuf.Empty);
+  rpc Read(ReadContentRequest) returns (stream ReadContentResponse);
+  rpc Status(StatusRequest) returns (StatusResponse);
+  rpc ListStatuses(ListStatusesRequest) returns (ListStatusesResponse);
+  rpc Write(stream WriteContentRequest) returns (stream WriteContentResponse);
+  rpc Abort(AbortRequest) returns (google.protobuf.Empty);
+}
+
+message Info {
+  string digest = 1;
+  int64 size = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp updated_at = 4;
+  map<string, string> labels = 5;
+}
+
+message InfoRequest { string digest = 1; }
+message InfoResponse { Info info = 1; }
+
+message UpdateRequest {
+  Info info = 1;
+  google.protobuf.FieldMask update_mask = 2;
+}
+message UpdateResponse { Info info = 1; }
+
+message ListContentRequest { repeated string filters = 1; }
+message ListContentResponse { repeated Info info = 1; }
+
+message DeleteContentRequest { string digest = 1; }
+
+message ReadContentRequest {
+  string digest = 1;
+  int64 offset = 2;
+  int64 size = 3;
+}
+message ReadContentResponse {
+  int64 offset = 1;
+  bytes data = 2;
+}
+
+message StatusRequest { string ref = 1; }
+message StatusResponse {
+  string ref = 1;
+  int64 offset = 2;
+  int64 total = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message ListStatusesRequest { repeated string filters = 1; }
+message ListStatusesResponse { repeated StatusResponse statuses = 1; }
+
+message WriteContentRequest {
+  enum Action {
+    STAT = 0;
+    WRITE = 1;
+    COMMIT = 2;
+  }
+  Action action = 1;
+  string ref = 2;
+  int64 total = 3;
+  string expected = 4;
+  int64 offset = 5;
+  bytes data = 6;
+  map<string, string> labels = 7;
+}
+
+message WriteContentResponse {
+  enum Action {
+    STAT = 0;
+    WRITE = 1;
+    COMMIT = 2;
+  }
+  Action action = 1;
+  google.protobuf.Timestamp started_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  int64 offset = 4;
+  int64 total = 5;
+  string digest = 6;
+}
+
+message AbortRequest { string ref = 1; }

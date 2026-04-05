@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Wisp — browser-based virtualization and workload management for KVM and containers." />
+    <title>Wisp — Virtualization control from the browser</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="top-inner">
+        <div>
+          <span class="brand">Wisp</span>
+          <span class="brand-sub">KVM &amp; containers</span>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <div class="wrap">
+        <div class="hero">
+          <h1>Run VMs and containers from one clean panel</h1>
+          <p class="hero-lead">
+            Wisp is a deployable web app for managing QEMU/KVM virtual machines via libvirt and OCI
+            workloads via containerd—live host stats, storage, networking, consoles, backups, and more.
+          </p>
+        </div>
+
+        <section aria-labelledby="features-heading">
+          <span class="section-label">What you get</span>
+          <h2 id="features-heading">Functionality</h2>
+          <div class="grid">
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">◇</div>
+              <h3>Virtual machines</h3>
+              <p>
+                Full lifecycle control over libvirt domains: CPU, memory, disks, networks, snapshots,
+                cloud-init, USB passthrough, and SPICE/VNC console access.
+              </p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">▢</div>
+              <h3>Containers</h3>
+              <p>
+                OCI containers alongside VMs in one workload list—containerd-backed, with images,
+                mounts, and networking aligned with the same patterns as the rest of the app.
+              </p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">◎</div>
+              <h3>Host &amp; live data</h3>
+              <p>
+                CPU, memory, disk and network I/O pushed over Server-Sent Events—no polling the UI
+                for stats, jobs, or workload state.
+              </p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">◈</div>
+              <h3>Operations</h3>
+              <p>
+                Image library, SMB-aware backups, app and host configuration, and a focused layout
+                built for daily ops on a single machine or homelab server.
+              </p>
+            </article>
+          </div>
+        </section>
+      </div>
+
+      <div class="strip">
+        <div class="wrap">
+          <div class="strip-card">
+            <span class="section-label">How it was made</span>
+            <p>
+              <strong>Wisp is vibe coded.</strong> The UI, API, and automation were built end to end
+              in Cursor—pair programming with AI for structure, refactors, and polish—while keeping a
+              single coherent design language: light surfaces, clear typography, and calm blue
+              accents—the same look you see in the product.
+            </p>
+            <span class="cursor-badge">Made with Cursor</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="wrap footer">
+        <p>
+          Self-hosted<span class="dot" aria-hidden="true">●</span>Node.js backend<span class="dot" aria-hidden="true">●</span>static-friendly frontend
+        </p>
+      </div>
+    </main>
+  </body>
+</html>

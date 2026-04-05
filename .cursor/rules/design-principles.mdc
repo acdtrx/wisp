@@ -1,0 +1,21 @@
+---
+description: Core design principles for Wisp (naming, errors, timing, dependencies, CORS, fonts)
+alwaysApply: true
+---
+
+# Design Principles
+
+- **Naming:** Functions named for purpose (e.g. `attachISO(vmName, slot, isoPath)`), not for DBus method. No `callDomainMethod('UpdateDevice', ...)`.
+- **No generic action API:** No single `performAction(name, action)` string-switch in the backend. Use purpose-named functions (e.g. `startVM(name)`).
+- **Promises and errors:** Every function returns a Promise. Errors thrown as `{ code, message, raw? }`. Route handlers map codes to HTTP status (404, 409, 422, 500). Routes return `{ error: string, detail: string }` on failure.
+- **No sleep/timers for race conditions:** Do not use `setTimeout`, `setInterval`, or artificial delays to paper over state races. State-transition waits use DomainEvent DBus signals or retry with exponential backoff via `setImmediate`. Other backend timers are allowed for non-race purposes (e.g. libvirt reconnect delay, SSE push intervals, job TTL cleanup, periodic apt checks).
+- **Single DBus/libvirt caller:** Only `backend/src/lib/linux/vmManager/` (and the `vmManager.js` facade) may import `dbus-next` for **libvirt** or talk to libvirt. Avahi/mDNS uses `dbus-next` only in `linux/mdnsManager.js`. Routes and other libs must not import `dbus-next` for libvirt. New VM operations = new purpose-named export from the vmManager facade.
+- **Single gRPC/containerd caller:** Only `backend/src/lib/linux/containerManager/` (and the `containerManager.js` facade) may import `@grpc/grpc-js` or talk to containerd. Routes and other libs must not import `@grpc/grpc-js`. New operations = new purpose-named export from the containerManager facade.
+- **Minimize dependencies:** Don't add a module for functionality that can be implemented as a small function — write the function instead.
+- **No duplicated functionality:** Overview and Create VM share section components via `isCreating` prop. vmManager is the single implementation for every VM operation.
+- **CORS:** Backend allows CORS from `localhost:5173` only when `NODE_ENV=development`. Production: frontend proxies `/api` and `/ws`.
+- **No CDN assets:** No cdn, jsdelivr, unpkg, googleapis in frontend. Fonts: `font-family: system-ui, -apple-system, sans-serif` only.
+- **Shell/CLI:** No shell exec of binaries unless the alternative is very complex; validate with the user if the code should exec a CLI.
+- **No regex for XML:** Do not parse or mutate XML with regex. Use `fast-xml-parser` (parseDomainRaw / parseVMFromXML, buildXml, buildDiskXml) already used in the project.
+- **Live data via SSE:** All data that updates over time in the app (host stats, VM list, per-VM stats, job progress, etc.) must be pushed from the server via SSE (or WebSocket where applicable). Do not use repeated GET requests (polling) to refresh live data. One-time or on-demand GET is fine for static or user-triggered data (e.g. hardware info, host info, settings).
+- **UI section names and file names:** Keep component and file names aligned with the user-visible section or tab names. When you rename a tab or section in the UI (e.g. "OS Settings" → "Host Mgmt", "Settings" → "App Config"), rename the corresponding files and default export (e.g. `HostOSSettings.jsx` → `HostMgmt.jsx`, `HostSettings.jsx` → `AppConfig.jsx`). Section blocks that have a clear label (e.g. "Backup & SMB") should use a matching component name (e.g. `HostBackup.jsx` for the Backup & SMB section in the Host panel).

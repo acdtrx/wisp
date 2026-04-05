@@ -1,0 +1,26 @@
+---
+description: Feature-building mode — no schema/version migrations; bug fixes and corrective repair are in scope
+alwaysApply: true
+---
+
+# Feature building (no migrations)
+
+The project is in **feature-building** mode.
+
+## What “no migrations” means
+
+**Out of scope without an explicit decision to end this mode:**
+
+- Automatic **upgrade paths** between intentional product versions (e.g. reshape `wisp-config.json` or other persisted models on install or “first read after upgrade”).
+- **Dual-read** of deprecated keys or old on-disk shapes to repopulate new fields.
+- General **legacy support** for multiple historical schemas side by side.
+
+Implement new behavior against the **target schema and APIs** only. When this mode is lifted, update or remove this rule so agents know full migrations are allowed.
+
+## What is still in scope (not “migrations”)
+
+**Bug fixes** that caused wrong persisted state are normal engineering. Examples: incorrect file ownership or permissions written by the app, bad paths, or inconsistent data written by a faulty code path. Fixing the root cause in code is required; **repair or cleanup** of state produced by that bug (e.g. `chown`/`chmod` on a bounded path, a one-time repair in setup, or documented operator steps) is **not** treated as forbidden “migration” work. Agents should not refuse such fixes by citing this rule.
+
+**Distinction:** *Migration* here means **evolving an intentional older product shape into a newer one across releases.** *Corrective repair* means **aligning on-disk reality with what the correct implementation would have written**, including after a bug is fixed.
+
+When this mode changes, this rule should be updated or removed so agents know migrations are allowed again.

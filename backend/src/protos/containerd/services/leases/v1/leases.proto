@@ -1,0 +1,43 @@
+syntax = "proto3";
+package containerd.services.leases.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/containerd/containerd/api/services/leases/v1;leases";
+
+service Leases {
+  rpc Create(CreateRequest) returns (CreateResponse);
+  rpc Delete(DeleteRequest) returns (google.protobuf.Empty);
+  rpc List(ListRequest) returns (ListResponse);
+  rpc AddResource(AddResourceRequest) returns (google.protobuf.Empty);
+  rpc DeleteResource(DeleteResourceRequest) returns (google.protobuf.Empty);
+  rpc ListResources(ListResourcesRequest) returns (ListResourcesResponse);
+}
+
+message Lease {
+  string id = 1;
+  map<string, string> labels = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message CreateRequest {
+  string id = 1;
+  map<string, string> labels = 2;
+}
+message CreateResponse { Lease lease = 1; }
+
+message DeleteRequest { string id = 1; bool sync = 2; }
+
+message ListRequest { repeated string filters = 1; }
+message ListResponse { repeated Lease leases = 1; }
+
+message Resource {
+  string id = 1;
+  string type = 2;
+}
+
+message AddResourceRequest { string id = 1; Resource resource = 2; }
+message DeleteResourceRequest { string id = 1; Resource resource = 2; }
+message ListResourcesRequest { string id = 1; }
+message ListResourcesResponse { repeated Resource resources = 1; }

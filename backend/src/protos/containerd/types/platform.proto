@@ -1,0 +1,10 @@
+syntax = "proto3";
+package containerd.types;
+
+option go_package = "github.com/containerd/containerd/api/types;types";
+
+message Platform {
+  string os = 1;
+  string architecture = 2;
+  string variant = 3;
+}

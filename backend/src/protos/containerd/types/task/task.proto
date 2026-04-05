@@ -1,0 +1,13 @@
+syntax = "proto3";
+package containerd.types.task;
+
+option go_package = "github.com/containerd/containerd/api/types/task;task";
+
+enum Status {
+  UNKNOWN = 0;
+  CREATED = 1;
+  RUNNING = 2;
+  STOPPED = 3;
+  PAUSED = 4;
+  PAUSING = 5;
+}

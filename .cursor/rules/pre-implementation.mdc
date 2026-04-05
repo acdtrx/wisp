@@ -1,0 +1,77 @@
+---
+description: Pre-implementation analysis — read relevant docs and specs before making any code change, then update docs afterward
+alwaysApply: true
+---
+
+# Pre-Implementation Analysis
+
+Before writing or modifying any code, you MUST read the relevant documentation to understand how the system currently works and how code is expected to be written. Skip this only for trivial typo fixes or comment-only edits.
+
+## Step 1 — Identify the affected areas
+
+Map the requested change to one or more areas below.
+
+| Area | Trigger (you're touching…) | Read BEFORE coding |
+|------|---------------------------|---------------------|
+| **Coding standards** | Any code | `docs/CODING-RULES.md` |
+| **Project conventions** | Any code | `docs/WISP-RULES.md` |
+| **Architecture** | New modules, new processes, data flow | `docs/ARCHITECTURE.md` |
+| **Tech stack** | Adding/removing/upgrading a dependency | `docs/TECHSTACK.md` |
+| **API routes** | `backend/src/routes/*` | `docs/spec/API.md` |
+| **Error handling** | Throwing/catching errors, error responses | `docs/spec/ERROR-HANDLING.md` |
+| **VM operations** | `backend/src/lib/vmManager.js`, `backend/src/lib/linux/vmManager/`, VM lifecycle | `docs/spec/VM-MANAGEMENT.md` |
+| **Container operations** | `backend/src/lib/containerManager.js`, `backend/src/lib/linux/containerManager/`, container lifecycle | `docs/spec/CONTAINERS.md` |
+| **Auth / login** | `auth.js`, JWT, password, tokens | `docs/spec/AUTH.md` |
+| **Config / env / paths** | `config/`, `paths.js`, `config.js` | `docs/spec/CONFIGURATION.md` |
+| **Console / VNC** | `ConsolePanel`, `VNCConsole`, `console.js` route | `docs/spec/CONSOLE.md`, `docs/spec/noVNC.md` |
+| **Host stats** | `procStats.js`, `stats.js` route, `HostStatsBar` | `docs/spec/HOST-MONITORING.md` |
+| **Backups** | `vmManagerBackup.js`, `backups.js` route | `docs/spec/BACKUPS.md` |
+| **Snapshots** | `vmManagerSnapshots.js`, `SnapshotsSection` | `docs/spec/SNAPSHOTS.md` |
+| **Cloud-init** | `cloudInit.js`, `vmManagerCloudInit.js`, `CloudInitSection` | `docs/spec/CLOUD-INIT.md` |
+| **USB passthrough** | `vmManagerUsb.js`, `USBSection` | `docs/spec/USB.md` |
+| **Image library** | `library.js` route, `ImageLibrary` component | `docs/spec/IMAGE-LIBRARY.md` |
+| **Deployment / scripts** | `scripts/*`, systemd, `install.sh` | `docs/spec/DEPLOYMENT.md` |
+| **Settings UI** | `AppConfig`, `HostMgmt`, `HostBackup` | `docs/spec/SETTINGS.md` |
+| **Frontend UI** | Any component in `frontend/src/components/*` | `docs/spec/UI.md` (if it exists) |
+
+**Always read `docs/CODING-RULES.md` and `docs/WISP-RULES.md`** — they apply to every change. Then read the area-specific specs from the table above.
+
+## Step 2 — Verify your plan against the docs
+
+After reading, before coding, verify:
+
+1. **Existing behavior**: Does the spec describe the behavior you're about to change? If so, your implementation must either follow the existing pattern or intentionally replace it (and the spec must be updated).
+2. **Error handling**: If adding a new operation, does it follow the `{ code, message, raw? }` → `{ error, detail }` pattern? Is the new error code listed in the mapping table?
+3. **API contract**: If adding/changing a route, does the request/response shape match the API spec? Are all new endpoints documented?
+4. **State management**: If the feature involves live-updating data, does it use SSE (not polling)?
+5. **XML handling**: If touching libvirt XML, are you using `fast-xml-parser` (not regex)?
+6. **Dependencies**: If adding a package, is it justified per `docs/TECHSTACK.md` philosophy? Could a small function replace it?
+7. **Architecture boundaries**: If calling libvirt, is it going through `vmManager`? If accessing the filesystem, is it using `paths.js`?
+
+## Step 3 — Implement following the documented patterns
+
+Write code that conforms to what you read. Key patterns to respect:
+
+- **Backend**: Purpose-named functions, structured errors, single DBus caller (vmManager), no sleep for races
+- **Frontend**: Zustand stores, SSE via `createSSE`/`createJobSSE`, shared sections with `isCreating`, system fonts only
+- **Routes**: `{ error, detail }` on failure, `handleRouteError` for vmManager errors, `sendError` for others
+- **Scripts**: Fix in the install/setup pipeline (not manual server steps), quote variables, `set -e`
+
+## Step 4 — Update docs to reflect changes
+
+After implementing, update the relevant spec docs **in the same edit**. Use the mapping table in Step 1 to identify which docs to update. Specifically:
+
+- **New API endpoint** → add to `docs/spec/API.md` with method, path, auth, body, response, errors
+- **New error code** → add to `docs/spec/ERROR-HANDLING.md` mapping table
+- **New VM operation** → add to `docs/spec/VM-MANAGEMENT.md`
+- **New config field** → add to `docs/spec/CONFIGURATION.md` schema table
+- **New dependency** → add to `docs/TECHSTACK.md` table
+- **New component/view** → add to `docs/spec/UI.md` and `docs/ARCHITECTURE.md` component table
+- **Changed behavior** → update the description in the relevant spec to match the new behavior
+- **New setup step** → add to `docs/spec/DEPLOYMENT.md`
+
+If the change only affects internal implementation (no behavior, API, or UI change), no doc update is needed.
+
+## Feature building and migrations
+
+While the project is in feature-building mode, **do not** plan or implement **schema/version migrations** (dual-read of old keys, automatic upgrade conversion of persisted config shapes, etc.) unless the user lifts that policy. **Bug fixes** that produced wrong on-disk state, and **corrective repair** of that state, are in scope — see `.cursor/rules/feature-building.mdc` for the distinction.

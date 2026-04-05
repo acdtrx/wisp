@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Usage: wisp-os-update check | upgrade
+#   check   - sync package database, then count packages that would be upgraded; prints one integer.
+#   upgrade - sync package database and perform a full upgrade (non-interactive).
+# Must be run with sufficient privilege (root or sudo).
+# Supports: Debian/Ubuntu (apt) and Arch Linux (pacman).
+set -euo pipefail
+
+# Detect distro from /etc/os-release
+DISTRO="unknown"
+if [[ -f /etc/os-release ]]; then
+  _ID="$(. /etc/os-release && echo "${ID:-}")"
+  _ID_LIKE="$(. /etc/os-release && echo "${ID_LIKE:-}")"
+  case "${_ID}:${_ID_LIKE}" in
+    arch:*|*:*arch*)
+      DISTRO="arch"
+      ;;
+    ubuntu:*|debian:*|*:*debian*|*:*ubuntu*)
+      DISTRO="debian"
+      ;;
+  esac
+fi
+
+if [[ "$DISTRO" == "unknown" ]]; then
+  echo "Unsupported distro; OS updates require Debian/Ubuntu (apt) or Arch Linux (pacman)." >&2
+  exit 1
+fi
+
+CMD="${1:-}"
+
+case "$DISTRO" in
+  arch)
+    case "$CMD" in
+      check)
+        pacman -Sy >/dev/null 2>&1
+        pacman -Qu 2>/dev/null | wc -l
+        ;;
+      upgrade)
+        pacman -Syu --noconfirm
+        ;;
+      *)
+        echo "Usage: $0 check|upgrade" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  debian)
+    case "$CMD" in
+      check)
+        apt-get update -qq >/dev/null 2>&1
+        # Simulate upgrade so count matches what apt-get upgrade would install (excludes phased-only, etc.).
+        OUT=$(LC_ALL=C apt-get -s upgrade 2>&1 || true)
+        SUMMARY=$(echo "$OUT" | grep -E '^[0-9]+ upgraded,' | tail -n1 || true)
+        if [[ -z "$SUMMARY" ]]; then
+          echo 0
+        else
+          # First comma-separated field is "N upgraded" (avoid matching "not upgraded" later in the line).
+          FIRST="${SUMMARY%%,*}"
+          echo "${FIRST%% upgraded}"
+        fi
+        ;;
+      upgrade)
+        apt-get update -qq
+        apt-get upgrade -y
+        ;;
+      *)
+        echo "Usage: $0 check|upgrade" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+esac

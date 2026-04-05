@@ -1,0 +1,267 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $EUID -ne 0 ]]; then
+  echo "ERROR: wisp-bridge must run as root."
+  exit 1
+fi
+
+if ! command -v netplan >/dev/null 2>&1; then
+  echo "ERROR: netplan is required."
+  exit 1
+fi
+
+if ! command -v ip >/dev/null 2>&1; then
+  echo "ERROR: iproute2 (ip command) is required."
+  exit 1
+fi
+
+NETPLAN_DIR="/etc/netplan"
+
+iface_exists() {
+  [[ -d "/sys/class/net/$1" ]]
+}
+
+is_bridge() {
+  [[ -d "/sys/class/net/$1/bridge" ]]
+}
+
+is_vlanned_iface() {
+  local iface="$1"
+  if [[ "$iface" =~ \.[0-9]+$ ]] || [[ "$iface" =~ -vlan[0-9]+$ ]]; then
+    return 0
+  fi
+  if [[ -f /proc/net/vlan/config ]] && awk -v iface="$iface" -F ' \\| ' '$1 == iface { found=1 } END { exit(found ? 0 : 1) }' /proc/net/vlan/config; then
+    return 0
+  fi
+  return 1
+}
+
+bridge_has_non_vlan_member() {
+  local bridge="$1"
+  local brif="/sys/class/net/${bridge}/brif"
+  [[ -d "$brif" ]] || return 1
+  local member
+  for member in "$brif"/*; do
+    [[ -e "$member" ]] || continue
+    member="$(basename "$member")"
+    if ! is_vlanned_iface "$member"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+validate_iface_name() {
+  local name="$1"
+  local label="$2"
+  if [[ -z "$name" ]]; then
+    echo "ERROR: ${label} is required."
+    exit 1
+  fi
+  if [[ "$name" =~ __ ]]; then
+    echo "ERROR: ${label} must not contain '__'."
+    exit 1
+  fi
+  if ! [[ "$name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+    echo "ERROR: ${label} contains invalid characters."
+    exit 1
+  fi
+  if [[ ${#name} -gt 15 ]]; then
+    echo "ERROR: ${label} exceeds Linux interface length limit (15)."
+    exit 1
+  fi
+}
+
+validate_vlan_id() {
+  local vlan="$1"
+  if ! [[ "$vlan" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: VLAN ID must be numeric."
+    exit 1
+  fi
+  if (( vlan < 1 || vlan > 4094 )); then
+    echo "ERROR: VLAN ID must be between 1 and 4094."
+    exit 1
+  fi
+}
+
+write_file_atomic() {
+  local target="$1"
+  local tmp
+  tmp="$(mktemp "${target}.tmp.XXXXXX")"
+  cat > "$tmp"
+  chmod 600 "$tmp"
+  mv "$tmp" "$target"
+}
+
+apply_netplan() {
+  netplan apply
+}
+
+create_vlan_bridge() {
+  local base_bridge="$1"
+  local vlan_id="$2"
+  local bridge_name="$3"
+  local file_name="$4"
+
+  validate_iface_name "$base_bridge" "base bridge"
+  validate_iface_name "$bridge_name" "bridge name"
+  validate_vlan_id "$vlan_id"
+
+  if ! is_bridge "$base_bridge"; then
+    echo "ERROR: Parent bridge '$base_bridge' does not exist."
+    exit 1
+  fi
+  if is_vlanned_iface "$base_bridge"; then
+    echo "ERROR: Parent bridge '$base_bridge' is VLAN-tagged and cannot be used as a parent."
+    exit 1
+  fi
+  if ! bridge_has_non_vlan_member "$base_bridge"; then
+    echo "ERROR: Parent bridge '$base_bridge' has no non-VLAN members."
+    exit 1
+  fi
+
+  local expected_name="${base_bridge}-vlan${vlan_id}"
+  if [[ "$bridge_name" != "$expected_name" ]]; then
+    echo "ERROR: Bridge name must be '${expected_name}'."
+    exit 1
+  fi
+
+  local vlan_iface="${base_bridge}.${vlan_id}"
+  if [[ ${#vlan_iface} -gt 15 ]]; then
+    echo "ERROR: VLAN interface '${vlan_iface}' exceeds Linux interface length limit (15)."
+    exit 1
+  fi
+
+  local target="${NETPLAN_DIR}/${file_name}"
+  mkdir -p "$NETPLAN_DIR"
+
+  write_file_atomic "$target" <<EOF
+# Managed by Wisp. Do not edit manually.
+network:
+  version: 2
+  vlans:
+    ${vlan_iface}:
+      id: ${vlan_id}
+      link: ${base_bridge}
+  bridges:
+    ${bridge_name}:
+      interfaces: [${vlan_iface}]
+      parameters:
+        stp: false
+        forward-delay: 0
+EOF
+
+  apply_netplan
+  echo "OK: created ${bridge_name}"
+}
+
+teardown_live_bridge_stack() {
+  local bridge_name="$1"
+  local vlan_iface="$2"
+
+  if iface_exists "$vlan_iface" && [[ -L "/sys/class/net/${vlan_iface}/master" ]]; then
+    ip link set "$vlan_iface" nomaster || true
+  fi
+
+  if iface_exists "$bridge_name"; then
+    ip link del "$bridge_name" || true
+  fi
+
+  if iface_exists "$vlan_iface"; then
+    ip link del "$vlan_iface" || true
+  fi
+}
+
+delete_vlan_bridge() {
+  local base_bridge="$1"
+  local vlan_id="$2"
+  local bridge_name="$3"
+  local file_name="$4"
+
+  validate_iface_name "$base_bridge" "base bridge"
+  validate_iface_name "$bridge_name" "bridge name"
+  validate_vlan_id "$vlan_id"
+
+  local expected_name="${base_bridge}-vlan${vlan_id}"
+  if [[ "$bridge_name" != "$expected_name" ]]; then
+    echo "ERROR: Bridge name must be '${expected_name}'."
+    exit 1
+  fi
+
+  local vlan_iface="${base_bridge}.${vlan_id}"
+  if [[ ${#vlan_iface} -gt 15 ]]; then
+    echo "ERROR: VLAN interface '${vlan_iface}' exceeds Linux interface length limit (15)."
+    exit 1
+  fi
+
+  local target="${NETPLAN_DIR}/${file_name}"
+  rm -f "$target"
+  teardown_live_bridge_stack "$bridge_name" "$vlan_iface"
+  apply_netplan
+  echo "OK: deleted ${bridge_name}"
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  wisp-bridge create-vlan-bridge --base <bridge> --vlan <id> --name <bridgeName> --file-name <file.yaml>
+  wisp-bridge delete-vlan-bridge --base <bridge> --vlan <id> --name <bridgeName> --file-name <file.yaml>
+EOF
+}
+
+if [[ $# -lt 1 ]]; then
+  usage
+  exit 1
+fi
+
+cmd="$1"
+shift
+
+case "$cmd" in
+  create-vlan-bridge)
+    base=""
+    vlan=""
+    name=""
+    file_name=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --base) base="$2"; shift 2 ;;
+        --vlan) vlan="$2"; shift 2 ;;
+        --name) name="$2"; shift 2 ;;
+        --file-name) file_name="$2"; shift 2 ;;
+        *) echo "ERROR: unknown argument '$1'"; usage; exit 1 ;;
+      esac
+    done
+    if [[ -z "$base" || -z "$vlan" || -z "$name" || -z "$file_name" ]]; then
+      usage
+      exit 1
+    fi
+    create_vlan_bridge "$base" "$vlan" "$name" "$file_name"
+    ;;
+  delete-vlan-bridge)
+    base=""
+    vlan=""
+    name=""
+    file_name=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --base) base="$2"; shift 2 ;;
+        --vlan) vlan="$2"; shift 2 ;;
+        --name) name="$2"; shift 2 ;;
+        --file-name) file_name="$2"; shift 2 ;;
+        *) echo "ERROR: unknown argument '$1'"; usage; exit 1 ;;
+      esac
+    done
+    if [[ -z "$base" || -z "$vlan" || -z "$name" || -z "$file_name" ]]; then
+      usage
+      exit 1
+    fi
+    delete_vlan_bridge "$base" "$vlan" "$name" "$file_name"
+    ;;
+  *)
+    echo "ERROR: unknown command '$cmd'"
+    usage
+    exit 1
+    ;;
+esac

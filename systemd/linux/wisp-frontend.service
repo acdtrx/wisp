@@ -1,0 +1,15 @@
+[Unit]
+Description=Wisp — Frontend
+After=network.target wisp-backend.service
+
+[Service]
+User=WISP_USER
+WorkingDirectory=WISP_PATH/frontend
+EnvironmentFile=-WISP_PATH/config/runtime.env
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
