@@ -39,7 +39,7 @@ Each container has a directory at `/var/lib/wisp/containers/<name>/`:
   container.log     # stdout/stderr from the container task
 ```
 
-Task `stdout` / `stderr` are set to a `file://` URI pointing at `container.log` so **containerd-shim-runc-v2** opens the file and copies process output (same idea as containerd’s `LogFile` helper). Do not use `binary:///usr/bin/tee?…` here: the shim builds logger argv from query **key/value pairs**, not a bare path, so tee would not receive the log file argument as intended.
+On each **start** that creates a new task (`startExistingContainer`), the backend records **`sessionLogStartBytes`**: the size in bytes of `container.log` immediately before `tasks.create` (append position for the new run). The logs UI defaults to **GET `/api/containers/:name/logs?scope=session`**, which shows only content from that byte offset onward; **`scope=all`** shows the full file. Task `stdout` / `stderr` are set to a `file://` URI pointing at `container.log` so **containerd-shim-runc-v2** opens the file and copies process output (same idea as containerd’s `LogFile` helper). Do not use `binary:///usr/bin/tee?…` here: the shim builds logger argv from query **key/value pairs**, not a bare path, so tee would not receive the log file argument as intended.
 
 ### container.json Schema
 
@@ -60,6 +60,7 @@ Task `stdout` / `stderr` are set to a `file://` URI pointing at `container.log` 
 | `exposedPorts` | string[] | `[]` | Ports declared by the image (`EXPOSE` directives), e.g. `["80/tcp", "443/tcp"]`. Set at create time from the OCI image config; informational only (macvlan exposes all ports) |
 | `createdAt` | string | (auto) | ISO 8601 creation timestamp |
 | `iconId` | string \| omitted | omitted | Optional UI icon key (same ids as VM icons in the app; default client icon when omitted) |
+| `sessionLogStartBytes` | number \| omitted | omitted | Server-managed: byte offset into `container.log` at the last task **create** (start). Used for “current session” log view. Omitted until the first start on older installs; treated as **0** when missing. Not writable via PATCH. |
 
 ### `network` object
 
@@ -244,7 +245,7 @@ The HTTP server listens **after** these steps, so hosts with SMB auto-mount conf
 | `ContainerMountsSection` | `sections/` | **Mounts**: table (bridges-style); type icon column; container path (wider column) and mount name; read-only; per-row Save (PATCH full list), icon upload (file/zip) with optional multipart **`mounts`** for atomic save+upload, file editor modal |
 | `MountFileEditorModal` | `sections/` | UTF-8 text editor for file-mount backing content (GET/PUT content API) |
 | `ContainerNetworkSection` | `sections/` | Network type, interface, IP, MAC (editable when stopped + randomize), status |
-| `ContainerLogsSection` | `sections/` | Live-scrolling log viewer with filter |
+| `ContainerLogsSection` | `sections/` | Live-scrolling log viewer with filter; toggle for **current session** vs **all logs** (SSE `?scope=`; session uses `sessionLogStartBytes` from `container.json`) |
 
 ### UI Integration
 

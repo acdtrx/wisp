@@ -4,7 +4,7 @@
  */
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { mkdir, rm, readFile, writeFile, access, readdir } from 'node:fs/promises';
+import { mkdir, rm, readFile, writeFile, access, readdir, stat } from 'node:fs/promises';
 import { randomBytes, createHash } from 'node:crypto';
 
 import {
@@ -497,6 +497,15 @@ export async function startExistingContainer(name) {
   }
 
   const logPath = join(containerDir, 'container.log');
+  let sessionLogStartBytes = 0;
+  try {
+    sessionLogStartBytes = (await stat(logPath)).size;
+  } catch {
+    /* no log file yet */
+  }
+  config.sessionLogStartBytes = sessionLogStartBytes;
+  await writeFile(join(containerDir, 'container.json'), JSON.stringify(config, null, 2), 'utf8');
+
   const logUri = taskLogStdioUri(logPath);
 
   await callUnary(getClient('tasks'), 'create', {

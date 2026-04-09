@@ -47,6 +47,7 @@ export async function updateContainerConfig(name, changes) {
 
   for (const [key, value] of Object.entries(changes)) {
     if (key === 'name' || key === 'createdAt' || key === 'state') continue;
+    if (key === 'sessionLogStartBytes') continue;
     if (key === 'iconId') {
       if (value == null || value === '') {
         delete config.iconId;

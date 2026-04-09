@@ -1072,6 +1072,8 @@ Default interval is **3s** when `intervalMs` is omitted.
 
 SSE stream for container logs. Initial event: `{ type: "history", lines }`. Subsequent: `{ type: "line", line }`.
 
+- **Query:** `?scope=session` (default) or `?scope=all`. **session** returns only log bytes written at or after **`sessionLogStartBytes`** in `container.json` (set when a new task is created on start). **all** returns the full log file (last 500 lines for the initial history, same as before). The live tail always streams new lines appended after the connection opens.
+
 ### POST /api/containers/:name/mounts
 
 Append one bind mount (row-scoped). **Body:** `{ type: "file"|"directory", name, containerPath, readonly? }` (same shape as one element of **`mounts`** in **PATCH**).

@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { ArrowDown, Search } from 'lucide-react';
+import { ArrowDown, ScrollText, Search, Timer } from 'lucide-react';
 import { createSSE } from '../../api/sse.js';
 import { randomId } from '../../utils/randomId.js';
 
 export default function ContainerLogsSection({ containerName }) {
   const [lines, setLines] = useState([]);
   const [filter, setFilter] = useState('');
+  /** `session` = from last task start (`sessionLogStartBytes`); `all` = full log file. */
+  const [logScope, setLogScope] = useState('session');
   const [autoScroll, setAutoScroll] = useState(true);
   const logRef = useRef(null);
   const closeRef = useRef(null);
@@ -13,8 +15,9 @@ export default function ContainerLogsSection({ containerName }) {
   useEffect(() => {
     setLines([]);
 
+    const q = logScope === 'all' ? '?scope=all' : '?scope=session';
     closeRef.current = createSSE(
-      `/api/containers/${encodeURIComponent(containerName)}/logs`,
+      `/api/containers/${encodeURIComponent(containerName)}/logs${q}`,
       (data) => {
         if (data.type === 'history' && Array.isArray(data.lines)) {
           setLines(data.lines.map((text) => ({ id: randomId(), text })));
@@ -34,7 +37,7 @@ export default function ContainerLogsSection({ containerName }) {
     return () => {
       if (closeRef.current) closeRef.current();
     };
-  }, [containerName]);
+  }, [containerName, logScope]);
 
   useEffect(() => {
     if (autoScroll && logRef.current) {
@@ -58,10 +61,30 @@ export default function ContainerLogsSection({ containerName }) {
     });
   }, [lines, filter]);
 
+  const toggleLogScope = useCallback(() => {
+    setLogScope((s) => (s === 'session' ? 'all' : 'session'));
+  }, []);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex items-center gap-2 border-b border-surface-border px-4 py-2">
-        <div className="relative flex-1">
+        <button
+          type="button"
+          onClick={toggleLogScope}
+          className="shrink-0 rounded-md p-1.5 text-accent bg-accent/10 transition-colors duration-150 hover:opacity-90"
+          title={
+            logScope === 'session'
+              ? 'Showing current session — click for all logs'
+              : 'Showing all logs — click for current session'
+          }
+        >
+          {logScope === 'session' ? (
+            <Timer size={14} aria-hidden />
+          ) : (
+            <ScrollText size={14} aria-hidden />
+          )}
+        </button>
+        <div className="relative min-w-0 flex-1">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
           <input
             type="text"

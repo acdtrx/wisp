@@ -3,7 +3,6 @@
  */
 import { join } from 'node:path';
 import { readFile, stat, open } from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
 import { watch } from 'node:fs';
 
 import { containerError } from './containerManagerConnection.js';
@@ -11,17 +10,25 @@ import { getContainerDir } from './containerPaths.js';
 
 /**
  * Read the last N lines from a container's log file.
+ * @param {string} name
+ * @param {number} tailLines
+ * @param {{ fromBytes?: number }} [options] - When set, only bytes at or after `fromBytes` are considered (current-session view).
  */
-export async function getContainerLogs(name, tailLines = 200) {
+export async function getContainerLogs(name, tailLines = 200, options = {}) {
   const logPath = join(getContainerDir(name), 'container.log');
+  const fromBytes = typeof options.fromBytes === 'number' && options.fromBytes >= 0 ? options.fromBytes : 0;
 
-  let content;
+  let buf;
   try {
-    content = await readFile(logPath, 'utf8');
+    buf = await readFile(logPath);
   } catch (err) {
     if (err.code === 'ENOENT') return { lines: [], totalSize: 0 };
     throw containerError('CONTAINERD_ERROR', `Failed to read logs for "${name}"`, err.message);
   }
+
+  const start = Math.min(fromBytes, buf.length);
+  const slice = buf.subarray(start);
+  const content = slice.toString('utf8');
 
   const allLines = content.split('\n');
   const lines = tailLines > 0
@@ -58,6 +65,14 @@ export function streamContainerLogs(name, onLine) {
       }
 
       const info = await stat(logPath);
+      if (info.size < offset) {
+        offset = info.size;
+        if (fh) {
+          await fh.close().catch(() => {});
+          fh = null;
+        }
+        return;
+      }
       if (info.size <= offset) return;
 
       const buf = Buffer.alloc(info.size - offset);

@@ -257,11 +257,18 @@ export default async function containerRoutes(fastify) {
   // ── Logs SSE ──────────────────────────────────────────────────────
   fastify.get('/containers/:name/logs', async (request, reply) => {
     const { name } = request.params;
+    const scope = request.query.scope === 'all' ? 'all' : 'session';
     setupSSE(reply);
 
     // Send existing logs first
     try {
-      const { lines } = await getContainerLogs(name, 500);
+      let fromBytes = 0;
+      if (scope === 'session') {
+        const cfg = await getContainerConfig(name);
+        const b = cfg.sessionLogStartBytes;
+        fromBytes = typeof b === 'number' && Number.isFinite(b) && b >= 0 ? b : 0;
+      }
+      const { lines } = await getContainerLogs(name, 500, { fromBytes });
       if (lines.length) {
         reply.raw.write(`data: ${JSON.stringify({ type: 'history', lines })}\n\n`);
       }
