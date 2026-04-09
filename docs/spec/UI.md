@@ -32,6 +32,10 @@ System fonts only — no web fonts, no CDN font loading:
 font-family: system-ui, -apple-system, sans-serif
 ```
 
+### Favicon
+
+`frontend/public/favicon.png` (32×32, alpha) and `favicon.svg`. `index.html` declares the PNG first, then the SVG (`sizes="any"`), so browsers that composite SVG favicons poorly still get a bitmap with reliable transparency; others can use the SVG for sharp scaling.
+
 ### Spacing and Shape
 
 - **Card border radius:** 8px
