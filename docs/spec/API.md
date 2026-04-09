@@ -932,6 +932,26 @@ VNC console WebSocket proxy. Bridges the browser's noVNC client to QEMU's VNC se
   - `4000` — Invalid VM name or VNC not available
   - `1011` — TCP connection error
 
+### WS /ws/container-console/:name
+
+Interactive shell in a **running** container. Uses containerd `Tasks.Exec` with a PTY (`/bin/sh`); I/O is bridged over WebSocket.
+
+- **Auth:** `?token=<jwt>` query parameter (same as VNC console)
+- **Query:** `cols` and `rows` (optional, defaults 80×24) — initial PTY size; client may send further resize messages after connect
+- **Protocol:**
+  - **Binary frames** — terminal input (client → server) and output (server → client)
+  - **Text frames** — JSON control only: `{ "type": "resize", "cols": number, "rows": number }` (client → server)
+- **Connection flow:**
+  1. Verify JWT from query parameter
+  2. Validate container name
+  3. Ensure the container task is running; create a unique exec session with named pipes + `Tasks.Exec` / `Tasks.Start`
+  4. Bridge WebSocket ↔ FIFO streams; forward `resize` to `Tasks.ResizePty`
+  5. On close, kill the exec process and remove temp FIFO directory
+- **Close codes:**
+  - `4001` — Authentication required/failed
+  - `4000` — Invalid container name, container not running, or exec failed
+  - `1011` — Stream/proxy error
+
 ---
 
 ## Containers

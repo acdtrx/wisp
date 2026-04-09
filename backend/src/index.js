@@ -21,6 +21,7 @@ import libraryRoutes from './routes/library.js';
 import vmsRoutes from './routes/vms.js';
 import cloudInitRoutes from './routes/cloudinit.js';
 import consoleRoutes from './routes/console.js';
+import containerConsoleRoutes from './routes/containerConsole.js';
 import settingsRoutes from './routes/settings.js';
 import backupsRoutes from './routes/backups.js';
 import containerRoutes from './routes/containers.js';
@@ -60,6 +61,7 @@ app.register(backupsRoutes, { prefix: '/api' });
 app.register(containerRoutes, { prefix: '/api' });
 app.register(backgroundJobsRoutes, { prefix: '/api' });
 app.register(consoleRoutes, { prefix: '/ws' });
+app.register(containerConsoleRoutes, { prefix: '/ws' });
 
 async function start() {
   try {

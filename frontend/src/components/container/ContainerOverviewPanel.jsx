@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import {
   Play, Square, Zap, RotateCcw, Trash2, Loader2, X,
 } from 'lucide-react';
@@ -14,6 +14,8 @@ import ContainerMountsSection from '../sections/ContainerMountsSection.jsx';
 import ContainerNetworkSection from '../sections/ContainerNetworkSection.jsx';
 import ContainerLogsSection from '../sections/ContainerLogsSection.jsx';
 import { CONTAINER_STATE_ICON_COLOR } from '../../utils/containerConstants.js';
+
+const ContainerConsolePanel = lazy(() => import('../console/ContainerConsolePanel.jsx'));
 
 function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default', loading }) {
   const base = 'flex items-center justify-center rounded-md p-2 text-sm font-medium transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed';
@@ -115,6 +117,15 @@ export default function ContainerOverviewPanel() {
             >
               Logs
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('console')}
+              className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
+                activeTab === 'console' ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
+              }`}
+            >
+              Console
+            </button>
           </div>
         </div>
         <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-1">
@@ -136,7 +147,18 @@ export default function ContainerOverviewPanel() {
         </div>
       )}
 
-      {activeTab === 'logs' ? (
+      {activeTab === 'console' ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <Suspense fallback={(
+            <div className="flex flex-1 items-center justify-center">
+              <Loader2 size={24} className="animate-spin text-text-muted" />
+            </div>
+          )}
+          >
+            <ContainerConsolePanel containerName={name} />
+          </Suspense>
+        </div>
+      ) : activeTab === 'logs' ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <ContainerLogsSection containerName={name} />
         </div>

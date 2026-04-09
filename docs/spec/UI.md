@@ -450,7 +450,7 @@ Containers share the same unified list in the left panel as VMs. They use the **
 Header bar with:
 - **Icon** — clickable, opens the Icon Picker (same set as VMs), colored by state; default matches **Box**
 - Container name + **container** badge (muted pill)
-- Tabs: **Overview** | **Logs**
+- Tabs: **Overview** | **Logs** | **Console**
 - Action buttons: Start, Stop, Kill, Restart, Delete
 
 #### Overview tab
@@ -469,6 +469,10 @@ Full-height log viewer:
 - Auto-scroll toggle button
 - Line count indicator
 - SSE-streamed live log data
+
+#### Console tab
+
+Lazy-loaded (`ContainerConsolePanel`). **xterm.js** terminal + toolbar (Paste, Fullscreen, Disconnect/Reconnect). Connects to **`/ws/container-console/:name`** with JWT; live I/O is WebSocket binary frames (see [API.md](API.md)). When the container is **not** running, shows a short message to start the container first (no shell session).
 
 ### Create Container Panel
 

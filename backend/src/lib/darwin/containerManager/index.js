@@ -194,3 +194,11 @@ export async function setupNetwork() {
 export async function teardownNetwork() {
   throw noContainerd();
 }
+
+export async function execInContainer() {
+  throw noContainerd();
+}
+
+export async function resizeExec() {
+  throw noContainerd();
+}

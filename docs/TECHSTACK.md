@@ -10,7 +10,7 @@ This is the single source of truth for all technology choices in the project. No
 | Framework | Fastify | ^5.8 | HTTP server with built-in JSON schema validation, low overhead, plugin system. |
 | CORS | @fastify/cors | ^11.2 | Cross-origin support for development mode only. |
 | File uploads | @fastify/multipart | ^9.4 | Streaming multipart uploads (50GB limit). |
-| WebSocket | @fastify/websocket | ^11.2 | WebSocket support for VNC console proxy. |
+| WebSocket | @fastify/websocket | ^11.2 | WebSocket support for VNC console proxy and container interactive shell. |
 | Hypervisor | dbus-next | ^0.10 | Pure-JS DBus client for communicating with libvirt via its DBus API (`org.libvirt`). Chosen over native bindings (node-libvirt) because it requires no native compilation, works across Node versions, and libvirt's DBus API is a stable first-class interface. |
 | XML parsing | fast-xml-parser | ^5.5.7 | Parse and build libvirt domain XML. No regex-based XML manipulation anywhere. |
 | gRPC client | @grpc/grpc-js | ^1.14.3 | gRPC client for communicating with containerd via its unix socket API. |
@@ -31,7 +31,7 @@ This is the single source of truth for all technology choices in the project. No
 | Component | Technology | Version | Purpose |
 |-----------|-----------|---------|---------|
 | UI library | React | ^18.3 | Component-based UI. |
-| Build tool | Vite | ^6.4 | Dev server with HMR, production bundler. |
+| Build tool | Vite | ^6.4.2 | Dev server with HMR, production bundler. |
 | Vite plugin | @vitejs/plugin-react | ^4.3 | JSX transform and React fast refresh. |
 | Styling | Tailwind CSS | ^3.4 | Utility-first CSS framework. Custom theme with project-specific design tokens. |
 | CSS processing | PostCSS + Autoprefixer | ^8.4 / ^10.4 | Required by Tailwind for CSS processing. |
@@ -40,6 +40,8 @@ This is the single source of truth for all technology choices in the project. No
 | Icons | lucide-react | ^0.468 | Tree-shakeable icon library. No CDN. |
 | HTTP client | Native `fetch` | — | No Axios or similar; plain browser fetch API. |
 | VNC console | noVNC | vendored | ESM source files served from `public/vendor/novnc/`. Not installed via npm. See [noVNC.md](spec/noVNC.md). |
+| Container console | @xterm/xterm | ^6.0 | In-browser terminal emulator for container shell sessions. |
+| Terminal layout | @xterm/addon-fit | ^0.11 | Fits the terminal to its container element; paired with resize WebSocket control messages. |
 
 ### Frontend production server
 

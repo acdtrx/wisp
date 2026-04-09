@@ -169,6 +169,7 @@ Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux 
 | `index.js` | Re-exports the Linux implementation for the facade |
 | `containerManagerConnection.js` | gRPC client, containerd connection lifecycle |
 | `containerManagerSpec.js` | OCI spec builder from `container.json` + image config |
+| `containerManagerExec.js` | Interactive shell: containerd `Tasks.Exec` + PTY (FIFO I/O) for the container console WebSocket |
 | `containerManagerNetwork.js` | macvlan CNI, netns, DHCP IP discovery |
 | `containerManagerLifecycle.js` | Start, stop, kill, restart, task lifecycle |
 | `containerManagerCreate.js` | Create container (pull, snapshot, define) |
@@ -288,7 +289,7 @@ components/
 │                     ContainerMountsSection, ContainerEnvSection,
 │                     ContainerGeneralSection, ContainerNetworkSection, ContainerLogsSection,
 │                     MountFileEditorModal
-├── console/          ConsolePanel, VNCConsole, ConsoleToolbar
+├── console/          ConsolePanel, VNCConsole, ConsoleToolbar; ContainerConsolePanel, ContainerConsole, ContainerConsoleToolbar
 ├── shared/           Reusable: SectionCard, DataTableChrome (table shell + tokens), ConfirmDialog, ImageLibraryModal,
 │                     UsbAttachModal, IconPickerModal, StatPill, Toggle, vmIcons
 ├── library/          ImageLibrary (standalone page and modal)

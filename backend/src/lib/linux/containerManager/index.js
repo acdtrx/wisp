@@ -66,3 +66,5 @@ export {
 export { setupNetwork, teardownNetwork } from './containerManagerNetwork.js';
 
 export { buildOCISpec } from './containerManagerSpec.js';
+
+export { execInContainer, resizeExec } from './containerManagerExec.js';
