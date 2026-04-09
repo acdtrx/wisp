@@ -39,9 +39,11 @@ const READONLY_PATHS = [
  * @param {object} config - Parsed container.json
  * @param {object} imageConfig - OCI image config (from manifest → config blob)
  * @param {string} containerFilesDir - Absolute path to the container's files/ directory
+ * @param {object} [opts] - Extra options
+ * @param {string} [opts.resolvConfPath] - Host resolv.conf to bind-mount (default: /etc/resolv.conf)
  * @returns {object} OCI runtime spec (JSON-serializable)
  */
-export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '') {
+export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', opts = {}) {
   const imgCfg = imageConfig.config || imageConfig || {};
 
   const entrypoint = imgCfg.Entrypoint || [];
@@ -62,20 +64,20 @@ export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '') {
     for (const m of config.mounts) {
       if (!m?.name || (m.type !== 'file' && m.type !== 'directory')) continue;
       const hostPath = join(containerFilesDir, m.name);
-      const opts = ['rbind'];
-      if (m.readonly) opts.push('ro');
+      const mountOpts = ['rbind'];
+      if (m.readonly) mountOpts.push('ro');
       mounts.push({
         destination: m.containerPath,
         type: 'bind',
         source: hostPath,
-        options: opts,
+        options: mountOpts,
       });
     }
   }
   mounts.push({
     destination: '/etc/resolv.conf',
     type: 'bind',
-    source: '/etc/resolv.conf',
+    source: opts.resolvConfPath || '/etc/resolv.conf',
     options: ['rbind', 'ro'],
   });
 

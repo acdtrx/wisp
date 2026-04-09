@@ -16,6 +16,7 @@ import { getContainersPath, getContainerDir, getContainerFilesDir } from './cont
 import {
   setupNetwork, teardownNetwork, mergeNetworkLeaseIntoConfig,
   generateMacvlanMac, normalizeMacvlanMac, ensureMacvlanMacInConfig,
+  resolveContainerResolvConf,
 } from './containerManagerNetwork.js';
 import { getDefaultMacvlanParentBridge } from '../vmManager/vmManagerHost.js';
 import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.js';
@@ -385,7 +386,8 @@ export async function createContainer(spec, onStep) {
   onStep?.({ step: 'creating', detail: 'Creating container…' });
 
   // Build OCI spec
-  const ociSpec = buildOCISpec(config, imageConfig, filesDir);
+  const resolvConfPath = await resolveContainerResolvConf();
+  const ociSpec = buildOCISpec(config, imageConfig, filesDir, { resolvConfPath });
 
   // Prepare snapshot (required before containerd Containers.Create)
   try {
@@ -458,7 +460,8 @@ export async function startExistingContainer(name) {
   }
 
   // Rebuild OCI spec
-  const ociSpec = buildOCISpec(config, imageConfig, filesDir);
+  const resolvConfPath = await resolveContainerResolvConf();
+  const ociSpec = buildOCISpec(config, imageConfig, filesDir, { resolvConfPath });
 
   // Update the container spec in containerd
   await callUnary(getClient('containers'), 'update', {

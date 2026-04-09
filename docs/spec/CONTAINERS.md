@@ -129,7 +129,7 @@ The exec process uses the same **UID/GID** as the main container task (`runAsRoo
 - **Process user:** `process.user` uses the **backend process UID/GID** (the systemd deploy user) by default, so files created on bind mounts under `files/<name>/` remain owned by that user and the backend can delete them. If the backend runs as root (unusual), UID/GID stay 0. When **`runAsRoot: true`** is set in `container.json`, UID/GID are forced to 0 — required for images that write to root-owned directories inside the container (e.g. OpenWebUI writing `.webui_secret_key` to `/app`). Bind-mount data created while running as root will be root-owned; container deletion may require sudo for those paths.
 - User bind mounts: `files/<mountName>` per `mounts[].name` (`type` determines file vs directory)
 - CPU quota/period from `cpuLimit`, memory limit from `memoryLimitMiB`
-- `/etc/resolv.conf` bind-mounted from host
+- `/etc/resolv.conf` bind-mounted from host. On systemd-resolved hosts, the upstream file (`/run/systemd/resolve/resolv.conf`) is used instead of the stub (`127.0.0.53`), which is unreachable from a container's network namespace
 
 ## Networking
 

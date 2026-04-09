@@ -425,6 +425,22 @@ export async function mergeNetworkLeaseIntoConfig(name, config, lease) {
 /**
  * Ensure macvlan has a persisted MAC in `container.json` (stable across restarts; CNI ADD uses it).
  */
+/**
+ * Determine the host resolv.conf to bind-mount into containers.
+ * On hosts with systemd-resolved, `/etc/resolv.conf` points at the stub resolver
+ * (`127.0.0.53`) which is unreachable from a container's own network namespace.
+ * Use the upstream resolvers file when available.
+ */
+export async function resolveContainerResolvConf() {
+  const upstream = '/run/systemd/resolve/resolv.conf';
+  try {
+    await access(upstream);
+    return upstream;
+  } catch {
+    return '/etc/resolv.conf';
+  }
+}
+
 export async function ensureMacvlanMacInConfig(name, config) {
   if (config.network?.type !== 'macvlan') return config;
   if (normalizeMacvlanMac(config.network?.mac)) return config;
