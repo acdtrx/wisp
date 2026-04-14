@@ -126,11 +126,11 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
               <button
                 type="button"
                 onClick={() => setPickerOpen(true)}
-                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-surface-border bg-surface px-2.5 text-xs font-medium text-text-secondary hover:bg-surface-sidebar hover:text-text-primary transition-colors duration-150"
+                className="inline-flex items-center justify-center rounded-md border border-surface-border bg-surface px-2.5 text-text-secondary hover:bg-surface-sidebar hover:text-text-primary transition-colors duration-150"
                 title="Browse image library"
+                aria-label="Browse image library"
               >
                 <Images size={14} aria-hidden />
-                Browse…
               </button>
             </div>
           </Field>
