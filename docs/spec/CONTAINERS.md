@@ -10,7 +10,7 @@ Frontend (containerStore) ──REST+SSE──▶ containers.js route ──▶ 
                                                     ┌──────────────────┼──────────────────┐
                                                     ▼                  ▼                  ▼
                                          containerManagerConnection  containerManagerSpec  containerManagerNetwork
-                                            (gRPC to containerd)     (OCI spec builder)   (macvlan CNI exec)
+                                            (gRPC to containerd)     (OCI spec builder)    (bridge CNI exec)
 ```
 
 Containers follow the same architectural patterns as VMs:
@@ -56,8 +56,8 @@ On each **start** that creates a new task (`startExistingContainer`), the backen
 | `localDns` | boolean | false | Enable mDNS registration for this container on the LAN. New containers default to `true`; existing containers without this field are treated as `false` for upgrade safety. |
 | `env` | object | `{}` | Key-value environment variables |
 | `mounts` | array | `[]` | Bind mount definitions (see Mount entry); backing data lives under `files/<name>` |
-| `network` | object | `{ "type": "macvlan" }` | Network configuration (see below) |
-| `exposedPorts` | string[] | `[]` | Ports declared by the image (`EXPOSE` directives), e.g. `["80/tcp", "443/tcp"]`. Set at create time from the OCI image config; informational only (macvlan exposes all ports) |
+| `network` | object | `{ "type": "bridge" }` | Network configuration (see below) |
+| `exposedPorts` | string[] | `[]` | Ports declared by the image (`EXPOSE` directives), e.g. `["80/tcp", "443/tcp"]`. Set at create time from the OCI image config; informational only (containers expose all listening ports on the LAN) |
 | `createdAt` | string | (auto) | ISO 8601 creation timestamp |
 | `iconId` | string \| omitted | omitted | Optional UI icon key (same ids as VM icons in the app; default client icon when omitted) |
 | `sessionLogStartBytes` | number \| omitted | omitted | Server-managed: byte offset into `container.log` at the last task **create** (start). Used for “current session” log view. Omitted until the first start on older installs; treated as **0** when missing. Not writable via PATCH. |
@@ -66,10 +66,10 @@ On each **start** that creates a new task (`startExistingContainer`), the backen
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `type` | string | `macvlan` — container gets a LAN-facing interface (DHCP) |
-| `interface` | string \| omitted | Optional: host bridge as CNI `master` (else use `/etc/cni/net.d/10-wisp-macvlan.conflist`). At **create**, defaults to the first Linux bridge whose name is not VLAN-style (`br0-vlanN` / `iface.VID`); if none, the first listed bridge. |
+| `type` | string | `bridge` — container is attached as a veth port on a host Linux bridge (LAN DHCP) |
+| `interface` | string | Host Linux bridge used as the parent for the container's veth pair (e.g. `br0` or a VLAN sub-bridge `br0-vlan10`). Required at start; a setup-time probe rejects anything that is not an existing Linux bridge. At **create**, defaults to the first bridge whose name is not VLAN-style (`br0-vlanN` / `iface.VID`); if none, the first listed bridge. |
 | `ip` | string \| omitted | Set by the backend after a successful CNI **ADD** (IPv4 with mask, e.g. `192.168.1.50/24`). Not writable via PATCH while the task is running (ignored in the merge). |
-| `mac` | string | **Macvlan:** Required. Locally administered unicast format (`aa:bb:cc:dd:ee:ff`). Assigned at create (random if omitted), persisted in `container.json`, and passed to the CNI macvlan plugin on each **ADD** so the address stays stable across stop/start. User-editable via PATCH when the container is **not** running (`running` / `paused` / `pausing` block MAC or interface changes). Legacy configs without a MAC get one on first **GET** (`/api/containers/:name`) or before **start**. |
+| `mac` | string | Required. Locally administered unicast format (`aa:bb:cc:dd:ee:ff`). Assigned at create (random if omitted), persisted in `container.json`, and passed to the CNI bridge plugin on each **ADD** so the DHCP client identity (and therefore the lease) stays stable across stop/start. User-editable via PATCH when the container is **not** running (`running` / `paused` / `pausing` block MAC or interface changes). Legacy configs without a MAC get one on first **GET** (`/api/containers/:name`) or before **start**. |
 
 ### Mount entry
 
@@ -124,7 +124,7 @@ The exec process uses the same **UID/GID** as the main container task (`runAsRoo
 
 `buildOCISpec()` generates an OCI 1.1.0 runtime spec from `container.json` + image config:
 
-- Default Linux namespaces: pid, ipc, uts, mount, network, cgroup. For **`network.type: macvlan`**, the network namespace uses **`path: /var/run/netns/<name>`** so the process joins the netns CNI configured (a bare `network` namespace without `path` would be a new empty netns and ignore macvlan).
+- Default Linux namespaces: pid, ipc, uts, mount, network, cgroup. For **`network.type: bridge`**, the network namespace uses **`path: /var/run/netns/<name>`** so the process joins the netns CNI configured (a bare `network` namespace without `path` would be a new empty netns and ignore the CNI-created veth).
 - Default capabilities: standard container set (chown, net_bind, etc.)
 - Default mounts: proc, dev, devpts, shm, mqueue, sysfs, cgroup, run
 - **Process user:** `process.user` uses the **backend process UID/GID** (the systemd deploy user) by default, so files created on bind mounts under `files/<name>/` remain owned by that user and the backend can delete them. If the backend runs as root (unusual), UID/GID stay 0. When **`runAsRoot: true`** is set in `container.json`, UID/GID are forced to 0 — required for images that write to root-owned directories inside the container (e.g. OpenWebUI writing `.webui_secret_key` to `/app`). Bind-mount data created while running as root will be root-owned; container deletion may require sudo for those paths.
@@ -134,19 +134,21 @@ The exec process uses the same **UID/GID** as the main container task (`runAsRoo
 
 ## Networking
 
-Containers use macvlan CNI networking to appear directly on the LAN with their own IP address (via DHCP), the same way VMs do on a bridge.
+Containers are attached as **veth ports on a host Linux bridge** (`br0`, or a VLAN sub-bridge `br0-vlanN`) via the **CNI bridge plugin**, exactly the same topology libvirt uses for VM NICs. Each container gets its own MAC, its own DHCP-assigned LAN IP, and — critically — **is reachable from the host** because the host already has an IP on the same bridge. This replaced an earlier macvlan setup, which isolated containers from the host by kernel design.
 
-- **No Docker-style `-p` publish:** The container is on the LAN like a small VM. If nginx listens on port 80 inside the image, browse to `http://<container-ip>/` from other machines on the same LAN (no host port mapping table). Firewall rules on the host or image still apply. The Network section shows `ExposedPorts` from the OCI image config (Dockerfile `EXPOSE` directives) as informational badges so users know which ports the image intends to serve.
-- **MAC in CNI:** The reference macvlan plugin accepts a **`mac`** field in the netconf JSON; Wisp sets it from `container.json` on each **ADD** so DHCP sees a consistent client identity across restarts.
-- **Interface selection:** Optional `network.interface` selects which host bridge/interface CNI macvlan uses as `master`. In the UI, this is chosen from the host bridge list (`/api/host/bridges`), and interface changes require the container to be stopped. VLAN-specific connectivity should use a managed VLAN bridge (for example `br0-vlan10`) created in Host Mgmt.
-- **IP in the UI:** After each successful CNI **ADD**, the backend stores `network.ip` in `container.json` (and may fill `mac` from the CNI result only when no MAC was already persisted). With **`ipam.type: dhcp`**, the macvlan plugin often returns **no `ips[]` in the CNI result** (the `cni-dhcp` daemon assigns the address shortly after). When the container **task PID** is known, Wisp prefers reading the address from **`/proc/<pid>/net/fib_trie`** (no sudo). Before the task exists (e.g. polling right after CNI **ADD**), or if `/proc` parsing finds no address, Wisp falls back to **`sudo wisp-netns ipv4 <name> eth0`**. **`GET /api/containers/:name`** also probes if the task is running but `network.ip` is still empty — so the UI catches up after DHCP is slow.
+- **No Docker-style `-p` publish:** The container is on the LAN like a small VM. If nginx listens on port 80 inside the image, browse to `http://<container-ip>/` from any machine on the same LAN — including the Wisp host itself. Firewall rules on the host or image still apply. The Network section shows `ExposedPorts` from the OCI image config (Dockerfile `EXPOSE` directives) as informational badges so users know which ports the image intends to serve.
+- **Stable MAC:** Wisp assigns a locally administered MAC at create time, persists it in `container.json`, and passes it to the CNI bridge plugin on every **ADD** as the top-level `mac` field. `cni-dhcp` keys leases by MAC, so a container keeps the same IP across stop/start.
+- **Interface selection:** `network.interface` must be an existing Linux bridge (`br0`, `br0-vlan10`, etc.). The UI picks from the host bridge list (`/api/host/bridges`). Interface changes require the container to be stopped. For a VLAN-specific container, create a managed VLAN bridge (e.g. `br0-vlan10`) in Host Mgmt and point the container at it.
+- **Host ↔ container reachability:** Free on the untagged bridge — no `promiscMode`, no extra routing. Host reachability **on VLAN sub-bridges** is a host-config concern (the host needs an IP on that sub-bridge); Wisp itself does not configure it.
+- **Pre-ADD bridge validation:** `setupNetwork()` asserts `/sys/class/net/<iface>/bridge` exists before every CNI ADD. Without this, the bridge CNI plugin would silently create an orphan bridge under the given name.
+- **IP in the UI:** After each successful CNI **ADD**, the backend stores `network.ip` in `container.json` (and may fill `mac` from the CNI result only when no MAC was already persisted). With **`ipam.type: dhcp`**, the CNI result often has **no `ips[]`** (the `cni-dhcp` daemon assigns the address shortly after). When the container **task PID** is known, Wisp prefers reading the address from **`/proc/<pid>/net/fib_trie`** (no sudo). Before the task exists (e.g. polling right after CNI **ADD**), or if `/proc` parsing finds no address, Wisp falls back to **`sudo wisp-netns ipv4 <name> eth0`**. **`GET /api/containers/:name`** also probes if the task is running but `network.ip` is still empty — so the UI catches up after DHCP is slow.
 - Re-run **`install-helpers.sh`** after upgrading so `/usr/local/bin/wisp-netns` includes the **`ipv4`** subcommand (needed for fallback when PID is unavailable or `/proc` has no lease yet).
 - CNI plugins installed to `/opt/cni/bin/` by `scripts/linux/setup/cni.sh`
-- Config at `/etc/cni/net.d/10-wisp-macvlan.conflist`. When the host default route uses a **Linux bridge** (`br0`), **`master` must be that bridge**, not the physical NIC enslaved to it — macvlan on a bridge port often fails with **device or resource busy**.
-- DHCP IPAM via `cni-dhcp.service` systemd unit
+- Systemwide conflist at `/etc/cni/net.d/10-wisp-bridge.conflist`: `type: bridge`, `isGateway: false`, `ipMasq: false`, `hairpinMode: false`, `promiscMode: false`, `forceAddress: false`, `ipam.type: dhcp`. The `bridge` field is overridden per container from `network.interface` before each invocation.
+- DHCP IPAM via `cni-dhcp.service` systemd unit (plugin-agnostic; key on MAC)
 - Network namespace per container at `/var/run/netns/<name>`
-- CNI plugins are invoked via the **`wisp-cni`** privileged helper and **`sudo -n`** when the backend runs as the deploy user (`User=` in systemd). Stdin netconf merges **`.conflist` top-level `cniVersion` and `name` into the macvlan `plugins[0]` object** (the fragment alone is not valid for a direct plugin exec). **`wisp-netns`** creates `/var/run/netns/<name>` with `ip netns add`. Install both with **`install-helpers.sh`** / **`wispctl.sh helpers`** (same pattern as `wisp-smb`). **`cni-dhcp.service`** must be running when using `ipam.type: dhcp`.
-- Before **ADD**, if the netns file already exists, **`setupNetwork`** runs **CNI DEL** and **`ip netns delete`** so a leftover **`eth0`** from a failed stop does not cause macvlan **device or resource busy**.
+- CNI plugins are invoked via the **`wisp-cni`** privileged helper and **`sudo -n`** when the backend runs as the deploy user (`User=` in systemd). Stdin netconf merges **`.conflist` top-level `cniVersion` and `name` into the bridge `plugins[0]` object** (the fragment alone is not valid for a direct plugin exec). **`wisp-netns`** creates `/var/run/netns/<name>` with `ip netns add`. Install both with **`install-helpers.sh`** / **`wispctl.sh helpers`** (same pattern as `wisp-smb`). **`cni-dhcp.service`** must be running when using `ipam.type: dhcp`.
+- Before **ADD**, if the netns file already exists, **`setupNetwork`** runs **CNI DEL** and **`ip netns delete`** so a leftover **`eth0`** from a failed stop does not cause `ADD` to error on "device exists".
 
 ## Local DNS (mDNS)
 

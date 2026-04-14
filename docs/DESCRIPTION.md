@@ -12,7 +12,7 @@ Wisp targets homelab users, prosumers, and small-team administrators who need a 
 
 - **Modern, minimal UI** — professional light-theme dashboard inspired by tools like Linear and Vercel. No visual clutter.
 - **Full VM lifecycle management** — create, start, stop, reboot, suspend, resume, clone, delete, snapshot, backup, and restore virtual machines.
-- **Container lifecycle** — create, configure, start, stop, and manage containers on containerd (macvlan networking, mounts, logs).
+- **Container lifecycle** — create, configure, start, stop, and manage containers on containerd (bridge networking, mounts, logs).
 - **In-browser graphical console** — VNC console access to running VMs directly from the web UI, with no client software required.
 - **Self-contained** — no CDN-linked assets at runtime. All JavaScript, CSS, and libraries are bundled or vendored and served locally. The application is fully functional with zero internet access on the server after installation.
 - **Single-host scope** — manages VMs and containers on the machine where it is installed. No clustering, live migration, or multi-host orchestration.

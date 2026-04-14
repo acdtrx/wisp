@@ -10,9 +10,9 @@ import {
 import { getContainersPath, getContainerDir } from './containerPaths.js';
 import { getTaskState, containerTaskStatusToUi } from './containerManagerLifecycle.js';
 import {
-  persistMacvlanIpFromNetnsIfMissing,
-  ensureMacvlanMacInConfig,
-  normalizeMacvlanMac,
+  persistContainerIpFromNetnsIfMissing,
+  ensureContainerNetworkConfig,
+  normalizeContainerMac,
 } from './containerManagerNetwork.js';
 import { processUptimeMsFromProc } from '../host/linuxProcUptime.js';
 import { getRegisteredHostname, registerAddress, sanitizeHostname } from '../../mdnsManager.js';
@@ -106,11 +106,11 @@ export async function getContainerConfig(name) {
     throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
   }
 
-  if (config.network?.type === 'macvlan' && !normalizeMacvlanMac(config.network?.mac)) {
+  if (config.network?.type !== 'bridge' || !normalizeContainerMac(config.network?.mac)) {
     try {
-      config = await ensureMacvlanMacInConfig(name, config);
+      config = await ensureContainerNetworkConfig(name, config);
     } catch {
-      /* keep config without mac */
+      /* keep config as-is if rewrite failed */
     }
   }
 
@@ -139,7 +139,7 @@ export async function getContainerConfig(name) {
   let merged = config;
   if (state === 'running') {
     try {
-      merged = await persistMacvlanIpFromNetnsIfMissing(name, merged, pid);
+      merged = await persistContainerIpFromNetnsIfMissing(name, merged, pid);
     } catch {
       /* netns missing or helper failed — return config without ip */
     }

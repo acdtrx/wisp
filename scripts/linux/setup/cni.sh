@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install CNI plugins and create macvlan config for container networking. Run as root.
+# Install CNI plugins and create bridge config for container networking. Run as root.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -19,7 +19,7 @@ CNI_VERSION="v1.9.1"
 ARCH="$(sys_arch)"
 
 # Install CNI plugins if not present
-if [[ ! -x "$CNI_BIN_DIR/macvlan" ]]; then
+if [[ ! -x "$CNI_BIN_DIR/bridge" ]]; then
   echo "  Downloading CNI plugins ${CNI_VERSION}..."
   mkdir -p "$CNI_BIN_DIR"
 
@@ -34,39 +34,49 @@ else
   echo "  CNI plugins already installed."
 fi
 
-# Macvlan master for CNI: must be the interface macvlan attaches to.
-# If the default route uses a *bridge* (e.g. br0), use that bridge as master — not the
-# physical port under it. Macvlan on a bridge slave (enp0s31f6 enslaved to br0) typically
-# fails with "device or resource busy"; macvlan on br0 shares the same L2 segment as the host.
-detect_interface() {
+# Bridge master for CNI: must be an **existing Linux bridge**. The CNI bridge plugin will
+# silently create a new orphan bridge if the name doesn't resolve to one, so we abort instead.
+# We pick the bridge that carries the default route (typically br0, which setup-server.sh creates).
+detect_bridge() {
   local iface
   iface="$(ip route show default 2>/dev/null | awk '/default/ { print $5; exit }')"
   if [[ -z "$iface" ]]; then
-    echo "eth0"
-    return
+    return 1
   fi
   if [[ -d "/sys/class/net/$iface/bridge" ]]; then
     echo "$iface"
-    return
+    return 0
   fi
-  echo "$iface"
+  return 1
 }
 
-# Create / overwrite macvlan CNI config every run (no partial edits — same as fresh install).
+MASTER_IFACE="$(detect_bridge || true)"
+if [[ -z "$MASTER_IFACE" ]]; then
+  echo "ERROR: default-route interface is not a Linux bridge. Run scripts/linux/setup/bridge.sh first to set up br0." >&2
+  exit 1
+fi
+
+# Remove legacy macvlan conflist from earlier installs (setup script is idempotent).
 mkdir -p "$CNI_CONF_DIR"
-CONF_FILE="$CNI_CONF_DIR/10-wisp-macvlan.conflist"
-MASTER_IFACE="$(detect_interface)"
-echo "  Writing macvlan config to $CONF_FILE (master=$MASTER_IFACE)"
+rm -f "$CNI_CONF_DIR/10-wisp-macvlan.conflist"
+
+CONF_FILE="$CNI_CONF_DIR/10-wisp-bridge.conflist"
+echo "  Writing bridge config to $CONF_FILE (bridge=$MASTER_IFACE)"
 
 cat > "$CONF_FILE" <<CNIEOF
 {
   "cniVersion": "1.0.0",
-  "name": "wisp-macvlan",
+  "name": "wisp-bridge",
   "plugins": [
     {
-      "type": "macvlan",
-      "master": "$MASTER_IFACE",
-      "mode": "bridge",
+      "type": "bridge",
+      "bridge": "$MASTER_IFACE",
+      "isGateway": false,
+      "isDefaultGateway": false,
+      "ipMasq": false,
+      "hairpinMode": false,
+      "promiscMode": false,
+      "forceAddress": false,
       "ipam": {
         "type": "dhcp"
       }

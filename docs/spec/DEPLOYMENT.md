@@ -83,7 +83,7 @@ One-time server preparation script. Run as root with `sudo`. Safe to re-run. It 
 
 7. **Runs `scripts/linux/setup/containerd.sh`** — Installs containerd 2.0+ (from the official Docker apt repo on Debian/Ubuntu; from the official Arch repo on Arch Linux), creates a `containerd` system group, adds the deploy user to it, configures the socket `gid` in `/etc/containerd/config.toml` so the deploy user can connect, enables the service, creates the `wisp` namespace
 
-8. **Runs `scripts/linux/setup/cni.sh`** — Installs CNI plugins (macvlan, dhcp, etc.) to `/opt/cni/bin/`, **overwrites** `/etc/cni/net.d/10-wisp-macvlan.conflist` each time (`master` = default-route device; if that device is a **bridge** e.g. `br0`, the bridge is used — not the physical port under it, since macvlan on a bridge slave returns **EBUSY**), enables the `cni-dhcp` systemd service for DHCP IPAM
+8. **Runs `scripts/linux/setup/cni.sh`** — Installs CNI plugins (bridge, dhcp, etc.) to `/opt/cni/bin/`, removes any legacy `10-wisp-macvlan.conflist`, and **overwrites** `/etc/cni/net.d/10-wisp-bridge.conflist` each time with the default-route Linux bridge as the `bridge` master (aborts if that interface is not an existing bridge — run `bridge.sh` first). Enables the `cni-dhcp` systemd service for DHCP IPAM.
 
 9. **Runs `scripts/linux/setup/sanity.sh`** — Verifies virsh, /dev/kvm, libvirt socket, org.libvirt DBus service
 
@@ -110,7 +110,7 @@ Server setup and install logic is split into standalone scripts under `scripts/l
 | `install-helpers.sh <project-root> <user>` | root | Install or **refresh** all `wisp-*` helpers from the install tree → `/usr/local/bin` |
 | `rapl.sh <user>` | root | Intel RAPL read access for Host Overview |
 | `containerd.sh [user]` | root | Install containerd 2.0+, socket group perms, wisp namespace |
-| `cni.sh` | root | CNI plugins (macvlan, dhcp); **overwrites** `10-wisp-macvlan.conflist`; DHCP daemon |
+| `cni.sh` | root | CNI plugins (bridge, dhcp); **overwrites** `10-wisp-bridge.conflist`; DHCP daemon |
 | `bridge.sh` | root | Create br0 on primary NIC (netplan / nmcli / systemd-networkd) |
 | `copy.sh <source-dir> <install-dir>` | user | Replace `frontend/`, `backend/`, `scripts/`, `systemd/`; refresh `config/*.example` |
 | `config.sh <install-dir> [server-name]` | user | `config/wisp-config.json` from example + serverName |
@@ -406,16 +406,16 @@ Creates or removes a network namespace under `/var/run/netns/<name>` using `mkdi
 
 ### `wisp-cni` (installed to `/usr/local/bin/`)
 
-Runs a single CNI plugin binary from `CNI_PATH` (default `/opt/cni/bin`) with config JSON read from a temp file, setting `CNI_COMMAND`, `CNI_CONTAINERID`, `CNI_NETNS`, `CNI_IFNAME`, `CNI_PATH`. Used for macvlan **ADD** / **DEL** so the deploy user does not need ambient `CAP_NET_ADMIN` on the Node process.
+Runs a single CNI plugin binary from `CNI_PATH` (default `/opt/cni/bin`) with config JSON read from a temp file, setting `CNI_COMMAND`, `CNI_CONTAINERID`, `CNI_NETNS`, `CNI_IFNAME`, `CNI_PATH`. Used for bridge **ADD** / **DEL** so the deploy user does not need ambient `CAP_NET_ADMIN` on the Node process.
 
 **Usage (do not run by hand unless debugging):** `wisp-cni ADD\|DEL <plugin_basename> <container_id> <netns_path> <config.json> [<cni_bin_dir>]`. The backend always passes `WISP_CNI_BIN_DIR` or `/opt/cni/bin` as the 6th argument so `sudo`’s env reset does not drop `CNI_PATH`.
 
 **Troubleshooting:** If container start returns 200 but the task exits or CNI errors appear in logs:
 
-1. **Plugin stdin** — The backend merges top-level `cniVersion` and `name` from the `.conflist` into each `plugins[]` entry before invoking macvlan (a raw plugin fragment alone is invalid).
-2. **Binaries** — `/opt/cni/bin/macvlan` and `/opt/cni/bin/dhcp` exist (`scripts/linux/setup/cni.sh`).
-3. **DHCP daemon** — For `ipam.type: dhcp`, **`cni-dhcp.service`** must be active (`systemctl status cni-dhcp`). If it is down, macvlan ADD fails.
-4. **Master interface** — `master` must be the interface macvlan can attach to. If the host default route is via **`br0`**, **`master` should be `br0`**, not `enp…` under the bridge (enslaved ports → **device or resource busy**). **`scripts/linux/setup/cni.sh`** **rewrites** the conflist on every run from current routing (`detect_interface`); re-run after changing bridges or default route.
+1. **Plugin stdin** — The backend merges top-level `cniVersion` and `name` from the `.conflist` into each `plugins[]` entry before invoking the bridge plugin (a raw plugin fragment alone is invalid).
+2. **Binaries** — `/opt/cni/bin/bridge` and `/opt/cni/bin/dhcp` exist (`scripts/linux/setup/cni.sh`).
+3. **DHCP daemon** — For `ipam.type: dhcp`, **`cni-dhcp.service`** must be active (`systemctl status cni-dhcp`). If it is down, bridge ADD fails to obtain an IP.
+4. **Bridge interface** — `bridge` must name an existing Linux bridge on the host (e.g. `br0` or a managed VLAN bridge such as `br0-vlan10`). The backend asserts `/sys/class/net/<iface>/bridge` exists before every CNI ADD; otherwise ADD is refused with `CONTAINERD_ERROR`. If the default route is not via a bridge, run `scripts/linux/setup/bridge.sh` to create `br0`, then re-run `cni.sh`.
 5. **Sudoers** — `sudo -n /usr/local/bin/wisp-cni` succeeds as the deploy user.
 
 ### `wisp-bridge` (installed to `/usr/local/bin/`)

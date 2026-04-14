@@ -95,7 +95,7 @@ export async function listHostBridges() {
   return [];
 }
 
-export async function getDefaultMacvlanParentBridge() {
+export async function getDefaultContainerParentBridge() {
   return undefined;
 }
 

@@ -170,7 +170,7 @@ Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux 
 | `containerManagerConnection.js` | gRPC client, containerd connection lifecycle |
 | `containerManagerSpec.js` | OCI spec builder from `container.json` + image config |
 | `containerManagerExec.js` | Interactive shell: containerd `Tasks.Exec` + PTY (FIFO I/O) for the container console WebSocket |
-| `containerManagerNetwork.js` | macvlan CNI, netns, DHCP IP discovery |
+| `containerManagerNetwork.js` | Bridge CNI, netns, DHCP IP discovery |
 | `containerManagerLifecycle.js` | Start, stop, kill, restart, task lifecycle |
 | `containerManagerCreate.js` | Create container (pull, snapshot, define) |
 | `containerManagerConfig.js` | Read/update persisted config |
@@ -231,8 +231,8 @@ Source copies live in the repo; **`scripts/linux/setup/install-helpers.sh`** cop
 | `wisp-smb` | Mount/unmount/check SMB shares (invoked via `sudo`) |
 | `wisp-power` | Shut down or reboot the host (`/usr/local/bin` after setup, invoked via `sudo -n`) |
 | `wisp-dmidecode` | Output RAM DIMM JSON for Host Overview (type, size, speed, slot, form factor, manufacturer, voltage; `/usr/local/bin` after setup, invoked via `sudo -n`) |
-| `wisp-netns` | `ip netns add|delete` under `/var/run/netns` for container macvlan (`sudo -n`) |
-| `wisp-cni` | Run one CNI plugin (e.g. macvlan) with config file; `sudo -n` |
+| `wisp-netns` | `ip netns add|delete` under `/var/run/netns` for container bridge networking (`sudo -n`) |
+| `wisp-cni` | Run one CNI plugin (e.g. bridge) with config file; `sudo -n` |
 | `wisp-smartctl` | Disk SMART summary via `smartctl --json` (`sudo -n`; see HOST-MONITORING) |
 | `wisp-bridge` | Managed VLAN bridges via netplan (`sudo -n`; Host Mgmt network bridges) |
 
@@ -434,7 +434,7 @@ containerStore (Zustand) ──SSE+REST──▶ containers.js routes ──▶ 
                          ┌─────────────────────────────────────────────┼─────────────────────────────────────────────┐
                          ▼                         ▼                     ▼                     ▼                     ▼
               containerManagerConnection   containerManagerSpec   containerManagerNetwork   containerManagerLifecycle
-              (@grpc/grpc-js ↔ containerd)  (OCI spec builder)     (macvlan CNI + netns)    (start/stop/task)
+              (@grpc/grpc-js ↔ containerd)  (OCI spec builder)     (bridge CNI + netns)     (start/stop/task)
                          │                         │                     │                     │
                          └─────────────────────────┴─────────────────────┴─────────────────────┘
                     Also: containerManagerCreate, containerManagerConfig, containerManagerList,
@@ -444,7 +444,7 @@ containerStore (Zustand) ──SSE+REST──▶ containers.js routes ──▶ 
 
 - **Communication**: gRPC over unix socket to containerd, proto files in `backend/src/protos/`
 - **Namespace**: All operations use the `wisp` containerd namespace
-- **Networking**: macvlan CNI plugin gives each container its own LAN IP via DHCP
+- **Networking**: CNI bridge plugin attaches each container as a veth port on a host Linux bridge (`br0` or a VLAN sub-bridge); DHCP via `cni-dhcp` gives each container its own LAN IP. Host↔container reachability works natively because the host owns the same bridge.
 - **State**: `container.json` is the Wisp source of truth; containerd provides runtime state (task status, metrics)
 - **Lifecycle**: Create = pull image + prepare snapshot + build OCI spec + create containerd container + create/start task
 

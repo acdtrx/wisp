@@ -113,10 +113,11 @@ export async function listHostBridges() {
 }
 
 /**
- * First Linux bridge suitable as macvlan **master**: prefer a name that is not VLAN-style
- * (see `isVlanLikeBridgeName`), else the first listed bridge. Empty when none (e.g. Darwin).
+ * First Linux bridge suitable as the **parent bridge** for a new container: prefer a name
+ * that is not VLAN-style (see `isVlanLikeBridgeName`), else the first listed bridge.
+ * Empty when none (e.g. Darwin).
  */
-export async function getDefaultMacvlanParentBridge() {
+export async function getDefaultContainerParentBridge() {
   const bridges = await listHostBridges();
   if (bridges.length === 0) return undefined;
   const plain = bridges.find((b) => !isVlanLikeBridgeName(b));

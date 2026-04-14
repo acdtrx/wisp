@@ -162,7 +162,7 @@ export default function ContainerNetworkSection({ config, onSave, isCreating = f
         {!isCreating ? (
           <>
         <Field label="Type">
-          <span className="text-sm text-text-primary font-medium">{net.type || 'macvlan'}</span>
+          <span className="text-sm text-text-primary font-medium">{net.type || 'bridge'}</span>
         </Field>
         {net.ip ? (
           <Field label="IP Address">

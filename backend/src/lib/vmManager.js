@@ -25,7 +25,7 @@ export const getHostInfo = impl.getHostInfo;
 export const getHostHardware = impl.getHostHardware;
 export const getRunningVMAllocations = impl.getRunningVMAllocations;
 export const listHostBridges = impl.listHostBridges;
-export const getDefaultMacvlanParentBridge = impl.getDefaultMacvlanParentBridge;
+export const getDefaultContainerParentBridge = impl.getDefaultContainerParentBridge;
 export const listHostFirmware = impl.listHostFirmware;
 export const listHostUSBDevices = impl.listHostUSBDevices;
 

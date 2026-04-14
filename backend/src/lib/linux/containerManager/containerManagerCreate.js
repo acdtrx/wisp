@@ -15,10 +15,10 @@ import { buildOCISpec } from './containerManagerSpec.js';
 import { getContainersPath, getContainerDir, getContainerFilesDir } from './containerPaths.js';
 import {
   setupNetwork, teardownNetwork, mergeNetworkLeaseIntoConfig,
-  generateMacvlanMac, normalizeMacvlanMac, ensureMacvlanMacInConfig,
+  generateContainerMac, normalizeContainerMac, ensureContainerNetworkConfig,
   resolveContainerResolvConf,
 } from './containerManagerNetwork.js';
-import { getDefaultMacvlanParentBridge } from '../vmManager/vmManagerHost.js';
+import { getDefaultContainerParentBridge } from '../vmManager/vmManagerHost.js';
 import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.js';
 import { registerAddress, deregisterAddress, sanitizeHostname } from '../../mdnsManager.js';
 import { assertBindSourcesReady } from './containerManagerMounts.js';
@@ -345,21 +345,19 @@ export async function createContainer(spec, onStep) {
   const exposedPorts = imgCfg.ExposedPorts ? Object.keys(imgCfg.ExposedPorts).sort() : [];
 
   // Build container.json (create accepts name + image only; network defaults here)
-  let network = { type: 'macvlan' };
-  if (network.type === 'macvlan') {
-    if (network.mac != null && String(network.mac).trim() !== '') {
-      const n = normalizeMacvlanMac(network.mac);
-      if (!n) throw containerError('INVALID_CONTAINER_MAC', 'Invalid MAC address format');
-      network.mac = n;
-    } else {
-      network.mac = generateMacvlanMac();
-    }
-    try {
-      const parent = await getDefaultMacvlanParentBridge();
-      if (parent) network.interface = parent;
-    } catch {
-      /* no default bridge — omit interface (CNI default) */
-    }
+  let network = { type: 'bridge' };
+  if (network.mac != null && String(network.mac).trim() !== '') {
+    const n = normalizeContainerMac(network.mac);
+    if (!n) throw containerError('INVALID_CONTAINER_MAC', 'Invalid MAC address format');
+    network.mac = n;
+  } else {
+    network.mac = generateContainerMac();
+  }
+  try {
+    const parent = await getDefaultContainerParentBridge();
+    if (parent) network.interface = parent;
+  } catch {
+    /* no default bridge — omit interface (setupNetwork will reject on start) */
   }
   delete network.vlan;
 
@@ -441,7 +439,7 @@ export async function startExistingContainer(name) {
     throw containerError('CONTAINER_NOT_FOUND', `Container config not found for "${name}"`);
   }
 
-  config = await ensureMacvlanMacInConfig(name, config);
+  config = await ensureContainerNetworkConfig(name, config);
 
   // Remove any stale task (STOPPED still exists until Delete; Create would fail with "already exists").
   try {

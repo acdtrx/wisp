@@ -978,7 +978,7 @@ Create a new container (async job with image pull). The container is **defined i
 
 Optional `iconId` selects a workload icon from the same set as VMs (persisted in `container.json`).
 
-On create, the server writes defaults in `container.json` (empty `mounts`, macvlan `network` with a generated MAC, `localDns: true`, etc.). Use **PATCH** to change command, resources, env, mounts, and network before starting.
+On create, the server writes defaults in `container.json` (empty `mounts`, bridge `network` with a generated MAC and the default container parent bridge, `localDns: true`, etc.). Use **PATCH** to change command, resources, env, mounts, and network before starting.
 
 **200:** `{ jobId: "uuid", title: string }` — `title` is e.g. `Create <name>`
 
@@ -1012,7 +1012,7 @@ Remove an image from containerd. Query parameter **`ref`** (required): image ref
 
 Full container config including live state.
 
-**200:** Full `container.json` fields plus `state`, `pid`, `uptime`, `type`, and `mdnsHostname` when Local DNS is enabled and registration is active. For macvlan, `network.ip` / `network.mac` may be set after CNI DHCP; if the task is running and `network.ip` is still empty, the handler may probe the netns once and persist the address (see CONTAINERS.md).
+**200:** Full `container.json` fields plus `state`, `pid`, `uptime`, `type`, and `mdnsHostname` when Local DNS is enabled and registration is active. For bridge networking, `network.ip` / `network.mac` may be set after CNI DHCP; if the task is running and `network.ip` is still empty, the handler may probe the netns once and persist the address (see CONTAINERS.md).
 
 **404:** `{ error, detail }` if container not found.
 
@@ -1022,7 +1022,7 @@ Partially update container config.
 
 **Body:** Any subset of container.json fields. **`iconId`:** set to a string to choose a UI icon (same ids as VM icons), or `null` / empty string to clear and use the client default. **`localDns`:** boolean toggle for mDNS registration. **`runAsRoot`:** boolean — when `true`, the container process runs as UID/GID 0 instead of the Wisp deploy user (required for images that write to root-owned paths inside the container, e.g. OpenWebUI); requires restart.
 
-**`network`:** Merged with the existing object (not replaced wholesale). **Macvlan** requires **`network.mac`** after merge (unicast format). While the task is **running or paused**, **`network.ip`** from the body is ignored (server-owned), and changing **`network.mac`** or **`network.interface`** returns **409** `CONTAINER_MUST_BE_STOPPED`. Invalid MAC → **422** `INVALID_CONTAINER_MAC`.
+**`network`:** Merged with the existing object (not replaced wholesale). **Bridge networking** requires **`network.mac`** after merge (unicast format). While the task is **running or paused**, **`network.ip`** from the body is ignored (server-owned), and changing **`network.mac`** or **`network.interface`** returns **409** `CONTAINER_MUST_BE_STOPPED`. Invalid MAC → **422** `INVALID_CONTAINER_MAC`.
 
 **`mounts`:** Replaces the entire mounts array (bulk update). Prefer row-scoped mount routes below for UI editing. Each element: `{ type: "file"|"directory", name, containerPath, readonly }`. **`name`** is a single path segment (storage key under the container’s `files/` directory). Duplicate **`name`** or duplicate **`containerPath`** → **422** `CONTAINER_MOUNT_DUPLICATE`. Invalid shape → **422** `INVALID_CONTAINER_MOUNTS`. Mounts removed from the array have their on-disk artifacts deleted automatically.
 

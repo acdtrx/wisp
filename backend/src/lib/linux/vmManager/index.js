@@ -22,7 +22,7 @@ export {
   getHostHardware,
   getRunningVMAllocations,
   listHostBridges,
-  getDefaultMacvlanParentBridge,
+  getDefaultContainerParentBridge,
   getDefaultBridge,
   listHostFirmware,
   listHostUSBDevices,

@@ -86,7 +86,7 @@ Installed by the server setup script:
 | cifs-utils | SMB mount support for network storage mounts |
 | containerd.io | Container runtime (2.0+); managed via gRPC from the backend |
 | unzip | Info-ZIP `unzip` — extracts `.zip` uploads for container directory mounts (`unzip -Z1` + `unzip -d`) |
-| CNI plugins | macvlan, dhcp, loopback — container networking (installed to `/opt/cni/bin/`) |
+| CNI plugins | bridge, dhcp, loopback — container networking (installed to `/opt/cni/bin/`) |
 
 ## CLI Tools Used by Backend
 
@@ -107,7 +107,7 @@ These are invoked via `child_process` where no native Node.js alternative exists
 | `wisp-smb` | SMB mount/unmount/check (privileged helper) |
 | `wisp-smartctl` | Disk SMART summary (`smartctl --json`; privileged helper) |
 | `wisp-bridge` | Managed VLAN bridges via netplan (privileged helper) |
-| `/opt/cni/bin/macvlan` | CNI macvlan plugin exec for container networking (standard CNI interface) |
+| `/opt/cni/bin/bridge` | CNI bridge plugin exec for container networking (standard CNI interface) |
 | `/opt/cni/bin/dhcp` | CNI DHCP daemon for container IP assignment |
 | `ip` | Network namespace management (`ip netns add/delete`) for containers |
 

@@ -8,7 +8,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { containerError } from './containerManagerConnection.js';
 import { getContainerDir } from './containerPaths.js';
 import { getTaskState } from './containerManagerLifecycle.js';
-import { normalizeMacvlanMac } from './containerManagerNetwork.js';
+import { normalizeContainerMac } from './containerManagerNetwork.js';
 import { deregisterAddress, registerAddress, sanitizeHostname } from '../../mdnsManager.js';
 import { validateAndNormalizeMounts, ensureMissingMountArtifacts } from './containerManagerMounts.js';
 import { deleteMountBackingStore } from './containerManagerMountsContent.js';
@@ -18,8 +18,8 @@ const RESTART_FIELDS = new Set([
 ]);
 
 function networkMacOrInterfaceChanged(prev, next) {
-  const pm = prev?.mac ? (normalizeMacvlanMac(prev.mac) || '') : '';
-  const nm = next?.mac ? (normalizeMacvlanMac(next.mac) || '') : '';
+  const pm = prev?.mac ? (normalizeContainerMac(prev.mac) || '') : '';
+  const nm = next?.mac ? (normalizeContainerMac(next.mac) || '') : '';
   if (pm !== nm) return true;
   if ((prev?.interface || '') !== (next?.interface || '')) return true;
   return false;
@@ -67,15 +67,15 @@ export async function updateContainerConfig(name, changes) {
       }
       const merged = { ...(config.network || {}), ...toMerge };
 
-      if (merged.type === 'macvlan') {
+      if (merged.type === 'bridge') {
         if (merged.mac == null || String(merged.mac).trim() === '') {
-          throw containerError('INVALID_CONTAINER_MAC', 'MAC address is required for macvlan');
+          throw containerError('INVALID_CONTAINER_MAC', 'MAC address is required for bridge networking');
         }
-        const norm = normalizeMacvlanMac(merged.mac);
+        const norm = normalizeContainerMac(merged.mac);
         if (!norm) throw containerError('INVALID_CONTAINER_MAC', 'Invalid MAC address format');
         merged.mac = norm;
       } else if (merged.mac != null && String(merged.mac).trim() !== '') {
-        const norm = normalizeMacvlanMac(merged.mac);
+        const norm = normalizeContainerMac(merged.mac);
         if (!norm) throw containerError('INVALID_CONTAINER_MAC', 'Invalid MAC address format');
         merged.mac = norm;
       }

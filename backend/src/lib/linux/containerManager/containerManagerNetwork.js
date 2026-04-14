@@ -1,6 +1,8 @@
 /**
- * CNI-based macvlan networking for containers.
- * Invokes the macvlan CNI plugin to attach containers directly to the LAN.
+ * CNI-based bridge networking for containers.
+ * Invokes the bridge CNI plugin to attach containers as veth ports on a host Linux bridge
+ * (br0 or a VLAN sub-bridge br0-vlanN), so containers look like VMs on the wire and the host
+ * can reach them directly.
  *
  * Network namespace creation and CNI require privileges. As the deploy user (systemd
  * `User=`), the backend uses **`sudo -n`** with **`wisp-netns`** and **`wisp-cni`**
@@ -23,16 +25,17 @@ import { ipv4CidrFromProcFibTrie } from '../host/linuxProcIpv4.js';
 const execFile = promisify(execFileCb);
 
 /** Unicast locally administered MAC (same idea as VM NICs). */
-export function generateMacvlanMac() {
+export function generateContainerMac() {
   const b = randomBytes(3);
   const h = (n) => n.toString(16).padStart(2, '0');
   return `52:54:00:${h(b[0])}:${h(b[1])}:${h(b[2])}`;
 }
 
 /**
- * Normalize and validate a MAC for CNI macvlan `mac` field. Returns lowercase `aa:bb:...` or null.
+ * Normalize and validate a MAC for the CNI bridge plugin `mac` field.
+ * Returns lowercase `aa:bb:...` or null.
  */
-export function normalizeMacvlanMac(input) {
+export function normalizeContainerMac(input) {
   if (input == null || input === '') return null;
   const s = String(input).trim().toLowerCase();
   if (!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(s)) return null;
@@ -43,7 +46,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const CNI_BIN_DIR = process.env.WISP_CNI_BIN_DIR || '/opt/cni/bin';
 const CNI_CONF_DIR = process.env.WISP_CNI_CONF_DIR || '/etc/cni/net.d';
-const CNI_CONF_NAME = '10-wisp-macvlan.conflist';
+const CNI_CONF_NAME = '10-wisp-bridge.conflist';
 const NETNS_INSTALLED = '/usr/local/bin/wisp-netns';
 const CNI_INSTALLED = '/usr/local/bin/wisp-cni';
 
@@ -88,10 +91,39 @@ function isRoot() {
 }
 
 /**
+ * Reject anything that isn't an existing Linux bridge.
+ * `/sys/class/net/<iface>/bridge` is a directory that exists only on bridges — not on
+ * macvlan/bond/veth/physical — so a pair of sysfs access() calls is enough.
+ *
+ * Without this, the bridge CNI plugin will happily create an orphan bridge under that name.
+ */
+async function assertIsLinuxBridge(iface) {
+  if (!iface || typeof iface !== 'string') {
+    throw containerError('CONTAINERD_ERROR', 'Container bridge interface is not set');
+  }
+  try {
+    await access(`/sys/class/net/${iface}`);
+  } catch {
+    throw containerError(
+      'CONTAINERD_ERROR',
+      `Container bridge "${iface}" does not exist on the host`,
+    );
+  }
+  try {
+    await access(`/sys/class/net/${iface}/bridge`);
+  } catch {
+    throw containerError(
+      'CONTAINERD_ERROR',
+      `Container interface "${iface}" is not a Linux bridge`,
+    );
+  }
+}
+
+/**
  * Build stdin JSON for a single CNI plugin invocation.
  * A .conflist stores `cniVersion` and `name` at the top level only; each `plugins[]`
- * entry is missing those fields. Macvlan (and DHCP IPAM) require a full netconf — without
- * `name`, ADD fails immediately with an opaque exit code.
+ * entry is missing those fields. The bridge (and DHCP IPAM) plugins require a full
+ * netconf — without `name`, ADD fails immediately with an opaque exit code.
  */
 function executablePluginNetconf(cniDoc, pluginIndex = 0) {
   if (cniDoc.plugins?.length) {
@@ -99,14 +131,14 @@ function executablePluginNetconf(cniDoc, pluginIndex = 0) {
     return {
       ...p,
       cniVersion: cniDoc.cniVersion || p.cniVersion || '1.0.0',
-      name: cniDoc.name || p.name || 'wisp-macvlan',
-      type: p.type || 'macvlan',
+      name: cniDoc.name || p.name || 'wisp-bridge',
+      type: p.type || 'bridge',
     };
   }
   const copy = { ...cniDoc };
   if (!copy.cniVersion) copy.cniVersion = '1.0.0';
-  if (!copy.name) copy.name = 'wisp-macvlan';
-  if (!copy.type) copy.type = 'macvlan';
+  if (!copy.name) copy.name = 'wisp-bridge';
+  if (!copy.type) copy.type = 'bridge';
   return copy;
 }
 
@@ -114,10 +146,10 @@ function buildPluginConfig(cniConfig, networkConfig = {}) {
   const pluginConfig = executablePluginNetconf(cniConfig, 0);
 
   if (networkConfig.interface) {
-    pluginConfig.master = String(networkConfig.interface).trim();
+    pluginConfig.bridge = String(networkConfig.interface).trim();
   }
 
-  const macNorm = normalizeMacvlanMac(networkConfig.mac);
+  const macNorm = normalizeContainerMac(networkConfig.mac);
   if (macNorm) {
     pluginConfig.mac = macNorm;
   }
@@ -126,7 +158,7 @@ function buildPluginConfig(cniConfig, networkConfig = {}) {
 }
 
 /**
- * Read the Wisp macvlan CNI config. Creates a default one if it doesn't exist.
+ * Read the Wisp bridge CNI config. Creates a default one if it doesn't exist.
  */
 async function getCNIConfig() {
   const confPath = join(CNI_CONF_DIR, CNI_CONF_NAME);
@@ -136,12 +168,17 @@ async function getCNIConfig() {
   } catch {
     return {
       cniVersion: '1.0.0',
-      name: 'wisp-macvlan',
+      name: 'wisp-bridge',
       plugins: [
         {
-          type: 'macvlan',
-          master: 'eth0',
-          mode: 'bridge',
+          type: 'bridge',
+          bridge: 'br0',
+          isGateway: false,
+          isDefaultGateway: false,
+          ipMasq: false,
+          hairpinMode: false,
+          promiscMode: false,
+          forceAddress: false,
           ipam: { type: 'dhcp' },
         },
       ],
@@ -391,11 +428,12 @@ async function discoverIpv4InNetns(name, ifname = 'eth0', pollOpts = DEFAULT_IPV
 }
 
 /**
- * If macvlan has no persisted `network.ip` yet, read the live address from the netns and save `container.json`.
- * Call from GET config when the task is running — DHCP often appears after the initial start-time poll.
+ * If the container has no persisted `network.ip` yet, read the live address from the netns
+ * and save `container.json`. Call from GET config when the task is running — DHCP often
+ * appears after the initial start-time poll.
  */
-export async function persistMacvlanIpFromNetnsIfMissing(name, config, taskPid = 0) {
-  if (config.network?.type !== 'macvlan' || config.network?.ip) return config;
+export async function persistContainerIpFromNetnsIfMissing(name, config, taskPid = 0) {
+  if (config.network?.type !== 'bridge' || config.network?.ip) return config;
   const pid = taskPid > 0 ? taskPid : null;
   const ip = await discoverIpv4InNetns(name, 'eth0', { maxAttempts: 30, sleepMs: 200 }, pid);
   if (!ip) return config;
@@ -409,7 +447,7 @@ export async function persistMacvlanIpFromNetnsIfMissing(name, config, taskPid =
  * Persist CNI ADD lease (IP, MAC) into `container.json` so the API/UI can show them.
  */
 export async function mergeNetworkLeaseIntoConfig(name, config, lease) {
-  if (!lease || config.network?.type !== 'macvlan') return config;
+  if (!lease || config.network?.type !== 'bridge') return config;
   const ip = primaryIPv4FromCni(lease.ips) || lease.discoveredIp || null;
   const next = {
     ...config,
@@ -422,9 +460,6 @@ export async function mergeNetworkLeaseIntoConfig(name, config, lease) {
   return next;
 }
 
-/**
- * Ensure macvlan has a persisted MAC in `container.json` (stable across restarts; CNI ADD uses it).
- */
 /**
  * Determine the host resolv.conf to bind-mount into containers.
  * On hosts with systemd-resolved, `/etc/resolv.conf` points at the stub resolver
@@ -441,32 +476,44 @@ export async function resolveContainerResolvConf() {
   }
 }
 
-export async function ensureMacvlanMacInConfig(name, config) {
-  if (config.network?.type !== 'macvlan') return config;
-  if (normalizeMacvlanMac(config.network?.mac)) return config;
-  const mac = generateMacvlanMac();
+/**
+ * Normalize the container's network config so it is ready for a start.
+ * Forces `network.type` to `"bridge"` (the only supported value) and assigns a
+ * stable MAC if one is missing. `setupNetwork` guards on `type === 'bridge'`, so
+ * any other value — legacy, empty, typo — would silently skip CNI and leave the
+ * task in an empty netns.
+ */
+export async function ensureContainerNetworkConfig(name, config) {
+  const needsTypeFix = config.network?.type !== 'bridge';
+  const needsMac = !normalizeContainerMac(config.network?.mac);
+  if (!needsTypeFix && !needsMac) return config;
+
   const next = {
     ...config,
-    network: { ...config.network, mac },
+    network: { ...(config.network || {}), type: 'bridge' },
   };
+  if (needsMac) next.network.mac = generateContainerMac();
   await writeFile(join(getContainerDir(name), 'container.json'), JSON.stringify(next, null, 2), 'utf8');
   return next;
 }
 
 /**
- * Set up macvlan networking for a container.
- * Creates a network namespace and invokes the macvlan CNI plugin.
+ * Set up bridge networking for a container.
+ * Creates a network namespace and invokes the bridge CNI plugin to attach a veth
+ * pair into the chosen host bridge (br0 or a VLAN sub-bridge).
  */
 export async function setupNetwork(name, networkConfig = {}) {
-  if (networkConfig.type !== 'macvlan') return null;
+  if (networkConfig.type !== 'bridge') return null;
+
+  await assertIsLinuxBridge(networkConfig.interface);
 
   const cniConfig = await getCNIConfig();
   const pluginConfig = buildPluginConfig(cniConfig, networkConfig);
 
-  const pluginName = pluginConfig.type || 'macvlan';
+  const pluginName = pluginConfig.type || 'bridge';
   const nsPath = getContainerNetnsPath(name);
 
-  // Reusing a netns that still has CNI's eth0 (e.g. after a failed stop) makes macvlan ADD fail with EBUSY.
+  // Reusing a netns that still has CNI's eth0 (e.g. after a failed stop) can make ADD fail.
   let hadNetns = false;
   try {
     await access(nsPath);
@@ -523,12 +570,12 @@ export async function setupNetwork(name, networkConfig = {}) {
  * Tear down networking for a container.
  */
 export async function teardownNetwork(name, networkConfig = {}) {
-  if (networkConfig.type !== 'macvlan') return;
+  if (networkConfig.type !== 'bridge') return;
 
   const nsPath = getContainerNetnsPath(name);
   const cniConfig = await getCNIConfig();
   const pluginConfig = buildPluginConfig(cniConfig, networkConfig);
-  const pluginName = pluginConfig.type || 'macvlan';
+  const pluginName = pluginConfig.type || 'bridge';
 
   try {
     await execCNI(pluginName, 'DEL', name, nsPath, pluginConfig);
