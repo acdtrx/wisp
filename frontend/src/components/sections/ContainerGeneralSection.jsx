@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Cpu, MemoryStick, RefreshCw } from 'lucide-react';
+import { Cpu, MemoryStick, RefreshCw, Images } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
+import ImageLibraryModal from '../shared/ImageLibraryModal.jsx';
 
 /** Same control pattern as AdvancedSection (machine type, CPU model). */
 const RESTART_OPTIONS = [
@@ -51,6 +52,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [requiresRestart, setRequiresRestart] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const init = useCallback(() => {
     const d = buildGeneralFormDefaults(config);
@@ -113,15 +115,38 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
             />
           </Field>
           <Field label="Image" className="flex-1 min-w-[200px]">
-            <input
-              type="text"
-              value={form.image}
-              onChange={(e) => updateField('image', e.target.value)}
-              placeholder="e.g. nginx:latest"
-              className="input-field"
-            />
+            <div className="flex items-stretch gap-2">
+              <input
+                type="text"
+                value={form.image}
+                onChange={(e) => updateField('image', e.target.value)}
+                placeholder="e.g. nginx:latest"
+                className="input-field flex-1"
+              />
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-surface-border bg-surface px-2.5 text-xs font-medium text-text-secondary hover:bg-surface-sidebar hover:text-text-primary transition-colors duration-150"
+                title="Browse image library"
+              >
+                <Images size={14} aria-hidden />
+                Browse…
+              </button>
+            </div>
           </Field>
         </div>
+
+        <ImageLibraryModal
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          onSelect={(selection) => {
+            if (selection?.kind === 'oci' && selection.name) {
+              updateField('image', selection.name);
+            }
+          }}
+          pickerKind="container"
+          defaultFilter="container"
+        />
 
         {!isCreating && (
         <>

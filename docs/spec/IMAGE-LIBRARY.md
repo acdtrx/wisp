@@ -4,7 +4,7 @@ The image library is a central place to manage **VM disk and ISO files** on disk
 
 ## Container (OCI) images
 
-On the standalone Host **Library** page, the **All** filter shows **VM library files and OCI images in one sorted list** (name order). The **OCI** filter lists only containerd images. Images appear after pulls (e.g. when creating a container). **Delete** removes the image from containerd unless a Wisp container still references it (409). The VM file picker (disk/CDROM) does **not** include the OCI filter — only ISO/disk files are selectable there.
+On the standalone Host **Library** page, the **All** filter shows **VM library files and OCI images in one sorted list** (name order). The **OCI** filter lists only containerd images. Images appear after pulls (e.g. when creating a container) **or** after an operator loads one on the server with `ctr -n wisp image import foo.tar` — anything in the `wisp` containerd namespace is listed. **Delete** removes the image from containerd unless a Wisp container still references it (409). The VM file picker (disk/CDROM) does **not** include the OCI filter — only ISO/disk files are selectable there. The **Create Container** form has its own picker (see below) that shows **only** OCI images.
 
 ## Storage
 
@@ -70,17 +70,19 @@ A type filter (All / ISO / Disk Image / **OCI**) sits in the **`SectionCard`** h
 
 ### Picker modal
 
-Opened from disk and CDROM fields in the VM overview and create forms. Wrapped in **`ImageLibraryModal`**: modal frame uses the page-style background; the library itself is still a **`SectionCard`** (same as the Host tab). Same UI but:
+Opened from disk and CDROM fields in the VM overview and create forms, and from the **Image** field in the Create/edit Container form. Wrapped in **`ImageLibraryModal`**: modal frame uses the page-style background; the library itself is still a **`SectionCard`** (same as the Host tab). Same UI but:
 - Table columns **Name**, **Type**, **Size**, and **Select** only — **Digest** and **Modified** are omitted so the modal stays narrow
-- Shows a "Select" action button per file (in addition to delete/rename)
-- Auto-filters by context: opened from a CDROM field → defaults to ISO filter; opened from a disk field → defaults to Disk Image filter
-- The user can change the filter at any time
-- Selecting a file closes the modal and returns the file path to the calling field
+- Shows a "Select" action button per row (in addition to delete/rename for VM files)
+- The `pickerKind` prop controls which tabs appear:
+  - `pickerKind="vm"` (default, used by disk/CDROM pickers) — tabs are **All / ISO / Disk Image**; OCI is hidden. Auto-filters by context (CDROM → ISO, disk → Disk Image).
+  - `pickerKind="container"` (used by the Container Image field) — the **only** tab is **OCI**; VM files are hidden.
+- Selecting a row closes the modal. VM files return `file.name` + full path (for attaching to a VM); OCI images return `{ kind: 'oci', name, digest }` so the caller can populate the text field with the exact containerd ref.
 
 ## Frontend Integration
 
-The image library component accepts a `mode` prop:
-- `page` — standalone view with upload, download, delete, rename, and OCI list/delete
-- `picker` — modal view with select action, auto-filtered by caller context (ISO/disk files only; no OCI tab)
+The image library component accepts a `mode` prop and, in picker mode, a `pickerKind` prop:
+- `mode="page"` — standalone view with upload, download, delete, rename, and OCI list/delete
+- `mode="picker"`, `pickerKind="vm"` — modal view with select action for VM files (ISO/disk); OCI tab hidden
+- `mode="picker"`, `pickerKind="container"` — modal view that shows only OCI images, each row has a Select button that emits `{ kind: 'oci', name, digest }`
 
 The picker mode is wrapped in a modal component (`ImageLibraryModal`) that handles overlay, close, and value return.

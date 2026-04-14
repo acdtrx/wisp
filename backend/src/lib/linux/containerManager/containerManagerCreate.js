@@ -305,28 +305,44 @@ export async function createContainer(spec, onStep) {
   const filesDir = getContainerFilesDir(name);
   await mkdir(filesDir, { recursive: true });
 
-  const imageRef = normalizeImageRef(spec.image);
-
-  // Pull image (periodic progress — containerd transfer has no %; elapsed time helps long pulls)
+  // If the literal ref is already in containerd (e.g. from `ctr -n wisp image import`
+  // or an exact match picked from the image library), skip normalization + pull and use
+  // it verbatim. This is the only way to handle local-only refs like `myapp:v1` — the
+  // normalize step would otherwise rewrite them to `docker.io/library/…` and the
+  // registry pull would fail.
+  let imageRef = null;
   try {
-    const pullStarted = Date.now();
-    onStep?.({ step: 'pulling', detail: `Pulling ${imageRef}…` });
-    const pullProgressTimer = setInterval(() => {
-      const elapsedSec = Math.floor((Date.now() - pullStarted) / 1000);
-      onStep?.({
-        step: 'pulling',
-        detail: `Pulling ${imageRef}… (${elapsedSec}s elapsed)`,
-        elapsedSec,
-      });
-    }, 15000);
+    await callUnary(getClient('images'), 'get', { name: spec.image });
+    imageRef = spec.image;
+    onStep?.({ step: 'using-local', detail: `Using local image ${imageRef}` });
+  } catch {
+    /* not local by literal name — fall through to normalized registry pull */
+  }
+
+  if (!imageRef) {
+    imageRef = normalizeImageRef(spec.image);
+
+    // Pull image (periodic progress — containerd transfer has no %; elapsed time helps long pulls)
     try {
-      await pullImage(imageRef, onStep);
-    } finally {
-      clearInterval(pullProgressTimer);
+      const pullStarted = Date.now();
+      onStep?.({ step: 'pulling', detail: `Pulling ${imageRef}…` });
+      const pullProgressTimer = setInterval(() => {
+        const elapsedSec = Math.floor((Date.now() - pullStarted) / 1000);
+        onStep?.({
+          step: 'pulling',
+          detail: `Pulling ${imageRef}… (${elapsedSec}s elapsed)`,
+          elapsedSec,
+        });
+      }, 15000);
+      try {
+        await pullImage(imageRef, onStep);
+      } finally {
+        clearInterval(pullProgressTimer);
+      }
+    } catch (err) {
+      await rm(containerDir, { recursive: true, force: true });
+      throw containerError('IMAGE_PULL_FAILED', `Failed to pull image "${imageRef}"`, err.message);
     }
-  } catch (err) {
-    await rm(containerDir, { recursive: true, force: true });
-    throw containerError('IMAGE_PULL_FAILED', `Failed to pull image "${imageRef}"`, err.message);
   }
 
   // Get image config for defaults

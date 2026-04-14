@@ -984,7 +984,9 @@ On create, the server writes defaults in `container.json` (empty `mounts`, bridg
 
 ### GET /api/containers/create-progress/:jobId
 
-SSE stream for container creation progress. Events: `{ step: "validating"|"pulling"|"pulled"|"creating"|"done"|"error", ... }`
+SSE stream for container creation progress. Events: `{ step: "validating"|"using-local"|"pulling"|"pulled"|"creating"|"done"|"error", ... }`
+
+The `using-local` step replaces `pulling`/`pulled` when the exact literal `image` in the request body already exists in containerd's `wisp` namespace (e.g. an operator pre-loaded it with `ctr -n wisp image import`, or the Create Container form's picker selected it verbatim). In that case the backend skips ref normalization and the Transfer pull entirely, so the sequence is `validating` → `using-local` → `creating` → `done`. For registry-named refs (`nginx:latest` etc.) the sequence is unchanged: `validating` → `pulling` → `pulled` → `creating` → `done`.
 
 ### GET /api/containers/images
 

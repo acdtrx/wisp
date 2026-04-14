@@ -10,6 +10,7 @@ import ContainerGeneralSection from '../sections/ContainerGeneralSection.jsx';
 
 const STEP_LABELS = {
   validating: 'Validating…',
+  'using-local': 'Using local image…',
   pulling: 'Pulling image…',
   pulled: 'Image pulled',
   creating: 'Creating container…',

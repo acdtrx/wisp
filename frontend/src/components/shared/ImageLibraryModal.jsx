@@ -2,13 +2,13 @@ import { X } from 'lucide-react';
 import ImageLibrary from '../library/ImageLibrary.jsx';
 import { useEscapeKey } from '../../hooks/useEscapeKey.js';
 
-export default function ImageLibraryModal({ open, onClose, onSelect, defaultFilter = 'all' }) {
+export default function ImageLibraryModal({ open, onClose, onSelect, defaultFilter = 'all', pickerKind = 'vm' }) {
   useEscapeKey(open, onClose);
 
   if (!open) return null;
 
-  const handleSelect = (file) => {
-    onSelect(file);
+  const handleSelect = (selection) => {
+    onSelect(selection);
     onClose();
   };
 
@@ -29,7 +29,12 @@ export default function ImageLibraryModal({ open, onClose, onSelect, defaultFilt
           </button>
         </div>
         <div className="flex-1 overflow-hidden">
-          <ImageLibrary mode="picker" onSelect={handleSelect} defaultFilter={defaultFilter} />
+          <ImageLibrary
+            mode="picker"
+            pickerKind={pickerKind}
+            onSelect={handleSelect}
+            defaultFilter={defaultFilter}
+          />
         </div>
       </div>
     </div>

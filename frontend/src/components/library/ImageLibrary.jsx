@@ -42,6 +42,10 @@ const FILTERS_PICKER = [
   { key: 'disk', label: 'Disk Image' },
 ];
 
+const FILTERS_PICKER_CONTAINER = [
+  { key: 'container', label: 'OCI' },
+];
+
 function shortDigest(digest) {
   if (!digest) return '—';
   const s = String(digest).replace(/^sha256:/, '');
@@ -69,7 +73,7 @@ function LibraryTableHead({ mode, compactPicker }) {
   );
 }
 
-function ContainerImageRow({ row, onDelete, compactPicker }) {
+function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker }) {
   return (
     <tr className={dataTableInteractiveRowClass}>
       <DataTableTd className="max-w-[14rem] break-all text-sm font-medium text-text-primary">{row.name}</DataTableTd>
@@ -84,17 +88,27 @@ function ContainerImageRow({ row, onDelete, compactPicker }) {
         <DataTableTd className="text-sm text-text-muted">{formatRelativeTime(row.updated)}</DataTableTd>
       )}
       <DataTableTd align="right">
-        <DataTableRowActions>
+        {mode === 'picker' ? (
           <button
             type="button"
-            onClick={() => onDelete(row)}
-            className="rounded p-1.5 text-text-secondary hover:bg-red-50 hover:text-status-stopped"
-            title="Delete"
-            aria-label={`Delete image ${row.name}`}
+            onClick={() => onSelect?.({ kind: 'oci', name: row.name, digest: row.digest })}
+            className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors duration-150"
           >
-            <Trash2 size={14} aria-hidden />
+            Select
           </button>
-        </DataTableRowActions>
+        ) : (
+          <DataTableRowActions>
+            <button
+              type="button"
+              onClick={() => onDelete(row)}
+              className="rounded p-1.5 text-text-secondary hover:bg-red-50 hover:text-status-stopped"
+              title="Delete"
+              aria-label={`Delete image ${row.name}`}
+            >
+              <Trash2 size={14} aria-hidden />
+            </button>
+          </DataTableRowActions>
+        )}
       </DataTableTd>
     </tr>
   );
@@ -220,14 +234,19 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
   );
 }
 
-export default function ImageLibrary({ mode = 'page', onSelect, defaultFilter = 'all' }) {
-  const filterTabs = useMemo(() => (mode === 'page' ? FILTERS_PAGE : FILTERS_PICKER), [mode]);
+export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelect, defaultFilter = 'all' }) {
+  const filterTabs = useMemo(() => {
+    if (mode === 'page') return FILTERS_PAGE;
+    if (pickerKind === 'container') return FILTERS_PICKER_CONTAINER;
+    return FILTERS_PICKER;
+  }, [mode, pickerKind]);
   const registerJob = useBackgroundJobsStore((s) => s.registerJob);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
 
   const [files, setFiles] = useState([]);
   const [containerImages, setContainerImages] = useState([]);
   const [filter, setFilter] = useState(() => {
+    if (mode === 'picker' && pickerKind === 'container') return 'container';
     if (mode === 'picker' && defaultFilter === 'container') return 'all';
     return defaultFilter;
   });
@@ -267,10 +286,10 @@ export default function ImageLibrary({ mode = 'page', onSelect, defaultFilter = 
   const tableMinWidthRem = compactPicker ? 32 : 56;
 
   useEffect(() => {
-    if (mode === 'picker' && filter === 'container') {
+    if (mode === 'picker' && pickerKind !== 'container' && filter === 'container') {
       setFilter('all');
     }
-  }, [mode, filter]);
+  }, [mode, pickerKind, filter]);
 
   const fetchFiles = useCallback(async () => {
     setLoading(true);
@@ -573,7 +592,9 @@ export default function ImageLibrary({ mode = 'page', onSelect, defaultFilter = 
                     <ContainerImageRow
                       key={row.name}
                       row={row}
+                      mode={mode}
                       compactPicker={compactPicker}
+                      onSelect={onSelect}
                       onDelete={(r) => setDeleteTarget({ kind: 'oci', ref: r.name })}
                     />
                   ))}
@@ -612,7 +633,9 @@ export default function ImageLibrary({ mode = 'page', onSelect, defaultFilter = 
                       <ContainerImageRow
                         key={`oci:${row.oci.name}`}
                         row={row.oci}
+                        mode={mode}
                         compactPicker={compactPicker}
+                        onSelect={onSelect}
                         onDelete={(r) => setDeleteTarget({ kind: 'oci', ref: r.name })}
                       />
                     ),
