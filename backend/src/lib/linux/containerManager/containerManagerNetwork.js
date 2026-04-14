@@ -149,9 +149,16 @@ function buildPluginConfig(cniConfig, networkConfig = {}) {
     pluginConfig.bridge = String(networkConfig.interface).trim();
   }
 
+  // The CNI bridge plugin does NOT read a top-level `mac` field (unlike macvlan).
+  // It reads from `args.cni.mac` or `runtimeConfig.mac`. Without this, every
+  // container start gets a fresh kernel-generated random MAC on eth0, so DHCP
+  // leases never stabilize and the router accumulates orphaned lease rows.
   const macNorm = normalizeContainerMac(networkConfig.mac);
   if (macNorm) {
-    pluginConfig.mac = macNorm;
+    pluginConfig.args = {
+      ...(pluginConfig.args || {}),
+      cni: { ...(pluginConfig.args?.cni || {}), mac: macNorm },
+    };
   }
 
   return pluginConfig;
