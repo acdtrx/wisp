@@ -54,7 +54,7 @@ On each **start** that creates a new task (`startExistingContainer`), the backen
 | `autostart` | boolean | false | Start on backend boot |
 | `runAsRoot` | boolean | false | Run the container process as UID/GID 0 instead of the Wisp deploy user. Required for images that write to root-owned directories (e.g. OpenWebUI). When true, bind-mount files under `files/` are root-owned; container deletion may require `sudo` for those paths. Requires restart. |
 | `localDns` | boolean | false | Enable mDNS registration for this container on the LAN. New containers default to `true`; existing containers without this field are treated as `false` for upgrade safety. |
-| `env` | object | `{}` | Key-value environment variables |
+| `env` | object | `{}` | Environment variables. Structured shape: `{ KEY: { value: string, secret?: true } }`. Entries without `secret` are plaintext; `secret: true` marks the entry as write-only — see **Secret env vars** below. |
 | `mounts` | array | `[]` | Bind mount definitions (see Mount entry); backing data lives under `files/<name>` |
 | `network` | object | `{ "type": "bridge" }` | Network configuration (see below) |
 | `exposedPorts` | string[] | `[]` | Ports declared by the image (`EXPOSE` directives), e.g. `["80/tcp", "443/tcp"]`. Set at create time from the OCI image config; informational only (containers expose all listening ports on the LAN) |
@@ -81,6 +81,17 @@ On each **start** that creates a new task (`startExistingContainer`), the backen
 | `readonly` | boolean | Bind mount read-only when true |
 
 After **PATCH** persists **`mounts`**, or after **POST** `/api/containers/:name/mounts` adds one mount, the backend creates any **missing** backing file or directory under `files/<name>` automatically (empty file or empty directory) so new rows are usable without a separate **Init** call.
+
+### Secret env vars
+
+Individual env vars can be marked `secret: true` to hide their values from the UI. Secret values are persisted in `container.json` like any other env var (the OCI process needs them at runtime), but:
+
+- **`GET /api/containers/:name`** strips the value and returns `{ value: null, secret: true, isSet: boolean }` for every secret entry. `isSet` is `true` when a value is stored on disk.
+- **`PATCH /api/containers/:name`** only accepts env-var changes through the **`envPatch`** delta (a plain `env` field is rejected with `CONFIG_ERROR`). See API.md for the delta shape.
+- Flipping a key from `secret: true` to `secret: false` without providing a new value clears the stored value server-side. This is intentional: since the UI never received the old value, there is nothing to preserve. The UI warns the user before flipping the toggle.
+- Creating a brand-new secret key without a `value` is rejected with `CONFIG_ERROR` (`Secret env var "X" requires a value`).
+
+Legacy `container.json` files with a flat `env: { KEY: "value" }` dict are normalized on first **GET** `/api/containers/:name` (written back to disk as `{ KEY: { value: "value" } }`) — existing entries become non-secret.
 
 ## Backend Modules
 

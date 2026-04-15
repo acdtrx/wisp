@@ -1016,13 +1016,22 @@ Full container config including live state.
 
 **200:** Full `container.json` fields plus `state`, `pid`, `uptime`, `type`, and `mdnsHostname` when Local DNS is enabled and registration is active. For bridge networking, `network.ip` / `network.mac` may be set after CNI DHCP; if the task is running and `network.ip` is still empty, the handler may probe the netns once and persist the address (see CONTAINERS.md).
 
+The **`env`** field uses a structured shape: `{ KEY: { value, secret?, isSet? } }`. Non-secret entries are returned as `{ value: "plaintext" }`. Secret entries are returned as `{ value: null, secret: true, isSet: boolean }` — the value is never sent to the client, and `isSet` is `true` when a value is stored on disk. See CONTAINERS.md → *Secret env vars*.
+
 **404:** `{ error, detail }` if container not found.
 
 ### PATCH /api/containers/:name
 
 Partially update container config.
 
-**Body:** Any subset of container.json fields. **`iconId`:** set to a string to choose a UI icon (same ids as VM icons), or `null` / empty string to clear and use the client default. **`localDns`:** boolean toggle for mDNS registration. **`runAsRoot`:** boolean — when `true`, the container process runs as UID/GID 0 instead of the Wisp deploy user (required for images that write to root-owned paths inside the container, e.g. OpenWebUI); requires restart.
+**Body:** Any subset of container.json fields, except environment variables — those must use **`envPatch`** (see below). **`iconId`:** set to a string to choose a UI icon (same ids as VM icons), or `null` / empty string to clear and use the client default. **`localDns`:** boolean toggle for mDNS registration. **`runAsRoot`:** boolean — when `true`, the container process runs as UID/GID 0 instead of the Wisp deploy user (required for images that write to root-owned paths inside the container, e.g. OpenWebUI); requires restart.
+
+**`envPatch`:** Delta applied to the container's environment variables. Keyed by env var name:
+
+- `envPatch[KEY] = { value: "new", secret?: boolean }` — upsert. Fields omitted on an existing entry are preserved.
+- `envPatch[KEY] = null` — remove the entry.
+
+Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwise **422** `CONFIG_ERROR`). Flipping an existing entry from `secret: true` → `secret: false` without providing a new `value` clears the stored value to `""` (the UI warns the user before doing this). Renames are expressed as `{ OLD: null, NEW: { value: "..." } }`. Sending a top-level `env` field in the PATCH body is rejected with **422** `CONFIG_ERROR` (`Use envPatch to update environment variables`). Any non-empty `envPatch` on a running container sets `requiresRestart: true`.
 
 **`network`:** Merged with the existing object (not replaced wholesale). **Bridge networking** requires **`network.mac`** after merge (unicast format). While the task is **running or paused**, **`network.ip`** from the body is ignored (server-owned), and changing **`network.mac`** or **`network.interface`** returns **409** `CONTAINER_MUST_BE_STOPPED`. Invalid MAC → **422** `INVALID_CONTAINER_MAC`.
 

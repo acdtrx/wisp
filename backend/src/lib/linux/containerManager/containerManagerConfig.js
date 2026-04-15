@@ -17,6 +17,86 @@ const RESTART_FIELDS = new Set([
   'image', 'command', 'cpuLimit', 'memoryLimitMiB', 'env', 'mounts', 'network', 'runAsRoot',
 ]);
 
+/**
+ * Apply an envPatch delta to config.env (structured shape: { KEY: { value, secret? } }).
+ * Returns true if anything actually changed.
+ *
+ * Delta semantics:
+ *   envPatch[key] === null            → delete key
+ *   envPatch[key] = { value?, secret? } → upsert; fields omitted are preserved
+ *
+ * Special rules:
+ *   - Marking a key secret → non-secret without providing a new value resets the
+ *     value to "" (so stored secrets are never leaked through the flag toggle).
+ *   - Adding a brand-new key with secret:true requires an explicit value.
+ */
+function applyEnvPatch(config, envPatch) {
+  if (!envPatch || typeof envPatch !== 'object' || Array.isArray(envPatch)) {
+    throw containerError('CONFIG_ERROR', 'envPatch must be an object');
+  }
+  if (!config.env || typeof config.env !== 'object') config.env = {};
+  let mutated = false;
+
+  for (const [rawKey, entry] of Object.entries(envPatch)) {
+    const key = typeof rawKey === 'string' ? rawKey.trim() : '';
+    if (!key) {
+      throw containerError('CONFIG_ERROR', 'envPatch keys must be non-empty strings');
+    }
+
+    if (entry === null) {
+      if (key in config.env) {
+        delete config.env[key];
+        mutated = true;
+      }
+      continue;
+    }
+
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw containerError('CONFIG_ERROR', `envPatch entry for "${key}" must be an object or null`);
+    }
+    if ('value' in entry && entry.value != null && typeof entry.value !== 'string') {
+      throw containerError('CONFIG_ERROR', `envPatch value for "${key}" must be a string`);
+    }
+    if ('secret' in entry && typeof entry.secret !== 'boolean') {
+      throw containerError('CONFIG_ERROR', `envPatch secret flag for "${key}" must be boolean`);
+    }
+
+    const prev = config.env[key];
+    const prevExists = !!prev && typeof prev === 'object';
+    const prevSecret = !!(prevExists && prev.secret);
+    const prevValue = prevExists && typeof prev.value === 'string' ? prev.value : '';
+
+    const nextSecret = 'secret' in entry ? !!entry.secret : prevSecret;
+
+    let nextValue;
+    if ('value' in entry && typeof entry.value === 'string') {
+      nextValue = entry.value;
+    } else if (prevSecret && !nextSecret) {
+      // secret → non-secret without explicit value: clear per UX contract.
+      nextValue = '';
+    } else if (prevExists) {
+      nextValue = prevValue;
+    } else {
+      nextValue = '';
+    }
+
+    if (!prevExists && nextSecret && !('value' in entry && typeof entry.value === 'string')) {
+      throw containerError('CONFIG_ERROR', `Secret env var "${key}" requires a value`);
+    }
+
+    const nextEntry = nextSecret ? { value: nextValue, secret: true } : { value: nextValue };
+
+    if (!prevExists
+      || prevSecret !== nextSecret
+      || prevValue !== nextValue) {
+      config.env[key] = nextEntry;
+      mutated = true;
+    }
+  }
+
+  return mutated;
+}
+
 function networkMacOrInterfaceChanged(prev, next) {
   const pm = prev?.mac ? (normalizeContainerMac(prev.mac) || '') : '';
   const nm = next?.mac ? (normalizeContainerMac(next.mac) || '') : '';
@@ -45,9 +125,18 @@ export async function updateContainerConfig(name, changes) {
   const task = await getTaskState(name);
   const isRunning = task && (task.status === 'RUNNING' || task.status === 'PAUSED');
 
+  if ('env' in changes) {
+    throw containerError('CONFIG_ERROR', 'Use envPatch to update environment variables');
+  }
+  if ('envPatch' in changes) {
+    const mutated = applyEnvPatch(config, changes.envPatch);
+    if (mutated && isRunning) requiresRestart = true;
+  }
+
   for (const [key, value] of Object.entries(changes)) {
     if (key === 'name' || key === 'createdAt' || key === 'state') continue;
     if (key === 'sessionLogStartBytes') continue;
+    if (key === 'envPatch') continue;
     if (key === 'iconId') {
       if (value == null || value === '') {
         delete config.iconId;

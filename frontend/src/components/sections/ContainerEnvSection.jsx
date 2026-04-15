@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Braces, Pencil, Save, X, Loader2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  Plus, Trash2, Braces, Pencil, Save, X, Loader2, Lock, LockOpen,
+} from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
+import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import {
   DataTableScroll,
   DataTable,
@@ -17,24 +20,76 @@ import { randomId } from '../../utils/randomId.js';
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
+const MASK = '••••••••';
+
 function rowsFromEnv(env) {
   if (!env || typeof env !== 'object') return [];
-  return Object.entries(env).map(([k, v]) => ({
-    id: randomId(),
-    initialKey: k,
-    key: k,
-    value: String(v ?? ''),
-  }));
+  return Object.entries(env).map(([k, entry]) => {
+    const isSecret = !!entry?.secret;
+    return {
+      id: randomId(),
+      initialKey: k,
+      initialSecret: isSecret,
+      initialIsSet: isSecret ? !!entry?.isSet : false,
+      key: k,
+      value: isSecret ? '' : String(entry?.value ?? ''),
+      secret: isSecret,
+      secretValueDirty: false,
+    };
+  });
 }
 
-function buildEnvFromRows(rows) {
+// Used by the create-flow (not currently mounted, but kept as a defensive
+// fallback). Emits the full structured env map in the target on-disk shape.
+function buildEnvMapFromRows(rows) {
   const obj = {};
   for (const r of rows) {
     const k = (r.key || '').trim();
     if (!k) continue;
-    obj[k] = r.value;
+    obj[k] = r.secret ? { value: r.value, secret: true } : { value: r.value };
   }
   return obj;
+}
+
+// Build an envPatch delta containing only the rows that actually changed,
+// plus null entries for rows that were removed.
+function buildEnvPatchFromRows(rows, originalMap) {
+  const patch = {};
+  const remainingOrig = new Set(Object.keys(originalMap));
+
+  for (const r of rows) {
+    const k = (r.key || '').trim();
+    if (!k) continue;
+
+    if (r.initialKey != null && r.initialKey === k) {
+      remainingOrig.delete(r.initialKey);
+      const orig = originalMap[r.initialKey];
+      const secretChanged = r.secret !== orig.initialSecret;
+      const plainValueChanged = !r.secret && r.value !== orig.value;
+      const secretValueChanged = r.secret && r.secretValueDirty;
+      if (!secretChanged && !plainValueChanged && !secretValueChanged) continue;
+      const entry = {};
+      if (secretChanged) entry.secret = r.secret;
+      if (plainValueChanged || secretValueChanged) entry.value = r.value;
+      patch[k] = entry;
+      continue;
+    }
+
+    // New row OR rename: remove old key (if any) + upsert new.
+    if (r.initialKey != null) {
+      remainingOrig.delete(r.initialKey);
+      patch[r.initialKey] = null;
+    }
+    patch[k] = r.secret
+      ? { value: r.value, secret: true }
+      : { value: r.value };
+  }
+
+  for (const origKey of remainingOrig) {
+    patch[origKey] = null;
+  }
+
+  return patch;
 }
 
 function validateRows(rows) {
@@ -44,6 +99,9 @@ function validateRows(rows) {
     if (!k) continue;
     if (seen.has(k)) return `Duplicate key: ${k}`;
     seen.add(k);
+    if (r.secret && r.initialKey == null && !r.secretValueDirty && !(r.value || '').trim()) {
+      return `Secret '${k}' requires a value`;
+    }
   }
   return null;
 }
@@ -55,6 +113,20 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState(null);
   const [requiresRestart, setRequiresRestart] = useState(false);
+  const [pendingToggle, setPendingToggle] = useState(null); // { rowId, key, toSecret }
+
+  const originalMap = useMemo(() => {
+    const map = {};
+    if (config?.env && typeof config.env === 'object') {
+      for (const [k, v] of Object.entries(config.env)) {
+        map[k] = {
+          initialSecret: !!v?.secret,
+          value: v?.secret ? '' : String(v?.value ?? ''),
+        };
+      }
+    }
+    return map;
+  }, [config?.env]);
 
   const init = useCallback(() => {
     setRows(rowsFromEnv(config.env));
@@ -69,12 +141,29 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
 
   const addEntry = () => {
     const id = randomId();
-    setRows((prev) => [...prev, { id, initialKey: null, key: '', value: '' }]);
+    setRows((prev) => [
+      ...prev,
+      {
+        id,
+        initialKey: null,
+        initialSecret: false,
+        initialIsSet: false,
+        key: '',
+        value: '',
+        secret: false,
+        secretValueDirty: false,
+      },
+    ]);
     setEditingId(id);
   };
 
   const updateRow = (id, field, value) => {
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+    setRows((prev) => prev.map((r) => {
+      if (r.id !== id) return r;
+      const next = { ...r, [field]: value };
+      if (field === 'value' && r.secret) next.secretValueDirty = true;
+      return next;
+    }));
   };
 
   const cancelEdit = (row) => {
@@ -84,15 +173,46 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
       return;
     }
     if (row.initialKey != null) {
-      const v = config.env?.[row.initialKey];
+      const orig = config.env?.[row.initialKey] || {};
+      const origSecret = !!orig.secret;
       setRows((prev) =>
         prev.map((r) =>
           r.id === row.id
-            ? { ...r, key: row.initialKey, value: String(v ?? '') }
+            ? {
+              ...r,
+              key: row.initialKey,
+              value: origSecret ? '' : String(orig.value ?? ''),
+              secret: origSecret,
+              secretValueDirty: false,
+            }
             : r));
     }
     setEditingId(null);
   };
+
+  const requestToggleSecret = (row) => {
+    setPendingToggle({ rowId: row.id, key: (row.key || '').trim() || row.initialKey || '', toSecret: !row.secret });
+  };
+
+  const confirmToggleSecret = () => {
+    if (!pendingToggle) return;
+    const { rowId, toSecret } = pendingToggle;
+    setRows((prev) => prev.map((r) => {
+      if (r.id !== rowId) return r;
+      if (toSecret) {
+        // Non-secret → secret. Preserve the current value so the upcoming save
+        // carries it through as a secret upsert; mark dirty so canSave lights up.
+        return { ...r, secret: true, secretValueDirty: true };
+      }
+      // Secret → non-secret. Clear value; user must type a new plaintext (or
+      // save empty and let the server clear the stored secret).
+      return { ...r, secret: false, value: '', secretValueDirty: false };
+    }));
+    setEditingId(rowId);
+    setPendingToggle(null);
+  };
+
+  const cancelToggleSecret = () => setPendingToggle(null);
 
   const saveRow = async (row) => {
     const msg = validateRows(rows);
@@ -107,12 +227,16 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
     setSavingId(row.id);
     setError(null);
     try {
-      const env = buildEnvFromRows(rows);
       if (isCreating && onFormChange) {
-        onFormChange({ env });
+        onFormChange({ env: buildEnvMapFromRows(rows) });
         setEditingId(null);
       } else {
-        const result = await onSave({ env });
+        const envPatch = buildEnvPatchFromRows(rows, originalMap);
+        if (Object.keys(envPatch).length === 0) {
+          setEditingId(null);
+          return;
+        }
+        const result = await onSave({ envPatch });
         if (result?.requiresRestart) setRequiresRestart(true);
         setEditingId(null);
       }
@@ -125,16 +249,21 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
 
   const removeRow = async (row) => {
     setError(null);
-    const next = rows.filter((r) => r.id !== row.id);
     if (isCreating && onFormChange) {
-      onFormChange({ env: buildEnvFromRows(next) });
+      const next = rows.filter((r) => r.id !== row.id);
+      onFormChange({ env: buildEnvMapFromRows(next) });
       setRows(next);
+      if (editingId === row.id) setEditingId(null);
+      return;
+    }
+    if (row.initialKey == null) {
+      setRows((prev) => prev.filter((r) => r.id !== row.id));
       if (editingId === row.id) setEditingId(null);
       return;
     }
     setDeletingId(row.id);
     try {
-      const result = await onSave({ env: buildEnvFromRows(next) });
+      const result = await onSave({ envPatch: { [row.initialKey]: null } });
       if (result?.requiresRestart) setRequiresRestart(true);
     } catch (err) {
       setError(err.message);
@@ -170,7 +299,7 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
       headerAction={headerAdd}
     >
       <p className="text-[11px] text-text-muted mb-3">
-        Hover a row for actions. Use the pencil to edit; Save writes the full environment map (one API update per save).
+        Hover a row for actions. Toggle the lock to mark a variable as secret — secret values are never sent back and can only be overwritten.
       </p>
       <DataTableScroll>
         <DataTable minWidthRem={28}>
@@ -180,7 +309,7 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
                 Key
               </DataTableTh>
               <DataTableTh dense>Value</DataTableTh>
-              <DataTableTh dense align="right" className="w-36">
+              <DataTableTh dense align="right" className="w-44">
                 Actions
               </DataTableTh>
             </tr>
@@ -195,18 +324,22 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
             )}
             {rows.map((row) => {
               const editing = editingId === row.id;
-              const baseVal =
-                row.initialKey != null ? String(config.env?.[row.initialKey] ?? '') : '';
+              const orig = row.initialKey != null ? originalMap[row.initialKey] : null;
+              const keyChanged = row.initialKey != null && (row.key || '').trim() !== row.initialKey;
+              const secretChanged = orig && row.secret !== orig.initialSecret;
+              const valueChanged = !row.secret && orig && row.value !== orig.value;
+              const secretValueChanged = row.secret && row.secretValueDirty;
               const dirty =
                 row.initialKey == null
                   ? ((row.key || '').trim() !== '' || (row.value || '').trim() !== '')
-                  : (row.key || '').trim() !== row.initialKey || String(row.value) !== baseVal;
+                  : keyChanged || secretChanged || valueChanged || secretValueChanged;
               const canSave =
                 editing
                 && (row.key || '').trim() !== ''
                 && (row.initialKey == null ? true : dirty);
               const actionsForce =
                 editing || savingId === row.id || deletingId === row.id;
+              const showMask = row.secret && !editing && (row.initialIsSet || row.secretValueDirty);
 
               return (
                 <tr key={row.id} className={dataTableInteractiveRowClass}>
@@ -225,19 +358,45 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
                   </DataTableTd>
                   <DataTableTd dense>
                     {editing ? (
-                      <input
-                        type="text"
-                        value={row.value}
-                        onChange={(e) => updateRow(row.id, 'value', e.target.value)}
-                        placeholder="value"
-                        className="input-field w-full font-mono text-xs"
-                      />
+                      row.secret ? (
+                        <input
+                          type="password"
+                          value={row.value}
+                          onChange={(e) => updateRow(row.id, 'value', e.target.value)}
+                          placeholder={row.initialIsSet ? 'Enter new value to replace' : 'Enter value'}
+                          autoComplete="new-password"
+                          className="input-field w-full font-mono text-xs"
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          value={row.value}
+                          onChange={(e) => updateRow(row.id, 'value', e.target.value)}
+                          placeholder="value"
+                          className="input-field w-full font-mono text-xs"
+                        />
+                      )
+                    ) : row.secret ? (
+                      <span className="font-mono text-sm text-text-secondary">
+                        {showMask ? MASK : '—'}
+                        <span className="ml-2 text-[10px] uppercase tracking-wide text-text-muted">secret</span>
+                      </span>
                     ) : (
                       <span className="font-mono text-sm text-text-secondary">{truncate(row.value, 64)}</span>
                     )}
                   </DataTableTd>
                   <DataTableTd dense align="right">
                     <DataTableRowActions forceVisible={actionsForce}>
+                      <button
+                        type="button"
+                        onClick={() => requestToggleSecret(row)}
+                        disabled={savingId === row.id || deletingId === row.id}
+                        className={iconBtn}
+                        title={row.secret ? 'Unmark as secret' : 'Mark as secret'}
+                        aria-label={row.secret ? 'Unmark as secret' : 'Mark as secret'}
+                      >
+                        {row.secret ? <Lock size={14} aria-hidden /> : <LockOpen size={14} aria-hidden />}
+                      </button>
                       {!editing && (
                         <button
                           type="button"
@@ -299,6 +458,26 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
           </tbody>
         </DataTable>
       </DataTableScroll>
+
+      <ConfirmDialog
+        open={!!pendingToggle}
+        title={pendingToggle?.toSecret ? 'Mark as secret?' : 'Unmark secret?'}
+        confirmLabel={pendingToggle?.toSecret ? 'Mark secret' : 'Unmark'}
+        onConfirm={confirmToggleSecret}
+        onCancel={cancelToggleSecret}
+      >
+        {pendingToggle?.toSecret ? (
+          <p>
+            Marking <span className="font-mono text-text-primary">{pendingToggle?.key}</span> as secret will hide its
+            value from the UI. After saving, you won&apos;t be able to read it again — only overwrite it. Continue?
+          </p>
+        ) : (
+          <p>
+            Unmarking <span className="font-mono text-text-primary">{pendingToggle?.key}</span> will clear its stored
+            value. You&apos;ll need to enter a new non-secret value before saving. Continue?
+          </p>
+        )}
+      </ConfirmDialog>
     </SectionCard>
   );
 }

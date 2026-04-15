@@ -2,7 +2,7 @@
  * List containers by merging containerd state with on-disk container.json configs.
  */
 import { join } from 'node:path';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, writeFile, stat } from 'node:fs/promises';
 
 import {
   containerError, containerState, getClient, callUnary,
@@ -94,16 +94,49 @@ export async function getRunningContainerCount() {
 }
 
 /**
+ * Normalize the on-disk env shape. Legacy container.json stored env as a flat
+ * { KEY: "value" } dict; the target shape is { KEY: { value, secret? } }. If any
+ * entry is still a bare string, convert it in place and report `changed: true`
+ * so the caller can write the file back once.
+ */
+function ensureContainerEnvShape(config) {
+  if (!config.env || typeof config.env !== 'object') {
+    config.env = {};
+    return false;
+  }
+  let changed = false;
+  for (const [k, v] of Object.entries(config.env)) {
+    if (typeof v === 'string') {
+      config.env[k] = { value: v };
+      changed = true;
+    } else if (!v || typeof v !== 'object') {
+      config.env[k] = { value: String(v ?? '') };
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
  * Get the full config for a single container (for detail view).
  */
 export async function getContainerConfig(name) {
   const dir = getContainerDir(name);
+  const configPath = join(dir, 'container.json');
   let config;
   try {
-    const raw = await readFile(join(dir, 'container.json'), 'utf8');
+    const raw = await readFile(configPath, 'utf8');
     config = JSON.parse(raw);
   } catch {
     throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
+  }
+
+  if (ensureContainerEnvShape(config)) {
+    try {
+      await writeFile(configPath, JSON.stringify(config, null, 2));
+    } catch {
+      /* keep in-memory normalization if rewrite failed */
+    }
   }
 
   if (config.network?.type !== 'bridge' || !normalizeContainerMac(config.network?.mac)) {
