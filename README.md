@@ -1,10 +1,16 @@
 # Wisp
 
-**Wisp** is a web application for managing **KVM/QEMU virtual machines** and **containerd-backed containers** on a Linux host. It talks to **libvirt** over D-Bus, exposes a REST API and live updates (SSE), and ships with a React frontend for day-to-day VM and host operations (lifecycle, storage, console, backups, networking, and more).
+**Wisp** is an **opinionated** application for **small homelab** setups: it targets people who want a **really simple** path to a working stack, **sensible defaults**, and as little fuss as possible. That intent is reflected in **how the software is built** and in **how the UI talks to you**—direct flows and clear choices rather than exhaustive configuration surfaces.
+
+At a high level, it is a web app for managing **KVM/QEMU virtual machines** and **containerd-backed containers** on a Linux host.
 
 This project was **vibe coded** with [Cursor](https://cursor.com) and other AI-assisted tooling. You are welcome to **clone the repository** and open it in Cursor, VS Code with Copilot, or any AI-capable IDE to adapt behavior, branding, or integrations to your needs.
 
-## What it runs on
+## Technical overview
+
+**Stack and integration:** Wisp talks to **libvirt** over D-Bus, exposes a **REST** API and **live updates (SSE)**, and ships with a **React** frontend for day-to-day VM and host work (lifecycle, storage, console, backups, networking, and more).
+
+**Platforms**
 
 - **Production:** **Linux only** — **Debian/Ubuntu** or **Arch Linux** (see `scripts/linux/setup/distro.sh`). The stack expects **KVM**, **libvirt**, **QEMU**, **containerd**, and related packages installed by the project’s setup scripts.
 - **Runtime:** **Node.js 24+** (backend and frontend build/serve).
