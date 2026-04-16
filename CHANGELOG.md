@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-04-16
+
+### New Features
+- Custom App Containers: hardcoded app templates with dedicated config UIs instead of generic env/mounts
+- App registry pattern (backend + frontend) for organizing app modules
+- Caddy Reverse Proxy app: domain, wildcard TLS via Cloudflare DNS, host-based reverse proxy entries
+- Eject app container to generic (one-way, preserves generated config)
+- Live reload for app containers (Caddy reloads config without restart)
+- Non-interactive container exec (`execCommandInContainer`) for one-shot commands
+- Loopback interface brought up in container network namespaces (fixes localhost binding)
+
 ## 2026-04-15
 
 ### New Features

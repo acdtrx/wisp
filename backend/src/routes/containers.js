@@ -17,6 +17,7 @@ import { BACKGROUND_JOB_KIND } from '../lib/backgroundJobKinds.js';
 import { titleForContainerCreate } from '../lib/backgroundJobTitles.js';
 import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
+import { isKnownApp, getAppModule } from '../lib/linux/containerManager/apps/appRegistry.js';
 
 function maskContainerSecrets(config) {
   if (!config || !config.env || typeof config.env !== 'object') return config;
@@ -32,7 +33,17 @@ function maskContainerSecrets(config) {
       env[k] = { value: v?.value ?? '' };
     }
   }
-  return { ...config, env };
+  const masked = { ...config, env };
+
+  // Mask app-specific secrets
+  if (masked.app && masked.appConfig) {
+    const appModule = getAppModule(masked.app);
+    if (appModule?.maskSecrets) {
+      masked.appConfig = appModule.maskSecrets(masked.appConfig);
+    }
+  }
+
+  return masked;
 }
 
 /**
@@ -83,6 +94,9 @@ export default async function containerRoutes(fastify) {
     const spec = request.body;
     if (!spec?.name || !spec?.image) {
       return sendError(reply, 422, 'Missing required fields', 'name and image are required');
+    }
+    if (spec.app && !isKnownApp(spec.app)) {
+      return sendError(reply, 422, 'Unknown app type', `App "${spec.app}" is not a known app type`);
     }
 
     const jobId = randomUUID();

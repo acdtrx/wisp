@@ -67,4 +67,5 @@ export const teardownNetwork = impl.teardownNetwork;
 export const buildOCISpec = impl.buildOCISpec;
 
 export const execInContainer = impl.execInContainer;
+export const execCommandInContainer = impl.execCommandInContainer;
 export const resizeExec = impl.resizeExec;

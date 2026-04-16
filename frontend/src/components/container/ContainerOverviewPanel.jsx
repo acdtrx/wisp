@@ -14,6 +14,8 @@ import ContainerMountsSection from '../sections/ContainerMountsSection.jsx';
 import ContainerNetworkSection from '../sections/ContainerNetworkSection.jsx';
 import ContainerLogsSection from '../sections/ContainerLogsSection.jsx';
 import { CONTAINER_STATE_ICON_COLOR } from '../../utils/containerConstants.js';
+import { getAppEntry } from '../../apps/appRegistry.js';
+import AppConfigWrapper from '../../apps/AppConfigWrapper.jsx';
 
 const ContainerConsolePanel = lazy(() => import('../console/ContainerConsolePanel.jsx'));
 
@@ -129,6 +131,11 @@ export default function ContainerOverviewPanel() {
           </div>
         </div>
         <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-1">
+          {config.pendingRestart && (
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-status-warning mr-1">
+              Restart required
+            </span>
+          )}
           <ActionButton icon={Play} label="Start" onClick={() => startContainer(name)} disabled={!isStopped} loading={actionLoading === 'start'} variant="primary" />
           <ActionButton icon={Square} label="Stop" onClick={() => stopContainer(name)} disabled={isStopped} loading={actionLoading === 'stop'} />
           <ActionButton icon={Zap} label="Kill" onClick={() => killContainer(name)} disabled={isStopped} loading={actionLoading === 'kill'} variant="danger" />
@@ -165,8 +172,14 @@ export default function ContainerOverviewPanel() {
       ) : (
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           <ContainerGeneralSection config={config} onSave={handleSectionSave} />
-          <ContainerEnvSection config={config} onSave={handleSectionSave} />
-          <ContainerMountsSection config={config} onRefresh={refreshSelectedContainer} />
+          {config.app && getAppEntry(config.app) ? (
+            <AppConfigWrapper config={config} onSave={handleSectionSave} onRefresh={refreshSelectedContainer} />
+          ) : (
+            <>
+              <ContainerEnvSection config={config} onSave={handleSectionSave} />
+              <ContainerMountsSection config={config} onRefresh={refreshSelectedContainer} />
+            </>
+          )}
           <ContainerNetworkSection config={config} onSave={handleSectionSave} />
         </div>
       )}

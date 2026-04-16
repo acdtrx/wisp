@@ -46,7 +46,7 @@ export function buildGeneralFormDefaults(config) {
   };
 }
 
-export default function ContainerGeneralSection({ config, isCreating, onSave, onFormChange }) {
+export default function ContainerGeneralSection({ config, isCreating, onSave, onFormChange, headerAction }) {
   const [form, setForm] = useState(() => buildGeneralFormDefaults(config));
   const [original, setOriginal] = useState(() => buildGeneralFormDefaults(config));
   const [saving, setSaving] = useState(false);
@@ -65,6 +65,13 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
   useEffect(() => {
     if (!isCreating) init();
   }, [init, isCreating]);
+
+  // In create mode, sync image from parent when it changes externally (e.g. app selector prefill)
+  useEffect(() => {
+    if (isCreating && config?.image !== undefined && config.image !== form.image) {
+      setForm((prev) => ({ ...prev, image: config.image }));
+    }
+  }, [isCreating, config?.image]);
 
   const isDirty = JSON.stringify(form) !== JSON.stringify(original);
 
@@ -102,7 +109,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
   };
 
   return (
-    <SectionCard title="General" isDirty={!isCreating && isDirty} onSave={isCreating ? undefined : handleSave} saving={saving} requiresRestart={requiresRestart} error={error}>
+    <SectionCard title="General" isDirty={!isCreating && isDirty} onSave={isCreating ? undefined : handleSave} saving={saving} requiresRestart={requiresRestart} error={error} headerAction={headerAction}>
       <div className="space-y-3">
         <div className="flex items-end gap-4 flex-wrap">
           <Field label="Name" className="w-[180px]">

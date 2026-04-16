@@ -23,6 +23,7 @@ import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.j
 import { registerAddress, deregisterAddress, sanitizeHostname } from '../../mdnsManager.js';
 import { assertBindSourcesReady } from './containerManagerMounts.js';
 import { normalizeImageRef } from './containerImageRef.js';
+import { isKnownApp, getAppModule } from './apps/appRegistry.js';
 
 const RUNTIME_NAME = 'io.containerd.runc.v2';
 const SNAPSHOTTER = 'overlayfs';
@@ -395,6 +396,31 @@ export async function createContainer(spec, onStep) {
   const iconTrim = spec.iconId != null && spec.iconId !== '' ? String(spec.iconId).trim() : '';
   if (iconTrim) config.iconId = iconTrim;
 
+  // App container: validate, store appConfig, generate derived env/mounts/files
+  if (spec.app) {
+    if (!isKnownApp(spec.app)) {
+      await rm(containerDir, { recursive: true, force: true });
+      throw containerError('UNKNOWN_APP_TYPE', `Unknown app type "${spec.app}"`);
+    }
+    const appModule = getAppModule(spec.app);
+    const appConfig = spec.appConfig
+      ? appModule.validateAppConfig(spec.appConfig)
+      : appModule.getDefaultAppConfig();
+    config.app = spec.app;
+    config.appConfig = appConfig;
+
+    const derived = appModule.generateDerivedConfig(appConfig);
+    if (derived.env) config.env = derived.env;
+    if (derived.mounts) config.mounts = derived.mounts;
+
+    // Write mount file contents after persisting config (filesDir already exists)
+    if (derived.mountContents) {
+      for (const [mountName, content] of Object.entries(derived.mountContents)) {
+        await writeFile(join(filesDir, mountName), content, 'utf8');
+      }
+    }
+  }
+
   await writeFile(join(containerDir, 'container.json'), JSON.stringify(config, null, 2));
 
   onStep?.({ step: 'creating', detail: 'Creating container…' });
@@ -456,6 +482,9 @@ export async function startExistingContainer(name) {
   }
 
   config = await ensureContainerNetworkConfig(name, config);
+
+  // Clear pending restart flag — the container is (re)starting now
+  if (config.pendingRestart) delete config.pendingRestart;
 
   // Remove any stale task (STOPPED still exists until Delete; Create would fail with "already exists").
   try {

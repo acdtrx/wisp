@@ -7,6 +7,7 @@ import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { createContainer } from '../../api/containers.js';
 import ContainerGeneralSection from '../sections/ContainerGeneralSection.jsx';
+import { getAppList } from '../../apps/appRegistry.js';
 
 const STEP_LABELS = {
   validating: 'Validating…',
@@ -28,6 +29,7 @@ export default function CreateContainerPanel() {
   const registerJob = useBackgroundJobsStore((s) => s.registerJob);
   const jobs = useBackgroundJobsStore((s) => s.jobs);
 
+  const [selectedApp, setSelectedApp] = useState(null);
   const [form, setForm] = useState({
     name: '',
     image: '',
@@ -37,6 +39,22 @@ export default function CreateContainerPanel() {
   const [createJobId, setCreateJobId] = useState(null);
   const [createError, setCreateError] = useState(null);
   const [createDetail, setCreateDetail] = useState(null);
+
+  const appList = getAppList();
+
+  const handleSelectApp = (appId) => {
+    const next = appId || null;
+    if (next === selectedApp) return;
+    setSelectedApp(next);
+    if (next) {
+      const app = appList.find((a) => a.id === next);
+      if (app?.defaultImage) {
+        setForm((prev) => ({ ...prev, image: app.defaultImage }));
+      }
+    } else {
+      setForm((prev) => ({ ...prev, image: '' }));
+    }
+  };
 
   const handleFormChange = (changes) => {
     setForm((prev) => ({ ...prev, ...changes }));
@@ -51,6 +69,7 @@ export default function CreateContainerPanel() {
       name: form.name.trim(),
       image: form.image.trim(),
     };
+    if (selectedApp) spec.app = selectedApp;
 
     try {
       const { jobId, title } = await createContainer(spec);
@@ -97,6 +116,23 @@ export default function CreateContainerPanel() {
   const progressStep = row?.step ?? (creating ? 'validating' : null);
   const progressDetail = row?.detail ?? null;
 
+  const selectedLabel = selectedApp
+    ? appList.find((a) => a.id === selectedApp)?.label || selectedApp
+    : 'Generic Container';
+
+  const appSelector = (
+    <select
+      value={selectedApp || ''}
+      onChange={(e) => handleSelectApp(e.target.value)}
+      className="input-field h-7 text-[11px] min-w-[140px]"
+    >
+      <option value="">Generic Container</option>
+      {appList.map((app) => (
+        <option key={app.id} value={app.id}>{app.label}</option>
+      ))}
+    </select>
+  );
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex flex-shrink-0 items-center gap-3 border-b border-surface-border bg-surface-card px-4 py-3">
@@ -113,13 +149,15 @@ export default function CreateContainerPanel() {
       <div className="flex flex-1 flex-col overflow-y-auto px-6 py-5">
         <div className="space-y-5">
           <p className="text-xs text-text-muted">
-            Enter a name and image. After creation the container stays stopped so you can configure mounts, network, and resources, then start it from the overview.
+            Enter a name and image. After creation the container stays stopped so you can configure it, then start it from the overview.
           </p>
+
           <ContainerGeneralSection
             config={config}
             isCreating
             onSave={() => Promise.resolve({})}
             onFormChange={handleFormChange}
+            headerAction={appSelector}
           />
         </div>
 

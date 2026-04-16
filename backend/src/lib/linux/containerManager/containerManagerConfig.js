@@ -6,15 +6,17 @@ import { join } from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 
 import { containerError } from './containerManagerConnection.js';
-import { getContainerDir } from './containerPaths.js';
+import { getContainerDir, getContainerFilesDir } from './containerPaths.js';
 import { getTaskState } from './containerManagerLifecycle.js';
 import { normalizeContainerMac } from './containerManagerNetwork.js';
 import { deregisterAddress, registerAddress, sanitizeHostname } from '../../mdnsManager.js';
 import { validateAndNormalizeMounts, ensureMissingMountArtifacts } from './containerManagerMounts.js';
 import { deleteMountBackingStore } from './containerManagerMountsContent.js';
+import { getAppModule } from './apps/appRegistry.js';
+import { execCommandInContainer } from './containerManagerExec.js';
 
 const RESTART_FIELDS = new Set([
-  'image', 'command', 'cpuLimit', 'memoryLimitMiB', 'env', 'mounts', 'network', 'runAsRoot',
+  'image', 'command', 'cpuLimit', 'memoryLimitMiB', 'env', 'mounts', 'network', 'runAsRoot', 'appConfig',
 ]);
 
 /**
@@ -125,18 +127,100 @@ export async function updateContainerConfig(name, changes) {
   const task = await getTaskState(name);
   const isRunning = task && (task.status === 'RUNNING' || task.status === 'PAUSED');
 
-  if ('env' in changes) {
-    throw containerError('CONFIG_ERROR', 'Use envPatch to update environment variables');
+  // ── Eject: convert app container to generic ──────────────────────
+  if (changes.eject === true && config.app) {
+    delete config.app;
+    delete config.appConfig;
+    delete config.pendingRestart;
+    await writeFile(configPath, JSON.stringify(config, null, 2));
+    return { requiresRestart: false };
   }
-  if ('envPatch' in changes) {
-    const mutated = applyEnvPatch(config, changes.envPatch);
-    if (mutated && isRunning) requiresRestart = true;
+
+  // ── App container: reject raw envPatch/mounts, handle appConfig ─
+  if (config.app) {
+    if ('envPatch' in changes || 'env' in changes) {
+      throw containerError('APP_CONFIG_ONLY', 'Use appConfig to configure app containers, or eject to generic first');
+    }
+    if ('mounts' in changes) {
+      throw containerError('APP_CONFIG_ONLY', 'Use appConfig to configure app containers, or eject to generic first');
+    }
+    if ('appConfig' in changes) {
+      const appModule = getAppModule(config.app);
+      if (!appModule) {
+        throw containerError('UNKNOWN_APP_TYPE', `Unknown app type "${config.app}"`);
+      }
+      const validated = appModule.validateAppConfig(changes.appConfig);
+      config.appConfig = validated;
+
+      const derived = appModule.generateDerivedConfig(validated);
+
+      // Replace env entirely with derived env
+      config.env = derived.env || {};
+
+      // Replace mounts — delete backing stores for removed mounts
+      const prevMounts = Array.isArray(config.mounts) ? [...config.mounts] : [];
+      const nextNames = new Set((derived.mounts || []).map((m) => m.name));
+      for (const m of prevMounts) {
+        if (!nextNames.has(m.name)) {
+          await deleteMountBackingStore(name, m);
+        }
+      }
+      config.mounts = derived.mounts || [];
+      mountsPersisted = config.mounts;
+
+      // Write mount file contents
+      if (derived.mountContents) {
+        const filesDir = getContainerFilesDir(name);
+        for (const [mountName, content] of Object.entries(derived.mountContents)) {
+          await writeFile(join(filesDir, mountName), content, 'utf8');
+        }
+      }
+
+      if (isRunning) {
+        // Try live reload if the app supports it; fall back to pendingRestart
+        const reloadCmd = appModule.getReloadCommand?.();
+        if (reloadCmd) {
+          // Write config first so the reload picks up the new files
+          await writeFile(configPath, JSON.stringify(config, null, 2));
+          if (mountsPersisted) await ensureMissingMountArtifacts(name, mountsPersisted);
+          try {
+            const result = await execCommandInContainer(name, reloadCmd, { timeoutMs: 15000 });
+            if (result.exitCode !== 0) {
+              const detail = (result.stderr || result.stdout || '').trim().slice(0, 500);
+              throw containerError('APP_RELOAD_FAILED', `Reload failed (exit ${result.exitCode})`, detail);
+            }
+            // Reload succeeded — no restart needed, config already written
+            return { requiresRestart: false, reloaded: true };
+          } catch (err) {
+            if (err.code === 'APP_RELOAD_FAILED') throw err;
+            // Exec failed (e.g. command not found) — fall through to pendingRestart
+            config.pendingRestart = true;
+            requiresRestart = true;
+          }
+        } else {
+          requiresRestart = true;
+          config.pendingRestart = true;
+        }
+      }
+    }
+  }
+
+  // ── Generic container: envPatch ─────────────────────────────────
+  if (!config.app) {
+    if ('env' in changes) {
+      throw containerError('CONFIG_ERROR', 'Use envPatch to update environment variables');
+    }
+    if ('envPatch' in changes) {
+      const mutated = applyEnvPatch(config, changes.envPatch);
+      if (mutated && isRunning) requiresRestart = true;
+    }
   }
 
   for (const [key, value] of Object.entries(changes)) {
     if (key === 'name' || key === 'createdAt' || key === 'state') continue;
     if (key === 'sessionLogStartBytes') continue;
     if (key === 'envPatch') continue;
+    if (key === 'appConfig' || key === 'eject' || key === 'app') continue;
     if (key === 'iconId') {
       if (value == null || value === '') {
         delete config.iconId;

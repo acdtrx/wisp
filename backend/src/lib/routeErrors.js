@@ -73,6 +73,10 @@ function errorCodeToStatus(code) {
     case 'CONTAINER_MUST_BE_STOPPED':
     case 'CONTAINER_IMAGE_IN_USE':
       return 409;
+    case 'INVALID_APP_CONFIG':
+    case 'APP_CONFIG_ONLY':
+    case 'APP_RELOAD_FAILED':
+    case 'UNKNOWN_APP_TYPE':
     case 'INVALID_CONTAINER_IMAGE_REF':
     case 'IMAGE_PULL_FAILED':
     case 'INVALID_CONTAINER_NAME':

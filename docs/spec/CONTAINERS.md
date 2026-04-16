@@ -60,6 +60,9 @@ On each **start** that creates a new task (`startExistingContainer`), the backen
 | `exposedPorts` | string[] | `[]` | Ports declared by the image (`EXPOSE` directives), e.g. `["80/tcp", "443/tcp"]`. Set at create time from the OCI image config; informational only (containers expose all listening ports on the LAN) |
 | `createdAt` | string | (auto) | ISO 8601 creation timestamp |
 | `iconId` | string \| omitted | omitted | Optional UI icon key (same ids as VM icons in the app; default client icon when omitted) |
+| `app` | string \| omitted | omitted | App registry ID (e.g. `”caddy-reverse-proxy”`). When set, the container uses a dedicated app module for config management. See [CUSTOM-APPS.md](CUSTOM-APPS.md). |
+| `appConfig` | object \| omitted | omitted | Structured config for the app. Shape is app-specific. Only present when `app` is set. Source of truth — `env`, `mounts`, and mount files are derived from it. |
+| `pendingRestart` | boolean \| omitted | omitted | Set `true` when `appConfig` changes while the container is running. Cleared on start/restart. |
 | `sessionLogStartBytes` | number \| omitted | omitted | Server-managed: byte offset into `container.log` at the last task **create** (start). Used for “current session” log view. Omitted until the first start on older installs; treated as **0** when missing. Not writable via PATCH. |
 
 ### `network` object

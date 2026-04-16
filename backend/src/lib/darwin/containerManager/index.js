@@ -199,6 +199,10 @@ export async function execInContainer() {
   throw noContainerd();
 }
 
+export async function execCommandInContainer() {
+  throw noContainerd();
+}
+
 export async function resizeExec() {
   throw noContainerd();
 }

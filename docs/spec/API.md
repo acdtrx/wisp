@@ -974,9 +974,11 @@ SSE stream of the container list. Query param: `intervalMs` (default 5000, min 2
 
 Create a new container (async job with image pull). The container is **defined in containerd but not started** (no task, no CNI setup yet) so mounts and settings can be configured before **Start**.
 
-**Body:** `{ name, image, iconId? }`
+**Body:** `{ name, image, iconId?, app?, appConfig? }`
 
 Optional `iconId` selects a workload icon from the same set as VMs (persisted in `container.json`).
+
+Optional `app` is an app registry ID (e.g. `"caddy-reverse-proxy"`) — creates a custom app container with a dedicated config UI. If `app` is set without `appConfig`, the app module's default config is used. Unknown `app` values → **422**. See [CUSTOM-APPS.md](CUSTOM-APPS.md).
 
 On create, the server writes defaults in `container.json` (empty `mounts`, bridge `network` with a generated MAC and the default container parent bridge, `localDns: true`, etc.). Use **PATCH** to change command, resources, env, mounts, and network before starting.
 
@@ -1037,7 +1039,13 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 **`mounts`:** Replaces the entire mounts array (bulk update). Prefer row-scoped mount routes below for UI editing. Each element: `{ type: "file"|"directory", name, containerPath, readonly }`. **`name`** is a single path segment (storage key under the container’s `files/` directory). Duplicate **`name`** or duplicate **`containerPath`** → **422** `CONTAINER_MOUNT_DUPLICATE`. Invalid shape → **422** `INVALID_CONTAINER_MOUNTS`. Mounts removed from the array have their on-disk artifacts deleted automatically.
 
-**200:** `{ requiresRestart: boolean }`
+**`appConfig`:** (app containers only) Structured config for the app. Validated by the app module; on success, regenerates derived env, mounts, and mount files. Sets `pendingRestart: true` if the container is running. Sending `envPatch` or `mounts` on an app container → **422** `APP_CONFIG_ONLY`.
+
+**`eject: true`:** (app containers only) Removes `app`, `appConfig`, and `pendingRestart` from the config. Generated env vars and mounts are preserved as-is and become directly editable. One-way operation.
+
+**200:** `{ requiresRestart: boolean, reloaded?: boolean }` — `reloaded: true` when the app was live-reloaded (no restart needed).
+
+**422:** `APP_RELOAD_FAILED` — the app's reload command exited non-zero. Config is saved but the app rejected it; check `detail` for stderr.
 
 ### DELETE /api/containers/:name
 

@@ -18,6 +18,7 @@ case "$CMD" in
       exit 0
     fi
     ip netns add "$NAME"
+    ip netns exec "$NAME" ip link set lo up
     ;;
   delete)
     valid_name "$NAME" || { echo "wisp-netns: invalid name" >&2; exit 1; }

@@ -481,9 +481,18 @@ Lazy-loaded (`ContainerConsolePanel`). **xterm.js** terminal + toolbar (Paste, F
 ### Create Container Panel
 
 - Back button to return to default view
-- Short explanation: new containers stay **stopped** after create so mounts and settings can be set on the overview before **Start**
+- Short explanation: new containers stay **stopped** after create so settings can be configured on the overview before **Start**
+- **App selector**: dropdown in the General section header (right). Options: "Generic Container" (default) plus each registered app (e.g. "Caddy Reverse Proxy"). Selecting an app prefills the image field with the app's default image (editable when `allowCustomImage` is true).
 - **General** section: **Name** and **Image** only (same SectionCard as overview, create mode)
-- Create button with progress (validating → pulling → creating → done); no env/network on this screen — configure on the container overview after creation
+- Create button with progress (validating → pulling → creating → done); no env/network/app config on this screen — configure on the container overview after creation
+
+### Custom App Container Overview
+
+When `config.app` is set and recognized:
+- **Overview tab** replaces ContainerEnvSection + ContainerMountsSection with the app's dedicated component (e.g. CaddyAppSection) wrapped in AppConfigWrapper
+- ContainerGeneralSection and ContainerNetworkSection remain unchanged
+- **pendingRestart badge** in the header (visible across all tabs) when `config.pendingRestart` is true
+- **Eject button** below the app component — converts to generic container (one-way, with confirmation dialog). See [CUSTOM-APPS.md](CUSTOM-APPS.md).
 
 ### Container Stats Bar
 

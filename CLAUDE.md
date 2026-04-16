@@ -50,6 +50,7 @@ When you change behavior, APIs, UI, or configuration, update the corresponding d
 | Tech stack (dependencies, versions) | `docs/TECHSTACK.md` |
 | API (routes, request/response, errors) | `docs/spec/API.md` |
 | UI (layout, components, views, empty states) | `docs/spec/UI.md` |
+| UI patterns (section lists, tables, row editors) | `docs/UI-PATTERNS.md` |
 | Backend (vmManager, lifecycle, XML) | `docs/spec/VM-MANAGEMENT.md`, `docs/spec/ERROR-HANDLING.md` |
 | Containers (containerManager, containerd, OCI, CNI) | `docs/spec/CONTAINERS.md` |
 | Auth / login | `docs/spec/AUTH.md` |
@@ -63,7 +64,7 @@ When you change behavior, APIs, UI, or configuration, update the corresponding d
 
 Before writing or modifying any code (skip only for trivial typo/comment-only edits):
 
-1. **Read relevant docs first.** Always read `docs/CODING-RULES.md` and `docs/WISP-RULES.md`, plus the area-specific specs from the table above.
+1. **Read relevant docs first.** Always read `docs/CODING-RULES.md`, `docs/WISP-RULES.md`, and `docs/UI-PATTERNS.md` (for any UI with tables or row editors), plus the area-specific specs from the table above.
 2. **Verify your plan** — check existing behavior in specs, error handling patterns (`{ code, message, raw? }` → `{ error, detail }`), API contract, SSE for live data, `fast-xml-parser` for XML, dependency justification, architecture boundaries (vmManager for libvirt, containerManager for containerd, paths.js for filesystem).
 3. **Implement following documented patterns:**
    - Backend: Purpose-named functions, structured errors, single DBus caller (vmManager), no sleep for races

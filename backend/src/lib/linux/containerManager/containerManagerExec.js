@@ -246,6 +246,106 @@ export async function execInContainer(name, opts = {}) {
 }
 
 /**
+ * Run a non-interactive command inside a running container and return its output + exit code.
+ * Unlike execInContainer (PTY-based interactive shell), this is fire-and-forget with captured output.
+ * @param {string} name - Container id
+ * @param {string[]} args - Command and arguments (e.g. ['caddy', 'reload', '--config', '/etc/caddy/Caddyfile'])
+ * @param {{ timeoutMs?: number }} [opts]
+ * @returns {Promise<{ exitCode: number, stdout: string, stderr: string }>}
+ */
+export async function execCommandInContainer(name, args, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 30000;
+
+  const task = await getTaskState(name);
+  if (!task || normalizeTaskStatus(task.status) !== 'RUNNING') {
+    throw containerError('CONTAINER_NOT_RUNNING', `Container "${name}" is not running`);
+  }
+
+  const runAsRoot = await readContainerRunAsRoot(name);
+  const { uid, gid } = uidGidForExec(runAsRoot);
+
+  const processSpec = {
+    terminal: false,
+    user: { uid, gid },
+    args,
+    env: ['PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'],
+    cwd: '/',
+    capabilities: {
+      bounding: DEFAULT_CAPS,
+      effective: DEFAULT_CAPS,
+      permitted: DEFAULT_CAPS,
+    },
+  };
+
+  const execId = `cmd-${randomBytes(8).toString('hex')}`;
+  const fifoRoot = getExecFifoSessionDir();
+  await mkdir(fifoRoot, { recursive: true });
+  const tmpDir = await mkdtemp(join(fifoRoot, 'wisp-cmd-'));
+  const stdoutFifo = join(tmpDir, 'stdout');
+  const stderrFifo = join(tmpDir, 'stderr');
+
+  const cleanup = async () => {
+    try { await callUnary(getClient('tasks'), 'deleteProcess', { containerId: name, execId }); } catch { /* may already be deleted */ }
+    try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  };
+
+  try {
+    makeFifo(stdoutFifo);
+    makeFifo(stderrFifo);
+
+    await callUnary(getClient('tasks'), 'exec', {
+      containerId: name,
+      execId,
+      stdin: '',
+      stdout: stdoutFifo,
+      stderr: stderrFifo,
+      terminal: false,
+      spec: packAny(OCI_PROCESS_TYPE_URL, processSpec),
+    });
+
+    // Start the exec and open FIFOs concurrently (shim opens the other end during Start)
+    const startPromise = callUnary(getClient('tasks'), 'start', { containerId: name, execId });
+    const stdoutChunks = [];
+    const stderrChunks = [];
+
+    const collectStream = (path, chunks) => new Promise((resolve, reject) => {
+      const s = createReadStream(path, { autoClose: true });
+      s.on('data', (d) => chunks.push(d));
+      s.on('end', () => resolve());
+      s.on('error', reject);
+    });
+
+    const stdoutDone = collectStream(stdoutFifo, stdoutChunks);
+    const stderrDone = collectStream(stderrFifo, stderrChunks);
+
+    await startPromise;
+
+    // Wait for the exec process to exit
+    const waitPromise = callUnary(getClient('tasks'), 'wait', { containerId: name, execId });
+
+    const timer = timeoutMs > 0
+      ? new Promise((_, reject) => setTimeout(() => reject(new Error('exec timed out')), timeoutMs))
+      : null;
+    const waitResult = timer
+      ? await Promise.race([waitPromise, timer])
+      : await waitPromise;
+
+    // Streams should end once the process exits; give them a moment
+    await Promise.all([stdoutDone, stderrDone]).catch(() => {});
+
+    const exitCode = Number(waitResult?.exitStatus ?? waitResult?.exit_status ?? -1);
+    const stdout = Buffer.concat(stdoutChunks).toString('utf8');
+    const stderr = Buffer.concat(stderrChunks).toString('utf8');
+
+    await cleanup();
+    return { exitCode, stdout, stderr };
+  } catch (err) {
+    await cleanup();
+    throw err;
+  }
+}
+
+/**
  * Resize the PTY for an exec session.
  * @param {string} name
  * @param {string} execId
