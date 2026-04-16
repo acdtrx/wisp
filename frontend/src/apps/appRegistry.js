@@ -2,6 +2,7 @@
  * Frontend app registry — maps app IDs to their UI components and metadata.
  */
 import CaddyAppSection from './caddy/CaddyAppSection.jsx';
+import ZotAppSection from './zot/ZotAppSection.jsx';
 
 export const APP_REGISTRY = {
   'caddy-reverse-proxy': {
@@ -10,6 +11,13 @@ export const APP_REGISTRY = {
     defaultImage: 'caddy:latest',
     allowCustomImage: true,
     component: CaddyAppSection,
+  },
+  'zot-registry': {
+    label: 'Zot OCI Registry',
+    description: 'Private OCI container image registry',
+    defaultImage: 'ghcr.io/project-zot/zot-linux-amd64:latest',
+    allowCustomImage: true,
+    component: ZotAppSection,
   },
 };
 

@@ -3,6 +3,7 @@
  * Each module exports: getDefaultAppConfig, validateAppConfig, generateDerivedConfig, maskSecrets.
  */
 import { caddyAppModule } from './caddy.js';
+import { zotAppModule } from './zot.js';
 
 export const APP_REGISTRY = {
   'caddy-reverse-proxy': {
@@ -11,6 +12,13 @@ export const APP_REGISTRY = {
     defaultImage: 'caddy:latest',
     allowCustomImage: true,
     module: caddyAppModule,
+  },
+  'zot-registry': {
+    label: 'Zot OCI Registry',
+    description: 'Private OCI container image registry',
+    defaultImage: 'ghcr.io/project-zot/zot-linux-amd64:latest',
+    allowCustomImage: true,
+    module: zotAppModule,
   },
 };
 

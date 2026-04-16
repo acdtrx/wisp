@@ -409,7 +409,8 @@ export async function createContainer(spec, onStep) {
     config.app = spec.app;
     config.appConfig = appConfig;
 
-    const derived = appModule.generateDerivedConfig(appConfig);
+    const derived = await appModule.generateDerivedConfig(appConfig);
+    if (derived.appConfig) config.appConfig = derived.appConfig;
     if (derived.env) config.env = derived.env;
     if (derived.mounts) config.mounts = derived.mounts;
 

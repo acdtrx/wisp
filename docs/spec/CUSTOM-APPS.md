@@ -147,3 +147,32 @@ Eject converts an app container to a generic container. The `app` and `appConfig
 - **env:** `CLOUDFLARE_API_TOKEN` (secret) when token is set
 - **mounts:** `Caddyfile` (file → `/etc/caddy/Caddyfile`, readonly), `caddy-data` (dir → `/data`), `caddy-config` (dir → `/config`)
 - **Caddyfile:** Generated with wildcard site block, per-host reverse proxy handlers, Cloudflare DNS TLS block (when token set)
+- **Reload:** `caddy reload --config /etc/caddy/Caddyfile` — live reload without restart
+
+---
+
+## App: Zot OCI Registry
+
+**ID:** `zot-registry`
+**Default image:** `ghcr.io/project-zot/zot-linux-amd64:latest` (custom image allowed)
+
+### appConfig Schema
+
+```json
+{
+  "users": [
+    { "username": "admin", "hash": "$6$..." }
+  ]
+}
+```
+
+- `users[]` — htpasswd authentication entries. When empty, the registry allows anonymous push/pull. Passwords are hashed with SHA-512 crypt on save; only hashes are stored in `appConfig`. Masked in API responses as `{ username, hasPassword }`.
+
+When adding or updating a user, send `{ username, password }` — the backend hashes the password and stores only the hash. To keep an existing password, omit the `password` field.
+
+### Derived Config
+
+- **env:** (none)
+- **mounts:** `config-json` (file → `/etc/zot/config.json`, readonly), `registry` (dir → `/var/lib/registry`), optionally `htpasswd` (file → `/etc/zot/htpasswd`, readonly) when users are configured
+- **config.json:** Generated zot config with storage and HTTP settings; htpasswd auth block when users exist
+- **Reload:** Not supported — config changes require container restart

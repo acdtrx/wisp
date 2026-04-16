@@ -152,7 +152,10 @@ export async function updateContainerConfig(name, changes) {
       const validated = appModule.validateAppConfig(changes.appConfig);
       config.appConfig = validated;
 
-      const derived = appModule.generateDerivedConfig(validated);
+      const derived = await appModule.generateDerivedConfig(validated);
+
+      // If generateDerivedConfig returns a transformed appConfig (e.g. with hashed passwords), use it
+      if (derived.appConfig) config.appConfig = derived.appConfig;
 
       // Replace env entirely with derived env
       config.env = derived.env || {};

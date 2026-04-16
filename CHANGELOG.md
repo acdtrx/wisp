@@ -7,6 +7,7 @@
 - App registry pattern (backend + frontend) for organizing app modules
 - Caddy Reverse Proxy app: domain, wildcard TLS via Cloudflare DNS, host-based reverse proxy entries
 - Eject app container to generic (one-way, preserves generated config)
+- Zot OCI Registry app: private container image registry with optional htpasswd auth
 - Live reload for app containers (Caddy reloads config without restart)
 - Non-interactive container exec (`execCommandInContainer`) for one-shot commands
 - Loopback interface brought up in container network namespaces (fixes localhost binding)
