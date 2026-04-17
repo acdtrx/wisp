@@ -401,8 +401,9 @@ Creates or removes a network namespace under `/var/run/netns/<name>` using `mkdi
 | `add <name>` | Ensure netns exists (idempotent if bind mount already present) |
 | `delete <name>` | Best-effort `ip netns delete` |
 | `ipv4 <name> [ifname]` | Print `ip -4 addr show dev <ifname>` inside the netns (default `eth0`). Used to persist DHCP-assigned addresses when the CNI ADD result has no `ips[]`. |
+| `route-add <name> <ifname> <ipv4>` | `ip -n <name> route replace <ipv4>/32 dev <ifname>` — installs an on-link /32 route inside the container's netns so the systemd-resolved mDNS stub IP (`169.254.53.53`) is reachable via the veth instead of being sent to the LAN gateway and black-holed. |
 
-**Troubleshooting:** `EACCES` on `mkdir '/var/run/netns'` in backend logs → helpers not installed or sudoers missing. Run **`sudo ./scripts/linux/setup/install-helpers.sh <project-root> <deploy-user>`** or **`./scripts/wispctl.sh helpers`**. Test: `sudo -n /usr/local/bin/wisp-netns add wisp-netns-test` then `sudo -n /usr/local/bin/wisp-netns delete wisp-netns-test`. After upgrading Wisp, re-run install-helpers so **`wisp-netns ipv4`** exists; otherwise container **network IP** may stay blank with DHCP.
+**Troubleshooting:** `EACCES` on `mkdir '/var/run/netns'` in backend logs → helpers not installed or sudoers missing. Run **`sudo ./scripts/linux/setup/install-helpers.sh <project-root> <deploy-user>`** or **`./scripts/wispctl.sh helpers`**. Test: `sudo -n /usr/local/bin/wisp-netns add wisp-netns-test` then `sudo -n /usr/local/bin/wisp-netns delete wisp-netns-test`. After upgrading Wisp, re-run install-helpers so **`wisp-netns ipv4`** and **`wisp-netns route-add`** exist; otherwise container **network IP** may stay blank or `.local` resolution from containers on br0 fails.
 
 ### `wisp-cni` (installed to `/usr/local/bin/`)
 

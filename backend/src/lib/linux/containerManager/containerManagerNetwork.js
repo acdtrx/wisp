@@ -467,13 +467,76 @@ export async function mergeNetworkLeaseIntoConfig(name, config, lease) {
   return next;
 }
 
+const WISP_MDNS_STUB_IP = '169.254.53.53';
+const WISP_CONTAINER_RESOLV_CONF = '/var/lib/wisp/container-resolv.conf';
+
 /**
- * Determine the host resolv.conf to bind-mount into containers.
- * On hosts with systemd-resolved, `/etc/resolv.conf` points at the stub resolver
- * (`127.0.0.53`) which is unreachable from a container's own network namespace.
- * Use the upstream resolvers file when available.
+ * Check if a bridge carries the Wisp mDNS stub IP. Written by
+ * `scripts/linux/setup/resolved-mdns.sh` to br0 as a stable link-local address
+ * that systemd-resolved listens on (DNSStubListenerExtra). If present, containers
+ * on this bridge can query the host resolver at that IP and get .local resolution
+ * via MulticastDNS=resolve.
  */
-export async function resolveContainerResolvConf() {
+async function bridgeHasMdnsStubIp(bridgeInterface) {
+  if (!bridgeInterface) return false;
+  try {
+    const { stdout } = await execFile('ip', ['-4', 'addr', 'show', 'dev', bridgeInterface], {
+      timeout: 5000, encoding: 'utf8', maxBuffer: 65536,
+    });
+    return stdout.includes(`${WISP_MDNS_STUB_IP}/`);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Install an on-link /32 route for the mDNS stub IP inside the container's netns.
+ *
+ * Why: the container gets its default route via DHCP (LAN gateway). Without a specific
+ * route for 169.254.53.53, the kernel forwards DNS queries to the LAN gateway, which
+ * black-holes them (3-second timeout). Adding `169.254.53.53/32 dev eth0` makes the
+ * container ARP directly on its veth; the host br0 (which carries that IP) answers
+ * and systemd-resolved handles the query.
+ *
+ * Best-effort: a failure here logs a warning but does not block the container start.
+ */
+async function installMdnsStubRoute(name) {
+  const netnsScript = await resolveNetnsScript();
+  if (!netnsScript) return;
+  const tail = ['route-add', name, 'eth0', WISP_MDNS_STUB_IP];
+  const opts = { timeout: 8000, maxBuffer: 65536, encoding: 'utf8' };
+  try {
+    if (isRoot()) {
+      await execFile(netnsScript, tail, opts);
+    } else {
+      await execFile('sudo', ['-n', netnsScript, ...tail], opts);
+    }
+  } catch (err) {
+    const detail = `${err.stderr || ''} ${err.message || ''}`.trim();
+    containerState.logger?.warn(
+      `Failed to install mDNS stub route (169.254.53.53) in netns "${name}": ${detail}. ` +
+      '.local resolution inside this container will not work until helpers are refreshed.',
+    );
+  }
+}
+
+/**
+ * Determine the resolv.conf to bind-mount into a container.
+ * When the container's bridge has the Wisp mDNS stub IP and the shared resolv.conf
+ * exists (setup-server.sh ran `resolved-mdns.sh`), use it so .local names resolve.
+ * Otherwise fall back to the host's upstream resolvers — on systemd-resolved hosts,
+ * `/etc/resolv.conf` points at the stub (`127.0.0.53`) which is unreachable from a
+ * container netns, so prefer `/run/systemd/resolve/resolv.conf` when present.
+ */
+export async function resolveContainerResolvConf(bridgeInterface = null) {
+  if (await bridgeHasMdnsStubIp(bridgeInterface)) {
+    try {
+      await access(WISP_CONTAINER_RESOLV_CONF);
+      return WISP_CONTAINER_RESOLV_CONF;
+    } catch {
+      /* Stub IP exists but shared file is missing — fall through to host resolv.conf. */
+    }
+  }
   const upstream = '/run/systemd/resolve/resolv.conf';
   try {
     await access(upstream);
@@ -561,6 +624,10 @@ export async function setupNetwork(name, networkConfig = {}) {
     freshPath,
     pluginConfig,
   );
+
+  if (await bridgeHasMdnsStubIp(networkConfig.interface)) {
+    await installMdnsStubRoute(name);
+  }
 
   const fromCni = primaryIPv4FromCni(result.ips || []);
   const discoveredIp = fromCni ? null : await discoverIpv4InNetns(name, 'eth0', DEFAULT_IPV4_POLL);

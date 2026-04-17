@@ -4,7 +4,7 @@
  */
 import { join } from 'node:path';
 
-import { getContainerNetnsPath } from './containerPaths.js';
+import { CONTAINER_SHARED_HOSTS_FILE, getContainerNetnsPath } from './containerPaths.js';
 
 const DEFAULT_CAPS = [
   'CAP_CHOWN', 'CAP_DAC_OVERRIDE', 'CAP_FSETID', 'CAP_FOWNER',
@@ -41,6 +41,7 @@ const READONLY_PATHS = [
  * @param {string} containerFilesDir - Absolute path to the container's files/ directory
  * @param {object} [opts] - Extra options
  * @param {string} [opts.resolvConfPath] - Host resolv.conf to bind-mount (default: /etc/resolv.conf)
+ * @param {string} [opts.hostsPath] - Host /etc/hosts to bind-mount (default: Wisp shared container hosts file)
  * @returns {object} OCI runtime spec (JSON-serializable)
  */
 export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', opts = {}) {
@@ -78,6 +79,12 @@ export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', o
     destination: '/etc/resolv.conf',
     type: 'bind',
     source: opts.resolvConfPath || '/etc/resolv.conf',
+    options: ['rbind', 'ro'],
+  });
+  mounts.push({
+    destination: '/etc/hosts',
+    type: 'bind',
+    source: opts.hostsPath || CONTAINER_SHARED_HOSTS_FILE,
     options: ['rbind', 'ro'],
   });
 

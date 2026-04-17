@@ -8,6 +8,14 @@ import { getConfigSync } from '../../config.js';
 
 const DEFAULT_CONTAINERS_PATH = '/var/lib/wisp/containers';
 
+/**
+ * Shared /etc/hosts file bind-mounted into every Wisp container. Maintained by
+ * `mdnsManager.js` (baseline localhost entries + `<ip> <name>.local` for every
+ * VM/container with an mDNS registration). Same-host `.local` resolution relies
+ * on this because avahi refuses to answer mDNS queries from its own host.
+ */
+export const CONTAINER_SHARED_HOSTS_FILE = '/var/lib/wisp/mdns/container-hosts';
+
 export function getContainersPath() {
   const config = getConfigSync();
   return config.containersPath || DEFAULT_CONTAINERS_PATH;

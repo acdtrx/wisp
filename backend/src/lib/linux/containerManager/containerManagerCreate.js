@@ -434,7 +434,7 @@ export async function createContainer(spec, onStep) {
   onStep?.({ step: 'creating', detail: 'Creating container…' });
 
   // Build OCI spec
-  const resolvConfPath = await resolveContainerResolvConf();
+  const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
   const ociSpec = buildOCISpec(config, imageConfig, filesDir, { resolvConfPath });
 
   // Prepare snapshot (required before containerd Containers.Create)
@@ -528,7 +528,7 @@ export async function startExistingContainer(name) {
   }
 
   // Rebuild OCI spec
-  const resolvConfPath = await resolveContainerResolvConf();
+  const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
   const ociSpec = buildOCISpec(config, imageConfig, filesDir, { resolvConfPath });
 
   // Update the container spec in containerd

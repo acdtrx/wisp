@@ -6,8 +6,11 @@
 - OCI image update checker: hourly background sweep plus manual bulk and per-image triggers in the Image Library
 - Containers flagged with `updateAvailable` / `pendingRestart` when their image's digest moves upstream; restart re-prepares the snapshot from new layers
 - `imageDigest` and `imagePulledAt` stamped on `container.json` at create time to detect future drift
+- Container `.local` resolution via systemd-resolved stub on `br0` (link-local 169.254.53.53) — apps inside containers can now resolve mDNS hostnames without per-container setup
 
 ### Bug Fixes
+- Same-host container `.local` resolution via shared `/etc/hosts` bind mount maintained by `mdnsManager.js` (working around avahi refusing to answer its own host's mDNS queries). No privileged helper; backend writes `/var/lib/wisp/mdns/container-hosts` directly
+- Install `169.254.53.53/32 dev eth0` route in container netns after CNI ADD — without it, containers on br0 used the stub resolver via their default gateway and all DNS timed out
 - Silence Caddy reverse_proxy per-disconnect WARNs that spam logs from SSE clients
 - Bump backend fastify to patch content-type validation bypass (GHSA-247c-9743-5963)
 - Bump frontend @fastify/http-proxy and @fastify/reply-from for connection header abuse (GHSA-gwhp-pf74-vj37) and content-type bypass (GHSA-247c-9743-5963)

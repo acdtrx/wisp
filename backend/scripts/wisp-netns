@@ -35,8 +35,33 @@ case "$CMD" in
     fi
     ip -n "$NAME" -4 addr show dev "$IFACE" 2>/dev/null || true
     ;;
+  route-add)
+    # Install an on-link /32 route inside the netns so a specific host IP (e.g. the
+    # systemd-resolved mDNS stub on br0) is reachable directly via the container's veth
+    # instead of being sent to the LAN gateway and black-holed.
+    valid_name "$NAME" || { echo "wisp-netns: invalid name" >&2; exit 1; }
+    IFACE="${3:-}"
+    DST="${4:-}"
+    if [[ -z "$IFACE" || -z "$DST" ]]; then
+      echo "Usage: $0 route-add <name> <ifname> <ipv4>" >&2
+      exit 1
+    fi
+    if [[ ! "$IFACE" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,14}$ ]]; then
+      echo "wisp-netns: invalid ifname" >&2
+      exit 1
+    fi
+    if [[ ! "$DST" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+      echo "wisp-netns: invalid ipv4" >&2
+      exit 1
+    fi
+    if [[ ! -e "/var/run/netns/$NAME" ]]; then
+      echo "wisp-netns: no netns: $NAME" >&2
+      exit 1
+    fi
+    ip -n "$NAME" route replace "$DST/32" dev "$IFACE"
+    ;;
   *)
-    echo "Usage: $0 add|delete <name> | ipv4 <name> [ifname]" >&2
+    echo "Usage: $0 add|delete <name> | ipv4 <name> [ifname] | route-add <name> <ifname> <ipv4>" >&2
     exit 1
     ;;
 esac

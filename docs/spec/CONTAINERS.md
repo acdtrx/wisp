@@ -147,7 +147,7 @@ The exec process uses the same **UID/GID** as the main container task (`runAsRoo
 - **Process user:** `process.user` uses the **backend process UID/GID** (the systemd deploy user) by default, so files created on bind mounts under `files/<name>/` remain owned by that user and the backend can delete them. If the backend runs as root (unusual), UID/GID stay 0. When **`runAsRoot: true`** is set in `container.json`, UID/GID are forced to 0 — required for images that write to root-owned directories inside the container (e.g. OpenWebUI writing `.webui_secret_key` to `/app`). Bind-mount data created while running as root will be root-owned; container deletion may require sudo for those paths.
 - User bind mounts: `files/<mountName>` per `mounts[].name` (`type` determines file vs directory)
 - CPU quota/period from `cpuLimit`, memory limit from `memoryLimitMiB`
-- `/etc/resolv.conf` bind-mounted from host. On systemd-resolved hosts, the upstream file (`/run/systemd/resolve/resolv.conf`) is used instead of the stub (`127.0.0.53`), which is unreachable from a container's network namespace
+- `/etc/resolv.conf` bind-mounted from host. When the container's bridge has the Wisp mDNS stub IP (`169.254.53.53/32` on `br0`, installed by `scripts/linux/setup/resolved-mdns.sh`), the shared `/var/lib/wisp/container-resolv.conf` is used — a single `nameserver 169.254.53.53` line — so containers can resolve `.local` names via systemd-resolved (`MulticastDNS=resolve`). Without the stub IP (e.g. VLAN sub-bridges, or setup skipped), fall back to the host's upstream resolvers (`/run/systemd/resolve/resolv.conf` on resolved hosts, else `/etc/resolv.conf`) — resolved's `127.0.0.53` stub is unreachable from a container netns
 
 ## Networking
 
@@ -169,7 +169,9 @@ Containers are attached as **veth ports on a host Linux bridge** (`br0`, or a VL
 
 ## Local DNS (mDNS)
 
-Containers can be registered on the local network via mDNS (`.local`) using avahi-daemon.
+Two independent pieces. **Publishing** advertises a container as `<name>.local` on the LAN so peers can find it. **Resolution** lets an app *inside* the container query `foo.local`.
+
+### Publishing (avahi-daemon)
 
 - Controlled by **`localDns`** in `container.json`
 - Name source: container name, sanitized to a DNS label (lowercase alnum + `-`, max 63 chars)
@@ -178,6 +180,24 @@ Containers can be registered on the local network via mDNS (`.local`) using avah
 - Deregister points: stop, kill, delete, or `localDns` toggle set to false
 - UI: Network section has a **Local DNS** toggle; stats bar shows the registered `.local` hostname when active
 - Best-effort behavior: if avahi-daemon is unavailable, container operations continue unchanged and mDNS is skipped
+
+### Resolution (systemd-resolved stub on br0)
+
+Container apps that `getaddrinfo("foo.local")` need a resolver that speaks mDNS. The container netns only has a standard DNS client, so Wisp bridges the two on the host:
+
+- `scripts/linux/setup/resolved-mdns.sh` assigns link-local **`169.254.53.53/32`** to `br0` and configures systemd-resolved with `MulticastDNS=resolve` (query-only, no response — avoids conflict with avahi-daemon's mDNS responder) and `DNSStubListenerExtra=169.254.53.53`
+- When the container's bridge carries the stub IP, `resolveContainerResolvConf()` returns `/var/lib/wisp/container-resolv.conf` (single `nameserver 169.254.53.53` line) — bind-mounted at `/etc/resolv.conf`
+- After CNI ADD, `setupNetwork` installs `169.254.53.53/32 dev eth0` inside the container's netns via `wisp-netns route-add`. Without this on-link /32, the container's kernel would send DNS to the LAN gateway (its DHCP default route) and queries would black-hole; the route makes the kernel ARP directly on the veth so br0 answers
+- Containers on bridges without the stub IP (VLAN sub-bridges, setup skipped) fall back to the host's upstream resolvers and get no `.local` resolution — same as before the feature
+
+**Same-host blind spot (avahi loop prevention) → shared `/etc/hosts` bind mount**
+
+Avahi refuses to answer mDNS queries that originate on its own host. Result: a Wisp container asking for `other-wisp-container.local` gets no answer via mDNS because the only publisher is the host's own avahi. LAN peers' `.local` names (published by other machines' avahi/mDNS stacks) resolve fine.
+
+Workaround: Wisp maintains a shared hosts file at `/var/lib/wisp/mdns/container-hosts` (constant `CONTAINER_SHARED_HOSTS_FILE` in `containerPaths.js`) that every container bind-mounts read-only at `/etc/hosts` (alongside the existing `resolv.conf` bind mount). `mdnsManager.js` rewrites the file atomically (write-tmp + `rename`) on every `registerAddress` / `deregisterAddress`, and ensures a baseline file exists at `connect()` time so the bind mount is valid even before any registrations. The file contains standard loopback/IPv6 multicast entries plus `<ip> <fqdn.local>` for every Wisp VM/container with an active mDNS registration. Same-host `.local` queries resolve via the bind-mounted file (NSS `files` provider) before mDNS is attempted; LAN peers continue to resolve via the systemd-resolved stub → mDNS path.
+
+No privileged helper is needed: the directory is deploy-user-owned (`dirs.sh`) and the backend writes the file directly.
+- Setup is re-run safe: the resolved drop-in's `ExecStartPre` re-adds the link-local IP to `br0` on every resolved restart, so a reboot that drops the runtime address is recovered transparently
 
 ## Image Management
 
