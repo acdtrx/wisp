@@ -510,22 +510,18 @@ export async function startExistingContainer(name) {
     /* use empty for other read failures */
   }
 
-  // Apply pending image update: if the stored digest no longer matches containerd's current
-  // digest for this ref (a check pulled a newer version since create/last-start), remove the
-  // old snapshot so the block below re-prepares it from the new chain ID.
+  // Rootfs is ephemeral: on every start, discard the existing snapshot and re-prepare
+  // from the current library image. State persists only through bind mounts.
+  try {
+    await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name });
+  } catch { /* no snapshot yet (first-ever start) — prepareSnapshot below creates it */ }
+
   const currentDigest = await getImageDigest(config.image);
-  if (config.imageDigest && currentDigest && currentDigest !== config.imageDigest) {
-    try {
-      await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name });
-    } catch { /* already gone — fine */ }
-    config.imageDigest = currentDigest;
-    config.imagePulledAt = new Date().toISOString();
-    if (config.updateAvailable) delete config.updateAvailable;
-  } else if (!config.imageDigest && currentDigest) {
-    /** Back-fill for containers created before this field existed. */
+  if (currentDigest && config.imageDigest !== currentDigest) {
     config.imageDigest = currentDigest;
     config.imagePulledAt = new Date().toISOString();
   }
+  if (config.updateAvailable) delete config.updateAvailable;
 
   // Rebuild OCI spec
   const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
@@ -540,11 +536,7 @@ export async function startExistingContainer(name) {
     updateMask: { paths: ['spec'] },
   });
 
-  // Get or re-prepare snapshot
-  let mounts = await getSnapshotMounts(name);
-  if (!mounts) {
-    mounts = await prepareSnapshot(name, imageConfig);
-  }
+  const mounts = await prepareSnapshot(name, imageConfig);
 
   await assertBindSourcesReady(name, config, filesDir);
 
