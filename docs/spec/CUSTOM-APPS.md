@@ -146,7 +146,7 @@ Eject converts an app container to a generic container. The `app` and `appConfig
 
 - **env:** `CLOUDFLARE_API_TOKEN` (secret) when token is set
 - **mounts:** `Caddyfile` (file → `/etc/caddy/Caddyfile`, readonly), `caddy-data` (dir → `/data`), `caddy-config` (dir → `/config`)
-- **Caddyfile:** Generated with wildcard site block, per-host reverse proxy handlers, Cloudflare DNS TLS block (when token set)
+- **Caddyfile:** Generated with wildcard site block, per-host reverse proxy handlers, Cloudflare DNS TLS block (when token set), and a global log filter that routes `http.handlers.reverse_proxy` logs to a separate logger capped at `ERROR` (suppresses the per-disconnect `aborting with incomplete response` WARN that SSE-heavy apps like Wisp trigger on every client refresh or navigation)
 - **Reload:** `caddy reload --config /etc/caddy/Caddyfile` — live reload without restart
 
 ---

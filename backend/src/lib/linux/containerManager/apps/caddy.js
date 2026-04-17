@@ -94,17 +94,22 @@ function generateCaddyfile(appConfig) {
   const { domain, email, hosts, cloudflareApiToken } = appConfig;
   const lines = [];
 
-  // Global options block
-  const globalOpts = [];
-  if (email) globalOpts.push(`  email ${email}`);
-  if (cloudflareApiToken) globalOpts.push('  acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}');
-
-  if (globalOpts.length > 0) {
-    lines.push('{');
-    lines.push(...globalOpts);
-    lines.push('}');
-    lines.push('');
-  }
+  // Global options block. Always emitted so SSE-aware log filtering is in place:
+  // reverse_proxy logs every SSE client abort as a WARN ("aborting with incomplete response").
+  // Route reverse_proxy logs to a separate logger capped at ERROR so real upstream failures
+  // still surface while per-disconnect warns don't spam the log on SSE-heavy apps like Wisp.
+  lines.push('{');
+  if (email) lines.push(`  email ${email}`);
+  if (cloudflareApiToken) lines.push('  acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}');
+  lines.push('  log default {');
+  lines.push('    exclude http.handlers.reverse_proxy');
+  lines.push('  }');
+  lines.push('  log reverse_proxy {');
+  lines.push('    include http.handlers.reverse_proxy');
+  lines.push('    level ERROR');
+  lines.push('  }');
+  lines.push('}');
+  lines.push('');
 
   if (!domain) {
     // No domain configured yet — placeholder Caddyfile
