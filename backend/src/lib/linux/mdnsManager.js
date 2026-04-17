@@ -8,7 +8,7 @@
  * resolution short-circuits through this file instead of going out to mDNS.
  * LAN peers' `.local` names still resolve via the systemd-resolved stub.
  */
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import dbus from 'dbus-next';
 
@@ -57,7 +57,11 @@ function buildHostsFileContent() {
 }
 
 /**
- * Atomically rewrite the shared hosts file from current in-memory state.
+ * Rewrite the shared hosts file from current in-memory state.
+ * Writes in place (no rename-over) so the inode stays stable — every
+ * container's read-only bind mount of this file is pinned to the original
+ * inode at task start, so a rename would leave running containers looking at
+ * the unlinked old file and never seeing new registrations.
  * Called at connect() time (so the file exists as a bind-mount source even
  * with no registrations and/or avahi unavailable) and after every
  * registerAddress/deregisterAddress. Best-effort: failures log a warning.
@@ -67,12 +71,10 @@ async function writeHostsFile() {
   try {
     await mkdir(dir, { recursive: true });
   } catch {
-    /* dir may exist with different perms; rename below will surface real errors */
+    /* dir may exist with different perms; writeFile below will surface real errors */
   }
-  const tmp = `${CONTAINER_SHARED_HOSTS_FILE}.tmp.${process.pid}`;
   try {
-    await writeFile(tmp, buildHostsFileContent(), { encoding: 'utf8', mode: 0o644 });
-    await rename(tmp, CONTAINER_SHARED_HOSTS_FILE);
+    await writeFile(CONTAINER_SHARED_HOSTS_FILE, buildHostsFileContent(), { encoding: 'utf8', mode: 0o644 });
   } catch (err) {
     console.warn(
       `[mdns] failed to write shared hosts file ${CONTAINER_SHARED_HOSTS_FILE}: ${err?.message || err}. ` +

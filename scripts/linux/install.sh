@@ -94,8 +94,10 @@ WISP_BACKEND_UNIT="/etc/systemd/system/wisp-backend.service"
 WISP_FRONTEND_UNIT="/etc/systemd/system/wisp-frontend.service"
 if [[ "$RESTART_SVC" -eq 1 ]]; then
   if [[ -f "$WISP_BACKEND_UNIT" ]] && [[ -f "$WISP_FRONTEND_UNIT" ]]; then
+    # Re-template units so unit-file changes in the repo propagate on every update.
+    "$WISPCTL" svc install
     "$WISPCTL" svc restart
-    echo "  Services restarted."
+    echo "  Services reinstalled and restarted."
   else
     "$WISPCTL" svc install
     "$WISPCTL" svc start
@@ -104,8 +106,10 @@ if [[ "$RESTART_SVC" -eq 1 ]]; then
 elif [[ -f "$WISP_BACKEND_UNIT" ]] && [[ -f "$WISP_FRONTEND_UNIT" ]]; then
   read -r -p "Wisp systemd services are already installed. Restart them to apply this update? [Y/n] " ans || true
   if [[ ! "${ans:-Y}" =~ ^[nN] ]]; then
+    # Re-template units so unit-file changes in the repo propagate on every update.
+    "$WISPCTL" svc install
     "$WISPCTL" svc restart
-    echo "  Services restarted."
+    echo "  Services reinstalled and restarted."
   fi
 else
   read -r -p "Install and start systemd services? [y/N] " ans || true
