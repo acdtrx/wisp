@@ -154,6 +154,20 @@ export default function ContainerOverviewPanel() {
         </div>
       )}
 
+      {config.updateAvailable && (
+        <div className="flex-shrink-0 flex items-center justify-between gap-2 border-b border-orange-200 bg-orange-50 px-4 py-2 text-xs text-orange-900">
+          <span className="min-w-0 flex-1">New image version available. Restart to apply.</span>
+          <button
+            type="button"
+            onClick={() => restartContainer(name)}
+            disabled={actionLoading === 'restart'}
+            className="shrink-0 rounded-md bg-accent px-3 py-1 text-[11px] font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+          >
+            Restart
+          </button>
+        </div>
+      )}
+
       {activeTab === 'console' ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <Suspense fallback={(

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as containerApi from '../api/containers.js';
 import { createSSE } from '../api/sse.js';
+import { subscribeJobProgress, JOB_KIND } from '../api/jobProgress.js';
 
 export const useContainerStore = create((set, get) => {
   let listCloseFn = null;
@@ -36,6 +37,8 @@ export const useContainerStore = create((set, get) => {
     set({ containerStats: null });
   }
 
+  let imageUpdateJobClose = null;
+
   return {
     containers: [],
     selectedContainer: null,
@@ -44,6 +47,18 @@ export const useContainerStore = create((set, get) => {
     loading: false,
     actionLoading: null,
     error: null,
+
+    imageUpdateCheck: {
+      running: false,
+      ref: null,
+      lastCheckedAt: null,
+      imagesChecked: 0,
+      imagesUpdated: 0,
+      flaggedContainers: 0,
+      lastError: null,
+      currentRef: null,
+      progress: null,
+    },
 
     fetchContainers: async () => {
       try {
@@ -163,6 +178,102 @@ export const useContainerStore = create((set, get) => {
     },
     deleteContainer: async (name, deleteFiles) => {
       await get().withAction('delete', () => containerApi.deleteContainerApi(name, deleteFiles));
+    },
+
+    refreshImageUpdateStatus: async () => {
+      try {
+        const status = await containerApi.getImageUpdateStatus();
+        set((prev) => ({
+          imageUpdateCheck: {
+            ...prev.imageUpdateCheck,
+            lastCheckedAt: status.lastCheckedAt,
+            imagesChecked: status.imagesChecked || 0,
+            imagesUpdated: status.imagesUpdated || 0,
+          },
+        }));
+      } catch { /* cached status is best-effort */ }
+    },
+
+    startImageUpdateCheck: async (ref = null) => {
+      const state = get();
+      if (state.imageUpdateCheck.running) return;
+
+      set((prev) => ({
+        imageUpdateCheck: {
+          ...prev.imageUpdateCheck,
+          running: true,
+          ref,
+          lastError: null,
+          currentRef: null,
+          progress: null,
+        },
+      }));
+
+      let job;
+      try {
+        job = await containerApi.checkContainerImageUpdates(ref);
+      } catch (err) {
+        set((prev) => ({
+          imageUpdateCheck: { ...prev.imageUpdateCheck, running: false, lastError: err.message },
+        }));
+        return;
+      }
+
+      if (imageUpdateJobClose) {
+        imageUpdateJobClose();
+        imageUpdateJobClose = null;
+      }
+
+      imageUpdateJobClose = subscribeJobProgress(
+        JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK,
+        job.jobId,
+        (ev) => {
+          if (ev.step === 'checking') {
+            set((prev) => ({
+              imageUpdateCheck: {
+                ...prev.imageUpdateCheck,
+                currentRef: ev.ref,
+                progress: { index: ev.index, total: ev.total },
+              },
+            }));
+          } else if (ev.step === 'done') {
+            set((prev) => ({
+              imageUpdateCheck: {
+                ...prev.imageUpdateCheck,
+                running: false,
+                ref: null,
+                currentRef: null,
+                progress: null,
+                lastCheckedAt: ev.lastCheckedAt || new Date().toISOString(),
+                imagesChecked: ev.checked || 0,
+                imagesUpdated: ev.updated || 0,
+                flaggedContainers: ev.flaggedContainers || 0,
+              },
+            }));
+            if (imageUpdateJobClose) {
+              imageUpdateJobClose();
+              imageUpdateJobClose = null;
+            }
+            get().fetchContainers();
+            get().refreshSelectedContainer();
+          } else if (ev.step === 'error') {
+            set((prev) => ({
+              imageUpdateCheck: {
+                ...prev.imageUpdateCheck,
+                running: false,
+                ref: null,
+                currentRef: null,
+                progress: null,
+                lastError: ev.error || 'Image update check failed',
+              },
+            }));
+            if (imageUpdateJobClose) {
+              imageUpdateJobClose();
+              imageUpdateJobClose = null;
+            }
+          }
+        },
+      );
     },
   };
 });

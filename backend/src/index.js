@@ -8,7 +8,12 @@ import fastifyWebsocket from '@fastify/websocket';
 import { loadRuntimeEnv } from './lib/loadRuntimeEnv.js';
 import { createAuthHook } from './lib/auth.js';
 import { connect as connectLibvirt } from './lib/vmManager.js';
-import { connect as connectContainerd, disconnect as disconnectContainerd } from './lib/containerManager.js';
+import {
+  connect as connectContainerd,
+  disconnect as disconnectContainerd,
+  startImageUpdateChecker,
+  stopImageUpdateChecker,
+} from './lib/containerManager.js';
 import {
   listContainers,
   getContainerConfig,
@@ -103,6 +108,7 @@ async function start() {
   startUsbMonitor();
 
   startUpdateChecker(app.log);
+  startImageUpdateChecker(app.log);
 }
 
 let shuttingDown = false;
@@ -114,6 +120,7 @@ async function shutdown(signal) {
   closeAllSSE();
   stopUsbMonitor();
   stopUpdateChecker();
+  stopImageUpdateChecker();
   disconnectLibvirtBus();
   disconnectContainerd();
   await disconnectMdns();

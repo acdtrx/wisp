@@ -76,6 +76,8 @@ export async function listContainers() {
         autostart: config.autostart ?? false,
         uptime,
         iconId: config.iconId ?? null,
+        updateAvailable: config.updateAvailable === true,
+        pendingRestart: config.pendingRestart === true,
       });
     } catch {
       // Skip malformed container dirs

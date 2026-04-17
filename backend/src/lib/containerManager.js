@@ -41,6 +41,14 @@ export const startExistingContainer = impl.startExistingContainer;
 
 export const listContainerImages = impl.listContainerImages;
 export const deleteContainerImage = impl.deleteContainerImage;
+export const getImageDigest = impl.getImageDigest;
+export const findContainersUsingImage = impl.findContainersUsingImage;
+
+export const checkAllImagesForUpdates = impl.checkAllImagesForUpdates;
+export const checkSingleImageForUpdates = impl.checkSingleImageForUpdates;
+export const getImageUpdateStatus = impl.getImageUpdateStatus;
+export const startImageUpdateChecker = impl.startImageUpdateChecker;
+export const stopImageUpdateChecker = impl.stopImageUpdateChecker;
 
 export const updateContainerConfig = impl.updateContainerConfig;
 

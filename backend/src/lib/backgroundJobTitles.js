@@ -22,6 +22,12 @@ export function titleForContainerCreate(name) {
   return `Create ${name}`;
 }
 
+export const TITLE_IMAGE_UPDATE_CHECK_ALL = 'Check OCI image updates';
+export function titleForImageUpdateCheckSingle(ref) {
+  const shortRef = ref.length > 48 ? `${ref.slice(0, 45)}…` : ref;
+  return `Check ${shortRef}`;
+}
+
 export const TITLE_LIBRARY_UBUNTU_CLOUD = 'Ubuntu Cloud Image';
 export const TITLE_LIBRARY_ARCH_CLOUD = 'Arch Linux Cloud Image';
 export const TITLE_LIBRARY_HAOS = 'Home Assistant';

@@ -48,6 +48,14 @@ export default function ContainerListItem({ container }) {
         <div className="flex items-center gap-1.5">
           <WorkloadIcon size={14} className={`shrink-0 ${iconColorClass}`} />
           <span className="truncate text-sm font-medium text-text-primary">{container.name}</span>
+          {container.updateAvailable && (
+            <span
+              className="shrink-0 rounded-full bg-orange-50 px-1.5 py-0.5 text-[10px] font-medium text-orange-800"
+              title="A new image version is available. Restart to apply."
+            >
+              Update
+            </span>
+          )}
         </div>
         <p className="mt-0.5 text-[11px] text-text-muted truncate">
           {shortImage(container.image)}

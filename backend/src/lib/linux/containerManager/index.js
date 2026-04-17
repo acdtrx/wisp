@@ -39,7 +39,17 @@ export {
   startExistingContainer,
 } from './containerManagerCreate.js';
 
-export { listContainerImages, deleteContainerImage } from './containerManagerImages.js';
+export {
+  listContainerImages, deleteContainerImage, getImageDigest, findContainersUsingImage,
+} from './containerManagerImages.js';
+
+export {
+  checkAllImagesForUpdates,
+  checkSingleImageForUpdates,
+  getImageUpdateStatus,
+  startImageUpdateChecker,
+  stopImageUpdateChecker,
+} from './containerManagerImageUpdates.js';
 
 export { updateContainerConfig } from './containerManagerConfig.js';
 

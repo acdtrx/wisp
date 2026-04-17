@@ -62,7 +62,10 @@ On each **start** that creates a new task (`startExistingContainer`), the backen
 | `iconId` | string \| omitted | omitted | Optional UI icon key (same ids as VM icons in the app; default client icon when omitted) |
 | `app` | string \| omitted | omitted | App registry ID (e.g. `”caddy-reverse-proxy”`). When set, the container uses a dedicated app module for config management. See [CUSTOM-APPS.md](CUSTOM-APPS.md). |
 | `appConfig` | object \| omitted | omitted | Structured config for the app. Shape is app-specific. Only present when `app` is set. Source of truth — `env`, `mounts`, and mount files are derived from it. |
-| `pendingRestart` | boolean \| omitted | omitted | Set `true` when `appConfig` changes while the container is running. Cleared on start/restart. |
+| `pendingRestart` | boolean \| omitted | omitted | Set `true` when `appConfig` changes while the container is running, or when an image update check pulls new layers for a running container. Cleared on start/restart. Not writable via PATCH. |
+| `imageDigest` | string \| omitted | omitted | Server-managed: top-level manifest/index digest (`sha256:…`) of the image this container was built from. Written at **create** and updated when a restart applies a new image. Used by the image update checker to detect drift. Not writable via PATCH. |
+| `imagePulledAt` | string \| omitted | omitted | Server-managed: ISO 8601 timestamp of when `imageDigest` was pulled (i.e. last time the container's image layers were refreshed). Not writable via PATCH. |
+| `updateAvailable` | boolean \| omitted | omitted | Server-managed: `true` when the image library holds a newer digest for `image` than `imageDigest`. Set by the image update check; cleared on restart-apply. Not writable via PATCH. |
 | `sessionLogStartBytes` | number \| omitted | omitted | Server-managed: byte offset into `container.log` at the last task **create** (start). Used for “current session” log view. Omitted until the first start on older installs; treated as **0** when missing. Not writable via PATCH. |
 
 ### `network` object
@@ -190,6 +193,22 @@ Containers can be registered on the local network via mDNS (`.local`) using avah
 - Snapshot parent key is the chain ID computed from `rootfs.diff_ids` using full digest strings including the `sha256:` prefix (matches Go's `identity.ChainID` which concatenates `digest.Digest` values directly)
 - Images are stored in containerd's content store, not in Wisp's filesystem
 - Create progress is delivered over **SSE** (`/api/containers/create-progress/:jobId`). Large pulls may run for many minutes without real **percentage** (containerd Transfer does not expose it through the current unary API); the UI shows **elapsed time** every 15s during pull. The production **frontend** proxy disables idle **body timeout** on `/api` so long-lived SSE streams are not cut off (older installs that only updated the backend could see `BodyTimeoutError` in `wisp-frontend` logs).
+
+### Image updates
+
+Wisp checks every OCI image in the library for upstream changes and flags containers running stale bits.
+
+- **Trigger:** a background sweep runs **60 seconds after backend boot** and **every hour** thereafter. The UI also exposes two manual triggers from the Image Library OCI tab — a bulk **Check for updates** button and a per-row **Check this image** button.
+- **How the check works:** for each image, the current top-level digest is recorded, the image is re-pulled via the existing Transfer service, and the new digest is compared. The pull is idempotent — when the upstream digest is unchanged, containerd does **HEAD** only and skips layer downloads. When the digest differs, new layers are downloaded and stored alongside the old ones (containerd keeps whichever are still referenced by a snapshot).
+- **Skipped images:** locally built or unreachable refs (no registry, auth required, network down) emit a `skipped` event and continue — one failure never aborts the sweep.
+- **Flagging containers:** when a pull changes the digest for an image, every container whose `image` field resolves to that ref is updated on disk:
+  - `updateAvailable: true` is set unless the container's stored `imageDigest` already matches the new digest.
+  - If the container's task is **RUNNING** or **PAUSED**, `pendingRestart: true` is also set — the same flag the appConfig flow uses. The overview panel shows a banner, and the list row shows an "Update" pill.
+- **Apply on restart:** `startExistingContainer` compares the stored `imageDigest` with containerd's current digest for the reference. When they differ, the old snapshot is removed and a new one is prepared from the updated image's `rootfs.diff_ids`, the OCI spec is rebuilt (as with every start), the new container spec is pushed to containerd, and the stored `imageDigest` / `imagePulledAt` are updated. `updateAvailable` and `pendingRestart` are cleared. No rollback logic: if `prepareSnapshot` fails, the container fails to start and the user must recreate; because layers were downloaded during the check, this failure window is narrow.
+- **Back-fill:** containers created before this feature existed have no `imageDigest`. On the next start, the current containerd digest is recorded so future checks work correctly. No forced update happens on back-fill.
+- **Cached summary:** `GET /api/containers/images/update-status` returns `{ lastCheckedAt, imagesChecked, imagesUpdated }` from the last bulk or single-image run (in-memory, lost on restart).
+- **Pinned digests:** containers whose `image` is `ref@sha256:…` never flag updates — correct behavior (immutable by design).
+- **Module:** `backend/src/lib/linux/containerManager/containerManagerImageUpdates.js` (bulk/single entry points + `startImageUpdateChecker`/`stopImageUpdateChecker`). The background timer and SIGTERM-safe AbortController mirror `osUpdates.js`.
 
 ### Debugging slow or stuck image pulls (on the server)
 

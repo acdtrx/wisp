@@ -11,10 +11,16 @@ import {
   uploadMountFileStream, uploadMountZipStream, initMountContent, deleteMountData,
   getMountFileTextContent, putMountFileTextContent,
   listContainerImages, deleteContainerImage,
+  checkAllImagesForUpdates, checkSingleImageForUpdates, getImageUpdateStatus,
 } from '../lib/containerManager.js';
 import { containerJobStore } from '../lib/containerJobStore.js';
+import { imageUpdateJobStore } from '../lib/imageUpdateJobStore.js';
 import { BACKGROUND_JOB_KIND } from '../lib/backgroundJobKinds.js';
-import { titleForContainerCreate } from '../lib/backgroundJobTitles.js';
+import {
+  titleForContainerCreate,
+  TITLE_IMAGE_UPDATE_CHECK_ALL,
+  titleForImageUpdateCheckSingle,
+} from '../lib/backgroundJobTitles.js';
 import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
 import { isKnownApp, getAppModule } from '../lib/linux/containerManager/apps/appRegistry.js';
@@ -184,6 +190,49 @@ export default async function containerRoutes(fastify) {
         handleRouteError(err, reply, request);
       }
     },
+  });
+
+  // ── OCI image update check ────────────────────────────────────────
+  fastify.post('/containers/images/check-updates', async (request, reply) => {
+    const ref = typeof request.body?.ref === 'string' && request.body.ref.trim()
+      ? request.body.ref.trim()
+      : null;
+
+    const jobId = randomUUID();
+    const title = ref ? titleForImageUpdateCheckSingle(ref) : TITLE_IMAGE_UPDATE_CHECK_ALL;
+    imageUpdateJobStore.createJob(jobId, {
+      kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK,
+      title,
+      log: request.log,
+    });
+    request.log.info(
+      { jobId, kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK, title, ref: ref || 'all' },
+      'Background job started',
+    );
+
+    const runner = ref
+      ? checkSingleImageForUpdates(ref, (ev) => imageUpdateJobStore.pushEvent(jobId, ev))
+      : checkAllImagesForUpdates((ev) => imageUpdateJobStore.pushEvent(jobId, ev));
+
+    runner
+      .then((result) => imageUpdateJobStore.completeJob(jobId, result))
+      .catch((err) => imageUpdateJobStore.failJob(jobId, err));
+
+    return { jobId, title };
+  });
+
+  fastify.get('/containers/images/check-updates/:jobId', async (request, reply) => {
+    const { jobId } = request.params;
+    const job = imageUpdateJobStore.getJob(jobId);
+    if (!job) return sendError(reply, 404, 'Job not found', `No job with id "${jobId}"`);
+
+    setupSSE(reply);
+    imageUpdateJobStore.registerStream(jobId, reply.raw);
+    request.raw.on('close', () => imageUpdateJobStore.unregisterStream(jobId, reply.raw));
+  });
+
+  fastify.get('/containers/images/update-status', async () => {
+    return getImageUpdateStatus();
   });
 
   // ── Get single ────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { createJobSSE } from './sse.js';
 export const JOB_KIND = {
   VM_CREATE: 'vm-create',
   CONTAINER_CREATE: 'container-create',
+  CONTAINER_IMAGE_UPDATE_CHECK: 'container-image-update-check',
   BACKUP: 'backup',
   LIBRARY_DOWNLOAD: 'library-download',
 };
@@ -11,6 +12,7 @@ export const JOB_KIND = {
 const PATHS = {
   [JOB_KIND.VM_CREATE]: (jobId) => `/api/vms/create-progress/${encodeURIComponent(jobId)}`,
   [JOB_KIND.CONTAINER_CREATE]: (jobId) => `/api/containers/create-progress/${encodeURIComponent(jobId)}`,
+  [JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK]: (jobId) => `/api/containers/images/check-updates/${encodeURIComponent(jobId)}`,
   [JOB_KIND.BACKUP]: (jobId) => `/api/vms/backup-progress/${encodeURIComponent(jobId)}`,
   [JOB_KIND.LIBRARY_DOWNLOAD]: (jobId) => `/api/library/download-progress/${encodeURIComponent(jobId)}`,
 };

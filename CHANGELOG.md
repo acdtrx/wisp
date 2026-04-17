@@ -2,6 +2,11 @@
 
 ## 2026-04-17
 
+### New Features
+- OCI image update checker: hourly background sweep plus manual bulk and per-image triggers in the Image Library
+- Containers flagged with `updateAvailable` / `pendingRestart` when their image's digest moves upstream; restart re-prepares the snapshot from new layers
+- `imageDigest` and `imagePulledAt` stamped on `container.json` at create time to detect future drift
+
 ### Bug Fixes
 - Silence Caddy reverse_proxy per-disconnect WARNs that spam logs from SSE clients
 - Bump backend fastify to patch content-type validation bypass (GHSA-247c-9743-5963)

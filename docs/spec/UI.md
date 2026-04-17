@@ -240,9 +240,9 @@ See [IMAGE-LIBRARY.md](IMAGE-LIBRARY.md) for functionality. Accessed as the **Im
 
 ### Page mode layout (Host → Image Library tab)
 
-- **`SectionCard`** (same visual shell as Host Overview sections): **`Images`** **`titleIcon`**, **`headerAction`** = type filter (All / ISO / Disk Image / OCI) plus VM-file **icon-only** actions — **Upload** (accent), **Download from URL**, **Ubuntu Cloud**, **Home Assistant** (URL opens a modal; download progress also in background jobs)
+- **`SectionCard`** (same visual shell as Host Overview sections): **`Images`** **`titleIcon`**, **`headerAction`** = type filter (All / ISO / Disk Image / OCI) plus VM-file **icon-only** actions — **Upload** (accent), **Download from URL**, **Ubuntu Cloud**, **Home Assistant** (URL opens a modal; download progress also in background jobs). When the **OCI** filter is active, a **Check for updates** icon button (`RefreshCw`, icon-only) appears in the header and a status line "Checked {relative} · N updated · N containers flagged" (or "Checking {ref} (i/total)…") appears above the table.
 - Optional strip below the section header (inside the card) when uploading or when upload/preset errors need to be shown
-- File table: filename, type badge, digest (OCI), size, last modified (**picker** modal omits **Digest** and **Modified**); **rename/delete** in the actions column use the shared **hover-reveal** row pattern (add/ingest controls stay in the **`SectionCard`** header, not in the HTML `<thead>`)
+- File table: filename, type badge, digest (OCI), size, last modified (**picker** modal omits **Digest** and **Modified**); **rename/delete** in the actions column use the shared **hover-reveal** row pattern (add/ingest controls stay in the **`SectionCard`** header, not in the HTML `<thead>`). OCI rows also have a per-row **Check this image** action (`RefreshCw`, hover-revealed; disabled while any check is running) next to **Delete**.
 
 ### Picker modal
 
@@ -445,7 +445,7 @@ Containers share the same unified list in the left panel as VMs. They use the **
 ### Container List Item
 
 - **Icon**: user-selected workload icon or default **Box**, colored by state (green=running, gray=stopped)
-- **Name**: container name
+- **Name**: container name, with a small orange **Update** pill when the image update checker has flagged this container (`updateAvailable`)
 - **Subtitle**: shortened OCI image reference
 - **Hover actions**: Start (if stopped), Stop (if running), Restart (if running)
 
@@ -456,6 +456,8 @@ Header bar with:
 - Container name + **container** badge (muted pill)
 - Tabs: **Overview** | **Logs** | **Console**
 - Action buttons: Start, Stop, Kill, Restart, Delete
+
+When `config.updateAvailable` is `true`, an orange banner sits above the tab content: "New image version available. Restart to apply." with a primary **Restart** button. Clicking Restart triggers `restartContainer`; `startExistingContainer` detects the digest drift and re-prepares the snapshot from the new image layers (see CONTAINERS.md → *Image updates*).
 
 #### Overview tab
 

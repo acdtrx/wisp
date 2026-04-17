@@ -29,6 +29,19 @@ function protoTimestampToIso(ts) {
 }
 
 /**
+ * Top-level manifest/index digest containerd currently holds for this reference.
+ * @returns {Promise<string | null>} null when the image is not locally present.
+ */
+export async function getImageDigest(imageRef) {
+  try {
+    const res = await callUnary(getClient('images'), 'get', { name: imageRef });
+    return res.image?.target?.digest || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * @returns {Promise<Array<{ name: string, digest: string, size: number, updated: string }>>}
  */
 export async function listContainerImages() {
@@ -61,7 +74,7 @@ export async function listContainerImages() {
   return rows;
 }
 
-async function findContainersUsingImage(normalizedRef) {
+export async function findContainersUsingImage(normalizedRef) {
   const basePath = getContainersPath();
   let dirs;
   try {

@@ -15,6 +15,21 @@ export function deleteContainerImage(ref) {
   return api(`/api/containers/images?${params}`, { method: 'DELETE' });
 }
 
+/**
+ * Start an image update check (bulk when no ref, single image when ref given).
+ * Returns { jobId, title } — subscribe via JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK.
+ */
+export function checkContainerImageUpdates(ref = null) {
+  return api('/api/containers/images/check-updates', {
+    method: 'POST',
+    body: ref ? { ref } : {},
+  });
+}
+
+export function getImageUpdateStatus() {
+  return api('/api/containers/images/update-status');
+}
+
 export function createContainer(spec) {
   return api('/api/containers', { method: 'POST', body: spec });
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Upload, Trash2, Pencil, Check, X, HardDrive, Disc, FileQuestion, Link, Loader2, Package, Images } from 'lucide-react';
+import { Upload, Trash2, Pencil, Check, X, HardDrive, Disc, FileQuestion, Link, Loader2, Package, Images, RefreshCw } from 'lucide-react';
 
 import {
   listFiles,
@@ -13,6 +13,7 @@ import {
   startDownloadArchCloud,
 } from '../../api/library.js';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
+import { useContainerStore } from '../../store/containerStore.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { listContainerImages, deleteContainerImage } from '../../api/containers.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
@@ -73,7 +74,9 @@ function LibraryTableHead({ mode, compactPicker }) {
   );
 }
 
-function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker }) {
+function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onCheckUpdate, checkState }) {
+  const thisChecking = checkState?.running && checkState.currentRef === row.name;
+  const anyChecking = !!checkState?.running;
   return (
     <tr className={dataTableInteractiveRowClass}>
       <DataTableTd className="max-w-[14rem] break-all text-sm font-medium text-text-primary">{row.name}</DataTableTd>
@@ -98,6 +101,18 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker }) {
           </button>
         ) : (
           <DataTableRowActions>
+            <button
+              type="button"
+              onClick={() => onCheckUpdate?.(row)}
+              disabled={anyChecking}
+              className="rounded p-1.5 text-text-secondary hover:bg-surface-sidebar hover:text-text-primary disabled:opacity-50"
+              title="Check this image for updates"
+              aria-label={`Check image ${row.name} for updates`}
+            >
+              {thisChecking
+                ? <Loader2 size={14} className="animate-spin" aria-hidden />
+                : <RefreshCw size={14} aria-hidden />}
+            </button>
             <button
               type="button"
               onClick={() => onDelete(row)}
@@ -242,6 +257,9 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   }, [mode, pickerKind]);
   const registerJob = useBackgroundJobsStore((s) => s.registerJob);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
+  const imageUpdateCheck = useContainerStore((s) => s.imageUpdateCheck);
+  const startImageUpdateCheck = useContainerStore((s) => s.startImageUpdateCheck);
+  const refreshImageUpdateStatus = useContainerStore((s) => s.refreshImageUpdateStatus);
 
   const [files, setFiles] = useState([]);
   const [containerImages, setContainerImages] = useState([]);
@@ -336,6 +354,19 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   useEffect(() => {
     fetchFiles();
   }, [fetchFiles]);
+
+  /** Fetch cached update-check status once on mount so the "Checked X ago" line is populated. */
+  useEffect(() => {
+    refreshImageUpdateStatus();
+  }, [refreshImageUpdateStatus]);
+
+  /** When a check finishes, re-fetch images so new digests/sizes show up. */
+  const updateCheckRunning = imageUpdateCheck.running;
+  useEffect(() => {
+    if (!updateCheckRunning) {
+      fetchFiles();
+    }
+  }, [updateCheckRunning, fetchFiles]);
 
   const handleUpload = async (file) => {
     setUploading(true);
@@ -496,6 +527,20 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
         ))}
       </div>
       <div className="flex items-center gap-1 border-l border-surface-border pl-3">
+        {mode === 'page' && isOciView && (
+          <button
+            type="button"
+            onClick={() => startImageUpdateCheck(null)}
+            disabled={imageUpdateCheck.running}
+            className="inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-50"
+            title="Check all OCI images for updates"
+            aria-label="Check all OCI images for updates"
+          >
+            {imageUpdateCheck.running && !imageUpdateCheck.ref
+              ? <Loader2 size={14} className="animate-spin" aria-hidden />
+              : <RefreshCw size={14} aria-hidden />}
+          </button>
+        )}
         <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileInput} />
         <button
           type="button"
@@ -570,6 +615,36 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             </div>
           )}
 
+          {mode === 'page' && isOciView && (
+            <div className="mb-3 flex items-center justify-between text-xs text-text-muted">
+              <span>
+                {imageUpdateCheck.running ? (
+                  <>
+                    Checking
+                    {imageUpdateCheck.currentRef ? ` ${shortDigest(imageUpdateCheck.currentRef)}` : '…'}
+                    {imageUpdateCheck.progress
+                      ? ` (${imageUpdateCheck.progress.index}/${imageUpdateCheck.progress.total})`
+                      : ''}
+                  </>
+                ) : imageUpdateCheck.lastCheckedAt ? (
+                  <>
+                    Checked {formatRelativeTime(imageUpdateCheck.lastCheckedAt)}
+                    {imageUpdateCheck.imagesUpdated > 0
+                      ? ` · ${imageUpdateCheck.imagesUpdated} updated`
+                      : ''}
+                    {imageUpdateCheck.flaggedContainers > 0
+                      ? ` · ${imageUpdateCheck.flaggedContainers} container${imageUpdateCheck.flaggedContainers === 1 ? '' : 's'} flagged`
+                      : ''}
+                  </>
+                ) : (
+                  <>Never checked for updates</>
+                )}
+              </span>
+              {imageUpdateCheck.lastError && (
+                <span className="text-status-stopped">{imageUpdateCheck.lastError}</span>
+              )}
+            </div>
+          )}
           {loading ? (
           <p className="py-8 text-center text-sm text-text-muted">Loading…</p>
         ) : isOciView ? (
@@ -596,6 +671,8 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
                       compactPicker={compactPicker}
                       onSelect={onSelect}
                       onDelete={(r) => setDeleteTarget({ kind: 'oci', ref: r.name })}
+                      onCheckUpdate={(r) => startImageUpdateCheck(r.name)}
+                      checkState={imageUpdateCheck}
                     />
                   ))}
                 </tbody>
@@ -637,6 +714,8 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
                         compactPicker={compactPicker}
                         onSelect={onSelect}
                         onDelete={(r) => setDeleteTarget({ kind: 'oci', ref: r.name })}
+                        onCheckUpdate={(r) => startImageUpdateCheck(r.name)}
+                        checkState={imageUpdateCheck}
                       />
                     ),
                   )}

@@ -23,6 +23,7 @@ import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.j
 import { registerAddress, deregisterAddress, sanitizeHostname } from '../../mdnsManager.js';
 import { assertBindSourcesReady } from './containerManagerMounts.js';
 import { normalizeImageRef } from './containerImageRef.js';
+import { getImageDigest } from './containerManagerImages.js';
 import { isKnownApp, getAppModule } from './apps/appRegistry.js';
 
 const RUNTIME_NAME = 'io.containerd.runc.v2';
@@ -422,6 +423,12 @@ export async function createContainer(spec, onStep) {
     }
   }
 
+  const resolvedDigest = await getImageDigest(imageRef);
+  if (resolvedDigest) {
+    config.imageDigest = resolvedDigest;
+    config.imagePulledAt = new Date().toISOString();
+  }
+
   await writeFile(join(containerDir, 'container.json'), JSON.stringify(config, null, 2));
 
   onStep?.({ step: 'creating', detail: 'Creating container…' });
@@ -461,7 +468,7 @@ export async function createContainer(spec, onStep) {
     }
   }
 
-  onStep?.({ step: 'done', name });
+  onStep?.({ step: 'done', name, imageDigest: resolvedDigest || null });
   return { name };
 }
 
@@ -501,6 +508,23 @@ export async function startExistingContainer(name) {
   } catch (err) {
     if (err.code === 'IMAGE_PULL_FAILED') throw err;
     /* use empty for other read failures */
+  }
+
+  // Apply pending image update: if the stored digest no longer matches containerd's current
+  // digest for this ref (a check pulled a newer version since create/last-start), remove the
+  // old snapshot so the block below re-prepares it from the new chain ID.
+  const currentDigest = await getImageDigest(config.image);
+  if (config.imageDigest && currentDigest && currentDigest !== config.imageDigest) {
+    try {
+      await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name });
+    } catch { /* already gone — fine */ }
+    config.imageDigest = currentDigest;
+    config.imagePulledAt = new Date().toISOString();
+    if (config.updateAvailable) delete config.updateAvailable;
+  } else if (!config.imageDigest && currentDigest) {
+    /** Back-fill for containers created before this field existed. */
+    config.imageDigest = currentDigest;
+    config.imagePulledAt = new Date().toISOString();
   }
 
   // Rebuild OCI spec

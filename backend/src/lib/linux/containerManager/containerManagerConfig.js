@@ -224,6 +224,9 @@ export async function updateContainerConfig(name, changes) {
     if (key === 'sessionLogStartBytes') continue;
     if (key === 'envPatch') continue;
     if (key === 'appConfig' || key === 'eject' || key === 'app') continue;
+    /** Server-managed — never writable via PATCH. */
+    if (key === 'imageDigest' || key === 'imagePulledAt'
+      || key === 'updateAvailable' || key === 'pendingRestart') continue;
     if (key === 'iconId') {
       if (value == null || value === '') {
         delete config.iconId;

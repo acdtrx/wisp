@@ -129,6 +129,30 @@ export async function deleteContainerImage() {
   throw noContainerd();
 }
 
+export async function getImageDigest() {
+  return null;
+}
+
+export async function findContainersUsingImage() {
+  return [];
+}
+
+export async function checkAllImagesForUpdates() {
+  return { checked: 0, updated: 0, flaggedContainers: 0, lastCheckedAt: new Date().toISOString() };
+}
+
+export async function checkSingleImageForUpdates() {
+  throw noContainerd();
+}
+
+export function getImageUpdateStatus() {
+  return { lastCheckedAt: null, imagesChecked: 0, imagesUpdated: 0 };
+}
+
+export function startImageUpdateChecker() {}
+
+export function stopImageUpdateChecker() {}
+
 export async function startExistingContainer() {
   throw noContainerd();
 }
