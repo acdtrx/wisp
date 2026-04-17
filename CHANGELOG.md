@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-04-17
+
+### Bug Fixes
+- Silence Caddy reverse_proxy per-disconnect WARNs that spam logs from SSE clients
+- Bump backend fastify to patch content-type validation bypass (GHSA-247c-9743-5963)
+- Bump frontend @fastify/http-proxy and @fastify/reply-from for connection header abuse (GHSA-gwhp-pf74-vj37) and content-type bypass (GHSA-247c-9743-5963)
+
 ## 2026-04-16
 
 ### New Features
