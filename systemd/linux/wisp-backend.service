@@ -7,19 +7,19 @@ Wants=network-online.target
 User=WISP_USER
 WorkingDirectory=WISP_PATH/backend
 EnvironmentFile=-WISP_PATH/config/runtime.env
-# Ensure the mDNS stub IP (169.254.53.53) is on br0 before autostart kicks in.
-# resolved-mdns.sh installs the same logic as a systemd-resolved ExecStartPre,
-# but on first boot resolved starts before networkd creates br0, so that guard
-# silently no-ops and the IP is missing when containers come up. Re-apply here
-# so autostart containers get the in-netns route. `+` runs this as root even
-# though the main service runs as WISP_USER.
+# Ensure the mDNS stub IP (169.254.53.53) is on br0 before the in-process DNS
+# forwarder (backend/src/lib/linux/mdnsForwarder.js) tries to bind to it. The
+# address is runtime-only — dropped on every reboot — so we re-add it here
+# even though container-dns.sh also adds it at setup time. `+` runs this as
+# root even though the main service runs as WISP_USER.
 ExecStartPre=+/bin/sh -c '[ -d /sys/class/net/br0/bridge ] && (ip -4 addr show dev br0 | grep -q "169.254.53.53/32" || ip addr add 169.254.53.53/32 dev br0 scope link) || true'
-# Per-link MulticastDNS=resolve on br0 is a runtime-only setting: networkd
-# resets it to the link default each boot, which for bridges is "off". Without
-# this, resolved binds the stub IP fine but has no link to send mDNS queries
-# over, so .local queries from containers return NXDOMAIN for LAN peers.
-ExecStartPre=+/bin/sh -c '[ -d /sys/class/net/br0/bridge ] && command -v resolvectl >/dev/null 2>&1 && resolvectl mdns br0 resolve || true'
 ExecStart=/usr/bin/node src/index.js
+# Grant CAP_NET_BIND_SERVICE so mdnsForwarder can bind UDP+TCP 169.254.53.53:53
+# while the service otherwise runs unprivileged as WISP_USER. Do NOT also set
+# CapabilityBoundingSet — it would cap every child process (including sudo)
+# to just this one capability, and sudo needs CAP_SETUID/CAP_SETGID to elevate,
+# which breaks the wisp-netns and wisp-smb privileged helpers.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15

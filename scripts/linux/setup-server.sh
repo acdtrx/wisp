@@ -87,7 +87,7 @@ echo ""
 run_step "CNI plugins" "$SETUP_DIR/cni.sh"
 echo ""
 
-run_step "Container mDNS" "$SETUP_DIR/resolved-mdns.sh"
+run_step "Container DNS" "$SETUP_DIR/container-dns.sh"
 echo ""
 
 run_step "Sanity checks" "$SETUP_DIR/sanity.sh"

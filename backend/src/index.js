@@ -80,7 +80,7 @@ async function start() {
   } catch (err) {
     app.log.warn({ err }, 'containerd connection failed — container operations will be unavailable');
   }
-  await connectMdns();
+  await connectMdns(app.log);
 
   try {
     await ensureNetworkMounts(app.log);

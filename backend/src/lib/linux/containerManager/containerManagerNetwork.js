@@ -472,10 +472,11 @@ const WISP_CONTAINER_RESOLV_CONF = '/var/lib/wisp/container-resolv.conf';
 
 /**
  * Check if a bridge carries the Wisp mDNS stub IP. Written by
- * `scripts/linux/setup/resolved-mdns.sh` to br0 as a stable link-local address
- * that systemd-resolved listens on (DNSStubListenerExtra). If present, containers
- * on this bridge can query the host resolver at that IP and get .local resolution
- * via MulticastDNS=resolve.
+ * `scripts/linux/setup/container-dns.sh` to br0 as a stable link-local address
+ * that wisp-backend's in-process DNS forwarder (mdnsForwarder.js) listens on.
+ * If present, containers on this bridge can query 169.254.53.53 to reach the
+ * forwarder, which resolves `.local` via avahi DBus and relays everything else
+ * to the host's upstream DNS.
  */
 async function bridgeHasMdnsStubIp(bridgeInterface) {
   if (!bridgeInterface) return false;
@@ -496,7 +497,7 @@ async function bridgeHasMdnsStubIp(bridgeInterface) {
  * route for 169.254.53.53, the kernel forwards DNS queries to the LAN gateway, which
  * black-holes them (3-second timeout). Adding `169.254.53.53/32 dev eth0` makes the
  * container ARP directly on its veth; the host br0 (which carries that IP) answers
- * and systemd-resolved handles the query.
+ * and wisp-backend's DNS forwarder handles the query.
  *
  * Best-effort: a failure here logs a warning but does not block the container start.
  */
@@ -523,10 +524,11 @@ async function installMdnsStubRoute(name) {
 /**
  * Determine the resolv.conf to bind-mount into a container.
  * When the container's bridge has the Wisp mDNS stub IP and the shared resolv.conf
- * exists (setup-server.sh ran `resolved-mdns.sh`), use it so .local names resolve.
- * Otherwise fall back to the host's upstream resolvers — on systemd-resolved hosts,
- * `/etc/resolv.conf` points at the stub (`127.0.0.53`) which is unreachable from a
- * container netns, so prefer `/run/systemd/resolve/resolv.conf` when present.
+ * exists (setup-server.sh ran `container-dns.sh`), use it so `.local` names resolve
+ * through wisp-backend's DNS forwarder. Otherwise fall back to the host's upstream
+ * resolvers — on systemd-resolved hosts, `/etc/resolv.conf` points at the stub
+ * (`127.0.0.53`) which is unreachable from a container netns, so prefer
+ * `/run/systemd/resolve/resolv.conf` when present.
  */
 export async function resolveContainerResolvConf(bridgeInterface = null) {
   if (await bridgeHasMdnsStubIp(bridgeInterface)) {
