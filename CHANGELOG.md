@@ -2,6 +2,11 @@
 
 ## 2026-04-18
 
+### Docs
+- README rewritten around the actual VM + container feature set, positioning vs Proxmox/Arcane, and the install flow
+
+## 2026-04-18
+
 ### New Features
 - In-process DNS forwarder on 169.254.53.53 for containers — wisp-backend binds UDP+TCP 53 on the stub IP (via `CAP_NET_BIND_SERVICE`), answers `.local` queries through avahi DBus, and relays everything else to the host's upstream resolver. Same-host container→container `.local` now resolves through the same path, obsoleting the shared `/etc/hosts` bind mount
 
