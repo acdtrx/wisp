@@ -66,6 +66,7 @@ function errorCodeToStatus(code) {
     case 'CONTAINER_NOT_FOUND':
     case 'CONTAINER_MOUNT_NOT_FOUND':
     case 'CONTAINER_IMAGE_NOT_FOUND':
+    case 'CONTAINER_RUN_NOT_FOUND':
       return 404;
     case 'CONTAINER_ALREADY_RUNNING':
     case 'CONTAINER_NOT_RUNNING':

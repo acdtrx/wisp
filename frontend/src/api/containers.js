@@ -109,6 +109,10 @@ export function putMountFileContent(containerName, mountName, content) {
   );
 }
 
+export function listContainerRuns(name) {
+  return api(`/api/containers/${encodeURIComponent(name)}/runs`);
+}
+
 export function deleteMountDataApi(containerName, mountName) {
   return api(
     `/api/containers/${encodeURIComponent(containerName)}/mounts/${encodeURIComponent(mountName)}/data`,

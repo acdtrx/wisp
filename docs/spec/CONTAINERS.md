@@ -34,12 +34,28 @@ Each container has a directory at `/var/lib/wisp/containers/<name>/`:
 
 ```
 /var/lib/wisp/containers/<name>/
-  container.json    # Source-of-truth config
-  files/            # Per-mount backing paths: files/<mountName> (file) or files/<mountName>/ (directory)
-  container.log     # stdout/stderr from the container task
+  container.json        # Source-of-truth config
+  files/                # Per-mount backing paths: files/<mountName> (file) or files/<mountName>/ (directory)
+  runs/
+    <runId>.log         # stdout/stderr for one task run
+    <runId>.json        # sidecar metadata for that run
 ```
 
-On each **start** that creates a new task (`startExistingContainer`), the backend records **`sessionLogStartBytes`**: the size in bytes of `container.log` immediately before `tasks.create` (append position for the new run). The logs UI defaults to **GET `/api/containers/:name/logs?scope=session`**, which shows only content from that byte offset onward; **`scope=all`** shows the full file. Task `stdout` / `stderr` are set to a `file://` URI pointing at `container.log` so **containerd-shim-runc-v2** opens the file and copies process output (same idea as containerd’s `LogFile` helper). Do not use `binary:///usr/bin/tee?…` here: the shim builds logger argv from query **key/value pairs**, not a bare path, so tee would not receive the log file argument as intended.
+**Per-run log files.** Every start that creates a new task (`startExistingContainer`) allocates a fresh **runId** — a filesystem-safe ISO-8601 timestamp (`2026-04-18T12-34-56-789Z`, colons and dots replaced with hyphens). Task `stdout` / `stderr` are both set to a `file://` URI pointing at `runs/<runId>.log` so **containerd-shim-runc-v2** opens the file and copies process output (same idea as containerd's `LogFile` helper). Do not use `binary:///usr/bin/tee?…` here: the shim builds logger argv from query **key/value pairs**, not a bare path, so tee would not receive the log file argument as intended.
+
+Alongside each log file, the backend writes a JSON sidecar with run metadata:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `runId` | string | Matches the filename stem. |
+| `startedAt` | string | ISO 8601 time the run was allocated (immediately before `tasks.create`). |
+| `endedAt` | string \| null | ISO 8601 time the task exited (set in `cleanupTask` after `tasks.delete` returns). Null while the run is active. |
+| `exitCode` | number \| null | Process exit status from the `Tasks.Delete` response. Null while the run is active, or when the exit code is unavailable. |
+| `imageDigest` | string \| null | Library image digest the container was running at the time of the run, if known. |
+
+**Retention.** The newest **10** runs are kept; older log+sidecar pairs are pruned on every new-run allocation. No separate GC job. Container delete removes the whole container directory, including all runs.
+
+**Finding the current run.** The active run is the one whose sidecar has `endedAt === null`. `cleanupTask` — called from `stopContainer` / `killContainer`, and also as a stale-task cleanup inside `startExistingContainer` before re-creating — captures the `exit_status` field from the `Tasks.Delete` response and writes both `endedAt` and `exitCode` to the sidecar in a single `finalizeRun` call. Already-finalized sidecars are not rewritten. Backend restart is safe: the "current" run is not tracked in memory, so a container mid-run looks identical across restarts.
 
 ### container.json Schema
 
@@ -66,7 +82,6 @@ On each **start** that creates a new task (`startExistingContainer`), the backen
 | `imageDigest` | string \| omitted | omitted | Server-managed: top-level manifest/index digest (`sha256:…`) of the library image the container's rootfs was last built from. Written at **create** and refreshed on every start when the library digest has changed. Used by the image update checker to detect drift. Not writable via PATCH. |
 | `imagePulledAt` | string \| omitted | omitted | Server-managed: ISO 8601 timestamp of the last `imageDigest` change (i.e. when the container last adopted a new image). Not writable via PATCH. |
 | `updateAvailable` | boolean \| omitted | omitted | Server-managed: `true` when the image library holds a newer digest for `image` than `imageDigest`. Set by the image update check; cleared on every start. Not writable via PATCH. |
-| `sessionLogStartBytes` | number \| omitted | omitted | Server-managed: byte offset into `container.log` at the last task **create** (start). Used for “current session” log view. Omitted until the first start on older installs; treated as **0** when missing. Not writable via PATCH. |
 
 ### `network` object
 
@@ -117,7 +132,7 @@ All under `backend/src/lib/`:
 | `containerManagerStats.js` | `getContainerStats()` |
 | `linuxProcUptime.js` | `processUptimeMsFromProc(pid)` — container uptime from `/proc` (survives backend restart; in-memory `containerStartTimes` is only a fallback) |
 | `linuxProcIpv4.js` | `ipv4CidrFromProcFibTrie(pid)` — read primary IPv4 from `/proc/<pid>/net/fib_trie` when the task PID is known (no sudo) |
-| `containerManagerLogs.js` | `getContainerLogs()`, `streamContainerLogs()` |
+| `containerManagerLogs.js` | Per-run log files under `runs/`: `listContainerRuns()`, `getContainerRunLogs()`, `streamContainerRunLogs()`, `createNewRun()`, `finalizeRun()`, `findCurrentRunId()`, `resolveRunId()`, `createRunLogReadStream()` |
 | `containerManagerMounts.js` | `validateAndNormalizeMounts()`, `findMount()`, `ensureMountArtifactIfMissing()`, `ensureMissingMountArtifacts()`, `assertBindSourcesReady()` |
 | `containerManagerMountCrud.js` | `addContainerMount()`, `updateContainerMount()`, `removeContainerMount()` — row-scoped bind mount CRUD |
 | `containerManagerMountsContent.js` | `uploadMountFileStream()`, `uploadMountZipStream()` (system **`unzip`**, paths checked with **`unzip -Z1`** before extract), `initMountContent()`, `getMountFileTextContent()`, `putMountFileTextContent()`, `deleteMountData()`, `deleteMountBackingStore()` |
@@ -265,6 +280,7 @@ The HTTP server listens **after** these steps, so hosts with SMB auto-mount conf
 | Code | HTTP | Description |
 |------|------|-------------|
 | `CONTAINER_NOT_FOUND` | 404 | Container doesn't exist |
+| `CONTAINER_RUN_NOT_FOUND` | 404 | Referenced `runId` does not exist in `runs/` |
 | `CONTAINER_ALREADY_RUNNING` | 409 | Start called on running container |
 | `CONTAINER_NOT_RUNNING` | 409 | Stop/kill called on stopped container |
 | `CONTAINER_EXISTS` | 409 | Name conflict on create |
@@ -307,7 +323,7 @@ The HTTP server listens **after** these steps, so hosts with SMB auto-mount conf
 | `ContainerMountsSection` | `sections/` | **Mounts**: table (bridges-style); type icon column; container path (wider column) and mount name; read-only; per-row Save (PATCH full list), icon upload (file/zip) with optional multipart **`mounts`** for atomic save+upload, file editor modal |
 | `MountFileEditorModal` | `sections/` | UTF-8 text editor for file-mount backing content (GET/PUT content API) |
 | `ContainerNetworkSection` | `sections/` | Network type, interface, IP, MAC (editable when stopped + randomize), status |
-| `ContainerLogsSection` | `sections/` | Live-scrolling log viewer with filter; toggle for **current session** vs **all logs** (SSE `?scope=`; session uses `sessionLogStartBytes` from `container.json`) |
+| `ContainerLogsSection` | `sections/` | Live-scrolling log viewer for one **run** at a time. Top bar has a **run picker** (newest first; green dot = running, red = non-zero exit, gray = clean exit), a filter input, and icon-only actions: **Clear** viewer (client-side only — does not touch files), **Mark** (inserts a divider line with an optional label), **Download** (streams the selected run's log file), **Auto-scroll**. SSE via `/logs?runId=…`; run list via `GET /runs` and refetched when the container's state transitions. |
 
 ### UI Integration
 

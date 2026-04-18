@@ -7,7 +7,9 @@ import {
   listContainers, getContainerConfig, createContainer, deleteContainer,
   startContainer, stopContainer, killContainer, restartContainer,
   updateContainerConfig, addContainerMount, updateContainerMount, removeContainerMount,
-  getContainerStats, getContainerLogs, streamContainerLogs,
+  getContainerStats,
+  listContainerRuns, getContainerRunLogs, streamContainerRunLogs, resolveRunId,
+  createRunLogReadStream,
   uploadMountFileStream, uploadMountZipStream, initMountContent, deleteMountData,
   getMountFileTextContent, putMountFileTextContent,
   listContainerImages, deleteContainerImage,
@@ -334,34 +336,72 @@ export default async function containerRoutes(fastify) {
     request.raw.on('close', () => clearInterval(timer));
   });
 
+  // ── List runs ────────────────────────────────────────────────────
+  fastify.get('/containers/:name/runs', async (request, reply) => {
+    try {
+      const runs = await listContainerRuns(request.params.name);
+      return { runs };
+    } catch (err) {
+      handleRouteError(err, reply, request);
+    }
+  });
+
   // ── Logs SSE ──────────────────────────────────────────────────────
+  //
+  // Streams history (tail) and live-appended lines for one run. `runId`
+  // defaults to the newest run (ongoing one if any). Completed runs are read
+  // from disk and tailed with no new output — still useful for filtering and
+  // scrolling. Initial event: { type: "history", lines, runId }. Subsequent
+  // events: { type: "line", line }.
   fastify.get('/containers/:name/logs', async (request, reply) => {
     const { name } = request.params;
-    const scope = request.query.scope === 'all' ? 'all' : 'session';
+    const requestedRunId = typeof request.query.runId === 'string' ? request.query.runId : null;
+
+    let runId;
+    try {
+      runId = await resolveRunId(name, requestedRunId);
+    } catch (err) {
+      handleRouteError(err, reply, request);
+      return;
+    }
+
     setupSSE(reply);
 
-    // Send existing logs first
-    try {
-      let fromBytes = 0;
-      if (scope === 'session') {
-        const cfg = await getContainerConfig(name);
-        const b = cfg.sessionLogStartBytes;
-        fromBytes = typeof b === 'number' && Number.isFinite(b) && b >= 0 ? b : 0;
-      }
-      const { lines } = await getContainerLogs(name, 500, { fromBytes });
-      if (lines.length) {
-        reply.raw.write(`data: ${JSON.stringify({ type: 'history', lines })}\n\n`);
-      }
-    } catch { /* no logs yet */ }
+    if (!runId) {
+      reply.raw.write(`data: ${JSON.stringify({ type: 'history', lines: [], runId: null })}\n\n`);
+      request.raw.on('close', () => {});
+      return;
+    }
 
-    // Stream new lines
-    const handle = streamContainerLogs(name, (line) => {
+    try {
+      const { lines } = await getContainerRunLogs(name, runId, 500);
+      reply.raw.write(`data: ${JSON.stringify({ type: 'history', lines, runId })}\n\n`);
+    } catch { /* history unavailable — proceed to tail */ }
+
+    const handle = streamContainerRunLogs(name, runId, (line) => {
       try {
         reply.raw.write(`data: ${JSON.stringify({ type: 'line', line })}\n\n`);
       } catch { /* client disconnected */ }
     });
 
     request.raw.on('close', () => handle.stop());
+  });
+
+  // ── Run log download ─────────────────────────────────────────────
+  fastify.get('/containers/:name/runs/:runId/log', async (request, reply) => {
+    const { name, runId: reqRunId } = request.params;
+    try {
+      const runId = await resolveRunId(name, reqRunId);
+      if (!runId) {
+        return sendError(reply, 404, 'Run not found', `No run "${reqRunId}" for "${name}"`);
+      }
+      reply
+        .header('Content-Type', 'text/plain; charset=utf-8')
+        .header('Content-Disposition', `attachment; filename="${name}-${runId}.log"`);
+      return reply.send(createRunLogReadStream(name, runId));
+    } catch (err) {
+      handleRouteError(err, reply, request);
+    }
   });
 
   // ── Mount definitions (row-scoped) ──────────────────────────────

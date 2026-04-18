@@ -1113,11 +1113,25 @@ SSE stream for per-container stats.
 
 Default interval is **3s** when `intervalMs` is omitted.
 
+### GET /api/containers/:name/runs
+
+List log runs for a container. Each start creates a new run under `runs/<runId>.log` with a sidecar `runs/<runId>.json` holding timing + exit status. The newest 10 runs are kept (older pairs pruned on new-run allocation).
+
+**200:** `{ runs: [{ runId, startedAt, endedAt, exitCode, imageDigest, logSizeBytes }, ...] }` — newest first. `endedAt` / `exitCode` are null for the currently-running run.
+
 ### GET /api/containers/:name/logs
 
-SSE stream for container logs. Initial event: `{ type: "history", lines }`. Subsequent: `{ type: "line", line }`.
+SSE stream for a single run's logs. Initial event: `{ type: "history", lines, runId }`. Subsequent: `{ type: "line", line }`.
 
-- **Query:** `?scope=session` (default) or `?scope=all`. **session** returns only log bytes written at or after **`sessionLogStartBytes`** in `container.json` (set when a new task is created on start). **all** returns the full log file (last 500 lines for the initial history, same as before). The live tail always streams new lines appended after the connection opens.
+- **Query:** `?runId=<runId>` — optional. Omit (or pass an empty value) to stream the newest run (the currently-running one if any, else the most recent completed run). Runs that have ended are served from disk and then idle-tailed — the SSE connection stays open with no new lines until the client disconnects. The live tail streams new bytes appended after the connection opens.
+- **Errors:** `CONTAINER_RUN_NOT_FOUND` (404) if a non-existent or malformed `runId` is requested.
+- **Empty state:** containers with no runs yet (never started) return a single history event with `lines: []` and `runId: null`.
+
+### GET /api/containers/:name/runs/:runId/log
+
+Download one run's log file. Responds with `Content-Type: text/plain; charset=utf-8` and a `Content-Disposition: attachment; filename="<name>-<runId>.log"` header. Streams the file directly from disk.
+
+**404:** `CONTAINER_RUN_NOT_FOUND` if the run does not exist.
 
 ### POST /api/containers/:name/mounts
 

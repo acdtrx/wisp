@@ -6,6 +6,7 @@ import {
   containerError, containerState, getClient, callUnary,
 } from './containerManagerConnection.js';
 import { deregisterAddress } from '../../mdnsManager.js';
+import { findCurrentRunId, finalizeRun } from './containerManagerLogs.js';
 
 const SIGTERM = 15;
 const SIGKILL = 9;
@@ -220,10 +221,25 @@ async function waitForStop(name, timeoutMs) {
   }
 }
 
-async function cleanupTask(name) {
+/**
+ * Delete the containerd task record and finalize the currently-active log run.
+ * Exit status comes from Tasks.Delete (uint32; non-finite values become null).
+ * Finalizing is best-effort — missing/already-finalized runs are skipped.
+ * Exported so containerManagerCreate can reuse the same flow before re-creating.
+ */
+export async function cleanupTask(name) {
+  let exitCode = null;
   try {
-    await callUnary(getClient('tasks'), 'delete', { containerId: name });
+    const res = await callUnary(getClient('tasks'), 'delete', { containerId: name });
+    const raw = res?.exitStatus;
+    if (typeof raw === 'number' && Number.isFinite(raw)) exitCode = raw;
+    else if (typeof raw === 'bigint') exitCode = Number(raw);
+    else if (typeof raw === 'string' && /^\d+$/.test(raw)) exitCode = parseInt(raw, 10);
   } catch {
-    // Task may not exist
+    // Task may not exist (already deleted, or never created).
   }
+  try {
+    const runId = await findCurrentRunId(name);
+    if (runId) await finalizeRun(name, runId, { exitCode });
+  } catch { /* best effort — finalization is informational */ }
 }

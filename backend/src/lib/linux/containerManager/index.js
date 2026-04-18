@@ -61,7 +61,13 @@ export {
 
 export { getContainerStats } from './containerManagerStats.js';
 
-export { getContainerLogs, streamContainerLogs } from './containerManagerLogs.js';
+export {
+  listContainerRuns,
+  getContainerRunLogs,
+  streamContainerRunLogs,
+  resolveRunId,
+  createRunLogReadStream,
+} from './containerManagerLogs.js';
 
 export {
   uploadMountFileStream,

@@ -421,7 +421,9 @@ On the Linux server:
     <name>/
         container.json            # Container config (source of truth)
         files/                    # Per-mount backing paths (see CONTAINERS.md)
-        container.log             # stdout/stderr output
+        runs/                     # Per-run log file + sidecar metadata (see CONTAINERS.md)
+            <runId>.log           # stdout/stderr for one task run
+            <runId>.json          # run metadata (startedAt, endedAt, exitCode, imageDigest)
 ```
 
 ## Container Subsystem

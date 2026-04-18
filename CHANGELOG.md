@@ -2,6 +2,16 @@
 
 ## 2026-04-18
 
+### New Features
+- Per-run container logs: every start writes a fresh `runs/<runId>.log` + sidecar (`startedAt`, `endedAt`, `exitCode`, `imageDigest`); newest 10 runs retained per container
+- Container logs UI: run picker replaces the session/all toggle — pick any recent run, green dot for the active one, red dot for non-zero exit
+- Clear-viewer, insert-mark, and download-run controls in the logs toolbar; clear and mark touch only the client buffer
+
+### Breaking
+- Dropped `sessionLogStartBytes` from `container.json` and the legacy single `container.log`; `/api/containers/:name/logs` now takes `?runId=` instead of `?scope=`; new `GET /api/containers/:name/runs` and `GET /api/containers/:name/runs/:runId/log`
+
+## 2026-04-18
+
 ### Docs
 - README rewritten around the actual VM + container feature set, positioning vs Proxmox/Arcane, and the install flow
 

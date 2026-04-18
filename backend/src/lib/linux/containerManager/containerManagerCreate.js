@@ -4,7 +4,7 @@
  */
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { mkdir, rm, readFile, writeFile, access, readdir, stat } from 'node:fs/promises';
+import { mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { randomBytes, createHash } from 'node:crypto';
 
 import {
@@ -13,13 +13,14 @@ import {
 } from './containerManagerConnection.js';
 import { buildOCISpec } from './containerManagerSpec.js';
 import { getContainersPath, getContainerDir, getContainerFilesDir } from './containerPaths.js';
+import { createNewRun } from './containerManagerLogs.js';
 import {
   setupNetwork, teardownNetwork, mergeNetworkLeaseIntoConfig,
   generateContainerMac, normalizeContainerMac, ensureContainerNetworkConfig,
   resolveContainerResolvConf,
 } from './containerManagerNetwork.js';
 import { getDefaultContainerParentBridge } from '../vmManager/vmManagerHost.js';
-import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.js';
+import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
 import { registerAddress, deregisterAddress, sanitizeHostname } from '../../mdnsManager.js';
 import { assertBindSourcesReady } from './containerManagerMounts.js';
 import { normalizeImageRef } from './containerImageRef.js';
@@ -494,12 +495,11 @@ export async function startExistingContainer(name) {
   // Clear pending restart flag — the container is (re)starting now
   if (config.pendingRestart) delete config.pendingRestart;
 
-  // Remove any stale task (STOPPED still exists until Delete; Create would fail with "already exists").
-  try {
-    await callUnary(getClient('tasks'), 'delete', { containerId: name });
-  } catch {
-    // No task — expected when starting after a clean stop
-  }
+  // Remove any stale task (STOPPED still exists until Delete; Create would fail
+  // with "already exists"). cleanupTask also finalizes the prior log run if
+  // one was still open, so the run picker shows it as ended rather than
+  // perpetually "Running…".
+  await cleanupTask(name);
 
   // Get image config
   let imageConfig = {};
@@ -556,14 +556,11 @@ export async function startExistingContainer(name) {
     );
   }
 
-  const logPath = join(containerDir, 'container.log');
-  let sessionLogStartBytes = 0;
-  try {
-    sessionLogStartBytes = (await stat(logPath)).size;
-  } catch {
-    /* no log file yet */
-  }
-  config.sessionLogStartBytes = sessionLogStartBytes;
+  // Allocate a fresh log run (per-start file under runs/<runId>.log + sidecar).
+  // The shim opens the path via file:// and appends stdout+stderr. Retention
+  // keeps only the newest N runs, pruned inside createNewRun.
+  const { logPath } = await createNewRun(name, { imageDigest: config.imageDigest || null });
+
   await writeFile(join(containerDir, 'container.json'), JSON.stringify(config, null, 2), 'utf8');
 
   const logUri = taskLogStdioUri(logPath);

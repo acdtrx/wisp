@@ -177,11 +177,23 @@ export async function getContainerStats() {
   throw noContainerd();
 }
 
-export async function getContainerLogs() {
+export async function listContainerRuns() {
   throw noContainerd();
 }
 
-export async function streamContainerLogs() {
+export async function getContainerRunLogs() {
+  throw noContainerd();
+}
+
+export function streamContainerRunLogs() {
+  throw noContainerd();
+}
+
+export async function resolveRunId() {
+  throw noContainerd();
+}
+
+export function createRunLogReadStream() {
   throw noContainerd();
 }
 

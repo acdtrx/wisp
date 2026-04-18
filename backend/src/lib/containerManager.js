@@ -58,8 +58,11 @@ export const removeContainerMount = impl.removeContainerMount;
 
 export const getContainerStats = impl.getContainerStats;
 
-export const getContainerLogs = impl.getContainerLogs;
-export const streamContainerLogs = impl.streamContainerLogs;
+export const listContainerRuns = impl.listContainerRuns;
+export const getContainerRunLogs = impl.getContainerRunLogs;
+export const streamContainerRunLogs = impl.streamContainerRunLogs;
+export const resolveRunId = impl.resolveRunId;
+export const createRunLogReadStream = impl.createRunLogReadStream;
 
 export const uploadMountFileStream = impl.uploadMountFileStream;
 export const uploadMountZipStream = impl.uploadMountZipStream;

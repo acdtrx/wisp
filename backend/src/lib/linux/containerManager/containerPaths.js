@@ -21,6 +21,21 @@ export function getContainerFilesDir(name) {
   return join(getContainersPath(), name, 'files');
 }
 
+export function getContainerRunsDir(name) {
+  return join(getContainersPath(), name, 'runs');
+}
+
+export function getRunLogPath(name, runId) {
+  return join(getContainerRunsDir(name), `${runId}.log`);
+}
+
+export function getRunMetaPath(name, runId) {
+  return join(getContainerRunsDir(name), `${runId}.json`);
+}
+
+/** Filesystem-safe ISO timestamp: 2026-04-18T12-34-56-789Z (colons replaced with hyphens). */
+export const RUN_ID_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
+
 /** Directory for `ip netns` bind mounts (must match system `/var/run/netns`). */
 export const CONTAINER_NETNS_DIR = '/var/run/netns';
 
