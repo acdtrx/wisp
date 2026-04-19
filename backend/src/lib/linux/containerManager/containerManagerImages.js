@@ -1,13 +1,65 @@
 /**
  * List and delete OCI images in containerd (wisp namespace).
  */
-import { join } from 'node:path';
-import { readdir, readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 
 import { getClient, callUnary, containerError } from './containerManagerConnection.js';
 import { getContainersPath } from './containerPaths.js';
+import { CONFIG_PATH } from '../../config.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { compressedBlobSizeForImageName } from './containerManagerOciSize.js';
+
+/**
+ * Sidecar pinning OCI image "modified" timestamps by digest.
+ *
+ * Why: containerd's Transfer service bumps `updatedAt` on every pull, including
+ * idempotent re-pulls during update checks. Without a pin, every check resets
+ * every image's displayed Modified timestamp to "just now". We remember the
+ * first containerd `updatedAt` we see for each (ref, digest) and keep returning
+ * it until the digest actually changes. Lives next to wisp-config.json —
+ * OCI images are independent of containers, so the file does not belong under
+ * containersPath.
+ */
+const OCI_META_FILE = 'oci-image-meta.json';
+
+function imageMetaPath() {
+  return join(dirname(CONFIG_PATH), OCI_META_FILE);
+}
+
+async function readImageMeta() {
+  try {
+    const raw = await readFile(imageMetaPath(), 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Current library digest for every ref recorded in the sidecar. Used to derive
+ * per-container `updateAvailable` without a containerd roundtrip per container.
+ * @returns {Promise<Map<string, string>>} ref → digest
+ */
+export async function readLibraryDigestMap() {
+  const meta = await readImageMeta();
+  const map = new Map();
+  for (const [ref, entry] of Object.entries(meta)) {
+    if (entry && typeof entry.digest === 'string' && entry.digest) {
+      map.set(ref, entry.digest);
+    }
+  }
+  return map;
+}
+
+async function writeImageMeta(data) {
+  try {
+    await writeFile(imageMetaPath(), JSON.stringify(data, null, 2));
+  } catch {
+    /* best-effort: sidecar is a cache, not critical state */
+  }
+}
 
 /** @param {unknown} v */
 function intFromProtoLong(v) {
@@ -47,29 +99,54 @@ export async function getImageDigest(imageRef) {
 export async function listContainerImages() {
   const res = await callUnary(getClient('images'), 'list', { filters: [] });
   const images = res.images || [];
+  const meta = await readImageMeta();
+  let metaChanged = false;
+
   const rows = await Promise.all(
     images.map(async (img) => {
       const target = img.target || {};
       const name = img.name || '';
+      const digest = target.digest || '';
       const updatedAt = img.updatedAt ?? img.updated_at;
       const createdAt = img.createdAt ?? img.created_at;
-      const updated =
+      const containerdUpdated =
         protoTimestampToIso(updatedAt) ||
         protoTimestampToIso(createdAt) ||
         null;
+
+      /** Use the pinned timestamp when the digest still matches — otherwise adopt containerd's value. */
+      let updated = containerdUpdated;
+      const entry = meta[name];
+      if (entry && entry.digest === digest && entry.updatedAt) {
+        updated = entry.updatedAt;
+      } else if (digest) {
+        meta[name] = { digest, updatedAt: containerdUpdated };
+        metaChanged = true;
+      }
+
       /** Descriptor `target.size` is the top-level manifest/index JSON blob — a few KB. Prefer summed layer + config sizes. */
       const compressedTotal = await compressedBlobSizeForImageName(name);
       const size =
         compressedTotal != null ? compressedTotal : Number(target.size) || 0;
       return {
         name,
-        digest: target.digest || '',
+        digest,
         size,
         /** ISO 8601 or null if containerd sent no timestamps */
         updated,
       };
     }),
   );
+
+  const currentNames = new Set(images.map((i) => i.name).filter(Boolean));
+  for (const key of Object.keys(meta)) {
+    if (!currentNames.has(key)) {
+      delete meta[key];
+      metaChanged = true;
+    }
+  }
+  if (metaChanged) await writeImageMeta(meta);
+
   rows.sort((a, b) => a.name.localeCompare(b.name));
   return rows;
 }

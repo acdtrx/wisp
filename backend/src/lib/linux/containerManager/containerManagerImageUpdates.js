@@ -2,14 +2,15 @@
  * OCI image update checker.
  *
  * Bulk or per-image: re-pulls every image via the Transfer service (idempotent — containerd
- * skips layer downloads when the digest matches). When the digest moves, flag every container
- * using that reference: `updateAvailable: true` on disk, plus `pendingRestart: true` when the
- * task is running. Restarting the container applies the new snapshot (see containerManagerCreate).
+ * skips layer downloads when the digest matches). Update availability is never persisted on
+ * containers — it's derived at read time from (`container.imageDigest` != current library digest)
+ * + (task RUNNING/PAUSED). This module just reports how many containers WOULD now show the flag
+ * so the UI can surface counts.
  *
  * Mirrors the `osUpdates` background-check pattern.
  */
 import { join } from 'node:path';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 
 import { containerError } from './containerManagerConnection.js';
 import { getContainerDir } from './containerPaths.js';
@@ -35,54 +36,32 @@ export function getImageUpdateStatus() {
 }
 
 /**
- * Flip updateAvailable / pendingRestart on a single container.json.
- * Writes directly — updateContainerConfig() refuses to touch these server-managed fields.
- * @returns {Promise<boolean>} true when the file was changed (caller emits `flagged-container`).
+ * Would this container show an update badge given a new library digest?
+ * True when the container is running/paused AND its stored `imageDigest`
+ * differs from the new digest. Read-only — nothing is persisted.
  */
-async function markContainerUpdateAvailable(name, newDigest) {
+async function containerFlaggedForDigest(name, newDigest) {
   const configPath = join(getContainerDir(name), 'container.json');
-  let raw;
-  try {
-    raw = await readFile(configPath, 'utf8');
-  } catch {
-    return false;
-  }
   let config;
   try {
-    config = JSON.parse(raw);
+    config = JSON.parse(await readFile(configPath, 'utf8'));
   } catch {
     return false;
   }
-  if (config.imageDigest && config.imageDigest === newDigest) return false;
-
-  let changed = false;
-  if (config.updateAvailable !== true) {
-    config.updateAvailable = true;
-    changed = true;
-  }
-
-  let running = false;
+  if (!config.imageDigest || config.imageDigest === newDigest) return false;
   try {
     const task = await getTaskState(name);
-    if (task) {
-      const st = normalizeTaskStatus(task.status);
-      running = st === 'RUNNING' || st === 'PAUSED';
-    }
+    if (!task) return false;
+    const st = normalizeTaskStatus(task.status);
+    return st === 'RUNNING' || st === 'PAUSED';
   } catch {
-    /* no task — treat as not running */
+    return false;
   }
-  if (running && config.pendingRestart !== true) {
-    config.pendingRestart = true;
-    changed = true;
-  }
-
-  if (!changed) return false;
-  await writeFile(configPath, JSON.stringify(config, null, 2));
-  return true;
 }
 
 /**
- * Pull a single ref and flag affected containers. Internal; does not update cached summary.
+ * Pull a single ref and report how many containers would now show an update badge.
+ * Internal; does not update cached summary, does not write to container.json.
  * @param {string} ref
  * @param {(ev: object) => void} [onProgress]
  * @param {{ index: number, total: number }} position
@@ -111,8 +90,7 @@ async function checkOneImage(ref, onProgress, position) {
   let flaggedCount = 0;
   const users = await findContainersUsingImage(ref);
   for (const name of users) {
-    const flagged = await markContainerUpdateAvailable(name, after);
-    if (flagged) {
+    if (await containerFlaggedForDigest(name, after)) {
       flaggedCount += 1;
       onProgress?.({ step: 'flagged-container', name });
     }

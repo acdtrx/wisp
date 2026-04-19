@@ -629,9 +629,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
                 ) : imageUpdateCheck.lastCheckedAt ? (
                   <>
                     Checked {formatRelativeTime(imageUpdateCheck.lastCheckedAt)}
-                    {imageUpdateCheck.imagesUpdated > 0
-                      ? ` · ${imageUpdateCheck.imagesUpdated} updated`
-                      : ''}
+                    {` · ${imageUpdateCheck.imagesUpdated} update${imageUpdateCheck.imagesUpdated === 1 ? '' : 's'} found`}
                     {imageUpdateCheck.flaggedContainers > 0
                       ? ` · ${imageUpdateCheck.flaggedContainers} container${imageUpdateCheck.flaggedContainers === 1 ? '' : 's'} flagged`
                       : ''}

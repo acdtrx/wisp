@@ -521,7 +521,6 @@ export async function startExistingContainer(name) {
     config.imageDigest = currentDigest;
     config.imagePulledAt = new Date().toISOString();
   }
-  if (config.updateAvailable) delete config.updateAvailable;
 
   // Rebuild OCI spec
   const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);

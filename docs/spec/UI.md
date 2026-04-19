@@ -457,7 +457,7 @@ Header bar with:
 - Tabs: **Overview** | **Logs** | **Console**
 - Action buttons: Start, Stop, Kill, Restart, Delete
 
-When `config.updateAvailable` is `true`, an orange banner sits above the tab content: "New image version available. Restart to apply." with a primary **Restart** button. Clicking Restart triggers `restartContainer`; `startExistingContainer` detects the digest drift and re-prepares the snapshot from the new image layers (see CONTAINERS.md → *Image updates*).
+When `config.updateAvailable` is `true`, an orange banner sits above the tab content: "New image version available. Restart to apply." The message has no button of its own — the user restarts via the primary **Restart** action button in the header row just above. `startExistingContainer` detects the digest drift and re-prepares the snapshot from the new image layers (see CONTAINERS.md → *Image updates*). `updateAvailable` is a derived backend field — it's only ever `true` when the container is running (or paused) with a digest older than the library's current one; stopped containers always read as `false`.
 
 #### Overview tab
 

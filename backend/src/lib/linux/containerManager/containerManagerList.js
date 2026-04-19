@@ -16,6 +16,21 @@ import {
 } from './containerManagerNetwork.js';
 import { processUptimeMsFromProc } from '../host/linuxProcUptime.js';
 import { getRegisteredHostname, registerAddress, sanitizeHostname } from '../../mdnsManager.js';
+import { readLibraryDigestMap } from './containerManagerImages.js';
+import { normalizeImageRef } from './containerImageRef.js';
+
+/**
+ * Derived `updateAvailable`: true when the container is running/paused AND
+ * its stored `imageDigest` no longer matches the library's current digest
+ * for its image ref. Not persisted — computed on every read from two sources
+ * of truth (`container.imageDigest` and the image-meta sidecar).
+ */
+function deriveUpdateAvailable(config, state, libraryDigests) {
+  if (state !== 'running' && state !== 'paused') return false;
+  if (!config.imageDigest || !config.image) return false;
+  const current = libraryDigests.get(normalizeImageRef(config.image));
+  return !!current && current !== config.imageDigest;
+}
 
 /**
  * List all containers (summary for the left panel list).
@@ -33,6 +48,7 @@ export async function listContainers() {
   }
 
   const results = [];
+  const libraryDigests = await readLibraryDigestMap();
 
   for (const entry of dirs) {
     if (!entry.isDirectory()) continue;
@@ -76,7 +92,7 @@ export async function listContainers() {
         autostart: config.autostart ?? false,
         uptime,
         iconId: config.iconId ?? null,
-        updateAvailable: config.updateAvailable === true,
+        updateAvailable: deriveUpdateAvailable(config, state, libraryDigests),
         pendingRestart: config.pendingRestart === true,
       });
     } catch {
@@ -185,6 +201,8 @@ export async function getContainerConfig(name) {
     await registerAddress(name, sanitizeHostname(name), merged.network.ip);
   }
 
+  const libraryDigests = await readLibraryDigestMap();
+
   return {
     ...merged,
     localDns,
@@ -193,5 +211,6 @@ export async function getContainerConfig(name) {
     pid,
     uptime,
     type: 'container',
+    updateAvailable: deriveUpdateAvailable(merged, state, libraryDigests),
   };
 }
