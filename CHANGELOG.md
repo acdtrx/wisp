@@ -3,6 +3,8 @@
 ## 2026-04-20
 
 ### New Features
+- Container directory mounts can be sourced from a Storage mount: new **Source** column (Local by default; dropdown of configured SMB shares / adopted drives) plus a **Sub-path** input. Adopted-drive content backs the bind mount directly — no extraction into `files/`. Alert badge on rows whose Storage source is missing or not currently mounted.
+- Container start performs a pre-flight check on Storage-sourced mounts (referenced storage exists, currently mounted, sub-path resolves inside the storage root) and fails fast with actionable errors before hitting containerd.
 - Host Mgmt → **Storage** replaces **Network Storage**: unified SMB shares and adopted removable drives in one SectionCard, with a live "Detected drives" table for unadopted block devices
 - Removable drive auto-mount: adopted disks (keyed by filesystem UUID) mount on insertion, lazy-unmount on surprise removal, and reconcile at backend startup
 - New `wisp-mount` privileged helper (replaces `wisp-smb`) — supports `smb mount|check`, `disk mount`, `unmount`, and `unmount-lazy`; `install-helpers.sh` removes the legacy `wisp-smb` automatically

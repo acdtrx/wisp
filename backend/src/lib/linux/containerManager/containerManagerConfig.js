@@ -12,6 +12,7 @@ import { normalizeContainerMac } from './containerManagerNetwork.js';
 import { deregisterAddress, registerAddress, sanitizeHostname } from '../../mdnsManager.js';
 import { validateAndNormalizeMounts, ensureMissingMountArtifacts } from './containerManagerMounts.js';
 import { deleteMountBackingStore } from './containerManagerMountsContent.js';
+import { getRawMounts } from '../../settings.js';
 import { getAppModule } from './apps/appRegistry.js';
 import { execCommandInContainer } from './containerManagerExec.js';
 
@@ -277,10 +278,12 @@ export async function updateContainerConfig(name, changes) {
     }
     if (key === 'mounts') {
       const prevMounts = Array.isArray(config.mounts) ? [...config.mounts] : [];
-      const normalized = validateAndNormalizeMounts(value);
+      const storageMounts = await getRawMounts();
+      const normalized = validateAndNormalizeMounts(value, storageMounts);
       const nextNames = new Set(normalized.map((m) => m.name));
       for (const m of prevMounts) {
-        if (!nextNames.has(m.name)) {
+        if (!nextNames.has(m.name) && !m.sourceId) {
+          /* Only remove local backing stores; storage-sourced entries point at user data we must not touch. */
           await deleteMountBackingStore(name, m);
         }
       }

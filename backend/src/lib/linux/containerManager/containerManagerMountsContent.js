@@ -137,6 +137,12 @@ export async function uploadMountZipStream(containerName, mountName, zipStream) 
   if (m.type !== 'directory') {
     throw containerError('CONTAINER_MOUNT_TYPE_MISMATCH', `Mount "${mountName}" is not a directory mount`);
   }
+  if (m.sourceId) {
+    throw containerError(
+      'CONTAINER_MOUNT_TYPE_MISMATCH',
+      `Zip upload is only supported for Local directory mounts; "${mountName}" is sourced from a storage mount`,
+    );
+  }
   const containerDir = getContainerDir(containerName);
   const filesDir = getContainerFilesDir(containerName);
   await mkdir(filesDir, { recursive: true });

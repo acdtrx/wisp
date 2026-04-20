@@ -60,7 +60,17 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
     setOriginal(d);
     setRequiresRestart(false);
     setError(null);
-  }, [config?.name, config?.image, config?.cpuLimit, config?.memoryLimitMiB, config?.restartPolicy, config?.autostart, config?.runAsRoot]);
+    /* command joined to a stable string so re-renders with same-contents arrays don't trigger re-init */
+  }, [
+    config?.name,
+    config?.image,
+    Array.isArray(config?.command) ? config.command.join(' ') : '',
+    config?.cpuLimit,
+    config?.memoryLimitMiB,
+    config?.restartPolicy,
+    config?.autostart,
+    config?.runAsRoot,
+  ]);
 
   useEffect(() => {
     if (!isCreating) init();
@@ -101,6 +111,16 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
 
       const result = await onSave(changes);
       if (result?.requiresRestart) setRequiresRestart(true);
+      /* Snap form + original to the values we actually sent. Without this, cosmetic-only
+       * diffs (trailing whitespace in command, "2" vs "2.0" in cpuLimit, etc.) keep
+       * isDirty=true when the server stores the normalized value and the parent's
+       * config prop doesn't change (so the init useEffect doesn't re-fire). */
+      const canonical = { ...form };
+      if ('command' in changes) {
+        canonical.command = Array.isArray(changes.command) ? changes.command.join(' ') : '';
+      }
+      setForm(canonical);
+      setOriginal(canonical);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -165,6 +185,9 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
             placeholder="Leave empty for image default"
             className="input-field"
           />
+          <p className="mt-1 text-[10px] text-text-muted">
+            Space-separated arguments (argv). No shell parsing — for shell syntax prefix with <span className="font-mono">sh -c</span>.
+          </p>
         </Field>
 
         <div className="flex items-end gap-4 flex-wrap">

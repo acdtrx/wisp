@@ -1,11 +1,17 @@
 /**
  * Container bind mount definitions: validation and bind-source checks.
+ * Supports two kinds of directory sources:
+ *   - Local  (default) — backing store lives under <containersPath>/<name>/files/<mountName>
+ *   - Storage — backing store lives at <storageMount.mountPath>/<subPath>,
+ *               where storageMount is an entry in settings.mounts (SMB share / removable drive).
+ * File mounts are always Local.
  */
 import { basename, join, resolve } from 'node:path';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, stat, writeFile, realpath } from 'node:fs/promises';
 
 import { containerError } from './containerManagerConnection.js';
 import { getContainerFilesDir } from './containerPaths.js';
+import { getMountStatus } from '../../smbMount.js';
 
 /**
  * @param {string} name
@@ -21,11 +27,57 @@ export function validateMountSegmentName(name) {
 }
 
 /**
- * Validate and normalize mounts for persistence. Rejects duplicate name or containerPath.
- * @param {unknown} mounts
- * @returns {{ type: 'file'|'directory', name: string, containerPath: string, readonly: boolean }[]}
+ * Validate a sub-path (relative, no `..`, no leading `/`). Empty string is allowed (means mount root).
+ * @param {unknown} value
+ * @returns {string|null} normalized sub-path (no leading/trailing slashes) or null if invalid
  */
-export function validateAndNormalizeMounts(mounts) {
+export function validateSubPath(value) {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (trimmed === '') return '';
+  if (trimmed.startsWith('/')) return null;
+  const segments = trimmed.split('/').filter((s) => s.length > 0);
+  for (const seg of segments) {
+    if (seg === '..' || seg === '.') return null;
+  }
+  return segments.join('/');
+}
+
+/**
+ * Resolve the host-side bind-mount source path for a single mount entry.
+ * @param {{ type: string, name: string, sourceId?: string|null, subPath?: string }} mount
+ * @param {string} filesDir - absolute path to <containersPath>/<name>/files/
+ * @param {Array<{ id: string, mountPath: string }>} [storageMounts] - storage mounts from settings; required for Storage-sourced entries
+ * @returns {{ source: 'local'|'storage', hostPath: string, storageMount?: object }}
+ */
+export function resolveMountHostPath(mount, filesDir, storageMounts = []) {
+  if (!mount || !mount.name) {
+    throw containerError('INVALID_CONTAINER_MOUNTS', 'Mount is missing name');
+  }
+  if (mount.sourceId) {
+    const storage = storageMounts.find((m) => m.id === mount.sourceId);
+    if (!storage) {
+      throw containerError(
+        'CONTAINER_MOUNT_SOURCE_MISSING',
+        `Mount "${mount.name}" references storage mount "${mount.sourceId}" which is no longer configured`,
+      );
+    }
+    const sub = mount.subPath || '';
+    const hostPath = sub ? join(storage.mountPath, sub) : storage.mountPath;
+    return { source: 'storage', hostPath, storageMount: storage };
+  }
+  return { source: 'local', hostPath: join(filesDir, mount.name) };
+}
+
+/**
+ * Validate and normalize mounts for persistence. Rejects duplicate name or containerPath.
+ * When `storageMounts` is provided, validates that every `sourceId` references a real mount.
+ * @param {unknown} mounts
+ * @param {Array<{ id: string, mountPath: string }>} [storageMounts]
+ * @returns {{ type: 'file'|'directory', name: string, containerPath: string, readonly: boolean, sourceId: string|null, subPath: string }[]}
+ */
+export function validateAndNormalizeMounts(mounts, storageMounts = null) {
   if (!Array.isArray(mounts)) {
     throw containerError('INVALID_CONTAINER_MOUNTS', 'mounts must be an array');
   }
@@ -56,11 +108,39 @@ export function validateAndNormalizeMounts(mounts) {
       throw containerError('CONTAINER_MOUNT_DUPLICATE', `Duplicate container path "${containerPath}"`);
     }
     containerPaths.add(containerPath);
+
+    let sourceId = null;
+    let subPath = '';
+    if (raw.sourceId !== undefined && raw.sourceId !== null && raw.sourceId !== '') {
+      if (type !== 'directory') {
+        throw containerError('INVALID_CONTAINER_MOUNTS', 'sourceId is only allowed on directory mounts');
+      }
+      if (typeof raw.sourceId !== 'string' || !raw.sourceId.trim()) {
+        throw containerError('INVALID_CONTAINER_MOUNTS', 'sourceId must be a non-empty string');
+      }
+      sourceId = raw.sourceId.trim();
+      if (Array.isArray(storageMounts)) {
+        if (!storageMounts.some((m) => m.id === sourceId)) {
+          throw containerError(
+            'INVALID_CONTAINER_MOUNTS',
+            `sourceId "${sourceId}" does not reference a configured storage mount`,
+          );
+        }
+      }
+      const normalizedSub = validateSubPath(raw.subPath);
+      if (normalizedSub === null) {
+        throw containerError('INVALID_CONTAINER_MOUNTS', 'subPath must be relative and must not contain ".." segments');
+      }
+      subPath = normalizedSub;
+    }
+
     out.push({
       type,
       name: seg,
       containerPath,
       readonly: raw.readonly === true,
+      sourceId,
+      subPath,
     });
   }
   return out;
@@ -69,7 +149,7 @@ export function validateAndNormalizeMounts(mounts) {
 /**
  * @param {object} config - container.json
  * @param {string} mountName
- * @returns {{ type: string, name: string, containerPath: string, readonly: boolean } | null}
+ * @returns {{ type: string, name: string, containerPath: string, readonly: boolean, sourceId?: string|null, subPath?: string } | null}
  */
 export function findMount(config, mountName) {
   const list = config.mounts;
@@ -78,11 +158,13 @@ export function findMount(config, mountName) {
 }
 
 /**
- * Create an empty file or directory for a mount if the artifact path is missing.
+ * Create an empty file or directory for a Local mount if the artifact path is missing.
+ * Storage-sourced mounts are skipped — their artifacts are managed at start time (mkdir -p of subPath).
  * @param {string} containerName
- * @param {{ type: string, name: string }} mountEntry
+ * @param {{ type: string, name: string, sourceId?: string|null }} mountEntry
  */
 export async function ensureMountArtifactIfMissing(containerName, mountEntry) {
+  if (mountEntry.sourceId) return;
   const filesDir = getContainerFilesDir(containerName);
   await mkdir(filesDir, { recursive: true });
   const root = resolve(filesDir);
@@ -105,7 +187,7 @@ export async function ensureMountArtifactIfMissing(containerName, mountEntry) {
 
 /**
  * @param {string} containerName
- * @param {{ type: string, name: string }[]} mounts
+ * @param {{ type: string, name: string, sourceId?: string|null }[]} mounts
  */
 export async function ensureMissingMountArtifacts(containerName, mounts) {
   if (!Array.isArray(mounts) || mounts.length === 0) return;
@@ -114,23 +196,30 @@ export async function ensureMissingMountArtifacts(containerName, mounts) {
   }
 }
 
-/**
- * Ensure each mount's backing path exists under files/ and matches type (before task create).
- * Missing artifacts are created (empty file or empty directory) automatically.
- * @param {string} containerName
- * @param {object} config
- * @param {string} filesDir - absolute path to container files/
- */
-export async function assertBindSourcesReady(containerName, config, filesDir) {
-  const list = config.mounts;
-  if (!Array.isArray(list) || list.length === 0) return;
+async function assertBindSourcesReadyLocal(containerName, m, filesDir) {
   const root = resolve(filesDir);
-  for (const m of list) {
-    const hostPath = resolve(join(filesDir, m.name));
-    if (!hostPath.startsWith(root + '/') && hostPath !== root) {
-      throw containerError('CONTAINERD_ERROR', `Invalid mount path for "${m.name}"`);
+  const hostPath = resolve(join(filesDir, m.name));
+  if (!hostPath.startsWith(root + '/') && hostPath !== root) {
+    throw containerError('CONTAINERD_ERROR', `Invalid mount path for "${m.name}"`);
+  }
+  try {
+    const s = await stat(hostPath);
+    if (m.type === 'file' && !s.isFile()) {
+      throw containerError(
+        'CONTAINER_MOUNT_SOURCE_WRONG_TYPE',
+        `Mount "${m.name}" must be backed by a file on the host`,
+      );
     }
-    try {
+    if (m.type === 'directory' && !s.isDirectory()) {
+      throw containerError(
+        'CONTAINER_MOUNT_SOURCE_WRONG_TYPE',
+        `Mount "${m.name}" must be backed by a directory on the host`,
+      );
+    }
+  } catch (err) {
+    if (typeof err?.code === 'string' && err.code.startsWith('CONTAINER_')) throw err;
+    if (err?.code === 'ENOENT') {
+      await ensureMountArtifactIfMissing(containerName, m);
       const s = await stat(hostPath);
       if (m.type === 'file' && !s.isFile()) {
         throw containerError(
@@ -144,26 +233,74 @@ export async function assertBindSourcesReady(containerName, config, filesDir) {
           `Mount "${m.name}" must be backed by a directory on the host`,
         );
       }
-    } catch (err) {
-      if (typeof err?.code === 'string' && err.code.startsWith('CONTAINER_')) throw err;
-      if (err?.code === 'ENOENT') {
-        await ensureMountArtifactIfMissing(containerName, m);
-        const s = await stat(hostPath);
-        if (m.type === 'file' && !s.isFile()) {
-          throw containerError(
-            'CONTAINER_MOUNT_SOURCE_WRONG_TYPE',
-            `Mount "${m.name}" must be backed by a file on the host`,
-          );
-        }
-        if (m.type === 'directory' && !s.isDirectory()) {
-          throw containerError(
-            'CONTAINER_MOUNT_SOURCE_WRONG_TYPE',
-            `Mount "${m.name}" must be backed by a directory on the host`,
-          );
-        }
-        continue;
-      }
-      throw err;
+      return;
+    }
+    throw err;
+  }
+}
+
+async function assertBindSourcesReadyStorage(m, storageMounts) {
+  const storage = (storageMounts || []).find((x) => x.id === m.sourceId);
+  if (!storage) {
+    throw containerError(
+      'CONTAINER_MOUNT_SOURCE_MISSING',
+      `Mount "${m.name}" references storage mount "${m.sourceId}" which is no longer configured`,
+    );
+  }
+  const { mounted } = await getMountStatus(storage.mountPath);
+  if (!mounted) {
+    throw containerError(
+      'CONTAINER_MOUNT_SOURCE_NOT_MOUNTED',
+      `Mount "${m.name}" points at storage "${storage.label || storage.id}" which is not currently mounted at ${storage.mountPath}. Mount it in Host Mgmt → Storage, then retry.`,
+    );
+  }
+  const sub = m.subPath || '';
+  const hostPath = sub ? join(storage.mountPath, sub) : storage.mountPath;
+  await mkdir(hostPath, { recursive: true });
+  let resolvedHost;
+  let resolvedRoot;
+  try {
+    resolvedHost = await realpath(hostPath);
+    resolvedRoot = await realpath(storage.mountPath);
+  } catch (err) {
+    throw containerError(
+      'CONTAINER_MOUNT_SOURCE_UNSAFE',
+      `Could not resolve mount source for "${m.name}"`,
+      err.message,
+    );
+  }
+  if (!(resolvedHost === resolvedRoot || resolvedHost.startsWith(resolvedRoot + '/'))) {
+    throw containerError(
+      'CONTAINER_MOUNT_SOURCE_UNSAFE',
+      `Mount "${m.name}" resolves outside its storage root (${resolvedRoot}) — symlink escape rejected`,
+    );
+  }
+  const s = await stat(resolvedHost);
+  if (!s.isDirectory()) {
+    throw containerError(
+      'CONTAINER_MOUNT_SOURCE_WRONG_TYPE',
+      `Mount "${m.name}" storage path ${hostPath} is not a directory`,
+    );
+  }
+}
+
+/**
+ * Ensure each mount's backing path exists and matches type (before task create).
+ * Local mounts auto-create the artifact under files/. Storage mounts verify the referenced
+ * storage is currently mounted and mkdir -p the sub-path (within the storage root).
+ * @param {string} containerName
+ * @param {object} config
+ * @param {string} filesDir - absolute path to container files/
+ * @param {Array<{ id: string, mountPath: string, label?: string }>} [storageMounts]
+ */
+export async function assertBindSourcesReady(containerName, config, filesDir, storageMounts = []) {
+  const list = config.mounts;
+  if (!Array.isArray(list) || list.length === 0) return;
+  for (const m of list) {
+    if (m.sourceId) {
+      await assertBindSourcesReadyStorage(m, storageMounts);
+    } else {
+      await assertBindSourcesReadyLocal(containerName, m, filesDir);
     }
   }
 }

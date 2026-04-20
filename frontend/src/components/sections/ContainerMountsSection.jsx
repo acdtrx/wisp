@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus,
   File,
@@ -11,6 +11,7 @@ import {
   SquarePen,
   Pencil,
   X,
+  AlertCircle,
 } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
@@ -34,9 +35,25 @@ import {
   uploadMountZip,
 } from '../../api/containers.js';
 import { randomId } from '../../utils/randomId.js';
+import { useSettingsStore } from '../../store/settingsStore.js';
+import { getMountStatus } from '../../api/settings.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
+
+function isValidSubPath(value) {
+  if (value === undefined || value === null || value === '') return true;
+  if (typeof value !== 'string') return false;
+  const t = value.trim();
+  if (t === '') return true;
+  if (t.startsWith('/')) return false;
+  return !t.split('/').filter(Boolean).some((seg) => seg === '..' || seg === '.');
+}
+
+function normalizeSubPath(value) {
+  if (!value || typeof value !== 'string') return '';
+  return value.trim().replace(/^\/+/, '').replace(/\/+$/, '');
+}
 
 function rowsFromServerMounts(mounts) {
   return (mounts || []).map((m) => ({
@@ -46,6 +63,8 @@ function rowsFromServerMounts(mounts) {
     name: m.name || '',
     containerPath: m.containerPath || '',
     readonly: !!m.readonly,
+    sourceId: m.sourceId || null,
+    subPath: m.subPath || '',
   }));
 }
 
@@ -57,6 +76,9 @@ function validateRowAgainstOthers(row, allRows) {
   }
   if (!containerPath.startsWith('/')) {
     return 'Container path must be absolute (start with /).';
+  }
+  if (row.sourceId && !isValidSubPath(row.subPath)) {
+    return 'Sub-path must be relative (no leading /) and cannot contain ".." segments.';
   }
   const names = new Set();
   const paths = new Set();
@@ -81,25 +103,39 @@ function rowMatchesServer(row, serverMounts) {
   if (!mn || !row.serverMountName) return false;
   const s = (serverMounts || []).find((m) => m.name === row.serverMountName);
   if (!s) return false;
+  const savedSourceId = s.sourceId || null;
+  const savedSubPath = s.subPath || '';
   return (
     s.type === row.type
     && s.name === mn
     && s.containerPath === row.containerPath.trim()
     && Boolean(s.readonly) === Boolean(row.readonly)
+    && savedSourceId === (row.sourceId || null)
+    && savedSubPath === normalizeSubPath(row.subPath)
   );
 }
 
 function isRowDirty(row, serverMounts) {
   if (!row.serverMountName) {
-    return row.name.trim() !== '' || row.containerPath.trim() !== '' || row.readonly;
+    return (
+      row.name.trim() !== ''
+      || row.containerPath.trim() !== ''
+      || row.readonly
+      || !!row.sourceId
+      || !!normalizeSubPath(row.subPath)
+    );
   }
   const s = (serverMounts || []).find((m) => m.name === row.serverMountName);
   if (!s) return true;
+  const savedSourceId = s.sourceId || null;
+  const savedSubPath = s.subPath || '';
   return (
     s.type !== row.type
     || s.name !== row.name.trim()
     || s.containerPath !== row.containerPath.trim()
     || Boolean(s.readonly) !== Boolean(row.readonly)
+    || savedSourceId !== (row.sourceId || null)
+    || savedSubPath !== normalizeSubPath(row.subPath)
   );
 }
 
@@ -108,6 +144,8 @@ function isFieldEditing(row, fieldEditRowId) {
 }
 
 export default function ContainerMountsSection({ config, onRefresh }) {
+  const settings = useSettingsStore((s) => s.settings);
+  const loadSettings = useSettingsStore((s) => s.loadSettings);
   const [rows, setRows] = useState(() => rowsFromServerMounts(config.mounts));
   const [fieldEditRowId, setFieldEditRowId] = useState(null);
   const [savingRowId, setSavingRowId] = useState(null);
@@ -117,6 +155,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
   const [requiresRestart, setRequiresRestart] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorMountName, setEditorMountName] = useState('');
+  const [storageStatus, setStorageStatus] = useState([]);
 
   useEffect(() => {
     setRows(rowsFromServerMounts(config.mounts));
@@ -124,6 +163,28 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     setRequiresRestart(false);
     setError(null);
   }, [config.name, config.mounts]);
+
+  /* Settings store holds the storage-mount catalogue and is cheap to (re)load; the mount-status
+   * endpoint tells us which ones are currently mounted so we can warn on orphan references. */
+  const refreshStorageStatus = useCallback(() => {
+    getMountStatus()
+      .then((list) => setStorageStatus(Array.isArray(list) ? list : []))
+      .catch(() => setStorageStatus([]));
+  }, []);
+
+  useEffect(() => {
+    if (!settings) {
+      loadSettings().catch(() => {});
+    }
+    refreshStorageStatus();
+  }, [settings, loadSettings, refreshStorageStatus]);
+
+  const storageMounts = useMemo(() => settings?.mounts || [], [settings]);
+  const storageStatusById = useMemo(() => {
+    const map = new Map();
+    for (const s of storageStatus || []) map.set(s.id, !!s.mounted);
+    return map;
+  }, [storageStatus]);
 
   const serverMounts = config.mounts;
   const saving = savingRowId !== null;
@@ -139,9 +200,19 @@ export default function ContainerMountsSection({ config, onRefresh }) {
         name: '',
         containerPath: '',
         readonly: false,
+        sourceId: null,
+        subPath: '',
       },
     ]);
     setFieldEditRowId(rowId);
+  };
+
+  const handleSourceChange = (row, nextSourceId) => {
+    setRows((prev) => prev.map((r) => {
+      if (r.rowId !== row.rowId) return r;
+      if (!nextSourceId) return { ...r, sourceId: null, subPath: '' };
+      return { ...r, sourceId: nextSourceId };
+    }));
   };
 
   const updateRow = (rowId, field, value) => {
@@ -165,6 +236,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                 name: s.name,
                 containerPath: s.containerPath,
                 readonly: !!s.readonly,
+                sourceId: s.sourceId || null,
+                subPath: s.subPath || '',
               }
             : r));
     }
@@ -180,13 +253,19 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     setSavingRowId(row.rowId);
     setError(null);
     try {
+      const rowSub = normalizeSubPath(row.subPath);
       if (!row.serverMountName) {
-        const result = await addContainerMount(config.name, {
+        const payload = {
           type: row.type,
           name: row.name.trim(),
           containerPath: row.containerPath.trim(),
           readonly: !!row.readonly,
-        });
+        };
+        if (row.sourceId) {
+          payload.sourceId = row.sourceId;
+          payload.subPath = rowSub;
+        }
+        const result = await addContainerMount(config.name, payload);
         if (result?.requiresRestart) setRequiresRestart(true);
       } else {
         const prev = (config.mounts || []).find((m) => m.name === row.serverMountName);
@@ -198,6 +277,13 @@ export default function ContainerMountsSection({ config, onRefresh }) {
         if (row.name.trim() !== prev.name) patch.name = row.name.trim();
         if (row.containerPath.trim() !== prev.containerPath) patch.containerPath = row.containerPath.trim();
         if (!!row.readonly !== !!prev.readonly) patch.readonly = !!row.readonly;
+        const prevSourceId = prev.sourceId || null;
+        const nextSourceId = row.sourceId || null;
+        if (prevSourceId !== nextSourceId) patch.sourceId = nextSourceId;
+        const prevSub = prev.subPath || '';
+        if ((nextSourceId && rowSub !== prevSub) || (!nextSourceId && prevSub)) {
+          patch.subPath = nextSourceId ? rowSub : '';
+        }
         if (Object.keys(patch).length === 0) {
           setFieldEditRowId(null);
           return;
@@ -206,6 +292,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
         if (result?.requiresRestart) setRequiresRestart(true);
       }
       if (onRefresh) await onRefresh();
+      refreshStorageStatus();
       setFieldEditRowId(null);
     } catch (err) {
       setError(err.message);
@@ -312,15 +399,21 @@ export default function ContainerMountsSection({ config, onRefresh }) {
         </p>
 
         <DataTableScroll>
-          <DataTable minWidthRem={44}>
+          <DataTable minWidthRem={60}>
             <thead>
               <tr className={dataTableHeadRowClass}>
                 <DataTableTh dense className="w-10 font-normal" aria-hidden />
-                <DataTableTh dense className="min-w-[14rem]">
+                <DataTableTh dense className="min-w-[12rem]">
                   Container path
                 </DataTableTh>
-                <DataTableTh dense className="w-36 min-w-[9rem]">
+                <DataTableTh dense className="w-32 min-w-[8rem]">
                   Mount name
+                </DataTableTh>
+                <DataTableTh dense className="min-w-[9rem]">
+                  Source
+                </DataTableTh>
+                <DataTableTh dense className="min-w-[8rem]">
+                  Sub-path
                 </DataTableTh>
                 <DataTableTh dense>Read-only</DataTableTh>
                 <DataTableTh dense align="right">
@@ -331,7 +424,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
             <tbody>
               {rows.length === 0 && (
                 <tr className={dataTableBodyRowClass}>
-                  <td colSpan={5} className={`${dataTableEmptyCellClass} text-xs text-text-muted`}>
+                  <td colSpan={7} className={`${dataTableEmptyCellClass} text-xs text-text-muted`}>
                     No mounts configured.
                   </td>
                 </tr>
@@ -373,7 +466,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                         <span className="font-mono text-sm text-text-primary">{truncate(row.containerPath, 40)}</span>
                       )}
                     </DataTableTd>
-                    <DataTableTd dense className="w-36 min-w-[9rem]">
+                    <DataTableTd dense className="w-32 min-w-[8rem]">
                       {fieldEdit ? (
                         <input
                           type="text"
@@ -384,6 +477,69 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                         />
                       ) : (
                         <span className="font-mono text-sm text-text-primary">{truncate(row.name, 24)}</span>
+                      )}
+                    </DataTableTd>
+                    <DataTableTd dense className="min-w-[9rem]">
+                      {row.type === 'file' ? (
+                        <span className="text-sm text-text-muted">Local</span>
+                      ) : fieldEdit ? (
+                        <select
+                          value={row.sourceId || ''}
+                          onChange={(e) => handleSourceChange(row, e.target.value || null)}
+                          className="input-field w-full min-w-0 text-xs"
+                        >
+                          <option value="">Local</option>
+                          {storageMounts.map((sm) => (
+                            <option key={sm.id} value={sm.id}>
+                              {(sm.label && sm.label.trim()) || sm.mountPath}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        (() => {
+                          if (!row.sourceId) return <span className="text-sm text-text-muted">Local</span>;
+                          const sm = storageMounts.find((m) => m.id === row.sourceId);
+                          const missing = !sm;
+                          const notMounted = sm && storageStatusById.get(sm.id) === false;
+                          const label = sm ? ((sm.label && sm.label.trim()) || sm.mountPath) : row.sourceId;
+                          const warn = missing || notMounted;
+                          const warnMsg = missing
+                            ? 'Referenced storage mount no longer exists'
+                            : notMounted
+                              ? 'Referenced storage mount is not currently mounted'
+                              : '';
+                          return (
+                            <span className="inline-flex items-center gap-1 text-sm">
+                              {warn && (
+                                <AlertCircle size={12} className="text-status-stopped" aria-label={warnMsg}>
+                                  <title>{warnMsg}</title>
+                                </AlertCircle>
+                              )}
+                              <span className={warn ? 'text-status-stopped' : 'text-text-secondary'} title={warn ? warnMsg : label}>
+                                {truncate(label, 20)}
+                              </span>
+                            </span>
+                          );
+                        })()
+                      )}
+                    </DataTableTd>
+                    <DataTableTd dense className="min-w-[8rem]">
+                      {row.type === 'file' ? (
+                        <span className="text-sm text-text-muted">—</span>
+                      ) : row.sourceId ? (
+                        fieldEdit ? (
+                          <input
+                            type="text"
+                            value={row.subPath || ''}
+                            onChange={(e) => updateRow(row.rowId, 'subPath', e.target.value)}
+                            placeholder="(empty = mount root)"
+                            className="input-field w-full min-w-0 font-mono text-xs"
+                          />
+                        ) : (
+                          <span className="font-mono text-sm text-text-secondary">{row.subPath ? truncate(row.subPath, 20) : '—'}</span>
+                        )
+                      ) : (
+                        <span className="text-sm text-text-muted">—</span>
                       )}
                     </DataTableTd>
                     <DataTableTd dense>
@@ -446,22 +602,28 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                             </label>
                           </>
                         ) : (
-                          <>
-                            <label
-                              className={`${iconBtn} cursor-pointer text-accent ${rowBusy || saving || rowDeleting ? 'opacity-40 pointer-events-none' : ''}`}
-                              title="Upload zip"
-                              aria-label="Upload zip archive"
-                            >
-                              {rowBusy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Archive size={14} aria-hidden />}
-                              <input
-                                type="file"
-                                accept=".zip,application/zip"
-                                className="hidden"
-                                disabled={rowBusy || saving || rowDeleting}
-                                onChange={(e) => handleZipUpload(row, e)}
-                              />
-                            </label>
-                          </>
+                          (() => {
+                            const zipDisabled = rowBusy || saving || rowDeleting || !!row.sourceId;
+                            const zipTitle = row.sourceId
+                              ? 'Zip upload is available on Local mounts only'
+                              : 'Upload zip';
+                            return (
+                              <label
+                                className={`${iconBtn} cursor-pointer text-accent ${zipDisabled ? 'opacity-40 pointer-events-none' : ''}`}
+                                title={zipTitle}
+                                aria-label={zipTitle}
+                              >
+                                {rowBusy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Archive size={14} aria-hidden />}
+                                <input
+                                  type="file"
+                                  accept=".zip,application/zip"
+                                  className="hidden"
+                                  disabled={zipDisabled}
+                                  onChange={(e) => handleZipUpload(row, e)}
+                                />
+                              </label>
+                            );
+                          })()
                         )}
                         {row.serverMountName && !fieldEdit && (
                           <button

@@ -71,7 +71,7 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 | `runAsRoot` | boolean | false | Run the container process as UID/GID 0 instead of the Wisp deploy user. Required for images that write to root-owned directories (e.g. OpenWebUI). When true, bind-mount files under `files/` are root-owned; container deletion may require `sudo` for those paths. Requires restart. |
 | `localDns` | boolean | false | Enable mDNS registration for this container on the LAN. New containers default to `true`; existing containers without this field are treated as `false` for upgrade safety. |
 | `env` | object | `{}` | Environment variables. Structured shape: `{ KEY: { value: string, secret?: true } }`. Entries without `secret` are plaintext; `secret: true` marks the entry as write-only — see **Secret env vars** below. |
-| `mounts` | array | `[]` | Bind mount definitions (see Mount entry); backing data lives under `files/<name>` |
+| `mounts` | array | `[]` | Bind mount definitions (see Mount entry); Local backing data lives under `files/<name>`, Storage-sourced entries resolve to `<settings.mounts[sourceId].mountPath>/<subPath>` |
 | `network` | object | `{ "type": "bridge" }` | Network configuration (see below) |
 | `exposedPorts` | string[] | `[]` | Ports declared by the image (`EXPOSE` directives), e.g. `["80/tcp", "443/tcp"]`. Set at create time from the OCI image config; informational only (containers expose all listening ports on the LAN) |
 | `createdAt` | string | (auto) | ISO 8601 creation timestamp |
@@ -97,11 +97,26 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 | Field | Type | Description |
 |-------|------|-------------|
 | `type` | string | `"file"` — bind a single host file; `"directory"` — bind a host directory |
-| `name` | string | Single path segment: storage key; host path is `files/<name>` (file) or `files/<name>/` (directory). Must be unique among mounts. |
+| `name` | string | Single path segment: storage key. Must be unique among mounts. For Local entries it also names the backing directory under `files/<name>`. For Storage-sourced entries it is purely a config key. |
 | `containerPath` | string | Absolute path inside the container (unique among mounts) |
 | `readonly` | boolean | Bind mount read-only when true |
+| `sourceId` | string \| null | Optional; directory mounts only. When set, references an entry in **`settings.mounts`** (see [STORAGE.md](STORAGE.md)) and the bind source lives on that mount instead of `files/<name>`. `null`/absent = Local. |
+| `subPath` | string | Sub-path inside the referenced storage mount (relative; no `..`; empty = mount root). Only meaningful when `sourceId` is set. |
 
-After **PATCH** persists **`mounts`**, or after **POST** `/api/containers/:name/mounts` adds one mount, the backend creates any **missing** backing file or directory under `files/<name>` automatically (empty file or empty directory) so new rows are usable without a separate **Init** call.
+**Host-path resolution** (`resolveMountHostPath`):
+- Local: `<containersPath>/<name>/files/<mount.name>`
+- Storage: `<settings.mounts[sourceId].mountPath>/<mount.subPath>`
+
+After **PATCH** persists **`mounts`**, or after **POST** `/api/containers/:name/mounts` adds one mount, the backend creates any **missing** backing artifact automatically (Local: empty file/directory under `files/<name>`; Storage: `mkdir -p` of the sub-path inside the mounted storage root) so new rows are usable without a separate **Init** call.
+
+**Pre-start checks (`assertBindSourcesReady`)** for Storage-sourced entries validate that:
+- The referenced `settings.mounts[sourceId]` still exists (otherwise `CONTAINER_MOUNT_SOURCE_MISSING`).
+- The storage mount is currently mounted (`/proc/mounts`; otherwise **503** `CONTAINER_MOUNT_SOURCE_NOT_MOUNTED` — user mounts it in Host Mgmt → Storage and retries).
+- `realpath(<mountPath>/<subPath>)` stays within `realpath(<mountPath>)` — symlink escapes are rejected with `CONTAINER_MOUNT_SOURCE_UNSAFE`.
+
+**Delete semantics:** removing a mount row or deleting the container itself leaves Storage-sourced sub-paths untouched (user data outside the container directory). Local backing files/directories are removed as before.
+
+**Zip upload** (`POST /api/containers/:name/mounts/:mountName/zip`) is available for Local directory mounts only — Storage-sourced rows reject the call with `CONTAINER_MOUNT_TYPE_MISMATCH`. The UI dims the zip button and shows a tooltip to that effect.
 
 ### Secret env vars
 
@@ -133,7 +148,7 @@ All under `backend/src/lib/`:
 | `linuxProcUptime.js` | `processUptimeMsFromProc(pid)` — container uptime from `/proc` (survives backend restart; in-memory `containerStartTimes` is only a fallback) |
 | `linuxProcIpv4.js` | `ipv4CidrFromProcFibTrie(pid)` — read primary IPv4 from `/proc/<pid>/net/fib_trie` when the task PID is known (no sudo) |
 | `containerManagerLogs.js` | Per-run log files under `runs/`: `listContainerRuns()`, `getContainerRunLogs()`, `streamContainerRunLogs()`, `createNewRun()`, `finalizeRun()`, `findCurrentRunId()`, `resolveRunId()`, `createRunLogReadStream()` |
-| `containerManagerMounts.js` | `validateAndNormalizeMounts()`, `findMount()`, `ensureMountArtifactIfMissing()`, `ensureMissingMountArtifacts()`, `assertBindSourcesReady()` |
+| `containerManagerMounts.js` | `validateAndNormalizeMounts()` (validates optional `sourceId`/`subPath` against `settings.mounts`), `resolveMountHostPath()` (Local vs Storage resolver), `validateSubPath()`, `findMount()`, `ensureMountArtifactIfMissing()`, `ensureMissingMountArtifacts()`, `assertBindSourcesReady()` (branches on `sourceId`, verifies the storage mount is currently mounted and the resolved path stays within its root) |
 | `containerManagerMountCrud.js` | `addContainerMount()`, `updateContainerMount()`, `removeContainerMount()` — row-scoped bind mount CRUD |
 | `containerManagerMountsContent.js` | `uploadMountFileStream()`, `uploadMountZipStream()` (system **`unzip`**, paths checked with **`unzip -Z1`** before extract), `initMountContent()`, `getMountFileTextContent()`, `putMountFileTextContent()`, `deleteMountData()`, `deleteMountBackingStore()` |
 | `containerManagerNetwork.js` | `setupNetwork()`, `teardownNetwork()`, `mergeNetworkLeaseIntoConfig()` (persist DHCP IP / MAC to `container.json`) |
@@ -160,7 +175,7 @@ The exec process uses the same **UID/GID** as the main container task (`runAsRoo
 - Default capabilities: standard container set (chown, net_bind, etc.)
 - Default mounts: proc, dev, devpts, shm, mqueue, sysfs, cgroup, run
 - **Process user:** `process.user` uses the **backend process UID/GID** (the systemd deploy user) by default, so files created on bind mounts under `files/<name>/` remain owned by that user and the backend can delete them. If the backend runs as root (unusual), UID/GID stay 0. When **`runAsRoot: true`** is set in `container.json`, UID/GID are forced to 0 — required for images that write to root-owned directories inside the container (e.g. OpenWebUI writing `.webui_secret_key` to `/app`). Bind-mount data created while running as root will be root-owned; container deletion may require sudo for those paths.
-- User bind mounts: `files/<mountName>` per `mounts[].name` (`type` determines file vs directory)
+- User bind mounts: `resolveMountHostPath(m)` — Local rows use `files/<m.name>` (`type` determines file vs directory); Storage rows use `<settings.mounts[m.sourceId].mountPath>/<m.subPath>`. All bind mounts use `rbind` (+ `ro` when `m.readonly`).
 - CPU quota/period from `cpuLimit`, memory limit from `memoryLimitMiB`
 - `/etc/resolv.conf` bind-mounted from host. When the container's bridge has the Wisp stub IP (`169.254.53.53/32` on `br0`, installed by `scripts/linux/setup/container-dns.sh`), the shared `/var/lib/wisp/container-resolv.conf` is used — a single `nameserver 169.254.53.53` line — so containers reach the in-process DNS forwarder in `wisp-backend` (see **Local DNS** below). Without the stub IP (e.g. VLAN sub-bridges, or setup skipped), fall back to the host's upstream resolvers (`/run/systemd/resolve/resolv.conf` on resolved hosts, else `/etc/resolv.conf`) — resolved's `127.0.0.53` stub is unreachable from a container netns
 
@@ -291,7 +306,9 @@ The HTTP server listens **after** these steps, so hosts with mounts configured m
 | `CONTAINER_MOUNT_TYPE_MISMATCH` | 422 | Operation does not match mount `type` |
 | `CONTAINER_ZIP_INVALID` | 422 | Zip archive missing or corrupt |
 | `CONTAINER_ZIP_UNSAFE` | 422 | Zip path escapes target directory |
-| `CONTAINER_MOUNT_SOURCE_MISSING` | 422 | Backing path missing when reading mount file content in the editor (GET content) |
+| `CONTAINER_MOUNT_SOURCE_MISSING` | 422 | Backing path missing when reading mount file content in the editor, or Storage-sourced mount references a deleted `settings.mounts` entry |
+| `CONTAINER_MOUNT_SOURCE_NOT_MOUNTED` | 503 | Storage-sourced mount's referenced share/drive is not currently mounted on the host |
+| `CONTAINER_MOUNT_SOURCE_UNSAFE` | 422 | Storage-sourced path resolves outside its storage root (symlink escape) |
 | `CONTAINER_MOUNT_FILE_TOO_LARGE` | 422 | Mount file exceeds 512 KiB (editor GET/PUT) |
 | `CONTAINER_MOUNT_FILE_NOT_UTF8` | 422 | Mount file is not valid UTF-8 (editor GET) |
 | `BAD_MULTIPART_TOO_MANY_FILES` | 400 | More than one file part in a mount upload request |

@@ -121,6 +121,13 @@ After reconciliation, Wisp subscribes to `diskMonitor.onChange`. The handler dif
 
 SMB mount toggles come only from explicit user action (`POST /api/host/mounts/:id/mount` / `…/unmount`) or the startup reconcile; SMB has no equivalent of physical hotplug.
 
+## Consumers
+
+Storage mounts are designed to be referenced by other features. Current consumers:
+
+- **Backup destinations** — `settings.backupMountId` can point at any storage mount; backup flows mount it on demand and write backup archives into it.
+- **Container directory mounts** — a container's `mounts[].sourceId` can reference a storage mount id; `mounts[].subPath` scopes to a sub-directory. See [CONTAINERS.md](CONTAINERS.md) §**Mount entry** for the full flow (validation, pre-start checks, zip-upload restriction to Local).
+
 ## API
 
 See [API.md](API.md) §**Storage / Mounts** for the full `/api/host/mounts/*` and `/api/host/disks/*` endpoints.

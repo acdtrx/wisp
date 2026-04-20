@@ -10,9 +10,11 @@ import { getTaskState } from './containerManagerLifecycle.js';
 import {
   validateAndNormalizeMounts,
   validateMountSegmentName,
+  validateSubPath,
   ensureMissingMountArtifacts,
 } from './containerManagerMounts.js';
 import { deleteMountBackingStore } from './containerManagerMountsContent.js';
+import { getRawMounts } from '../../settings.js';
 
 const RESTART_WHEN_RUNNING = true;
 
@@ -39,10 +41,11 @@ function taskIsRunning(task) {
 /**
  * Append one mount, create backing artifact. Returns { requiresRestart }.
  * @param {string} containerName
- * @param {{ type: string, name: string, containerPath: string, readonly?: boolean }} mountDef
+ * @param {{ type: string, name: string, containerPath: string, readonly?: boolean, sourceId?: string|null, subPath?: string }} mountDef
  */
 export async function addContainerMount(containerName, mountDef) {
-  const [normalized] = validateAndNormalizeMounts([mountDef]);
+  const storageMounts = await getRawMounts();
+  const [normalized] = validateAndNormalizeMounts([mountDef], storageMounts);
   const config = await loadContainerConfig(containerName);
   const list = Array.isArray(config.mounts) ? [...config.mounts] : [];
   const names = new Set(list.map((m) => m.name));
@@ -66,10 +69,11 @@ export async function addContainerMount(containerName, mountDef) {
 }
 
 /**
- * Update one mount by current storage key (name). Optional rename moves files/<old> to files/<new>.
+ * Update one mount by current storage key (name). Optional rename moves files/<old> to files/<new>
+ * (Local mounts only — Storage mounts use the name purely as a config key).
  * @param {string} containerName
  * @param {string} mountName - current mount name in config
- * @param {{ name?: string, containerPath?: string, readonly?: boolean }} changes
+ * @param {{ name?: string, containerPath?: string, readonly?: boolean, sourceId?: string|null, subPath?: string }} changes
  */
 export async function updateContainerMount(containerName, mountName, changes) {
   if (!changes || typeof changes !== 'object') {
@@ -81,7 +85,7 @@ export async function updateContainerMount(containerName, mountName, changes) {
   if (idx < 0) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
   }
-  const current = { ...list[idx] };
+  const current = { ...list[idx], sourceId: list[idx].sourceId || null, subPath: list[idx].subPath || '' };
   let nextName = current.name;
   if (changes.name !== undefined) {
     const seg = validateMountSegmentName(changes.name);
@@ -100,6 +104,38 @@ export async function updateContainerMount(containerName, mountName, changes) {
   }
   const nextReadonly = changes.readonly !== undefined ? changes.readonly === true : current.readonly;
 
+  let nextSourceId = current.sourceId;
+  let nextSubPath = current.subPath;
+  const sourceIdProvided = Object.prototype.hasOwnProperty.call(changes, 'sourceId');
+  if (sourceIdProvided) {
+    if (changes.sourceId === null || changes.sourceId === '' || changes.sourceId === undefined) {
+      nextSourceId = null;
+      nextSubPath = '';
+    } else if (typeof changes.sourceId === 'string' && changes.sourceId.trim()) {
+      if (current.type !== 'directory') {
+        throw containerError('INVALID_CONTAINER_MOUNTS', 'sourceId is only allowed on directory mounts');
+      }
+      const storageMounts = await getRawMounts();
+      const sid = changes.sourceId.trim();
+      if (!storageMounts.some((m) => m.id === sid)) {
+        throw containerError('INVALID_CONTAINER_MOUNTS', `sourceId "${sid}" does not reference a configured storage mount`);
+      }
+      nextSourceId = sid;
+    } else {
+      throw containerError('INVALID_CONTAINER_MOUNTS', 'sourceId must be a non-empty string or null');
+    }
+  }
+  if (changes.subPath !== undefined && nextSourceId) {
+    const normalizedSub = validateSubPath(changes.subPath);
+    if (normalizedSub === null) {
+      throw containerError('INVALID_CONTAINER_MOUNTS', 'subPath must be relative and must not contain ".." segments');
+    }
+    nextSubPath = normalizedSub;
+  }
+  if (!nextSourceId) {
+    nextSubPath = '';
+  }
+
   const other = list.filter((_, i) => i !== idx);
   if (other.some((m) => m.name === nextName)) {
     throw containerError('CONTAINER_MOUNT_DUPLICATE', `Duplicate mount name "${nextName}"`);
@@ -113,17 +149,28 @@ export async function updateContainerMount(containerName, mountName, changes) {
     name: nextName,
     containerPath: nextPath,
     readonly: nextReadonly,
+    sourceId: nextSourceId,
+    subPath: nextSubPath,
   };
 
-  if (
+  const unchanged =
     updated.name === current.name
     && updated.containerPath === current.containerPath
     && updated.readonly === current.readonly
-  ) {
+    && updated.sourceId === current.sourceId
+    && updated.subPath === current.subPath;
+  if (unchanged) {
     return { requiresRestart: false };
   }
 
-  if (nextName !== current.name) {
+  /* Switching a Local mount to Storage: drop the now-unused local files/<name> backing store so we
+   * don't leave stale data behind. Switching the other direction: leave external data in place. */
+  if (!current.sourceId && updated.sourceId) {
+    await deleteMountBackingStore(containerName, current);
+  }
+
+  /* Rename on disk only applies to Local mounts — Storage-backed names are just config keys. */
+  if (!updated.sourceId && nextName !== current.name) {
     const filesDir = getContainerFilesDir(containerName);
     const oldPath = join(filesDir, current.name);
     const newPath = join(filesDir, nextName);
@@ -143,7 +190,7 @@ export async function updateContainerMount(containerName, mountName, changes) {
   const task = await getTaskState(containerName);
   const isRunning = taskIsRunning(task);
   await writeContainerConfig(containerName, config);
-  if (nextName === current.name) {
+  if (!updated.sourceId && nextName === current.name) {
     await ensureMissingMountArtifacts(containerName, [updated]);
   }
   return { requiresRestart: isRunning && RESTART_WHEN_RUNNING };
@@ -162,7 +209,10 @@ export async function removeContainerMount(containerName, mountName) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
   }
   const removed = list[idx];
-  await deleteMountBackingStore(containerName, removed);
+  if (!removed.sourceId) {
+    /* Storage-sourced mounts reference user data outside the container dir — leave it alone. */
+    await deleteMountBackingStore(containerName, removed);
+  }
   list.splice(idx, 1);
   config.mounts = list;
   const task = await getTaskState(containerName);

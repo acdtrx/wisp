@@ -5,6 +5,7 @@
 import { join } from 'node:path';
 
 import { getContainerNetnsPath } from './containerPaths.js';
+import { resolveMountHostPath } from './containerManagerMounts.js';
 
 const DEFAULT_CAPS = [
   'CAP_CHOWN', 'CAP_DAC_OVERRIDE', 'CAP_FSETID', 'CAP_FOWNER',
@@ -41,6 +42,7 @@ const READONLY_PATHS = [
  * @param {string} containerFilesDir - Absolute path to the container's files/ directory
  * @param {object} [opts] - Extra options
  * @param {string} [opts.resolvConfPath] - Host resolv.conf to bind-mount (default: /etc/resolv.conf)
+ * @param {Array<{ id: string, mountPath: string }>} [opts.storageMounts] - settings.mounts, required when any mount uses sourceId
  * @returns {object} OCI runtime spec (JSON-serializable)
  */
 export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', opts = {}) {
@@ -60,10 +62,11 @@ export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', o
   const cwd = imgCfg.WorkingDir || '/';
 
   const mounts = [...DEFAULT_MOUNTS];
+  const storageMounts = opts.storageMounts || [];
   if (config.mounts) {
     for (const m of config.mounts) {
       if (!m?.name || (m.type !== 'file' && m.type !== 'directory')) continue;
-      const hostPath = join(containerFilesDir, m.name);
+      const { hostPath } = resolveMountHostPath(m, containerFilesDir, storageMounts);
       const mountOpts = ['rbind'];
       if (m.readonly) mountOpts.push('ro');
       mounts.push({

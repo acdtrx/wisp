@@ -23,6 +23,7 @@ import { getDefaultContainerParentBridge } from '../vmManager/vmManagerHost.js';
 import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
 import { registerAddress, deregisterAddress, sanitizeHostname } from '../../mdnsManager.js';
 import { assertBindSourcesReady } from './containerManagerMounts.js';
+import { getRawMounts } from '../../settings.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { getImageDigest } from './containerManagerImages.js';
 import { isKnownApp, getAppModule } from './apps/appRegistry.js';
@@ -436,7 +437,8 @@ export async function createContainer(spec, onStep) {
 
   // Build OCI spec
   const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
-  const ociSpec = buildOCISpec(config, imageConfig, filesDir, { resolvConfPath });
+  const storageMounts = await getRawMounts();
+  const ociSpec = buildOCISpec(config, imageConfig, filesDir, { resolvConfPath, storageMounts });
 
   // Prepare snapshot (required before containerd Containers.Create)
   try {
@@ -524,7 +526,8 @@ export async function startExistingContainer(name) {
 
   // Rebuild OCI spec
   const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
-  const ociSpec = buildOCISpec(config, imageConfig, filesDir, { resolvConfPath });
+  const storageMounts = await getRawMounts();
+  const ociSpec = buildOCISpec(config, imageConfig, filesDir, { resolvConfPath, storageMounts });
 
   // Update the container spec in containerd
   await callUnary(getClient('containers'), 'update', {
@@ -537,7 +540,7 @@ export async function startExistingContainer(name) {
 
   const mounts = await prepareSnapshot(name, imageConfig);
 
-  await assertBindSourcesReady(name, config, filesDir);
+  await assertBindSourcesReady(name, config, filesDir, storageMounts);
 
   // Set up networking
   try {

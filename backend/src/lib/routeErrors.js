@@ -89,6 +89,7 @@ function errorCodeToStatus(code) {
     case 'CONTAINER_ZIP_UNSAFE':
     case 'CONTAINER_MOUNT_SOURCE_MISSING':
     case 'CONTAINER_MOUNT_SOURCE_WRONG_TYPE':
+    case 'CONTAINER_MOUNT_SOURCE_UNSAFE':
     case 'CONTAINER_MOUNT_FILE_TOO_LARGE':
     case 'CONTAINER_MOUNT_FILE_NOT_UTF8':
     case 'INVALID_NETWORK_BRIDGE_NAME':
@@ -105,6 +106,7 @@ function errorCodeToStatus(code) {
       return 404;
     case 'NETWORK_BRIDGE_UNAVAILABLE':
     case 'NETWORK_BRIDGE_APPLY_FAILED':
+    case 'CONTAINER_MOUNT_SOURCE_NOT_MOUNTED':
       return 503;
     case 'CONTAINERD_ERROR':
     case 'GITHUB_API':
