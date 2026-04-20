@@ -5,9 +5,15 @@
 ### New Features
 - URL-addressable views: `/host/:tab`, `/vm/:name/:tab`, `/container/:name/:tab`, `/create/vm`, `/create/container` — browser refresh and deep links now land back on the same page and tab
 - Host tabs reshuffled: OS Update moved out of "Host Mgmt" into a new top-level **Software** tab (replaces "Image Library"), stacked above the image list; pending-update badge moves with it
+- Host "reboot required" signal — amber badge on the Restart button and OS Update card when `/var/run/reboot-required` is present (Debian/Ubuntu) or the running kernel differs from the installed one (Arch); triggering packages listed in the tooltip
+- VM stale-qemu signal — list row and Reboot action flag VMs whose qemu binary was replaced on disk (e.g. after a qemu/libvirt upgrade) so a restart into the new binary is visible
+- Image Library "Checked …" status always reports the update count found, so the Check button's effect is visible even when zero
 
 ### Bug Fixes
 - Shell top bar height unified across Host / VM / Container views; left-sidebar Host row no longer stands taller than the tab row next to it
+- OCI image Modified timestamps no longer reset to "just now" on every update check — pinned per (ref, digest) via a sidecar so idempotent re-pulls don't bump the column
+- Container `updateAvailable` is now derived at read time from digest drift rather than persisted, so stale flags can no longer stick across start/stop cycles
+- Container overview drops the redundant Restart button from the update banner; the primary Restart action sits directly above it in the header
 
 ## 2026-04-18
 
