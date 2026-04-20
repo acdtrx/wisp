@@ -250,11 +250,12 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
 }
 
 export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelect, defaultFilter = 'all' }) {
+  const isPageLike = mode === 'page' || mode === 'embedded';
   const filterTabs = useMemo(() => {
-    if (mode === 'page') return FILTERS_PAGE;
+    if (isPageLike) return FILTERS_PAGE;
     if (pickerKind === 'container') return FILTERS_PICKER_CONTAINER;
     return FILTERS_PICKER;
-  }, [mode, pickerKind]);
+  }, [isPageLike, pickerKind]);
   const registerJob = useBackgroundJobsStore((s) => s.registerJob);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
   const imageUpdateCheck = useContainerStore((s) => s.imageUpdateCheck);
@@ -317,7 +318,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
         const data = await listContainerImages();
         setContainerImages(data);
         setFiles([]);
-      } else if (mode === 'page' && filter === 'all') {
+      } else if (isPageLike && filter === 'all') {
         const [fileData, ociData] = await Promise.all([
           listFiles(undefined),
           listContainerImages(),
@@ -335,10 +336,10 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     } finally {
       setLoading(false);
     }
-  }, [filter, mode]);
+  }, [filter, isPageLike]);
 
   const mergedAllRows = useMemo(() => {
-    if (mode !== 'page' || filter !== 'all') return null;
+    if (!isPageLike || filter !== 'all') return null;
     const merged = [
       ...files.map((f) => ({ kind: 'file', file: f })),
       ...containerImages.map((o) => ({ kind: 'oci', oci: o })),
@@ -349,7 +350,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       return na.localeCompare(nb);
     });
     return merged;
-  }, [mode, filter, files, containerImages]);
+  }, [isPageLike, filter, files, containerImages]);
 
   useEffect(() => {
     fetchFiles();
@@ -527,7 +528,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
         ))}
       </div>
       <div className="flex items-center gap-1 border-l border-surface-border pl-3">
-        {mode === 'page' && isOciView && (
+        {isPageLike && isOciView && (
           <button
             type="button"
             onClick={() => startImageUpdateCheck(null)}
@@ -568,15 +569,13 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
 
   const pageGutters = mode === 'page' ? 'px-6 py-5' : 'px-4 py-4';
 
-  return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <div className={`min-h-0 flex-1 overflow-y-auto ${pageGutters}`}>
-        <SectionCard
-          title="Image Library"
-          titleIcon={<Images size={14} strokeWidth={2} />}
-          headerAction={libraryHeaderAction}
-          error={error || undefined}
-        >
+  const sectionCardNode = (
+    <SectionCard
+      title="Image Library"
+      titleIcon={<Images size={14} strokeWidth={2} />}
+      headerAction={libraryHeaderAction}
+      error={error || undefined}
+    >
           {(uploading || uploadError || presetError || presetDownloading) && (
             <div className="mb-4 border-b border-surface-border pb-4">
               {uploading && (
@@ -615,7 +614,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             </div>
           )}
 
-          {mode === 'page' && isOciView && (
+          {isPageLike && isOciView && (
             <div className="mb-3 flex items-center justify-between text-xs text-text-muted">
               <span>
                 {imageUpdateCheck.running ? (
@@ -677,7 +676,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
               </DataTable>
             </DataTableScroll>
           )
-        ) : mode === 'page' && filter === 'all' && mergedAllRows ? (
+        ) : isPageLike && filter === 'all' && mergedAllRows ? (
           mergedAllRows.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <HardDrive size={32} className="mb-2 text-text-muted" />
@@ -749,9 +748,11 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             </DataTable>
           </DataTableScroll>
         )}
-        </SectionCard>
-      </div>
+    </SectionCard>
+  );
 
+  const modalNodes = (
+    <>
       <ConfirmDialog
         open={!!deleteTarget}
         title={deleteTarget?.kind === 'oci' ? 'Delete container image' : 'Delete file'}
@@ -837,6 +838,24 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
           </div>
         </div>
       )}
+    </>
+  );
+
+  if (mode === 'embedded') {
+    return (
+      <>
+        {sectionCardNode}
+        {modalNodes}
+      </>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div className={`min-h-0 flex-1 overflow-y-auto ${pageGutters}`}>
+        {sectionCardNode}
+      </div>
+      {modalNodes}
     </div>
   );
 }

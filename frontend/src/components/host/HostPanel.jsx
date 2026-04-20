@@ -1,22 +1,24 @@
 import { useState } from 'react';
+import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { Server, Power, RotateCcw, Loader2 } from 'lucide-react';
-import { useUiStore } from '../../store/uiStore.js';
 import { useStatsStore } from '../../store/statsStore.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import HostOverview from './HostOverview.jsx';
 import HostMgmt from './HostMgmt.jsx';
 import AppConfig from './AppConfig.jsx';
-import ImageLibrary from '../library/ImageLibrary.jsx';
+import Software from './Software.jsx';
 import BackupsPanel from '../backups/BackupsPanel.jsx';
 import { hostShutdown, hostReboot } from '../../api/host.js';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'os-settings', label: 'Host Mgmt' },
-  { id: 'library', label: 'Image Library' },
+  { id: 'host-mgmt', label: 'Host Mgmt' },
+  { id: 'software', label: 'Software' },
   { id: 'backups', label: 'Backups' },
-  { id: 'settings', label: 'App Config' },
+  { id: 'app-config', label: 'App Config' },
 ];
+
+const VALID_TAB_IDS = new Set(TABS.map((t) => t.id));
 
 function TabButton({ id, label, active, hasBadge, onClick }) {
   return (
@@ -36,8 +38,8 @@ function TabButton({ id, label, active, hasBadge, onClick }) {
 }
 
 export default function HostPanel() {
-  const hostTab = useUiStore((s) => s.hostTab);
-  const setHostTab = useUiStore((s) => s.setHostTab);
+  const { tab } = useParams();
+  const navigate = useNavigate();
   const stats = useStatsStore((s) => s.stats);
   const pendingUpdates = stats?.pendingUpdates ?? 0;
   const rebootRequired = !!stats?.rebootRequired;
@@ -47,13 +49,18 @@ export default function HostPanel() {
   const [restartOpen, setRestartOpen] = useState(false);
   const [powerLoading, setPowerLoading] = useState(null);
 
+  if (!tab || !VALID_TAB_IDS.has(tab)) {
+    return <Navigate to="/host/overview" replace />;
+  }
+
+  const handleTabChange = (id) => navigate(`/host/${id}`);
+
   const handlePowerOff = async () => {
     setPowerLoading('shutdown');
     try {
       await hostShutdown();
       setPowerOffOpen(false);
     } catch (err) {
-      // Host may already be shutting down; dialog can stay open or close
       setPowerOffOpen(false);
     } finally {
       setPowerLoading(null);
@@ -74,7 +81,7 @@ export default function HostPanel() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex flex-shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4 py-2">
+      <div className="flex h-11 flex-shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex-shrink-0 rounded-lg p-1 text-text-secondary" aria-hidden>
             <Server size={18} />
@@ -86,9 +93,9 @@ export default function HostPanel() {
                 key={id}
                 id={id}
                 label={label}
-                active={hostTab === id}
-                hasBadge={id === 'os-settings' && pendingUpdates > 0}
-                onClick={setHostTab}
+                active={tab === id}
+                hasBadge={id === 'software' && pendingUpdates > 0}
+                onClick={handleTabChange}
               />
             ))}
           </div>
@@ -98,7 +105,7 @@ export default function HostPanel() {
             type="button"
             onClick={() => setPowerOffOpen(true)}
             disabled={!!powerLoading}
-            className="flex items-center gap-1.5 rounded-md border border-surface-border px-2.5 py-2 text-sm font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-md border border-surface-border px-2.5 py-1 text-sm font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-40"
             title="Power Off"
           >
             {powerLoading === 'shutdown' ? <Loader2 size={18} className="animate-spin" /> : <Power size={18} />}
@@ -108,7 +115,7 @@ export default function HostPanel() {
             type="button"
             onClick={() => setRestartOpen(true)}
             disabled={!!powerLoading}
-            className="relative flex items-center gap-1.5 rounded-md border border-surface-border px-2.5 py-2 text-sm font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-40"
+            className="relative flex items-center gap-1.5 rounded-md border border-surface-border px-2.5 py-1 text-sm font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-40"
             title={rebootRequired ? `Restart (reboot required: ${rebootReasons.join(', ') || 'kernel update'})` : 'Restart'}
           >
             {powerLoading === 'restart' ? <Loader2 size={18} className="animate-spin" /> : <RotateCcw size={18} />}
@@ -121,11 +128,11 @@ export default function HostPanel() {
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
-        {hostTab === 'overview' && <HostOverview />}
-        {hostTab === 'os-settings' && <HostMgmt />}
-        {hostTab === 'library' && <ImageLibrary mode="page" />}
-        {hostTab === 'backups' && <BackupsPanel />}
-        {hostTab === 'settings' && <AppConfig />}
+        {tab === 'overview' && <HostOverview />}
+        {tab === 'host-mgmt' && <HostMgmt />}
+        {tab === 'software' && <Software />}
+        {tab === 'backups' && <BackupsPanel />}
+        {tab === 'app-config' && <AppConfig />}
       </div>
 
       <ConfirmDialog

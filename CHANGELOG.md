@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-04-20
+
+### New Features
+- URL-addressable views: `/host/:tab`, `/vm/:name/:tab`, `/container/:name/:tab`, `/create/vm`, `/create/container` — browser refresh and deep links now land back on the same page and tab
+- Host tabs reshuffled: OS Update moved out of "Host Mgmt" into a new top-level **Software** tab (replaces "Image Library"), stacked above the image list; pending-update badge moves with it
+
+### Bug Fixes
+- Shell top bar height unified across Host / VM / Container views; left-sidebar Host row no longer stands taller than the tab row next to it
+
 ## 2026-04-18
 
 ### New Features

@@ -1,7 +1,6 @@
+import { useNavigate } from 'react-router-dom';
 import { Play, Square, RotateCcw } from 'lucide-react';
 import { useContainerStore } from '../../store/containerStore.js';
-import { useUiStore } from '../../store/uiStore.js';
-import { useVmStore } from '../../store/vmStore.js';
 import { CONTAINER_STATE_ICON_COLOR } from '../../utils/containerConstants.js';
 import { getVmIcon, getDefaultContainerIconId } from '../shared/vmIcons.jsx';
 
@@ -14,13 +13,11 @@ function shortImage(image) {
 
 export default function ContainerListItem({ container }) {
   const selectedContainer = useContainerStore((s) => s.selectedContainer);
-  const selectContainer = useContainerStore((s) => s.selectContainer);
   const startContainer = useContainerStore((s) => s.startContainer);
   const stopContainer = useContainerStore((s) => s.stopContainer);
   const restartContainer = useContainerStore((s) => s.restartContainer);
   const actionLoading = useContainerStore((s) => s.actionLoading);
-  const setCenterView = useUiStore((s) => s.setCenterView);
-  const deselectVM = useVmStore((s) => s.deselectVM);
+  const navigate = useNavigate();
 
   const isSelected = selectedContainer === container.name;
   const isRunning = container.state === 'running';
@@ -30,9 +27,7 @@ export default function ContainerListItem({ container }) {
   const WorkloadIcon = getVmIcon(iconId).component;
 
   const handleSelect = () => {
-    deselectVM();
-    setCenterView('default');
-    selectContainer(container.name);
+    navigate(`/container/${encodeURIComponent(container.name)}/overview`);
   };
 
   return (

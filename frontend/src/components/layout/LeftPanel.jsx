@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Monitor, Search, Server, Box } from 'lucide-react';
 import { useVmStore } from '../../store/vmStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
@@ -22,13 +23,10 @@ export default function LeftPanel() {
   const containers = useContainerStore((s) => s.containers);
   const startContainerListSSE = useContainerStore((s) => s.startContainerListSSE);
   const stopContainerListSSE = useContainerStore((s) => s.stopContainerListSSE);
-  const setCenterView = useUiStore((s) => s.setCenterView);
-  const setHostTab = useUiStore((s) => s.setHostTab);
-  const centerView = useUiStore((s) => s.centerView);
   const listFilter = useUiStore((s) => s.listFilter);
   const setListFilter = useUiStore((s) => s.setListFilter);
-  const deselectVM = useVmStore((s) => s.deselectVM);
-  const deselectContainer = useContainerStore((s) => s.deselectContainer);
+  const navigate = useNavigate();
+  const location = useLocation();
   const refreshIntervalSeconds = useSettingsStore((s) => s.settings?.refreshIntervalSeconds ?? 5);
   const stats = useStatsStore((s) => s.stats);
   const pendingUpdates = stats?.pendingUpdates ?? 0;
@@ -75,29 +73,24 @@ export default function LeftPanel() {
   }, [vms, containers, search, sortRunningFirst, listFilter]);
 
   const totalCount = vms.length + containers.length;
-  const isHostSelected = centerView === 'host';
+  const isHostSelected = location.pathname === '/' || location.pathname.startsWith('/host');
 
-  const openHost = () => {
-    deselectVM();
-    deselectContainer();
-    setHostTab('overview');
-    setCenterView('host');
-  };
+  const openHost = () => navigate('/host/overview');
 
   return (
     <aside className="flex w-[280px] flex-col border-r border-surface-border bg-surface-sidebar">
       <button
         type="button"
         onClick={openHost}
-        className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors duration-150 border-b border-surface-border ${
+        className={`flex h-11 w-full items-center gap-3 px-4 text-left transition-colors duration-150 border-b border-surface-border ${
           isHostSelected ? 'bg-surface-card border-l-2 border-l-accent' : 'hover:bg-surface-card'
         }`}
       >
         <Server size={18} className="flex-shrink-0 text-text-secondary" />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 leading-tight">
           <span className="block truncate text-sm font-medium text-text-primary">Host</span>
           {stats?.cpu?.total != null && stats?.memory?.totalGB != null && (
-            <p className="mt-0.5 text-[11px] text-text-muted">
+            <p className="text-[11px] text-text-muted">
               {stats.cpu.total} CPU / {formatMemory(Math.round(stats.memory.totalGB * 1024))}
             </p>
           )}
@@ -113,7 +106,7 @@ export default function LeftPanel() {
         </span>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => { deselectVM(); deselectContainer(); setCenterView('create'); }}
+            onClick={() => navigate('/create/vm')}
             className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors duration-150"
             title="New VM"
           >
@@ -121,7 +114,7 @@ export default function LeftPanel() {
             <Server size={12} />
           </button>
           <button
-            onClick={() => { deselectVM(); deselectContainer(); setCenterView('create-container'); }}
+            onClick={() => navigate('/create/container')}
             className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors duration-150"
             title="New Container"
           >

@@ -1,7 +1,7 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Loader2, ArrowLeft } from 'lucide-react';
 
-import { useUiStore } from '../../store/uiStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
@@ -23,8 +23,7 @@ const CONNECTION_LOST_DETAIL =
   'The progress stream closed unexpectedly (e.g. proxy timeout). Check the server: journalctl -u wisp-frontend -u wisp-backend -n 50';
 
 export default function CreateContainerPanel() {
-  const setCenterView = useUiStore((s) => s.setCenterView);
-  const selectContainer = useContainerStore((s) => s.selectContainer);
+  const navigate = useNavigate();
   const fetchContainers = useContainerStore((s) => s.fetchContainers);
   const registerJob = useBackgroundJobsStore((s) => s.registerJob);
   const jobs = useBackgroundJobsStore((s) => s.jobs);
@@ -83,8 +82,7 @@ export default function CreateContainerPanel() {
             setCreating(false);
             setCreateJobId(null);
             fetchContainers();
-            selectContainer(spec.name);
-            setCenterView('default');
+            navigate(`/container/${encodeURIComponent(spec.name)}/overview`);
           }
           if (ev.step === 'error') {
             setCreateError(ev.error || 'Creation failed');
@@ -137,7 +135,7 @@ export default function CreateContainerPanel() {
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex flex-shrink-0 items-center gap-3 border-b border-surface-border bg-surface-card px-4 py-3">
         <button
-          onClick={() => setCenterView('default')}
+          onClick={() => navigate('/host/overview')}
           className="rounded-md p-1 text-text-muted hover:text-text-primary hover:bg-surface transition-colors duration-150"
           title="Back"
         >

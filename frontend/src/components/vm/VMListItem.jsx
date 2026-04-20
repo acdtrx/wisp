@@ -1,7 +1,6 @@
+import { useNavigate } from 'react-router-dom';
 import { Play, Square, RotateCcw } from 'lucide-react';
 import { useVmStore } from '../../store/vmStore.js';
-import { useContainerStore } from '../../store/containerStore.js';
-import { useUiStore } from '../../store/uiStore.js';
 import { getVmIcon, getDefaultIconId } from '../shared/vmIcons.jsx';
 import { formatMemory } from '../../utils/formatters.js';
 
@@ -19,13 +18,11 @@ const STATE_ICON_COLOR = {
 
 export default function VMListItem({ vm }) {
   const selectedVM = useVmStore((s) => s.selectedVM);
-  const selectVM = useVmStore((s) => s.selectVM);
   const startVM = useVmStore((s) => s.startVM);
   const stopVM = useVmStore((s) => s.stopVM);
   const rebootVM = useVmStore((s) => s.rebootVM);
   const actionLoading = useVmStore((s) => s.actionLoading);
-  const setCenterView = useUiStore((s) => s.setCenterView);
-  const deselectContainer = useContainerStore((s) => s.deselectContainer);
+  const navigate = useNavigate();
 
   const isSelected = selectedVM === vm.name;
   const isRunning = vm.state === 'running' || vm.state === 'blocked';
@@ -39,11 +36,7 @@ export default function VMListItem({ vm }) {
 
   return (
     <div
-      onClick={() => {
-        deselectContainer();
-        setCenterView('default');
-        selectVM(vm.name);
-      }}
+      onClick={() => navigate(`/vm/${encodeURIComponent(vm.name)}/overview`)}
       className={`group flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors duration-150 ${
         isSelected
           ? 'bg-surface-card border-l-2 border-l-accent'

@@ -1,4 +1,5 @@
 import { useState, lazy, Suspense } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Play, Square, Zap, RotateCcw, Trash2, Loader2, X,
 } from 'lucide-react';
@@ -53,9 +54,12 @@ export default function ContainerOverviewPanel() {
   const deleteContainer = useContainerStore((s) => s.deleteContainer);
   const refreshSelectedContainer = useContainerStore((s) => s.refreshSelectedContainer);
 
+  const { tab } = useParams();
+  const navigate = useNavigate();
+  const activeTab = tab === 'console' ? 'console' : tab === 'logs' ? 'logs' : 'overview';
+
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteFiles, setDeleteFiles] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
 
   if (loading || !config) {
@@ -88,7 +92,7 @@ export default function ContainerOverviewPanel() {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex flex-shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4 py-2">
+      <div className="flex h-11 flex-shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4">
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
@@ -103,7 +107,7 @@ export default function ContainerOverviewPanel() {
           <div className="flex border-l border-surface-border pl-3">
             <button
               type="button"
-              onClick={() => setActiveTab('overview')}
+              onClick={() => navigate(`/container/${encodeURIComponent(name)}/overview`)}
               className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
                 activeTab === 'overview' ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
               }`}
@@ -112,7 +116,7 @@ export default function ContainerOverviewPanel() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('logs')}
+              onClick={() => navigate(`/container/${encodeURIComponent(name)}/logs`)}
               className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
                 activeTab === 'logs' ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
               }`}
@@ -121,7 +125,7 @@ export default function ContainerOverviewPanel() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('console')}
+              onClick={() => navigate(`/container/${encodeURIComponent(name)}/console`)}
               className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
                 activeTab === 'console' ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
               }`}

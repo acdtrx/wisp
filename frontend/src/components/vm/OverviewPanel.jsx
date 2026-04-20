@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Play, Square, Zap, RotateCcw, Pause, PlayCircle,
   Copy, Trash2, Loader2, Code2, X, Archive,
@@ -111,11 +112,14 @@ export default function OverviewPanel() {
   );
   const backupInProgress = !!backupRunningJob;
 
+  const { tab } = useParams();
+  const navigate = useNavigate();
+  const activeTab = tab === 'console' ? 'console' : 'overview';
+
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteDisks, setDeleteDisks] = useState(true);
   const [xmlModalOpen, setXmlModalOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
   const [backupModalOpen, setBackupModalOpen] = useState(false);
   const [backupDestinations, setBackupDestinations] = useState([]);
   const [backupSelectedIds, setBackupSelectedIds] = useState(['local']);
@@ -198,7 +202,7 @@ export default function OverviewPanel() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header row: VM name + status | tabs | actions */}
-      <div className="flex flex-shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4 py-2">
+      <div className="flex h-11 flex-shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4">
         <div className="flex min-w-0 items-center gap-3">
           <button
             onClick={() => setIconPickerOpen(true)}
@@ -212,7 +216,7 @@ export default function OverviewPanel() {
           <div className="flex border-l border-surface-border pl-3">
             <button
               type="button"
-              onClick={() => setActiveTab('overview')}
+              onClick={() => navigate(`/vm/${encodeURIComponent(name)}/overview`)}
               className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
                 activeTab === 'overview' ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
               }`}
@@ -221,7 +225,7 @@ export default function OverviewPanel() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('console')}
+              onClick={() => navigate(`/vm/${encodeURIComponent(name)}/console`)}
               className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
                 activeTab === 'console' ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
               }`}

@@ -85,7 +85,7 @@ Single row containing (left to right):
 2. **Host stats pills** — CPU, RAM, Disk I/O, Net I/O, **RUNNING** (running VM count and running container count as `monitor · n | box · m`, embedded inline, centered in the remaining width)
 3. **Background jobs** (when any exist) — rightmost; list icon with a badge count of *running* jobs; opens a dropdown listing in-progress and recently finished jobs (VM create, container create, VM backup, library downloads). Each row shows title, step, optional detail, and a **gradient progress bar** when a numeric percent is available (running), or a full **success** bar when the job completed. **Dismiss** appears for completed or failed jobs. Jobs are tracked app-wide so progress continues if you navigate away from the panel that started the operation. After a full page reload, the shell loads the in-memory job list from **GET /api/background-jobs** and re-subscribes to each job’s progress SSE (server is source of truth for titles; jobs disappear after server TTL or process restart).
 
-The top bar shows "Wisp" text and the server display name (from settings). There is no logo image. The **browser tab title** is `{server display name} — Wisp` after settings load (same name as the top bar; default **My Server** when unset), so multiple tabs to different servers are easy to tell apart. The host stats are live (SSE, every 3 seconds) and use the `StatPill` component with color thresholds. Host management, Backups, Image Library, and Settings are accessed via the **Host** entry in the left panel.
+The top bar shows "Wisp" text and the server display name (from settings). There is no logo image. The **browser tab title** is `{server display name} — Wisp` after settings load (same name as the top bar; default **My Server** when unset), so multiple tabs to different servers are easy to tell apart. The host stats are live (SSE, every 3 seconds) and use the `StatPill` component with color thresholds. Host management, Backups, Software (OS Update + Image Library), and App Config are accessed via the **Host** entry in the left panel.
 
 ---
 
@@ -93,7 +93,7 @@ The top bar shows "Wisp" text and the server display name (from settings). There
 
 ### Host entry
 
-A **Host** row appears above the Virtual Machines section. It shows a Server icon, the label "Host", a secondary line with physical CPU count and total RAM (same `formatMemory` style as VM list rows, from host stats SSE), and an optional badge dot when pending OS updates are available (from the background hourly check). Clicking it opens the Host panel in the center with tabs: Overview, Host Mgmt, Image Library, Backups, App Config. The Host row has active state styling (accent border) when the Host panel is visible.
+A **Host** row appears above the Virtual Machines section. It shows a Server icon, the label "Host", a secondary line with physical CPU count and total RAM (same `formatMemory` style as VM list rows, from host stats SSE), and an optional badge dot when pending OS updates are available (from the background hourly check). Clicking it navigates to `/host/overview` and renders the Host panel in the center with tabs: Overview, Host Mgmt, Software, Backups, App Config. The Host row height is fixed at **`h-11`** (44px) to match the central-panel top bars, and has active state styling (accent border) when the Host panel is visible.
 
 ### Workloads — Header
 
@@ -128,16 +128,20 @@ Each VM is a full-width flat row (no rounded corners, edge-to-edge in the list a
 
 ## View Switching
 
-The center panel content is controlled by a UI store state (`centerView`), not URL-based routing. The app uses a single catch-all route; only `/login` has its own URL.
+The center panel content is controlled by the URL. `AppLayout` is a shell that renders `TopBar`, `LeftPanel`, and a react-router `<Outlet />`; which route renders inside the outlet determines the view. Refreshing the browser restores the same view and tab.
 
-| `centerView` | Content |
-|--------------|---------|
-| `default` | Empty state: "Select a VM or create a new one" |
-| `host` | Host panel (tabbed: Overview, Host Mgmt, Image Library, Backups, App Config) |
-| `create` | Create VM panel |
-| VM selected | Overview panel + VM Stats Bar |
+| URL | Content |
+|-----|---------|
+| `/` | Redirects to `/host/overview` |
+| `/host/:tab` | Host panel (`tab` ∈ `overview`, `host-mgmt`, `software`, `backups`, `app-config`) |
+| `/vm/:name/:tab?` | Overview panel + VM Stats Bar (`tab` ∈ `overview`, `console`; default `overview`) |
+| `/container/:name/:tab?` | Container Overview panel + Container Stats Bar (`tab` ∈ `overview`, `logs`, `console`; default `overview`) |
+| `/create/vm` | Create VM panel |
+| `/create/container` | Create Container panel |
+| `/login` | Login page |
+| `*` | Redirects to `/host/overview` |
 
-When `centerView` is `host`, the active tab is tracked by `hostTab` (`overview`, `os-settings` for Host Mgmt, `library`, `backups`, `settings` for App Config).
+VM/container selection is derived from the URL: `VmRoute` / `ContainerRoute` read `:name` from params and call `selectVM` / `selectContainer` on mount, `deselectVM` / `deselectContainer` on unmount. Tab buttons and sidebar list items call `navigate()` rather than setting store state.
 
 ---
 
@@ -236,9 +240,9 @@ On error: red inline error card above button, with optional expandable raw detai
 
 ## Image Library
 
-See [IMAGE-LIBRARY.md](IMAGE-LIBRARY.md) for functionality. Accessed as the **Image Library** tab inside the Host panel (and as a picker modal from VM creation/overview).
+See [IMAGE-LIBRARY.md](IMAGE-LIBRARY.md) for functionality. Accessed inside the **Software** tab of the Host panel (stacked below OS Update), and as a picker modal from VM creation/overview.
 
-### Page mode layout (Host → Image Library tab)
+### Page mode layout (Host → Software tab)
 
 - **`SectionCard`** (same visual shell as Host Overview sections): **`Images`** **`titleIcon`**, **`headerAction`** = type filter (All / ISO / Disk Image / OCI) plus VM-file **icon-only** actions — **Upload** (accent), **Download from URL**, **Ubuntu Cloud**, **Home Assistant** (URL opens a modal; download progress also in background jobs). When the **OCI** filter is active, a **Check for updates** icon button (`RefreshCw`, icon-only) appears in the header and a status line "Checked {relative} · N updated · N containers flagged" (or "Checking {ref} (i/total)…") appears above the table.
 - Optional strip below the section header (inside the card) when uploading or when upload/preset errors need to be shown
@@ -277,7 +281,7 @@ These are tabs inside the Host panel (not a separate `/settings` page):
 Section-based layout:
 
 1. **App Config tab** — General (server name, VM storage path, image library path, refresh interval). Save button. Password change (current + new, Change button).
-2. **Host Mgmt tab** — OS Update (check/upgrade); **Network Storage** (SMB/CIFS mounts in a **table** with shared DataTable chrome; header **`Plus`+server** adds a row; icon-only row actions; **Pencil** enters inline edit, then save/cancel icons; combined **mount/unmount** control with **green background when mounted**; **Check** (shield) turns **green after success** and **red after failure** (failure text on hover), not inline under the row; delete as icon; no separate “mounted” text column); **Backup** (one row: local path input and network-mount select aligned to the same control height; optional `(none)` or one configured mount).
+2. **Host Mgmt tab** — **Network Storage** (SMB/CIFS mounts in a **table** with shared DataTable chrome; header **`Plus`+server** adds a row; icon-only row actions; **Pencil** enters inline edit, then save/cancel icons; combined **mount/unmount** control with **green background when mounted**; **Check** (shield) turns **green after success** and **red after failure** (failure text on hover), not inline under the row; delete as icon; no separate “mounted” text column); **Backup** (one row: local path input and network-mount select aligned to the same control height; optional `(none)` or one configured mount). **Software tab** hosts OS Update (check/upgrade) above the Image Library.
 3. **Overview tab** — Software section shows Wisp, Node.js, libvirt, QEMU, OS info (see Host Panel).
 
 ---
@@ -288,9 +292,9 @@ The Host panel is opened from the left panel "Host" entry. It uses the same layo
 
 ### Header row
 
-- **Left:** Server icon (non-clickable), "Host" label, tab strip: **Overview** | **Host Mgmt** | **Image Library** | **Backups** | **App Config**
+- **Left:** Server icon (non-clickable), "Host" label, tab strip: **Overview** | **Host Mgmt** | **Software** | **Backups** | **App Config**. Height is fixed at **`h-11`** (44px) to match the left-sidebar Host row, the VM header, and the container header.
 - **Right:** Power Off button, Restart button (each opens a simple confirmation dialog before executing)
-- **Badge:** A dot on the "Host Mgmt" tab when pending updates are available (from background hourly check or manual check)
+- **Badge:** A dot on the "Software" tab when pending updates are available (from background hourly check or manual check)
 
 ### Tab: Overview
 
@@ -307,14 +311,16 @@ Scrollable content with section cards:
 
 Scrollable page with **`px-6 py-5 space-y-5`**, same as Overview. Each block is a **`SectionCard`** with a **`titleIcon`** (same pattern as Overview):
 
-- **OS Update** — **`Package`** icon. Check for updates, Upgrade buttons; display of upgradable package count; note about pending count from background check; success/error messages.
 - **Network Bridges** — **`Network`** icon. Table with columns **Name**, **Parent**, **VLAN Id**, **Status**, **Actions**. Header **`Plus`+network** adds an **inline table row** for create (fields + confirm/cancel icons). Delete is icon-only on existing rows.
 - **Network Storage** — **`Server`** icon. Table layout; header **`Plus`+server** adds a row; icon-only actions; mount state shown on the **mount/unmount** button background (e.g. green when mounted), not as a separate status label; **Check** uses green/red on the shield button after a test (error detail on hover), not extra lines under the row; edit mode per row where applicable.
 - **Backup** — **`Archive`** icon. Local backup path and network-mount-for-backup select on one row (equal-height controls); optional `(none)` or a mount from Network Storage.
 
-### Tab: Image Library
+### Tab: Software
 
-Single **`SectionCard`** titled **Image Library** with **`Images`** **`titleIcon`**, type filter and header icon actions (upload, URL download modal, Ubuntu/HA presets) in **`headerAction`**, then the file/OCI table in the card body. Outer scroll: **`px-6 py-5`** (same gutters as Overview / Host Mgmt). See [IMAGE-LIBRARY.md](IMAGE-LIBRARY.md).
+Scrollable page with **`px-6 py-5 space-y-5`**, same gutters as Overview / Host Mgmt. Two stacked sections:
+
+- **OS Update** (top) — **`Package`** **`titleIcon`**. Check for updates, Upgrade buttons; display of upgradable package count; note about pending count from background check; reboot-required banner; success/error messages.
+- **Image Library** (below) — **`Images`** **`titleIcon`**, type filter and header icon actions (upload, URL download modal, Ubuntu/HA presets) in **`headerAction`**, then the file/OCI table in the card body. `ImageLibrary` is rendered with `mode="embedded"` so it contributes its `SectionCard` directly to the shared scroll, without its own outer scroll wrapper. See [IMAGE-LIBRARY.md](IMAGE-LIBRARY.md).
 
 ### Tab: Backups
 
@@ -427,8 +433,8 @@ Used in Image Library, Backups, Snapshots, and other DataTable-based lists. On *
 
 ## Keyboard Shortcuts
 
-- **Escape:** When a **VM or container** is selected in the left panel, deselects it (empty center view). Does **not** close the Host panel or other `centerView` modes by itself.
-- **Escape in modals:** Overlays that use `useEscapeKey` and mark their content panel with **`data-wisp-modal-root`** do not trigger shell deselect: `AppLayout` ignores Escape while that attribute is in the DOM. Image Library, USB attach, confirms, etc. follow this pattern.
+- **Escape:** While a VM or container view is open (`/vm/:name/...` or `/container/:name/...`), navigates back to `/host/overview`. Handled inside `VmRoute` / `ContainerRoute`. Does **not** close tabs within the Host panel.
+- **Escape in modals:** Overlays that use `useEscapeKey` and mark their content panel with **`data-wisp-modal-root`** take precedence: the route-level Escape handler skips when that attribute is in the DOM so the overlay closes first. Image Library, USB attach, confirms, etc. follow this pattern.
 
 ---
 

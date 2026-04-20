@@ -244,14 +244,26 @@ Source copies live in the repo; **`scripts/linux/setup/install-helpers.sh`** cop
 
 ### View management
 
-The app uses a single catch-all route after login. View switching within the authenticated shell is managed by a UI store (`centerView` state), not by URL-based routing. Values include `default`, `host`, `create` (new VM), `create-container` (new container), or a selected VM/container (driven by `vmStore` / `containerStore`, not by `centerView` alone).
+The URL is the source of truth for which view and tab are active. `AppLayout` is a shell (TopBar + LeftPanel + react-router `<Outlet />`); nested routes decide what renders inside the outlet:
+
+| Route | Element |
+|-------|---------|
+| `/` | `<Navigate to="/host/overview" replace />` |
+| `/host/:tab` | `HostPanel` (tabs: `overview`, `host-mgmt`, `software`, `backups`, `app-config`) |
+| `/vm/:name/:tab?` | `VmRoute` → `OverviewPanel` + `VMStatsBar` (tabs: `overview`, `console`) |
+| `/container/:name/:tab?` | `ContainerRoute` → `ContainerOverviewPanel` + `ContainerStatsBar` (tabs: `overview`, `logs`, `console`) |
+| `/create/vm` | `CreateVMPanel` |
+| `/create/container` | `CreateContainerPanel` |
+| `*` | `<Navigate to="/host/overview" replace />` |
+
+`VmRoute` / `ContainerRoute` read `:name` from `useParams`, call `selectVM` / `selectContainer` on mount (starting the per-workload stats SSE) and `deselectVM` / `deselectContainer` on unmount. Tab buttons and sidebar list items call `navigate()` rather than setting store state, so refreshing the browser restores the same view and tab.
 
 ### Stores (`frontend/src/store/`)
 
 | Store | State managed |
 |-------|--------------|
 | `vmStore` | VM list (SSE `startVMListSSE` / `stopVMListSSE`), selected VM, VM config (seeded from list data for instant header), VM stats, configLoading/error, VM action dispatchers |
-| `uiStore` | Active center view (`centerView`) |
+| `uiStore` | Sidebar list filter (`listFilter`) |
 | `authStore` | Auth token, login/logout |
 | `settingsStore` | App settings, loading/error |
 | `statsStore` | Host stats (CPU, RAM, disk, net) from SSE stream |

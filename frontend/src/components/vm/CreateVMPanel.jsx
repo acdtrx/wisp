@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 
-import { useUiStore } from '../../store/uiStore.js';
 import { useVmStore } from '../../store/vmStore.js';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
@@ -54,8 +54,7 @@ const defaultForm = () => ({
 });
 
 export default function CreateVMPanel() {
-  const setCenterView = useUiStore((s) => s.setCenterView);
-  const selectVM = useVmStore((s) => s.selectVM);
+  const navigate = useNavigate();
   const fetchVMs = useVmStore((s) => s.fetchVMs);
   const registerJob = useBackgroundJobsStore((s) => s.registerJob);
   const createRow = useBackgroundJobsStore((s) => s.jobs);
@@ -220,9 +219,8 @@ export default function CreateVMPanel() {
           if (data.step === 'done' && data.name) {
             setCreating(false);
             setCreateJobId(null);
-            setCenterView('default');
-            selectVM(data.name);
             fetchVMs();
+            navigate(`/vm/${encodeURIComponent(data.name)}/overview`);
           }
           if (data.step === 'error') {
             setCreateError(data.error || 'Create failed');
