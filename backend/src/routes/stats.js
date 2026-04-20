@@ -2,6 +2,7 @@ import { getHostStats } from '../lib/procStats.js';
 import { getRunningVMAllocations, getHostHardware } from '../lib/vmManager.js';
 import { getRunningContainerCount } from '../lib/containerManager.js';
 import { getPendingUpdatesCount, getLastCheckedAt } from '../lib/aptUpdates.js';
+import { getRebootSignal } from '../lib/rebootRequired.js';
 import { setupSSE } from '../lib/sse.js';
 
 export default async function statsRoutes(fastify) {
@@ -17,6 +18,7 @@ export default async function statsRoutes(fastify) {
           const host = getHostStats();
           const vms = await getRunningVMAllocations();
           const runningContainers = await getRunningContainerCount();
+          const reboot = await getRebootSignal();
 
           const payload = {
             cpu: {
@@ -64,6 +66,8 @@ export default async function statsRoutes(fastify) {
             runningContainers,
             pendingUpdates: getPendingUpdatesCount(),
             updatesLastChecked: getLastCheckedAt(),
+            rebootRequired: reboot.required,
+            rebootReasons: reboot.reasons,
           };
 
           reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);

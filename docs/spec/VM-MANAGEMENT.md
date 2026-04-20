@@ -266,13 +266,17 @@ XML parsing and building utilities using fast-xml-parser. Handles the conversion
 ### vmManagerList.js
 
 - **VM list cache** — in-memory cache of the VM list, populated on connect and refreshed automatically on any `DomainEvent` signal (defined, undefined, started, stopped, suspended, resumed). `listVMs()` returns the cache when populated, avoiding per-call libvirt queries. The cache is invalidated on disconnect or bus error.
-- `listVMs()` — returns cached VM list (sub-millisecond); falls back to a live libvirt query on first call before cache populates
+- `listVMs()` — returns cached VM list (sub-millisecond); falls back to a live libvirt query on first call before cache populates. Enriches each item with `staleBinary` at read-time for running VMs (see `vmManagerProc.js`) — intentionally not cached because staleness can change without a libvirt event (e.g. on qemu package upgrade).
 - `getVMConfig(name)` — full VM configuration parsed from XML
 - `getCachedLocalDns(name)` — reads the `localDns` flag for a VM from the cached list; used by `getVMStats` to avoid an extra inactive XML fetch per stats cycle
 
 ### vmManagerLifecycle.js
 
 Purpose-named lifecycle functions: `startVM`, `stopVM`, `forceStopVM`, `rebootVM`, `suspendVM`, `resumeVM`. Each resolves the domain by name, gets the domain interface, and calls the appropriate DBus method.
+
+### vmManagerProc.js
+
+- `isVMBinaryStale(name)` — returns `true` when the VM's qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt upgrade). Reads the libvirt pidfile at `/var/run/libvirt/qemu/<name>.pid`, then checks whether `/proc/<pid>/exe` ends with ` (deleted)`. Returns `false` on any error (missing pidfile, dead pid, EACCES). Exposed via `listVMs()` and `getVMStats()` as `staleBinary`.
 
 ### vmManagerCreate.js
 

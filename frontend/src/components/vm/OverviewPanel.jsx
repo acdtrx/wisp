@@ -50,8 +50,8 @@ const STATE_ICON_COLOR = {
   nostate: 'text-text-secondary',
 };
 
-function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default', loading, hint }) {
-  const base = 'flex items-center justify-center rounded-md p-2 text-sm font-medium transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed';
+function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default', loading, hint, badge }) {
+  const base = 'relative flex items-center justify-center rounded-md p-2 text-sm font-medium transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed';
   const variants = {
     default: 'border border-surface-border text-text-secondary hover:bg-surface hover:text-text-primary',
     danger: 'border border-red-200 text-status-stopped hover:bg-red-50',
@@ -69,12 +69,16 @@ function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default
       className={`${base} ${variants[variant]}`}
     >
       {loading ? <Loader2 size={18} className="animate-spin" /> : <Icon size={18} />}
+      {badge && (
+        <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500" />
+      )}
     </button>
   );
 }
 
 export default function OverviewPanel() {
   const vmConfig = useVmStore((s) => s.vmConfig);
+  const vmStats = useVmStore((s) => s.vmStats);
   const configLoading = useVmStore((s) => s.configLoading);
   const actionLoading = useVmStore((s) => s.actionLoading);
   const error = useVmStore((s) => s.error);
@@ -253,6 +257,8 @@ export default function OverviewPanel() {
             onClick={() => rebootVM(name)}
             disabled={!isRunning}
             loading={actionLoading === 'reboot'}
+            badge={!!vmStats?.staleBinary}
+            hint={vmStats?.staleBinary ? 'Reboot (qemu binary updated since VM started)' : undefined}
           />
           <ActionButton
             icon={Pause} label="Suspend"

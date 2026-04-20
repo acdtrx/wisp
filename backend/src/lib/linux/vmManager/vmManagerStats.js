@@ -5,6 +5,7 @@ import { connectionState, resolveDomain, getDomainXML, getDomainObjAndIface, unw
 import { parseVMFromXML } from './vmManagerXml.js';
 import { STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT } from './libvirtConstants.js';
 import { getCachedLocalDns } from './vmManagerList.js';
+import { isVMBinaryStale } from './vmManagerProc.js';
 import { deregisterAddress, getRegisteredHostname, registerAddress, sanitizeHostname } from '../../mdnsManager.js';
 
 function parseInterfaceAddresses(raw, unwrapVariantFn) {
@@ -62,7 +63,7 @@ export async function getVMStats(name) {
 
   if (stateCode !== 1 && stateCode !== 2 && stateCode !== 3) {
     await deregisterAddress(name);
-    return { state: STATE_NAMES[stateCode] ?? 'unknown', active: false, cpu: null, disk: null, net: null, uptime: null };
+    return { state: STATE_NAMES[stateCode] ?? 'unknown', active: false, cpu: null, disk: null, net: null, uptime: null, staleBinary: false };
   }
 
   const xml = await iface.GetXMLDesc(0);
@@ -149,6 +150,7 @@ export async function getVMStats(name) {
       /* guest agent calls may fail if agent unavailable */
     }
   }
+  const staleBinary = await isVMBinaryStale(name);
   if (localDns === true && guestIp) {
     await registerAddress(name, guestHostname || sanitizeHostname(name), guestIp);
   } else {
@@ -171,6 +173,7 @@ export async function getVMStats(name) {
     guestIp: guestIp ?? undefined,
     guestHostname: guestHostname ?? undefined,
     mdnsHostname: localDns === true ? (getRegisteredHostname(name) ?? undefined) : undefined,
+    staleBinary,
   };
 }
 

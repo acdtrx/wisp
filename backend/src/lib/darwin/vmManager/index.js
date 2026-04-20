@@ -161,6 +161,10 @@ export async function getVNCPort() {
   throw noConn();
 }
 
+export async function isVMBinaryStale() {
+  return false;
+}
+
 export function getWindowsFeatures() {
   return {
     acpi: {},

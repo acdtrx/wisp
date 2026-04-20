@@ -312,7 +312,9 @@ Server-Sent Events stream of host statistics. Pushes every 3 seconds.
   "runningVMs": 3,
   "runningContainers": 2,
   "pendingUpdates": 0,
-  "updatesLastChecked": "2026-04-03T12:00:00.000Z"
+  "updatesLastChecked": "2026-04-03T12:00:00.000Z",
+  "rebootRequired": false,
+  "rebootReasons": []
 }
 ```
 
@@ -324,6 +326,7 @@ Server-Sent Events stream of host statistics. Pushes every 3 seconds.
 - `loadAvg` is [1min, 5min, 15min] from /proc/loadavg.
 - `pendingUpdates` is the count of upgradable packages from the background hourly check (or 0 if check unavailable).
 - `updatesLastChecked` is an ISO 8601 timestamp of the last successful update check (background or manual), or `null` if no check has completed since the backend started.
+- `rebootRequired` is `true` when the host has a pending reboot. `rebootReasons` is a list of short tags (Debian/Ubuntu package names, or `kernel <running> → <installed>` on Arch).
 - CPU and memory `allocated` values reflect running VMs only.
 
 ---
@@ -346,10 +349,13 @@ List all VMs with summary info.
     "vcpus": 4,
     "memoryMiB": 4096,
     "osCategory": "linux",
-    "autostart": true
+    "autostart": true,
+    "staleBinary": false
   }
 ]
 ```
+
+- `staleBinary` is `true` when the VM's running qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt package upgrade); the VM needs to be restarted to pick up the new binary. Always `false` for non-running VMs. Detected by reading `/var/run/libvirt/qemu/<name>.pid` and checking whether `/proc/<pid>/exe` ends with ` (deleted)`.
 
 ### GET /api/vms/stream
 
@@ -520,13 +526,16 @@ SSE stream of per-VM statistics. Pushes every 3 seconds.
   "uptime": 15780,
   "guestHostname": "myvm",
   "guestIp": "192.168.1.10",
-  "mdnsHostname": "myvm.local"
+  "mdnsHostname": "myvm.local",
+  "staleBinary": false
 }
 ```
 
 `guestHostname` and `guestIp` are present only when the guest agent is enabled and the backend successfully queried them. `mdnsHostname` is present when Local DNS is enabled for the VM and registration succeeded.
 
-- **Event data (stopped):** `{ state: "shutoff", active: false, cpu: null, disk: null, net: null, uptime: null }`
+`staleBinary` is `true` when the VM's qemu process is still using a binary that was replaced on disk (typically after a qemu/libvirt upgrade) — the VM needs to be restarted. Detected from `/proc/<pid>/exe` reporting a ` (deleted)` suffix; PID sourced from `/var/run/libvirt/qemu/<name>.pid`. Always `false` in the stopped payload.
+
+- **Event data (stopped):** `{ state: "shutoff", active: false, cpu: null, disk: null, net: null, uptime: null, staleBinary: false }`
 
 ---
 

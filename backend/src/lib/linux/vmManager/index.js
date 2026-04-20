@@ -34,6 +34,8 @@ export { startVM, stopVM, forceStopVM, rebootVM, suspendVM, resumeVM } from './v
 
 export { getVMStats, getVMXML, getVNCPort } from './vmManagerStats.js';
 
+export { isVMBinaryStale } from './vmManagerProc.js';
+
 export {
   createVM,
   deleteVM,

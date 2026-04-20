@@ -40,6 +40,8 @@ export default function HostPanel() {
   const setHostTab = useUiStore((s) => s.setHostTab);
   const stats = useStatsStore((s) => s.stats);
   const pendingUpdates = stats?.pendingUpdates ?? 0;
+  const rebootRequired = !!stats?.rebootRequired;
+  const rebootReasons = stats?.rebootReasons ?? [];
 
   const [powerOffOpen, setPowerOffOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
@@ -106,11 +108,14 @@ export default function HostPanel() {
             type="button"
             onClick={() => setRestartOpen(true)}
             disabled={!!powerLoading}
-            className="flex items-center gap-1.5 rounded-md border border-surface-border px-2.5 py-2 text-sm font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-40"
-            title="Restart"
+            className="relative flex items-center gap-1.5 rounded-md border border-surface-border px-2.5 py-2 text-sm font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-40"
+            title={rebootRequired ? `Restart (reboot required: ${rebootReasons.join(', ') || 'kernel update'})` : 'Restart'}
           >
             {powerLoading === 'restart' ? <Loader2 size={18} className="animate-spin" /> : <RotateCcw size={18} />}
             Restart
+            {rebootRequired && (
+              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2 rounded-full bg-amber-500" />
+            )}
           </button>
         </div>
       </div>
@@ -134,7 +139,11 @@ export default function HostPanel() {
       <ConfirmDialog
         open={restartOpen}
         title="Restart host?"
-        message="The server will reboot. This may take a minute. You will be disconnected."
+        message={
+          rebootRequired
+            ? `A reboot is pending${rebootReasons.length > 0 ? ` (${rebootReasons.slice(0, 4).join(', ')}${rebootReasons.length > 4 ? `, +${rebootReasons.length - 4} more` : ''})` : ''}. The server will reboot. This may take a minute. You will be disconnected.`
+            : 'The server will reboot. This may take a minute. You will be disconnected.'
+        }
         confirmLabel="Restart"
         onConfirm={handleRestart}
         onCancel={() => setRestartOpen(false)}

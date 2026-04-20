@@ -74,7 +74,9 @@ VM allocation fields are fetched from libvirt's active domain list at each stats
   "net": { "rxMBs": 2.1, "txMBs": 0.8 },
   "runningVMs": 3,
   "runningContainers": 2,
-  "pendingUpdates": 0
+  "pendingUpdates": 0,
+  "rebootRequired": false,
+  "rebootReasons": []
 }
 ```
 
@@ -83,6 +85,7 @@ VM allocation fields are fetched from libvirt's active domain list at each stats
 - `cpuTempThresholds` contains thresholds for the selected primary CPU sensor as `{ maxC, critC }` (or `null` when unavailable).
 - `thermalZones` includes all readable thermal sensors (`type`, user-facing `label`, `tempC`, `maxC`, `critC`, `pciAddress`). It can be empty when sensors are unavailable. For entries sourced from hwmon, `pciAddress` is derived from the resolved `device` symlink path by taking the **last** `dddd:dd:dd.d` segment (so NVMe and other devices nested under a PCI function still map to that function’s BDF); `null` if no PCI segment is found. Thermal zones from `/sys/class/thermal` use `pciAddress: null`.
 - `pendingUpdates` is the count of upgradable packages from a background hourly check (see OS Updates); 0 if check unavailable.
+- `rebootRequired` is `true` when the host needs a reboot to apply pending kernel/system updates. `rebootReasons` is a list of short tags (Debian/Ubuntu: package names from `/var/run/reboot-required.pkgs`; Arch: `kernel <running> → <installed>`). Detected via `/var/run/reboot-required` on Debian/Ubuntu and by comparing `uname -r` to the newest kernel in `/usr/lib/modules/` on Arch; always `false`/empty on other distros.
 
 The stream runs until the client disconnects. The interval timer is cleaned up on connection close.
 

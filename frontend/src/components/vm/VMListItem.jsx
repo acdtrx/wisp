@@ -35,6 +35,7 @@ export default function VMListItem({ vm }) {
   const iconId = vm.iconId || getDefaultIconId(vm.osCategory);
   const OsIcon = getVmIcon(iconId).component;
   const iconColorClass = STATE_ICON_COLOR[vm.state] || STATE_ICON_COLOR.nostate;
+  const staleBinary = !!vm.staleBinary;
 
   return (
     <div
@@ -53,6 +54,12 @@ export default function VMListItem({ vm }) {
         <div className="flex items-center gap-1.5">
           <OsIcon size={14} className={`shrink-0 ${iconColorClass}`} />
           <span className="truncate text-sm font-medium text-text-primary">{vm.name}</span>
+          {staleBinary && (
+            <span
+              className="inline-block h-2 w-2 shrink-0 rounded-full bg-amber-500"
+              title="Restart required: qemu binary was updated after this VM started"
+            />
+          )}
         </div>
         <p className="mt-0.5 text-[11px] text-text-muted">
           {vm.vcpus} vCPU / {formatMemory(vm.memoryMiB)}
@@ -84,10 +91,13 @@ export default function VMListItem({ vm }) {
           <button
             onClick={(e) => { e.stopPropagation(); rebootVM(vm.name); }}
             disabled={!!actionLoading || isPaused}
-            className="rounded p-1 text-text-secondary hover:bg-blue-50 hover:text-accent disabled:opacity-40"
-            title="Reboot"
+            className="relative rounded p-1 text-text-secondary hover:bg-blue-50 hover:text-accent disabled:opacity-40"
+            title={staleBinary ? 'Reboot (qemu binary updated since VM started)' : 'Reboot'}
           >
             <RotateCcw size={14} />
+            {staleBinary && (
+              <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-amber-500" />
+            )}
           </button>
         )}
       </div>

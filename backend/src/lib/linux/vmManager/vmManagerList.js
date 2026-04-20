@@ -5,6 +5,7 @@
 import { getDiskInfo } from '../../diskOps.js';
 import { connectionState, getDomainObjAndIface, resolveDomain, unwrapVariant, vmError } from './vmManagerConnection.js';
 import { parseVMFromXML, detectOSCategory } from './vmManagerXml.js';
+import { isVMBinaryStale } from './vmManagerProc.js';
 import { STATE_NAMES } from './libvirtConstants.js';
 
 /* ── VM list cache (event-driven) ──────────────────────────────────── */
@@ -84,11 +85,21 @@ export function getCachedLocalDns(name) {
 
 /* ── Public API ─────────────────────────────────────────────────────── */
 
+/**
+ * Returns the cached VM list enriched with `staleBinary` for running VMs. The cache itself
+ * holds only libvirt-derived state; staleness is recomputed on each call (cheap: two fs ops
+ * per running VM) because it changes independently of libvirt events (e.g. on qemu upgrade).
+ */
 export async function listVMs() {
-  if (vmListCache !== null) return vmListCache;
-  const list = await fetchVMListFromLibvirt();
-  vmListCache = list;
-  return list;
+  if (vmListCache === null) {
+    vmListCache = await fetchVMListFromLibvirt();
+  }
+  return Promise.all(
+    vmListCache.map(async (v) => ({
+      ...v,
+      staleBinary: v.stateCode === 1 ? await isVMBinaryStale(v.name) : false,
+    })),
+  );
 }
 
 /** Add sizeGiB (virtual size, rounded) to each file-backed block disk; on qemu-img failure, disk is unchanged. */

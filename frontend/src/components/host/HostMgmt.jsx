@@ -22,6 +22,8 @@ export default function HostMgmt() {
   const stats = useStatsStore((s) => s.stats);
   const pendingUpdates = stats?.pendingUpdates ?? 0;
   const updatesLastChecked = stats?.updatesLastChecked ?? null;
+  const rebootRequired = !!stats?.rebootRequired;
+  const rebootReasons = stats?.rebootReasons ?? [];
 
   const [checking, setChecking] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
@@ -129,6 +131,21 @@ export default function HostMgmt() {
             </button>
           </div>
         </div>
+
+        {rebootRequired && (
+          <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
+            <AlertCircle size={13} className="mt-0.5 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="font-medium">Reboot required</div>
+              {rebootReasons.length > 0 && (
+                <div className="mt-0.5 break-words text-amber-600/90">
+                  {rebootReasons.slice(0, 6).join(', ')}
+                  {rebootReasons.length > 6 && ` +${rebootReasons.length - 6} more`}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {(status || lastCheckedLabel) && (
           <div className="mt-2 flex items-center gap-2 text-xs">
