@@ -211,8 +211,10 @@ Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux 
 | `downloadFromUrl.js` | Generic URL download with progress |
 | `downloadUbuntuCloud.js` | Ubuntu Server cloud image download |
 | `downloadHaos.js` | Home Assistant OS image download |
-| `smbMount.js` | Facade: SMB via `wisp-smb` on Linux (`linux/host/smbMount.js`); macOS stub |
-| `networkMountAutoMount.js` | Auto-mount configured network (SMB) mounts at startup |
+| `smbMount.js` | Facade: SMB via `wisp-mount smb ...` on Linux (`linux/host/smbMount.js`); macOS stub |
+| `diskMount.js` | Facade: removable/fixed disk mount via `wisp-mount disk ...` on Linux (`linux/host/diskMount.js`); macOS stub |
+| `diskMonitor.js` | Facade: block-device enumeration (sysfs + `/run/udev/data`) and hotplug via `fs.watch` on Linux (`linux/host/diskMonitor.js`); macOS no-op |
+| `mountsAutoMount.js` | Startup mount reconciliation + hard-converge for `/mnt/wisp/` + disk hotplug handlers (auto-mount on insertion, lazy-unmount on removal) |
 | `hostHardware.js` | Facade: hardware inventory on Linux (`linux/host/hostHardware.js`); macOS stub |
 | `hostPower.js` | Facade: `wisp-power` on Linux; macOS stub |
 | `hostNetworkBridges.js` | Facade: netplan/managed bridges on Linux; macOS stub |
@@ -228,7 +230,7 @@ Source copies live in the repo; **`scripts/linux/setup/install-helpers.sh`** cop
 | Script | Purpose |
 |--------|---------|
 | `wisp-os-update` | Check for and install OS package updates — Debian/Ubuntu (apt) and Arch (pacman); distro detected at runtime (invoked via `sudo`) |
-| `wisp-smb` | Mount/unmount/check SMB shares (invoked via `sudo`) |
+| `wisp-mount` | Mount/unmount/check SMB shares and mount adopted removable drives by UUID (invoked via `sudo`) |
 | `wisp-power` | Shut down or reboot the host (`/usr/local/bin` after setup, invoked via `sudo -n`) |
 | `wisp-dmidecode` | Output RAM DIMM JSON for Host Overview (type, size, speed, slot, form factor, manufacturer, voltage; `/usr/local/bin` after setup, invoked via `sudo -n`) |
 | `wisp-netns` | `ip netns add|delete` under `/var/run/netns` for container bridge networking (`sudo -n`) |
@@ -307,7 +309,7 @@ components/
 ├── library/          ImageLibrary (standalone page and modal)
 ├── backups/          BackupsPanel
 ├── settings/         PasswordChangeForm (Host App Config)
-└── host/             HostOverview, HostMgmt, HostNetworkBridges, HostNetworkStorage, HostBackup, AppConfig
+└── host/             HostOverview, HostMgmt, HostNetworkBridges, HostStorage, HostBackup, AppConfig
 ```
 
 ### Pages (`frontend/src/pages/`)
@@ -316,7 +318,7 @@ components/
 |------|---------|
 | `Login.jsx` | Password authentication form |
 
-App settings, backup paths, network storage (SMB mounts), and password change live in the Host panel (`AppConfig.jsx`, `HostNetworkStorage.jsx`, `HostBackup.jsx`, `HostMgmt.jsx`), not a separate top-level page.
+App settings, backup paths, storage (SMB shares + adopted removable drives), and password change live in the Host panel (`AppConfig.jsx`, `HostStorage.jsx`, `HostBackup.jsx`, `HostMgmt.jsx`), not a separate top-level page.
 
 ### Key architectural pattern: shared sections
 
@@ -330,7 +332,7 @@ wisp/
 │   ├── package.json
 │   ├── .npmrc                    # omit[]=optional
 │   ├── scripts/
-│   │   ├── wisp-os-update, wisp-smb, wisp-power, wisp-dmidecode, wisp-smartctl, wisp-bridge, wisp-netns, wisp-cni   # Privileged helpers → /usr/local/bin via install-helpers.sh
+│   │   ├── wisp-os-update, wisp-mount, wisp-power, wisp-dmidecode, wisp-smartctl, wisp-bridge, wisp-netns, wisp-cni   # Privileged helpers → /usr/local/bin via install-helpers.sh
 │   └── src/
 │       ├── index.js              # Entry point
 │       ├── routes/               # Route modules

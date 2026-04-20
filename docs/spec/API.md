@@ -702,8 +702,8 @@ Fetch SSH public keys for a GitHub user (server-side proxy to avoid CORS).
 
 Start a backup job. Returns a job ID; monitor progress via SSE.
 
-- **Body:** `{ destinationIds?: ["local", "<networkMountId>"], destinationPaths?: ["/path/to/dest"] }`
-- **`destinationIds`:** Only `local` and, if configured in settings, the single `backupNetworkMountId` value are accepted. Any other id returns **422**.
+- **Body:** `{ destinationIds?: ["local", "<mountId>"], destinationPaths?: ["/path/to/dest"] }`
+- **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted. Any other id returns **422**.
 - **201:** `{ jobId: string, title: string }` — `title` is e.g. `Backup <vmName>`
 - **422:** No valid destination
 - **503:** SMB mount failed
@@ -857,66 +857,74 @@ Get application settings.
   "containersPath": "/var/lib/wisp/containers",
   "refreshIntervalSeconds": 5,
   "backupLocalPath": "/var/lib/wisp/backups",
-  "networkMounts": [],
-  "backupNetworkMountId": null
+  "mounts": [],
+  "backupMountId": null
 }
 ```
 
-The shipped `wisp-config.json.example` has empty `networkMounts`. Mounts are added via **Host → Host Mgmt → Network Storage** (row-scoped **POST**/**PATCH**/**DELETE** below, or legacy **PATCH** with full **`networkMounts`**). SMB passwords are masked as `***` in the response.
+The shipped `wisp-config.json.example` has empty `mounts`. Mounts are added via **Host → Host Mgmt → Storage** (row-scoped **POST**/**PATCH**/**DELETE** on `/api/host/mounts`). SMB passwords are masked as `***` in the response.
 
 ### PATCH /api/settings
 
 Update settings. Partial update — only include fields to change.
 
-- **Body:** Partial settings object
+- **Body:** Partial settings object (`serverName`, `refreshIntervalSeconds`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`)
 - **200:** Updated settings object
-- **Validation:** Paths must be absolute (start with `/`). `refreshIntervalSeconds` must be 1–60. Password value `***` is preserved (not overwritten).
+- **Validation:** Paths must be absolute (start with `/`). `refreshIntervalSeconds` must be 1–60.
 - **`containersPath`:** Optional; container storage root (same default as `config.js`; exposed for scripts — App Config UI does not edit it yet).
-- **`networkMounts`:** Replacing the full array is still supported; prefer **POST**/**PATCH**/**DELETE** `/api/settings/network-mounts` for per-row edits.
+- **Mount CRUD:** Not available via PATCH /api/settings. Use `/api/host/mounts` endpoints below.
 
-### POST /api/settings/network-mounts
+### GET /api/host/mounts
 
-Append one network mount definition. **Body:** `{ label, share?, mountPath?, path?, username?, password? }` — **`id`** optional (server generates a UUID if omitted). Paths must be absolute when provided.
+List configured mounts (SMB + disk). SMB passwords masked as `***`.
 
-- **200:** Full settings object (same shape as **GET** `/api/settings`)
+- **200:** Array of mount objects — see [CONFIGURATION.md](CONFIGURATION.md) for field shape.
 
-### PATCH /api/settings/network-mounts/:id
+### POST /api/host/mounts
 
-Update one mount by **`id`**. **Body:** partial fields (`label`, `share`, `mountPath`, `path`, `username`, `password`). Password **`***`** preserves the stored password.
+Append one mount. **Body:** `{ type: "smb" | "disk", label?, mountPath, autoMount?, ...type-specific }`. **`id`** optional (server generates a UUID if omitted). Paths must be absolute. For `type: "smb"`, `share` is required. For `type: "disk"`, `uuid` is required; `fsType` must be one of `ext4`, `btrfs`, `vfat`, `exfat`, `ntfs3`.
 
-- **200:** Full settings object | **404:** mount not found
+- **200:** Array of mounts after the insert
+- **409:** `MOUNT_DUPLICATE` — id already exists
+- **422:** `MOUNT_INVALID` — missing/invalid fields
 
-### DELETE /api/settings/network-mounts/:id
+### PATCH /api/host/mounts/:id
 
-Remove one mount from settings. If it was **`backupNetworkMountId`**, that field is cleared.
+Update one mount by **`id`**. **Body:** partial fields (`label`, `mountPath`, `autoMount`, and type-specific: `share`/`username`/`password` for SMB, `fsType`/`readOnly` for disk). Password **`***`** preserves the stored password. `type` and `uuid` cannot be changed after creation.
 
-- **200:** Full settings object | **404:** mount not found
+- **200:** Array of mounts after the update | **404:** mount not found
 
-### GET /api/settings/network-mounts/status
+### DELETE /api/host/mounts/:id
 
-Get mount status for all configured network (SMB) mounts.
+Remove one mount from settings. If it was **`backupMountId`**, that field is cleared.
+
+- **200:** Array of mounts after removal | **404:** mount not found
+
+### GET /api/host/mounts/status
+
+Mount status for all configured mounts.
 
 - **200:** `[{ id, label, mountPath, mounted: boolean }]`
 
-### POST /api/settings/network-mounts/check
+### POST /api/host/mounts/check
 
 Test an SMB connection for a saved mount or ad hoc credentials.
 
 - **Body:** `{ id?: string, share?: string, username?: string, password?: string }`
-- If `id` is provided, credentials are looked up from config. Otherwise, use provided `share`/`username`/`password`.
+- If `id` is provided, credentials are looked up from config and the referenced mount must be `type: "smb"`. Otherwise, use provided `share`/`username`/`password`.
 - **200:** `{ ok: true }`
-- **404:** Network mount not found (when using `id`)
+- **404:** SMB mount not found (when using `id`)
 
-### POST /api/settings/network-mounts/:id/mount
+### POST /api/host/mounts/:id/mount
 
-Mount a network (SMB) share by settings id.
+Mount an SMB share by settings id. Disk mounts are mounted automatically on device insertion and this endpoint currently returns **422** for `type: "disk"` — dedicated support lands with the disk monitor work.
 
 - **200:** `{ ok: true }`
 - **503:** Mount unavailable (platform/helper error)
 
-### POST /api/settings/network-mounts/:id/unmount
+### POST /api/host/mounts/:id/unmount
 
-Unmount a network mount by settings id.
+Unmount a mount by settings id.
 
 - **200:** `{ ok: true }`
 

@@ -33,7 +33,7 @@ import {
 } from '../lib/vmManager.js';
 import * as createJobStore from '../lib/createJobStore.js';
 import * as backupJobStore from '../lib/backupJobStore.js';
-import { getSettings, getRawNetworkMounts } from '../lib/settings.js';
+import { getSettings, getRawMounts } from '../lib/settings.js';
 import { getMountStatus, mountSMB } from '../lib/smbMount.js';
 import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError } from '../lib/routeErrors.js';
@@ -293,22 +293,22 @@ export default async function vmsRoutes(fastify) {
         if (!paths || paths.length === 0) {
           const ids = body.destinationIds || ['local'];
           const settings = await getSettings();
-          const rawMounts = await getRawNetworkMounts();
-          const backupNetId = settings.backupNetworkMountId;
+          const rawMounts = await getRawMounts();
+          const backupMountId = settings.backupMountId;
           paths = [];
           for (const id of ids) {
             if (id === 'local') {
               if (settings.backupLocalPath) paths.push(settings.backupLocalPath);
-            } else if (backupNetId && id === backupNetId) {
+            } else if (backupMountId && id === backupMountId) {
               const dest = rawMounts.find((d) => d.id === id);
               if (!dest) {
                 return reply.code(422).send({
                   error: 'Invalid backup destination',
-                  detail: 'Network mount is not configured for backup',
+                  detail: 'Mount is not configured for backup',
                 });
               }
-              const mountPath = dest.mountPath || dest.path;
-              if (dest.share && mountPath) {
+              const mountPath = dest.mountPath;
+              if (dest.type === 'smb' && mountPath) {
                 const { mounted } = await getMountStatus(mountPath);
                 if (!mounted) {
                   try {

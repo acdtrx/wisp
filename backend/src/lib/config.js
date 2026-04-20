@@ -17,8 +17,8 @@ const DEFAULTS = {
   imagePath: '/var/lib/wisp/images',
   backupLocalPath: '/var/lib/wisp/backups',
   containersPath: '/var/lib/wisp/containers',
-  networkMounts: [],
-  backupNetworkMountId: null,
+  mounts: [],
+  backupMountId: null,
 };
 
 function validatePath(val, defaultVal) {
@@ -45,10 +45,10 @@ export function getConfigSync() {
       imagePath: validatePath(data.imagePath, DEFAULTS.imagePath),
       backupLocalPath: validatePath(data.backupLocalPath, DEFAULTS.backupLocalPath),
       containersPath: validatePath(data.containersPath, DEFAULTS.containersPath),
-      networkMounts: Array.isArray(data.networkMounts) ? data.networkMounts : DEFAULTS.networkMounts,
-      backupNetworkMountId:
-        typeof data.backupNetworkMountId === 'string' && data.backupNetworkMountId.trim()
-          ? data.backupNetworkMountId.trim()
+      mounts: Array.isArray(data.mounts) ? data.mounts : DEFAULTS.mounts,
+      backupMountId:
+        typeof data.backupMountId === 'string' && data.backupMountId.trim()
+          ? data.backupMountId.trim()
           : null,
     };
   } catch (err) {

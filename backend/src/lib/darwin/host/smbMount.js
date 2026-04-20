@@ -21,3 +21,7 @@ export async function getMountStatus(mountPath) {
   if (!mountPath || !mountPath.startsWith('/')) return { mounted: false };
   return { mounted: false };
 }
+
+export async function rmdirMountpoint() {
+  /* no-op on macOS */
+}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import HostBackup from './HostBackup.jsx';
-import HostNetworkStorage from './HostNetworkStorage.jsx';
+import HostStorage from './HostStorage.jsx';
 import HostNetworkBridges from './HostNetworkBridges.jsx';
 
 export default function HostMgmt() {
@@ -26,7 +26,7 @@ export default function HostMgmt() {
 
       <HostNetworkBridges onError={setBridgeError} />
 
-      <HostNetworkStorage />
+      <HostStorage />
 
       <HostBackup />
     </div>

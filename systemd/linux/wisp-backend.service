@@ -18,7 +18,7 @@ ExecStart=/usr/bin/node src/index.js
 # while the service otherwise runs unprivileged as WISP_USER. Do NOT also set
 # CapabilityBoundingSet — it would cap every child process (including sudo)
 # to just this one capability, and sudo needs CAP_SETUID/CAP_SETGID to elevate,
-# which breaks the wisp-netns and wisp-smb privileged helpers.
+# which breaks the wisp-netns and wisp-mount privileged helpers.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=on-failure
 RestartSec=5

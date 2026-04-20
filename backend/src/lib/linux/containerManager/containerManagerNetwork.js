@@ -6,7 +6,7 @@
  *
  * Network namespace creation and CNI require privileges. As the deploy user (systemd
  * `User=`), the backend uses **`sudo -n`** with **`wisp-netns`** and **`wisp-cni`**
- * installed by `install-helpers.sh` (same pattern as `wisp-smb`).
+ * installed by `install-helpers.sh` (same pattern as `wisp-mount`).
  */
 import { execFile as execFileCb } from 'node:child_process';
 import { randomBytes } from 'node:crypto';

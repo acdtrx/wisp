@@ -178,9 +178,9 @@ export default function OverviewPanel() {
     setBackupSelectedIds(['local']);
     getSettings().then((s) => {
       const dests = [{ id: 'local', label: 'Local', path: s.backupLocalPath || '/var/lib/wisp/backups' }];
-      if (s.backupNetworkMountId) {
-        const m = (s.networkMounts || []).find((x) => x.id === s.backupNetworkMountId);
-        const p = m && (m.path || m.mountPath);
+      if (s.backupMountId) {
+        const m = (s.mounts || []).find((x) => x.id === s.backupMountId);
+        const p = m && m.mountPath;
         if (m && p) dests.push({ id: m.id, label: m.label || 'Network', path: p });
       }
       setBackupDestinations(dests);

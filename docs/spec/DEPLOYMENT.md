@@ -350,17 +350,19 @@ The backend invokes **`/usr/local/bin/wisp-os-update`** only. `install-helpers.s
 4. **Package manager** — On Debian/Ubuntu, network and apt sources must work. On Arch, `pacman` must be functional and the keyring up to date.
 5. **Distro detection** — The script reads `/etc/os-release`; if the distro is unrecognised it exits 1 with an error message.
 
-### `wisp-smb` (installed to `/usr/local/bin/`)
+### `wisp-mount` (installed to `/usr/local/bin/`)
 
-SMB share management invoked via `sudo`:
+Unified mount helper for SMB shares and adopted removable drives. Invoked via `sudo`:
 
 | Command | Description |
 |---------|-------------|
-| `wisp-smb mount <share> <path> [username] [password]` | Mount an SMB share |
-| `wisp-smb check <path>` | Check if a path is a mount point |
-| `wisp-smb unmount <path>` | Unmount a mount point |
+| `wisp-mount smb mount <configPath>` | Mount an SMB share (config file supplies share, mountPath, username, password, uid, gid) |
+| `wisp-mount smb check <configPath>` | Test SMB connectivity by mounting then unmounting |
+| `wisp-mount disk mount <configPath>` | Mount an adopted removable drive by UUID (config file supplies uuid, mountPath, fsType, readOnly, uid, gid) |
+| `wisp-mount unmount <path>` | Unmount a mount point |
+| `wisp-mount unmount-lazy <path>` | Lazy-unmount (`umount -l`) for surprise-removed devices |
 
-Requires `cifs-utils`. The backend uses **`/usr/local/bin/wisp-smb`** only; `setup-server.sh` installs it and sudoers.
+Requires `cifs-utils`. The backend writes a temp config file (mode `0600`) per operation, invokes `wisp-mount` via `sudo -n`, then removes the config file. The helper also deletes the config file after use. `install-helpers.sh` now installs `wisp-mount` and automatically removes any legacy `/usr/local/bin/wisp-smb` (+ its sudoers entry) from prior installs.
 
 ### `wisp-dmidecode` (installed to `/usr/local/bin/`)
 

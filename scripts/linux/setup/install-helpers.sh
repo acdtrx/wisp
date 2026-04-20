@@ -58,12 +58,21 @@ else
 fi
 echo ""
 
-echo "--- wisp-smb (SMB mount for backups) ---"
-if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-smb" ]]; then
-  "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-smb" wisp-smb "$DEPLOY_USER" cifs-utils
-  echo "  Installed /usr/local/bin/wisp-smb."
+echo "--- wisp-mount (SMB + removable disk mount helper) ---"
+if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-mount" ]]; then
+  "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-mount" wisp-mount "$DEPLOY_USER" cifs-utils
+  echo "  Installed /usr/local/bin/wisp-mount."
+  # Remove obsolete wisp-smb (superseded by wisp-mount smb ...).
+  if [[ -f /usr/local/bin/wisp-smb ]]; then
+    rm -f /usr/local/bin/wisp-smb
+    echo "  Removed obsolete /usr/local/bin/wisp-smb."
+  fi
+  if [[ -f /etc/sudoers.d/wisp-smb ]]; then
+    rm -f /etc/sudoers.d/wisp-smb
+    echo "  Removed obsolete /etc/sudoers.d/wisp-smb."
+  fi
 else
-  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-smb)"
+  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-mount)"
 fi
 echo ""
 

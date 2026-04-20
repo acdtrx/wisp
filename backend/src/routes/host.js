@@ -21,6 +21,7 @@ import { hostShutdown, hostReboot } from '../lib/hostPower.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
 import { setupSSE } from '../lib/sse.js';
 import { getDevices as getHostUSBDevicesCached, onChange as onHostUSBChange } from '../lib/usbMonitor.js';
+import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/diskMonitor.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -316,6 +317,61 @@ export default async function hostRoutes(fastify) {
         request.log.error({ err }, 'GET /host/usb failed');
         sendError(reply, 500, 'Failed to list USB devices', err.message);
       }
+    },
+  });
+
+  const diskResponseItem = {
+    type: 'object',
+    properties: {
+      uuid: { type: 'string' },
+      devPath: { type: 'string' },
+      fsType: { type: 'string' },
+      label: { type: 'string' },
+      sizeBytes: { type: 'number' },
+      removable: { type: 'boolean' },
+      vendor: { type: 'string' },
+      model: { type: 'string' },
+      mountedAt: { type: ['string', 'null'] },
+    },
+  };
+
+  fastify.get('/host/disks', {
+    schema: {
+      response: { 200: { type: 'array', items: diskResponseItem } },
+    },
+    handler: async (request, reply) => {
+      try {
+        return getHostDisksCached();
+      } catch (err) {
+        request.log.error({ err }, 'GET /host/disks failed');
+        sendError(reply, 500, 'Failed to list disks', err.message);
+      }
+    },
+  });
+
+  // GET /host/disks/stream — SSE: removable/fixed block-device list with mount state.
+  fastify.get('/host/disks/stream', {
+    schema: { hide: true },
+    handler: async (request, reply) => {
+      setupSSE(reply);
+
+      function sendList() {
+        try {
+          const devices = getHostDisksCached();
+          reply.raw.write(`data: ${JSON.stringify(devices)}\n\n`);
+        } catch (err) {
+          request.log.error({ err }, 'host/disks/stream write failed');
+          const payload = { error: 'Failed to list disks', detail: err.message };
+          reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+        }
+      }
+
+      sendList();
+      const unsubscribe = onHostDiskChange(sendList);
+
+      request.raw.on('close', () => {
+        unsubscribe();
+      });
     },
   });
 

@@ -1,5 +1,5 @@
 /**
- * SMB mount helpers (Linux wisp-smb) vs stub (macOS dev).
+ * SMB mount helpers (Linux wisp-mount) vs stub (macOS dev).
  */
 import { platform } from 'node:os';
 
@@ -11,3 +11,4 @@ export const mountSMB = impl.mountSMB;
 export const checkSMBConnection = impl.checkSMBConnection;
 export const unmountSMB = impl.unmountSMB;
 export const getMountStatus = impl.getMountStatus;
+export const rmdirMountpoint = impl.rmdirMountpoint;

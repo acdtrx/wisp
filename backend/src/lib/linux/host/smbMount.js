@@ -1,5 +1,5 @@
 /**
- * SMB mount/unmount via privileged wisp-smb script (same pattern as wisp-os-update).
+ * SMB mount/unmount via the unified wisp-mount helper (subcommand `smb`).
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -10,7 +10,7 @@ import { createAppError } from '../../routeErrors.js';
 
 const execFileAsync = promisify(execFile);
 
-const SCRIPT_PATH = '/usr/local/bin/wisp-smb';
+const SCRIPT_PATH = '/usr/local/bin/wisp-mount';
 
 const UNAVAILABLE = 'SMB_MOUNT_UNAVAILABLE';
 
@@ -35,14 +35,22 @@ async function getScriptPath() {
   } catch (err) {
     throw createAppError(
       UNAVAILABLE,
-      'wisp-smb script not found or not readable',
+      'wisp-mount script not found or not readable',
       err.message
     );
   }
 }
 
+async function runHelper(args, { timeout = 30000 } = {}) {
+  const scriptPath = await getScriptPath();
+  const isRoot = process.getuid && process.getuid() === 0;
+  const cmd = isRoot ? scriptPath : 'sudo';
+  const cmdArgs = isRoot ? args : ['-n', scriptPath, ...args];
+  return execFileAsync(cmd, cmdArgs, { timeout });
+}
+
 /**
- * Mount an SMB share. Writes a temp config file (0600), invokes wisp-smb mount <path>, then removes temp file.
+ * Mount an SMB share.
  * @param {string} share - e.g. //server/share
  * @param {string} mountPath - e.g. /mnt/wisp/smb-nas
  * @param {{ username?: string, password?: string }} options
@@ -65,12 +73,10 @@ export async function mountSMB(share, mountPath, { username, password } = {}) {
 }
 
 async function _mountSMB(share, mountPath, { username, password } = {}) {
-  const scriptPath = await getScriptPath();
   const oldMask = process.umask(0o077);
   const tmpDir = await mkdtemp(join(tmpdir(), 'wisp-smb-'));
   process.umask(oldMask);
   const configPath = join(tmpDir, 'smb.conf');
-
   const uid = process.getuid && process.getuid();
   const gid = process.getgid && process.getgid();
   const lines = [
@@ -84,24 +90,15 @@ async function _mountSMB(share, mountPath, { username, password } = {}) {
   await writeFile(configPath, lines.join('\n'), { mode: 0o600 });
 
   try {
-    const isRoot = process.getuid && process.getuid() === 0;
-    if (isRoot) {
-      await execFileAsync(scriptPath, ['mount', configPath], { timeout: 30000 });
-    } else {
-      await execFileAsync('sudo', ['-n', scriptPath, 'mount', configPath], { timeout: 30000 });
-    }
+    await runHelper(['smb', 'mount', configPath]);
   } finally {
-    await unlink(configPath).catch(() => {
-      /* temp file may already be removed */
-    });
-    await rm(tmpDir, { recursive: true, force: true }).catch(() => {
-      /* temp dir cleanup */
-    });
+    await unlink(configPath).catch(() => {});
+    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
 /**
- * Test SMB connection by mounting to a temp path then unmounting. Uses wisp-smb check.
+ * Test SMB connection by mounting to a temp path then unmounting. Uses wisp-mount smb check.
  * @param {string} share - e.g. //server/share
  * @param {{ username?: string, password?: string }} options
  */
@@ -109,7 +106,6 @@ export async function checkSMBConnection(share, { username, password } = {}) {
   if (!share || typeof share !== 'string' || !share.trim()) {
     throw createAppError('SMB_INVALID', 'Share is required', 'share required');
   }
-  const scriptPath = await getScriptPath();
   const oldMask = process.umask(0o077);
   const tmpDir = await mkdtemp(join(tmpdir(), 'wisp-smb-'));
   process.umask(oldMask);
@@ -127,41 +123,43 @@ export async function checkSMBConnection(share, { username, password } = {}) {
   ];
   await writeFile(configPath, lines.join('\n'), { mode: 0o600 });
   try {
-    const isRoot = process.getuid && process.getuid() === 0;
-    if (isRoot) {
-      await execFileAsync(scriptPath, ['check', configPath], { timeout: 30000 });
-    } else {
-      await execFileAsync('sudo', ['-n', scriptPath, 'check', configPath], { timeout: 30000 });
-    }
+    await runHelper(['smb', 'check', configPath]);
   } finally {
-    await unlink(configPath).catch(() => {
-      /* temp file may already be removed */
-    });
-    await rm(tmpDir, { recursive: true, force: true }).catch(() => {
-      /* temp dir cleanup */
-    });
+    await unlink(configPath).catch(() => {});
+    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
 /**
- * Unmount an SMB share at the given path.
+ * Unmount at the given path. When { lazy: true }, uses `umount -l` (safe after surprise removal).
+ * When { ignoreNotMounted: true }, swallows "not mounted" errors so delete flows don't fail
+ * when the mount was already cleaned up.
  */
-export async function unmountSMB(mountPath) {
+export async function unmountSMB(mountPath, { lazy = false, ignoreNotMounted = false } = {}) {
   if (!mountPath || !mountPath.startsWith('/')) {
     throw createAppError('SMB_INVALID', 'Invalid mountPath', 'mountPath must be absolute');
   }
-
-  const scriptPath = await getScriptPath();
-  const isRoot = process.getuid && process.getuid() === 0;
   try {
-    if (isRoot) {
-      await execFileAsync(scriptPath, ['unmount', mountPath], { timeout: 10000 });
-    } else {
-      await execFileAsync('sudo', ['-n', scriptPath, 'unmount', mountPath], { timeout: 10000 });
-    }
+    await runHelper([lazy ? 'unmount-lazy' : 'unmount', mountPath], { timeout: 10000 });
   } catch (err) {
-    const safeMsg = sanitizeStderr(err.stderr || err.message);
-    throw createAppError(UNAVAILABLE, `SMB unmount failed: ${safeMsg}`, safeMsg);
+    const rawMsg = String(err.stderr || err.message || '');
+    if (ignoreNotMounted && /not mounted|no such file|not found/i.test(rawMsg)) return;
+    const safeMsg = sanitizeStderr(rawMsg);
+    throw createAppError(UNAVAILABLE, `Unmount failed: ${safeMsg}`, safeMsg);
+  }
+}
+
+/**
+ * Remove an empty mount point directory under /mnt/wisp/. Used only by the delete flow;
+ * regular unmount leaves the directory in place. Silently ignores missing or non-empty dirs.
+ */
+export async function rmdirMountpoint(mountPath) {
+  if (!mountPath || !mountPath.startsWith('/mnt/wisp/')) return;
+  try {
+    await runHelper(['rmdir', mountPath], { timeout: 5000 });
+  } catch (err) {
+    /* rmdir is best-effort — log via thrown error only if caller wants it, otherwise swallow */
+    throw createAppError(UNAVAILABLE, `rmdir failed: ${sanitizeStderr(err.stderr || err.message)}`);
   }
 }
 

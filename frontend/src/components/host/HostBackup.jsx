@@ -10,7 +10,7 @@ export default function HostBackup() {
   const loadSettings = useSettingsStore((s) => s.loadSettings);
 
   const [backupLocalPath, setBackupLocalPath] = useState('');
-  const [backupNetworkMountId, setBackupNetworkMountId] = useState('');
+  const [backupMountId, setBackupMountId] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -18,15 +18,15 @@ export default function HostBackup() {
   useEffect(() => {
     if (settings) {
       setBackupLocalPath(settings.backupLocalPath ?? '');
-      setBackupNetworkMountId(settings.backupNetworkMountId ?? '');
+      setBackupMountId(settings.backupMountId ?? '');
     }
   }, [settings]);
 
   useEffect(() => {
     const lp = settings?.backupLocalPath ?? '';
-    const savedNet = settings?.backupNetworkMountId ?? '';
-    setDirty(backupLocalPath !== lp || (backupNetworkMountId || '') !== (savedNet || ''));
-  }, [settings, backupLocalPath, backupNetworkMountId]);
+    const savedNet = settings?.backupMountId ?? '';
+    setDirty(backupLocalPath !== lp || (backupMountId || '') !== (savedNet || ''));
+  }, [settings, backupLocalPath, backupMountId]);
 
   const handleSave = async () => {
     setError(null);
@@ -34,11 +34,11 @@ export default function HostBackup() {
     try {
       const updated = await updateSettings({
         backupLocalPath: backupLocalPath.trim() || undefined,
-        backupNetworkMountId: backupNetworkMountId ? backupNetworkMountId : null,
+        backupMountId: backupMountId ? backupMountId : null,
       });
       await loadSettings();
       setBackupLocalPath(updated.backupLocalPath ?? '');
-      setBackupNetworkMountId(updated.backupNetworkMountId ?? '');
+      setBackupMountId(updated.backupMountId ?? '');
       setDirty(false);
     } catch (err) {
       setError(err.message || 'Failed to save backup settings');
@@ -47,7 +47,7 @@ export default function HostBackup() {
     }
   };
 
-  const networkOptions = settings?.networkMounts || [];
+  const networkOptions = (settings?.mounts || []).filter((m) => m.type === 'smb');
 
   const controlHeightClass = 'h-9 py-0 leading-normal';
 
@@ -72,8 +72,8 @@ export default function HostBackup() {
               Network mount for backup
             </label>
             <select
-              value={backupNetworkMountId}
-              onChange={(e) => setBackupNetworkMountId(e.target.value)}
+              value={backupMountId}
+              onChange={(e) => setBackupMountId(e.target.value)}
               className={`input-field w-full text-sm ${controlHeightClass}`}
             >
               <option value="">(none)</option>

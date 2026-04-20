@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# Usage:
+#   wisp-mount smb mount    <configPath>
+#   wisp-mount smb check    <configPath>
+#   wisp-mount disk mount   <configPath>
+#   wisp-mount unmount      <mountPath>
+#   wisp-mount unmount-lazy <mountPath>
+#   wisp-mount rmdir        <mountPath under /mnt/wisp/>   # delete-only cleanup; no-op if non-empty or missing
+#
+# SMB config file: lines `share=`, `mountPath=`, `username=`, `password=`, `uid=`, `gid=`
+# Disk config file: lines `uuid=`, `mountPath=`, `fsType=`, `readOnly=` (0|1), `uid=`, `gid=`
+#
+# mount / check: creates the mount point, runs mount; check tears it back down. Removes config file after use.
+# unmount     : runs umount on the given path.
+# unmount-lazy: runs umount -l (for surprise-removed devices).
+#
+# Install: sudoers NOPASSWD for this script (installed by scripts/linux/setup/install-helpers.sh).
+set -euo pipefail
+
+CMD="${1:-}"
+SUB="${2:-}"
+ARG="${3:-}"
+
+SUPPORTED_DISK_FSTYPES=(ext4 btrfs vfat exfat ntfs3)
+
+is_supported_fstype() {
+  local t="$1"
+  for x in "${SUPPORTED_DISK_FSTYPES[@]}"; do
+    [[ "$x" == "$t" ]] && return 0
+  done
+  return 1
+}
+
+do_smb_mount() {
+  # shellcheck source=/dev/null
+  source "$1"
+  if [[ -z "${mountPath:-}" || -z "${share:-}" ]]; then
+    echo "Config must set mountPath and share" >&2
+    exit 1
+  fi
+  mkdir -p "$mountPath"
+  local opts="rw"
+  [[ -n "${uid:-}" ]] && opts="${opts},uid=${uid}"
+  [[ -n "${gid:-}" ]] && opts="${opts},gid=${gid}"
+  [[ -n "${username:-}" ]] && opts="${opts},username=${username}"
+  [[ -n "${password:-}" ]] && opts="${opts},password=${password}"
+  mount -t cifs "$share" "$mountPath" -o "$opts"
+}
+
+do_smb_check() {
+  do_smb_mount "$1"
+  umount "$mountPath"
+  rmdir "$mountPath"
+}
+
+do_disk_mount() {
+  # shellcheck source=/dev/null
+  source "$1"
+  if [[ -z "${mountPath:-}" || -z "${uuid:-}" || -z "${fsType:-}" ]]; then
+    echo "Config must set mountPath, uuid, and fsType" >&2
+    exit 1
+  fi
+  if ! is_supported_fstype "$fsType"; then
+    echo "Unsupported fsType: $fsType" >&2
+    exit 1
+  fi
+  local devPath="/dev/disk/by-uuid/$uuid"
+  if [[ ! -e "$devPath" ]]; then
+    echo "Device not present: $devPath" >&2
+    exit 1
+  fi
+  mkdir -p "$mountPath"
+  local opts=""
+  local ro=""
+  [[ "${readOnly:-0}" == "1" ]] && ro="ro"
+  # ntfs3 forced to ro by the backend; enforce here too.
+  [[ "$fsType" == "ntfs3" ]] && ro="ro"
+
+  case "$fsType" in
+    vfat|exfat|ntfs3)
+      opts=""
+      [[ -n "$ro" ]] && opts="${opts},${ro}"
+      [[ -n "${uid:-}" ]] && opts="${opts},uid=${uid}"
+      [[ -n "${gid:-}" ]] && opts="${opts},gid=${gid}"
+      opts="${opts},umask=0007"
+      ;;
+    ext4|btrfs)
+      opts="defaults"
+      [[ -n "$ro" ]] && opts="${opts},${ro}"
+      ;;
+  esac
+  opts="${opts#,}"
+  mount -t "$fsType" "$devPath" "$mountPath" -o "$opts"
+}
+
+case "$CMD" in
+  smb)
+    if [[ -z "$ARG" || ! -f "$ARG" ]]; then
+      echo "Usage: $0 smb mount|check <configPath>" >&2
+      exit 1
+    fi
+    case "$SUB" in
+      mount) do_smb_mount "$ARG"; rm -f "$ARG" ;;
+      check) do_smb_check "$ARG"; rm -f "$ARG" ;;
+      *) echo "Usage: $0 smb mount|check <configPath>" >&2; exit 1 ;;
+    esac
+    ;;
+  disk)
+    if [[ "$SUB" != "mount" ]]; then
+      echo "Usage: $0 disk mount <configPath>" >&2
+      exit 1
+    fi
+    if [[ -z "$ARG" || ! -f "$ARG" ]]; then
+      echo "Usage: $0 disk mount <configPath>" >&2
+      exit 1
+    fi
+    do_disk_mount "$ARG"
+    rm -f "$ARG"
+    ;;
+  unmount)
+    PATH_ARG="$SUB"
+    if [[ -z "$PATH_ARG" || "${PATH_ARG:0:1}" != "/" ]]; then
+      echo "Usage: $0 unmount <mountPath>" >&2
+      exit 1
+    fi
+    umount "$PATH_ARG"
+    ;;
+  unmount-lazy)
+    PATH_ARG="$SUB"
+    if [[ -z "$PATH_ARG" || "${PATH_ARG:0:1}" != "/" ]]; then
+      echo "Usage: $0 unmount-lazy <mountPath>" >&2
+      exit 1
+    fi
+    umount -l "$PATH_ARG"
+    ;;
+  rmdir)
+    PATH_ARG="$SUB"
+    # rmdir is scoped to /mnt/wisp/* as a safety net — used only by the delete flow.
+    if [[ -z "$PATH_ARG" || "$PATH_ARG" != /mnt/wisp/* ]]; then
+      echo "Usage: $0 rmdir <mountPath under /mnt/wisp/>" >&2
+      exit 1
+    fi
+    rmdir "$PATH_ARG" 2>/dev/null || true
+    ;;
+  *)
+    echo "Usage: $0 smb mount|check <configPath> | disk mount <configPath> | unmount <mountPath> | unmount-lazy <mountPath>" >&2
+    exit 1
+    ;;
+esac

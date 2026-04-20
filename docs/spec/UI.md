@@ -312,8 +312,8 @@ Scrollable content with section cards:
 Scrollable page with **`px-6 py-5 space-y-5`**, same as Overview. Each block is a **`SectionCard`** with a **`titleIcon`** (same pattern as Overview):
 
 - **Network Bridges** — **`Network`** icon. Table with columns **Name**, **Parent**, **VLAN Id**, **Status**, **Actions**. Header **`Plus`+network** adds an **inline table row** for create (fields + confirm/cancel icons). Delete is icon-only on existing rows.
-- **Network Storage** — **`Server`** icon. Table layout; header **`Plus`+server** adds a row; icon-only actions; mount state shown on the **mount/unmount** button background (e.g. green when mounted), not as a separate status label; **Check** uses green/red on the shield button after a test (error detail on hover), not extra lines under the row; edit mode per row where applicable.
-- **Backup** — **`Archive`** icon. Local backup path and network-mount-for-backup select on one row (equal-height controls); optional `(none)` or a mount from Network Storage.
+- **Storage** — **`Server`** icon. Unified section for SMB shares (and, with disk support enabled, adopted removable drives). Table layout; header **`Plus`+server** adds a row; icon-only actions; mount state shown on the **mount/unmount** button background (e.g. green when mounted), not as a separate status label; **Check** uses green/red on the shield button after an SMB test (error detail on hover), not extra lines under the row; edit mode per row where applicable.
+- **Backup** — **`Archive`** icon. Local backup path and extra-mount-for-backup select on one row (equal-height controls); optional `(none)` or a mount from Storage.
 
 ### Tab: Software
 

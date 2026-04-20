@@ -1,6 +1,6 @@
 # Settings
 
-Settings are split across the Host panel: **App Config** tab (application-wide configuration and password change) and **Host Mgmt** tab (OS updates, network bridge management, **Network Storage** for SMB/CIFS mounts, and **Backup** for local path plus optional network mount used for VM backups). Host information is in the **Overview** tab.
+Settings are split across the Host panel: **App Config** tab (application-wide configuration and password change) and **Host Mgmt** tab (OS updates, network bridge management, **Storage** for SMB/CIFS shares and adopted removable drives, and **Backup** for local path plus optional mount used for VM backups). Host information is in the **Overview** tab.
 
 ## Settings Fields
 
@@ -15,9 +15,11 @@ Settings are split across the Host panel: **App Config** tab (application-wide c
 
 Settings are persisted in `config/wisp-config.json`. The config file is updated with a mutex to prevent concurrent writes.
 
-## Network Storage (`networkMounts`)
+## Storage (`mounts`)
 
-Configured in **Host → Host Mgmt → Network Storage**. Each entry is a network (SMB/CIFS) mount:
+Configured in **Host → Host Mgmt → Storage**. Each entry has a `type` discriminator (`smb` or `disk`) and common fields (id, label, mount path, autoMount).
+
+SMB/CIFS mount fields:
 
 | Field | Description |
 |-------|-------------|
@@ -27,6 +29,19 @@ Configured in **Host → Host Mgmt → Network Storage**. Each entry is a networ
 | Mount path | Local mount point (e.g. `/mnt/wisp/smb`) |
 | Username | SMB authentication username |
 | Password | SMB authentication password |
+| Auto-mount | When true, mount at backend startup |
+
+Disk mount fields (adopted removable drive):
+
+| Field | Description |
+|-------|-------------|
+| ID | Unique identifier |
+| Label | Display name |
+| UUID | Filesystem UUID (stable across ports) |
+| Mount path | Local mount point (e.g. `/mnt/wisp/backup-drive`) |
+| Filesystem | `ext4`, `btrfs`, `vfat`, `exfat`, or `ntfs3` |
+| Read-only | When true, mount read-only (mandatory for `ntfs3`) |
+| Auto-mount | When true, mount on device insertion |
 
 ### Password masking
 
@@ -34,18 +49,18 @@ When reading settings, SMB passwords are returned as `***`. When saving, if the 
 
 ### Mount operations
 
-**Host → Host Mgmt → Network Storage**: add/edit/remove mounts (row-scoped **POST** / **PATCH** / **DELETE** on `/api/settings/network-mounts`); **Mount**, **Unmount**, and **Check** per mount; status (mounted or not). Bulk **PATCH** `/api/settings` with **`networkMounts`** remains available for advanced use. See [API.md](API.md).
+**Host → Host Mgmt → Storage**: add/edit/remove mounts via row-scoped **POST** / **PATCH** / **DELETE** on `/api/host/mounts`; **Mount**, **Unmount**, and **Check** (SMB only) per mount; status (mounted or not). See [API.md](API.md).
 
-## Backup (`backupLocalPath`, `backupNetworkMountId`)
+## Backup (`backupLocalPath`, `backupMountId`)
 
 Configured in **Host → Host Mgmt → Backup**.
 
 | Setting | Description |
 |---------|-------------|
 | `backupLocalPath` | Local directory for VM backups (always available as a destination in the VM backup modal). |
-| `backupNetworkMountId` | Optional. If set to a mount `id` from `networkMounts`, that mount appears as a second destination in the VM Overview backup modal. Use `(none)` when no network path should be offered for backups. |
+| `backupMountId` | Optional. If set to a mount `id` from `mounts`, that mount appears as a second destination in the VM Overview backup modal. Use `(none)` when no extra destination should be offered for backups. |
 
-Backups still require the VM to be stopped. The VM modal lists **Local** plus at most one network destination when `backupNetworkMountId` is set.
+Backups still require the VM to be stopped. The VM modal lists **Local** plus at most one extra destination when `backupMountId` is set.
 
 ## Password Change
 

@@ -11,38 +11,43 @@ const DEFAULTS = {
   imagePath: '/var/lib/wisp/images',
   backupLocalPath: '/var/lib/wisp/backups',
   containersPath: '/var/lib/wisp/containers',
-  networkMounts: [],
-  backupNetworkMountId: null,
+  mounts: [],
+  backupMountId: null,
 };
 
-function normalizeNetworkMounts(arr) {
-  if (!Array.isArray(arr)) return DEFAULTS.networkMounts;
-  return arr
-    .filter((d) => d && typeof d.id === 'string' && typeof d.label === 'string')
-    .map((d) => {
-      const mountPath = typeof d.mountPath === 'string' ? d.mountPath.trim() : '';
-      const path = typeof d.path === 'string' ? d.path.trim() : mountPath;
-      const effectivePath = (path && path.startsWith('/') ? path : mountPath) || '';
-      const entry = { id: d.id.trim(), label: d.label.trim(), path: effectivePath, mountPath: effectivePath };
-      if (d.share && typeof d.share === 'string') entry.share = d.share.trim();
-      if (d.username !== undefined) entry.username = typeof d.username === 'string' ? d.username.trim() : '';
-      if (d.password !== undefined) entry.password = typeof d.password === 'string' ? d.password : '';
-      return entry;
-    })
-    .filter((d) => d.id && d.path?.startsWith('/'));
+const VALID_DISK_FSTYPES = new Set(['ext4', 'btrfs', 'vfat', 'exfat', 'ntfs3']);
+
+function normalizeMounts(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  for (const d of arr) {
+    if (!d || typeof d.id !== 'string' || !d.id.trim()) continue;
+    const type = d.type === 'smb' || d.type === 'disk' ? d.type : null;
+    if (!type) continue;
+    const mountPath = typeof d.mountPath === 'string' ? d.mountPath.trim() : '';
+    if (!mountPath.startsWith('/')) continue;
+    const id = d.id.trim();
+    const label = typeof d.label === 'string' ? d.label.trim() : '';
+    const autoMount = d.autoMount !== false;
+    const entry = { id, type, label, mountPath, autoMount };
+    if (type === 'smb') {
+      const share = typeof d.share === 'string' ? d.share.trim() : '';
+      if (!share) continue;
+      entry.share = share;
+      entry.username = typeof d.username === 'string' ? d.username.trim() : '';
+      entry.password = typeof d.password === 'string' ? d.password : '';
+    } else {
+      const uuid = typeof d.uuid === 'string' ? d.uuid.trim() : '';
+      if (!uuid) continue;
+      entry.uuid = uuid;
+      entry.fsType = VALID_DISK_FSTYPES.has(d.fsType) ? d.fsType : '';
+      entry.readOnly = d.readOnly === true;
+    }
+    out.push(entry);
+  }
+  return out;
 }
 
-function normalizeBackupNetworkMountId(val, networkMountIds) {
-  if (val === null || val === undefined || val === '') return null;
-  if (typeof val !== 'string') return null;
-  const id = val.trim();
-  if (!id) return null;
-  return networkMountIds.includes(id) ? id : null;
-}
-
-/**
- * Read settings from wisp-config.json. Returns defaults if file is missing or invalid.
- */
 async function readSettingsFile() {
   let data;
   try {
@@ -54,15 +59,15 @@ async function readSettingsFile() {
   }
   if (!data) return { ...DEFAULTS };
 
-  const networkMounts = normalizeNetworkMounts(data.networkMounts);
-  const mountIds = networkMounts.map((m) => m.id);
-  let backupNetworkMountId = null;
-  if (typeof data.backupNetworkMountId === 'string' && data.backupNetworkMountId.trim()) {
-    const cand = data.backupNetworkMountId.trim();
-    if (mountIds.includes(cand)) backupNetworkMountId = cand;
+  const mounts = normalizeMounts(data.mounts);
+  const mountIds = mounts.map((m) => m.id);
+  let backupMountId = null;
+  if (typeof data.backupMountId === 'string' && data.backupMountId.trim()) {
+    const cand = data.backupMountId.trim();
+    if (mountIds.includes(cand)) backupMountId = cand;
   }
 
-  const fromFile = {
+  return {
     serverName: typeof data.serverName === 'string' ? data.serverName : DEFAULTS.serverName,
     refreshIntervalSeconds:
       typeof data.refreshIntervalSeconds === 'number' &&
@@ -86,10 +91,29 @@ async function readSettingsFile() {
       typeof data.containersPath === 'string' && data.containersPath.trim().startsWith('/')
         ? data.containersPath.trim()
         : DEFAULTS.containersPath,
-    networkMounts,
-    backupNetworkMountId,
+    mounts,
+    backupMountId,
   };
-  return fromFile;
+}
+
+function mountForApi(d) {
+  const base = {
+    id: d.id,
+    type: d.type,
+    label: d.label,
+    mountPath: d.mountPath,
+    autoMount: d.autoMount !== false,
+  };
+  if (d.type === 'smb') {
+    base.share = d.share;
+    base.username = d.username != null ? d.username : undefined;
+    base.password = d.password ? '***' : undefined;
+  } else if (d.type === 'disk') {
+    base.uuid = d.uuid;
+    base.fsType = d.fsType || undefined;
+    base.readOnly = d.readOnly === true;
+  }
+  return base;
 }
 
 /**
@@ -101,48 +125,30 @@ export async function getSettings() {
     fromFile.serverName != null && fromFile.serverName !== ''
       ? fromFile.serverName
       : 'My Server';
-  const vmsPath = fromFile.vmsPath ?? DEFAULTS.vmsPath;
-  const imagePath = fromFile.imagePath ?? DEFAULTS.imagePath;
-  const refreshIntervalSeconds = fromFile.refreshIntervalSeconds ?? DEFAULTS.refreshIntervalSeconds;
-  const backupLocalPath =
-    fromFile.backupLocalPath != null && fromFile.backupLocalPath !== ''
-      ? fromFile.backupLocalPath
-      : DEFAULTS.backupLocalPath;
-  const containersPath = fromFile.containersPath ?? DEFAULTS.containersPath;
-  const networkMountsStored = fromFile.networkMounts?.length ? fromFile.networkMounts : DEFAULTS.networkMounts;
-  let backupNetworkMountId = fromFile.backupNetworkMountId ?? null;
-  const mountIds = networkMountsStored.map((m) => m.id);
-  if (backupNetworkMountId && !mountIds.includes(backupNetworkMountId)) {
-    backupNetworkMountId = null;
+  const mountsStored = fromFile.mounts?.length ? fromFile.mounts : [];
+  let backupMountId = fromFile.backupMountId ?? null;
+  const mountIds = mountsStored.map((m) => m.id);
+  if (backupMountId && !mountIds.includes(backupMountId)) {
+    backupMountId = null;
   }
-
-  const networkMountsForApi = networkMountsStored.map((d) => ({
-    id: d.id,
-    label: d.label,
-    path: d.path || d.mountPath,
-    mountPath: d.mountPath || d.path,
-    share: d.share,
-    username: d.username != null ? d.username : undefined,
-    password: d.password ? '***' : undefined,
-  }));
 
   return {
     serverName,
-    vmsPath,
-    imagePath,
-    refreshIntervalSeconds,
-    backupLocalPath,
-    containersPath,
-    networkMounts: networkMountsForApi,
-    backupNetworkMountId,
+    vmsPath: fromFile.vmsPath,
+    imagePath: fromFile.imagePath,
+    refreshIntervalSeconds: fromFile.refreshIntervalSeconds,
+    backupLocalPath: fromFile.backupLocalPath,
+    containersPath: fromFile.containersPath,
+    mounts: mountsStored.map(mountForApi),
+    backupMountId,
   };
 }
 
 let writeLock = Promise.resolve();
 
 /**
- * Update only the allowed keys in the settings file. Validates refreshIntervalSeconds 1-60.
- * Returns the full merged settings after write. Serialised with a mutex to avoid concurrent write races.
+ * Update only the allowed top-level keys. Mount CRUD goes via dedicated mounts lib.
+ * Returns the full merged settings after write. Serialised via a mutex.
  */
 export async function updateSettings(updates) {
   writeLock = writeLock.then(() => _updateSettings(updates));
@@ -170,27 +176,13 @@ async function _updateSettings(updates) {
         ? updates.backupLocalPath.trim()
         : DEFAULTS.backupLocalPath;
   }
-  if (updates.networkMounts !== undefined) {
-    const normalized = normalizeNetworkMounts(updates.networkMounts);
-    const existing = fromFile.networkMounts || [];
-    next.networkMounts = normalized.map((d) => {
-      const prev = existing.find((e) => e.id === d.id);
-      if (prev && (d.password === '***' || d.password === '' || d.password == null)) {
-        d.password = prev.password || '';
-      }
-      return d;
-    });
-    const ids = new Set(next.networkMounts.map((m) => m.id));
-    if (next.backupNetworkMountId && !ids.has(next.backupNetworkMountId)) {
-      next.backupNetworkMountId = null;
-    }
-  }
-  if (updates.backupNetworkMountId !== undefined) {
-    const ids = (next.networkMounts || []).map((m) => m.id);
-    if (updates.backupNetworkMountId === null || updates.backupNetworkMountId === '') {
-      next.backupNetworkMountId = null;
-    } else if (typeof updates.backupNetworkMountId === 'string') {
-      next.backupNetworkMountId = normalizeBackupNetworkMountId(updates.backupNetworkMountId, ids);
+  if (updates.backupMountId !== undefined) {
+    const ids = (next.mounts || []).map((m) => m.id);
+    if (updates.backupMountId === null || updates.backupMountId === '') {
+      next.backupMountId = null;
+    } else if (typeof updates.backupMountId === 'string') {
+      const id = updates.backupMountId.trim();
+      next.backupMountId = ids.includes(id) ? id : null;
     }
   }
   if (updates.vmsPath !== undefined) {
@@ -212,183 +204,209 @@ async function _updateSettings(updates) {
         : DEFAULTS.containersPath;
   }
 
-  const toWrite = {
-    serverName: next.serverName,
-    refreshIntervalSeconds: next.refreshIntervalSeconds,
-    vmsPath: next.vmsPath,
-    imagePath: next.imagePath,
-    backupLocalPath: next.backupLocalPath,
-    containersPath: next.containersPath,
-    networkMounts: (next.networkMounts || []).map((d) => {
-      const out = { id: d.id, label: d.label, path: d.path || d.mountPath, mountPath: d.mountPath || d.path };
-      if (d.share) out.share = d.share;
-      if (d.username !== undefined) out.username = d.username;
-      if (d.password !== undefined && d.password !== '' && d.password !== '***') out.password = d.password;
-      return out;
-    }),
-    backupNetworkMountId: next.backupNetworkMountId,
-  };
-
-  await writeFile(CONFIG_PATH, JSON.stringify(toWrite, null, 2), 'utf8');
+  await persistSettings(next);
   return getSettings();
 }
 
-/**
- * Return network mounts as stored (including passwords). For server-side use only (e.g. mount).
- */
-export async function getRawNetworkMounts() {
-  const fromFile = await readSettingsFile();
-  return fromFile.networkMounts || [];
+async function persistSettings(state) {
+  const toWrite = {
+    serverName: state.serverName,
+    refreshIntervalSeconds: state.refreshIntervalSeconds,
+    vmsPath: state.vmsPath,
+    imagePath: state.imagePath,
+    backupLocalPath: state.backupLocalPath,
+    containersPath: state.containersPath,
+    mounts: (state.mounts || []).map((d) => {
+      const out = {
+        id: d.id,
+        type: d.type,
+        label: d.label,
+        mountPath: d.mountPath,
+        autoMount: d.autoMount !== false,
+      };
+      if (d.type === 'smb') {
+        out.share = d.share;
+        if (d.username !== undefined) out.username = d.username;
+        if (d.password !== undefined && d.password !== '' && d.password !== '***') out.password = d.password;
+      } else if (d.type === 'disk') {
+        out.uuid = d.uuid;
+        if (d.fsType) out.fsType = d.fsType;
+        out.readOnly = d.readOnly === true;
+      }
+      return out;
+    }),
+    backupMountId: state.backupMountId,
+  };
+  await writeFile(CONFIG_PATH, JSON.stringify(toWrite, null, 2), 'utf8');
 }
 
-function mountPathFromBody(body) {
-  const mountPath =
-    typeof body.mountPath === 'string'
-      ? body.mountPath.trim()
-      : typeof body.path === 'string'
-        ? body.path.trim()
-        : '';
+/**
+ * Return mounts as stored (including SMB passwords). For server-side use only (e.g. mount, auto-mount).
+ */
+export async function getRawMounts() {
+  const fromFile = await readSettingsFile();
+  return fromFile.mounts || [];
+}
+
+function validateCommonFields(body) {
+  const mountPath = typeof body.mountPath === 'string' ? body.mountPath.trim() : '';
+  if (!mountPath.startsWith('/')) {
+    throw createAppError('MOUNT_INVALID', 'mountPath must be an absolute path (start with /)');
+  }
   return mountPath;
 }
 
-/**
- * Build one stored network mount from API input (add or replace).
- * @param {object} body
- * @param {string} id
- */
-function networkMountEntryFromBody(body, id) {
-  const mountPath = mountPathFromBody(body);
-  if (!mountPath.startsWith('/')) {
-    throw createAppError('NETWORK_MOUNT_INVALID', 'mountPath must be an absolute path (start with /)');
+function mountEntryFromBody(body, id) {
+  const type = body.type === 'smb' || body.type === 'disk' ? body.type : null;
+  if (!type) {
+    throw createAppError('MOUNT_INVALID', 'type must be "smb" or "disk"');
   }
+  const mountPath = validateCommonFields(body);
   const label = typeof body.label === 'string' ? body.label.trim() : '';
-  const entry = {
-    id,
-    label: label || id.slice(0, 8),
-    path: mountPath,
-    mountPath,
-  };
-  const share = typeof body.share === 'string' ? body.share.trim() : '';
-  if (share) {
+  const autoMount = body.autoMount !== false;
+  const entry = { id, type, label: label || id.slice(0, 8), mountPath, autoMount };
+  if (type === 'smb') {
+    const share = typeof body.share === 'string' ? body.share.trim() : '';
+    if (!share) {
+      throw createAppError('MOUNT_INVALID', 'share is required for smb mounts');
+    }
     entry.share = share;
     entry.username = typeof body.username === 'string' ? body.username.trim() : '';
     entry.password = typeof body.password === 'string' ? body.password : '';
+  } else {
+    const uuid = typeof body.uuid === 'string' ? body.uuid.trim() : '';
+    if (!uuid) {
+      throw createAppError('MOUNT_INVALID', 'uuid is required for disk mounts');
+    }
+    entry.uuid = uuid;
+    if (body.fsType !== undefined) {
+      if (!VALID_DISK_FSTYPES.has(body.fsType)) {
+        throw createAppError('MOUNT_INVALID', `fsType "${body.fsType}" is not supported`);
+      }
+      entry.fsType = body.fsType;
+    } else {
+      entry.fsType = '';
+    }
+    entry.readOnly = body.readOnly === true;
   }
   return entry;
 }
 
-function networkMountsToPatchPayload(list) {
-  return list.map((d) => {
-    const out = {
-      id: d.id,
-      label: d.label,
-      path: d.path || d.mountPath,
-      mountPath: d.mountPath || d.path,
-    };
-    if (d.share) {
-      out.share = d.share;
-      if (d.username !== undefined) out.username = d.username;
-      if (d.password !== undefined) out.password = d.password;
-    }
-    return out;
-  });
-}
-
 /**
- * Append one network mount (row-scoped). Returns merged settings like getSettings().
+ * Append one mount. Returns merged settings like getSettings().
  */
-export async function addNetworkMount(body) {
+export async function addMount(body) {
   if (!body || typeof body !== 'object') {
-    throw createAppError('NETWORK_MOUNT_INVALID', 'Body must be a JSON object');
+    throw createAppError('MOUNT_INVALID', 'Body must be a JSON object');
   }
   const fromFile = await readSettingsFile();
   const id =
     typeof body.id === 'string' && body.id.trim() ? body.id.trim() : randomUUID();
-  const existing = fromFile.networkMounts || [];
+  const existing = fromFile.mounts || [];
   if (existing.some((m) => m.id === id)) {
-    throw createAppError('NETWORK_MOUNT_DUPLICATE', `Network mount "${id}" already exists`);
+    throw createAppError('MOUNT_DUPLICATE', `Mount "${id}" already exists`);
   }
-  const entry = networkMountEntryFromBody(body, id);
-  const combined = [...existing, entry];
-  return updateSettings({ networkMounts: networkMountsToPatchPayload(combined) });
+  const entry = mountEntryFromBody(body, id);
+  const next = { ...fromFile, mounts: [...existing, entry] };
+  writeLock = writeLock.then(() => persistSettings(next));
+  await writeLock;
+  return getSettings();
 }
 
 /**
- * Update one network mount by id. Returns merged settings.
+ * Update one mount by id. Only label, mountPath, autoMount, and type-specific fields can change.
+ * Type cannot be changed after creation.
  */
-export async function updateNetworkMount(mountId, body) {
+export async function updateMount(mountId, body) {
   if (!body || typeof body !== 'object') {
-    throw createAppError('NETWORK_MOUNT_INVALID', 'Body must be a JSON object');
+    throw createAppError('MOUNT_INVALID', 'Body must be a JSON object');
   }
   const fromFile = await readSettingsFile();
-  const list = [...(fromFile.networkMounts || [])];
+  const list = [...(fromFile.mounts || [])];
   const idx = list.findIndex((m) => m.id === mountId);
   if (idx < 0) {
-    throw createAppError('NETWORK_MOUNT_NOT_FOUND', `No network mount with id "${mountId}"`);
+    throw createAppError('MOUNT_NOT_FOUND', `No mount with id "${mountId}"`);
   }
   const cur = { ...list[idx] };
   if (body.label !== undefined) {
     cur.label = typeof body.label === 'string' ? body.label.trim() : '';
   }
-  if (body.share !== undefined) {
-    const s = typeof body.share === 'string' ? body.share.trim() : '';
-    if (s) {
-      cur.share = s;
-    } else {
-      delete cur.share;
-      delete cur.username;
-      delete cur.password;
-    }
-  }
-  if (body.mountPath !== undefined || body.path !== undefined) {
-    const p = mountPathFromBody(body);
+  if (body.mountPath !== undefined) {
+    const p = typeof body.mountPath === 'string' ? body.mountPath.trim() : '';
     if (!p.startsWith('/')) {
-      throw createAppError('NETWORK_MOUNT_INVALID', 'mountPath must be an absolute path (start with /)');
+      throw createAppError('MOUNT_INVALID', 'mountPath must be an absolute path (start with /)');
     }
-    cur.path = p;
     cur.mountPath = p;
   }
-  if (body.username !== undefined && cur.share) {
-    cur.username = typeof body.username === 'string' ? body.username.trim() : '';
+  if (body.autoMount !== undefined) {
+    cur.autoMount = body.autoMount !== false;
   }
-  if (body.password !== undefined && cur.share) {
-    const pw = body.password;
-    if (pw !== '***' && pw !== '' && pw != null) {
-      cur.password = typeof pw === 'string' ? pw : '';
+  if (cur.type === 'smb') {
+    if (body.share !== undefined) {
+      const s = typeof body.share === 'string' ? body.share.trim() : '';
+      if (!s) {
+        throw createAppError('MOUNT_INVALID', 'share cannot be empty for smb mounts');
+      }
+      cur.share = s;
+    }
+    if (body.username !== undefined) {
+      cur.username = typeof body.username === 'string' ? body.username.trim() : '';
+    }
+    if (body.password !== undefined) {
+      const pw = body.password;
+      if (pw !== '***' && pw !== '' && pw != null) {
+        cur.password = typeof pw === 'string' ? pw : '';
+      }
+    }
+  } else if (cur.type === 'disk') {
+    if (body.fsType !== undefined) {
+      if (!VALID_DISK_FSTYPES.has(body.fsType)) {
+        throw createAppError('MOUNT_INVALID', `fsType "${body.fsType}" is not supported`);
+      }
+      cur.fsType = body.fsType;
+    }
+    if (body.readOnly !== undefined) {
+      cur.readOnly = body.readOnly === true;
     }
   }
   list[idx] = cur;
-  return updateSettings({ networkMounts: networkMountsToPatchPayload(list) });
+  const next = { ...fromFile, mounts: list };
+  writeLock = writeLock.then(() => persistSettings(next));
+  await writeLock;
+  return getSettings();
 }
 
 /**
- * Remove one network mount. Clears backupNetworkMountId when it pointed at this id.
+ * Remove one mount. Clears backupMountId when it pointed at this id.
  */
-export async function removeNetworkMount(mountId) {
+export async function removeMount(mountId) {
   const fromFile = await readSettingsFile();
-  const existing = fromFile.networkMounts || [];
+  const existing = fromFile.mounts || [];
   const list = existing.filter((m) => m.id !== mountId);
   if (list.length === existing.length) {
-    throw createAppError('NETWORK_MOUNT_NOT_FOUND', `No network mount with id "${mountId}"`);
+    throw createAppError('MOUNT_NOT_FOUND', `No mount with id "${mountId}"`);
   }
-  const updates = { networkMounts: networkMountsToPatchPayload(list) };
-  if (fromFile.backupNetworkMountId === mountId) {
-    updates.backupNetworkMountId = null;
-  }
-  return updateSettings(updates);
+  const next = {
+    ...fromFile,
+    mounts: list,
+    backupMountId: fromFile.backupMountId === mountId ? null : fromFile.backupMountId,
+  };
+  writeLock = writeLock.then(() => persistSettings(next));
+  await writeLock;
+  return getSettings();
 }
 
 /**
- * Configured backup roots for path validation (restore/delete). Includes local and optional network mount path.
+ * Configured backup roots for path validation (restore/delete). Includes local and optional mount path.
  * @param {Awaited<ReturnType<typeof getSettings>>} settings
  */
 export function listConfiguredBackupRoots(settings) {
   const roots = [];
   if (settings.backupLocalPath) roots.push(settings.backupLocalPath);
-  const id = settings.backupNetworkMountId;
+  const id = settings.backupMountId;
   if (!id) return roots;
-  const d = (settings.networkMounts || []).find((m) => m.id === id);
-  const path = d && (d.mountPath || d.path);
+  const d = (settings.mounts || []).find((m) => m.id === id);
+  const path = d && d.mountPath;
   if (path && !roots.includes(path)) roots.push(path);
   return roots;
 }
@@ -404,13 +422,13 @@ export function buildBackupDestinationsFromSettings(settings) {
     destinations.push({ path: settings.backupLocalPath, label: 'Local' });
     seen.add(settings.backupLocalPath);
   }
-  const id = settings.backupNetworkMountId;
+  const id = settings.backupMountId;
   if (!id) return destinations;
-  const d = (settings.networkMounts || []).find((m) => m.id === id);
-  const path = d && (d.mountPath || d.path);
+  const d = (settings.mounts || []).find((m) => m.id === id);
+  const path = d && d.mountPath;
   if (!path || seen.has(path)) return destinations;
   seen.add(path);
-  destinations.push({ path, label: (d.label && d.label.trim()) || 'Network' });
+  destinations.push({ path, label: (d.label && d.label.trim()) || (d.type === 'smb' ? 'Network' : 'Disk') });
   return destinations;
 }
 
@@ -423,17 +441,17 @@ export async function listBackupDestinationsWithMountCheck(settings) {
   if (settings.backupLocalPath) {
     destinations.push({ path: settings.backupLocalPath, label: 'Local' });
   }
-  const id = settings.backupNetworkMountId;
+  const id = settings.backupMountId;
   if (!id) return destinations;
-  const d = (settings.networkMounts || []).find((m) => m.id === id);
-  const path = d && (d.mountPath || d.path);
+  const d = (settings.mounts || []).find((m) => m.id === id);
+  const path = d && d.mountPath;
   if (!path) return destinations;
-  if (d.share) {
+  if (d.type === 'smb' || d.type === 'disk') {
     const { mounted } = await getMountStatus(path);
     if (!mounted) return destinations;
   }
   if (!destinations.some((x) => x.path === path)) {
-    destinations.push({ path, label: (d.label && d.label.trim()) || 'Network' });
+    destinations.push({ path, label: (d.label && d.label.trim()) || (d.type === 'smb' ? 'Network' : 'Disk') });
   }
   return destinations;
 }

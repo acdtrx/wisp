@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install a helper script to /usr/local/bin/<name> and add sudoers entry. Run as root.
 # Usage: helper.sh <src-script> <basename> <username> [extra-package ...]
-# Example: helper.sh /opt/wisp/backend/scripts/wisp-smb wisp-smb myuser cifs-utils
+# Example: helper.sh /opt/wisp/backend/scripts/wisp-mount wisp-mount myuser cifs-utils
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then

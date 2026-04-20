@@ -8,30 +8,34 @@ export function updateSettings(body) {
   return api('/api/settings', { method: 'PATCH', body });
 }
 
-export function getNetworkMountStatus() {
-  return api('/api/settings/network-mounts/status');
+export function getMounts() {
+  return api('/api/host/mounts');
 }
 
-export function mountNetworkMount(id) {
-  return api(`/api/settings/network-mounts/${encodeURIComponent(id)}/mount`, { method: 'POST' });
+export function getMountStatus() {
+  return api('/api/host/mounts/status');
 }
 
-export function unmountNetworkMount(id) {
-  return api(`/api/settings/network-mounts/${encodeURIComponent(id)}/unmount`, { method: 'POST' });
+export function mountMount(id) {
+  return api(`/api/host/mounts/${encodeURIComponent(id)}/mount`, { method: 'POST' });
 }
 
-export function checkNetworkMountConnection(body) {
-  return api('/api/settings/network-mounts/check', { method: 'POST', body });
+export function unmountMount(id) {
+  return api(`/api/host/mounts/${encodeURIComponent(id)}/unmount`, { method: 'POST' });
 }
 
-export function addNetworkMount(body) {
-  return api('/api/settings/network-mounts', { method: 'POST', body });
+export function checkMountConnection(body) {
+  return api('/api/host/mounts/check', { method: 'POST', body });
 }
 
-export function patchNetworkMount(id, body) {
-  return api(`/api/settings/network-mounts/${encodeURIComponent(id)}`, { method: 'PATCH', body });
+export function addMount(body) {
+  return api('/api/host/mounts', { method: 'POST', body });
 }
 
-export function deleteNetworkMount(id) {
-  return api(`/api/settings/network-mounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export function patchMount(id, body) {
+  return api(`/api/host/mounts/${encodeURIComponent(id)}`, { method: 'PATCH', body });
+}
+
+export function deleteMount(id) {
+  return api(`/api/host/mounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

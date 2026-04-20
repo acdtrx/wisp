@@ -28,14 +28,16 @@ import cloudInitRoutes from './routes/cloudinit.js';
 import consoleRoutes from './routes/console.js';
 import containerConsoleRoutes from './routes/containerConsole.js';
 import settingsRoutes from './routes/settings.js';
+import mountsRoutes from './routes/mounts.js';
 import backupsRoutes from './routes/backups.js';
 import containerRoutes from './routes/containers.js';
 import backgroundJobsRoutes from './routes/backgroundJobs.js';
-import { ensureNetworkMounts } from './lib/networkMountAutoMount.js';
+import { ensureMounts, installMountHotplugHandlers } from './lib/mountsAutoMount.js';
 import { startUpdateChecker, stopUpdateChecker } from './lib/aptUpdates.js';
 import { closeAllSSE } from './lib/sse.js';
 import { disconnect as disconnectLibvirtBus } from './lib/vmManager.js';
 import { start as startUsbMonitor, stop as stopUsbMonitor } from './lib/usbMonitor.js';
+import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/diskMonitor.js';
 import { connect as connectMdns, disconnect as disconnectMdns, registerAddress, sanitizeHostname } from './lib/mdnsManager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -62,6 +64,7 @@ app.register(libraryRoutes, { prefix: '/api' });
 app.register(vmsRoutes, { prefix: '/api' });
 app.register(cloudInitRoutes, { prefix: '/api' });
 app.register(settingsRoutes, { prefix: '/api' });
+app.register(mountsRoutes, { prefix: '/api' });
 app.register(backupsRoutes, { prefix: '/api' });
 app.register(containerRoutes, { prefix: '/api' });
 app.register(backgroundJobsRoutes, { prefix: '/api' });
@@ -82,11 +85,16 @@ async function start() {
   }
   await connectMdns(app.log);
 
+  // Disk monitor must populate its snapshot before ensureMounts can reconcile disk entries.
+  startDiskMonitor();
+
   try {
-    await ensureNetworkMounts(app.log);
+    await ensureMounts(app.log);
   } catch (err) {
-    app.log.warn({ err }, 'Network mount auto-mount at startup failed');
+    app.log.warn({ err }, 'Mount auto-mount at startup failed');
   }
+
+  unsubscribeMountHotplug = installMountHotplugHandlers(app.log);
 
   await startAutostartContainersAtBackendBoot(app.log);
 
@@ -112,13 +120,19 @@ async function start() {
 }
 
 let shuttingDown = false;
+let unsubscribeMountHotplug = null;
 
 async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   app.log.info(`Received ${signal}, shutting down`);
   closeAllSSE();
+  if (unsubscribeMountHotplug) {
+    try { unsubscribeMountHotplug(); } catch { /* no-op */ }
+    unsubscribeMountHotplug = null;
+  }
   stopUsbMonitor();
+  stopDiskMonitor();
   stopUpdateChecker();
   stopImageUpdateChecker();
   disconnectLibvirtBus();

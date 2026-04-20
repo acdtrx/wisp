@@ -3,6 +3,21 @@
 ## 2026-04-20
 
 ### New Features
+- Host Mgmt → **Storage** replaces **Network Storage**: unified SMB shares and adopted removable drives in one SectionCard, with a live "Detected drives" table for unadopted block devices
+- Removable drive auto-mount: adopted disks (keyed by filesystem UUID) mount on insertion, lazy-unmount on surprise removal, and reconcile at backend startup
+- New `wisp-mount` privileged helper (replaces `wisp-smb`) — supports `smb mount|check`, `disk mount`, `unmount`, and `unmount-lazy`; `install-helpers.sh` removes the legacy `wisp-smb` automatically
+- Disk detection via `/dev/disk/by-uuid/` + `/run/udev/data/b<maj>:<min>` (no `udisks2` dependency); hotplug via `fs.watch`, pushed to `/api/host/disks/stream` SSE
+- Supported removable filesystems: `ext4`, `btrfs`, `vfat`, `exfat`, `ntfs3` (ntfs3 forced read-only)
+- Hard-converge on startup: mounts under `/mnt/wisp/` that aren't in `settings.mounts` are lazy-unmounted so the on-disk state always matches the config
+
+### Breaking
+- `settings.networkMounts` → `settings.mounts` (type-discriminated: `"smb"` | `"disk"`); `settings.backupNetworkMountId` → `settings.backupMountId`; mount `path` field removed in favour of `mountPath`
+- `/api/settings/network-mounts/*` moved to `/api/host/mounts/*`; full-array mount replacement via `PATCH /api/settings` is gone — use per-row POST/PATCH/DELETE
+- Error codes renamed: `NETWORK_MOUNT_*` → `MOUNT_*`
+
+## 2026-04-20
+
+### New Features
 - URL-addressable views: `/host/:tab`, `/vm/:name/:tab`, `/container/:name/:tab`, `/create/vm`, `/create/container` — browser refresh and deep links now land back on the same page and tab
 - Host tabs reshuffled: OS Update moved out of "Host Mgmt" into a new top-level **Software** tab (replaces "Image Library"), stacked above the image list; pending-update badge moves with it
 - Host "reboot required" signal — amber badge on the Restart button and OS Update card when `/var/run/reboot-required` is present (Debian/Ubuntu) or the running kernel differs from the installed one (Arch); triggering packages listed in the tooltip

@@ -108,19 +108,11 @@ Single-section views (e.g. **Image Library**) use one **`SectionCard`** with the
 - **[UsbAttachModal.jsx](../frontend/src/components/shared/UsbAttachModal.jsx)** — Modal shell (image-library style): scroll area on **`bg-surface`**, table inside **`rounded-card` + `bg-surface-card` + border** like **`SectionCard`**; dense **`DataTable`** with **`dataTableInteractiveRowClass`**; per-row icon **Attach** (**`DataTableRowActions`**, hover-reveal).
 - **[HostNetworkBridges.jsx](../frontend/src/components/host/HostNetworkBridges.jsx)** — Header `Plus`+`Network`; inline create row in table; icon-only delete.
 - **[ContainerMountsSection.jsx](../frontend/src/components/sections/ContainerMountsSection.jsx)** — Row-scoped mount API; header `Plus`+`File` / `Plus`+`Folder`.
-- **[HostNetworkStorage.jsx](../frontend/src/components/host/HostNetworkStorage.jsx)** — Row-scoped network mount API; `DataTable` chrome; header `Plus`+`Server`; combined mount/unmount with mounted-state background; SMB **Check** uses green/red on the shield button (errors on hover).
+- **[HostStorage.jsx](../frontend/src/components/host/HostStorage.jsx)** — Row-scoped mount API (`/api/host/mounts`) for SMB + adopted removable drives; `DataTable` chrome; header `Plus`+`Server`; combined mount/unmount with mounted-state background; SMB **Check** uses green/red on the shield button (errors on hover); separate "Detected drives" table rendered only when non-empty.
 - **[SnapshotsSection.jsx](../frontend/src/components/sections/SnapshotsSection.jsx)** — Header `Plus`+`Camera` when qcow2; icon-only row actions (hover-reveal).
 - **[BackupsPanel.jsx](../frontend/src/components/backups/BackupsPanel.jsx)** — Restore/delete on row hover.
 - **[HostOverview.jsx](../frontend/src/components/host/HostOverview.jsx)** (hardware inventory) — Read-only; **`SectionCard`** + **`titleIcon`** per section; shared table chrome.
 - **[HostMgmt.jsx](../frontend/src/components/host/HostMgmt.jsx)** — Stacked **`SectionCard`**s (**OS Update**, **Network Bridges**, **Network Storage**, **Backup**) with **`titleIcon`** on each; same page gutters as Overview.
-
----
-
-## Bulk APIs (legacy / advanced use)
-
-These remain valid for scripts or advanced clients but are not the primary UI path:
-
-- **PATCH** `/api/settings` with **`networkMounts`** — replaces the full network mounts array (UI prefers row-scoped **POST**/**PATCH**/**DELETE** `/api/settings/network-mounts`).
 
 ---
 
@@ -129,4 +121,4 @@ These remain valid for scripts or advanced clients but are not the primary UI pa
 - [docs/spec/UI.md](spec/UI.md) — Layout, tokens, and view inventory.
 - [docs/CODING-RULES.md](CODING-RULES.md) §8 — General frontend patterns.
 - [docs/WISP-RULES.md](WISP-RULES.md) — Wisp-specific frontend notes.
-- [docs/spec/API.md](spec/API.md) — Mount and network-mount row endpoints.
+- [docs/spec/API.md](spec/API.md) — Mount row endpoints (`/api/host/mounts`).

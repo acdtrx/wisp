@@ -43,22 +43,22 @@ The timestamp format is used as the directory name (e.g. `20250115-103000`).
 
 The default backup path is `/var/lib/wisp/backups` (configurable via `backupLocalPath` in `config/wisp-config.json`).
 
-### Optional network mount
+### Optional extra mount
 
-SMB/CIFS shares are defined under **`networkMounts`** in settings (**Host → Host Mgmt → Network Storage**). Only one mount may be selected for backups via **`backupNetworkMountId`** (**Host → Host Mgmt → Backup**). When set, that mount’s local path is offered as a second destination in the VM Overview backup modal (alongside Local).
+All configured mounts (SMB shares and adopted removable drives) live under **`mounts`** in settings (**Host → Host Mgmt → Storage**). Only one mount may be selected for backups via **`backupMountId`** (**Host → Host Mgmt → Backup**). When set, that mount's local path is offered as a second destination in the VM Overview backup modal (alongside Local).
 
-Each network mount entry includes **id**, **label**, **share**, **mountPath**, **username** / **password** as documented in [CONFIGURATION.md](CONFIGURATION.md).
+Each mount entry has a `type` (`smb` or `disk`) and common fields (id, label, mountPath, autoMount) plus type-specific fields as documented in [CONFIGURATION.md](CONFIGURATION.md).
 
-SMB shares must be mounted before use (or the backup job attempts to auto-mount). Mount/unmount/status use the `wisp-smb` helper script (invoked with `sudo`).
+SMB shares must be mounted before use (or the backup job attempts to auto-mount). Disk mounts follow removable-drive insertion events. Mount/unmount is performed via the `wisp-mount` helper script (invoked with `sudo`).
 
 ### Auto-mount
 
-At backend startup, the system attempts to mount all configured **`networkMounts`** that define a **share**. Failures are logged but do not prevent the backend from starting.
+At backend startup, `ensureMounts()` attempts to mount every configured SMB share (unless `autoMount` is false) and hard-converges orphan mounts under `/mnt/wisp/`. Disk mounts are triggered by insertion events, not startup reconciliation. Failures are logged but do not prevent the backend from starting.
 
 ## Creating a Backup
 
-1. Client sends `POST /api/vms/:name/backup` with `destinationIds` (e.g. `["local"]` or `["local", "<backupNetworkMountId>"]`) or explicit `destinationPaths`
-2. Backend resolves paths from `backupLocalPath` and, when requested, the mount referenced by `backupNetworkMountId` (with mount check / auto-mount for SMB)
+1. Client sends `POST /api/vms/:name/backup` with `destinationIds` (e.g. `["local"]` or `["local", "<backupMountId>"]`) or explicit `destinationPaths`
+2. Backend resolves paths from `backupLocalPath` and, when requested, the mount referenced by `backupMountId` (with mount check / auto-mount for SMB)
 3. A background job is created (returns `jobId`)
 4. For each destination path:
    - Create backup directory `<dest>/<vmName>/<timestamp>/`
@@ -72,7 +72,7 @@ At backend startup, the system attempts to mount all configured **`networkMounts
 
 ## Listing Backups
 
-`GET /api/backups` scans configured destinations that are currently usable: always the local backup path; the network path only if `backupNetworkMountId` is set **and** (for SMB) the share is mounted. For each found backup, returns: VM name, timestamp, full path, total size in bytes, and destination label.
+`GET /api/backups` scans configured destinations that are currently usable: always the local backup path; the extra destination only if `backupMountId` is set **and** the corresponding mount is currently mounted. For each found backup, returns: VM name, timestamp, full path, total size in bytes, and destination label.
 
 Optional `?vmName=` filter restricts results to a specific VM.
 
@@ -94,7 +94,7 @@ The restored VM gets a new name, new UUID, and new MAC addresses — it is a ful
 
 `DELETE /api/backups` with `{ backupPath }`:
 
-- The path is validated to be under one of the configured backup destination roots (local path and, when set, the selected network mount path — safety check to prevent arbitrary path deletion)
+- The path is validated to be under one of the configured backup destination roots (local path and, when set, the selected extra mount path — safety check to prevent arbitrary path deletion)
 - The entire backup directory is removed
 
 ## Progress Tracking
@@ -106,13 +106,13 @@ Backup creation and restore operations run as background jobs with SSE-based pro
 - Events include: step name, percent complete, current file being processed
 - Completion event indicates success or failure
 
-## Network mount operations (settings API)
+## Mount operations (host mounts API)
 
 | Operation | Endpoint | Description |
 |-----------|----------|-------------|
-| Status | `GET /api/settings/network-mounts/status` | Mount status for all configured network mounts |
-| Check | `POST /api/settings/network-mounts/check` | Test SMB connection (does not mount) |
-| Mount | `POST /api/settings/network-mounts/:id/mount` | Mount a share |
-| Unmount | `POST /api/settings/network-mounts/:id/unmount` | Unmount a share |
+| Status | `GET /api/host/mounts/status` | Mount status for all configured mounts |
+| Check | `POST /api/host/mounts/check` | Test SMB connection (does not mount) |
+| Mount | `POST /api/host/mounts/:id/mount` | Mount |
+| Unmount | `POST /api/host/mounts/:id/unmount` | Unmount |
 
-The `wisp-smb` helper script handles the actual mount/unmount operations and is invoked via `sudo` for the necessary filesystem permissions.
+The `wisp-mount` helper script handles the actual mount/unmount operations and is invoked via `sudo` for the necessary filesystem permissions.

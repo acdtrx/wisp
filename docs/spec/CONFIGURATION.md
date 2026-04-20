@@ -26,7 +26,7 @@ If this file exists, the backend and frontend parse `KEY=value` lines (comments 
 
 Shipped template: `config/runtime.env.example` (copy to `runtime.env` if you need overrides).
 
-OS updates and SMB mounts use **`/usr/local/bin/wisp-os-update`** and **`/usr/local/bin/wisp-smb`** when installed by `setup-server.sh` (no env vars required).
+OS updates, SMB shares, and removable-drive mounts use **`/usr/local/bin/wisp-os-update`** and **`/usr/local/bin/wisp-mount`** when installed by `setup-server.sh` (no env vars required).
 
 ## Application Config (`config/wisp-config.json`)
 
@@ -42,20 +42,36 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 | `imagePath` | `string` | `/var/lib/wisp/images` | Image library path. |
 | `backupLocalPath` | `string` | `/var/lib/wisp/backups` | Local backup directory. |
 | `containersPath` | `string` | `/var/lib/wisp/containers` | Container storage root (absolute). |
-| `networkMounts` | `array` | `[]` | SMB/CIFS network mounts (see object shape below). |
-| `backupNetworkMountId` | `string \| null` | `null` | Optional `id` of a `networkMounts` entry to expose as a backup destination in the UI. |
+| `mounts` | `array` | `[]` | Configured mounts (see object shape below). Includes SMB shares and adopted removable drives. |
+| `backupMountId` | `string \| null` | `null` | Optional `id` of a `mounts` entry to expose as a backup destination in the UI. |
 
-### Network mount object (`networkMounts[]`)
+### Mount object (`mounts[]`)
+
+Common fields:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | `string` | Unique id |
+| `type` | `string` | `"smb"` or `"disk"`. Discriminates the remaining fields. |
 | `label` | `string` | Display name |
-| `path` | `string` | Mount point (synced with `mountPath`) |
-| `mountPath` | `string` | Mount point |
-| `share` | `string` | SMB URL |
+| `mountPath` | `string` | Absolute mount point (must start with `/`) |
+| `autoMount` | `boolean` | When `true` (default), Wisp mounts on startup (SMB) or on device insertion (disk). |
+
+SMB-only (`type: "smb"`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `share` | `string` | SMB URL (e.g. `//server/share`) |
 | `username` | `string` | SMB user |
 | `password` | `string` | SMB password (API masks as `***`) |
+
+Disk-only (`type: "disk"`):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `uuid` | `string` | Filesystem UUID (resolved to `/dev/disk/by-uuid/<uuid>`) |
+| `fsType` | `string` | One of `ext4`, `btrfs`, `vfat`, `exfat`, `ntfs3` |
+| `readOnly` | `boolean` | Force read-only mount (mandatory for `ntfs3`) |
 
 ### Config priority
 

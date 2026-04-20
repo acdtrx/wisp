@@ -179,7 +179,7 @@ Containers are attached as **veth ports on a host Linux bridge** (`br0`, or a VL
 - Systemwide conflist at `/etc/cni/net.d/10-wisp-bridge.conflist`: `type: bridge`, `isGateway: false`, `ipMasq: false`, `hairpinMode: false`, `promiscMode: false`, `forceAddress: false`, `ipam.type: dhcp`. The `bridge` field is overridden per container from `network.interface` before each invocation.
 - DHCP IPAM via `cni-dhcp.service` systemd unit (plugin-agnostic; key on MAC)
 - Network namespace per container at `/var/run/netns/<name>`
-- CNI plugins are invoked via the **`wisp-cni`** privileged helper and **`sudo -n`** when the backend runs as the deploy user (`User=` in systemd). Stdin netconf merges **`.conflist` top-level `cniVersion` and `name` into the bridge `plugins[0]` object** (the fragment alone is not valid for a direct plugin exec). **`wisp-netns`** creates `/var/run/netns/<name>` with `ip netns add`. Install both with **`install-helpers.sh`** / **`wispctl.sh helpers`** (same pattern as `wisp-smb`). **`cni-dhcp.service`** must be running when using `ipam.type: dhcp`.
+- CNI plugins are invoked via the **`wisp-cni`** privileged helper and **`sudo -n`** when the backend runs as the deploy user (`User=` in systemd). Stdin netconf merges **`.conflist` top-level `cniVersion` and `name` into the bridge `plugins[0]` object** (the fragment alone is not valid for a direct plugin exec). **`wisp-netns`** creates `/var/run/netns/<name>` with `ip netns add`. Install both with **`install-helpers.sh`** / **`wispctl.sh helpers`** (same pattern as `wisp-mount`). **`cni-dhcp.service`** must be running when using `ipam.type: dhcp`.
 - Before **ADD**, if the netns file already exists, **`setupNetwork`** runs **CNI DEL** and **`ip netns delete`** so a leftover **`eth0`** from a failed stop does not cause `ADD` to error on "device exists".
 
 ## Local DNS (mDNS)
@@ -268,11 +268,11 @@ Wisp checks every OCI image in the library for upstream changes and flags contai
 
 When the Wisp backend process starts (`backend/src/index.js`), after libvirt and containerd connection attempts and after mDNS manager connect:
 
-1. **SMB network mounts** — `ensureNetworkMounts()` runs to completion (awaited) so Host Mgmt SMB shares are mounted before any autostart container starts (avoids bind mounts whose host paths live under those shares).
+1. **Configured mounts** — `ensureMounts()` runs to completion (awaited) so Host Mgmt SMB shares (and, later, removable-drive adoptions) are mounted before any autostart container starts (avoids bind mounts whose host paths live under those shares). The same pass also hard-converges: any mount under `/mnt/wisp/` not present in settings is unmounted.
 2. **Container autostart** — `startAutostartContainersAtBackendBoot()` lists containers from disk + containerd; for each with `autostart: true` that is not already `running`, it calls `startContainer()`. Failures are logged per container and do not block other containers.
 3. **mDNS warm-up** — For each running container (including any just started), if `localDns` is true and `network.ip` is set, the backend registers the `.local` address.
 
-The HTTP server listens **after** these steps, so hosts with SMB auto-mount configured may accept API traffic slightly later; when no SMB mounts are configured, `ensureNetworkMounts` returns immediately.
+The HTTP server listens **after** these steps, so hosts with mounts configured may accept API traffic slightly later; when no mounts are configured, `ensureMounts` returns immediately.
 
 ## Error Codes
 

@@ -343,9 +343,9 @@ All phases must comply with the architectural rules defined in the spec document
 - `GET /api/backups`, `POST /api/backups/restore`, `DELETE /api/backups`
 - Settings module: read/write `wisp-config.json` with mutex, password masking
 - `GET /api/settings`, `PATCH /api/settings`
-- SMB module: mount/unmount/check via `wisp-smb` script
-- `GET /api/settings/network-mounts/status`, `POST /api/settings/network-mounts/check`, `POST /api/settings/network-mounts/:id/mount`, `POST /api/settings/network-mounts/:id/unmount`
-- SMB auto-mount at startup
+- Mount module: SMB mount/unmount/check via `wisp-mount` helper
+- `GET /api/host/mounts`, `POST|PATCH|DELETE /api/host/mounts[/:id]`, `GET /api/host/mounts/status`, `POST /api/host/mounts/check`, `POST /api/host/mounts/:id/mount`, `POST /api/host/mounts/:id/unmount`
+- Mount auto-mount + hard-converge at startup
 - Backup job store
 - OS updates: `POST /api/host/updates/check`, `POST /api/host/updates/upgrade`
 
