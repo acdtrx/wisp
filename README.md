@@ -4,6 +4,8 @@
 
 The philosophy: direct flows and clear choices instead of exhaustive configuration surfaces. If you need to fine-tune every knob, Wisp is probably not for you.
 
+![VM overview](./screenshots/vm-overview.png)
+
 ## What it does
 
 ### Virtual machines
@@ -92,3 +94,33 @@ Please report bugs and feature requests via **GitHub Issues**.
 ## License
 
 Wisp is released under the **MIT License** — see [`LICENSE`](./LICENSE).
+
+## Screenshots
+
+**VM overview** — per-VM details, disks, USB passthrough, and network interfaces.
+
+![VM overview](./screenshots/vm-overview.png)
+
+**VM console** — in-browser noVNC for control and install flows.
+
+![VM console](./screenshots/vm-console.png)
+
+**Container overview** — image, command, env vars, mounts, and live stats.
+
+![Container overview](./screenshots/container-overview.png)
+
+**Container console** — xterm attached via containerd exec.
+
+![Container console](./screenshots/container-console.png)
+
+**Host overview** — CPU, memory, storage, and network read from `/proc` and `/sys`.
+
+![Host overview](./screenshots/host-overview.png)
+
+**Host hardware** — software versions, board/system info, RAM modules, PCI devices with live temps.
+
+![Host hardware](./screenshots/host-hardware.png)
+
+**Host management** — VLAN bridges, SMB network mounts, removable drives, and backup targets.
+
+![Host management](./screenshots/host-management.png)
