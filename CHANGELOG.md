@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-04-24
+
+### New Features
+- README gains a Screenshots section with VM, container, and host views; VM overview shown up top
+
+### Bug Fixes
+- Ubuntu cloud image download now resolves the latest LTS dynamically from Canonical's simplestreams catalog instead of a hardcoded list, so new LTS releases are picked up automatically (with a fallback list on network failure)
+- Bump `fast-xml-parser` to 5.7.1 for CDATA/comment injection fix (GHSA-gh4j-gqv2-49f6); relevant because `buildXml` is fed user-controlled values before `DomainDefineXML`
+
 ## 2026-04-20
 
 ### New Features
