@@ -9,7 +9,10 @@ import { containerError } from './containerManagerConnection.js';
 import { getContainerDir, getContainerFilesDir } from './containerPaths.js';
 import { getTaskState } from './containerManagerLifecycle.js';
 import { normalizeContainerMac } from './containerManagerNetwork.js';
-import { deregisterAddress, registerAddress, sanitizeHostname } from '../../mdnsManager.js';
+import {
+  deregisterAddress, registerAddress, deregisterServicesForContainer, sanitizeHostname,
+} from '../../mdnsManager.js';
+import { registerAllContainerServices } from './containerManagerServices.js';
 import { validateAndNormalizeMounts, ensureMissingMountArtifacts } from './containerManagerMounts.js';
 import { deleteMountBackingStore } from './containerManagerMountsContent.js';
 import { getRawMounts } from '../../settings.js';
@@ -276,6 +279,12 @@ export async function updateContainerConfig(name, changes) {
       config.localDns = value === true;
       continue;
     }
+    if (key === 'services') {
+      throw containerError(
+        'CONFIG_ERROR',
+        'Use the per-service endpoints (POST/PATCH/DELETE /containers/:name/services/:port) to manage advertised services',
+      );
+    }
     if (key === 'mounts') {
       const prevMounts = Array.isArray(config.mounts) ? [...config.mounts] : [];
       const storageMounts = await getRawMounts();
@@ -297,9 +306,11 @@ export async function updateContainerConfig(name, changes) {
   }
 
   if (changes.localDns === false) {
+    await deregisterServicesForContainer(name);
     await deregisterAddress(name);
   } else if (changes.localDns === true && isRunning && config.network?.ip) {
     await registerAddress(name, sanitizeHostname(name), config.network.ip);
+    await registerAllContainerServices(name, config);
   }
 
   await writeFile(configPath, JSON.stringify(config, null, 2));

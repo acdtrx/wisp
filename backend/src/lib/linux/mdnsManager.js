@@ -31,6 +31,8 @@ const state = {
   server: null,
   /** key -> { group: EntryGroup iface | null, host, ip, fqdn } */
   entries: new Map(),
+  /** serviceKey -> { group: EntryGroup iface | null, instanceName, type, port, txt, host } */
+  services: new Map(),
   watchInstalled: false,
 };
 
@@ -59,6 +61,7 @@ async function installAvahiWatch() {
         console.warn('[mdns] avahi-daemon went away; entries will be re-registered when it returns');
         state.server = null;
         for (const entry of state.entries.values()) entry.group = null;
+        for (const svc of state.services.values()) svc.group = null;
       } else if (!oldOwner && newOwner) {
         console.info('[mdns] avahi-daemon appeared; re-registering entries');
         reregisterAll().catch((err) => console.warn('[mdns] re-register failed:', err?.message || err));
@@ -92,13 +95,28 @@ async function createGroup() {
 }
 
 async function reregisterAll() {
-  const stored = [];
+  const storedAddresses = [];
   for (const [key, entry] of state.entries.entries()) {
-    stored.push({ key, host: entry.host, ip: entry.ip });
+    storedAddresses.push({ key, host: entry.host, ip: entry.ip });
   }
   state.entries.clear();
-  for (const { key, host, ip } of stored) {
+  for (const { key, host, ip } of storedAddresses) {
     await registerAddress(key, host, ip);
+  }
+  const storedServices = [];
+  for (const [serviceKey, svc] of state.services.entries()) {
+    storedServices.push({
+      serviceKey,
+      instanceName: svc.instanceName,
+      type: svc.type,
+      port: svc.port,
+      txt: svc.txt,
+      host: svc.host,
+    });
+  }
+  state.services.clear();
+  for (const s of storedServices) {
+    await registerService(s.serviceKey, s.instanceName, s.type, s.port, s.txt, s.host);
   }
 }
 
@@ -116,6 +134,11 @@ export async function disconnect() {
     try { await entry.group.Free(); } catch { /* best effort on shutdown */ }
   }
   state.entries.clear();
+  for (const svc of state.services.values()) {
+    if (!svc.group) continue;
+    try { await svc.group.Free(); } catch { /* best effort on shutdown */ }
+  }
+  state.services.clear();
   if (state.bus) {
     try { state.bus.disconnect(); } catch { /* best effort */ }
   }
@@ -174,6 +197,91 @@ export async function deregisterAddress(key) {
 
 export function getRegisteredHostname(key) {
   return state.entries.get(key)?.fqdn || null;
+}
+
+function txtMapToAvahi(txt) {
+  if (!txt || typeof txt !== 'object') return [];
+  const out = [];
+  for (const [k, v] of Object.entries(txt)) {
+    if (!k) continue;
+    out.push(Buffer.from(`${k}=${v == null ? '' : String(v)}`, 'utf8'));
+  }
+  return out;
+}
+
+/**
+ * Publish an mDNS service (SRV+TXT) for a host already published via registerAddress.
+ *
+ * @param {string} serviceKey  unique key (we use `${containerName}#${port}`)
+ * @param {string} instanceName  service instance name (defaults to host on collision)
+ * @param {string} type  e.g. "_smb._tcp"
+ * @param {number} port  1..65535
+ * @param {object} txt  flat key/value map (values stringified)
+ * @param {string} host  FQDN the SRV target points at, e.g. "mycontainer.local"
+ * @returns {Promise<boolean>}  true on success, false on best-effort failure
+ */
+export async function registerService(serviceKey, instanceName, type, port, txt, host) {
+  if (!serviceKey || !instanceName || !type || !host) return false;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
+
+  const txtPairs = txtMapToAvahi(txt);
+  const current = state.services.get(serviceKey);
+  if (current && current.group) {
+    try { await current.group.Free(); } catch { /* free stale */ }
+  }
+  state.services.delete(serviceKey);
+
+  try {
+    const group = await createGroup();
+    if (!group) {
+      // avahi unavailable — keep entry so NameOwnerChanged re-registers it
+      state.services.set(serviceKey, { group: null, instanceName, type, port, txt, host });
+      return false;
+    }
+    await group.AddService(
+      AVAHI_IF_UNSPEC,
+      AVAHI_PROTO_UNSPEC,
+      AVAHI_FLAG_DEFAULT,
+      instanceName,
+      type,
+      '',          // domain — empty = .local
+      host,        // SRV target host (must be a name avahi or another stack publishes)
+      port,
+      txtPairs,
+    );
+    await group.Commit();
+    state.services.set(serviceKey, { group, instanceName, type, port, txt, host });
+    return true;
+  } catch (err) {
+    console.warn('[mdns] registerService failed:', err?.message || err);
+    state.services.set(serviceKey, { group: null, instanceName, type, port, txt, host });
+    return false;
+  }
+}
+
+export async function deregisterService(serviceKey) {
+  const current = state.services.get(serviceKey);
+  if (!current) return;
+  state.services.delete(serviceKey);
+  if (current.group) {
+    try { await current.group.Free(); } catch { /* best effort */ }
+  }
+}
+
+/**
+ * Deregister every service tied to a container — used by stop/kill/delete and the
+ * localDns toggle so callers do not have to remember per-port keys.
+ */
+export async function deregisterServicesForContainer(containerName) {
+  if (!containerName) return;
+  const prefix = `${containerName}#`;
+  const matched = [];
+  for (const key of state.services.keys()) {
+    if (key.startsWith(prefix)) matched.push(key);
+  }
+  for (const key of matched) {
+    await deregisterService(key);
+  }
 }
 
 /**

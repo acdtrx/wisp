@@ -65,6 +65,7 @@ function errorCodeToStatus(code) {
       return 503;
     case 'CONTAINER_NOT_FOUND':
     case 'CONTAINER_MOUNT_NOT_FOUND':
+    case 'CONTAINER_SERVICE_NOT_FOUND':
     case 'CONTAINER_IMAGE_NOT_FOUND':
     case 'CONTAINER_RUN_NOT_FOUND':
       return 404;
@@ -73,6 +74,8 @@ function errorCodeToStatus(code) {
     case 'CONTAINER_EXISTS':
     case 'CONTAINER_MUST_BE_STOPPED':
     case 'CONTAINER_IMAGE_IN_USE':
+    case 'CONTAINER_SERVICE_DUPLICATE':
+    case 'CONTAINER_LOCAL_DNS_DISABLED':
       return 409;
     case 'INVALID_APP_CONFIG':
     case 'APP_CONFIG_ONLY':
@@ -92,6 +95,7 @@ function errorCodeToStatus(code) {
     case 'CONTAINER_MOUNT_SOURCE_UNSAFE':
     case 'CONTAINER_MOUNT_FILE_TOO_LARGE':
     case 'CONTAINER_MOUNT_FILE_NOT_UTF8':
+    case 'INVALID_CONTAINER_SERVICE':
     case 'INVALID_NETWORK_BRIDGE_NAME':
     case 'INVALID_NETWORK_BRIDGE_PARENT':
     case 'INVALID_VLAN_ID':

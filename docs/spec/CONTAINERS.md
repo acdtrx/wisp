@@ -70,6 +70,7 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 | `autostart` | boolean | false | Start on backend boot |
 | `runAsRoot` | boolean | false | Run the container process as UID/GID 0 instead of the Wisp deploy user. Required for images that write to root-owned directories (e.g. OpenWebUI). When true, **Local** bind mounts get a per-mount **idmapped mount** (size:1) that maps the configured `containerOwnerUid`/`containerOwnerGid` (defaults 0/0) to the host deploy UID/GID — so files written by that in-container UID land on disk owned by the deploy user and the backend can clean them up without `sudo`. Storage-sourced mounts never get idmappings. See [Mount entry](#mount-entry) and [Idmapped Local mounts](#idmapped-local-mounts). Requires restart. |
 | `localDns` | boolean | false | Enable mDNS registration for this container on the LAN. New containers default to `true`; existing containers without this field are treated as `false` for upgrade safety. |
+| `services` | array | `[]` | Optional mDNS service advertisements (SRV+TXT) tied to the container's `<name>.local` host. See [Service entry](#service-entry). Requires `localDns: true`. |
 | `env` | object | `{}` | Environment variables. Structured shape: `{ KEY: { value: string, secret?: true } }`. Entries without `secret` are plaintext; `secret: true` marks the entry as write-only — see **Secret env vars** below. |
 | `mounts` | array | `[]` | Bind mount definitions (see Mount entry); Local backing data lives under `files/<name>`, Storage-sourced entries resolve to `<settings.mounts[sourceId].mountPath>/<subPath>` |
 | `network` | object | `{ "type": "bridge" }` | Network configuration (see below) |
@@ -117,6 +118,29 @@ After **PATCH** persists **`mounts`**, or after **POST** `/api/containers/:name/
 - `realpath(<mountPath>/<subPath>)` stays within `realpath(<mountPath>)` — symlink escapes are rejected with `CONTAINER_MOUNT_SOURCE_UNSAFE`.
 
 **Delete semantics:** removing a mount row or deleting the container itself leaves Storage-sourced sub-paths untouched (user data outside the container directory). Local backing files/directories are removed as before.
+
+### Service entry
+
+Each `services[]` element advertises one mDNS service for the container's `<name>.local` host record:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `port` | integer (1–65535) | Service port. Unique per container — one service per port. |
+| `type` | string | mDNS service type matching `^_[a-z0-9-]+\._(tcp\|udp)$` (e.g. `_smb._tcp`, `_https._tcp`). |
+| `txt` | object | Flat key/value map serialized as TXT records (`key=value` pairs). Empty object when none. Values coerced to strings. |
+
+**Validation:** `port` must be an integer in [1, 65535]; `type` must match the regex above; `txt` keys must be non-empty and must not contain `=`. Adding a service for a port that already has one returns **409** `CONTAINER_SERVICE_DUPLICATE`. All service mutations are gated on `localDns: true` (otherwise **409** `CONTAINER_LOCAL_DNS_DISABLED`).
+
+**Mutation surface:** services are managed exclusively via the row-scoped endpoints (`POST` / `PATCH` / `DELETE` `/api/containers/:name/services[/:port]`); sending `services` to **PATCH** `/api/containers/:name` returns **422** `CONFIG_ERROR`. The whole list is replaced on each row mutation under the hood.
+
+**Lifecycle:** services persist in `container.json` independent of run state. Live publication tracks the address registration:
+- **Container start:** after `registerAddress` succeeds (and the IP is known), every entry in `services[]` is published via Avahi `EntryGroup.AddService` against the container's `<name>.local` host.
+- **Container stop / kill / delete:** every published service for the container is deregistered before the address itself is freed.
+- **`localDns` toggled off:** all services are deregistered alongside the address.
+- **`localDns` toggled on (running):** the address is republished and every entry in `services[]` is registered.
+- **Per-row mutation while running:** `addContainerService` / `updateContainerService` / `removeContainerService` apply the mDNS change live (no task restart). Updates are deregister + register (Avahi has no in-place update).
+
+Service publication is best-effort: if Avahi is unavailable, services are stored in memory and re-registered the next time avahi-daemon appears (same `NameOwnerChanged` watch as address registrations — see Publishing below).
 
 **Zip upload** (`POST /api/containers/:name/mounts/:mountName/zip`) is available for Local directory mounts only — Storage-sourced rows reject the call with `CONTAINER_MOUNT_TYPE_MISMATCH`. The UI dims the zip button and shows a tooltip to that effect.
 
@@ -238,7 +262,8 @@ Two independent pieces. **Publishing** advertises a container as `<name>.local` 
 - Deregister points: stop, kill, delete, or `localDns` toggle set to false
 - UI: Network section has a **Local DNS** toggle; stats bar shows the registered `.local` hostname when active
 - Best-effort behavior: if avahi-daemon is unavailable, container operations continue unchanged and mDNS is skipped
-- **Avahi restart recovery:** `mdnsManager.js` subscribes to DBus `NameOwnerChanged` on `org.freedesktop.Avahi`. When avahi-daemon disappears (package upgrade, manual restart), the in-memory entry map is kept but each entry's `group` handle is cleared. When avahi reappears, every stored registration is re-added. Without this, restarting avahi would silently drop all container publications until wisp-backend was restarted too
+- **Avahi restart recovery:** `mdnsManager.js` subscribes to DBus `NameOwnerChanged` on `org.freedesktop.Avahi`. When avahi-daemon disappears (package upgrade, manual restart), the in-memory entry maps (addresses **and** services) are kept but each entry's `group` handle is cleared. When avahi reappears, every stored registration is re-added. Without this, restarting avahi would silently drop all container publications until wisp-backend was restarted too
+- **Service advertisements:** in addition to the host A record above, `services[]` entries publish SRV+TXT via `EntryGroup.AddService(if=-1, proto=-1, flags=0, instanceName=containerName, type, domain="", host="<name>.local", port, txt)`. Each service has its own EntryGroup keyed by `${containerName}#${port}` so individual services can be removed without disturbing the address record. Instance name defaults to the container name (collision-resolved by Avahi if duplicated on the LAN). See [Service entry](#service-entry)
 
 ### Resolution (in-process DNS forwarder on 169.254.53.53)
 

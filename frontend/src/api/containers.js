@@ -66,6 +66,30 @@ export function removeContainerMount(containerName, mountName) {
   );
 }
 
+/** Add an mDNS service advertisement on a port (row-scoped). */
+export function addContainerService(containerName, serviceDef) {
+  return api(`/api/containers/${encodeURIComponent(containerName)}/services`, {
+    method: 'POST',
+    body: serviceDef,
+  });
+}
+
+/** Update an mDNS service identified by its port. Body: optional type, txt. */
+export function updateContainerService(containerName, port, changes) {
+  return api(
+    `/api/containers/${encodeURIComponent(containerName)}/services/${port}`,
+    { method: 'PATCH', body: changes },
+  );
+}
+
+/** Remove an mDNS service by port. */
+export function removeContainerService(containerName, port) {
+  return api(
+    `/api/containers/${encodeURIComponent(containerName)}/services/${port}`,
+    { method: 'DELETE' },
+  );
+}
+
 export function deleteContainerApi(name, deleteFiles = true) {
   return api(`/api/containers/${encodeURIComponent(name)}?deleteFiles=${deleteFiles}`, { method: 'DELETE' });
 }

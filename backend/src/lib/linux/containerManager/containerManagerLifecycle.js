@@ -5,7 +5,7 @@ import grpc from '@grpc/grpc-js';
 import {
   containerError, containerState, getClient, callUnary,
 } from './containerManagerConnection.js';
-import { deregisterAddress } from '../../mdnsManager.js';
+import { deregisterAddress, deregisterServicesForContainer } from '../../mdnsManager.js';
 import { findCurrentRunId, finalizeRun } from './containerManagerLogs.js';
 
 const SIGTERM = 15;
@@ -175,6 +175,7 @@ export async function stopContainer(name) {
 
   await cleanupTask(name);
   containerState.containerStartTimes.delete(name);
+  await deregisterServicesForContainer(name);
   await deregisterAddress(name);
 }
 
@@ -197,6 +198,7 @@ export async function killContainer(name) {
   await waitForStop(name, 5000);
   await cleanupTask(name);
   containerState.containerStartTimes.delete(name);
+  await deregisterServicesForContainer(name);
   await deregisterAddress(name);
 }
 

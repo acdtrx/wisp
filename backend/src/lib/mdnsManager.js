@@ -14,3 +14,6 @@ export const disconnect = impl.disconnect;
 export const registerAddress = impl.registerAddress;
 export const deregisterAddress = impl.deregisterAddress;
 export const getRegisteredHostname = impl.getRegisteredHostname;
+export const registerService = impl.registerService;
+export const deregisterService = impl.deregisterService;
+export const deregisterServicesForContainer = impl.deregisterServicesForContainer;

@@ -21,7 +21,10 @@ import {
 } from './containerManagerNetwork.js';
 import { getDefaultContainerParentBridge } from '../vmManager/vmManagerHost.js';
 import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
-import { registerAddress, deregisterAddress, sanitizeHostname } from '../../mdnsManager.js';
+import {
+  registerAddress, deregisterAddress, deregisterServicesForContainer, sanitizeHostname,
+} from '../../mdnsManager.js';
+import { registerAllContainerServices } from './containerManagerServices.js';
 import { assertBindSourcesReady } from './containerManagerMounts.js';
 import { getRawMounts } from '../../settings.js';
 import { normalizeImageRef } from './containerImageRef.js';
@@ -549,6 +552,7 @@ export async function startExistingContainer(name) {
       config = await mergeNetworkLeaseIntoConfig(name, config, lease);
       if (config.localDns) {
         await registerAddress(name, sanitizeHostname(name), config.network?.ip);
+        await registerAllContainerServices(name, config);
       }
     }
   } catch (err) {
@@ -580,6 +584,7 @@ export async function startExistingContainer(name) {
  * Delete a container: stop task, remove snapshot, remove containerd definition, delete files.
  */
 export async function deleteContainer(name, deleteFiles = true) {
+  await deregisterServicesForContainer(name);
   await deregisterAddress(name);
   // Stop task if running
   try {

@@ -190,7 +190,7 @@ export default function ContainerOverviewPanel() {
               <ContainerMountsSection config={config} onRefresh={refreshSelectedContainer} />
             </>
           )}
-          <ContainerNetworkSection config={config} onSave={handleSectionSave} />
+          <ContainerNetworkSection config={config} onSave={handleSectionSave} onRefresh={refreshSelectedContainer} />
         </div>
       )}
 

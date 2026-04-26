@@ -173,6 +173,18 @@ export async function removeContainerMount() {
   throw noContainerd();
 }
 
+export async function addContainerService() {
+  throw noContainerd();
+}
+
+export async function updateContainerService() {
+  throw noContainerd();
+}
+
+export async function removeContainerService() {
+  throw noContainerd();
+}
+
 export async function getContainerStats() {
   throw noContainerd();
 }

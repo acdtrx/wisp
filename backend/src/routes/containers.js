@@ -7,6 +7,7 @@ import {
   listContainers, getContainerConfig, createContainer, deleteContainer,
   startContainer, stopContainer, killContainer, restartContainer,
   updateContainerConfig, addContainerMount, updateContainerMount, removeContainerMount,
+  addContainerService, updateContainerService, removeContainerService,
   getContainerStats,
   listContainerRuns, getContainerRunLogs, streamContainerRunLogs, resolveRunId,
   createRunLogReadStream,
@@ -504,6 +505,36 @@ export default async function containerRoutes(fastify) {
       const mountName = decodeURIComponent(request.params.mountName);
       await deleteMountData(request.params.name, mountName);
       return { ok: true };
+    } catch (err) {
+      handleRouteError(err, reply, request);
+    }
+  });
+
+  // ── mDNS service advertisements (row-scoped, keyed by port) ─────
+  fastify.post('/containers/:name/services', async (request, reply) => {
+    try {
+      const body = request.body;
+      if (!body || typeof body !== 'object') {
+        return sendError(reply, 422, 'Invalid body', 'Expected JSON object with port, type, txt?');
+      }
+      return await addContainerService(request.params.name, body);
+    } catch (err) {
+      handleRouteError(err, reply, request);
+    }
+  });
+
+  fastify.patch('/containers/:name/services/:port', async (request, reply) => {
+    try {
+      const body = request.body && typeof request.body === 'object' ? request.body : {};
+      return await updateContainerService(request.params.name, request.params.port, body);
+    } catch (err) {
+      handleRouteError(err, reply, request);
+    }
+  });
+
+  fastify.delete('/containers/:name/services/:port', async (request, reply) => {
+    try {
+      return await removeContainerService(request.params.name, request.params.port);
     } catch (err) {
       handleRouteError(err, reply, request);
     }

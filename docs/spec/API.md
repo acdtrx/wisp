@@ -1082,6 +1082,8 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 **`mounts`:** Replaces the entire mounts array (bulk update). Prefer row-scoped mount routes below for UI editing. Each element: `{ type: "file"|"directory", name, containerPath, readonly }`. **`name`** is a single path segment (storage key under the container’s `files/` directory). Duplicate **`name`** or duplicate **`containerPath`** → **422** `CONTAINER_MOUNT_DUPLICATE`. Invalid shape → **422** `INVALID_CONTAINER_MOUNTS`. Mounts removed from the array have their on-disk artifacts deleted automatically.
 
+**`services`:** Not editable via PATCH — returns **422** `CONFIG_ERROR`. Use the row-scoped service endpoints (`POST` / `PATCH` / `DELETE` `/api/containers/:name/services[/:port]`) below.
+
 **`appConfig`:** (app containers only) Structured config for the app. Validated by the app module; on success, regenerates derived env, mounts, and mount files. Sets `pendingRestart: true` if the container is running. Sending `envPatch` or `mounts` on an app container → **422** `APP_CONFIG_ONLY`.
 
 **`eject: true`:** (app containers only) Removes `app`, `appConfig`, and `pendingRestart` from the config. Generated env vars and mounts are preserved as-is and become directly editable. One-way operation.
@@ -1209,5 +1211,23 @@ Create an empty file (0 bytes) or empty directory according to the mount **`type
 ### DELETE /api/containers/:name/mounts/:mountName/data
 
 Remove the backing file or directory tree for that mount. The mount row remains in `container.json` until **DELETE** `/mounts/:mountName` or **PATCH** replaces **`mounts`**.
+
+### POST /api/containers/:name/services
+
+Append one mDNS service advertisement (row-scoped, keyed by port). **Body:** `{ port: integer, type: string, txt?: object }` — `type` matches `^_[a-z0-9-]+\._(tcp|udp)$`; `txt` is a flat key/value map (values stringified). Requires `localDns: true` on the container. Live registration happens immediately if the container is running.
+
+**200:** `{ requiresRestart: false }` | **409:** `CONTAINER_LOCAL_DNS_DISABLED`, `CONTAINER_SERVICE_DUPLICATE` | **422:** `INVALID_CONTAINER_SERVICE`
+
+### PATCH /api/containers/:name/services/:port
+
+Update one service identified by its current **`port`** (URL segment). **Body:** optional subset of `{ type, txt }`. Port is not editable — delete + create to move to a different port.
+
+**200:** `{ requiresRestart: false }` | **404:** `CONTAINER_SERVICE_NOT_FOUND` | **409:** `CONTAINER_LOCAL_DNS_DISABLED` | **422:** `INVALID_CONTAINER_SERVICE`
+
+### DELETE /api/containers/:name/services/:port
+
+Remove an mDNS service by its port. Live deregistration happens immediately if the container is running.
+
+**200:** `{ requiresRestart: false }` | **404:** `CONTAINER_SERVICE_NOT_FOUND`
 
 **200:** `{ ok: true }`
