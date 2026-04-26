@@ -2,6 +2,12 @@
 
 ## 2026-04-26
 
+### Bug Fixes
+- Container Mounts: saving a new row no longer leaves a duplicate draft alongside the persisted one (regression from earlier same-day edit-mode-preservation fix; the just-saved draft is now skipped from preservation when its name/path matches a row that just appeared on the server)
+- Escape key inside an input / textarea / select / contenteditable no longer triggers the global "navigate to Host overview" handler on the Container/VM routes; only Escape on non-form elements navigates
+
+## 2026-04-26
+
 ### New Features
 - Container bind mounts under **runAsRoot** now get a per-mount **idmapped mount** (size:1) so files written by the configured in-container UID/GID land on the host owned by the wisp deploy user — no more `sudo` needed to clean up root-in-container artifacts
 - New **Owner uid:gid** column in the container Mounts table (visible only when runAsRoot is on, Local mounts only): pick which in-container UID/GID is the "writer" through this mount; defaults to `0:0` (root). Writes by other in-container UIDs fail with `EOVERFLOW` — exactly one writer per mount by design
