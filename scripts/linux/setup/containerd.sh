@@ -115,3 +115,22 @@ if command -v ctr &>/dev/null; then
   ctr namespaces create wisp 2>/dev/null || true
   echo "  Namespace 'wisp' ready."
 fi
+
+# runc 1.2+ is required for per-mount idmapped mounts (used when runAsRoot is set on a container
+# with non-default mount owner UID/GID). Older runc will fail at task create with a confusing
+# OCI error — fail loudly here instead.
+if command -v runc &>/dev/null; then
+  RUNC_VER="$(runc --version 2>/dev/null | awk '/^runc version/ { print $3; exit }')"
+  RUNC_MAJOR="$(echo "$RUNC_VER" | cut -d. -f1)"
+  RUNC_MINOR="$(echo "$RUNC_VER" | cut -d. -f2)"
+  if [[ -z "$RUNC_VER" ]] || ! [[ "$RUNC_MAJOR" =~ ^[0-9]+$ && "$RUNC_MINOR" =~ ^[0-9]+$ ]]; then
+    echo "  WARN: Could not parse runc version (got: '$RUNC_VER'). Idmapped mounts require runc >= 1.2.0."
+  elif [[ "$RUNC_MAJOR" -lt 1 ]] || { [[ "$RUNC_MAJOR" -eq 1 ]] && [[ "$RUNC_MINOR" -lt 2 ]]; }; then
+    echo "  WARN: runc $RUNC_VER is older than 1.2.0 — per-mount idmapped mounts (runAsRoot + custom owner UID/GID) will fail."
+    echo "        Upgrade containerd.io / runc, or avoid setting non-default mount owner UID/GID."
+  else
+    echo "  runc $RUNC_VER (>= 1.2.0): idmapped mounts supported."
+  fi
+else
+  echo "  WARN: runc not found in PATH — containerd will be unable to start containers."
+fi

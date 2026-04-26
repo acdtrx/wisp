@@ -95,8 +95,8 @@ export function DataTableRowActions({ children, forceVisible = false }) {
     <div
       className={
         forceVisible
-          ? 'flex flex-wrap items-center justify-end gap-1'
-          : 'flex flex-wrap items-center justify-end gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150'
+          ? 'flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap'
+          : 'flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150'
       }
     >
       {children}

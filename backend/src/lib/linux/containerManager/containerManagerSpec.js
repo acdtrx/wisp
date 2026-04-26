@@ -61,20 +61,48 @@ export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', o
 
   const cwd = imgCfg.WorkingDir || '/';
 
+  // By default match the backend deploy user so bind mounts under files/ remain owned by the same
+  // uid/gid and the backend can delete them. When runAsRoot is set, use 0/0 — needed for images
+  // that write to root-owned directories inside the container (e.g. OpenWebUI's /app). When the
+  // chosen container UID for a Local mount differs from deployUid, attach a size:1 idmapping so
+  // the in-container UID lands on disk as deployUid (and same for GID) — host backend can then
+  // clean up the files without sudo.
+  const deployUid = typeof process.getuid === 'function' ? process.getuid() : 0;
+  const deployGid = typeof process.getgid === 'function' ? process.getgid() : 0;
+
   const mounts = [...DEFAULT_MOUNTS];
   const storageMounts = opts.storageMounts || [];
   if (config.mounts) {
     for (const m of config.mounts) {
       if (!m?.name || (m.type !== 'file' && m.type !== 'directory')) continue;
-      const { hostPath } = resolveMountHostPath(m, containerFilesDir, storageMounts);
+      const { hostPath, source } = resolveMountHostPath(m, containerFilesDir, storageMounts);
       const mountOpts = ['rbind'];
       if (m.readonly) mountOpts.push('ro');
-      mounts.push({
+      const entry = {
         destination: m.containerPath,
         type: 'bind',
         source: hostPath,
         options: mountOpts,
-      });
+      };
+      // Idmap is only applied to Local mounts when runAsRoot is on. Storage mounts often live on
+      // filesystems (CIFS/SMB, NFS) that don't support idmapped mounts, so we never attach there.
+      // The size:1 idmap is attached unconditionally — even when the chosen container UID equals
+      // deployUid — so the mount contract is consistent: exactly the configured in-container
+      // UID/GID writes cleanly to the host as deployUid/deployGid; writes by any other in-container
+      // UID hit the unmapped path (kernel-dependent: stored as overflowuid on disk, or EOVERFLOW).
+      //
+      // OCI mount idmap field convention is the OPPOSITE of `linux.uidMappings` (full userns):
+      //   - containerID = UID on the source file system (i.e. on-disk)
+      //   - hostID      = UID at the destination mount point (i.e. what the container sees)
+      // We want: container process running as `cUid` writes files stored on disk as `deployUid`,
+      // so the mapping is { containerID: deployUid, hostID: cUid, size: 1 }.
+      if (config.runAsRoot && source === 'local') {
+        const cUid = Number.isInteger(m.containerOwnerUid) ? m.containerOwnerUid : 0;
+        const cGid = Number.isInteger(m.containerOwnerGid) ? m.containerOwnerGid : 0;
+        entry.uidMappings = [{ containerID: deployUid, hostID: cUid, size: 1 }];
+        entry.gidMappings = [{ containerID: deployGid, hostID: cGid, size: 1 }];
+      }
+      mounts.push(entry);
     }
   }
   mounts.push({
@@ -102,12 +130,6 @@ export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', o
     };
   }
 
-  // By default match the backend deploy user so bind mounts under files/ remain owned by the same
-  // uid/gid and the backend can delete them. When runAsRoot is set, use 0/0 — needed for images
-  // that write to root-owned directories inside the container (e.g. OpenWebUI's /app). Note that
-  // bind-mount data created while running as root will be root-owned; delete may require sudo.
-  const deployUid = typeof process.getuid === 'function' ? process.getuid() : 0;
-  const deployGid = typeof process.getgid === 'function' ? process.getgid() : 0;
   const uid = config.runAsRoot ? 0 : deployUid;
   const gid = config.runAsRoot ? 0 : deployGid;
 

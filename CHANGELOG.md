@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-04-26
+
+### New Features
+- Container bind mounts under **runAsRoot** now get a per-mount **idmapped mount** (size:1) so files written by the configured in-container UID/GID land on the host owned by the wisp deploy user — no more `sudo` needed to clean up root-in-container artifacts
+- New **Owner uid:gid** column in the container Mounts table (visible only when runAsRoot is on, Local mounts only): pick which in-container UID/GID is the "writer" through this mount; defaults to `0:0` (root). Writes by other in-container UIDs fail with `EOVERFLOW` — exactly one writer per mount by design
+- `containerd.sh` setup probes the installed `runc` version and warns when `< 1.2.0` (required for per-mount idmapped mounts)
+
+### Bug Fixes
+- Container Mounts: row no longer exits edit mode mid-edit when an SSE tick from the container store hands the section a fresh `config` object; reset is now keyed to container switches and content changes, not object identity
+- Data tables: action icon row no longer wraps to multiple lines on narrow widths (affected mounts, env, USB, networks, snapshots, disks, storage, bridges, backups)
+- Bump frontend `postcss` to 8.5.10 via `npm audit fix` (transitive advisory)
+
 ## 2026-04-24
 
 ### New Features

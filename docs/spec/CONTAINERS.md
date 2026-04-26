@@ -68,7 +68,7 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 | `memoryLimitMiB` | number \| null | null | Memory limit in MiB |
 | `restartPolicy` | string | `"unless-stopped"` | One of: `never`, `on-failure`, `unless-stopped`, `always` |
 | `autostart` | boolean | false | Start on backend boot |
-| `runAsRoot` | boolean | false | Run the container process as UID/GID 0 instead of the Wisp deploy user. Required for images that write to root-owned directories (e.g. OpenWebUI). When true, bind-mount files under `files/` are root-owned; container deletion may require `sudo` for those paths. Requires restart. |
+| `runAsRoot` | boolean | false | Run the container process as UID/GID 0 instead of the Wisp deploy user. Required for images that write to root-owned directories (e.g. OpenWebUI). When true, **Local** bind mounts get a per-mount **idmapped mount** (size:1) that maps the configured `containerOwnerUid`/`containerOwnerGid` (defaults 0/0) to the host deploy UID/GID — so files written by that in-container UID land on disk owned by the deploy user and the backend can clean them up without `sudo`. Storage-sourced mounts never get idmappings. See [Mount entry](#mount-entry) and [Idmapped Local mounts](#idmapped-local-mounts). Requires restart. |
 | `localDns` | boolean | false | Enable mDNS registration for this container on the LAN. New containers default to `true`; existing containers without this field are treated as `false` for upgrade safety. |
 | `env` | object | `{}` | Environment variables. Structured shape: `{ KEY: { value: string, secret?: true } }`. Entries without `secret` are plaintext; `secret: true` marks the entry as write-only — see **Secret env vars** below. |
 | `mounts` | array | `[]` | Bind mount definitions (see Mount entry); Local backing data lives under `files/<name>`, Storage-sourced entries resolve to `<settings.mounts[sourceId].mountPath>/<subPath>` |
@@ -102,6 +102,8 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 | `readonly` | boolean | Bind mount read-only when true |
 | `sourceId` | string \| null | Optional; directory mounts only. When set, references an entry in **`settings.mounts`** (see [STORAGE.md](STORAGE.md)) and the bind source lives on that mount instead of `files/<name>`. `null`/absent = Local. |
 | `subPath` | string | Sub-path inside the referenced storage mount (relative; no `..`; empty = mount root). Only meaningful when `sourceId` is set. |
+| `containerOwnerUid` | integer (0–65535) | In-container UID to map to the host deploy UID via a **size:1 idmapped mount**. Default `0` (root). Only consumed when `runAsRoot` is true and the mount is **Local** — ignored otherwise. See [Idmapped Local mounts](#idmapped-local-mounts). |
+| `containerOwnerGid` | integer (0–65535) | In-container GID to map to the host deploy GID via a size:1 idmapped mount. Default `0` (root). Same activation conditions as `containerOwnerUid`. |
 
 **Host-path resolution** (`resolveMountHostPath`):
 - Local: `<containersPath>/<name>/files/<mount.name>`
@@ -117,6 +119,32 @@ After **PATCH** persists **`mounts`**, or after **POST** `/api/containers/:name/
 **Delete semantics:** removing a mount row or deleting the container itself leaves Storage-sourced sub-paths untouched (user data outside the container directory). Local backing files/directories are removed as before.
 
 **Zip upload** (`POST /api/containers/:name/mounts/:mountName/zip`) is available for Local directory mounts only — Storage-sourced rows reject the call with `CONTAINER_MOUNT_TYPE_MISMATCH`. The UI dims the zip button and shows a tooltip to that effect.
+
+### Idmapped Local mounts
+
+When `runAsRoot` is true on a container, every **Local** directory/file bind mount may carry a per-mount idmap that translates a single in-container UID/GID pair to the host deploy UID/GID. This makes files created inside the container land on the host with ownership the backend can read/delete without `sudo`. Storage-sourced mounts never get an idmap (CIFS/SMB/NFS support is inconsistent and the data lives outside the container directory anyway).
+
+**Mapping shape**: for each Local mount under `runAsRoot`, the OCI spec attaches **unconditionally** — there is no no-op short-circuit, even when `containerOwnerUid === deployUid`. This keeps the contract consistent: exactly one in-container UID/GID writes through this mount cleanly; any other UID hits the unmapped path. Without the unconditional attachment, the mount silently degrades to a plain bind for the equal-IDs case and the contract changes underneath the user.
+
+```js
+uidMappings: [{ containerID: deployUid, hostID: containerOwnerUid, size: 1 }]
+gidMappings: [{ containerID: deployGid, hostID: containerOwnerGid, size: 1 }]
+```
+
+> ⚠ **Field-name gotcha:** the OCI runtime spec for `mounts[].uidMappings` uses the *opposite* convention from `linux.uidMappings` (full user namespaces). For mount idmaps, **`containerID` = UID on the source file system (on-disk)** and **`hostID` = UID at the destination mount point (what the container sees)**. So to make container UID `N` (mount-visible) write files stored on disk as `deployUid`, the mapping is `{containerID: deployUid, hostID: N, size: 1}` — *not* the other way around. Getting this backwards causes reads of bind-source files to surface as `nobody:nogroup` and writes by the container process to fail with `EOVERFLOW` (`Value too large for defined data type`).
+
+**Implications of size:1 (one container UID translates, others don't):**
+- *Reads* of files owned by other (unmapped) UIDs through the idmapped mount appear as `overflowuid`/`overflowgid` (typically `65534`, `nobody:nogroup`).
+- *Writes* by other in-container UIDs **fail at the syscall** with `EOVERFLOW` (glibc surfaces this as `"Value too large for defined data type"`). Empirically confirmed on Ubuntu LTS kernels with runc 1.2+; the file is not created on disk at all. This *is* the contract — exactly the configured in-container UID/GID may write through this mount.
+- The implicit assumption is **each Local mount is consistently written by ~one container UID**. If the container needs to write as both root and a worker UID to the same path, split into two mounts (each with its own owner UID) rather than relying on one mount accepting both.
+
+**Visibility of failed writes**: there is no host-side trace of `EOVERFLOW`-rejected writes. The kernel doesn't log them (`dmesg` is silent), no file artifact appears on the bind source, no containerd event fires. The error exists only as a syscall return value handed to the in-container process. Apps that print errors to stderr surface via the container's logs panel; apps that swallow `errno` will lose data silently. This is the standard tradeoff for any in-container permission failure, just framed by the idmap rather than DAC permissions.
+
+**Bijection rule**: idmapped mounts must be one-to-one. Two container UIDs cannot map to the same host UID through a single mount. The size:1 design sidesteps this entirely (each mount carries one entry).
+
+**Runtime requirements**: idmapped mounts require **runc ≥ 1.2.0** (per-mount `uidMappings`/`gidMappings` without a userns) and a recent kernel (≥ 5.19 in practice; ext4/xfs/btrfs/tmpfs all supported). `scripts/linux/setup/containerd.sh` warns if the installed `runc` is older. With an older runc, container task creation fails with an OCI spec error.
+
+**Important: idmap is an on-disk ownership shift, not a security boundary.** The container process still runs as real host UID 0 with all capabilities (no user namespace is added). Only the inode ownership stored on the bind source is translated.
 
 ### Secret env vars
 
@@ -174,8 +202,8 @@ The exec process uses the same **UID/GID** as the main container task (`runAsRoo
 - Default Linux namespaces: pid, ipc, uts, mount, network, cgroup. For **`network.type: bridge`**, the network namespace uses **`path: /var/run/netns/<name>`** so the process joins the netns CNI configured (a bare `network` namespace without `path` would be a new empty netns and ignore the CNI-created veth).
 - Default capabilities: standard container set (chown, net_bind, etc.)
 - Default mounts: proc, dev, devpts, shm, mqueue, sysfs, cgroup, run
-- **Process user:** `process.user` uses the **backend process UID/GID** (the systemd deploy user) by default, so files created on bind mounts under `files/<name>/` remain owned by that user and the backend can delete them. If the backend runs as root (unusual), UID/GID stay 0. When **`runAsRoot: true`** is set in `container.json`, UID/GID are forced to 0 — required for images that write to root-owned directories inside the container (e.g. OpenWebUI writing `.webui_secret_key` to `/app`). Bind-mount data created while running as root will be root-owned; container deletion may require sudo for those paths.
-- User bind mounts: `resolveMountHostPath(m)` — Local rows use `files/<m.name>` (`type` determines file vs directory); Storage rows use `<settings.mounts[m.sourceId].mountPath>/<m.subPath>`. All bind mounts use `rbind` (+ `ro` when `m.readonly`).
+- **Process user:** `process.user` uses the **backend process UID/GID** (the systemd deploy user) by default, so files created on bind mounts under `files/<name>/` remain owned by that user and the backend can delete them. If the backend runs as root (unusual), UID/GID stay 0. When **`runAsRoot: true`** is set in `container.json`, UID/GID are forced to 0 — required for images that write to root-owned directories inside the container (e.g. OpenWebUI writing `.webui_secret_key` to `/app`). Each **Local** bind mount then receives a per-mount **idmapped mount** (size:1) translating the configured `containerOwnerUid`/`containerOwnerGid` (defaults 0/0) to the deploy UID/GID — so writes from that in-container UID still land on disk owned by the deploy user. See [Idmapped Local mounts](#idmapped-local-mounts) for full semantics, the no-op case (`containerOwnerUid === deployUid`), and the runc/kernel requirements.
+- User bind mounts: `resolveMountHostPath(m)` — Local rows use `files/<m.name>` (`type` determines file vs directory); Storage rows use `<settings.mounts[m.sourceId].mountPath>/<m.subPath>`. All bind mounts use `rbind` (+ `ro` when `m.readonly`). Local mounts under `runAsRoot` additionally carry `uidMappings`/`gidMappings`; Storage mounts never do.
 - CPU quota/period from `cpuLimit`, memory limit from `memoryLimitMiB`
 - `/etc/resolv.conf` bind-mounted from host. When the container's bridge has the Wisp stub IP (`169.254.53.53/32` on `br0`, installed by `scripts/linux/setup/container-dns.sh`), the shared `/var/lib/wisp/container-resolv.conf` is used — a single `nameserver 169.254.53.53` line — so containers reach the in-process DNS forwarder in `wisp-backend` (see **Local DNS** below). Without the stub IP (e.g. VLAN sub-bridges, or setup skipped), fall back to the host's upstream resolvers (`/run/systemd/resolve/resolv.conf` on resolved hosts, else `/etc/resolv.conf`) — resolved's `127.0.0.53` stub is unreachable from a container netns
 
@@ -277,7 +305,7 @@ Wisp checks every OCI image in the library for upstream changes and flags contai
 3. **Stop**: SIGTERM → Wait 10s → SIGKILL if needed → Delete task
 4. **Kill**: SIGKILL → Wait 5s → Delete task
 5. **Restart**: Stop then Start
-6. **Delete**: Kill task → Tear down networking → Remove snapshot → Remove containerd container → Delete files on disk (`fs.rm` on the container directory). The main process runs as the **deploy user’s UID/GID** (see OCI section), so bind-mount data under `files/` is normally removable. Leftover **root-owned** paths from before that behavior (or from images that escalate to root) are **not** migrated or chowned by the app; fix on the host once (e.g. `sudo chown -R <deploy-user>:…` or remove that subtree) if delete fails with permission errors.
+6. **Delete**: Kill task → Tear down networking → Remove snapshot → Remove containerd container → Delete files on disk (`fs.rm` on the container directory). Without `runAsRoot`, the main process runs as the **deploy user's UID/GID**, so bind-mount data under `files/` is removable directly. With `runAsRoot`, idmapped Local mounts (see [Idmapped Local mounts](#idmapped-local-mounts)) translate the configured in-container UID/GID to the deploy user, so files written by that UID also remain removable. Files written by other in-container UIDs through an idmapped mount may end up `nobody`-owned (`overflowuid`) on disk — fix on the host (e.g. `sudo rm -rf <path>`) if delete fails with permission errors.
 
 ### Backend process startup (host boot / `wisp-backend` restart)
 

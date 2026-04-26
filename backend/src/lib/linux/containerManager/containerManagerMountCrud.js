@@ -11,6 +11,7 @@ import {
   validateAndNormalizeMounts,
   validateMountSegmentName,
   validateSubPath,
+  validateOwnerId,
   ensureMissingMountArtifacts,
 } from './containerManagerMounts.js';
 import { deleteMountBackingStore } from './containerManagerMountsContent.js';
@@ -85,7 +86,13 @@ export async function updateContainerMount(containerName, mountName, changes) {
   if (idx < 0) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
   }
-  const current = { ...list[idx], sourceId: list[idx].sourceId || null, subPath: list[idx].subPath || '' };
+  const current = {
+    ...list[idx],
+    sourceId: list[idx].sourceId || null,
+    subPath: list[idx].subPath || '',
+    containerOwnerUid: Number.isInteger(list[idx].containerOwnerUid) ? list[idx].containerOwnerUid : 0,
+    containerOwnerGid: Number.isInteger(list[idx].containerOwnerGid) ? list[idx].containerOwnerGid : 0,
+  };
   let nextName = current.name;
   if (changes.name !== undefined) {
     const seg = validateMountSegmentName(changes.name);
@@ -136,6 +143,23 @@ export async function updateContainerMount(containerName, mountName, changes) {
     nextSubPath = '';
   }
 
+  let nextOwnerUid = current.containerOwnerUid;
+  if (changes.containerOwnerUid !== undefined) {
+    const v = validateOwnerId(changes.containerOwnerUid);
+    if (v === null) {
+      throw containerError('INVALID_CONTAINER_MOUNTS', 'containerOwnerUid must be an integer in [0, 65535]');
+    }
+    nextOwnerUid = v;
+  }
+  let nextOwnerGid = current.containerOwnerGid;
+  if (changes.containerOwnerGid !== undefined) {
+    const v = validateOwnerId(changes.containerOwnerGid);
+    if (v === null) {
+      throw containerError('INVALID_CONTAINER_MOUNTS', 'containerOwnerGid must be an integer in [0, 65535]');
+    }
+    nextOwnerGid = v;
+  }
+
   const other = list.filter((_, i) => i !== idx);
   if (other.some((m) => m.name === nextName)) {
     throw containerError('CONTAINER_MOUNT_DUPLICATE', `Duplicate mount name "${nextName}"`);
@@ -151,6 +175,8 @@ export async function updateContainerMount(containerName, mountName, changes) {
     readonly: nextReadonly,
     sourceId: nextSourceId,
     subPath: nextSubPath,
+    containerOwnerUid: nextOwnerUid,
+    containerOwnerGid: nextOwnerGid,
   };
 
   const unchanged =
@@ -158,7 +184,9 @@ export async function updateContainerMount(containerName, mountName, changes) {
     && updated.containerPath === current.containerPath
     && updated.readonly === current.readonly
     && updated.sourceId === current.sourceId
-    && updated.subPath === current.subPath;
+    && updated.subPath === current.subPath
+    && updated.containerOwnerUid === current.containerOwnerUid
+    && updated.containerOwnerGid === current.containerOwnerGid;
   if (unchanged) {
     return { requiresRestart: false };
   }

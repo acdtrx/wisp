@@ -65,7 +65,21 @@ function rowsFromServerMounts(mounts) {
     readonly: !!m.readonly,
     sourceId: m.sourceId || null,
     subPath: m.subPath || '',
+    containerOwnerUid: Number.isInteger(m.containerOwnerUid) ? m.containerOwnerUid : 0,
+    containerOwnerGid: Number.isInteger(m.containerOwnerGid) ? m.containerOwnerGid : 0,
   }));
+}
+
+function isValidOwnerId(value) {
+  if (value === '' || value === null || value === undefined) return true;
+  const n = typeof value === 'string' ? Number(value) : value;
+  return Number.isInteger(n) && n >= 0 && n <= 65535;
+}
+
+function normalizeOwnerId(value) {
+  if (value === '' || value === null || value === undefined) return 0;
+  const n = typeof value === 'string' ? Number(value) : value;
+  return Number.isInteger(n) && n >= 0 && n <= 65535 ? n : 0;
 }
 
 function validateRowAgainstOthers(row, allRows) {
@@ -79,6 +93,12 @@ function validateRowAgainstOthers(row, allRows) {
   }
   if (row.sourceId && !isValidSubPath(row.subPath)) {
     return 'Sub-path must be relative (no leading /) and cannot contain ".." segments.';
+  }
+  if (!isValidOwnerId(row.containerOwnerUid)) {
+    return 'Owner UID must be a whole number between 0 and 65535.';
+  }
+  if (!isValidOwnerId(row.containerOwnerGid)) {
+    return 'Owner GID must be a whole number between 0 and 65535.';
   }
   const names = new Set();
   const paths = new Set();
@@ -105,6 +125,8 @@ function rowMatchesServer(row, serverMounts) {
   if (!s) return false;
   const savedSourceId = s.sourceId || null;
   const savedSubPath = s.subPath || '';
+  const savedOwnerUid = Number.isInteger(s.containerOwnerUid) ? s.containerOwnerUid : 0;
+  const savedOwnerGid = Number.isInteger(s.containerOwnerGid) ? s.containerOwnerGid : 0;
   return (
     s.type === row.type
     && s.name === mn
@@ -112,6 +134,8 @@ function rowMatchesServer(row, serverMounts) {
     && Boolean(s.readonly) === Boolean(row.readonly)
     && savedSourceId === (row.sourceId || null)
     && savedSubPath === normalizeSubPath(row.subPath)
+    && savedOwnerUid === normalizeOwnerId(row.containerOwnerUid)
+    && savedOwnerGid === normalizeOwnerId(row.containerOwnerGid)
   );
 }
 
@@ -123,12 +147,16 @@ function isRowDirty(row, serverMounts) {
       || row.readonly
       || !!row.sourceId
       || !!normalizeSubPath(row.subPath)
+      || normalizeOwnerId(row.containerOwnerUid) !== 0
+      || normalizeOwnerId(row.containerOwnerGid) !== 0
     );
   }
   const s = (serverMounts || []).find((m) => m.name === row.serverMountName);
   if (!s) return true;
   const savedSourceId = s.sourceId || null;
   const savedSubPath = s.subPath || '';
+  const savedOwnerUid = Number.isInteger(s.containerOwnerUid) ? s.containerOwnerUid : 0;
+  const savedOwnerGid = Number.isInteger(s.containerOwnerGid) ? s.containerOwnerGid : 0;
   return (
     s.type !== row.type
     || s.name !== row.name.trim()
@@ -136,6 +164,8 @@ function isRowDirty(row, serverMounts) {
     || Boolean(s.readonly) !== Boolean(row.readonly)
     || savedSourceId !== (row.sourceId || null)
     || savedSubPath !== normalizeSubPath(row.subPath)
+    || savedOwnerUid !== normalizeOwnerId(row.containerOwnerUid)
+    || savedOwnerGid !== normalizeOwnerId(row.containerOwnerGid)
   );
 }
 
@@ -157,12 +187,26 @@ export default function ContainerMountsSection({ config, onRefresh }) {
   const [editorMountName, setEditorMountName] = useState('');
   const [storageStatus, setStorageStatus] = useState([]);
 
+  // The parent containerStore replaces `containerConfig` (and therefore `config.mounts`) on
+  // every SSE/refresh tick — even when mount content is unchanged — so depending on the array
+  // reference would kick the user out of edit mode mid-edit. Use a content-hashed key instead.
+  const mountsKey = useMemo(() => JSON.stringify(config.mounts || []), [config.mounts]);
+
   useEffect(() => {
-    setRows(rowsFromServerMounts(config.mounts));
     setFieldEditRowId(null);
     setRequiresRestart(false);
     setError(null);
-  }, [config.name, config.mounts]);
+  }, [config.name]);
+
+  useEffect(() => {
+    setRows((prev) => {
+      const next = rowsFromServerMounts(config.mounts);
+      // Preserve any unsaved row the user is currently adding (no server-side counterpart yet).
+      const unsaved = prev.find((r) => !r.serverMountName);
+      if (unsaved) next.push(unsaved);
+      return next;
+    });
+  }, [mountsKey]);
 
   /* Settings store holds the storage-mount catalogue and is cheap to (re)load; the mount-status
    * endpoint tells us which ones are currently mounted so we can warn on orphan references. */
@@ -202,6 +246,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
         readonly: false,
         sourceId: null,
         subPath: '',
+        containerOwnerUid: 0,
+        containerOwnerGid: 0,
       },
     ]);
     setFieldEditRowId(rowId);
@@ -238,6 +284,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                 readonly: !!s.readonly,
                 sourceId: s.sourceId || null,
                 subPath: s.subPath || '',
+                containerOwnerUid: Number.isInteger(s.containerOwnerUid) ? s.containerOwnerUid : 0,
+                containerOwnerGid: Number.isInteger(s.containerOwnerGid) ? s.containerOwnerGid : 0,
               }
             : r));
     }
@@ -254,6 +302,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     setError(null);
     try {
       const rowSub = normalizeSubPath(row.subPath);
+      const rowOwnerUid = normalizeOwnerId(row.containerOwnerUid);
+      const rowOwnerGid = normalizeOwnerId(row.containerOwnerGid);
       if (!row.serverMountName) {
         const payload = {
           type: row.type,
@@ -265,6 +315,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
           payload.sourceId = row.sourceId;
           payload.subPath = rowSub;
         }
+        if (rowOwnerUid !== 0) payload.containerOwnerUid = rowOwnerUid;
+        if (rowOwnerGid !== 0) payload.containerOwnerGid = rowOwnerGid;
         const result = await addContainerMount(config.name, payload);
         if (result?.requiresRestart) setRequiresRestart(true);
       } else {
@@ -284,6 +336,10 @@ export default function ContainerMountsSection({ config, onRefresh }) {
         if ((nextSourceId && rowSub !== prevSub) || (!nextSourceId && prevSub)) {
           patch.subPath = nextSourceId ? rowSub : '';
         }
+        const prevOwnerUid = Number.isInteger(prev.containerOwnerUid) ? prev.containerOwnerUid : 0;
+        const prevOwnerGid = Number.isInteger(prev.containerOwnerGid) ? prev.containerOwnerGid : 0;
+        if (rowOwnerUid !== prevOwnerUid) patch.containerOwnerUid = rowOwnerUid;
+        if (rowOwnerGid !== prevOwnerGid) patch.containerOwnerGid = rowOwnerGid;
         if (Object.keys(patch).length === 0) {
           setFieldEditRowId(null);
           return;
@@ -391,6 +447,9 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     return `${t.slice(0, n - 1)}…`;
   };
 
+  const runAsRoot = !!config.runAsRoot;
+  const colCount = runAsRoot ? 8 : 7;
+
   return (
     <SectionCard title="Mounts" requiresRestart={requiresRestart} error={error} headerAction={headerAdds}>
       <div className="space-y-3">
@@ -399,7 +458,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
         </p>
 
         <DataTableScroll>
-          <DataTable minWidthRem={60}>
+          <DataTable minWidthRem={runAsRoot ? 68 : 60}>
             <thead>
               <tr className={dataTableHeadRowClass}>
                 <DataTableTh dense className="w-10 font-normal" aria-hidden />
@@ -415,7 +474,16 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                 <DataTableTh dense className="min-w-[8rem]">
                   Sub-path
                 </DataTableTh>
-                <DataTableTh dense>Read-only</DataTableTh>
+                <DataTableTh dense className="w-14" title="Read-only">R/O</DataTableTh>
+                {runAsRoot && (
+                  <DataTableTh
+                    dense
+                    className="min-w-[7rem]"
+                    title="In-container UID:GID that maps to the host deploy user (size:1 idmap; Local mounts only)"
+                  >
+                    Owner uid:gid
+                  </DataTableTh>
+                )}
                 <DataTableTh dense align="right">
                   Actions
                 </DataTableTh>
@@ -424,7 +492,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
             <tbody>
               {rows.length === 0 && (
                 <tr className={dataTableBodyRowClass}>
-                  <td colSpan={7} className={`${dataTableEmptyCellClass} text-xs text-text-muted`}>
+                  <td colSpan={colCount} className={`${dataTableEmptyCellClass} text-xs text-text-muted`}>
                     No mounts configured.
                   </td>
                 </tr>
@@ -542,13 +610,56 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                         <span className="text-sm text-text-muted">—</span>
                       )}
                     </DataTableTd>
-                    <DataTableTd dense>
+                    <DataTableTd dense className="w-14">
                       {fieldEdit ? (
                         <Toggle checked={row.readonly} onChange={(v) => updateRow(row.rowId, 'readonly', v)} />
                       ) : (
                         <span className="text-sm text-text-secondary">{row.readonly ? 'Yes' : 'No'}</span>
                       )}
                     </DataTableTd>
+                    {runAsRoot && (
+                      <DataTableTd dense className="min-w-[7rem]">
+                        {row.sourceId ? (
+                          <span className="text-sm text-text-muted" title="Idmap is not applied to Storage-sourced mounts">—</span>
+                        ) : fieldEdit ? (
+                          <span className="inline-flex items-center gap-1 font-mono text-xs">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              maxLength={5}
+                              value={row.containerOwnerUid}
+                              onChange={(e) => {
+                                const v = e.target.value.replace(/[^0-9]/g, '');
+                                updateRow(row.rowId, 'containerOwnerUid', v === '' ? '' : Number(v));
+                              }}
+                              className="input-field w-20 min-w-0 text-right"
+                              title="Container UID that maps to host deploy UID"
+                              aria-label="Owner UID inside container"
+                            />
+                            <span className="text-text-muted">:</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              maxLength={5}
+                              value={row.containerOwnerGid}
+                              onChange={(e) => {
+                                const v = e.target.value.replace(/[^0-9]/g, '');
+                                updateRow(row.rowId, 'containerOwnerGid', v === '' ? '' : Number(v));
+                              }}
+                              className="input-field w-20 min-w-0 text-right"
+                              title="Container GID that maps to host deploy GID"
+                              aria-label="Owner GID inside container"
+                            />
+                          </span>
+                        ) : (
+                          <span className="font-mono text-sm text-text-secondary">
+                            {`${normalizeOwnerId(row.containerOwnerUid)}:${normalizeOwnerId(row.containerOwnerGid)}`}
+                          </span>
+                        )}
+                      </DataTableTd>
+                    )}
                     <DataTableTd dense align="right">
                       <DataTableRowActions forceVisible={actionsForce}>
                         {fieldEdit && (

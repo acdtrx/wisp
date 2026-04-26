@@ -71,11 +71,23 @@ export function resolveMountHostPath(mount, filesDir, storageMounts = []) {
 }
 
 /**
+ * Validate an integer in [0, 65535] (a valid POSIX UID/GID for our purposes).
+ * @param {unknown} value
+ * @returns {number|null} the integer or null if invalid
+ */
+export function validateOwnerId(value) {
+  if (value === undefined || value === null || value === '') return 0;
+  const n = typeof value === 'string' ? Number(value.trim()) : value;
+  if (!Number.isInteger(n) || n < 0 || n > 65535) return null;
+  return n;
+}
+
+/**
  * Validate and normalize mounts for persistence. Rejects duplicate name or containerPath.
  * When `storageMounts` is provided, validates that every `sourceId` references a real mount.
  * @param {unknown} mounts
  * @param {Array<{ id: string, mountPath: string }>} [storageMounts]
- * @returns {{ type: 'file'|'directory', name: string, containerPath: string, readonly: boolean, sourceId: string|null, subPath: string }[]}
+ * @returns {{ type: 'file'|'directory', name: string, containerPath: string, readonly: boolean, sourceId: string|null, subPath: string, containerOwnerUid: number, containerOwnerGid: number }[]}
  */
 export function validateAndNormalizeMounts(mounts, storageMounts = null) {
   if (!Array.isArray(mounts)) {
@@ -134,6 +146,15 @@ export function validateAndNormalizeMounts(mounts, storageMounts = null) {
       subPath = normalizedSub;
     }
 
+    const containerOwnerUid = validateOwnerId(raw.containerOwnerUid);
+    if (containerOwnerUid === null) {
+      throw containerError('INVALID_CONTAINER_MOUNTS', 'containerOwnerUid must be an integer in [0, 65535]');
+    }
+    const containerOwnerGid = validateOwnerId(raw.containerOwnerGid);
+    if (containerOwnerGid === null) {
+      throw containerError('INVALID_CONTAINER_MOUNTS', 'containerOwnerGid must be an integer in [0, 65535]');
+    }
+
     out.push({
       type,
       name: seg,
@@ -141,6 +162,8 @@ export function validateAndNormalizeMounts(mounts, storageMounts = null) {
       readonly: raw.readonly === true,
       sourceId,
       subPath,
+      containerOwnerUid,
+      containerOwnerGid,
     });
   }
   return out;
