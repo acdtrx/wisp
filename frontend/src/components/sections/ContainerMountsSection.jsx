@@ -201,8 +201,15 @@ export default function ContainerMountsSection({ config, onRefresh }) {
   useEffect(() => {
     setRows((prev) => {
       const next = rowsFromServerMounts(config.mounts);
-      // Preserve any unsaved row the user is currently adding (no server-side counterpart yet).
-      const unsaved = prev.find((r) => !r.serverMountName);
+      // Preserve any in-progress unsaved draft EXCEPT when it matches a row that just appeared
+      // on the server (i.e. it was just created by save — without this guard the draft would
+      // duplicate the persisted row until the next render). Match by user-entered name/path.
+      const unsaved = prev.find((r) => {
+        if (r.serverMountName) return false;
+        const name = r.name.trim();
+        const cpath = r.containerPath.trim();
+        return !next.some((s) => s.name === name || s.containerPath === cpath);
+      });
       if (unsaved) next.push(unsaved);
       return next;
     });

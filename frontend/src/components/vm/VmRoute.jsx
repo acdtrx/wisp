@@ -27,6 +27,12 @@ export default function VmRoute() {
     const handler = (e) => {
       if (e.key !== 'Escape') return;
       if (document.querySelector('[data-wisp-modal-root]')) return;
+      // Don't hijack Escape when the user is interacting with a form control — they're
+      // likely trying to cancel an inline edit, not navigate away from the page.
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) {
+        return;
+      }
       navigate('/host/overview');
     };
     document.addEventListener('keydown', handler);
