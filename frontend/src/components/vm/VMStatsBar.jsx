@@ -49,6 +49,12 @@ export default function VMStatsBar() {
       {vmStats.guestIp ? (
         <StatPill label="IP" value={vmStats.guestIp} />
       ) : null}
+      {vmStats.guestAgent ? (
+        <StatPill
+          label="Agent"
+          value={vmStats.guestAgent.connected ? 'connected' : 'disconnected'}
+        />
+      ) : null}
     </div>
   );
 }

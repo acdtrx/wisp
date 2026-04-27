@@ -8,8 +8,7 @@ import { validateVMName } from '../../validation.js';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
 import { parseVMFromXML, parseDomainRaw, buildXml, setWispMetadata } from './vmManagerXml.js';
 import { getWindowsFeatures, getWindowsClock, getLinuxFeatures } from './vmManagerCreate.js';
-import { deregisterAddress, registerAddress, sanitizeHostname } from '../../mdnsManager.js';
-import { getGuestPrimaryAddressFromIface, getGuestHostnameFromIface } from './vmManagerStats.js';
+import { publishVm, unpublishVm } from '../vmMdnsPublisher.js';
 
 /** Parsed `<name>` may be a string or `{ '#text': string }` from fast-xml-parser. */
 function domainNameFromParsed(dom) {
@@ -246,21 +245,13 @@ export async function updateVMConfig(name, changes) {
     }
   }
 
+  // Rename requires VM offline (enforced above), so there's no live mDNS entry
+  // under the old name to clean up — when the VM starts again, the publisher's
+  // reconcile handles publishing under the new name.
   if (patch.localDns === false) {
-    await deregisterAddress(effectiveName);
-  } else if (patch.localDns === true && isRunning) {
-    try {
-      const { iface: domIface } = await getDomainObjAndIface(domPath);
-      const [guestIp, guestHostname] = await Promise.all([
-        getGuestPrimaryAddressFromIface(domIface),
-        getGuestHostnameFromIface(domIface),
-      ]);
-      if (guestIp) {
-        await registerAddress(effectiveName, guestHostname || sanitizeHostname(effectiveName), guestIp);
-      }
-    } catch {
-      /* guest agent may not be available; stats loop will retry */
-    }
+    await unpublishVm(effectiveName);
+  } else if (patch.localDns === true) {
+    await publishVm(effectiveName);
   }
 
   return { ok: true, requiresRestart };

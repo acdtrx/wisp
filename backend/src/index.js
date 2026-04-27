@@ -39,6 +39,7 @@ import { disconnect as disconnectLibvirtBus } from './lib/vmManager.js';
 import { start as startUsbMonitor, stop as stopUsbMonitor } from './lib/usbMonitor.js';
 import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/diskMonitor.js';
 import { connect as connectMdns, disconnect as disconnectMdns, registerAddress, sanitizeHostname } from './lib/mdnsManager.js';
+import { startVmMdnsPublisher, stopVmMdnsPublisher } from './lib/vmMdnsPublisher.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadRuntimeEnv(resolve(__dirname, '..', '..'));
@@ -111,6 +112,11 @@ async function start() {
     /* mDNS warm-up is best effort */
   }
 
+  // VM mDNS publisher: subscribes to libvirt lifecycle + AgentEvent, runs an initial
+  // reconcile, and keeps a 45s safety-net interval. Replaces the prior coupling that
+  // only re-published while a user had a VM's stats SSE open.
+  startVmMdnsPublisher(app.log);
+
   await app.listen({ port: PORT, host: '0.0.0.0' });
 
   startUsbMonitor();
@@ -135,6 +141,7 @@ async function shutdown(signal) {
   stopDiskMonitor();
   stopUpdateChecker();
   stopImageUpdateChecker();
+  stopVmMdnsPublisher();
   disconnectLibvirtBus();
   disconnectContainerd();
   await disconnectMdns();

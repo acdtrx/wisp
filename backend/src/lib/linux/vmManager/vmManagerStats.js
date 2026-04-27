@@ -1,12 +1,16 @@
 /**
  * VM stats, raw XML, VNC port; guest agent (IP, hostname).
+ *
+ * Note: this file is intentionally side-effect-free w.r.t. mDNS publishing.
+ * Local-DNS registration is owned by lib/linux/vmMdnsPublisher.js, which is
+ * driven by libvirt lifecycle + AgentEvent signals, not by SSE/UI activity.
  */
 import { connectionState, resolveDomain, getDomainXML, getDomainObjAndIface, unwrapVariant, unwrapDict, vmError } from './vmManagerConnection.js';
 import { parseVMFromXML } from './vmManagerXml.js';
 import { STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT } from './libvirtConstants.js';
 import { getCachedLocalDns } from './vmManagerList.js';
 import { isVMBinaryStale } from './vmManagerProc.js';
-import { deregisterAddress, getRegisteredHostname, registerAddress, sanitizeHostname } from '../../mdnsManager.js';
+import { getRegisteredHostname } from '../../mdnsManager.js';
 
 function parseInterfaceAddresses(raw, unwrapVariantFn) {
   const ifaces = Array.isArray(raw) ? raw : [];
@@ -56,13 +60,34 @@ export async function getGuestHostnameFromIface(iface) {
   }
 }
 
+/**
+ * Fetch guest-agent IP + hostname for a VM in one libvirt round-trip.
+ * Returns `{ ip, hostname }` with either field possibly null. Used by callers
+ * outside `linux/vmManager/` (e.g. vmMdnsPublisher) so they don't need to touch
+ * libvirt ifaces directly. Returns `{ ip: null, hostname: null }` if the domain
+ * can't be resolved or the agent is not configured/responding.
+ */
+export async function getGuestNetwork(name) {
+  let path;
+  try {
+    path = await resolveDomain(name);
+  } catch {
+    return { ip: null, hostname: null };
+  }
+  const { iface } = await getDomainObjAndIface(path);
+  const [ip, hostname] = await Promise.all([
+    getGuestPrimaryAddressFromIface(iface),
+    getGuestHostnameFromIface(iface),
+  ]);
+  return { ip, hostname };
+}
+
 export async function getVMStats(name) {
   const path = await resolveDomain(name);
   const { iface } = await getDomainObjAndIface(path);
   const [stateCode] = await iface.GetState(0);
 
   if (stateCode !== 1 && stateCode !== 2 && stateCode !== 3) {
-    await deregisterAddress(name);
     return { state: STATE_NAMES[stateCode] ?? 'unknown', active: false, cpu: null, disk: null, net: null, uptime: null, staleBinary: false };
   }
 
@@ -140,6 +165,7 @@ export async function getVMStats(name) {
 
   let guestIp = null;
   let guestHostname = null;
+  let guestAgent = null; // null = not configured in domain XML
   if (config?.guestAgent) {
     try {
       [guestIp, guestHostname] = await Promise.all([
@@ -149,13 +175,11 @@ export async function getVMStats(name) {
     } catch {
       /* guest agent calls may fail if agent unavailable */
     }
+    // Treat any successful response as "agent connected." Both helpers swallow
+    // their own errors and return null when qemu-ga isn't responding.
+    guestAgent = { connected: !!(guestIp || guestHostname) };
   }
   const staleBinary = await isVMBinaryStale(name);
-  if (localDns === true && guestIp) {
-    await registerAddress(name, guestHostname || sanitizeHostname(name), guestIp);
-  } else {
-    await deregisterAddress(name);
-  }
 
   return {
     state: STATE_NAMES[stateCode] ?? 'unknown',
@@ -172,6 +196,7 @@ export async function getVMStats(name) {
     uptime: now - connectionState.vmStartTimes.get(name),
     guestIp: guestIp ?? undefined,
     guestHostname: guestHostname ?? undefined,
+    guestAgent: guestAgent ?? undefined,
     mdnsHostname: localDns === true ? (getRegisteredHostname(name) ?? undefined) : undefined,
     staleBinary,
   };

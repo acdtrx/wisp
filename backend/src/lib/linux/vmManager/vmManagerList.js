@@ -3,7 +3,15 @@
  * Maintains an in-memory cache of the VM list, refreshed on DomainEvent signals.
  */
 import { getDiskInfo } from '../../diskOps.js';
-import { connectionState, getDomainObjAndIface, resolveDomain, unwrapVariant, vmError } from './vmManagerConnection.js';
+import {
+  connectionState,
+  getDomainObjAndIface,
+  resolveDomain,
+  unwrapVariant,
+  vmError,
+  subscribeDomainChange,
+  subscribeDisconnect,
+} from './vmManagerConnection.js';
 import { parseVMFromXML, detectOSCategory } from './vmManagerXml.js';
 import { isVMBinaryStale } from './vmManagerProc.js';
 import { STATE_NAMES } from './libvirtConstants.js';
@@ -71,8 +79,8 @@ function invalidateVMListCache() {
   vmListCache = null;
 }
 
-connectionState.onDomainChange = refreshVMListCache;
-connectionState.onDisconnect = invalidateVMListCache;
+subscribeDomainChange(refreshVMListCache);
+subscribeDisconnect(invalidateVMListCache);
 
 /**
  * Read localDns for a VM from the cached list (avoids an extra inactive XML fetch in stats).

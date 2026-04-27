@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-04-27
+
+### New Features
+- VM detail page status line now shows a **Guest agent: connected/disconnected** pill when the domain has a qemu-ga channel configured
+
+### Bug Fixes
+- **VM Local DNS hostnames stop resolving after backend restart until the VM page is opened.** mDNS publishing for VMs was driven by the per-VM stats SSE stream — re-registration only ran while a user had the VM detail page open. After a backend restart no warm-up ran for VMs (containers had one), so hostnames went dark until someone navigated to the VM and the SSE stream re-published them as a side effect. Replaced with a backend reconciler (`vmMdnsPublisher`) that subscribes to libvirt `DomainEvent` + per-domain `AgentEvent` signals, runs an initial reconcile at boot, and keeps a 45 s safety-net interval; the SSE stats stream is now side-effect free for mDNS
+- **`systemctl restart avahi-daemon` no longer recovers Local DNS entries.** The `NameOwnerChanged` watch in `mdnsManager` called `bus.addMatch(...)` — a method that doesn't exist as a public API in dbus-next 0.10.x. Watch installation threw at startup with `bus.addMatch is not a function`, the error was caught and only logged, and the signal listener was never attached. So `reregisterAll` never fired when avahi restarted. Removed the broken call: dbus-next auto-installs the match rule when you attach a listener on the proxy iface (`iface.on('NameOwnerChanged', ...)`), so the listener attachment alone is sufficient
+
 ## 2026-04-26
 
 ### Bug Fixes

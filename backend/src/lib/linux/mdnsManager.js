@@ -50,11 +50,12 @@ async function installAvahiWatch() {
   if (state.watchInstalled) return;
   try {
     const bus = await ensureBus();
-    await bus.addMatch(
-      "type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='org.freedesktop.Avahi'",
-    );
     const dbusObj = await bus.getProxyObject('org.freedesktop.DBus', '/org/freedesktop/DBus');
     const dbusIface = dbusObj.getInterface('org.freedesktop.DBus');
+    // dbus-next auto-installs the match rule when we attach a listener on the proxy
+    // iface (see proxy-interface.js _addMatch in dbus-next), so no explicit AddMatch
+    // call is needed. We filter by name in the handler — system-bus NameOwnerChanged
+    // churn is low.
     dbusIface.on('NameOwnerChanged', (name, oldOwner, newOwner) => {
       if (name !== AVAHI_BUS_NAME) return;
       if (oldOwner && !newOwner) {

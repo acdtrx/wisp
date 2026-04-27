@@ -222,6 +222,7 @@ Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux 
 | `aptUpdates.js` | Facade: `wisp-os-update` on Linux; macOS stub |
 | `mdnsHostname.js` | Pure hostname/CIDR helpers for mDNS (no DBus) |
 | `mdnsManager.js` | Facade: Avahi DBus on Linux (`linux/mdnsManager.js`); macOS stub |
+| `vmMdnsPublisher.js` | Facade: VM mDNS reconciler on Linux (`linux/vmMdnsPublisher.js`); macOS stub. Owns desired→actual mDNS mapping for VMs, driven by libvirt `DomainEvent` + per-domain `AgentEvent` signals — independent of any UI/SSE activity |
 
 ### Backend helper scripts (`backend/scripts/`)
 

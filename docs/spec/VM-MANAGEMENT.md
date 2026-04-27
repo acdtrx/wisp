@@ -225,9 +225,21 @@ VMs can be registered on the local network via mDNS (`.local`) using avahi-daemo
 - Controlled by VM metadata `wisp:prefs.localDns`
 - Name source: guest hostname from QEMU guest agent (`GetHostname`) when available; fallback to sanitized VM name
 - Address source: guest primary IP from guest agent interface addresses
-- Registration is attempted from the VM stats path when the VM is active and guest IP is available
-- Registration is removed when VM stats become inactive or `localDns` is toggled off
-- UI: Advanced section has a **Local DNS** toggle; VM stats bar shows the registered `.local` hostname when active
+- Publishing is owned by **`backend/src/lib/linux/vmMdnsPublisher.js`** — a backend reconciler driven by libvirt lifecycle (`DomainEvent`) and qemu-ga lifecycle (`AgentEvent`) signals. It is **not** triggered by the SSE stats stream or any UI activity, so hostnames keep resolving even when no one is viewing the VM in the UI.
+- Triggers: backend boot (initial reconcile), `DomainEvent` (any VM start/stop, including externally via `virsh`), `AgentEvent` `state=connected` (publishes immediately when qemu-ga comes up — no IP-fetch retry loop), config endpoint (toggle on/off), and a 45 s periodic reconcile as a safety net for DHCP drift or missed signals.
+- The publisher tracks the desired set as `running + localDns=true`, attaches a per-domain `AgentEvent` listener for each tracked VM, and detaches when the VM leaves the set (stop, localDns off, delete).
+- Registration is removed when the VM stops, is undefined, or `localDns` is toggled off.
+- UI: Advanced section has a **Local DNS** toggle; VM stats bar shows the registered `.local` hostname when active, plus a guest-agent `connected/disconnected` pill.
+
+### Avahi restart recovery
+
+`mdnsManager` listens for `NameOwnerChanged` on the system DBus to detect avahi-daemon restarts. When the owner of `org.freedesktop.Avahi` changes, every cached `EntryGroup` reference is invalidated and `reregisterAll()` re-publishes every entry/service.
+
+dbus-next 0.10.x auto-installs the match rule when you attach a listener on the `org.freedesktop.DBus` proxy iface (`iface.on('NameOwnerChanged', ...)`), so no explicit `AddMatch` call is needed. The previously-used `bus.addMatch` is not a public API in this version and broke watch installation entirely (see CHANGELOG 2026-04-27).
+
+### Guest agent state surfacing
+
+`getVMStats()` derives `guestAgent.connected` from whether `InterfaceAddresses` or `GetHostname` produced a value during the current poll. The flag is `undefined` when the domain XML has no guest_agent channel configured (so the UI hides the pill entirely). `vmMdnsPublisher` independently maintains its own per-VM agent state via the `AgentEvent` signal — the two paths are deliberately decoupled so the stats stream remains side-effect free.
 
 ## Backend Module Structure
 
@@ -244,7 +256,8 @@ The VM management backend is organized as a **platform facade** plus implementat
 - Domain lookup by name (`DomainLookupByName`)
 - Domain state retrieval (`GetState`)
 - Domain XML retrieval (`GetXMLDesc`)
-- DomainEvent signal listener for state change tracking and VM list cache refresh
+- DomainEvent signal listener for state change tracking, fanned out to subscribers via `subscribeDomainChange(handler)` (used by `vmManagerList` for cache refresh and by `vmMdnsPublisher` for reconcile)
+- Per-domain `AgentEvent` (qemu-ga lifecycle) subscription helpers: `attachAgentSubscription(path, name)` / `detachAgentSubscription(path)`. Handlers register via `subscribeAgentEvent((vmName, { state, reason, domainPath }))` — `state=1` is connected, `state=0` is disconnected. Note: libvirt's C constant is `VIR_DOMAIN_EVENT_ID_AGENT_LIFECYCLE`, but libvirt-dbus surfaces it as the `AgentEvent` signal on the per-domain `org.libvirt.Domain` interface.
 
 ### macOS: `backend/src/lib/darwin/vmManager/index.js`
 
