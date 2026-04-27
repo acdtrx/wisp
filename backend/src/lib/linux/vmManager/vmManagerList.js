@@ -132,8 +132,8 @@ export async function getVMConfig(name) {
   const path = await resolveDomain(name);
   const { iface, props } = await getDomainObjAndIface(path);
 
-  const [xml, inactiveXml, [stateCode], autostart] = await Promise.all([
-    iface.GetXMLDesc(0),
+  // Read inactive XML: DomainDefineXML writes here, so this is what reflects saved config on running VMs.
+  const [xml, [stateCode], autostart] = await Promise.all([
     iface.GetXMLDesc(2),
     iface.GetState(0),
     props.Get('org.libvirt.Domain', 'Autostart').then((v) => !!unwrapVariant(v)).catch(() => false),
@@ -142,7 +142,6 @@ export async function getVMConfig(name) {
   const config = parseVMFromXML(xml);
   if (!config) throw vmError('PARSE_ERROR', `Failed to parse XML for VM "${name}"`);
 
-  const inactiveConfig = parseVMFromXML(inactiveXml);
   const disks = await enrichDisksWithSizeGiB(config.disks);
 
   return {
@@ -152,7 +151,5 @@ export async function getVMConfig(name) {
     stateCode,
     osCategory: detectOSCategory(config),
     autostart,
-    iconId: (inactiveConfig?.iconId ?? config.iconId) ?? null,
-    localDns: inactiveConfig?.localDns ?? config.localDns,
   };
 }

@@ -89,7 +89,7 @@ A VM can be cloned when it is stopped.
 
 ### Reading config
 
-`getVMConfig(name)` resolves the domain via DBus, reads its XML with `GetXMLDesc(0)`, and parses it into a structured object containing: name, uuid, state, vcpus, memoryMiB, disks, nics, firmware, machineType, cpuMode, videoDriver, graphicsType, bootOrder, bootMenu, memBalloon, guestAgent, vtpm, virtioRng, nestedVirt, osCategory, osVariant, autostart, iconId, and `localDns`. Each file-backed **disk** (`device: disk`) entry may include **`sizeGiB`** (virtual size via `qemu-img info` when the image is readable).
+`getVMConfig(name)` resolves the domain via DBus, reads its **inactive** (persistent) XML with `GetXMLDesc(2)`, and parses it into a structured object containing: name, uuid, state, vcpus, memoryMiB, disks, nics, firmware, machineType, cpuMode, videoDriver, graphicsType, bootOrder, bootMenu, memBalloon, guestAgent, vtpm, virtioRng, nestedVirt, osCategory, osVariant, autostart, iconId, and `localDns`. Each file-backed **disk** (`device: disk`) entry may include **`sizeGiB`** (virtual size via `qemu-img info` when the image is readable). Reading inactive XML ensures saved config edits (e.g. boot menu, firmware, video driver) are reflected immediately on running VMs — `DomainDefineXML` writes there, and active XML on a running VM does not pick up such changes until the next start. The only consumer of active XML in vmManager is `getVNCPort`, which needs the runtime-allocated VNC port.
 
 ### Updating config
 
@@ -214,7 +214,7 @@ Wisp app-level VM metadata is stored in domain XML metadata under the `https://w
 - `icon` — workload icon id for the UI
 - `localDns` — `"true"`/`"false"` toggle controlling mDNS registration
 
-The backend writes and reads children with the `wisp:` prefix (`wisp:icon`, `wisp:localDns`) to match what libvirt returns after its own XML round-trip. `DomainDefineXML` writes to the **inactive** (persistent) config, while `GetXMLDesc(0)` returns the **active** (live) XML for running VMs — which does not reflect metadata changes until restart. To avoid stale reads, VM listing reads the inactive XML, and the detail view reads wisp prefs from the inactive XML while using the active XML for runtime fields (VNC port, etc.).
+The backend writes and reads children with the `wisp:` prefix (`wisp:icon`, `wisp:localDns`) to match what libvirt returns after its own XML round-trip. `DomainDefineXML` writes to the **inactive** (persistent) config, while `GetXMLDesc(0)` returns the **active** (live) XML for running VMs — which does not reflect changes (metadata or otherwise) until restart. Both the VM list and the detail view (`getVMConfig`) read inactive XML so saved edits show immediately; runtime fields like the live VNC port have their own dedicated active-XML readers (`getVNCPort`).
 
 For upgrade safety, VMs without `localDns` metadata are treated as `false` (off). New VMs default to `true`.
 
