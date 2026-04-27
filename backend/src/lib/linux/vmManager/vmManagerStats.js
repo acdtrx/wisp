@@ -8,8 +8,7 @@
 import { connectionState, resolveDomain, getDomainXML, getDomainObjAndIface, unwrapVariant, unwrapDict, vmError } from './vmManagerConnection.js';
 import { parseVMFromXML } from './vmManagerXml.js';
 import { STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT } from './libvirtConstants.js';
-import { getCachedLocalDns } from './vmManagerList.js';
-import { isVMBinaryStale } from './vmManagerProc.js';
+import { getCachedLocalDns, getCachedStaleBinary } from './vmManagerList.js';
 import { getRegisteredHostname } from '../../mdnsManager.js';
 
 function parseInterfaceAddresses(raw, unwrapVariantFn) {
@@ -179,7 +178,7 @@ export async function getVMStats(name) {
     // their own errors and return null when qemu-ga isn't responding.
     guestAgent = { connected: !!(guestIp || guestHostname) };
   }
-  const staleBinary = await isVMBinaryStale(name);
+  const staleBinary = getCachedStaleBinary(name);
 
   return {
     state: STATE_NAMES[stateCode] ?? 'unknown',

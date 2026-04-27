@@ -120,7 +120,7 @@ All phases must comply with the architectural rules defined in the spec document
 - `getVMConfig(name)` — full config parsed from XML
 - Lifecycle: `startVM`, `stopVM`, `forceStopVM`, `rebootVM`, `suspendVM`, `resumeVM`
 - `GET /api/vms` — list all VMs
-- `GET /api/vms/stream` — SSE stream of VM list at configurable interval
+- `GET /api/vms/stream` — SSE stream of VM list, pushed on libvirt domain events and qemu binary changes
 - `GET /api/vms/:name` — full VM config
 - `POST /api/vms/:name/{start,stop,force-stop,reboot,suspend,resume}`
 - `GET /api/vms/:name/stats` — SSE stream of per-VM stats every 3s

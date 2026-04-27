@@ -28,7 +28,13 @@ export {
   listHostUSBDevices,
 } from './vmManagerHost.js';
 
-export { listVMs, getVMConfig, getCachedLocalDns } from './vmManagerList.js';
+export {
+  listVMs,
+  getVMConfig,
+  getCachedLocalDns,
+  getCachedStaleBinary,
+  subscribeVMListChange,
+} from './vmManagerList.js';
 
 export { startVM, stopVM, forceStopVM, rebootVM, suspendVM, resumeVM } from './vmManagerLifecycle.js';
 

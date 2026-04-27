@@ -11,6 +11,9 @@ import {
   generateMAC,
 } from '../../vmManagerShared.js';
 import { STATE_NAMES } from './libvirtConstants.js';
+import { watchQemuBinaries } from './vmManagerProc.js';
+
+let qemuBinaryWatcherCleanup = null;
 
 export const IS_DARWIN = false;
 
@@ -93,6 +96,10 @@ export async function connect() {
     fireDomainChange();
   });
 
+  if (!qemuBinaryWatcherCleanup) {
+    qemuBinaryWatcherCleanup = watchQemuBinaries(fireDomainChange);
+  }
+
   fireDomainChange();
 
   connectionState.bus.on('error', (err) => {
@@ -120,6 +127,10 @@ export function disconnect() {
   connectionState.bus = null;
   connectionState.connectIface = null;
   connectionState.connectProps = null;
+  if (qemuBinaryWatcherCleanup) {
+    qemuBinaryWatcherCleanup();
+    qemuBinaryWatcherCleanup = null;
+  }
   fireDisconnect();
 }
 

@@ -7,8 +7,10 @@
  * PID source: libvirt writes `/var/run/libvirt/qemu/<name>.pid` for each running VM.
  */
 import { readFile, readlink } from 'node:fs/promises';
+import { watch } from 'node:fs';
 
 const QEMU_PIDFILE_DIR = '/var/run/libvirt/qemu';
+const QEMU_BIN_DIRS = ['/usr/bin', '/usr/local/bin', '/usr/libexec'];
 
 /**
  * @param {string} name
@@ -30,4 +32,29 @@ export async function isVMBinaryStale(name) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Watch the directories where qemu-system-* binaries can live and invoke `onChange`
+ * whenever any of them is created/replaced/removed (apt/dnf upgrade of qemu-system).
+ * Returns a cleanup function that closes all watchers.
+ */
+export function watchQemuBinaries(onChange) {
+  const watchers = [];
+  for (const dir of QEMU_BIN_DIRS) {
+    try {
+      const w = watch(dir, (_eventType, filename) => {
+        if (filename && String(filename).startsWith('qemu-system-')) onChange();
+      });
+      w.on('error', () => { /* directory may be unwatchable; ignore */ });
+      watchers.push(w);
+    } catch {
+      /* directory missing or not watchable on this host — skip */
+    }
+  }
+  return () => {
+    for (const w of watchers) {
+      try { w.close(); } catch { /* already closed */ }
+    }
+  };
 }

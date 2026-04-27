@@ -349,7 +349,8 @@ List all VMs with summary info.
     "vcpus": 4,
     "memoryMiB": 4096,
     "osCategory": "linux",
-    "autostart": true,
+    "iconId": null,
+    "localDns": false,
     "staleBinary": false
   }
 ]
@@ -359,11 +360,11 @@ List all VMs with summary info.
 
 ### GET /api/vms/stream
 
-SSE stream of the full VM list. Pushes at a configurable interval.
+SSE stream of the full VM list. Event-driven: pushes when libvirt emits a `DomainEvent` (define/undefine/start/stop/etc.) or when a `qemu-system-*` binary is replaced on disk (apt/dnf upgrade). No polling timer — clients receive updates as they happen.
 
-- **Query:** `?intervalMs=5000` (default 5000, min 2000, max 60000)
+- **Query:** none
 - **Content-Type:** `text/event-stream`
-- **Event data:** Same array as `GET /api/vms`
+- **Event data:** Same array as `GET /api/vms`. An initial event is sent on connect.
 
 ### POST /api/vms
 

@@ -37,13 +37,14 @@ export default function LeftPanel() {
   const intervalMs = refreshIntervalSeconds * 1000;
 
   useEffect(() => {
-    startVMListSSE(intervalMs);
+    startVMListSSE();
+    return () => stopVMListSSE();
+  }, [startVMListSSE, stopVMListSSE]);
+
+  useEffect(() => {
     startContainerListSSE(intervalMs);
-    return () => {
-      stopVMListSSE();
-      stopContainerListSSE();
-    };
-  }, [startVMListSSE, stopVMListSSE, startContainerListSSE, stopContainerListSSE, intervalMs]);
+    return () => stopContainerListSSE();
+  }, [startContainerListSSE, stopContainerListSSE, intervalMs]);
 
   const allItems = useMemo(() => {
     const vmItems = (listFilter === 'all' || listFilter === 'vms')

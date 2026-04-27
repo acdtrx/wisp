@@ -278,10 +278,12 @@ XML parsing and building utilities using fast-xml-parser. Handles the conversion
 
 ### vmManagerList.js
 
-- **VM list cache** — in-memory cache of the VM list, populated on connect and refreshed automatically on any `DomainEvent` signal (defined, undefined, started, stopped, suspended, resumed). `listVMs()` returns the cache when populated, avoiding per-call libvirt queries. The cache is invalidated on disconnect or bus error.
-- `listVMs()` — returns cached VM list (sub-millisecond); falls back to a live libvirt query on first call before cache populates. Enriches each item with `staleBinary` at read-time for running VMs (see `vmManagerProc.js`) — intentionally not cached because staleness can change without a libvirt event (e.g. on qemu package upgrade).
+- **VM list cache** — in-memory cache of the VM list, populated on connect and refreshed automatically on any `DomainEvent` signal (defined, undefined, started, stopped, suspended, resumed) and on any qemu binary replacement detected by `watchQemuBinaries` (apt/dnf upgrade of `qemu-system-*`). `listVMs()` returns the cache when populated, avoiding per-call libvirt queries. The cache is invalidated on disconnect or bus error. Each cached entry holds: `name`, `uuid`, `state`, `stateCode`, `vcpus`, `memoryMiB`, `osCategory`, `iconId`, `localDns`, `staleBinary`.
+- `listVMs()` — returns cached VM list (sub-millisecond); falls back to a live libvirt query on first call before cache populates.
 - `getVMConfig(name)` — full VM configuration parsed from XML
 - `getCachedLocalDns(name)` — reads the `localDns` flag for a VM from the cached list; used by `getVMStats` to avoid an extra inactive XML fetch per stats cycle
+- `getCachedStaleBinary(name)` — reads the `staleBinary` flag from the cached list; used by `getVMStats` to avoid per-tick `/proc` syscalls
+- `subscribeVMListChange(handler)` — subscribe to cache-refresh events. Used by the `/vms/stream` SSE handler to push the list to clients without a polling timer. Returns an unsubscribe function.
 
 ### vmManagerLifecycle.js
 
@@ -289,7 +291,8 @@ Purpose-named lifecycle functions: `startVM`, `stopVM`, `forceStopVM`, `rebootVM
 
 ### vmManagerProc.js
 
-- `isVMBinaryStale(name)` — returns `true` when the VM's qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt upgrade). Reads the libvirt pidfile at `/var/run/libvirt/qemu/<name>.pid`, then checks whether `/proc/<pid>/exe` ends with ` (deleted)`. Returns `false` on any error (missing pidfile, dead pid, EACCES). Exposed via `listVMs()` and `getVMStats()` as `staleBinary`.
+- `isVMBinaryStale(name)` — returns `true` when the VM's qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt upgrade). Reads the libvirt pidfile at `/var/run/libvirt/qemu/<name>.pid`, then checks whether `/proc/<pid>/exe` ends with ` (deleted)`. Returns `false` on any error (missing pidfile, dead pid, EACCES). Computed once per VM list cache refresh and read via `getCachedStaleBinary` from both list and stats payloads.
+- `watchQemuBinaries(onChange)` — sets up `fs.watch` on directories where `qemu-system-*` binaries can live (`/usr/bin`, `/usr/local/bin`, `/usr/libexec`) and calls `onChange` whenever any matching basename changes. Used at vmManager connect to wire qemu upgrades into `fireDomainChange`, so `staleBinary` updates are event-driven (no polling). Returns a cleanup function called on disconnect.
 
 ### vmManagerCreate.js
 

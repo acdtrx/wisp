@@ -34,6 +34,8 @@ export const getDefaultBridge = impl.getDefaultBridge;
 export const listVMs = impl.listVMs;
 export const getVMConfig = impl.getVMConfig;
 export const getCachedLocalDns = impl.getCachedLocalDns;
+export const getCachedStaleBinary = impl.getCachedStaleBinary;
+export const subscribeVMListChange = impl.subscribeVMListChange;
 
 export const startVM = impl.startVM;
 export const stopVM = impl.stopVM;

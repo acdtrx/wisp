@@ -117,6 +117,14 @@ export function getCachedLocalDns() {
   return undefined;
 }
 
+export function getCachedStaleBinary() {
+  return false;
+}
+
+export function subscribeVMListChange() {
+  return () => {};
+}
+
 export async function listVMs() {
   return [];
 }

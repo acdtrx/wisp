@@ -21,6 +21,7 @@ import { STATE_NAMES } from './libvirtConstants.js';
 let vmListCache = null;
 let refreshPromise = null;
 let refreshQueued = false;
+const listChangeHandlers = new Set();
 
 async function fetchVMListFromLibvirt() {
   if (!connectionState.connectIface) return [];
@@ -29,16 +30,17 @@ async function fetchVMListFromLibvirt() {
 
   const results = await Promise.allSettled(
     paths.map(async (p) => {
-      const { iface, props } = await getDomainObjAndIface(p);
+      const { iface } = await getDomainObjAndIface(p);
 
-      const [xml, [stateCode], autostart] = await Promise.all([
+      const [xml, [stateCode]] = await Promise.all([
         iface.GetXMLDesc(2),
         iface.GetState(0),
-        props.Get('org.libvirt.Domain', 'Autostart').then((v) => !!unwrapVariant(v)).catch(() => false),
       ]);
 
       const config = parseVMFromXML(xml);
       if (!config) return null;
+
+      const staleBinary = stateCode === 1 ? await isVMBinaryStale(config.name) : false;
 
       return {
         name: config.name,
@@ -48,9 +50,9 @@ async function fetchVMListFromLibvirt() {
         vcpus: config.vcpus,
         memoryMiB: config.memoryMiB,
         osCategory: detectOSCategory(config),
-        autostart,
         iconId: config.iconId ?? null,
         localDns: config.localDns ?? false,
+        staleBinary,
       };
     }),
   );
@@ -60,6 +62,12 @@ async function fetchVMListFromLibvirt() {
     .map((r) => r.value);
 }
 
+function fireListChange() {
+  for (const h of listChangeHandlers) {
+    try { h(vmListCache); } catch (err) { console.warn('[vmManager] vm-list-change handler threw:', err?.message || err); }
+  }
+}
+
 function refreshVMListCache() {
   if (refreshPromise) {
     refreshQueued = true;
@@ -67,7 +75,7 @@ function refreshVMListCache() {
   }
   refreshQueued = false;
   refreshPromise = fetchVMListFromLibvirt()
-    .then((list) => { vmListCache = list; })
+    .then((list) => { vmListCache = list; fireListChange(); })
     .catch((err) => { console.warn('[vmManager] VM list cache refresh failed:', err.message); })
     .finally(() => {
       refreshPromise = null;
@@ -77,10 +85,20 @@ function refreshVMListCache() {
 
 function invalidateVMListCache() {
   vmListCache = null;
+  fireListChange();
 }
 
 subscribeDomainChange(refreshVMListCache);
 subscribeDisconnect(invalidateVMListCache);
+
+/**
+ * Subscribe to VM list cache changes. Handler fires after each successful refresh
+ * (with the new list) and on disconnect (with null). Returns an unsubscribe function.
+ */
+export function subscribeVMListChange(handler) {
+  listChangeHandlers.add(handler);
+  return () => listChangeHandlers.delete(handler);
+}
 
 /**
  * Read localDns for a VM from the cached list (avoids an extra inactive XML fetch in stats).
@@ -91,23 +109,23 @@ export function getCachedLocalDns(name) {
   return vmListCache.find((v) => v.name === name)?.localDns;
 }
 
+/**
+ * Read staleBinary for a VM from the cached list. Returns false if the cache is not
+ * populated or the VM is not found. Stale state refreshes on libvirt domain events
+ * and on qemu binary replacement (see watchQemuBinaries).
+ */
+export function getCachedStaleBinary(name) {
+  if (!vmListCache) return false;
+  return vmListCache.find((v) => v.name === name)?.staleBinary ?? false;
+}
+
 /* ── Public API ─────────────────────────────────────────────────────── */
 
-/**
- * Returns the cached VM list enriched with `staleBinary` for running VMs. The cache itself
- * holds only libvirt-derived state; staleness is recomputed on each call (cheap: two fs ops
- * per running VM) because it changes independently of libvirt events (e.g. on qemu upgrade).
- */
 export async function listVMs() {
   if (vmListCache === null) {
     vmListCache = await fetchVMListFromLibvirt();
   }
-  return Promise.all(
-    vmListCache.map(async (v) => ({
-      ...v,
-      staleBinary: v.stateCode === 1 ? await isVMBinaryStale(v.name) : false,
-    })),
-  );
+  return vmListCache;
 }
 
 /** Add sizeGiB (virtual size, rounded) to each file-backed block disk; on qemu-img failure, disk is unchanged. */

@@ -89,7 +89,8 @@ Three SSE patterns:
 
 | Pattern | Endpoints | Behavior |
 |---------|-----------|----------|
-| Long-lived stream | `/api/stats`, `/api/vms/stream`, `/api/vms/:name/stats` | Continuous push at intervals, client reconnects on error |
+| Event-driven stream | `/api/vms/stream` | Pushes on libvirt `DomainEvent` and qemu binary changes; no polling timer |
+| Long-lived stream | `/api/stats`, `/api/vms/:name/stats` | Continuous push at intervals (sampled metrics); client reconnects on error |
 | Job progress | `/api/vms/create-progress/:jobId`, `/api/vms/backup-progress/:jobId`, `/api/library/download-progress/:jobId`, `/api/containers/create-progress/:jobId` | Emits progress events until completion/failure, then closes |
 | One-shot | URL check responses | Single response, no streaming |
 

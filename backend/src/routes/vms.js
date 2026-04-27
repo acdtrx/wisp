@@ -30,6 +30,7 @@ import {
   revertSnapshot,
   deleteSnapshot,
   createBackup,
+  subscribeVMListChange,
 } from '../lib/vmManager.js';
 import * as createJobStore from '../lib/createJobStore.js';
 import * as backupJobStore from '../lib/backupJobStore.js';
@@ -86,12 +87,11 @@ export default async function vmsRoutes(fastify) {
     },
   });
 
-  // GET /vms/stream — SSE endpoint for VM list updates (no polling)
+  // GET /vms/stream — SSE endpoint for VM list updates. Pushes on libvirt
+  // domain events and qemu binary changes; no polling timer.
   fastify.get('/vms/stream', {
     schema: { hide: true },
     handler: async (request, reply) => {
-      const intervalMs = Math.max(2000, Math.min(60000, Number(request.query.intervalMs) || 5000));
-
       setupSSE(reply);
 
       async function sendList() {
@@ -106,10 +106,10 @@ export default async function vmsRoutes(fastify) {
       }
 
       await sendList();
-      const interval = setInterval(sendList, intervalMs);
+      const unsubscribe = subscribeVMListChange(() => { sendList(); });
 
       request.raw.on('close', () => {
-        clearInterval(interval);
+        unsubscribe();
       });
     },
   });

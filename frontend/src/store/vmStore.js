@@ -80,11 +80,10 @@ export const useVmStore = create((set, get) => {
       }
     },
 
-    startVMListSSE: (intervalMs = 5000) => {
+    startVMListSSE: () => {
       if (listCloseFn) return;
-      const url = `/api/vms/stream?intervalMs=${Math.max(2000, Math.min(60000, intervalMs))}`;
       listCloseFn = createSSE(
-        url,
+        '/api/vms/stream',
         (data) => {
           if (!Array.isArray(data)) return;
           migrateSelectionIfRenamed(data);
@@ -117,7 +116,7 @@ export const useVmStore = create((set, get) => {
     selectVM: async (name) => {
       const listItem = get().vms.find((v) => v.name === name);
       const seed = listItem
-        ? { name: listItem.name, uuid: listItem.uuid, state: listItem.state, stateCode: listItem.stateCode, vcpus: listItem.vcpus, memoryMiB: listItem.memoryMiB, osCategory: listItem.osCategory, autostart: listItem.autostart, iconId: listItem.iconId }
+        ? { name: listItem.name, uuid: listItem.uuid, state: listItem.state, stateCode: listItem.stateCode, vcpus: listItem.vcpus, memoryMiB: listItem.memoryMiB, osCategory: listItem.osCategory, iconId: listItem.iconId }
         : null;
       set({ selectedVM: name, vmConfig: seed, vmStats: null, configLoading: true });
       startStatsSSE(name);
