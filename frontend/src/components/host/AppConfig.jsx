@@ -14,7 +14,6 @@ export default function AppConfig() {
   const [serverName, setServerName] = useState('');
   const [vmsPath, setVmsPath] = useState('');
   const [imagePath, setImagePath] = useState('');
-  const [refreshIntervalSeconds, setRefreshIntervalSeconds] = useState(5);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -24,7 +23,6 @@ export default function AppConfig() {
       setServerName(settings.serverName || '');
       setVmsPath(settings.vmsPath ?? '');
       setImagePath(settings.imagePath ?? '');
-      setRefreshIntervalSeconds(settings.refreshIntervalSeconds ?? 5);
     }
   }, [settings]);
 
@@ -33,10 +31,9 @@ export default function AppConfig() {
       settings != null &&
       (serverName !== (settings.serverName || '') ||
         vmsPath !== (settings.vmsPath ?? '') ||
-        imagePath !== (settings.imagePath ?? '') ||
-        refreshIntervalSeconds !== (settings.refreshIntervalSeconds ?? 5))
+        imagePath !== (settings.imagePath ?? ''))
     );
-  }, [settings, serverName, vmsPath, imagePath, refreshIntervalSeconds]);
+  }, [settings, serverName, vmsPath, imagePath]);
 
   const handleSave = async () => {
     setError(null);
@@ -46,7 +43,6 @@ export default function AppConfig() {
         serverName: serverName.trim() || undefined,
         vmsPath: vmsPath.trim().startsWith('/') ? vmsPath.trim() : undefined,
         imagePath: imagePath.trim().startsWith('/') ? imagePath.trim() : undefined,
-        refreshIntervalSeconds: refreshIntervalSeconds >= 1 && refreshIntervalSeconds <= 60 ? refreshIntervalSeconds : undefined,
       });
       setSettings(updated);
       await loadSettings();
@@ -112,20 +108,6 @@ export default function AppConfig() {
                   className="input-field font-mono placeholder:text-text-muted w-full max-w-md"
                 />
                 <p className="mt-1 text-[10px] text-text-muted">Path for ISOs and disk images.</p>
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
-                  Refresh interval (seconds)
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={60}
-                  value={refreshIntervalSeconds}
-                  onChange={(e) => setRefreshIntervalSeconds(parseInt(e.target.value, 10) || 5)}
-                  className="input-field w-24"
-                />
-                <p className="mt-1 text-[10px] text-text-muted">How often the VM list is refreshed.</p>
               </div>
             </div>
             <PasswordChangeForm />

@@ -21,7 +21,14 @@ export {
   ensureContainersDir,
 } from './containerPaths.js';
 
-export { listContainers, getContainerConfig, getRunningContainerCount } from './containerManagerList.js';
+export {
+  listContainers,
+  getContainerConfig,
+  getRunningContainerCount,
+  subscribeContainerListChange,
+} from './containerManagerList.js';
+
+export { notifyContainerConfigWrite } from './containerManagerConfigIo.js';
 
 export {
   startContainer,

@@ -26,6 +26,8 @@ export const ensureContainersDir = impl.ensureContainersDir;
 export const listContainers = impl.listContainers;
 export const getContainerConfig = impl.getContainerConfig;
 export const getRunningContainerCount = impl.getRunningContainerCount;
+export const subscribeContainerListChange = impl.subscribeContainerListChange;
+export const notifyContainerConfigWrite = impl.notifyContainerConfigWrite;
 
 export const startContainer = impl.startContainer;
 export const startAutostartContainersAtBackendBoot = impl.startAutostartContainersAtBackendBoot;

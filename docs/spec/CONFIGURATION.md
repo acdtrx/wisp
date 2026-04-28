@@ -37,7 +37,6 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `serverName` | `string \| null` | `null` | Display name in the top bar. Falls back to `My Server` when null. |
-| `refreshIntervalSeconds` | `number` | `5` | VM list SSE interval (1–60). |
 | `vmsPath` | `string` | `/var/lib/wisp/vms` | VM storage root (absolute). |
 | `imagePath` | `string` | `/var/lib/wisp/images` | Image library path. |
 | `backupLocalPath` | `string` | `/var/lib/wisp/backups` | Local backup directory. |

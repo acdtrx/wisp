@@ -1,10 +1,18 @@
 /**
  * List containers by merging containerd state with on-disk container.json configs.
+ * Maintains an in-memory cache refreshed on containerd events, container.json writes,
+ * and image-update completion (see Stage 3 of the SSE refactor).
  */
 import { join } from 'node:path';
 import { readFile, readdir } from 'node:fs/promises';
 
-import { containerState } from './containerManagerConnection.js';
+import {
+  containerState,
+  getClient,
+  callStream,
+  subscribeContainerdConnect,
+  subscribeContainerdDisconnect,
+} from './containerManagerConnection.js';
 import { getContainersPath } from './containerPaths.js';
 import { getTaskState, containerTaskStatusToUi } from './containerManagerLifecycle.js';
 import {
@@ -16,7 +24,11 @@ import { processUptimeMsFromProc } from '../host/linuxProcUptime.js';
 import { getRegisteredHostname, registerAddress, sanitizeHostname } from '../../mdnsManager.js';
 import { readLibraryDigestMap } from './containerManagerImages.js';
 import { normalizeImageRef } from './containerImageRef.js';
-import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
+import {
+  readContainerConfig,
+  writeContainerConfig,
+  subscribeContainerConfigWrite,
+} from './containerManagerConfigIo.js';
 
 /**
  * Derived `updateAvailable`: true when the container is running/paused AND
@@ -31,14 +43,28 @@ function deriveUpdateAvailable(config, state, libraryDigests) {
   return !!current && current !== config.imageDigest;
 }
 
-/**
- * List all containers (summary for the left panel list).
- * Returns only fields rendered by the sidebar; runtime details (pid, uptime,
- * resource limits, etc.) are served by getContainerConfig and the per-container
- * stats SSE — fetching them per-tick here is wasted work.
- */
-export async function listContainers() {
+/* ── Container list cache (event-driven) ────────────────────────────── */
 
+let containerListCache = null;
+let refreshPromise = null;
+let refreshQueued = false;
+let eventsStream = null;
+const listChangeHandlers = new Set();
+
+/** Containerd event topics that affect what listContainers returns. */
+const LIST_AFFECTING_TOPICS = new Set([
+  '/tasks/start',
+  '/tasks/exit',
+  '/tasks/oom',
+  '/tasks/delete',
+  '/tasks/paused',
+  '/tasks/resumed',
+  '/containers/create',
+  '/containers/update',
+  '/containers/delete',
+]);
+
+async function fetchContainerListFromDisk() {
   const basePath = getContainersPath();
   let dirs;
   try {
@@ -81,6 +107,91 @@ export async function listContainers() {
   }
 
   return results;
+}
+
+function fireListChange() {
+  for (const h of listChangeHandlers) {
+    try { h(containerListCache); } catch (err) { console.warn('[containerManager] list-change handler threw:', err?.message || err); }
+  }
+}
+
+function refreshContainerListCache() {
+  if (refreshPromise) {
+    refreshQueued = true;
+    return;
+  }
+  refreshQueued = false;
+  refreshPromise = fetchContainerListFromDisk()
+    .then((list) => { containerListCache = list; fireListChange(); })
+    .catch((err) => { console.warn('[containerManager] container list cache refresh failed:', err.message); })
+    .finally(() => {
+      refreshPromise = null;
+      if (refreshQueued) refreshContainerListCache();
+    });
+}
+
+function invalidateContainerListCache() {
+  containerListCache = null;
+  fireListChange();
+}
+
+function startEventsStream() {
+  if (eventsStream || !containerState.connected) return;
+  try {
+    eventsStream = callStream(getClient('events'), 'subscribe', { filters: [] });
+    eventsStream.on('data', (envelope) => {
+      if (envelope?.topic && LIST_AFFECTING_TOPICS.has(envelope.topic)) {
+        refreshContainerListCache();
+      }
+    });
+    eventsStream.on('error', (err) => {
+      /* Stream broke — cleanup; the disconnect handler (or next reconnect) will rebuild. */
+      containerState.logger?.warn?.({ err: err?.message || String(err) }, 'containerd events stream error');
+      stopEventsStream();
+    });
+    eventsStream.on('end', () => { eventsStream = null; });
+  } catch (err) {
+    containerState.logger?.warn?.({ err: err?.message || String(err) }, 'containerd events subscribe failed');
+    eventsStream = null;
+  }
+}
+
+function stopEventsStream() {
+  if (!eventsStream) return;
+  try { eventsStream.cancel(); } catch { /* already cancelled */ }
+  eventsStream = null;
+}
+
+subscribeContainerdConnect(() => {
+  startEventsStream();
+  refreshContainerListCache();
+});
+subscribeContainerdDisconnect(() => {
+  stopEventsStream();
+  invalidateContainerListCache();
+});
+subscribeContainerConfigWrite(refreshContainerListCache);
+
+/**
+ * Subscribe to container list cache changes. Handler fires after each successful
+ * refresh (with the new list) and on disconnect (with null). Returns an unsubscribe.
+ */
+export function subscribeContainerListChange(handler) {
+  listChangeHandlers.add(handler);
+  return () => listChangeHandlers.delete(handler);
+}
+
+/**
+ * List all containers (summary for the left panel list).
+ * Returns only fields rendered by the sidebar; runtime details (pid, uptime,
+ * resource limits, etc.) are served by getContainerConfig and the per-container
+ * stats SSE — fetching them per-tick here is wasted work.
+ */
+export async function listContainers() {
+  if (containerListCache === null) {
+    containerListCache = await fetchContainerListFromDisk();
+  }
+  return containerListCache;
 }
 
 /**

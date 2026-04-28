@@ -77,6 +77,14 @@ export async function listContainers() {
   return [];
 }
 
+export function subscribeContainerListChange() {
+  return () => {};
+}
+
+export function notifyContainerConfigWrite() {
+  /* no-op on darwin (no containerd) */
+}
+
 export async function getRunningContainerCount() {
   return 0;
 }

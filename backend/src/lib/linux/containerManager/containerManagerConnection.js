@@ -26,6 +26,33 @@ export const containerState = {
   logger: null,
 };
 
+const connectHandlers = new Set();
+const disconnectHandlers = new Set();
+
+/** Subscribe to containerd-ready events; handler fires after each successful connect. */
+export function subscribeContainerdConnect(handler) {
+  connectHandlers.add(handler);
+  return () => connectHandlers.delete(handler);
+}
+
+/** Subscribe to containerd-disconnect events; handler fires when the client is torn down. */
+export function subscribeContainerdDisconnect(handler) {
+  disconnectHandlers.add(handler);
+  return () => disconnectHandlers.delete(handler);
+}
+
+function fireConnect() {
+  for (const h of connectHandlers) {
+    try { h(); } catch (err) { console.warn('[containerManager] connect handler threw:', err?.message || err); }
+  }
+}
+
+function fireDisconnect() {
+  for (const h of disconnectHandlers) {
+    try { h(); } catch (err) { console.warn('[containerManager] disconnect handler threw:', err?.message || err); }
+  }
+}
+
 export function containerError(code, message, raw) {
   return createAppError(code, message, raw);
 }
@@ -240,6 +267,7 @@ export async function connect(opts = {}) {
   }
 
   containerState.connected = true;
+  fireConnect();
 }
 
 export function disconnect() {
@@ -251,6 +279,7 @@ export function disconnect() {
   containerState.connected = false;
   containerState.containerStartTimes.clear();
   containerState.logger = null;
+  fireDisconnect();
 }
 
 export function getClient(name) {

@@ -79,12 +79,11 @@ export const useContainerStore = create((set, get) => {
       }
     },
 
-    startContainerListSSE: (intervalMs = 5000) => {
+    startContainerListSSE: () => {
       if (listCloseFn) return;
       get().fetchContainers();
-      const url = `/api/containers/stream?intervalMs=${Math.max(2000, Math.min(60000, intervalMs))}`;
       listCloseFn = createSSE(
-        url,
+        '/api/containers/stream',
         (data) => {
           if (!Array.isArray(data)) return;
           const state = get();
@@ -254,7 +253,8 @@ export const useContainerStore = create((set, get) => {
               imageUpdateJobClose();
               imageUpdateJobClose = null;
             }
-            get().fetchContainers();
+            // Backend fires notifyContainerConfigWrite after the job completes
+            // → /containers/stream pushes a fresh list automatically.
             get().refreshSelectedContainer();
           } else if (ev.step === 'error') {
             set((prev) => ({

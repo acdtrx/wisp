@@ -12,7 +12,6 @@ const CONFIG_PATH = process.env.WISP_CONFIG_PATH || resolve(__dirname, '../../..
 
 const DEFAULTS = {
   serverName: null,
-  refreshIntervalSeconds: 5,
   vmsPath: '/var/lib/wisp/vms',
   imagePath: '/var/lib/wisp/images',
   backupLocalPath: '/var/lib/wisp/backups',
@@ -35,12 +34,6 @@ export function getConfigSync() {
     const data = JSON.parse(raw);
     return {
       serverName: typeof data.serverName === 'string' ? data.serverName : DEFAULTS.serverName,
-      refreshIntervalSeconds:
-        typeof data.refreshIntervalSeconds === 'number' &&
-        data.refreshIntervalSeconds >= 1 &&
-        data.refreshIntervalSeconds <= 60
-          ? data.refreshIntervalSeconds
-          : DEFAULTS.refreshIntervalSeconds,
       vmsPath: validatePath(data.vmsPath, DEFAULTS.vmsPath),
       imagePath: validatePath(data.imagePath, DEFAULTS.imagePath),
       backupLocalPath: validatePath(data.backupLocalPath, DEFAULTS.backupLocalPath),

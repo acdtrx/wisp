@@ -856,7 +856,6 @@ Get application settings.
   "vmsPath": "/var/lib/wisp/vms",
   "imagePath": "/var/lib/wisp/images",
   "containersPath": "/var/lib/wisp/containers",
-  "refreshIntervalSeconds": 5,
   "backupLocalPath": "/var/lib/wisp/backups",
   "mounts": [],
   "backupMountId": null
@@ -869,9 +868,9 @@ The shipped `wisp-config.json.example` has empty `mounts`. Mounts are added via 
 
 Update settings. Partial update — only include fields to change.
 
-- **Body:** Partial settings object (`serverName`, `refreshIntervalSeconds`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`)
+- **Body:** Partial settings object (`serverName`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`)
 - **200:** Updated settings object
-- **Validation:** Paths must be absolute (start with `/`). `refreshIntervalSeconds` must be 1–60.
+- **Validation:** Paths must be absolute (start with `/`).
 - **`containersPath`:** Optional; container storage root (same default as `config.js`; exposed for scripts — App Config UI does not edit it yet).
 - **Mount CRUD:** Not available via PATCH /api/settings. Use `/api/host/mounts` endpoints below.
 
@@ -986,9 +985,11 @@ List all containers (summary).
 
 ### GET /api/containers/stream
 
-SSE stream of the container list. Query param: `intervalMs` (default 5000, min 2000, max 60000).
+SSE stream of the container list. Event-driven: pushes when containerd emits a relevant event (`tasks/start`, `tasks/exit`, `tasks/delete`, `containers/create`, `containers/update`, `containers/delete`, etc.), when a `container.json` is written by wisp, or when an image-update check completes. No polling timer — clients receive updates as they happen.
 
-> Note: at this stage of the refactor `/containers/stream` is still timer-based; it will become event-driven (no `intervalMs`) in a follow-up that wires a containerd-events-backed cache.
+- **Query:** none
+- **Content-Type:** `text/event-stream`
+- **Event data:** Same array as `GET /api/containers`. An initial event is sent on connect.
 
 ### POST /api/containers
 
@@ -1129,7 +1130,7 @@ Kill a container (SIGKILL).
 
 SSE stream for per-container stats.
 
-- **Query:** `?intervalMs=` (default **3000**, min **2000**, max **60000**) — push interval in milliseconds (same bounds as `/api/containers/stream`).
+- **Query:** `?intervalMs=` (default **3000**, min **2000**, max **60000**) — push interval in milliseconds for sampled metrics (CPU, memory, uptime).
 - **Event data:** `{ state, cpuPercent, memoryUsageMiB, memoryLimitMiB, uptime, pid }` (and related fields from `getContainerStats`).
 - **Errors:** `{ error, detail, code }` (same shape as other SSE error payloads).
 

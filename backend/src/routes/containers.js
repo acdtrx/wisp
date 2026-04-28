@@ -15,6 +15,7 @@ import {
   getMountFileTextContent, putMountFileTextContent,
   listContainerImages, deleteContainerImage,
   checkAllImagesForUpdates, checkSingleImageForUpdates, getImageUpdateStatus,
+  subscribeContainerListChange, notifyContainerConfigWrite,
 } from '../lib/containerManager.js';
 import { containerJobStore } from '../lib/containerJobStore.js';
 import { imageUpdateJobStore } from '../lib/imageUpdateJobStore.js';
@@ -82,9 +83,10 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── List SSE stream ───────────────────────────────────────────────
+  // Event-driven: pushes on containerd events (tasks/containers create/start/exit/etc.),
+  // container.json writes, and image-update completion. No polling timer.
   fastify.get('/containers/stream', async (request, reply) => {
     setupSSE(reply);
-    const intervalMs = Math.max(2000, Math.min(60000, parseInt(request.query.intervalMs, 10) || 5000));
 
     const send = async () => {
       try {
@@ -94,8 +96,8 @@ export default async function containerRoutes(fastify) {
     };
 
     await send();
-    const timer = setInterval(send, intervalMs);
-    request.raw.on('close', () => clearInterval(timer));
+    const unsubscribe = subscribeContainerListChange(() => { send(); });
+    request.raw.on('close', () => unsubscribe());
   });
 
   // ── Create ────────────────────────────────────────────────────────
@@ -218,7 +220,13 @@ export default async function containerRoutes(fastify) {
       : checkAllImagesForUpdates((ev) => imageUpdateJobStore.pushEvent(jobId, ev));
 
     runner
-      .then((result) => imageUpdateJobStore.completeJob(jobId, result))
+      .then(async (result) => {
+        imageUpdateJobStore.completeJob(jobId, result);
+        // Refresh the image-meta sidecar so deriveUpdateAvailable sees the new
+        // library digests, then notify so the container list cache recomputes.
+        try { await listContainerImages(); } catch { /* best-effort */ }
+        notifyContainerConfigWrite('*');
+      })
       .catch((err) => imageUpdateJobStore.failJob(jobId, err));
 
     return { jobId, title };

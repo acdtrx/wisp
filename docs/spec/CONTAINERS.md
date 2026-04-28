@@ -189,14 +189,14 @@ All under `backend/src/lib/`:
 |--------|---------|
 | `containerManager.js` | Facade re-exporting all container operations |
 | `containerManagerConnection.js` | gRPC client setup, proto loading, connect/disconnect |
-| `containerManagerList.js` | `listContainers()`, `getContainerConfig()`, `getRunningContainerCount()` (running count for host stats SSE) |
+| `containerManagerList.js` | `listContainers()`, `getContainerConfig()`, `getRunningContainerCount()` (running count for host stats SSE), `subscribeContainerListChange()` (SSE consumers subscribe to cache-refresh events). Maintains an in-memory cache populated on containerd connect, refreshed on **(a)** containerd events that affect the list (`/tasks/{start,exit,oom,delete,paused,resumed}`, `/containers/{create,update,delete}`), **(b)** any `container.json` write via `subscribeContainerConfigWrite`, and **(c)** image-update job completion (route handler calls `notifyContainerConfigWrite('*')` after refreshing the meta sidecar). |
 | `containerManagerLifecycle.js` | `startContainer()`, `stopContainer()`, `restartContainer()`, `killContainer()`, `getTaskState()`, `startAutostartContainersAtBackendBoot()`, `normalizeTaskStatus()`, `containerTaskStatusToUi()` (gRPC task enums may arrive as names, indices, or string digits — normalize before API/UI) |
 | `containerImageRef.js` | `normalizeImageRef()` — docker.io/library/ prefix rules (shared with pull/delete) |
 | `containerManagerCreate.js` | `pullImage()`, `createContainer()`, `deleteContainer()` |
 | `containerManagerImages.js` | `listContainerImages()`, `deleteContainerImage()` (containerd Images service; delete blocked if any Wisp container references the image) |
 | `containerManagerOciSize.js` | `compressedBlobSizeForImageName()` — sums compressed config + layer sizes from the resolved Linux image manifest (not the top-level manifest blob size) |
 | `containerManagerConfig.js` | `updateContainerConfig()` |
-| `containerManagerConfigIo.js` | `readContainerConfig()`, `writeContainerConfig()`, `subscribeContainerListChange()` — single owner of `container.json` reads/writes. Every mutation fans out a list-change notification (no subscribers yet; the upcoming containerd-events-backed cache will subscribe). |
+| `containerManagerConfigIo.js` | `readContainerConfig()`, `writeContainerConfig()`, `subscribeContainerConfigWrite()`, `notifyContainerConfigWrite()` — single owner of `container.json` reads/writes. Every mutation fans out a config-write notification; the container list cache subscribes and refreshes accordingly. The image-update job completion route also calls `notifyContainerConfigWrite('*')` after refreshing the image-meta sidecar. |
 | `containerManagerStats.js` | `getContainerStats()` |
 | `linuxProcUptime.js` | `processUptimeMsFromProc(pid)` — container uptime from `/proc` (survives backend restart; in-memory `containerStartTimes` is only a fallback) |
 | `linuxProcIpv4.js` | `ipv4CidrFromProcFibTrie(pid)` — read primary IPv4 from `/proc/<pid>/net/fib_trie` when the task PID is known (no sudo) |

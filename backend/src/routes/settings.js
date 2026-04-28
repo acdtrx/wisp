@@ -22,7 +22,6 @@ const settingsResponseProps = {
   serverName: { type: 'string' },
   vmsPath: { type: 'string' },
   imagePath: { type: 'string' },
-  refreshIntervalSeconds: { type: 'integer' },
   backupLocalPath: { type: 'string' },
   containersPath: { type: 'string' },
   mounts: { type: 'array', items: mountResponseSchema },
@@ -50,7 +49,6 @@ export default async function settingsRoutes(fastify) {
         type: 'object',
         properties: {
           serverName: { type: ['string', 'null'] },
-          refreshIntervalSeconds: { type: 'integer', minimum: 1, maximum: 60 },
           vmsPath: { type: 'string' },
           imagePath: { type: 'string' },
           backupLocalPath: { type: 'string' },

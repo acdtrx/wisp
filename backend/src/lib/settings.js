@@ -6,7 +6,6 @@ import { createAppError } from './routeErrors.js';
 
 const DEFAULTS = {
   serverName: null,
-  refreshIntervalSeconds: 5,
   vmsPath: '/var/lib/wisp/vms',
   imagePath: '/var/lib/wisp/images',
   backupLocalPath: '/var/lib/wisp/backups',
@@ -69,12 +68,6 @@ async function readSettingsFile() {
 
   return {
     serverName: typeof data.serverName === 'string' ? data.serverName : DEFAULTS.serverName,
-    refreshIntervalSeconds:
-      typeof data.refreshIntervalSeconds === 'number' &&
-      data.refreshIntervalSeconds >= 1 &&
-      data.refreshIntervalSeconds <= 60
-        ? data.refreshIntervalSeconds
-        : DEFAULTS.refreshIntervalSeconds,
     vmsPath:
       typeof data.vmsPath === 'string' && data.vmsPath.trim().startsWith('/')
         ? data.vmsPath.trim()
@@ -136,7 +129,6 @@ export async function getSettings() {
     serverName,
     vmsPath: fromFile.vmsPath,
     imagePath: fromFile.imagePath,
-    refreshIntervalSeconds: fromFile.refreshIntervalSeconds,
     backupLocalPath: fromFile.backupLocalPath,
     containersPath: fromFile.containersPath,
     mounts: mountsStored.map(mountForApi),
@@ -164,11 +156,6 @@ async function _updateSettings(updates) {
       typeof updates.serverName === 'string' && updates.serverName.trim() !== ''
         ? updates.serverName.trim()
         : null;
-  }
-  if (updates.refreshIntervalSeconds !== undefined) {
-    const n = Number(updates.refreshIntervalSeconds);
-    next.refreshIntervalSeconds =
-      Number.isInteger(n) && n >= 1 && n <= 60 ? n : DEFAULTS.refreshIntervalSeconds;
   }
   if (updates.backupLocalPath !== undefined) {
     next.backupLocalPath =
@@ -211,7 +198,6 @@ async function _updateSettings(updates) {
 async function persistSettings(state) {
   const toWrite = {
     serverName: state.serverName,
-    refreshIntervalSeconds: state.refreshIntervalSeconds,
     vmsPath: state.vmsPath,
     imagePath: state.imagePath,
     backupLocalPath: state.backupLocalPath,

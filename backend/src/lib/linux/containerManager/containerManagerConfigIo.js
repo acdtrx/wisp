@@ -1,6 +1,6 @@
 /**
  * Centralized I/O for container.json. All mutations go through writeContainerConfig
- * so list-change notifications (and any future schema validation, atomic writes, etc.)
+ * so config-write notifications (and any future schema validation, atomic writes, etc.)
  * have one place to live.
  */
 import { join } from 'node:path';
@@ -9,7 +9,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { containerError } from './containerManagerConnection.js';
 import { getContainerDir } from './containerPaths.js';
 
-const listChangeHandlers = new Set();
+const configWriteHandlers = new Set();
 
 export async function readContainerConfig(name) {
   const path = join(getContainerDir(name), 'container.json');
@@ -25,16 +25,16 @@ export async function readContainerConfig(name) {
 export async function writeContainerConfig(name, config) {
   const path = join(getContainerDir(name), 'container.json');
   await writeFile(path, JSON.stringify(config, null, 2));
-  fireListChange(name);
+  notifyContainerConfigWrite(name);
 }
 
-export function subscribeContainerListChange(handler) {
-  listChangeHandlers.add(handler);
-  return () => listChangeHandlers.delete(handler);
+export function subscribeContainerConfigWrite(handler) {
+  configWriteHandlers.add(handler);
+  return () => configWriteHandlers.delete(handler);
 }
 
-function fireListChange(name) {
-  for (const h of listChangeHandlers) {
-    try { h(name); } catch (err) { console.warn('[containerManager] list-change handler threw:', err?.message || err); }
+export function notifyContainerConfigWrite(name) {
+  for (const h of configWriteHandlers) {
+    try { h(name); } catch (err) { console.warn('[containerManager] config-write handler threw:', err?.message || err); }
   }
 }

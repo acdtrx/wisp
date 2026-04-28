@@ -1,7 +1,6 @@
 {
   "_comment": "Copied to wisp-config.json on first install. Lives in config/; chmod 600 if you later add SMB passwords via Settings.",
   "serverName": "My Server",
-  "refreshIntervalSeconds": 5,
   "vmsPath": "/var/lib/wisp/vms",
   "imagePath": "/var/lib/wisp/images",
   "containersPath": "/var/lib/wisp/containers",

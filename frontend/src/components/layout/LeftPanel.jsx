@@ -4,7 +4,6 @@ import { Plus, Monitor, Search, Server, Box } from 'lucide-react';
 import { useVmStore } from '../../store/vmStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { useUiStore } from '../../store/uiStore.js';
-import { useSettingsStore } from '../../store/settingsStore.js';
 import { useStatsStore } from '../../store/statsStore.js';
 import { formatMemory } from '../../utils/formatters.js';
 import VMListItem from '../vm/VMListItem.jsx';
@@ -27,14 +26,11 @@ export default function LeftPanel() {
   const setListFilter = useUiStore((s) => s.setListFilter);
   const navigate = useNavigate();
   const location = useLocation();
-  const refreshIntervalSeconds = useSettingsStore((s) => s.settings?.refreshIntervalSeconds ?? 5);
   const stats = useStatsStore((s) => s.stats);
   const pendingUpdates = stats?.pendingUpdates ?? 0;
 
   const [search, setSearch] = useState('');
   const [sortRunningFirst, setSortRunningFirst] = useState(false);
-
-  const intervalMs = refreshIntervalSeconds * 1000;
 
   useEffect(() => {
     startVMListSSE();
@@ -42,9 +38,9 @@ export default function LeftPanel() {
   }, [startVMListSSE, stopVMListSSE]);
 
   useEffect(() => {
-    startContainerListSSE(intervalMs);
+    startContainerListSSE();
     return () => stopContainerListSSE();
-  }, [startContainerListSSE, stopContainerListSSE, intervalMs]);
+  }, [startContainerListSSE, stopContainerListSSE]);
 
   const allItems = useMemo(() => {
     const vmItems = (listFilter === 'all' || listFilter === 'vms')
