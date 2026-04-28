@@ -29,7 +29,7 @@ import { assertBindSourcesReady } from './containerManagerMounts.js';
 import { getRawMounts } from '../../settings.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { getImageDigest } from './containerManagerImages.js';
-import { isKnownApp, getAppModule } from './apps/appRegistry.js';
+import { isKnownApp, getAppModule, getAppEntry } from './apps/appRegistry.js';
 import { writeContainerConfig, notifyContainerConfigWrite } from './containerManagerConfigIo.js';
 
 const RUNTIME_NAME = 'io.containerd.runc.v2';
@@ -409,12 +409,30 @@ export async function createContainer(spec, onStep) {
       await rm(containerDir, { recursive: true, force: true });
       throw containerError('UNKNOWN_APP_TYPE', `Unknown app type "${spec.app}"`);
     }
-    const appModule = getAppModule(spec.app);
+    const appEntry = getAppEntry(spec.app);
+    const appModule = appEntry.module;
     const appConfig = spec.appConfig
-      ? appModule.validateAppConfig(spec.appConfig)
-      : appModule.getDefaultAppConfig();
+      ? appModule.validateAppConfig(spec.appConfig, null)
+      : appModule.getDefaultAppConfig({ containerName: name });
     config.app = spec.app;
     config.appConfig = appConfig;
+
+    // Apps that bind privileged ports / setuid / write to root-owned image dirs declare
+    // `requiresRoot: true` in the registry; honour it without making the user toggle General.
+    if (appEntry.requiresRoot) {
+      config.runAsRoot = true;
+    }
+
+    // Seed mDNS service entries from the registry so common protocols (e.g. _smb._tcp for
+    // tiny-samba) advertise out of the box. Done at create only — after that the user owns
+    // the services list via the Services section.
+    if (Array.isArray(appEntry.defaultServices) && appEntry.defaultServices.length > 0) {
+      config.services = appEntry.defaultServices.map((s) => ({
+        port: s.port,
+        type: s.type,
+        txt: { ...(s.txt || {}) },
+      }));
+    }
 
     const derived = await appModule.generateDerivedConfig(appConfig);
     if (derived.appConfig) config.appConfig = derived.appConfig;

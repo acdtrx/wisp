@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-04-29
+
+### New Features
+- **Tiny Samba container app** — declarative SMB file server. Server / Users / Shares form UI; per-share host source picker (Local container files or any wisp storage mount + sub-path); per-user RW/RO access dropdowns; Apple-extensions toggle. Live reload via `tiny-samba reload`; restart required only for server-level changes or when the share mount layout changes
+- App registry gains two flags: `requiresRoot: true` (auto-sets `runAsRoot` at create) and `defaultServices: [...]` (seeds `container.services[]` at create so `<container>.local` advertises the right mDNS records out of the box, e.g. `_smb._tcp` for tiny-samba)
+- App modules can export `requiresRestartForChange(oldAppConfig, newAppConfig)` to mark specific changes as restart-only; backend ORs that with a structural mount-layout-changed check so adding/retargeting a bind mount on a running app container always triggers `pendingRestart`
+- App `getDefaultAppConfig(ctx)` and `validateAppConfig(new, old)` now receive context — `containerName` for sensible defaults, prior config for merging unchanged secrets forward
+
+### Bug Fixes
+- Form fields render at consistent height — `.input-field` now sets explicit `h-[34px]` so native `<select>` chevron padding doesn't make selects taller than inputs
+
 ## 2026-04-28
 
 ### New Features

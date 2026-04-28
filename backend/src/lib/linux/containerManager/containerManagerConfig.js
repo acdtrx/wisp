@@ -146,7 +146,8 @@ export async function updateContainerConfig(name, changes) {
       if (!appModule) {
         throw containerError('UNKNOWN_APP_TYPE', `Unknown app type "${config.app}"`);
       }
-      const validated = appModule.validateAppConfig(changes.appConfig);
+      const oldAppConfig = config.appConfig;
+      const validated = appModule.validateAppConfig(changes.appConfig, oldAppConfig);
       config.appConfig = validated;
 
       const derived = await appModule.generateDerivedConfig(validated);
@@ -159,14 +160,30 @@ export async function updateContainerConfig(name, changes) {
 
       // Replace mounts — delete backing stores for removed mounts
       const prevMounts = Array.isArray(config.mounts) ? [...config.mounts] : [];
-      const nextNames = new Set((derived.mounts || []).map((m) => m.name));
+      const nextMounts = Array.isArray(derived.mounts) ? derived.mounts : [];
+      const nextNames = new Set(nextMounts.map((m) => m.name));
       for (const m of prevMounts) {
         if (!nextNames.has(m.name)) {
           await deleteMountBackingStore(name, m);
         }
       }
-      config.mounts = derived.mounts || [];
+      config.mounts = nextMounts;
       mountsPersisted = config.mounts;
+
+      // The container task captures bind mounts at create time — reload can't introduce a new
+      // bind, retarget it, or change tmpfs size on an already-running task. So if the mount
+      // *layout* changed (count / name / containerPath / source / size), force a restart even
+      // if the app's reload command would otherwise apply the change live. File contents are
+      // hot-reloadable; structural mount changes are not.
+      const mountLayoutSig = (list) => JSON.stringify(list.map((m) => ({
+        type: m.type,
+        name: m.name,
+        containerPath: m.containerPath,
+        sourceId: m.sourceId || null,
+        subPath: m.subPath || '',
+        sizeMiB: Number.isInteger(m.sizeMiB) ? m.sizeMiB : null,
+      })));
+      const mountLayoutChanged = mountLayoutSig(prevMounts) !== mountLayoutSig(nextMounts);
 
       // Write mount file contents
       if (derived.mountContents) {
@@ -180,6 +197,16 @@ export async function updateContainerConfig(name, changes) {
         // Try live reload if the app supports it; fall back to pendingRestart
         const reloadCmd = appModule.getReloadCommand?.();
         if (reloadCmd) {
+          // Some changes apply via reload; others (e.g. tiny-samba server.workgroup, or any
+          // change that adds/removes/retargets a bind mount) need a task restart. We OR the
+          // app module's signal with our own structural mount-layout check.
+          const restartFromAppHint = !!(
+            appModule.requiresRestartForChange?.(oldAppConfig, validated)
+          );
+          const reloadStillNeedsRestart = restartFromAppHint || mountLayoutChanged;
+          if (reloadStillNeedsRestart) {
+            config.pendingRestart = true;
+          }
           // Write config first so the reload picks up the new files
           await writeContainerConfig(name, config);
           if (mountsPersisted) await ensureMissingMountArtifacts(name, mountsPersisted);
@@ -189,8 +216,9 @@ export async function updateContainerConfig(name, changes) {
               const detail = (result.stderr || result.stdout || '').trim().slice(0, 500);
               throw containerError('APP_RELOAD_FAILED', `Reload failed (exit ${result.exitCode})`, detail);
             }
-            // Reload succeeded — no restart needed, config already written
-            return { requiresRestart: false, reloaded: true };
+            // Reload applied file contents; if mount layout or server-level fields changed,
+            // pendingRestart is set above and we surface that to the caller.
+            return { requiresRestart: reloadStillNeedsRestart, reloaded: true };
           } catch (err) {
             if (err.code === 'APP_RELOAD_FAILED') throw err;
             // Exec failed (e.g. command not found) — fall through to pendingRestart

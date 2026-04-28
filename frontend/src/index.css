@@ -4,7 +4,9 @@
 
 @layer components {
   .input-field {
-    @apply w-full rounded-md border border-surface-border bg-white px-3 py-1.5 text-sm text-text-primary
+    /* h-[34px] forces inputs and selects to match height — without it, native <select>
+       chrome (chevron padding) renders ~2px taller than text inputs at the same padding. */
+    @apply w-full h-[34px] rounded-md border border-surface-border bg-white px-3 py-1.5 text-sm text-text-primary
       outline-none focus:border-accent focus:ring-1 focus:ring-accent
       disabled:bg-surface disabled:text-text-muted disabled:cursor-not-allowed
       transition-colors duration-150;

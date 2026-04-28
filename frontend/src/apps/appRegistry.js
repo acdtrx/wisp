@@ -3,6 +3,7 @@
  */
 import CaddyAppSection from './caddy/CaddyAppSection.jsx';
 import ZotAppSection from './zot/ZotAppSection.jsx';
+import TinySambaAppSection from './tinySamba/TinySambaAppSection.jsx';
 
 export const APP_REGISTRY = {
   'caddy-reverse-proxy': {
@@ -18,6 +19,13 @@ export const APP_REGISTRY = {
     defaultImage: 'ghcr.io/project-zot/zot-linux-amd64:latest',
     allowCustomImage: true,
     component: ZotAppSection,
+  },
+  'tiny-samba': {
+    label: 'Tiny Samba',
+    description: 'Lightweight SMB file server with declarative shares + users',
+    defaultImage: 'ghcr.io/acdtrx/tiny-samba:latest',
+    allowCustomImage: true,
+    component: TinySambaAppSection,
   },
 };
 

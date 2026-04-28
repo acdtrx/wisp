@@ -24,7 +24,11 @@ Three optional fields on `container.json`:
 
 ### Backend — `backend/src/lib/linux/containerManager/apps/appRegistry.js`
 
-Maps app IDs to `{ label, description, defaultImage, allowCustomImage, module }`. The `getAppModule(appId)` function returns the module or null.
+Maps app IDs to `{ label, description, defaultImage, allowCustomImage, module, requiresRoot? }`. `getAppModule(appId)` returns the module or null; `getAppEntry(appId)` returns the full entry (used by the create flow to read flags like `requiresRoot`).
+
+**`requiresRoot: true`** flips on `container.runAsRoot` at create time. Use for apps that need UID 0 inside the container — binding privileged ports, calling `setuid` per session, or writing to root-owned dirs in the image (smbd, OpenWebUI, etc.). Without this flag, the user has to toggle General → runAsRoot manually after create.
+
+**`defaultServices: [{ port, type, txt }]`** seeds `container.services[]` at create time so the app's mDNS records publish out of the box (e.g. `_smb._tcp` for tiny-samba, `_https._tcp` for Caddy). After create the user owns the services list — PATCH does not re-seed, and the Services section can edit/remove any of these entries.
 
 ### Frontend — `frontend/src/apps/appRegistry.js`
 
@@ -36,11 +40,12 @@ Each module (`backend/src/lib/linux/containerManager/apps/<app>.js`) exports:
 
 | Function | Signature | Purpose |
 |----------|-----------|---------|
-| `getDefaultAppConfig` | `() → appConfig` | Starting appConfig for new containers |
-| `validateAppConfig` | `(appConfig) → appConfig` | Validate and normalize. Throws `INVALID_APP_CONFIG` on failure. |
-| `generateDerivedConfig` | `(appConfig) → { env, mounts, mountContents }` | Generate derived artifacts from appConfig |
+| `getDefaultAppConfig` | `(context?) → appConfig` | Starting appConfig for new containers. The optional `context` is `{ containerName }`, passed by the create flow so apps can derive sensible defaults from the container name (e.g. tiny-samba uses it for `server.netbiosName`). |
+| `validateAppConfig` | `(appConfig, oldAppConfig?) → appConfig` | Validate and normalize. Throws `INVALID_APP_CONFIG` on failure. The optional second arg lets the module merge unchanged secrets forward (`maskSecrets` strips them on output, so the frontend can't round-trip them). For create, `oldAppConfig` is `null`. |
+| `generateDerivedConfig` | `(appConfig) → { env, mounts, mountContents, appConfig? }` | Generate derived artifacts from appConfig. May return a transformed `appConfig` (e.g. zot stores hashed passwords back into appConfig). |
 | `maskSecrets` | `(appConfig) → appConfig` | Redact secrets for API responses |
 | `getReloadCommand` | `() → string[] \| null` | Optional. Command to live-reload config inside the running container (e.g. `['caddy', 'reload', ...]`). Return `null` if the app doesn't support live reload. |
+| `requiresRestartForChange` | `(oldAppConfig, newAppConfig) → boolean` | Optional. Returns `true` when the diff includes fields that the app's reload can't apply live (e.g. tiny-samba's `server.workgroup`). When true, the backend sets `pendingRestart: true` and reports `requiresRestart: true` even after a successful reload. |
 
 ### generateDerivedConfig return shape
 
@@ -103,6 +108,8 @@ When an app module provides `getReloadCommand()`, the backend attempts a live re
 5. If the exec itself fails (e.g. command not found): falls back to `pendingRestart: true` behavior
 
 Apps that don't support live reload (return `null` from `getReloadCommand`) always use `pendingRestart`.
+
+**Mount layout vs file contents.** The reload-without-restart path covers *file contents* but not the *bind mount layout*. Bind mounts are captured in the OCI spec at task create — adding a new share, changing a share's `source`, retargeting a `subPath`, or resizing a tmpfs cannot be applied to a running task by reload alone. The backend compares the mount list before/after generateDerivedConfig and forces `pendingRestart: true` when the structural shape (count / name / containerPath / sourceId / subPath / sizeMiB) differs, even if the app's reload command returned exit 0. This is in addition to the app module's `requiresRestartForChange` hook — the two signals are OR-ed.
 
 `execCommandInContainer` is a general-purpose non-interactive exec utility (`containerManagerExec.js`) available for future use beyond app reload.
 
@@ -176,3 +183,69 @@ When adding or updating a user, send `{ username, password }` — the backend ha
 - **mounts:** `config-json` (file → `/etc/zot/config.json`, readonly), `registry` (dir → `/var/lib/registry`), optionally `htpasswd` (file → `/etc/zot/htpasswd`, readonly) when users are configured
 - **config.json:** Generated zot config with storage and HTTP settings; htpasswd auth block when users exist
 - **Reload:** Not supported — config changes require container restart
+
+---
+
+## App: Tiny Samba
+
+**ID:** `tiny-samba`
+**Default image:** `ghcr.io/acdtrx/tiny-samba:latest` (custom image allowed)
+**Registry flags:** `requiresRoot: true` — smbd needs UID 0 to bind 445 and `setuid` per session, so the container is created with `runAsRoot: true` automatically. `defaultServices: [{ port: 445, type: '_smb._tcp', txt: {} }]` — `<container>.local` advertises as an SMB host out of the box.
+
+### appConfig Schema
+
+```json
+{
+  "server": {
+    "workgroup": "WORKGROUP",
+    "netbiosName": "tiny-samba",
+    "dataUid": 1000,
+    "minProtocol": "SMB3",
+    "iconModel": "TimeCapsule6,106"
+  },
+  "users": [
+    { "name": "alice", "password": "hunter2" },
+    { "name": "bob",   "password": "$NT$8846F7EAEE8FB117AD06BDD830B7586C" }
+  ],
+  "shares": [
+    {
+      "name": "documents",
+      "guest": false,
+      "source": null,
+      "access": [
+        { "user": "alice", "level": "rw" },
+        { "user": "bob",   "level": "ro" }
+      ]
+    },
+    {
+      "name": "archive",
+      "guest": false,
+      "source": { "sourceId": "usb-4tb", "subPath": "samba/archive" },
+      "access": [{ "user": "alice", "level": "rw" }]
+    },
+    { "name": "public", "guest": true, "source": null, "access": [] }
+  ]
+}
+```
+
+- `server.workgroup` / `server.netbiosName` — 1–15 chars, alphanumeric + `_`/`-`. Changes need a task restart (smbd-level config).
+- `server.dataUid` — UID inside the container that owns share data. Combined with the container's `runAsRoot: true` mount idmap, the host-side files are owned by the wisp deploy user. Changes need a task restart.
+- `server.minProtocol` — `SMB1` / `SMB2` / `SMB3`. Live-reloadable.
+- `server.iconModel` — Apple SMB extensions toggle. `"TimeCapsule6,106"` (default) enables `vfs_fruit` + `streams_xattr` for nicer macOS Finder behaviour and Time Capsule icon; `"-"` disables AAPL extensions entirely. Use `"-"` as a workaround when uploads fail with `fruit_pwrite_meta_stream … No such file or directory` on a backing filesystem where `streams_xattr` misbehaves.
+- `users[].name` — lowercase, starts with a letter, only `[a-z0-9._-]`. `users[].password` accepts plaintext or `$NT$<32 hex>`. Stored as-is in `appConfig` (no hashing — tiny-samba's `pdbedit` accepts both forms). Masked in API responses as `{ name, password: { isSet: bool } }`. PATCH bodies that omit `password` for an existing user keep the prior value (merged forward by `validateAppConfig(new, old)`).
+- `shares[].name` — lowercase DNS label (`[a-z0-9-]`); SMB share name visible to clients. The in-container mount path is fixed at `/shares/<name>` by convention (no user-visible field — it's an implementation detail). Each share fans out to its own wisp directory mount (named `share-<name>`).
+- `shares[].source` — optional `{ sourceId, subPath }`. When set, the share is bound from a wisp storage mount (SMB share, removable drive, etc.) — `sourceId` references an entry in `settings.mounts`, `subPath` is a relative path inside that mount root. When `null`, the share is backed by the container's local files dir.
+- `shares[].guest: true` — anonymous, read-only access (tiny-samba enforces RO at smbd). The per-user `access` list is dropped on save when guest is on.
+- `shares[].access[].level` — `rw` or `ro`. Non-guest shares require at least one access entry — the validator (and the UI guard) rejects empty access lists with `INVALID_APP_CONFIG`.
+
+### Derived Config
+
+- **env:** (none)
+- **mounts:**
+  - `tiny-samba-config` (file → `/etc/tiny-samba/config.yaml`, readonly)
+  - `tiny-samba-passwords` (file → `/etc/tiny-samba/passwords.yaml`, readonly)
+  - `tiny-samba-state` (tmpfs → `/var/lib/samba`, 64 MiB) — smbd's tdb runtime state, gone on restart
+  - `share-<name>` (directory → `/shares/<name>`, owner uid:gid = `server.dataUid`) — one per declared share, optionally backed by a storage mount via `source: { sourceId, subPath }`
+- **config.yaml:** Generated YAML — `server` block with snake_case fields, `users` list, `shares` map (each with `path`, optional `comment`, `guest: true` OR `access` map)
+- **passwords.yaml:** `name: password` map (passwords double-quoted; plaintext or `$NT$` hash passes through)
+- **Reload:** `tiny-samba reload` — applies live for users, passwords, shares, access, min protocol. Server-level changes (`workgroup`, `netbiosName`, `dataUid`) flip `requiresRestartForChange` and the badge stays until restart.
