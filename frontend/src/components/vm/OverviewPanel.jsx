@@ -209,6 +209,7 @@ export default function OverviewPanel() {
       typeof changes.name === 'string' ? changes.name.trim() : '';
     const renamed = newName !== '' && newName !== name;
     await refreshSelectedVM(renamed ? newName : undefined);
+    if (renamed) navigate(`/vm/${encodeURIComponent(newName)}/${activeTab}`);
     return result;
   };
 
