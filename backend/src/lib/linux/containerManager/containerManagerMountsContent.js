@@ -168,6 +168,9 @@ export async function initMountContent(containerName, mountName) {
   if (!m) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
   }
+  if (m.type === 'tmpfs') {
+    throw containerError('CONTAINER_MOUNT_TYPE_MISMATCH', `Mount "${mountName}" is tmpfs and has no host backing store`);
+  }
   const filesDir = getContainerFilesDir(containerName);
   await mkdir(filesDir, { recursive: true });
   const p = artifactPath(containerName, mountName);
@@ -187,13 +190,17 @@ export async function deleteMountData(containerName, mountName) {
   if (!m) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
   }
+  if (m.type === 'tmpfs') {
+    throw containerError('CONTAINER_MOUNT_TYPE_MISMATCH', `Mount "${mountName}" is tmpfs and has no host backing store`);
+  }
   const p = artifactPath(containerName, mountName);
   await rm(p, { recursive: true, force: true });
   return { ok: true };
 }
 
-/** Delete on-disk artifact when a mount definition is removed from config. */
+/** Delete on-disk artifact when a mount definition is removed from config. No-op for tmpfs. */
 export async function deleteMountBackingStore(containerName, mountEntry) {
+  if (mountEntry?.type === 'tmpfs') return;
   const p = join(getContainerFilesDir(containerName), mountEntry.name);
   await rm(p, { recursive: true, force: true });
 }

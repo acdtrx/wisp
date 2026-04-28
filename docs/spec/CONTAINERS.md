@@ -97,18 +97,20 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `type` | string | `"file"` — bind a single host file; `"directory"` — bind a host directory |
-| `name` | string | Single path segment: storage key. Must be unique among mounts. For Local entries it also names the backing directory under `files/<name>`. For Storage-sourced entries it is purely a config key. |
+| `type` | string | `"file"` — bind a single host file; `"directory"` — bind a host directory; `"tmpfs"` — kernel-managed in-memory mount, no host backing (see [tmpfs mounts](#tmpfs-mounts)) |
+| `name` | string | Single path segment: storage key. Must be unique among mounts. For Local entries it also names the backing directory under `files/<name>`. For Storage-sourced and tmpfs entries it is purely a config key. |
 | `containerPath` | string | Absolute path inside the container (unique among mounts) |
-| `readonly` | boolean | Bind mount read-only when true |
-| `sourceId` | string \| null | Optional; directory mounts only. When set, references an entry in **`settings.mounts`** (see [STORAGE.md](STORAGE.md)) and the bind source lives on that mount instead of `files/<name>`. `null`/absent = Local. |
-| `subPath` | string | Sub-path inside the referenced storage mount (relative; no `..`; empty = mount root). Only meaningful when `sourceId` is set. |
-| `containerOwnerUid` | integer (0–65535) | In-container UID to map to the host deploy UID via a **size:1 idmapped mount**. Default `0` (root). Only consumed when `runAsRoot` is true and the mount is **Local** — ignored otherwise. See [Idmapped Local mounts](#idmapped-local-mounts). |
+| `readonly` | boolean | Bind mount read-only when true. Rejected on tmpfs entries (`INVALID_CONTAINER_MOUNTS`). |
+| `sourceId` | string \| null | Optional; directory mounts only. When set, references an entry in **`settings.mounts`** (see [STORAGE.md](STORAGE.md)) and the bind source lives on that mount instead of `files/<name>`. `null`/absent = Local. Rejected on tmpfs entries. |
+| `subPath` | string | Sub-path inside the referenced storage mount (relative; no `..`; empty = mount root). Only meaningful when `sourceId` is set. Rejected on tmpfs entries. |
+| `containerOwnerUid` | integer (0–65535) | In-container UID to map to the host deploy UID via a **size:1 idmapped mount**. Default `0` (root). Only consumed when `runAsRoot` is true and the mount is **Local** — ignored on Storage-sourced mounts and rejected on tmpfs. See [Idmapped Local mounts](#idmapped-local-mounts). |
 | `containerOwnerGid` | integer (0–65535) | In-container GID to map to the host deploy GID via a size:1 idmapped mount. Default `0` (root). Same activation conditions as `containerOwnerUid`. |
+| `sizeMiB` | integer (1–2048) | tmpfs only. Cap on the tmpfs mount in MiB. Default `64`. Ignored / rejected on file and directory mounts. |
 
 **Host-path resolution** (`resolveMountHostPath`):
 - Local: `<containersPath>/<name>/files/<mount.name>`
 - Storage: `<settings.mounts[sourceId].mountPath>/<mount.subPath>`
+- tmpfs: no host path (kernel-allocated)
 
 After **PATCH** persists **`mounts`**, or after **POST** `/api/containers/:name/mounts` adds one mount, the backend creates any **missing** backing artifact automatically (Local: empty file/directory under `files/<name>`; Storage: `mkdir -p` of the sub-path inside the mounted storage root) so new rows are usable without a separate **Init** call.
 
@@ -118,6 +120,18 @@ After **PATCH** persists **`mounts`**, or after **POST** `/api/containers/:name/
 - `realpath(<mountPath>/<subPath>)` stays within `realpath(<mountPath>)` — symlink escapes are rejected with `CONTAINER_MOUNT_SOURCE_UNSAFE`.
 
 **Delete semantics:** removing a mount row or deleting the container itself leaves Storage-sourced sub-paths untouched (user data outside the container directory). Local backing files/directories are removed as before.
+
+### tmpfs mounts
+
+`type: "tmpfs"` mounts are kernel-managed in-memory filesystems. They have no host backing — contents live only in RAM (subject to the `sizeMiB` cap) for the lifetime of the container task and are wiped on stop/restart. Use them for paths that don't need to survive a restart and shouldn't write through to disk: per-session caches, runtime state directories like Samba's `/var/lib/samba`, lock/socket scratch space.
+
+The OCI runtime spec emits tmpfs entries as `{ type: 'tmpfs', source: 'tmpfs', options: ['nosuid', 'nodev', 'mode=1777', 'size=<N>m'] }`. `mode=1777` mirrors `/tmp` semantics so any in-container UID can write — the on-disk-ownership concerns that drive idmap on Local mounts don't apply (nothing is on disk).
+
+**Field rules:** `sizeMiB` is required and capped at 2048 (default 64). `sourceId`, `subPath`, `readonly`, `containerOwnerUid`, `containerOwnerGid` are rejected — providing any of them raises `INVALID_CONTAINER_MOUNTS`.
+
+**No content endpoints:** the file-upload, zip-upload, init, and delete-data routes return `CONTAINER_MOUNT_TYPE_MISMATCH` for tmpfs mounts (there is no host artifact to read or write).
+
+**Lifecycle:** changing any field on a tmpfs mount (size, name, container path) requires a task restart, same as file/directory mounts. Removing a tmpfs row from `mounts` or deleting the container is purely a config delete — no on-disk cleanup.
 
 ### Service entry
 

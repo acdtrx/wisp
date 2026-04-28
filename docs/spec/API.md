@@ -1084,7 +1084,7 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 **`network`:** Merged with the existing object (not replaced wholesale). **Bridge networking** requires **`network.mac`** after merge (unicast format). While the task is **running or paused**, **`network.ip`** from the body is ignored (server-owned), and changing **`network.mac`** or **`network.interface`** returns **409** `CONTAINER_MUST_BE_STOPPED`. Invalid MAC → **422** `INVALID_CONTAINER_MAC`.
 
-**`mounts`:** Replaces the entire mounts array (bulk update). Prefer row-scoped mount routes below for UI editing. Each element: `{ type: "file"|"directory", name, containerPath, readonly }`. **`name`** is a single path segment (storage key under the container’s `files/` directory). Duplicate **`name`** or duplicate **`containerPath`** → **422** `CONTAINER_MOUNT_DUPLICATE`. Invalid shape → **422** `INVALID_CONTAINER_MOUNTS`. Mounts removed from the array have their on-disk artifacts deleted automatically.
+**`mounts`:** Replaces the entire mounts array (bulk update). Prefer row-scoped mount routes below for UI editing. Each element: `{ type: "file"|"directory"|"tmpfs", name, containerPath, ... }`. For `file`/`directory`: `readonly`, optional `sourceId`/`subPath` (directories only), `containerOwnerUid`/`Gid`. For `tmpfs`: `sizeMiB` (1–2048, default 64); `sourceId`/`subPath`/`readonly`/`containerOwnerUid`/`Gid` are rejected. **`name`** is a single path segment (storage key under the container’s `files/` directory; tmpfs entries have no on-disk artifact). Duplicate **`name`** or duplicate **`containerPath`** → **422** `CONTAINER_MOUNT_DUPLICATE`. Invalid shape → **422** `INVALID_CONTAINER_MOUNTS`. Mounts removed from the array have their on-disk artifacts deleted automatically (tmpfs has no artifact).
 
 **`services`:** Not editable via PATCH — returns **422** `CONFIG_ERROR`. Use the row-scoped service endpoints (`POST` / `PATCH` / `DELETE` `/api/containers/:name/services[/:port]`) below.
 
@@ -1158,19 +1158,19 @@ Download one run's log file. Responds with `Content-Type: text/plain; charset=ut
 
 ### POST /api/containers/:name/mounts
 
-Append one bind mount (row-scoped). **Body:** `{ type: "file"|"directory", name, containerPath, readonly? }` (same shape as one element of **`mounts`** in **PATCH**).
+Append one bind mount (row-scoped). **Body:** `{ type: "file"|"directory"|"tmpfs", name, containerPath, ... }` (same shape as one element of **`mounts`** in **PATCH**; `readonly`/`sourceId`/`subPath`/`containerOwnerUid`/`Gid` for file/directory; `sizeMiB` for tmpfs).
 
 **200:** `{ requiresRestart: boolean }` | **422:** `INVALID_CONTAINER_MOUNTS`, `CONTAINER_MOUNT_DUPLICATE`
 
 ### PATCH /api/containers/:name/mounts/:mountName
 
-Update one mount by its current storage **`name`** (URL segment). **Body:** optional subset of `{ name, containerPath, readonly }`. Renaming **`name`** moves `files/<oldName>` to `files/<newName>` on disk.
+Update one mount by its current storage **`name`** (URL segment). **Body:** optional subset of `{ name, containerPath, readonly, sourceId, subPath, containerOwnerUid, containerOwnerGid }` for file/directory mounts, or `{ name, containerPath, sizeMiB }` for tmpfs mounts (other fields rejected on tmpfs). Renaming **`name`** moves `files/<oldName>` to `files/<newName>` on disk; tmpfs renames are config-only.
 
 **200:** `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** duplicate path/name
 
 ### DELETE /api/containers/:name/mounts/:mountName
 
-Remove one mount and delete its `files/<mountName>` backing store.
+Remove one mount and delete its `files/<mountName>` backing store (tmpfs has no backing store; its row is removed config-only).
 
 **200:** `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND`
 

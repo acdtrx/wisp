@@ -5,6 +5,10 @@
  *   - Storage — backing store lives at <storageMount.mountPath>/<subPath>,
  *               where storageMount is an entry in settings.mounts (SMB share / removable drive).
  * File mounts are always Local.
+ *
+ * A third type — `tmpfs` — has no host backing at all: contents live only in kernel memory
+ * for the lifetime of the container task and are gone on stop/restart. tmpfs entries carry
+ * a sizeMiB cap (default 64) and ignore sourceId/subPath/readonly/containerOwnerUid/Gid.
  */
 import { basename, join, resolve } from 'node:path';
 import { mkdir, stat, writeFile, realpath } from 'node:fs/promises';
@@ -82,12 +86,31 @@ export function validateOwnerId(value) {
   return n;
 }
 
+/** Default and max tmpfs cap (MiB). Values are kept conservative to avoid eating host RAM. */
+export const TMPFS_DEFAULT_SIZE_MIB = 64;
+export const TMPFS_MAX_SIZE_MIB = 2048;
+
+/**
+ * Validate a tmpfs sizeMiB value. Accepts undefined/null/'' as "use default".
+ * @param {unknown} value
+ * @returns {number|null} the integer (default-applied) or null if invalid
+ */
+export function validateTmpfsSizeMiB(value) {
+  if (value === undefined || value === null || value === '') return TMPFS_DEFAULT_SIZE_MIB;
+  const n = typeof value === 'string' ? Number(value.trim()) : value;
+  if (!Number.isInteger(n) || n < 1 || n > TMPFS_MAX_SIZE_MIB) return null;
+  return n;
+}
+
 /**
  * Validate and normalize mounts for persistence. Rejects duplicate name or containerPath.
  * When `storageMounts` is provided, validates that every `sourceId` references a real mount.
  * @param {unknown} mounts
  * @param {Array<{ id: string, mountPath: string }>} [storageMounts]
- * @returns {{ type: 'file'|'directory', name: string, containerPath: string, readonly: boolean, sourceId: string|null, subPath: string, containerOwnerUid: number, containerOwnerGid: number }[]}
+ * @returns {Array<
+ *   | { type: 'file'|'directory', name: string, containerPath: string, readonly: boolean, sourceId: string|null, subPath: string, containerOwnerUid: number, containerOwnerGid: number }
+ *   | { type: 'tmpfs', name: string, containerPath: string, sizeMiB: number }
+ * >}
  */
 export function validateAndNormalizeMounts(mounts, storageMounts = null) {
   if (!Array.isArray(mounts)) {
@@ -101,8 +124,8 @@ export function validateAndNormalizeMounts(mounts, storageMounts = null) {
       throw containerError('INVALID_CONTAINER_MOUNTS', 'Each mount must be an object');
     }
     const type = raw.type;
-    if (type !== 'file' && type !== 'directory') {
-      throw containerError('INVALID_CONTAINER_MOUNTS', 'Mount type must be "file" or "directory"');
+    if (type !== 'file' && type !== 'directory' && type !== 'tmpfs') {
+      throw containerError('INVALID_CONTAINER_MOUNTS', 'Mount type must be "file", "directory", or "tmpfs"');
     }
     const seg = validateMountSegmentName(raw.name);
     if (!seg) {
@@ -120,6 +143,35 @@ export function validateAndNormalizeMounts(mounts, storageMounts = null) {
       throw containerError('CONTAINER_MOUNT_DUPLICATE', `Duplicate container path "${containerPath}"`);
     }
     containerPaths.add(containerPath);
+
+    if (type === 'tmpfs') {
+      // tmpfs has no host backing — sourceId/subPath/readonly/containerOwnerUid/Gid don't apply.
+      // Reject them explicitly so misuse surfaces instead of being silently dropped.
+      if (raw.sourceId !== undefined && raw.sourceId !== null && raw.sourceId !== '') {
+        throw containerError('INVALID_CONTAINER_MOUNTS', 'sourceId is not allowed on tmpfs mounts');
+      }
+      if (raw.subPath !== undefined && raw.subPath !== null && raw.subPath !== '') {
+        throw containerError('INVALID_CONTAINER_MOUNTS', 'subPath is not allowed on tmpfs mounts');
+      }
+      if (raw.readonly === true) {
+        throw containerError('INVALID_CONTAINER_MOUNTS', 'tmpfs mounts cannot be read-only');
+      }
+      if (raw.containerOwnerUid !== undefined && raw.containerOwnerUid !== null && raw.containerOwnerUid !== '' && raw.containerOwnerUid !== 0) {
+        throw containerError('INVALID_CONTAINER_MOUNTS', 'containerOwnerUid is not applicable to tmpfs mounts');
+      }
+      if (raw.containerOwnerGid !== undefined && raw.containerOwnerGid !== null && raw.containerOwnerGid !== '' && raw.containerOwnerGid !== 0) {
+        throw containerError('INVALID_CONTAINER_MOUNTS', 'containerOwnerGid is not applicable to tmpfs mounts');
+      }
+      const sizeMiB = validateTmpfsSizeMiB(raw.sizeMiB);
+      if (sizeMiB === null) {
+        throw containerError(
+          'INVALID_CONTAINER_MOUNTS',
+          `sizeMiB must be an integer in [1, ${TMPFS_MAX_SIZE_MIB}]`,
+        );
+      }
+      out.push({ type: 'tmpfs', name: seg, containerPath, sizeMiB });
+      continue;
+    }
 
     let sourceId = null;
     let subPath = '';
@@ -182,11 +234,13 @@ export function findMount(config, mountName) {
 
 /**
  * Create an empty file or directory for a Local mount if the artifact path is missing.
- * Storage-sourced mounts are skipped — their artifacts are managed at start time (mkdir -p of subPath).
+ * Storage-sourced and tmpfs mounts are skipped — Storage artifacts are managed at start time
+ * (mkdir -p of subPath); tmpfs has no host backing at all.
  * @param {string} containerName
  * @param {{ type: string, name: string, sourceId?: string|null }} mountEntry
  */
 export async function ensureMountArtifactIfMissing(containerName, mountEntry) {
+  if (mountEntry.type === 'tmpfs') return;
   if (mountEntry.sourceId) return;
   const filesDir = getContainerFilesDir(containerName);
   await mkdir(filesDir, { recursive: true });
@@ -320,6 +374,7 @@ export async function assertBindSourcesReady(containerName, config, filesDir, st
   const list = config.mounts;
   if (!Array.isArray(list) || list.length === 0) return;
   for (const m of list) {
+    if (m.type === 'tmpfs') continue;
     if (m.sourceId) {
       await assertBindSourcesReadyStorage(m, storageMounts);
     } else {

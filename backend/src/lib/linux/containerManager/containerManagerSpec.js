@@ -5,7 +5,7 @@
 import { join } from 'node:path';
 
 import { getContainerNetnsPath } from './containerPaths.js';
-import { resolveMountHostPath } from './containerManagerMounts.js';
+import { resolveMountHostPath, TMPFS_DEFAULT_SIZE_MIB } from './containerManagerMounts.js';
 
 const DEFAULT_CAPS = [
   'CAP_CHOWN', 'CAP_DAC_OVERRIDE', 'CAP_FSETID', 'CAP_FOWNER',
@@ -74,7 +74,21 @@ export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', o
   const storageMounts = opts.storageMounts || [];
   if (config.mounts) {
     for (const m of config.mounts) {
-      if (!m?.name || (m.type !== 'file' && m.type !== 'directory')) continue;
+      if (!m?.name) continue;
+      if (m.type === 'tmpfs') {
+        const sizeMiB = Number.isInteger(m.sizeMiB) && m.sizeMiB > 0 ? m.sizeMiB : TMPFS_DEFAULT_SIZE_MIB;
+        // mode=1777 mirrors /tmp semantics so any in-container UID can write — files only exist
+        // for the lifetime of the task and are gone on stop, so the on-disk-ownership concerns
+        // that drive idmap on Local mounts don't apply here.
+        mounts.push({
+          destination: m.containerPath,
+          type: 'tmpfs',
+          source: 'tmpfs',
+          options: ['nosuid', 'nodev', 'mode=1777', `size=${sizeMiB}m`],
+        });
+        continue;
+      }
+      if (m.type !== 'file' && m.type !== 'directory') continue;
       const { hostPath, source } = resolveMountHostPath(m, containerFilesDir, storageMounts);
       const mountOpts = ['rbind'];
       if (m.readonly) mountOpts.push('ro');

@@ -284,8 +284,9 @@ export async function updateContainerConfig(name, changes) {
       const normalized = validateAndNormalizeMounts(value, storageMounts);
       const nextNames = new Set(normalized.map((m) => m.name));
       for (const m of prevMounts) {
-        if (!nextNames.has(m.name) && !m.sourceId) {
-          /* Only remove local backing stores; storage-sourced entries point at user data we must not touch. */
+        if (!nextNames.has(m.name) && !m.sourceId && m.type !== 'tmpfs') {
+          /* Only remove local backing stores; storage-sourced entries point at user data we must not touch.
+           * tmpfs has no on-disk artifact. */
           await deleteMountBackingStore(name, m);
         }
       }
@@ -306,6 +307,7 @@ export async function updateContainerConfig(name, changes) {
     await registerAllContainerServices(name, config);
   }
 
+  if (requiresRestart) config.pendingRestart = true;
   await writeContainerConfig(name, config);
   if (mountsPersisted) {
     await ensureMissingMountArtifacts(name, mountsPersisted);

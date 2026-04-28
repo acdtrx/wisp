@@ -12,7 +12,9 @@ import {
   validateMountSegmentName,
   validateSubPath,
   validateOwnerId,
+  validateTmpfsSizeMiB,
   ensureMissingMountArtifacts,
+  TMPFS_MAX_SIZE_MIB,
 } from './containerManagerMounts.js';
 import { deleteMountBackingStore } from './containerManagerMountsContent.js';
 import { getRawMounts } from '../../settings.js';
@@ -49,9 +51,11 @@ export async function addContainerMount(containerName, mountDef) {
   config.mounts = list;
   const task = await getTaskState(containerName);
   const isRunning = taskIsRunning(task);
+  const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
+  if (requiresRestart) config.pendingRestart = true;
   await writeContainerConfig(containerName, config);
   await ensureMissingMountArtifacts(containerName, [normalized]);
-  return { requiresRestart: isRunning && RESTART_WHEN_RUNNING };
+  return { requiresRestart };
 }
 
 /**
@@ -71,6 +75,72 @@ export async function updateContainerMount(containerName, mountName, changes) {
   if (idx < 0) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
   }
+
+  // tmpfs: only name, containerPath, sizeMiB are mutable. Reject changes to fields that
+  // don't apply (sourceId/subPath/readonly/containerOwnerUid/Gid) explicitly so misuse surfaces.
+  if (list[idx].type === 'tmpfs') {
+    const cur = list[idx];
+    const forbidden = ['sourceId', 'subPath', 'readonly', 'containerOwnerUid', 'containerOwnerGid'];
+    for (const k of forbidden) {
+      if (Object.prototype.hasOwnProperty.call(changes, k)) {
+        const v = changes[k];
+        const isEmpty = v === undefined || v === null || v === '' || v === 0 || v === false;
+        if (!isEmpty) {
+          throw containerError('INVALID_CONTAINER_MOUNTS', `${k} is not applicable to tmpfs mounts`);
+        }
+      }
+    }
+    let nextName = cur.name;
+    if (changes.name !== undefined) {
+      const seg = validateMountSegmentName(changes.name);
+      if (!seg) throw containerError('INVALID_CONTAINER_MOUNTS', 'Invalid mount name');
+      nextName = seg;
+    }
+    let nextPath = cur.containerPath;
+    if (changes.containerPath !== undefined) {
+      const cp = typeof changes.containerPath === 'string' ? changes.containerPath.trim() : '';
+      if (!cp.startsWith('/') || cp.length < 2) {
+        throw containerError('INVALID_CONTAINER_MOUNTS', 'containerPath must be an absolute path');
+      }
+      nextPath = cp;
+    }
+    let nextSize = Number.isInteger(cur.sizeMiB) ? cur.sizeMiB : null;
+    if (Object.prototype.hasOwnProperty.call(changes, 'sizeMiB')) {
+      const v = validateTmpfsSizeMiB(changes.sizeMiB);
+      if (v === null) {
+        throw containerError(
+          'INVALID_CONTAINER_MOUNTS',
+          `sizeMiB must be an integer in [1, ${TMPFS_MAX_SIZE_MIB}]`,
+        );
+      }
+      nextSize = v;
+    }
+
+    const other = list.filter((_, i) => i !== idx);
+    if (other.some((m) => m.name === nextName)) {
+      throw containerError('CONTAINER_MOUNT_DUPLICATE', `Duplicate mount name "${nextName}"`);
+    }
+    if (other.some((m) => m.containerPath === nextPath)) {
+      throw containerError('CONTAINER_MOUNT_DUPLICATE', `Duplicate container path "${nextPath}"`);
+    }
+
+    const updated = { type: 'tmpfs', name: nextName, containerPath: nextPath, sizeMiB: nextSize };
+    const unchanged =
+      updated.name === cur.name
+      && updated.containerPath === cur.containerPath
+      && updated.sizeMiB === cur.sizeMiB;
+    if (unchanged) return { requiresRestart: false };
+
+    list[idx] = updated;
+    config.mounts = list;
+    const task = await getTaskState(containerName);
+    const isRunning = taskIsRunning(task);
+    const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
+    if (requiresRestart) config.pendingRestart = true;
+    await writeContainerConfig(containerName, config);
+    return { requiresRestart };
+  }
+
   const current = {
     ...list[idx],
     sourceId: list[idx].sourceId || null,
@@ -202,11 +272,13 @@ export async function updateContainerMount(containerName, mountName, changes) {
   config.mounts = list;
   const task = await getTaskState(containerName);
   const isRunning = taskIsRunning(task);
+  const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
+  if (requiresRestart) config.pendingRestart = true;
   await writeContainerConfig(containerName, config);
   if (!updated.sourceId && nextName === current.name) {
     await ensureMissingMountArtifacts(containerName, [updated]);
   }
-  return { requiresRestart: isRunning && RESTART_WHEN_RUNNING };
+  return { requiresRestart };
 }
 
 /**
@@ -222,14 +294,17 @@ export async function removeContainerMount(containerName, mountName) {
     throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
   }
   const removed = list[idx];
-  if (!removed.sourceId) {
-    /* Storage-sourced mounts reference user data outside the container dir — leave it alone. */
+  if (!removed.sourceId && removed.type !== 'tmpfs') {
+    /* Storage-sourced mounts reference user data outside the container dir — leave it alone.
+     * tmpfs mounts have no host backing at all. */
     await deleteMountBackingStore(containerName, removed);
   }
   list.splice(idx, 1);
   config.mounts = list;
   const task = await getTaskState(containerName);
   const isRunning = taskIsRunning(task);
+  const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
+  if (requiresRestart) config.pendingRestart = true;
   await writeContainerConfig(containerName, config);
-  return { requiresRestart: isRunning && RESTART_WHEN_RUNNING };
+  return { requiresRestart };
 }

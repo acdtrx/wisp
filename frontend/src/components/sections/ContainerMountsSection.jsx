@@ -3,6 +3,7 @@ import {
   Plus,
   File,
   Folder,
+  MemoryStick,
   Trash2,
   Loader2,
   Save,
@@ -55,11 +56,19 @@ function normalizeSubPath(value) {
   return value.trim().replace(/^\/+/, '').replace(/\/+$/, '');
 }
 
+const TMPFS_DEFAULT_SIZE_MIB = 64;
+const TMPFS_MAX_SIZE_MIB = 2048;
+
+function normalizeRowType(t) {
+  if (t === 'directory' || t === 'tmpfs') return t;
+  return 'file';
+}
+
 function rowsFromServerMounts(mounts) {
   return (mounts || []).map((m) => ({
     rowId: m.name,
     serverMountName: m.name,
-    type: m.type === 'directory' ? 'directory' : 'file',
+    type: normalizeRowType(m.type),
     name: m.name || '',
     containerPath: m.containerPath || '',
     readonly: !!m.readonly,
@@ -67,6 +76,7 @@ function rowsFromServerMounts(mounts) {
     subPath: m.subPath || '',
     containerOwnerUid: Number.isInteger(m.containerOwnerUid) ? m.containerOwnerUid : 0,
     containerOwnerGid: Number.isInteger(m.containerOwnerGid) ? m.containerOwnerGid : 0,
+    sizeMiB: Number.isInteger(m.sizeMiB) && m.sizeMiB > 0 ? m.sizeMiB : TMPFS_DEFAULT_SIZE_MIB,
   }));
 }
 
@@ -82,6 +92,18 @@ function normalizeOwnerId(value) {
   return Number.isInteger(n) && n >= 0 && n <= 65535 ? n : 0;
 }
 
+function isValidTmpfsSize(value) {
+  if (value === '' || value === null || value === undefined) return false;
+  const n = typeof value === 'string' ? Number(value) : value;
+  return Number.isInteger(n) && n >= 1 && n <= TMPFS_MAX_SIZE_MIB;
+}
+
+function normalizeTmpfsSize(value) {
+  if (value === '' || value === null || value === undefined) return TMPFS_DEFAULT_SIZE_MIB;
+  const n = typeof value === 'string' ? Number(value) : value;
+  return Number.isInteger(n) && n >= 1 && n <= TMPFS_MAX_SIZE_MIB ? n : TMPFS_DEFAULT_SIZE_MIB;
+}
+
 function validateRowAgainstOthers(row, allRows) {
   const name = row.name.trim();
   const containerPath = row.containerPath.trim();
@@ -91,14 +113,20 @@ function validateRowAgainstOthers(row, allRows) {
   if (!containerPath.startsWith('/')) {
     return 'Container path must be absolute (start with /).';
   }
-  if (row.sourceId && !isValidSubPath(row.subPath)) {
-    return 'Sub-path must be relative (no leading /) and cannot contain ".." segments.';
-  }
-  if (!isValidOwnerId(row.containerOwnerUid)) {
-    return 'Owner UID must be a whole number between 0 and 65535.';
-  }
-  if (!isValidOwnerId(row.containerOwnerGid)) {
-    return 'Owner GID must be a whole number between 0 and 65535.';
+  if (row.type === 'tmpfs') {
+    if (!isValidTmpfsSize(row.sizeMiB)) {
+      return `Tmpfs size must be a whole number between 1 and ${TMPFS_MAX_SIZE_MIB} MiB.`;
+    }
+  } else {
+    if (row.sourceId && !isValidSubPath(row.subPath)) {
+      return 'Sub-path must be relative (no leading /) and cannot contain ".." segments.';
+    }
+    if (!isValidOwnerId(row.containerOwnerUid)) {
+      return 'Owner UID must be a whole number between 0 and 65535.';
+    }
+    if (!isValidOwnerId(row.containerOwnerGid)) {
+      return 'Owner GID must be a whole number between 0 and 65535.';
+    }
   }
   const names = new Set();
   const paths = new Set();
@@ -123,15 +151,19 @@ function rowMatchesServer(row, serverMounts) {
   if (!mn || !row.serverMountName) return false;
   const s = (serverMounts || []).find((m) => m.name === row.serverMountName);
   if (!s) return false;
+  if (s.type !== row.type) return false;
+  if (s.name !== mn) return false;
+  if (s.containerPath !== row.containerPath.trim()) return false;
+  if (row.type === 'tmpfs') {
+    const savedSize = Number.isInteger(s.sizeMiB) && s.sizeMiB > 0 ? s.sizeMiB : TMPFS_DEFAULT_SIZE_MIB;
+    return savedSize === normalizeTmpfsSize(row.sizeMiB);
+  }
   const savedSourceId = s.sourceId || null;
   const savedSubPath = s.subPath || '';
   const savedOwnerUid = Number.isInteger(s.containerOwnerUid) ? s.containerOwnerUid : 0;
   const savedOwnerGid = Number.isInteger(s.containerOwnerGid) ? s.containerOwnerGid : 0;
   return (
-    s.type === row.type
-    && s.name === mn
-    && s.containerPath === row.containerPath.trim()
-    && Boolean(s.readonly) === Boolean(row.readonly)
+    Boolean(s.readonly) === Boolean(row.readonly)
     && savedSourceId === (row.sourceId || null)
     && savedSubPath === normalizeSubPath(row.subPath)
     && savedOwnerUid === normalizeOwnerId(row.containerOwnerUid)
@@ -141,6 +173,13 @@ function rowMatchesServer(row, serverMounts) {
 
 function isRowDirty(row, serverMounts) {
   if (!row.serverMountName) {
+    if (row.type === 'tmpfs') {
+      return (
+        row.name.trim() !== ''
+        || row.containerPath.trim() !== ''
+        || normalizeTmpfsSize(row.sizeMiB) !== TMPFS_DEFAULT_SIZE_MIB
+      );
+    }
     return (
       row.name.trim() !== ''
       || row.containerPath.trim() !== ''
@@ -153,15 +192,19 @@ function isRowDirty(row, serverMounts) {
   }
   const s = (serverMounts || []).find((m) => m.name === row.serverMountName);
   if (!s) return true;
+  if (s.type !== row.type) return true;
+  if (s.name !== row.name.trim()) return true;
+  if (s.containerPath !== row.containerPath.trim()) return true;
+  if (row.type === 'tmpfs') {
+    const savedSize = Number.isInteger(s.sizeMiB) && s.sizeMiB > 0 ? s.sizeMiB : TMPFS_DEFAULT_SIZE_MIB;
+    return savedSize !== normalizeTmpfsSize(row.sizeMiB);
+  }
   const savedSourceId = s.sourceId || null;
   const savedSubPath = s.subPath || '';
   const savedOwnerUid = Number.isInteger(s.containerOwnerUid) ? s.containerOwnerUid : 0;
   const savedOwnerGid = Number.isInteger(s.containerOwnerGid) ? s.containerOwnerGid : 0;
   return (
-    s.type !== row.type
-    || s.name !== row.name.trim()
-    || s.containerPath !== row.containerPath.trim()
-    || Boolean(s.readonly) !== Boolean(row.readonly)
+    Boolean(s.readonly) !== Boolean(row.readonly)
     || savedSourceId !== (row.sourceId || null)
     || savedSubPath !== normalizeSubPath(row.subPath)
     || savedOwnerUid !== normalizeOwnerId(row.containerOwnerUid)
@@ -182,7 +225,6 @@ export default function ContainerMountsSection({ config, onRefresh }) {
   const [busyRowId, setBusyRowId] = useState(null);
   const [deletingRowId, setDeletingRowId] = useState(null);
   const [error, setError] = useState(null);
-  const [requiresRestart, setRequiresRestart] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorMountName, setEditorMountName] = useState('');
   const [storageStatus, setStorageStatus] = useState([]);
@@ -194,7 +236,6 @@ export default function ContainerMountsSection({ config, onRefresh }) {
 
   useEffect(() => {
     setFieldEditRowId(null);
-    setRequiresRestart(false);
     setError(null);
   }, [config.name]);
 
@@ -255,6 +296,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
         subPath: '',
         containerOwnerUid: 0,
         containerOwnerGid: 0,
+        sizeMiB: TMPFS_DEFAULT_SIZE_MIB,
       },
     ]);
     setFieldEditRowId(rowId);
@@ -285,7 +327,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
           r.rowId === row.rowId
             ? {
                 ...r,
-                type: s.type === 'directory' ? 'directory' : 'file',
+                type: normalizeRowType(s.type),
                 name: s.name,
                 containerPath: s.containerPath,
                 readonly: !!s.readonly,
@@ -293,6 +335,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                 subPath: s.subPath || '',
                 containerOwnerUid: Number.isInteger(s.containerOwnerUid) ? s.containerOwnerUid : 0,
                 containerOwnerGid: Number.isInteger(s.containerOwnerGid) ? s.containerOwnerGid : 0,
+                sizeMiB: Number.isInteger(s.sizeMiB) && s.sizeMiB > 0 ? s.sizeMiB : TMPFS_DEFAULT_SIZE_MIB,
               }
             : r));
     }
@@ -308,51 +351,78 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     setSavingRowId(row.rowId);
     setError(null);
     try {
-      const rowSub = normalizeSubPath(row.subPath);
-      const rowOwnerUid = normalizeOwnerId(row.containerOwnerUid);
-      const rowOwnerGid = normalizeOwnerId(row.containerOwnerGid);
-      if (!row.serverMountName) {
-        const payload = {
-          type: row.type,
-          name: row.name.trim(),
-          containerPath: row.containerPath.trim(),
-          readonly: !!row.readonly,
-        };
-        if (row.sourceId) {
-          payload.sourceId = row.sourceId;
-          payload.subPath = rowSub;
+      if (row.type === 'tmpfs') {
+        const rowSize = normalizeTmpfsSize(row.sizeMiB);
+        if (!row.serverMountName) {
+          const payload = {
+            type: 'tmpfs',
+            name: row.name.trim(),
+            containerPath: row.containerPath.trim(),
+            sizeMiB: rowSize,
+          };
+          const result = await addContainerMount(config.name, payload);
+        } else {
+          const prev = (config.mounts || []).find((m) => m.name === row.serverMountName);
+          if (!prev) {
+            setError('Mount no longer exists on the server. Refresh and try again.');
+            return;
+          }
+          const patch = {};
+          if (row.name.trim() !== prev.name) patch.name = row.name.trim();
+          if (row.containerPath.trim() !== prev.containerPath) patch.containerPath = row.containerPath.trim();
+          const prevSize = Number.isInteger(prev.sizeMiB) && prev.sizeMiB > 0 ? prev.sizeMiB : TMPFS_DEFAULT_SIZE_MIB;
+          if (rowSize !== prevSize) patch.sizeMiB = rowSize;
+          if (Object.keys(patch).length === 0) {
+            setFieldEditRowId(null);
+            return;
+          }
+          const result = await updateContainerMount(config.name, row.serverMountName, patch);
         }
-        if (rowOwnerUid !== 0) payload.containerOwnerUid = rowOwnerUid;
-        if (rowOwnerGid !== 0) payload.containerOwnerGid = rowOwnerGid;
-        const result = await addContainerMount(config.name, payload);
-        if (result?.requiresRestart) setRequiresRestart(true);
       } else {
-        const prev = (config.mounts || []).find((m) => m.name === row.serverMountName);
-        if (!prev) {
-          setError('Mount no longer exists on the server. Refresh and try again.');
-          return;
+        const rowSub = normalizeSubPath(row.subPath);
+        const rowOwnerUid = normalizeOwnerId(row.containerOwnerUid);
+        const rowOwnerGid = normalizeOwnerId(row.containerOwnerGid);
+        if (!row.serverMountName) {
+          const payload = {
+            type: row.type,
+            name: row.name.trim(),
+            containerPath: row.containerPath.trim(),
+            readonly: !!row.readonly,
+          };
+          if (row.sourceId) {
+            payload.sourceId = row.sourceId;
+            payload.subPath = rowSub;
+          }
+          if (rowOwnerUid !== 0) payload.containerOwnerUid = rowOwnerUid;
+          if (rowOwnerGid !== 0) payload.containerOwnerGid = rowOwnerGid;
+          const result = await addContainerMount(config.name, payload);
+        } else {
+          const prev = (config.mounts || []).find((m) => m.name === row.serverMountName);
+          if (!prev) {
+            setError('Mount no longer exists on the server. Refresh and try again.');
+            return;
+          }
+          const patch = {};
+          if (row.name.trim() !== prev.name) patch.name = row.name.trim();
+          if (row.containerPath.trim() !== prev.containerPath) patch.containerPath = row.containerPath.trim();
+          if (!!row.readonly !== !!prev.readonly) patch.readonly = !!row.readonly;
+          const prevSourceId = prev.sourceId || null;
+          const nextSourceId = row.sourceId || null;
+          if (prevSourceId !== nextSourceId) patch.sourceId = nextSourceId;
+          const prevSub = prev.subPath || '';
+          if ((nextSourceId && rowSub !== prevSub) || (!nextSourceId && prevSub)) {
+            patch.subPath = nextSourceId ? rowSub : '';
+          }
+          const prevOwnerUid = Number.isInteger(prev.containerOwnerUid) ? prev.containerOwnerUid : 0;
+          const prevOwnerGid = Number.isInteger(prev.containerOwnerGid) ? prev.containerOwnerGid : 0;
+          if (rowOwnerUid !== prevOwnerUid) patch.containerOwnerUid = rowOwnerUid;
+          if (rowOwnerGid !== prevOwnerGid) patch.containerOwnerGid = rowOwnerGid;
+          if (Object.keys(patch).length === 0) {
+            setFieldEditRowId(null);
+            return;
+          }
+          const result = await updateContainerMount(config.name, row.serverMountName, patch);
         }
-        const patch = {};
-        if (row.name.trim() !== prev.name) patch.name = row.name.trim();
-        if (row.containerPath.trim() !== prev.containerPath) patch.containerPath = row.containerPath.trim();
-        if (!!row.readonly !== !!prev.readonly) patch.readonly = !!row.readonly;
-        const prevSourceId = prev.sourceId || null;
-        const nextSourceId = row.sourceId || null;
-        if (prevSourceId !== nextSourceId) patch.sourceId = nextSourceId;
-        const prevSub = prev.subPath || '';
-        if ((nextSourceId && rowSub !== prevSub) || (!nextSourceId && prevSub)) {
-          patch.subPath = nextSourceId ? rowSub : '';
-        }
-        const prevOwnerUid = Number.isInteger(prev.containerOwnerUid) ? prev.containerOwnerUid : 0;
-        const prevOwnerGid = Number.isInteger(prev.containerOwnerGid) ? prev.containerOwnerGid : 0;
-        if (rowOwnerUid !== prevOwnerUid) patch.containerOwnerUid = rowOwnerUid;
-        if (rowOwnerGid !== prevOwnerGid) patch.containerOwnerGid = rowOwnerGid;
-        if (Object.keys(patch).length === 0) {
-          setFieldEditRowId(null);
-          return;
-        }
-        const result = await updateContainerMount(config.name, row.serverMountName, patch);
-        if (result?.requiresRestart) setRequiresRestart(true);
       }
       if (onRefresh) await onRefresh();
       refreshStorageStatus();
@@ -374,7 +444,6 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     setDeletingRowId(row.rowId);
     try {
       const result = await removeContainerMount(config.name, row.serverMountName);
-      if (result?.requiresRestart) setRequiresRestart(true);
       if (onRefresh) await onRefresh();
     } catch (err) {
       setError(err.message);
@@ -445,6 +514,16 @@ export default function ContainerMountsSection({ config, onRefresh }) {
         <Plus size={14} aria-hidden />
         <Folder size={14} aria-hidden />
       </button>
+      <button
+        type="button"
+        onClick={() => addRow('tmpfs')}
+        className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
+        title="Add tmpfs mount (in-memory, gone on restart)"
+        aria-label="Add tmpfs mount"
+      >
+        <Plus size={14} aria-hidden />
+        <MemoryStick size={14} aria-hidden />
+      </button>
     </div>
   );
 
@@ -458,7 +537,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
   const colCount = runAsRoot ? 8 : 7;
 
   return (
-    <SectionCard title="Mounts" requiresRestart={requiresRestart} error={error} headerAction={headerAdds}>
+    <SectionCard title="Mounts" requiresRestart={!!config.pendingRestart} error={error} headerAction={headerAdds}>
       <div className="space-y-3">
         <p className="text-[11px] text-text-muted">
           Use the pencil to edit paths and options. Save, delete, and uploads apply to one mount at a time. Hover a row for actions.
@@ -521,11 +600,22 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                   || rowDeleting
                   || !row.serverMountName;
 
+                const tmpfsLabel = row.type === 'tmpfs'
+                  ? `tmpfs (${normalizeTmpfsSize(row.sizeMiB)} MiB)`
+                  : '';
+
                 return (
                   <tr key={row.rowId} className={dataTableInteractiveRowClass}>
                     <DataTableTd dense className="text-text-muted">
-                      <span className="inline-flex" title={row.type === 'directory' ? 'Folder mount' : 'File mount'}>
-                        {row.type === 'directory' ? <Folder size={16} aria-hidden /> : <File size={16} aria-hidden />}
+                      <span
+                        className="inline-flex"
+                        title={row.type === 'tmpfs' ? 'In-memory mount (tmpfs)' : row.type === 'directory' ? 'Folder mount' : 'File mount'}
+                      >
+                        {row.type === 'tmpfs'
+                          ? <MemoryStick size={16} aria-hidden />
+                          : row.type === 'directory'
+                            ? <Folder size={16} aria-hidden />
+                            : <File size={16} aria-hidden />}
                       </span>
                     </DataTableTd>
                     <DataTableTd dense className="min-w-[14rem]">
@@ -555,7 +645,29 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                       )}
                     </DataTableTd>
                     <DataTableTd dense className="min-w-[9rem]">
-                      {row.type === 'file' ? (
+                      {row.type === 'tmpfs' ? (
+                        fieldEdit ? (
+                          <span className="inline-flex items-center gap-1 font-mono text-xs">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              maxLength={4}
+                              value={row.sizeMiB}
+                              onChange={(e) => {
+                                const v = e.target.value.replace(/[^0-9]/g, '');
+                                updateRow(row.rowId, 'sizeMiB', v === '' ? '' : Number(v));
+                              }}
+                              className="input-field w-16 min-w-0 text-right"
+                              title={`Tmpfs cap in MiB (1–${TMPFS_MAX_SIZE_MIB})`}
+                              aria-label="Tmpfs size in MiB"
+                            />
+                            <span className="text-text-muted">MiB</span>
+                          </span>
+                        ) : (
+                          <span className="text-sm text-text-secondary" title={tmpfsLabel}>{tmpfsLabel}</span>
+                        )
+                      ) : row.type === 'file' ? (
                         <span className="text-sm text-text-muted">Local</span>
                       ) : fieldEdit ? (
                         <select
@@ -599,7 +711,9 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                       )}
                     </DataTableTd>
                     <DataTableTd dense className="min-w-[8rem]">
-                      {row.type === 'file' ? (
+                      {row.type === 'tmpfs' ? (
+                        <span className="text-sm text-text-muted">—</span>
+                      ) : row.type === 'file' ? (
                         <span className="text-sm text-text-muted">—</span>
                       ) : row.sourceId ? (
                         fieldEdit ? (
@@ -618,7 +732,9 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                       )}
                     </DataTableTd>
                     <DataTableTd dense className="w-14">
-                      {fieldEdit ? (
+                      {row.type === 'tmpfs' ? (
+                        <span className="text-sm text-text-muted" title="tmpfs cannot be read-only">—</span>
+                      ) : fieldEdit ? (
                         <Toggle checked={row.readonly} onChange={(v) => updateRow(row.rowId, 'readonly', v)} />
                       ) : (
                         <span className="text-sm text-text-secondary">{row.readonly ? 'Yes' : 'No'}</span>
@@ -626,7 +742,9 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                     </DataTableTd>
                     {runAsRoot && (
                       <DataTableTd dense className="min-w-[7rem]">
-                        {row.sourceId ? (
+                        {row.type === 'tmpfs' ? (
+                          <span className="text-sm text-text-muted" title="Idmap does not apply to tmpfs (kernel-managed in-memory mount)">—</span>
+                        ) : row.sourceId ? (
                           <span className="text-sm text-text-muted" title="Idmap is not applied to Storage-sourced mounts">—</span>
                         ) : fieldEdit ? (
                           <span className="inline-flex items-center gap-1 font-mono text-xs">
@@ -693,7 +811,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                             </button>
                           </>
                         )}
-                        {row.type === 'file' ? (
+                        {row.type === 'tmpfs' ? null : row.type === 'file' ? (
                           <>
                             <button
                               type="button"
