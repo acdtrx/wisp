@@ -980,13 +980,15 @@ All container routes require JWT authentication.
 
 List all containers (summary).
 
-**200:** `[{ name, type: "container", image, state, pid, cpuLimit, memoryLimitMiB, restartPolicy, autostart, uptime, iconId, updateAvailable, pendingRestart }]`. `updateAvailable` is set by the image update checker (see CONTAINERS.md → *Image updates*); `pendingRestart` indicates the running task has config changes (appConfig or new image digest) waiting for a restart. Both default to `false` when the field is not set on disk.
+**200:** `[{ name, type: "container", image, state, iconId, updateAvailable }]`. List payload is intentionally minimal — only what the sidebar renders. `updateAvailable` is set by the image update checker (see CONTAINERS.md → *Image updates*) and defaults to `false` when the field is not set on disk. Detail fields (`pid`, `cpuLimit`, `memoryLimitMiB`, `restartPolicy`, `autostart`, `pendingRestart`, etc.) are returned by `GET /api/containers/:name`; runtime samples (`uptime`, live CPU/IO) come from the per-container stats SSE.
 
 `iconId` is the optional UI icon key (same registry as VM icons); omit or `null` means the client uses the default container icon.
 
 ### GET /api/containers/stream
 
 SSE stream of the container list. Query param: `intervalMs` (default 5000, min 2000, max 60000).
+
+> Note: at this stage of the refactor `/containers/stream` is still timer-based; it will become event-driven (no `intervalMs`) in a follow-up that wires a containerd-events-backed cache.
 
 ### POST /api/containers
 

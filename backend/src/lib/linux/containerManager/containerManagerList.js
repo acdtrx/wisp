@@ -34,7 +34,9 @@ function deriveUpdateAvailable(config, state, libraryDigests) {
 
 /**
  * List all containers (summary for the left panel list).
- * Merges on-disk config with live task state from containerd.
+ * Returns only fields rendered by the sidebar; runtime details (pid, uptime,
+ * resource limits, etc.) are served by getContainerConfig and the per-container
+ * stats SSE — fetching them per-tick here is wasted work.
  */
 export async function listContainers() {
 
@@ -59,25 +61,11 @@ export async function listContainers() {
       const config = JSON.parse(raw);
 
       let state = 'stopped';
-      let pid = 0;
       try {
         const task = await getTaskState(name);
-        if (task) {
-          state = containerTaskStatusToUi(task);
-          pid = Number(task.pid) || 0;
-        }
+        if (task) state = containerTaskStatusToUi(task);
       } catch {
         // No task — container is stopped
-      }
-
-      let uptime = 0;
-      if (state === 'running') {
-        const fromProc = pid ? await processUptimeMsFromProc(pid) : null;
-        if (fromProc != null) {
-          uptime = fromProc;
-        } else if (containerState.containerStartTimes.has(name)) {
-          uptime = Date.now() - containerState.containerStartTimes.get(name);
-        }
       }
 
       results.push({
@@ -85,15 +73,8 @@ export async function listContainers() {
         type: 'container',
         image: config.image || '',
         state,
-        pid,
-        cpuLimit: config.cpuLimit ?? null,
-        memoryLimitMiB: config.memoryLimitMiB ?? null,
-        restartPolicy: config.restartPolicy || 'never',
-        autostart: config.autostart ?? false,
-        uptime,
         iconId: config.iconId ?? null,
         updateAvailable: deriveUpdateAvailable(config, state, libraryDigests),
-        pendingRestart: config.pendingRestart === true,
       });
     } catch {
       // Skip malformed container dirs

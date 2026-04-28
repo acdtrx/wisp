@@ -1,12 +1,16 @@
 /**
  * Container lifecycle operations: start, stop, restart, kill.
  */
+import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+
 import grpc from '@grpc/grpc-js';
 import {
   containerError, containerState, getClient, callUnary,
 } from './containerManagerConnection.js';
 import { deregisterAddress, deregisterServicesForContainer } from '../../mdnsManager.js';
 import { findCurrentRunId, finalizeRun } from './containerManagerLogs.js';
+import { getContainerDir } from './containerPaths.js';
 
 const SIGTERM = 15;
 const SIGKILL = 9;
@@ -129,8 +133,16 @@ export async function startAutostartContainersAtBackendBoot(log) {
   }
 
   for (const c of list) {
-    if (!c.autostart) continue;
     if (c.state === 'running') continue;
+
+    let autostart = false;
+    try {
+      const raw = await readFile(join(getContainerDir(c.name), 'container.json'), 'utf8');
+      autostart = JSON.parse(raw).autostart === true;
+    } catch {
+      continue;
+    }
+    if (!autostart) continue;
 
     try {
       await startContainer(c.name);
