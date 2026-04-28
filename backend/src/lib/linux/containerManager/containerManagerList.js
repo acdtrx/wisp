@@ -2,12 +2,10 @@
  * List containers by merging containerd state with on-disk container.json configs.
  */
 import { join } from 'node:path';
-import { readdir, readFile, writeFile, stat } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 
-import {
-  containerError, containerState, getClient, callUnary,
-} from './containerManagerConnection.js';
-import { getContainersPath, getContainerDir } from './containerPaths.js';
+import { containerState } from './containerManagerConnection.js';
+import { getContainersPath } from './containerPaths.js';
 import { getTaskState, containerTaskStatusToUi } from './containerManagerLifecycle.js';
 import {
   persistContainerIpFromNetnsIfMissing,
@@ -18,6 +16,7 @@ import { processUptimeMsFromProc } from '../host/linuxProcUptime.js';
 import { getRegisteredHostname, registerAddress, sanitizeHostname } from '../../mdnsManager.js';
 import { readLibraryDigestMap } from './containerManagerImages.js';
 import { normalizeImageRef } from './containerImageRef.js';
+import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
 /**
  * Derived `updateAvailable`: true when the container is running/paused AND
@@ -120,19 +119,11 @@ function ensureContainerEnvShape(config) {
  * Get the full config for a single container (for detail view).
  */
 export async function getContainerConfig(name) {
-  const dir = getContainerDir(name);
-  const configPath = join(dir, 'container.json');
-  let config;
-  try {
-    const raw = await readFile(configPath, 'utf8');
-    config = JSON.parse(raw);
-  } catch {
-    throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
-  }
+  let config = await readContainerConfig(name);
 
   if (ensureContainerEnvShape(config)) {
     try {
-      await writeFile(configPath, JSON.stringify(config, null, 2));
+      await writeContainerConfig(name, config);
     } catch {
       /* keep in-memory normalization if rewrite failed */
     }

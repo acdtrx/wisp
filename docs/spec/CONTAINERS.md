@@ -196,6 +196,7 @@ All under `backend/src/lib/`:
 | `containerManagerImages.js` | `listContainerImages()`, `deleteContainerImage()` (containerd Images service; delete blocked if any Wisp container references the image) |
 | `containerManagerOciSize.js` | `compressedBlobSizeForImageName()` — sums compressed config + layer sizes from the resolved Linux image manifest (not the top-level manifest blob size) |
 | `containerManagerConfig.js` | `updateContainerConfig()` |
+| `containerManagerConfigIo.js` | `readContainerConfig()`, `writeContainerConfig()`, `subscribeContainerListChange()` — single owner of `container.json` reads/writes. Every mutation fans out a list-change notification (no subscribers yet; the upcoming containerd-events-backed cache will subscribe). |
 | `containerManagerStats.js` | `getContainerStats()` |
 | `linuxProcUptime.js` | `processUptimeMsFromProc(pid)` — container uptime from `/proc` (survives backend restart; in-memory `containerStartTimes` is only a fallback) |
 | `linuxProcIpv4.js` | `ipv4CidrFromProcFibTrie(pid)` — read primary IPv4 from `/proc/<pid>/net/fib_trie` when the task PID is known (no sudo) |

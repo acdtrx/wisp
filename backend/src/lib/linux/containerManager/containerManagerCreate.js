@@ -30,6 +30,7 @@ import { getRawMounts } from '../../settings.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { getImageDigest } from './containerManagerImages.js';
 import { isKnownApp, getAppModule } from './apps/appRegistry.js';
+import { writeContainerConfig } from './containerManagerConfigIo.js';
 
 const RUNTIME_NAME = 'io.containerd.runc.v2';
 const SNAPSHOTTER = 'overlayfs';
@@ -434,7 +435,7 @@ export async function createContainer(spec, onStep) {
     config.imagePulledAt = new Date().toISOString();
   }
 
-  await writeFile(join(containerDir, 'container.json'), JSON.stringify(config, null, 2));
+  await writeContainerConfig(name, config);
 
   onStep?.({ step: 'creating', detail: 'Creating container…' });
 
@@ -567,7 +568,7 @@ export async function startExistingContainer(name) {
   // keeps only the newest N runs, pruned inside createNewRun.
   const { logPath } = await createNewRun(name, { imageDigest: config.imageDigest || null });
 
-  await writeFile(join(containerDir, 'container.json'), JSON.stringify(config, null, 2), 'utf8');
+  await writeContainerConfig(name, config);
 
   const logUri = taskLogStdioUri(logPath);
 

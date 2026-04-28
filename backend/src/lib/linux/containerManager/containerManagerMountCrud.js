@@ -2,10 +2,10 @@
  * Row-scoped container bind mount CRUD (add / update / remove one mount).
  */
 import { join } from 'node:path';
-import { readFile, writeFile, rename } from 'node:fs/promises';
+import { rename } from 'node:fs/promises';
 
 import { containerError } from './containerManagerConnection.js';
-import { getContainerDir, getContainerFilesDir } from './containerPaths.js';
+import { getContainerFilesDir } from './containerPaths.js';
 import { getTaskState } from './containerManagerLifecycle.js';
 import {
   validateAndNormalizeMounts,
@@ -16,24 +16,9 @@ import {
 } from './containerManagerMounts.js';
 import { deleteMountBackingStore } from './containerManagerMountsContent.js';
 import { getRawMounts } from '../../settings.js';
+import { readContainerConfig as loadContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
 const RESTART_WHEN_RUNNING = true;
-
-async function loadContainerConfig(containerName) {
-  const configPath = join(getContainerDir(containerName), 'container.json');
-  let config;
-  try {
-    config = JSON.parse(await readFile(configPath, 'utf8'));
-  } catch {
-    throw containerError('CONTAINER_NOT_FOUND', `Container "${containerName}" not found`);
-  }
-  return config;
-}
-
-async function writeContainerConfig(containerName, config) {
-  const configPath = join(getContainerDir(containerName), 'container.json');
-  await writeFile(configPath, JSON.stringify(config, null, 2));
-}
 
 function taskIsRunning(task) {
   return task && (task.status === 'RUNNING' || task.status === 'PAUSED');

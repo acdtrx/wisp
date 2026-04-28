@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import { containerError, containerState } from './containerManagerConnection.js';
 import { CONTAINER_NETNS_DIR, getContainerDir, getContainerNetnsPath } from './containerPaths.js';
+import { writeContainerConfig } from './containerManagerConfigIo.js';
 import { ipv4CidrFromProcFibTrie } from '../host/linuxProcIpv4.js';
 
 const execFile = promisify(execFileCb);
@@ -462,8 +463,7 @@ export async function mergeNetworkLeaseIntoConfig(name, config, lease) {
   };
   if (ip) next.network.ip = ip;
   if (lease.mac && !next.network.mac) next.network.mac = lease.mac;
-  const dir = getContainerDir(name);
-  await writeFile(join(dir, 'container.json'), JSON.stringify(next, null, 2), 'utf8');
+  await writeContainerConfig(name, next);
   return next;
 }
 
@@ -565,7 +565,7 @@ export async function ensureContainerNetworkConfig(name, config) {
     network: { ...(config.network || {}), type: 'bridge' },
   };
   if (needsMac) next.network.mac = generateContainerMac();
-  await writeFile(join(getContainerDir(name), 'container.json'), JSON.stringify(next, null, 2), 'utf8');
+  await writeContainerConfig(name, next);
   return next;
 }
 

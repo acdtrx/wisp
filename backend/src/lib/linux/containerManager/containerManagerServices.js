@@ -4,30 +4,13 @@
  * container's `<name>.local` host record (which itself is published by
  * `registerAddress` when `localDns` is true).
  */
-import { join } from 'node:path';
-import { readFile, writeFile } from 'node:fs/promises';
-
 import { containerError } from './containerManagerConnection.js';
-import { getContainerDir } from './containerPaths.js';
 import { getTaskState } from './containerManagerLifecycle.js';
 import {
   registerService, deregisterService, deregisterServicesForContainer, sanitizeHostname,
 } from '../../mdnsManager.js';
 import { isValidServiceType, isValidServicePort } from '../mdnsServiceTypes.js';
-
-async function loadContainerConfig(name) {
-  const configPath = join(getContainerDir(name), 'container.json');
-  try {
-    return JSON.parse(await readFile(configPath, 'utf8'));
-  } catch {
-    throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
-  }
-}
-
-async function writeContainerConfig(name, config) {
-  const configPath = join(getContainerDir(name), 'container.json');
-  await writeFile(configPath, JSON.stringify(config, null, 2));
-}
+import { readContainerConfig as loadContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
 function taskIsRunning(task) {
   return task && (task.status === 'RUNNING' || task.status === 'PAUSED');

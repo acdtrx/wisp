@@ -3,10 +3,10 @@
  * Changes are written to container.json; running containers need a restart for most changes.
  */
 import { join } from 'node:path';
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 
 import { containerError } from './containerManagerConnection.js';
-import { getContainerDir, getContainerFilesDir } from './containerPaths.js';
+import { getContainerFilesDir } from './containerPaths.js';
 import { getTaskState } from './containerManagerLifecycle.js';
 import { normalizeContainerMac } from './containerManagerNetwork.js';
 import {
@@ -18,6 +18,7 @@ import { deleteMountBackingStore } from './containerManagerMountsContent.js';
 import { getRawMounts } from '../../settings.js';
 import { getAppModule } from './apps/appRegistry.js';
 import { execCommandInContainer } from './containerManagerExec.js';
+import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
 const RESTART_FIELDS = new Set([
   'image', 'command', 'cpuLimit', 'memoryLimitMiB', 'env', 'mounts', 'network', 'runAsRoot', 'appConfig',
@@ -115,15 +116,7 @@ function networkMacOrInterfaceChanged(prev, next) {
  * Partially update a container's config. Returns { requiresRestart: boolean }.
  */
 export async function updateContainerConfig(name, changes) {
-  const dir = getContainerDir(name);
-  const configPath = join(dir, 'container.json');
-
-  let config;
-  try {
-    config = JSON.parse(await readFile(configPath, 'utf8'));
-  } catch {
-    throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
-  }
+  let config = await readContainerConfig(name);
 
   let requiresRestart = false;
   /** @type {{ type: string, name: string, containerPath: string, readonly: boolean }[] | null} */
@@ -136,7 +129,7 @@ export async function updateContainerConfig(name, changes) {
     delete config.app;
     delete config.appConfig;
     delete config.pendingRestart;
-    await writeFile(configPath, JSON.stringify(config, null, 2));
+    await writeContainerConfig(name, config);
     return { requiresRestart: false };
   }
 
@@ -188,7 +181,7 @@ export async function updateContainerConfig(name, changes) {
         const reloadCmd = appModule.getReloadCommand?.();
         if (reloadCmd) {
           // Write config first so the reload picks up the new files
-          await writeFile(configPath, JSON.stringify(config, null, 2));
+          await writeContainerConfig(name, config);
           if (mountsPersisted) await ensureMissingMountArtifacts(name, mountsPersisted);
           try {
             const result = await execCommandInContainer(name, reloadCmd, { timeoutMs: 15000 });
@@ -313,7 +306,7 @@ export async function updateContainerConfig(name, changes) {
     await registerAllContainerServices(name, config);
   }
 
-  await writeFile(configPath, JSON.stringify(config, null, 2));
+  await writeContainerConfig(name, config);
   if (mountsPersisted) {
     await ensureMissingMountArtifacts(name, mountsPersisted);
   }
