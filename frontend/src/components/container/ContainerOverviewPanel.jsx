@@ -93,9 +93,10 @@ export default function ContainerOverviewPanel() {
   const iconId = config.iconId || getDefaultContainerIconId();
   const IconComp = getVmIcon(iconId).component;
 
-  const handleDelete = () => {
-    deleteContainer(name, deleteFiles);
+  const handleDelete = async () => {
     setDeleteDialogOpen(false);
+    await deleteContainer(name, deleteFiles);
+    if (!useContainerStore.getState().error) navigate('/host/overview');
   };
 
   const handleSectionSave = async (changes) => {

@@ -174,9 +174,10 @@ export default function OverviewPanel() {
     cloneVM(name, newName);
   };
 
-  const handleDelete = () => {
-    deleteVM(name, deleteDisks);
+  const handleDelete = async () => {
     setDeleteDialogOpen(false);
+    await deleteVM(name, deleteDisks);
+    if (!useVmStore.getState().error) navigate('/host/overview');
     // Do not reset deleteDisks here so the checkbox stays selected if delete fails and user retries
   };
 
