@@ -62,6 +62,21 @@ export default function ContainerOverviewPanel() {
   const [deleteFiles, setDeleteFiles] = useState(true);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
 
+  if (!config && error && !loading) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+        <p className="text-sm font-medium text-status-stopped">{error}</p>
+        <button
+          type="button"
+          onClick={() => { clearError(); navigate('/host/overview'); }}
+          className="text-xs text-text-muted hover:text-text-secondary"
+        >
+          Go to Host overview
+        </button>
+      </div>
+    );
+  }
+
   if (loading || !config) {
     return (
       <div className="flex flex-1 items-center justify-center">

@@ -30,7 +30,7 @@ import { getRawMounts } from '../../settings.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { getImageDigest } from './containerManagerImages.js';
 import { isKnownApp, getAppModule } from './apps/appRegistry.js';
-import { writeContainerConfig } from './containerManagerConfigIo.js';
+import { writeContainerConfig, notifyContainerConfigWrite } from './containerManagerConfigIo.js';
 
 const RUNTIME_NAME = 'io.containerd.runc.v2';
 const SNAPSHOTTER = 'overlayfs';
@@ -629,4 +629,9 @@ export async function deleteContainer(name, deleteFiles = true) {
     const containerDir = getContainerDir(name);
     await rm(containerDir, { recursive: true, force: true });
   }
+
+  // The earlier containerd /containers/delete event already triggered a cache
+  // refresh, but at that moment the container.json file was still on disk so
+  // the cache picked it up. Refresh again now that rm has actually run.
+  notifyContainerConfigWrite(name);
 }

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-04-28
+
+### New Features
+- **VM and container sidebars update instantly on backend events** instead of polling on a 5 s timer. `/vms/stream` now pushes on libvirt `DomainEvent` and qemu binary replacement (apt upgrade); `/containers/stream` pushes on containerd events (`tasks/start`, `tasks/exit`, `containers/create`, etc.), every `container.json` write, and image-update job completion. The list cache shape was trimmed to only what the sidebar renders (drops `pid`, `cpuLimit`, `memoryLimitMiB`, `restartPolicy`, `autostart`, `uptime`, `pendingRestart` from the container list payload, `autostart` from the VM list payload — all still served by the detail endpoints)
+- All `container.json` writes now go through a single `writeContainerConfig` helper (twelve scattered call sites consolidated, two duplicate private helpers removed); fans out a config-write notification consumed by the new container list cache
+- Removed the **Refresh interval** setting from App Config and the `refreshIntervalSeconds` field from `wisp-config.json` — the SSE streams it drove are now event-driven. Existing config files with the field are silently ignored
+
+### Bug Fixes
+- **VM Advanced settings (Boot Menu, Firmware, Video Driver, Graphics, Boot Order, vTPM, VirtIO RNG, Mem Balloon, Guest Agent, Machine Type, CPU Mode, Nested Virt) now reflect saved values immediately on running VMs.** `getVMConfig` was reading **active** XML for everything except `iconId`/`localDns`, while `DomainDefineXML` writes to **inactive** XML — so saved edits to a running VM looked like they didn't stick until the next start, and the toggle would visually snap back after the auto-refresh. Switched the detail view to read inactive XML for all persisted config; `getVNCPort` keeps its active-XML read for the runtime VNC port
+- **Deleted containers no longer linger in the sidebar.** The containerd `/containers/delete` event fires before `rm -rf` of the container directory, so the cache refresh it triggered still saw the file on disk. Added a final cache refresh after `rm` completes so the sidebar reflects the deletion
+- **VM and container detail panels now show the error message instead of an infinite spinner** when a missing entry is selected (e.g. clicking a sidebar entry whose container/VM was just deleted). Previously a 404 left `loading: false, config: null`, but the panel returned a spinner for `!config`, so the error was swallowed
+
 ## 2026-04-27
 
 ### New Features

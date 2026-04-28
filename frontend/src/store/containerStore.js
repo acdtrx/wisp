@@ -121,7 +121,7 @@ export const useContainerStore = create((set, get) => {
     },
 
     selectContainer: async (name) => {
-      set({ selectedContainer: name, containerConfig: null, containerStats: null, loading: true });
+      set({ selectedContainer: name, containerConfig: null, containerStats: null, loading: true, error: null });
       startStatsSSE(name);
       try {
         const config = await containerApi.getContainer(name);

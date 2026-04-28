@@ -140,6 +140,21 @@ export default function OverviewPanel() {
     setBackupModalOpen(false);
   }, [vmName]);
 
+  if (!vmConfig && error && !configLoading) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+        <p className="text-sm font-medium text-status-stopped">{error}</p>
+        <button
+          type="button"
+          onClick={() => { clearError(); navigate('/host/overview'); }}
+          className="text-xs text-text-muted hover:text-text-secondary"
+        >
+          Go to Host overview
+        </button>
+      </div>
+    );
+  }
+
   if (!vmConfig) {
     return (
       <div className="flex flex-1 items-center justify-center">

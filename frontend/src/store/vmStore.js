@@ -118,13 +118,13 @@ export const useVmStore = create((set, get) => {
       const seed = listItem
         ? { name: listItem.name, uuid: listItem.uuid, state: listItem.state, stateCode: listItem.stateCode, vcpus: listItem.vcpus, memoryMiB: listItem.memoryMiB, osCategory: listItem.osCategory, iconId: listItem.iconId }
         : null;
-      set({ selectedVM: name, vmConfig: seed, vmStats: null, configLoading: true });
+      set({ selectedVM: name, vmConfig: seed, vmStats: null, configLoading: true, error: null });
       startStatsSSE(name);
       try {
         const config = await vmApi.getVM(name);
         set({ vmConfig: config, configLoading: false });
       } catch (err) {
-        set({ error: err.message, configLoading: false });
+        set({ vmConfig: null, error: err.message, configLoading: false });
       }
     },
 
