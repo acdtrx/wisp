@@ -32,7 +32,6 @@ export const APP_REGISTRY = {
     description: 'Self-hosted media server with optional GPU-accelerated transcoding',
     defaultImage: 'jellyfin/jellyfin:latest',
     allowCustomImage: true,
-    requiresRoot: true,
     defaultServices: [
       { port: 8096, type: '_http._tcp', txt: { path: '/web/' } },
     ],
