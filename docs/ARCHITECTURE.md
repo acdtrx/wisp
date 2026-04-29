@@ -188,8 +188,10 @@ Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux 
 | Module | Purpose |
 |--------|---------|
 | `auth.js` | JWT sign/verify, password verification, auth hook factory |
+| `atomicJson.js` | `writeJsonAtomic(path, obj)`: stage to `*.tmp.<pid>.<ts>.<rand>`, fsync, rename(2). Used for `wisp-config.json`, `container.json`, `oci-image-meta.json`. |
+| `bootCleanup.js` | `cleanPartialJsonArtifacts(log)` runs at boot, removes orphan atomic-write temp files left by a crash mid-rename. |
 | `config.js` | Sync reader for `wisp-config.json` with defaults (including `containersPath`) |
-| `settings.js` | Async read/write of `wisp-config.json`, network mount CRUD, masked API responses, backup destination helpers (mutex-serialized writes) |
+| `settings.js` | Async read/write of `wisp-config.json`, network mount CRUD, masked API responses, backup destination helpers (read-modify-write happens **inside** the mutex via `withSettingsWriteLock`; persisted via `writeJsonAtomic`). |
 | `loadRuntimeEnv.js` | Optional `config/runtime.env` parsing (loaded from `index.js` before server start) |
 | `createJobStore.js` | Preconfigured job store for VM create progress (`routes/vms.js`) |
 | `containerJobStore.js` | Job store wrapper for container create (`routes/containers.js`) |

@@ -27,6 +27,7 @@ import {
 } from '../lib/backgroundJobTitles.js';
 import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
+import { validateContainerName } from '../lib/validation.js';
 import { isKnownApp, getAppModule } from '../lib/linux/containerManager/apps/appRegistry.js';
 
 function maskContainerSecrets(config) {
@@ -77,6 +78,16 @@ async function collectSingleMultipartFile(request) {
 }
 
 export default async function containerRoutes(fastify) {
+  fastify.addHook('preHandler', async (request, reply) => {
+    const name = request.params?.name;
+    if (name === undefined) return;
+    try {
+      validateContainerName(name);
+    } catch (err) {
+      handleRouteError(err, reply, request);
+    }
+  });
+
   // ── List ──────────────────────────────────────────────────────────
   fastify.get('/containers', async () => {
     return listContainers();
@@ -399,14 +410,18 @@ export default async function containerRoutes(fastify) {
   // ── Run log download ─────────────────────────────────────────────
   fastify.get('/containers/:name/runs/:runId/log', async (request, reply) => {
     const { name, runId: reqRunId } = request.params;
+    if (!/^[a-zA-Z0-9._-]+$/.test(reqRunId)) {
+      return sendError(reply, 422, 'Invalid run id', 'runId must be alphanumeric (._- allowed)');
+    }
     try {
       const runId = await resolveRunId(name, reqRunId);
       if (!runId) {
         return sendError(reply, 404, 'Run not found', `No run "${reqRunId}" for "${name}"`);
       }
+      const filename = encodeURIComponent(`${name}-${runId}.log`);
       reply
         .header('Content-Type', 'text/plain; charset=utf-8')
-        .header('Content-Disposition', `attachment; filename="${name}-${runId}.log"`);
+        .header('Content-Disposition', `attachment; filename*=UTF-8''${filename}`);
       return reply.send(createRunLogReadStream(name, runId));
     } catch (err) {
       handleRouteError(err, reply, request);

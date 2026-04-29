@@ -7,9 +7,21 @@
 - App registry gains two flags: `requiresRoot: true` (auto-sets `runAsRoot` at create) and `defaultServices: [...]` (seeds `container.services[]` at create so `<container>.local` advertises the right mDNS records out of the box, e.g. `_smb._tcp` for tiny-samba)
 - App modules can export `requiresRestartForChange(oldAppConfig, newAppConfig)` to mark specific changes as restart-only; backend ORs that with a structural mount-layout-changed check so adding/retargeting a bind mount on a running app container always triggers `pendingRestart`
 - App `getDefaultAppConfig(ctx)` and `validateAppConfig(new, old)` now receive context — `containerName` for sensible defaults, prior config for merging unchanged secrets forward
+- Single-line `pino-pretty` log output in dev (`NODE_ENV=development`); production keeps default Pino JSON
+- Atomic JSON writes for `wisp-config.json`, `container.json`, and `oci-image-meta.json` (stage to `*.tmp.<pid>.<ts>.<rand>`, fsync, rename); orphan temp files cleaned at backend startup
 
 ### Bug Fixes
 - Form fields render at consistent height — `.input-field` now sets explicit `h-[34px]` so native `<select>` chevron padding doesn't make selects taller than inputs
+- Validate container names on every `/api/containers/:name/*` route (path-traversal hardening); run-log download uses RFC 5987 `Content-Disposition`
+- Validate VM body names on `POST /api/vms` and `POST /api/vms/:name/clone`; reject unknown body fields (`additionalProperties: false`); align name max length at 128
+- Redact `?token=` from request URLs in logs (Pino `req` serializer + custom not-found handler) — JWTs from SSE/WebSocket URLs no longer reach `journald` / `stdout`
+- `wisp-bridge` validates `--file-name` against the netplan filename pattern and asserts the resolved path stays under `/etc/netplan/` (defense in depth)
+- SSRF hardening: pin DNS resolution via `undici.Agent`, follow redirects manually with re-validation on every Location, expand private IPv4/IPv6 ranges (CGNAT, multicast, IPv4-mapped IPv6, etc.); applies to user URL downloads and preset image downloaders
+- Cloud-init password no longer silently downgrades to the literal `***` when re-saving an unchanged password — the hashed password is now persisted as `passwordHash` in `cloud-init.json` and re-emitted when the placeholder is sent back
+- Cloud-init `user-data` / `meta-data` emitted via `js-yaml` (was hand-rolled template literals); route schema also rejects CR/LF in user-controlled fields
+- Settings file writes serialise read-modify-write inside the mutex (was prone to lost updates on concurrent `PATCH /api/settings`)
+- SSRF: also detect IPv4-mapped IPv6 in Node's normalized hex form (`::ffff:7f00:1` ≡ `127.0.0.1`)
+- Storage mounts: `mountPath` must resolve under `/mnt/wisp/`; `wisp-mount` re-asserts it via `realpath -m` (admin-to-root hardening)
 
 ## 2026-04-28
 

@@ -2,11 +2,12 @@
  * List and delete OCI images in containerd (wisp namespace).
  */
 import { dirname, join } from 'node:path';
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 
 import { getClient, callUnary, containerError } from './containerManagerConnection.js';
 import { getContainersPath } from './containerPaths.js';
 import { CONFIG_PATH } from '../../config.js';
+import { writeJsonAtomic } from '../../atomicJson.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { compressedBlobSizeForImageName } from './containerManagerOciSize.js';
 
@@ -55,7 +56,7 @@ export async function readLibraryDigestMap() {
 
 async function writeImageMeta(data) {
   try {
-    await writeFile(imageMetaPath(), JSON.stringify(data, null, 2));
+    await writeJsonAtomic(imageMetaPath(), data);
   } catch {
     /* best-effort: sidecar is a cache, not critical state */
   }

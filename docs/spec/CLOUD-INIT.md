@@ -25,7 +25,21 @@ The seed ISO contains two files:
 
 ### Password hashing
 
-Passwords are hashed using `openssl passwd -6` (SHA-512 crypt) before being written to the user-data YAML. The plaintext password is never stored in the ISO — only the hash.
+Passwords are hashed using `openssl passwd -6` (SHA-512 crypt) before being written to the user-data YAML. The plaintext password is never stored on disk; the SHA-512 crypt hash is persisted in `cloud-init.json` as **`passwordHash`** so subsequent saves can re-emit the same hash without re-hashing.
+
+**Placeholder semantics.** The API never returns the plaintext or hash; `password` is exposed to clients as `"set"` (or empty). When the UI sends `password` back as `"***"` (or legacy `"set"`), the backend treats it as **"leave password unchanged"** and re-uses the stored `passwordHash`. Re-hashing the literal placeholder string would silently downgrade the VM password — explicitly avoided.
+
+### YAML emission
+
+`user-data` and `meta-data` are produced by **js-yaml** (`yaml.dump`), not template literals. Every scalar is automatically quoted/escaped, so user-controlled fields cannot inject sibling YAML keys (e.g. `runcmd:` / `write_files:` / `packages:`). Input fields also have route-level regex constraints as defense in depth:
+
+| Field | Regex / limit |
+|-------|---------------|
+| `hostname` | `^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$` (RFC 1123 label, ≤ 63 chars) |
+| `username` | `^[a-z][a-z0-9_-]{0,31}$` |
+| `password` | `^[^\r\n]*$`, ≤ 256 chars (CR/LF rejected) |
+| `sshKey` | ≤ 16384 chars; split on newlines into individual key entries |
+| `sshKeySource` | `^[a-zA-Z0-9:_-]*$` |
 
 ### ISO creation tools
 

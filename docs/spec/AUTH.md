@@ -115,4 +115,5 @@ The console route handler verifies the token from `request.query.token` before e
 - **No password in JWT payload** — the token only contains `iat` and `exp`
 - **HMAC-SHA256** signing prevents token forgery
 - **24-hour expiry** limits the window of exposure for leaked tokens
+- **Token redacted from request logs:** Fastify's `req` serializer rewrites `?token=...` query values to `token=REDACTED` so JWTs from SSE/WebSocket URLs never reach `journald` / `stdout`.
 - **Single password change invalidates all tokens** since the signing secret changes

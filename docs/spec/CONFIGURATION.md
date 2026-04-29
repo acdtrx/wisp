@@ -32,6 +32,10 @@ OS updates, SMB shares, and removable-drive mounts use **`/usr/local/bin/wisp-os
 
 JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (or `WISP_CONFIG_PATH`). Created from `config/wisp-config.json.example` on first install.
 
+**Atomic writes.** `wisp-config.json`, every container's `container.json`, and the `oci-image-meta.json` sidecar are written via `writeJsonAtomic`: stage to a `*.tmp.<pid>.<timestamp>.<rand>` sibling, `fsync`, then `rename(2)`. Readers always see either the previous full file or the new full file — never a half-written one. Orphan temp files left by a crash between fsync and rename are swept by `cleanPartialJsonArtifacts` at backend startup.
+
+**Settings concurrency.** `updateSettings`, `addMount`, `updateMount`, and `removeMount` read the on-disk file **inside** the write mutex (`withSettingsWriteLock`) so concurrent `PATCH /api/settings` calls cannot lose updates.
+
 ### Schema
 
 | Field | Type | Default | Description |

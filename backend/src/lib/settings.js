@@ -1,8 +1,25 @@
 import { randomUUID } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { CONFIG_PATH } from './config.js';
 import { getMountStatus } from './smbMount.js';
 import { createAppError } from './routeErrors.js';
+import { writeJsonAtomic } from './atomicJson.js';
+
+// Storage mounts must live under this prefix. Constraining the mountPath stops
+// an authenticated admin from mounting a hostile share over /etc, /usr, /home,
+// etc. Setup scripts ensure /mnt/wisp/ exists at install time.
+export const MOUNT_ROOT = '/mnt/wisp';
+
+function assertMountPathUnderRoot(mountPath) {
+  const resolved = path.resolve(mountPath);
+  if (resolved !== MOUNT_ROOT && !resolved.startsWith(`${MOUNT_ROOT}/`)) {
+    throw createAppError('MOUNT_INVALID', `mountPath must be under ${MOUNT_ROOT}/`);
+  }
+  if (resolved === MOUNT_ROOT) {
+    throw createAppError('MOUNT_INVALID', `mountPath cannot be ${MOUNT_ROOT} itself; pick a sub-directory`);
+  }
+}
 
 const DEFAULTS = {
   serverName: null,
@@ -140,15 +157,14 @@ let writeLock = Promise.resolve();
 
 /**
  * Update only the allowed top-level keys. Mount CRUD goes via dedicated mounts lib.
- * Returns the full merged settings after write. Serialised via a mutex.
+ * Returns the full merged settings after write. Serialised via a mutex; reads
+ * happen inside the lock to avoid lost-update races.
  */
 export async function updateSettings(updates) {
-  writeLock = writeLock.then(() => _updateSettings(updates));
-  return writeLock;
+  return withSettingsWriteLock((fromFile) => buildUpdatedSettings(fromFile, updates));
 }
 
-async function _updateSettings(updates) {
-  const fromFile = await readSettingsFile();
+function buildUpdatedSettings(fromFile, updates) {
   const next = { ...fromFile };
 
   if (updates.serverName !== undefined) {
@@ -191,7 +207,23 @@ async function _updateSettings(updates) {
         : DEFAULTS.containersPath;
   }
 
-  await persistSettings(next);
+  return next;
+}
+
+/**
+ * Read-modify-write a single mount entry under the write lock so concurrent
+ * callers can't race on `readSettingsFile() → persistSettings()`.
+ *
+ * `mutate(state)` returns the new state object (or throws to abort the write).
+ * Returns the merged settings as `getSettings()` would.
+ */
+async function withSettingsWriteLock(mutate) {
+  writeLock = writeLock.then(async () => {
+    const fromFile = await readSettingsFile();
+    const next = await mutate(fromFile);
+    if (next) await persistSettings(next);
+  });
+  await writeLock;
   return getSettings();
 }
 
@@ -223,7 +255,7 @@ async function persistSettings(state) {
     }),
     backupMountId: state.backupMountId,
   };
-  await writeFile(CONFIG_PATH, JSON.stringify(toWrite, null, 2), 'utf8');
+  await writeJsonAtomic(CONFIG_PATH, toWrite);
 }
 
 /**
@@ -239,6 +271,7 @@ function validateCommonFields(body) {
   if (!mountPath.startsWith('/')) {
     throw createAppError('MOUNT_INVALID', 'mountPath must be an absolute path (start with /)');
   }
+  assertMountPathUnderRoot(mountPath);
   return mountPath;
 }
 
@@ -285,18 +318,16 @@ export async function addMount(body) {
   if (!body || typeof body !== 'object') {
     throw createAppError('MOUNT_INVALID', 'Body must be a JSON object');
   }
-  const fromFile = await readSettingsFile();
-  const id =
-    typeof body.id === 'string' && body.id.trim() ? body.id.trim() : randomUUID();
-  const existing = fromFile.mounts || [];
-  if (existing.some((m) => m.id === id)) {
-    throw createAppError('MOUNT_DUPLICATE', `Mount "${id}" already exists`);
-  }
-  const entry = mountEntryFromBody(body, id);
-  const next = { ...fromFile, mounts: [...existing, entry] };
-  writeLock = writeLock.then(() => persistSettings(next));
-  await writeLock;
-  return getSettings();
+  return withSettingsWriteLock((fromFile) => {
+    const id =
+      typeof body.id === 'string' && body.id.trim() ? body.id.trim() : randomUUID();
+    const existing = fromFile.mounts || [];
+    if (existing.some((m) => m.id === id)) {
+      throw createAppError('MOUNT_DUPLICATE', `Mount "${id}" already exists`);
+    }
+    const entry = mountEntryFromBody(body, id);
+    return { ...fromFile, mounts: [...existing, entry] };
+  });
 }
 
 /**
@@ -307,79 +338,76 @@ export async function updateMount(mountId, body) {
   if (!body || typeof body !== 'object') {
     throw createAppError('MOUNT_INVALID', 'Body must be a JSON object');
   }
-  const fromFile = await readSettingsFile();
-  const list = [...(fromFile.mounts || [])];
-  const idx = list.findIndex((m) => m.id === mountId);
-  if (idx < 0) {
-    throw createAppError('MOUNT_NOT_FOUND', `No mount with id "${mountId}"`);
-  }
-  const cur = { ...list[idx] };
-  if (body.label !== undefined) {
-    cur.label = typeof body.label === 'string' ? body.label.trim() : '';
-  }
-  if (body.mountPath !== undefined) {
-    const p = typeof body.mountPath === 'string' ? body.mountPath.trim() : '';
-    if (!p.startsWith('/')) {
-      throw createAppError('MOUNT_INVALID', 'mountPath must be an absolute path (start with /)');
+  return withSettingsWriteLock((fromFile) => {
+    const list = [...(fromFile.mounts || [])];
+    const idx = list.findIndex((m) => m.id === mountId);
+    if (idx < 0) {
+      throw createAppError('MOUNT_NOT_FOUND', `No mount with id "${mountId}"`);
     }
-    cur.mountPath = p;
-  }
-  if (body.autoMount !== undefined) {
-    cur.autoMount = body.autoMount !== false;
-  }
-  if (cur.type === 'smb') {
-    if (body.share !== undefined) {
-      const s = typeof body.share === 'string' ? body.share.trim() : '';
-      if (!s) {
-        throw createAppError('MOUNT_INVALID', 'share cannot be empty for smb mounts');
+    const cur = { ...list[idx] };
+    if (body.label !== undefined) {
+      cur.label = typeof body.label === 'string' ? body.label.trim() : '';
+    }
+    if (body.mountPath !== undefined) {
+      const p = typeof body.mountPath === 'string' ? body.mountPath.trim() : '';
+      if (!p.startsWith('/')) {
+        throw createAppError('MOUNT_INVALID', 'mountPath must be an absolute path (start with /)');
       }
-      cur.share = s;
+      assertMountPathUnderRoot(p);
+      cur.mountPath = p;
     }
-    if (body.username !== undefined) {
-      cur.username = typeof body.username === 'string' ? body.username.trim() : '';
+    if (body.autoMount !== undefined) {
+      cur.autoMount = body.autoMount !== false;
     }
-    if (body.password !== undefined) {
-      const pw = body.password;
-      if (pw !== '***' && pw !== '' && pw != null) {
-        cur.password = typeof pw === 'string' ? pw : '';
+    if (cur.type === 'smb') {
+      if (body.share !== undefined) {
+        const s = typeof body.share === 'string' ? body.share.trim() : '';
+        if (!s) {
+          throw createAppError('MOUNT_INVALID', 'share cannot be empty for smb mounts');
+        }
+        cur.share = s;
+      }
+      if (body.username !== undefined) {
+        cur.username = typeof body.username === 'string' ? body.username.trim() : '';
+      }
+      if (body.password !== undefined) {
+        const pw = body.password;
+        if (pw !== '***' && pw !== '' && pw != null) {
+          cur.password = typeof pw === 'string' ? pw : '';
+        }
+      }
+    } else if (cur.type === 'disk') {
+      if (body.fsType !== undefined) {
+        if (!VALID_DISK_FSTYPES.has(body.fsType)) {
+          throw createAppError('MOUNT_INVALID', `fsType "${body.fsType}" is not supported`);
+        }
+        cur.fsType = body.fsType;
+      }
+      if (body.readOnly !== undefined) {
+        cur.readOnly = body.readOnly === true;
       }
     }
-  } else if (cur.type === 'disk') {
-    if (body.fsType !== undefined) {
-      if (!VALID_DISK_FSTYPES.has(body.fsType)) {
-        throw createAppError('MOUNT_INVALID', `fsType "${body.fsType}" is not supported`);
-      }
-      cur.fsType = body.fsType;
-    }
-    if (body.readOnly !== undefined) {
-      cur.readOnly = body.readOnly === true;
-    }
-  }
-  list[idx] = cur;
-  const next = { ...fromFile, mounts: list };
-  writeLock = writeLock.then(() => persistSettings(next));
-  await writeLock;
-  return getSettings();
+    list[idx] = cur;
+    return { ...fromFile, mounts: list };
+  });
 }
 
 /**
  * Remove one mount. Clears backupMountId when it pointed at this id.
  */
 export async function removeMount(mountId) {
-  const fromFile = await readSettingsFile();
-  const existing = fromFile.mounts || [];
-  const list = existing.filter((m) => m.id !== mountId);
-  if (list.length === existing.length) {
-    throw createAppError('MOUNT_NOT_FOUND', `No mount with id "${mountId}"`);
-  }
-  const next = {
-    ...fromFile,
-    mounts: list,
-    backupMountId: fromFile.backupMountId === mountId ? null : fromFile.backupMountId,
-  };
-  writeLock = writeLock.then(() => persistSettings(next));
-  await writeLock;
-  return getSettings();
+  return withSettingsWriteLock((fromFile) => {
+    const existing = fromFile.mounts || [];
+    const list = existing.filter((m) => m.id !== mountId);
+    if (list.length === existing.length) {
+      throw createAppError('MOUNT_NOT_FOUND', `No mount with id "${mountId}"`);
+    }
+    return {
+      ...fromFile,
+      mounts: list,
+      backupMountId: fromFile.backupMountId === mountId ? null : fromFile.backupMountId,
+    };
+  });
 }
 
 /**

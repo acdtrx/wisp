@@ -22,6 +22,7 @@ SUB="${2:-}"
 ARG="${3:-}"
 
 SUPPORTED_DISK_FSTYPES=(ext4 btrfs vfat exfat ntfs3)
+WISP_MOUNT_ROOT="/mnt/wisp"
 
 is_supported_fstype() {
   local t="$1"
@@ -31,6 +32,26 @@ is_supported_fstype() {
   return 1
 }
 
+# Defense in depth: refuse to mount over anything outside /mnt/wisp/. The JS
+# caller already validates this; if it ever regresses, this block stops the
+# helper from shadowing /etc, /usr, /home, etc.
+assert_mount_path_under_wisp() {
+  local p="$1"
+  if [[ -z "$p" || "${p:0:1}" != "/" ]]; then
+    echo "mountPath must be an absolute path" >&2
+    exit 64
+  fi
+  local resolved
+  resolved="$(realpath -m -- "$p")"
+  case "$resolved" in
+    "${WISP_MOUNT_ROOT}/"*) : ;;
+    *)
+      echo "mountPath must be under ${WISP_MOUNT_ROOT}/ (got ${resolved})" >&2
+      exit 64
+      ;;
+  esac
+}
+
 do_smb_mount() {
   # shellcheck source=/dev/null
   source "$1"
@@ -38,6 +59,7 @@ do_smb_mount() {
     echo "Config must set mountPath and share" >&2
     exit 1
   fi
+  assert_mount_path_under_wisp "$mountPath"
   mkdir -p "$mountPath"
   local opts="rw"
   [[ -n "${uid:-}" ]] && opts="${opts},uid=${uid}"
@@ -60,6 +82,7 @@ do_disk_mount() {
     echo "Config must set mountPath, uuid, and fsType" >&2
     exit 1
   fi
+  assert_mount_path_under_wisp "$mountPath"
   if ! is_supported_fstype "$fsType"; then
     echo "Unsupported fsType: $fsType" >&2
     exit 1

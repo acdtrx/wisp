@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 
+import yaml from 'js-yaml';
+
 import { getVMBasePath } from './paths.js';
 import { createAppError } from './routeErrors.js';
 
@@ -35,10 +37,12 @@ async function hashPassword(password) {
 /**
  * @param {string} vmName
  * @param {object} config - cloud-init config (hostname, username, password, etc.)
- * @param {{ firstNicMac?: string }} [opts] - optional; if firstNicMac is set, emit network config matching that MAC so netplan applies to the VM's real NIC
+ * @param {{ firstNicMac?: string, priorPasswordHash?: string }} [opts]
+ *   firstNicMac: when set, emit network config matching that MAC so netplan applies to the VM's real NIC.
+ *   priorPasswordHash: hashed password from a previous save. Used when the caller passes the `***` placeholder back in (the UI sends `'set'` / `'***'` to mean "leave password unchanged"); we re-emit the prior hash instead of re-hashing the placeholder string.
  */
 export async function generateCloudInitISO(vmName, config, opts = {}) {
-  const { firstNicMac } = opts;
+  const { firstNicMac, priorPasswordHash } = opts;
   const vmBasePath = getVMBasePath(vmName);
   await mkdir(vmBasePath, { recursive: true });
   const isoPath = join(vmBasePath, 'cloud-init.iso');
@@ -47,83 +51,66 @@ export async function generateCloudInitISO(vmName, config, opts = {}) {
   await mkdir(tmpDir, { recursive: true });
 
   try {
-    // Build meta-data
-    const metaData = [
-      `instance-id: ${vmName}`,
-      `local-hostname: ${config.hostname || vmName}`,
-    ].join('\n') + '\n';
+    const hostname = config.hostname || vmName;
 
-    // Build user-data
-    const userLines = ['#cloud-config'];
-    userLines.push(`hostname: ${config.hostname || vmName}`);
+    // Build meta-data through js-yaml so any unusual hostname is properly quoted.
+    const metaData = yaml.dump(
+      { 'instance-id': vmName, 'local-hostname': hostname },
+      { lineWidth: -1, noRefs: true },
+    );
 
-    // Network: match domain's first NIC by MAC so distro netplan applies to the real interface
-    if (firstNicMac) {
-      userLines.push('network:');
-      userLines.push('  version: 2');
-      userLines.push('  ethernets:');
-      userLines.push('    default:');
-      userLines.push('      match:');
-      userLines.push(`        macaddress: "${firstNicMac}"`);
-      userLines.push('      dhcp4: true');
+    // The UI sends `'***'` (or legacy `'set'`) to mean "keep the existing password".
+    // Never feed those placeholders to openssl — that would silently set the VM
+    // password to the literal placeholder string. Reuse the stored hash instead.
+    const isPasswordPlaceholder = config.password === '***' || config.password === 'set';
+    let resolvedPasswordHash = '';
+    if (config.password && !isPasswordPlaceholder) {
+      resolvedPasswordHash = await hashPassword(config.password);
+    } else if (isPasswordPlaceholder && priorPasswordHash) {
+      resolvedPasswordHash = priorPasswordHash;
     }
 
-    // User block
     const userEntry = {
       name: config.username || 'wisp',
       sudo: 'ALL=(ALL) NOPASSWD:ALL',
       shell: '/bin/bash',
-      lock_passwd: true,
+      lock_passwd: !resolvedPasswordHash,
     };
-
-    if (config.password) {
-      userEntry.passwd = await hashPassword(config.password);
-      userEntry.lock_passwd = false;
-    }
-
+    if (resolvedPasswordHash) userEntry.passwd = resolvedPasswordHash;
     if (config.sshKey) {
-      userEntry.ssh_authorized_keys = [config.sshKey];
+      const keys = String(config.sshKey)
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (keys.length) userEntry.ssh_authorized_keys = keys;
     }
 
-    // YAML for users — hand-built to avoid a YAML library dependency
-    userLines.push('users:');
-    userLines.push('  - default');
-    userLines.push(`  - name: ${userEntry.name}`);
-    userLines.push(`    sudo: "${userEntry.sudo}"`);
-    userLines.push(`    shell: ${userEntry.shell}`);
-    userLines.push(`    lock_passwd: ${userEntry.lock_passwd}`);
-    if (userEntry.passwd) {
-      userLines.push(`    passwd: "${userEntry.passwd}"`);
+    const userDataObj = {
+      hostname,
+      users: ['default', userEntry],
+    };
+    if (firstNicMac) {
+      userDataObj.network = {
+        version: 2,
+        ethernets: {
+          default: {
+            match: { macaddress: firstNicMac },
+            dhcp4: true,
+          },
+        },
+      };
     }
-    if (userEntry.ssh_authorized_keys) {
-      userLines.push('    ssh_authorized_keys:');
-      for (const key of userEntry.ssh_authorized_keys) {
-        userLines.push(`      - "${key}"`);
-      }
-    }
-
-    if (config.packageUpgrade) {
-      userLines.push('package_upgrade: true');
-    }
-
+    if (config.packageUpgrade) userDataObj.package_upgrade = true;
     if (config.growPartition) {
-      userLines.push('growpart:');
-      userLines.push('  mode: auto');
-      userLines.push('  devices:');
-      userLines.push("    - '/'");
+      userDataObj.growpart = { mode: 'auto', devices: ['/'] };
     }
-
     const packages = [];
     if (config.installQemuGuestAgent !== false) packages.push('qemu-guest-agent');
     if (config.installAvahiDaemon !== false) packages.push('avahi-daemon');
-    if (packages.length > 0) {
-      userLines.push('packages:');
-      for (const pkg of packages) {
-        userLines.push(`  - ${pkg}`);
-      }
-    }
+    if (packages.length) userDataObj.packages = packages;
 
-    const userData = userLines.join('\n') + '\n';
+    const userData =
+      '#cloud-config\n' + yaml.dump(userDataObj, { lineWidth: -1, noRefs: true });
 
     await writeFile(join(tmpDir, 'meta-data'), metaData);
     await writeFile(join(tmpDir, 'user-data'), userData);
@@ -146,7 +133,7 @@ export async function generateCloudInitISO(vmName, config, opts = {}) {
       ]);
     }
 
-    return isoPath;
+    return { isoPath, passwordHash: resolvedPasswordHash };
   } finally {
     // Clean up temp dir; ignore errors if already removed
     await unlink(join(tmpDir, 'meta-data')).catch(() => {

@@ -16,6 +16,9 @@ This is the single source of truth for all technology choices in the project. No
 | gRPC client | @grpc/grpc-js | ^1.14.3 | gRPC client for communicating with containerd via its unix socket API. |
 | Proto loader | @grpc/proto-loader | ^0.8.0 | Dynamic protobuf definition loading for containerd proto files. |
 | Proto encoding | protobufjs | ^8.0.0 | Binary protobuf encoding for containerd Transfer API `Any` fields. Direct usage needed because `@grpc/proto-loader` only exposes descriptor objects, not encodable Type instances. |
+| Log pretty-print (dev only) | pino-pretty | ^11.3 | `devDependency`. Single-line, time-formatted log output when `NODE_ENV=development`. Production keeps Pino's default JSON output. |
+| HTTP client | undici | ^7.20 | Used directly for SSRF-hardened fetches: single-DNS-resolve + IP-pinned `Agent` + manual redirect re-validation. Node ≥18 ships undici as the global `fetch`; we depend on it explicitly to import `Agent` / `fetch`. |
+| YAML emitter | js-yaml | ^4.1 | `yaml.dump` for cloud-init `user-data` / `meta-data`. Replaces hand-rolled template-literal YAML which was vulnerable to scalar-break injection from user-controlled fields. |
 
 ### Backend dependencies NOT used
 

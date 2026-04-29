@@ -7,6 +7,7 @@ import { access, unlink, stat } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { createAppError } from './routeErrors.js';
 import { detectType } from './fileTypes.js';
+import { ssrfSafeFetch } from './downloadFromUrl.js';
 
 /**
  * Find a non-colliding path in dir for the given base filename.
@@ -77,9 +78,13 @@ export async function streamResponseToFile(res, destPath, onProgress) {
 /**
  * Download url to destPath with progress. onProgress(percent, loaded, totalBytes).
  * Cleans up destPath on error. Returns { name, type, size, modified } on success.
+ *
+ * Uses ssrfSafeFetch (DNS-pinned, manual redirect re-validation) so even
+ * hardcoded mirror URLs cannot be redirected to private/loopback addresses by
+ * a hostile or compromised mirror.
  */
 export async function downloadWithProgress(url, destPath, onProgress) {
-  const res = await fetch(url, { redirect: 'follow' });
+  const res = await ssrfSafeFetch(url);
   if (!res.ok) {
     throw createAppError('DOWNLOAD_FAILED', `Download failed: HTTP ${res.status}`, String(res.status));
   }

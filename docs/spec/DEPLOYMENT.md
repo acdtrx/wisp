@@ -432,6 +432,8 @@ Manages Host Mgmt VLAN-tagged bridges through netplan and is invoked via `sudo -
 
 The helper writes/removes only Wisp-managed files in `/etc/netplan` (`91-wisp-vlan__*`) and leaves unrelated netplan config untouched.
 
+`--file-name` is validated against the regex `^91-wisp-vlan__[a-zA-Z0-9._-]+__[0-9]+__[a-zA-Z0-9._-]+\.yaml$` and the resolved path (`realpath -m`) must remain inside `/etc/netplan/`. This is defense-in-depth: it stops a future caller bug from turning the helper into an arbitrary-root-write primitive.
+
 Parent safety checks are enforced in both backend and helper:
 
 - parent must be an existing Linux bridge

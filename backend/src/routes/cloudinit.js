@@ -49,11 +49,14 @@ export default async function cloudInitRoutes(fastify) {
         type: 'object',
         properties: {
           enabled: { type: 'boolean' },
-          hostname: { type: 'string' },
-          username: { type: 'string' },
-          password: { type: 'string' },
-          sshKey: { type: 'string' },
-          sshKeySource: { type: 'string' },
+          // RFC 1123 hostname label (1–63 chars, alphanumerics + hyphen, no leading/trailing hyphen).
+          hostname: { type: 'string', maxLength: 63, pattern: '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$' },
+          username: { type: 'string', maxLength: 32, pattern: '^[a-z][a-z0-9_-]{0,31}$' },
+          // Password is opaque to validation (we hash it). Forbid CR/LF so user input cannot extend the cloud-init document mid-scalar (defense in depth — js-yaml escaping already handles it). Empty string allowed; '***' / 'set' are placeholders.
+          password: { type: 'string', maxLength: 256, pattern: '^[^\\r\\n]*$' },
+          // SSH key may be one or more lines (e.g. several keys joined by \n). Each non-empty line must look like a key entry. Length-cap to keep the user-data ISO bounded.
+          sshKey: { type: 'string', maxLength: 16384 },
+          sshKeySource: { type: 'string', maxLength: 64, pattern: '^[a-zA-Z0-9:_-]*$' },
           growPartition: { type: 'boolean' },
           packageUpgrade: { type: 'boolean' },
           installQemuGuestAgent: { type: 'boolean' },

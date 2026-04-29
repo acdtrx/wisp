@@ -4,10 +4,11 @@
  * have one place to live.
  */
 import { join } from 'node:path';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 
 import { containerError } from './containerManagerConnection.js';
 import { getContainerDir } from './containerPaths.js';
+import { writeJsonAtomic } from '../../atomicJson.js';
 
 const configWriteHandlers = new Set();
 
@@ -24,7 +25,7 @@ export async function readContainerConfig(name) {
 
 export async function writeContainerConfig(name, config) {
   const path = join(getContainerDir(name), 'container.json');
-  await writeFile(path, JSON.stringify(config, null, 2));
+  await writeJsonAtomic(path, config);
   notifyContainerConfigWrite(name);
 }
 

@@ -374,7 +374,7 @@ Create a new VM. Returns a job ID; monitor progress via SSE.
 
 ```json
 {
-  "name": "string (required, 1-64 chars)",
+  "name": "string (required, 1-128 chars; alphanumeric, dot, hyphen, underscore; no .. or path separators)",
   "template": "ubuntu-server | ubuntu-desktop | windows-11 | haos | custom",
   "osType": "linux | windows | other",
   "osVariant": "ubuntu24.04 | ubuntu22.04 | debian12 | archlinux | win11 | win10 | generic",
@@ -430,7 +430,9 @@ Create a new VM. Returns a job ID; monitor progress via SSE.
 - **`cloudInit.enabled`:** Optional; default is on. If `false`, cloud-init is skipped during create (no seed ISO, no `sde`, no `cloud-init.json`).
 
 - **201:** `{ jobId: string, title: string }` — `title` is the display label for the background job (e.g. `Create <name>`)
-- **422:** `{ error, detail }` — VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
+- **422:** `{ error, detail }` — `INVALID_VM_NAME` when name fails `validateVMName`; VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
+
+The body schema is **`additionalProperties: false`**. With Fastify's default Ajv (`removeAdditional: true`), unknown keys are silently stripped before the handler runs — they never reach `createVM`. Only schema-level violations (wrong type, missing required field) return HTTP 400.
 
 ### GET /api/vms/create-progress/:jobId
 
@@ -452,10 +454,10 @@ Each `disks[]` entry may include **`sizeGiB`** (integer, virtual size in GiB, ro
 
 Update VM configuration.
 
-- **Body:** Partial config object (any fields from the VM config)
+- **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `machineType`, `firmware`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `localDns`, `autostart`. Schema is **`additionalProperties: false`**; with Fastify's default Ajv `removeAdditional: true`, unknown keys are silently stripped before reaching `updateVMConfig`.
 - **200:** `{ ok: true, requiresRestart: boolean }` — indicates whether changes need a VM restart
 - **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running
-- **422:** `{ error, detail }` — VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
+- **422:** `{ error, detail }` — `INVALID_VM_NAME` on rename to an invalid name; VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
 
 `localDns` is supported in PATCH and controls VM mDNS registration behavior.
 
@@ -504,8 +506,9 @@ Immediate force stop (destroy).
 
 Clone a VM (must be stopped).
 
-- **Body:** `{ newName: string }`
+- **Body:** `{ newName: string (1-128 chars; alphanumeric, dot, hyphen, underscore; no .. or path separators) }`. Schema is **`additionalProperties: false`**.
 - **200:** `{ ok: true }`
+- **422:** `INVALID_VM_NAME` if `newName` fails `validateVMName`.
 
 ---
 
@@ -973,7 +976,7 @@ Interactive shell in a **running** container. Uses containerd `Tasks.Exec` with 
 
 ## Containers
 
-All container routes require JWT authentication.
+All container routes require JWT authentication. Routes with a `:name` path parameter validate it via `validateContainerName` (length 1–63, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..`/`/`/`\`); failures return 422 `INVALID_CONTAINER_NAME`.
 
 ### GET /api/containers
 
@@ -1152,9 +1155,9 @@ SSE stream for a single run's logs. Initial event: `{ type: "history", lines, ru
 
 ### GET /api/containers/:name/runs/:runId/log
 
-Download one run's log file. Responds with `Content-Type: text/plain; charset=utf-8` and a `Content-Disposition: attachment; filename="<name>-<runId>.log"` header. Streams the file directly from disk.
+Download one run's log file. Responds with `Content-Type: text/plain; charset=utf-8` and an RFC 5987 `Content-Disposition: attachment; filename*=UTF-8''<percent-encoded(name-runId.log)>` header. Streams the file directly from disk. `runId` must match `^[a-zA-Z0-9._-]+$`.
 
-**404:** `CONTAINER_RUN_NOT_FOUND` if the run does not exist.
+**404:** `CONTAINER_RUN_NOT_FOUND` if the run does not exist. **422:** invalid `runId` format.
 
 ### POST /api/containers/:name/mounts
 

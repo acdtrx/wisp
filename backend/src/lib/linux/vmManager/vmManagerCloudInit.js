@@ -26,8 +26,24 @@ export async function generateCloudInit(vmName, config) {
     /* VM missing or XML unreadable — cloud-init can still run without MAC hint */
     firstNicMac = undefined;
   }
-  const isoPath = await generateCloudInitISO(vmName, config, { firstNicMac });
-  const stored = { ...config, enabled: true, password: config.password ? '***' : '' };
+
+  // Carry the prior hashed password forward when the caller passes the `***`
+  // placeholder (UI's "leave password unchanged"). Without this we used to
+  // silently re-hash the literal `***` string and downgrade the VM password.
+  const prior = await loadCloudInitConfig(vmName);
+  const priorPasswordHash = prior?.passwordHash || '';
+
+  const { isoPath, passwordHash } = await generateCloudInitISO(vmName, config, {
+    firstNicMac,
+    priorPasswordHash,
+  });
+
+  const stored = {
+    ...config,
+    enabled: true,
+    password: passwordHash ? '***' : '',
+    passwordHash: passwordHash || '',
+  };
   await saveCloudInitConfig(vmName, stored);
   return isoPath;
 }
@@ -76,10 +92,18 @@ function mergeCloudInitDisablePayload(existing, incoming) {
   const base = existing && typeof existing === 'object' ? { ...existing } : {};
   const { enabled: _en, password: incomingPassword, ...rest } = incoming;
   const merged = { ...base, ...rest, enabled: false };
-  if (incomingPassword && String(incomingPassword).trim() !== '') {
+  // `passwordHash` is internal — preserve from prior state, never accept from client.
+  merged.passwordHash = base.passwordHash || '';
+  const isPlaceholder = incomingPassword === '***' || incomingPassword === 'set';
+  if (incomingPassword && !isPlaceholder && String(incomingPassword).trim() !== '') {
+    // A new plaintext password came in even though we're disabling — store
+    // the placeholder; the hash will be regenerated when cloud-init is
+    // re-enabled.
     merged.password = '***';
   } else if (base.password !== undefined && base.password !== '') {
     merged.password = base.password;
+  } else if (merged.passwordHash) {
+    merged.password = '***';
   } else {
     merged.password = '';
   }
@@ -145,11 +169,14 @@ export async function detachCloudInitDisk(vmName) {
 export async function getCloudInitConfig(vmName) {
   const config = await loadCloudInitConfig(vmName);
   if (!config) return null;
+  // Internal-only fields (passwordHash) must not flow back to the client.
+  const { passwordHash: _hash, ...safe } = config;
+  const hasPassword = Boolean(safe.password) || Boolean(_hash);
   return {
-    ...config,
-    enabled: config.enabled !== false,
-    password: config.password && config.password !== '' ? 'set' : '',
-    sshKey: config.sshKey || '',
+    ...safe,
+    enabled: safe.enabled !== false,
+    password: hasPassword ? 'set' : '',
+    sshKey: safe.sshKey || '',
   };
 }
 

@@ -121,7 +121,7 @@ export default async function vmsRoutes(fastify) {
         type: 'object',
         required: ['name'],
         properties: {
-          name: { type: 'string', minLength: 1, maxLength: 64 },
+          name: { type: 'string', minLength: 1, maxLength: 128 },
           template: { type: 'string' },
           osType: { type: 'string' },
           osVariant: { type: 'string' },
@@ -180,18 +180,20 @@ export default async function vmsRoutes(fastify) {
             type: 'object',
             properties: {
               enabled: { type: 'boolean' },
-              hostname: { type: 'string' },
-              username: { type: 'string' },
-              password: { type: 'string' },
-              sshKey: { type: 'string' },
+              // RFC 1123 hostname label
+              hostname: { type: 'string', maxLength: 63, pattern: '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$' },
+              username: { type: 'string', maxLength: 32, pattern: '^[a-z][a-z0-9_-]{0,31}$' },
+              password: { type: 'string', maxLength: 256, pattern: '^[^\\r\\n]*$' },
+              sshKey: { type: 'string', maxLength: 16384 },
               growPartition: { type: 'boolean' },
               packageUpgrade: { type: 'boolean' },
               installQemuGuestAgent: { type: 'boolean' },
               installAvahiDaemon: { type: 'boolean' },
             },
+            additionalProperties: false,
           },
         },
-        additionalProperties: true,
+        additionalProperties: false,
       },
       response: {
         201: {
@@ -205,8 +207,13 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       const spec = request.body;
+      try {
+        validateVMName(spec?.name);
+      } catch (err) {
+        return handleRouteError(err, reply, request);
+      }
       const jobId = randomBytes(12).toString('hex');
-      const vmName = spec?.name ?? '';
+      const vmName = spec.name;
       const title = titleForVmCreate(vmName);
       createJobStore.createJob(jobId, {
         kind: BACKGROUND_JOB_KIND.VM_CREATE,
@@ -478,13 +485,14 @@ export default async function vmsRoutes(fastify) {
         type: 'object',
         required: ['newName'],
         properties: {
-          newName: { type: 'string', minLength: 1, maxLength: 64 },
+          newName: { type: 'string', minLength: 1, maxLength: 128 },
         },
         additionalProperties: false,
       },
     },
     handler: async (request, reply) => {
       try {
+        validateVMName(request.body.newName);
         await cloneVM(request.params.name, request.body.newName);
         return { ok: true };
       } catch (err) {
@@ -503,7 +511,42 @@ export default async function vmsRoutes(fastify) {
       },
       body: {
         type: 'object',
-        additionalProperties: true,
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 128 },
+          memoryMiB: { type: 'integer', minimum: 128 },
+          vcpus: { type: 'integer', minimum: 1 },
+          cpuMode: { type: 'string' },
+          nestedVirt: { type: 'boolean' },
+          machineType: { type: 'string' },
+          firmware: { type: 'string' },
+          bootOrder: { type: 'array', items: { type: 'string' } },
+          bootMenu: { type: 'boolean' },
+          osType: { type: 'string' },
+          nics: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                type: { type: 'string' },
+                source: { type: 'string' },
+                model: { type: 'string' },
+                mac: { type: 'string' },
+                vlan: { type: 'integer' },
+              },
+              additionalProperties: false,
+            },
+          },
+          videoDriver: { type: 'string' },
+          graphicsType: { type: 'string' },
+          memBalloon: { type: 'boolean' },
+          guestAgent: { type: 'boolean' },
+          vtpm: { type: 'boolean' },
+          virtioRng: { type: 'boolean' },
+          iconId: { type: ['string', 'null'] },
+          localDns: { type: 'boolean' },
+          autostart: { type: 'boolean' },
+        },
+        additionalProperties: false,
       },
     },
     handler: async (request, reply) => {

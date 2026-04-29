@@ -85,6 +85,28 @@ validate_vlan_id() {
   fi
 }
 
+validate_file_name() {
+  local file_name="$1"
+  if [[ -z "$file_name" ]]; then
+    echo "ERROR: --file-name is required."
+    exit 1
+  fi
+  if ! [[ "$file_name" =~ ^91-wisp-vlan__[a-zA-Z0-9._-]+__[0-9]+__[a-zA-Z0-9._-]+\.yaml$ ]]; then
+    echo "ERROR: --file-name must match Wisp's netplan pattern (91-wisp-vlan__<base>__<vlanId>__<bridge>.yaml)."
+    exit 1
+  fi
+  local target_path="${NETPLAN_DIR}/${file_name}"
+  local resolved
+  resolved="$(realpath -m -- "$target_path")"
+  case "$resolved" in
+    "${NETPLAN_DIR}/"*) : ;;
+    *)
+      echo "ERROR: --file-name resolves outside ${NETPLAN_DIR}: ${resolved}"
+      exit 1
+      ;;
+  esac
+}
+
 write_file_atomic() {
   local target="$1"
   local tmp
@@ -107,6 +129,7 @@ create_vlan_bridge() {
   validate_iface_name "$base_bridge" "base bridge"
   validate_iface_name "$bridge_name" "bridge name"
   validate_vlan_id "$vlan_id"
+  validate_file_name "$file_name"
 
   if ! is_bridge "$base_bridge"; then
     echo "ERROR: Parent bridge '$base_bridge' does not exist."
@@ -182,6 +205,7 @@ delete_vlan_bridge() {
   validate_iface_name "$base_bridge" "base bridge"
   validate_iface_name "$bridge_name" "bridge name"
   validate_vlan_id "$vlan_id"
+  validate_file_name "$file_name"
 
   local expected_name="${base_bridge}-vlan${vlan_id}"
   if [[ "$bridge_name" != "$expected_name" ]]; then

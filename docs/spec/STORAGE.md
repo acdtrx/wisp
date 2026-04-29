@@ -18,7 +18,7 @@ All mounts live in `settings.mounts` (array). Each entry carries a `type` discri
 | `id` | Unique identifier (UUID) |
 | `type` | `"smb"` or `"disk"` |
 | `label` | Display name |
-| `mountPath` | Absolute mount point (must start with `/`) |
+| `mountPath` | Absolute mount point. **Must resolve under `/mnt/wisp/`** (no `..`, no symlink escape). Enforced by `validateCommonFields` on add and update; `wisp-mount` re-asserts it via `realpath -m` so a regression can't shadow `/etc`, `/usr`, `/home`, etc. |
 | `autoMount` | When true (default), Wisp mounts on startup (SMB) or on device insertion (disk) |
 
 ### SMB-only fields (`type: "smb"`)

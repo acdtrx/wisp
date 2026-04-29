@@ -28,6 +28,16 @@ Containers follow the same architectural patterns as VMs:
 - Proto files: `backend/src/protos/containerd/` (loaded by `@grpc/proto-loader`). **Field numbers must match the installed containerd** (e.g. `types/mount.proto`: `target` is field 3, `options` is field 4 as in containerd 2.x; an older `options = 3` definition decodes overlay options incorrectly and task create fails with empty overlay `data`).
 - gRPC services used: Version, Namespaces, Containers, Tasks, Images, Content, Snapshots, Events, Leases, Transfer
 
+## Name validation
+
+Every `/api/containers/:name/*` route runs a `preHandler` that calls `validateContainerName(request.params.name)`. The validator (in `backend/src/lib/validation.js`) requires:
+
+- length 1–63
+- regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`
+- rejects `..`, `/`, `\`
+
+Failures map to HTTP 422 (`INVALID_CONTAINER_NAME`). This guards path-derived helpers (`getContainerDir(name)`, run-log streams, mount file paths) against traversal.
+
 ## Data Model
 
 Each container has a directory at `/var/lib/wisp/containers/<name>/`:

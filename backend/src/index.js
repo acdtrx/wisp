@@ -33,6 +33,7 @@ import backupsRoutes from './routes/backups.js';
 import containerRoutes from './routes/containers.js';
 import backgroundJobsRoutes from './routes/backgroundJobs.js';
 import { ensureMounts, installMountHotplugHandlers } from './lib/mountsAutoMount.js';
+import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
 import { startUpdateChecker, stopUpdateChecker } from './lib/aptUpdates.js';
 import { closeAllSSE } from './lib/sse.js';
 import { disconnect as disconnectLibvirtBus } from './lib/vmManager.js';
@@ -46,7 +47,45 @@ loadRuntimeEnv(resolve(__dirname, '..', '..'));
 
 const PORT = parseInt(process.env.WISP_BACKEND_PORT, 10) || 3001;
 
-const app = Fastify({ logger: true, forceCloseConnections: true });
+const isDev = process.env.NODE_ENV === 'development';
+
+function redactToken(url) {
+  return typeof url === 'string'
+    ? url.replace(/([?&])token=[^&]*/g, '$1token=REDACTED')
+    : url;
+}
+
+const loggerConfig = {
+  serializers: {
+    req(req) {
+      return {
+        method: req.method,
+        url: redactToken(req.url),
+        remoteAddress: req.ip,
+        remotePort: req.socket?.remotePort,
+      };
+    },
+  },
+  ...(isDev
+    ? {
+        transport: {
+          target: 'pino-pretty',
+          options: {
+            translateTime: 'HH:MM:ss.l',
+            singleLine: true,
+            ignore: 'pid,hostname,reqId,req.host,req.remoteAddress,req.remotePort',
+          },
+        },
+      }
+    : {}),
+};
+
+const app = Fastify({ logger: loggerConfig, forceCloseConnections: true });
+
+app.setNotFoundHandler((request, reply) => {
+  request.log.info({ method: request.method, url: redactToken(request.url) }, 'Route not found');
+  reply.code(404).send({ error: 'Not Found', detail: `Route ${request.method} ${redactToken(request.url)} not found` });
+});
 
 if (process.env.NODE_ENV === 'development') {
   await app.register(cors, { origin: 'http://localhost:5173' });
@@ -73,6 +112,8 @@ app.register(consoleRoutes, { prefix: '/ws' });
 app.register(containerConsoleRoutes, { prefix: '/ws' });
 
 async function start() {
+  await cleanPartialJsonArtifacts(app.log);
+
   try {
     await connectLibvirt();
   } catch (err) {
