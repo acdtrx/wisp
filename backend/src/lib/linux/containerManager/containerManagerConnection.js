@@ -43,13 +43,13 @@ export function subscribeContainerdDisconnect(handler) {
 
 function fireConnect() {
   for (const h of connectHandlers) {
-    try { h(); } catch (err) { console.warn('[containerManager] connect handler threw:', err?.message || err); }
+    try { h(); } catch (err) { containerState.logger?.warn?.({ err: err?.message || err }, '[containerManager] connect handler threw'); }
   }
 }
 
 function fireDisconnect() {
   for (const h of disconnectHandlers) {
-    try { h(); } catch (err) { console.warn('[containerManager] disconnect handler threw:', err?.message || err); }
+    try { h(); } catch (err) { containerState.logger?.warn?.({ err: err?.message || err }, '[containerManager] disconnect handler threw'); }
   }
 }
 

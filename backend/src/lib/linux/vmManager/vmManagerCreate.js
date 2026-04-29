@@ -393,7 +393,7 @@ export async function createVM(spec, { onStep } = {}) {
       await props.Set('org.libvirt.Domain', 'Autostart', new dbus.Variant('b', true));
     } catch (err) {
       /* VM defined; autostart failure is non-fatal */
-      console.warn('[vmManager] Failed to set autostart:', err.message);
+      connectionState.logger?.warn?.({ err: err.message, vm: name }, '[vmManager] Failed to set autostart');
     }
   }
 
@@ -561,7 +561,7 @@ export async function deleteVM(name, deleteDisks = false) {
       try {
         await deleteSnapshot(name, snap.name);
       } catch (err) {
-        console.warn(`[vmManager] Failed to delete snapshot "${snap.name}" before undefine:`, err.message);
+        connectionState.logger?.warn?.({ err: err.message, vm: name, snapshot: snap.name }, '[vmManager] Failed to delete snapshot before undefine');
       }
     }
   } catch {

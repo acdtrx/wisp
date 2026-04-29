@@ -163,6 +163,36 @@ Server-Sent Events stream of the host USB device list. Requires authentication (
 - Sends another `data:` line whenever the set of devices changes (hotplug), after debouncing.
 - **200:** `text/event-stream` (persistent connection)
 
+### GET /api/host/disks
+
+List host block devices (removable + fixed) with mount state. Snapshot from `lsblk` cache; same data as the initial SSE message on `/api/host/disks/stream`.
+
+- **200:**
+
+```json
+[
+  {
+    "uuid": "1c2a8d3e-9f7b-4eaa-9a2e-29ee32f1c1d0",
+    "devPath": "/dev/sdb1",
+    "fsType": "ext4",
+    "label": "BACKUP",
+    "sizeBytes": 1000204886016,
+    "removable": false,
+    "vendor": "ATA",
+    "model": "Samsung SSD 870",
+    "mountedAt": "/mnt/wisp/backup"
+  }
+]
+```
+
+### GET /api/host/disks/stream
+
+Server-Sent Events stream of the host block-device list. Requires authentication (JWT in `Authorization: Bearer` or `?token=` query).
+
+- Sends an immediate `data:` line with a JSON array of devices (same shape as `GET /api/host/disks`).
+- Sends another `data:` line whenever the diskMonitor detects a change (insertion / removal / partition rescan).
+- **200:** `text/event-stream` (persistent connection)
+
 ### POST /api/host/updates/check
 
 Check for OS package updates. On Debian/Ubuntu uses `apt-get -s upgrade` dry-run (excludes phased-only packages); on Arch uses `pacman -Qu`. Requires `/usr/local/bin/wisp-os-update` (installed by server setup).

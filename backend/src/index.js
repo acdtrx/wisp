@@ -116,7 +116,7 @@ async function start() {
   await cleanPartialJsonArtifacts(app.log);
 
   try {
-    await connectLibvirt();
+    await connectLibvirt(app.log);
   } catch (err) {
     app.log.warn({ err }, 'libvirt connection failed — VM operations will be unavailable');
   }
@@ -206,6 +206,8 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 start().catch((err) => {
+  // Bootstrap fatal — Fastify's logger may not have flushed by the time we
+  // exit, so use stderr directly to ensure the message reaches journald.
   console.error('Failed to start:', err);
   process.exit(1);
 });

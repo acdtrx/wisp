@@ -46,7 +46,9 @@ export function getConfigSync() {
     };
   } catch (err) {
     if (err.code === 'ENOENT') return { ...DEFAULTS };
-    /* parse/read error — fall back to defaults rather than crash sync callers */
+    /* parse/read error — fall back to defaults rather than crash sync callers.
+       getConfigSync runs synchronously from module top-level (paths.js etc.)
+       before any Pino logger exists, so console here is the fallback. */
     console.warn('wisp-config.json parse error, using defaults:', err.message);
     return { ...DEFAULTS };
   }

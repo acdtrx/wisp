@@ -41,7 +41,7 @@ export async function getHostInfo() {
       info.qemuVersion = formatVersion(unwrapVariant(await connectionState.connectProps.Get('org.libvirt.Connect', 'Version')));
     } catch (err) {
       /* libvirt props unavailable — leave version fields null */
-      console.warn('[vmManager] Failed to read versions:', err.message);
+      connectionState.logger?.warn?.({ err: err.message }, '[vmManager] Failed to read versions');
     }
   }
 
@@ -79,7 +79,7 @@ export async function getRunningVMAllocations() {
     return { vcpus, memoryBytes, count: paths.length };
   } catch (err) {
     /* ListDomains or aggregate failed — return zeros for stats bar */
-    console.warn('[vmManager] Failed to get running VM allocations:', err.message);
+    connectionState.logger?.warn?.({ err: err.message }, '[vmManager] Failed to get running VM allocations');
     return { vcpus: 0, memoryBytes: 0, count: 0 };
   }
 }

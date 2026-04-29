@@ -34,7 +34,7 @@ export async function listSnapshots(name) {
       if (info) result.push(info);
     } catch (err) {
       /* skip corrupt or unreadable snapshot entry */
-      console.warn(`[vmManager] Failed to read snapshot at ${snapPath}:`, err.message);
+      connectionState.logger?.warn?.({ err: err.message, snapPath }, '[vmManager] Failed to read snapshot');
     }
   }
   return result;

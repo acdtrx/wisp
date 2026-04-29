@@ -424,13 +424,21 @@ async function discoverIpv4InNetns(name, ifname = 'eth0', pollOpts = DEFAULT_IPV
     }
   };
 
-  for (let i = 0; i < maxAttempts; i++) {
+  // Exponential backoff (matches waitForStop / waitUntilTaskStoppedOrGone in
+  // this module). Total budget is preserved at maxAttempts * sleepMs so
+  // existing callers see roughly the same upper bound. Initial 250 ms catches
+  // fast LAN/dnsmasq leases; doubling capped at 1 s avoids busy-polling when
+  // a slow DHCP exchange is genuinely going to take seconds.
+  const deadline = Date.now() + maxAttempts * sleepMs;
+  let nextSleep = sleepMs;
+  while (Date.now() < deadline) {
     const { ip, fatal } = await runOnce();
     if (fatal) return null;
     if (ip) return ip;
-    if (i < maxAttempts - 1) {
-      await new Promise((r) => setTimeout(r, sleepMs));
-    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await new Promise((r) => setTimeout(r, Math.min(nextSleep, remaining)));
+    nextSleep = Math.min(nextSleep * 2, 1000);
   }
   return null;
 }

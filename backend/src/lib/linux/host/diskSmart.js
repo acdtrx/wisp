@@ -3,6 +3,7 @@ import { access } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { createAppError } from '../../routeErrors.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -196,29 +197,29 @@ function normalizeSmartSummary(raw) {
 
 async function readDiskSmartRaw(deviceName) {
   if (!/^[a-zA-Z0-9._-]+$/.test(String(deviceName || ''))) {
-    throw new Error('invalid-disk-name');
+    throw createAppError('SMART_INVALID_DISK_NAME', 'invalid-disk-name');
   }
 
   const scriptPath = await resolveSmartctlScriptPath();
-  if (!scriptPath) throw new Error('smartctl-helper-unavailable');
+  if (!scriptPath) throw createAppError('SMART_HELPER_UNAVAILABLE', 'smartctl-helper-unavailable');
 
   const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
   const args = isRoot
     ? ['bash', [scriptPath, deviceName]]
     : ['sudo', ['-n', scriptPath, deviceName]];
   const { stdout } = await execFileAsync(args[0], args[1], { timeout: 10000 });
-  if (!stdout || !stdout.trim()) throw new Error('empty-smartctl-output');
+  if (!stdout || !stdout.trim()) throw createAppError('SMART_EMPTY_OUTPUT', 'empty-smartctl-output');
 
   let parsed;
   try {
     parsed = JSON.parse(stdout);
   } catch {
-    throw new Error('invalid-smartctl-json');
+    throw createAppError('SMART_INVALID_JSON', 'invalid-smartctl-json');
   }
 
-  if (parsed?.error === 'device-not-found') throw new Error('device-not-found');
-  if (parsed?.error === 'smartctl-not-found') throw new Error('smartctl-not-installed');
-  if (parsed?.error === 'invalid-device-name') throw new Error('invalid-disk-name');
+  if (parsed?.error === 'device-not-found') throw createAppError('SMART_DEVICE_NOT_FOUND', 'device-not-found');
+  if (parsed?.error === 'smartctl-not-found') throw createAppError('SMART_NOT_INSTALLED', 'smartctl-not-installed');
+  if (parsed?.error === 'invalid-device-name') throw createAppError('SMART_INVALID_DISK_NAME', 'invalid-disk-name');
   return parsed;
 }
 

@@ -111,7 +111,7 @@ async function fetchContainerListFromDisk() {
 
 function fireListChange() {
   for (const h of listChangeHandlers) {
-    try { h(containerListCache); } catch (err) { console.warn('[containerManager] list-change handler threw:', err?.message || err); }
+    try { h(containerListCache); } catch (err) { containerState.logger?.warn?.({ err: err?.message || err }, '[containerManager] list-change handler threw'); }
   }
 }
 
@@ -123,7 +123,7 @@ function refreshContainerListCache() {
   refreshQueued = false;
   refreshPromise = fetchContainerListFromDisk()
     .then((list) => { containerListCache = list; fireListChange(); })
-    .catch((err) => { console.warn('[containerManager] container list cache refresh failed:', err.message); })
+    .catch((err) => { containerState.logger?.warn?.({ err: err.message }, '[containerManager] container list cache refresh failed'); })
     .finally(() => {
       refreshPromise = null;
       if (refreshQueued) refreshContainerListCache();

@@ -321,7 +321,7 @@ export async function updateVMConfig(name, changes) {
       await props.Set('org.libvirt.Domain', 'Autostart', variant);
     } catch (err) {
       /* autostart is optional; domain XML update already succeeded */
-      console.warn(`[vmManager] Failed to set autostart:`, err.message);
+      connectionState.logger?.warn?.({ err: err.message }, '[vmManager] Failed to set autostart');
     }
   }
 

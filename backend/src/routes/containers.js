@@ -89,8 +89,26 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── List ──────────────────────────────────────────────────────────
-  fastify.get('/containers', async () => {
-    return listContainers();
+  fastify.get('/containers', {
+    schema: {
+      response: {
+        200: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              type: { type: 'string' },
+              image: { type: 'string' },
+              state: { type: 'string' },
+              iconId: { type: ['string', 'null'] },
+              updateAvailable: { type: 'boolean' },
+            },
+          },
+        },
+      },
+    },
+    handler: async () => listContainers(),
   });
 
   // ── List SSE stream ───────────────────────────────────────────────
@@ -103,7 +121,11 @@ export default async function containerRoutes(fastify) {
       try {
         const list = await listContainers();
         reply.raw.write(`data: ${JSON.stringify(list)}\n\n`);
-      } catch { /* skip tick */ }
+      } catch (err) {
+        const payload = { error: 'Failed to list containers', detail: err.raw || err.message, code: err.code };
+        try { reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`); }
+        catch { /* client gone */ }
+      }
     };
 
     await send();

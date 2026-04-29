@@ -31,6 +31,8 @@ export const connectionState = {
   agentEventHandlers: new Set(),
   /** Per-domain AgentEvent subscriptions: domainPath -> { iface, listener }. */
   agentSubscriptions: new Map(),
+  /** Pino-compatible logger plumbed via connect(); null until connected. */
+  logger: null,
 };
 
 export { vmError, unwrapVariant, unwrapDict, formatVersion, generateMAC };
@@ -65,23 +67,24 @@ export function subscribeAgentEvent(handler) {
 
 function fireDomainChange() {
   for (const h of connectionState.domainChangeHandlers) {
-    try { h(); } catch (err) { console.warn('[vmManager] domain-change handler threw:', err?.message || err); }
+    try { h(); } catch (err) { connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] domain-change handler threw'); }
   }
 }
 
 function fireDisconnect() {
   for (const h of connectionState.disconnectHandlers) {
-    try { h(); } catch (err) { console.warn('[vmManager] disconnect handler threw:', err?.message || err); }
+    try { h(); } catch (err) { connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] disconnect handler threw'); }
   }
 }
 
 function fireAgentEvent(vmName, payload) {
   for (const h of connectionState.agentEventHandlers) {
-    try { h(vmName, payload); } catch (err) { console.warn('[vmManager] agent-event handler threw:', err?.message || err); }
+    try { h(vmName, payload); } catch (err) { connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] agent-event handler threw'); }
   }
 }
 
-export async function connect() {
+export async function connect(logger = null) {
+  if (logger) connectionState.logger = logger;
   connectionState.bus = dbus.systemBus();
   const obj = await connectionState.bus.getProxyObject('org.libvirt', '/org/libvirt/QEMU');
   connectionState.connectIface = obj.getInterface('org.libvirt.Connect');
@@ -103,7 +106,7 @@ export async function connect() {
   fireDomainChange();
 
   connectionState.bus.on('error', (err) => {
-    console.error('[vmManager] DBus connection error, reconnecting:', err.message);
+    connectionState.logger?.error?.({ err: err.message }, '[vmManager] DBus connection error, reconnecting');
     connectionState.connectIface = null;
     connectionState.connectProps = null;
     detachAllAgentSubscriptions();
@@ -186,7 +189,7 @@ export async function attachAgentSubscription(domainPath, vmName) {
     iface.on('AgentEvent', listener);
     connectionState.agentSubscriptions.set(domainPath, { iface, listener, vmName });
   } catch (err) {
-    console.warn(`[vmManager] failed to attach AgentEvent for ${vmName}:`, err?.message || err);
+    connectionState.logger?.warn?.({ vmName, err: err?.message || err }, '[vmManager] failed to attach AgentEvent');
   }
 }
 

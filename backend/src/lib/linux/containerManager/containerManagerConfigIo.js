@@ -6,7 +6,7 @@
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 
-import { containerError } from './containerManagerConnection.js';
+import { containerError, containerState } from './containerManagerConnection.js';
 import { getContainerDir } from './containerPaths.js';
 import { writeJsonAtomic } from '../../atomicJson.js';
 
@@ -36,6 +36,6 @@ export function subscribeContainerConfigWrite(handler) {
 
 export function notifyContainerConfigWrite(name) {
   for (const h of configWriteHandlers) {
-    try { h(name); } catch (err) { console.warn('[containerManager] config-write handler threw:', err?.message || err); }
+    try { h(name); } catch (err) { containerState.logger?.warn?.({ err: err?.message || err }, '[containerManager] config-write handler threw'); }
   }
 }

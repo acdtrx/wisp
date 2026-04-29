@@ -73,7 +73,7 @@ export default function XMLModal({ open, vmName, onClose }) {
     setCopied(false);
     getVMXML(vmName)
       .then((data) => setXml(data.xml || ''))
-      .catch(() => setXml('Failed to load XML'))
+      .catch((err) => setXml(`Failed to load XML: ${err?.message || 'unknown error'}`))
       .finally(() => setLoading(false));
   }, [open, vmName]);
 

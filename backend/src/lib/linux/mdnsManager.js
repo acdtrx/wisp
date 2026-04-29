@@ -34,13 +34,15 @@ const state = {
   /** serviceKey -> { group: EntryGroup iface | null, instanceName, type, port, txt, host } */
   services: new Map(),
   watchInstalled: false,
+  /** Pino-compatible logger plumbed via connect(); falls back to console for boot-time paths. */
+  logger: null,
 };
 
 async function ensureBus() {
   if (state.bus) return state.bus;
   state.bus = dbus.systemBus();
   state.bus.on('error', (err) => {
-    console.warn('[mdns] system bus error:', err?.message || err);
+    state.logger?.warn?.({ err: err?.message || err }, '[mdns] system bus error');
     state.server = null;
   });
   return state.bus;
@@ -59,18 +61,20 @@ async function installAvahiWatch() {
     dbusIface.on('NameOwnerChanged', (name, oldOwner, newOwner) => {
       if (name !== AVAHI_BUS_NAME) return;
       if (oldOwner && !newOwner) {
-        console.warn('[mdns] avahi-daemon went away; entries will be re-registered when it returns');
+        state.logger?.warn?.('[mdns] avahi-daemon went away; entries will be re-registered when it returns');
         state.server = null;
         for (const entry of state.entries.values()) entry.group = null;
         for (const svc of state.services.values()) svc.group = null;
       } else if (!oldOwner && newOwner) {
-        console.info('[mdns] avahi-daemon appeared; re-registering entries');
-        reregisterAll().catch((err) => console.warn('[mdns] re-register failed:', err?.message || err));
+        state.logger?.info?.('[mdns] avahi-daemon appeared; re-registering entries');
+        reregisterAll().catch((err) =>
+          state.logger?.warn?.({ err: err?.message || err }, '[mdns] re-register failed'),
+        );
       }
     });
     state.watchInstalled = true;
   } catch (err) {
-    console.warn('[mdns] failed to install avahi watch:', err?.message || err);
+    state.logger?.warn?.({ err: err?.message || err }, '[mdns] failed to install avahi watch');
   }
 }
 
@@ -122,6 +126,7 @@ async function reregisterAll() {
 }
 
 export async function connect(logger = null) {
+  state.logger = logger;
   await ensureBus();
   await installAvahiWatch();
   await ensureServer();
@@ -181,7 +186,7 @@ export async function registerAddress(key, preferredName, ipOrCidr) {
     state.entries.set(key, { group, host, ip, fqdn });
     return fqdn;
   } catch (err) {
-    console.warn('[mdns] registerAddress failed:', err?.message || err);
+    state.logger?.warn?.({ err: err?.message || err, host, ip }, '[mdns] registerAddress failed');
     state.entries.set(key, { group: null, host, ip, fqdn });
     return null;
   }
@@ -254,7 +259,7 @@ export async function registerService(serviceKey, instanceName, type, port, txt,
     state.services.set(serviceKey, { group, instanceName, type, port, txt, host });
     return true;
   } catch (err) {
-    console.warn('[mdns] registerService failed:', err?.message || err);
+    state.logger?.warn?.({ err: err?.message || err, instanceName, type, port }, '[mdns] registerService failed');
     state.services.set(serviceKey, { group: null, instanceName, type, port, txt, host });
     return false;
   }

@@ -32,6 +32,9 @@ function noConn() {
 }
 
 export async function connect() {
+  // Boot-time message before any Pino logger is available; console is
+  // intentional here so the dev server's stderr clearly shows that libvirt
+  // is offline (vmManager has no logger plumbed yet).
   console.warn('[vmManager] macOS detected — running without libvirt (dev mode)');
 }
 

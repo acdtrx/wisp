@@ -194,6 +194,6 @@ export async function updateCloudInit(vmName, config) {
     await attachCloudInitDisk(vmName);
   } catch (err) {
     /* ISO regenerated; live attach can fail if VM state disallows it — config still saved */
-    console.warn(`[vmManager] Could not hot-swap cloud-init disk for "${vmName}":`, err.message);
+    connectionState.logger?.warn?.({ err: err.message, vm: vmName }, '[vmManager] Could not hot-swap cloud-init disk');
   }
 }

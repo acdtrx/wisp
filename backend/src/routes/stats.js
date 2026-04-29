@@ -73,8 +73,14 @@ export default async function statsRoutes(fastify) {
 
           reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
         } catch (err) {
-          /* skip this tick — next interval will retry; avoid breaking the SSE stream */
           fastify.log.error({ err }, 'Failed to gather stats');
+          const errPayload = {
+            error: 'Failed to gather stats',
+            detail: err.raw || err.message,
+            code: err.code,
+          };
+          try { reply.raw.write(`data: ${JSON.stringify(errPayload)}\n\n`); }
+          catch { /* client gone — interval will be cleared on close */ }
         }
       }
 

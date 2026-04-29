@@ -64,7 +64,7 @@ async function fetchVMListFromLibvirt() {
 
 function fireListChange() {
   for (const h of listChangeHandlers) {
-    try { h(vmListCache); } catch (err) { console.warn('[vmManager] vm-list-change handler threw:', err?.message || err); }
+    try { h(vmListCache); } catch (err) { connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] vm-list-change handler threw'); }
   }
 }
 
@@ -76,7 +76,7 @@ function refreshVMListCache() {
   refreshQueued = false;
   refreshPromise = fetchVMListFromLibvirt()
     .then((list) => { vmListCache = list; fireListChange(); })
-    .catch((err) => { console.warn('[vmManager] VM list cache refresh failed:', err.message); })
+    .catch((err) => { connectionState.logger?.warn?.({ err: err.message }, '[vmManager] VM list cache refresh failed'); })
     .finally(() => {
       refreshPromise = null;
       if (refreshQueued) refreshVMListCache();

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { Search, X } from 'lucide-react';
 import { VM_ICONS } from './vmIcons.jsx';
 import { useEscapeKey } from '../../hooks/useEscapeKey.js';
@@ -12,10 +12,14 @@ export default function IconPickerModal({ open, currentIconId, onSelect, onClose
   useEscapeKey(open, onClose);
 
   useEffect(() => {
-    if (open) {
-      setSearch('');
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
+    if (open) setSearch('');
+  }, [open]);
+
+  // Focus the search input synchronously after the modal commits — ref is
+  // populated by then. Avoids the prior `setTimeout(50)` which raced the
+  // mount and made testing flaky.
+  useLayoutEffect(() => {
+    if (open) inputRef.current?.focus();
   }, [open]);
 
   const filtered = useMemo(() => {
