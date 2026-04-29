@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Monitor, Search, Server, Box } from 'lucide-react';
+import { Plus, Monitor, Search, Server, Box, LogOut } from 'lucide-react';
 import { useVmStore } from '../../store/vmStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { useUiStore } from '../../store/uiStore.js';
 import { useStatsStore } from '../../store/statsStore.js';
+import { useAuthStore } from '../../store/authStore.js';
 import { formatMemory } from '../../utils/formatters.js';
 import VMListItem from '../vm/VMListItem.jsx';
 import ContainerListItem from '../container/ContainerListItem.jsx';
@@ -69,10 +70,17 @@ export default function LeftPanel() {
     return list;
   }, [vms, containers, search, sortRunningFirst, listFilter]);
 
+  const logout = useAuthStore((s) => s.logout);
+
   const totalCount = vms.length + containers.length;
   const isHostSelected = location.pathname === '/' || location.pathname.startsWith('/host');
 
   const openHost = () => navigate('/host/overview');
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
 
   return (
     <aside className="flex w-[280px] flex-col border-r border-surface-border bg-surface-sidebar">
@@ -185,6 +193,17 @@ export default function LeftPanel() {
           </div>
         )}
       </div>
+
+      <button
+        type="button"
+        onClick={handleLogout}
+        className="flex h-10 w-full items-center gap-3 border-t border-surface-border px-4 text-left text-text-muted hover:bg-surface-card hover:text-text-secondary transition-colors duration-150"
+        title="Sign out"
+        aria-label="Sign out"
+      >
+        <LogOut size={14} className="flex-shrink-0" />
+        <span className="text-xs font-medium">Sign out</span>
+      </button>
     </aside>
   );
 }
