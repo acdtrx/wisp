@@ -12,6 +12,18 @@ export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+// Multi-tab logout: when another tab clears the token (logout, password
+// change), this listener fires here too and bounces the user to /login.
+// Without this, a stale tab keeps making authenticated requests with its
+// in-memory copy until the JWT expires (24 h).
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === TOKEN_KEY && !e.newValue) {
+      window.location.href = '/login';
+    }
+  });
+}
+
 export async function api(path, options = {}) {
   const token = getToken();
   const headers = { ...options.headers };

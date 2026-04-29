@@ -26,6 +26,7 @@ export const ensureContainersDir = impl.ensureContainersDir;
 export const listContainers = impl.listContainers;
 export const getContainerConfig = impl.getContainerConfig;
 export const getRunningContainerCount = impl.getRunningContainerCount;
+export const findContainersUsingStorageMount = impl.findContainersUsingStorageMount;
 export const subscribeContainerListChange = impl.subscribeContainerListChange;
 export const notifyContainerConfigWrite = impl.notifyContainerConfigWrite;
 
@@ -80,6 +81,8 @@ export const putMountFileTextContent = impl.putMountFileTextContent;
 
 export const setupNetwork = impl.setupNetwork;
 export const teardownNetwork = impl.teardownNetwork;
+export const discoverIpv4InNetnsOnce = impl.discoverIpv4InNetnsOnce;
+export const writeContainerConfig = impl.writeContainerConfig;
 
 export const buildOCISpec = impl.buildOCISpec;
 

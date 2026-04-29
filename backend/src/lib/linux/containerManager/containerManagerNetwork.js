@@ -436,6 +436,15 @@ async function discoverIpv4InNetns(name, ifname = 'eth0', pollOpts = DEFAULT_IPV
 }
 
 /**
+ * Single-shot wrapper around `discoverIpv4InNetns`. Used by the periodic
+ * mDNS reconciler — a 60s tick can't afford to sit on the default 20s poll
+ * budget, but one quick lookup per container is fine.
+ */
+export async function discoverIpv4InNetnsOnce(name, ifname = 'eth0') {
+  return discoverIpv4InNetns(name, ifname, { maxAttempts: 1, sleepMs: 0 });
+}
+
+/**
  * If the container has no persisted `network.ip` yet, read the live address from the netns
  * and save `container.json`. Call from GET config when the task is running — DHCP often
  * appears after the initial start-time poll.

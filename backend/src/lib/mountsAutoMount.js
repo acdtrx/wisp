@@ -85,6 +85,50 @@ export async function ensureMounts(log) {
 }
 
 /**
+ * Periodic auto-mount retry. `ensureMounts` runs once at boot and gives up on
+ * failures (logs and moves on). For long-lived backends, configured mounts
+ * that failed at boot (e.g. SMB server unreachable, NIC not yet up) should
+ * keep being attempted in the background — without that, the operator has to
+ * notice and click Mount manually. Returns a stop function for shutdown.
+ *
+ * Cadence: 5 minutes. Disks are skipped here — diskMonitor's hotplug handlers
+ * (`installMountHotplugHandlers`) already react to insertion events, so an
+ * idle disk poll wouldn't change anything.
+ *
+ * @param {{ info: Function, warn: Function }} log
+ */
+const AUTO_MOUNT_RETRY_INTERVAL_MS = 5 * 60 * 1000;
+
+export function startAutoMountRetry(log) {
+  const tick = async () => {
+    let mounts;
+    try {
+      mounts = await getRawMounts();
+    } catch (err) {
+      log.warn({ err }, 'Auto-mount retry: could not read settings');
+      return;
+    }
+    for (const d of mounts) {
+      if (d.autoMount === false) continue;
+      if (d.type !== 'smb') continue;
+      try {
+        const { mounted } = await getMountStatus(d.mountPath);
+        if (mounted) continue;
+        await mountSMB(d.share, d.mountPath, { username: d.username, password: d.password });
+        log.info({ id: d.id, mountPath: d.mountPath }, 'SMB mounted on retry');
+      } catch (err) {
+        /* swallow — next tick will retry */
+        log.warn({ err: err.message, id: d.id }, 'SMB auto-mount retry failed');
+      }
+    }
+  };
+
+  const interval = setInterval(tick, AUTO_MOUNT_RETRY_INTERVAL_MS);
+  interval.unref();
+  return () => clearInterval(interval);
+}
+
+/**
  * Subscribe to diskMonitor for hotplug events. Returns an unsubscribe fn.
  * @param {{ info: Function, warn: Function }} log
  */

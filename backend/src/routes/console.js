@@ -3,6 +3,7 @@ import { getVNCPort } from '../lib/vmManager.js';
 import { verifyJWT } from '../lib/auth.js';
 import { validateVMName } from '../lib/validation.js';
 import { isAllowedWsOrigin } from '../lib/wsOrigin.js';
+import { trackWebSocket } from '../lib/wsTracking.js';
 
 export default async function consoleRoutes(fastify) {
   // VNC: TCP proxy to QEMU VNC port. Token required (query.token) since WebSocket doesn't send Authorization header.
@@ -23,6 +24,8 @@ export default async function consoleRoutes(fastify) {
       socket.close(4001, 'Authentication required');
       return;
     }
+
+    trackWebSocket(socket);
 
     try {
       validateVMName(name);

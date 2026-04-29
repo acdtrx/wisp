@@ -203,6 +203,32 @@ export async function getRunningContainerCount() {
 }
 
 /**
+ * Find containers whose mounts reference a storage-mount entry by id. Used by
+ * settings.removeMount to refuse deletion when any container still has a
+ * `mounts[*].sourceId === mountId` (which would leave the container with a
+ * dangling source on next start). Returns container names.
+ */
+export async function findContainersUsingStorageMount(mountId) {
+  if (!mountId || typeof mountId !== 'string') return [];
+  const refs = [];
+  const list = await listContainers();
+  for (const entry of list) {
+    let config;
+    try {
+      config = await readContainerConfig(entry.name);
+    } catch {
+      /* skip containers whose config we can't read — best-effort scan */
+      continue;
+    }
+    const mounts = Array.isArray(config?.mounts) ? config.mounts : [];
+    if (mounts.some((m) => m && m.sourceId === mountId)) {
+      refs.push(entry.name);
+    }
+  }
+  return refs;
+}
+
+/**
  * Normalize the on-disk env shape. Legacy container.json stored env as a flat
  * { KEY: "value" } dict; the target shape is { KEY: { value, secret? } }. If any
  * entry is still a bare string, convert it in place and report `changed: true`

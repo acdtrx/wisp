@@ -1,4 +1,6 @@
 import { verifyPassword, signJWT, setPassword } from '../lib/auth.js';
+import { closeAllSSE } from '../lib/sse.js';
+import { closeAllWebSockets } from '../lib/wsTracking.js';
 
 const LOGIN_RATE_WINDOW_MS = 60 * 1000;
 const LOGIN_RATE_MAX_ATTEMPTS = 5;
@@ -107,6 +109,11 @@ export default async function authRoutes(fastify) {
 
       try {
         setPassword(newPassword);
+        // Rotate every live connection so pre-rotation tokens can't keep
+        // streaming. New connections will fail JWT verify against the new
+        // secret and the frontend's 401 handler bounces them to /login.
+        closeAllSSE();
+        closeAllWebSockets('password changed');
         reply.code(204).send();
       } catch (err) {
         fastify.log.error({ err }, 'Failed to update password');

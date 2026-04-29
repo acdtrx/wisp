@@ -5,6 +5,7 @@ import { execInContainer, resizeExec } from '../lib/containerManager.js';
 import { verifyJWT } from '../lib/auth.js';
 import { validateContainerName } from '../lib/validation.js';
 import { isAllowedWsOrigin } from '../lib/wsOrigin.js';
+import { trackWebSocket } from '../lib/wsTracking.js';
 
 /** RFC 6455: close reason must be ≤123 bytes UTF-8; `ws` throws RangeError if longer. */
 const WS_CLOSE_REASON_MAX_BYTES = 123;
@@ -55,6 +56,8 @@ export default async function containerConsoleRoutes(fastify) {
       socket.close(4001, 'Authentication required');
       return;
     }
+
+    trackWebSocket(socket);
 
     try {
       validateContainerName(name);

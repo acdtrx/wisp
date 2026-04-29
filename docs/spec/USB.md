@@ -71,6 +71,8 @@ The USB section in the VM Overview panel shows:
 
 Host device names update via **SSE** (`/api/host/usb/stream`) when devices are plugged or unplugged. VM-attached devices are refreshed after attach/detach actions. Attach and detach are immediate API actions — no Save button, no dirty state tracking.
 
+**Removed-from-host warning.** When a VM has a `<hostdev>` referencing a `vendor:product` that's no longer in the host SSE list (e.g. the device was unplugged while attached), the row in the VM USB table renders with a warning icon, the name `Device removed from host`, and the bus/device column shows `not connected`. Wisp deliberately does not auto-detach in this case — the operator decides. The Detach action still works on a missing device and clears the stale `<hostdev>` from the VM XML.
+
 Attach and detach operations work in both states:
 - **Running VM** — hot-plug/unplug (immediate effect)
 - **Stopped VM** — persistent config update (takes effect on next start)

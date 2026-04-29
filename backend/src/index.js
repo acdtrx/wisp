@@ -32,7 +32,7 @@ import mountsRoutes from './routes/mounts.js';
 import backupsRoutes from './routes/backups.js';
 import containerRoutes from './routes/containers.js';
 import backgroundJobsRoutes from './routes/backgroundJobs.js';
-import { ensureMounts, installMountHotplugHandlers } from './lib/mountsAutoMount.js';
+import { ensureMounts, installMountHotplugHandlers, startAutoMountRetry } from './lib/mountsAutoMount.js';
 import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
 import { startUpdateChecker, stopUpdateChecker } from './lib/aptUpdates.js';
 import { closeAllSSE } from './lib/sse.js';
@@ -41,6 +41,7 @@ import { start as startUsbMonitor, stop as stopUsbMonitor } from './lib/usbMonit
 import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/diskMonitor.js';
 import { connect as connectMdns, disconnect as disconnectMdns, registerAddress, sanitizeHostname } from './lib/mdnsManager.js';
 import { startVmMdnsPublisher, stopVmMdnsPublisher } from './lib/vmMdnsPublisher.js';
+import { startContainerMdnsReconciler, stopContainerMdnsReconciler } from './lib/containerMdnsReconciler.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadRuntimeEnv(resolve(__dirname, '..', '..'));
@@ -137,6 +138,7 @@ async function start() {
   }
 
   unsubscribeMountHotplug = installMountHotplugHandlers(app.log);
+  stopMountRetry = startAutoMountRetry(app.log);
 
   await startAutostartContainersAtBackendBoot(app.log);
 
@@ -157,6 +159,7 @@ async function start() {
   // reconcile, and keeps a 45s safety-net interval. Replaces the prior coupling that
   // only re-published while a user had a VM's stats SSE open.
   startVmMdnsPublisher(app.log);
+  startContainerMdnsReconciler(app.log);
 
   await app.listen({ port: PORT, host: '0.0.0.0' });
 
@@ -168,6 +171,7 @@ async function start() {
 
 let shuttingDown = false;
 let unsubscribeMountHotplug = null;
+let stopMountRetry = null;
 
 async function shutdown(signal) {
   if (shuttingDown) return;
@@ -178,11 +182,16 @@ async function shutdown(signal) {
     try { unsubscribeMountHotplug(); } catch { /* no-op */ }
     unsubscribeMountHotplug = null;
   }
+  if (stopMountRetry) {
+    try { stopMountRetry(); } catch { /* no-op */ }
+    stopMountRetry = null;
+  }
   stopUsbMonitor();
   stopDiskMonitor();
   stopUpdateChecker();
   stopImageUpdateChecker();
   stopVmMdnsPublisher();
+  stopContainerMdnsReconciler();
   disconnectLibvirtBus();
   disconnectContainerd();
   await disconnectMdns();

@@ -525,13 +525,26 @@ export async function startExistingContainer(name) {
   // perpetually "Running…".
   await cleanupTask(name);
 
-  // Get image config
+  // Get image config. If the image was removed under us (e.g.
+  // `ctr -n wisp image rm <ref>`), auto-pull it once and retry — the
+  // container's image reference is canonical, so re-pulling restores
+  // exactly what was there before. Anything else is treated as a transient
+  // read failure and we continue with an empty imageConfig (existing
+  // behavior — prepareSnapshot below will still throw if rootfs is missing).
   let imageConfig = {};
   try {
     imageConfig = await getImageConfig(config.image);
   } catch (err) {
     if (err.code === 'IMAGE_PULL_FAILED') throw err;
-    /* use empty for other read failures */
+    if (err.code === 'CONTAINER_NOT_FOUND' || err.code === 'CONTAINER_IMAGE_NOT_FOUND') {
+      containerState.logger?.info(
+        { image: config.image, container: name },
+        'Image missing on start; auto-pulling',
+      );
+      await pullImage(config.image);
+      imageConfig = await getImageConfig(config.image);
+    }
+    /* other read failures fall through with empty imageConfig */
   }
 
   // Rootfs is ephemeral: on every start, discard the existing snapshot and re-prepare

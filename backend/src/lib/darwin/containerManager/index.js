@@ -89,6 +89,18 @@ export async function getRunningContainerCount() {
   return 0;
 }
 
+export async function findContainersUsingStorageMount() {
+  return [];
+}
+
+export async function discoverIpv4InNetnsOnce() {
+  return null;
+}
+
+export async function writeContainerConfig() {
+  throw containerError('NO_CONTAINERD', 'Containerd is not available on darwin');
+}
+
 export async function getContainerConfig(name) {
   throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
 }

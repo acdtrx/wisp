@@ -25,10 +25,11 @@ export {
   listContainers,
   getContainerConfig,
   getRunningContainerCount,
+  findContainersUsingStorageMount,
   subscribeContainerListChange,
 } from './containerManagerList.js';
 
-export { notifyContainerConfigWrite } from './containerManagerConfigIo.js';
+export { notifyContainerConfigWrite, writeContainerConfig } from './containerManagerConfigIo.js';
 
 export {
   startContainer,
@@ -92,7 +93,7 @@ export {
   putMountFileTextContent,
 } from './containerManagerMountsContent.js';
 
-export { setupNetwork, teardownNetwork } from './containerManagerNetwork.js';
+export { setupNetwork, teardownNetwork, discoverIpv4InNetnsOnce } from './containerManagerNetwork.js';
 
 export { buildOCISpec } from './containerManagerSpec.js';
 

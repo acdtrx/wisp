@@ -8,6 +8,7 @@ import {
 import { mountSMB, unmountSMB, getMountStatus, checkSMBConnection, rmdirMountpoint } from '../lib/smbMount.js';
 import { mountDisk, unmountDisk } from '../lib/diskMount.js';
 import { refresh as refreshDiskSnapshot, getDevices as getDiskDevices } from '../lib/diskMonitor.js';
+import { findContainersUsingStorageMount } from '../lib/containerManager.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
 
 const mountSchema = {
@@ -125,6 +126,16 @@ export default async function mountsRoutes(fastify) {
         const d = mounts.find((x) => x.id === request.params.id);
         if (!d) {
           return reply.code(404).send({ error: 'Mount not found', detail: request.params.id });
+        }
+        /* Refuse if any container's mounts[*].sourceId references this id —
+         * removing it would leave the container with a dangling source on
+         * next start. Mirrors assertBridgeNotInUse / findVMsUsingImage. */
+        const inUseBy = await findContainersUsingStorageMount(d.id);
+        if (inUseBy.length > 0) {
+          return reply.code(409).send({
+            error: 'Mount in use',
+            detail: `Detach this mount from containers first: ${inUseBy.join(', ')}`,
+          });
         }
         /* Best-effort unmount before we forget about it; both flavours also rmdir /mnt/wisp/<name>
          * separately (delete-only cleanup — regular unmount leaves the dir in place). */

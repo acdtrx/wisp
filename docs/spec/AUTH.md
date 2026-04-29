@@ -92,6 +92,10 @@ The frontend fetch wrapper checks for 401 responses. On receiving a 401:
 
 This handles both token expiry and password changes gracefully.
 
+**Multi-tab logout.** `frontend/src/api/client.js` registers a `storage` event listener so when one tab clears the token (logout, password change), every other open tab also bounces to `/login`. Without this, a stale tab keeps making authenticated requests with its in-memory token copy until the JWT expires.
+
+**Password change closes live connections.** `POST /api/auth/change-password` writes the new hash and immediately calls `closeAllSSE()` and `closeAllWebSockets('password changed')`. Pre-rotation tokens can no longer keep streaming on connections that were authed before the secret changed; new connections fail JWT verify against the new secret and the frontend redirect cycle takes over.
+
 ## WebSocket Authentication
 
 WebSocket connections (VNC console) cannot send `Authorization` headers during the handshake. Instead, the JWT is passed as a query parameter:

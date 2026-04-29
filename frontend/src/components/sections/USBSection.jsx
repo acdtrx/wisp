@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Loader2, Plus, Unplug, Usb } from 'lucide-react';
+import { AlertTriangle, Loader2, Plus, Unplug, Usb } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import UsbAttachModal from '../shared/UsbAttachModal.jsx';
@@ -93,9 +93,18 @@ export default function USBSection({ vmConfig }) {
 
   const attachedSet = new Set(attachedDevices.map((d) => `${d.vendorId}:${d.productId}`));
 
+  // Mark attached entries whose host counterpart has disappeared. Wisp does
+  // not auto-detach USB devices on host removal — the operator decides — so
+  // we surface the staleness here. Detach still works on a missing device.
   const attachedWithNames = attachedDevices.map((d) => {
     const host = hostList.find((h) => h.vendorId === d.vendorId && h.productId === d.productId);
-    return { ...d, name: host?.name || 'Unknown Device', bus: host?.bus, device: host?.device };
+    return {
+      ...d,
+      name: host?.name || (host ? 'Unknown Device' : 'Device removed from host'),
+      bus: host?.bus,
+      device: host?.device,
+      missing: !host,
+    };
   });
 
   const available = hostList.filter((d) => !attachedSet.has(`${d.vendorId}:${d.productId}`));
@@ -177,12 +186,28 @@ export default function USBSection({ vmConfig }) {
                 const rowBusy = actionLoading === key;
                 return (
                   <tr key={key} className={dataTableInteractiveRowClass}>
-                    <DataTableTd dense className="font-medium text-text-primary">{dev.name}</DataTableTd>
+                    <DataTableTd dense className="font-medium text-text-primary">
+                      <span className="inline-flex items-center gap-1.5">
+                        {dev.missing ? (
+                          <AlertTriangle
+                            size={12}
+                            className="text-status-stopped"
+                            aria-hidden
+                            title="Device no longer present on host — VM XML still references it"
+                          />
+                        ) : null}
+                        <span className={dev.missing ? 'text-status-stopped' : undefined}>{dev.name}</span>
+                      </span>
+                    </DataTableTd>
                     <DataTableTd dense className="font-mono text-text-secondary">
                       {dev.vendorId}:{dev.productId}
                     </DataTableTd>
                     <DataTableTd dense className="text-text-muted">
-                      {dev.bus != null && dev.device != null ? `Bus ${dev.bus} · Device ${dev.device}` : '—'}
+                      {dev.bus != null && dev.device != null
+                        ? `Bus ${dev.bus} · Device ${dev.device}`
+                        : dev.missing
+                          ? 'not connected'
+                          : '—'}
                     </DataTableTd>
                     <DataTableTd dense align="right">
                       <DataTableRowActions forceVisible={rowBusy}>
