@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-04-30
+
+### New Features
+- **Container GPU passthrough** — generic `devices: [{ type, device }]` field on `container.json` exposes a host character device into the container. v1 supports Intel + AMD DRM render nodes (`/dev/dri/renderD<N>`); NVIDIA needs CDI and is not implemented. OCI spec emits `linux.devices`, the matching cgroup v2 allow rule, and pushes the host `render` GID onto `process.user.additionalGids` so the in-container process can open the `0660 root:render` node. The host kernel driver still owns the device — this is not VFIO-style PCI passthrough; multiple containers and the host share the GPU concurrently
+- New `GET /api/host/gpus` enumerates supported render nodes via sysfs (vendor, PCI slot, model); NVIDIA filtered at the source so users can't pick an unsupported GPU. macOS stub returns `[]`
+- New **Devices** section in Container Overview — vendor-labelled picker; icon-only confirm/cancel matching the Mounts pattern; "device not present on host" warning when the configured node disappears (e.g. driver pull, hardware change). Restart required on every change
+- Pre-start hard-fail: `CONTAINER_DEVICE_MISSING` (503) when the configured device path is absent or not a chardev — symmetric to `assertBindSourcesReady` for Storage mounts. Avoids silently disabling acceleration for users who configured an app to use it
+- App modules opt into device passthrough by returning `derived.devices` from `generateDerivedConfig` (same plumbing as `derived.env` / `derived.mounts`); generic Devices section and app-driven devices share one config path
+- **Jellyfin container app** — wraps `jellyfin/jellyfin:latest` with managed `/config` + `/cache` Local mounts, optional Storage-backed `/media` library (any wisp Storage source + sub-path), and a Hardware acceleration toggle that auto-picks the first available host GPU. `runAsRoot: true` (image writes to root-owned dirs); `_http._tcp` mDNS service seeded at create so `<name>.local` is discoverable out of the box. User still enables hardware acceleration inside Jellyfin's Dashboard → Playback after first start
+
 ## 2026-04-29
 
 ### New Features
