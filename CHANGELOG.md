@@ -9,6 +9,43 @@
 - App `getDefaultAppConfig(ctx)` and `validateAppConfig(new, old)` now receive context — `containerName` for sensible defaults, prior config for merging unchanged secrets forward
 - Single-line `pino-pretty` log output in dev (`NODE_ENV=development`); production keeps default Pino JSON
 - Atomic JSON writes for `wisp-config.json`, `container.json`, and `oci-image-meta.json` (stage to `*.tmp.<pid>.<ts>.<rand>`, fsync, rename); orphan temp files cleaned at backend startup
+- **JWT moved to HttpOnly cookies** with double-submit CSRF (`wisp_session` HttpOnly + `wisp_csrf` non-HttpOnly, `SameSite=Lax`, 24 h). `Authorization: Bearer …` and `?token=…` paths removed; frontend stops touching `localStorage` for auth. New `POST /api/auth/logout` endpoint and a Sign out button at the bottom of the left panel. Multi-tab logout via a `wisp_logout` localStorage signal
+- Container start auto-pulls the image if it was removed under us (`ctr -n wisp image rm`); container mDNS reconciler refreshes the `<container>.local` A record every 60 s so DHCP-renewal IP changes don't strand a stale record
+- 5-minute periodic retry for SMB auto-mounts that failed at boot (server unreachable / NIC up later)
+- USB section: warning row when an attached host device disappears (no auto-detach — operator decides what to do with the stale `<hostdev>`)
+
+### Bug Fixes (audit campaign — see `docs/review/2026-04-28/`)
+- Backup `POST /api/vms/:name/backup`: dropped the unrestricted `destinationPaths` body field; require `destinationIds` (closed a write-anywhere primitive that combined with prior path-traversals)
+- VM `attachDisk` / `attachISO` / create-time CDROM and disk source paths constrained to the image library or per-VM directory; libvirt can no longer open arbitrary host files (e.g. `/etc/shadow`) as block / CDROM devices
+- SMB credentials passed to the kernel via `mount.cifs credentials=` file (mode 0600); password no longer appears on `mount` argv / `/proc/<pid>/cmdline`. `wisp-mount` no longer `source`s the JS-generated config — strict allow-listed key=value parser. JS layer rejects `\n`/`\r`/`,` in `share`, `mountPath`, `username`, `password`
+- WebSocket consoles enforce same-origin via `Origin` header allow-list (CORS doesn't apply to WS); rejection close `1008`
+- Image library upload cleans up partial files on truncation (`data.file.truncated`) or pipeline error — closes a disk-fill DoS
+- Login rate-limit map now sweeps expired entries every 60 s and caps at 10 000 distinct IPs (was unbounded)
+- Auth hook matches public paths by post-routing `request.routeOptions.url` (was raw URL; trailing-slash / percent-encoded variants used to bypass)
+- `/api/github/keys/:username`: manual redirect handling (rejects 3xx) and 10/min per-IP rate limit
+- Plaintext password fallback removed; backend refuses to start on a non-scrypt `wisp-password` file (run `wispctl password` to repair)
+- `routeErrors.handleRouteError` redacts absolute paths and UUIDs from response `detail` and caps at 500 chars; raw stderr still logged server-side
+- `wisp-netns ipv4 <name> [ifname]` validates `ifname` (matches the existing `route-add` regex)
+- Caddy app `target` validated as `host[:port]` or `scheme://host[:port][/path]` (rejects `\n` / `\r` / `{` / `}` — was raw-interpolated into the Caddyfile)
+- Snapshot create / revert / delete share `validateSnapshotName` (`^[a-zA-Z0-9 ._-]+$`, max 64 chars)
+- Container mount PUT: per-route `bodyLimit` set just above `MOUNT_FILE_CONTENT_MAX_BYTES` (rejects oversized payloads at the parser, not just the handler)
+- Image library DELETE / PATCH refuses with 409 when any VM still references the file (`<disk source>` matches absolute path); operator detaches first
+- `removeMount` refuses with 409 when any container's `mounts[*].sourceId` references it (mirrors `assertBridgeNotInUse`)
+- `/api/stats` and `/api/containers/stream` SSE now emit `{ error, detail, code? }` frames on failure (was silent skip)
+- Frontend `api/client` uses `data.error` before `data.message` (matches the documented WISP-RULES contract)
+- `auth.js` and `diskSmart.js` throw via `createAppError` with stable codes (no plain `new Error`)
+- `containerManagerNetwork.discoverIpv4InNetns` switched to exponential backoff (matches sibling `waitForStop` / `waitUntilTaskStoppedOrGone`)
+- `IconPickerModal` focuses the search input via `useLayoutEffect` (was `setTimeout(50)`)
+- `XMLModal` surfaces the error message in the displayed text instead of silently swallowing
+- Password change closes all live SSE / WebSocket connections and re-issues fresh cookies against the new secret — pre-rotation tokens can no longer keep streaming, and the user who changed their password isn't bounced to /login
+- 22 backend `console.*` log sites routed through Pino (`connectionState.logger` / `containerState.logger` / `mdnsManager.state.logger`); three boot-time fallbacks left with comments where Pino isn't available yet
+- Container response schemas: added to `GET /api/containers` (rest deferred — Fastify silently strips non-declared response fields, high blast radius)
+
+### Bug Fixes (post-audit follow-ups, same day)
+- **VM delete on UEFI domains** failed with `cannot undefine domain with nvram` — `VIR_DOMAIN_UNDEFINE_NVRAM` / `KEEP_NVRAM` were declared as `0x2` / `0x4` but the libvirt enum is `1 << 2` / `1 << 3` (`0x4` / `0x8`). The wrong flag was being set on every UEFI delete; KEEP_NVRAM was even worse — it was actually `NVRAM` (delete the file), the opposite of what the operator picked
+- **Frontend WS proxy** now forwards `Origin` and `Host` across the upgrade hop. `@fastify/http-proxy`'s default `defaultWsHeadersRewrite` carries only `cookie`, dropping Origin and Host — the backend's same-origin check then saw no Origin and rejected with close `1008` ("origin not allowed"). Manifested in noVNC as a connection failure on the VM Console tab
+- **Newly-created VM Overview no longer freezes at "stopped"** even after the sidebar correctly tracks state. The list SSE listener used to call `deselectVM` whenever the selected name was missing from the latest frame — fired during the brief race after `selectVM` set `selectedVM` but before `getVM` resolved (and before the libvirt domain event for the new VM had reached the SSE), nulling `selectedVM` and stranding `vmConfig` outside the SSE listener's `prev.selectedVM && prev.vmConfig` gate. Fix: gate auto-deselect on `!configLoading && !actionLoading`. Symmetric fix in `containerStore`
+- `api/sse.js`: `setTimeout(() => controller.abort(), 90s)` referenced an outer `controller` that `close()` nulls. If the timeout fired after a close, `null.abort()` threw `Cannot read properties of null (reading 'abort')`. Fix: capture controller per-attempt; `clearTimeout` in `finally`
 
 ### Bug Fixes
 - Form fields render at consistent height — `.input-field` now sets explicit `h-[34px]` so native `<select>` chevron padding doesn't make selects taller than inputs
