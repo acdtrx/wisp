@@ -35,6 +35,22 @@ The backend listens for `DomainEvent` signals on the libvirt Connect interface. 
 
 When a domain stops (event 5) or is undefined (event 1), cached VM stats for that domain are cleared.
 
+## Name validation
+
+VM names go through `validateVMName(name)` (in `backend/src/lib/validation.js`):
+
+- length 1–128
+- regex `^[a-zA-Z0-9._-]+$`
+- rejects `..`, `/`, `\`
+
+It is enforced in three places:
+
+1. The `vmsRoutes` `preHandler` (every `/vms/:name/...` route) — for the path parameter.
+2. `POST /vms` and `POST /vms/:name/clone` route handlers — for `body.name` / `body.newName`, before any background job is created.
+3. `createVM`, `cloneVM`, and `updateVMConfig` (rename branch) — defense in depth so library callers get the same guarantee.
+
+Failures map to HTTP 422 (`INVALID_VM_NAME`).
+
 ## VM Creation
 
 ### Templates
@@ -72,18 +88,37 @@ Progress is reported via callback for each step, streamed to the frontend via SS
 
 A VM can be cloned when it is stopped.
 
-1. Copy all disk images using `cp --reflink=auto` (CoW on supported filesystems) or `copyFile`
-2. Read the original domain XML, parse with `parseDomainRaw`
-3. Mutate the domain object: new name, remove uuid, update disk source paths and interface MACs
-4. Serialize with `buildXml(parsed)` and define with `Connect.DomainDefineXML`
+1. Validate `newName` (`validateVMName`); reject if a VM with that name already exists.
+2. **Create the cloned VM's directory** at `<vmsPath>/<newName>/` (`mkdir -p`).
+3. Copy each disk **into the new VM's directory** preserving its basename (`cp --reflink=auto` falling back to `copyFile`). For example, cloning `archy` → `archy2` produces `<vmsPath>/archy2/disk0.qcow2`, **not** `<vmsPath>/archy/archy2.qcow2`. This keeps the "directory == VM name" invariant so a later rename or delete of the clone behaves predictably.
+4. Read the original domain XML, parse with `parseDomainRaw`.
+5. Mutate the domain object: new name, drop uuid, point each disk `<source file>` at the copied path, regenerate every NIC MAC, and (UEFI only) **always** point `<nvram>` at the new VM's `<vmsPath>/<newName>/VARS.fd` and `copyFile` the source's NVRAM file there. The clone never shares NVRAM with the source — even if the source's NVRAM lives in a legacy location outside its expected directory. If the source NVRAM file is missing on disk, the copy is skipped and libvirt template-fills on first define.
+6. Serialize with `buildXml(parsed)` and define via `Connect.DomainDefineXML`.
+
+On define failure: the copied disks and the new VM's directory are removed so a retry starts clean.
+
+## Renaming
+
+A VM can be renamed when it is stopped (rename is the `name` field in `PATCH /api/vms/:name`).
+
+1. Pre-check: VM offline; the new name passes `validateVMName`; no other VM already uses it; the target directory `<vmsPath>/<newName>/` does not already exist.
+2. **Infer the source dir.** `findActualVmDir` walks every absolute path in the parsed domain XML (disk `<source file>`, NVRAM, loader) and picks the deepest directory under `<vmsPath>/`. This may not equal `<vmsPath>/<oldName>/` — legacy state from a pre-fix rename can leave files in a directory whose name no longer matches the libvirt domain name. The rename converges that state by moving from the *actual* dir, not the *expected* one.
+3. **`iface.Rename(newName, 0)`** — libvirt updates the domain's `<name>` element.
+4. **`fs.rename(actualOldDir, <vmsPath>/<newName>)`** — atomic move on the same filesystem; brings disks, NVRAM, cloud-init artefacts, and the `snapshots/` subdirectory along. On failure, the libvirt rename is rolled back.
+5. **Rewrite domain XML paths** (`vmManagerRename.rewriteDomainPaths`): every `<disk><source file>`, `<os><nvram>`, and `<os><loader>` value that started with `actualOldDir/` is rewritten to `<vmsPath>/<newName>/…`, then the domain is redefined via `DomainDefineXML`. On failure here, both the directory move and the libvirt rename are rolled back.
+6. **Rewrite snapshot memory paths** (`vmManagerRename.rewriteSnapshotMemoryPaths`): walk every domain snapshot, update `<memory @file>` if it pointed into `actualOldDir`, and redefine the snapshot via `SnapshotCreateXML(xml, VIR_DOMAIN_SNAPSHOT_CREATE_REDEFINE)`. Per-snapshot failures are logged but do not unwind the rename.
+
+After step 5, the on-disk layout, libvirt's name, and the domain XML's absolute paths are all consistent under the new name. Backups taken before the rename keep references to the old path in their manifest — this is intentional; restore re-creates the per-VM dir under the **current** name.
 
 ## Deletion
 
-1. Force-stop the VM if it is running
-2. Delete all snapshots
-3. Undefine the domain via `Domain.Undefine(0)`
-4. Remove cloud-init ISO and config files
-5. If `deleteDisks=true`: remove disk images and the entire VM directory
+1. Force-stop the VM if it is running.
+2. Delete all snapshots (best-effort; libvirt won't undefine while snapshots exist).
+3. **`Domain.Undefine(flags)`**:
+   - `deleteDisks=true` and the NVRAM file lives inside this VM's own dir → `VIR_DOMAIN_UNDEFINE_NVRAM` so libvirt removes its managed NVRAM along with everything else.
+   - All other cases (`deleteDisks=false`, **or** the NVRAM file lives outside the VM's dir — legacy state from a pre-fix rename, or a clone produced by buggy older code) → `VIR_DOMAIN_UNDEFINE_KEEP_NVRAM`. We never let libvirt delete a file that may belong to another VM.
+4. **`deleteDisks=true`** only: `rm -rf <vmsPath>/<name>/`. Disks, NVRAM, cloud-init artifacts, snapshots — everything goes.
+   **`deleteDisks=false`**: the per-VM directory is left **completely untouched**. The operator chose "keep my data"; that means disks, NVRAM, cloud-init.iso, cloud-init.json all stay. A subsequent re-create with the same name picks them up.
 
 ## VM Configuration
 

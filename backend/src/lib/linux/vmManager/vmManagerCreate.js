@@ -3,7 +3,7 @@
  */
 import { copyFile, unlink, mkdir, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -11,9 +11,10 @@ import dbus from 'dbus-next';
 
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError, generateMAC } from './vmManagerConnection.js';
 import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
+import { validateVMName } from '../../validation.js';
 import { getVMBasePath, getImagePath } from '../../paths.js';
 import { resizeDisk as resizeDiskImage, copyAndConvert, getDiskInfo } from '../../diskOps.js';
-import { generateCloudInitISO, deleteCloudInitISO, saveCloudInitConfig, loadCloudInitConfig, deleteCloudInitConfig } from '../../cloudInit.js';
+import { deleteCloudInitISO } from '../../cloudInit.js';
 import { listHostFirmware, getDefaultBridge } from './vmManagerHost.js';
 import { listSnapshots, deleteSnapshot } from './vmManagerSnapshots.js';
 import { generateCloudInit } from './vmManagerCloudInit.js';
@@ -275,6 +276,7 @@ export async function createVM(spec, { onStep } = {}) {
   const s = applyTemplateDefaults(spec);
   const name = (s.name || '').trim();
   if (!name) throw vmError('PARSE_ERROR', 'VM name is required');
+  validateVMName(name);
 
   emit('validating');
   try {
@@ -398,6 +400,7 @@ export async function createVM(spec, { onStep } = {}) {
 
 export async function cloneVM(name, newName) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
+  validateVMName(newName);
 
   const path = await resolveDomain(name);
   const state = await getDomainState(path);
@@ -414,49 +417,100 @@ export async function cloneVM(name, newName) {
   const config = parseVMFromXML(xml);
   if (!config) throw vmError('PARSE_ERROR', `Failed to parse XML for VM "${name}"`);
 
+  // Copy disks into the new VM's own directory so a future deleteVM(newName)
+  // / renameVM(newName) doesn't have to chase files that live under the
+  // source VM's path. Keeps the "directory == VM name" invariant.
+  const newVmDir = getVMBasePath(newName);
+  await mkdir(newVmDir, { recursive: true });
+
   const diskMapping = [];
-  for (const disk of config.disks) {
-    if (disk.device !== 'disk' || !disk.source) continue;
-
-    const ext = disk.source.substring(disk.source.lastIndexOf('.'));
-    const newDiskPath = join(dirname(disk.source), `${newName}${disk.slot ? '-' + disk.slot : ''}${ext}`);
-
-    try {
-      await execFile('cp', ['--reflink=auto', disk.source, newDiskPath]);
-    } catch {
-      /* cp --reflink not supported — full copy */
-      await copyFile(disk.source, newDiskPath);
-    }
-    diskMapping.push({ oldPath: disk.source, newPath: newDiskPath });
-  }
-
-  const parsed = parseDomainRaw(xml);
-  const dom = parsed.domain;
-  dom.name = newName;
-  delete dom.uuid;
-  for (const d of dom.devices?.disk || []) {
-    const file = d.source?.['@_file'];
-    if (file) {
-      const mapping = diskMapping.find(m => m.oldPath === file);
-      if (mapping) d.source['@_file'] = mapping.newPath;
-    }
-  }
-  for (const iface of dom.devices?.interface || []) {
-    iface.mac = { '@_address': generateMAC() };
-  }
-  const newXml = buildXml(parsed);
-
+  let dirCleanupNeeded = true;
   try {
+    for (const disk of config.disks) {
+      if (disk.device !== 'disk' || !disk.source) continue;
+
+      // Use the source's basename (e.g. disk0.qcow2) inside newVmDir so the
+      // cloned VM has the same on-disk layout as a freshly-created VM.
+      const baseName = disk.source.slice(disk.source.lastIndexOf('/') + 1);
+      const newDiskPath = join(newVmDir, baseName);
+
+      try {
+        await execFile('cp', ['--reflink=auto', disk.source, newDiskPath]);
+      } catch {
+        /* cp --reflink not supported — full copy */
+        await copyFile(disk.source, newDiskPath);
+      }
+      diskMapping.push({ oldPath: disk.source, newPath: newDiskPath });
+    }
+
+    const parsed = parseDomainRaw(xml);
+    const dom = parsed.domain;
+    dom.name = newName;
+    delete dom.uuid;
+    for (const d of dom.devices?.disk || []) {
+      const file = d.source?.['@_file'];
+      if (file) {
+        const mapping = diskMapping.find(m => m.oldPath === file);
+        if (mapping) d.source['@_file'] = mapping.newPath;
+      }
+    }
+    // NVRAM (UEFI): always relocate the clone's NVRAM into its own dir so
+    // it never shares the file with the source. Two cases:
+    //   - Source NVRAM file exists on disk: copy it (boot vars, secure-boot
+    //     enrolled keys, etc. carry forward).
+    //   - Source NVRAM declared in XML but missing on disk (rare): leave the
+    //     copy out; libvirt will template-fill on first define.
+    // Either way, rewrite the XML to point at <newVmDir>/VARS.fd so a future
+    // deleteVM(newName, deleteDisks=true) only ever touches the clone's files.
+    const os = dom.os;
+    if (os) {
+      const nvramSrc = typeof os.nvram === 'string'
+        ? os.nvram
+        : (os.nvram && typeof os.nvram === 'object' && typeof os.nvram['#text'] === 'string' ? os.nvram['#text'] : null);
+      if (nvramSrc) {
+        const newNvramPath = join(newVmDir, 'VARS.fd');
+        try {
+          await copyFile(nvramSrc, newNvramPath);
+        } catch (err) {
+          if (!err || err.code !== 'ENOENT') throw err;
+          /* source NVRAM missing — let libvirt template-fill on define */
+        }
+        if (typeof os.nvram === 'string') {
+          os.nvram = newNvramPath;
+        } else if (os.nvram && typeof os.nvram === 'object') {
+          os.nvram['#text'] = newNvramPath;
+        }
+      }
+    }
+    for (const iface of dom.devices?.interface || []) {
+      iface.mac = { '@_address': generateMAC() };
+    }
+    const newXml = buildXml(parsed);
+
     await connectionState.connectIface.DomainDefineXML(newXml);
+    dirCleanupNeeded = false;
   } catch (err) {
-    for (const { newPath } of diskMapping) {
-      await unlink(newPath).catch(() => {
-        /* cleanup copied disk on define failure — may already be gone */
+    if (dirCleanupNeeded) {
+      // Roll back: delete copied disks AND the newly-created dir so a retry
+      // doesn't trip over leftover state.
+      for (const { newPath } of diskMapping) {
+        await unlink(newPath).catch(() => {
+          /* may already be gone */
+        });
+      }
+      await rm(newVmDir, { recursive: true, force: true }).catch(() => {
+        /* best-effort */
       });
     }
+    if (err && err.code) throw err;
     throw vmError('CLONE_FAILED', `Failed to define cloned VM "${newName}"`, err.message);
   }
 }
+
+// libvirt VIR_DOMAIN_UNDEFINE_* flags — declared inline since this is the
+// only call site that needs them.
+const VIR_DOMAIN_UNDEFINE_NVRAM = 0x2;
+const VIR_DOMAIN_UNDEFINE_KEEP_NVRAM = 0x4;
 
 export async function deleteVM(name, deleteDisks = false) {
   const path = await resolveDomain(name);
@@ -471,43 +525,39 @@ export async function deleteVM(name, deleteDisks = false) {
     }
   }
 
-  let diskPaths = [];
-  let nvramPathToDelete = null;
+  // Detect UEFI before undefine so we can pass the right flag (otherwise
+  // Undefine refuses on a domain with managed NVRAM). Also note where the
+  // NVRAM file actually lives — if it's outside this VM's per-VM directory
+  // (legacy state from a pre-fix rename, or a mis-cloned VM), we must NOT
+  // pass VIR_DOMAIN_UNDEFINE_NVRAM since libvirt would delete a file that
+  // may belong to another VM.
+  let hasNvram = false;
+  let nvramFile = null;
   try {
     const xml = await getDomainXML(path);
     const parsed = parseDomainRaw(xml);
     const dom = parsed?.domain;
     const loaderNode = dom?.os?.loader;
-    const hasNvram = !!dom?.os?.nvram ||
-      (typeof loaderNode === 'object' && loaderNode['@_type'] === 'pflash');
     const nvramNode = dom?.os?.nvram;
-    if (nvramNode && typeof nvramNode === 'object' && nvramNode['#text']) {
-      nvramPathToDelete = nvramNode['#text'].trim();
-    } else if (nvramNode && typeof nvramNode === 'string') {
-      nvramPathToDelete = nvramNode.trim();
-    }
-    if (!nvramPathToDelete && hasNvram) {
-      nvramPathToDelete = join(getVMBasePath(name), 'VARS.fd');
-    }
-    if (deleteDisks) {
-      const config = parseVMFromXML(xml);
-      if (config) {
-        diskPaths = config.disks
-          .filter(d => d.device === 'disk' && d.source)
-          .map(d => d.source);
-      }
+    hasNvram = !!nvramNode ||
+      (typeof loaderNode === 'object' && loaderNode['@_type'] === 'pflash');
+    if (typeof nvramNode === 'string') nvramFile = nvramNode.trim();
+    else if (nvramNode && typeof nvramNode === 'object' && typeof nvramNode['#text'] === 'string') {
+      nvramFile = nvramNode['#text'].trim();
     }
   } catch {
-    /* proceed with undefine even if XML read fails */
+    /* proceed with default flag if XML read fails */
   }
+  const ownVmDir = getVMBasePath(name);
+  const nvramInOwnDir = nvramFile && (nvramFile === join(ownVmDir, 'VARS.fd') || nvramFile.startsWith(`${ownVmDir}/`));
 
+  // Snapshots block undefine; clear them up front (best-effort).
   try {
     const snapshots = await listSnapshots(name);
     for (const snap of snapshots) {
       try {
         await deleteSnapshot(name, snap.name);
       } catch (err) {
-        /* best-effort snapshot cleanup before undefine */
         console.warn(`[vmManager] Failed to delete snapshot "${snap.name}" before undefine:`, err.message);
       }
     }
@@ -515,32 +565,29 @@ export async function deleteVM(name, deleteDisks = false) {
     /* proceed with undefine even if listing snapshots fails */
   }
 
-  if (nvramPathToDelete) {
-    await unlink(nvramPathToDelete).catch(() => {
-      /* optional NVRAM file */
-    });
+  // Symmetric on-disk semantics:
+  //   deleteDisks=true  → tell libvirt to remove its managed NVRAM, then
+  //                       rm -rf the per-VM dir at the end. Everything goes.
+  //   deleteDisks=false → KEEP_NVRAM and leave the per-VM dir untouched.
+  //                       Operator picked "keep my data" — that means disks,
+  //                       NVRAM, cloud-init.iso, cloud-init.json all stay.
+  let undefineFlags = 0;
+  if (hasNvram) {
+    // Only let libvirt delete the NVRAM file when it lives inside this VM's
+    // own directory. Otherwise (legacy mismatch, shared file from a buggy
+    // pre-fix clone, etc.) keep it — deleting could corrupt another VM.
+    const safeToDeleteNvram = deleteDisks && nvramInOwnDir;
+    undefineFlags = safeToDeleteNvram ? VIR_DOMAIN_UNDEFINE_NVRAM : VIR_DOMAIN_UNDEFINE_KEEP_NVRAM;
   }
 
   try {
-    await iface.Undefine(0);
+    await iface.Undefine(undefineFlags);
   } catch (err) {
     throw vmError('LIBVIRT_ERROR', `Failed to delete VM "${name}"`, err.message);
   }
 
-  const vmBasePath = getVMBasePath(name);
-  await unlink(join(vmBasePath, 'cloud-init.iso')).catch(() => {
-    /* optional */
-  });
-  await deleteCloudInitConfig(name).catch(() => {
-    /* optional */
-  });
-
   if (deleteDisks) {
-    for (const p of diskPaths) {
-      await unlink(p).catch(() => {
-        /* disk path may already be removed */
-      });
-    }
+    const vmBasePath = getVMBasePath(name);
     await rm(vmBasePath, { recursive: true, force: true }).catch(() => {
       /* VM dir may be partially gone */
     });

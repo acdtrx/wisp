@@ -22,6 +22,10 @@
 - Settings file writes serialise read-modify-write inside the mutex (was prone to lost updates on concurrent `PATCH /api/settings`)
 - SSRF: also detect IPv4-mapped IPv6 in Node's normalized hex form (`::ffff:7f00:1` ≡ `127.0.0.1`)
 - Storage mounts: `mountPath` must resolve under `/mnt/wisp/`; `wisp-mount` re-asserts it via `realpath -m` (admin-to-root hardening)
+- VM rename now relocates the on-disk directory in lockstep with the libvirt rename, rewrites every absolute path in the domain XML (disks, NVRAM, loader), and redefines snapshot memory file paths. The source dir is **inferred from the XML's actual file paths**, not from `getVMBasePath(oldName)` — converges legacy state where a prior pre-fix rename left files at a directory whose name no longer matches the libvirt domain name. Refuses to rename when the target dir already exists
+- VM clone now copies disks into the **new** VM's directory (was writing into the source VM's dir), so subsequent rename/delete of the clone behaves predictably; clone also copies the source NVRAM file into the new dir so the clone never shares NVRAM with the source
+- VM delete only passes `VIR_DOMAIN_UNDEFINE_NVRAM` when the NVRAM file lives inside the VM's own directory; legacy/shared NVRAM files are kept (`KEEP_NVRAM`) so deleting one VM cannot corrupt another
+- VM delete with `deleteDisks=false` now leaves the per-VM directory completely untouched (was selectively removing cloud-init artefacts but keeping disks, leaving half-cleaned state)
 
 ## 2026-04-28
 

@@ -5,10 +5,13 @@
 import dbus from 'dbus-next';
 
 import { validateVMName } from '../../validation.js';
+import { getVMBasePath } from '../../paths.js';
+import { getConfigSync } from '../../config.js';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
 import { parseVMFromXML, parseDomainRaw, buildXml, setWispMetadata } from './vmManagerXml.js';
 import { getWindowsFeatures, getWindowsClock, getLinuxFeatures } from './vmManagerCreate.js';
 import { publishVm, unpublishVm } from '../vmMdnsPublisher.js';
+import { moveVmDirectory, rewriteDomainPaths, rewriteSnapshotMemoryPaths, findActualVmDir, pathExists } from './vmManagerRename.js';
 
 /** Parsed `<name>` may be a string or `{ '#text': string }` from fast-xml-parser. */
 function domainNameFromParsed(dom) {
@@ -56,18 +59,95 @@ export async function updateVMConfig(name, changes) {
       } catch (err) {
         if (err.code === 'VM_EXISTS') throw err;
       }
+
+      // Where do this VM's files actually live? `getVMBasePath(currentName)`
+      // is the *expected* dir, but legacy state from a pre-fix rename can
+      // leave the files at a different path. Read the XML and find the
+      // directory the disks/NVRAM actually reference.
+      const expectedOldDir = getVMBasePath(currentName);
+      const { vmsPath } = getConfigSync();
+      const xmlBeforeRename = await getDomainXML(domPath);
+      const parsedBeforeRename = parseDomainRaw(xmlBeforeRename);
+      const inferredDir = findActualVmDir(parsedBeforeRename?.domain, vmsPath);
+      // Prefer the expected dir when it both exists and matches inference.
+      // When inference disagrees, trust inference (legacy convergence).
+      // When no path lives under vmsPath at all (CDROM-only VMs), fall back
+      // to whatever exists on disk; if neither exists it's a no-op move.
+      let oldDir;
+      if (inferredDir && inferredDir !== expectedOldDir) {
+        oldDir = inferredDir;
+      } else if (await pathExists(expectedOldDir)) {
+        oldDir = expectedOldDir;
+      } else if (inferredDir) {
+        oldDir = inferredDir;
+      } else {
+        oldDir = expectedOldDir;
+      }
+      const newDir = getVMBasePath(newName);
+
+      // The new dir must not already exist — collisions would mean we'd
+      // overwrite or merge into an unrelated VM's files.
+      if (await pathExists(newDir)) {
+        throw vmError('CONFIG_ERROR', `Refusing to rename: target directory ${newDir} already exists`);
+      }
+
+      // 1. libvirt-level rename. Updates only the domain `<name>` element.
       const { iface } = await getDomainObjAndIface(domPath);
       try {
         await iface.Rename(newName, 0);
       } catch (err) {
         throw vmError('LIBVIRT_ERROR', `Failed to rename VM "${effectiveName}"`, err.message);
       }
+
+      // 2. Move on-disk dir. If this fails, roll back the libvirt rename.
+      let dirMoved = false;
+      try {
+        dirMoved = await moveVmDirectory(oldDir, newDir);
+      } catch (moveErr) {
+        try {
+          const { iface: backIface } = await getDomainObjAndIface(await resolveDomain(newName));
+          await backIface.Rename(currentName, 0);
+        } catch { /* rollback best-effort; leave inconsistent state for the operator to inspect */ }
+        throw moveErr;
+      }
+
       effectiveName = newName;
       domPath = await resolveDomain(newName);
       xml = await getDomainXML(domPath);
       parsed = parseDomainRaw(xml);
       dom = parsed.domain;
       if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
+
+      // 3. Rewrite absolute paths in the domain XML to point at the new dir.
+      //    Always attempt rewrite (using the inferred oldDir) — a successful
+      //    move guarantees old paths are now invalid; even on a no-op move
+      //    (rare CDROM-only case) the rewrite is harmless.
+      if (dirMoved) {
+        const rewritten = rewriteDomainPaths(dom, oldDir, newDir);
+        if (rewritten > 0) {
+          let outXml;
+          try {
+            outXml = buildXml(parsed);
+            await connectionState.connectIface.DomainDefineXML(outXml);
+          } catch (defErr) {
+            // Roll back: move dir back, rename libvirt back.
+            try { await moveVmDirectory(newDir, oldDir); } catch { /* best-effort */ }
+            try {
+              const { iface: backIface } = await getDomainObjAndIface(domPath);
+              await backIface.Rename(currentName, 0);
+            } catch { /* best-effort */ }
+            throw vmError('LIBVIRT_ERROR', 'Failed to update domain XML after rename', defErr.message);
+          }
+          xml = await getDomainXML(domPath);
+          parsed = parseDomainRaw(xml);
+          dom = parsed.domain;
+        }
+
+        // 4. Rewrite snapshot memory file paths. Best-effort per snapshot —
+        //    a missing/corrupt snapshot does not unwind the rename.
+        await rewriteSnapshotMemoryPaths(domPath, oldDir, newDir, null);
+      }
+
       current = parseVMFromXML(xml);
     }
     delete patch.name;
