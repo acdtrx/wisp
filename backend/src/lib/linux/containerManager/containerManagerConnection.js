@@ -166,12 +166,32 @@ export function packProtoAny(protoFullName, obj) {
 }
 
 /**
- * Unpack a google.protobuf.Any field as JSON.
+ * Unpack a google.protobuf.Any field.
+ *
+ * containerd's typeurl uses proto.Marshal for proto.Message values (binary)
+ * and json.Marshal for everything else (e.g. OCI runtime spec). We dispatch
+ * on type_url: if a registered protobufjs Type matches, decode binary;
+ * otherwise fall back to JSON parsing.
  */
 export function unpackAny(any) {
   if (!any || !any.value) return null;
   const buf = any.value;
   if (!buf || buf.length === 0) return null;
+
+  const typeUrl = any.typeUrl || any.type_url || '';
+  const fullName = typeUrl.includes('/')
+    ? typeUrl.slice(typeUrl.lastIndexOf('/') + 1)
+    : typeUrl;
+  const typeDef = fullName ? containerState.protoTypes?.[fullName] : null;
+  if (typeDef?.type) {
+    try {
+      const decoded = typeDef.type.decode(Buffer.isBuffer(buf) ? buf : Buffer.from(buf));
+      return typeDef.type.toObject(decoded, { longs: String, defaults: false });
+    } catch {
+      /* binary decode failed — fall through to JSON */
+    }
+  }
+
   try {
     return JSON.parse(Buffer.isBuffer(buf) ? buf.toString('utf8') : buf);
   } catch {
@@ -226,12 +246,27 @@ export async function connect(opts = {}) {
     'containerd/types/transfer/registry.proto',
     'containerd/types/transfer/imagestore.proto',
   ]);
+
+  // Cgroup metrics types — used by unpackAny to decode tasks.Metrics payloads.
+  const cgroupRoot = new protobuf.Root();
+  cgroupRoot.resolvePath = (_origin, target) => resolve(PROTOS_DIR, target);
+  cgroupRoot.loadSync([
+    'containerd/cgroups/v1/metrics.proto',
+    'containerd/cgroups/v2/metrics.proto',
+  ]);
+
   containerState.protoTypes = {
     'containerd.types.transfer.OCIRegistry': {
       type: transferRoot.lookupType('containerd.types.transfer.OCIRegistry'),
     },
     'containerd.types.transfer.ImageStore': {
       type: transferRoot.lookupType('containerd.types.transfer.ImageStore'),
+    },
+    'io.containerd.cgroups.v1.Metrics': {
+      type: cgroupRoot.lookupType('io.containerd.cgroups.v1.Metrics'),
+    },
+    'io.containerd.cgroups.v2.Metrics': {
+      type: cgroupRoot.lookupType('io.containerd.cgroups.v2.Metrics'),
     },
   };
 

@@ -252,7 +252,7 @@ All under `backend/src/lib/`:
 | `containerManagerOciSize.js` | `compressedBlobSizeForImageName()` — sums compressed config + layer sizes from the resolved Linux image manifest (not the top-level manifest blob size) |
 | `containerManagerConfig.js` | `updateContainerConfig()` |
 | `containerManagerConfigIo.js` | `readContainerConfig()`, `writeContainerConfig()`, `subscribeContainerConfigWrite()`, `notifyContainerConfigWrite()` — single owner of `container.json` reads/writes. Every mutation fans out a config-write notification; the container list cache subscribes and refreshes accordingly. The image-update job completion route also calls `notifyContainerConfigWrite('*')` after refreshing the image-meta sidecar. |
-| `containerManagerStats.js` | `getContainerStats()` |
+| `containerManagerStats.js` | `getContainerStats()` — calls containerd `Tasks.Metrics`; the `Any` payload is decoded via the registered `io.containerd.cgroups.v{1,2}.Metrics` proto types (loaded by `containerManagerConnection.js` from `protos/containerd/cgroups/`) to extract CPU usec and memory usage |
 | `linuxProcUptime.js` | `processUptimeMsFromProc(pid)` — container uptime from `/proc` (survives backend restart; in-memory `containerStartTimes` is only a fallback) |
 | `linuxProcIpv4.js` | `ipv4CidrFromProcFibTrie(pid)` — read primary IPv4 from `/proc/<pid>/net/fib_trie` when the task PID is known (no sudo) |
 | `containerManagerLogs.js` | Per-run log files under `runs/`: `listContainerRuns()`, `getContainerRunLogs()`, `streamContainerRunLogs()`, `createNewRun()`, `finalizeRun()`, `findCurrentRunId()`, `resolveRunId()`, `createRunLogReadStream()` |
