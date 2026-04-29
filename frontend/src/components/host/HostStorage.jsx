@@ -89,7 +89,9 @@ function smbRowFromSettings(d) {
     mountPath: d.mountPath || '',
     share: d.share || '',
     username: d.username || '',
-    password: d.password === '***' ? '' : (d.password || ''),
+    /* Backend never returns the password; `hasPassword` tells us whether one
+     * is on file so the row can render an empty input with the "saved" hint. */
+    password: '',
   };
 }
 
@@ -108,8 +110,9 @@ function smbRowDirty(row, savedSmb) {
   const a = smbBaselineForCompare(row);
   const b = smbBaselineForCompare(savedSmb);
   if (JSON.stringify(a) !== JSON.stringify(b)) return true;
-  const prevPw = savedSmb.password === '***' ? '' : (savedSmb.password || '');
-  if ((row.password || '').trim() !== (prevPw || '').trim()) return true;
+  /* The backend never returns the password — we only know whether one is on
+   * file. Treat any non-empty input as a change; empty means "leave it". */
+  if ((row.password || '').trim() !== '') return true;
   return false;
 }
 
@@ -297,8 +300,10 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
         const share = (row.share || '').trim();
         if (share !== (saved?.share || '').trim()) patch.share = share;
         if ((row.username || '').trim() !== (saved?.username || '').trim()) patch.username = (row.username || '').trim();
-        const prevPw = saved?.password === '***' ? '' : (saved?.password || '');
-        if ((row.password || '').trim() !== prevPw) patch.password = (row.password || '').trim();
+        /* Only send `password` when the user actually typed one; empty means
+         * "keep what's on file" (the backend never returns the stored value). */
+        const newPw = (row.password || '').trim();
+        if (newPw !== '') patch.password = newPw;
         if (Object.keys(patch).length > 0) await patchMount(row.id, patch);
       }
       await loadSettings();
@@ -404,7 +409,7 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
               const saved = smbSaved.find((m) => m.id === row.id);
               const dirty = smbRowDirty(row, saved);
               const canSave = editing && dirty && pathOk(row) && savingId !== row.id;
-              const hasStoredPassword = persisted && (saved?.password === '***' || (saved?.password && String(saved.password).length > 0));
+              const hasStoredPassword = persisted && saved?.hasPassword === true;
 
               const check = checkByRow[row.id];
               const checkLoading = checkId === row.id;

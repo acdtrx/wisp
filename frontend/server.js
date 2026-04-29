@@ -16,6 +16,40 @@ const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
 const app = Fastify({ logger: true, forceCloseConnections: true });
 
+/* Baseline security headers attached to every HTML / API response served by
+ * the frontend process. Backend SSE/WS responses go through `httpProxy` and
+ * `reply.hijack()` — they bypass `onSend`, which is fine: SSE bodies are not
+ * HTML and CSP doesn't apply to a JSON stream.
+ *
+ * `style-src 'unsafe-inline'` is required because xterm.js and noVNC inject
+ * inline style attributes for terminal/canvas sizing; tightening this would
+ * need either CSP nonces (complicates static caching) or hashes (brittle to
+ * upstream updates). `img-src data:` covers favicons / inline data URIs used
+ * by lucide-react icons. `connect-src 'self'` permits the same-origin WS
+ * upgrade to /ws.
+ *
+ * `Strict-Transport-Security` is intentionally not set here — Wisp is often
+ * deployed on HTTP behind a LAN; let the operator's reverse proxy enforce
+ * HSTS where TLS termination actually lives. */
+const CSP =
+  "default-src 'self'; " +
+  "script-src 'self'; " +
+  "style-src 'self' 'unsafe-inline'; " +
+  "img-src 'self' data:; " +
+  "font-src 'self' data:; " +
+  "connect-src 'self'; " +
+  "frame-ancestors 'none'; " +
+  "base-uri 'self'; " +
+  "form-action 'self'";
+
+app.addHook('onSend', async (_request, reply, payload) => {
+  reply.header('Content-Security-Policy', CSP);
+  reply.header('X-Content-Type-Options', 'nosniff');
+  reply.header('X-Frame-Options', 'DENY');
+  reply.header('Referrer-Policy', 'same-origin');
+  return payload;
+});
+
 // When backend is down, return 503 with a clear message instead of 500
 app.setErrorHandler((err, request, reply) => {
   const cause = err.cause || err;

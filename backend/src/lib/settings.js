@@ -117,7 +117,10 @@ function mountForApi(d) {
   if (d.type === 'smb') {
     base.share = d.share;
     base.username = d.username != null ? d.username : undefined;
-    base.password = d.password ? '***' : undefined;
+    /* Never expose the password — even masked. The boolean below tells the UI
+     * whether one is on file so it can render an empty input with a "saved"
+     * affordance, without giving any secret-shaped string back to the client. */
+    base.hasPassword = !!d.password;
   } else if (d.type === 'disk') {
     base.uuid = d.uuid;
     base.fsType = d.fsType || undefined;
@@ -245,7 +248,7 @@ async function persistSettings(state) {
       if (d.type === 'smb') {
         out.share = d.share;
         if (d.username !== undefined) out.username = d.username;
-        if (d.password !== undefined && d.password !== '' && d.password !== '***') out.password = d.password;
+        if (d.password !== undefined && d.password !== '') out.password = d.password;
       } else if (d.type === 'disk') {
         out.uuid = d.uuid;
         if (d.fsType) out.fsType = d.fsType;
@@ -372,8 +375,11 @@ export async function updateMount(mountId, body) {
       }
       if (body.password !== undefined) {
         const pw = body.password;
-        if (pw !== '***' && pw !== '' && pw != null) {
-          cur.password = typeof pw === 'string' ? pw : '';
+        /* Empty / null means "leave current password as-is"; the frontend only
+         * sends `password` when the user actually typed a new one (the saved
+         * value is never returned, so they can't echo it back). */
+        if (typeof pw === 'string' && pw !== '') {
+          cur.password = pw;
         }
       }
     } else if (cur.type === 'disk') {

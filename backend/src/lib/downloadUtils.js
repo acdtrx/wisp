@@ -37,6 +37,10 @@ export async function findUniqueFilename(dir, baseName) {
 /**
  * Stream response body to destPath. onProgress(percent, loaded, totalBytes).
  * Cleans up (destroy writer, unlink) on error.
+ *
+ * Opens with `wx` (O_CREAT|O_EXCL) so the open fails — rather than following
+ * a symlink — if a concurrent attacker swapped destPath for a symlink between
+ * findUniqueFilename's `access` check and our write.
  */
 export async function streamResponseToFile(res, destPath, onProgress) {
   const total = res.headers.get('content-length');
@@ -45,7 +49,7 @@ export async function streamResponseToFile(res, destPath, onProgress) {
   if (!reader) {
     throw createAppError('NO_BODY', 'Response has no body');
   }
-  const writer = createWriteStream(destPath);
+  const writer = createWriteStream(destPath, { flags: 'wx' });
   let loaded = 0;
   try {
     while (true) {

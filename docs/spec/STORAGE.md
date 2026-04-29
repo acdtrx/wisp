@@ -27,7 +27,8 @@ All mounts live in `settings.mounts` (array). Each entry carries a `type` discri
 |-------|-------------|
 | `share` | SMB URL (e.g. `//192.168.1.100/backups`) |
 | `username` | SMB auth user (optional) |
-| `password` | SMB auth password (masked as `***` in API responses) |
+| `password` | SMB auth password. Write-only — never returned in API responses; the response carries a `hasPassword: boolean` field instead so the UI can render an "on file" affordance without holding any secret. To leave the stored password unchanged on update, omit `password` (or send an empty string) — the backend treats both as "preserve". |
+| `hasPassword` | (response only) `true` when an SMB password is on file. Never accepted on input. |
 
 ### Disk-only fields (`type: "disk"`)
 

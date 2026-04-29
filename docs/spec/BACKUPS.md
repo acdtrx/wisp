@@ -90,6 +90,12 @@ A configured network backup path that is not mounted is omitted from the scan (s
 
 The restored VM gets a new name, new UUID, and new MAC addresses — it is a fully independent copy.
 
+### `vmBasePath` portability
+
+`manifest.vmBasePath` is recorded as an **absolute path** at backup time (e.g. `/var/lib/wisp/vms/<oldName>`). Restore uses it as the prefix to rewrite when emitting the new domain XML. This is resilient to the VM being renamed since the backup was taken (the manifest still points at the old path, which is what disk `<source file>` entries in the backup XML refer to), and also tolerates `vmsPath` changes (the rewrite produces paths under whatever `vmsPath` is configured **at restore time**).
+
+Where it can fail: if a backup was produced under one `vmsPath` and you later move the entire `vms/` tree to a different absolute path **and** edit `wisp-config.json` accordingly, the manifest's recorded `vmBasePath` no longer matches anything Wisp recognises. In that uncommon case the restore falls back to inferring from the original VM name — and if that also doesn't match, the operator must edit `manifest.vmBasePath` to the path that was current when the backup was taken before retrying. We accept this rare manual step rather than carrying historical `vmsPath` history in the manifest.
+
 ## Deleting a Backup
 
 `DELETE /api/backups` with `{ backupPath }`:

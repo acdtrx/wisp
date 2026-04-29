@@ -110,6 +110,10 @@ A VM can be renamed when it is stopped (rename is the `name` field in `PATCH /ap
 
 After step 5, the on-disk layout, libvirt's name, and the domain XML's absolute paths are all consistent under the new name. Backups taken before the rename keep references to the old path in their manifest — this is intentional; restore re-creates the per-VM dir under the **current** name.
 
+### Out-of-band renames
+
+Renames performed outside Wisp (`virsh domrename`, hand-edited domain XML, etc.) are **not** auto-reconciled. The VM mDNS publisher tracks domains by name, so an external rename leaves a stale Avahi entry under the old name until the backend restarts; per-VM directories and snapshot memory paths are also untouched. If you must rename outside Wisp, restart `wisp-backend` afterwards so the publisher re-syncs and run the standard Wisp rename to reconcile the on-disk layout.
+
 ## Deletion
 
 1. Force-stop the VM if it is running.

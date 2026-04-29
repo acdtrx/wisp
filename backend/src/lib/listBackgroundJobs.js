@@ -3,14 +3,26 @@ import * as backupJobStore from './backupJobStore.js';
 import * as downloadJobStore from './downloadJobStore.js';
 import { containerJobStore } from './containerJobStore.js';
 
+/* Each store is independent; if one throws (corrupted in-memory state, future
+ * regression, etc.) we still want to surface the others to the UI rather than
+ * blanking the entire jobs panel. */
+function safeList(fn) {
+  try {
+    const out = fn();
+    return Array.isArray(out) ? out : [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * In-memory background jobs across all task types, newest first (each store already sorts).
  */
 export function listBackgroundJobs() {
   return [
-    ...createJobStore.listJobs(),
-    ...backupJobStore.listJobs(),
-    ...downloadJobStore.listJobs(),
-    ...containerJobStore.listJobs(),
+    ...safeList(() => createJobStore.listJobs()),
+    ...safeList(() => backupJobStore.listJobs()),
+    ...safeList(() => downloadJobStore.listJobs()),
+    ...safeList(() => containerJobStore.listJobs()),
   ].sort((a, b) => b.createdAt - a.createdAt);
 }

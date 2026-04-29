@@ -86,9 +86,10 @@ async function _mountDisk(uuid, mountPath, { fsType, readOnly }) {
   assertNoForbiddenChars('mountPath', mountPath);
   assertNoForbiddenChars('fsType', fsType);
 
-  const oldMask = process.umask(0o077);
-  const tmpDir = await mkdtemp(join(tmpdir(), 'wisp-disk-'));
-  process.umask(oldMask);
+  /* mkdtemp's `mode: 0o700` plus per-file `mode: 0o600` writes are enough; we
+   * deliberately do NOT touch process.umask, which is process-global and would
+   * race with concurrent file-create sites elsewhere. */
+  const tmpDir = await mkdtemp(join(tmpdir(), 'wisp-disk-'), { mode: 0o700 });
   const configPath = join(tmpDir, 'disk.conf');
   const uid = process.getuid && process.getuid();
   const gid = process.getgid && process.getgid();

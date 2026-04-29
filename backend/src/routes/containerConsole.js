@@ -6,17 +6,14 @@ import { validateContainerName } from '../lib/validation.js';
 import { isAllowedWsOrigin } from '../lib/wsOrigin.js';
 import { trackWebSocket } from '../lib/wsTracking.js';
 
-/** RFC 6455: close reason must be ≤123 bytes UTF-8; `ws` throws RangeError if longer. */
-const WS_CLOSE_REASON_MAX_BYTES = 123;
-
-function wsCloseReason(detail, fallback = 'Error') {
-  let s = detail != null && String(detail).trim() !== '' ? String(detail) : fallback;
-  if (Buffer.byteLength(s, 'utf8') <= WS_CLOSE_REASON_MAX_BYTES) return s;
-  while (s.length > 0 && Buffer.byteLength(s, 'utf8') > WS_CLOSE_REASON_MAX_BYTES) {
-    s = s.slice(0, -1);
-  }
-  return s || fallback;
-}
+/* WS close reasons are sent to any network observer and to peer tabs. We keep
+ * them as a small set of generic constants — the real error is in the server
+ * log. RFC 6455 also requires the reason to be ≤123 bytes UTF-8, but the
+ * generic strings stay well within that. */
+const WS_CLOSE = {
+  INVALID_NAME: 'invalid name',
+  EXEC_FAILED: 'exec failed',
+};
 
 /**
  * Parse a text-frame resize control message. Returns null if not a resize payload.
@@ -57,7 +54,7 @@ export default async function containerConsoleRoutes(fastify) {
       validateContainerName(name);
     } catch (err) {
       log.warn({ reason: 'invalid_container_name', err: err.message }, 'Container console WebSocket rejected');
-      socket.close(4000, wsCloseReason(err.message, 'Invalid container name'));
+      socket.close(4000, WS_CLOSE.INVALID_NAME);
       return;
     }
 
@@ -72,7 +69,7 @@ export default async function containerConsoleRoutes(fastify) {
         { reason: 'exec_failed', code: err.code, message: err.message, detail: err.raw },
         'Container exec failed',
       );
-      socket.close(4000, wsCloseReason(err.message, 'Exec failed'));
+      socket.close(4000, WS_CLOSE.EXEC_FAILED);
       return;
     }
 

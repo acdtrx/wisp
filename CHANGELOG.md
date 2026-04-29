@@ -64,6 +64,18 @@
 - VM delete only passes `VIR_DOMAIN_UNDEFINE_NVRAM` when the NVRAM file lives inside the VM's own directory; legacy/shared NVRAM files are kept (`KEEP_NVRAM`) so deleting one VM cannot corrupt another
 - VM delete with `deleteDisks=false` now leaves the per-VM directory completely untouched (was selectively removing cloud-init artefacts but keeping disks, leaving half-cleaned state)
 
+### Bug Fixes (audit campaign — plan-3 Low / Info / state-sync Low)
+- Frontend serves CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin` on every response (`style-src 'unsafe-inline'` only, to keep xterm/noVNC working); HSTS deliberately left to the upstream proxy
+- Mount API never returns the SMB password (the masked `***` placeholder is gone). Response now carries `hasPassword: boolean` so the UI can render a "saved" affordance without holding any secret-shaped string. Update PATCH semantics: omit / empty `password` preserves the stored value; the frontend only sends `password` when the user actually typed one
+- WebSocket consoles (VNC + container shell) close with a small set of generic reasons (`invalid name`, `vnc unavailable`, `exec failed`) instead of leaking `err.message` text — full detail still logged server-side
+- Container delete deregisters mDNS *after* `Tasks.delete`, not before — closes the brief "name gone, container still serving" window
+- `oci-image-meta.json` read-modify-write in `listContainerImages` serialises through a single-writer mutex (the periodic update checker and the UI both hit this path concurrently)
+- `listBackgroundJobs` tolerates a single store throwing — the aggregator returns the others instead of blanking the panel
+- SMB and disk mount tmp dirs no longer touch `process.umask` (was process-global and would race with concurrent file-create sites); `mkdtemp({mode: 0o700})` plus per-file `mode: 0o600` writes are sufficient
+- Library download write stream opens with `O_EXCL` (`createWriteStream({flags:'wx'})`) so a symlink swapped between `findUniqueFilename`'s `access` check and the write fails the open instead of following the link
+- Backend warns on stderr at boot when `config/runtime.env` permissions exceed `0o600` (the install/setup pipeline already chmods 0600; this is the safety net for hand-edited deploys)
+- Docs: `AUTH.md` documents the `trustProxy` requirement for `request.ip`-based rate limiting; `VM-MANAGEMENT.md` documents out-of-band rename behaviour; `BACKUPS.md` documents `vmBasePath` portability across `vmsPath` changes; `STORAGE.md` documents the new `hasPassword` response field
+
 ## 2026-04-28
 
 ### New Features

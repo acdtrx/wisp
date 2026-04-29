@@ -113,6 +113,8 @@ The global `onRequest` auth hook validates the cookie before the WebSocket upgra
 
 Failed login attempts are tracked per source IP (in-memory `Map`). The window is **60 s** with a maximum of **5 failed attempts per IP**; further attempts in the same window return **429**. The map is swept every 60 s for expired entries and capped at 10 000 distinct IPs to bound memory under flood conditions.
 
+The IP used as the map key is **`request.ip`**, which Fastify resolves to the socket peer (`trustProxy: false` is the default and is what we ship with). Do **not** enable `trustProxy: true` without an upstream-IP allowlist: it would let any client forge `X-Forwarded-For` and trivially bypass the rate limit. If a deployment ever fronts Wisp with a reverse proxy that adds `X-Forwarded-For`, gate `trustProxy` behind that proxy's IP only.
+
 ## Security Considerations
 
 - **Timing-safe comparison** for both password verification and JWT signature verification

@@ -616,8 +616,6 @@ export async function startExistingContainer(name) {
  * Delete a container: stop task, remove snapshot, remove containerd definition, delete files.
  */
 export async function deleteContainer(name, deleteFiles = true) {
-  await deregisterServicesForContainer(name);
-  await deregisterAddress(name);
   // Stop task if running
   try {
     const task = await callUnary(getClient('tasks'), 'get', { containerId: name });
@@ -630,6 +628,12 @@ export async function deleteContainer(name, deleteFiles = true) {
   } catch {
     // No task
   }
+  /* Deregister mDNS *after* the task is gone so we never have a window where
+   * `<name>.local` resolves to nothing while the container is still serving;
+   * the brief overlap where the name still resolves to a tearing-down
+   * container is preferable to "name gone, container still answering". */
+  await deregisterServicesForContainer(name);
+  await deregisterAddress(name);
 
   // Tear down networking
   try {

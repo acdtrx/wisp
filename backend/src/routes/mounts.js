@@ -11,7 +11,12 @@ import { refresh as refreshDiskSnapshot, getDevices as getDiskDevices } from '..
 import { findContainersUsingStorageMount } from '../lib/containerManager.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
 
-const mountSchema = {
+/* Response schema deliberately omits `password`: the field never leaves the
+ * server. `mountForApi` (settings.js) replaces it with `hasPassword: boolean`
+ * so the UI can render a "saved" affordance without holding a secret-shaped
+ * placeholder string. Declaring the schema here means Fastify strips any
+ * stray `password` even if a future change leaks it back into the model. */
+const mountResponseSchema = {
   type: 'object',
   properties: {
     id: { type: 'string' },
@@ -21,7 +26,7 @@ const mountSchema = {
     autoMount: { type: 'boolean' },
     share: { type: 'string' },
     username: { type: 'string' },
-    password: { type: 'string' },
+    hasPassword: { type: 'boolean' },
     uuid: { type: 'string' },
     fsType: { type: 'string' },
     readOnly: { type: 'boolean' },
@@ -31,7 +36,7 @@ const mountSchema = {
 export default async function mountsRoutes(fastify) {
   fastify.get('/host/mounts', {
     schema: {
-      response: { 200: { type: 'array', items: mountSchema } },
+      response: { 200: { type: 'array', items: mountResponseSchema } },
     },
     handler: async () => {
       const settings = await getSettings();

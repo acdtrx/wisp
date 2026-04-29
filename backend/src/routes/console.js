@@ -28,7 +28,9 @@ export default async function consoleRoutes(fastify) {
       validateVMName(name);
     } catch (err) {
       log.warn({ reason: 'invalid_vm_name', err: err.message }, 'VNC WebSocket rejected');
-      socket.close(4000, err.message || 'Invalid VM name');
+      /* WS close reasons are visible to any network observer and to other tabs;
+       * keep them generic and log the real error server-side. */
+      socket.close(4000, 'invalid name');
       return;
     }
     let port;
@@ -44,7 +46,7 @@ export default async function consoleRoutes(fastify) {
         },
         'VNC could not resolve graphics port (libvirt/XML or VM state)',
       );
-      socket.close(4000, err.message || 'VNC not available');
+      socket.close(4000, 'vnc unavailable');
       return;
     }
 
