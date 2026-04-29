@@ -42,10 +42,14 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
   async function connect() {
     if (closed) return;
 
+    // Capture controller in this closure so the timeout / catch don't see a
+    // stale outer reference that close() may have nulled in the meantime.
+    const myController = new AbortController();
+    controller = myController;
+    const tid = setTimeout(() => myController.abort(), SSE_FETCH_TIMEOUT_MS);
+
     try {
-      controller = new AbortController();
-      const tid = setTimeout(() => controller.abort(), SSE_FETCH_TIMEOUT_MS);
-      const res = await fetch(url, { signal: controller.signal, credentials: 'include' });
+      const res = await fetch(url, { signal: myController.signal, credentials: 'include' });
       clearTimeout(tid);
 
       if (res.status === 401) {
@@ -102,12 +106,15 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
         retryDelay = sseBackoffMs(retryDelay);
       }
     } catch (err) {
+      clearTimeout(tid);
       if (closed || err.name === 'AbortError') return;
       retryTimer = setTimeout(() => {
         retryTimer = null;
         retryDelay = sseBackoffMs(retryDelay);
         connect();
       }, withJitterMs(retryDelay));
+    } finally {
+      clearTimeout(tid);
     }
   }
 
@@ -139,10 +146,12 @@ export function createSSE(url, onMessage, onError) {
   async function connect() {
     if (closed) return;
 
+    const myController = new AbortController();
+    controller = myController;
+    const tid = setTimeout(() => myController.abort(), SSE_FETCH_TIMEOUT_MS);
+
     try {
-      controller = new AbortController();
-      const tid = setTimeout(() => controller.abort(), SSE_FETCH_TIMEOUT_MS);
-      const res = await fetch(url, { signal: controller.signal, credentials: 'include' });
+      const res = await fetch(url, { signal: myController.signal, credentials: 'include' });
       clearTimeout(tid);
 
       if (res.status === 401) {
@@ -188,6 +197,7 @@ export function createSSE(url, onMessage, onError) {
         retryDelay = sseBackoffMs(retryDelay);
       }
     } catch (err) {
+      clearTimeout(tid);
       if (closed || err.name === 'AbortError') return;
       if (onError) onError();
       retryTimer = setTimeout(() => {
@@ -195,6 +205,8 @@ export function createSSE(url, onMessage, onError) {
         retryDelay = sseBackoffMs(retryDelay);
         connect();
       }, withJitterMs(retryDelay));
+    } finally {
+      clearTimeout(tid);
     }
   }
 

@@ -65,8 +65,16 @@ export const useContainerStore = create((set, get) => {
         const containers = await containerApi.listContainers();
         set({ containers });
 
-        const { selectedContainer, containerConfig } = get();
-        if (selectedContainer && !containers.find((c) => c.name === selectedContainer)) {
+        const { selectedContainer, containerConfig, loading, actionLoading } = get();
+        // Skip auto-deselect while a select or action is in flight — the
+        // container may legitimately not be in the list yet (post-create
+        // race). See vmStore for the symmetric fix and full reasoning.
+        if (
+          selectedContainer
+          && !containers.find((c) => c.name === selectedContainer)
+          && !loading
+          && !actionLoading
+        ) {
           get().deselectContainer();
         } else if (selectedContainer && containerConfig) {
           const ct = containers.find((c) => c.name === selectedContainer);
@@ -93,6 +101,8 @@ export const useContainerStore = create((set, get) => {
             state.selectedContainer
             && data.length > 0
             && !data.find((c) => c.name === state.selectedContainer)
+            && !state.loading
+            && !state.actionLoading
           ) {
             get().deselectContainer();
           }

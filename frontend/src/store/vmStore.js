@@ -66,8 +66,12 @@ export const useVmStore = create((set, get) => {
         migrateSelectionIfRenamed(vms);
         set({ vms });
 
-        const { selectedVM, vmConfig } = get();
-        if (selectedVM && !vms.find(v => v.name === selectedVM)) {
+        const { selectedVM, vmConfig, configLoading, actionLoading } = get();
+        // Skip auto-deselect while a select or action is in flight — the VM may
+        // legitimately not be in the list yet (post-create race) or be there
+        // under its prior name (post-rename race). Subsequent SSE frames will
+        // deselect once configLoading/actionLoading clear if it's truly gone.
+        if (selectedVM && !vms.find(v => v.name === selectedVM) && !configLoading && !actionLoading) {
           get().deselectVM();
         } else if (selectedVM && vmConfig) {
           const vm = vms.find(v => v.name === selectedVM);
@@ -88,7 +92,18 @@ export const useVmStore = create((set, get) => {
           if (!Array.isArray(data)) return;
           migrateSelectionIfRenamed(data);
           const state = get();
-          if (state.selectedVM && !data.find((v) => v.name === state.selectedVM)) {
+          // Skip auto-deselect while a select or action is in flight — the VM
+          // may legitimately not be in this SSE frame yet (post-create race
+          // before libvirt's DomainEvent reaches us). Without this gate, the
+          // listener fires deselectVM during the gap between selectVM setting
+          // selectedVM and getVM resolving, leaving selectedVM=null while
+          // vmConfig still gets populated from getVM — a stuck-stale state.
+          if (
+            state.selectedVM &&
+            !data.find((v) => v.name === state.selectedVM) &&
+            !state.configLoading &&
+            !state.actionLoading
+          ) {
             get().deselectVM();
           }
           set((prev) => {
