@@ -42,11 +42,11 @@ If the configured size limit is exceeded, the partial file is unlinked and the r
 
 ### Delete
 
-Removes a file from the image directory. Returns 404 if the file doesn't exist.
+Removes a file from the image directory. Returns 404 if the file doesn't exist. Returns **409** when the file is still referenced by any VM (any disk's `<source file="...">` matches the absolute path) — the response detail lists the VM names so the operator can detach first. This mirrors `assertBridgeNotInUse` for managed bridges.
 
 ### Rename
 
-Renames a file within the image directory. Validates both the old and new filenames. Returns 409 if the new name is already taken.
+Renames a file within the image directory. Validates both the old and new filenames. Returns 409 if the new name is already taken or if the source file is referenced by any VM.
 
 ### URL Download
 

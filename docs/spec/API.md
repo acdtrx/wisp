@@ -792,6 +792,7 @@ Delete a file from the library.
 
 - **200:** `{ ok: true }`
 - **404:** File not found
+- **409:** File in use — referenced by one or more VMs (detail lists names)
 
 ### PATCH /api/library/:filename
 
@@ -800,7 +801,7 @@ Rename a file.
 - **Body:** `{ name: string }`
 - **200:** `{ name, type, size, modified }`
 - **404:** File not found
-- **409:** New name already taken
+- **409:** New name already taken, or source file is referenced by one or more VMs
 
 ### GET /api/library/check-url
 

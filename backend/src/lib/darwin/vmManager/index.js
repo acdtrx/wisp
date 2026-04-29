@@ -133,6 +133,10 @@ export async function getVMConfig() {
   throw noConn();
 }
 
+export async function findVMsUsingImage() {
+  return [];
+}
+
 export async function startVM() {
   throw noConn();
 }

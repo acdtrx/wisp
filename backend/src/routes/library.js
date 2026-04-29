@@ -10,6 +10,7 @@ import { downloadUbuntuCloudImage } from '../lib/downloadUbuntuCloud.js';
 import { downloadArchCloudImage } from '../lib/downloadArchCloud.js';
 import { ensureImageDir, getImagePath } from '../lib/paths.js';
 import { detectType } from '../lib/fileTypes.js';
+import { findVMsUsingImage } from '../lib/vmManager.js';
 import { setupSSE } from '../lib/sse.js';
 import { sendError } from '../lib/routeErrors.js';
 import { BACKGROUND_JOB_KIND } from '../lib/backgroundJobKinds.js';
@@ -185,6 +186,19 @@ export default async function libraryRoutes(fastify) {
       } catch {
         /* ENOENT or unreadable */
         reply.code(404).send({ error: 'File not found', detail: `"${filename}" does not exist in the library` });
+        return;
+      }
+
+      // Refuse to remove a library file that's still referenced by any VM —
+      // otherwise the next VM start would fail with "no such file" because
+      // the domain XML still points at the now-missing path. Symmetrical with
+      // assertBridgeNotInUse for managed bridges.
+      const inUseBy = await findVMsUsingImage(filePath);
+      if (inUseBy.length > 0) {
+        reply.code(409).send({
+          error: 'File in use',
+          detail: `Detach "${filename}" from these VMs first: ${inUseBy.join(', ')}`,
+        });
         return;
       }
 
@@ -499,6 +513,20 @@ export default async function libraryRoutes(fastify) {
           return;
         } catch {
           /* target name free — proceed with rename */
+        }
+      }
+
+      // Refuse to rename a library file that's referenced by any VM (same
+      // reasoning as DELETE) — if we renamed it under a running domain's feet
+      // its next start would fail.
+      if (filename !== newName) {
+        const inUseBy = await findVMsUsingImage(oldPath);
+        if (inUseBy.length > 0) {
+          reply.code(409).send({
+            error: 'File in use',
+            detail: `Detach "${filename}" from these VMs first: ${inUseBy.join(', ')}`,
+          });
+          return;
         }
       }
 

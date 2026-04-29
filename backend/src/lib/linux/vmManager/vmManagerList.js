@@ -146,6 +146,39 @@ async function enrichDisksWithSizeGiB(disks) {
   );
 }
 
+/**
+ * Find VMs that reference an absolute file path in any `<disk><source file>`
+ * (block disk or CDROM). Used by the image library to refuse rename/delete on
+ * files that are still attached — otherwise a VM's next start would fail with
+ * "no such file" because the domain XML still points at the old/missing path.
+ *
+ * Returns an array of VM names. Empty array means no references found.
+ */
+export async function findVMsUsingImage(absPath) {
+  if (!absPath || typeof absPath !== 'string') return [];
+  const target = String(absPath);
+  const refs = [];
+  let domainPaths;
+  try {
+    domainPaths = await connectionState.connectIface.ListDomains(3);
+  } catch {
+    return [];
+  }
+  for (const dp of domainPaths) {
+    try {
+      const { iface } = await getDomainObjAndIface(dp);
+      const xml = await iface.GetXMLDesc(2);
+      const config = parseVMFromXML(xml);
+      if (!config) continue;
+      const inUse = (config.disks || []).some((d) => d.source === target);
+      if (inUse) refs.push(config.name);
+    } catch {
+      /* skip VM if XML unavailable — best-effort scan */
+    }
+  }
+  return refs;
+}
+
 export async function getVMConfig(name) {
   const path = await resolveDomain(name);
   const { iface, props } = await getDomainObjAndIface(path);
