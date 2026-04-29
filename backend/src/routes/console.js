@@ -2,12 +2,19 @@ import { createConnection } from 'node:net';
 import { getVNCPort } from '../lib/vmManager.js';
 import { verifyJWT } from '../lib/auth.js';
 import { validateVMName } from '../lib/validation.js';
+import { isAllowedWsOrigin } from '../lib/wsOrigin.js';
 
 export default async function consoleRoutes(fastify) {
   // VNC: TCP proxy to QEMU VNC port. Token required (query.token) since WebSocket doesn't send Authorization header.
   fastify.get('/console/:name/vnc', { websocket: true }, async (socket, request) => {
     const { name } = request.params;
     const log = request.log.child({ scope: 'vnc-console', vmName: name });
+
+    if (!isAllowedWsOrigin(request)) {
+      log.warn({ reason: 'origin_not_allowed', origin: request.headers?.origin }, 'VNC WebSocket rejected');
+      socket.close(1008, 'origin not allowed');
+      return;
+    }
 
     const token = request.query?.token;
     const payload = token ? verifyJWT(token) : null;

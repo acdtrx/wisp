@@ -38,6 +38,8 @@ Filename validation: no path separators (`/`, `\`), no `..`, no leading dots. Th
 
 If a file with the same name already exists, the upload is rejected (409 conflict).
 
+If the configured size limit is exceeded, the partial file is unlinked and the request returns **422**. Any other pipeline error also unlinks the partial file before responding 500. This prevents disk-fill from a truncated or aborted upload.
+
 ### Delete
 
 Removes a file from the image directory. Returns 404 if the file doesn't exist.

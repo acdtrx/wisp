@@ -7,12 +7,21 @@
 #   wisp-mount unmount-lazy <mountPath>
 #   wisp-mount rmdir        <mountPath under /mnt/wisp/>   # delete-only cleanup; no-op if non-empty or missing
 #
-# SMB config file: lines `share=`, `mountPath=`, `username=`, `password=`, `uid=`, `gid=`
-# Disk config file: lines `uuid=`, `mountPath=`, `fsType=`, `readOnly=` (0|1), `uid=`, `gid=`
+# Config file format (one key=value per line; '#' comments and blank lines ignored):
+#   SMB:  share, mountPath, credentialsPath, uid, gid
+#   Disk: uuid, mountPath, fsType, readOnly (0|1), uid, gid
 #
-# mount / check: creates the mount point, runs mount; check tears it back down. Removes config file after use.
-# unmount     : runs umount on the given path.
-# unmount-lazy: runs umount -l (for surprise-removed devices).
+# The SMB `credentialsPath` points at a separate mode-0600 file in the standard
+# mount.cifs format (`username=...` / `password=...` / `domain=...`), passed to
+# the kernel via `mount -o credentials=<path>` so secrets never appear on argv
+# (`/proc/<pid>/cmdline`) or in this script's environment. The JS caller
+# (smbMount.js) writes both files in a temp dir and unlinks them after the
+# helper returns.
+#
+# Parsing the config file uses a strict allow-listed key=value parser — never
+# `source`. Any unknown key, multi-line value, or value containing a literal
+# newline is rejected. This stops a JS-side regression from turning the helper
+# into a `bash -e` primitive.
 #
 # Install: sudoers NOPASSWD for this script (installed by scripts/linux/setup/install-helpers.sh).
 set -euo pipefail
@@ -52,20 +61,88 @@ assert_mount_path_under_wisp() {
   esac
 }
 
+# Strict key=value parser. Reads a config file line by line, splits on the
+# first '=', and only assigns to known keys. Rejects unknown keys with exit 64.
+# Variables are written via `printf -v` so values stay literal (no $-expansion,
+# no command substitution, no glob expansion).
+read_smb_config() {
+  share=""
+  mountPath=""
+  credentialsPath=""
+  uid=""
+  gid=""
+  local line k v
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      \#*|'') continue ;;
+      *=*)
+        k="${line%%=*}"
+        v="${line#*=}"
+        case "$k" in
+          share|mountPath|credentialsPath|uid|gid)
+            printf -v "$k" '%s' "$v"
+            ;;
+          *)
+            echo "wisp-mount: unknown config key: $k" >&2
+            exit 64
+            ;;
+        esac
+        ;;
+      *)
+        echo "wisp-mount: malformed config line" >&2
+        exit 64
+        ;;
+    esac
+  done < "$1"
+}
+
+read_disk_config() {
+  uuid=""
+  mountPath=""
+  fsType=""
+  readOnly=""
+  uid=""
+  gid=""
+  local line k v
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      \#*|'') continue ;;
+      *=*)
+        k="${line%%=*}"
+        v="${line#*=}"
+        case "$k" in
+          uuid|mountPath|fsType|readOnly|uid|gid)
+            printf -v "$k" '%s' "$v"
+            ;;
+          *)
+            echo "wisp-mount: unknown config key: $k" >&2
+            exit 64
+            ;;
+        esac
+        ;;
+      *)
+        echo "wisp-mount: malformed config line" >&2
+        exit 64
+        ;;
+    esac
+  done < "$1"
+}
+
 do_smb_mount() {
-  # shellcheck source=/dev/null
-  source "$1"
+  read_smb_config "$1"
   if [[ -z "${mountPath:-}" || -z "${share:-}" ]]; then
     echo "Config must set mountPath and share" >&2
     exit 1
   fi
+  if [[ -z "${credentialsPath:-}" || ! -f "$credentialsPath" ]]; then
+    echo "Config must set credentialsPath pointing to a readable file" >&2
+    exit 1
+  fi
   assert_mount_path_under_wisp "$mountPath"
   mkdir -p "$mountPath"
-  local opts="rw"
+  local opts="rw,credentials=${credentialsPath}"
   [[ -n "${uid:-}" ]] && opts="${opts},uid=${uid}"
   [[ -n "${gid:-}" ]] && opts="${opts},gid=${gid}"
-  [[ -n "${username:-}" ]] && opts="${opts},username=${username}"
-  [[ -n "${password:-}" ]] && opts="${opts},password=${password}"
   mount -t cifs "$share" "$mountPath" -o "$opts"
 }
 
@@ -76,8 +153,7 @@ do_smb_check() {
 }
 
 do_disk_mount() {
-  # shellcheck source=/dev/null
-  source "$1"
+  read_disk_config "$1"
   if [[ -z "${mountPath:-}" || -z "${uuid:-}" || -z "${fsType:-}" ]]; then
     echo "Config must set mountPath, uuid, and fsType" >&2
     exit 1

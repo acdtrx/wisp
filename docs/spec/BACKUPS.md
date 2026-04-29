@@ -57,7 +57,7 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
 
 ## Creating a Backup
 
-1. Client sends `POST /api/vms/:name/backup` with `destinationIds` (e.g. `["local"]` or `["local", "<backupMountId>"]`) or explicit `destinationPaths`
+1. Client sends `POST /api/vms/:name/backup` with `destinationIds` (e.g. `["local"]` or `["local", "<backupMountId>"]`); defaults to `["local"]` when omitted. Only `local` and the single configured `backupMountId` are accepted — any other id returns 422.
 2. Backend resolves paths from `backupLocalPath` and, when requested, the mount referenced by `backupMountId` (with mount check / auto-mount for SMB)
 3. A background job is created (returns `jobId`)
 4. For each destination path:

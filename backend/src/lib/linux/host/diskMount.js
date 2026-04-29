@@ -23,10 +23,19 @@ function sanitizeStderr(msg) {
   return msg;
 }
 
-function escapeShellValue(v) {
-  if (v == null) return '';
-  const s = String(v);
-  return s.replace(/'/g, "'\"'\"'");
+/**
+ * Reject characters that have load-bearing meaning in the wisp-mount config
+ * file format (line-oriented `key=value`). Newlines/CR would inject extra
+ * keys; we conservatively reject commas too to stay symmetrical with smbMount.
+ */
+function assertNoForbiddenChars(field, value) {
+  if (value == null) return;
+  if (typeof value !== 'string') {
+    throw createAppError('DISK_MOUNT_INVALID', `${field} must be a string`);
+  }
+  if (/[\n\r,]/.test(value)) {
+    throw createAppError('DISK_MOUNT_INVALID', `${field} cannot contain newlines or commas`);
+  }
 }
 
 async function getScriptPath() {
@@ -73,6 +82,10 @@ export async function mountDisk(uuid, mountPath, { fsType, readOnly = false } = 
 }
 
 async function _mountDisk(uuid, mountPath, { fsType, readOnly }) {
+  assertNoForbiddenChars('uuid', uuid);
+  assertNoForbiddenChars('mountPath', mountPath);
+  assertNoForbiddenChars('fsType', fsType);
+
   const oldMask = process.umask(0o077);
   const tmpDir = await mkdtemp(join(tmpdir(), 'wisp-disk-'));
   process.umask(oldMask);
@@ -81,14 +94,14 @@ async function _mountDisk(uuid, mountPath, { fsType, readOnly }) {
   const gid = process.getgid && process.getgid();
   const effectiveReadOnly = readOnly || fsType === 'ntfs3';
   const lines = [
-    `uuid='${escapeShellValue(uuid)}'`,
-    `mountPath='${escapeShellValue(mountPath)}'`,
-    `fsType='${escapeShellValue(fsType)}'`,
+    `uuid=${uuid}`,
+    `mountPath=${mountPath}`,
+    `fsType=${fsType}`,
     `readOnly=${effectiveReadOnly ? '1' : '0'}`,
     ...(typeof uid === 'number' ? [`uid=${uid}`] : []),
     ...(typeof gid === 'number' ? [`gid=${gid}`] : []),
   ];
-  await writeFile(configPath, lines.join('\n'), { mode: 0o600 });
+  await writeFile(configPath, `${lines.join('\n')}\n`, { mode: 0o600 });
 
   try {
     await runHelper(['disk', 'mount', configPath]);

@@ -278,7 +278,6 @@ export default async function vmsRoutes(fastify) {
         type: 'object',
         properties: {
           destinationIds: { type: 'array', items: { type: 'string' } },
-          destinationPaths: { type: 'array', items: { type: 'string' } },
         },
         additionalProperties: false,
       },
@@ -296,53 +295,50 @@ export default async function vmsRoutes(fastify) {
       try {
         const { name } = request.params;
         const body = request.body || {};
-        let paths = body.destinationPaths;
-        if (!paths || paths.length === 0) {
-          const ids = body.destinationIds || ['local'];
-          const settings = await getSettings();
-          const rawMounts = await getRawMounts();
-          const backupMountId = settings.backupMountId;
-          paths = [];
-          for (const id of ids) {
-            if (id === 'local') {
-              if (settings.backupLocalPath) paths.push(settings.backupLocalPath);
-            } else if (backupMountId && id === backupMountId) {
-              const dest = rawMounts.find((d) => d.id === id);
-              if (!dest) {
-                return reply.code(422).send({
-                  error: 'Invalid backup destination',
-                  detail: 'Mount is not configured for backup',
-                });
-              }
-              const mountPath = dest.mountPath;
-              if (dest.type === 'smb' && mountPath) {
-                const { mounted } = await getMountStatus(mountPath);
-                if (!mounted) {
-                  try {
-                    await mountSMB(dest.share, mountPath, { username: dest.username, password: dest.password });
-                  } catch (mountErr) {
-                    return reply.code(503).send({
-                      error: 'Network mount failed',
-                      detail: mountErr.message || 'Could not mount network share. Mount it from Host Mgmt first.',
-                    });
-                  }
-                }
-                paths.push(mountPath);
-              } else if (mountPath) {
-                paths.push(mountPath);
-              }
-            } else {
+        const ids = body.destinationIds && body.destinationIds.length > 0 ? body.destinationIds : ['local'];
+        const settings = await getSettings();
+        const rawMounts = await getRawMounts();
+        const backupMountId = settings.backupMountId;
+        const paths = [];
+        for (const id of ids) {
+          if (id === 'local') {
+            if (settings.backupLocalPath) paths.push(settings.backupLocalPath);
+          } else if (backupMountId && id === backupMountId) {
+            const dest = rawMounts.find((d) => d.id === id);
+            if (!dest) {
               return reply.code(422).send({
                 error: 'Invalid backup destination',
-                detail: `Unknown or disallowed destination id: ${id}`,
+                detail: 'Mount is not configured for backup',
               });
             }
+            const mountPath = dest.mountPath;
+            if (dest.type === 'smb' && mountPath) {
+              const { mounted } = await getMountStatus(mountPath);
+              if (!mounted) {
+                try {
+                  await mountSMB(dest.share, mountPath, { username: dest.username, password: dest.password });
+                } catch (mountErr) {
+                  return reply.code(503).send({
+                    error: 'Network mount failed',
+                    detail: mountErr.message || 'Could not mount network share. Mount it from Host Mgmt first.',
+                  });
+                }
+              }
+              paths.push(mountPath);
+            } else if (mountPath) {
+              paths.push(mountPath);
+            }
+          } else {
+            return reply.code(422).send({
+              error: 'Invalid backup destination',
+              detail: `Unknown or disallowed destination id: ${id}`,
+            });
           }
         }
         if (paths.length === 0) {
           return reply.code(422).send({
             error: 'No backup destination',
-            detail: 'Provide destinationIds (e.g. ["local"]) or destinationPaths',
+            detail: 'No configured destination resolved for the requested ids',
           });
         }
         const jobId = randomBytes(12).toString('hex');

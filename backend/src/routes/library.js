@@ -131,10 +131,21 @@ export default async function libraryRoutes(fastify) {
         /* destination free — proceed with upload */
       }
 
+      // Stream to disk. fastify-multipart sets `data.file.truncated` when the
+      // configured fileSize limit is exceeded; the pipeline still resolves
+      // successfully, so we must check explicitly. On any failure path,
+      // unlink the partial file to avoid disk-fill DoS.
       try {
         await pipeline(data.file, createWriteStream(destPath));
       } catch (err) {
+        await unlink(destPath).catch(() => { /* best-effort cleanup */ });
         reply.code(500).send({ error: 'Upload failed', detail: err.message });
+        return;
+      }
+
+      if (data.file.truncated) {
+        await unlink(destPath).catch(() => { /* best-effort cleanup */ });
+        reply.code(422).send({ error: 'File too large', detail: 'Upload exceeded the configured size limit' });
         return;
       }
 

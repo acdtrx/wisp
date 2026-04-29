@@ -28,7 +28,10 @@ The backend extracts the `port` attribute from the `<graphics type='vnc'>` eleme
 
 WebSocket connections cannot carry `Authorization` headers during the handshake. Instead, the JWT is passed as a query parameter (`?token=`). The console route verifies the token before establishing the proxy connection.
 
+The route also enforces a same-origin policy on the upgrade request before the JWT check. CORS does not apply to WebSocket, so without this an attacker page on any origin could open a WS to `/ws/console/...` and (with a stolen JWT) drive the VM. In dev, only `http://localhost:5173` is allowed; in production, `Origin`'s host must equal the request `Host` header. Extra origins can be allow-listed via the comma-separated `WISP_ALLOWED_WS_ORIGINS` environment variable (rare — reverse-proxy deployments where the frontend is served from a different origin than the backend).
+
 Rejection responses:
+- Close code `1008` — Origin not allowed (or Origin header missing)
 - Close code `4001` — missing or invalid token
 - Close code `4000` — invalid VM name or VNC port not available
 

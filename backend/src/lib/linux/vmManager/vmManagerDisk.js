@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError } from './vmManagerConnection.js';
 import { parseDomainRaw, parseVMFromXML, buildXml } from './vmManagerXml.js';
-import { getVMBasePath } from '../../paths.js';
+import { getVMBasePath, assertPathInsideAllowedRoots } from '../../paths.js';
 import { resizeDisk as resizeDiskImage } from '../../diskOps.js';
 
 const execFile = promisify(execFileCb);
@@ -41,6 +41,8 @@ export function extractDiskSnippet(fullXml, slot) {
 }
 
 export async function attachDisk(name, slot, imagePath, bus = 'virtio') {
+  assertPathInsideAllowedRoots(imagePath, name);
+
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
   if (state.code !== 5 && state.code !== 0) {

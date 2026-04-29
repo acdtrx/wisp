@@ -49,6 +49,7 @@ function errorCodeToStatus(code) {
     case 'DOWNLOAD_FAILED':
     case 'NO_BODY':
     case 'INVALID_REQUEST':
+    case 'PATH_NOT_ALLOWED':
       return 422;
     case 'BACKUP_DEST_NOT_FOUND':
     case 'BACKUP_DEST_NOT_WRITABLE':

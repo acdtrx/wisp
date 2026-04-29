@@ -4,6 +4,7 @@
 import { execInContainer, resizeExec } from '../lib/containerManager.js';
 import { verifyJWT } from '../lib/auth.js';
 import { validateContainerName } from '../lib/validation.js';
+import { isAllowedWsOrigin } from '../lib/wsOrigin.js';
 
 /** RFC 6455: close reason must be ≤123 bytes UTF-8; `ws` throws RangeError if longer. */
 const WS_CLOSE_REASON_MAX_BYTES = 123;
@@ -40,6 +41,12 @@ export default async function containerConsoleRoutes(fastify) {
   fastify.get('/container-console/:name', { websocket: true }, async (socket, request) => {
     const { name } = request.params;
     const log = request.log.child({ scope: 'container-console', containerName: name });
+
+    if (!isAllowedWsOrigin(request)) {
+      log.warn({ reason: 'origin_not_allowed', origin: request.headers?.origin }, 'Container console WebSocket rejected');
+      socket.close(1008, 'origin not allowed');
+      return;
+    }
 
     const token = request.query?.token;
     const payload = token ? verifyJWT(token) : null;

@@ -5,8 +5,11 @@
 import { resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
 import { extractDiskSnippet } from './vmManagerDisk.js';
 import { buildDiskXml } from './vmManagerXml.js';
+import { assertPathInsideAllowedRoots } from '../../paths.js';
 
 export async function attachISO(name, slot, isoPath) {
+  assertPathInsideAllowedRoots(isoPath, name);
+
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
   const { iface } = await getDomainObjAndIface(domPath);

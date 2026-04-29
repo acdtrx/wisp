@@ -84,22 +84,26 @@ Re-insertion after unplug auto-mounts silently. Removal triggers a lazy unmount 
 
 ## Privileged helper
 
-`backend/scripts/wisp-mount` (installed at `/usr/local/bin/wisp-mount` by `scripts/linux/setup/install-helpers.sh`) is the single privileged invocation point. The backend writes a temp config file (mode `0600`) per operation, runs the helper via `sudo -n`, then the helper removes the config after use.
+`backend/scripts/wisp-mount` (installed at `/usr/local/bin/wisp-mount` by `scripts/linux/setup/install-helpers.sh`) is the single privileged invocation point. The backend writes one or two mode-`0600` temp files per operation, runs the helper via `sudo -n`, then the helper removes the config after use.
 
 | Subcommand | Purpose |
 |------------|---------|
-| `smb mount <configPath>` | `mount -t cifs` (config supplies share, mountPath, username, password, uid, gid) |
+| `smb mount <configPath>` | `mount -t cifs` (config supplies share, mountPath, credentialsPath, uid, gid) |
 | `smb check <configPath>` | SMB test — mount then unmount, no persistent state |
 | `disk mount <configPath>` | `mount -t <fsType> /dev/disk/by-uuid/<uuid>` (config supplies uuid, mountPath, fsType, readOnly, uid, gid) |
 | `unmount <path>` | `umount` |
 | `unmount-lazy <path>` | `umount -l` (used on surprise device removal) |
+
+The config file format is **strict line-oriented `key=value`** (no `source`, no shell evaluation). `wisp-mount` parses it with an allow-listed key set; unknown keys, malformed lines, or values containing `\n` / `\r` exit non-zero. The JS layer rejects `\n` / `\r` / `,` in `share`, `mountPath`, `username`, `password` before writing.
+
+For SMB, **credentials never appear on argv** (`/proc/<pid>/cmdline`). The backend writes a separate mode-`0600` credentials file in `mount.cifs` format (`username=...` / `password=...` / `domain=...` lines) and the helper passes its path via `mount -o credentials=<path>`. The kernel reads the file synchronously; the backend unlinks it once the helper returns.
 
 Mount options are chosen by filesystem:
 
 - `ext4` / `btrfs`: `defaults[,ro]` (filesystem stores POSIX perms)
 - `vfat` / `exfat` / `ntfs3`: `uid=$uid,gid=$gid,umask=0007[,ro]` (ownership must be passed at mount time)
 - `ntfs3`: forced `ro` (write support in `ntfs3` is still maturing; explicit opt-in could be added later)
-- SMB: `rw,uid=$uid,gid=$gid[,username=...,password=...]`
+- SMB: `rw,credentials=<path>[,uid=$uid,gid=$gid]`
 
 ## Startup reconciliation (`ensureMounts`)
 

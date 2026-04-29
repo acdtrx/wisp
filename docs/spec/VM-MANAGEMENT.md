@@ -353,6 +353,10 @@ Purpose-named lifecycle functions: `startVM`, `stopVM`, `forceStopVM`, `rebootVM
 - `attachISO(name, slot, isoPath)` — attach ISO to CDROM slot (hot-plug capable)
 - `ejectISO(name, slot)` — eject ISO from CDROM slot (hot-unplug capable)
 
+### Allowed paths for attach / create
+
+Every host-supplied disk or ISO path (attach disk/CDROM at runtime, plus `disk.sourcePath` and `cdrom1Path`/`cdrom2Path` at create time) is asserted to resolve under either the image library (`imagePath`) or this VM's own per-VM directory (`getVMBasePath(name)`). Paths outside those roots return **422 PATH_NOT_ALLOWED**. The check uses `path.resolve` to canonicalize before comparing — `..` traversal is rejected. libvirt would otherwise happily open arbitrary host files (e.g. `/etc/shadow`) as block / CDROM devices for QEMU.
+
 ### vmManagerUsb.js
 
 - `getVMUSBDevices(name)` — list USB devices attached to a VM

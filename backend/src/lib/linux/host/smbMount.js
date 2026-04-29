@@ -22,10 +22,52 @@ function sanitizeStderr(msg) {
   return msg.replace(/password\s*=\s*\S+/gi, 'password=***');
 }
 
-function escapeShellValue(v) {
-  if (v == null) return '';
-  const s = String(v);
-  return s.replace(/'/g, "'\"'\"'");
+/**
+ * Reject characters that have load-bearing meaning in either the wisp-mount
+ * config file format (which is line-oriented `key=value`) or in mount.cifs
+ * credentials files (`username=` / `password=` / `domain=` lines).
+ *
+ * Newlines/CR would create extra config keys; commas would have appeared as
+ * extra `mount -o` options under the prior argv-based scheme and remain
+ * reserved here for safety. The caller surfaces SMB_INVALID to the operator.
+ */
+function assertNoForbiddenChars(field, value) {
+  if (value == null) return;
+  if (typeof value !== 'string') {
+    throw createAppError('SMB_INVALID', `${field} must be a string`);
+  }
+  if (/[\n\r,]/.test(value)) {
+    throw createAppError(
+      'SMB_INVALID',
+      `${field} cannot contain newlines or commas`,
+    );
+  }
+}
+
+/**
+ * Write the kernel-readable credentials file consumed by `mount -o credentials=`.
+ * Format is mount.cifs's: one `key=value` per line. Mode 0600 keeps the file
+ * unreadable by other users; the caller unlinks it once mount.cifs has loaded
+ * it (the mount syscall reads the file synchronously). The password never
+ * crosses argv this way.
+ */
+async function writeCredentialsFile(filePath, { username, password, domain }) {
+  const lines = [];
+  if (username != null && username !== '') lines.push(`username=${username}`);
+  if (password != null && password !== '') lines.push(`password=${password}`);
+  if (domain != null && domain !== '') lines.push(`domain=${domain}`);
+  await writeFile(filePath, `${lines.join('\n')}\n`, { mode: 0o600 });
+}
+
+function buildSmbConfigContents({ share, mountPath, credentialsPath, uid, gid }) {
+  const lines = [
+    `share=${share}`,
+    `mountPath=${mountPath}`,
+    `credentialsPath=${credentialsPath}`,
+  ];
+  if (typeof uid === 'number') lines.push(`uid=${uid}`);
+  if (typeof gid === 'number') lines.push(`gid=${gid}`);
+  return `${lines.join('\n')}\n`;
 }
 
 async function getScriptPath() {
@@ -73,26 +115,31 @@ export async function mountSMB(share, mountPath, { username, password } = {}) {
 }
 
 async function _mountSMB(share, mountPath, { username, password } = {}) {
+  assertNoForbiddenChars('share', share);
+  assertNoForbiddenChars('mountPath', mountPath);
+  assertNoForbiddenChars('username', username);
+  assertNoForbiddenChars('password', password);
+
   const oldMask = process.umask(0o077);
   const tmpDir = await mkdtemp(join(tmpdir(), 'wisp-smb-'));
   process.umask(oldMask);
   const configPath = join(tmpDir, 'smb.conf');
+  const credentialsPath = join(tmpDir, 'credentials');
   const uid = process.getuid && process.getuid();
   const gid = process.getgid && process.getgid();
-  const lines = [
-    `share='${escapeShellValue(share)}'`,
-    `mountPath='${escapeShellValue(mountPath)}'`,
-    `username='${escapeShellValue(username)}'`,
-    `password='${escapeShellValue(password)}'`,
-    ...(typeof uid === 'number' ? [`uid=${uid}`] : []),
-    ...(typeof gid === 'number' ? [`gid=${gid}`] : []),
-  ];
-  await writeFile(configPath, lines.join('\n'), { mode: 0o600 });
+
+  await writeCredentialsFile(credentialsPath, { username, password });
+  await writeFile(
+    configPath,
+    buildSmbConfigContents({ share, mountPath, credentialsPath, uid, gid }),
+    { mode: 0o600 },
+  );
 
   try {
     await runHelper(['smb', 'mount', configPath]);
   } finally {
     await unlink(configPath).catch(() => {});
+    await unlink(credentialsPath).catch(() => {});
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 }
@@ -106,26 +153,37 @@ export async function checkSMBConnection(share, { username, password } = {}) {
   if (!share || typeof share !== 'string' || !share.trim()) {
     throw createAppError('SMB_INVALID', 'Share is required', 'share required');
   }
+  const trimmedShare = share.trim();
+  assertNoForbiddenChars('share', trimmedShare);
+  assertNoForbiddenChars('username', username);
+  assertNoForbiddenChars('password', password);
+
   const oldMask = process.umask(0o077);
   const tmpDir = await mkdtemp(join(tmpdir(), 'wisp-smb-'));
   process.umask(oldMask);
   const tempMountPath = `/mnt/wisp/smb-check-${Date.now()}`;
   const configPath = join(tmpDir, 'smb.conf');
+  const credentialsPath = join(tmpDir, 'credentials');
   const uid = process.getuid && process.getuid();
   const gid = process.getgid && process.getgid();
-  const lines = [
-    `share='${escapeShellValue(share.trim())}'`,
-    `mountPath='${tempMountPath}'`,
-    `username='${escapeShellValue(username)}'`,
-    `password='${escapeShellValue(password)}'`,
-    ...(typeof uid === 'number' ? [`uid=${uid}`] : []),
-    ...(typeof gid === 'number' ? [`gid=${gid}`] : []),
-  ];
-  await writeFile(configPath, lines.join('\n'), { mode: 0o600 });
+
+  await writeCredentialsFile(credentialsPath, { username, password });
+  await writeFile(
+    configPath,
+    buildSmbConfigContents({
+      share: trimmedShare,
+      mountPath: tempMountPath,
+      credentialsPath,
+      uid,
+      gid,
+    }),
+    { mode: 0o600 },
+  );
   try {
     await runHelper(['smb', 'check', configPath]);
   } finally {
     await unlink(configPath).catch(() => {});
+    await unlink(credentialsPath).catch(() => {});
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 }

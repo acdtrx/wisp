@@ -706,7 +706,7 @@ Fetch SSH public keys for a GitHub user (server-side proxy to avoid CORS).
 
 Start a backup job. Returns a job ID; monitor progress via SSE.
 
-- **Body:** `{ destinationIds?: ["local", "<mountId>"], destinationPaths?: ["/path/to/dest"] }`
+- **Body:** `{ destinationIds?: ["local", "<mountId>"] }` (defaults to `["local"]`)
 - **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted. Any other id returns **422**.
 - **201:** `{ jobId: string, title: string }` — `title` is e.g. `Backup <vmName>`
 - **422:** No valid destination
