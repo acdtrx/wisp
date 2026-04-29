@@ -91,7 +91,6 @@ export default async function vmsRoutes(fastify) {
   // domain events and qemu binary changes; no polling timer.
   fastify.get('/vms/stream', {
     schema: { hide: true },
-    config: { acceptQueryToken: true },
     handler: async (request, reply) => {
       setupSSE(reply);
 
@@ -249,7 +248,6 @@ export default async function vmsRoutes(fastify) {
   // GET /vms/create-progress/:jobId — SSE stream for create progress
   fastify.get('/vms/create-progress/:jobId', {
     schema: { hide: true },
-    config: { acceptQueryToken: true },
     handler: async (request, reply) => {
       const { jobId } = request.params;
       const job = createJobStore.getJob(jobId);
@@ -378,7 +376,6 @@ export default async function vmsRoutes(fastify) {
   // GET /vms/backup-progress/:jobId — SSE stream for backup progress
   fastify.get('/vms/backup-progress/:jobId', {
     schema: { hide: true },
-    config: { acceptQueryToken: true },
     handler: async (request, reply) => {
       const { jobId } = request.params;
       const job = backupJobStore.getJob(jobId);
@@ -941,7 +938,6 @@ export default async function vmsRoutes(fastify) {
   // GET /vms/:name/stats — SSE endpoint
   fastify.get('/vms/:name/stats', {
     schema: { hide: true },
-    config: { acceptQueryToken: true },
     handler: async (request, reply) => {
       const { name } = request.params;
 

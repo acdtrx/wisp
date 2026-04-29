@@ -443,7 +443,6 @@ export default async function libraryRoutes(fastify) {
   // GET /library/download-progress/:jobId — SSE stream for download progress
   fastify.get('/library/download-progress/:jobId', {
     schema: { hide: true },
-    config: { acceptQueryToken: true },
     handler: async (request, reply) => {
       const { jobId } = request.params;
       const job = downloadJobStore.getJob(jobId);

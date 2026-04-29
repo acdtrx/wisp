@@ -8,7 +8,6 @@ import { setupSSE } from '../lib/sse.js';
 export default async function statsRoutes(fastify) {
   fastify.get('/stats', {
     schema: { hide: true },
-    config: { acceptQueryToken: true },
     handler: async (request, reply) => {
       setupSSE(reply);
 

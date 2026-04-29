@@ -1,6 +1,6 @@
 # API Reference
 
-All routes are prefixed with `/api/` (REST) or `/ws/` (WebSocket). All endpoints except `POST /api/auth/login` require authentication via `Authorization: Bearer <token>` header or `?token=<jwt>` query parameter.
+All routes are prefixed with `/api/` (REST) or `/ws/` (WebSocket). All endpoints except `POST /api/auth/login` require an authenticated session — the `wisp_session` cookie set by login. State-changing methods (`POST` / `PUT` / `PATCH` / `DELETE`) additionally require the `X-CSRF-Token` header to match the (non-HttpOnly) `wisp_csrf` cookie. Send `credentials: 'include'` on fetch requests so the browser carries the cookies cross-port in dev.
 
 All error responses return `{ error: string, detail: string }`. See [ERROR-HANDLING.md](ERROR-HANDLING.md) for details.
 
@@ -8,21 +8,27 @@ All error responses return `{ error: string, detail: string }`. See [ERROR-HANDL
 
 ### POST /api/auth/login
 
-Authenticate with password and receive a JWT.
+Authenticate with password. On success, sets two cookies (`wisp_session` HttpOnly + `wisp_csrf` non-HttpOnly, `SameSite=Lax`, 24h Max-Age) and returns `{ ok: true }`.
 
 - **Auth:** Public (no token required)
-- **Rate limit:** 5 attempts per IP per 60 seconds
+- **Rate limit:** 5 attempts per IP per 60 seconds (sweep 60 s, max 10 000 entries)
 - **Body:** `{ password: string }`
-- **200:** `{ token: string }`
+- **200:** `{ ok: true }` + `Set-Cookie: wisp_session=…; HttpOnly; SameSite=Lax`, `Set-Cookie: wisp_csrf=…; SameSite=Lax`
 - **401:** `{ error, detail }` — invalid password
 - **429:** `{ error, detail }` — rate limited
 
+### POST /api/auth/logout
+
+Clear the session cookies. Idempotent.
+
+- **204:** No content + `Set-Cookie: wisp_session=; Max-Age=0`, `Set-Cookie: wisp_csrf=; Max-Age=0`
+
 ### POST /api/auth/change-password
 
-Change the application password.
+Change the application password. On success, re-issues fresh `wisp_session` and `wisp_csrf` cookies against the new secret so the caller stays logged in. Existing SSE / WebSocket connections are server-closed because their pre-rotation tokens no longer verify.
 
 - **Body:** `{ currentPassword: string, newPassword: string }`
-- **204:** No content (success)
+- **204:** No content + new `Set-Cookie` lines for both cookies
 - **401:** `{ error, detail }` — current password incorrect
 - **500:** `{ error, detail }` — failed to write new password
 

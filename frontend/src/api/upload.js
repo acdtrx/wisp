@@ -1,4 +1,4 @@
-import { getToken, clearToken } from './client.js';
+import { broadcastLogout, readCsrfToken } from './client.js';
 
 /**
  * POST a single file as multipart field `file` with optional upload progress (0–100).
@@ -13,9 +13,9 @@ export function postMultipartFile(url, file, options = {}) {
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', url);
-
-    const token = getToken();
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.withCredentials = true;
+    const csrf = readCsrfToken();
+    if (csrf) xhr.setRequestHeader('X-CSRF-Token', csrf);
 
     if (onProgress) {
       xhr.upload.addEventListener('progress', (e) => {
@@ -25,7 +25,7 @@ export function postMultipartFile(url, file, options = {}) {
 
     xhr.addEventListener('load', () => {
       if (xhr.status === 401) {
-        clearToken();
+        broadcastLogout();
         window.location.href = '/login';
         reject(new Error('Session expired'));
         return;

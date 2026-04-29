@@ -1,16 +1,26 @@
 # Authentication
 
-Wisp uses single-user JWT authentication. There is one password for the entire application — no user accounts, roles, or multi-user support.
+Wisp uses single-user JWT authentication carried in **HttpOnly cookies**. There is one password for the entire application — no user accounts, roles, or multi-user support.
 
 ## Login Flow
 
-1. User navigates to the app. If no valid JWT is stored, they are redirected to `/login`.
+1. User navigates to the app. If no `wisp_csrf` cookie is present, the SPA redirects to `/login`.
 2. User enters the password and submits.
-3. Frontend sends `POST /api/auth/login` with `{ password }`.
+3. Frontend sends `POST /api/auth/login` with `{ password }` and `credentials: 'include'`.
 4. Backend verifies the password using timing-safe comparison.
-5. On success, backend returns `{ token }` — a signed JWT with 24-hour expiry.
-6. Frontend stores the token in `localStorage` and redirects to the main app.
+5. On success, backend sets two cookies and returns `{ ok: true }`:
+   - **`wisp_session`** — the JWT itself. `HttpOnly` (JS cannot read it), `SameSite=Lax`, `Path=/`, `Max-Age=86400`. `Secure` in production.
+   - **`wisp_csrf`** — a per-session random 32-byte token used for double-submit CSRF defence. Same attributes as the session cookie except **not** `HttpOnly` (JS reads it to echo on state-changing requests).
+6. Frontend has nothing to store; subsequent requests automatically carry both cookies.
 7. On failure, backend returns 401 with `{ error, detail }`.
+
+## CSRF protection
+
+`SameSite=Lax` already blocks the simple cross-site form-submission CSRF cases, but Wisp also enforces double-submit:
+
+- Frontend reads the `wisp_csrf` cookie value (non-HttpOnly) and sends it as `X-CSRF-Token` on every **POST/PUT/PATCH/DELETE**.
+- Backend's auth hook compares the header to the cookie via `timingSafeEqual`; mismatch returns **403 CSRF check failed**.
+- GETs (including SSE streams and the WebSocket upgrade handshake) skip the CSRF check — they don't mutate state, and `SameSite=Lax` keeps the session cookie from leaking to cross-site GETs in any meaningful way.
 
 ## Password Storage
 
@@ -64,10 +74,7 @@ Only one route is public (no authentication required):
 
 ### Token extraction
 
-The auth hook extracts the JWT from (in order):
-
-1. `Authorization: Bearer <token>` header (standard HTTP requests).
-2. `?token=<token>` query parameter — **only on routes tagged with `config.acceptQueryToken: true`**. Currently those are SSE endpoints and the WebSocket consoles, which can't set custom headers from the browser. Every other route requires the Bearer header so a JWT in an image tag's URL, link preview, or browser history can't be replayed.
+The auth hook extracts the JWT from the `wisp_session` cookie. There is **no** `Authorization: Bearer …` header path and **no** `?token=…` query string fallback — both were removed when sessions moved to cookies. The browser sends the cookie automatically on every same-origin request (HTTP, SSE via fetch, WebSocket upgrade, link clicks for the run-log download), so no custom client code is needed to forward it.
 
 ### Rejection
 
@@ -85,26 +92,22 @@ or:
 
 ### Frontend handling
 
-The frontend fetch wrapper checks for 401 responses. On receiving a 401:
+The frontend fetch wrapper sends `credentials: 'include'` on every request, reads the `wisp_csrf` cookie via `document.cookie`, and echoes it as `X-CSRF-Token` on state-changing methods. On a 401 response:
 
-1. Clears the stored token from `localStorage`
+1. Writes a `wisp_logout` flag to localStorage so other tabs see the logout
 2. Redirects to `/login`
 
-This handles both token expiry and password changes gracefully.
+`POST /api/auth/logout` clears both cookies and returns 204. The frontend's `useAuthStore.logout` calls it before broadcasting the multi-tab signal.
 
-**Multi-tab logout.** `frontend/src/api/client.js` registers a `storage` event listener so when one tab clears the token (logout, password change), every other open tab also bounces to `/login`. Without this, a stale tab keeps making authenticated requests with its in-memory token copy until the JWT expires.
+**Multi-tab logout.** Logout in one tab calls `broadcastLogout()` which writes a `wisp_logout` localStorage entry. Every other open tab subscribes to the `storage` event and bounces to `/login` on that key change. The session cookie itself is shared across tabs (same browser profile, same origin), so any tab that tries an authenticated request after logout also gets 401 and redirects.
 
-**Password change closes live connections.** `POST /api/auth/change-password` writes the new hash and immediately calls `closeAllSSE()` and `closeAllWebSockets('password changed')`. Pre-rotation tokens can no longer keep streaming on connections that were authed before the secret changed; new connections fail JWT verify against the new secret and the frontend redirect cycle takes over.
+**Password change closes live connections.** `POST /api/auth/change-password` writes the new hash, calls `closeAllSSE()` + `closeAllWebSockets('password changed')`, then re-issues a fresh `wisp_session` and `wisp_csrf` against the new secret so the user who just changed their password isn't immediately bounced. Pre-rotation tokens can no longer keep streaming on connections that were authed before the secret changed.
 
 ## WebSocket Authentication
 
-WebSocket connections (VNC console) cannot send `Authorization` headers during the handshake. Instead, the JWT is passed as a query parameter:
+WebSocket connections (VNC + container console) carry the same `wisp_session` cookie that authenticates HTTP requests. The browser sends cookies on the upgrade handshake automatically for same-origin URLs (Wisp's prod deployment serves the frontend and backend from the same origin; dev uses Vite's WS proxy so it's still same-origin from the browser's view).
 
-```
-ws://host:port/ws/console/:name/vnc?token=<jwt>
-```
-
-The console route handler verifies the token from `request.query.token` before establishing the VNC proxy connection. If invalid, the WebSocket is closed with code `4001` and reason "Authentication required".
+The global `onRequest` auth hook validates the cookie before the WebSocket upgrade completes — by the time the route handler runs, `request.user` is set and no per-route token check is needed. The WS routes still enforce an `Origin` header allow-list (`isAllowedWsOrigin`) since CORS does not apply to WebSocket; cross-origin pages are rejected with close code `1008` even if they have a stolen cookie.
 
 ## Login Rate Limiting
 
@@ -117,6 +120,7 @@ Failed login attempts are tracked per source IP (in-memory `Map`). The window is
 - **No password in JWT payload** — the token only contains `iat` and `exp`
 - **HMAC-SHA256** signing prevents token forgery
 - **24-hour expiry** limits the window of exposure for leaked tokens
-- **Token redacted from request logs:** Fastify's `req` serializer rewrites `?token=...` query values to `token=REDACTED` so JWTs from SSE/WebSocket URLs never reach `journald` / `stdout`.
-- **`?token=` only on SSE/WebSocket routes** — every other route requires the `Authorization: Bearer …` header.
-- **Single password change invalidates all tokens** since the signing secret changes
+- **No token on the URL** — the JWT lives in an `HttpOnly` cookie, so it never appears in `Authorization`, `?token=`, image tags, link previews, or browser history.
+- **`HttpOnly + Secure + SameSite=Lax`** session cookie + double-submit `X-CSRF-Token` — both layers must be defeated for cross-site abuse to succeed.
+- **WS Origin allow-list** since CORS does not apply to WebSocket — cross-origin pages with a stolen cookie still get `close 1008`.
+- **Single password change invalidates all tokens** since the signing secret changes; live SSE/WS are explicitly closed and the user's session is re-issued.

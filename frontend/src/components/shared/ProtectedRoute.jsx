@@ -7,12 +7,12 @@ const CHECK_INITIAL_DELAY_MS = 0;
 const CHECK_MAX_DELAY_MS = 5000;
 
 export default function ProtectedRoute({ children }) {
-  const token = useAuthStore((s) => s.token);
+  const authenticated = useAuthStore((s) => s.authenticated);
   const [checked, setChecked] = useState(false);
   const retryTimer = useRef(null);
 
   useEffect(() => {
-    if (!token) return;
+    if (!authenticated) return;
 
     let cancelled = false;
     let delay = CHECK_INITIAL_DELAY_MS;
@@ -42,9 +42,9 @@ export default function ProtectedRoute({ children }) {
         retryTimer.current = null;
       }
     };
-  }, [token]);
+  }, [authenticated]);
 
-  if (!token) {
+  if (!authenticated) {
     return <Navigate to="/login" replace />;
   }
 

@@ -1,28 +1,30 @@
 import { create } from 'zustand';
-import { api, getToken, setToken, clearToken } from '../api/client';
+import { api, isAuthenticated, broadcastLogout } from '../api/client';
 
 export const useAuthStore = create((set) => ({
-  token: getToken(),
+  // Cookie-based session — the HttpOnly session cookie is invisible to JS.
+  // We track auth status via the (non-HttpOnly) wisp_csrf cookie's presence.
+  authenticated: isAuthenticated(),
   error: null,
   loading: false,
 
   login: async (password) => {
     set({ loading: true, error: null });
     try {
-      const data = await fetch('/api/auth/login', {
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
+        credentials: 'include',
       });
 
-      if (!data.ok) {
-        const body = await data.json().catch(() => ({}));
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
         throw new Error(body.error || 'Login failed');
       }
 
-      const { token } = await data.json();
-      setToken(token);
-      set({ token, loading: false });
+      // Cookies are now set by the response (HttpOnly session + CSRF).
+      set({ authenticated: true, loading: false });
       return true;
     } catch (err) {
       set({ error: err.message, loading: false });
@@ -30,8 +32,13 @@ export const useAuthStore = create((set) => ({
     }
   },
 
-  logout: () => {
-    clearToken();
-    set({ token: null });
+  logout: async () => {
+    try {
+      await api('/api/auth/logout', { method: 'POST' });
+    } catch {
+      /* logout is best-effort — even on failure clear local state */
+    }
+    broadcastLogout();
+    set({ authenticated: false });
   },
 }));

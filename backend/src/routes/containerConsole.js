@@ -2,7 +2,6 @@
  * WebSocket: interactive shell in a running container (containerd exec + PTY).
  */
 import { execInContainer, resizeExec } from '../lib/containerManager.js';
-import { verifyJWT } from '../lib/auth.js';
 import { validateContainerName } from '../lib/validation.js';
 import { isAllowedWsOrigin } from '../lib/wsOrigin.js';
 import { trackWebSocket } from '../lib/wsTracking.js';
@@ -39,21 +38,13 @@ function parseResizeControl(buf) {
 }
 
 export default async function containerConsoleRoutes(fastify) {
-  fastify.get('/container-console/:name', { websocket: true, config: { acceptQueryToken: true } }, async (socket, request) => {
+  fastify.get('/container-console/:name', { websocket: true }, async (socket, request) => {
     const { name } = request.params;
     const log = request.log.child({ scope: 'container-console', containerName: name });
 
     if (!isAllowedWsOrigin(request)) {
       log.warn({ reason: 'origin_not_allowed', origin: request.headers?.origin }, 'Container console WebSocket rejected');
       socket.close(1008, 'origin not allowed');
-      return;
-    }
-
-    const token = request.query?.token;
-    const payload = token ? verifyJWT(token) : null;
-    if (!payload) {
-      log.warn({ reason: 'missing_or_invalid_token' }, 'Container console WebSocket rejected');
-      socket.close(4001, 'Authentication required');
       return;
     }
 

@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAppError } from './routeErrors.js';
+import { parseCookieHeader } from './cookies.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PASSWORD_FILE = resolve(__dirname, '../../../config/wisp-password');
@@ -122,38 +123,53 @@ export function setPassword(newPassword) {
 // don't accidentally get marked public.
 const PUBLIC_ROUTES = new Set(['/api/auth/login']);
 
+const SESSION_COOKIE = 'wisp_session';
+const CSRF_COOKIE = 'wisp_csrf';
+const CSRF_HEADER = 'x-csrf-token';
+const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function timingSafeEqualString(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
+
 export function createAuthHook() {
   return async (request, reply) => {
     const routeUrl = request.routeOptions?.url;
     if (routeUrl && PUBLIC_ROUTES.has(routeUrl)) return;
 
-    let token = null;
-
-    const authHeader = request.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.slice(7);
-    } else if (
-      // Only SSE/WebSocket routes are tagged with `acceptQueryToken: true` —
-      // those endpoints can't carry an Authorization header from the browser
-      // (EventSource / WebSocket constructor APIs forbid custom headers).
-      // Every other route requires the Bearer header so a JWT in the URL of
-      // an image tag, link preview, or browser history can't be used to
-      // mutate state.
-      request.routeOptions?.config?.acceptQueryToken === true &&
-      request.query?.token
-    ) {
-      token = request.query.token;
-    }
+    const cookies = parseCookieHeader(request.headers?.cookie);
+    const token = cookies[SESSION_COOKIE] || null;
 
     if (!token) {
-      reply.code(401).send({ error: 'Authentication required', detail: 'Missing or malformed Authorization header' });
+      reply.code(401).send({ error: 'Authentication required', detail: 'No session cookie' });
       return;
     }
 
     const payload = verifyJWT(token);
     if (!payload) {
-      reply.code(401).send({ error: 'Authentication failed', detail: 'Invalid or expired token' });
+      reply.code(401).send({ error: 'Authentication failed', detail: 'Invalid or expired session' });
       return;
+    }
+
+    // Double-submit CSRF: state-changing requests must echo the wisp_csrf
+    // cookie value back as X-CSRF-Token. SameSite=Lax already stops most
+    // cross-site forgery, but this header check defends against subdomain
+    // bleeds and a mistake-class regression that flips SameSite to None.
+    if (STATE_CHANGING_METHODS.has(request.method)) {
+      const headerToken = request.headers?.[CSRF_HEADER];
+      const cookieToken = cookies[CSRF_COOKIE];
+      if (
+        typeof headerToken !== 'string' ||
+        typeof cookieToken !== 'string' ||
+        !timingSafeEqualString(headerToken, cookieToken)
+      ) {
+        reply.code(403).send({ error: 'CSRF check failed', detail: 'Missing or mismatched CSRF token' });
+        return;
+      }
     }
 
     request.user = payload;

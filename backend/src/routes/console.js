@@ -1,27 +1,21 @@
 import { createConnection } from 'node:net';
 import { getVNCPort } from '../lib/vmManager.js';
-import { verifyJWT } from '../lib/auth.js';
 import { validateVMName } from '../lib/validation.js';
 import { isAllowedWsOrigin } from '../lib/wsOrigin.js';
 import { trackWebSocket } from '../lib/wsTracking.js';
 
 export default async function consoleRoutes(fastify) {
-  // VNC: TCP proxy to QEMU VNC port. Token required (query.token) since WebSocket doesn't send Authorization header.
-  fastify.get('/console/:name/vnc', { websocket: true, config: { acceptQueryToken: true } }, async (socket, request) => {
+  // VNC: TCP proxy to QEMU VNC port. Auth already handled by the global
+  // onRequest hook (cookie-based JWT) — by the time we run, request.user is
+  // set. The Origin check below stops cross-origin pages from opening this WS
+  // even with a stolen cookie (CORS does not apply to WebSocket).
+  fastify.get('/console/:name/vnc', { websocket: true }, async (socket, request) => {
     const { name } = request.params;
     const log = request.log.child({ scope: 'vnc-console', vmName: name });
 
     if (!isAllowedWsOrigin(request)) {
       log.warn({ reason: 'origin_not_allowed', origin: request.headers?.origin }, 'VNC WebSocket rejected');
       socket.close(1008, 'origin not allowed');
-      return;
-    }
-
-    const token = request.query?.token;
-    const payload = token ? verifyJWT(token) : null;
-    if (!payload) {
-      log.warn({ reason: 'missing_or_invalid_token' }, 'VNC WebSocket rejected');
-      socket.close(4001, 'Authentication required');
       return;
     }
 

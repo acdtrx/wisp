@@ -1,6 +1,39 @@
+import { randomBytes } from 'node:crypto';
+
 import { verifyPassword, signJWT, setPassword } from '../lib/auth.js';
+import { appendSetCookie, buildSetCookie } from '../lib/cookies.js';
 import { closeAllSSE } from '../lib/sse.js';
 import { closeAllWebSockets } from '../lib/wsTracking.js';
+
+const SESSION_COOKIE = 'wisp_session';
+const CSRF_COOKIE = 'wisp_csrf';
+const SESSION_MAX_AGE_SECONDS = 86400;
+
+function isProd() {
+  return process.env.NODE_ENV !== 'development';
+}
+
+function setSessionCookies(reply, jwt, csrfToken) {
+  const baseAttrs = {
+    secure: isProd(),
+    sameSite: 'Lax',
+    path: '/',
+    maxAge: SESSION_MAX_AGE_SECONDS,
+  };
+  appendSetCookie(reply, buildSetCookie(SESSION_COOKIE, jwt, { ...baseAttrs, httpOnly: true }));
+  appendSetCookie(reply, buildSetCookie(CSRF_COOKIE, csrfToken, { ...baseAttrs, httpOnly: false }));
+}
+
+function clearSessionCookies(reply) {
+  const baseAttrs = {
+    secure: isProd(),
+    sameSite: 'Lax',
+    path: '/',
+    maxAge: 0,
+  };
+  appendSetCookie(reply, buildSetCookie(SESSION_COOKIE, '', { ...baseAttrs, httpOnly: true }));
+  appendSetCookie(reply, buildSetCookie(CSRF_COOKIE, '', { ...baseAttrs, httpOnly: false }));
+}
 
 const LOGIN_RATE_WINDOW_MS = 60 * 1000;
 const LOGIN_RATE_MAX_ATTEMPTS = 5;
@@ -53,7 +86,7 @@ export default async function authRoutes(fastify) {
         200: {
           type: 'object',
           properties: {
-            token: { type: 'string' },
+            ok: { type: 'boolean' },
           },
         },
       },
@@ -77,7 +110,25 @@ export default async function authRoutes(fastify) {
       }
 
       const token = signJWT({ role: 'admin' });
-      return { token };
+      // Random per-session CSRF token. Frontend reads the (non-HttpOnly)
+      // wisp_csrf cookie and echoes it as X-CSRF-Token on state-changing
+      // requests; the auth hook compares header to cookie. Double-submit
+      // pattern — same-origin SameSite=Lax already blocks cross-site posts,
+      // but the explicit token defends against subdomain/proxy edge cases
+      // and deliberate mistake-class regressions.
+      const csrfToken = randomBytes(32).toString('base64url');
+      setSessionCookies(reply, token, csrfToken);
+      return { ok: true };
+    },
+  });
+
+  fastify.post('/logout', {
+    schema: {
+      response: { 204: { type: 'null' } },
+    },
+    handler: async (_request, reply) => {
+      clearSessionCookies(reply);
+      reply.code(204).send();
     },
   });
 
@@ -114,6 +165,11 @@ export default async function authRoutes(fastify) {
         // secret and the frontend's 401 handler bounces them to /login.
         closeAllSSE();
         closeAllWebSockets('password changed');
+        // Re-issue the current session against the new secret so the user
+        // who just changed their password isn't immediately bounced to /login.
+        const newToken = signJWT({ role: 'admin' });
+        const newCsrf = randomBytes(32).toString('base64url');
+        setSessionCookies(reply, newToken, newCsrf);
         reply.code(204).send();
       } catch (err) {
         fastify.log.error({ err }, 'Failed to update password');

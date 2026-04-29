@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ArrowDown, Circle, Download, Eraser, MapPin, RefreshCw, Search } from 'lucide-react';
 import { createSSE } from '../../api/sse.js';
 import { listContainerRuns } from '../../api/containers.js';
-import { getToken } from '../../api/client.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { randomId } from '../../utils/randomId.js';
 
@@ -177,11 +176,11 @@ export default function ContainerLogsSection({ containerName }) {
     setEntries((prev) => [...prev, { id: randomId(), kind: 'divider', text }]);
   }, []);
 
+  // Plain link — the wisp_session cookie is sent natively on same-origin
+  // navigation, so the backend's auth hook accepts it just like an API call.
   const downloadHref = useMemo(() => {
     if (!selectedRunId) return null;
-    const token = getToken();
-    if (!token) return null;
-    return `/api/containers/${encodeURIComponent(containerName)}/runs/${encodeURIComponent(selectedRunId)}/log?token=${encodeURIComponent(token)}`;
+    return `/api/containers/${encodeURIComponent(containerName)}/runs/${encodeURIComponent(selectedRunId)}/log`;
   }, [containerName, selectedRunId]);
 
   return (

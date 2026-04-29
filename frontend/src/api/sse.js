@@ -1,4 +1,4 @@
-import { getToken, clearToken } from './client.js';
+import { broadcastLogout } from './client.js';
 
 /** Long-lived SSE (`createSSE`): reconnect delays */
 const SSE_INITIAL_RETRY_MS = 1000;
@@ -18,8 +18,11 @@ function withJitterMs(baseMs) {
 }
 
 /**
- * One-shot job progress SSE: token in URL. Reconnects with backoff until terminal
- * `done`/`error` or job missing (404). Server replays buffered events on reconnect.
+ * One-shot job progress SSE. Auth flows via the wisp_session cookie (sent
+ * automatically by the browser on same-origin fetches with credentials).
+ * Reconnects with backoff until terminal `done`/`error` or job missing (404).
+ * Server replays buffered events on reconnect.
+ *
  * @param {(ev: object) => void} onMessage
  * @param {(reason?: 'not_found') => void} [onConnectionLost] — 404 passes `not_found` (job expired / unknown)
  */
@@ -39,24 +42,14 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
   async function connect() {
     if (closed) return;
 
-    const token = getToken();
-    if (!token) {
-      clearToken();
-      window.location.href = '/login';
-      return;
-    }
-
-    const separator = url.includes('?') ? '&' : '?';
-    const fullUrl = `${url}${separator}token=${encodeURIComponent(token)}`;
-
     try {
       controller = new AbortController();
       const tid = setTimeout(() => controller.abort(), SSE_FETCH_TIMEOUT_MS);
-      const res = await fetch(fullUrl, { signal: controller.signal });
+      const res = await fetch(url, { signal: controller.signal, credentials: 'include' });
       clearTimeout(tid);
 
       if (res.status === 401) {
-        clearToken();
+        broadcastLogout();
         window.location.href = '/login';
         return;
       }
@@ -146,24 +139,14 @@ export function createSSE(url, onMessage, onError) {
   async function connect() {
     if (closed) return;
 
-    const token = getToken();
-    if (!token) {
-      clearToken();
-      window.location.href = '/login';
-      return;
-    }
-
-    const separator = url.includes('?') ? '&' : '?';
-    const fullUrl = `${url}${separator}token=${encodeURIComponent(token)}`;
-
     try {
       controller = new AbortController();
       const tid = setTimeout(() => controller.abort(), SSE_FETCH_TIMEOUT_MS);
-      const res = await fetch(fullUrl, { signal: controller.signal });
+      const res = await fetch(url, { signal: controller.signal, credentials: 'include' });
       clearTimeout(tid);
 
       if (res.status === 401) {
-        clearToken();
+        broadcastLogout();
         window.location.href = '/login';
         return;
       }

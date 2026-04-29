@@ -114,7 +114,7 @@ export default async function containerRoutes(fastify) {
   // ── List SSE stream ───────────────────────────────────────────────
   // Event-driven: pushes on containerd events (tasks/containers create/start/exit/etc.),
   // container.json writes, and image-update completion. No polling timer.
-  fastify.get('/containers/stream', { config: { acceptQueryToken: true } }, async (request, reply) => {
+  fastify.get('/containers/stream', async (request, reply) => {
     setupSSE(reply);
 
     const send = async () => {
@@ -163,7 +163,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Create progress SSE ───────────────────────────────────────────
-  fastify.get('/containers/create-progress/:jobId', { config: { acceptQueryToken: true } }, async (request, reply) => {
+  fastify.get('/containers/create-progress/:jobId', async (request, reply) => {
     const { jobId } = request.params;
     const job = containerJobStore.getJob(jobId);
     if (!job) return sendError(reply, 404, 'Job not found', `No job with id "${jobId}"`);
@@ -265,7 +265,7 @@ export default async function containerRoutes(fastify) {
     return { jobId, title };
   });
 
-  fastify.get('/containers/images/check-updates/:jobId', { config: { acceptQueryToken: true } }, async (request, reply) => {
+  fastify.get('/containers/images/check-updates/:jobId', async (request, reply) => {
     const { jobId } = request.params;
     const job = imageUpdateJobStore.getJob(jobId);
     if (!job) return sendError(reply, 404, 'Job not found', `No job with id "${jobId}"`);
@@ -346,7 +346,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Stats SSE ─────────────────────────────────────────────────────
-  fastify.get('/containers/:name/stats', { config: { acceptQueryToken: true } }, async (request, reply) => {
+  fastify.get('/containers/:name/stats', async (request, reply) => {
     const { name } = request.params;
     setupSSE(reply);
     const intervalMs = Math.max(2000, Math.min(60000, parseInt(request.query.intervalMs, 10) || 3000));
@@ -395,7 +395,7 @@ export default async function containerRoutes(fastify) {
   // from disk and tailed with no new output — still useful for filtering and
   // scrolling. Initial event: { type: "history", lines, runId }. Subsequent
   // events: { type: "line", line }.
-  fastify.get('/containers/:name/logs', { config: { acceptQueryToken: true } }, async (request, reply) => {
+  fastify.get('/containers/:name/logs', async (request, reply) => {
     const { name } = request.params;
     const requestedRunId = typeof request.query.runId === 'string' ? request.query.runId : null;
 
