@@ -18,6 +18,7 @@ import {
 import { checkForUpdates, performUpgrade, setCachedUpdateCount } from '../lib/aptUpdates.js';
 import { getHostHardwareInfo } from '../lib/hostHardware.js';
 import { hostShutdown, hostReboot } from '../lib/hostPower.js';
+import { listHostGpus } from '../lib/hostGpus.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
 import { setupSSE } from '../lib/sse.js';
 import { getDevices as getHostUSBDevicesCached, onChange as onHostUSBChange } from '../lib/usbMonitor.js';
@@ -288,6 +289,40 @@ export default async function hostRoutes(fastify) {
       } catch (err) {
         request.log.error({ err }, 'GET /host/firmware failed');
         sendError(reply, 500, 'Failed to list firmware', err.message);
+      }
+    },
+  });
+
+  fastify.get('/host/gpus', {
+    schema: {
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            gpus: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  device: { type: 'string' },
+                  vendor: { type: 'string' },
+                  vendorName: { type: 'string' },
+                  pciSlot: { type: ['string', 'null'] },
+                  model: { type: ['string', 'null'] },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      try {
+        const gpus = await listHostGpus();
+        return { gpus };
+      } catch (err) {
+        request.log.error({ err }, 'GET /host/gpus failed');
+        sendError(reply, 500, 'Failed to list GPUs', err.message);
       }
     },
   });

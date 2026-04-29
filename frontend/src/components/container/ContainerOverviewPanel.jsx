@@ -13,6 +13,7 @@ import ContainerGeneralSection from '../sections/ContainerGeneralSection.jsx';
 import ContainerEnvSection from '../sections/ContainerEnvSection.jsx';
 import ContainerMountsSection from '../sections/ContainerMountsSection.jsx';
 import ContainerNetworkSection from '../sections/ContainerNetworkSection.jsx';
+import ContainerDevicesSection from '../sections/ContainerDevicesSection.jsx';
 import ContainerLogsSection from '../sections/ContainerLogsSection.jsx';
 import { CONTAINER_STATE_ICON_COLOR } from '../../utils/containerConstants.js';
 import { getAppEntry } from '../../apps/appRegistry.js';
@@ -207,6 +208,7 @@ export default function ContainerOverviewPanel() {
             </>
           )}
           <ContainerNetworkSection config={config} onSave={handleSectionSave} onRefresh={refreshSelectedContainer} />
+          <ContainerDevicesSection config={config} onSave={handleSectionSave} />
         </div>
       )}
 

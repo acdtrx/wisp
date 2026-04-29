@@ -101,6 +101,7 @@ function errorCodeToStatus(code) {
     case 'CONTAINER_MOUNT_FILE_TOO_LARGE':
     case 'CONTAINER_MOUNT_FILE_NOT_UTF8':
     case 'INVALID_CONTAINER_SERVICE':
+    case 'INVALID_CONTAINER_DEVICES':
     case 'INVALID_NETWORK_BRIDGE_NAME':
     case 'INVALID_NETWORK_BRIDGE_PARENT':
     case 'INVALID_VLAN_ID':
@@ -116,6 +117,7 @@ function errorCodeToStatus(code) {
     case 'NETWORK_BRIDGE_UNAVAILABLE':
     case 'NETWORK_BRIDGE_APPLY_FAILED':
     case 'CONTAINER_MOUNT_SOURCE_NOT_MOUNTED':
+    case 'CONTAINER_DEVICE_MISSING':
       return 503;
     case 'CONTAINERD_ERROR':
     case 'GITHUB_API':

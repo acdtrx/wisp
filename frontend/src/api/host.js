@@ -8,6 +8,10 @@ export function getHostHardware() {
   return api('/api/host/hardware');
 }
 
+export function getHostGpus() {
+  return api('/api/host/gpus');
+}
+
 export function checkForUpdates() {
   return api('/api/host/updates/check', { method: 'POST' });
 }

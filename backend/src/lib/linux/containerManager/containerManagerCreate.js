@@ -26,6 +26,7 @@ import {
 } from '../../mdnsManager.js';
 import { registerAllContainerServices } from './containerManagerServices.js';
 import { assertBindSourcesReady } from './containerManagerMounts.js';
+import { resolveDeviceSpecs } from './containerDeviceNode.js';
 import { getRawMounts } from '../../settings.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { getImageDigest } from './containerManagerImages.js';
@@ -397,6 +398,7 @@ export async function createContainer(spec, onStep) {
     localDns: true,
     env: {},
     mounts: [],
+    devices: [],
     network,
     createdAt: new Date().toISOString(),
   };
@@ -438,6 +440,7 @@ export async function createContainer(spec, onStep) {
     if (derived.appConfig) config.appConfig = derived.appConfig;
     if (derived.env) config.env = derived.env;
     if (derived.mounts) config.mounts = derived.mounts;
+    if (Array.isArray(derived.devices)) config.devices = derived.devices;
 
     // Write mount file contents after persisting config (filesDir already exists)
     if (derived.mountContents) {
@@ -460,7 +463,10 @@ export async function createContainer(spec, onStep) {
   // Build OCI spec
   const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
   const storageMounts = await getRawMounts();
-  const ociSpec = buildOCISpec(config, imageConfig, filesDir, { resolvConfPath, storageMounts });
+  const { deviceSpecs, renderGid } = await resolveDeviceSpecs(config);
+  const ociSpec = buildOCISpec(config, imageConfig, filesDir, {
+    resolvConfPath, storageMounts, deviceSpecs, renderGid,
+  });
 
   // Prepare snapshot (required before containerd Containers.Create)
   try {
@@ -562,7 +568,10 @@ export async function startExistingContainer(name) {
   // Rebuild OCI spec
   const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
   const storageMounts = await getRawMounts();
-  const ociSpec = buildOCISpec(config, imageConfig, filesDir, { resolvConfPath, storageMounts });
+  const { deviceSpecs, renderGid } = await resolveDeviceSpecs(config);
+  const ociSpec = buildOCISpec(config, imageConfig, filesDir, {
+    resolvConfPath, storageMounts, deviceSpecs, renderGid,
+  });
 
   // Update the container spec in containerd
   await callUnary(getClient('containers'), 'update', {

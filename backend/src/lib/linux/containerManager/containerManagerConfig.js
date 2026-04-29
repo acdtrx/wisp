@@ -14,6 +14,7 @@ import {
 } from '../../mdnsManager.js';
 import { registerAllContainerServices } from './containerManagerServices.js';
 import { validateAndNormalizeMounts, ensureMissingMountArtifacts } from './containerManagerMounts.js';
+import { validateAndNormalizeDevices } from './containerManagerDevices.js';
 import { deleteMountBackingStore } from './containerManagerMountsContent.js';
 import { getRawMounts } from '../../settings.js';
 import { getAppModule } from './apps/appRegistry.js';
@@ -21,7 +22,7 @@ import { execCommandInContainer } from './containerManagerExec.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
 const RESTART_FIELDS = new Set([
-  'image', 'command', 'cpuLimit', 'memoryLimitMiB', 'env', 'mounts', 'network', 'runAsRoot', 'appConfig',
+  'image', 'command', 'cpuLimit', 'memoryLimitMiB', 'env', 'mounts', 'devices', 'network', 'runAsRoot', 'appConfig',
 ]);
 
 /**
@@ -169,6 +170,13 @@ export async function updateContainerConfig(name, changes) {
       }
       config.mounts = nextMounts;
       mountsPersisted = config.mounts;
+
+      // Replace devices when the app provides a derived list. App modules opt in
+      // by returning `devices: [...]`; modules that don't manage devices return
+      // nothing and the existing config.devices is preserved.
+      if (Array.isArray(derived.devices)) {
+        config.devices = derived.devices;
+      }
 
       // The container task captures bind mounts at create time — reload can't introduce a new
       // bind, retarget it, or change tmpfs size on an already-running task. So if the mount
@@ -320,6 +328,11 @@ export async function updateContainerConfig(name, changes) {
       }
       config.mounts = normalized;
       mountsPersisted = normalized;
+      if (isRunning && RESTART_FIELDS.has(key)) requiresRestart = true;
+      continue;
+    }
+    if (key === 'devices') {
+      config.devices = validateAndNormalizeDevices(value);
       if (isRunning && RESTART_FIELDS.has(key)) requiresRestart = true;
       continue;
     }

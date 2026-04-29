@@ -143,6 +143,28 @@ List available UEFI firmware paths.
 
 - **200:** `["/usr/share/OVMF/OVMF_CODE_4M.fd", ...]`
 
+### GET /api/host/gpus
+
+List GPUs available for container passthrough (Intel/AMD render nodes). One-shot snapshot — the list rarely changes, no SSE.
+
+- **200:**
+
+```json
+{
+  "gpus": [
+    {
+      "device": "/dev/dri/renderD128",
+      "vendor": "0x8086",
+      "vendorName": "Intel",
+      "pciSlot": "0000:00:02.0",
+      "model": "Alder Lake-P GT2 [Iris Xe Graphics]"
+    }
+  ]
+}
+```
+
+NVIDIA GPUs (vendor `0x10de`) are filtered out of the response — exposing them via container passthrough requires CDI / nvidia-container-toolkit, which is not implemented in v1. Hosts with no `/dev/dri/renderD*` (no GPU, or only NVIDIA) return `{ "gpus": [] }`. The UI uses the empty result to disable the GPU picker with an explanation.
+
 ### GET /api/host/usb
 
 List all USB devices on the host (snapshot from sysfs; same data as the initial SSE message on `/api/host/usb/stream`).
@@ -1125,6 +1147,8 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 **`network`:** Merged with the existing object (not replaced wholesale). **Bridge networking** requires **`network.mac`** after merge (unicast format). While the task is **running or paused**, **`network.ip`** from the body is ignored (server-owned), and changing **`network.mac`** or **`network.interface`** returns **409** `CONTAINER_MUST_BE_STOPPED`. Invalid MAC → **422** `INVALID_CONTAINER_MAC`.
 
 **`mounts`:** Replaces the entire mounts array (bulk update). Prefer row-scoped mount routes below for UI editing. Each element: `{ type: "file"|"directory"|"tmpfs", name, containerPath, ... }`. For `file`/`directory`: `readonly`, optional `sourceId`/`subPath` (directories only), `containerOwnerUid`/`Gid`. For `tmpfs`: `sizeMiB` (1–2048, default 64); `sourceId`/`subPath`/`readonly`/`containerOwnerUid`/`Gid` are rejected. **`name`** is a single path segment (storage key under the container’s `files/` directory; tmpfs entries have no on-disk artifact). Duplicate **`name`** or duplicate **`containerPath`** → **422** `CONTAINER_MOUNT_DUPLICATE`. Invalid shape → **422** `INVALID_CONTAINER_MOUNTS`. Mounts removed from the array have their on-disk artifacts deleted automatically (tmpfs has no artifact).
+
+**`devices`:** Replaces the entire devices array. Each element: `{ type: "gpu", device }`. v1 caps the array at one entry; `type` must be `"gpu"`; `device` must match `^/dev/dri/renderD\d+$`. Invalid shape → **422** `INVALID_CONTAINER_DEVICES`. Always requires a task restart on running containers. The configured device must exist and be a character device at start; otherwise the container fails to start with **503** `CONTAINER_DEVICE_MISSING`. See CONTAINERS.md → [Devices entry](../spec/CONTAINERS.md#devices-entry) for details.
 
 **`services`:** Not editable via PATCH — returns **422** `CONFIG_ERROR`. Use the row-scoped service endpoints (`POST` / `PATCH` / `DELETE` `/api/containers/:name/services[/:port]`) below.
 

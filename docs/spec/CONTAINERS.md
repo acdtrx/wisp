@@ -83,6 +83,7 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 | `services` | array | `[]` | Optional mDNS service advertisements (SRV+TXT) tied to the container's `<name>.local` host. See [Service entry](#service-entry). Requires `localDns: true`. |
 | `env` | object | `{}` | Environment variables. Structured shape: `{ KEY: { value: string, secret?: true } }`. Entries without `secret` are plaintext; `secret: true` marks the entry as write-only — see **Secret env vars** below. |
 | `mounts` | array | `[]` | Bind mount definitions (see Mount entry); Local backing data lives under `files/<name>`, Storage-sourced entries resolve to `<settings.mounts[sourceId].mountPath>/<subPath>` |
+| `devices` | array | `[]` | Host device passthrough (see [Devices entry](#devices-entry)). Currently only `type: "gpu"` (Intel/AMD render nodes); v1 caps the array at one entry. |
 | `network` | object | `{ "type": "bridge" }` | Network configuration (see below) |
 | `exposedPorts` | string[] | `[]` | Ports declared by the image (`EXPOSE` directives), e.g. `["80/tcp", "443/tcp"]`. Set at create time from the OCI image config; informational only (containers expose all listening ports on the LAN) |
 | `createdAt` | string | (auto) | ISO 8601 creation timestamp |
@@ -194,6 +195,36 @@ gidMappings: [{ containerID: deployGid, hostID: containerOwnerGid, size: 1 }]
 
 **Important: idmap is an on-disk ownership shift, not a security boundary.** The container process still runs as real host UID 0 with all capabilities (no user namespace is added). Only the inode ownership stored on the bind source is translated.
 
+### Devices entry
+
+Host device passthrough for containers. Unlike VM PCI passthrough (VFIO), the host kernel driver still owns the device — the container only gets the existing character-device node exposed inside its mount + cgroup namespace, so host and container share the device cooperatively via the host's driver.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | `"gpu"` — Intel/AMD render node (`/dev/dri/renderD<N>`). NVIDIA is **not supported** in v1 (would require nvidia-container-toolkit + CDI). |
+| `device` | string | Absolute host path. For `type: "gpu"`, must match `/dev/dri/renderD\d+` (DRM render node, no master/auth required). `/dev/dri/card<N>` is **not** accepted. |
+
+**Validation rules** (`validateAndNormalizeDevices`):
+- `devices` must be an array.
+- v1: at most **one** entry. Multi-device exposure is intentionally deferred until a real use case lands; the array shape is for forward compatibility.
+- Each entry's `type` must be `"gpu"` (other types are rejected with `INVALID_CONTAINER_DEVICES`).
+- For `type: "gpu"`, `device` must match `^/dev/dri/renderD\d+$`. No symlink resolution — the literal path is what gets passed to the OCI spec.
+- Unknown keys are rejected.
+
+**OCI spec emission** (`buildOCISpec`):
+- `linux.devices: [{ path, type: 'c', major, minor, fileMode: 0o660, uid: 0, gid: <render-gid> }]` — major/minor read via `stat()` on the host node at spec build time.
+- `linux.resources.devices` cgroup allow rule: `{ allow: true, type: 'c', major, minor, access: 'rw' }`. Without this, cgroup v2 denies the syscall even though the device node is visible.
+- `process.user.additionalGids: [<render-gid>]` — the in-container process is added to the host's `render` group so the `0660 root:render` device node is openable. Render GID is looked up via `getgrnam('render')` (or fallback `video`) at every spec build — distros vary on the numeric GID, so it is never cached.
+
+**Pre-start check** (symmetric to `assertBindSourcesReady` for Storage mounts):
+- The configured `device` path must exist and be a character device. If missing (driver glitch, hardware change, hot-removal), start hard-fails with `CONTAINER_DEVICE_MISSING` (503). The container is not auto-cleared of its `gpu` entry — this is a footgun for users who configured an app to use HW acceleration; surfacing the error makes the regression visible.
+
+**Concurrency:** DRM render nodes are designed for concurrent open by multiple processes. Multiple Wisp containers (and the host itself) can hold the same device simultaneously; the kernel driver schedules access. No exclusivity bookkeeping in Wisp.
+
+**Restart required:** any change to `devices` requires a task restart — devices are baked into the OCI spec at task create. Treated like `mounts` in `RESTART_FIELDS`.
+
+**Detection (host side):** `GET /api/host/gpus` enumerates `/dev/dri/renderD*`, reads `/sys/class/drm/<name>/device/vendor` (`0x8086` Intel, `0x1002` AMD; `0x10de` NVIDIA filtered out for v1), and returns `[{ device, vendor, vendorName, pciSlot, model? }]`. UI uses this to populate the picker. When multiple GPUs are present, the user picks one — Wisp does not auto-select beyond what the picker offers.
+
 ### Secret env vars
 
 Individual env vars can be marked `secret: true` to hide their values from the UI. Secret values are persisted in `container.json` like any other env var (the OCI process needs them at runtime), but:
@@ -253,6 +284,7 @@ The exec process uses the same **UID/GID** as the main container task (`runAsRoo
 - Default mounts: proc, dev, devpts, shm, mqueue, sysfs, cgroup, run
 - **Process user:** `process.user` uses the **backend process UID/GID** (the systemd deploy user) by default, so files created on bind mounts under `files/<name>/` remain owned by that user and the backend can delete them. If the backend runs as root (unusual), UID/GID stay 0. When **`runAsRoot: true`** is set in `container.json`, UID/GID are forced to 0 — required for images that write to root-owned directories inside the container (e.g. OpenWebUI writing `.webui_secret_key` to `/app`). Each **Local** bind mount then receives a per-mount **idmapped mount** (size:1) translating the configured `containerOwnerUid`/`containerOwnerGid` (defaults 0/0) to the deploy UID/GID — so writes from that in-container UID still land on disk owned by the deploy user. See [Idmapped Local mounts](#idmapped-local-mounts) for full semantics, the no-op case (`containerOwnerUid === deployUid`), and the runc/kernel requirements.
 - User bind mounts: `resolveMountHostPath(m)` — Local rows use `files/<m.name>` (`type` determines file vs directory); Storage rows use `<settings.mounts[m.sourceId].mountPath>/<m.subPath>`. All bind mounts use `rbind` (+ `ro` when `m.readonly`). Local mounts under `runAsRoot` additionally carry `uidMappings`/`gidMappings`; Storage mounts never do.
+- **Host devices** (`config.devices`): each entry emits a `linux.devices` chardev node, a matching `linux.resources.devices` cgroup allow rule, and pushes the host's `render` GID onto `process.user.additionalGids`. See [Devices entry](#devices-entry). The mechanism is generic to character devices; `type: "gpu"` is the only consumer in v1.
 - CPU quota/period from `cpuLimit`, memory limit from `memoryLimitMiB`
 - `/etc/resolv.conf` bind-mounted from host. When the container's bridge has the Wisp stub IP (`169.254.53.53/32` on `br0`, installed by `scripts/linux/setup/container-dns.sh`), the shared `/var/lib/wisp/container-resolv.conf` is used — a single `nameserver 169.254.53.53` line — so containers reach the in-process DNS forwarder in `wisp-backend` (see **Local DNS** below). Without the stub IP (e.g. VLAN sub-bridges, or setup skipped), fall back to the host's upstream resolvers (`/run/systemd/resolve/resolv.conf` on resolved hosts, else `/etc/resolv.conf`) — resolved's `127.0.0.53` stub is unreachable from a container netns
 
@@ -363,7 +395,7 @@ Wisp checks every OCI image in the library for upstream changes and flags contai
 
 When the Wisp backend process starts (`backend/src/index.js`), after libvirt and containerd connection attempts and after mDNS manager connect:
 
-1. **Configured mounts** — `ensureMounts()` runs to completion (awaited) so Host Mgmt SMB shares (and, later, removable-drive adoptions) are mounted before any autostart container starts (avoids bind mounts whose host paths live under those shares). The same pass also hard-converges: any mount under `/mnt/wisp/` not present in settings is unmounted.
+1. **Configured mounts** — `ensureMounts()` runs to completion (awaited) so Host Mgmt SMB shares and removable-drive adoptions are mounted before any autostart container starts (avoids bind mounts whose host paths live under those shares). The same pass also hard-converges: any mount under `/mnt/wisp/` not present in settings is unmounted.
 2. **Container autostart** — `startAutostartContainersAtBackendBoot()` lists containers from disk + containerd; for each with `autostart: true` that is not already `running`, it calls `startContainer()`. Failures are logged per container and do not block other containers.
 3. **mDNS warm-up** — For each running container (including any just started), if `localDns` is true and `network.ip` is set, the backend registers the `.local` address.
 
@@ -393,6 +425,8 @@ The HTTP server listens **after** these steps, so hosts with mounts configured m
 | `CONTAINER_MOUNT_FILE_NOT_UTF8` | 422 | Mount file is not valid UTF-8 (editor GET) |
 | `BAD_MULTIPART_TOO_MANY_FILES` | 400 | More than one file part in a mount upload request |
 | `CONTAINER_MOUNT_SOURCE_WRONG_TYPE` | 422 | Backing path is not a file/directory as required |
+| `INVALID_CONTAINER_DEVICES` | 422 | `devices` array invalid (shape, unknown type, bad path, > 1 entry) |
+| `CONTAINER_DEVICE_MISSING` | 503 | Configured host device path does not exist or is not a character device at start |
 | `CONTAINERD_ERROR` | 500 | Generic containerd error |
 | `NO_CONTAINERD` | 503 | containerd not reachable |
 
@@ -419,6 +453,7 @@ The HTTP server listens **after** these steps, so hosts with mounts configured m
 | `ContainerMountsSection` | `sections/` | **Mounts**: table (bridges-style); type icon column; container path (wider column) and mount name; read-only; per-row Save (PATCH full list), icon upload (file/zip) with optional multipart **`mounts`** for atomic save+upload, file editor modal |
 | `MountFileEditorModal` | `sections/` | UTF-8 text editor for file-mount backing content (GET/PUT content API) |
 | `ContainerNetworkSection` | `sections/` | Network type, interface, IP, MAC (editable when stopped + randomize), status |
+| `ContainerDevicesSection` | `sections/` | Host device passthrough (currently GPU only). Picker populated from `GET /api/host/gpus`; one entry max in v1. PATCHes `devices` on Save. Disabled empty state when host has no supported GPUs. |
 | `ContainerLogsSection` | `sections/` | Live-scrolling log viewer for one **run** at a time. Top bar has a **run picker** (newest first; green dot = running, red = non-zero exit, gray = clean exit), a filter input, and icon-only actions: **Clear** viewer (client-side only — does not touch files), **Mark** (inserts a divider line with an optional label), **Download** (streams the selected run's log file), **Auto-scroll**. SSE via `/logs?runId=…`; run list via `GET /runs` and refetched when the container's state transitions. |
 
 ### UI Integration

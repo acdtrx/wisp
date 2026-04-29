@@ -43,6 +43,8 @@ const READONLY_PATHS = [
  * @param {object} [opts] - Extra options
  * @param {string} [opts.resolvConfPath] - Host resolv.conf to bind-mount (default: /etc/resolv.conf)
  * @param {Array<{ id: string, mountPath: string }>} [opts.storageMounts] - settings.mounts, required when any mount uses sourceId
+ * @param {Array<{ type: 'gpu', path: string, major: number, minor: number }>} [opts.deviceSpecs] - Resolved host devices for passthrough (see resolveDeviceSpecs)
+ * @param {number | null} [opts.renderGid] - Host GID for the `render` group; pushed onto process.user.additionalGids when devices are exposed
  * @returns {object} OCI runtime spec (JSON-serializable)
  */
 export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', opts = {}) {
@@ -147,11 +149,66 @@ export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', o
   const uid = config.runAsRoot ? 0 : deployUid;
   const gid = config.runAsRoot ? 0 : deployGid;
 
+  // Host device passthrough (currently only Intel/AMD GPU render nodes — see
+  // containerManagerDevices.js / containerDeviceNode.js). For each resolved
+  // device we emit the chardev node into the container, an explicit cgroup v2
+  // allow rule (without it the syscall is denied even when the node is
+  // visible), and add the host's render group to additionalGids so the in-
+  // container process can open the 0660 root:render device.
+  const deviceSpecs = Array.isArray(opts.deviceSpecs) ? opts.deviceSpecs : [];
+  const linuxDevices = [];
+  const deviceCgroup = [];
+  const additionalGids = [];
+  for (const d of deviceSpecs) {
+    linuxDevices.push({
+      path: d.path,
+      type: 'c',
+      major: d.major,
+      minor: d.minor,
+      fileMode: 0o660,
+      uid: 0,
+      gid: typeof opts.renderGid === 'number' ? opts.renderGid : 0,
+    });
+    deviceCgroup.push({
+      allow: true,
+      type: 'c',
+      major: d.major,
+      minor: d.minor,
+      access: 'rw',
+    });
+  }
+  if (deviceSpecs.length && typeof opts.renderGid === 'number'
+    && opts.renderGid !== gid) {
+    additionalGids.push(opts.renderGid);
+  }
+
+  if (deviceCgroup.length) {
+    resources.devices = deviceCgroup;
+  }
+
+  const processUser = { uid, gid };
+  if (additionalGids.length) processUser.additionalGids = additionalGids;
+
+  const linuxBlock = {
+    resources,
+    namespaces: [
+      { type: 'pid' },
+      { type: 'ipc' },
+      { type: 'uts' },
+      { type: 'mount' },
+      networkNamespace,
+      { type: 'cgroup' },
+    ],
+    maskedPaths: MASKED_PATHS,
+    readonlyPaths: READONLY_PATHS,
+  };
+  if (linuxDevices.length) linuxBlock.devices = linuxDevices;
+
   return {
     ociVersion: '1.1.0',
     process: {
       terminal: false,
-      user: { uid, gid },
+      user: processUser,
       args,
       env,
       cwd,
@@ -168,18 +225,6 @@ export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', o
     },
     hostname: config.name || 'container',
     mounts,
-    linux: {
-      resources,
-      namespaces: [
-        { type: 'pid' },
-        { type: 'ipc' },
-        { type: 'uts' },
-        { type: 'mount' },
-        networkNamespace,
-        { type: 'cgroup' },
-      ],
-      maskedPaths: MASKED_PATHS,
-      readonlyPaths: READONLY_PATHS,
-    },
+    linux: linuxBlock,
   };
 }
