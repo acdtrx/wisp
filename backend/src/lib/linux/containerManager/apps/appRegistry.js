@@ -10,6 +10,7 @@
 import { caddyAppModule } from './caddy.js';
 import { zotAppModule } from './zot.js';
 import { tinySambaAppModule } from './tinySamba.js';
+import { jellyfinAppModule } from './jellyfin.js';
 
 export const APP_REGISTRY = {
   'caddy-reverse-proxy': {
@@ -25,6 +26,17 @@ export const APP_REGISTRY = {
     defaultImage: 'ghcr.io/project-zot/zot-linux-amd64:latest',
     allowCustomImage: true,
     module: zotAppModule,
+  },
+  'jellyfin': {
+    label: 'Jellyfin',
+    description: 'Self-hosted media server with optional GPU-accelerated transcoding',
+    defaultImage: 'jellyfin/jellyfin:latest',
+    allowCustomImage: true,
+    requiresRoot: true,
+    defaultServices: [
+      { port: 8096, type: '_http._tcp', txt: { path: '/web/' } },
+    ],
+    module: jellyfinAppModule,
   },
   'tiny-samba': {
     label: 'Tiny Samba',
