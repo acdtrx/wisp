@@ -14,7 +14,10 @@ export default async function consoleRoutes(fastify) {
     const log = request.log.child({ scope: 'vnc-console', vmName: name });
 
     if (!isAllowedWsOrigin(request)) {
-      log.warn({ reason: 'origin_not_allowed', origin: request.headers?.origin }, 'VNC WebSocket rejected');
+      log.warn(
+        { reason: 'origin_not_allowed', origin: request.headers?.origin, host: request.headers?.host },
+        'VNC WebSocket rejected',
+      );
       socket.close(1008, 'origin not allowed');
       return;
     }

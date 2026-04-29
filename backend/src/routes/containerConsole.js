@@ -43,7 +43,10 @@ export default async function containerConsoleRoutes(fastify) {
     const log = request.log.child({ scope: 'container-console', containerName: name });
 
     if (!isAllowedWsOrigin(request)) {
-      log.warn({ reason: 'origin_not_allowed', origin: request.headers?.origin }, 'Container console WebSocket rejected');
+      log.warn(
+        { reason: 'origin_not_allowed', origin: request.headers?.origin, host: request.headers?.host },
+        'Container console WebSocket rejected',
+      );
       socket.close(1008, 'origin not allowed');
       return;
     }

@@ -47,11 +47,26 @@ await app.register(httpProxy, {
   },
 });
 
+// Forward the browser's Origin and Host headers across the WS upgrade hop.
+// @fastify/http-proxy's default rewriter only carries the cookie; without
+// these two, the backend's same-origin Origin check (isAllowedWsOrigin) sees
+// no Origin and rejects with 1008. Cookie still has to be forwarded too.
+function forwardWsHeaders(headers, request) {
+  const out = { ...headers };
+  if (request.headers.cookie) out.cookie = request.headers.cookie;
+  if (request.headers.origin) out.origin = request.headers.origin;
+  if (request.headers.host) out.host = request.headers.host;
+  return out;
+}
+
 await app.register(httpProxy, {
   upstream: BACKEND_URL.replace('http', 'ws'),
   prefix: '/ws',
   rewritePrefix: '/ws',
   websocket: true,
+  wsClientOptions: {
+    rewriteRequestHeaders: forwardWsHeaders,
+  },
 });
 
 const distPath = resolve(__dirname, 'dist');
