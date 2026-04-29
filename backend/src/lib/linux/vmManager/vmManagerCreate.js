@@ -511,9 +511,13 @@ export async function cloneVM(name, newName) {
 }
 
 // libvirt VIR_DOMAIN_UNDEFINE_* flags — declared inline since this is the
-// only call site that needs them.
-const VIR_DOMAIN_UNDEFINE_NVRAM = 0x2;
-const VIR_DOMAIN_UNDEFINE_KEEP_NVRAM = 0x4;
+// only call site that needs them. Bit positions match libvirt-domain.h's
+// virDomainUndefineFlagsValues enum (1 << 2 / 1 << 3). Earlier values of
+// 0x2 / 0x4 happened to be SNAPSHOTS_METADATA / NVRAM respectively, which
+// is why deleteVM on a UEFI domain failed with libvirt error
+// "cannot undefine domain with nvram" — the wrong flag was being set.
+const VIR_DOMAIN_UNDEFINE_NVRAM = 0x4;
+const VIR_DOMAIN_UNDEFINE_KEEP_NVRAM = 0x8;
 
 export async function deleteVM(name, deleteDisks = false) {
   const path = await resolveDomain(name);
