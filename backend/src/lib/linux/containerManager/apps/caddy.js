@@ -69,6 +69,20 @@ function validateAppConfig(appConfig) {
     if (!target) {
       throw containerError('INVALID_APP_CONFIG', `hosts[${i}].target is required`);
     }
+    // The target is interpolated raw into the Caddyfile (`reverse_proxy ${target}`).
+    // Without validation, an admin (or a future automation that surfaces this
+    // field) could inject Caddy directives by including `\n`, `{`, or `}`.
+    // Allow common shapes (host, host:port, scheme://host[:port][/path]) and
+    // reject any character that has structural meaning in a Caddyfile.
+    if (/[\n\r{}]/.test(target)) {
+      throw containerError('INVALID_APP_CONFIG', `hosts[${i}].target contains invalid characters`);
+    }
+    if (!/^([a-z][a-z0-9+.-]*:\/\/)?[a-zA-Z0-9._-]+(:[0-9]{1,5})?(\/[^\s\n\r{}]*)?$/.test(target)) {
+      throw containerError(
+        'INVALID_APP_CONFIG',
+        `hosts[${i}].target must be host[:port] or scheme://host[:port][/path]`,
+      );
+    }
 
     return { subdomain: sub, target };
   });

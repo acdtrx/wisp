@@ -1205,9 +1205,9 @@ Multipart: one file part. Mount must have **`type: "directory"`**. Clears `files
 
 ### PUT /api/containers/:name/mounts/:mountName/content
 
-**Body:** JSON `{ "content": string }`. Replaces the backing file with UTF-8 bytes (max **512 KiB** encoded length).
+**Body:** JSON `{ "content": string }`. Replaces the backing file with UTF-8 bytes (max **512 KiB** encoded length). The route's `bodyLimit` is set just above the content cap to reject oversized payloads at the parser before reaching the handler; the handler enforces the exact byte cap on the decoded content.
 
-**200:** `{ ok: true }` | **422:** same family as GET for type/size/encoding
+**200:** `{ ok: true }` | **413:** request body too large | **422:** same family as GET for type/size/encoding
 
 ### POST /api/containers/:name/mounts/:mountName/init
 

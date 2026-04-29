@@ -2,7 +2,18 @@ import { verifyPassword, signJWT, setPassword } from '../lib/auth.js';
 
 const LOGIN_RATE_WINDOW_MS = 60 * 1000;
 const LOGIN_RATE_MAX_ATTEMPTS = 5;
+const LOGIN_ATTEMPTS_MAX_ENTRIES = 10_000;
+const LOGIN_SWEEP_INTERVAL_MS = 60 * 1000;
 const loginAttempts = new Map();
+
+// Periodic sweep so the map can't grow unbounded (one entry per failing IP).
+// `unref()` so the sweep timer doesn't hold the process open during shutdown.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of loginAttempts) {
+    if (now > entry.resetAt) loginAttempts.delete(ip);
+  }
+}, LOGIN_SWEEP_INTERVAL_MS).unref();
 
 function isLoginRateLimited(ip) {
   const now = Date.now();
@@ -15,6 +26,10 @@ function recordFailedLogin(ip) {
   const now = Date.now();
   let entry = loginAttempts.get(ip);
   if (!entry || now > entry.resetAt) {
+    // Hard cap on map size in case the sweep falls behind a flood of distinct
+    // IPs. Returning early means we just stop counting failures for new IPs
+    // until the window rolls — acceptable trade-off vs. unbounded memory.
+    if (loginAttempts.size >= LOGIN_ATTEMPTS_MAX_ENTRIES) return;
     entry = { count: 0, resetAt: now + LOGIN_RATE_WINDOW_MS };
     loginAttempts.set(ip, entry);
   }

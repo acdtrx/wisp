@@ -123,10 +123,11 @@ SSH keys can be imported from a GitHub user profile:
 
 1. User enters a GitHub username in the UI
 2. Frontend sends `GET /api/github/keys/:username`
-3. Backend fetches `https://github.com/<username>.keys` server-side (no direct browser-to-GitHub request — prevents CORS issues and SSRF from the frontend)
-4. Returns the list of SSH public keys
-5. User confirms which key(s) to use
-6. Selected key is written to the `sshKey` field with `sshKeySource: "github:<username>"`
+3. Backend fetches `https://github.com/<username>.keys` server-side (no direct browser-to-GitHub request — prevents CORS issues and SSRF from the frontend). The fetch sets `redirect: 'manual'` so a hostile/compromised upstream that ever 30x's into a private IP can't turn this auth-required proxy into an SSRF; a 3xx surfaces as **502**.
+4. Per-IP rate limit: 10 requests / 60 s (sweep every 60 s, max 10 000 entries). Excess hits return **429**.
+5. Returns the list of SSH public keys
+6. User confirms which key(s) to use
+7. Selected key is written to the `sshKey` field with `sshKeySource: "github:<username>"`
 
 ## Visibility Rules
 

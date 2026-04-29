@@ -14,12 +14,9 @@ Wisp uses single-user JWT authentication. There is one password for the entire a
 
 ## Password Storage
 
-**`config/wisp-password`** (mode `0600`) holds either:
+**`config/wisp-password`** (mode `0600`) holds a **scrypt hash** in the form `scrypt:<salt_hex>:<key_hex>` (written by install, `wispctl password`, and change-password).
 
-- **Plain text** — single line (legacy; trim applied).
-- **Scrypt hash** — `scrypt:<salt_hex>:<key_hex>` (install, `wispctl password`, change-password).
-
-If the file is missing, JWT signing fails until a password is set (`wispctl password` or install). There is no `WISP_PASSWORD` env fallback.
+If the file is missing, JWT signing fails until a password is set (`wispctl password` or install). There is no `WISP_PASSWORD` env fallback. If the file exists but is not in the expected scrypt form, the backend refuses to use it (the auth route returns 503 with `PASSWORD_FILE_UNSUPPORTED_FORMAT`) — run `wispctl password` to repair.
 
 ### Password change
 
@@ -41,10 +38,7 @@ Standard JWT with three base64url-encoded segments: `header.payload.signature`
 
 ### Secret derivation
 
-- **Plain password:** The signing secret is `SHA-256(effective_password)`.
-- **Scrypt hash in config/wisp-password:** The signing secret is the stored derived key (64 bytes). No plain password is available.
-
-Changing the password (or writing a new hash) changes the signing secret and invalidates all existing tokens.
+The signing secret is the stored scrypt-derived key (64 bytes). Changing the password writes a new hash and so changes the signing secret, invalidating all existing tokens.
 
 ### Token lifetime
 
@@ -60,7 +54,7 @@ Changing the password (or writing a new hash) changes the signing secret and inv
 
 ## Route Protection
 
-An `onRequest` hook is registered globally on the backend server. Every incoming request passes through this hook before reaching any route handler.
+An `onRequest` hook is registered globally on the backend server. Every incoming request passes through this hook before reaching any route handler. Fastify v5 selects the matching route before `onRequest` runs, so the hook reads `request.routeOptions.url` (the registered route URL) for public-route matching — trailing slashes and percent-encoded variants don't accidentally bypass auth.
 
 ### Public routes
 
@@ -72,8 +66,8 @@ Only one route is public (no authentication required):
 
 The auth hook extracts the JWT from (in order):
 
-1. `Authorization: Bearer <token>` header (standard HTTP requests)
-2. `?token=<token>` query parameter (WebSocket connections, since WebSocket handshakes cannot set custom headers)
+1. `Authorization: Bearer <token>` header (standard HTTP requests).
+2. `?token=<token>` query parameter — **only on routes tagged with `config.acceptQueryToken: true`**. Currently those are SSE endpoints and the WebSocket consoles, which can't set custom headers from the browser. Every other route requires the Bearer header so a JWT in an image tag's URL, link preview, or browser history can't be replayed.
 
 ### Rejection
 
@@ -108,6 +102,10 @@ ws://host:port/ws/console/:name/vnc?token=<jwt>
 
 The console route handler verifies the token from `request.query.token` before establishing the VNC proxy connection. If invalid, the WebSocket is closed with code `4001` and reason "Authentication required".
 
+## Login Rate Limiting
+
+Failed login attempts are tracked per source IP (in-memory `Map`). The window is **60 s** with a maximum of **5 failed attempts per IP**; further attempts in the same window return **429**. The map is swept every 60 s for expired entries and capped at 10 000 distinct IPs to bound memory under flood conditions.
+
 ## Security Considerations
 
 - **Timing-safe comparison** for both password verification and JWT signature verification
@@ -116,4 +114,5 @@ The console route handler verifies the token from `request.query.token` before e
 - **HMAC-SHA256** signing prevents token forgery
 - **24-hour expiry** limits the window of exposure for leaked tokens
 - **Token redacted from request logs:** Fastify's `req` serializer rewrites `?token=...` query values to `token=REDACTED` so JWTs from SSE/WebSocket URLs never reach `journald` / `stdout`.
+- **`?token=` only on SSE/WebSocket routes** — every other route requires the `Authorization: Bearer …` header.
 - **Single password change invalidates all tokens** since the signing secret changes

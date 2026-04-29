@@ -352,6 +352,7 @@ export default async function hostRoutes(fastify) {
   // GET /host/disks/stream — SSE: removable/fixed block-device list with mount state.
   fastify.get('/host/disks/stream', {
     schema: { hide: true },
+    config: { acceptQueryToken: true },
     handler: async (request, reply) => {
       setupSSE(reply);
 
@@ -378,6 +379,7 @@ export default async function hostRoutes(fastify) {
   // GET /host/usb/stream — SSE: host USB device list (push on hotplug; initial snapshot immediately)
   fastify.get('/host/usb/stream', {
     schema: { hide: true },
+    config: { acceptQueryToken: true },
     handler: async (request, reply) => {
       setupSSE(reply);
 

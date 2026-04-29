@@ -94,7 +94,37 @@ export default async function cloudInitRoutes(fastify) {
     },
   });
 
-  // GET /github/keys/:username — fetch SSH keys from GitHub
+  // GET /github/keys/:username — fetch SSH keys from GitHub.
+  //
+  // - `redirect: 'manual'` so a hostile/compromised upstream that ever 30x's
+  //   into a private IP can't turn this auth-required proxy into an SSRF.
+  //   GitHub's `.keys` endpoint does not redirect under normal use — a 3xx
+  //   surfaces as 502.
+  // - Per-IP rate limit (10 req/min) so this proxy can't be used to spray
+  //   GitHub's API on the operator's behalf.
+  const GITHUB_KEYS_RATE_WINDOW_MS = 60 * 1000;
+  const GITHUB_KEYS_RATE_MAX = 10;
+  const GITHUB_KEYS_RATE_MAX_ENTRIES = 10_000;
+  const githubKeysAttempts = new Map();
+  setInterval(() => {
+    const now = Date.now();
+    for (const [ip, entry] of githubKeysAttempts) {
+      if (now > entry.resetAt) githubKeysAttempts.delete(ip);
+    }
+  }, GITHUB_KEYS_RATE_WINDOW_MS).unref();
+
+  function recordGithubKeysHit(ip) {
+    const now = Date.now();
+    let entry = githubKeysAttempts.get(ip);
+    if (!entry || now > entry.resetAt) {
+      if (githubKeysAttempts.size >= GITHUB_KEYS_RATE_MAX_ENTRIES) return false;
+      entry = { count: 0, resetAt: now + GITHUB_KEYS_RATE_WINDOW_MS };
+      githubKeysAttempts.set(ip, entry);
+    }
+    entry.count += 1;
+    return entry.count <= GITHUB_KEYS_RATE_MAX;
+  }
+
   fastify.get('/github/keys/:username', {
     schema: {
       params: {
@@ -104,9 +134,15 @@ export default async function cloudInitRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
+      if (!recordGithubKeysHit(request.ip || 'unknown')) {
+        return sendError(reply, 429, 'Too many requests', `Try again after ${Math.ceil(GITHUB_KEYS_RATE_WINDOW_MS / 1000)} seconds`);
+      }
       const { username } = request.params;
       try {
-        const resp = await fetch(`https://github.com/${username}.keys`);
+        const resp = await fetch(`https://github.com/${username}.keys`, { redirect: 'manual' });
+        if (resp.status >= 300 && resp.status < 400) {
+          return sendError(reply, 502, 'Unexpected redirect from GitHub', 'GitHub returned a redirect for a .keys lookup');
+        }
         if (!resp.ok) {
           return sendError(reply, 404, `No keys found for "${username}"`, `No keys found for "${username}"`);
         }

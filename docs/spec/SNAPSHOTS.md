@@ -24,6 +24,10 @@ Returns all snapshots for a VM. Each snapshot's metadata (name, creation time, s
 
 The backend calls `ListDomainSnapshots` to get snapshot object paths, then `GetXMLDesc` on each to extract metadata.
 
+### Snapshot name validation
+
+Every snapshot operation (create, revert, delete) validates the name against `^[a-zA-Z0-9 ._-]+$` (max 64 characters, no `..` or path separators). Both the JSON-schema check on the create route and the in-library `validateSnapshotName` enforce the same accept set so revert/delete can't be used as a path-traversal primitive against the snapshot memory file location.
+
 ### Create
 
 Creates a new snapshot with a user-provided name.

@@ -6,7 +6,7 @@ import { isAllowedWsOrigin } from '../lib/wsOrigin.js';
 
 export default async function consoleRoutes(fastify) {
   // VNC: TCP proxy to QEMU VNC port. Token required (query.token) since WebSocket doesn't send Authorization header.
-  fastify.get('/console/:name/vnc', { websocket: true }, async (socket, request) => {
+  fastify.get('/console/:name/vnc', { websocket: true, config: { acceptQueryToken: true } }, async (socket, request) => {
     const { name } = request.params;
     const log = request.log.child({ scope: 'vnc-console', vmName: name });
 

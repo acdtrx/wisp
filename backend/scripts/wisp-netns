@@ -29,6 +29,10 @@ case "$CMD" in
     # ips[] (common with ipam.type=dhcp; cni-dhcp assigns asynchronously).
     valid_name "$NAME" || { echo "wisp-netns: invalid name" >&2; exit 1; }
     IFACE="${3:-eth0}"
+    if [[ ! "$IFACE" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,14}$ ]]; then
+      echo "wisp-netns: invalid ifname" >&2
+      exit 1
+    fi
     if [[ ! -e "/var/run/netns/$NAME" ]]; then
       echo "wisp-netns: no netns: $NAME" >&2
       exit 1

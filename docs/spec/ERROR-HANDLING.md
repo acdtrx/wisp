@@ -34,6 +34,8 @@ All API routes return errors in a consistent format:
 
 Route handlers use `handleRouteError(err, reply, request)` which maps the error `code` to an HTTP status code and formats the response.
 
+Before sending, `handleRouteError` runs `detail` through a redactor that scrubs absolute filesystem paths (`/foo/bar/...` → `<path>`) and UUIDs to `<uuid>`, and caps the string at 500 characters. The full unredacted value (including any `err.raw` toolchain stderr) is still logged server-side via `request.log.warn` / `request.log.error`, so operators see the real diagnostic in journald. This keeps callers from leaking host layout that an authenticated admin shouldn't need to depend on.
+
 For non-vmManager errors (e.g. settings, host), routes use `sendError(reply, status, error, detail)`.
 
 ## Error Code to HTTP Status Mapping
@@ -45,9 +47,9 @@ The table below lists codes mapped by `handleRouteError` in `backend/src/lib/rou
 | **400** | `BAD_MULTIPART_TOO_MANY_FILES` | Bad request — more than one file part in a container mount upload |
 | **404** | `VM_NOT_FOUND`, `SNAPSHOT_NOT_FOUND`, `BACKUP_NOT_FOUND`, `CONTAINER_NOT_FOUND`, `CONTAINER_MOUNT_NOT_FOUND`, `CONTAINER_IMAGE_NOT_FOUND`, `MOUNT_NOT_FOUND`, `NETWORK_BRIDGE_NOT_FOUND` | Resource does not exist |
 | **409** | `VM_ALREADY_RUNNING`, `VM_NOT_RUNNING`, `VM_NOT_PAUSED`, `VM_RUNNING`, `VM_EXISTS`, `VM_MUST_BE_OFFLINE`, `CONTAINER_ALREADY_RUNNING`, `CONTAINER_NOT_RUNNING`, `CONTAINER_EXISTS`, `CONTAINER_MUST_BE_STOPPED`, `CONTAINER_IMAGE_IN_USE`, `MOUNT_DUPLICATE`, `NETWORK_BRIDGE_EXISTS`, `NETWORK_BRIDGE_IN_USE` | State conflict — the operation is not valid for the current state |
-| **422** | `PARSE_ERROR`, `CLONE_FAILED`, `RESIZE_INVALID`, `DISK_NOT_FOUND`, `RESIZE_FAILED`, `CONVERT_FAILED`, `USB_ATTACH_FAILED`, `USB_DETACH_FAILED`, `SNAPSHOT_CREATE_FAILED`, `SNAPSHOT_REVERT_FAILED`, `SNAPSHOT_DELETE_FAILED`, `CONFIG_ERROR`, `INVALID_VM_NAME`, `INVALID_USB_ID`, `BACKUP_INVALID`, `HASH_FAILED`, `INVALID_URL`, `SSRF_BLOCKED`, `DNS_FAILED`, `DOWNLOAD_FAILED`, `NO_BODY`, `INVALID_REQUEST`, `IMAGE_PULL_FAILED`, `INVALID_CONTAINER_IMAGE_REF`, `INVALID_CONTAINER_NAME`, `INVALID_CONTAINER_MAC`, `INVALID_CONTAINER_MOUNTS`, `CONTAINER_MOUNT_DUPLICATE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_SOURCE_MISSING`, `CONTAINER_MOUNT_SOURCE_WRONG_TYPE`, `CONTAINER_MOUNT_SOURCE_UNSAFE`, `CONTAINER_MOUNT_FILE_TOO_LARGE`, `CONTAINER_MOUNT_FILE_NOT_UTF8`, `MOUNT_INVALID`, `INVALID_NETWORK_BRIDGE_NAME`, `INVALID_NETWORK_BRIDGE_PARENT`, `INVALID_VLAN_ID` | Unprocessable — the request is structurally valid but cannot be carried out |
+| **422** | `PARSE_ERROR`, `CLONE_FAILED`, `RESIZE_INVALID`, `DISK_NOT_FOUND`, `RESIZE_FAILED`, `CONVERT_FAILED`, `USB_ATTACH_FAILED`, `USB_DETACH_FAILED`, `SNAPSHOT_CREATE_FAILED`, `SNAPSHOT_REVERT_FAILED`, `SNAPSHOT_DELETE_FAILED`, `CONFIG_ERROR`, `INVALID_VM_NAME`, `INVALID_SNAPSHOT_NAME`, `INVALID_USB_ID`, `BACKUP_INVALID`, `HASH_FAILED`, `INVALID_URL`, `SSRF_BLOCKED`, `DNS_FAILED`, `DOWNLOAD_FAILED`, `NO_BODY`, `INVALID_REQUEST`, `PATH_NOT_ALLOWED`, `PASSWORD_EMPTY`, `IMAGE_PULL_FAILED`, `INVALID_CONTAINER_IMAGE_REF`, `INVALID_CONTAINER_NAME`, `INVALID_CONTAINER_MAC`, `INVALID_CONTAINER_MOUNTS`, `CONTAINER_MOUNT_DUPLICATE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_SOURCE_MISSING`, `CONTAINER_MOUNT_SOURCE_WRONG_TYPE`, `CONTAINER_MOUNT_SOURCE_UNSAFE`, `CONTAINER_MOUNT_FILE_TOO_LARGE`, `CONTAINER_MOUNT_FILE_NOT_UTF8`, `INVALID_APP_CONFIG`, `MOUNT_INVALID`, `INVALID_NETWORK_BRIDGE_NAME`, `INVALID_NETWORK_BRIDGE_PARENT`, `INVALID_VLAN_ID` | Unprocessable — the request is structurally valid but cannot be carried out |
 | **500** | `LIBVIRT_ERROR`, `DISK_INFO_FAILED`, `BACKUP_RESTORE_FAILED`, `GITHUB_API`, `NO_ASSET`, `CONTAINERD_ERROR` | Internal server error |
-| **503** | `NO_CONNECTION`, `NO_CONTAINERD`, `BACKUP_DEST_NOT_FOUND`, `BACKUP_DEST_NOT_WRITABLE`, `UPDATE_CHECK_UNAVAILABLE`, `POWER_UNAVAILABLE`, `SMB_INVALID`, `SMB_MOUNT_UNAVAILABLE`, `CONTAINER_MOUNT_SOURCE_NOT_MOUNTED`, `NETWORK_BRIDGE_UNAVAILABLE`, `NETWORK_BRIDGE_APPLY_FAILED` | Service unavailable — libvirt/containerd not connected, backup destination not accessible, host update/power scripts missing, SMB/mount issues, managed bridge helper/netplan failures, etc. |
+| **503** | `NO_CONNECTION`, `NO_CONTAINERD`, `NO_PASSWORD_CONFIGURED`, `PASSWORD_FILE_UNSUPPORTED_FORMAT`, `BACKUP_DEST_NOT_FOUND`, `BACKUP_DEST_NOT_WRITABLE`, `UPDATE_CHECK_UNAVAILABLE`, `POWER_UNAVAILABLE`, `SMB_INVALID`, `SMB_MOUNT_UNAVAILABLE`, `CONTAINER_MOUNT_SOURCE_NOT_MOUNTED`, `NETWORK_BRIDGE_UNAVAILABLE`, `NETWORK_BRIDGE_APPLY_FAILED` | Service unavailable — libvirt/containerd not connected, backup destination not accessible, host update/power scripts missing, SMB/mount issues, managed bridge helper/netplan failures, etc. |
 
 Any unrecognized error code passed to `handleRouteError` defaults to **500**.
 
@@ -84,7 +86,9 @@ The stream closes after that event. **Successful completion** uses `{ "step": "d
 | Wrong password (login) | 401 | `{ error: "Invalid password", detail: "The provided password is incorrect" }` |
 | Rate limited (login) | 429 | `{ error: "Too many login attempts", detail: "Try again after 60 seconds" }` |
 
-Login rate limiting: 5 failed attempts per IP within a 60-second window.
+Login rate limiting: 5 failed attempts per IP within a 60-second window. The map is swept every 60 s for expired entries and capped at 10 000 distinct IPs.
+
+`PASSWORD_FILE_UNSUPPORTED_FORMAT` (503) is returned by login when `config/wisp-password` exists but isn't in the expected `scrypt:salt:hash` shape — run `wispctl password` to repair. `NO_PASSWORD_CONFIGURED` (503) is returned when the file is missing.
 
 ## Frontend Error Display
 
@@ -115,6 +119,14 @@ This is automatic and applies to all API calls, handling token expiry and passwo
 ### VM name validation
 
 VM names are validated before route handlers execute (via a `preHandler` hook). Invalid names receive a 422 response with code `INVALID_VM_NAME`.
+
+### Snapshot name validation
+
+`createSnapshot` / `revertSnapshot` / `deleteSnapshot` all share `validateSnapshotName` (regex `^[a-zA-Z0-9 ._-]+$`, max 64 chars, no `..` or path separators). Failures return **422 INVALID_SNAPSHOT_NAME**.
+
+### Path policy for VM disks / ISOs
+
+`assertPathInsideAllowedRoots(absPath, vmName)` is invoked by attach/create paths (CDROM, ISO, sourcePath). Any path that resolves outside the image library or the VM's per-VM directory returns **422 PATH_NOT_ALLOWED**.
 
 ### Request body validation
 

@@ -40,6 +40,7 @@ function errorCodeToStatus(code) {
     case 'SNAPSHOT_DELETE_FAILED':
     case 'CONFIG_ERROR':
     case 'INVALID_VM_NAME':
+    case 'INVALID_SNAPSHOT_NAME':
     case 'INVALID_USB_ID':
     case 'BACKUP_INVALID':
     case 'HASH_FAILED':
@@ -50,6 +51,7 @@ function errorCodeToStatus(code) {
     case 'NO_BODY':
     case 'INVALID_REQUEST':
     case 'PATH_NOT_ALLOWED':
+    case 'PASSWORD_EMPTY':
       return 422;
     case 'BACKUP_DEST_NOT_FOUND':
     case 'BACKUP_DEST_NOT_WRITABLE':
@@ -63,6 +65,8 @@ function errorCodeToStatus(code) {
       return 500;
     case 'NO_CONNECTION':
     case 'NO_CONTAINERD':
+    case 'NO_PASSWORD_CONFIGURED':
+    case 'PASSWORD_FILE_UNSUPPORTED_FORMAT':
       return 503;
     case 'CONTAINER_NOT_FOUND':
     case 'CONTAINER_MOUNT_NOT_FOUND':
@@ -122,17 +126,37 @@ function errorCodeToStatus(code) {
   }
 }
 
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const ABS_PATH_RE = /\/[^\s'"]+/g;
+
+/**
+ * Sanitize a detail string before returning it to the client. Absolute paths
+ * and UUIDs from toolchain stderr (qemu-img, libvirt, mount, dbus) leak
+ * internal layout that an authenticated admin shouldn't need to know about
+ * and which makes log-based blame correlation harder. Server logs still see
+ * the raw value via `handleRouteError`.
+ */
+function curateDetail(detail) {
+  if (typeof detail !== 'string') return detail;
+  let s = detail.replace(ABS_PATH_RE, '<path>').replace(UUID_RE, '<uuid>');
+  if (s.length > 500) s = `${s.slice(0, 500)}…`;
+  return s;
+}
+
 /**
  * Handle errors from vmManager (or similar) that have { code, message, raw? }. Maps code to HTTP status and sends { error, detail }.
  */
 export function handleRouteError(err, reply, request) {
   const status = errorCodeToStatus(err?.code);
+  const rawDetail = err?.raw ?? err?.message ?? 'Unknown error';
   if (status >= 500 && request?.log) {
-    request.log.error({ err: err.message, code: err.code, detail: err.raw || err.message }, 'Route error');
+    request.log.error({ err: err.message, code: err.code, detail: rawDetail }, 'Route error');
+  } else if (request?.log && err?.raw && err.raw !== err.message) {
+    request.log.warn({ err: err.message, code: err.code, raw: err.raw }, 'Route error (raw)');
   }
   reply.code(status).send({
     error: err?.message ?? 'Internal error',
-    detail: err?.raw ?? err?.message ?? 'Unknown error',
+    detail: curateDetail(rawDetail),
   });
 }
 

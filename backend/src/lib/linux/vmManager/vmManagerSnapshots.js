@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { connectionState, resolveDomain, getDomainState, getDomainObjAndIface, unwrapVariant, vmError } from './vmManagerConnection.js';
 import { parseSnapshotFromXML, buildXml } from './vmManagerXml.js';
 import { getVMBasePath } from '../../paths.js';
+import { validateSnapshotName } from '../../validation.js';
 import { VIR_DOMAIN_SNAPSHOT_CREATE_LIVE } from './libvirtConstants.js';
 
 async function getSnapshotIface(snapshotPath) {
@@ -40,9 +41,7 @@ export async function listSnapshots(name) {
 }
 
 export async function createSnapshot(name, snapshotName) {
-  if (!snapshotName || String(snapshotName).trim() === '') {
-    throw vmError('SNAPSHOT_CREATE_FAILED', 'Snapshot name is required');
-  }
+  validateSnapshotName(snapshotName);
   const path = await resolveDomain(name);
   const state = await getDomainState(path);
   const { iface } = await getDomainObjAndIface(path);
@@ -75,6 +74,7 @@ export async function createSnapshot(name, snapshotName) {
 }
 
 export async function revertSnapshot(name, snapshotName) {
+  validateSnapshotName(snapshotName);
   const path = await resolveDomain(name);
   const { iface } = await getDomainObjAndIface(path);
   let snapPath;
@@ -98,6 +98,7 @@ export async function revertSnapshot(name, snapshotName) {
 }
 
 export async function deleteSnapshot(name, snapshotName) {
+  validateSnapshotName(snapshotName);
   const path = await resolveDomain(name);
   const { iface } = await getDomainObjAndIface(path);
   let snapPath;

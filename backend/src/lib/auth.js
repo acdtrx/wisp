@@ -1,7 +1,8 @@
-import { createHmac, timingSafeEqual, createHash, scryptSync, randomBytes } from 'node:crypto';
+import { createHmac, timingSafeEqual, scryptSync, randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createAppError } from './routeErrors.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PASSWORD_FILE = resolve(__dirname, '../../../config/wisp-password');
@@ -9,35 +10,43 @@ const SCRYPT_KEYLEN = 64;
 const SCRYPT_SALT_LEN = 16;
 
 /**
- * Read config/wisp-password content. Returns { plain } or { salt, key } for hashed (scrypt:salt_hex:key_hex).
+ * Read config/wisp-password content. Returns { salt, key } for hashed
+ * (scrypt:salt_hex:key_hex). Returns null when the file is missing or empty.
+ * Throws when the file exists but is not in the expected scrypt form — the
+ * backend refuses to start in that case (run `wispctl password` to repair).
  */
 function readPasswordFile() {
   if (!existsSync(PASSWORD_FILE)) return null;
+  let raw;
   try {
-    const raw = readFileSync(PASSWORD_FILE, 'utf8').trim();
-    if (!raw) return null;
-    if (raw.startsWith('scrypt:')) {
-      const parts = raw.slice(7).split(':');
-      if (parts.length !== 2) return null;
-      const salt = Buffer.from(parts[0], 'hex');
-      const key = Buffer.from(parts[1], 'hex');
-      if (salt.length !== SCRYPT_SALT_LEN || key.length !== SCRYPT_KEYLEN) return null;
-      return { salt, key };
-    }
-    return { plain: raw };
+    raw = readFileSync(PASSWORD_FILE, 'utf8').trim();
   } catch {
     /* unreadable password file — treat as not configured */
     return null;
   }
+  if (!raw) return null;
+  if (!raw.startsWith('scrypt:')) {
+    throw createAppError(
+      'PASSWORD_FILE_UNSUPPORTED_FORMAT',
+      'wisp-password is in an unsupported format — run `wispctl password` (or scripts/linux/setup/password.sh) to set a new password.',
+    );
+  }
+  const parts = raw.slice(7).split(':');
+  if (parts.length !== 2) {
+    throw createAppError('PASSWORD_FILE_UNSUPPORTED_FORMAT', 'wisp-password file is malformed (expected scrypt:salt:hash)');
+  }
+  const salt = Buffer.from(parts[0], 'hex');
+  const key = Buffer.from(parts[1], 'hex');
+  if (salt.length !== SCRYPT_SALT_LEN || key.length !== SCRYPT_KEYLEN) {
+    throw createAppError('PASSWORD_FILE_UNSUPPORTED_FORMAT', 'wisp-password file has the wrong scrypt parameters');
+  }
+  return { salt, key };
 }
 
 function getSecret() {
   const stored = readPasswordFile();
-  if (stored) {
-    if ('key' in stored) return stored.key;
-    if ('plain' in stored) return createHash('sha256').update(stored.plain).digest();
-  }
-  throw new Error('No password configured: run wispctl password (or scripts/linux/setup/password.sh)');
+  if (stored) return stored.key;
+  throw createAppError('NO_PASSWORD_CONFIGURED', 'No password configured: run wispctl password (or scripts/linux/setup/password.sh)');
 }
 
 function base64UrlEncode(data) {
@@ -90,18 +99,9 @@ export function verifyJWT(token) {
 export function verifyPassword(input) {
   const stored = readPasswordFile();
   if (!stored) return false;
-
-  if ('key' in stored) {
-    const derived = scryptSync(input, stored.salt, SCRYPT_KEYLEN);
-    if (derived.length !== stored.key.length) return false;
-    return timingSafeEqual(derived, stored.key);
-  }
-
-  const expected = stored.plain;
-  const inputBuf = Buffer.from(input);
-  const expectedBuf = Buffer.from(expected);
-  if (inputBuf.length !== expectedBuf.length) return false;
-  return timingSafeEqual(inputBuf, expectedBuf);
+  const derived = scryptSync(input, stored.salt, SCRYPT_KEYLEN);
+  if (derived.length !== stored.key.length) return false;
+  return timingSafeEqual(derived, stored.key);
 }
 
 /**
@@ -110,26 +110,38 @@ export function verifyPassword(input) {
  */
 export function setPassword(newPassword) {
   const str = String(newPassword).trim();
-  if (!str) throw new Error('Password cannot be empty');
+  if (!str) throw createAppError('PASSWORD_EMPTY', 'Password cannot be empty');
   const salt = randomBytes(SCRYPT_SALT_LEN);
   const key = scryptSync(str, salt, SCRYPT_KEYLEN);
   const line = `scrypt:${salt.toString('hex')}:${key.toString('hex')}\n`;
   writeFileSync(PASSWORD_FILE, line, { mode: 0o600, encoding: 'utf8' });
 }
 
-export function createAuthHook() {
-  const publicPaths = new Set(['/api/auth/login']);
+// Routes whose canonical (post-routing) URL bypasses auth. Matched against
+// `request.routeOptions.url` so trailing-slash / percent-encoded variants
+// don't accidentally get marked public.
+const PUBLIC_ROUTES = new Set(['/api/auth/login']);
 
+export function createAuthHook() {
   return async (request, reply) => {
-    const urlPath = request.url.split('?')[0];
-    if (publicPaths.has(urlPath)) return;
+    const routeUrl = request.routeOptions?.url;
+    if (routeUrl && PUBLIC_ROUTES.has(routeUrl)) return;
 
     let token = null;
 
     const authHeader = request.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       token = authHeader.slice(7);
-    } else if (request.query?.token) {
+    } else if (
+      // Only SSE/WebSocket routes are tagged with `acceptQueryToken: true` —
+      // those endpoints can't carry an Authorization header from the browser
+      // (EventSource / WebSocket constructor APIs forbid custom headers).
+      // Every other route requires the Bearer header so a JWT in the URL of
+      // an image tag, link preview, or browser history can't be used to
+      // mutate state.
+      request.routeOptions?.config?.acceptQueryToken === true &&
+      request.query?.token
+    ) {
       token = request.query.token;
     }
 
