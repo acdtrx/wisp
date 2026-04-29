@@ -10,6 +10,9 @@
 - App modules opt into device passthrough by returning `derived.devices` from `generateDerivedConfig` (same plumbing as `derived.env` / `derived.mounts`); generic Devices section and app-driven devices share one config path
 - **Jellyfin container app** — wraps `jellyfin/jellyfin:latest` with managed `/config` + `/cache` Local mounts, optional Storage-backed `/media` library (any wisp Storage source + sub-path), and a Hardware acceleration toggle that auto-picks the first available host GPU. Runs as the wisp deploy user (no `runAsRoot`) — Local mount auto-ownership and the new render-group `additionalGids` cover the cases that traditionally drove people to root with raw Docker. `_http._tcp` mDNS service seeded at create so `<name>.local` is discoverable out of the box. User still enables hardware acceleration inside Jellyfin's Dashboard → Playback after first start
 
+### Bug Fixes
+- Container stats SSE: containerd returns `Tasks.Metrics` as a binary-proto `google.protobuf.Any`; `unpackAny` only handled JSON, so decoding silently failed and the status bar always read 0%. Register the cgroup v1 / v2 `Metrics` proto types and dispatch in `unpackAny` on `type_url`, with JSON as a fallback for non-proto Anys
+
 ## 2026-04-29
 
 ### New Features
