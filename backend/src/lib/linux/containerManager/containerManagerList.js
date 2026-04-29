@@ -74,36 +74,58 @@ async function fetchContainerListFromDisk() {
     return [];
   }
 
+  // Index the previous snapshot so a transient task-lookup failure can fall
+  // back to the last known state. Under host CPU saturation, individual
+  // tasks.get calls flake (DEADLINE_EXCEEDED, UNAVAILABLE on missed
+  // keepalives) even though the container is still running; without this,
+  // the row used to flip to 'stopped' in the sidebar and stick until the
+  // next event/save refresh corrected it.
+  const prevByName = new Map(
+    Array.isArray(containerListCache)
+      ? containerListCache.map((c) => [c.name, c])
+      : [],
+  );
+
   const results = [];
   const libraryDigests = await readLibraryDigestMap();
 
   for (const entry of dirs) {
     if (!entry.isDirectory()) continue;
     const name = entry.name;
+    let config;
     try {
       const configPath = join(basePath, name, 'container.json');
       const raw = await readFile(configPath, 'utf8');
-      const config = JSON.parse(raw);
-
-      let state = 'stopped';
-      try {
-        const task = await getTaskState(name);
-        if (task) state = containerTaskStatusToUi(task);
-      } catch {
-        // No task — container is stopped
-      }
-
-      results.push({
-        name,
-        type: 'container',
-        image: config.image || '',
-        state,
-        iconId: config.iconId ?? null,
-        updateAvailable: deriveUpdateAvailable(config, state, libraryDigests),
-      });
+      config = JSON.parse(raw);
     } catch {
-      // Skip malformed container dirs
+      /* missing or malformed container.json (mid-create, mid-delete) — skip */
+      continue;
     }
+
+    let state;
+    try {
+      const task = await getTaskState(name);
+      state = task ? containerTaskStatusToUi(task) : 'stopped';
+    } catch (err) {
+      // getTaskState already returns null when the task genuinely doesn't
+      // exist; an exception here means the gRPC call faulted. Keep the last
+      // cached state so a flake doesn't poison the sidebar, and log so we
+      // can confirm the failure mode in journalctl.
+      state = prevByName.get(name)?.state || 'unknown';
+      containerState.logger?.warn?.(
+        { err: err?.message || String(err), container: name, fallback: state },
+        '[containerManager] task lookup failed during list refresh — kept previous state',
+      );
+    }
+
+    results.push({
+      name,
+      type: 'container',
+      image: config.image || '',
+      state,
+      iconId: config.iconId ?? null,
+      updateAvailable: deriveUpdateAvailable(config, state, libraryDigests),
+    });
   }
 
   return results;
