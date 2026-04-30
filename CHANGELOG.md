@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-05-01
+## 2026-05-01 (v1.0.7)
 
 ### New Features
 - **Sidebar Host-row dot now also lights for Wisp updates**, not only OS package updates. Same amber dot, single tooltip that names whichever signal(s) are firing
