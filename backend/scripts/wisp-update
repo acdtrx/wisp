@@ -17,14 +17,22 @@ set -uo pipefail
 
 # We're spawned by the wisp-backend service, so by default we live in its cgroup.
 # Step 1 of this helper stops wisp-backend, and systemd's default KillMode of
-# `control-group` would then SIGTERM us along with the backend. Re-exec inside a
-# new transient systemd scope so PID 1 owns us instead and we survive the stop.
+# `control-group` would then SIGTERM us along with the backend.
+#
+# Re-exec inside a transient systemd scope, pinned to `system.slice` so the
+# scope lives as a SIBLING of wisp-backend.service rather than a child of it.
+# Without --slice, `systemd-run --scope` from within a service places the new
+# scope under that service's cgroup tree, and the parent stop still kills us
+# (we hit this on the first cgroup-detach attempt — scope showed "Deactivated
+# successfully" milliseconds after starting because systemd tore down the
+# parent and everything under it).
 if [[ -z "${WISP_UPDATE_DETACHED:-}" ]]; then
   if ! command -v systemd-run >/dev/null 2>&1; then
     echo "error: systemd-run not available; cannot detach from caller cgroup" >&2
     exit 1
   fi
   exec systemd-run --quiet --scope --collect \
+    --slice=system.slice \
     --unit="wisp-update-$$" \
     --setenv=WISP_UPDATE_DETACHED=1 \
     -- "$0" "$@"
@@ -33,10 +41,34 @@ fi
 STAGING="${1:-}"
 INSTALL_DIR="${2:-}"
 
+# Mirror progress / errors to journald via systemd-cat in addition to stdio.
+# stdio still flows back to the calling backend (for SSE), but the backend
+# may go away mid-stop; the journald copy survives independent of the SSE
+# stream so post-mortem `journalctl -t wisp-update` shows the full trace.
+log() {
+  printf '%s\n' "$*"
+  if command -v systemd-cat >/dev/null 2>&1; then
+    printf '%s\n' "$*" | systemd-cat -t wisp-update -p info
+  fi
+}
+logerr() {
+  printf '%s\n' "$*" >&2
+  if command -v systemd-cat >/dev/null 2>&1; then
+    printf '%s\n' "$*" | systemd-cat -t wisp-update -p err
+  fi
+}
+
 fail() {
-  echo "error: $*" >&2
+  logerr "error: $*"
   exit 1
 }
+
+# Where in the cgroup tree did we land? Critical for diagnosing whether
+# --slice=system.slice actually escaped wisp-backend.service.
+if command -v systemd-cat >/dev/null 2>&1; then
+  printf 'cgroup: %s\n' "$(awk -F: '$2=="" {print $3}' /proc/self/cgroup 2>/dev/null || echo unknown)" \
+    | systemd-cat -t wisp-update -p info
+fi
 
 [[ -n "$STAGING" && -n "$INSTALL_DIR" ]] || fail "usage: wisp-update <staging-dir> <install-dir>"
 [[ "$STAGING" == /* ]] || fail "staging dir must be absolute: $STAGING"
@@ -68,7 +100,7 @@ RSYNC_EXCLUDES=(
 snapshot_taken=0
 
 rollback() {
-  echo "step:rollback" >&2
+  logerr "step:rollback"
   if [[ "$snapshot_taken" -eq 1 && -d "$PREV_DIR" ]]; then
     rsync -a --delete "$PREV_DIR/" "$INSTALL_DIR/" || true
     chown -R "$DEPLOY_USER:$DEPLOY_USER" "$INSTALL_DIR" || true
@@ -79,22 +111,22 @@ rollback() {
 
 trap 'rc=$?; if [[ $rc -ne 0 ]]; then rollback; fi' EXIT
 
-echo "step:stop-services"
+log "step:stop-services"
 systemctl stop "$FRONTEND_UNIT" 2>/dev/null || true
 systemctl stop "$BACKEND_UNIT" 2>/dev/null || true
 
-echo "step:snapshot"
+log "step:snapshot"
 rm -rf "$PREV_DIR"
 # Full mirror copy of the install dir (including config, node_modules, etc.)
 # so rollback fully restores prior state.
 rsync -a --delete "$INSTALL_DIR/" "$PREV_DIR/" || fail "snapshot rsync failed"
 snapshot_taken=1
 
-echo "step:swap"
+log "step:swap"
 rsync -a --delete "${RSYNC_EXCLUDES[@]}" "$STAGING/" "$INSTALL_DIR/" || fail "swap rsync failed"
 chown -R "$DEPLOY_USER:$DEPLOY_USER" "$INSTALL_DIR" || fail "chown failed"
 
-echo "step:install-deps"
+log "step:install-deps"
 # Tarball ships without node_modules — install runtime deps for both backend
 # (always needed) and frontend (server.js runtime: fastify, http-proxy, static).
 # Frontend dist/ is prebuilt so no `npm run build` is required.
@@ -103,14 +135,14 @@ sudo -u "$DEPLOY_USER" bash -c "cd '$INSTALL_DIR/backend' && npm ci --omit=dev -
 sudo -u "$DEPLOY_USER" bash -c "cd '$INSTALL_DIR/frontend' && npm ci --omit=dev --omit=optional" \
   || fail "frontend npm ci failed"
 
-echo "step:install-helpers"
+log "step:install-helpers"
 # A new release may add or update wisp-* helpers (including this one).
 if [[ -x "$INSTALL_DIR/scripts/linux/setup/install-helpers.sh" ]]; then
   "$INSTALL_DIR/scripts/linux/setup/install-helpers.sh" "$INSTALL_DIR" "$DEPLOY_USER" \
     || fail "install-helpers failed"
 fi
 
-echo "step:install-units"
+log "step:install-units"
 # Re-template systemd units so unit-file changes in the new release apply.
 for template in "$BACKEND_UNIT" "$FRONTEND_UNIT"; do
   src="$INSTALL_DIR/systemd/linux/${template}.service"
@@ -123,7 +155,7 @@ for template in "$BACKEND_UNIT" "$FRONTEND_UNIT"; do
 done
 systemctl daemon-reload || fail "daemon-reload failed"
 
-echo "step:start-services"
+log "step:start-services"
 systemctl start "$BACKEND_UNIT" || fail "starting $BACKEND_UNIT failed"
 systemctl start "$FRONTEND_UNIT" || fail "starting $FRONTEND_UNIT failed"
 
@@ -132,7 +164,7 @@ systemctl start "$FRONTEND_UNIT" || fail "starting $FRONTEND_UNIT failed"
 # (so the user has one-deep manual rollback).
 rm -rf "$STAGING" || true
 
-echo "step:done"
+log "step:done"
 
 # Disarm the failure trap on success so we don't roll back on a benign exit.
 trap - EXIT
