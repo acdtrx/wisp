@@ -7,6 +7,14 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# Suppress interactive prompts during apt installs:
+# - DEBIAN_FRONTEND=noninteractive: stop debconf from popping menus (e.g. for libvirt apparmor)
+# - NEEDRESTART_MODE=a / NEEDRESTART_SUSPEND=1: stop Ubuntu 22.04+ `needrestart` from
+#   asking which services to restart after the install (this is the usual hang).
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export NEEDRESTART_SUSPEND=1
+
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=distro.sh
 source "$SETUP_DIR/distro.sh"
@@ -78,8 +86,10 @@ else
     apt-get install -y -qq nodejs
   fi
 
+  # qemu-system-x86 is the concrete package on modern Debian/Ubuntu.
+  # The old `qemu-kvm` transitional package was dropped in Ubuntu 24.04.
   apt-get install -y -qq \
-    qemu-kvm \
+    qemu-system-x86 \
     libvirt-daemon-system \
     libvirt-clients \
     libvirt-dbus \

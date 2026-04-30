@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Enable libvirtd + virtlogd; disable default NAT network. Run as root.
+# Enable libvirt daemons (modular or monolithic) + virtlogd; disable default NAT network. Run as root.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -9,9 +9,33 @@ fi
 
 echo "--- Enabling libvirt services ---"
 
-systemctl enable --now libvirtd
+unit_exists() { systemctl cat "$1" &>/dev/null; }
+
+# Modular daemons (virtqemud + sidecars) replace the monolithic libvirtd on
+# distros that opt in (Fedora 35+, recent Arch). Ubuntu 26.04 ships libvirt 12
+# but still packages it monolithically, so this branch is for forward-compat
+# and non-Debian distros. virtproxyd provides the legacy
+# /var/run/libvirt/libvirt-sock for clients that hardcode that path
+# (libvirt-dbus, sanity.sh).
+if unit_exists virtqemud.socket; then
+  for sock in virtqemud.socket virtnetworkd.socket virtstoraged.socket \
+              virtnodedevd.socket virtsecretd.socket virtproxyd.socket \
+              virtinterfaced.socket virtnwfilterd.socket; do
+    if unit_exists "$sock"; then
+      systemctl enable --now "$sock" >/dev/null
+    fi
+  done
+  echo "  libvirt modular daemons: socket-activated (virtqemud + virtnetworkd + virtstoraged + virtproxyd + ...)"
+elif unit_exists libvirtd.service; then
+  systemctl enable --now libvirtd
+  echo "  libvirtd: $(systemctl is-active libvirtd)"
+else
+  echo "  ERROR: neither virtqemud.socket nor libvirtd.service is installed"
+  exit 1
+fi
+
+# virtlogd persists in both monolithic and modular setups
 systemctl enable --now virtlogd
-echo "  libvirtd: $(systemctl is-active libvirtd)"
 echo "  virtlogd: $(systemctl is-active virtlogd)"
 echo "  libvirt-dbus: installed (activates on demand via D-Bus)"
 

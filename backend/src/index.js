@@ -82,7 +82,16 @@ const loggerConfig = {
     : {}),
 };
 
-const app = Fastify({ logger: loggerConfig, forceCloseConnections: true });
+// trustProxy honors X-Forwarded-Proto / X-Forwarded-For only when the connection
+// itself comes from loopback. The frontend proxy always connects from 127.0.0.1,
+// so this lets backend cookies pick the right `Secure` flag based on the
+// browser's actual scheme (HTTP on LAN → no Secure; HTTPS via reverse proxy →
+// Secure) without trusting headers from arbitrary networks.
+const app = Fastify({
+  logger: loggerConfig,
+  forceCloseConnections: true,
+  trustProxy: ['127.0.0.1', '::1'],
+});
 
 app.setNotFoundHandler((request, reply) => {
   request.log.info({ method: request.method, url: redactToken(request.url) }, 'Route not found');

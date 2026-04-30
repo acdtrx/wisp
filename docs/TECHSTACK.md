@@ -75,7 +75,7 @@ Installed by the server setup script:
 
 | Package | Purpose |
 |---------|---------|
-| qemu-kvm | KVM hypervisor |
+| qemu-system-x86 | KVM hypervisor (replaces the old `qemu-kvm` transitional package, which was dropped in Ubuntu 24.04) |
 | libvirt-daemon-system | Libvirt daemon and management |
 | libvirt-clients | CLI tools (virsh, etc.) |
 | libvirt-dbus | DBus interface for libvirt (required for dbus-next communication) |

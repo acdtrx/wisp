@@ -9,13 +9,15 @@ const SESSION_COOKIE = 'wisp_session';
 const CSRF_COOKIE = 'wisp_csrf';
 const SESSION_MAX_AGE_SECONDS = 86400;
 
-function isProd() {
-  return process.env.NODE_ENV !== 'development';
-}
-
-function setSessionCookies(reply, jwt, csrfToken) {
+// `Secure` must reflect the actual request scheme. Browsers silently drop
+// Secure cookies received over plain HTTP for non-localhost origins — so
+// hardcoding `secure: true` in production breaks LAN-HTTP installs (login
+// returns 200, browser discards the cookie, next API call 401s, frontend
+// bounces to /login). With trustProxy enabled and the frontend proxy passing
+// X-Forwarded-Proto, request.protocol is the original browser-side scheme.
+function setSessionCookies(reply, request, jwt, csrfToken) {
   const baseAttrs = {
-    secure: isProd(),
+    secure: request.protocol === 'https',
     sameSite: 'Lax',
     path: '/',
     maxAge: SESSION_MAX_AGE_SECONDS,
@@ -24,9 +26,9 @@ function setSessionCookies(reply, jwt, csrfToken) {
   appendSetCookie(reply, buildSetCookie(CSRF_COOKIE, csrfToken, { ...baseAttrs, httpOnly: false }));
 }
 
-function clearSessionCookies(reply) {
+function clearSessionCookies(reply, request) {
   const baseAttrs = {
-    secure: isProd(),
+    secure: request.protocol === 'https',
     sameSite: 'Lax',
     path: '/',
     maxAge: 0,
@@ -117,7 +119,7 @@ export default async function authRoutes(fastify) {
       // but the explicit token defends against subdomain/proxy edge cases
       // and deliberate mistake-class regressions.
       const csrfToken = randomBytes(32).toString('base64url');
-      setSessionCookies(reply, token, csrfToken);
+      setSessionCookies(reply, request, token, csrfToken);
       return { ok: true };
     },
   });
@@ -126,8 +128,8 @@ export default async function authRoutes(fastify) {
     schema: {
       response: { 204: { type: 'null' } },
     },
-    handler: async (_request, reply) => {
-      clearSessionCookies(reply);
+    handler: async (request, reply) => {
+      clearSessionCookies(reply, request);
       reply.code(204).send();
     },
   });
@@ -169,7 +171,7 @@ export default async function authRoutes(fastify) {
         // who just changed their password isn't immediately bounced to /login.
         const newToken = signJWT({ role: 'admin' });
         const newCsrf = randomBytes(32).toString('base64url');
-        setSessionCookies(reply, newToken, newCsrf);
+        setSessionCookies(reply, request, newToken, newCsrf);
         reply.code(204).send();
       } catch (err) {
         fastify.log.error({ err }, 'Failed to update password');

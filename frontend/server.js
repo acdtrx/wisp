@@ -14,7 +14,29 @@ const PORT = parseInt(process.env.WISP_FRONTEND_PORT, 10) || 8080;
 const BACKEND_PORT = parseInt(process.env.WISP_BACKEND_PORT, 10) || 3001;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
-const app = Fastify({ logger: true, forceCloseConnections: true });
+// trustProxy lets `request.protocol` reflect a TLS-terminating reverse proxy
+// (Caddy/nginx) sitting in front of port 8080 via X-Forwarded-Proto. Limited
+// to loopback so headers from arbitrary networks aren't trusted. Without this,
+// an HTTPS reverse proxy would still surface as 'http' to the proxy header
+// rewriter below, breaking the browser→proxy→frontend→backend Secure cookie
+// chain.
+const app = Fastify({
+  logger: true,
+  forceCloseConnections: true,
+  trustProxy: ['127.0.0.1', '::1'],
+});
+
+// Inject standard X-Forwarded-* headers so the backend can derive the original
+// browser-side scheme (for Secure cookie selection) and client IP (for the
+// login rate-limit map). @fastify/http-proxy doesn't add these by default.
+function rewriteProxiedHeaders(originalReq, headers) {
+  return {
+    ...headers,
+    'x-forwarded-proto': originalReq.protocol,
+    'x-forwarded-host': originalReq.headers.host || '',
+    'x-forwarded-for': originalReq.ip,
+  };
+}
 
 /* Baseline security headers attached to every HTML / API response served by
  * the frontend process. Backend SSE/WS responses go through `httpProxy` and
@@ -78,6 +100,7 @@ await app.register(httpProxy, {
   websocket: false,
   replyOptions: {
     timeout: 0,
+    rewriteRequestHeaders: rewriteProxiedHeaders,
   },
 });
 

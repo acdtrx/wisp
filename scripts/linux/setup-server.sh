@@ -15,6 +15,14 @@ if [[ -z "$DEPLOY_USER" ]]; then
   exit 1
 fi
 
+SKIP_BRIDGE=0
+for arg in "$@"; do
+  case "$arg" in
+    --skip-bridge) SKIP_BRIDGE=1 ;;
+    *) echo "ERROR: unknown argument: $arg"; exit 1 ;;
+  esac
+done
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # scripts/linux → project root
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
@@ -50,9 +58,9 @@ echo ""
 run_step "Libvirt" "$SETUP_DIR/libvirt.sh"
 echo ""
 
-# Optional: Bridged networking — skipped when WISP_SKIP_BRIDGE=1 (e.g. from install.sh; bridge offered at end)
+# Optional: Bridged networking — skipped when --skip-bridge is passed (e.g. from install.sh; bridge offered at end)
 echo "--- Optional: Bridged networking (br0) ---"
-if [[ -n "${WISP_SKIP_BRIDGE:-}" ]]; then
+if [[ "$SKIP_BRIDGE" == "1" ]]; then
   echo "  Skipped (bridge can be configured at end of install or later with: sudo scripts/linux/setup/bridge.sh)"
 else
   has_real_bridge() {

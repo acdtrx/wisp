@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-01
+
+### Bug Fixes
+- **Ubuntu 26.04 install — `qemu-kvm` package no longer exists**: replaced with `qemu-system-x86` in `packages.sh`. The transitional `qemu-kvm` was dropped in 24.04; on 26.04 the missing package made the entire apt batch fail atomically, cascading into the libvirt/groups/dirs/libvirtd failures
+- **Ubuntu 22.04+ setup hang on package install**: `needrestart` silently popped an interactive service-restart menu after the libvirt install even with `apt-get -y -qq`. Suppressed via `NEEDRESTART_MODE=a` + `NEEDRESTART_SUSPEND=1` + `DEBIAN_FRONTEND=noninteractive` exports at the top of `packages.sh`
+- **`sudo -E` rejected by Ubuntu 26.04 sudo**: `install.sh` used it only to smuggle `WISP_SKIP_BRIDGE=1`; replaced with a `--skip-bridge` CLI flag on `setup-server.sh`
+- **libvirt modular-daemon support**: `libvirt.sh` now socket-activates `virtqemud` + `virtnetworkd` + `virtstoraged` + `virtproxyd` + sidecars on distros that ship modular daemons (Fedora 35+, recent Arch). Ubuntu 26.04 still packages libvirt monolithically so the existing `libvirtd.service` path is preserved. `wisp-backend.service` `After=` now lists both unit names
+- **Login redirected back to /login on LAN-HTTP installs**: the cookie's `Secure` flag was hardcoded to `NODE_ENV !== 'development'`, but browsers silently drop `Secure` cookies received over plain HTTP for non-`localhost` origins — login returned 200 + `Set-Cookie`, the cookie never persisted, the next API call 401'd, the SPA bounced to /login. Now derived from `request.protocol` with `trustProxy: ['127.0.0.1', '::1']` on backend + frontend, and the frontend proxy injects `X-Forwarded-Proto`/`X-Forwarded-Host`/`X-Forwarded-For` on the `/api` hop. HTTP-on-LAN works; an HTTPS-terminating reverse proxy in front still triggers `Secure` correctly via the forwarded scheme
+
 ## 2026-05-01 (v1.0.5)
 
 ### New Features

@@ -67,7 +67,7 @@ if [[ ! -x "$SETUP_SERVER" ]]; then
   echo "ERROR: $SETUP_SERVER not found or not executable."
   exit 1
 fi
-WISP_SKIP_BRIDGE=1 sudo -E "$SETUP_SERVER"
+sudo "$SETUP_SERVER" --skip-bridge
 
 # --- Node check ---
 if ! command -v node &>/dev/null; then

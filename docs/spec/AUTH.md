@@ -9,7 +9,7 @@ Wisp uses single-user JWT authentication carried in **HttpOnly cookies**. There 
 3. Frontend sends `POST /api/auth/login` with `{ password }` and `credentials: 'include'`.
 4. Backend verifies the password using timing-safe comparison.
 5. On success, backend sets two cookies and returns `{ ok: true }`:
-   - **`wisp_session`** — the JWT itself. `HttpOnly` (JS cannot read it), `SameSite=Lax`, `Path=/`, `Max-Age=86400`. `Secure` in production.
+   - **`wisp_session`** — the JWT itself. `HttpOnly` (JS cannot read it), `SameSite=Lax`, `Path=/`, `Max-Age=86400`. `Secure` is set when the request scheme is HTTPS (derived from `request.protocol`, which honors `X-Forwarded-Proto` from loopback proxies via `trustProxy`). On plain-HTTP LAN deployments the flag is omitted — browsers silently discard `Secure` cookies received over HTTP for non-`localhost` origins, which would otherwise leave the user stuck on the login page.
    - **`wisp_csrf`** — a per-session random 32-byte token used for double-submit CSRF defence. Same attributes as the session cookie except **not** `HttpOnly` (JS reads it to echo on state-changing requests).
 6. Frontend has nothing to store; subsequent requests automatically carry both cookies.
 7. On failure, backend returns 401 with `{ error, detail }`.
@@ -113,7 +113,7 @@ The global `onRequest` auth hook validates the cookie before the WebSocket upgra
 
 Failed login attempts are tracked per source IP (in-memory `Map`). The window is **60 s** with a maximum of **5 failed attempts per IP**; further attempts in the same window return **429**. The map is swept every 60 s for expired entries and capped at 10 000 distinct IPs to bound memory under flood conditions.
 
-The IP used as the map key is **`request.ip`**, which Fastify resolves to the socket peer (`trustProxy: false` is the default and is what we ship with). Do **not** enable `trustProxy: true` without an upstream-IP allowlist: it would let any client forge `X-Forwarded-For` and trivially bypass the rate limit. If a deployment ever fronts Wisp with a reverse proxy that adds `X-Forwarded-For`, gate `trustProxy` behind that proxy's IP only.
+The IP used as the map key is **`request.ip`**. Backend Fastify is configured with `trustProxy: ['127.0.0.1', '::1']` — loopback only — because the bundled frontend proxy (`frontend/server.js`) always connects to the backend from `127.0.0.1` and injects `X-Forwarded-For` / `X-Forwarded-Proto`. Trust is intentionally narrow: only headers from loopback are honored, so an attacker connecting directly to backend port 3001 over the LAN cannot forge `X-Forwarded-For` to bypass the rate limit. If a future deployment puts a TLS-terminating reverse proxy in front of the frontend on a different host, extend the allow-list to that proxy's IP — never set `trustProxy: true`.
 
 ## Security Considerations
 

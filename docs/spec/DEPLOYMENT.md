@@ -42,7 +42,7 @@ One-time server preparation script. Run as root with `sudo`. Safe to re-run. It 
 2. **Runs `scripts/linux/setup/packages.sh`** — Detects distro and installs Node.js 24+ and system packages:
 
    **Debian/Ubuntu** — Node.js via NodeSource; packages:
-   - `qemu-kvm` — KVM hypervisor
+   - `qemu-system-x86` — KVM hypervisor (the old `qemu-kvm` transitional package was dropped in Ubuntu 24.04)
    - `libvirt-daemon-system` — libvirt daemon
    - `libvirt-clients` — CLI tools (virsh)
    - `libvirt-dbus` — DBus interface for libvirt (required by the app)
@@ -77,9 +77,9 @@ One-time server preparation script. Run as root with `sudo`. Safe to re-run. It 
    | `/var/lib/wisp/containers` | `$USER:libvirt` | `0775` |
    | `/mnt/wisp/smb` | `$USER:libvirt` | `0775` |
 
-5. **Runs `scripts/linux/setup/libvirt.sh`** — Enables and starts `libvirtd` and `virtlogd`; disables libvirt default NAT network
+5. **Runs `scripts/linux/setup/libvirt.sh`** — Enables libvirt and `virtlogd`; disables libvirt default NAT network. On Debian/Ubuntu (including 26.04, which ships libvirt 12) the script enables the monolithic `libvirtd.service`. On distros that ship modular libvirt daemons (Fedora 35+, recent Arch) it socket-activates `virtqemud`, `virtnetworkd`, `virtstoraged`, `virtnodedevd`, `virtsecretd`, `virtproxyd`, `virtinterfaced`, `virtnwfilterd` instead — `virtproxyd.socket` provides the legacy `/var/run/libvirt/libvirt-sock` path that libvirt-dbus and the sanity check expect.
 
-6. **Optionally runs `scripts/linux/setup/bridge.sh`** — Bridged networking (br0). Skipped when `WISP_SKIP_BRIDGE=1` (e.g. from `install.sh`, which offers bridge at end of install).
+6. **Optionally runs `scripts/linux/setup/bridge.sh`** — Bridged networking (br0). Skipped when `--skip-bridge` is passed (e.g. from `install.sh`, which offers bridge at end of install).
 
 7. **Runs `scripts/linux/setup/containerd.sh`** — Installs containerd 2.0+ (from the official Docker apt repo on Debian/Ubuntu; from the official Arch repo on Arch Linux), creates a `containerd` system group, adds the deploy user to it, configures the socket `gid` in `/etc/containerd/config.toml` so the deploy user can connect, enables the service, creates the `wisp` namespace
 
@@ -104,7 +104,7 @@ Server setup and install logic is split into standalone scripts under `scripts/l
 | `packages.sh` | root | Node.js 24+, QEMU/KVM/libvirt stack |
 | `groups.sh <user>` | root | Add user to libvirt/kvm/input; chmod /dev/kvm |
 | `dirs.sh <user>` | root | Create /var/lib/wisp/*, /mnt/wisp/smb |
-| `libvirt.sh` | root | Enable libvirtd/virtlogd; disable default NAT |
+| `libvirt.sh` | root | Enable modular libvirt daemons (virtqemud + sidecars) or monolithic `libvirtd`; enable `virtlogd`; disable default NAT |
 | `sanity.sh` | root or libvirt user | Verify virsh, /dev/kvm, socket, DBus |
 | `helper.sh <src> <basename> <user> [pkg...]` | root | Copy one script to `/usr/local/bin/<basename>` + sudoers (used by `install-helpers.sh`) |
 | `install-helpers.sh <project-root> <user>` | root | Install or **refresh** all `wisp-*` helpers from the install tree → `/usr/local/bin` |
@@ -132,7 +132,7 @@ Run as the deploy user from the unpacked release root (or repo root).
 | `install-dir` | Target directory. If omitted, prompts interactively (default `/opt/wisp`). |
 | `--restart-svc` | Auto-restart (or install+start) systemd services without prompting. Also skips the bridged-networking prompt. |
 
-Steps: prompts for install directory (unless provided as arg), runs `scripts/linux/setup/copy.sh`, then `sudo setup-server.sh` (with `WISP_SKIP_BRIDGE=1`), then `config.sh`, `password.sh`, `wispctl.sh build`, and `permissions.sh`. For systemd: if `wisp-backend` / `wisp-frontend` unit files are not yet installed, optionally installs and starts them; if they already exist (e.g. upgrade), prompts to **restart** them instead (default yes) — unless `--restart-svc` is set, which does it automatically. Optionally offers bridged networking (`scripts/linux/setup/bridge.sh`) in interactive mode only.
+Steps: prompts for install directory (unless provided as arg), runs `scripts/linux/setup/copy.sh`, then `sudo setup-server.sh --skip-bridge`, then `config.sh`, `password.sh`, `wispctl.sh build`, and `permissions.sh`. For systemd: if `wisp-backend` / `wisp-frontend` unit files are not yet installed, optionally installs and starts them; if they already exist (e.g. upgrade), prompts to **restart** them instead (default yes) — unless `--restart-svc` is set, which does it automatically. Optionally offers bridged networking (`scripts/linux/setup/bridge.sh`) in interactive mode only.
 
 1. **Copy and server setup:** `copy.sh` then `sudo setup-server.sh`
 2. **Config and password:** `config.sh`, `password.sh`

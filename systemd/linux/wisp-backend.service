@@ -1,6 +1,6 @@
 [Unit]
 Description=Wisp — Backend
-After=network-online.target libvirtd.service containerd.service
+After=network-online.target libvirtd.service virtqemud.service containerd.service
 Wants=network-online.target
 
 [Service]
