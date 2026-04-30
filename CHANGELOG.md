@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-05-01
+
+### New Features
+- **Sidebar Host-row dot now also lights for Wisp updates**, not only OS package updates. Same amber dot, single tooltip that names whichever signal(s) are firing
+- **Release notes render as Markdown** in Wisp Update via `react-markdown` + `@tailwindcss/typography`; long notes still scroll inside the section
+- Release workflow bumped to `actions/checkout@v6` + `actions/setup-node@v6` to drop the Node-20 deprecation warnings
+
+### Bug Fixes
+- **Self-update helper killed before it could snapshot**: `wisp-update` ran inside `wisp-backend.service`'s cgroup, so its first real step (`systemctl stop wisp-backend`) SIGTERM'd itself via systemd's default `KillMode=control-group`. Helper now re-execs inside a transient `systemd-run --scope` so PID 1 owns it and the stop step no longer affects it. v1.0.6 → any-newer self-update on existing installs requires manually refreshing `/usr/local/bin/wisp-update` first (`wispctl helpers` or a fresh `push.sh`)
+
 ## 2026-05-01 (v1.0.6)
 
 ### New Features
