@@ -39,8 +39,20 @@ if [[ ${#EXTRA_PACKAGES[@]} -gt 0 ]]; then
   echo "  Installed packages: ${EXTRA_PACKAGES[*]}"
 fi
 
-cp "$SCRIPT_SRC" "$DEST_PATH"
-chmod 755 "$DEST_PATH"
+# Write to a temp file then atomic-rename into place. `cp src dst` keeps
+# dst's inode and rewrites contents under any process that's currently
+# executing dst — that's exactly the case for wisp-update self-update,
+# where the running helper triggers install-helpers.sh, which then loops
+# back and `cp`s itself. Bash reads scripts line-by-line, so corrupting
+# the file mid-execution led to a silent non-zero exit (syntax error /
+# command-not-found) several lines later, with no `fail` message and no
+# obvious clue. `mv -f` over the same filesystem is rename(2) — the old
+# inode stays open for the running process; new invocations get the new
+# file.
+TMP_DEST="${DEST_PATH}.new.$$"
+cp "$SCRIPT_SRC" "$TMP_DEST"
+chmod 755 "$TMP_DEST"
+mv -f "$TMP_DEST" "$DEST_PATH"
 echo "  Installed $SCRIPT_NAME to $DEST_PATH"
 
 echo "$DEPLOY_USER ALL=(root) NOPASSWD: $DEST_PATH" > "$SUDOERS_FILE"
