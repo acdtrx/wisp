@@ -310,17 +310,21 @@ XML parsing and building utilities using fast-xml-parser. Handles the conversion
 
 - Host info (hostname, versions, uptime, kernel, primary IP)
 - Host hardware (CPU cores, total memory)
-- Running VM allocations (total vCPUs and memory across active domains)
 - Network bridge enumeration
 - UEFI firmware path discovery
 - USB device listing via sysfs (`usbMonitor.js`; see [USB.md](USB.md))
 
 ### vmManagerList.js
 
-- **VM list cache** — in-memory cache of the VM list, populated on connect and refreshed automatically on any `DomainEvent` signal (defined, undefined, started, stopped, suspended, resumed) and on any qemu binary replacement detected by `watchQemuBinaries` (apt/dnf upgrade of `qemu-system-*`). `listVMs()` returns the cache when populated, avoiding per-call libvirt queries. The cache is invalidated on disconnect or bus error. Each cached entry holds: `name`, `uuid`, `state`, `stateCode`, `vcpus`, `memoryMiB`, `osCategory`, `iconId`, `localDns`, `staleBinary`.
+- **VM list cache** — in-memory cache of the VM list, populated on connect and refreshed automatically on any `DomainEvent` signal (defined, undefined, started, stopped, suspended, resumed) and on any qemu binary replacement detected by `watchQemuBinaries` (apt/dnf upgrade of `qemu-system-*`). `listVMs()` returns the cache when populated, avoiding per-call libvirt queries. The cache is invalidated on disconnect or bus error. Each cached entry holds: `name`, `uuid`, `domainPath`, `state`, `stateCode`, `vcpus`, `memoryMiB`, `osCategory`, `iconId`, `localDns`, `guestAgent`, `staleBinary`.
 - `listVMs()` — returns cached VM list (sub-millisecond); falls back to a live libvirt query on first call before cache populates.
+- `getRunningVMAllocations()` — sums `vcpus` and `memoryMiB` across cached entries with `stateCode === 1` (running). Powers the host stats SSE allocation totals without per-tick libvirt traffic; updates piggyback on the same DomainEvent-driven cache refresh used by `listVMs()`.
 - `getVMConfig(name)` — full VM configuration parsed from XML
 - `getCachedLocalDns(name)` — reads the `localDns` flag for a VM from the cached list; used by `getVMStats` to avoid an extra inactive XML fetch per stats cycle
+- `getCachedVcpus(name)` — reads cached vCPU count; used by `getVMStats` for CPU% computation without a per-tick `GetXMLDesc`
+- `getCachedGuestAgent(name)` — reads whether the qemu guest agent is configured in the domain XML; used by `getVMStats` to gate `InterfaceAddresses` / `GetHostname` calls
+- `getCachedStateCode(name)` — reads the libvirt state code from the cached list; used by `getVMStats` to fast-path non-running VMs to a zero-DBus tick
+- `getCachedDomainPath(name)` — returns the libvirt-dbus domain path captured during cache population; used by `getVMStats` to skip `DomainLookupByName` on the hot path
 - `getCachedStaleBinary(name)` — reads the `staleBinary` flag from the cached list; used by `getVMStats` to avoid per-tick `/proc` syscalls
 - `subscribeVMListChange(handler)` — subscribe to cache-refresh events. Used by the `/vms/stream` SSE handler to push the list to clients without a polling timer. Returns an unsubscribe function.
 
@@ -404,4 +408,4 @@ Every host-supplied disk or ISO path (attach disk/CDROM at runtime, plus `disk.s
 | `/org/libvirt/domains/<uuid>` | `org.libvirt.Domain` | Per-VM lifecycle, config, stats, devices |
 | `/org/libvirt/domains/<uuid>` | `org.freedesktop.DBus.Properties` | Read domain properties (autostart, etc.) |
 
-Domain object paths follow the pattern `/org/libvirt/domains/<uuid>` where UUIDs are obtained from `ListDomains`. Always obtain a fresh proxy object for each operation — do not cache proxy references across reconnects.
+Domain object paths follow the pattern `/org/libvirt/domains/<uuid>` where UUIDs are obtained from `ListDomains`. Per-domain proxy objects are cached in `connectionState.domainProxyCache` (path → `{ iface, props }`) so `getDomainObjAndIface(path)` skips the DBus `Introspect` round-trip on hot paths like the per-VM stats SSE. The cache is cleared on bus disconnect/error and the entry for a given path is dropped on `VIR_DOMAIN_EVENT_UNDEFINED`, so a redefined VM with the same path gets a fresh proxy. Do not stash proxy references in module-level state outside this cache.

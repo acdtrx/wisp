@@ -334,7 +334,7 @@ Reboot the host. Same requirements as shutdown (`wisp-power reboot`).
 
 ### GET /api/stats
 
-Server-Sent Events stream of host statistics. Pushes every 3 seconds.
+Server-Sent Events stream of host statistics. Pushes every 5 seconds.
 
 - **Content-Type:** `text/event-stream`
 - **Event data:**
@@ -576,7 +576,7 @@ Clone a VM (must be stopped).
 
 ### GET /api/vms/:name/stats
 
-SSE stream of per-VM statistics. Pushes every 3 seconds.
+SSE stream of per-VM statistics. Pushes every 5 seconds.
 
 - **Event data (running, active: true):**
 

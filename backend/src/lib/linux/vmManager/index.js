@@ -20,7 +20,6 @@ export {
 export {
   getHostInfo,
   getHostHardware,
-  getRunningVMAllocations,
   listHostBridges,
   getDefaultContainerParentBridge,
   getDefaultBridge,
@@ -30,6 +29,7 @@ export {
 
 export {
   listVMs,
+  getRunningVMAllocations,
   getVMConfig,
   findVMsUsingImage,
   getCachedLocalDns,

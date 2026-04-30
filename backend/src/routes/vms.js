@@ -961,7 +961,7 @@ export default async function vmsRoutes(fastify) {
       }
 
       await sendStats();
-      const interval = setInterval(sendStats, 3000);
+      const interval = setInterval(sendStats, 5000);
 
       request.raw.on('close', () => {
         clearInterval(interval);

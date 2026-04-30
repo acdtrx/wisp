@@ -146,8 +146,8 @@ Shared pure helpers live in **`backend/src/lib/vmManagerShared.js`** (re-exporte
 | Module (under `linux/vmManager/`) | Responsibility |
 |--------|---------------|
 | `vmManagerConnection.js` | DBus connection lifecycle (`connect`, `disconnect` on shutdown), domain lookup, state queries, XML retrieval, error helpers (MAC/format helpers from `vmManagerShared`) |
-| `vmManagerHost.js` | Host info (versions, hardware), running VM allocations, bridge/firmware/USB enumeration |
-| `vmManagerList.js` | List all VMs (cached, event-driven refresh), get full VM config (parsed from XML) |
+| `vmManagerHost.js` | Host info (versions, hardware), bridge/firmware/USB enumeration |
+| `vmManagerList.js` | List all VMs (cached, event-driven refresh), aggregate running VM allocations (vCPU/memory) from the cache, get full VM config (parsed from XML) |
 | `vmManagerLifecycle.js` | Start, stop, force-stop, reboot, suspend, resume |
 | `vmManagerCreate.js` | Create VM (XML generation, disk provisioning), delete, clone |
 | `vmManagerConfig.js` | Update VM configuration (live vs offline, restart detection) |

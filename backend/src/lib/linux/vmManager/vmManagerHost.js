@@ -5,8 +5,7 @@ import { hostname, release, uptime, networkInterfaces, cpus, totalmem } from 'no
 import { readdir, access as fsAccess } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isVlanLikeBridgeName } from '../../bridgeNaming.js';
-import { connectionState, getDomainXML, formatVersion, unwrapVariant } from './vmManagerConnection.js';
-import { parseVMFromXML } from './vmManagerXml.js';
+import { connectionState, formatVersion, unwrapVariant } from './vmManagerConnection.js';
 import { getDevices as getHostUSBDevicesFromMonitor } from '../host/usbMonitor.js';
 
 function getPrimaryAddress() {
@@ -53,35 +52,6 @@ export function getHostHardware() {
     cores: cpus().length,
     totalMemoryBytes: totalmem(),
   };
-}
-
-export async function getRunningVMAllocations() {
-  if (!connectionState.connectIface) return { vcpus: 0, memoryBytes: 0, count: 0 };
-
-  try {
-    const paths = await connectionState.connectIface.ListDomains(1);
-    let vcpus = 0;
-    let memoryBytes = 0;
-
-    for (const p of paths) {
-      try {
-        const xml = await getDomainXML(p);
-        const config = parseVMFromXML(xml);
-        if (config) {
-          vcpus += config.vcpus;
-          memoryBytes += config.memoryMiB * 1024 * 1024;
-        }
-      } catch {
-        /* domain may have disappeared between list and query */
-      }
-    }
-
-    return { vcpus, memoryBytes, count: paths.length };
-  } catch (err) {
-    /* ListDomains or aggregate failed — return zeros for stats bar */
-    connectionState.logger?.warn?.({ err: err.message }, '[vmManager] Failed to get running VM allocations');
-    return { vcpus: 0, memoryBytes: 0, count: 0 };
-  }
 }
 
 export async function listHostBridges() {

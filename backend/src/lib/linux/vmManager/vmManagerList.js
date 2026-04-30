@@ -45,6 +45,7 @@ async function fetchVMListFromLibvirt() {
       return {
         name: config.name,
         uuid: config.uuid,
+        domainPath: p,
         state: STATE_NAMES[stateCode] ?? 'unknown',
         stateCode,
         vcpus: config.vcpus,
@@ -52,6 +53,7 @@ async function fetchVMListFromLibvirt() {
         osCategory: detectOSCategory(config),
         iconId: config.iconId ?? null,
         localDns: config.localDns ?? false,
+        guestAgent: !!config.guestAgent,
         staleBinary,
       };
     }),
@@ -119,6 +121,50 @@ export function getCachedStaleBinary(name) {
   return vmListCache.find((v) => v.name === name)?.staleBinary ?? false;
 }
 
+/**
+ * Read vcpu count for a VM from the cached list. Returns undefined if the cache is
+ * not populated or the VM is not found — callers should treat that as "unknown" and
+ * fall back accordingly (e.g. CPU% computation).
+ */
+export function getCachedVcpus(name) {
+  if (!vmListCache) return undefined;
+  return vmListCache.find((v) => v.name === name)?.vcpus;
+}
+
+/**
+ * Read whether the qemu guest agent is configured in the domain XML, from the cached
+ * list. Returns false if the cache is not populated or the VM is not found — getVMStats
+ * uses this to decide whether to attempt agent calls (InterfaceAddresses, GetHostname).
+ */
+export function getCachedGuestAgent(name) {
+  if (!vmListCache) return false;
+  return vmListCache.find((v) => v.name === name)?.guestAgent ?? false;
+}
+
+/**
+ * Read libvirt state code for a VM from the cached list. Returns undefined if the
+ * cache is not populated or the VM is not found. The cache is refreshed on every
+ * DomainEvent, so a non-running cached state can be trusted for short-circuiting
+ * per-tick libvirt traffic in `getVMStats` (the next DomainEvent fires the moment
+ * the VM starts and the next tick will see running).
+ */
+export function getCachedStateCode(name) {
+  if (!vmListCache) return undefined;
+  return vmListCache.find((v) => v.name === name)?.stateCode;
+}
+
+/**
+ * Read the libvirt-dbus domain path for a VM from the cached list. Returns undefined
+ * if the cache is not populated or the VM is not found — callers should fall back to
+ * `resolveDomain(name)` (one `DomainLookupByName` round-trip) on cache miss. The path
+ * is captured from `ListDomains` during cache population and is stable for the lifetime
+ * of the domain definition (libvirt keys paths by UUID).
+ */
+export function getCachedDomainPath(name) {
+  if (!vmListCache) return undefined;
+  return vmListCache.find((v) => v.name === name)?.domainPath;
+}
+
 /* ── Public API ─────────────────────────────────────────────────────── */
 
 export async function listVMs() {
@@ -126,6 +172,26 @@ export async function listVMs() {
     vmListCache = await fetchVMListFromLibvirt();
   }
   return vmListCache;
+}
+
+/**
+ * Aggregate vCPU and memory allocations across running VMs from the cached list.
+ * Zero DBus traffic per call — the cache is refreshed only on libvirt DomainEvent
+ * signals (start/stop/define/undefine), so allocations stay accurate without
+ * per-tick `GetXMLDesc` calls from the stats SSE.
+ */
+export async function getRunningVMAllocations() {
+  const list = vmListCache ?? await listVMs();
+  let vcpus = 0;
+  let memoryBytes = 0;
+  let count = 0;
+  for (const vm of list) {
+    if (vm.stateCode !== 1) continue;
+    vcpus += vm.vcpus;
+    memoryBytes += vm.memoryMiB * 1024 * 1024;
+    count += 1;
+  }
+  return { vcpus, memoryBytes, count };
 }
 
 /** Add sizeGiB (virtual size, rounded) to each file-backed block disk; on qemu-img failure, disk is unchanged. */

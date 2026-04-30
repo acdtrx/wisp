@@ -7,8 +7,8 @@
  */
 import { connectionState, resolveDomain, getDomainXML, getDomainObjAndIface, unwrapVariant, unwrapDict, vmError } from './vmManagerConnection.js';
 import { parseVMFromXML } from './vmManagerXml.js';
-import { STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT } from './libvirtConstants.js';
-import { getCachedLocalDns, getCachedStaleBinary } from './vmManagerList.js';
+import { STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, VM_STATS_MASK } from './libvirtConstants.js';
+import { getCachedLocalDns, getCachedStaleBinary, getCachedVcpus, getCachedGuestAgent, getCachedStateCode, getCachedDomainPath } from './vmManagerList.js';
 import { getRegisteredHostname } from '../../mdnsManager.js';
 
 function parseInterfaceAddresses(raw, unwrapVariantFn) {
@@ -60,6 +60,23 @@ export async function getGuestHostnameFromIface(iface) {
 }
 
 /**
+ * Per-VM guest-agent info cache. qemu-ga `InterfaceAddresses` and `GetHostname` are
+ * expensive (libvirtd → virtio-serial → guest agent process inside the VM) and the
+ * data they return rarely changes — hostname is set at boot, IP changes on DHCP
+ * renewal (typically hours). The per-VM stats SSE refreshes every 5 s but we only
+ * hit the agent every GUEST_INFO_TTL_MS, so 5 in 6 ticks read straight from cache.
+ *
+ * Entries are dropped when the cached state turns non-running, so a stop/start cycle
+ * always re-fetches from the live agent on the next running tick.
+ */
+const guestInfoCache = new Map(); // name -> { ip, hostname, fetchedAt }
+const GUEST_INFO_TTL_MS = 30_000;
+
+function invalidateGuestInfo(name) {
+  guestInfoCache.delete(name);
+}
+
+/**
  * Fetch guest-agent IP + hostname for a VM in one libvirt round-trip.
  * Returns `{ ip, hostname }` with either field possibly null. Used by callers
  * outside `linux/vmManager/` (e.g. vmMdnsPublisher) so they don't need to touch
@@ -82,24 +99,33 @@ export async function getGuestNetwork(name) {
 }
 
 export async function getVMStats(name) {
-  const path = await resolveDomain(name);
-  const { iface } = await getDomainObjAndIface(path);
-  const [stateCode] = await iface.GetState(0);
-
-  if (stateCode !== 1 && stateCode !== 2 && stateCode !== 3) {
-    return { state: STATE_NAMES[stateCode] ?? 'unknown', active: false, cpu: null, disk: null, net: null, uptime: null, staleBinary: false };
+  // Fast path for non-running VMs: trust the event-driven cache and skip libvirt
+  // entirely. The cache is refreshed on every DomainEvent, so a cached non-running
+  // state means the SSE tick costs zero DBus calls until the VM actually starts.
+  const cachedState = getCachedStateCode(name);
+  if (cachedState !== undefined && cachedState !== 1 && cachedState !== 2 && cachedState !== 3) {
+    invalidateGuestInfo(name);
+    return { state: STATE_NAMES[cachedState] ?? 'unknown', active: false, cpu: null, disk: null, net: null, uptime: null, staleBinary: false };
   }
 
-  const xml = await iface.GetXMLDesc(0);
-  const config = parseVMFromXML(xml);
-  const cachedDns = getCachedLocalDns(name);
-  const localDns = cachedDns !== undefined ? cachedDns : (config?.localDns ?? false);
+  // Resolve the domain path from the cache (set by ListDomains) — saves a per-tick
+  // DomainLookupByName. Fall back to the live lookup only if the cache is empty
+  // (briefly, during reconnect or before the first refresh has populated it).
+  const path = getCachedDomainPath(name) ?? await resolveDomain(name);
+  const { iface } = await getDomainObjAndIface(path);
+  // No GetState round-trip here: cachedState is kept current via DomainEvent and
+  // we already short-circuited any non-running state above. If a state change races
+  // the tick, GetStats either returns nothing or errors — both handled below.
+  const stateCode = cachedState ?? 1;
+
+  const cachedVcpus = getCachedVcpus(name);
+  const localDns = getCachedLocalDns(name) ?? false;
   const now = Date.now();
   const prev = connectionState.prevVMStats.get(name);
 
   let allStats = {};
   try {
-    const raw = await iface.GetStats(0, 0);
+    const raw = await iface.GetStats(VM_STATS_MASK, 0);
     allStats = unwrapDict(raw);
   } catch {
     /* GetStats may not be available for this QEMU/libvirt build */
@@ -111,7 +137,7 @@ export async function getVMStats(name) {
     cpuTime = Number(allStats['cpu.time'] || 0);
 
     if (!cpuTime) {
-      const vcpuCount = Number(allStats['vcpu.current'] || config?.vcpus || 0);
+      const vcpuCount = Number(allStats['vcpu.current'] || cachedVcpus || 0);
       for (let i = 0; i < vcpuCount; i++) {
         cpuTime = (cpuTime || 0) + Number(allStats[`vcpu.${i}.time`] || 0);
       }
@@ -120,7 +146,7 @@ export async function getVMStats(name) {
     if (cpuTime && prev?.cpuTime != null && prev.timestamp) {
       const elapsedNs = (now - prev.timestamp) * 1e6;
       const deltaNs = cpuTime - prev.cpuTime;
-      const totalCapacity = elapsedNs * (config?.vcpus || 1);
+      const totalCapacity = elapsedNs * (cachedVcpus || 1);
       cpuPercent = totalCapacity > 0 ? Math.min(100, (deltaNs / totalCapacity) * 100) : 0;
     }
   } catch {
@@ -165,14 +191,21 @@ export async function getVMStats(name) {
   let guestIp = null;
   let guestHostname = null;
   let guestAgent = null; // null = not configured in domain XML
-  if (config?.guestAgent) {
-    try {
-      [guestIp, guestHostname] = await Promise.all([
-        getGuestPrimaryAddressFromIface(iface),
-        getGuestHostnameFromIface(iface),
-      ]);
-    } catch {
-      /* guest agent calls may fail if agent unavailable */
+  if (getCachedGuestAgent(name)) {
+    const cached = guestInfoCache.get(name);
+    if (cached && (now - cached.fetchedAt) < GUEST_INFO_TTL_MS) {
+      guestIp = cached.ip;
+      guestHostname = cached.hostname;
+    } else {
+      try {
+        [guestIp, guestHostname] = await Promise.all([
+          getGuestPrimaryAddressFromIface(iface),
+          getGuestHostnameFromIface(iface),
+        ]);
+      } catch {
+        /* guest agent calls may fail if agent unavailable */
+      }
+      guestInfoCache.set(name, { ip: guestIp, hostname: guestHostname, fetchedAt: now });
     }
     // Treat any successful response as "agent connected." Both helpers swallow
     // their own errors and return null when qemu-ga isn't responding.

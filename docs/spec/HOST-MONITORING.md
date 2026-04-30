@@ -23,7 +23,7 @@ Host metrics are read directly from the Linux `/proc` and `/sys` filesystems —
 | Disk I/O | `/proc/diskstats` | Delta of read/write sectors, converted to MB/s |
 | Network I/O | `/proc/net/dev` | Delta of rx/tx bytes across interfaces (excl. lo), converted to MB/s |
 
-Deltas are computed between consecutive reads (every 3 seconds). Temperature and power are `null` when unavailable (e.g. non-Linux, VM, or no sysfs support).
+Deltas are computed between consecutive reads (every 5 seconds). Temperature and power are `null` when unavailable (e.g. non-Linux, VM, or no sysfs support).
 
 **Checking CPU power support on the server:** Run `test -r /sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj && echo supported`. The file is often root-only (mode 400). `setup-server.sh` (run during install) grants the deploy user read access: it tries `setfacl` first; if sysfs is mounted with `noacl`, it creates group `wisp-power`, adds the deploy user, and installs a udev rule that sets group read on the RAPL file. After the udev fallback, log out and back in (or `newgrp wisp-power`) so the group takes effect. Not available in VMs or on non-Intel CPUs.
 
@@ -38,11 +38,11 @@ In addition to host-level metrics, the stats include aggregate allocation across
 | Running VM count | Number of active domains |
 | Running container count | Number of containers in the running state (from containerd + on-disk configs, same as the workload list) |
 
-VM allocation fields are fetched from libvirt's active domain list at each stats interval. The running container count is computed each tick via `getRunningContainerCount()` (see container manager list).
+VM allocation fields are summed from the event-driven `vmListCache` in `vmManagerList.js` — every stats tick reads from in-memory state with **zero libvirt traffic**. The cache itself only refreshes when libvirt fires a `DomainEvent` (start, stop, define, undefine), so allocations cost nothing per tick yet stay accurate as VMs change. The running container count is computed each tick via `getRunningContainerCount()` (see container manager list).
 
 ### SSE stream
 
-`GET /api/stats` returns an SSE stream that pushes every 3 seconds:
+`GET /api/stats` returns an SSE stream that pushes every 5 seconds:
 
 ```json
 {
@@ -125,12 +125,25 @@ The backend does not expose RAM used/allocated in the VM stats stream (memory st
 
 ### SSE stream
 
-`GET /api/vms/:name/stats` returns an SSE stream that pushes every 3 seconds:
+`GET /api/vms/:name/stats` returns an SSE stream that pushes every 5 seconds:
 
 - **Running VM:** Full stats object with all metrics
 - **Stopped VM:** Only state information, no resource metrics
 
 The frontend subscribes when a VM is selected and unsubscribes when deselected (or a different VM is selected).
+
+Per-tick libvirt traffic is intentionally minimal:
+
+- **Non-running VM (cached):** zero DBus calls. `getVMStats` fast-paths on `getCachedStateCode(name)`; the cache is refreshed on every libvirt `DomainEvent`, so the cost stays at zero until the VM is actually running again.
+- **Running VM:** one `GetStats(VM_STATS_MASK, 0)` per tick — and that's it on most ticks. The bitmask narrows the call to the four groups we actually consume (`CPU_TOTAL | VCPU | INTERFACE | BLOCK`), excluding `BALLOON` (which forces a qemu-monitor round-trip on libvirtd). Only when the cached `guestAgent` flag is true *and* the per-VM 30 s `guestInfoCache` entry has expired: one `InterfaceAddresses` + `GetHostname` pair to the in-guest agent (so ~1 in 6 ticks). **No `DomainLookupByName`, no `GetState`, no `Introspect`, no `GetXMLDesc`.**
+
+How the per-tick cost was driven down:
+
+- `DomainLookupByName` is skipped via `getCachedDomainPath(name)` — paths are captured by `ListDomains` during cache population and are stable for the lifetime of the domain definition.
+- `GetState` is skipped — `getCachedStateCode(name)` is kept current by `DomainEvent` signals; the rare race (state changes between event and tick) is handled by the existing `try/catch` around `GetStats`.
+- `Introspect` is skipped — `getDomainObjAndIface` reads from `connectionState.domainProxyCache`, populated once per domain path and invalidated on disconnect / undefine.
+- `GetXMLDesc` is skipped — vCPU count, guest-agent presence, and `localDns` come from the `vmListCache` via `getCachedVcpus`/`getCachedGuestAgent`/`getCachedLocalDns`.
+- Guest-agent calls (`InterfaceAddresses`, `GetHostname`) are gated by `guestInfoCache` (TTL 30 s, dropped when state turns non-running) — these are the heaviest because libvirtd has to round-trip through virtio-serial to qemu-ga inside the guest, and the data they return (hostname, primary IP) is essentially static between DHCP renewals.
 
 ## Color Thresholds
 
