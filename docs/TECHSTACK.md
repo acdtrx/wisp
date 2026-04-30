@@ -37,10 +37,12 @@ This is the single source of truth for all technology choices in the project. No
 | Build tool | Vite | ^6.4.2 | Dev server with HMR, production bundler. |
 | Vite plugin | @vitejs/plugin-react | ^4.3 | JSX transform and React fast refresh. |
 | Styling | Tailwind CSS | ^3.4 | Utility-first CSS framework. Custom theme with project-specific design tokens. |
+| Tailwind plugin | @tailwindcss/typography | ^0.5 | `prose` utility classes for rendering arbitrary markdown content (release notes). |
 | CSS processing | PostCSS + Autoprefixer | ^8.4 / ^10.4 | Required by Tailwind for CSS processing. |
 | State management | Zustand | ^5.0 | Minimal global state with no boilerplate. |
 | Routing | react-router-dom | ^6.28 | Client-side routing (login page vs. app shell). |
 | Icons | lucide-react | ^0.468 | Tree-shakeable icon library. No CDN. |
+| Markdown | react-markdown | ^10 | Renders GitHub-flavored release notes in the Wisp Update section. |
 | HTTP client | Native `fetch` | — | No Axios or similar; plain browser fetch API. |
 | VNC console | noVNC | vendored | ESM source files served from `public/vendor/novnc/`. Not installed via npm. See [noVNC.md](spec/noVNC.md). |
 | Container console | @xterm/xterm | ^6.0 | In-browser terminal emulator for container shell sessions. |

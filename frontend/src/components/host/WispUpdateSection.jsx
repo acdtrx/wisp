@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
 import {
   Loader2,
   RefreshCw,
@@ -219,9 +220,17 @@ export default function WispUpdateSection() {
               </a>
             )}
           </summary>
-          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words font-sans text-text-secondary">
-            {notes}
-          </pre>
+          <div className="prose prose-sm prose-slate mt-2 max-h-64 max-w-none overflow-auto break-words text-text-secondary prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-text-primary prose-p:my-1.5 prose-li:my-0.5 prose-code:rounded prose-code:bg-surface prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none prose-a:text-accent">
+            <ReactMarkdown
+              components={{
+                a: ({ node, ...props }) => (
+                  <a {...props} target="_blank" rel="noopener noreferrer" />
+                ),
+              }}
+            >
+              {notes}
+            </ReactMarkdown>
+          </div>
         </details>
       )}
 

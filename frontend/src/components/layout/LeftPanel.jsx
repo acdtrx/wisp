@@ -310,6 +310,7 @@ export default function LeftPanel() {
   const location = useLocation();
   const stats = useStatsStore((s) => s.stats);
   const pendingUpdates = stats?.pendingUpdates ?? 0;
+  const wispUpdateAvailable = !!stats?.wispUpdate?.available;
 
   const [search, setSearch] = useState('');
   const [sortRunningFirst, setSortRunningFirst] = useState(false);
@@ -422,8 +423,17 @@ export default function LeftPanel() {
             </p>
           )}
         </div>
-        {pendingUpdates > 0 && (
-          <span className="flex h-2 w-2 flex-shrink-0 rounded-full bg-amber-500" title={`${pendingUpdates} update(s) available`} />
+        {(pendingUpdates > 0 || wispUpdateAvailable) && (
+          <span
+            className="flex h-2 w-2 flex-shrink-0 rounded-full bg-amber-500"
+            title={
+              wispUpdateAvailable && pendingUpdates > 0
+                ? `Wisp update available · ${pendingUpdates} OS package update(s)`
+                : wispUpdateAvailable
+                  ? 'Wisp update available'
+                  : `${pendingUpdates} OS package update(s) available`
+            }
+          />
         )}
       </button>
 
