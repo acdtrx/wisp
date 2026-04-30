@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-05-01
+## 2026-05-01 (v1.0.5)
 
 ### New Features
 - **Sidebar sections** — group VMs and containers in the left panel under user-defined sections. Synthetic Main section holds unassigned workloads; new workloads default to Main. Persisted in `wisp-config.json` (`sections[]` + `assignments` map). New `/api/sections` routes (GET/POST/PATCH/DELETE/PUT assign); `sectionId` added to VM and container list payloads (REST + SSE)
