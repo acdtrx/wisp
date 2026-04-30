@@ -112,4 +112,13 @@ else
 fi
 echo ""
 
+echo "--- wisp-update (self-update atomic swap + service restart) ---"
+if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-update" ]]; then
+  "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-update" wisp-update "$DEPLOY_USER" rsync
+  echo "  Installed /usr/local/bin/wisp-update."
+else
+  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-update)"
+fi
+echo ""
+
 echo "=== Helpers step complete ==="

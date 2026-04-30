@@ -2,6 +2,7 @@ import { getHostStats } from '../lib/procStats.js';
 import { getRunningVMAllocations, getHostHardware } from '../lib/vmManager.js';
 import { getRunningContainerCount } from '../lib/containerManager.js';
 import { getPendingUpdatesCount, getLastCheckedAt } from '../lib/aptUpdates.js';
+import { getCachedStatus as getWispUpdateStatus } from '../lib/wispUpdate.js';
 import { getRebootSignal } from '../lib/rebootRequired.js';
 import { setupSSE } from '../lib/sse.js';
 
@@ -68,6 +69,15 @@ export default async function statsRoutes(fastify) {
             updatesLastChecked: getLastCheckedAt(),
             rebootRequired: reboot.required,
             rebootReasons: reboot.reasons,
+            wispUpdate: (() => {
+              const s = getWispUpdateStatus();
+              return {
+                current: s.current,
+                latest: s.latest,
+                available: s.available,
+                lastChecked: s.lastChecked,
+              };
+            })(),
           };
 
           reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);

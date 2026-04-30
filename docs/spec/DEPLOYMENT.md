@@ -292,9 +292,22 @@ Pass `--restart-svc` to auto-restart systemd services after install (no interact
 
 ## Updating the app (after install)
 
-From a **full git checkout** on the server: pull, then **`./scripts/wispctl.sh helpers`** (refreshes `/usr/local/bin` privileged scripts), then `./scripts/wispctl.sh build` and restart (`svc restart` or `local restart`).
+The recommended path is **self-update from the UI** — Host → Software → Wisp Update. Wisp polls GitHub Releases hourly, surfaces a badge on the Software tab when a new tag is published, and downloads + verifies + atomic-swaps the new tarball through the privileged `wisp-update` helper. See [UPDATES.md](UPDATES.md) for the pipeline, API, and rollback semantics.
 
-For **slim zip** installs: unpack/replace app dirs while preserving `config/`, then run **`sudo <install>/scripts/linux/setup/install-helpers.sh <install> <deploy-user>`** (or `wispctl helpers` from `<install>`), then `wispctl.sh build` and restart. Skipping `helpers` after an upgrade can leave stale `wisp-*` shims on the host.
+Manual paths remain supported:
+
+- From a **full git checkout** on the server: pull, then **`./scripts/wispctl.sh helpers`** (refreshes `/usr/local/bin` privileged scripts), then `./scripts/wispctl.sh build` and restart (`svc restart` or `local restart`).
+- From a **release tarball** (the same artifact the self-updater pulls from GitHub): extract over a working directory, then `./scripts/install.sh <path> --restart-svc` — `install.sh` auto-detects the prebuilt `frontend/dist/` and skips the frontend build.
+- From a **slim zip** install: unpack/replace app dirs while preserving `config/`, then run **`sudo <install>/scripts/linux/setup/install-helpers.sh <install> <deploy-user>`** (or `wispctl helpers` from `<install>`), then `wispctl.sh build` and restart. Skipping `helpers` after an upgrade can leave stale `wisp-*` shims on the host.
+
+### Cutting a release (maintainers)
+
+```bash
+./scripts/release.sh 1.0.6        # bumps versions + retitles CHANGELOG + tags v1.0.6
+git push && git push origin v1.0.6
+```
+
+The `v1.0.6` tag triggers `.github/workflows/release.yml`, which builds the frontend, packages `wisp-1.0.6.tar.gz` (with prebuilt `frontend/dist/`) plus a `.sha256`, extracts the matching CHANGELOG section as release notes, and creates the GitHub Release. Tags shaped `v*-*` (e.g. `v1.0.6-rc.1`) are published as prereleases — these are not surfaced by the in-app auto-checker (GitHub's `releases/latest` endpoint excludes prereleases).
 
 ### Push from a dev machine (`push.sh`)
 
@@ -439,6 +452,16 @@ Parent safety checks are enforced in both backend and helper:
 - parent must be an existing Linux bridge
 - parent must not be VLAN-tagged
 - parent must have at least one non-VLAN member interface
+
+### `wisp-update` (installed to `/usr/local/bin/`)
+
+Atomic-swap helper for the Wisp self-update pipeline. Invoked via `sudo -n` by the backend after a release tarball has been downloaded, verified, and extracted. See [UPDATES.md](UPDATES.md) for the full pipeline.
+
+| Command | Description |
+|---------|-------------|
+| `wisp-update <staging-dir> <install-dir>` | Stop services → snapshot install to `<install>.prev/` → rsync staging into install (preserving `config/wisp-config.json`, `wisp-password`, `runtime.env`, `.pids`, `.logs`) → `npm ci --omit=dev` in backend → re-install privileged helpers and systemd units → start services. Auto-rolls back from `<install>.prev/` on any failure. |
+
+The helper streams `step:<name>` lines on stdout so the backend can fan them out over SSE to the UI.
 
 ### `vendor-novnc.sh`
 

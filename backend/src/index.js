@@ -33,9 +33,11 @@ import sectionsRoutes from './routes/sections.js';
 import backupsRoutes from './routes/backups.js';
 import containerRoutes from './routes/containers.js';
 import backgroundJobsRoutes from './routes/backgroundJobs.js';
+import updatesRoutes from './routes/updates.js';
 import { ensureMounts, installMountHotplugHandlers, startAutoMountRetry } from './lib/mountsAutoMount.js';
 import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
 import { startUpdateChecker, stopUpdateChecker } from './lib/aptUpdates.js';
+import { startUpdateChecker as startWispUpdateChecker, stopUpdateChecker as stopWispUpdateChecker } from './lib/wispUpdate.js';
 import { closeAllSSE } from './lib/sse.js';
 import { disconnect as disconnectLibvirtBus } from './lib/vmManager.js';
 import { start as startUsbMonitor, stop as stopUsbMonitor } from './lib/usbMonitor.js';
@@ -120,6 +122,7 @@ app.register(sectionsRoutes, { prefix: '/api' });
 app.register(backupsRoutes, { prefix: '/api' });
 app.register(containerRoutes, { prefix: '/api' });
 app.register(backgroundJobsRoutes, { prefix: '/api' });
+app.register(updatesRoutes, { prefix: '/api' });
 app.register(consoleRoutes, { prefix: '/ws' });
 app.register(containerConsoleRoutes, { prefix: '/ws' });
 
@@ -178,6 +181,7 @@ async function start() {
 
   startUpdateChecker(app.log);
   startImageUpdateChecker(app.log);
+  startWispUpdateChecker(app.log);
 }
 
 let shuttingDown = false;
@@ -201,6 +205,7 @@ async function shutdown(signal) {
   stopDiskMonitor();
   stopUpdateChecker();
   stopImageUpdateChecker();
+  stopWispUpdateChecker();
   stopVmMdnsPublisher();
   stopContainerMdnsReconciler();
   disconnectLibvirtBus();

@@ -1,0 +1,9 @@
+{
+  "name": "wisp",
+  "version": "1.0.5",
+  "private": true,
+  "description": "Wisp — VM and container management",
+  "scripts": {
+    "release": "bash scripts/release.sh"
+  }
+}

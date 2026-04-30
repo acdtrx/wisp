@@ -2,6 +2,9 @@
 
 ## 2026-05-01
 
+### New Features
+- **Self-update from GitHub Releases** — Host → Software → **Wisp Update** section: hourly check + manual button + Install button that downloads, verifies (SHA256), atomic-swaps via the new privileged `wisp-update` helper, and restarts services. The Software-tab dot also lights up for Wisp updates. Releases are produced by `.github/workflows/release.yml` on `v*` tag push (prebuilt frontend in the tarball) and tagged via `scripts/release.sh <version>`. One-deep rollback in `<install>.prev/`. Override repo with `WISP_UPDATE_REPO=` for forks. New `/api/updates/{status,check,install,progress/:jobId}` routes; `wispUpdate` field added to host stats SSE. See `docs/spec/UPDATES.md`
+
 ### Bug Fixes
 - **Ubuntu 26.04 install — `qemu-kvm` package no longer exists**: replaced with `qemu-system-x86` in `packages.sh`. The transitional `qemu-kvm` was dropped in 24.04; on 26.04 the missing package made the entire apt batch fail atomically, cascading into the libvirt/groups/dirs/libvirtd failures
 - **Ubuntu 22.04+ setup hang on package install**: `needrestart` silently popped an interactive service-restart menu after the libvirt install even with `apt-get -y -qq`. Suppressed via `NEEDRESTART_MODE=a` + `NEEDRESTART_SUSPEND=1` + `DEBIAN_FRONTEND=noninteractive` exports at the top of `packages.sh`

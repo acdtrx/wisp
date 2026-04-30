@@ -235,6 +235,34 @@ Install OS package updates.
 - **200:** `{ ok: true }`
 - **503:** `{ error, detail }` — update script not configured
 
+### GET /api/updates/status
+
+Cached state of the Wisp self-update checker (hourly poll of GitHub Releases). See [UPDATES.md](UPDATES.md).
+
+- **200:** `{ current, latest, available, notes, publishedAt, lastChecked, lastError, repo }`
+
+### POST /api/updates/check
+
+Force an immediate self-update check; returns the same shape as `/status`.
+
+- **200:** `{ current, latest, available, notes, publishedAt, lastChecked, lastError, repo }`
+- **503:** `{ error, detail }` — GitHub unreachable, rate-limited, or response malformed
+
+### POST /api/updates/install
+
+Start the self-update install pipeline (download → verify → stage → apply → restart) as a background job. `?force=1` overrides the active-jobs guard.
+
+- **201:** `{ jobId, title }`
+- **409:** `{ error, detail }` — no update available, another install in flight, or non-update background jobs are running and `force=1` was not supplied
+- **503:** `{ error, detail }` — privileged helper missing or returned an error
+
+### GET /api/updates/progress/:jobId
+
+SSE stream for an install job. Steps in order: `start`, `download` (with `received`/`total`), `verify`, `extract`, `apply`, `stop-services`, `snapshot`, `swap`, `install-deps`, `install-helpers`, `install-units`, `start-services`, `done`. Failures emit `{ step: 'error', error, detail }`.
+
+- **200:** `text/event-stream`
+- **404:** `{ error, detail }` — unknown / expired jobId
+
 ### GET /api/host/hardware
 
 Static/semi-static hardware details for the Host Overview tab. On Linux: `/proc`, `/sys`, system `pci.ids` (when installed), and optional privileged helpers `wisp-dmidecode` (RAM) and `wisp-smartctl` (disk SMART summary). On macOS (dev): `/usr/sbin/system_profiler -json` (several `SP*` data types) plus `fs.statfsSync` and `os.networkInterfaces`; synthetic PCI addresses for sorting; if profiler fails, OS-only fallback. See [HOST-MONITORING.md](HOST-MONITORING.md).

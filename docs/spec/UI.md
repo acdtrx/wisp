@@ -299,7 +299,7 @@ These are tabs inside the Host panel (not a separate `/settings` page):
 Section-based layout:
 
 1. **App Config tab** — General (server name, VM storage path, image library path, refresh interval). Save button. Password change (current + new, Change button).
-2. **Host Mgmt tab** — **Network Storage** (SMB/CIFS mounts in a **table** with shared DataTable chrome; header **`Plus`+server** adds a row; icon-only row actions; **Pencil** enters inline edit, then save/cancel icons; combined **mount/unmount** control with **green background when mounted**; **Check** (shield) turns **green after success** and **red after failure** (failure text on hover), not inline under the row; delete as icon; no separate “mounted” text column); **Backup** (one row: local path input and network-mount select aligned to the same control height; optional `(none)` or one configured mount). **Software tab** hosts OS Update (check/upgrade) above the Image Library.
+2. **Host Mgmt tab** — **Network Storage** (SMB/CIFS mounts in a **table** with shared DataTable chrome; header **`Plus`+server** adds a row; icon-only row actions; **Pencil** enters inline edit, then save/cancel icons; combined **mount/unmount** control with **green background when mounted**; **Check** (shield) turns **green after success** and **red after failure** (failure text on hover), not inline under the row; delete as icon; no separate “mounted” text column); **Backup** (one row: local path input and network-mount select aligned to the same control height; optional `(none)` or one configured mount). **Software tab** stacks **Wisp Update** (self-update from GitHub Releases — see [UPDATES.md](UPDATES.md)), **OS Update** (check/upgrade), and the **Image Library**, in that order.
 3. **Overview tab** — Software section shows Wisp, Node.js, libvirt, QEMU, OS info (see Host Panel).
 
 ---
@@ -312,7 +312,7 @@ The Host panel is opened from the left panel "Host" entry. It uses the same layo
 
 - **Left:** Server icon (non-clickable), "Host" label, tab strip: **Overview** | **Host Mgmt** | **Software** | **Backups** | **App Config**. Height is fixed at **`h-11`** (44px) to match the left-sidebar Host row, the VM header, and the container header.
 - **Right:** Power Off button, Restart button (each opens a simple confirmation dialog before executing)
-- **Badge:** A dot on the "Software" tab when pending updates are available (from background hourly check or manual check)
+- **Badge:** A dot on the "Software" tab when **either** a Wisp self-update is available (from `wispUpdate.available` in the host stats SSE) **or** pending OS package updates are available (background hourly check or manual check). The same dot serves both signals — clicking the tab takes the user to the Software panel where the relevant section explains which one.
 
 ### Tab: Overview
 

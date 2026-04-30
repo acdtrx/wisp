@@ -61,8 +61,24 @@ cmd_helpers() {
 }
 
 cmd_build() {
+  local prebuilt=0
+  for arg in "$@"; do
+    case "$arg" in
+      --prebuilt) prebuilt=1 ;;
+      *) echo "ERROR: unknown build flag: $arg"; exit 1 ;;
+    esac
+  done
+  # Auto-detect: a release tarball ships frontend/dist already built. Skip
+  # frontend npm install + build in that case (it's the slow part of an update).
+  if [[ "$prebuilt" -eq 0 && -f "$PROJECT_DIR/frontend/dist/index.html" && ! -d "$PROJECT_DIR/frontend/src" ]]; then
+    prebuilt=1
+  fi
+
   echo "=== Wisp Build ==="
   echo "Project: $PROJECT_DIR"
+  if [[ "$prebuilt" -eq 1 ]]; then
+    echo "Mode:    prebuilt (frontend dist already present — skipping frontend build)"
+  fi
   echo ""
   if [[ -f "$RUNTIME_ENV" ]]; then
     echo "--- config/runtime.env (optional) ---"
@@ -78,16 +94,22 @@ cmd_build() {
   npm ci --omit=dev --omit=optional
   echo "  Backend deps installed"
 
-  echo ""
-  echo "--- Vendor noVNC (core + pako) ---"
+  if [[ "$prebuilt" -eq 0 ]]; then
+    echo ""
+    echo "--- Vendor noVNC (core + pako) ---"
     bash "$SCRIPTS_ROOT/vendor-novnc.sh" "$PROJECT_DIR/frontend/public/vendor/novnc"
 
-  echo ""
-  echo "--- Building frontend ---"
-  cd "$PROJECT_DIR/frontend"
-  npm install
-  npm run build
-  echo "  Frontend built"
+    echo ""
+    echo "--- Building frontend ---"
+    cd "$PROJECT_DIR/frontend"
+    npm install
+    npm run build
+    echo "  Frontend built"
+  else
+    echo ""
+    echo "--- Frontend ---"
+    echo "  Skipped (using prebuilt $PROJECT_DIR/frontend/dist)"
+  fi
 
   echo ""
   echo "=== Build complete ==="
@@ -252,7 +274,10 @@ cmd_svc_logs() {
 
 case "${1:-help}" in
   helpers) cmd_helpers ;;
-  build)   cmd_build ;;
+  build)
+    shift
+    cmd_build "$@"
+    ;;
   password)
     cmd_password "${2:-}"
     ;;
@@ -288,7 +313,7 @@ case "${1:-help}" in
     echo "Usage: $0 {helpers|build|password|local|svc}"
     echo ""
     echo "  helpers               sudo: copy wisp-* scripts to /usr/local/bin (run after upgrade)"
-    echo "  build                 Install deps, vendor noVNC, build frontend"
+    echo "  build [--prebuilt]    Install deps, vendor noVNC, build frontend (skip frontend build with --prebuilt)"
     echo "  password [--force]    Set or reset config/wisp-password"
     echo "  local start|stop|restart|status|logs|tail"
     echo "  svc install|uninstall|start|stop|restart|logs [backend|frontend|all]"

@@ -2,9 +2,10 @@
 # Wisp install: copy app dirs, server setup, config, password, build, permissions, optional systemd and bridge.
 # Run as normal user (not root). Linux only.
 #
-# Usage: ./scripts/install.sh [install-dir] [--restart-svc]
+# Usage: ./scripts/install.sh [install-dir] [--restart-svc] [--prebuilt]
 #   install-dir    — target directory (default: prompt, or /opt/wisp)
 #   --restart-svc  — auto-restart (or install+start) systemd services without prompting
+#   --prebuilt     — frontend/dist/ is already built (e.g. release tarball); skip frontend build
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -12,15 +13,22 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 RESTART_SVC=0
+PREBUILT=0
 INSTALL_DIR=""
 
 for arg in "$@"; do
   case "$arg" in
     --restart-svc) RESTART_SVC=1 ;;
+    --prebuilt) PREBUILT=1 ;;
     -*) echo "ERROR: Unknown flag: $arg"; exit 1 ;;
     *) INSTALL_DIR="$arg" ;;
   esac
 done
+
+# Auto-detect prebuilt: source has dist but no src — release tarball shape.
+if [[ "$PREBUILT" -eq 0 && -f "$SOURCE_DIR/frontend/dist/index.html" && ! -d "$SOURCE_DIR/frontend/src" ]]; then
+  PREBUILT=1
+fi
 
 # --- Pre-flight ---
 if [[ "$(uname -s)" != "Linux" ]]; then
@@ -82,7 +90,11 @@ fi
 # --- Build ---
 echo ""
 echo "--- Build ---"
-"$WISPCTL" build
+if [[ "$PREBUILT" -eq 1 ]]; then
+  "$WISPCTL" build --prebuilt
+else
+  "$WISPCTL" build
+fi
 
 # --- Permissions ---
 echo ""

@@ -42,6 +42,7 @@ export default function HostPanel() {
   const navigate = useNavigate();
   const stats = useStatsStore((s) => s.stats);
   const pendingUpdates = stats?.pendingUpdates ?? 0;
+  const wispUpdateAvailable = !!stats?.wispUpdate?.available;
   const rebootRequired = !!stats?.rebootRequired;
   const rebootReasons = stats?.rebootReasons ?? [];
 
@@ -94,7 +95,7 @@ export default function HostPanel() {
                 id={id}
                 label={label}
                 active={tab === id}
-                hasBadge={id === 'software' && pendingUpdates > 0}
+                hasBadge={id === 'software' && (pendingUpdates > 0 || wispUpdateAvailable)}
                 onClick={handleTabChange}
               />
             ))}
