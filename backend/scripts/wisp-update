@@ -15,6 +15,21 @@
 
 set -uo pipefail
 
+# We're spawned by the wisp-backend service, so by default we live in its cgroup.
+# Step 1 of this helper stops wisp-backend, and systemd's default KillMode of
+# `control-group` would then SIGTERM us along with the backend. Re-exec inside a
+# new transient systemd scope so PID 1 owns us instead and we survive the stop.
+if [[ -z "${WISP_UPDATE_DETACHED:-}" ]]; then
+  if ! command -v systemd-run >/dev/null 2>&1; then
+    echo "error: systemd-run not available; cannot detach from caller cgroup" >&2
+    exit 1
+  fi
+  exec systemd-run --quiet --scope --collect \
+    --unit="wisp-update-$$" \
+    --setenv=WISP_UPDATE_DETACHED=1 \
+    -- "$0" "$@"
+fi
+
 STAGING="${1:-}"
 INSTALL_DIR="${2:-}"
 
