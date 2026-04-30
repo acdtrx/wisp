@@ -20,6 +20,7 @@
 
 ### Bug Fixes
 - Container stats SSE: containerd returns `Tasks.Metrics` as a binary-proto `google.protobuf.Any`; `unpackAny` only handled JSON, so decoding silently failed and the status bar always read 0%. Register the cgroup v1 / v2 `Metrics` proto types and dispatch in `unpackAny` on `type_url`, with JSON as a fallback for non-proto Anys
+- VM console **Paste** button: QEMU's built-in VNC has no clipboard bridge to the guest, so the standard cut-text path (`clipboardPasteFrom`) silently went nowhere. Replaced with keystroke synthesis via `rfb.sendKey` — works in any guest. US keyboard / ASCII; uppercase and shifted symbols wrapped in Shift_L; `\n`/`\r` → Enter, `\t` → Tab
 
 ## 2026-04-29
 
