@@ -127,6 +127,7 @@ export default function ZotAppSection({ config, onSave }) {
     <SectionCard
       title="Zot Registry Configuration"
       titleIcon={<Container size={14} />}
+      helpText="The registry listens on port 5000. With no users it allows anonymous push and pull — add users to require basic auth."
       onSave={handleSave}
       saving={saving}
       isDirty={dirty}
@@ -135,11 +136,6 @@ export default function ZotAppSection({ config, onSave }) {
       headerAction={addUserButton}
     >
       <div className="space-y-3">
-        <p className="text-[11px] text-text-muted">
-          Registry listens on port 5000. Without users, the registry allows anonymous push and pull.
-          Add users to require basic auth.
-        </p>
-
         <DataTableScroll>
           <DataTable minWidthRem={28}>
             <thead>

@@ -9,6 +9,7 @@ import { Cpu, Folder, Plus, X } from 'lucide-react';
 
 import SectionCard from '../../components/shared/SectionCard.jsx';
 import Toggle from '../../components/shared/Toggle.jsx';
+import HelpIcon from '../../components/shared/HelpIcon.jsx';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { getHostGpus } from '../../api/host.js';
 
@@ -201,6 +202,10 @@ export default function JellyfinAppSection({ config, onSave }) {
           <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-text-muted">
             <Folder size={12} />
             Media libraries
+            <HelpIcon
+              size={12}
+              text="Each library mounts a Storage source (Host Mgmt → Storage) at /media/<label>. Add the matching libraries inside Jellyfin's Dashboard pointing to those paths."
+            />
           </div>
           {form.libraries.length === 0 ? (
             <p className="text-[11px] text-text-muted">
@@ -268,14 +273,15 @@ export default function JellyfinAppSection({ config, onSave }) {
               <Plus size={14} />
             </button>
           </div>
-          <p className="mt-2 text-[11px] text-text-muted">
-            Each library mounts a Storage source (Host Mgmt → Storage) at <code>/media/&lt;label&gt;</code>. Add the libraries inside Jellyfin's Dashboard pointing to those paths.
-          </p>
         </div>
 
         <div>
           <label className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-text-muted" htmlFor="jellyfin-published-url">
             Published server URL
+            <HelpIcon
+              size={12}
+              text="Address Jellyfin advertises to clients (apps, browsers). Defaults to the container's mDNS hostname."
+            />
           </label>
           <input
             id="jellyfin-published-url"
@@ -285,9 +291,6 @@ export default function JellyfinAppSection({ config, onSave }) {
             onChange={(e) => setForm((f) => ({ ...f, publishedUrl: e.target.value }))}
             className="w-full rounded-md border border-surface-border bg-white px-2 py-1 text-xs"
           />
-          <p className="mt-1 text-[11px] text-text-muted">
-            Address Jellyfin advertises to clients (apps, browsers). Defaults to the container&apos;s mDNS hostname.
-          </p>
         </div>
 
         <div className="flex items-start justify-between gap-3 rounded-md border border-surface-border bg-surface-card px-3 py-2">

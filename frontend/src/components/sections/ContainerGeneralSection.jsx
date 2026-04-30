@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Cpu, MemoryStick, RefreshCw, Images } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
+import HelpIcon from '../shared/HelpIcon.jsx';
 import ImageLibraryModal from '../shared/ImageLibraryModal.jsx';
 
 /** Same control pattern as AdvancedSection (machine type, CPU model). */
@@ -177,7 +178,11 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
 
         {!isCreating && (
         <>
-        <Field label="Command Override" className="w-full">
+        <Field
+          label="Command Override"
+          helpText="Space-separated argv — no shell parsing. For shell syntax, prefix with sh -c."
+          className="w-full"
+        >
           <input
             type="text"
             value={form.command}
@@ -185,9 +190,6 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
             placeholder="Leave empty for image default"
             className="input-field"
           />
-          <p className="mt-1 text-[10px] text-text-muted">
-            Space-separated arguments (argv). No shell parsing — for shell syntax prefix with <span className="font-mono">sh -c</span>.
-          </p>
         </Field>
 
         <div className="flex items-end gap-4 flex-wrap">
@@ -244,12 +246,13 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
 }
 
 
-function Field({ label, icon: Icon, className, children }) {
+function Field({ label, icon: Icon, helpText, className, children }) {
   return (
     <div className={className}>
       <label className="flex items-center gap-1.5 text-xs font-medium text-text-secondary mb-1.5">
         {Icon && <Icon size={12} />}
         {label}
+        {helpText && <HelpIcon text={helpText} size={12} />}
       </label>
       {children}
     </div>

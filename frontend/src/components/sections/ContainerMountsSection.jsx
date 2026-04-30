@@ -537,12 +537,14 @@ export default function ContainerMountsSection({ config, onRefresh }) {
   const colCount = runAsRoot ? 8 : 7;
 
   return (
-    <SectionCard title="Mounts" requiresRestart={!!config.pendingRestart} error={error} headerAction={headerAdds}>
+    <SectionCard
+      title="Mounts"
+      helpText="Use the pencil to edit a mount. Saves, deletes, and uploads apply to one row at a time. Hover a row to see actions."
+      requiresRestart={!!config.pendingRestart}
+      error={error}
+      headerAction={headerAdds}
+    >
       <div className="space-y-3">
-        <p className="text-[11px] text-text-muted">
-          Use the pencil to edit paths and options. Save, delete, and uploads apply to one mount at a time. Hover a row for actions.
-        </p>
-
         <DataTableScroll>
           <DataTable minWidthRem={runAsRoot ? 68 : 60}>
             <thead>

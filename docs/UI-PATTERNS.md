@@ -72,6 +72,7 @@ Major blocks on **Host** tabs (Overview, Host Mgmt, Image Library) use **`Sectio
 |--------|----------------|
 | **Card** | `SectionCard` — `rounded-card border border-surface-border bg-surface-card` |
 | **`titleIcon`** | Lucide icon **14px**, **`strokeWidth={2}`**, muted (SectionCard places it before the uppercase title). Same pattern as [HostOverview.jsx](../frontend/src/components/host/HostOverview.jsx) (CPU, Memory, Hardware, etc.). |
+| **`helpText`** | Optional one-line description shown via a small `HelpCircle` icon next to the title (native `title=` + `aria-label`, rendered by [HelpIcon.jsx](../frontend/src/components/shared/HelpIcon.jsx)). Use this instead of an in-body `<p className="text-text-muted">` blurb when the text is descriptive context the user can ignore — keeps vertical space for actual content. |
 | **Header right** | Filters, **Save**, **`headerAction`** (add/upload/download icons) stay in the section header row — not inside the HTML `<thead>`. |
 | **Body** | Default content padding `px-5 py-4` below the header divider (`border-t`). |
 | **Page gutters** | Outer wrapper **`px-6 py-5`** (and **`space-y-5`** between multiple sections); outer container scrolls when content is tall — same as Host Overview / Host Mgmt. |

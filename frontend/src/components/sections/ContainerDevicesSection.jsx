@@ -106,15 +106,11 @@ export default function ContainerDevicesSection({ config, onSave }) {
     <SectionCard
       title="Devices"
       titleIcon={<Cpu size={12} />}
+      helpText="Share a host GPU (Intel/AMD render node) with the container for hardware acceleration like media transcoding. Restart the container to apply changes."
       requiresRestart={!!config.pendingRestart}
       error={error || loadError}
       headerAction={headerAction}
     >
-      <p className="text-[11px] text-text-muted mb-3">
-        Expose a host GPU (Intel/AMD render node) to the container for hardware-accelerated workloads such as media transcoding.
-        The host kernel keeps the device — this is not VFIO-style PCI passthrough. Changes require a container restart.
-      </p>
-
       {!currentGpu && !picking && (
         <div className="rounded-md border border-dashed border-surface-border px-3 py-3 text-xs text-text-muted">
           {Array.isArray(hostGpus) && hostGpus.length === 0

@@ -501,10 +501,13 @@ export default function DisksSection({
       disk2.type === 'none' &&
       !createDiskDraft;
     return (
-      <SectionCard title="Disks" titleIcon={<HardDrive size={14} strokeWidth={2} />} error={error} headerAction={headerActions}>
-        <p className="text-[11px] text-text-muted mb-3">
-          Add block disks from the header (new disk, existing image) or attach an ISO. Original files are not modified — copies are created for new VMs. CD-ROM rows appear after you select a file.
-        </p>
+      <SectionCard
+        title="Disks"
+        titleIcon={<HardDrive size={14} strokeWidth={2} />}
+        helpText="Add disks or attach an ISO from the header. Original images are never modified — copies are created for new VMs."
+        error={error}
+        headerAction={headerActions}
+      >
         <DataTableScroll>
           <DataTable minWidthRem={52}>
             <thead>
@@ -600,11 +603,13 @@ export default function DisksSection({
   }
 
   return (
-    <SectionCard title="Disks" titleIcon={<HardDrive size={14} strokeWidth={2} />} error={error} headerAction={headerActions}>
-      <p className="text-[11px] text-text-muted mb-3">
-        Block disks sda–sdb: use Actions → Edit to change size and bus when the VM is stopped (Save to apply). CD-ROM rows appear after you attach an ISO (+ CD-ROM opens the library). Row actions: unmount or eject. Stop the VM to change disks when required.
-      </p>
-
+    <SectionCard
+      title="Disks"
+      titleIcon={<HardDrive size={14} strokeWidth={2} />}
+      helpText="Edit a disk from its row Actions menu — stop the VM first to change size or bus. Use + CD-ROM to attach an ISO from the library; row actions let you unmount or eject."
+      error={error}
+      headerAction={headerActions}
+    >
       <DataTableScroll>
         <DataTable minWidthRem={52}>
           <thead>

@@ -119,12 +119,13 @@ export default function HostNetworkBridges({ onError }) {
   );
 
   return (
-    <SectionCard title="Network Bridges" titleIcon={<Network size={14} strokeWidth={2} />} headerAction={headerAdd}>
+    <SectionCard
+      title="Network Bridges"
+      titleIcon={<Network size={14} strokeWidth={2} />}
+      helpText="Bridges are how VMs and containers connect to networks. Add one from the header, then edit it inline. The host handles VLAN tagging — guests connect untagged."
+      headerAction={headerAdd}
+    >
       <div className="space-y-4">
-        <p className="text-xs text-text-muted">
-          Create VLAN-tagged bridges for VM and container network selection. Guests connect untagged; the host bridge handles VLAN tagging. Use Add in the header, then edit the new row inline.
-        </p>
-
         {loading ? (
           <p className="text-xs text-text-muted">Loading…</p>
         ) : (

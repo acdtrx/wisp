@@ -81,8 +81,11 @@ export default function BackupsPanel() {
       </div>
 
       <div className="flex-1 space-y-5 px-6 py-5">
-        <SectionCard title="Backups" error={restoreError || deleteError}>
-          <p className="text-[11px] text-text-muted mb-2">Restore a backup as a new VM or delete backups you no longer need.</p>
+        <SectionCard
+          title="Backups"
+          helpText="Restore a backup as a new VM, or delete backups you no longer need."
+          error={restoreError || deleteError}
+        >
           {error && (
             <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-status-stopped">
               {error}

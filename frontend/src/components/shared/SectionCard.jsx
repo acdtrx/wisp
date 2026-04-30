@@ -1,8 +1,10 @@
 import { ChevronDown, ChevronRight, Lock, Loader2, Save } from 'lucide-react';
+import HelpIcon from './HelpIcon.jsx';
 
 export default function SectionCard({
   title,
   titleIcon,
+  helpText,
   children,
   onSave,
   saving,
@@ -36,6 +38,7 @@ export default function SectionCard({
           <h3 className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
             {title}
           </h3>
+          {helpText && <HelpIcon text={helpText} />}
           {locked && (
             <span className="flex items-center gap-1 text-[10px] text-text-muted">
               <Lock size={11} />

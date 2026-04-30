@@ -242,18 +242,17 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
   return (
     <SectionCard
       title="Network interfaces"
+      helpText={
+        isCreating
+          ? 'Configure bridges and MACs now — changes apply when you create the VM.'
+          : 'Each NIC saves with the row Save button. Hover a row to see actions.'
+      }
       requiresRestart={requiresRestart}
       error={error}
       headerAction={headerAdd}
       locked={networkLocked && !isCreating}
       lockedMessage="Stop the VM to edit interfaces"
     >
-      <p className="text-[11px] text-text-muted mb-3">
-        {isCreating
-          ? 'Configure bridges and MACs before create. Changes apply when you create the VM.'
-          : 'Each NIC is saved with the row Save control (libvirt updates the full set). Hover a row for actions.'}
-      </p>
-
       <DataTableScroll>
         <DataTable minWidthRem={52}>
           <thead>

@@ -294,13 +294,11 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
   return (
     <SectionCard
       title="Environment Variables"
+      helpText="Hover a row to see actions. Toggle the lock to mark a value as secret — secrets are never read back, only overwritten."
       requiresRestart={requiresRestart}
       error={error}
       headerAction={headerAdd}
     >
-      <p className="text-[11px] text-text-muted mb-3">
-        Hover a row for actions. Toggle the lock to mark a variable as secret — secret values are never sent back and can only be overwritten.
-      </p>
       <DataTableScroll>
         <DataTable minWidthRem={28}>
           <thead>
