@@ -1,18 +1,23 @@
 /**
  * Jellyfin app module.
  *
- * Wraps the official `jellyfin/jellyfin` image with three managed mounts
- * (config / cache / media) and an optional GPU passthrough toggle that wires
- * into the generic container `devices` field. The user still enables hardware
- * acceleration inside Jellyfin's admin UI — we only expose the device.
+ * Wraps the official `jellyfin/jellyfin` image with managed `/config` + `/cache`
+ * mounts, zero or more user-defined media libraries (each mounted at
+ * `/media/<label>` from a Storage source) and an optional GPU passthrough
+ * toggle that wires into the generic container `devices` field. The user still
+ * enables hardware acceleration inside Jellyfin's admin UI — we only expose
+ * the device.
  */
 import { containerError } from '../containerManagerConnection.js';
 import { getRawMounts } from '../../../settings.js';
 import { listHostGpus } from '../../host/hostGpus.js';
+import { validateMountSegmentName, validateSubPath } from '../containerManagerMounts.js';
+
+const RESERVED_LIBRARY_LABELS = new Set(['config', 'cache']);
 
 function getDefaultAppConfig({ containerName } = {}) {
   return {
-    media: { sourceId: null, subPath: '' },
+    libraries: [],
     gpuEnabled: false,
     publishedUrl: containerName ? `http://${containerName}.local:8096` : '',
   };
@@ -23,27 +28,43 @@ function validateAppConfig(appConfig) {
     throw containerError('INVALID_APP_CONFIG', 'appConfig must be an object');
   }
 
-  const media = appConfig.media && typeof appConfig.media === 'object' && !Array.isArray(appConfig.media)
-    ? appConfig.media
-    : {};
-  const sourceId = media.sourceId == null || media.sourceId === ''
-    ? null
-    : (typeof media.sourceId === 'string' ? media.sourceId.trim() : null);
-  if (sourceId === null && media.sourceId !== null && media.sourceId !== undefined && media.sourceId !== '') {
-    throw containerError('INVALID_APP_CONFIG', 'media.sourceId must be a string or null');
+  const rawLibs = Array.isArray(appConfig.libraries) ? appConfig.libraries : [];
+  const labels = new Set();
+  const libraries = [];
+  for (const raw of rawLibs) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw containerError('INVALID_APP_CONFIG', 'Each library must be an object');
+    }
+    const label = validateMountSegmentName(raw.label);
+    if (!label) {
+      throw containerError('INVALID_APP_CONFIG', 'Library label must be a non-empty path segment (no slashes, no "..", no leading dot)');
+    }
+    if (RESERVED_LIBRARY_LABELS.has(label)) {
+      throw containerError('INVALID_APP_CONFIG', `Library label "${label}" is reserved`);
+    }
+    if (labels.has(label)) {
+      throw containerError('INVALID_APP_CONFIG', `Duplicate library label "${label}"`);
+    }
+    labels.add(label);
+
+    if (typeof raw.sourceId !== 'string' || !raw.sourceId.trim()) {
+      throw containerError('INVALID_APP_CONFIG', `Library "${label}" must have a sourceId`);
+    }
+    const sourceId = raw.sourceId.trim();
+    const subPath = validateSubPath(raw.subPath);
+    if (subPath === null) {
+      throw containerError('INVALID_APP_CONFIG', `Library "${label}" subPath must be relative without ".." segments`);
+    }
+
+    libraries.push({ label, sourceId, subPath });
   }
-  const rawSub = typeof media.subPath === 'string' ? media.subPath.trim() : '';
-  if (rawSub.split('/').some((seg) => seg === '..')) {
-    throw containerError('INVALID_APP_CONFIG', 'media.subPath must not contain ".." segments');
-  }
-  const subPath = rawSub.replace(/^\/+|\/+$/g, '');
 
   const gpuEnabled = appConfig.gpuEnabled === true;
 
   const publishedUrl = typeof appConfig.publishedUrl === 'string' ? appConfig.publishedUrl.trim() : '';
 
   return {
-    media: { sourceId, subPath },
+    libraries,
     gpuEnabled,
     publishedUrl,
   };
@@ -55,22 +76,24 @@ async function generateDerivedConfig(appConfig) {
     { type: 'directory', name: 'cache', containerPath: '/cache', readonly: false },
   ];
 
-  if (appConfig.media?.sourceId) {
+  if (Array.isArray(appConfig.libraries) && appConfig.libraries.length) {
     const storageMounts = await getRawMounts();
-    if (!storageMounts.some((m) => m.id === appConfig.media.sourceId)) {
-      throw containerError(
-        'INVALID_APP_CONFIG',
-        `media.sourceId "${appConfig.media.sourceId}" does not reference a configured storage mount`,
-      );
+    for (const lib of appConfig.libraries) {
+      if (!storageMounts.some((m) => m.id === lib.sourceId)) {
+        throw containerError(
+          'INVALID_APP_CONFIG',
+          `Library "${lib.label}" sourceId "${lib.sourceId}" does not reference a configured storage mount`,
+        );
+      }
+      mounts.push({
+        type: 'directory',
+        name: lib.label,
+        containerPath: `/media/${lib.label}`,
+        readonly: false,
+        sourceId: lib.sourceId,
+        subPath: lib.subPath || '',
+      });
     }
-    mounts.push({
-      type: 'directory',
-      name: 'media',
-      containerPath: '/media',
-      readonly: false,
-      sourceId: appConfig.media.sourceId,
-      subPath: appConfig.media.subPath || '',
-    });
   }
 
   const env = {};
@@ -105,13 +128,24 @@ function getReloadCommand() {
   return null;
 }
 
+function librariesEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if ((x.label || '') !== (y.label || '')) return false;
+    if ((x.sourceId || '') !== (y.sourceId || '')) return false;
+    if ((x.subPath || '') !== (y.subPath || '')) return false;
+  }
+  return true;
+}
+
 function requiresRestartForChange(oldCfg, newCfg) {
   if (!oldCfg) return true;
   if (oldCfg.gpuEnabled !== newCfg.gpuEnabled) return true;
-  const a = oldCfg.media || {};
-  const b = newCfg.media || {};
-  if ((a.sourceId || null) !== (b.sourceId || null)) return true;
-  if ((a.subPath || '') !== (b.subPath || '')) return true;
+  const a = Array.isArray(oldCfg.libraries) ? oldCfg.libraries : [];
+  const b = Array.isArray(newCfg.libraries) ? newCfg.libraries : [];
+  if (!librariesEqual(a, b)) return true;
   if ((oldCfg.publishedUrl || '') !== (newCfg.publishedUrl || '')) return true;
   return false;
 }

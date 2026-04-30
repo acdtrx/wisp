@@ -32,9 +32,7 @@ export const APP_REGISTRY = {
     description: 'Self-hosted media server with optional GPU-accelerated transcoding',
     defaultImage: 'jellyfin/jellyfin:latest',
     allowCustomImage: true,
-    defaultServices: [
-      { port: 8096, type: '_http._tcp', txt: { path: '/web/' } },
-    ],
+    // Jellyfin advertises itself over its own SSDP/UDP discovery — no mDNS seed needed.
     module: jellyfinAppModule,
   },
   'tiny-samba': {
