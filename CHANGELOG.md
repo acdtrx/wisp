@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-05-01
+## 2026-05-01 (v1.0.8)
 
 ### Bug Fixes
 - **Self-update helper STILL killed by parent stop in v1.0.7**: re-exec into `systemd-run --scope` worked but the new scope was placed under `wisp-backend.service`'s cgroup tree by default, so `KillMode=control-group` on the parent stop tore it down anyway. Pinned the scope to `system.slice` (sibling of `wisp-backend.service`) so the parent stop can't reach it. Also mirrored every step:* to journald via `systemd-cat` and logged the actual cgroup the helper landed in, so post-mortems are no longer two opaque "Started/Deactivated" lines. v1.0.7 → v1.0.8 self-update on existing installs needs `/usr/local/bin/wisp-update` refreshed manually first (`wispctl helpers` or `push.sh`); the v1.0.7 helper is the still-broken one
