@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-05-01
+## 2026-05-01 (v1.0.6)
 
 ### New Features
 - **Self-update from GitHub Releases** — Host → Software → **Wisp Update** section: hourly check + manual button + Install button that downloads, verifies (SHA256), atomic-swaps via the new privileged `wisp-update` helper, and restarts services. The Software-tab dot also lights up for Wisp updates. Releases are produced by `.github/workflows/release.yml` on `v*` tag push (prebuilt frontend in the tarball) and tagged via `scripts/release.sh <version>`. One-deep rollback in `<install>.prev/`. Override repo with `WISP_UPDATE_REPO=` for forks. New `/api/updates/{status,check,install,progress/:jobId}` routes; `wispUpdate` field added to host stats SSE. See `docs/spec/UPDATES.md`
