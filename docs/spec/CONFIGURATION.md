@@ -47,6 +47,16 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 | `containersPath` | `string` | `/var/lib/wisp/containers` | Container storage root (absolute). |
 | `mounts` | `array` | `[]` | Configured mounts (see object shape below). Includes SMB shares and adopted removable drives. |
 | `backupMountId` | `string \| null` | `null` | Optional `id` of a `mounts` entry to expose as a backup destination in the UI. |
+| `sections` | `array` | `[]` | User-defined sidebar sections (see object shape below). The synthetic `Main` section is implicit and never persisted. |
+| `assignments` | `object` | `{}` | Map of `"<type>:<workload-name>"` → `sectionId`. Missing entries (or entries pointing at a removed section) fall back to `Main`. `<type>` is `vm` or `container`. |
+
+### Section object (`sections[]`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | UUID. The constant `"main"` is reserved for the implicit Main bucket and never appears in the persisted array. |
+| `name` | `string` | Display name (1–64 chars; case-insensitive uniqueness within `sections`). |
+| `order` | `number` | Stable sort order. New sections take `max(order)+1`. |
 
 ### Mount object (`mounts[]`)
 

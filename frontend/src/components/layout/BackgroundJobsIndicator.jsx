@@ -61,15 +61,20 @@ export default function BackgroundJobsIndicator() {
     return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
 
-  if (list.length === 0) return null;
+  const isEmpty = list.length === 0;
 
   return (
     <div className="relative shrink-0" ref={rootRef}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="relative flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
-        title="Background jobs"
+        onClick={() => !isEmpty && setOpen((o) => !o)}
+        disabled={isEmpty}
+        className={`relative flex items-center justify-center rounded-md border border-surface-border p-1.5 transition-colors duration-150 ${
+          isEmpty
+            ? 'cursor-default text-text-muted/60'
+            : 'text-text-secondary hover:bg-surface hover:text-text-primary'
+        }`}
+        title={isEmpty ? 'No background jobs' : 'Background jobs'}
         aria-label="Background jobs"
         aria-expanded={open}
       >
@@ -81,7 +86,7 @@ export default function BackgroundJobsIndicator() {
         )}
       </button>
 
-      {open && (
+      {open && !isEmpty && (
         <div className="absolute right-0 top-full z-50 mt-1 w-[min(100vw-2rem,22rem)] rounded-lg border border-surface-border bg-surface-card py-1 shadow-lg">
           <div className="border-b border-surface-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
             Background jobs

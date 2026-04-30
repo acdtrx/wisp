@@ -29,6 +29,7 @@ import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
 import { validateContainerName } from '../lib/validation.js';
 import { isKnownApp, getAppModule } from '../lib/linux/containerManager/apps/appRegistry.js';
+import { getAssignments, resolveSectionId } from '../lib/sections.js';
 
 function maskContainerSecrets(config) {
   if (!config || !config.env || typeof config.env !== 'object') return config;
@@ -103,12 +104,16 @@ export default async function containerRoutes(fastify) {
               state: { type: 'string' },
               iconId: { type: ['string', 'null'] },
               updateAvailable: { type: 'boolean' },
+              sectionId: { type: 'string' },
             },
           },
         },
       },
     },
-    handler: async () => listContainers(),
+    handler: async () => {
+      const [list, assignments] = await Promise.all([listContainers(), getAssignments()]);
+      return list.map((c) => ({ ...c, sectionId: resolveSectionId(assignments, 'container', c.name) }));
+    },
   });
 
   // ── List SSE stream ───────────────────────────────────────────────
@@ -119,8 +124,12 @@ export default async function containerRoutes(fastify) {
 
     const send = async () => {
       try {
-        const list = await listContainers();
-        reply.raw.write(`data: ${JSON.stringify(list)}\n\n`);
+        const [list, assignments] = await Promise.all([listContainers(), getAssignments()]);
+        const decorated = list.map((c) => ({
+          ...c,
+          sectionId: resolveSectionId(assignments, 'container', c.name),
+        }));
+        reply.raw.write(`data: ${JSON.stringify(decorated)}\n\n`);
       } catch (err) {
         const payload = { error: 'Failed to list containers', detail: err.raw || err.message, code: err.code };
         try { reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`); }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-01
+
+### New Features
+- **Sidebar sections** — group VMs and containers in the left panel under user-defined sections. Synthetic Main section holds unassigned workloads; new workloads default to Main. Persisted in `wisp-config.json` (`sections[]` + `assignments` map). New `/api/sections` routes (GET/POST/PATCH/DELETE/PUT assign); `sectionId` added to VM and container list payloads (REST + SSE)
+- **Organize mode** — single full-width toggle at the bottom of the sidebar that swaps each workload's start/stop actions for a Move-to-section picker, suppresses row click navigation, and enables drag-and-drop of rows onto whole section blocks. Section headers gain inline up/down reorder, rename, and delete affordances while organizing (Main stays pinned to the top). A dashed **Create Section** ghost zone at the bottom of the list and a **+ New section…** entry in the move-to picker both mint a new section by routing through the same `createAndAssign` flow (default-named, auto-rename input opens). New `POST /api/sections/reorder` endpoint takes a full-list permutation
+- **Sign out moved to the top bar** as an icon-only button to the right of the background-jobs indicator
+- **Background-jobs indicator now always visible** in the top bar — dimmed and non-interactive when no jobs exist, badge + dropdown otherwise
+
 ## 2026-04-30
 
 ### New Features

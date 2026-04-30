@@ -106,13 +106,16 @@ function errorCodeToStatus(code) {
     case 'INVALID_NETWORK_BRIDGE_PARENT':
     case 'INVALID_VLAN_ID':
     case 'MOUNT_INVALID':
+    case 'SECTION_INVALID':
       return 422;
     case 'NETWORK_BRIDGE_EXISTS':
     case 'NETWORK_BRIDGE_IN_USE':
     case 'MOUNT_DUPLICATE':
+    case 'SECTION_DUPLICATE':
       return 409;
     case 'NETWORK_BRIDGE_NOT_FOUND':
     case 'MOUNT_NOT_FOUND':
+    case 'SECTION_NOT_FOUND':
       return 404;
     case 'NETWORK_BRIDGE_UNAVAILABLE':
     case 'NETWORK_BRIDGE_APPLY_FAILED':

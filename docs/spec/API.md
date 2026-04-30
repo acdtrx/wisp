@@ -409,12 +409,14 @@ List all VMs with summary info.
     "osCategory": "linux",
     "iconId": null,
     "localDns": false,
-    "staleBinary": false
+    "staleBinary": false,
+    "sectionId": "main"
   }
 ]
 ```
 
 - `staleBinary` is `true` when the VM's running qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt package upgrade); the VM needs to be restarted to pick up the new binary. Always `false` for non-running VMs. Detected by reading `/var/run/libvirt/qemu/<name>.pid` and checking whether `/proc/<pid>/exe` ends with ` (deleted)`.
+- `sectionId` is the id of the sidebar section the VM is assigned to. Workloads with no explicit assignment (or with an assignment pointing at a deleted section) report `"main"` — the synthetic Main bucket. See [Sections](#sections).
 
 ### GET /api/vms/stream
 
@@ -992,6 +994,86 @@ Unmount a mount by settings id.
 
 ---
 
+## Sections
+
+User-defined groupings for the sidebar workload list. The synthetic **Main** section (`id: "main"`, `builtin: true`) is always present in responses but never persisted. Workloads with no explicit assignment — or with an assignment pointing at a deleted section — fall back to Main on the next read.
+
+All section endpoints (GET, POST, PATCH, DELETE, PUT assign) return the same `{ sections, assignments }` envelope so the client can keep its local copy in sync from a single response — no separate fetch needed after a mutation.
+
+### Response envelope
+
+```json
+{
+  "sections": [
+    { "id": "main", "name": "Main", "order": -Infinity, "builtin": true },
+    { "id": "9c12…", "name": "Web", "order": 0, "builtin": false }
+  ],
+  "assignments": {
+    "vm:web1": "9c12…",
+    "container:nginx": "9c12…"
+  }
+}
+```
+
+`assignments` keys are `"<type>:<workload-name>"` (`<type>` is `vm` or `container`); values are section ids. Missing keys mean Main.
+
+### GET /api/sections
+
+Return the current sections + assignments envelope.
+
+- **200:** Envelope above.
+
+### POST /api/sections
+
+Create a section. Returns the updated envelope.
+
+- **Body:** `{ "name": "string (1–64)" }`
+- **200:** Envelope.
+- **422 (`SECTION_INVALID`):** Empty / too-long name.
+- **409 (`SECTION_DUPLICATE`):** Case-insensitive name collision.
+
+### PATCH /api/sections/:id
+
+Rename a section. The `main` section cannot be renamed.
+
+- **Body:** `{ "name": "string (1–64)" }`
+- **200:** Envelope.
+- **404 (`SECTION_NOT_FOUND`):** No section with that id.
+- **422 (`SECTION_INVALID`):** Empty name or attempted Main rename.
+- **409 (`SECTION_DUPLICATE`):** Case-insensitive name collision.
+
+### DELETE /api/sections/:id
+
+Delete a section. Workloads previously assigned to it return to Main on next read. The `main` section cannot be deleted.
+
+- **200:** Envelope (after removal — the assignments map will no longer reference the deleted id).
+- **404 (`SECTION_NOT_FOUND`):** No section with that id.
+
+### POST /api/sections/reorder
+
+Replace the persisted ordering of user-defined sections. The body must list every existing section id exactly once (Main is implicit and never appears in the array).
+
+- **Body:** `{ "ids": ["<section-id>", "<section-id>", …] }`
+- **200:** Envelope (with `order` reassigned to the array index).
+- **422 (`SECTION_INVALID`):** `ids` is not an array, or doesn't list every section exactly once.
+- **404 (`SECTION_NOT_FOUND`):** An id in `ids` doesn't match any section.
+
+### PUT /api/sections/assign
+
+Move a workload to a section.
+
+- **Body:** `{ "type": "vm" | "container", "name": "string", "sectionId": "string | null" }`
+- `sectionId === null` (or `"main"`) drops the explicit assignment — the workload returns to Main.
+- **200:** Envelope.
+- **404 (`SECTION_NOT_FOUND`):** Target sectionId doesn't exist.
+- **422 (`SECTION_INVALID`):** Bad `type` or empty `name`.
+
+The workload itself isn't validated — assignments are pure metadata, so referencing an unknown VM/container name is a no-op (the entry is ignored on the next list read).
+
+> The VM and container list payloads also include `sectionId` for direct API consumers, but the frontend does not rely on it: SSE only re-pushes on libvirt/containerd events, so after a move the assignments envelope (cached in `sectionsStore`) is the live source of truth on the client.
+
+---
+
 ## WebSocket
 
 ### WS /ws/console/:name/vnc
@@ -1041,7 +1123,7 @@ All container routes require JWT authentication. Routes with a `:name` path para
 
 List all containers (summary).
 
-**200:** `[{ name, type: "container", image, state, iconId, updateAvailable }]`. List payload is intentionally minimal — only what the sidebar renders. `updateAvailable` is set by the image update checker (see CONTAINERS.md → *Image updates*) and defaults to `false` when the field is not set on disk. Detail fields (`pid`, `cpuLimit`, `memoryLimitMiB`, `restartPolicy`, `autostart`, `pendingRestart`, etc.) are returned by `GET /api/containers/:name`; runtime samples (`uptime`, live CPU/IO) come from the per-container stats SSE.
+**200:** `[{ name, type: "container", image, state, iconId, updateAvailable, sectionId }]`. List payload is intentionally minimal — only what the sidebar renders. `updateAvailable` is set by the image update checker (see CONTAINERS.md → *Image updates*) and defaults to `false` when the field is not set on disk. `sectionId` is the assigned sidebar section id (or `"main"` when unassigned — see [Sections](#sections)). Detail fields (`pid`, `cpuLimit`, `memoryLimitMiB`, `restartPolicy`, `autostart`, `pendingRestart`, etc.) are returned by `GET /api/containers/:name`; runtime samples (`uptime`, live CPU/IO) come from the per-container stats SSE.
 
 `iconId` is the optional UI icon key (same registry as VM icons); omit or `null` means the client uses the default container icon.
 

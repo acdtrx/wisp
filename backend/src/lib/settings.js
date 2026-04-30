@@ -29,7 +29,44 @@ const DEFAULTS = {
   containersPath: '/var/lib/wisp/containers',
   mounts: [],
   backupMountId: null,
+  sections: [],
+  assignments: {},
 };
+
+/* "main" is the implicit fallback bucket — never persisted as a section, but
+ * the id every workload reports when it has no explicit assignment (or its
+ * assignment points at a section that no longer exists). */
+export const MAIN_SECTION_ID = 'main';
+
+function normalizeSections(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  const seenIds = new Set();
+  for (const s of arr) {
+    if (!s || typeof s.id !== 'string' || !s.id.trim()) continue;
+    const id = s.id.trim();
+    if (id === MAIN_SECTION_ID || seenIds.has(id)) continue;
+    const name = typeof s.name === 'string' ? s.name.trim() : '';
+    if (!name) continue;
+    const order = Number.isFinite(s.order) ? s.order : out.length;
+    seenIds.add(id);
+    out.push({ id, name, order });
+  }
+  out.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  return out;
+}
+
+function normalizeAssignments(map, sectionIds) {
+  if (!map || typeof map !== 'object') return {};
+  const valid = new Set(sectionIds);
+  const out = {};
+  for (const [key, value] of Object.entries(map)) {
+    if (typeof key !== 'string' || !key.includes(':')) continue;
+    if (typeof value !== 'string' || !valid.has(value)) continue;
+    out[key] = value;
+  }
+  return out;
+}
 
 const VALID_DISK_FSTYPES = new Set(['ext4', 'btrfs', 'vfat', 'exfat', 'ntfs3']);
 
@@ -83,6 +120,12 @@ async function readSettingsFile() {
     if (mountIds.includes(cand)) backupMountId = cand;
   }
 
+  const sections = normalizeSections(data.sections);
+  const assignments = normalizeAssignments(
+    data.assignments,
+    sections.map((s) => s.id),
+  );
+
   return {
     serverName: typeof data.serverName === 'string' ? data.serverName : DEFAULTS.serverName,
     vmsPath:
@@ -103,6 +146,8 @@ async function readSettingsFile() {
         : DEFAULTS.containersPath,
     mounts,
     backupMountId,
+    sections,
+    assignments,
   };
 }
 
@@ -153,6 +198,8 @@ export async function getSettings() {
     containersPath: fromFile.containersPath,
     mounts: mountsStored.map(mountForApi),
     backupMountId,
+    sections: fromFile.sections || [],
+    assignments: fromFile.assignments || {},
   };
 }
 
@@ -220,7 +267,7 @@ function buildUpdatedSettings(fromFile, updates) {
  * `mutate(state)` returns the new state object (or throws to abort the write).
  * Returns the merged settings as `getSettings()` would.
  */
-async function withSettingsWriteLock(mutate) {
+export async function withSettingsWriteLock(mutate) {
   writeLock = writeLock.then(async () => {
     const fromFile = await readSettingsFile();
     const next = await mutate(fromFile);
@@ -231,12 +278,19 @@ async function withSettingsWriteLock(mutate) {
 }
 
 async function persistSettings(state) {
+  const sections = normalizeSections(state.sections);
+  const assignments = normalizeAssignments(
+    state.assignments,
+    sections.map((s) => s.id),
+  );
   const toWrite = {
     serverName: state.serverName,
     vmsPath: state.vmsPath,
     imagePath: state.imagePath,
     backupLocalPath: state.backupLocalPath,
     containersPath: state.containersPath,
+    sections,
+    assignments,
     mounts: (state.mounts || []).map((d) => {
       const out = {
         id: d.id,

@@ -83,7 +83,8 @@ Single row containing (left to right):
 
 1. **Wisp logo/label** + server display name
 2. **Host stats pills** — CPU, RAM, Disk I/O, Net I/O, **RUNNING** (running VM count and running container count as `monitor · n | box · m`, embedded inline, centered in the remaining width)
-3. **Background jobs** (when any exist) — rightmost; list icon with a badge count of *running* jobs; opens a dropdown listing in-progress and recently finished jobs (VM create, container create, VM backup, library downloads). Each row shows title, step, optional detail, and a **gradient progress bar** when a numeric percent is available (running), or a full **success** bar when the job completed. **Dismiss** appears for completed or failed jobs. Jobs are tracked app-wide so progress continues if you navigate away from the panel that started the operation. After a full page reload, the shell loads the in-memory job list from **GET /api/background-jobs** and re-subscribes to each job’s progress SSE (server is source of truth for titles; jobs disappear after server TTL or process restart).
+3. **Background jobs** — list icon, always rendered. Dimmed and non-interactive when no jobs exist; otherwise carries a badge count of *running* jobs and opens a dropdown listing in-progress and recently finished jobs (VM create, container create, VM backup, library downloads). Each row shows title, step, optional detail, and a **gradient progress bar** when a numeric percent is available (running), or a full **success** bar when the job completed. **Dismiss** appears for completed or failed jobs. Jobs are tracked app-wide so progress continues if you navigate away from the panel that started the operation. After a full page reload, the shell loads the in-memory job list from **GET /api/background-jobs** and re-subscribes to each job’s progress SSE (server is source of truth for titles; jobs disappear after server TTL or process restart).
+4. **Sign out** — rightmost, icon-only (LogOut). Hits `POST /api/auth/logout` and broadcasts the multi-tab logout signal.
 
 The top bar shows "Wisp" text and the server display name (from settings). There is no logo image. The **browser tab title** is `{server display name} — Wisp` after settings load (same name as the top bar; default **My Server** when unset), so multiple tabs to different servers are easy to tell apart. The host stats are live (SSE, every 3 seconds) and use the `StatPill` component with color thresholds. Host management, Backups, Software (OS Update + Image Library), and App Config are accessed via the **Host** entry in the left panel.
 
@@ -107,6 +108,22 @@ Text input with placeholder for client-side instant filtering by workload name (
 
 A small text button below the search: "○ Alphabetical" (default) or "● Running first" when toggled. Running-first sorts running VMs above stopped ones, then alphabetically within each group.
 
+### Sections
+
+Workloads are grouped under user-defined **sections**. A synthetic **Main** section (`id: "main"`) always exists implicitly and holds anything not explicitly assigned. Sections render as thin rule-with-label dividers (the same minimal style as the container Logs marker line). New workloads default to **Main**; users move them via the Organize toggle below. Empty Main is hidden when other sections exist (and when not in organize mode); empty user-defined sections stay visible so they can receive drops.
+
+### Organize mode
+
+A single full-width **Organize** button sits at the bottom of the sidebar (above the panel border). Toggling it puts the sidebar into editing mode:
+
+- The button flips to an accent-filled **Done** state.
+- Each workload row's start/stop/reboot/restart actions are replaced with a single **Move to section** icon (lucide `FolderInput`); clicking it opens a small popover listing every section + Main, with a check mark next to the current one. The popover also has a **+ New section…** entry at the bottom that mints a new section (default name with auto-suffix, auto-rename input opens immediately) and assigns the workload to it — same flow as dropping on the Create Section ghost zone.
+- Row click navigation is suppressed (clicking a row does nothing while organizing) and the row gets a `cursor-grab` pointer.
+- Workloads can be **drag-and-dropped** onto any section. The whole section block (header + items area) is the drop target — not just the thin header line — so dropping is forgiving. The block tints accent while a drag hovers it. The drag payload uses MIME type `application/x-wisp-workload` (`{ type, name }`).
+- Section headers expose **ChevronUp** / **ChevronDown** (reorder), **Pencil** (rename) and **Trash** (delete) icon affordances inline. Up/down arrows are disabled at the top/bottom of the user-defined range; Main always stays at the top and is never reorderable. Deleting a section returns its workloads to Main; Main itself cannot be renamed or deleted.
+- A **Create Section** ghost zone (dashed border, `FolderPlus` icon) renders at the bottom of the list. Dropping a workload onto it creates a new section (default name `New Section`, auto-suffixed if taken), assigns the workload, and auto-opens the new section's rename input so the user can give it a real name immediately. The ghost stays visible for further drops; it disappears on **Done**.
+- Organize mode automatically exits when the user navigates away from the workloads view (route change), so stale edit state never leaks across views.
+
 ### VM list items
 
 Each VM is a full-width flat row (no rounded corners, edge-to-edge in the list area; no gap between rows):
@@ -114,7 +131,7 @@ Each VM is a full-width flat row (no rounded corners, edge-to-edge in the list a
 - **VM icon** (small, from icon picker or default by OS type) **colored by state** — green (running), grey (stopped), amber (paused), blue (transitioning). The icon appears before the name; there is no separate status dot.
 - **VM name** (bold) on the same line as the icon
 - **vCPU and RAM** summary on the line below in muted text (e.g. "4 vCPU / 4 GB")
-- **Hover actions:** contextual action icons (Start / Stop / Reboot — only relevant ones shown), revealed on row hover
+- **Hover actions:** contextual action icons (Start / Stop / Reboot — only relevant ones shown), revealed on row hover. In organize mode these are replaced by the Move-to-section picker.
 
 ### Behavior
 
@@ -123,6 +140,7 @@ Each VM is a full-width flat row (no rounded corners, edge-to-edge in the list a
 - Selected VM uses the same active styling as Host entry: subtle card background with a left accent border only (no full outline or rounded corners)
 - Escape key deselects the current VM
 - Sorting: default alphabetical, toggle to running-first
+- Sign out moved to the **top bar** (rightmost icon).
 
 ---
 
