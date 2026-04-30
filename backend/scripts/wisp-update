@@ -15,6 +15,13 @@
 
 set -uo pipefail
 
+# wisp-backend (which holds the read ends of our stdout/stderr pipes) is
+# stopped as our first real step. Any subsequent write to stdio would
+# otherwise SIGPIPE bash and kill us mid-script. Ignoring SIGPIPE lets the
+# write fail silently with EPIPE; we also `exec >/dev/null 2>&1` once the
+# stop has happened so subsequent writes don't even attempt the broken pipe.
+trap '' PIPE
+
 # We're spawned by the wisp-backend service, so by default we live in its cgroup.
 # Step 1 of this helper stops wisp-backend, and systemd's default KillMode of
 # `control-group` would then SIGTERM us along with the backend.
@@ -114,6 +121,11 @@ trap 'rc=$?; if [[ $rc -ne 0 ]]; then rollback; fi' EXIT
 log "step:stop-services"
 systemctl stop "$FRONTEND_UNIT" 2>/dev/null || true
 systemctl stop "$BACKEND_UNIT" 2>/dev/null || true
+
+# wisp-backend just died and took the read ends of our stdio pipes with it.
+# Detach our stdout/stderr from the broken pipes — the SSE connection is
+# gone anyway, journald via systemd-cat is now our only output channel.
+exec >/dev/null 2>&1
 
 log "step:snapshot"
 rm -rf "$PREV_DIR"
