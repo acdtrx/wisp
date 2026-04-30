@@ -11,6 +11,58 @@ const VNC_MAX_RECONNECT_ATTEMPTS = 12;
 const VNC_INITIAL_BACKOFF_MS = 1000;
 const VNC_MAX_BACKOFF_MS = 30000;
 
+// X11 keysyms for the keys we synthesize during typeText.
+const KEYSYM_SHIFT_L = 0xffe1;
+const KEYSYM_ENTER = 0xff0d;
+const KEYSYM_TAB = 0xff09;
+
+// US-layout shifted symbols → unshifted base char (we wrap with Shift_L).
+const SHIFTED_TO_BASE = {
+  '!': '1', '@': '2', '#': '3', '$': '4', '%': '5',
+  '^': '6', '&': '7', '*': '8', '(': '9', ')': '0',
+  '_': '-', '+': '=', '{': '[', '}': ']', '|': '\\',
+  ':': ';', '"': "'", '<': ',', '>': '.', '?': '/',
+  '~': '`',
+};
+
+/**
+ * Type clipboard text into the guest as VNC key events. QEMU's built-in VNC
+ * server has no clipboard bridge to the guest OS, so the standard VNC cut-text
+ * path (clipboardPasteFrom) goes nowhere. Synthesizing keystrokes works in any
+ * guest. US keyboard layout assumed; uppercase + symbols wrapped in Shift_L.
+ * Non-ASCII / non-US-symbol characters are skipped.
+ */
+function typeText(rfb, text) {
+  for (const ch of text) {
+    if (ch === '\n' || ch === '\r') {
+      rfb.sendKey(KEYSYM_ENTER, 'Enter', true);
+      rfb.sendKey(KEYSYM_ENTER, 'Enter', false);
+      continue;
+    }
+    if (ch === '\t') {
+      rfb.sendKey(KEYSYM_TAB, 'Tab', true);
+      rfb.sendKey(KEYSYM_TAB, 'Tab', false);
+      continue;
+    }
+    const code = ch.charCodeAt(0);
+    if (code < 0x20 || code > 0x7e) continue;
+
+    let keysym = code;
+    let shifted = false;
+    if (ch >= 'A' && ch <= 'Z') {
+      shifted = true;
+    } else if (SHIFTED_TO_BASE[ch]) {
+      shifted = true;
+      keysym = SHIFTED_TO_BASE[ch].charCodeAt(0);
+    }
+
+    if (shifted) rfb.sendKey(KEYSYM_SHIFT_L, 'ShiftLeft', true);
+    rfb.sendKey(keysym, 'Unidentified', true);
+    rfb.sendKey(keysym, 'Unidentified', false);
+    if (shifted) rfb.sendKey(KEYSYM_SHIFT_L, 'ShiftLeft', false);
+  }
+}
+
 /**
  * Return false only for 4000/4001 closes that are known-permanent (bad VM name, auth).
  * Everything else — VNC port not available, VM not found, libvirt errors — is transient
@@ -192,7 +244,7 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
     if (!rfbRef.current || !isConnected()) return;
     try {
       const text = await navigator.clipboard.readText();
-      if (text) rfbRef.current.clipboardPasteFrom(text);
+      if (text) typeText(rfbRef.current, text);
     } catch (err) {
       console.warn('Clipboard read failed:', err);
     }

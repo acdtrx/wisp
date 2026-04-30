@@ -48,12 +48,21 @@ A permanent bar above the console viewport (never an overlay, never hidden, neve
 | Button | Description |
 |--------|-------------|
 | Ctrl+Alt+Del | Sends the Ctrl+Alt+Del key sequence to the VM |
-| Paste | Pastes clipboard text into the VM |
+| Paste | Types the host clipboard text into the VM as keystrokes |
 | Screenshot | Captures a screenshot of the current console display |
 | Fullscreen | Expands the console viewport only (toolbar remains visible) |
 | Disconnect / Reconnect | Disconnect when connected; Reconnect when disconnected. Only one is shown at a time. |
 
 Toolbar order: Ctrl+Alt+Del, Paste, Screenshot, (divider), Fullscreen, (divider), Disconnect or Reconnect.
+
+### Paste behavior
+
+QEMU's built-in VNC server has no clipboard bridge to the guest OS, so the standard VNC cut-text channel (`clipboardPasteFrom`) goes nowhere — there's no agent inside the guest listening for clipboard updates. Wisp's Paste button instead reads `navigator.clipboard.readText()` and synthesizes the text as VNC key events (`rfb.sendKey`), one character at a time. This works in any guest because the guest just sees keypresses.
+
+Limitations:
+- **US keyboard layout assumed.** Uppercase letters and US-layout shifted symbols (`!@#$%^&*()_+{}|:"<>?~`) are wrapped in Shift_L. On a guest configured for a different layout, characters will come out wrong.
+- **ASCII only.** Non-printable control characters are skipped, except `\n`/`\r` (sent as Enter) and `\t` (sent as Tab). Non-ASCII characters (accented letters, emoji, non-Latin scripts) are skipped.
+- **Browser clipboard prompt.** Most browsers (Chrome) show a clipboard-read confirmation pill the first time the API is called. Granting persistent permission for the origin (URL bar → Site settings → Clipboard → Allow) makes subsequent pastes silent.
 
 ### Viewport
 
