@@ -22,11 +22,11 @@ function parseInterfaceAddresses(raw, unwrapVariantFn) {
       const tuple = Array.isArray(a) ? a : [];
       const type = unwrapVariantFn(tuple[0]);
       const addr = typeof tuple[1] === 'string' ? tuple[1] : unwrapVariantFn(tuple[1]);
-      if (type === 0 && addr && !addr.startsWith('127.')) {
+      if (type === 0 && addr && !addr.startsWith('127.') && !addr.startsWith('169.254.')) {
         ipv4 = addr.split('/')[0];
         break;
       }
-      if (type === 1 && !ipv6 && addr && !addr.startsWith('::1') && !addr.includes('%')) {
+      if (type === 1 && !ipv6 && addr && !addr.startsWith('::1') && !addr.toLowerCase().startsWith('fe80:') && !addr.includes('%')) {
         ipv6 = addr.split('/')[0];
       }
     }
