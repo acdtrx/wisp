@@ -26,6 +26,12 @@
 - **Wisp is a deployable application.** Fixes and changes should be made **in the app** (functionality or setup) so it works out of the box for future installs, not one-off fixes on the server.
 - **Setup and configuration:** Fix setup/configuration issues in the install and setup scripts (e.g. `scripts/install.sh`, `scripts/setup-server.sh`, `scripts/linux/setup/*.sh`). Prefer improving the pipeline over documenting manual server steps.
 - **Manual server fixes** are appropriate only when actively debugging or testing, not as the intended long-term resolution.
+- **Self-update is a first-class deployment path.** Existing installs upgrade in place from GitHub Releases via `wisp-updater.service` (atomic-swap rsync of a release tarball, then re-runs `install-helpers.sh` and re-templates `wisp.service`). Changes that touch the install layout, persisted state, privileged helpers, or systemd templates must keep the updater contract intact — see `docs/spec/UPDATES.md`. In particular:
+  - New files inside the install tree that must survive an update → add to the `RSYNC_EXCLUDES` list in `backend/scripts/wisp-updater` (currently preserves `config/wisp-config.json`, `config/wisp-password`, `config/runtime.env`, `.pids`, `.logs`).
+  - New privileged `wisp-*` helper or sudoers entry → register in `scripts/linux/setup/install-helpers.sh` (the updater re-runs it on every upgrade; helpers not registered there will be missing after self-update even if they exist in `backend/scripts/`).
+  - Changes to `systemd/linux/wisp.service` → the updater re-templates this from the repo on every run, so any manual server-side edits are overwritten; bake the change into the template.
+  - New persisted on-disk shape → the new code must be able to read state produced by the previous version (no migration scripts under feature-building mode, but root-cause repair of bug-produced state is fine).
+  - Anything that affects what ships → remember the release artifact is `wisp-<version>.tar.gz` built by `.github/workflows/release.yml` from a `v*` tag, with a prebuilt `frontend/dist/`. Files not committed to the repo will not be in the tarball.
 
 ## Feature Building (No Migrations)
 
@@ -57,6 +63,7 @@ When you change behavior, APIs, UI, or configuration, update the corresponding d
 | Config / env / paths | `docs/spec/CONFIGURATION.md` |
 | Console / VNC | `docs/spec/CONSOLE.md`, `docs/spec/noVNC.md` |
 | Host stats / monitoring | `docs/spec/HOST-MONITORING.md` |
+| Self-update / release pipeline (`backend/src/lib/wispUpdate.js`, `backend/scripts/wisp-updater`, `systemd/linux/wisp-updater.service`, `scripts/release.sh`, `.github/workflows/release.yml`) | `docs/spec/UPDATES.md` |
 | Backups, snapshots, cloud-init, USB, image library, deployment, etc. | Same-name spec in `docs/spec/` |
 | Project rules / coding standards | `docs/CODING-RULES.md`, `docs/WISP-RULES.md` |
 
