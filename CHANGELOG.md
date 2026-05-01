@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-05-01
+## 2026-05-01 (v1.0.11)
 
 ### Refactor
 - **Self-update: own systemd unit (`wisp-updater.service`)** — stop trying to make a process that's about to die orchestrate its own replacement. The applier is now a `Type=oneshot` unit triggered by the backend via `sudo -n systemctl start --no-block wisp-updater.service`. Lives in its own cgroup, with its own journald-attached stdio — when it stops `wisp-backend.service` as its first real step, nothing connecting the two breaks. Sidesteps every failure mode the v1.0.6→v1.0.10 series chased (cgroup teardown, scope slice, SIGPIPE, `exec >/dev/null`, mysterious post-stop hang).
