@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-05-01
+## 2026-05-01 (v1.0.12)
 
 ### Refactor
 - **Frontend bundle: split `node_modules` into a `vendor` chunk + lazy-load `WispUpdateSection`** — main bundle dropped from 578 kB to 258 kB (gzip 161 → 62 kB) and the chunk-size-warning noise is gone. Heavy lazy-only deps (`react-markdown` for release notes, `@xterm/*` for the console) deliberately stay out of `vendor` so they only ship when the user opens that view; `vendor` (react + router + zustand + lucide-react ≈ 200 kB) caches across most releases.
