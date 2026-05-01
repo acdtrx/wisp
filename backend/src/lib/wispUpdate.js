@@ -7,7 +7,7 @@
  * for forks or testing.
  */
 import { readFileSync, createWriteStream, createReadStream } from 'node:fs';
-import { mkdir, rm, stat, access } from 'node:fs/promises';
+import { mkdir, rm, access } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -289,16 +289,18 @@ export async function downloadAndStage(onProgress, signal) {
 }
 
 /**
- * Hand off to the privileged helper. Streams its stdout (lines of `step:<name>`)
- * to onProgress so the SSE picks up "stop-services", "snapshot", "swap", etc.
+ * Hand off to the privileged helper as a fully detached process. We can't
+ * stream the helper's progress here because the helper kills US as part of
+ * its first step (systemctl stop wisp-backend) — every previous attempt to
+ * keep stdio pipes alive across that death (SIGPIPE traps, exec >/dev/null,
+ * systemd-run --scope under different slices) ran into a different edge
+ * case of the bash↔node↔sudo↔scope process tree.
  *
- * NOTE: the helper restarts wisp-backend at the end. The helper's own exit
- * happens BEFORE that restart blocks our process. The new backend boots, this
- * old one is killed by systemd; the SSE client will see the stream close and
- * reconnect to the new backend (which has a different jobId map but the
- * pre-restart "step:done" was already pushed).
+ * Detach and ignore stdio entirely. The helper writes its progress to the
+ * journal via systemd-cat (`journalctl -t wisp-update`), and the UI detects
+ * completion by polling GET /api/host for wispVersion === target.
  */
-export async function applyUpdate(stagingPath, onProgress) {
+export async function applyUpdate(stagingPath) {
   if (typeof stagingPath !== 'string' || !stagingPath.startsWith('/')) {
     throw createAppError('INVALID_REQUEST', 'staging path must be absolute');
   }
@@ -311,35 +313,13 @@ export async function applyUpdate(stagingPath, onProgress) {
   const argv = isRoot
     ? [HELPER_PATH, stagingPath, INSTALL_DIR]
     : ['sudo', '-n', HELPER_PATH, stagingPath, INSTALL_DIR];
-  const child = spawn(argv[0], argv.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
 
-  let stderrBuf = '';
-  child.stderr.on('data', (chunk) => {
-    stderrBuf += chunk.toString('utf8');
+  const child = spawn(argv[0], argv.slice(1), {
+    detached: true,
+    stdio: 'ignore',
   });
-  let stdoutBuf = '';
-  child.stdout.on('data', (chunk) => {
-    stdoutBuf += chunk.toString('utf8');
-    let nl;
-    while ((nl = stdoutBuf.indexOf('\n')) !== -1) {
-      const line = stdoutBuf.slice(0, nl).trim();
-      stdoutBuf = stdoutBuf.slice(nl + 1);
-      if (!line) continue;
-      const m = /^step:(.+)$/.exec(line);
-      if (m && onProgress) onProgress({ step: m[1] });
-    }
-  });
-
-  return new Promise((resolveExit, rejectExit) => {
-    child.on('error', rejectExit);
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolveExit({ ok: true });
-      } else {
-        rejectExit(createAppError('UPDATE_CHECK_UNAVAILABLE', `wisp-update helper exited ${code}`, stderrBuf.trim().slice(-400) || undefined));
-      }
-    });
-  });
+  child.unref();
+  return { started: true };
 }
 
 let intervalId = null;

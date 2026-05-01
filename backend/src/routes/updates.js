@@ -1,25 +1,14 @@
-import { randomBytes } from 'node:crypto';
 import {
   getCachedStatus,
   checkForUpdate,
   downloadAndStage,
   applyUpdate,
 } from '../lib/wispUpdate.js';
-import { wispUpdateJobStore } from '../lib/wispUpdateJobStore.js';
 import { listBackgroundJobs } from '../lib/listBackgroundJobs.js';
-import { BACKGROUND_JOB_KIND } from '../lib/backgroundJobKinds.js';
-import { setupSSE } from '../lib/sse.js';
 import { handleRouteError } from '../lib/routeErrors.js';
 
-function activeWispUpdateJobId() {
-  for (const j of wispUpdateJobStore.listJobs()) {
-    if (!j.done) return j.jobId;
-  }
-  return null;
-}
-
-function activeNonUpdateJobs() {
-  return listBackgroundJobs().filter((j) => !j.done && j.kind !== BACKGROUND_JOB_KIND.WISP_UPDATE);
+function activeOtherJobs() {
+  return listBackgroundJobs().filter((j) => !j.done);
 }
 
 const STATUS_RESPONSE = {
@@ -54,9 +43,13 @@ export default async function updatesRoutes(fastify) {
   });
 
   /**
-   * Start the install pipeline. Soft-guards against concurrent install jobs
-   * and against running while other background work is active; pass ?force=1
-   * to override the active-jobs guard (UI shows a confirm dialog first).
+   * Synchronously download + verify + extract the new release tarball, then
+   * spawn the privileged helper detached and return 202. The helper takes
+   * the rest of the install over (and kills this very backend as part of
+   * step:stop-services). The UI polls GET /api/host wispVersion to detect
+   * completion; the helper logs steps to journald (`journalctl -t wisp-update`).
+   *
+   * Pass ?force=1 to bypass the active-jobs guard (UI confirms first).
    */
   fastify.post('/updates/install', {
     schema: {
@@ -65,11 +58,10 @@ export default async function updatesRoutes(fastify) {
         properties: { force: { type: 'string' } },
       },
       response: {
-        201: {
+        202: {
           type: 'object',
           properties: {
-            jobId: { type: 'string' },
-            title: { type: 'string' },
+            targetVersion: { type: 'string' },
           },
         },
       },
@@ -82,16 +74,9 @@ export default async function updatesRoutes(fastify) {
           detail: status.latest ? `Already on ${status.current}` : 'Run check first',
         });
       }
-      const existing = activeWispUpdateJobId();
-      if (existing) {
-        return reply.code(409).send({
-          error: 'Update already in progress',
-          detail: `Job ${existing} is still running`,
-        });
-      }
       const force = request.query?.force === '1' || request.query?.force === 'true';
       if (!force) {
-        const others = activeNonUpdateJobs();
+        const others = activeOtherJobs();
         if (others.length > 0) {
           return reply.code(409).send({
             error: 'Other background jobs are active',
@@ -100,65 +85,25 @@ export default async function updatesRoutes(fastify) {
         }
       }
 
-      const jobId = randomBytes(12).toString('hex');
-      const title = `Update to v${status.latest}`;
-      wispUpdateJobStore.createJob(jobId, {
-        kind: BACKGROUND_JOB_KIND.WISP_UPDATE,
-        title,
-        log: request.log,
-      });
-      request.log.info(
-        { jobId, kind: BACKGROUND_JOB_KIND.WISP_UPDATE, title },
-        'Background job started',
-      );
-
-      (async () => {
-        try {
-          wispUpdateJobStore.pushEvent(jobId, { step: 'start', from: status.current, to: status.latest });
-          const stagingPath = await downloadAndStage((p) => {
-            wispUpdateJobStore.pushEvent(jobId, p);
-          });
-          wispUpdateJobStore.pushEvent(jobId, { step: 'apply', stagingPath });
-          await applyUpdate(stagingPath, (p) => {
-            wispUpdateJobStore.pushEvent(jobId, p);
-          });
-          /* The helper restarts the backend at the end; this completion event
-           * may or may not reach the client before our process is killed. Either
-           * way the client reconnects to the new backend and notices the version
-           * has changed. */
-          wispUpdateJobStore.completeJob(jobId, { version: status.latest });
-        } catch (err) {
-          request.log.error({ err: err.message, jobId }, 'Wisp update job failed');
-          try {
-            wispUpdateJobStore.failJob(jobId, err);
-          } catch (failErr) {
-            request.log.error({ err: failErr.message, jobId }, 'failJob failed');
-          }
-        }
-      })();
-
-      return reply.code(201).send({ jobId, title });
-    },
-  });
-
-  /* SSE: progress for a specific install job */
-  fastify.get('/updates/progress/:jobId', {
-    schema: { hide: true },
-    handler: async (request, reply) => {
-      const { jobId } = request.params;
-      const job = wispUpdateJobStore.getJob(jobId);
-      if (!job) {
-        return reply.code(404).send({ error: 'Job not found', detail: jobId });
+      let stagingPath;
+      try {
+        /* Phase 1: download + verify + extract — blocks here for ~5–15s.
+         * Errors are reported as HTTP errors before we hand off to the helper. */
+        stagingPath = await downloadAndStage();
+      } catch (err) {
+        return handleRouteError(err, reply, request);
       }
-      setupSSE(reply);
-      const ok = wispUpdateJobStore.registerStream(jobId, reply.raw);
-      if (!ok) {
-        reply.raw.end();
-        return;
+
+      try {
+        /* Phase 2: fire-and-forget the privileged helper. applyUpdate spawns
+         * detached + ignores stdio and returns immediately. The helper kills
+         * this backend as its first real step. */
+        await applyUpdate(stagingPath);
+      } catch (err) {
+        return handleRouteError(err, reply, request);
       }
-      request.raw.on('close', () => {
-        wispUpdateJobStore.unregisterStream(jobId, reply.raw);
-      });
+
+      return reply.code(202).send({ targetVersion: status.latest });
     },
   });
 }

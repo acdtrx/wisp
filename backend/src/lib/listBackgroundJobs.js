@@ -2,7 +2,6 @@ import * as createJobStore from './createJobStore.js';
 import * as backupJobStore from './backupJobStore.js';
 import * as downloadJobStore from './downloadJobStore.js';
 import { containerJobStore } from './containerJobStore.js';
-import { wispUpdateJobStore } from './wispUpdateJobStore.js';
 
 /* Each store is independent; if one throws (corrupted in-memory state, future
  * regression, etc.) we still want to surface the others to the UI rather than
@@ -25,6 +24,5 @@ export function listBackgroundJobs() {
     ...safeList(() => backupJobStore.listJobs()),
     ...safeList(() => downloadJobStore.listJobs()),
     ...safeList(() => containerJobStore.listJobs()),
-    ...safeList(() => wispUpdateJobStore.listJobs()),
   ].sort((a, b) => b.createdAt - a.createdAt);
 }

@@ -250,18 +250,11 @@ Force an immediate self-update check; returns the same shape as `/status`.
 
 ### POST /api/updates/install
 
-Start the self-update install pipeline (download → verify → stage → apply → restart) as a background job. `?force=1` overrides the active-jobs guard.
+Synchronously downloads + verifies + extracts the new release tarball, then spawns the privileged `wisp-update` helper detached and returns 202. The helper kills the backend as part of its first step; the UI detects completion by polling `GET /api/host` for `wispVersion === targetVersion`. Helper progress is logged to journald (`journalctl -t wisp-update`). `?force=1` overrides the active-jobs guard.
 
-- **201:** `{ jobId, title }`
-- **409:** `{ error, detail }` — no update available, another install in flight, or non-update background jobs are running and `force=1` was not supplied
-- **503:** `{ error, detail }` — privileged helper missing or returned an error
-
-### GET /api/updates/progress/:jobId
-
-SSE stream for an install job. Steps in order: `start`, `download` (with `received`/`total`), `verify`, `extract`, `apply`, `stop-services`, `snapshot`, `swap`, `install-deps`, `install-helpers`, `install-units`, `start-services`, `done`. Failures emit `{ step: 'error', error, detail }`.
-
-- **200:** `text/event-stream`
-- **404:** `{ error, detail }` — unknown / expired jobId
+- **202:** `{ targetVersion }`
+- **409:** `{ error, detail }` — no update available, or other background jobs are running and `force=1` was not supplied
+- **503/422/500:** `{ error, detail }` — download / verify / extract / helper-spawn failure
 
 ### GET /api/host/hardware
 

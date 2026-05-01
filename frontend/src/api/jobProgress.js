@@ -7,7 +7,6 @@ export const JOB_KIND = {
   CONTAINER_IMAGE_UPDATE_CHECK: 'container-image-update-check',
   BACKUP: 'backup',
   LIBRARY_DOWNLOAD: 'library-download',
-  WISP_UPDATE: 'wisp-update',
 };
 
 const PATHS = {
@@ -16,7 +15,6 @@ const PATHS = {
   [JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK]: (jobId) => `/api/containers/images/check-updates/${encodeURIComponent(jobId)}`,
   [JOB_KIND.BACKUP]: (jobId) => `/api/vms/backup-progress/${encodeURIComponent(jobId)}`,
   [JOB_KIND.LIBRARY_DOWNLOAD]: (jobId) => `/api/library/download-progress/${encodeURIComponent(jobId)}`,
-  [JOB_KIND.WISP_UPDATE]: (jobId) => `/api/updates/progress/${encodeURIComponent(jobId)}`,
 };
 
 /**

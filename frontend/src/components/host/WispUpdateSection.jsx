@@ -1,11 +1,10 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import {
   Loader2,
   RefreshCw,
   ArrowUpCircle,
   Rocket,
-  CheckCircle,
   AlertCircle,
   Clock,
   ExternalLink,
@@ -14,7 +13,7 @@ import SectionCard from '../shared/SectionCard.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
-import { JOB_KIND } from '../../api/jobProgress.js';
+import { getHostInfo } from '../../api/host.js';
 import {
   getUpdateStatus,
   checkForWispUpdate,
@@ -32,22 +31,9 @@ function formatRelativeTime(isoString) {
   return `${Math.floor(diffHr / 24)}d ago`;
 }
 
-const STEP_LABELS = {
-  start: 'Starting…',
-  download: 'Downloading…',
-  verify: 'Verifying checksum…',
-  extract: 'Extracting…',
-  apply: 'Applying update…',
-  'stop-services': 'Stopping services…',
-  snapshot: 'Snapshotting current install…',
-  swap: 'Swapping in new version…',
-  'install-deps': 'Installing dependencies…',
-  'install-helpers': 'Refreshing privileged helpers…',
-  'install-units': 'Reinstalling systemd units…',
-  'start-services': 'Starting services…',
-  rollback: 'Rolling back…',
-  done: 'Update complete — backend restarting',
-};
+const POLL_INTERVAL_MS = 5_000;
+const SLOW_AFTER_FAILED_POLLS = 12; // 12 × 5s = 1 min of "backend not responding"
+const MAX_TOTAL_POLLS = 60;          // 60 × 5s = 5 min hard cap
 
 export default function WispUpdateSection() {
   /* SSE-driven badge data (current/latest/available/lastChecked); hydrate on
@@ -60,23 +46,16 @@ export default function WispUpdateSection() {
 
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [installTarget, setInstallTarget] = useState(null);
+  const [installSlow, setInstallSlow] = useState(false);
+  const [installStuck, setInstallStuck] = useState(false);
   const [error, setError] = useState(null);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmForce, setConfirmForce] = useState(false);
 
-  const [activeJob, setActiveJob] = useState(null); // { jobId }
-
   const jobs = useBackgroundJobsStore((s) => s.jobs);
-  const registerJob = useBackgroundJobsStore((s) => s.registerJob);
-  const runningOtherJobs = useMemo(
-    () =>
-      Object.values(jobs).filter(
-        (j) => j.status === 'running' && j.kind !== JOB_KIND.WISP_UPDATE,
-      ),
-    [jobs],
-  );
-  const liveJob = activeJob ? jobs[activeJob.jobId] : null;
+  const runningOtherJobs = Object.values(jobs).filter((j) => j.status === 'running');
 
   const refreshFromServer = useCallback(async () => {
     try {
@@ -123,41 +102,74 @@ export default function WispUpdateSection() {
 
   const doInstall = useCallback(async () => {
     setConfirmOpen(false);
+    setError(null);
+    setInstallSlow(false);
+    setInstallStuck(false);
     setInstalling(true);
+    setInstallTarget(latest);
     try {
-      const { jobId } = await installWispUpdate({ force: confirmForce });
-      setActiveJob({ jobId });
-      registerJob({
-        jobId,
-        kind: JOB_KIND.WISP_UPDATE,
-        title: `Update to v${latest}`,
-      });
+      /* Backend blocks during download (~5–15s) then spawns the helper
+       * detached and returns 202. After that the backend dies as the helper
+       * runs systemctl stop wisp-backend; we detect completion below by
+       * polling /api/host wispVersion === target. */
+      await installWispUpdate({ force: confirmForce });
     } catch (err) {
       setInstalling(false);
+      setInstallTarget(null);
       setError(err.detail || err.message || 'Install failed to start');
     }
-  }, [confirmForce, latest, registerJob]);
+  }, [confirmForce, latest]);
 
-  /* When the update job reaches a terminal state, schedule a short delay
-   * (services restart) and then reload — the page reload yanks fresh assets
-   * from the new frontend. */
+  /* Poll /api/host every 5s. Stop when wispVersion matches the target (then
+   * reload the page to pick up the new frontend bundle). Show a "may be slow"
+   * note after 12 failed polls (1 min); give up after 60 total polls (5 min).
+   * Failures are EXPECTED while the backend is restarting — we count them
+   * against `consecutiveFailures` only, and reset on every successful poll. */
+  const pollIntervalRef = useRef(null);
   useEffect(() => {
-    if (!liveJob) return;
-    if (liveJob.status === 'done') {
-      const t = setTimeout(() => window.location.reload(), 5000);
-      return () => clearTimeout(t);
-    }
-    if (liveJob.status === 'error') {
-      setInstalling(false);
-      setError(liveJob.error || 'Update failed');
-    }
-  }, [liveJob]);
+    if (!installing || !installTarget) return undefined;
 
-  const stepLabel = liveJob?.step ? STEP_LABELS[liveJob.step] || liveJob.step : null;
-  const downloadPercent =
-    liveJob?.step === 'download' && liveJob?.percent != null
-      ? Math.round(liveJob.percent)
-      : null;
+    let consecutiveFailures = 0;
+    let totalPolls = 0;
+
+    async function tick() {
+      totalPolls++;
+      try {
+        const info = await getHostInfo();
+        consecutiveFailures = 0;
+        if (info?.wispVersion === installTarget) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+          /* Brief pause so the success badge actually renders before reload */
+          setTimeout(() => window.location.reload(), 1500);
+        }
+        /* else: backend up, version not yet swapped — could be pre-stop, or
+         * post-rollback. We can't reliably tell, so just keep polling until
+         * the hard cap. */
+      } catch {
+        consecutiveFailures++;
+        if (consecutiveFailures >= SLOW_AFTER_FAILED_POLLS) {
+          setInstallSlow(true);
+        }
+      }
+      if (totalPolls >= MAX_TOTAL_POLLS) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+        setInstallStuck(true);
+      }
+    }
+
+    pollIntervalRef.current = setInterval(tick, POLL_INTERVAL_MS);
+    /* fire one immediately so we don't wait the first 5 s */
+    tick();
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+    };
+  }, [installing, installTarget]);
+
   const releaseUrl = repo && latest ? `https://github.com/${repo}/releases/tag/v${latest}` : null;
   const lastCheckedLabel = formatRelativeTime(lastChecked);
   const publishedLabel = formatRelativeTime(publishedAt);
@@ -234,25 +246,36 @@ export default function WispUpdateSection() {
         </details>
       )}
 
-      {liveJob && (
+      {installing && (
         <div className="mt-3 rounded-md border border-surface-border bg-surface px-3 py-2 text-xs">
           <div className="flex items-center gap-2">
-            {liveJob.status === 'running' && <Loader2 size={13} className="shrink-0 animate-spin text-accent" />}
-            {liveJob.status === 'done' && <CheckCircle size={13} className="shrink-0 text-status-running" />}
-            {liveJob.status === 'error' && <AlertCircle size={13} className="shrink-0 text-status-stopped" />}
-            <span className="text-text-secondary">{stepLabel || 'Working…'}</span>
-            {downloadPercent != null && <span className="ml-auto text-text-muted">{downloadPercent}%</span>}
+            <Loader2 size={13} className="shrink-0 animate-spin text-accent" />
+            <span className="text-text-secondary">
+              Installing v{installTarget}… backend will restart and the page will reload automatically.
+            </span>
           </div>
-          {liveJob.status === 'error' && liveJob.error && (
-            <div className="mt-1 break-words text-status-stopped">{liveJob.error}</div>
+          {installSlow && !installStuck && (
+            <div className="mt-1 flex items-start gap-2 text-amber-700">
+              <AlertCircle size={13} className="mt-0.5 shrink-0" />
+              <span>
+                Backend hasn't come back yet — install may be slow. Still trying.
+              </span>
+            </div>
           )}
-          {liveJob.status === 'done' && (
-            <div className="mt-1 text-text-muted">Backend is restarting — page will refresh in a moment.</div>
+          {installStuck && (
+            <div className="mt-1 flex items-start gap-2 text-status-stopped">
+              <AlertCircle size={13} className="mt-0.5 shrink-0" />
+              <span>
+                Install hasn't completed after 5 minutes. Check{' '}
+                <code className="rounded bg-surface-card px-1">sudo journalctl -t wisp-update</code>{' '}
+                on the server for details.
+              </span>
+            </div>
           )}
         </div>
       )}
 
-      {(error || lastCheckedLabel) && !liveJob && (
+      {(error || lastCheckedLabel) && !installing && (
         <div className="mt-2 flex items-center gap-2 text-xs">
           {error && (
             <>
@@ -278,7 +301,7 @@ export default function WispUpdateSection() {
       >
         <p>
           Wisp will download v{latest}, swap it in, and restart its services. The web UI will
-          briefly disconnect and reload automatically.
+          briefly disconnect; the page will reload automatically once the new version is up.
         </p>
         {confirmForce && (
           <p className="mt-2 text-amber-700">

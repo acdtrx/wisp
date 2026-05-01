@@ -7,5 +7,4 @@ export const BACKGROUND_JOB_KIND = {
   CONTAINER_IMAGE_UPDATE_CHECK: 'container-image-update-check',
   BACKUP: 'backup',
   LIBRARY_DOWNLOAD: 'library-download',
-  WISP_UPDATE: 'wisp-update',
 };
