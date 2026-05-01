@@ -112,12 +112,51 @@ else
 fi
 echo ""
 
-echo "--- wisp-update (self-update atomic swap + service restart) ---"
-if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-update" ]]; then
-  "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-update" wisp-update "$DEPLOY_USER" rsync
-  echo "  Installed /usr/local/bin/wisp-update."
+echo "--- wisp-updater (self-update applier, runs as wisp-updater.service) ---"
+if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-updater" && -f "$PROJECT_ROOT/systemd/linux/wisp-updater.service" ]]; then
+  # rsync is needed by the updater script itself.
+  # shellcheck source=distro.sh
+  source "$SETUP_DIR/distro.sh"
+  pkg_install rsync || true
+
+  # Install the script via atomic rename. wisp-updater itself runs install-helpers
+  # mid-update, so the running inode must persist across the in-place refresh.
+  TMP_DEST="/usr/local/bin/wisp-updater.new.$$"
+  cp "$PROJECT_ROOT/backend/scripts/wisp-updater" "$TMP_DEST"
+  chmod 755 "$TMP_DEST"
+  mv -f "$TMP_DEST" /usr/local/bin/wisp-updater
+  echo "  Installed /usr/local/bin/wisp-updater."
+
+  # Template + install the unit file. WISP_PATH → install dir, used by the
+  # script as $WISP_INSTALL_DIR. Idempotent.
+  sed -e "s|WISP_PATH|$PROJECT_ROOT|g" \
+    "$PROJECT_ROOT/systemd/linux/wisp-updater.service" \
+    > /etc/systemd/system/wisp-updater.service
+  chmod 644 /etc/systemd/system/wisp-updater.service
+  echo "  Installed /etc/systemd/system/wisp-updater.service."
+
+  # Sudoers: deploy user may trigger the unit, and only that. argv must match
+  # the backend's invocation exactly:
+  #   sudo -n /usr/bin/systemctl start --no-block wisp-updater.service
+  SUDOERS_FILE=/etc/sudoers.d/wisp-updater
+  echo "$DEPLOY_USER ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block wisp-updater.service" > "$SUDOERS_FILE"
+  chmod 440 "$SUDOERS_FILE"
+  visudo -c -f "$SUDOERS_FILE" || { echo "  ERROR: Invalid sudoers file"; rm -f "$SUDOERS_FILE"; exit 1; }
+  echo "  Configured sudo: $DEPLOY_USER may trigger wisp-updater.service."
+
+  # Drop obsolete wisp-update (superseded by wisp-updater + systemd unit).
+  if [[ -f /usr/local/bin/wisp-update ]]; then
+    rm -f /usr/local/bin/wisp-update
+    echo "  Removed obsolete /usr/local/bin/wisp-update."
+  fi
+  if [[ -f /etc/sudoers.d/wisp-update ]]; then
+    rm -f /etc/sudoers.d/wisp-update
+    echo "  Removed obsolete /etc/sudoers.d/wisp-update."
+  fi
+
+  systemctl daemon-reload || true
 else
-  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-update)"
+  echo "  Skipped (script or unit file missing)"
 fi
 echo ""
 

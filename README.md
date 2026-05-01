@@ -63,15 +63,28 @@ macOS is supported for backend development (no hypervisor features); production 
 
 ## Installation
 
-Full details in [`docs/spec/DEPLOYMENT.md`](./docs/spec/DEPLOYMENT.md). High-level flow:
+Full details in [`docs/spec/DEPLOYMENT.md`](./docs/spec/DEPLOYMENT.md). The recommended path is to grab a published release — no git clone, no Node build on the install host.
 
-1. Clone this repository on the target Linux host.
-2. One-time host prep as root: `sudo ./scripts/setup-server.sh` (packages, libvirt/containerd, directories, privileged helpers, group membership).
-3. Install as your deploy user: `./scripts/install.sh` (copies files, builds frontend and backend, configures `config/`, installs systemd units).
+1. **Download the latest release tarball** from the [Releases page](https://github.com/acdtrx/wisp/releases/latest). Look for `wisp-X.Y.Z.tar.gz` under *Assets*.
 
-Two systemd services run the app: `wisp-backend` and `wisp-frontend`. Default frontend port is **8080** (override via `config/runtime.env`). Set or rotate the login password with `./scripts/wispctl.sh password`.
+2. **Extract on the target Linux host**:
+   ```
+   tar -xzf wisp-X.Y.Z.tar.gz
+   cd wisp
+   ```
 
-Push-deploy from another machine: `./scripts/push.sh user@host /remote/path --restart-svc`.
+3. **Install as your normal (non-root) user** — the script will use `sudo` itself for the steps that need it (host packages, libvirt setup, systemd units):
+   ```
+   ./scripts/install.sh /opt/wisp --restart-svc
+   ```
+
+   `--restart-svc` skips the interactive restart prompt and starts services on first run. The release tarball ships a prebuilt `frontend/dist/`, so no Node build runs on the install host.
+
+After install, two systemd services run the app: `wisp-backend` and `wisp-frontend`. Default frontend port is **8080** (override via `config/runtime.env`). Set or rotate the login password with `./scripts/wispctl.sh password`.
+
+**Updates after install** — use the in-app **Wisp Update** section (Host → Software). Wisp polls GitHub Releases hourly; the Install button downloads the new tarball, verifies its checksum, and atomic-swaps it via a dedicated systemd unit.
+
+**Developing from a checkout** — clone the repo, run `./scripts/install.sh /opt/wisp` from inside it (frontend is built locally). For pushing to a remote host: `./scripts/push.sh user@host /opt/wisp --restart-svc`.
 
 ## Security
 

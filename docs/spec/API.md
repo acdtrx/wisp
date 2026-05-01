@@ -250,11 +250,11 @@ Force an immediate self-update check; returns the same shape as `/status`.
 
 ### POST /api/updates/install
 
-Synchronously downloads + verifies + extracts the new release tarball, then spawns the privileged `wisp-update` helper detached and returns 202. The helper kills the backend as part of its first step; the UI detects completion by polling `GET /api/host` for `wispVersion === targetVersion`. Helper progress is logged to journald (`journalctl -t wisp-update`). `?force=1` overrides the active-jobs guard.
+Synchronously downloads + verifies + extracts the new release tarball, writes the staging path to `/var/lib/wisp/updates/target`, triggers `wisp-updater.service` via `sudo -n systemctl start --no-block` and returns 202. The updater is a separate `Type=oneshot` systemd unit — it stops the backend as part of its first real step; the UI detects completion by polling `GET /api/host` for `wispVersion === targetVersion`. Updater progress is in journald (`journalctl -u wisp-updater.service`). `?force=1` overrides the active-jobs guard.
 
 - **202:** `{ targetVersion }`
 - **409:** `{ error, detail }` — no update available, or other background jobs are running and `force=1` was not supplied
-- **503/422/500:** `{ error, detail }` — download / verify / extract / helper-spawn failure
+- **503/422/500:** `{ error, detail }` — download / verify / extract / unit-trigger failure
 
 ### GET /api/host/hardware
 

@@ -108,10 +108,10 @@ export default function WispUpdateSection() {
     setInstalling(true);
     setInstallTarget(latest);
     try {
-      /* Backend blocks during download (~5–15s) then spawns the helper
-       * detached and returns 202. After that the backend dies as the helper
-       * runs systemctl stop wisp-backend; we detect completion below by
-       * polling /api/host wispVersion === target. */
+      /* Backend blocks during download (~5–15s) then triggers
+       * wisp-updater.service and returns 202. After that the backend dies
+       * as the updater runs systemctl stop wisp-backend; we detect completion
+       * below by polling /api/host wispVersion === target. */
       await installWispUpdate({ force: confirmForce });
     } catch (err) {
       setInstalling(false);
@@ -267,7 +267,7 @@ export default function WispUpdateSection() {
               <AlertCircle size={13} className="mt-0.5 shrink-0" />
               <span>
                 Install hasn't completed after 5 minutes. Check{' '}
-                <code className="rounded bg-surface-card px-1">sudo journalctl -t wisp-update</code>{' '}
+                <code className="rounded bg-surface-card px-1">sudo journalctl -u wisp-updater.service</code>{' '}
                 on the server for details.
               </span>
             </div>

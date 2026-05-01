@@ -44,10 +44,11 @@ export default async function updatesRoutes(fastify) {
 
   /**
    * Synchronously download + verify + extract the new release tarball, then
-   * spawn the privileged helper detached and return 202. The helper takes
-   * the rest of the install over (and kills this very backend as part of
-   * step:stop-services). The UI polls GET /api/host wispVersion to detect
-   * completion; the helper logs steps to journald (`journalctl -t wisp-update`).
+   * trigger wisp-updater.service and return 202. The updater is a separate
+   * systemd unit — it runs in its own cgroup, with its own stdio, and stops
+   * this backend as its first real step. The UI polls GET /api/host
+   * wispVersion to detect completion; updater steps are in journald
+   * (`journalctl -u wisp-updater.service`).
    *
    * Pass ?force=1 to bypass the active-jobs guard (UI confirms first).
    */

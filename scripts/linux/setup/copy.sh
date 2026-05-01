@@ -44,10 +44,31 @@ for name in frontend backend scripts systemd; do
   fi
 done
 
-rm -rf "$INSTALL_DIR/frontend" "$INSTALL_DIR/backend" "$INSTALL_DIR/scripts" "$INSTALL_DIR/systemd"
+# Root package.json is the canonical version source — wispUpdate.js reads it
+# first; absence triggers a silent fallback to backend/package.json. Refuse to
+# install a tree that's missing it instead of leaving the install in a state
+# that lies about its version.
+if [[ ! -f "$SOURCE_DIR/package.json" ]]; then
+  echo "ERROR: Missing root package.json in source tree: $SOURCE_DIR"
+  exit 1
+fi
+
+rm -rf "$INSTALL_DIR/frontend" "$INSTALL_DIR/backend" "$INSTALL_DIR/scripts" "$INSTALL_DIR/systemd" "$INSTALL_DIR/docs"
 
 mkdir -p "$INSTALL_DIR"
 cp -a "$SOURCE_DIR/frontend" "$SOURCE_DIR/backend" "$SOURCE_DIR/scripts" "$SOURCE_DIR/systemd" "$INSTALL_DIR/"
+
+if [[ -d "$SOURCE_DIR/docs" ]]; then
+  cp -a "$SOURCE_DIR/docs" "$INSTALL_DIR/"
+fi
+
+# Top-level files. Mirrors the release tarball; package.json is required, the
+# rest are bundled for parity (self-update overwrites them on every release).
+for f in package.json CHANGELOG.md LICENSE README.md CLAUDE.md; do
+  if [[ -f "$SOURCE_DIR/$f" ]]; then
+    cp -a "$SOURCE_DIR/$f" "$INSTALL_DIR/$f"
+  fi
+done
 
 if [[ -d "$SOURCE_DIR/config" ]]; then
   mkdir -p "$INSTALL_DIR/config"
@@ -59,4 +80,4 @@ if [[ -d "$SOURCE_DIR/config" ]]; then
   echo "  Updated config examples under $INSTALL_DIR/config/"
 fi
 
-echo "  Installed frontend, backend, scripts, systemd under $INSTALL_DIR"
+echo "  Installed frontend, backend, scripts, systemd, docs, top-level files under $INSTALL_DIR"

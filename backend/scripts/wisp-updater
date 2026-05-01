@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# Atomic-swap update applier. Triggered as a systemd Type=oneshot unit
+# (`wisp-updater.service`). Lives in its own cgroup with no inherited stdio,
+# so wisp-backend's death during step:stop-services can't reach in.
+#
+#   Backend writes the staging dir to /var/lib/wisp/updates/target and runs:
+#     sudo -n systemctl start --no-block wisp-updater.service
+#
+# Steps (echoed to journald):
+#   stop-services → snapshot → swap → install-deps → install-helpers
+#   → install-units → start-services → done
+#
+# On any failure after `snapshot`, rolls back from <install>.prev and exits non-zero.
+# User config (config/wisp-config.json, wisp-password, runtime.env) and runtime
+# scratch (.pids, .logs) are never deleted from the install dir.
+
+set -uo pipefail
+
+TARGET_FILE=/var/lib/wisp/updates/target
+STAGING_PREFIX=/var/lib/wisp/updates/staging-
+INSTALL_DIR="${WISP_INSTALL_DIR:-}"
+
+fail() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+[[ -n "$INSTALL_DIR" ]] || fail "WISP_INSTALL_DIR not set (unit file should template it)"
+[[ "$INSTALL_DIR" == /* ]] || fail "install dir must be absolute: $INSTALL_DIR"
+[[ -d "$INSTALL_DIR" ]] || fail "install dir not found: $INSTALL_DIR"
+[[ -f "$TARGET_FILE" ]] || fail "no pending update: $TARGET_FILE missing"
+
+STAGING="$(head -n 1 "$TARGET_FILE" | tr -d '[:space:]')"
+[[ -n "$STAGING" ]] || fail "target file is empty"
+[[ "$STAGING" == "$STAGING_PREFIX"* ]] || fail "staging path outside allowed root: $STAGING"
+[[ -d "$STAGING" ]] || fail "staging dir not found: $STAGING"
+[[ "$STAGING" != "$INSTALL_DIR" ]] || fail "staging and install dir must differ"
+[[ -f "$STAGING/backend/package.json" ]] || fail "staging dir does not look like a wisp tree"
+
+# Detect deploy user from owner of the install dir (set by install.sh).
+DEPLOY_USER="$(stat -c %U "$INSTALL_DIR")"
+[[ -n "$DEPLOY_USER" && "$DEPLOY_USER" != "root" ]] || fail "could not detect non-root deploy user from $INSTALL_DIR"
+
+PREV_DIR="${INSTALL_DIR}.prev"
+BACKEND_UNIT=wisp-backend
+FRONTEND_UNIT=wisp-frontend
+
+# User-data and runtime scratch must survive the swap rsync.
+RSYNC_EXCLUDES=(
+  --exclude '/config/wisp-config.json'
+  --exclude '/config/wisp-password'
+  --exclude '/config/runtime.env'
+  --exclude '/.pids'
+  --exclude '/.logs'
+)
+
+snapshot_taken=0
+
+rollback() {
+  echo "step:rollback"
+  if [[ "$snapshot_taken" -eq 1 && -d "$PREV_DIR" ]]; then
+    rsync -a --delete "$PREV_DIR/" "$INSTALL_DIR/" || true
+    chown -R "$DEPLOY_USER:$DEPLOY_USER" "$INSTALL_DIR" || true
+  fi
+  systemctl daemon-reload || true
+  systemctl start "$BACKEND_UNIT" "$FRONTEND_UNIT" || true
+}
+
+trap 'rc=$?; if [[ $rc -ne 0 ]]; then rollback; fi' EXIT
+
+echo "step:stop-services"
+systemctl stop "$FRONTEND_UNIT" 2>/dev/null || true
+systemctl stop "$BACKEND_UNIT" 2>/dev/null || true
+
+echo "step:snapshot"
+rm -rf "$PREV_DIR"
+rsync -a --delete "$INSTALL_DIR/" "$PREV_DIR/" || fail "snapshot rsync failed"
+snapshot_taken=1
+
+echo "step:swap"
+rsync -a --delete "${RSYNC_EXCLUDES[@]}" "$STAGING/" "$INSTALL_DIR/" || fail "swap rsync failed"
+chown -R "$DEPLOY_USER:$DEPLOY_USER" "$INSTALL_DIR" || fail "chown failed"
+
+echo "step:install-deps"
+# Tarball ships without node_modules — install runtime deps for both backend
+# (always needed) and frontend (server.js runtime: fastify, http-proxy, static).
+sudo -u "$DEPLOY_USER" bash -c "cd '$INSTALL_DIR/backend' && npm ci --omit=dev --omit=optional" \
+  || fail "backend npm ci failed"
+sudo -u "$DEPLOY_USER" bash -c "cd '$INSTALL_DIR/frontend' && npm ci --omit=dev --omit=optional" \
+  || fail "frontend npm ci failed"
+
+echo "step:install-helpers"
+# Re-runs helper.sh against every wisp-* helper (atomic-rename via mv -f, so the
+# currently-running wisp-updater inode persists; new invocations get the new file).
+# Also re-installs/re-templates wisp-updater.service and its sudoers rule.
+if [[ -x "$INSTALL_DIR/scripts/linux/setup/install-helpers.sh" ]]; then
+  "$INSTALL_DIR/scripts/linux/setup/install-helpers.sh" "$INSTALL_DIR" "$DEPLOY_USER" \
+    || fail "install-helpers failed"
+fi
+
+echo "step:install-units"
+# Re-template wisp-backend / wisp-frontend service files so unit-file changes in
+# the new release apply. wisp-updater.service is handled by install-helpers above.
+for template in "$BACKEND_UNIT" "$FRONTEND_UNIT"; do
+  src="$INSTALL_DIR/systemd/linux/${template}.service"
+  if [[ -f "$src" ]]; then
+    sed -e "s|WISP_USER|$DEPLOY_USER|g" \
+        -e "s|WISP_PATH|$INSTALL_DIR|g" \
+      "$src" > "/etc/systemd/system/${template}.service" \
+      || fail "templating ${template}.service failed"
+  fi
+done
+systemctl daemon-reload || fail "daemon-reload failed"
+
+echo "step:start-services"
+systemctl start "$BACKEND_UNIT" || fail "starting $BACKEND_UNIT failed"
+systemctl start "$FRONTEND_UNIT" || fail "starting $FRONTEND_UNIT failed"
+
+# Drop staging + target marker after a successful swap. <install>.prev is kept
+# until the next successful update for one-deep manual rollback.
+rm -rf "$STAGING" || true
+rm -f "$TARGET_FILE" || true
+
+echo "step:done"
+trap - EXIT
+exit 0

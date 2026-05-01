@@ -292,7 +292,7 @@ Pass `--restart-svc` to auto-restart systemd services after install (no interact
 
 ## Updating the app (after install)
 
-The recommended path is **self-update from the UI** — Host → Software → Wisp Update. Wisp polls GitHub Releases hourly, surfaces a badge on the Software tab when a new tag is published, and downloads + verifies + atomic-swaps the new tarball through the privileged `wisp-update` helper. See [UPDATES.md](UPDATES.md) for the pipeline, API, and rollback semantics.
+The recommended path is **self-update from the UI** — Host → Software → Wisp Update. Wisp polls GitHub Releases hourly, surfaces a badge on the Software tab when a new tag is published, and downloads + verifies + atomic-swaps the new tarball via `wisp-updater.service` (a `Type=oneshot` systemd unit triggered by the backend). See [UPDATES.md](UPDATES.md) for the pipeline, API, and rollback semantics.
 
 Manual paths remain supported:
 
@@ -453,15 +453,15 @@ Parent safety checks are enforced in both backend and helper:
 - parent must not be VLAN-tagged
 - parent must have at least one non-VLAN member interface
 
-### `wisp-update` (installed to `/usr/local/bin/`)
+### `wisp-updater` (installed to `/usr/local/bin/`, run via `wisp-updater.service`)
 
-Atomic-swap helper for the Wisp self-update pipeline. Invoked via `sudo -n` by the backend after a release tarball has been downloaded, verified, and extracted. See [UPDATES.md](UPDATES.md) for the full pipeline.
+Atomic-swap applier for the Wisp self-update pipeline. Not invoked directly — the backend triggers `wisp-updater.service` (a `Type=oneshot` systemd unit) via `sudo -n /usr/bin/systemctl start --no-block wisp-updater.service`. The unit's `WISP_INSTALL_DIR` env var is templated at install time; the staging path is read from `/var/lib/wisp/updates/target` (single line, must start with `/var/lib/wisp/updates/staging-`). See [UPDATES.md](UPDATES.md) for the full pipeline.
 
-| Command | Description |
+| Operation | Description |
 |---------|-------------|
-| `wisp-update <staging-dir> <install-dir>` | Stop services → snapshot install to `<install>.prev/` → rsync staging into install (preserving `config/wisp-config.json`, `wisp-password`, `runtime.env`, `.pids`, `.logs`) → `npm ci --omit=dev` in backend → re-install privileged helpers and systemd units → start services. Auto-rolls back from `<install>.prev/` on any failure. |
+| `systemctl start --no-block wisp-updater.service` | Stop services → snapshot install to `<install>.prev/` → rsync staging into install (preserving `config/wisp-config.json`, `wisp-password`, `runtime.env`, `.pids`, `.logs`) → `npm ci --omit=dev` in backend AND frontend → re-run `install-helpers.sh` (refreshes all wisp-* shims + the unit + sudoers) → re-template `wisp-backend` / `wisp-frontend` units → start services. Auto-rolls back from `<install>.prev/` on any failure. |
 
-The helper streams `step:<name>` lines on stdout so the backend can fan them out over SSE to the UI.
+Steps are echoed to journald (`journalctl -u wisp-updater.service`) — the backend does not capture them since it dies during `step:stop-services`.
 
 ### `vendor-novnc.sh`
 

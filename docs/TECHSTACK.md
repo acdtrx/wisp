@@ -125,7 +125,7 @@ These are invoked via `child_process` where no native Node.js alternative exists
 | Privileged helpers | `install-helpers.sh` | Refreshes `/usr/local/bin/wisp-*` from `backend/scripts/` on install/upgrade (`setup-server.sh`, `wispctl helpers`, `push.sh`) |
 | Packaging | zip | Deployment archive for manual server setup |
 | Releases | GitHub Releases + GitHub Actions (`.github/workflows/release.yml`) | Tag `v*` triggers a workflow that builds the frontend and publishes a tarball + SHA256 as a GitHub Release |
-| Self-update | `backend/src/lib/wispUpdate.js` + `/usr/local/bin/wisp-update` | Hourly poll of GitHub Releases; in-app Install button downloads, verifies, atomic-swaps via the privileged helper. See [spec/UPDATES.md](spec/UPDATES.md) |
+| Self-update | `backend/src/lib/wispUpdate.js` + `wisp-updater.service` (Type=oneshot, runs `/usr/local/bin/wisp-updater`) | Hourly poll of GitHub Releases; in-app Install button downloads, verifies, atomic-swaps via the dedicated systemd unit. See [spec/UPDATES.md](spec/UPDATES.md) |
 | Containerization | None | No Docker. Services run directly on the Linux host. |
 
 ## Dependency Philosophy

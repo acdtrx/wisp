@@ -33,12 +33,30 @@ if [[ ${#CONFIG_EXAMPLES[@]} -eq 0 ]]; then
   exit 1
 fi
 
+# Top-level single-file payload. Mirrors what .github/workflows/release.yml
+# bundles into the GitHub release tarball — keep these in sync so push.sh and
+# self-update install the same files.
+TOP_FILES=()
+for f in package.json CHANGELOG.md LICENSE README.md CLAUDE.md; do
+  [[ -f "$PROJECT_DIR/$f" ]] && TOP_FILES+=( "$f" )
+done
+
+# package.json is the most important: backend/src/lib/wispUpdate.js reads
+# <install>/package.json as the primary source of the running version. Without
+# it, getCurrentVersion() falls back to backend/package.json (a quieter bug).
+if [[ ! -f "$PROJECT_DIR/package.json" ]]; then
+  echo "ERROR: root package.json missing."
+  exit 1
+fi
+
 zip -r "$ZIP_PATH" \
   frontend \
   backend \
   scripts \
   systemd \
+  docs \
   "${CONFIG_EXAMPLES[@]}" \
+  "${TOP_FILES[@]}" \
   -x "*.git*" \
   -x "*/node_modules/*" \
   -x "frontend/node_modules/*" \

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-05-01
+
+### Refactor
+- **Self-update: own systemd unit (`wisp-updater.service`)** — stop trying to make a process that's about to die orchestrate its own replacement. The applier is now a `Type=oneshot` unit triggered by the backend via `sudo -n systemctl start --no-block wisp-updater.service`. Lives in its own cgroup, with its own journald-attached stdio — when it stops `wisp-backend.service` as its first real step, nothing connecting the two breaks. Sidesteps every failure mode the v1.0.6→v1.0.10 series chased (cgroup teardown, scope slice, SIGPIPE, `exec >/dev/null`, mysterious post-stop hang).
+- **Hand-off contract:** backend writes the staging path to `/var/lib/wisp/updates/target` (atomic via `rename(2)`); the unit's `WISP_INSTALL_DIR` env (templated at install time) provides the install dir — staging path is validated to start with `/var/lib/wisp/updates/staging-`.
+- **Sudoers:** `<deploy-user> ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block wisp-updater.service` (argv exact-match). Same blast radius as the previous `wisp-update <staging> <install>` rule but tighter: install dir is hardcoded at install time, deploy user can no longer point an update at an arbitrary path.
+- **Code shrinkage:** dropped the `systemd-run --scope --slice=system.slice` re-exec block, the `trap '' PIPE`, the `exec >/dev/null 2>&1` after stop-services, the `systemd-cat`-mirroring `log()`/`logerr()` helpers, the `WISP_UPDATE_DETACHED` re-entry, the cgroup-self-detect log line, and Node's `detached: true / unref / stdio: 'ignore'` spawn. `applyUpdate()` is ~15 lines.
+- **Renames:** `backend/scripts/wisp-update` → `backend/scripts/wisp-updater`; `/usr/local/bin/wisp-update` → `/usr/local/bin/wisp-updater`. `install-helpers.sh` removes the obsolete files on next run.
+- **Migration note for existing v1.0.10 installs:** the v1.0.10 in-app updater is the broken one, so it cannot bootstrap v1.0.11. Refresh helpers manually first — `./scripts/wispctl.sh helpers` from a checked-out repo, or `./scripts/push.sh user@server /opt/wisp` — to land the new unit + sudoers + script. Subsequent self-updates work normally.
+
+### Bug Fixes
+- **`push.sh` was shipping a partial install tree** — `package.sh` zipped only `frontend/`, `backend/`, `scripts/`, `systemd/`, `config/*.example`, and `copy.sh` only copied that same set, so root `package.json` (and `CHANGELOG.md`, `LICENSE`, `README.md`, `CLAUDE.md`, `docs/`) never landed on the target. The user-visible symptom: `wispUpdate.js`'s `getCurrentVersion()` reads `<install>/package.json` first; missing it, the install silently misreported its version from `backend/package.json`. Aligned both with the GitHub release tarball — push.sh now installs the same file set that self-update lays down.
+- **README Installation:** swapped the "clone the repo" path for the recommended user flow — grab the latest release tarball (prebuilt `frontend/dist/` shipped, no Node build on the install host), extract, run `./scripts/install.sh /opt/wisp --restart-svc`. The clone path is documented separately as the dev workflow.
+
 ## 2026-05-01 (v1.0.10)
 
 ### Refactor

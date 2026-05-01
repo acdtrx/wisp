@@ -1,17 +1,18 @@
 /**
  * Self-update: poll GitHub Releases hourly, download + verify the latest tarball,
- * stage it next to the install dir, and hand off to the privileged `wisp-update`
- * helper which performs the atomic swap and service restart.
+ * stage it under /var/lib/wisp/updates/, and hand off to wisp-updater.service
+ * (a Type=oneshot systemd unit) which performs the atomic swap and service
+ * restart in its own cgroup, fully detached from this backend process.
  *
  * Repo defaults to acdtrx/wisp; override with WISP_UPDATE_REPO in runtime.env
  * for forks or testing.
  */
 import { readFileSync, createWriteStream, createReadStream } from 'node:fs';
-import { mkdir, rm, access } from 'node:fs/promises';
+import { mkdir, rm, access, writeFile, rename } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { execFile as execFileCb, spawn } from 'node:child_process';
+import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Agent, fetch as undiciFetch } from 'undici';
 import { createAppError } from './routeErrors.js';
@@ -35,7 +36,9 @@ function getRepo() {
   return (process.env.WISP_UPDATE_REPO || DEFAULT_REPO).trim();
 }
 
-const HELPER_PATH = '/usr/local/bin/wisp-update';
+const UPDATER_UNIT = 'wisp-updater.service';
+const UPDATER_UNIT_FILE = '/etc/systemd/system/wisp-updater.service';
+const TARGET_FILE = join(STAGING_ROOT, 'target');
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // hourly
 const INITIAL_DELAY_MS = 30_000;
@@ -114,7 +117,7 @@ export async function checkForUpdate(signal) {
       method: 'GET',
       headers: {
         'Accept': 'application/vnd.github+json',
-        'User-Agent': `wisp-update/${cache.current}`,
+        'User-Agent': `wisp-updater/${cache.current}`,
         'X-GitHub-Api-Version': '2022-11-28',
       },
       dispatcher,
@@ -176,7 +179,7 @@ async function downloadToFile(url, destPath, onProgress, signal) {
   const dispatcher = new Agent({ headersTimeout: HTTP_TIMEOUT_MS, bodyTimeout: 5 * 60_000 });
   const res = await undiciFetch(url, {
     method: 'GET',
-    headers: { 'User-Agent': `wisp-update/${cache.current}`, 'Accept': 'application/octet-stream' },
+    headers: { 'User-Agent': `wisp-updater/${cache.current}`, 'Accept': 'application/octet-stream' },
     redirect: 'follow',
     dispatcher,
     signal,
@@ -289,36 +292,45 @@ export async function downloadAndStage(onProgress, signal) {
 }
 
 /**
- * Hand off to the privileged helper as a fully detached process. We can't
- * stream the helper's progress here because the helper kills US as part of
- * its first step (systemctl stop wisp-backend) — every previous attempt to
- * keep stdio pipes alive across that death (SIGPIPE traps, exec >/dev/null,
- * systemd-run --scope under different slices) ran into a different edge
- * case of the bash↔node↔sudo↔scope process tree.
+ * Trigger wisp-updater.service. Because that's a separate systemd unit running
+ * in its own cgroup with its own stdio, the updater is fully decoupled from
+ * this backend process — when the updater stops wisp-backend.service as its
+ * first real step, nothing connecting the two breaks.
  *
- * Detach and ignore stdio entirely. The helper writes its progress to the
- * journal via systemd-cat (`journalctl -t wisp-update`), and the UI detects
- * completion by polling GET /api/host for wispVersion === target.
+ * Hand-off contract:
+ *   - Backend writes the staging path to /var/lib/wisp/updates/target.
+ *   - Backend invokes `sudo -n /usr/bin/systemctl start --no-block wisp-updater.service`.
+ *   - Updater reads the target file and the install dir (from the unit's
+ *     WISP_INSTALL_DIR env), does its job, deletes the target file on success.
+ *
+ * UI detects completion by polling GET /api/host for wispVersion === target.
+ * Updater progress is in journald: `journalctl -u wisp-updater.service`.
  */
 export async function applyUpdate(stagingPath) {
-  if (typeof stagingPath !== 'string' || !stagingPath.startsWith('/')) {
-    throw createAppError('INVALID_REQUEST', 'staging path must be absolute');
+  if (typeof stagingPath !== 'string' || !stagingPath.startsWith(`${STAGING_ROOT}/staging-`)) {
+    throw createAppError('INVALID_REQUEST', 'staging path must be inside /var/lib/wisp/updates/');
   }
   try {
-    await access(HELPER_PATH);
+    await access(UPDATER_UNIT_FILE);
   } catch {
-    throw createAppError('UPDATE_CHECK_UNAVAILABLE', 'wisp-update helper missing on /usr/local/bin');
+    throw createAppError(
+      'UPDATE_CHECK_UNAVAILABLE',
+      `${UPDATER_UNIT_FILE} missing — run scripts/linux/setup/install-helpers.sh`
+    );
   }
+
+  /* Atomic write: stage to .tmp, rename into place. The updater reads this
+   * file on start, so a partial write would be a real bug. */
+  const tmp = `${TARGET_FILE}.tmp`;
+  await writeFile(tmp, `${stagingPath}\n`, { mode: 0o644 });
+  await rename(tmp, TARGET_FILE);
+
   const isRoot = process.getuid && process.getuid() === 0;
   const argv = isRoot
-    ? [HELPER_PATH, stagingPath, INSTALL_DIR]
-    : ['sudo', '-n', HELPER_PATH, stagingPath, INSTALL_DIR];
+    ? ['/usr/bin/systemctl', 'start', '--no-block', UPDATER_UNIT]
+    : ['sudo', '-n', '/usr/bin/systemctl', 'start', '--no-block', UPDATER_UNIT];
 
-  const child = spawn(argv[0], argv.slice(1), {
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.unref();
+  await execFileAsync(argv[0], argv.slice(1));
   return { started: true };
 }
 
