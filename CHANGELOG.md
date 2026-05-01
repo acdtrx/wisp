@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-05-01
+## 2026-05-01 (v1.0.9)
 
 ### Bug Fixes
 - **Release tarball missed `frontend/loadRuntimeEnv.js`**: workflow used a selective allowlist that listed only server.js + package.json; the runtime sibling import was silently omitted. Frontend service crash-looped with `ERR_MODULE_NOT_FOUND` after self-update. Switched workflow to exclusion-based rsync (mirrors backend) so any new runtime file at `frontend/` root is auto-included
