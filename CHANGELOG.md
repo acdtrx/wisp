@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-05-01
+
+### Refactor
+- **Self-update: detach the helper, drop SSE, poll for completion** — five sequential fixes (cgroup detach, slice pinning, SIGPIPE trap, stdio-to-/dev/null, atomic-rename of running script) landed correctly but in-app installs still hung in some unidentified corner of the bash↔sudo↔scope process tree (manual invocation worked since v1.0.8). Switched architecture: backend spawns the helper with `detached: true, stdio: 'ignore'` and returns 202 immediately; UI polls `GET /api/host wispVersion` every 5 s until it matches the target, then reloads. After 12 failed polls (1 min) it surfaces "may be slow"; after 60 polls (5 min) it tells the user to check `sudo journalctl -t wisp-update`. Removed `wispUpdateJobStore`, the WISP_UPDATE job kind, the `/api/updates/progress/:jobId` SSE route, and all stdout parsing on the backend. Helper itself keeps all its hardening — useful for direct-from-terminal operator runs
+
 ## 2026-05-01 (v1.0.9)
 
 ### Bug Fixes
