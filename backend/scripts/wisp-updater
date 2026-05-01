@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Atomic-swap update applier. Triggered as a systemd Type=oneshot unit
 # (`wisp-updater.service`). Lives in its own cgroup with no inherited stdio,
-# so wisp-backend's death during step:stop-services can't reach in.
+# so wisp's death during step:stop-service can't reach in.
 #
 #   Backend writes the staging dir to /var/lib/wisp/updates/target and runs:
 #     sudo -n systemctl start --no-block wisp-updater.service
 #
 # Steps (echoed to journald):
-#   stop-services → snapshot → swap → install-deps → install-helpers
-#   → install-units → start-services → done
+#   stop-service → snapshot → swap → install-deps → install-helpers
+#   → install-unit → start-service → done
 #
 # On any failure after `snapshot`, rolls back from <install>.prev and exits non-zero.
 # User config (config/wisp-config.json, wisp-password, runtime.env) and runtime
@@ -42,8 +42,7 @@ DEPLOY_USER="$(stat -c %U "$INSTALL_DIR")"
 [[ -n "$DEPLOY_USER" && "$DEPLOY_USER" != "root" ]] || fail "could not detect non-root deploy user from $INSTALL_DIR"
 
 PREV_DIR="${INSTALL_DIR}.prev"
-BACKEND_UNIT=wisp-backend
-FRONTEND_UNIT=wisp-frontend
+SERVICE_UNIT=wisp
 
 # User-data and runtime scratch must survive the swap rsync.
 RSYNC_EXCLUDES=(
@@ -63,14 +62,13 @@ rollback() {
     chown -R "$DEPLOY_USER:$DEPLOY_USER" "$INSTALL_DIR" || true
   fi
   systemctl daemon-reload || true
-  systemctl start "$BACKEND_UNIT" "$FRONTEND_UNIT" || true
+  systemctl start "$SERVICE_UNIT" || true
 }
 
 trap 'rc=$?; if [[ $rc -ne 0 ]]; then rollback; fi' EXIT
 
-echo "step:stop-services"
-systemctl stop "$FRONTEND_UNIT" 2>/dev/null || true
-systemctl stop "$BACKEND_UNIT" 2>/dev/null || true
+echo "step:stop-service"
+systemctl stop "$SERVICE_UNIT" 2>/dev/null || true
 
 echo "step:snapshot"
 rm -rf "$PREV_DIR"
@@ -82,12 +80,9 @@ rsync -a --delete "${RSYNC_EXCLUDES[@]}" "$STAGING/" "$INSTALL_DIR/" || fail "sw
 chown -R "$DEPLOY_USER:$DEPLOY_USER" "$INSTALL_DIR" || fail "chown failed"
 
 echo "step:install-deps"
-# Tarball ships without node_modules — install runtime deps for both backend
-# (always needed) and frontend (server.js runtime: fastify, http-proxy, static).
+# Tarball ships without node_modules — install runtime deps for backend.
 sudo -u "$DEPLOY_USER" bash -c "cd '$INSTALL_DIR/backend' && npm ci --omit=dev --omit=optional" \
   || fail "backend npm ci failed"
-sudo -u "$DEPLOY_USER" bash -c "cd '$INSTALL_DIR/frontend' && npm ci --omit=dev --omit=optional" \
-  || fail "frontend npm ci failed"
 
 echo "step:install-helpers"
 # Re-runs helper.sh against every wisp-* helper (atomic-rename via mv -f, so the
@@ -98,23 +93,19 @@ if [[ -x "$INSTALL_DIR/scripts/linux/setup/install-helpers.sh" ]]; then
     || fail "install-helpers failed"
 fi
 
-echo "step:install-units"
-# Re-template wisp-backend / wisp-frontend service files so unit-file changes in
-# the new release apply. wisp-updater.service is handled by install-helpers above.
-for template in "$BACKEND_UNIT" "$FRONTEND_UNIT"; do
-  src="$INSTALL_DIR/systemd/linux/${template}.service"
-  if [[ -f "$src" ]]; then
-    sed -e "s|WISP_USER|$DEPLOY_USER|g" \
-        -e "s|WISP_PATH|$INSTALL_DIR|g" \
-      "$src" > "/etc/systemd/system/${template}.service" \
-      || fail "templating ${template}.service failed"
-  fi
-done
+echo "step:install-unit"
+# Re-template wisp.service so unit-file changes in the new release apply.
+# wisp-updater.service is handled by install-helpers above.
+src="$INSTALL_DIR/systemd/linux/${SERVICE_UNIT}.service"
+[[ -f "$src" ]] || fail "${SERVICE_UNIT}.service template missing in release"
+sed -e "s|WISP_USER|$DEPLOY_USER|g" \
+    -e "s|WISP_PATH|$INSTALL_DIR|g" \
+  "$src" > "/etc/systemd/system/${SERVICE_UNIT}.service" \
+  || fail "templating ${SERVICE_UNIT}.service failed"
 systemctl daemon-reload || fail "daemon-reload failed"
 
-echo "step:start-services"
-systemctl start "$BACKEND_UNIT" || fail "starting $BACKEND_UNIT failed"
-systemctl start "$FRONTEND_UNIT" || fail "starting $FRONTEND_UNIT failed"
+echo "step:start-service"
+systemctl start "$SERVICE_UNIT" || fail "starting $SERVICE_UNIT failed"
 
 # Drop staging + target marker after a successful swap. <install>.prev is kept
 # until the next successful update for one-deep manual rollback.

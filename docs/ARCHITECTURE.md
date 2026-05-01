@@ -394,8 +394,8 @@ wisp/
 │   └── vendor-novnc.sh           # Clone noVNC into frontend/public/vendor
 ├── systemd/
 │   └── linux/
-│       ├── wisp-backend.service  # Template (placeholders substituted on install)
-│       └── wisp-frontend.service
+│       ├── wisp.service           # Template (placeholders substituted on install)
+│       └── wisp-updater.service   # Type=oneshot atomic-swap applier
 ├── docs/
 │   ├── spec/                     # Feature and API specs (concrete behavior)
 │   ├── ARCHITECTURE.md           # System overview (this file)

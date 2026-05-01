@@ -20,7 +20,7 @@ const STEP_LABELS = {
 };
 
 const CONNECTION_LOST_DETAIL =
-  'The progress stream closed unexpectedly (e.g. proxy timeout). Check the server: journalctl -u wisp-frontend -u wisp-backend -n 50';
+  'The progress stream closed unexpectedly (e.g. proxy timeout). Check the server: journalctl -u wisp -n 50';
 
 export default function CreateContainerPanel() {
   const navigate = useNavigate();

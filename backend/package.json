@@ -1,6 +1,6 @@
 {
   "name": "wisp-backend",
-  "version": "1.0.12",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,6 +13,7 @@
   "dependencies": {
     "@fastify/cors": "^11.2.0",
     "@fastify/multipart": "^9.4.0",
+    "@fastify/static": "^9.0.0",
     "@fastify/websocket": "^11.2.0",
     "@grpc/grpc-js": "^1.14.3",
     "@grpc/proto-loader": "^0.8.0",

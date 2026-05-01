@@ -294,7 +294,7 @@ export async function downloadAndStage(onProgress, signal) {
 /**
  * Trigger wisp-updater.service. Because that's a separate systemd unit running
  * in its own cgroup with its own stdio, the updater is fully decoupled from
- * this backend process — when the updater stops wisp-backend.service as its
+ * this backend process — when the updater stops wisp.service as its
  * first real step, nothing connecting the two breaks.
  *
  * Hand-off contract:

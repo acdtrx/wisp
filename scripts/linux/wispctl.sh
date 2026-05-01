@@ -24,22 +24,18 @@ normalize_runtime_env() {
   sed -i 's/\r$//' "$RUNTIME_ENV" 2>/dev/null || true
 }
 
-BACKEND_UNIT="wisp-backend"
-FRONTEND_UNIT="wisp-frontend"
+SERVICE_UNIT="wisp"
 
 set_env_vars() {
   normalize_runtime_env
-  BACKEND_PORT="$(read_env WISP_BACKEND_PORT 3001)"
-  FRONTEND_PORT="$(read_env WISP_FRONTEND_PORT 8080)"
+  WISP_PORT="$(read_env WISP_PORT 8080)"
 }
 
 PID_DIR="$PROJECT_DIR/.pids"
 LOG_DIR="$PROJECT_DIR/.logs"
 mkdir -p "$PID_DIR" "$LOG_DIR"
-BACKEND_PID="$PID_DIR/backend.pid"
-FRONTEND_PID="$PID_DIR/frontend.pid"
-BACKEND_LOG="$LOG_DIR/backend.log"
-FRONTEND_LOG="$LOG_DIR/frontend.log"
+WISP_PID="$PID_DIR/wisp.pid"
+WISP_LOG="$LOG_DIR/wisp.log"
 
 is_running() {
   local pidfile="$1"
@@ -132,24 +128,14 @@ cmd_start() {
   set_env_vars
   echo "=== Starting Wisp (local) ==="
 
-  if is_running "$BACKEND_PID"; then
-    echo "  Backend already running (pid $(cat "$BACKEND_PID"))"
+  if is_running "$WISP_PID"; then
+    echo "  Wisp already running (pid $(cat "$WISP_PID"))"
   else
-    echo "  Starting backend on port $BACKEND_PORT..."
+    echo "  Starting wisp on port $WISP_PORT..."
     cd "$PROJECT_DIR/backend"
-    nohup node src/index.js >> "$BACKEND_LOG" 2>&1 &
-    echo "$!" > "$BACKEND_PID"
-    echo "  Backend started (pid $!)"
-  fi
-
-  if is_running "$FRONTEND_PID"; then
-    echo "  Frontend already running (pid $(cat "$FRONTEND_PID"))"
-  else
-    echo "  Starting frontend on port $FRONTEND_PORT..."
-    cd "$PROJECT_DIR/frontend"
-    nohup node server.js >> "$FRONTEND_LOG" 2>&1 &
-    echo "$!" > "$FRONTEND_PID"
-    echo "  Frontend started (pid $!)"
+    nohup node src/index.js >> "$WISP_LOG" 2>&1 &
+    echo "$!" > "$WISP_PID"
+    echo "  Wisp started (pid $!)"
   fi
 
   sleep 1
@@ -157,21 +143,16 @@ cmd_start() {
 }
 
 cmd_stop() {
-  set_env_vars
   echo "=== Stopping Wisp (local) ==="
-
-  for svc in frontend backend; do
-    local pidfile="$PID_DIR/${svc}.pid"
-    if is_running "$pidfile"; then
-      local pid
-      pid="$(cat "$pidfile")"
-      kill "$pid" 2>/dev/null
-      echo "  Stopped $svc (pid $pid)"
-    else
-      echo "  $svc not running"
-    fi
-    rm -f "$pidfile"
-  done
+  if is_running "$WISP_PID"; then
+    local pid
+    pid="$(cat "$WISP_PID")"
+    kill "$pid" 2>/dev/null
+    echo "  Stopped wisp (pid $pid)"
+  else
+    echo "  wisp not running"
+  fi
+  rm -f "$WISP_PID"
 }
 
 cmd_restart() {
@@ -181,95 +162,68 @@ cmd_restart() {
 }
 
 cmd_status() {
-  set_env_vars
   echo "=== Wisp status (local) ==="
-  for svc in backend frontend; do
-    local pidfile="$PID_DIR/${svc}.pid"
-    if is_running "$pidfile"; then
-      echo "  $svc: running (pid $(cat "$pidfile"))"
-    else
-      echo "  $svc: stopped"
-      rm -f "$pidfile"
-    fi
-  done
+  if is_running "$WISP_PID"; then
+    echo "  wisp: running (pid $(cat "$WISP_PID"))"
+  else
+    echo "  wisp: stopped"
+    rm -f "$WISP_PID"
+  fi
 }
 
 cmd_logs() {
-  set_env_vars
-  local svc="${1:-all}"
-  case "$svc" in
-    backend)  tail -f "$BACKEND_LOG" ;;
-    frontend) tail -f "$FRONTEND_LOG" ;;
-    all)      tail -f "$BACKEND_LOG" "$FRONTEND_LOG" ;;
-    *)        echo "Usage: $0 local logs [backend|frontend|all]"; exit 1 ;;
-  esac
+  tail -f "$WISP_LOG"
 }
 
 cmd_tail() {
-  set_env_vars
   local lines="${1:-40}"
   echo "=== Last $lines lines ==="
-  echo "--- backend ---"
-  tail -n "$lines" "$BACKEND_LOG" 2>/dev/null || echo "  (no logs yet)"
-  echo ""
-  echo "--- frontend ---"
-  tail -n "$lines" "$FRONTEND_LOG" 2>/dev/null || echo "  (no logs yet)"
+  tail -n "$lines" "$WISP_LOG" 2>/dev/null || echo "  (no logs yet)"
 }
 
 cmd_svc_install() {
   set_env_vars
-  echo "=== Installing systemd units ==="
+  echo "=== Installing systemd unit ==="
   local wisp_user
   wisp_user="$(whoami)"
-  for template in wisp-backend wisp-frontend; do
-    sed -e "s|WISP_USER|$wisp_user|g" \
-        -e "s|WISP_PATH|$PROJECT_DIR|g" \
-      "$PROJECT_DIR/systemd/linux/${template}.service" | sudo tee "/etc/systemd/system/${template}.service" > /dev/null
-    echo "  Installed ${template}.service"
-  done
+  sed -e "s|WISP_USER|$wisp_user|g" \
+      -e "s|WISP_PATH|$PROJECT_DIR|g" \
+    "$PROJECT_DIR/systemd/linux/${SERVICE_UNIT}.service" | sudo tee "/etc/systemd/system/${SERVICE_UNIT}.service" > /dev/null
+  echo "  Installed ${SERVICE_UNIT}.service"
   sudo systemctl daemon-reload
-  sudo systemctl enable "$BACKEND_UNIT" "$FRONTEND_UNIT"
+  sudo systemctl enable "$SERVICE_UNIT"
   echo "  Enabled. Run: $0 svc start"
 }
 
 cmd_svc_uninstall() {
-  echo "=== Uninstalling systemd units ==="
-  sudo systemctl stop "$BACKEND_UNIT" "$FRONTEND_UNIT" 2>/dev/null || true
-  sudo systemctl disable "$BACKEND_UNIT" "$FRONTEND_UNIT" 2>/dev/null || true
-  sudo rm -f "/etc/systemd/system/${BACKEND_UNIT}.service" "/etc/systemd/system/${FRONTEND_UNIT}.service"
+  echo "=== Uninstalling systemd unit ==="
+  sudo systemctl stop "$SERVICE_UNIT" 2>/dev/null || true
+  sudo systemctl disable "$SERVICE_UNIT" 2>/dev/null || true
+  sudo rm -f "/etc/systemd/system/${SERVICE_UNIT}.service"
   sudo systemctl daemon-reload
   echo "  Uninstalled."
 }
 
 cmd_svc_start() {
-  echo "=== Starting systemd services ==="
-  sudo systemctl start "$BACKEND_UNIT" "$FRONTEND_UNIT"
+  echo "=== Starting systemd service ==="
+  sudo systemctl start "$SERVICE_UNIT"
   echo "  Started."
 }
 
 cmd_svc_stop() {
-  echo "=== Stopping systemd services ==="
-  sudo systemctl stop "$BACKEND_UNIT" "$FRONTEND_UNIT"
+  echo "=== Stopping systemd service ==="
+  sudo systemctl stop "$SERVICE_UNIT"
   echo "  Stopped."
 }
 
 cmd_svc_restart() {
-  echo "=== Restarting systemd services ==="
-  sudo systemctl restart "$BACKEND_UNIT" "$FRONTEND_UNIT"
+  echo "=== Restarting systemd service ==="
+  sudo systemctl restart "$SERVICE_UNIT"
   echo "  Restarted."
 }
 
 cmd_svc_logs() {
-  local which="${1:-all}"
-  case "$which" in
-    backend)  sudo journalctl -u "$BACKEND_UNIT" -f ;;
-    frontend) sudo journalctl -u "$FRONTEND_UNIT" -f ;;
-    all)      sudo journalctl -u "$BACKEND_UNIT" -u "$FRONTEND_UNIT" -f ;;
-    *)
-      echo "Usage: $0 svc logs [backend|frontend|all]"
-      exit 1
-      ;;
-  esac
+  sudo journalctl -u "$SERVICE_UNIT" -f
 }
 
 case "${1:-help}" in
@@ -287,7 +241,7 @@ case "${1:-help}" in
       stop)    cmd_stop ;;
       restart) cmd_restart ;;
       status)  cmd_status ;;
-      logs)    cmd_logs "${3:-all}" ;;
+      logs)    cmd_logs ;;
       tail)    cmd_tail "${3:-40}" ;;
       *)
         echo "Usage: $0 local {start|stop|restart|status|logs|tail}"
@@ -302,7 +256,7 @@ case "${1:-help}" in
       start)     cmd_svc_start ;;
       stop)      cmd_svc_stop ;;
       restart)   cmd_svc_restart ;;
-      logs)      cmd_svc_logs "${3:-all}" ;;
+      logs)      cmd_svc_logs ;;
       *)
         echo "Usage: $0 svc {install|uninstall|start|stop|restart|logs}"
         exit 1
@@ -316,6 +270,6 @@ case "${1:-help}" in
     echo "  build [--prebuilt]    Install deps, vendor noVNC, build frontend (skip frontend build with --prebuilt)"
     echo "  password [--force]    Set or reset config/wisp-password"
     echo "  local start|stop|restart|status|logs|tail"
-    echo "  svc install|uninstall|start|stop|restart|logs [backend|frontend|all]"
+    echo "  svc install|uninstall|start|stop|restart|logs"
     ;;
 esac

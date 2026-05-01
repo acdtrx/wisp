@@ -1,6 +1,6 @@
 # Deployment
 
-Wisp runs directly on a Linux server as two systemd services — no Docker or containers. This document covers server setup, installation, developer workflow, packaging, and the production server architecture.
+Wisp runs directly on a Linux server as a single systemd service — no Docker or containers. One Node process serves both the API and the prebuilt SPA. This document covers server setup, installation, developer workflow, packaging, and the production server architecture.
 
 ## Deployment Overview
 
@@ -8,10 +8,10 @@ Wisp runs directly on a Linux server as two systemd services — no Docker or co
 flowchart TD
     Setup["sudo setup-server.sh\n(one-time, as root)"]
     Install["install.sh or wispctl.sh build\n(as deploy user)"]
-    Services["systemd services\nwisp-backend + wisp-frontend"]
+    Service["systemd service\nwisp.service"]
     Access["Browser → http://host:8080"]
 
-    Setup --> Install --> Services --> Access
+    Setup --> Install --> Service --> Access
 ```
 
 ### Script and unit layout (repo)
@@ -132,7 +132,7 @@ Run as the deploy user from the unpacked release root (or repo root).
 | `install-dir` | Target directory. If omitted, prompts interactively (default `/opt/wisp`). |
 | `--restart-svc` | Auto-restart (or install+start) systemd services without prompting. Also skips the bridged-networking prompt. |
 
-Steps: prompts for install directory (unless provided as arg), runs `scripts/linux/setup/copy.sh`, then `sudo setup-server.sh --skip-bridge`, then `config.sh`, `password.sh`, `wispctl.sh build`, and `permissions.sh`. For systemd: if `wisp-backend` / `wisp-frontend` unit files are not yet installed, optionally installs and starts them; if they already exist (e.g. upgrade), prompts to **restart** them instead (default yes) — unless `--restart-svc` is set, which does it automatically. Optionally offers bridged networking (`scripts/linux/setup/bridge.sh`) in interactive mode only.
+Steps: prompts for install directory (unless provided as arg), runs `scripts/linux/setup/copy.sh`, then `sudo setup-server.sh --skip-bridge`, then `config.sh`, `password.sh`, `wispctl.sh build`, and `permissions.sh`. For systemd: if `wisp.service` is not yet installed, optionally installs and starts it; if it already exists (e.g. upgrade), prompts to **restart** it instead (default yes) — unless `--restart-svc` is set, which does it automatically. Optionally offers bridged networking (`scripts/linux/setup/bridge.sh`) in interactive mode only.
 
 1. **Copy and server setup:** `copy.sh` then `sudo setup-server.sh`
 2. **Config and password:** `config.sh`, `password.sh`
@@ -162,44 +162,47 @@ Runs `sudo scripts/linux/setup/install-helpers.sh` with the current user as depl
 ### Local (non-systemd)
 
 ```
-wispctl.sh local start      # Start both processes
-wispctl.sh local stop       # Stop both
+wispctl.sh local start      # Start the Wisp process
+wispctl.sh local stop       # Stop it
 wispctl.sh local restart    # Stop then start
 wispctl.sh local status     # Show running state
-wispctl.sh local logs       # Follow logs (backend|frontend|all)
+wispctl.sh local logs       # Follow log
 wispctl.sh local tail [n]   # Show last n lines
 ```
 
-Local mode runs both services as `nohup` background processes. PIDs are stored in `.pids/`, logs in `.logs/`.
+Local mode runs the Wisp process as a `nohup` background process. PID is stored in `.pids/wisp.pid`, log in `.logs/wisp.log`.
 
 ### Systemd (production)
 
 ```
-wispctl.sh svc install      # Install and enable units
+wispctl.sh svc install      # Install and enable wisp.service
 wispctl.sh svc start        # Start via systemd
 wispctl.sh svc stop         # Stop via systemd
-wispctl.sh svc restart      # Restart both units
-wispctl.sh svc logs [backend|frontend|all]   # journalctl -f
-wispctl.sh svc uninstall    # Remove units
+wispctl.sh svc restart      # Restart
+wispctl.sh svc logs         # journalctl -u wisp -f
+wispctl.sh svc uninstall    # Remove unit
 wispctl.sh password [--force]   # Set or reset config/wisp-password
 ```
 
-## Systemd Service Units
+## Systemd Service Unit
 
-Two service units in `systemd/linux/`:
+A single service unit in `systemd/linux/`:
 
-### Backend (`wisp-backend.service`)
+### `wisp.service`
 
 ```ini
 [Unit]
-Description=Wisp — Backend
-After=network.target libvirtd.service containerd.service
+Description=Wisp
+After=network-online.target libvirtd.service virtqemud.service containerd.service
+Wants=network-online.target
 
 [Service]
 User=WISP_USER
 WorkingDirectory=WISP_PATH/backend
 EnvironmentFile=-WISP_PATH/config/runtime.env
+ExecStartPre=+/bin/sh -c '...assigns 169.254.53.53/32 to br0 if needed...'
 ExecStart=/usr/bin/node src/index.js
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
@@ -210,55 +213,21 @@ WantedBy=multi-user.target
 
 `TimeoutStopSec=15` limits how long systemd waits for a clean exit after SIGTERM (default is 90s). If the process does not exit within 15 seconds, systemd sends SIGKILL.
 
-On SIGTERM/SIGINT, the backend closes all active SSE streams, stops the background OS update checker (**aborting any in-flight `wisp-os-update check` subprocess**, which can otherwise run up to two minutes and block exit), disconnects from the system DBus (libvirt), calls `server.closeAllConnections()` when available, then runs Fastify `close()` with `forceCloseConnections` so WebSockets and other keep-alive connections are torn down. The frontend does the same `closeAllConnections` + Fastify option so proxied `/api` and `/ws` connections drop promptly. In normal use both processes should exit well within this window so `wispctl.sh svc stop` does not sit at the full stop timeout.
+On SIGTERM/SIGINT, Wisp closes all active SSE streams, stops the background OS update checker (**aborting any in-flight `wisp-os-update check` subprocess**, which can otherwise run up to two minutes and block exit), disconnects from the system DBus (libvirt), calls `server.closeAllConnections()` when available, then runs Fastify `close()` with `forceCloseConnections` so WebSockets and other keep-alive connections are torn down. The process should exit well within this window so `wispctl.sh svc stop` does not sit at the full stop timeout.
 
-If `svc stop` still hangs, confirm the installed units include `TimeoutStopSec=15` (`systemctl show -p TimeoutStopUSec wisp-backend`); older installs without it use systemd’s default (often 90s), which feels like a “minute-plus” stop.
+If `svc stop` still hangs, confirm the installed unit includes `TimeoutStopSec=15` (`systemctl show -p TimeoutStopUSec wisp`); older installs without it use systemd’s default (often 90s), which feels like a "minute-plus" stop.
 
-### Frontend (`wisp-frontend.service`)
+### SPA serving
 
-```ini
-[Unit]
-Description=Wisp — Frontend
-After=network.target wisp-backend.service
-
-[Service]
-User=WISP_USER
-WorkingDirectory=WISP_PATH/frontend
-EnvironmentFile=-WISP_PATH/config/runtime.env
-ExecStart=/usr/bin/node server.js
-Restart=on-failure
-RestartSec=5
-TimeoutStopSec=15
-
-[Install]
-WantedBy=multi-user.target
-```
+In production, the same Node process serves the prebuilt SPA from `frontend/dist/` (and `/vendor/*` from `frontend/public/vendor/` for noVNC). `@fastify/static` is registered after the `/api` and `/ws` route trees; an `onSend` hook adds CSP + `X-Content-Type-Options` + `X-Frame-Options` + `Referrer-Policy` headers; `setNotFoundHandler` returns `dist/index.html` for non-`/api` / non-`/ws` paths so client-side routing survives deep-link refresh. The auth hook bypasses non-API/WS paths so the bundle and login page load without a session — `/api/*` still requires the JWT cookie.
 
 ### Placeholder substitution
 
-During `svc install`, `wispctl.sh` substitutes `WISP_USER` and `WISP_PATH` into `systemd/linux/wisp-backend.service` and `systemd/linux/wisp-frontend.service`, which are installed as `/etc/systemd/system/wisp-backend.service` and `wisp-frontend.service`.
+During `svc install`, `wispctl.sh` substitutes `WISP_USER` and `WISP_PATH` into `systemd/linux/wisp.service`, which is installed as `/etc/systemd/system/wisp.service`.
 
 #### Troubleshooting: `svc install` exits early; `Unit … not found`
 
-`config/runtime.env` is optional (systemd uses `EnvironmentFile=-…`). An older `wispctl.sh` could exit with `set -e` before printing `=== Installing systemd units ===` when `runtime.env` was missing (bare `return` after a failed `[[ -f … ]]` test inherited a non-zero status). **Fix:** use current `scripts/wispctl.sh` (`normalize_runtime_env` uses `return 0` when the file is absent). Otherwise verify `sudo` works and `/opt/wisp/systemd/linux/wisp-*.service` exist.
-
-### Service ordering
-
-The frontend unit starts after `wisp-backend.service`. Both restart on failure with a 5-second delay.
-
-## Frontend Production Server
-
-`frontend/server.js` is a lightweight server that:
-
-1. **Optionally reads `config/runtime.env`** (same semantics as the backend; defaults if missing)
-2. **Proxies `/api/*`** to `http://127.0.0.1:<BACKEND_PORT>` (HTTP proxy)
-3. **Proxies `/ws/*`** to `ws://127.0.0.1:<BACKEND_PORT>` (WebSocket proxy)
-4. **Serves static files:**
-   - `/vendor/*` from `public/vendor/` (noVNC — always available)
-   - Everything else from `dist/` (Vite build output)
-5. **SPA fallback:** unmatched non-API routes serve `index.html`
-6. **Backend down:** returns 503 with a clear error message for `/api` and `/ws` requests when the backend is unreachable
-7. **Listens on** `WISP_FRONTEND_PORT` (default: 8080)
+`config/runtime.env` is optional (systemd uses `EnvironmentFile=-…`). An older `wispctl.sh` could exit with `set -e` before printing `=== Installing systemd unit ===` when `runtime.env` was missing (bare `return` after a failed `[[ -f … ]]` test inherited a non-zero status). **Fix:** use current `scripts/wispctl.sh` (`normalize_runtime_env` uses `return 0` when the file is absent). Otherwise verify `sudo` works and `/opt/wisp/systemd/linux/wisp.service` exists.
 
 ## Developer Workflow
 
@@ -459,9 +428,9 @@ Atomic-swap applier for the Wisp self-update pipeline. Not invoked directly — 
 
 | Operation | Description |
 |---------|-------------|
-| `systemctl start --no-block wisp-updater.service` | Stop services → snapshot install to `<install>.prev/` → rsync staging into install (preserving `config/wisp-config.json`, `wisp-password`, `runtime.env`, `.pids`, `.logs`) → `npm ci --omit=dev` in backend AND frontend → re-run `install-helpers.sh` (refreshes all wisp-* shims + the unit + sudoers) → re-template `wisp-backend` / `wisp-frontend` units → start services. Auto-rolls back from `<install>.prev/` on any failure. |
+| `systemctl start --no-block wisp-updater.service` | Stop service → snapshot install to `<install>.prev/` → rsync staging into install (preserving `config/wisp-config.json`, `wisp-password`, `runtime.env`, `.pids`, `.logs`) → `npm ci --omit=dev` in backend → re-run `install-helpers.sh` (refreshes all wisp-* shims + the unit + sudoers) → re-template `wisp.service` → start service. Auto-rolls back from `<install>.prev/` on any failure. |
 
-Steps are echoed to journald (`journalctl -u wisp-updater.service`) — the backend does not capture them since it dies during `step:stop-services`.
+Steps are echoed to journald (`journalctl -u wisp-updater.service`) — Wisp does not capture them since it dies during `step:stop-service`.
 
 ### `vendor-novnc.sh`
 

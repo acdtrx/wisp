@@ -110,7 +110,7 @@ export default function WispUpdateSection() {
     try {
       /* Backend blocks during download (~5–15s) then triggers
        * wisp-updater.service and returns 202. After that the backend dies
-       * as the updater runs systemctl stop wisp-backend; we detect completion
+       * as the updater runs systemctl stop wisp; we detect completion
        * below by polling /api/host wispVersion === target. */
       await installWispUpdate({ force: confirmForce });
     } catch (err) {

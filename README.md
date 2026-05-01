@@ -80,7 +80,7 @@ Full details in [`docs/spec/DEPLOYMENT.md`](./docs/spec/DEPLOYMENT.md). The reco
 
    `--restart-svc` skips the interactive restart prompt and starts services on first run. The release tarball ships a prebuilt `frontend/dist/`, so no Node build runs on the install host.
 
-After install, two systemd services run the app: `wisp-backend` and `wisp-frontend`. Default frontend port is **8080** (override via `config/runtime.env`). Set or rotate the login password with `./scripts/wispctl.sh password`.
+After install, a single systemd service runs the app: `wisp.service`. Default port is **8080** (override `WISP_PORT` via `config/runtime.env`). Set or rotate the login password with `./scripts/wispctl.sh password`.
 
 **Updates after install** — use the in-app **Wisp Update** section (Host → Software). Wisp polls GitHub Releases hourly; the Install button downloads the new tarball, verifies its checksum, and atomic-swaps it via a dedicated systemd unit.
 

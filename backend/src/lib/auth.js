@@ -138,6 +138,10 @@ function timingSafeEqualString(a, b) {
 
 export function createAuthHook() {
   return async (request, reply) => {
+    // Static assets and SPA fallback bypass auth — only /api and /ws require it.
+    // The login UI is part of the SPA, so the bundle must load before any session exists.
+    if (!request.url.startsWith('/api') && !request.url.startsWith('/ws')) return;
+
     const routeUrl = request.routeOptions?.url;
     if (routeUrl && PUBLIC_ROUTES.has(routeUrl)) return;
 

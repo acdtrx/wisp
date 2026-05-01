@@ -286,7 +286,7 @@ The exec process uses the same **UID/GID** as the main container task (`runAsRoo
 - User bind mounts: `resolveMountHostPath(m)` — Local rows use `files/<m.name>` (`type` determines file vs directory); Storage rows use `<settings.mounts[m.sourceId].mountPath>/<m.subPath>`. All bind mounts use `rbind` (+ `ro` when `m.readonly`). Local mounts under `runAsRoot` additionally carry `uidMappings`/`gidMappings`; Storage mounts never do.
 - **Host devices** (`config.devices`): each entry emits a `linux.devices` chardev node, a matching `linux.resources.devices` cgroup allow rule, and pushes the host's `render` GID onto `process.user.additionalGids`. See [Devices entry](#devices-entry). The mechanism is generic to character devices; `type: "gpu"` is the only consumer in v1.
 - CPU quota/period from `cpuLimit`, memory limit from `memoryLimitMiB`
-- `/etc/resolv.conf` bind-mounted from host. When the container's bridge has the Wisp stub IP (`169.254.53.53/32` on `br0`, installed by `scripts/linux/setup/container-dns.sh`), the shared `/var/lib/wisp/container-resolv.conf` is used — a single `nameserver 169.254.53.53` line — so containers reach the in-process DNS forwarder in `wisp-backend` (see **Local DNS** below). Without the stub IP (e.g. VLAN sub-bridges, or setup skipped), fall back to the host's upstream resolvers (`/run/systemd/resolve/resolv.conf` on resolved hosts, else `/etc/resolv.conf`) — resolved's `127.0.0.53` stub is unreachable from a container netns
+- `/etc/resolv.conf` bind-mounted from host. When the container's bridge has the Wisp stub IP (`169.254.53.53/32` on `br0`, installed by `scripts/linux/setup/container-dns.sh`), the shared `/var/lib/wisp/container-resolv.conf` is used — a single `nameserver 169.254.53.53` line — so containers reach the in-process DNS forwarder in `wisp` (see **Local DNS** below). Without the stub IP (e.g. VLAN sub-bridges, or setup skipped), fall back to the host's upstream resolvers (`/run/systemd/resolve/resolv.conf` on resolved hosts, else `/etc/resolv.conf`) — resolved's `127.0.0.53` stub is unreachable from a container netns
 
 ## Networking
 
@@ -320,19 +320,19 @@ Two independent pieces. **Publishing** advertises a container as `<name>.local` 
 - UI: Network section has a **Local DNS** toggle; stats bar shows the registered `.local` hostname when active
 - Best-effort behavior: if avahi-daemon is unavailable, container operations continue unchanged and mDNS is skipped
 - **DHCP renewal reconcile:** `containerMdnsReconciler.startContainerMdnsReconciler` runs every **60 s** and, for every running container with `localDns: true`, reads the current netns IP via `discoverIpv4InNetnsOnce`. If the live IP differs from `network.ip` in `container.json`, the reconciler atomically rewrites the config and re-registers the A record. Without this loop, an asynchronous DHCP renewal that hands out a new lease would leave the published `.local` host pointing at the stale IP forever.
-- **Avahi restart recovery:** `mdnsManager.js` subscribes to DBus `NameOwnerChanged` on `org.freedesktop.Avahi`. When avahi-daemon disappears (package upgrade, manual restart), the in-memory entry maps (addresses **and** services) are kept but each entry's `group` handle is cleared. When avahi reappears, every stored registration is re-added. Without this, restarting avahi would silently drop all container publications until wisp-backend was restarted too
+- **Avahi restart recovery:** `mdnsManager.js` subscribes to DBus `NameOwnerChanged` on `org.freedesktop.Avahi`. When avahi-daemon disappears (package upgrade, manual restart), the in-memory entry maps (addresses **and** services) are kept but each entry's `group` handle is cleared. When avahi reappears, every stored registration is re-added. Without this, restarting avahi would silently drop all container publications until wisp was restarted too
 - **Service advertisements:** in addition to the host A record above, `services[]` entries publish SRV+TXT via `EntryGroup.AddService(if=-1, proto=-1, flags=0, instanceName=containerName, type, domain="", host="<name>.local", port, txt)`. Each service has its own EntryGroup keyed by `${containerName}#${port}` so individual services can be removed without disturbing the address record. Instance name defaults to the container name (collision-resolved by Avahi if duplicated on the LAN). See [Service entry](#service-entry)
 
 ### Resolution (in-process DNS forwarder on 169.254.53.53)
 
-Container apps that `getaddrinfo("foo.local")` need a resolver that speaks mDNS. Rather than install mDNS infrastructure inside every container — or stand up a second mDNS daemon on the host — Wisp runs a small **DNS forwarder inside the wisp-backend process** (`backend/src/lib/linux/mdnsForwarder.js`) that containers query via unicast DNS. The forwarder translates `.local` queries into avahi DBus calls and relays everything else to the host's upstream DNS.
+Container apps that `getaddrinfo("foo.local")` need a resolver that speaks mDNS. Rather than install mDNS infrastructure inside every container — or stand up a second mDNS daemon on the host — Wisp runs a small **DNS forwarder inside the wisp process** (`backend/src/lib/linux/mdnsForwarder.js`) that containers query via unicast DNS. The forwarder translates `.local` queries into avahi DBus calls and relays everything else to the host's upstream DNS.
 
 - `scripts/linux/setup/container-dns.sh` assigns link-local **`169.254.53.53/32`** to `br0` and writes `/var/lib/wisp/container-resolv.conf` (a single `nameserver 169.254.53.53` line)
-- `mdnsForwarder.js` binds **UDP + TCP port 53** on `169.254.53.53`. Binding to privileged port 53 requires `CAP_NET_BIND_SERVICE`, granted to `wisp-backend.service` via `AmbientCapabilities=CAP_NET_BIND_SERVICE` (the service otherwise runs unprivileged as the deploy user)
+- `mdnsForwarder.js` binds **UDP + TCP port 53** on `169.254.53.53`. Binding to privileged port 53 requires `CAP_NET_BIND_SERVICE`, granted to `wisp.service` via `AmbientCapabilities=CAP_NET_BIND_SERVICE` (the service otherwise runs unprivileged as the deploy user)
 - When the container's bridge carries the stub IP, `resolveContainerResolvConf()` returns the shared `container-resolv.conf` and the OCI spec bind-mounts it at `/etc/resolv.conf`
 - After CNI ADD, `setupNetwork` installs `169.254.53.53/32 dev eth0` inside the container's netns via `wisp-netns route-add`. Without this on-link /32, the container's kernel would send DNS to the LAN gateway (its DHCP default route) and queries would black-hole; the route makes the kernel ARP directly on the veth so br0 answers
 - Containers on bridges without the stub IP (VLAN sub-bridges, setup skipped) fall back to the host's upstream resolvers and get no `.local` resolution — same as before the feature
-- Boot-time recovery: `169.254.53.53/32` is a runtime-only address (dropped on every reboot). `wisp-backend.service` carries an `ExecStartPre=+` line (privileged exec via `+`, even though the service runs as the deploy user) that re-asserts it idempotently. The unit also declares `After=network-online.target Wants=network-online.target` so `br0` actually exists by then
+- Boot-time recovery: `169.254.53.53/32` is a runtime-only address (dropped on every reboot). `wisp.service` carries an `ExecStartPre=+` line (privileged exec via `+`, even though the service runs as the deploy user) that re-asserts it idempotently. The unit also declares `After=network-online.target Wants=network-online.target` so `br0` actually exists by then
 
 **Forwarder dispatch logic:**
 
@@ -359,7 +359,7 @@ The forwarder hand-rolls minimal DNS packet parse/build (A/AAAA/PTR answers only
 - The Transfer `ImageStore` destination includes an `unpacks` field (proto field 10) so containerd unpacks layers into overlayfs snapshots during pull
 - Snapshot parent key is the chain ID computed from `rootfs.diff_ids` using full digest strings including the `sha256:` prefix (matches Go's `identity.ChainID` which concatenates `digest.Digest` values directly)
 - Images are stored in containerd's content store, not in Wisp's filesystem
-- Create progress is delivered over **SSE** (`/api/containers/create-progress/:jobId`). Large pulls may run for many minutes without real **percentage** (containerd Transfer does not expose it through the current unary API); the UI shows **elapsed time** every 15s during pull. The production **frontend** proxy disables idle **body timeout** on `/api` so long-lived SSE streams are not cut off (older installs that only updated the backend could see `BodyTimeoutError` in `wisp-frontend` logs).
+- Create progress is delivered over **SSE** (`/api/containers/create-progress/:jobId`). Large pulls may run for many minutes without real **percentage** (containerd Transfer does not expose it through the current unary API); the UI shows **elapsed time** every 15s during pull.
 
 ### Image updates
 
@@ -378,7 +378,7 @@ Wisp checks every OCI image in the library for upstream changes and flags contai
 
 ### Debugging slow or stuck image pulls (on the server)
 
-- **Wisp logs:** `journalctl -u wisp-backend -u wisp-frontend -f` — backend shows pull/snapshot errors; frontend shows proxy errors (e.g. undici `BodyTimeoutError` if an old frontend build is still running).
+- **Wisp logs:** `journalctl -u wisp -f` — shows pull/snapshot errors and any other server-side issues.
 - **containerd images (namespace `wisp`):** `sudo ctr -n wisp images ls` — confirm the image reference appears after a successful pull.
 - **Active pull:** `sudo ctr -n wisp tasks ls` is usually empty until the container is started; during pull, watch backend logs or `ctr -n wisp content ls` (large output) only if deep debugging is needed.
 
@@ -391,7 +391,7 @@ Wisp checks every OCI image in the library for upstream changes and flags contai
 5. **Restart**: Stop then Start
 6. **Delete**: Kill task → Tear down networking → Remove snapshot → Remove containerd container → Delete files on disk (`fs.rm` on the container directory). Without `runAsRoot`, the main process runs as the **deploy user's UID/GID**, so bind-mount data under `files/` is removable directly. With `runAsRoot`, idmapped Local mounts (see [Idmapped Local mounts](#idmapped-local-mounts)) translate the configured in-container UID/GID to the deploy user, so files written by that UID also remain removable. Files written by other in-container UIDs through an idmapped mount may end up `nobody`-owned (`overflowuid`) on disk — fix on the host (e.g. `sudo rm -rf <path>`) if delete fails with permission errors.
 
-### Backend process startup (host boot / `wisp-backend` restart)
+### Backend process startup (host boot / `wisp` restart)
 
 When the Wisp backend process starts (`backend/src/index.js`), after libvirt and containerd connection attempts and after mDNS manager connect:
 

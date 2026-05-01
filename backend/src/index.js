@@ -1,8 +1,10 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFileSync, existsSync } from 'node:fs';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 
 import { loadRuntimeEnv } from './lib/loadRuntimeEnv.js';
@@ -47,11 +49,20 @@ import { startVmMdnsPublisher, stopVmMdnsPublisher } from './lib/vmMdnsPublisher
 import { startContainerMdnsReconciler, stopContainerMdnsReconciler } from './lib/containerMdnsReconciler.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-loadRuntimeEnv(resolve(__dirname, '..', '..'));
+const projectRoot = resolve(__dirname, '..', '..');
+loadRuntimeEnv(projectRoot);
 
-const PORT = parseInt(process.env.WISP_BACKEND_PORT, 10) || 3001;
+const PORT = parseInt(process.env.WISP_PORT, 10) || 8080;
 
 const isDev = process.env.NODE_ENV === 'development';
+
+const distPath = resolve(projectRoot, 'frontend/dist');
+const publicVendorPath = resolve(projectRoot, 'frontend/public/vendor');
+const indexHtmlPath = resolve(distPath, 'index.html');
+// Read the SPA shell once at startup so the SPA-fallback notFoundHandler
+// doesn't hit disk on every miss. In dev the file may not exist (no build);
+// the fallback is gated on isDev so this is only required in prod.
+const indexHtml = !isDev && existsSync(indexHtmlPath) ? readFileSync(indexHtmlPath, 'utf-8') : null;
 
 function redactToken(url) {
   return typeof url === 'string'
@@ -85,22 +96,55 @@ const loggerConfig = {
 };
 
 // trustProxy honors X-Forwarded-Proto / X-Forwarded-For only when the connection
-// itself comes from loopback. The frontend proxy always connects from 127.0.0.1,
-// so this lets backend cookies pick the right `Secure` flag based on the
-// browser's actual scheme (HTTP on LAN → no Secure; HTTPS via reverse proxy →
-// Secure) without trusting headers from arbitrary networks.
+// itself comes from loopback. A TLS-terminating reverse proxy (Caddy/nginx)
+// sitting in front lets cookies pick the right `Secure` flag based on the
+// browser's actual scheme without trusting headers from arbitrary networks.
 const app = Fastify({
   logger: loggerConfig,
   forceCloseConnections: true,
   trustProxy: ['127.0.0.1', '::1'],
 });
 
+// In prod the backend also serves the SPA — apply baseline security headers to
+// every response. `style-src 'unsafe-inline'` is required because xterm.js and
+// noVNC inject inline style attributes; tightening it would need CSP nonces.
+// `img-src data:` covers favicons / lucide-react inline data URIs. HSTS is
+// intentionally not set — Wisp is often deployed on plain HTTP behind a LAN;
+// the operator's reverse proxy enforces HSTS where TLS terminates.
+const CSP =
+  "default-src 'self'; " +
+  "script-src 'self'; " +
+  "style-src 'self' 'unsafe-inline'; " +
+  "img-src 'self' data:; " +
+  "font-src 'self' data:; " +
+  "connect-src 'self'; " +
+  "frame-ancestors 'none'; " +
+  "base-uri 'self'; " +
+  "form-action 'self'";
+
+if (!isDev) {
+  app.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('Content-Security-Policy', CSP);
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('Referrer-Policy', 'same-origin');
+    return payload;
+  });
+}
+
+// In prod, non-/api / non-/ws 404s serve the SPA shell so client-side routing
+// works on deep-link refresh. /api and /ws keep the JSON 404. In dev, vite
+// serves the SPA on :5173 and the backend stays a pure JSON API.
 app.setNotFoundHandler((request, reply) => {
+  if (indexHtml && !request.url.startsWith('/api') && !request.url.startsWith('/ws')) {
+    reply.type('text/html').send(indexHtml);
+    return;
+  }
   request.log.info({ method: request.method, url: redactToken(request.url) }, 'Route not found');
   reply.code(404).send({ error: 'Not Found', detail: `Route ${request.method} ${redactToken(request.url)} not found` });
 });
 
-if (process.env.NODE_ENV === 'development') {
+if (isDev) {
   await app.register(cors, { origin: 'http://localhost:5173' });
 }
 
@@ -125,6 +169,21 @@ app.register(backgroundJobsRoutes, { prefix: '/api' });
 app.register(updatesRoutes, { prefix: '/api' });
 app.register(consoleRoutes, { prefix: '/ws' });
 app.register(containerConsoleRoutes, { prefix: '/ws' });
+
+// SPA static serving — only in prod; dev hits vite on :5173. /vendor/* serves
+// noVNC. The dist root has wildcard:false so unmatched paths fall through to
+// setNotFoundHandler (which returns index.html for client-side routing).
+if (!isDev && existsSync(distPath)) {
+  await app.register(fastifyStatic, {
+    root: publicVendorPath,
+    prefix: '/vendor/',
+    decorateReply: false,
+  });
+  await app.register(fastifyStatic, {
+    root: distPath,
+    wildcard: false,
+  });
+}
 
 async function start() {
   await cleanPartialJsonArtifacts(app.log);

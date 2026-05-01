@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-05-01 (v1.1.0)
+
+### Breaking Changes
+- **Frontend Node server merged into the backend.** Wisp now runs as a single systemd unit (`wisp.service`) on a single port (`WISP_PORT`, default 8080). The separate `wisp-frontend.service` and the `WISP_BACKEND_PORT` / `WISP_FRONTEND_PORT` env vars are gone. **Upgrades from 1.0.x are not handled by the in-app updater — manual reinstall is required.**
+
+  On each existing host:
+  ```bash
+  # 1. Stop and remove the old units
+  sudo systemctl stop wisp-backend wisp-frontend
+  sudo systemctl disable wisp-backend wisp-frontend
+  sudo rm /etc/systemd/system/wisp-backend.service /etc/systemd/system/wisp-frontend.service
+  sudo systemctl daemon-reload
+
+  # 2. Update runtime.env if present — replace WISP_BACKEND_PORT and
+  #    WISP_FRONTEND_PORT with a single WISP_PORT=8080 (or delete the file
+  #    to fall back to defaults).
+  sudo -u <deploy-user> nano /opt/wisp/config/runtime.env
+
+  # 3. Reinstall from the v1.1.0 release tarball (or via push.sh)
+  ./scripts/install.sh /opt/wisp --restart-svc
+  ```
+  After reinstall: `systemctl status wisp` should be active; nothing listens on the old backend port.
+
+### Refactor
+- **Single Node process serves both API and SPA.** Backend gains `@fastify/static` (serves `frontend/dist` + `/vendor/` for noVNC), CSP/security headers (`onSend` hook), and a SPA fallback (`setNotFoundHandler` returns `index.html` for non-`/api` / non-`/ws` paths so client-side routing survives deep-link refresh). Auth hook bypasses non-API/WS paths so the bundle and login page load without a session. The `frontend/server.js` reverse-proxy + http-proxy + 503-when-backend-down shim is gone — same machine, no loopback hop, one event loop, one log stream.
+- **Release tarball trimmed.** `frontend/` ships only `dist/` + `public/` (the static-serve payload); no `package.json`, lockfile, or runtime code. `wisp-updater` no longer runs `npm ci` in `frontend/`.
+- **`wispctl` collapsed to single-unit:** `local logs` and `svc logs` no longer take a `[backend|frontend|all]` argument; `local start/stop/status` operate on one process; `svc install/uninstall/start/stop/restart` operate on `wisp.service`.
+
 ## 2026-05-01 (v1.0.12)
 
 ### Refactor

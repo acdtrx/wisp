@@ -1,19 +1,18 @@
 # Configuration
 
-Wisp uses **`config/`** at the project (install) root for persistent data: optional process overrides (`config/runtime.env`), application settings (`config/wisp-config.json`), and the login secret (`config/wisp-password`). The backend and frontend load `config/runtime.env` when present; **ports and other settings have built-in defaults** if the file is missing.
+Wisp uses **`config/`** at the project (install) root for persistent data: optional process overrides (`config/runtime.env`), application settings (`config/wisp-config.json`), and the login secret (`config/wisp-password`). The backend loads `config/runtime.env` when present; **port and other settings have built-in defaults** if the file is missing.
 
 ## Deployment (install.sh)
 
-On a new server, run `./scripts/install.sh` from the unpacked release (slim zip from `scripts/package.sh`) or from a full git checkout. The script prompts for install directory (default `/opt/wisp`), server name, and initial password; runs `scripts/linux/setup/copy.sh` (replaces `frontend/`, `backend/`, `scripts/`, `systemd/` from the source tree and refreshes `config/*.example`); runs `scripts/setup-server.sh` with sudo; runs `scripts/linux/setup/config.sh` and `scripts/linux/setup/password.sh`; runs `scripts/wispctl.sh build`; and `scripts/linux/setup/permissions.sh`. Optionally installs and starts systemd units (`wisp-backend`, `wisp-frontend`) on first install; if those units are already present, prompts to **restart** them instead (default yes), for upgrades without reinstalling units. Run as a normal user; sudo is used for install directory creation (when needed) and for `setup-server.sh`.
+On a new server, run `./scripts/install.sh` from the unpacked release (slim zip from `scripts/package.sh`) or from a full git checkout. The script prompts for install directory (default `/opt/wisp`), server name, and initial password; runs `scripts/linux/setup/copy.sh` (replaces `frontend/`, `backend/`, `scripts/`, `systemd/` from the source tree and refreshes `config/*.example`); runs `scripts/setup-server.sh` with sudo; runs `scripts/linux/setup/config.sh` and `scripts/linux/setup/password.sh`; runs `scripts/wispctl.sh build`; and `scripts/linux/setup/permissions.sh`. Optionally installs and starts the systemd unit (`wisp.service`) on first install; if it is already present, prompts to **restart** it instead (default yes), for upgrades without reinstalling. Run as a normal user; sudo is used for install directory creation (when needed) and for `setup-server.sh`.
 
 ## Optional `config/runtime.env`
 
-If this file exists, the backend and frontend parse `KEY=value` lines (comments and blank lines ignored) **only for keys not already set** in the process environment. Systemd uses `EnvironmentFile=-<install>/config/runtime.env` (leading `-` means the file may be absent).
+If this file exists, the backend parses `KEY=value` lines (comments and blank lines ignored) **only for keys not already set** in the process environment. Systemd uses `EnvironmentFile=-<install>/config/runtime.env` (leading `-` means the file may be absent).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WISP_BACKEND_PORT` | `3001` | Backend API port. |
-| `WISP_FRONTEND_PORT` | `8080` | Frontend static server port. |
+| `WISP_PORT` | `8080` | Port the Wisp server listens on (serves both API and SPA). |
 | `WISP_DEFAULT_BRIDGE` | (unset) | Override default bridge for new VM NICs; backend auto-detects if unset. |
 | `GITHUB_TOKEN` | (unset) | Optional; some download flows in the backend. |
 | `WISP_POWER_SCRIPT` | (unset) | Path to `wisp-power` helper. If unset, backend uses first existing path: `/usr/local/bin/wisp-power` (after `setup-server.sh`), then bundled `<install>/backend/scripts/wisp-power`. |
@@ -142,4 +141,4 @@ Templates in `systemd/` use:
 | `WISP_USER` | Deploy user |
 | `WISP_PATH` | Install directory |
 
-Installed units are **`wisp-backend.service`** and **`wisp-frontend.service`**. Optional `EnvironmentFile=-WISP_PATH/config/runtime.env`.
+Installed unit is **`wisp.service`**. Optional `EnvironmentFile=-WISP_PATH/config/runtime.env`.

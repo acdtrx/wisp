@@ -7,7 +7,7 @@
  * Single shared system-bus connection (opened once, watched for avahi restarts
  * via NameOwnerChanged). When avahi-daemon goes away and comes back, every
  * registered entry is re-added — without this, `systemctl restart avahi-daemon`
- * silently drops every container publication until wisp-backend restarts.
+ * silently drops every container publication until wisp restarts.
  *
  * All avahi calls are best-effort: failures never break VM/container ops.
  */

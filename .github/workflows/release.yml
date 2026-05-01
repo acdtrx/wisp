@@ -49,11 +49,7 @@ jobs:
           done
           echo "All package.json versions match $VERSION"
 
-      - name: Install backend deps (production only, used inside the tarball)
-        working-directory: backend
-        run: npm ci --omit=dev --omit=optional
-
-      - name: Install frontend deps + build
+      - name: Build frontend
         working-directory: frontend
         run: |
           npm ci
@@ -67,9 +63,10 @@ jobs:
           rm -rf dist
           mkdir -p "$STAGE"
 
-          # Copy app payload. The release tarball is a "ready to install" tree:
-          #  - backend/ source (no node_modules — install.sh / wisp-update will run npm ci on the target)
-          #  - frontend/ with prebuilt dist/ (frontend/node_modules excluded)
+          # The release tarball is a "ready to install" tree:
+          #  - backend/ source (no node_modules — wisp-updater runs npm ci on the target)
+          #  - frontend/dist + frontend/public (static assets the backend serves; no
+          #    runtime code in frontend/ anymore — it's all bundled via vite build)
           #  - scripts/, systemd/, config/, docs/
           rsync -a \
             --exclude '.git' \
@@ -83,22 +80,14 @@ jobs:
             --exclude '.github' \
             backend/ "$STAGE/backend/"
 
-          # Frontend: include the built dist + every runtime sibling of server.js
-          # (loadRuntimeEnv.js, public/vendor for noVNC, package.json + lock for
-          # `npm ci` on the target). Exclude source/build-only files. Mirrors the
-          # backend's exclusion-based approach so a new runtime file dropped at
-          # frontend/ root doesn't silently get omitted from the next release.
-          rsync -a \
-            --exclude '.git' \
-            --exclude '.DS_Store' \
-            --exclude 'node_modules' \
-            --exclude '/src' \
-            --exclude '/scripts' \
-            --exclude '/index.html' \
-            --exclude '/vite.config.js' \
-            --exclude '/postcss.config.js' \
-            --exclude '/tailwind.config.js' \
-            frontend/ "$STAGE/frontend/"
+          # Frontend: ship only the static-serving payload. Backend's @fastify/static
+          # reads from frontend/dist (built SPA) and frontend/public/vendor (noVNC).
+          # No package.json / lockfile shipped — the updater no longer touches
+          # frontend/. install.sh's auto-detect picks --prebuilt when dist exists
+          # and src does not, which is exactly this layout.
+          mkdir -p "$STAGE/frontend"
+          rsync -a frontend/dist/ "$STAGE/frontend/dist/"
+          rsync -a frontend/public/ "$STAGE/frontend/public/"
 
           # Top-level non-build assets
           for d in scripts systemd config docs; do

@@ -3,7 +3,7 @@
 # forwarder (backend/src/lib/linux/mdnsForwarder.js).
 #
 # How it works:
-#   - Assign link-local 169.254.53.53/32 to br0. The wisp-backend process
+#   - Assign link-local 169.254.53.53/32 to br0. The wisp process
 #     binds UDP+TCP 53 on this IP (via CAP_NET_BIND_SERVICE) and answers
 #     container DNS queries: `.local` names go to avahi over DBus,
 #     everything else is forwarded to the host's upstream DNS.
@@ -34,7 +34,7 @@ fi
 STUB_IP="169.254.53.53"
 RESOLV_OUT="/var/lib/wisp/container-resolv.conf"
 
-# 1. Assign the stub IP to br0 right now. Runtime-only — wisp-backend.service
+# 1. Assign the stub IP to br0 right now. Runtime-only — wisp.service
 #    has an ExecStartPre that re-applies this on every boot.
 if ip -4 addr show dev br0 | grep -q "${STUB_IP}/32"; then
   echo "  ${STUB_IP}/32 already present on br0."
@@ -55,4 +55,4 @@ EOF
 chmod 0644 "$RESOLV_OUT"
 echo "  Wrote $RESOLV_OUT"
 
-echo "Done. Containers on br0 route DNS through wisp-backend's forwarder."
+echo "Done. Containers on br0 route DNS through wisp's forwarder."

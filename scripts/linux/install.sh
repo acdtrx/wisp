@@ -100,35 +100,34 @@ fi
 echo ""
 "$SETUP_DIR/permissions.sh" "$INSTALL_DIR"
 
-# --- System services ---
+# --- System service ---
 echo ""
-WISP_BACKEND_UNIT="/etc/systemd/system/wisp-backend.service"
-WISP_FRONTEND_UNIT="/etc/systemd/system/wisp-frontend.service"
+WISP_UNIT="/etc/systemd/system/wisp.service"
 if [[ "$RESTART_SVC" -eq 1 ]]; then
-  if [[ -f "$WISP_BACKEND_UNIT" ]] && [[ -f "$WISP_FRONTEND_UNIT" ]]; then
-    # Re-template units so unit-file changes in the repo propagate on every update.
+  if [[ -f "$WISP_UNIT" ]]; then
+    # Re-template the unit so unit-file changes in the repo propagate on every update.
     "$WISPCTL" svc install
     "$WISPCTL" svc restart
-    echo "  Services reinstalled and restarted."
+    echo "  Service reinstalled and restarted."
   else
     "$WISPCTL" svc install
     "$WISPCTL" svc start
-    echo "  Services installed and started."
+    echo "  Service installed and started."
   fi
-elif [[ -f "$WISP_BACKEND_UNIT" ]] && [[ -f "$WISP_FRONTEND_UNIT" ]]; then
-  read -r -p "Wisp systemd services are already installed. Restart them to apply this update? [Y/n] " ans || true
+elif [[ -f "$WISP_UNIT" ]]; then
+  read -r -p "Wisp systemd service is already installed. Restart it to apply this update? [Y/n] " ans || true
   if [[ ! "${ans:-Y}" =~ ^[nN] ]]; then
-    # Re-template units so unit-file changes in the repo propagate on every update.
+    # Re-template the unit so unit-file changes in the repo propagate on every update.
     "$WISPCTL" svc install
     "$WISPCTL" svc restart
-    echo "  Services reinstalled and restarted."
+    echo "  Service reinstalled and restarted."
   fi
 else
-  read -r -p "Install and start systemd services? [y/N] " ans || true
+  read -r -p "Install and start systemd service? [y/N] " ans || true
   if [[ "${ans:-n}" =~ ^[yY] ]]; then
     "$WISPCTL" svc install
     "$WISPCTL" svc start
-    echo "  Services installed and started."
+    echo "  Service installed and started."
   fi
 fi
 
@@ -158,16 +157,16 @@ if [[ "$RESTART_SVC" -eq 0 ]] && [[ -x "$SETUP_DIR/bridge.sh" ]]; then
 fi
 
 # --- Summary ---
-FRONTEND_PORT="8080"
-if [[ -f "$RUNTIME_ENV" ]] && grep -q '^WISP_FRONTEND_PORT=' "$RUNTIME_ENV" 2>/dev/null; then
-  FRONTEND_PORT="$(grep '^WISP_FRONTEND_PORT=' "$RUNTIME_ENV" | head -1 | cut -d= -f2- | tr -d '\r')"
+WISP_PORT="8080"
+if [[ -f "$RUNTIME_ENV" ]] && grep -q '^WISP_PORT=' "$RUNTIME_ENV" 2>/dev/null; then
+  WISP_PORT="$(grep '^WISP_PORT=' "$RUNTIME_ENV" | head -1 | cut -d= -f2- | tr -d '\r')"
 fi
 
 echo ""
 echo "=== Install complete ==="
 echo ""
 echo "  Install path: $INSTALL_DIR"
-echo "  Access:       http://$(hostname -f 2>/dev/null || hostname):${FRONTEND_PORT}"
+echo "  Access:       http://$(hostname -f 2>/dev/null || hostname):${WISP_PORT}"
 echo ""
 echo "  If you were added to libvirt/kvm groups, log out and back in (or run: newgrp libvirt)"
 echo ""

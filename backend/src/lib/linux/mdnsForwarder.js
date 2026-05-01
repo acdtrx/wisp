@@ -16,7 +16,7 @@
  * avahi over DBus, not the wire.
  *
  * Binding port 53 needs CAP_NET_BIND_SERVICE — granted via AmbientCapabilities
- * in wisp-backend.service. If binding fails (missing capability, stub IP not
+ * in wisp.service. If binding fails (missing capability, stub IP not
  * on br0, etc.) the failure is logged and the backend continues without the
  * forwarder — container operations work, only `.local` in containers breaks.
  */
@@ -427,10 +427,10 @@ export async function startForwarder(logger = null) {
     const msg = err?.message || String(err);
     if (err?.code === 'EACCES') {
       logWarn(`cannot bind ${STUB_IP}:${PORT} — need CAP_NET_BIND_SERVICE. ` +
-        'Check AmbientCapabilities in wisp-backend.service. Container .local resolution will not work.');
+        'Check AmbientCapabilities in wisp.service. Container .local resolution will not work.');
     } else if (err?.code === 'EADDRNOTAVAIL') {
       logWarn(`${STUB_IP} is not assigned to any interface. ` +
-        'Run scripts/linux/setup/container-dns.sh or restart wisp-backend after br0 exists.');
+        'Run scripts/linux/setup/container-dns.sh or restart wisp after br0 exists.');
     } else {
       logWarn(`failed to start: ${msg}`);
     }

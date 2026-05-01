@@ -112,7 +112,7 @@ After step 5, the on-disk layout, libvirt's name, and the domain XML's absolute 
 
 ### Out-of-band renames
 
-Renames performed outside Wisp (`virsh domrename`, hand-edited domain XML, etc.) are **not** auto-reconciled. The VM mDNS publisher tracks domains by name, so an external rename leaves a stale Avahi entry under the old name until the backend restarts; per-VM directories and snapshot memory paths are also untouched. If you must rename outside Wisp, restart `wisp-backend` afterwards so the publisher re-syncs and run the standard Wisp rename to reconcile the on-disk layout.
+Renames performed outside Wisp (`virsh domrename`, hand-edited domain XML, etc.) are **not** auto-reconciled. The VM mDNS publisher tracks domains by name, so an external rename leaves a stale Avahi entry under the old name until the backend restarts; per-VM directories and snapshot memory paths are also untouched. If you must rename outside Wisp, restart `wisp` afterwards so the publisher re-syncs and run the standard Wisp rename to reconcile the on-disk layout.
 
 ## Deletion
 
