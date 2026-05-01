@@ -299,7 +299,7 @@ These are tabs inside the Host panel (not a separate `/settings` page):
 Section-based layout:
 
 1. **App Config tab** — General (server name, VM storage path, image library path, refresh interval). Save button. Password change (current + new, Change button).
-2. **Host Mgmt tab** — **Network Storage** (SMB/CIFS mounts in a **table** with shared DataTable chrome; header **`Plus`+server** adds a row; icon-only row actions; **Pencil** enters inline edit, then save/cancel icons; combined **mount/unmount** control with **green background when mounted**; **Check** (shield) turns **green after success** and **red after failure** (failure text on hover), not inline under the row; delete as icon; no separate “mounted” text column); **Backup** (one row: local path input and network-mount select aligned to the same control height; optional `(none)` or one configured mount). **Software tab** stacks **Wisp Update** (self-update from GitHub Releases — see [UPDATES.md](UPDATES.md)), **OS Update** (check/upgrade), and the **Image Library**, in that order.
+2. **Host Mgmt tab** — **Network Storage** (SMB/CIFS mounts in a **table** with shared DataTable chrome; header **`Plus`+server** adds a row; icon-only row actions; **Pencil** enters inline edit, then save/cancel icons; combined **mount/unmount** control with **green background when mounted**; **Check** (shield) turns **green after success** and **red after failure** (failure text on hover), not inline under the row; delete as icon; no separate “mounted” text column); **Backup** (one row: local path input and network-mount select aligned to the same control height; optional `(none)` or one configured mount). **Software tab** renders **Wisp Update** and **OS Update** side-by-side in a 2-column grid (1 col below `lg`), then the **Image Library** stacked below.
 3. **Overview tab** — Software section shows Wisp, Node.js, libvirt, QEMU, OS info (see Host Panel).
 
 ---
@@ -335,10 +335,13 @@ Scrollable page with **`px-6 py-5 space-y-5`**, same as Overview. Each block is 
 
 ### Tab: Software
 
-Scrollable page with **`px-6 py-5 space-y-5`**, same gutters as Overview / Host Mgmt. Two stacked sections:
+Scrollable page with **`px-6 py-5 space-y-5`**, same gutters as Overview / Host Mgmt. Two-column update grid (1 col below `lg`) on top, **Image Library** stacked below:
 
-- **OS Update** (top) — **`Package`** **`titleIcon`**. Check for updates, Upgrade buttons; display of upgradable package count; note about pending count from background check; reboot-required banner; success/error messages.
+- **Wisp Update** (left) — **`Rocket`** **`titleIcon`**. Shared `UpdateCard` shell. Description shows current/latest version. Buttons: **Check** / **Update** (Update disabled when no release is newer). When an update is available, a **Release notes** link opens an `UpdateDetailsModal` (centered overlay, ESC + backdrop close, "View on GitHub" link in the footer). Inline install banner replaces the status row while the install is running. Status row uses the unified state machine (success/warn/error icon + message, `Checked hourly` + relative-time `Checked Xm ago`). See [UPDATES.md](UPDATES.md).
+- **OS Update** (right) — **`Package`** **`titleIcon`**. Same `UpdateCard` shell. Buttons: **Check** / **Update** (Update label gets a `· N` count badge when packages are pending; disabled when nothing to do). **View packages** link opens a `UpdateDetailsModal` listing each upgradable package (name, from→to versions) plus the total download size; the package list is fetched lazily from `GET /api/host/updates/packages` on first open and refetched after a fresh check or completed upgrade. **Reboot-required banner** appears inline when `stats.rebootRequired` is true; it shows the reasons and a **Restart now** button that opens the existing host Restart confirm dialog. Status row mirrors the Wisp card.
 - **Image Library** (below) — **`Images`** **`titleIcon`**, type filter and header icon actions (upload, URL download modal, Ubuntu/HA presets) in **`headerAction`**, then the file/OCI table in the card body. `ImageLibrary` is rendered with `mode="embedded"` so it contributes its `SectionCard` directly to the shared scroll, without its own outer scroll wrapper. See [IMAGE-LIBRARY.md](IMAGE-LIBRARY.md).
+
+Both update cards share the same `UpdateCard` (`frontend/src/components/host/UpdateCard.jsx`) and `UpdateDetailsModal` (`UpdateDetailsModal.jsx`) so button labels, status icons, "Checked hourly" footer, and modal chrome stay aligned.
 
 ### Tab: Backups
 

@@ -242,6 +242,7 @@ When `/usr/local/bin/wisp-os-update` is installed:
 | Endpoint | Action |
 |----------|--------|
 | `POST /api/host/updates/check` | Runs `wisp-os-update check`, returns `{ count }` of upgradable packages; also updates cached count used in SSE `pendingUpdates` and sets `updatesLastChecked` timestamp |
+| `GET /api/host/updates/packages` | Runs `wisp-os-update list`, returns `{ packages: [{ name, from, to }], downloadBytes }`. Used by the Software tab "View packages" details modal. Refreshes the cached count and `updatesLastChecked` timestamp as a side-effect. On Arch `downloadBytes` is `0` (size cannot be computed non-interactively). |
 | `POST /api/host/updates/upgrade` | Runs `wisp-os-update upgrade`, returns `{ ok: true }` on success; resets cached count to 0 |
 
 `wisp-os-update` supports Debian/Ubuntu (apt) and Arch Linux (pacman); distro is detected at runtime. The script is invoked via `sudo`. Returns 503 if the script is not configured or the distro is unrecognised.

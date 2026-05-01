@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Usage: wisp-os-update check | upgrade
+# Usage: wisp-os-update check | list | upgrade
 #   check   - sync package database, then count packages that would be upgraded; prints one integer.
+#   list    - sync package database, then emit a structured list of upgradable packages:
+#               PKG<TAB>name<TAB>from<TAB>to     (one line per package, "from" empty for new installs)
+#               TOTAL <bytes>                    (estimated download size; 0 if unknown)
 #   upgrade - sync package database and perform a full upgrade (non-interactive).
 # Must be run with sufficient privilege (root or sudo).
 # Supports: Debian/Ubuntu (apt) and Arch Linux (pacman).
@@ -35,11 +38,21 @@ case "$DISTRO" in
         pacman -Sy >/dev/null 2>&1
         pacman -Qu 2>/dev/null | wc -l
         ;;
+      list)
+        pacman -Sy >/dev/null 2>&1
+        # pacman -Qu prints "name from -> to" for each upgradable package.
+        pacman -Qu 2>/dev/null | awk -v OFS='\t' '
+          NF >= 4 && $3 == "->" { printf "PKG%s%s%s%s%s%s\n", "\t", $1, "\t", $2, "\t", $4 }
+        '
+        # No reliable non-interactive way to get total download size on Arch
+        # without pulling actual packages; 0 means "unknown" to the caller.
+        echo "TOTAL 0"
+        ;;
       upgrade)
         pacman -Syu --noconfirm
         ;;
       *)
-        echo "Usage: $0 check|upgrade" >&2
+        echo "Usage: $0 check|list|upgrade" >&2
         exit 1
         ;;
     esac
@@ -59,12 +72,43 @@ case "$DISTRO" in
           echo "${FIRST%% upgraded}"
         fi
         ;;
+      list)
+        apt-get update -qq >/dev/null 2>&1
+        OUT=$(LC_ALL=C apt-get -s upgrade 2>&1 || true)
+        # `Inst <name> [<from>] (<to> ...)` for upgrades; `Inst <name> (<to> ...)` for new pulls.
+        echo "$OUT" | awk -v OFS='\t' '
+          /^Inst / {
+            name=$2; from=""; to="";
+            if ($3 ~ /^\[/) {
+              from=$3; sub(/^\[/, "", from); sub(/\]$/, "", from);
+              to=$4;   sub(/^\(/, "", to);
+            } else {
+              to=$3;   sub(/^\(/, "", to);
+            }
+            printf "PKG%s%s%s%s%s%s\n", "\t", name, "\t", from, "\t", to;
+          }
+        '
+        # apt prints "Need to get X[.Y] (kB|MB|GB|B) of archives." — convert to bytes.
+        NEED=$(echo "$OUT" | grep -E '^Need to get ' | head -n1 || true)
+        BYTES=0
+        if [[ -n "$NEED" ]]; then
+          AMOUNT=$(echo "$NEED" | awk '{print $4}')
+          UNIT=$(echo "$NEED" | awk '{print $5}')
+          case "$UNIT" in
+            B)  BYTES=$(awk -v n="$AMOUNT" 'BEGIN{printf "%.0f", n}') ;;
+            kB) BYTES=$(awk -v n="$AMOUNT" 'BEGIN{printf "%.0f", n*1000}') ;;
+            MB) BYTES=$(awk -v n="$AMOUNT" 'BEGIN{printf "%.0f", n*1000*1000}') ;;
+            GB) BYTES=$(awk -v n="$AMOUNT" 'BEGIN{printf "%.0f", n*1000*1000*1000}') ;;
+          esac
+        fi
+        echo "TOTAL ${BYTES}"
+        ;;
       upgrade)
         apt-get update -qq
         apt-get upgrade -y
         ;;
       *)
-        echo "Usage: $0 check|upgrade" >&2
+        echo "Usage: $0 check|list|upgrade" >&2
         exit 1
         ;;
     esac

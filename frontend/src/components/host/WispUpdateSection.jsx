@@ -1,15 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
-import {
-  Loader2,
-  RefreshCw,
-  ArrowUpCircle,
-  Rocket,
-  AlertCircle,
-  Clock,
-  ExternalLink,
-} from 'lucide-react';
-import SectionCard from '../shared/SectionCard.jsx';
+import { Loader2, Rocket, AlertCircle, ExternalLink } from 'lucide-react';
+import UpdateCard from './UpdateCard.jsx';
+import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
@@ -53,6 +46,7 @@ export default function WispUpdateSection() {
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmForce, setConfirmForce] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const jobs = useBackgroundJobsStore((s) => s.jobs);
   const runningOtherJobs = Object.values(jobs).filter((j) => j.status === 'running');
@@ -171,68 +165,97 @@ export default function WispUpdateSection() {
   }, [installing, installTarget]);
 
   const releaseUrl = repo && latest ? `https://github.com/${repo}/releases/tag/v${latest}` : null;
-  const lastCheckedLabel = formatRelativeTime(lastChecked);
   const publishedLabel = formatRelativeTime(publishedAt);
 
-  return (
-    <SectionCard title="Wisp Update" titleIcon={<Rocket size={14} strokeWidth={2} />}>
-      <div className="flex items-center justify-between gap-4">
-        <p className="flex-1 text-sm text-text-secondary">
-          {current ? (
-            <>
-              Currently running <span className="font-medium text-text-primary">v{current}</span>
-              {available && latest && (
-                <>
-                  {' '}— update <span className="font-medium text-text-primary">v{latest}</span> available
-                </>
-              )}
-              .
-            </>
-          ) : (
-            'Check for newer Wisp releases on GitHub.'
-          )}
-        </p>
-        <div className="shrink-0 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleCheck}
-            disabled={checking || installing}
-            className="flex items-center gap-2 rounded-lg border border-surface-border bg-surface-card px-4 py-2 text-sm font-medium text-text-primary hover:bg-surface transition-colors duration-150 disabled:opacity-50"
-          >
-            {checking ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-            {checking ? 'Checking…' : 'Check'}
-          </button>
-          <button
-            type="button"
-            onClick={beginInstall}
-            disabled={!available || checking || installing}
-            className="flex items-center gap-2 rounded-lg border border-surface-border bg-surface-card px-4 py-2 text-sm font-medium text-text-primary hover:bg-surface transition-colors duration-150 disabled:opacity-50"
-          >
-            {installing ? <Loader2 size={16} className="animate-spin" /> : <ArrowUpCircle size={16} />}
-            {installing ? 'Installing…' : 'Install update'}
-          </button>
-        </div>
-      </div>
+  let status = null;
+  if (error && !installing) {
+    status = { type: 'error', message: error };
+  } else if (available && latest && !installing) {
+    status = { type: 'warn', message: `v${latest} available` };
+  } else if (lastChecked && !available && !installing && !checking) {
+    status = { type: 'success', message: 'Up to date' };
+  }
 
-      {available && notes && !installing && (
-        <details className="mt-3 rounded-md border border-surface-border bg-surface px-3 py-2 text-xs">
-          <summary className="cursor-pointer select-none text-text-secondary">
-            Release notes
-            {publishedLabel && <span className="ml-2 text-text-muted">(published {publishedLabel})</span>}
-            {releaseUrl && (
-              <a
-                href={releaseUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="ml-2 inline-flex items-center gap-1 text-accent hover:underline"
-              >
-                <ExternalLink size={11} />
-                view on GitHub
-              </a>
+  const description = current ? (
+    <>
+      Currently running <span className="font-medium text-text-primary">v{current}</span>
+      {available && latest && (
+        <>
+          {' '}· update <span className="font-medium text-text-primary">v{latest}</span> available
+        </>
+      )}
+      .
+    </>
+  ) : (
+    'Check for newer Wisp releases on GitHub.'
+  );
+
+  return (
+    <>
+      <UpdateCard
+        title="Wisp Update"
+        titleIcon={<Rocket size={14} strokeWidth={2} />}
+        description={description}
+        available={available && !installing}
+        onCheck={handleCheck}
+        onUpdate={beginInstall}
+        checking={checking}
+        updating={installing}
+        updateBusyLabel="Installing…"
+        details={available && notes && !installing ? { label: 'Release notes', onClick: () => setDetailsOpen(true) } : null}
+        status={status}
+        lastChecked={lastChecked}
+        autoCheckLabel="Checked hourly"
+      >
+        {installing && (
+          <div className="mt-3 rounded-md border border-surface-border bg-surface px-3 py-2 text-xs">
+            <div className="flex items-center gap-2">
+              <Loader2 size={13} className="shrink-0 animate-spin text-accent" />
+              <span className="text-text-secondary">
+                Installing v{installTarget}… backend will restart and the page will reload automatically.
+              </span>
+            </div>
+            {installSlow && !installStuck && (
+              <div className="mt-1 flex items-start gap-2 text-amber-700">
+                <AlertCircle size={13} className="mt-0.5 shrink-0" />
+                <span>
+                  Backend hasn't come back yet — install may be slow. Still trying.
+                </span>
+              </div>
             )}
-          </summary>
-          <div className="prose prose-sm prose-slate mt-2 max-h-64 max-w-none overflow-auto break-words text-text-secondary prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-text-primary prose-p:my-1.5 prose-li:my-0.5 prose-code:rounded prose-code:bg-surface prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none prose-a:text-accent">
+            {installStuck && (
+              <div className="mt-1 flex items-start gap-2 text-status-stopped">
+                <AlertCircle size={13} className="mt-0.5 shrink-0" />
+                <span>
+                  Install hasn't completed after 5 minutes. Check{' '}
+                  <code className="rounded bg-surface-card px-1">sudo journalctl -u wisp-updater.service</code>{' '}
+                  on the server for details.
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </UpdateCard>
+
+      <UpdateDetailsModal
+        open={detailsOpen}
+        title={`Release notes — v${latest ?? ''}`}
+        subtitle={publishedLabel ? `Published ${publishedLabel}` : null}
+        onClose={() => setDetailsOpen(false)}
+        footer={releaseUrl && (
+          <a
+            href={releaseUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-accent hover:underline"
+          >
+            <ExternalLink size={11} />
+            View on GitHub
+          </a>
+        )}
+      >
+        <div className="prose prose-sm prose-slate max-w-none break-words text-text-secondary prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-text-primary prose-p:my-1.5 prose-li:my-0.5 prose-code:rounded prose-code:bg-surface prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none prose-a:text-accent">
+          {notes ? (
             <ReactMarkdown
               components={{
                 a: ({ node, ...props }) => (
@@ -242,55 +265,11 @@ export default function WispUpdateSection() {
             >
               {notes}
             </ReactMarkdown>
-          </div>
-        </details>
-      )}
-
-      {installing && (
-        <div className="mt-3 rounded-md border border-surface-border bg-surface px-3 py-2 text-xs">
-          <div className="flex items-center gap-2">
-            <Loader2 size={13} className="shrink-0 animate-spin text-accent" />
-            <span className="text-text-secondary">
-              Installing v{installTarget}… backend will restart and the page will reload automatically.
-            </span>
-          </div>
-          {installSlow && !installStuck && (
-            <div className="mt-1 flex items-start gap-2 text-amber-700">
-              <AlertCircle size={13} className="mt-0.5 shrink-0" />
-              <span>
-                Backend hasn't come back yet — install may be slow. Still trying.
-              </span>
-            </div>
-          )}
-          {installStuck && (
-            <div className="mt-1 flex items-start gap-2 text-status-stopped">
-              <AlertCircle size={13} className="mt-0.5 shrink-0" />
-              <span>
-                Install hasn't completed after 5 minutes. Check{' '}
-                <code className="rounded bg-surface-card px-1">sudo journalctl -u wisp-updater.service</code>{' '}
-                on the server for details.
-              </span>
-            </div>
+          ) : (
+            <p className="text-text-muted">No release notes.</p>
           )}
         </div>
-      )}
-
-      {(error || lastCheckedLabel) && !installing && (
-        <div className="mt-2 flex items-center gap-2 text-xs">
-          {error && (
-            <>
-              <AlertCircle size={13} className="shrink-0 text-status-stopped" />
-              <span className="text-status-stopped">{error}</span>
-            </>
-          )}
-          {lastCheckedLabel && (
-            <span className={`flex items-center gap-1 text-text-muted${error ? ' ml-auto' : ''}`}>
-              <Clock size={11} className="shrink-0" />
-              {lastCheckedLabel}
-            </span>
-          )}
-        </div>
-      )}
+      </UpdateDetailsModal>
 
       <ConfirmDialog
         open={confirmOpen}
@@ -310,6 +289,6 @@ export default function WispUpdateSection() {
           </p>
         )}
       </ConfirmDialog>
-    </SectionCard>
+    </>
   );
 }

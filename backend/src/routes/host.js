@@ -15,7 +15,12 @@ import {
   createManagedNetworkBridge,
   deleteManagedNetworkBridge,
 } from '../lib/hostNetworkBridges.js';
-import { checkForUpdates, performUpgrade, setCachedUpdateCount } from '../lib/aptUpdates.js';
+import {
+  checkForUpdates,
+  performUpgrade,
+  listUpgradablePackages,
+  setCachedUpdateCount,
+} from '../lib/aptUpdates.js';
 import { getHostHardwareInfo } from '../lib/hostHardware.js';
 import { hostShutdown, hostReboot } from '../lib/hostPower.js';
 import { listHostGpus } from '../lib/hostGpus.js';
@@ -132,6 +137,44 @@ export default async function hostRoutes(fastify) {
         const code = err.code === 'UPDATE_CHECK_UNAVAILABLE' ? 503 : 500;
         reply.code(code).send({
           error: err.message || 'Update check failed',
+          detail: err.raw || err.detail || err.message,
+        });
+      }
+    },
+  });
+
+  fastify.get('/host/updates/packages', {
+    schema: {
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            packages: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  from: { type: ['string', 'null'] },
+                  to: { type: 'string' },
+                },
+              },
+            },
+            downloadBytes: { type: 'number' },
+          },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      try {
+        const result = await listUpgradablePackages();
+        setCachedUpdateCount(result.packages.length);
+        return result;
+      } catch (err) {
+        request.log.error({ err }, 'GET /host/updates/packages failed');
+        const code = err.code === 'UPDATE_CHECK_UNAVAILABLE' ? 503 : 500;
+        reply.code(code).send({
+          error: err.message || 'Package list failed',
           detail: err.raw || err.detail || err.message,
         });
       }

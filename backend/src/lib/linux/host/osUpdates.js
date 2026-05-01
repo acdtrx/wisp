@@ -88,6 +88,36 @@ export async function performUpgrade(signal) {
   return { ok: true };
 }
 
+/**
+ * Sync package database and parse the structured upgradable-package list.
+ * Output contract from wisp-os-update list:
+ *   PKG<TAB>name<TAB>from<TAB>to    (one line per package)
+ *   TOTAL <bytes>                   (total download size; 0 if unknown)
+ * @param {AbortSignal} [signal]
+ * @returns { Promise<{ packages: Array<{ name: string, from: string|null, to: string }>, downloadBytes: number }> }
+ * @throws {{ code: 'UPDATE_CHECK_UNAVAILABLE', message: string, detail?: string }}
+ */
+export async function listUpgradablePackages(signal) {
+  const scriptPath = await getScriptPath();
+  const { stdout } = await runUpdateScript(scriptPath, 'list', 120000, signal);
+  const packages = [];
+  let downloadBytes = 0;
+  for (const line of String(stdout).split('\n')) {
+    if (line.startsWith('PKG\t')) {
+      const [, name, from, to] = line.split('\t');
+      if (name && to) {
+        packages.push({ name, from: from || null, to });
+      }
+    } else if (line.startsWith('TOTAL ')) {
+      const n = parseInt(line.slice(6).trim(), 10);
+      if (Number.isFinite(n) && n > 0) downloadBytes = n;
+    }
+  }
+  cachedLastCheckedAt = new Date().toISOString();
+  cachedUpdateCount = packages.length;
+  return { packages, downloadBytes };
+}
+
 const INITIAL_DELAY_MS = 30_000;
 const INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 

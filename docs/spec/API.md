@@ -228,6 +228,13 @@ Check for OS package updates. On Debian/Ubuntu uses `apt-get -s upgrade` dry-run
 - **200:** `{ count: number }`
 - **503:** `{ error, detail }` — update script not configured
 
+### GET /api/host/updates/packages
+
+Return the structured list of upgradable packages plus an estimated total download size. On Debian/Ubuntu uses `apt-get -s upgrade` to harvest `Inst …` lines and the `Need to get …` summary; on Arch uses `pacman -Qu` (download size cannot be computed non-interactively, so `downloadBytes` is `0`). Refreshes the cached `pendingUpdates` count and `updatesLastChecked` timestamp as a side-effect.
+
+- **200:** `{ packages: [{ name: string, from: string|null, to: string }], downloadBytes: number }`
+- **503:** `{ error, detail }` — update script not configured
+
 ### POST /api/host/updates/upgrade
 
 Install OS package updates.

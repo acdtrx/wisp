@@ -12,5 +12,6 @@ export const setCachedUpdateCount = impl.setCachedUpdateCount;
 export const getLastCheckedAt = impl.getLastCheckedAt;
 export const checkForUpdates = impl.checkForUpdates;
 export const performUpgrade = impl.performUpgrade;
+export const listUpgradablePackages = impl.listUpgradablePackages;
 export const startUpdateChecker = impl.startUpdateChecker;
 export const stopUpdateChecker = impl.stopUpdateChecker;

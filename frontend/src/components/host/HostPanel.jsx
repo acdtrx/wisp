@@ -131,7 +131,7 @@ export default function HostPanel() {
       <div className="flex-1 overflow-hidden flex flex-col">
         {tab === 'overview' && <HostOverview />}
         {tab === 'host-mgmt' && <HostMgmt />}
-        {tab === 'software' && <Software />}
+        {tab === 'software' && <Software onRequestRestart={() => setRestartOpen(true)} />}
         {tab === 'backups' && <BackupsPanel />}
         {tab === 'app-config' && <AppConfig />}
       </div>
