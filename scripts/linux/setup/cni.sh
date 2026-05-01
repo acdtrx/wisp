@@ -37,22 +37,38 @@ fi
 # Bridge master for CNI: must be an **existing Linux bridge**. The CNI bridge plugin will
 # silently create a new orphan bridge if the name doesn't resolve to one, so we abort instead.
 # We pick the bridge that carries the default route (typically br0, which setup-server.sh creates).
-detect_bridge() {
+#
+# Poll for up to ~30s. setup-server.sh runs bridge.sh immediately before this script, and
+# `netplan apply` only swaps the default route to br0 *after* the bridge acquires its DHCP
+# lease — without waiting, a fresh install silently skipped the conflist + cni-dhcp.service
+# install and containers came up with no IP.
+detect_bridge_with_wait() {
+  local timeout_s=30
+  local interval_s=2
+  local elapsed=0
   local iface
-  iface="$(ip route show default 2>/dev/null | awk '/default/ { print $5; exit }')"
-  if [[ -z "$iface" ]]; then
-    return 1
-  fi
-  if [[ -d "/sys/class/net/$iface/bridge" ]]; then
-    echo "$iface"
-    return 0
-  fi
-  return 1
+  while :; do
+    iface="$(ip route show default 2>/dev/null | awk '/default/ { print $5; exit }')"
+    if [[ -n "$iface" ]] && [[ -d "/sys/class/net/$iface/bridge" ]]; then
+      echo "$iface"
+      return 0
+    fi
+    if (( elapsed >= timeout_s )); then
+      return 1
+    fi
+    if (( elapsed == 0 )); then
+      echo "  Waiting up to ${timeout_s}s for default route to land on a Linux bridge..." >&2
+    fi
+    sleep "$interval_s"
+    elapsed=$((elapsed + interval_s))
+  done
 }
 
-MASTER_IFACE="$(detect_bridge || true)"
+MASTER_IFACE="$(detect_bridge_with_wait || true)"
 if [[ -z "$MASTER_IFACE" ]]; then
-  echo "ERROR: default-route interface is not a Linux bridge. Run scripts/linux/setup/bridge.sh first to set up br0." >&2
+  echo "ERROR: default-route interface is not a Linux bridge after 30s wait." >&2
+  echo "       If bridge.sh just configured br0, its DHCP lease may not have completed yet." >&2
+  echo "       Run scripts/linux/setup/bridge.sh if br0 is missing, then re-run: sudo $0" >&2
   exit 1
 fi
 
