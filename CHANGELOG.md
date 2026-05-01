@@ -3,6 +3,7 @@
 ## 2026-05-01
 
 ### Bug Fixes
+- **Release tarball missed `frontend/loadRuntimeEnv.js`**: workflow used a selective allowlist that listed only server.js + package.json; the runtime sibling import was silently omitted. Frontend service crash-looped with `ERR_MODULE_NOT_FOUND` after self-update. Switched workflow to exclusion-based rsync (mirrors backend) so any new runtime file at `frontend/` root is auto-included
 - **Self-update: SIGPIPE killed the helper one step after backend died** — `systemctl stop wisp-backend` (run by the helper) closed the read-ends of the helper's stdio pipes, so the next `printf` SIGPIPE'd bash. EXIT trap fired but rollback's stderr write SIGPIPE'd too — services stayed dead. Trap PIPE up front and `exec >/dev/null 2>&1` after stop-services; journald via `systemd-cat` is now the only output channel past that point
 - **Self-update: install-helpers.sh corrupted the running wisp-update file** — `cp src dst` rewrites dst in place under any currently-running process. install-helpers loops over every `wisp-*` helper and re-installs it, including wisp-update — and that wisp-update *was* the script we were running. Bash reads scripts line-by-line; the in-place overwrite caused a silent non-zero exit a few lines later with no `fail` message. `helper.sh` now writes to a temp file then `mv -f` (rename(2) — old inode stays open for running processes, new invocations pick up the new file)
 
