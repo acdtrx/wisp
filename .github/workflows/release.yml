@@ -83,18 +83,22 @@ jobs:
             --exclude '.github' \
             backend/ "$STAGE/backend/"
 
-          # Frontend: include built dist + the runtime server.js + minimal package.json
-          # + lockfile (server.js has runtime deps installed via npm ci on the target),
-          # but NOT source / node_modules / vite config — the target never builds.
-          mkdir -p "$STAGE/frontend"
-          cp -r frontend/dist "$STAGE/frontend/dist"
-          cp frontend/server.js "$STAGE/frontend/server.js"
-          cp frontend/package.json "$STAGE/frontend/package.json"
-          cp frontend/package-lock.json "$STAGE/frontend/package-lock.json"
-          if [[ -d frontend/public/vendor/novnc ]]; then
-            mkdir -p "$STAGE/frontend/public/vendor"
-            cp -r frontend/public/vendor/novnc "$STAGE/frontend/public/vendor/novnc"
-          fi
+          # Frontend: include the built dist + every runtime sibling of server.js
+          # (loadRuntimeEnv.js, public/vendor for noVNC, package.json + lock for
+          # `npm ci` on the target). Exclude source/build-only files. Mirrors the
+          # backend's exclusion-based approach so a new runtime file dropped at
+          # frontend/ root doesn't silently get omitted from the next release.
+          rsync -a \
+            --exclude '.git' \
+            --exclude '.DS_Store' \
+            --exclude 'node_modules' \
+            --exclude '/src' \
+            --exclude '/scripts' \
+            --exclude '/index.html' \
+            --exclude '/vite.config.js' \
+            --exclude '/postcss.config.js' \
+            --exclude '/tailwind.config.js' \
+            frontend/ "$STAGE/frontend/"
 
           # Top-level non-build assets
           for d in scripts systemd config docs; do
