@@ -21,6 +21,22 @@ export default defineConfig({
   build: {
     rollupOptions: {
       external: [/^\/vendor\//],
+      output: {
+        // Split the eagerly-used UI foundation into a `vendor` chunk so it
+        // caches across releases. Heavy lazy-only deps (react-markdown for
+        // release notes, @xterm/* for the console) are deliberately left out
+        // — Rollup's default behaviour groups them into their dynamic-import
+        // parent's chunk, so they only ship when the user actually opens
+        // that view. Bundling them into `vendor` would re-merge them into
+        // the eager bundle and inflate it past 500 kB.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (/[\\/]node_modules[\\/](?:react|react-dom|react-router|react-router-dom|scheduler|zustand|lucide-react)[\\/]/.test(id)) {
+            return 'vendor';
+          }
+          return undefined;
+        },
+      },
     },
   },
 });
