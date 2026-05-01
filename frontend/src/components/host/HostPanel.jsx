@@ -20,18 +20,21 @@ const TABS = [
 
 const VALID_TAB_IDS = new Set(TABS.map((t) => t.id));
 
-function TabButton({ id, label, active, hasBadge, onClick }) {
+function TabButton({ id, label, active, badgeTitle, onClick }) {
   return (
     <button
       type="button"
       onClick={() => onClick(id)}
-      className={`relative border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
+      className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
         active ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
       }`}
     >
-      {label}
-      {hasBadge && (
-        <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2 rounded-full bg-amber-500" title="Updates available" />
+      <span>{label}</span>
+      {badgeTitle && (
+        <span
+          className="flex h-2 w-2 flex-shrink-0 rounded-full bg-amber-500"
+          title={badgeTitle}
+        />
       )}
     </button>
   );
@@ -89,16 +92,31 @@ export default function HostPanel() {
           </div>
           <span className="truncate text-sm font-semibold text-text-primary">Host</span>
           <div className="flex border-l border-surface-border pl-3">
-            {TABS.map(({ id, label }) => (
-              <TabButton
-                key={id}
-                id={id}
-                label={label}
-                active={tab === id}
-                hasBadge={id === 'software' && (pendingUpdates > 0 || wispUpdateAvailable)}
-                onClick={handleTabChange}
-              />
-            ))}
+            {TABS.map(({ id, label }) => {
+              let badgeTitle = null;
+              if (id === 'software') {
+                const reasons = [];
+                if (wispUpdateAvailable) reasons.push('Wisp update available');
+                if (pendingUpdates > 0) reasons.push(`${pendingUpdates} OS package update(s)`);
+                if (rebootRequired) {
+                  const detail = rebootReasons.length > 0
+                    ? `: ${rebootReasons.slice(0, 4).join(', ')}${rebootReasons.length > 4 ? `, +${rebootReasons.length - 4} more` : ''}`
+                    : '';
+                  reasons.push(`Reboot required${detail}`);
+                }
+                if (reasons.length > 0) badgeTitle = reasons.join(' · ');
+              }
+              return (
+                <TabButton
+                  key={id}
+                  id={id}
+                  label={label}
+                  active={tab === id}
+                  badgeTitle={badgeTitle}
+                  onClick={handleTabChange}
+                />
+              );
+            })}
           </div>
         </div>
         <div className="flex flex-shrink-0 items-center gap-1">
