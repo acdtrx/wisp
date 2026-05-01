@@ -18,6 +18,7 @@ import { deleteCloudInitISO } from '../../cloudInit.js';
 import { listHostFirmware, getDefaultBridge } from './vmManagerHost.js';
 import { listSnapshots, deleteSnapshot } from './vmManagerSnapshots.js';
 import { generateCloudInit } from './vmManagerCloudInit.js';
+import { refreshVMListCache } from './vmManagerList.js';
 
 const execFile = promisify(execFileCb);
 
@@ -397,6 +398,7 @@ export async function createVM(spec, { onStep } = {}) {
     }
   }
 
+  refreshVMListCache();
   emit('done', { name });
   return { name };
 }
@@ -508,6 +510,7 @@ export async function cloneVM(name, newName) {
     if (err && err.code) throw err;
     throw vmError('CLONE_FAILED', `Failed to define cloned VM "${newName}"`, err.message);
   }
+  refreshVMListCache();
 }
 
 // libvirt VIR_DOMAIN_UNDEFINE_* flags — declared inline since this is the
@@ -602,4 +605,5 @@ export async function deleteVM(name, deleteDisks = false) {
 
   connectionState.vmStartTimes.delete(name);
   connectionState.prevVMStats.delete(name);
+  refreshVMListCache();
 }
