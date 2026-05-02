@@ -1,8 +1,14 @@
 import { useState } from 'react';
-import Modal from '../shared/Modal.jsx';
+import Modal from './Modal.jsx';
 
+/**
+ * Workload-agnostic backup modal. Shared by VM Overview and Container
+ * Overview — `name` is the VM/container name, `subjectLabel` controls the
+ * "<subject> must be stopped" copy ("VM" or "Container", default "VM").
+ */
 export default function BackupModal({
-  vmName,
+  name,
+  subjectLabel = 'VM',
   backupStarted = false,
   destinations,
   selectedIds,
@@ -28,7 +34,7 @@ export default function BackupModal({
     return (
       <Modal open={!!onClose} onClose={onClose} size="sm" bodyPadding="none">
         <div className="p-6">
-          <h3 className="text-sm font-semibold text-text-primary">Backup VM</h3>
+          <h3 className="text-sm font-semibold text-text-primary">Backup {subjectLabel}</h3>
           <p className="mt-2 text-xs text-text-muted">Loading destinations…</p>
           <button onClick={onClose} className="mt-4 rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium">Cancel</button>
         </div>
@@ -39,8 +45,8 @@ export default function BackupModal({
   return (
     <Modal open={!!onClose} onClose={onClose} size="md" bodyPadding="none">
       <div className="p-6">
-        <h3 className="text-sm font-semibold text-text-primary">Backup — {vmName}</h3>
-        <p className="mt-1 text-xs text-text-secondary">Choose backup destinations. VM must be stopped.</p>
+        <h3 className="text-sm font-semibold text-text-primary">Backup — {name}</h3>
+        <p className="mt-1 text-xs text-text-secondary">Choose backup destinations. {subjectLabel} must be stopped.</p>
 
         <div className={`mt-4 space-y-2 ${inProgress ? 'opacity-60' : ''}`}>
           {destinations.map((d) => (

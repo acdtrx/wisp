@@ -259,6 +259,7 @@ All under `backend/src/lib/`:
 | `containerImageRef.js` | `normalizeImageRef()` — docker.io/library/ prefix rules (shared with pull/delete) |
 | `containerManagerCreate.js` | `pullImage()`, `createContainer()`, `deleteContainer()` |
 | `containerManagerRename.js` | `renameContainer(oldName, newName)` — stopped-container rename (containerd Containers.Delete + Create + fs.rename + config rewrite); see [Rename](#rename) |
+| `containerManagerBackup.js` | `createContainerBackup`, `listContainerBackups`, `restoreContainerBackup`, `deleteContainerBackup` — tar.gz of the container directory + a manifest sidecar; restore extracts under a new name with a fresh MAC and re-pulls the image if missing. See [BACKUPS.md → Container Backups](BACKUPS.md#container-backups) |
 | `containerManagerImages.js` | `listContainerImages()`, `deleteContainerImage()` (containerd Images service; delete blocked if any Wisp container references the image) |
 | `containerManagerOciSize.js` | `compressedBlobSizeForImageName()` — sums compressed config + layer sizes from the resolved Linux image manifest (not the top-level manifest blob size) |
 | `containerManagerConfig.js` | `updateContainerConfig()` |

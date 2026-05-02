@@ -16,7 +16,7 @@ import { startBackup } from '../../api/backups.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import CloneDialog from './CloneDialog.jsx';
 import XMLModal from './XMLModal.jsx';
-import BackupModal from './BackupModal.jsx';
+import BackupModal from '../shared/BackupModal.jsx';
 import GeneralSection from '../sections/GeneralSection.jsx';
 import DisksSection from '../sections/DisksSection.jsx';
 import USBSection from '../sections/USBSection.jsx';
@@ -419,7 +419,8 @@ export default function OverviewPanel() {
       {/* Backup modal */}
       {backupModalOpen && (
         <BackupModal
-          vmName={name}
+          name={name}
+          subjectLabel="VM"
           backupStarted={!!backupJobId}
           destinations={backupDestinations}
           selectedIds={backupSelectedIds}

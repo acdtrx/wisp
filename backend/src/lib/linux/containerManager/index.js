@@ -50,6 +50,13 @@ export {
 export { renameContainer } from './containerManagerRename.js';
 
 export {
+  createContainerBackup,
+  listContainerBackups,
+  restoreContainerBackup,
+  deleteContainerBackup,
+} from './containerManagerBackup.js';
+
+export {
   listContainerImages, deleteContainerImage, getImageDigest, findContainersUsingImage,
 } from './containerManagerImages.js';
 

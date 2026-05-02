@@ -141,6 +141,22 @@ export async function renameContainer() {
   throw noContainerd();
 }
 
+export async function createContainerBackup() {
+  throw noContainerd();
+}
+
+export async function listContainerBackups() {
+  return [];
+}
+
+export async function restoreContainerBackup() {
+  throw noContainerd();
+}
+
+export async function deleteContainerBackup() {
+  throw noContainerd();
+}
+
 export async function pullImage() {
   throw noContainerd();
 }

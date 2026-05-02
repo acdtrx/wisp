@@ -6,5 +6,6 @@ export const BACKGROUND_JOB_KIND = {
   CONTAINER_CREATE: 'container-create',
   CONTAINER_IMAGE_UPDATE_CHECK: 'container-image-update-check',
   BACKUP: 'backup',
+  CONTAINER_BACKUP: 'container-backup',
   LIBRARY_DOWNLOAD: 'library-download',
 };

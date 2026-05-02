@@ -1,10 +1,11 @@
 /**
  * Container API routes: CRUD, lifecycle, mount content, stats SSE, logs SSE, create progress SSE.
  */
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 
 import {
   listContainers, getContainerConfig, createContainer, deleteContainer, renameContainer,
+  createContainerBackup,
   startContainer, stopContainer, killContainer, restartContainer,
   updateContainerConfig, addContainerMount, updateContainerMount, removeContainerMount,
   addContainerService, updateContainerService, removeContainerService,
@@ -19,12 +20,16 @@ import {
 } from '../lib/containerManager.js';
 import { containerJobStore } from '../lib/containerJobStore.js';
 import { imageUpdateJobStore } from '../lib/imageUpdateJobStore.js';
+import * as backupJobStore from '../lib/backupJobStore.js';
 import { BACKGROUND_JOB_KIND } from '../lib/backgroundJobKinds.js';
 import {
   titleForContainerCreate,
+  titleForContainerBackup,
   TITLE_IMAGE_UPDATE_CHECK_ALL,
   titleForImageUpdateCheckSingle,
 } from '../lib/backgroundJobTitles.js';
+import { getSettings, getRawMounts } from '../lib/settings.js';
+import { getMountStatus, mountSMB } from '../lib/smbMount.js';
 import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
 import { validateContainerName } from '../lib/validation.js';
@@ -364,6 +369,131 @@ export default async function containerRoutes(fastify) {
     } catch (err) {
       handleRouteError(err, reply, request);
     }
+  });
+
+  // ── Backup (start) + progress SSE ────────────────────────────────
+  // Mirrors POST /vms/:name/backup. Container must be stopped (enforced
+  // inside createContainerBackup → ensureContainerStopped). Body shape:
+  // { destinationIds: ["local"] | ["local", "<backupMountId>"] }.
+  fastify.post('/containers/:name/backup', {
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          destinationIds: { type: 'array', items: { type: 'string' } },
+        },
+        additionalProperties: false,
+      },
+      response: {
+        201: {
+          type: 'object',
+          properties: {
+            jobId: { type: 'string' },
+            title: { type: 'string' },
+          },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      try {
+        const { name } = request.params;
+        const body = request.body || {};
+        const ids = body.destinationIds && body.destinationIds.length > 0 ? body.destinationIds : ['local'];
+        const settings = await getSettings();
+        const rawMounts = await getRawMounts();
+        const backupMountId = settings.backupMountId;
+        const paths = [];
+        for (const id of ids) {
+          if (id === 'local') {
+            if (settings.backupLocalPath) paths.push(settings.backupLocalPath);
+          } else if (backupMountId && id === backupMountId) {
+            const dest = rawMounts.find((d) => d.id === id);
+            if (!dest) {
+              return reply.code(422).send({
+                error: 'Invalid backup destination',
+                detail: 'Mount is not configured for backup',
+              });
+            }
+            const mountPath = dest.mountPath;
+            if (dest.type === 'smb' && mountPath) {
+              const { mounted } = await getMountStatus(mountPath);
+              if (!mounted) {
+                try {
+                  await mountSMB(dest.share, mountPath, { username: dest.username, password: dest.password });
+                } catch (mountErr) {
+                  return reply.code(503).send({
+                    error: 'Network mount failed',
+                    detail: mountErr.message || 'Could not mount network share. Mount it from Host Mgmt first.',
+                  });
+                }
+              }
+              paths.push(mountPath);
+            } else if (mountPath) {
+              paths.push(mountPath);
+            }
+          } else {
+            return reply.code(422).send({
+              error: 'Invalid backup destination',
+              detail: `Unknown or disallowed destination id: ${id}`,
+            });
+          }
+        }
+        if (paths.length === 0) {
+          return reply.code(422).send({
+            error: 'No backup destination',
+            detail: 'No configured destination resolved for the requested ids',
+          });
+        }
+        const jobId = randomBytes(12).toString('hex');
+        const title = titleForContainerBackup(name);
+        backupJobStore.createJob(jobId, {
+          kind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP,
+          title,
+          log: request.log,
+        });
+        request.log.info(
+          { jobId, kind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP, title },
+          'Background job started',
+        );
+        (async () => {
+          let lastResult;
+          for (const destPath of paths) {
+            lastResult = await createContainerBackup(name, destPath, {
+              onProgress(ev) {
+                backupJobStore.pushEvent(jobId, { step: ev.step, percent: ev.percent, currentFile: ev.currentFile });
+              },
+            });
+          }
+          backupJobStore.completeJob(jobId, lastResult);
+        })().catch((err) => {
+          backupJobStore.failJob(jobId, err);
+          request.log.error({ err, jobId }, 'Background container backup failed');
+        });
+        return reply.code(201).send({ jobId, title });
+      } catch (err) {
+        handleRouteError(err, reply, request);
+      }
+    },
+  });
+
+  fastify.get('/containers/backup-progress/:jobId', {
+    schema: { hide: true },
+    handler: async (request, reply) => {
+      const { jobId } = request.params;
+      const job = backupJobStore.getJob(jobId);
+      if (!job) {
+        return reply.code(404).send({ error: 'Job not found', detail: jobId });
+      }
+      setupSSE(reply);
+      const ok = backupJobStore.registerStream(jobId, reply.raw);
+      if (!ok) {
+        reply.raw.end();
+        return;
+      }
+      request.raw.on('close', () => {
+        backupJobStore.unregisterStream(jobId, reply.raw);
+      });
+    },
   });
 
   // ── Stats SSE ─────────────────────────────────────────────────────

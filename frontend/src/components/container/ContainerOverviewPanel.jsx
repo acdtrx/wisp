@@ -1,15 +1,22 @@
-import { useState, lazy, Suspense } from 'react';
+import {
+  useState, useMemo, useEffect, lazy, Suspense,
+} from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Play, Square, Zap, RotateCcw, Trash2, Loader2, X,
+  Play, Square, Zap, RotateCcw, Trash2, Archive, Loader2, X,
 } from 'lucide-react';
 
 import { useContainerStore } from '../../store/containerStore.js';
 import { useSectionsStore } from '../../store/sectionsStore.js';
+import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { updateContainer } from '../../api/containers.js';
+import { startContainerBackup } from '../../api/backups.js';
+import { getSettings } from '../../api/settings.js';
+import { JOB_KIND } from '../../api/jobProgress.js';
 import { getVmIcon, getDefaultContainerIconId } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
+import BackupModal from '../shared/BackupModal.jsx';
 import ContainerGeneralSection from '../sections/ContainerGeneralSection.jsx';
 import ContainerEnvSection from '../sections/ContainerEnvSection.jsx';
 import ContainerMountsSection from '../sections/ContainerMountsSection.jsx';
@@ -56,6 +63,8 @@ export default function ContainerOverviewPanel() {
   const deleteContainer = useContainerStore((s) => s.deleteContainer);
   const selectContainer = useContainerStore((s) => s.selectContainer);
   const refreshSelectedContainer = useContainerStore((s) => s.refreshSelectedContainer);
+  const registerJob = useBackgroundJobsStore((s) => s.registerJob);
+  const bgJobs = useBackgroundJobsStore((s) => s.jobs);
 
   const { tab } = useParams();
   const navigate = useNavigate();
@@ -64,6 +73,42 @@ export default function ContainerOverviewPanel() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteFiles, setDeleteFiles] = useState(true);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const [backupModalOpen, setBackupModalOpen] = useState(false);
+  const [backupDestinations, setBackupDestinations] = useState([]);
+  const [backupSelectedIds, setBackupSelectedIds] = useState(['local']);
+  const [backupJobId, setBackupJobId] = useState(null);
+  const [backupError, setBackupError] = useState(null);
+
+  const containerName = config?.name ?? '';
+  const backupTitleForContainer = useMemo(
+    () => (containerName ? `Backup ${containerName}` : ''),
+    [containerName],
+  );
+  const backupRunningJob = useMemo(
+    () => (backupTitleForContainer
+      ? Object.values(bgJobs).find(
+        (j) => j.kind === JOB_KIND.CONTAINER_BACKUP
+          && j.title === backupTitleForContainer
+          && j.status === 'running',
+      )
+      : undefined),
+    [bgJobs, backupTitleForContainer],
+  );
+  const backupInProgress = !!backupRunningJob;
+
+  useEffect(() => {
+    if (!backupJobId) return;
+    const row = bgJobs[backupJobId];
+    if (row && (row.status === 'done' || row.status === 'error')) {
+      setBackupJobId(null);
+    }
+  }, [backupJobId, bgJobs]);
+
+  useEffect(() => {
+    setBackupJobId(null);
+    setBackupError(null);
+    setBackupModalOpen(false);
+  }, [containerName]);
 
   if (!config && error && !loading) {
     return (
@@ -100,6 +145,27 @@ export default function ContainerOverviewPanel() {
     setDeleteDialogOpen(false);
     await deleteContainer(name, deleteFiles);
     if (!useContainerStore.getState().error) navigate('/host/overview');
+  };
+
+  const handleOpenBackup = () => {
+    setBackupModalOpen(true);
+    setBackupError(null);
+    const existing = Object.values(bgJobs).find(
+      (j) => j.kind === JOB_KIND.CONTAINER_BACKUP
+        && j.title === backupTitleForContainer
+        && j.status === 'running',
+    );
+    setBackupJobId(existing ? existing.jobId : null);
+    setBackupSelectedIds(['local']);
+    getSettings().then((s) => {
+      const dests = [{ id: 'local', label: 'Local', path: s.backupLocalPath || '/var/lib/wisp/backups' }];
+      if (s.backupMountId) {
+        const m = (s.mounts || []).find((x) => x.id === s.backupMountId);
+        const p = m && m.mountPath;
+        if (m && p) dests.push({ id: m.id, label: m.label || 'Network', path: p });
+      }
+      setBackupDestinations(dests);
+    }).catch(() => setBackupDestinations([{ id: 'local', label: 'Local', path: '/var/lib/wisp/backups' }]));
   };
 
   const handleSectionSave = async (changes) => {
@@ -175,11 +241,24 @@ export default function ContainerOverviewPanel() {
               Restart required
             </span>
           )}
-          <ActionButton icon={Play} label="Start" onClick={() => startContainer(name)} disabled={!isStopped} loading={actionLoading === 'start'} variant="primary" />
+          <ActionButton
+            icon={Play} label={backupInProgress ? 'Cannot start while a backup is in progress' : 'Start'}
+            onClick={() => startContainer(name)}
+            disabled={!isStopped || backupInProgress}
+            loading={actionLoading === 'start'}
+            variant="primary"
+          />
           <ActionButton icon={Square} label="Stop" onClick={() => stopContainer(name)} disabled={isStopped} loading={actionLoading === 'stop'} />
           <ActionButton icon={Zap} label="Kill" onClick={() => killContainer(name)} disabled={isStopped} loading={actionLoading === 'kill'} variant="danger" />
           <ActionButton icon={RotateCcw} label="Restart" onClick={() => restartContainer(name)} disabled={!isRunning} loading={actionLoading === 'restart'} />
           <div className="mx-0.5 h-4 w-px bg-surface-border" />
+          <ActionButton
+            icon={Archive}
+            label={isStopped ? 'Backup' : 'Backup (stop the container first)'}
+            onClick={handleOpenBackup}
+            disabled={!isStopped}
+            loading={backupInProgress}
+          />
           <ActionButton icon={Trash2} label="Delete" onClick={() => setDeleteDialogOpen(true)} variant="danger" loading={actionLoading === 'delete'} />
         </div>
       </div>
@@ -253,6 +332,64 @@ export default function ContainerOverviewPanel() {
         }}
         onClose={() => setIconPickerOpen(false)}
       />
+
+      {backupModalOpen && (
+        <BackupModal
+          name={name}
+          subjectLabel="Container"
+          backupStarted={!!backupJobId}
+          destinations={backupDestinations}
+          selectedIds={backupSelectedIds}
+          onToggleDestination={(id) => {
+            setBackupSelectedIds((prev) => (
+              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+            ));
+          }}
+          progress={
+            backupJobId && bgJobs[backupJobId]
+              ? {
+                step: bgJobs[backupJobId].step || 'starting',
+                percent: bgJobs[backupJobId].percent,
+                currentFile: bgJobs[backupJobId].detail,
+              }
+              : null
+          }
+          error={
+            backupJobId && bgJobs[backupJobId]?.status === 'error'
+              ? bgJobs[backupJobId].error
+              : backupError
+          }
+          onStart={async () => {
+            setBackupError(null);
+            try {
+              const { jobId, title } = await startContainerBackup(name, { destinationIds: backupSelectedIds });
+              registerJob({
+                jobId,
+                kind: JOB_KIND.CONTAINER_BACKUP,
+                title,
+              });
+              /* Close the modal once the job is queued — progress is shown in
+               * the top-bar via backgroundJobsStore, and the toolbar Backup
+               * button is disabled while a backup runs (so the user can't
+               * reopen this modal mid-backup anyway). */
+              setBackupModalOpen(false);
+              setBackupJobId(null);
+              setBackupSelectedIds(['local']);
+            } catch (err) {
+              setBackupError(err.message || 'Failed to start backup');
+              setBackupJobId(null);
+            }
+          }}
+          onClose={() => {
+            setBackupModalOpen(false);
+            const row = backupJobId ? bgJobs[backupJobId] : null;
+            if (!row || row.status !== 'running') {
+              setBackupJobId(null);
+              setBackupError(null);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

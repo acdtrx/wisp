@@ -352,6 +352,11 @@ export async function listBackups(destinations, vmName = null) {
     for (const dirent of vmDirs) {
       if (!dirent.isDirectory()) continue;
       const name = dirent.name;
+      /* `containers/` under each backup root holds container backups
+       * (parallel namespace, different layout). Skip it explicitly so the
+       * VM scanner doesn't try to interpret container subdirs as VM
+       * timestamps. */
+      if (name === 'containers') continue;
       if (vmName != null && vmName !== '' && name !== vmName) continue;
       const vmPath = join(basePath, name);
       let timestamps;

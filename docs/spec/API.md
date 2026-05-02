@@ -842,6 +842,62 @@ Delete a backup. Path must be under a configured destination root.
 - **Body:** `{ backupPath: string }`
 - **200:** `{ ok: true }`
 
+### POST /api/containers/:name/backup
+
+Start a container backup job. Mirrors `POST /api/vms/:name/backup` — same body shape, same destination resolution, same SMB auto-mount behavior. Container must be **stopped** (returns **409** `CONTAINER_MUST_BE_STOPPED` otherwise; enforced inside the backup module). The on-disk layout is described in [BACKUPS.md → Container Backups](BACKUPS.md#container-backups).
+
+- **Body:** `{ destinationIds?: ["local", "<mountId>"] }` (defaults to `["local"]`)
+- **201:** `{ jobId: string, title: string }` — `title` is `Backup <name>`
+- **409:** `CONTAINER_MUST_BE_STOPPED` (container is running/paused)
+- **422:** No valid destination, or unknown destination id
+- **503:** SMB mount failed
+
+### GET /api/containers/backup-progress/:jobId
+
+SSE stream for container backup progress.
+
+- **Progress events:** `{ step, percent?, currentFile? }` — `step` values include `measuring`, `archiving`, `done`. Percent is driven by uncompressed bytes through tar against the pre-walked source size (so it tracks real progress through the archive, not output bytes).
+- **Completion (from job store):** `{ step: "done", path: string, timestamp: string }`
+- **Failure:** `{ step: "error", error: string, detail: string }`
+
+### GET /api/container-backups
+
+List all container backups across currently-usable destinations. Container backups live at `<dest>/containers/<name>/<timestamp>/` so they don't share a namespace with VM backups.
+
+- **Query:** `?containerName=foo` (optional filter)
+- **200:**
+
+```json
+[
+  {
+    "name": "caddy",
+    "timestamp": "2026-05-02T15-30-00",
+    "path": "/var/lib/wisp/backups/containers/caddy/2026-05-02T15-30-00",
+    "sizeBytes": 12345678,
+    "destinationLabel": "Local",
+    "image": "caddy:latest"
+  }
+]
+```
+
+### POST /api/container-backups/restore
+
+Restore a container backup under a new name. The new name must be free both on disk and in containerd. Image is re-pulled if missing locally; MAC address is regenerated; section assignment is **not** carried over (storage assignments live in `wisp-config.json`, not in the backup).
+
+- **Body:** `{ backupPath: string, newName: string }`
+- **200:** `{ name: string, sourceName: string, image: string | null }` — `sourceName` is the original container name from the manifest, useful when the user picked a backup whose folder name no longer matches.
+- **404:** backup not found
+- **409:** `CONTAINER_EXISTS` if the new name is already in use
+- **422:** `INVALID_CONTAINER_NAME`, `BACKUP_INVALID` (path not under a configured destination, or archive missing/malformed)
+- **500:** `BACKUP_RESTORE_FAILED` if extraction or containerd record creation fails
+
+### DELETE /api/container-backups
+
+Delete a container backup. Path must resolve to a directory under one of the configured destination roots (same validation as `DELETE /api/backups`).
+
+- **Body:** `{ backupPath: string }`
+- **200:** `{ ok: true }`
+
 ---
 
 ## Image Library

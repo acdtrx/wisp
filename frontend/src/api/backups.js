@@ -31,3 +31,28 @@ export function restoreBackup(backupPath, newVmName) {
 export function deleteBackup(backupPath) {
   return api('/api/backups', { method: 'DELETE', body: { backupPath } });
 }
+
+/* ── Container backups ──────────────────────────────────────────── */
+
+/**
+ * Start a container backup job. Returns { jobId, title }; subscribe via JOB_KIND.CONTAINER_BACKUP.
+ */
+export function startContainerBackup(name, options = {}) {
+  const body = options.destinationIds?.length
+    ? { destinationIds: options.destinationIds }
+    : { destinationIds: ['local'] };
+  return api(`/api/containers/${encodeURIComponent(name)}/backup`, { method: 'POST', body });
+}
+
+export function listContainerBackups(containerName = null) {
+  const q = containerName != null && containerName !== '' ? `?containerName=${encodeURIComponent(containerName)}` : '';
+  return api(`/api/container-backups${q}`);
+}
+
+export function restoreContainerBackup(backupPath, newName) {
+  return api('/api/container-backups/restore', { method: 'POST', body: { backupPath, newName } });
+}
+
+export function deleteContainerBackup(backupPath) {
+  return api('/api/container-backups', { method: 'DELETE', body: { backupPath } });
+}
