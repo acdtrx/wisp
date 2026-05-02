@@ -1,15 +1,13 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
-import { Search, X } from 'lucide-react';
+import { Search } from 'lucide-react';
+import Modal from './Modal.jsx';
 import { VM_ICONS } from './vmIcons.jsx';
-import { useEscapeKey } from '../../hooks/useEscapeKey.js';
 
 const CATEGORIES = ['OS', 'Service', 'Generic'];
 
 export default function IconPickerModal({ open, currentIconId, onSelect, onClose }) {
   const [search, setSearch] = useState('');
   const inputRef = useRef(null);
-
-  useEscapeKey(open, onClose);
 
   useEffect(() => {
     if (open) setSearch('');
@@ -39,25 +37,17 @@ export default function IconPickerModal({ open, currentIconId, onSelect, onClose
     return map;
   }, [filtered]);
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative z-10 flex w-full max-w-md flex-col overflow-hidden rounded-card bg-surface-card shadow-lg max-h-[70vh]" data-wisp-modal-root>
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-surface-border px-4 py-3">
-          <h2 className="text-sm font-semibold text-text-primary">Choose Icon</h2>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Search */}
-        <div className="px-4 pt-3 pb-2">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Choose Icon"
+      size="md"
+      height="cap"
+      bodyPadding="none"
+    >
+      <div className="flex h-full flex-col">
+        <div className="px-4 pt-3 pb-2 shrink-0">
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
             <input
@@ -71,8 +61,7 @@ export default function IconPickerModal({ open, currentIconId, onSelect, onClose
           </div>
         </div>
 
-        {/* Icon grid */}
-        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-3">
           {CATEGORIES.map((cat) => {
             const icons = grouped[cat];
             if (!icons || icons.length === 0) return null;
@@ -115,6 +104,6 @@ export default function IconPickerModal({ open, currentIconId, onSelect, onClose
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

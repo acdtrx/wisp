@@ -26,6 +26,7 @@ import {
   DataTableTh,
   DataTableTd,
   dataTableEmptyCellClass,
+  rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
 
 const NIC_MODEL_OPTIONS = [
@@ -413,7 +414,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                             type="button"
                             onClick={() => saveRow(idx)}
                             disabled={!canSave}
-                            className={iconBtn}
+                            className={rowActionIconBtnPrimary}
                             title="Save NICs"
                             aria-label={`Save network interfaces (${dirty ? 'unsaved' : 'unchanged'})`}
                           >

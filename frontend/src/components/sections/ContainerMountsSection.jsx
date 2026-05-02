@@ -26,6 +26,7 @@ import {
   DataTableTh,
   DataTableTd,
   dataTableEmptyCellClass,
+  rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
 import MountFileEditorModal from './MountFileEditorModal.jsx';
 import {
@@ -795,7 +796,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                               type="button"
                               disabled={!canSaveRow}
                               onClick={() => handleSave(row)}
-                              className={iconBtn}
+                              className={rowActionIconBtnPrimary}
                               title="Save mount"
                               aria-label="Save mount"
                             >

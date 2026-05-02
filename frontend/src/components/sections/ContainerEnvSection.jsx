@@ -14,6 +14,7 @@ import {
   DataTableTh,
   DataTableTd,
   dataTableEmptyCellClass,
+  rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
 
@@ -412,7 +413,7 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
                             type="button"
                             onClick={() => saveRow(row)}
                             disabled={!canSave || savingId === row.id}
-                            className={iconBtn}
+                            className={rowActionIconBtnPrimary}
                             title="Save environment"
                             aria-label="Save environment"
                           >

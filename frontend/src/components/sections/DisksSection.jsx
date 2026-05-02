@@ -24,6 +24,7 @@ import {
   DataTableTh,
   DataTableTd,
   dataTableCellPadX,
+  rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
 import {
   attachDiskToVM,
@@ -776,7 +777,7 @@ export default function DisksSection({
                       type="button"
                       onClick={confirmSdbDraft}
                       disabled={!!loading}
-                      className={`${iconBtn} text-accent border-accent/30`}
+                      className={rowActionIconBtnPrimary}
                       title={sdbDraft.mode === 'new' ? 'Create disk' : 'Attach disk'}
                       aria-label="Confirm"
                     >
@@ -971,7 +972,7 @@ function DiskRowActions({
           type="button"
           onClick={onSave}
           disabled={busy && !isSaving}
-          className={`${iconBtn} text-accent border-accent/30`}
+          className={rowActionIconBtnPrimary}
           title="Save size and bus"
           aria-label={`Save ${slot}`}
         >
@@ -1112,7 +1113,7 @@ function CreateDiskDraftTableRow({ draft, setDraft, onConfirm, onCancel }) {
             <button
               type="button"
               onClick={onConfirm}
-              className={`${iconBtn} text-accent border-accent/30`}
+              className={rowActionIconBtnPrimary}
               title={draft.mode === 'new' ? 'Add disk' : 'Add disk from image'}
               aria-label="Confirm"
             >

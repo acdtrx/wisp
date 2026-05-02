@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Copy, Check, X, Loader2 } from 'lucide-react';
-import { useEscapeKey } from '../../hooks/useEscapeKey.js';
+import { Copy, Check, Loader2 } from 'lucide-react';
+import Modal from '../shared/Modal.jsx';
 import { getVMXML } from '../../api/vms.js';
 
 function highlightXml(xml) {
@@ -65,8 +65,6 @@ export default function XMLModal({ open, vmName, onClose }) {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  useEscapeKey(open, onClose);
-
   useEffect(() => {
     if (!open || !vmName) return;
     setLoading(true);
@@ -77,8 +75,6 @@ export default function XMLModal({ open, vmName, onClose }) {
       .finally(() => setLoading(false));
   }, [open, vmName]);
 
-  if (!open) return null;
-
   const handleCopy = () => {
     navigator.clipboard.writeText(xml).then(() => {
       setCopied(true);
@@ -87,38 +83,33 @@ export default function XMLModal({ open, vmName, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative z-10 flex h-[80vh] w-full max-w-4xl flex-col overflow-hidden rounded-card bg-surface-card shadow-lg" data-wisp-modal-root>
-        <div className="flex items-center justify-between border-b border-surface-border px-4 py-3">
-          <h2 className="text-sm font-semibold text-text-primary">Domain XML — {vmName}</h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleCopy}
-              className="flex items-center gap-1.5 rounded-md border border-surface-border px-2.5 py-1 text-xs font-medium text-text-secondary hover:bg-surface transition-colors duration-150"
-            >
-              {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
-            </button>
-            <button
-              onClick={onClose}
-              className="rounded-lg p-1 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
-            >
-              <X size={16} />
-            </button>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Domain XML — ${vmName}`}
+      size="4xl"
+      height="tall"
+      bodyPadding="none"
+      headerExtra={
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 rounded-md border border-surface-border px-2.5 py-1 text-xs font-medium text-text-secondary hover:bg-surface transition-colors duration-150"
+        >
+          {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
+        </button>
+      }
+    >
+      <div className="h-full overflow-auto p-4">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 size={20} className="animate-spin text-text-muted" />
           </div>
-        </div>
-        <div className="flex-1 overflow-auto p-4">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 size={20} className="animate-spin text-text-muted" />
-            </div>
-          ) : (
-            <pre className="text-xs leading-relaxed font-mono text-text-primary whitespace-pre overflow-x-auto">
-              {highlightXml(xml)}
-            </pre>
-          )}
-        </div>
+        ) : (
+          <pre className="text-xs leading-relaxed font-mono text-text-primary whitespace-pre overflow-x-auto">
+            {highlightXml(xml)}
+          </pre>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }

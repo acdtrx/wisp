@@ -4,11 +4,11 @@ import {
 } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
+import Modal from '../shared/Modal.jsx';
 import { randomMac } from '../../utils/randomMac.js';
 import Toggle from '../shared/Toggle.jsx';
 import { getHostBridges } from '../../api/vms.js';
 import { isVlanLikeBridgeName } from '../../utils/bridgeNames.js';
-import { useEscapeKey } from '../../hooks/useEscapeKey.js';
 import {
   KNOWN_SERVICE_TYPES, DEFAULT_TXT_FOR_TYPE, isValidServiceType,
   parsePortLabel, suggestTypeForPort,
@@ -108,7 +108,9 @@ export default function ContainerNetworkSection({
   const pills = isCreating ? [] : buildPortPills(config.exposedPorts, config.services);
 
   const closeStrip = useCallback(() => setStrip(null), []);
-  useEscapeKey(strip != null && !strip.saving, closeStrip);
+  const handleStripClose = useCallback(() => {
+    if (!strip?.saving) closeStrip();
+  }, [strip, closeStrip]);
   const openStripForPort = (port, service) => {
     if (service) {
       setStrip({
@@ -445,33 +447,22 @@ export default function ContainerNetworkSection({
             )}
           </div>
 
-          {strip && servicesEnabled && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center">
-              <div
-                className="absolute inset-0 bg-black/30"
-                onClick={() => { if (!strip.saving) closeStrip(); }}
-              />
-              <div
-                className="relative z-10 mx-4 w-full max-w-xl rounded-card bg-surface-card shadow-lg"
-                data-wisp-modal-root
-              >
-              <div className="flex items-center justify-between border-b border-surface-border px-4 py-3">
-                <span className="text-sm font-semibold text-text-primary">
-                  {strip.portEditable
-                    ? 'Advertise new service'
-                    : `${strip.hasExisting ? 'Service' : 'Advertise service'} for port ${strip.port}`}
-                </span>
-                <button
-                  type="button"
-                  onClick={closeStrip}
-                  className="rounded-lg p-1 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
-                  title="Close"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-              <div className="px-4 py-4">
-
+          <Modal
+            open={!!(strip && servicesEnabled)}
+            onClose={handleStripClose}
+            title={
+              strip?.portEditable
+                ? 'Advertise new service'
+                : strip
+                  ? `${strip.hasExisting ? 'Service' : 'Advertise service'} for port ${strip.port}`
+                  : ''
+            }
+            size="xl"
+            closeOnBackdrop={!strip?.saving}
+            closeOnEscape={!strip?.saving}
+          >
+            {strip && (
+              <>
               {strip.error && (
                 <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[11px] text-status-stopped">
                   {strip.error}
@@ -598,10 +589,9 @@ export default function ContainerNetworkSection({
                   </button>
                 </div>
               </div>
-              </div>
-              </div>
-            </div>
-          )}
+              </>
+            )}
+          </Modal>
         </div>
       )}
     </SectionCard>

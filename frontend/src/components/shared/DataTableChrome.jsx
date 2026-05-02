@@ -90,6 +90,20 @@ export function DataTableTd({ dense = false, align = 'left', valign = 'middle', 
  * Icon actions hidden until row hover or focus-within; use `forceVisible` while editing or loading.
  * @param {{ children: React.ReactNode, forceVisible?: boolean }} props
  */
+/**
+ * Standard icon-button class for row Actions cells. Subtle: bordered, neutral text.
+ * Use for non-primary actions (edit, delete, cancel).
+ */
+export const rowActionIconBtn =
+  'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
+
+/**
+ * Primary-action variant of rowActionIconBtn — filled accent background.
+ * Use for the Save / Confirm button when committing a row edit (disks, mounts, env, drives).
+ */
+export const rowActionIconBtnPrimary =
+  'inline-flex items-center justify-center rounded-md bg-accent p-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
+
 export function DataTableRowActions({ children, forceVisible = false }) {
   return (
     <div

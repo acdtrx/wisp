@@ -37,6 +37,8 @@ Table and list **row actions** (edit, delete, mount, check, revert, etc.) are **
 
 - **Order:** Place **other actions first** (save/cancel while editing, upload, test connection, mount/unmount, revert/restore, open file editor, etc.), then the **Edit** control (**`Pencil`** — or the row’s primary “enter edit” affordance), then **Delete** (**`Trash2`**) **last**. Edit and delete stay adjacent when both are shown.
 
+- **Save / Confirm uses the primary variant.** When a row is in edit/draft mode, the commit button (Save, Add, Attach, Confirm) uses **`rowActionIconBtnPrimary`** from `DataTableChrome.jsx` — accent background, white icon. The non-primary buttons (Cancel, Edit, Delete, etc.) use **`rowActionIconBtn`** (bordered, neutral). This keeps the commit affordance visible at a glance and matches the header `+` add buttons.
+
 - **Mount state:** Do not show a separate “Mounted / Not mounted” text column when a single mount/unmount control exists; encode state with the **background** of that control (e.g. green tint when mounted).
 
 ---
@@ -116,6 +118,28 @@ Single-section views (e.g. **Image Library**) use one **`SectionCard`** with the
 - **[BackupsPanel.jsx](../frontend/src/components/backups/BackupsPanel.jsx)** — Restore/delete on row hover.
 - **[HostOverview.jsx](../frontend/src/components/host/HostOverview.jsx)** (hardware inventory) — Read-only; **`SectionCard`** + **`titleIcon`** per section; shared table chrome.
 - **[HostMgmt.jsx](../frontend/src/components/host/HostMgmt.jsx)** — Stacked **`SectionCard`**s (**OS Update**, **Network Bridges**, **Network Storage**, **Backup**) with **`titleIcon`** on each; same page gutters as Overview.
+
+---
+
+## Modals and dialogs
+
+All full-screen overlays go through the shared **[Modal.jsx](../frontend/src/components/shared/Modal.jsx)** primitive. It owns:
+
+- The fixed-position backdrop (standardized on **`bg-black/40`**) and centered card (**`bg-surface-card`** + border + shadow).
+- Escape-to-close (via `useEscapeKey`) and the **`data-wisp-modal-root`** marker that tells `AppLayout` to suppress its own Escape handling.
+- An optional **title / subtitle / X-button** header bar and an optional **footer** bar (right-aligned, bordered).
+- Width via **`size`** (`sm` | `md` | `lg` | `xl` | `2xl` | `3xl` | `4xl`) and height via **`height`** (`auto` | `tall` for `h-[80vh]` | `cap` for `max-h-[85vh]`).
+- Body padding via **`bodyPadding`** (`default` `px-4 py-4` | `compact` `px-4 py-3` | `none` for full-bleed content).
+- Guard flags **`closeOnBackdrop`** and **`closeOnEscape`** for in-flight save/upload states.
+
+Do **not** open ad-hoc `fixed inset-0` overlays. New modal-style UI must wrap `<Modal>` so backdrop, escape, marker, and styling stay consistent.
+
+### Confirmation, alert, and informational dialogs
+
+- **[ConfirmDialog.jsx](../frontend/src/components/shared/ConfirmDialog.jsx)** — Two-button confirm for destructive or impactful actions. Defaults to a red-tinted `Confirm` button (`variant="danger"`); pass `variant="primary"` for non-destructive accept (e.g. install update). Replaces `window.confirm()`.
+- **[AlertDialog.jsx](../frontend/src/components/shared/AlertDialog.jsx)** — Single-button informational/error dialog. Pass `tone="error"` to highlight the title in stopped color. Replaces `window.alert()`.
+
+Never call native `window.alert()` or `window.confirm()` — async-error reporting and confirmation prompts must use these dialogs so they pick up the same shell, focus, and styling as the rest of the app.
 
 ---
 

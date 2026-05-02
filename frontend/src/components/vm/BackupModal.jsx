@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useEscapeKey } from '../../hooks/useEscapeKey.js';
+import Modal from '../shared/Modal.jsx';
 
 export default function BackupModal({
   vmName,
@@ -17,8 +17,6 @@ export default function BackupModal({
   const isError = !!error;
   const inProgress = backupStarted && progress && !isDone && !isError;
 
-  useEscapeKey(!!onClose, onClose);
-
   const handleStart = () => {
     if (selectedIds.length === 0) return;
     setStarting(true);
@@ -28,21 +26,19 @@ export default function BackupModal({
 
   if (!destinations?.length) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-        <div className="relative z-10 w-full max-w-sm rounded-card bg-surface-card p-6 shadow-lg" data-wisp-modal-root>
+      <Modal open={!!onClose} onClose={onClose} size="sm" bodyPadding="none">
+        <div className="p-6">
           <h3 className="text-sm font-semibold text-text-primary">Backup VM</h3>
           <p className="mt-2 text-xs text-text-muted">Loading destinations…</p>
           <button onClick={onClose} className="mt-4 rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium">Cancel</button>
         </div>
-      </div>
+      </Modal>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-card bg-surface-card p-6 shadow-lg" data-wisp-modal-root>
+    <Modal open={!!onClose} onClose={onClose} size="md" bodyPadding="none">
+      <div className="p-6">
         <h3 className="text-sm font-semibold text-text-primary">Backup — {vmName}</h3>
         <p className="mt-1 text-xs text-text-secondary">Choose backup destinations. VM must be stopped.</p>
 
@@ -126,6 +122,6 @@ export default function BackupModal({
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

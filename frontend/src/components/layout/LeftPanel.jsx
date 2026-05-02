@@ -12,6 +12,8 @@ import { useSectionsStore, MAIN_SECTION_ID, selectSectionId } from '../../store/
 import { formatMemory } from '../../utils/formatters.js';
 import VMListItem from '../vm/VMListItem.jsx';
 import ContainerListItem from '../container/ContainerListItem.jsx';
+import AlertDialog from '../shared/AlertDialog.jsx';
+import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 
 const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -33,6 +35,8 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(section.name);
   const [busy, setBusy] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (autoEdit && !editing) {
@@ -62,24 +66,26 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
       await renameSection(section.id, name);
       setEditing(false);
     } catch (err) {
-      alert(err.message);
+      setErrorMsg(err.message);
     } finally {
       setBusy(false);
     }
   };
-  const handleDelete = async () => {
-    if (!confirm(`Delete section "${section.name}"? Its workloads will move back to Main.`)) return;
+  const handleDelete = () => setConfirmDelete(true);
+  const performDelete = async () => {
+    setConfirmDelete(false);
     setBusy(true);
     try {
       await deleteSection(section.id);
     } catch (err) {
-      alert(err.message);
+      setErrorMsg(err.message);
     } finally {
       setBusy(false);
     }
   };
 
   return (
+    <>
     <div className="flex items-center gap-2 px-3 py-1">
       <div className="h-px flex-1 bg-surface-border" />
       {editing ? (
@@ -168,6 +174,22 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
       )}
       <div className="h-px flex-1 bg-surface-border" />
     </div>
+    <ConfirmDialog
+      open={confirmDelete}
+      title="Delete section"
+      message={`Delete section "${section.name}"? Its workloads will move back to Main.`}
+      confirmLabel="Delete"
+      onConfirm={performDelete}
+      onCancel={() => setConfirmDelete(false)}
+    />
+    <AlertDialog
+      open={!!errorMsg}
+      title="Section action failed"
+      message={errorMsg || ''}
+      tone="error"
+      onClose={() => setErrorMsg(null)}
+    />
+    </>
   );
 }
 
@@ -314,6 +336,7 @@ export default function LeftPanel() {
 
   const [search, setSearch] = useState('');
   const [sortRunningFirst, setSortRunningFirst] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
     startVMListSSE();
@@ -393,7 +416,7 @@ export default function LeftPanel() {
     try {
       await reorderSections(next.map((s) => s.id));
     } catch (err) {
-      alert(err.message);
+      setErrorMsg(err.message);
     }
   };
 
@@ -401,7 +424,7 @@ export default function LeftPanel() {
     try {
       await createAndAssign({ type, name });
     } catch (err) {
-      alert(err.message);
+      setErrorMsg(err.message);
     }
   };
 
@@ -576,6 +599,13 @@ export default function LeftPanel() {
           <span>{organizeMode ? 'Done' : 'Organize'}</span>
         </button>
       </div>
+      <AlertDialog
+        open={!!errorMsg}
+        title="Section action failed"
+        message={errorMsg || ''}
+        tone="error"
+        onClose={() => setErrorMsg(null)}
+      />
     </aside>
   );
 }

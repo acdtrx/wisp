@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { FolderInput, Check, FolderPlus } from 'lucide-react';
 import { useSectionsStore, MAIN_SECTION_ID, selectSectionId } from '../../store/sectionsStore.js';
+import AlertDialog from '../shared/AlertDialog.jsx';
 
 /**
  * Tiny popover trigger used inside a workload row in organize mode.
@@ -14,6 +15,7 @@ export default function SectionPickerButton({ type, name, disabled }) {
   const currentSectionId = useSectionsStore((s) => selectSectionId(s, type, name));
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
   const rootRef = useRef(null);
 
   useEffect(() => {
@@ -39,7 +41,7 @@ export default function SectionPickerButton({ type, name, disabled }) {
       await assignWorkload({ type, name, sectionId });
       setOpen(false);
     } catch (err) {
-      alert(err.message);
+      setErrorMsg(err.message);
     } finally {
       setBusy(false);
     }
@@ -52,7 +54,7 @@ export default function SectionPickerButton({ type, name, disabled }) {
       await createAndAssign({ type, name });
       setOpen(false);
     } catch (err) {
-      alert(err.message);
+      setErrorMsg(err.message);
     } finally {
       setBusy(false);
     }
@@ -117,6 +119,13 @@ export default function SectionPickerButton({ type, name, disabled }) {
           </ul>
         </div>
       )}
+      <AlertDialog
+        open={!!errorMsg}
+        title="Couldn't move workload"
+        message={errorMsg || ''}
+        tone="error"
+        onClose={() => setErrorMsg(null)}
+      />
     </div>
   );
 }

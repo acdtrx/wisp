@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, X } from 'lucide-react';
-import { useEscapeKey } from '../../hooks/useEscapeKey.js';
+import { Loader2 } from 'lucide-react';
+import Modal from '../shared/Modal.jsx';
 import { getMountFileContent, putMountFileContent } from '../../api/containers.js';
 
 export default function MountFileEditorModal({
@@ -20,8 +20,6 @@ export default function MountFileEditorModal({
     if (saving) return;
     onClose();
   }, [onClose, saving]);
-
-  useEscapeKey(open, handleClose);
 
   useEffect(() => {
     if (!open || !containerName || !mountName) return;
@@ -54,48 +52,18 @@ export default function MountFileEditorModal({
     }
   };
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/30" onClick={handleClose} />
-      <div className="relative z-10 flex h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-card bg-surface-card shadow-lg" data-wisp-modal-root>
-        <div className="flex items-center justify-between border-b border-surface-border px-4 py-3">
-          <h2 className="text-sm font-semibold text-text-primary">
-            Edit mount file — {mountName}
-          </h2>
-          <button
-            type="button"
-            onClick={handleClose}
-            disabled={saving}
-            className="rounded-lg p-1 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-50"
-            aria-label="Close"
-          >
-            <X size={16} />
-          </button>
-        </div>
-        <div className="flex-1 flex flex-col min-h-0 p-4">
-          {loadError && (
-            <p className="mb-2 text-xs text-status-stopped">{loadError}</p>
-          )}
-          {loading ? (
-            <div className="flex flex-1 items-center justify-center py-12">
-              <Loader2 size={20} className="animate-spin text-text-muted" />
-            </div>
-          ) : (
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              spellCheck={false}
-              className="input-field flex-1 min-h-[12rem] w-full resize-y font-mono text-xs leading-relaxed text-text-primary"
-              disabled={!!loadError}
-            />
-          )}
-          {saveError && (
-            <p className="mt-2 text-xs text-status-stopped">{saveError}</p>
-          )}
-        </div>
-        <div className="flex justify-end gap-2 border-t border-surface-border px-4 py-3">
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title={`Edit mount file — ${mountName}`}
+      size="3xl"
+      height="tall"
+      bodyPadding="none"
+      closeOnBackdrop={!saving}
+      closeOnEscape={!saving}
+      footer={
+        <>
           <button
             type="button"
             onClick={handleClose}
@@ -112,8 +80,30 @@ export default function MountFileEditorModal({
           >
             {saving ? <Loader2 size={14} className="animate-spin inline" /> : 'Save'}
           </button>
-        </div>
+        </>
+      }
+    >
+      <div className="flex h-full flex-col p-4">
+        {loadError && (
+          <p className="mb-2 text-xs text-status-stopped">{loadError}</p>
+        )}
+        {loading ? (
+          <div className="flex flex-1 items-center justify-center py-12">
+            <Loader2 size={20} className="animate-spin text-text-muted" />
+          </div>
+        ) : (
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            spellCheck={false}
+            className="input-field flex-1 min-h-[12rem] w-full resize-y font-mono text-xs leading-relaxed text-text-primary"
+            disabled={!!loadError}
+          />
+        )}
+        {saveError && (
+          <p className="mt-2 text-xs text-status-stopped">{saveError}</p>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }

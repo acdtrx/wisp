@@ -3,6 +3,7 @@ import { Camera, Plus, RotateCcw, Trash2 } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
+import Modal from '../shared/Modal.jsx';
 import {
   DataTableScroll,
   DataTable,
@@ -198,46 +199,49 @@ export default function SnapshotsSection({ vmConfig }) {
         </DataTableScroll>
       )}
 
-      {/* Create Snapshot modal */}
-      {createOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={() => !createSubmitting && setCreateOpen(false)} />
-          <div className="relative z-10 w-full max-w-sm rounded-card bg-surface-card p-6 shadow-lg" data-wisp-modal-root>
-            <h3 className="text-sm font-semibold text-text-primary">Create Snapshot</h3>
-            <p className="mt-1 text-xs text-text-secondary">Enter a name for the snapshot.</p>
-            <input
-              type="text"
-              value={createName}
-              onChange={e => setCreateName(e.target.value)}
-              placeholder="Snapshot name"
-              className="input-field mt-3 bg-surface placeholder:text-text-muted"
-              onKeyDown={e => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') setCreateOpen(false); }}
-              autoFocus
-            />
-            {createError && (
-              <p className="mt-2 text-xs text-status-stopped">{createError}</p>
-            )}
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => !createSubmitting && setCreateOpen(false)}
-                className="rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface transition-colors"
-                disabled={createSubmitting}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleCreate}
-                className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
-                disabled={createSubmitting}
-              >
-                {createSubmitting ? 'Creating…' : 'Create'}
-              </button>
-            </div>
+      <Modal
+        open={createOpen}
+        onClose={() => !createSubmitting && setCreateOpen(false)}
+        size="sm"
+        bodyPadding="none"
+        closeOnBackdrop={!createSubmitting}
+        closeOnEscape={!createSubmitting}
+      >
+        <div className="p-6">
+          <h3 className="text-sm font-semibold text-text-primary">Create Snapshot</h3>
+          <p className="mt-1 text-xs text-text-secondary">Enter a name for the snapshot.</p>
+          <input
+            type="text"
+            value={createName}
+            onChange={e => setCreateName(e.target.value)}
+            placeholder="Snapshot name"
+            className="input-field mt-3 bg-surface placeholder:text-text-muted"
+            onKeyDown={e => { if (e.key === 'Enter') handleCreate(); }}
+            autoFocus
+          />
+          {createError && (
+            <p className="mt-2 text-xs text-status-stopped">{createError}</p>
+          )}
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => !createSubmitting && setCreateOpen(false)}
+              className="rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface transition-colors"
+              disabled={createSubmitting}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleCreate}
+              className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
+              disabled={createSubmitting}
+            >
+              {createSubmitting ? 'Creating…' : 'Create'}
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
       <ConfirmDialog
         open={!!revertTarget}

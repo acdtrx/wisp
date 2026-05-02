@@ -17,6 +17,7 @@ import { useContainerStore } from '../../store/containerStore.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { listContainerImages, deleteContainerImage } from '../../api/containers.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
+import Modal from '../shared/Modal.jsx';
 import SectionCard from '../shared/SectionCard.jsx';
 import PresetImageDownloadMenu from './PresetImageDownloadMenu.jsx';
 import {
@@ -766,78 +767,76 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
         onCancel={() => setDeleteTarget(null)}
       />
 
-      {/* URL download modal */}
-      {urlModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeUrlModal}>
-          <div
-            className="w-full max-w-md rounded-card border border-surface-border bg-surface-card p-5 shadow-lg"
-            data-wisp-modal-root
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-sm font-semibold text-text-primary mb-3">Download from URL</h3>
-            <p className="text-xs text-text-muted mb-2">Enter an HTTP or HTTPS URL to an ISO or disk image (qcow2, img).</p>
-            <div className="flex gap-2 mb-3">
-              <input
-                type="url"
-                value={urlInput}
-                onChange={(e) => { setUrlInput(e.target.value); setUrlCheckResult(null); setUrlDownloadError(null); }}
-                placeholder="https://..."
-                className="input-field flex-1"
-              />
-              <button
-                type="button"
-                onClick={handleUrlCheck}
-                disabled={urlChecking || !urlInput.trim()}
-                className="rounded border border-surface-border bg-surface px-3 py-2 text-xs font-medium text-text-secondary hover:bg-surface-sidebar disabled:opacity-50"
-              >
-                {urlChecking ? '…' : 'Check'}
-              </button>
+      <Modal
+        open={urlModalOpen}
+        onClose={closeUrlModal}
+        title="Download from URL"
+        size="md"
+        bodyPadding="none"
+      >
+        <div className="p-5">
+          <p className="text-xs text-text-muted mb-2">Enter an HTTP or HTTPS URL to an ISO or disk image (qcow2, img).</p>
+          <div className="flex gap-2 mb-3">
+            <input
+              type="url"
+              value={urlInput}
+              onChange={(e) => { setUrlInput(e.target.value); setUrlCheckResult(null); setUrlDownloadError(null); }}
+              placeholder="https://..."
+              className="input-field flex-1"
+            />
+            <button
+              type="button"
+              onClick={handleUrlCheck}
+              disabled={urlChecking || !urlInput.trim()}
+              className="rounded border border-surface-border bg-surface px-3 py-2 text-xs font-medium text-text-secondary hover:bg-surface-sidebar disabled:opacity-50"
+            >
+              {urlChecking ? '…' : 'Check'}
+            </button>
+          </div>
+          {urlCheckResult && (
+            <div className={`mb-3 rounded px-3 py-2 text-xs ${urlCheckResult.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-status-stopped'}`}>
+              {urlCheckResult.ok
+                ? `OK${urlCheckResult.contentLength != null ? ` — ${(urlCheckResult.contentLength / 1024 / 1024).toFixed(1)} MB` : ''}`
+                : urlCheckResult.error}
             </div>
-            {urlCheckResult && (
-              <div className={`mb-3 rounded px-3 py-2 text-xs ${urlCheckResult.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-status-stopped'}`}>
-                {urlCheckResult.ok
-                  ? `OK${urlCheckResult.contentLength != null ? ` — ${(urlCheckResult.contentLength / 1024 / 1024).toFixed(1)} MB` : ''}`
-                  : urlCheckResult.error}
+          )}
+          {urlDownloadError && (
+            <p className="mb-3 text-xs text-status-stopped">{urlDownloadError}</p>
+          )}
+          {urlDownloading && (
+            <div className="mb-3">
+              <div className="mb-1 text-xs text-text-secondary">Downloading… {urlDownloadProgress}%</div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-surface-border">
+                <div
+                  className="h-full rounded-full bg-accent transition-all duration-200"
+                  style={{ width: `${urlDownloadProgress}%` }}
+                />
               </div>
-            )}
-            {urlDownloadError && (
-              <p className="mb-3 text-xs text-status-stopped">{urlDownloadError}</p>
-            )}
-            {urlDownloading && (
-              <div className="mb-3">
-                <div className="mb-1 text-xs text-text-secondary">Downloading… {urlDownloadProgress}%</div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-surface-border">
-                  <div
-                    className="h-full rounded-full bg-accent transition-all duration-200"
-                    style={{ width: `${urlDownloadProgress}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-[11px] text-text-muted">
-                  You can close this dialog — progress continues in the background jobs list (top bar).
-                </p>
-              </div>
-            )}
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={closeUrlModal}
-                className="rounded border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface"
-              >
-                {urlDownloading ? 'Close' : 'Cancel'}
-              </button>
-              <button
-                type="button"
-                onClick={handleUrlDownload}
-                disabled={urlDownloading || !urlInput.trim()}
-                className="flex items-center gap-1.5 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-              >
-                {urlDownloading && <Loader2 size={14} className="animate-spin" />}
-                Download
-              </button>
+              <p className="mt-2 text-[11px] text-text-muted">
+                You can close this dialog — progress continues in the background jobs list (top bar).
+              </p>
             </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={closeUrlModal}
+              className="rounded border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface"
+            >
+              {urlDownloading ? 'Close' : 'Cancel'}
+            </button>
+            <button
+              type="button"
+              onClick={handleUrlDownload}
+              disabled={urlDownloading || !urlInput.trim()}
+              className="flex items-center gap-1.5 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {urlDownloading && <Loader2 size={14} className="animate-spin" />}
+              Download
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
     </>
   );
 

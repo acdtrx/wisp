@@ -25,6 +25,7 @@ import {
   DataTableTh,
   DataTableTd,
   dataTableEmptyCellClass,
+  rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
@@ -482,7 +483,7 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
                     <DataTableRowActions forceVisible={editing}>
                       {editing && (
                         <>
-                          <button type="button" onClick={() => handleSave(row)} disabled={!canSave} className={iconBtn} title="Save" aria-label="Save SMB mount">
+                          <button type="button" onClick={() => handleSave(row)} disabled={!canSave} className={rowActionIconBtnPrimary} title="Save" aria-label="Save SMB mount">
                             {savingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Save size={14} aria-hidden />}
                           </button>
                           <button type="button" onClick={() => cancelEdit(row)} disabled={savingId === row.id} className={iconBtn} title="Cancel edit" aria-label="Cancel edit">
@@ -768,7 +769,7 @@ function RemovableDrivesSection({
                       <DataTableRowActions forceVisible={editing}>
                         {editing && (
                           <>
-                            <button type="button" onClick={() => handleSave(row)} disabled={!canSave} className={iconBtn} title="Save" aria-label="Save drive">
+                            <button type="button" onClick={() => handleSave(row)} disabled={!canSave} className={rowActionIconBtnPrimary} title="Save" aria-label="Save drive">
                               {savingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Save size={14} aria-hidden />}
                             </button>
                             <button type="button" onClick={() => cancelEdit(row)} disabled={savingId === row.id} className={iconBtn} title="Cancel edit" aria-label="Cancel edit">
