@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 
 import { useContainerStore } from '../../store/containerStore.js';
+import { useSectionsStore } from '../../store/sectionsStore.js';
 import { updateContainer } from '../../api/containers.js';
 import { getVmIcon, getDefaultContainerIconId } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
@@ -53,6 +54,7 @@ export default function ContainerOverviewPanel() {
   const killContainer = useContainerStore((s) => s.killContainer);
   const restartContainer = useContainerStore((s) => s.restartContainer);
   const deleteContainer = useContainerStore((s) => s.deleteContainer);
+  const selectContainer = useContainerStore((s) => s.selectContainer);
   const refreshSelectedContainer = useContainerStore((s) => s.refreshSelectedContainer);
 
   const { tab } = useParams();
@@ -102,7 +104,23 @@ export default function ContainerOverviewPanel() {
 
   const handleSectionSave = async (changes) => {
     const result = await updateContainer(name, changes);
-    await refreshSelectedContainer();
+    /* PATCH may rename the container (when `name` is in the body); the
+     * response reports the name actually in effect. Re-select under the new
+     * name so the stats SSE reconnects, then update the URL. */
+    const nextName = result?.name && result.name !== name ? result.name : null;
+    if (nextName) {
+      /* The backend moved the section assignment as part of the rename, but
+       * the LeftPanel buckets workloads from the client-side sectionsStore
+       * (which isn't optimistic — it mirrors the server's `{sections,
+       * assignments}` payload after every API response that returns one).
+       * PATCH /containers/:name doesn't return that payload, so refetch
+       * sections to pick up the moved assignment. */
+      await useSectionsStore.getState().loadSections();
+      await selectContainer(nextName);
+      navigate(`/container/${encodeURIComponent(nextName)}/${activeTab}`, { replace: true });
+    } else {
+      await refreshSelectedContainer();
+    }
     return result;
   };
 

@@ -35,7 +35,6 @@ import {
 import * as createJobStore from '../lib/createJobStore.js';
 import * as backupJobStore from '../lib/backupJobStore.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
-import { getAssignments, resolveSectionId } from '../lib/sections.js';
 import { getMountStatus, mountSMB } from '../lib/smbMount.js';
 import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError } from '../lib/routeErrors.js';
@@ -74,7 +73,6 @@ export default async function vmsRoutes(fastify) {
               autostart: { type: 'boolean' },
               iconId: { type: ['string', 'null'] },
               localDns: { type: 'boolean' },
-              sectionId: { type: 'string' },
             },
           },
         },
@@ -82,8 +80,7 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (_request, reply) => {
       try {
-        const [vms, assignments] = await Promise.all([listVMs(), getAssignments()]);
-        return vms.map((v) => ({ ...v, sectionId: resolveSectionId(assignments, 'vm', v.name) }));
+        return await listVMs();
       } catch (err) {
         handleRouteError(err, reply, _request);
       }
@@ -91,7 +88,10 @@ export default async function vmsRoutes(fastify) {
   });
 
   // GET /vms/stream — SSE endpoint for VM list updates. Pushes on libvirt
-  // domain events and qemu binary changes; no polling timer.
+  // domain events and qemu binary changes; no polling timer. Section
+  // assignment is *not* part of this payload — the frontend reads sections
+  // via /api/sections (mirrored into sectionsStore) because moving a
+  // workload between sections doesn't trigger a libvirt event.
   fastify.get('/vms/stream', {
     schema: { hide: true },
     handler: async (request, reply) => {
@@ -99,12 +99,8 @@ export default async function vmsRoutes(fastify) {
 
       async function sendList() {
         try {
-          const [vms, assignments] = await Promise.all([listVMs(), getAssignments()]);
-          const decorated = vms.map((v) => ({
-            ...v,
-            sectionId: resolveSectionId(assignments, 'vm', v.name),
-          }));
-          reply.raw.write(`data: ${JSON.stringify(decorated)}\n\n`);
+          const vms = await listVMs();
+          reply.raw.write(`data: ${JSON.stringify(vms)}\n\n`);
         } catch (err) {
           request.log.warn({ err: err.message }, 'vms/stream listVMs failed');
           const payload = { error: err.message, detail: err.raw || err.message, code: err.code };

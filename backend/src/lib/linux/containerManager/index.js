@@ -47,6 +47,8 @@ export {
   startExistingContainer,
 } from './containerManagerCreate.js';
 
+export { renameContainer } from './containerManagerRename.js';
+
 export {
   listContainerImages, deleteContainerImage, getImageDigest, findContainersUsingImage,
 } from './containerManagerImages.js';

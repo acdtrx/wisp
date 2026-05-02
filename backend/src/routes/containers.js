@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto';
 
 import {
-  listContainers, getContainerConfig, createContainer, deleteContainer,
+  listContainers, getContainerConfig, createContainer, deleteContainer, renameContainer,
   startContainer, stopContainer, killContainer, restartContainer,
   updateContainerConfig, addContainerMount, updateContainerMount, removeContainerMount,
   addContainerService, updateContainerService, removeContainerService,
@@ -29,7 +29,6 @@ import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
 import { validateContainerName } from '../lib/validation.js';
 import { isKnownApp, getAppModule } from '../lib/linux/containerManager/apps/appRegistry.js';
-import { getAssignments, resolveSectionId } from '../lib/sections.js';
 
 function maskContainerSecrets(config) {
   if (!config || !config.env || typeof config.env !== 'object') return config;
@@ -104,32 +103,27 @@ export default async function containerRoutes(fastify) {
               state: { type: 'string' },
               iconId: { type: ['string', 'null'] },
               updateAvailable: { type: 'boolean' },
-              sectionId: { type: 'string' },
             },
           },
         },
       },
     },
-    handler: async () => {
-      const [list, assignments] = await Promise.all([listContainers(), getAssignments()]);
-      return list.map((c) => ({ ...c, sectionId: resolveSectionId(assignments, 'container', c.name) }));
-    },
+    handler: async () => listContainers(),
   });
 
   // ── List SSE stream ───────────────────────────────────────────────
   // Event-driven: pushes on containerd events (tasks/containers create/start/exit/etc.),
   // container.json writes, and image-update completion. No polling timer.
+  // Section assignment is *not* part of this payload — the frontend reads
+  // sections via /api/sections (mirrored into sectionsStore) because moving
+  // a workload between sections doesn't trigger a containerd event.
   fastify.get('/containers/stream', async (request, reply) => {
     setupSSE(reply);
 
     const send = async () => {
       try {
-        const [list, assignments] = await Promise.all([listContainers(), getAssignments()]);
-        const decorated = list.map((c) => ({
-          ...c,
-          sectionId: resolveSectionId(assignments, 'container', c.name),
-        }));
-        reply.raw.write(`data: ${JSON.stringify(decorated)}\n\n`);
+        const list = await listContainers();
+        reply.raw.write(`data: ${JSON.stringify(list)}\n\n`);
       } catch (err) {
         const payload = { error: 'Failed to list containers', detail: err.raw || err.message, code: err.code };
         try { reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`); }
@@ -298,9 +292,27 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Update ────────────────────────────────────────────────────────
+  // PATCH may rename the container (when `name` differs from the URL segment).
+  // In that case the rename runs first, and remaining fields are applied under
+  // the new name. The response carries the name actually in effect so clients
+  // can follow up with the new URL.
   fastify.patch('/containers/:name', async (request, reply) => {
     try {
-      return await updateContainerConfig(request.params.name, request.body);
+      const body = request.body && typeof request.body === 'object' ? request.body : {};
+      const { name: requestedName, ...rest } = body;
+      let workingName = request.params.name;
+
+      if (typeof requestedName === 'string' && requestedName.trim()
+        && requestedName.trim() !== workingName) {
+        const renamed = await renameContainer(workingName, requestedName.trim());
+        workingName = renamed.name;
+      }
+
+      if (Object.keys(rest).length === 0) {
+        return { ok: true, name: workingName };
+      }
+      const result = await updateContainerConfig(workingName, rest);
+      return { ...result, name: workingName };
     } catch (err) {
       handleRouteError(err, reply, request);
     }

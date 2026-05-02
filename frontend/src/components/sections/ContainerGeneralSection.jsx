@@ -55,6 +55,12 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
   const [requiresRestart, setRequiresRestart] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
+  /* Name is editable in create mode and on stopped containers; renaming a
+   * running/paused container would have to stop the task first, which is too
+   * much side effect for an inline field edit. Same gating idea as the
+   * Network section's MAC/interface fields. */
+  const nameEditable = isCreating || !['running', 'paused', 'pausing'].includes(config?.state);
+
   const init = useCallback(() => {
     const d = buildGeneralFormDefaults(config);
     setForm(d);
@@ -96,6 +102,8 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
     setError(null);
     try {
       const changes = {};
+      const trimmedName = form.name.trim();
+      if (trimmedName !== original.name) changes.name = trimmedName;
       if (form.image !== original.image) changes.image = form.image;
       if (form.command !== original.command) {
         changes.command = form.command.trim() ? form.command.trim().split(/\s+/) : null;
@@ -138,7 +146,11 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
               type="text"
               value={form.name}
               onChange={(e) => updateField('name', e.target.value)}
-              disabled={!isCreating}
+              disabled={!nameEditable}
+              maxLength={63}
+              autoComplete="off"
+              spellCheck={false}
+              title={nameEditable ? undefined : 'Stop the container to rename it'}
               className="input-field"
             />
           </Field>

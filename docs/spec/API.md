@@ -437,14 +437,13 @@ List all VMs with summary info.
     "osCategory": "linux",
     "iconId": null,
     "localDns": false,
-    "staleBinary": false,
-    "sectionId": "main"
+    "staleBinary": false
   }
 ]
 ```
 
 - `staleBinary` is `true` when the VM's running qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt package upgrade); the VM needs to be restarted to pick up the new binary. Always `false` for non-running VMs. Detected by reading `/var/run/libvirt/qemu/<name>.pid` and checking whether `/proc/<pid>/exe` ends with ` (deleted)`.
-- `sectionId` is the id of the sidebar section the VM is assigned to. Workloads with no explicit assignment (or with an assignment pointing at a deleted section) report `"main"` — the synthetic Main bucket. See [Sections](#sections).
+- The list payload does **not** carry section assignment. Section info is read separately from `GET /api/sections` (see [Sections](#sections)) — libvirt/containerd events don't fire on assignment changes, so the SSE list streams aren't a usable carrier for it; the dedicated sections endpoint is the only source.
 
 ### GET /api/vms/stream
 
@@ -1098,7 +1097,7 @@ Move a workload to a section.
 
 The workload itself isn't validated — assignments are pure metadata, so referencing an unknown VM/container name is a no-op (the entry is ignored on the next list read).
 
-> The VM and container list payloads also include `sectionId` for direct API consumers, but the frontend does not rely on it: SSE only re-pushes on libvirt/containerd events, so after a move the assignments envelope (cached in `sectionsStore`) is the live source of truth on the client.
+> Section info is **not** embedded in the VM/container list payloads or their SSE streams. libvirt/containerd don't emit events on assignment changes, so the lists wouldn't be a reliable carrier — the SSE could stay stale until the next workload event. Read sections from `GET /api/sections` directly; every section/assignment mutation returns the full envelope so a single API response keeps the client in sync.
 
 ---
 
@@ -1151,7 +1150,7 @@ All container routes require JWT authentication. Routes with a `:name` path para
 
 List all containers (summary).
 
-**200:** `[{ name, type: "container", image, state, iconId, updateAvailable, sectionId }]`. List payload is intentionally minimal — only what the sidebar renders. `updateAvailable` is set by the image update checker (see CONTAINERS.md → *Image updates*) and defaults to `false` when the field is not set on disk. `sectionId` is the assigned sidebar section id (or `"main"` when unassigned — see [Sections](#sections)). Detail fields (`pid`, `cpuLimit`, `memoryLimitMiB`, `restartPolicy`, `autostart`, `pendingRestart`, etc.) are returned by `GET /api/containers/:name`; runtime samples (`uptime`, live CPU/IO) come from the per-container stats SSE.
+**200:** `[{ name, type: "container", image, state, iconId, updateAvailable }]`. List payload is intentionally minimal — only what the sidebar renders. `updateAvailable` is set by the image update checker (see CONTAINERS.md → *Image updates*) and defaults to `false` when the field is not set on disk. Section assignment is not part of this payload — read it from `GET /api/sections` (see [Sections](#sections)). Detail fields (`pid`, `cpuLimit`, `memoryLimitMiB`, `restartPolicy`, `autostart`, `pendingRestart`, etc.) are returned by `GET /api/containers/:name`; runtime samples (`uptime`, live CPU/IO) come from the per-container stats SSE.
 
 `iconId` is the optional UI icon key (same registry as VM icons); omit or `null` means the client uses the default container icon.
 
@@ -1247,6 +1246,8 @@ Partially update container config.
 
 **Body:** Any subset of container.json fields, except environment variables — those must use **`envPatch`** (see below). **`iconId`:** set to a string to choose a UI icon (same ids as VM icons), or `null` / empty string to clear and use the client default. **`localDns`:** boolean toggle for mDNS registration. **`runAsRoot`:** boolean — when `true`, the container process runs as UID/GID 0 instead of the Wisp deploy user (required for images that write to root-owned paths inside the container, e.g. OpenWebUI); requires restart.
 
+**`name`:** Renaming the container. The container must be **stopped** (no running/paused task) — otherwise **409** `CONTAINER_MUST_BE_STOPPED`. The new name is validated with the same rules as create (1–63 chars, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..` / path separators); invalid → **422** `INVALID_CONTAINER_NAME`. Conflicts with an existing container or directory → **409** `CONTAINER_EXISTS`. The rename runs first, then any other fields in the body apply to the renamed container; the response always carries the name actually in effect (`{ ..., name: <newOrUnchangedName> }`). URL paths and SSE channels under the old name stop responding immediately — clients should follow the response and re-subscribe under the returned `name`. The on-disk container directory and the containerd container record are renamed in lockstep; the (ephemeral) rootfs snapshot is dropped and re-prepared on next start. See CONTAINERS.md → [Rename](../spec/CONTAINERS.md#rename).
+
 **`envPatch`:** Delta applied to the container's environment variables. Keyed by env var name:
 
 - `envPatch[KEY] = { value: "new", secret?: boolean }` — upsert. Fields omitted on an existing entry are preserved.
@@ -1266,7 +1267,7 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 **`eject: true`:** (app containers only) Removes `app`, `appConfig`, and `pendingRestart` from the config. Generated env vars and mounts are preserved as-is and become directly editable. One-way operation.
 
-**200:** `{ requiresRestart: boolean, reloaded?: boolean }` — `reloaded: true` when the app was live-reloaded (no restart needed).
+**200:** `{ requiresRestart: boolean, reloaded?: boolean, name: string }` — `reloaded: true` when the app was live-reloaded (no restart needed). `name` always reflects the container's current name (unchanged unless the body included a `name` rename).
 
 **422:** `APP_RELOAD_FAILED` — the app's reload command exited non-zero. Config is saved but the app rejected it; check `detail` for stderr.
 

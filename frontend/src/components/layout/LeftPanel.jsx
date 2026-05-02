@@ -384,10 +384,13 @@ export default function LeftPanel() {
     return list;
   }, [vms, containers, search, sortRunningFirst, listFilter]);
 
-  /* Bucket items using the local assignments map (sectionsStore), not the
-   * `sectionId` baked into the SSE payload — the SSE only re-pushes on
-   * libvirt/containerd events, so without this overlay the UI would lag
-   * behind every move-to-section action until the next workload event. */
+  /* Bucket items using the assignments map from sectionsStore. The store is
+   * the client mirror of /api/sections — refreshed (via applyResponse) by
+   * every section/assignment API response, not optimistically. The
+   * VM/container list SSE streams intentionally don't carry section info:
+   * libvirt and containerd don't emit events on assignment changes, so
+   * sectionsStore is the only source that updates when a user moves a
+   * workload between sections. */
   const itemsBySection = useMemo(() => {
     const buckets = new Map();
     for (const s of sections) buckets.set(s.id, []);

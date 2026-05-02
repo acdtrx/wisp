@@ -41,6 +41,7 @@ export const createContainer = impl.createContainer;
 export const deleteContainer = impl.deleteContainer;
 export const pullImage = impl.pullImage;
 export const startExistingContainer = impl.startExistingContainer;
+export const renameContainer = impl.renameContainer;
 
 export const listContainerImages = impl.listContainerImages;
 export const deleteContainerImage = impl.deleteContainerImage;

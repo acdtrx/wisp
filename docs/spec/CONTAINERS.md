@@ -20,6 +20,16 @@ Containers follow the same architectural patterns as VMs:
 - **Frontend**: Dedicated Zustand store (`containerStore.js`), SSE for live data
 - **API routes**: `backend/src/routes/containers.js` mirroring VM routes
 
+## Ephemeral rootfs
+
+The writable rootfs layer of a Wisp container is **ephemeral**. On every start, `startExistingContainer` removes the existing rootfs snapshot and re-prepares it from the current library image before the task is created (see `containerManagerCreate.js:556-560`). Anything a container needs to persist across restarts must be stored under a Local mount (`files/<mountName>` in the container directory), a Storage-sourced mount, or a tmpfs mount (which is itself ephemeral but kernel-managed).
+
+Consequences:
+
+- **Image updates** are picked up automatically on next start. The container always boots from whatever the library currently holds for its image reference.
+- **Package installs and `/etc` edits** done inside a running container do **not** survive a stop. Tools that customize a system after first boot must run as part of the image build, an entrypoint script reading mounted config, or an app's `appConfig`/derived mounts.
+- **Identity changes** (e.g. **rename**) do not need to preserve any rootfs state — the snapshot under the old key is dropped at rename time and the next start re-prepares one under the new key.
+
 ## containerd Connection
 
 - Socket: `/run/containerd/containerd.sock` (override: `WISP_CONTAINERD_SOCK`)
@@ -248,6 +258,7 @@ All under `backend/src/lib/`:
 | `containerManagerLifecycle.js` | `startContainer()`, `stopContainer()`, `restartContainer()`, `killContainer()`, `getTaskState()`, `startAutostartContainersAtBackendBoot()`, `normalizeTaskStatus()`, `containerTaskStatusToUi()` (gRPC task enums may arrive as names, indices, or string digits — normalize before API/UI) |
 | `containerImageRef.js` | `normalizeImageRef()` — docker.io/library/ prefix rules (shared with pull/delete) |
 | `containerManagerCreate.js` | `pullImage()`, `createContainer()`, `deleteContainer()` |
+| `containerManagerRename.js` | `renameContainer(oldName, newName)` — stopped-container rename (containerd Containers.Delete + Create + fs.rename + config rewrite); see [Rename](#rename) |
 | `containerManagerImages.js` | `listContainerImages()`, `deleteContainerImage()` (containerd Images service; delete blocked if any Wisp container references the image) |
 | `containerManagerOciSize.js` | `compressedBlobSizeForImageName()` — sums compressed config + layer sizes from the resolved Linux image manifest (not the top-level manifest blob size) |
 | `containerManagerConfig.js` | `updateContainerConfig()` |
@@ -391,6 +402,36 @@ Wisp checks every OCI image in the library for upstream changes and flags contai
 5. **Restart**: Stop then Start
 6. **Delete**: Kill task → Tear down networking → Remove snapshot → Remove containerd container → Delete files on disk (`fs.rm` on the container directory). Without `runAsRoot`, the main process runs as the **deploy user's UID/GID**, so bind-mount data under `files/` is removable directly. With `runAsRoot`, idmapped Local mounts (see [Idmapped Local mounts](#idmapped-local-mounts)) translate the configured in-container UID/GID to the deploy user, so files written by that UID also remain removable. Files written by other in-container UIDs through an idmapped mount may end up `nobody`-owned (`overflowuid`) on disk — fix on the host (e.g. `sudo rm -rf <path>`) if delete fails with permission errors.
 
+### Rename
+
+A container's name is its containerd container ID, the directory key under `containersPath`, the netns name, the published `<name>.local` mDNS host, and the URL/SSE channel key. containerd has no Rename API, so rename is implemented as **Containers.Delete(old) → Containers.Create(new) → fs.rename(old → new)**, with the rootfs snapshot dropped along the way. Because the rootfs is [ephemeral](#ephemeral-rootfs), the writable layer doesn't need to be preserved — the next start re-prepares the snapshot from the image under the new key.
+
+**Surface:** rename rides on `PATCH /api/containers/:name` — the user edits the **Name** field in the General section like any other field. When the request body's `name` differs from the URL segment, the route runs `renameContainer(oldName, newName)` first and then applies the rest of the patch under the new name; the response carries the name in effect so clients can follow up with the new URL. There is no separate rename endpoint.
+
+**Preconditions:**
+
+- Container must be **stopped** (no running/paused task). Returns **409** `CONTAINER_MUST_BE_STOPPED` otherwise. The user is expected to stop the container manually first; the rename does not auto-stop. The General section's Name input is correspondingly disabled when the container is `running`, `paused`, or `pausing` (matching the same gating used on `network.mac` / `network.interface`).
+- New name must pass `validateContainerName` (1–63 chars, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..` / path separators).
+- New name must not already exist as a containerd container or as a directory under `containersPath`. Returns **409** `CONTAINER_EXISTS` otherwise.
+
+**Order of operations** (in `containerManagerRename.js`):
+
+1. Validate new name and preconditions; finalize any dangling STOPPED task via `cleanupTask`.
+2. Capture the old `Containers.Get` record (for rollback).
+3. `Containers.Delete(old)`.
+4. `Snapshots.Remove(old)` — best-effort. Ephemeral rootfs means a missing snapshot is fine.
+5. `Containers.Create(new)` reusing the captured runtime / spec / labels / snapshotter, with `id` and `snapshotKey` set to the new name.
+6. `fs.rename(<containersPath>/<old>, <containersPath>/<new>)` — atomic on the same filesystem.
+7. `renameWorkloadAssignment('container', oldName, newName)` — moves the entry in `settings.assignments` from `container:<old>` to `container:<new>` so a workload in a custom section keeps that section after rename. The frontend reads sections from `GET /api/sections` (mirrored into `sectionsStore`), not from the container list SSE, so the renamed container picks up its section the next time the client refetches that endpoint.
+8. Rewrite `container.json` under the new dir with `name: <new>` (also fans out a config-write notification → SSE list refresh).
+9. Best-effort cleanup under the old name: `deregisterAddress`, `deregisterServicesForContainer`, `wisp-netns delete <old>` for any orphan netns left behind by a previous run (stop does not tear down the netns; setupNetwork on next start would otherwise leak it).
+
+**Rollback:** if step 5 fails, the old containerd container record is recreated from the captured spec. If step 6 fails after step 5 succeeded, the new container record is deleted and the old one is recreated. The on-disk directory and `container.json` are only touched after containerd has accepted the new id.
+
+**Client effects (breaking):** the URL `/api/containers/:name/...` and any open SSE / WS channels (stats, logs, container console) under the old name stop responding immediately. PATCH responses always include `name` (the post-rename name, or the unchanged name when no rename happened). The frontend `ContainerOverviewPanel` compares the response `name` to the URL segment and, on a change, refetches `/api/sections` (so the LeftPanel's `sectionsStore` mirror picks up the moved assignment), re-selects under the new name (which restarts the stats SSE), then `replace`-navigates to `/container/<newName>/<tab>`. The previous run-log files travel with the directory rename and remain accessible under the new name.
+
+**Why no auto-stop:** rename is intentionally gated on an explicit pre-stop. Auto-stopping would silently restart-equivalent the container's task (the next start runs under the new name with a fresh snapshot), which is too much side effect for what users expect from editing a name field.
+
 ### Backend process startup (host boot / `wisp` restart)
 
 When the Wisp backend process starts (`backend/src/index.js`), after libvirt and containerd connection attempts and after mDNS manager connect:
@@ -409,7 +450,8 @@ The HTTP server listens **after** these steps, so hosts with mounts configured m
 | `CONTAINER_RUN_NOT_FOUND` | 404 | Referenced `runId` does not exist in `runs/` |
 | `CONTAINER_ALREADY_RUNNING` | 409 | Start called on running container |
 | `CONTAINER_NOT_RUNNING` | 409 | Stop/kill called on stopped container |
-| `CONTAINER_EXISTS` | 409 | Name conflict on create |
+| `CONTAINER_MUST_BE_STOPPED` | 409 | Operation requires the container to be stopped (e.g. rename) |
+| `CONTAINER_EXISTS` | 409 | Name conflict on create or rename |
 | `IMAGE_PULL_FAILED` | 422 | Failed to pull OCI image |
 | `INVALID_CONTAINER_NAME` | 422 | Name validation failed |
 | `INVALID_CONTAINER_MOUNTS` | 422 | Mounts array invalid |

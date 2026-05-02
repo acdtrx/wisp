@@ -170,3 +170,23 @@ export async function assignWorkload({ type, name, sectionId }) {
     return { ...fromFile, assignments: assign };
   });
 }
+
+/**
+ * Move a workload's section assignment from oldName to newName when the
+ * workload is renamed. Idempotent: a no-op when no assignment exists for
+ * oldName. Used by `renameContainer` so a container in a custom section
+ * doesn't silently fall back to Main after rename.
+ */
+export async function renameWorkloadAssignment(type, oldName, newName) {
+  if (!VALID_TYPES.has(type)) return;
+  if (typeof oldName !== 'string' || typeof newName !== 'string' || oldName === newName) return;
+  return withSettingsWriteLock((fromFile) => {
+    const assign = { ...(fromFile.assignments || {}) };
+    const oldKey = assignmentKey(type, oldName);
+    if (!(oldKey in assign)) return fromFile;
+    const sectionId = assign[oldKey];
+    delete assign[oldKey];
+    assign[assignmentKey(type, newName)] = sectionId;
+    return { ...fromFile, assignments: assign };
+  });
+}

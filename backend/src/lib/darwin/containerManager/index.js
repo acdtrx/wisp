@@ -137,6 +137,10 @@ export async function deleteContainer() {
   throw noContainerd();
 }
 
+export async function renameContainer() {
+  throw noContainerd();
+}
+
 export async function pullImage() {
   throw noContainerd();
 }
