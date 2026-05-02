@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-05-03 (v1.2.0)
+
+### New Features
+- **Container backup + restore** — single `data.tar.gz` of the container directory plus a `manifest.json` sidecar under `<dest>/containers/<name>/<ts>/`. Restore extracts under a new name, rewrites `container.json` with a fresh MAC, re-pulls the image if missing, and recreates the containerd record (snapshot re-prepares on first start; rootfs is ephemeral by design). New `POST /api/containers/:name/backup` + progress SSE, plus `/api/container-backups` (list/restore/delete) parallel to `/api/backups`. `BackupModal` moves to `shared/` and is reused for VMs and containers via a `subjectLabel` prop.
+- **Container rename** — stopped containers can be renamed by editing the Name field in General. `PATCH /api/containers/:name` runs `renameContainer` first (Containers.Delete+Create, `fs.rename`, snapshot drop, section assignment move, mDNS/netns cleanup), then applies the rest of the patch under the new name.
+- **Host Software: OS package list + restart-now** — Wisp and OS update cards share a single `UpdateCard` shell (Check/Update buttons, count badge, unified status row, "Checked hourly" footer) and a single `UpdateDetailsModal`. OS card adds "View packages" (new `wisp-os-update list` action + `GET /api/host/updates/packages`) and a "Restart now" button on the reboot-required banner that opens the existing host Restart dialog.
+
+### Bug Fixes
+- **CNI default route detection in setup** — `cni.sh` ran immediately after `bridge.sh`, but `netplan apply` only swaps the default route to br0 *after* DHCP. Detection failed and the script bailed before writing the conflist + `cni-dhcp.service`, so fresh installs silently shipped without DHCP IPAM and containers came up with no IP. Now polls up to 30s for the default route to land on a Linux bridge.
+- **VM list cache stale on mutate** — refresh directly on `createVM` / `cloneVM` / `deleteVM` (mirrors containerManager). The libvirt `DomainEvent` listener stays as a secondary trigger but was dropping `DEFINED` often enough that newly created VMs stayed out of the LeftBar until manual page refresh.
+- **VM guest IP skipped real DHCP address** — guest agent's interface list could surface a 169.254.x.x (e.g. Wisp's own mDNS stub on br0 when Wisp is installed inside the VM) before the real DHCP address. Skip `169.254/16` for IPv4 and `fe80::/10` for IPv6 when picking `guestIp`.
+- **Software-tab badge: inline + folded** — moved from absolute corner to inline-right of the label (matches the Host row in the sidebar) and folded reboot-required into the same dot. Tooltip joins all active reasons (Wisp update / N OS packages / Reboot required).
+
+### Refactor
+- **Shared modal primitives** — `Modal` / `AlertDialog` so backdrop, escape, and styling stop drifting per call site. Replaces native `alert` / `confirm` in section sidebar flows. Row Save buttons now use a primary variant so the commit affordance reads at a glance like the header add buttons.
+- **Dropped unused `sectionId` decoration from list APIs** — `/api/vms`, `/api/containers`, and both list SSE streams. The LeftPanel never read it (it always bucketed from `sectionsStore`); the misleading "overlay" comment that implied optimistic UI is rewritten to reflect reality.
+- **Single-commit releases** — `scripts/release.sh` now accepts `CHANGELOG.md` as the only dirty file in the working tree and folds it into the `release: vX.Y.Z` commit alongside the version bumps + retitling. No more separate "update CHANGELOG" commit.
+
+### Docs
+- **`CLAUDE.md`: self-update mechanism wired into project rules** — `UPDATES.md` added to the Docs and Spec Sync table; new Deployability bullet enumerating the `wisp-updater` contract (rsync excludes, helper registration, `wisp.service` re-templating, on-disk shape compatibility, release tarball contents) so future sessions consider it when changing install layout, persisted state, or privileged helpers.
+
 ## 2026-05-01 (v1.1.0)
 
 ### Breaking Changes
