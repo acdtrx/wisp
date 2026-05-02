@@ -20,6 +20,7 @@
 ## Changelog
 
 - **Update `CHANGELOG.md` before every `git push`.** Add a new dated section at the **top** (format `## YYYY-MM-DD`) covering every commit since the previous push. Group entries under `### New Features` and `### Bug Fixes`. One line per entry, very terse — summarize intent, not implementation. Never touch older sections.
+- **Releases bundle the changelog into the release commit.** When cutting a release, leave `CHANGELOG.md` uncommitted — `scripts/release.sh` accepts it as the only dirty file and folds it into the single `release: vX.Y.Z` commit alongside the version bumps. For non-release pushes, commit `CHANGELOG.md` normally.
 
 ## Deployability
 

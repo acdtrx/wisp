@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Bump version across root + backend + frontend package.json, retitle the topmost
-# CHANGELOG section, commit, and tag v<version>. Push is left to the operator so
-# the tag is reviewable before it triggers the release workflow.
+# CHANGELOG section, commit, and tag v<version>. CHANGELOG.md may be dirty going
+# in — its contents are folded into the same release commit so a release lands as
+# a single commit. Push is left to the operator so the tag is reviewable before
+# it triggers the release workflow.
 #
 # Usage: ./scripts/release.sh <version>
 #   version  — semver without v prefix, e.g. 1.0.6 or 1.0.6-rc.1
@@ -30,8 +32,11 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
   echo "ERROR: not a git repository."
   exit 1
 fi
-if [[ -n "$(git status --porcelain)" ]]; then
-  echo "ERROR: working tree is not clean. Commit or stash changes first."
+# Allow CHANGELOG.md to be dirty (it'll be folded into the release commit
+# alongside the version bumps + retitling). Anything else dirty is an error.
+DIRTY="$(git status --porcelain | awk '{print $2}' | grep -v '^CHANGELOG\.md$' || true)"
+if [[ -n "$DIRTY" ]]; then
+  echo "ERROR: working tree has uncommitted changes other than CHANGELOG.md."
   git status --short
   exit 1
 fi

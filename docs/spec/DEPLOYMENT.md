@@ -272,9 +272,12 @@ Manual paths remain supported:
 ### Cutting a release (maintainers)
 
 ```bash
-./scripts/release.sh 1.0.6        # bumps versions + retitles CHANGELOG + tags v1.0.6
+# Edit CHANGELOG.md (add a new "## YYYY-MM-DD" section at the top), do NOT commit it.
+./scripts/release.sh 1.0.6        # bumps versions + retitles CHANGELOG + folds it into a single release commit + tags v1.0.6
 git push && git push origin v1.0.6
 ```
+
+`release.sh` accepts `CHANGELOG.md` as the only dirty file in the working tree, so the new section lands in the same `release: vX.Y.Z` commit as the version bumps — no separate changelog commit needed.
 
 The `v1.0.6` tag triggers `.github/workflows/release.yml`, which builds the frontend, packages `wisp-1.0.6.tar.gz` (with prebuilt `frontend/dist/`) plus a `.sha256`, extracts the matching CHANGELOG section as release notes, and creates the GitHub Release. Tags shaped `v*-*` (e.g. `v1.0.6-rc.1`) are published as prereleases — these are not surfaced by the in-app auto-checker (GitHub's `releases/latest` endpoint excludes prereleases).
 
