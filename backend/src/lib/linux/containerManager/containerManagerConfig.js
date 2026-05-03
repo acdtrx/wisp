@@ -11,7 +11,7 @@ import { getTaskState } from './containerManagerLifecycle.js';
 import { normalizeContainerMac } from './containerManagerNetwork.js';
 import {
   deregisterAddress, registerAddress, deregisterServicesForContainer, sanitizeHostname,
-} from '../../mdnsManager.js';
+} from '../../mdns/index.js';
 import { registerAllContainerServices } from './containerManagerServices.js';
 import { validateAndNormalizeMounts, ensureMissingMountArtifacts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';

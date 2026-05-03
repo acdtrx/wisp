@@ -4,6 +4,7 @@
 
 ### Refactor
 - **Networking module carved out of the flat `lib/` surface** — new `lib/networking/` (facade, `bridgeNaming`, plus `linux/{hostBridges,managedBridges}` and `darwin/` stubs). Removes the only true `containerManager` → `vmManager` cross-import (`getDefaultContainerParentBridge`); `listHostBridges` and `getDefaultBridge` follow as cohesive siblings. Step 1 of the modules-boundaries refactor campaign.
+- **mDNS module carved out** — new `lib/mdns/` (facade `index.js`, platform-agnostic `hostname.js` + `serviceTypes.js`, `linux/{avahi,forwarder}.js`, `darwin/avahi.js`). Replaces the flat `mdnsManager.js`/`mdnsHostname.js`/`linux/mdnsForwarder.js`/`linux/mdnsServiceTypes.js` constellation with one named module + one facade. `vmMdnsPublisher` and `containerMdnsReconciler` stay at `lib/` top-level as Wisp app-level glue (codified in `WISP-RULES.md` § Architecture: glue between extractable modules is intentionally outside both modules to keep them independently reusable). Step 2 of the modules-boundaries refactor campaign.
 
 ## 2026-05-03 (v1.2.0)
 

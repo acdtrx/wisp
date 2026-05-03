@@ -14,7 +14,7 @@ import {
   discoverIpv4InNetnsOnce,
   writeContainerConfig,
 } from './containerManager.js';
-import { registerAddress, sanitizeHostname } from './mdnsManager.js';
+import { registerAddress, sanitizeHostname } from './mdns/index.js';
 
 const RECONCILE_INTERVAL_MS = 60 * 1000;
 

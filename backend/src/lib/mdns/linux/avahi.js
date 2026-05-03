@@ -1,7 +1,7 @@
 /**
  * Avahi-backed mDNS for Wisp (Linux):
  *   - publishes <container>.local on the LAN via avahi's EntryGroup API
- *   - exposes resolveLocalName/resolveLocalAddress helpers for mdnsForwarder,
+ *   - exposes resolveLocalName/resolveLocalAddress helpers for forwarder.js,
  *     which answers container DNS queries from 169.254.53.53
  *
  * Single shared system-bus connection (opened once, watched for avahi restarts
@@ -13,8 +13,8 @@
  */
 import dbus from 'dbus-next';
 
-import { sanitizeHostname, stripCidr } from '../mdnsHostname.js';
-import { startForwarder, stopForwarder } from './mdnsForwarder.js';
+import { sanitizeHostname, stripCidr } from '../hostname.js';
+import { startForwarder, stopForwarder } from './forwarder.js';
 
 const AVAHI_BUS_NAME = 'org.freedesktop.Avahi';
 const AVAHI_SERVER_PATH = '/';
@@ -293,7 +293,7 @@ export async function deregisterServicesForContainer(containerName) {
 /**
  * Look up a Wisp-published `.local` name in our own in-memory state.
  *
- * Used by mdnsForwarder for a fast path that avoids DBus + avahi entirely
+ * Used by forwarder.js for a fast path that avoids DBus + avahi entirely
  * for names we know we own. Returns the address and its family (inferred
  * from the literal — `:` → inet6, else inet), or null if the name is not
  * published by this Wisp instance.
@@ -318,7 +318,7 @@ export function lookupLocalEntry(fqdn) {
 /**
  * Resolve a `.local` name → IP via avahi's DBus API.
  *
- * Used by mdnsForwarder to answer container DNS queries without going through
+ * Used by forwarder.js to answer container DNS queries without going through
  * multicast (avahi returns its own published records for DBus callers, so
  * same-host container→container resolution works — no multicast loop-prevention
  * edge case). Returns null on any failure (name not found, avahi unavailable).

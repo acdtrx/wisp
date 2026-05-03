@@ -8,7 +8,7 @@ import grpc from '@grpc/grpc-js';
 import {
   containerError, containerState, getClient, callUnary,
 } from './containerManagerConnection.js';
-import { deregisterAddress, deregisterServicesForContainer } from '../../mdnsManager.js';
+import { deregisterAddress, deregisterServicesForContainer } from '../../mdns/index.js';
 import { findCurrentRunId, finalizeRun } from './containerManagerLogs.js';
 import { getContainerDir } from './containerPaths.js';
 

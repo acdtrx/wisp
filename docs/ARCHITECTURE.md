@@ -139,7 +139,7 @@ Each file registers routes under a common prefix. Routes handle HTTP concerns (v
 
 ### vmManager (`backend/src/lib/vmManager.js`)
 
-Platform facade: at load time it imports **`backend/src/lib/linux/vmManager/`** on Linux (libvirt over DBus) or **`backend/src/lib/darwin/vmManager/`** on macOS (dev stub). This is the single integration boundary with libvirt — no route or other module imports `dbus-next` for libvirt or calls libvirt except through this facade; only code under `linux/vmManager/` does. Avahi (mDNS) uses `dbus-next` in **`linux/mdnsManager.js`** only (separate DBus service).
+Platform facade: at load time it imports **`backend/src/lib/linux/vmManager/`** on Linux (libvirt over DBus) or **`backend/src/lib/darwin/vmManager/`** on macOS (dev stub). This is the single integration boundary with libvirt — no route or other module imports `dbus-next` for libvirt or calls libvirt except through this facade; only code under `linux/vmManager/` does. Avahi (mDNS) uses `dbus-next` in **`lib/mdns/linux/avahi.js`** only (separate DBus service).
 
 Shared pure helpers live in **`backend/src/lib/vmManagerShared.js`** (re-exported through the facade).
 
@@ -222,9 +222,9 @@ Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux 
 | `hostPower.js` | Facade: `wisp-power` on Linux; macOS stub |
 | `procStats.js` | Facade: host stats from `/proc` on Linux; macOS stub |
 | `aptUpdates.js` | Facade: `wisp-os-update` on Linux; macOS stub |
-| `mdnsHostname.js` | Pure hostname/CIDR helpers for mDNS (no DBus) |
-| `mdnsManager.js` | Facade: Avahi DBus on Linux (`linux/mdnsManager.js`); macOS stub |
-| `vmMdnsPublisher.js` | Facade: VM mDNS reconciler on Linux (`linux/vmMdnsPublisher.js`); macOS stub. Owns desired→actual mDNS mapping for VMs, driven by libvirt `DomainEvent` + per-domain `AgentEvent` signals — independent of any UI/SSE activity |
+| `mdns/index.js` | mDNS module facade — Avahi-backed Linux backend (`mdns/linux/avahi.js`) plus an in-process DNS forwarder for container `.local` queries (`mdns/linux/forwarder.js`); macOS stubs (`mdns/darwin/avahi.js`). Public surface: `connect`/`disconnect`, address + service registration, `lookupLocalEntry`/`resolveLocalName` are private to the linux pair. Also exports the platform-agnostic helpers (`mdns/hostname.js` — `stripCidr`, `sanitizeHostname`) and service-type catalog (`mdns/serviceTypes.js`). |
+| `vmMdnsPublisher.js` | App-level glue (Wisp wiring, not part of vmManager). Facade for VM mDNS reconciler on Linux (`linux/vmMdnsPublisher.js`); macOS stub. Owns desired→actual mDNS mapping for VMs, driven by libvirt `DomainEvent` + per-domain `AgentEvent` signals — independent of any UI/SSE activity |
+| `containerMdnsReconciler.js` | App-level glue. Periodic 60s reconciler that re-registers a container's mDNS A record when its DHCP lease changes IP under it. |
 
 ### Backend helper scripts (`backend/scripts/`)
 
@@ -342,7 +342,9 @@ wisp/
 │       └── lib/                  # Business logic and utilities
 │           ├── vmManager.js      # Platform facade → linux/vmManager or darwin/vmManager
 │           ├── containerManager.js
-│           ├── linux/            # Linux-only: vmManager/, containerManager/, host/, mdnsManager.js
+│           ├── networking/       # Cross-platform: bridge enumeration, default-bridge, /proc IPv4, netplan VLAN bridges
+│           ├── mdns/              # Cross-platform: Avahi backend (linux), DNS forwarder, hostname helpers, service-type catalog
+│           ├── linux/            # Linux-only manager internals: vmManager/, containerManager/, host/
 │           ├── darwin/           # macOS dev stubs (no libvirt/containerd)
 │           └── *.js              # Auth, config, paths, facades (procStats, smbMount, …), etc.
 ├── frontend/

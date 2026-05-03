@@ -17,7 +17,7 @@ import { containerError, getClient, callUnary } from './containerManagerConnecti
 import { getContainerDir, getContainerNetnsPath } from './containerPaths.js';
 import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
-import { deregisterAddress, deregisterServicesForContainer } from '../../mdnsManager.js';
+import { deregisterAddress, deregisterServicesForContainer } from '../../mdns/index.js';
 import { validateContainerName } from '../../validation.js';
 import { renameWorkloadAssignment } from '../../sections.js';
 

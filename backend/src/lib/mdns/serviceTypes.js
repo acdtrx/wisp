@@ -1,6 +1,7 @@
 /**
  * Built-in mDNS service type catalog used for validation and UI suggestions.
  * Mirrored at frontend/src/lib/mdnsServiceTypes.js — keep both in sync.
+ * Platform-agnostic (catalog + regex validators).
  */
 
 export const KNOWN_SERVICE_TYPES = [

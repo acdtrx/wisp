@@ -21,7 +21,7 @@ import {
   normalizeContainerMac,
 } from './containerManagerNetwork.js';
 import { processUptimeMsFromProc } from '../host/linuxProcUptime.js';
-import { getRegisteredHostname, registerAddress, sanitizeHostname } from '../../mdnsManager.js';
+import { getRegisteredHostname, registerAddress, sanitizeHostname } from '../../mdns/index.js';
 import { readLibraryDigestMap } from './containerManagerImages.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import {

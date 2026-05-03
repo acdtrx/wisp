@@ -3,7 +3,7 @@
  *
  * Each container's /etc/resolv.conf points at 169.254.53.53 (the Wisp mDNS stub
  * IP on br0). This forwarder receives those queries and:
- *   - `<name>.local` forward (A/AAAA) → resolved via avahi DBus (mdnsManager)
+ *   - `<name>.local` forward (A/AAAA) → resolved via avahi DBus (avahi.js)
  *   - `<ip>.in-addr.arpa` / `<ip>.ip6.arpa` (PTR) → tried via avahi first
  *     (so containers in the Wisp registry get nice reverse names); falls
  *     through to upstream on miss so real reverse zones still work
@@ -24,7 +24,7 @@ import dgram from 'node:dgram';
 import net from 'node:net';
 import { readFileSync } from 'node:fs';
 
-import { resolveLocalName, resolveLocalAddress, lookupLocalEntry } from './mdnsManager.js';
+import { resolveLocalName, resolveLocalAddress, lookupLocalEntry } from './avahi.js';
 
 const STUB_IP = '169.254.53.53';
 const PORT = 53;

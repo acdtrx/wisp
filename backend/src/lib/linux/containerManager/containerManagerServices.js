@@ -8,8 +8,8 @@ import { containerError } from './containerManagerConnection.js';
 import { getTaskState } from './containerManagerLifecycle.js';
 import {
   registerService, deregisterService, deregisterServicesForContainer, sanitizeHostname,
-} from '../../mdnsManager.js';
-import { isValidServiceType, isValidServicePort } from '../mdnsServiceTypes.js';
+  isValidServiceType, isValidServicePort,
+} from '../../mdns/index.js';
 import { readContainerConfig as loadContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
 function taskIsRunning(task) {

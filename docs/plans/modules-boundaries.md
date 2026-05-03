@@ -24,8 +24,8 @@ This refactor stays **inside Wisp** — no package extraction, no port interface
 
 ## Status
 
-- **Current step:** Step 2 — mDNS (sketched, needs detailing)
-- **Completed:** Step 1 — Networking & Bridges (2026-05-03)
+- **Current step:** Step 3 — Storage primitives (sketched, needs detailing)
+- **Completed:** Step 1 — Networking & Bridges (2026-05-03), Step 2 — mDNS (2026-05-03)
 
 ## Boundaries identified (overview)
 
@@ -34,7 +34,7 @@ These are the internal modules to carve out of the flat `backend/src/lib/` surfa
 | # | Module | Why first/last | Status |
 |---|--------|----------------|--------|
 | 1 | **Networking & bridges** | Only true cross-leak: `containerManager` imports from `vmManager`. Unblocking this means the two managers become independent. | done |
-| 2 | **mDNS** | Both managers and several other modules reach into mDNS directly. Group under one named module. | sketched |
+| 2 | **mDNS** | Both managers and several other modules reach into mDNS directly. Group under one named module. | done |
 | 3 | **Storage primitives** | `diskOps`, `smbMount`, `diskMount` — generic disk operations, currently flat. | sketched |
 | 4 | **Host introspection** | `hostHardware`, `hostGpus`, `usbMonitor`, proc readers. Already partially under `linux/host/`. | sketched |
 | 5 | **Paths & config** | Hardest. Wisp-specific `wisp-config.json` schema lives here. Save for last — this is the policy boundary that will eventually become the port interface. | sketched |
@@ -171,3 +171,7 @@ Append one line per non-obvious tradeoff resolved during execution. Format: `YYY
 - 2026-05-03 — [step 1] — Layout collapsed to 6 files (no top-level dispatcher files; `index.js` does platform dispatch directly) — initial sketch had 8 files including separate `hostBridges.js`/`managedBridges.js` dispatchers; removed them since `index.js` already serves as the facade.
 - 2026-05-03 — [step 1] — Cross-platform-agnostic helper `isVlanLikeBridgeName` kept in standalone `bridgeNaming.js` despite being 4 lines — both `linux/hostBridges.js` and `linux/managedBridges.js` need it; putting it in `index.js` would risk circular-init via top-level `await import`.
 - 2026-05-03 — [step 1] — `networking/linux/managedBridges.js` originally kept static imports of `vmManager` and `containerManager` (for `assertBridgeNotInUse`), but this created a top-level-await cycle on Linux (vmManager TLA → networking TLA → managedBridges static-imports vmManager). Fixed by switching to dynamic `import()` inside `assertBridgeNotInUse`. macOS dev didn't reproduce it because `darwin/managedBridges.js` has no cross-deps. **Lesson for steps 2+:** verify Linux module-load with the *facade* entry point, not standalone file imports, before declaring done.
+- 2026-05-03 — [step 2] — `vmMdnsPublisher` and `containerMdnsReconciler` stay at `lib/` top-level as **app-level glue**, NOT moved inside their respective managers. Reason: extraction goal — vmManager/containerManager need to be reusable libs in projects that don't want mDNS. Glue is Wisp-specific orchestration policy (when to publish, what hostname, how often to reconcile); other apps would write their own glue against the same event surfaces (`subscribeDomainChange`, `subscribeAgentEvent`). Codified the rule in `docs/WISP-RULES.md` § Architecture. Step 2 only carved out the mDNS *core* (`lib/mdns/`).
+- 2026-05-03 — [step 2] — `mdnsServiceTypes.js` lifted from `lib/linux/` to `lib/mdns/serviceTypes.js` — was misfiled as Linux-specific despite being a platform-agnostic catalog + regex validators. Re-exported from the facade.
+- 2026-05-03 — [step 2] — Renamed `mdnsManager.js` → `avahi.js` inside the module — more accurate (the Linux backend is specifically Avahi, not generic mDNS), and the directory `mdns/` already carries the context. Same for `mdnsForwarder.js` → `forwarder.js`, `mdnsHostname.js` → `hostname.js`.
+- 2026-05-03 — [step 2] — Internal-only exports (`lookupLocalEntry`, `resolveLocalName`, `resolveLocalAddress`) stay private to the linux pair `avahi.js` ↔ `forwarder.js` — used only by the forwarder, not part of the public mDNS surface. Preserves the existing circular static import (no TLA, function bindings only — ESM handles it).

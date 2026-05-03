@@ -23,7 +23,7 @@ import { getDefaultContainerParentBridge } from '../../networking/index.js';
 import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
 import {
   registerAddress, deregisterAddress, deregisterServicesForContainer, sanitizeHostname,
-} from '../../mdnsManager.js';
+} from '../../mdns/index.js';
 import { registerAllContainerServices } from './containerManagerServices.js';
 import { assertBindSourcesReady } from './containerManagerMounts.js';
 import { resolveDeviceSpecs } from './containerDeviceNode.js';

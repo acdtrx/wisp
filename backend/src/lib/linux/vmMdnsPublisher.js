@@ -23,7 +23,7 @@ import {
 } from './vmManager/vmManagerConnection.js';
 import { getGuestNetwork } from './vmManager/vmManagerStats.js';
 import { listVMs } from './vmManager/vmManagerList.js';
-import { deregisterAddress, registerAddress, sanitizeHostname } from '../mdnsManager.js';
+import { deregisterAddress, registerAddress, sanitizeHostname } from '../mdns/index.js';
 
 const PERIODIC_INTERVAL_MS = 45_000;
 

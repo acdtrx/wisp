@@ -44,7 +44,7 @@ import { closeAllSSE } from './lib/sse.js';
 import { disconnect as disconnectLibvirtBus } from './lib/vmManager.js';
 import { start as startUsbMonitor, stop as stopUsbMonitor } from './lib/usbMonitor.js';
 import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/diskMonitor.js';
-import { connect as connectMdns, disconnect as disconnectMdns, registerAddress, sanitizeHostname } from './lib/mdnsManager.js';
+import { connect as connectMdns, disconnect as disconnectMdns, registerAddress, sanitizeHostname } from './lib/mdns/index.js';
 import { startVmMdnsPublisher, stopVmMdnsPublisher } from './lib/vmMdnsPublisher.js';
 import { startContainerMdnsReconciler, stopContainerMdnsReconciler } from './lib/containerMdnsReconciler.js';
 

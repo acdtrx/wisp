@@ -9,7 +9,7 @@ import { connectionState, resolveDomain, getDomainXML, getDomainObjAndIface, unw
 import { parseVMFromXML } from './vmManagerXml.js';
 import { STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, VM_STATS_MASK } from './libvirtConstants.js';
 import { getCachedLocalDns, getCachedStaleBinary, getCachedVcpus, getCachedGuestAgent, getCachedStateCode, getCachedDomainPath } from './vmManagerList.js';
-import { getRegisteredHostname } from '../../mdnsManager.js';
+import { getRegisteredHostname } from '../../mdns/index.js';
 
 function parseInterfaceAddresses(raw, unwrapVariantFn) {
   const ifaces = Array.isArray(raw) ? raw : [];

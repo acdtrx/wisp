@@ -1,13 +1,17 @@
 /**
- * mDNS (Avahi on Linux) facade: platform-specific implementation.
+ * mDNS module facade — Avahi-backed Linux backend (publish .local hostnames
+ * and services, plus an in-process DNS forwarder for container queries) and
+ * macOS stubs. Single public surface for VM/container managers and any
+ * Wisp app-level glue (vmMdnsPublisher, containerMdnsReconciler).
  */
 import { platform } from 'node:os';
 
-export { stripCidr, sanitizeHostname } from './mdnsHostname.js';
-
 const impl = await import(
-  platform() === 'linux' ? './linux/mdnsManager.js' : './darwin/mdnsManager.js',
+  platform() === 'linux' ? './linux/avahi.js' : './darwin/avahi.js',
 );
+
+export { stripCidr, sanitizeHostname } from './hostname.js';
+export { KNOWN_SERVICE_TYPES, isValidServiceType, isValidServicePort } from './serviceTypes.js';
 
 export const connect = impl.connect;
 export const disconnect = impl.disconnect;
