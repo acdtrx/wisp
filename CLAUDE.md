@@ -67,6 +67,7 @@ When you change behavior, APIs, UI, or configuration, update the corresponding d
 | Self-update / release pipeline (`backend/src/lib/wispUpdate.js`, `backend/scripts/wisp-updater`, `systemd/linux/wisp-updater.service`, `scripts/release.sh`, `.github/workflows/release.yml`) | `docs/spec/UPDATES.md` |
 | Backups, snapshots, cloud-init, USB, image library, deployment, etc. | Same-name spec in `docs/spec/` |
 | Project rules / coding standards | `docs/CODING-RULES.md`, `docs/WISP-RULES.md` |
+| Discovered-but-deferred bugs / improvements | `docs/BACKLOG.md` (single file; graduate to `docs/plans/<topic>.md` when an entry grows) |
 
 ## Pre-Implementation Analysis
 
