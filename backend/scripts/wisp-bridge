@@ -118,6 +118,19 @@ write_file_atomic() {
 
 apply_netplan() {
   netplan apply
+  # netplan apply re-renders bridges from the declared YAML, dropping any
+  # runtime-only addresses. The 169.254.53.53/32 stub IP for Wisp's in-process
+  # DNS forwarder (lib/mdns/linux/forwarder.js) is runtime-only — assigned at
+  # boot by wisp.service ExecStartPre and at install time by container-dns.sh —
+  # so without this re-assert, every VLAN bridge create/delete would wipe it
+  # and break .local resolution from inside containers until wisp restarts.
+  # Declaring it in the netplan YAML alongside dhcp4:true triggers a
+  # systemd-networkd reconcile loop on Ubuntu's bridge handling, so we keep
+  # it runtime-only and re-add here.
+  if [[ -d /sys/class/net/br0/bridge ]] && \
+     ! ip -4 addr show dev br0 | grep -q "169.254.53.53/32"; then
+    ip addr add 169.254.53.53/32 dev br0 scope link 2>/dev/null || true
+  fi
 }
 
 create_vlan_bridge() {

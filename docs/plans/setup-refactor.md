@@ -20,16 +20,34 @@ This doc captures the bigger refactor — not for execution now, but to remember
 5. **`run_step` swallows failures.** `setup-server.sh` wraps each step so a failure doesn't abort the whole run — good for first install, bad for updates where silent partial-success could leave the system in a broken state. The `FAILED_STEPS` list is reported to stdout but not propagated as a non-zero exit.
 6. **No clear "update-safe" classification.** Each setup script either is or isn't safe to re-run during a live update (wisp stopped, containerd may be running). Today this is implicit; nothing enforces it.
 
-## What we already did (Phase 1, May 2026)
+## What we tried first (Phase 1, May 2026) — and rolled back
 
-A focused fix that solves the immediate bridge bug without committing to the bigger refactor:
+Initial attempt: declare `169.254.53.53/32` in `/etc/netplan/90-wisp-bridge.yaml` under `bridges.br0.addresses` alongside `dhcp4: true`, and patch existing installs' YAML via a new `bridge-config.sh` + Python YAML script called from both `setup-server.sh` and `wisp-updater`.
 
-- `scripts/linux/setup/bridge-config.sh` — idempotent script that ensures `/etc/netplan/90-wisp-bridge.yaml` declares the stub IP `169.254.53.53/32` on `br0`. Patches in-place via Python YAML (a netplan dependency, always available on netplan systems). No-op on non-netplan installs. Runs `netplan apply` only when something changed.
-- `bridge.sh` netplan branch updated to include the stub IP in br0's addresses for new installs.
-- `setup-server.sh` runs `bridge-config.sh` as a step (so push.sh installs pick it up).
-- `wisp-updater` runs `bridge-config.sh` as a step (so self-updates pick it up — single new step, not the whole setup-server.sh).
+**Why we rolled it back:** on Ubuntu (systemd-networkd as the netplan backend), declaring a static `addresses:` array alongside `dhcp4: true` on a **bridge** put networkd into a `routable (configuring)` reconcile loop. Symptoms on the test box (tini):
+- `ip monitor address` showed the DHCP-acquired LAN address being deleted and re-added in a tight loop (10k+ events/min).
+- avahi-daemon couldn't keep up — joining/leaving multicast groups continuously, eventually publishing only `127.0.0.1` for `tini.local`.
+- The Wisp UI was unreachable via `tini.local`. Host networking itself stayed up (SSH worked) but mDNS-dependent flows broke.
 
-Phase 1 explicitly did NOT solve the broader update strategy. It's a tactical fix.
+Removing the `addresses:` block and re-running `netplan apply` returned networkd to `routable (configured)` immediately and avahi recovered.
+
+**The actual fix shipped:** `wisp-bridge`'s `apply_netplan()` re-asserts `169.254.53.53/32` on br0 after every `netplan apply` (idempotent — no-op when the IP is already there). The stub IP remains runtime-only, asserted at three points:
+- `container-dns.sh` at install time
+- `wisp.service` `ExecStartPre=+` at every service start
+- `wisp-bridge`'s `apply_netplan()` after every managed VLAN bridge create/delete
+
+This is what works on the user's other (pre-refactor) servers and matches the existing system design. The "declarative netplan" idea was structurally appealing but didn't survive contact with networkd's bridge-with-DHCP behavior.
+
+### Lesson recorded (not for re-litigation)
+
+When tempted to make the stub IP netplan-declared in the future:
+1. Test the dual `dhcp4 + addresses` config end-to-end on Ubuntu's networkd, not just netplan parsing.
+2. Watch `networkctl status br0` — `routable (configured)` settled vs `routable (configuring)` looping is the signal.
+3. The trigger is bridge-specific. Same YAML on a non-bridge ethernet may behave differently.
+
+A future refactor *might* solve this with a separate netplan dropin file using `Address=` directly in a per-bridge networkd `.network` snippet, bypassing netplan's bridge handler. Not pursuing now — runtime assertion works, and the refactor would touch the network config system enough to need its own audit.
+
+Phase 1 explicitly did NOT solve the broader update strategy. The runtime-assertion fix doesn't need a `wisp-updater` hook because it lives entirely in `wisp-bridge` (which is re-installed on every update by `install-helpers.sh`, already in `wisp-updater`).
 
 ## Ideas for the bigger refactor
 

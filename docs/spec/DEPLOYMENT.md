@@ -111,9 +111,8 @@ Server setup and install logic is split into standalone scripts under `scripts/l
 | `rapl.sh <user>` | root | Intel RAPL read access for Host Overview |
 | `containerd.sh [user]` | root | Install containerd 2.0+, socket group perms, wisp namespace |
 | `cni.sh` | root | CNI plugins (bridge, dhcp); **overwrites** `10-wisp-bridge.conflist`; DHCP daemon |
-| `bridge.sh` | root | Create br0 on primary NIC (netplan / nmcli / systemd-networkd). Netplan branch declares the link-local stub IP `169.254.53.53/32` on br0 so `netplan apply` (e.g. wisp-bridge during managed VLAN bridge create/delete) preserves it. |
-| `bridge-config.sh` | root | Idempotent. Patches `/etc/netplan/90-wisp-bridge.yaml` to add the stub IP if missing. No-op on non-netplan installs and on already-correct YAMLs. Runs on every install (via setup-server.sh) and every self-update (via wisp-updater) so existing installs pick up the YAML fix. |
-| `container-dns.sh` | root | Assigns 169.254.53.53/32 to br0 at runtime (defense-in-depth; netplan is the primary persistence) and writes `/var/lib/wisp/container-resolv.conf` for bind-mounting into containers. |
+| `bridge.sh` | root | Create br0 on primary NIC (netplan / nmcli / systemd-networkd) |
+| `container-dns.sh` | root | Assign link-local `169.254.53.53/32` to br0 at runtime (the bind address for Wisp's in-process DNS forwarder; runtime-only — re-asserted by `wisp.service` `ExecStartPre` and by `wisp-bridge` after `netplan apply`) and write `/var/lib/wisp/container-resolv.conf` for bind-mounting into containers. |
 | `copy.sh <source-dir> <install-dir>` | user | Replace `frontend/`, `backend/`, `scripts/`, `systemd/`; refresh `config/*.example` |
 | `config.sh <install-dir> [server-name]` | user | `config/wisp-config.json` from example + serverName |
 | `password.sh <install-dir> [--force]` | user | `config/wisp-password` (scrypt hash) |

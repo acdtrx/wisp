@@ -93,16 +93,6 @@ if [[ -x "$INSTALL_DIR/scripts/linux/setup/install-helpers.sh" ]]; then
     || fail "install-helpers failed"
 fi
 
-echo "step:bridge-config"
-# Patch /etc/netplan/90-wisp-bridge.yaml to declare the link-local stub IP
-# (169.254.53.53/32) so 'netplan apply' (e.g. from wisp-bridge during managed
-# VLAN bridge create/delete) doesn't wipe it. Idempotent; no-op on
-# NM/networkd installs and on installs where the YAML already has it.
-if [[ -x "$INSTALL_DIR/scripts/linux/setup/bridge-config.sh" ]]; then
-  "$INSTALL_DIR/scripts/linux/setup/bridge-config.sh" \
-    || echo "warn: bridge-config exited non-zero (continuing)"
-fi
-
 echo "step:install-unit"
 # Re-template wisp.service so unit-file changes in the new release apply.
 # wisp-updater.service is handled by install-helpers above.
