@@ -19,7 +19,7 @@ import {
   generateContainerMac, normalizeContainerMac, ensureContainerNetworkConfig,
   resolveContainerResolvConf,
 } from './containerManagerNetwork.js';
-import { getDefaultContainerParentBridge } from '../vmManager/vmManagerHost.js';
+import { getDefaultContainerParentBridge } from '../../networking/index.js';
 import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
 import {
   registerAddress, deregisterAddress, deregisterServicesForContainer, sanitizeHostname,

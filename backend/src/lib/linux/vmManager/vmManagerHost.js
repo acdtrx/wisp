@@ -1,10 +1,10 @@
 /**
- * Host info and host-level queries (bridges, firmware, USB devices).
+ * Host info and host-level queries (firmware, USB devices). Bridge enumeration
+ * lives in `lib/networking/`.
  */
 import { hostname, release, uptime, networkInterfaces, cpus, totalmem } from 'node:os';
-import { readdir, access as fsAccess } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { isVlanLikeBridgeName } from '../../bridgeNaming.js';
 import { connectionState, formatVersion, unwrapVariant } from './vmManagerConnection.js';
 import { getDevices as getHostUSBDevicesFromMonitor } from '../host/usbMonitor.js';
 
@@ -52,56 +52,6 @@ export function getHostHardware() {
     cores: cpus().length,
     totalMemoryBytes: totalmem(),
   };
-}
-
-export async function listHostBridges() {
-  try {
-    const entries = await readdir('/sys/class/net');
-    const bridges = [];
-    for (const name of entries) {
-      try {
-        await fsAccess(`/sys/class/net/${name}/bridge`);
-        bridges.push(name);
-      } catch { /* not a bridge */ }
-    }
-    const envBridge = process.env.WISP_DEFAULT_BRIDGE?.trim();
-    if (envBridge && bridges.includes(envBridge)) {
-      bridges.splice(bridges.indexOf(envBridge), 1);
-      bridges.unshift(envBridge);
-    } else {
-      bridges.sort((a, b) => {
-        const aVirbr = a.startsWith('virbr') ? 1 : 0;
-        const bVirbr = b.startsWith('virbr') ? 1 : 0;
-        return aVirbr - bVirbr;
-      });
-    }
-    return bridges;
-  } catch {
-    /* /sys/class/net unreadable (non-Linux layout or permissions) */
-    return [];
-  }
-}
-
-/**
- * First Linux bridge suitable as the **parent bridge** for a new container: prefer a name
- * that is not VLAN-style (see `isVlanLikeBridgeName`), else the first listed bridge.
- * Empty when none (e.g. Darwin).
- */
-export async function getDefaultContainerParentBridge() {
-  const bridges = await listHostBridges();
-  if (bridges.length === 0) return undefined;
-  const plain = bridges.find((b) => !isVlanLikeBridgeName(b));
-  return plain ?? bridges[0];
-}
-
-/**
- * Default bridge for new VMs: WISP_DEFAULT_BRIDGE env, or first non-virbr bridge, or virbr0.
- */
-export async function getDefaultBridge() {
-  const envBridge = process.env.WISP_DEFAULT_BRIDGE?.trim();
-  if (envBridge) return envBridge;
-  const bridges = await listHostBridges();
-  return bridges.length > 0 ? bridges[0] : 'virbr0';
 }
 
 export async function listHostFirmware() {

@@ -94,20 +94,6 @@ export async function getRunningVMAllocations() {
   return { vcpus: 0, memoryBytes: 0, count: 0 };
 }
 
-export async function listHostBridges() {
-  return [];
-}
-
-export async function getDefaultContainerParentBridge() {
-  return undefined;
-}
-
-export async function getDefaultBridge() {
-  const envBridge = process.env.WISP_DEFAULT_BRIDGE?.trim();
-  if (envBridge) return envBridge;
-  return 'virbr0';
-}
-
 export async function listHostFirmware() {
   return [];
 }

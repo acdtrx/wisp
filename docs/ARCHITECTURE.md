@@ -197,7 +197,7 @@ Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux 
 | `containerJobStore.js` | Job store wrapper for container create (`routes/containers.js`) |
 | `downloadUtils.js` | Shared helpers for library downloads (`findUniqueFilename`, streaming) |
 | `fileTypes.js` | `detectType` for image library files |
-| `bridgeNaming.js` | VLAN bridge name helpers (shared with host + vmManager) |
+| `networking/index.js` | Networking facade — host bridge enumeration (`listHostBridges`, `getDefaultBridge`, `getDefaultContainerParentBridge`), `/proc` IPv4 readout (`ipv4CidrFromProcFibTrie`), netplan-managed VLAN bridges, and the `isVlanLikeBridgeName` heuristic. Linux impl under `networking/linux/{hostBridges,managedBridges}.js`; macOS stubs under `networking/darwin/`. |
 | `pciIds.js` | PCI vendor/device name lookup from system `pci.ids` |
 | `paths.js` | `getVMBasePath(name)`, `getImagePath()`, `ensureImageDir()` (container roots: `containerManager` `containerPaths.js` / `getContainersPath()`) |
 | `routeErrors.js` | `createAppError()`, `handleRouteError()`, `sendError()`, error code-to-HTTP mapping |
@@ -220,7 +220,6 @@ Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux 
 | `mountsAutoMount.js` | Startup mount reconciliation + hard-converge for `/mnt/wisp/` + disk hotplug handlers (auto-mount on insertion, lazy-unmount on removal) |
 | `hostHardware.js` | Facade: hardware inventory on Linux (`linux/host/hostHardware.js`); macOS stub |
 | `hostPower.js` | Facade: `wisp-power` on Linux; macOS stub |
-| `hostNetworkBridges.js` | Facade: netplan/managed bridges on Linux; macOS stub |
 | `procStats.js` | Facade: host stats from `/proc` on Linux; macOS stub |
 | `aptUpdates.js` | Facade: `wisp-os-update` on Linux; macOS stub |
 | `mdnsHostname.js` | Pure hostname/CIDR helpers for mDNS (no DBus) |

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-05-03
+
+### Refactor
+- **Networking module carved out of the flat `lib/` surface** — new `lib/networking/` (facade, `bridgeNaming`, plus `linux/{hostBridges,managedBridges}` and `darwin/` stubs). Removes the only true `containerManager` → `vmManager` cross-import (`getDefaultContainerParentBridge`); `listHostBridges` and `getDefaultBridge` follow as cohesive siblings. Step 1 of the modules-boundaries refactor campaign.
+
 ## 2026-05-03 (v1.2.0)
 
 ### New Features

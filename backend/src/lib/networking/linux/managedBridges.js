@@ -1,12 +1,18 @@
+/**
+ * Netplan-managed VLAN bridges. Creates and deletes `<base>-vlanN` sub-bridges via
+ * `wisp-bridge` (sudo helper) writing 91-wisp-vlan__*.yaml to /etc/netplan/.
+ */
 import { execFile as execFileCb } from 'node:child_process';
 import { access, readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import { createAppError } from '../../routeErrors.js';
-import { isVlanLikeBridgeName } from '../../bridgeNaming.js';
-import { listHostBridges, listVMs, getVMConfig } from '../../vmManager.js';
-import { listContainers, getContainerConfig } from '../../containerManager.js';
+import { isVlanLikeBridgeName } from '../bridgeNaming.js';
+import { listHostBridges } from './hostBridges.js';
+
+// vmManager / containerManager imported dynamically inside assertBridgeNotInUse to
+// avoid a top-level-await cycle: vmManager → networking → managedBridges → vmManager.
 
 const execFileAsync = promisify(execFileCb);
 
@@ -223,6 +229,11 @@ async function assertCreateInput(baseBridgeRaw, vlanRaw) {
 }
 
 async function assertBridgeNotInUse(bridgeName) {
+  const [{ listVMs, getVMConfig }, { listContainers, getContainerConfig }] = await Promise.all([
+    import('../../vmManager.js'),
+    import('../../containerManager.js'),
+  ]);
+
   const vmRefs = [];
   const vms = await listVMs();
   for (const vm of vms) {
@@ -315,4 +326,3 @@ export async function deleteManagedNetworkBridge(nameRaw) {
 
   return { ok: true };
 }
-

@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { containerError, containerState } from './containerManagerConnection.js';
 import { CONTAINER_NETNS_DIR, getContainerDir, getContainerNetnsPath } from './containerPaths.js';
 import { writeContainerConfig } from './containerManagerConfigIo.js';
-import { ipv4CidrFromProcFibTrie } from '../host/linuxProcIpv4.js';
+import { ipv4CidrFromProcFibTrie } from '../../networking/index.js';
 
 const execFile = promisify(execFileCb);
 

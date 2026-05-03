@@ -24,12 +24,8 @@ export const getDomainObjAndIface = impl.getDomainObjAndIface;
 export const getHostInfo = impl.getHostInfo;
 export const getHostHardware = impl.getHostHardware;
 export const getRunningVMAllocations = impl.getRunningVMAllocations;
-export const listHostBridges = impl.listHostBridges;
-export const getDefaultContainerParentBridge = impl.getDefaultContainerParentBridge;
 export const listHostFirmware = impl.listHostFirmware;
 export const listHostUSBDevices = impl.listHostUSBDevices;
-
-export const getDefaultBridge = impl.getDefaultBridge;
 
 export const listVMs = impl.listVMs;
 export const getVMConfig = impl.getVMConfig;

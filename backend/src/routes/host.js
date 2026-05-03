@@ -5,16 +5,16 @@ import { platform } from 'node:os';
 
 import {
   getHostInfo,
-  listHostBridges,
   listHostFirmware,
   listHostUSBDevices,
 } from '../lib/vmManager.js';
 import {
+  listHostBridges,
   listManagedNetworkBridges,
   listEligibleParentBridges,
   createManagedNetworkBridge,
   deleteManagedNetworkBridge,
-} from '../lib/hostNetworkBridges.js';
+} from '../lib/networking/index.js';
 import {
   checkForUpdates,
   performUpgrade,

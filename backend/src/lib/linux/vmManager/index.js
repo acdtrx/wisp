@@ -20,9 +20,6 @@ export {
 export {
   getHostInfo,
   getHostHardware,
-  listHostBridges,
-  getDefaultContainerParentBridge,
-  getDefaultBridge,
   listHostFirmware,
   listHostUSBDevices,
 } from './vmManagerHost.js';
