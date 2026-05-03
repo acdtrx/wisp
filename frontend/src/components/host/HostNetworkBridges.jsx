@@ -12,6 +12,7 @@ import {
   DataTableTh,
   DataTableTd,
   dataTableEmptyCellClass,
+  rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
 import {
   listManagedNetworkBridges,
@@ -133,7 +134,7 @@ export default function HostNetworkBridges({ onError }) {
             <DataTable minWidthRem={42}>
               <thead>
                 <tr className={dataTableHeadRowClass}>
-                  <DataTableTh dense>Name</DataTableTh>
+                  <DataTableTh dense className="w-48">Name</DataTableTh>
                   <DataTableTh dense>Parent</DataTableTh>
                   <DataTableTh dense>VLAN Id</DataTableTh>
                   <DataTableTh dense>Status</DataTableTh>
@@ -150,7 +151,7 @@ export default function HostNetworkBridges({ onError }) {
                 )}
                 {managed.map((item) => (
                   <tr key={item.name} className={dataTableInteractiveRowClass}>
-                    <DataTableTd dense className="font-mono text-sm text-text-primary">{item.name}</DataTableTd>
+                    <DataTableTd dense className="w-48 font-mono text-sm text-text-primary">{item.name}</DataTableTd>
                     <DataTableTd dense className="font-mono text-sm text-text-secondary">{item.baseBridge}</DataTableTd>
                     <DataTableTd dense className="tabular-nums text-sm text-text-secondary">{item.vlanId}</DataTableTd>
                     <DataTableTd dense className="text-sm text-text-secondary">{item.present ? 'present' : 'missing'}</DataTableTd>
@@ -172,7 +173,7 @@ export default function HostNetworkBridges({ onError }) {
                 ))}
                 {showCreate && (
                   <tr className={dataTableInteractiveRowClass}>
-                    <DataTableTd dense className="font-mono text-sm text-text-primary">
+                    <DataTableTd dense className="w-48 font-mono text-sm text-text-primary">
                       {bridgePreview || '—'}
                     </DataTableTd>
                     <DataTableTd dense>
@@ -210,7 +211,7 @@ export default function HostNetworkBridges({ onError }) {
                           type="button"
                           onClick={onCreate}
                           disabled={!canCreate}
-                          className={iconBtn}
+                          className={rowActionIconBtnPrimary}
                           title="Create bridge"
                           aria-label="Create bridge"
                         >
