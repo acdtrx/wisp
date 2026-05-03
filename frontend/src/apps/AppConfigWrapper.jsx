@@ -9,7 +9,7 @@ import { getAppEntry } from './appRegistry.js';
 export default function AppConfigWrapper({ config, onSave, onRefresh }) {
   const [ejectOpen, setEjectOpen] = useState(false);
 
-  const appEntry = getAppEntry(config.app);
+  const appEntry = getAppEntry(config.metadata?.app);
   if (!appEntry) return null;
 
   const AppComponent = appEntry.component;

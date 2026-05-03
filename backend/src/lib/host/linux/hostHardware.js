@@ -15,8 +15,8 @@ import {
   lookupDeviceName,
   lookupVendorName,
   normalizePciClassHex,
-} from '../../pciIds.js';
-import { readAllDiskSmartSummaries } from '../../storage/index.js';
+} from './pciIds.js';
+import { readAllDiskSmartSummaries } from './smart.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);

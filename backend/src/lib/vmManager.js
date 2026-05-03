@@ -25,7 +25,6 @@ export const getHostInfo = impl.getHostInfo;
 export const getHostHardware = impl.getHostHardware;
 export const getRunningVMAllocations = impl.getRunningVMAllocations;
 export const listHostFirmware = impl.listHostFirmware;
-export const listHostUSBDevices = impl.listHostUSBDevices;
 
 export const listVMs = impl.listVMs;
 export const getVMConfig = impl.getVMConfig;

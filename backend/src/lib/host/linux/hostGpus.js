@@ -10,7 +10,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 
-import { lookupDeviceName } from '../../pciIds.js';
+import { lookupDeviceName } from './pciIds.js';
 
 const VENDOR_INTEL = '0x8086';
 const VENDOR_AMD = '0x1002';

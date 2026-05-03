@@ -1,12 +1,12 @@
 /**
- * Host info and host-level queries (firmware, USB devices). Bridge enumeration
- * lives in `lib/networking/`.
+ * Host info and host-level queries (firmware). Bridge enumeration lives in
+ * `lib/networking/`; USB enumeration lives in `lib/host/` and is consumed
+ * directly by the route layer.
  */
 import { hostname, release, uptime, networkInterfaces, cpus, totalmem } from 'node:os';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { connectionState, formatVersion, unwrapVariant } from './vmManagerConnection.js';
-import { getDevices as getHostUSBDevicesFromMonitor } from '../host/usbMonitor.js';
 
 function getPrimaryAddress() {
   const ifaces = networkInterfaces();
@@ -74,8 +74,4 @@ export async function listHostFirmware() {
     } catch { /* directory doesn't exist */ }
   }
   return firmware;
-}
-
-export async function listHostUSBDevices() {
-  return getHostUSBDevicesFromMonitor();
 }

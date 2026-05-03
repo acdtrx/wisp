@@ -4,7 +4,7 @@
  */
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { mkdir, rm, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, rm, readFile } from 'node:fs/promises';
 import { randomBytes, createHash } from 'node:crypto';
 
 import {
@@ -30,8 +30,9 @@ import { resolveDeviceSpecs } from './containerDeviceNode.js';
 import { getRawMounts } from '../../settings.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { getImageDigest } from './containerManagerImages.js';
-import { isKnownApp, getAppModule, getAppEntry } from './apps/appRegistry.js';
 import { writeContainerConfig, notifyContainerConfigWrite } from './containerManagerConfigIo.js';
+import { validateAndNormalizeMounts } from './containerManagerMounts.js';
+import { validateAndNormalizeDevices } from './containerManagerDevices.js';
 
 const RUNTIME_NAME = 'io.containerd.runc.v2';
 const SNAPSHOTTER = 'overlayfs';
@@ -405,49 +406,30 @@ export async function createContainer(spec, onStep) {
   const iconTrim = spec.iconId != null && spec.iconId !== '' ? String(spec.iconId).trim() : '';
   if (iconTrim) config.iconId = iconTrim;
 
-  // App container: validate, store appConfig, generate derived env/mounts/files
-  if (spec.app) {
-    if (!isKnownApp(spec.app)) {
-      await rm(containerDir, { recursive: true, force: true });
-      throw containerError('UNKNOWN_APP_TYPE', `Unknown app type "${spec.app}"`);
-    }
-    const appEntry = getAppEntry(spec.app);
-    const appModule = appEntry.module;
-    const appConfig = spec.appConfig
-      ? appModule.validateAppConfig(spec.appConfig, null)
-      : appModule.getDefaultAppConfig({ containerName: name });
-    config.app = spec.app;
-    config.appConfig = appConfig;
-
-    // Apps that bind privileged ports / setuid / write to root-owned image dirs declare
-    // `requiresRoot: true` in the registry; honour it without making the user toggle General.
-    if (appEntry.requiresRoot) {
-      config.runAsRoot = true;
-    }
-
-    // Seed mDNS service entries from the registry so common protocols (e.g. _smb._tcp for
-    // tiny-samba) advertise out of the box. Done at create only — after that the user owns
-    // the services list via the Services section.
-    if (Array.isArray(appEntry.defaultServices) && appEntry.defaultServices.length > 0) {
-      config.services = appEntry.defaultServices.map((s) => ({
-        port: s.port,
-        type: s.type,
-        txt: { ...(s.txt || {}) },
-      }));
-    }
-
-    const derived = await appModule.generateDerivedConfig(appConfig);
-    if (derived.appConfig) config.appConfig = derived.appConfig;
-    if (derived.env) config.env = derived.env;
-    if (derived.mounts) config.mounts = derived.mounts;
-    if (Array.isArray(derived.devices)) config.devices = derived.devices;
-
-    // Write mount file contents after persisting config (filesDir already exists)
-    if (derived.mountContents) {
-      for (const [mountName, content] of Object.entries(derived.mountContents)) {
-        await writeFile(join(filesDir, mountName), content, 'utf8');
-      }
-    }
+  // Generic spec fields — set whatever the caller passed. containerApps populates
+  // these when creating an app container; future external callers might do the same.
+  if (spec.env && typeof spec.env === 'object' && !Array.isArray(spec.env)) {
+    config.env = spec.env;
+  }
+  if (Array.isArray(spec.mounts) && spec.mounts.length) {
+    const storageMounts = await getRawMounts();
+    config.mounts = validateAndNormalizeMounts(spec.mounts, storageMounts);
+  }
+  if (Array.isArray(spec.devices) && spec.devices.length) {
+    config.devices = validateAndNormalizeDevices(spec.devices);
+  }
+  if (Array.isArray(spec.services) && spec.services.length) {
+    config.services = spec.services.map((s) => ({
+      port: s.port,
+      type: s.type,
+      txt: { ...(s.txt || {}) },
+    }));
+  }
+  if (spec.runAsRoot === true) {
+    config.runAsRoot = true;
+  }
+  if (spec.metadata && typeof spec.metadata === 'object' && !Array.isArray(spec.metadata)) {
+    config.metadata = spec.metadata;
   }
 
   const resolvedDigest = await getImageDigest(imageRef);

@@ -4,7 +4,7 @@
  */
 import { spawn } from 'node:child_process';
 
-import { containerError } from '../containerManagerConnection.js';
+import { createAppError as containerError } from '../routeErrors.js';
 
 /**
  * Hash a password using SHA-512 crypt (compatible with htpasswd / zot).

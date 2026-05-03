@@ -6,7 +6,7 @@ import {
   containerError, containerState, getClient, callUnary, unpackAny,
 } from './containerManagerConnection.js';
 import { getTaskState, containerTaskStatusToUi } from './containerManagerLifecycle.js';
-import { processUptimeMsFromProc } from '../host/linuxProcUptime.js';
+import { processUptimeMsFromProc } from './procUptime.js';
 
 const prevStats = new Map();
 

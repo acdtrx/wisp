@@ -24,8 +24,8 @@ This refactor stays **inside Wisp** — no package extraction, no port interface
 
 ## Status
 
-- **Current step:** Step 4 — Host introspection (sketched, needs detailing)
-- **Completed:** Step 1 — Networking & Bridges (2026-05-03), Step 2 — mDNS (2026-05-03), Step 3 — Storage primitives (2026-05-03)
+- **Current step:** Step 5 — Paths & config (sketched, needs detailing)
+- **Completed:** Step 1 — Networking & Bridges (2026-05-03), Step 2 — mDNS (2026-05-03), Step 3 — Storage primitives (2026-05-03), Step 4 — Host introspection (2026-05-03), Step 4b — containerApps carve-out (2026-05-03)
 
 ## Boundaries identified (overview)
 
@@ -36,7 +36,7 @@ These are the internal modules to carve out of the flat `backend/src/lib/` surfa
 | 1 | **Networking & bridges** | Only true cross-leak: `containerManager` imports from `vmManager`. Unblocking this means the two managers become independent. | done |
 | 2 | **mDNS** | Both managers and several other modules reach into mDNS directly. Group under one named module. | done |
 | 3 | **Storage primitives** | `diskOps`, `smbMount`, `diskMount` — generic disk operations, currently flat. | done |
-| 4 | **Host introspection** | `hostHardware`, `hostGpus`, `usbMonitor`, proc readers. Already partially under `linux/host/`. | sketched |
+| 4 | **Host introspection** | `hostHardware`, `hostGpus`, `usbMonitor`, proc readers. Already partially under `linux/host/`. | done |
 | 5 | **Paths & config** | Hardest. Wisp-specific `wisp-config.json` schema lives here. Save for last — this is the policy boundary that will eventually become the port interface. | sketched |
 | 6 | **Validation, errors** | `validation.js` is fine to share. `routeErrors.js` stays in routes (managers throw structured errors already — that's the right boundary). Mostly a naming/organizing pass. | sketched |
 
@@ -139,11 +139,142 @@ Confirmed by `grep` at plan-write time:
 
 ---
 
-## Step 4 — Host introspection  *(sketched)*
+## Step 4 — Host introspection
 
-**Files in scope:** `hostHardware.js`, `hostGpus.js`, `hostPower.js`, `usbMonitor.js`, `procStats.js`, `rebootRequired.js`, `linux/host/*` files not already moved by earlier steps.
+### Why this step
 
-**Note:** `linux/host/` already exists. Step 4 likely just consolidates the top-level `host*.js` files into the existing `host/` structure and adds a facade.
+Seven top-level `lib/*.js` facade files dispatch to `lib/linux/host/*` and `lib/darwin/host/*` impls — a flat surface that doesn't match the named-module pattern established in steps 1–3. Goal: consolidate into a single `lib/host/` module with one `index.js` facade, matching the layout of `networking/`, `mdns/`, `storage/`. Also resolves a manager→host deep import (`containerManager` reaches into `linux/host/linuxProcUptime.js`).
+
+### Scope — files moving
+
+Source files (paths relative to `backend/src/lib/`):
+
+| Current location | Target | Notes |
+|------------------|--------|-------|
+| `hostHardware.js` | **delete** | Replaced by `host/index.js` export. |
+| `hostGpus.js` | **delete** | Replaced by `host/index.js` export. |
+| `hostPower.js` | **delete** | Replaced by `host/index.js` export. |
+| `usbMonitor.js` | **delete** | Replaced by `host/index.js` export. |
+| `procStats.js` | **delete** | Replaced by `host/index.js` export. |
+| `rebootRequired.js` | **delete** | Replaced by `host/index.js` export. |
+| `aptUpdates.js` | **delete** | Replaced by `host/index.js` export — and the `apt`-ism is dropped (export names already platform-neutral; impls already named `osUpdates.js`). |
+| `pciIds.js` | move → `host/linux/pciIds.js` | Internal helper (not facade-exported). Sole consumers are `host/linux/hostHardware.js` and `host/linux/hostGpus.js`. |
+| `linux/host/hostHardware.js` | move → `host/linux/hostHardware.js` | |
+| `linux/host/hostGpus.js` | move → `host/linux/hostGpus.js` | |
+| `linux/host/hostPower.js` | move → `host/linux/hostPower.js` | |
+| `linux/host/usbMonitor.js` | move → `host/linux/usbMonitor.js` | |
+| `linux/host/procStats.js` | move → `host/linux/procStats.js` | |
+| `linux/host/rebootRequired.js` | move → `host/linux/rebootRequired.js` | |
+| `linux/host/osUpdates.js` | move → `host/linux/osUpdates.js` | |
+| `linux/host/linuxProcUptime.js` | move → `linux/containerManager/procUptime.js` | **Cross-leak fix.** Sole consumers are `containerManagerList.js` + `containerManagerStats.js`. Drop the `linux` prefix — already platform-scoped by directory. Not exposed from host facade. |
+| `darwin/host/hostHardware.js` | move → `host/darwin/hostHardware.js` | |
+| `darwin/host/hostGpus.js` | move → `host/darwin/hostGpus.js` | |
+| `darwin/host/hostPower.js` | move → `host/darwin/hostPower.js` | |
+| `darwin/host/usbMonitor.js` | move → `host/darwin/usbMonitor.js` | |
+| `darwin/host/procStats.js` | move → `host/darwin/procStats.js` | |
+| `darwin/host/rebootRequired.js` | move → `host/darwin/rebootRequired.js` | |
+| `darwin/host/osUpdates.js` | move → `host/darwin/osUpdates.js` | |
+| `darwin/host/systemProfilerHardware.js` | move → `host/darwin/systemProfilerHardware.js` | Internal helper for darwin `hostHardware`. |
+| `darwin/host/systemProfilerSoftware.js` | move → `host/darwin/systemProfilerSoftware.js` | Internal helper. |
+| `storage/linux/smart.js` | move → `host/linux/smart.js` | **Revising step 3.** Sole consumer is `hostHardware.js`. SMART is host introspection in spirit (machine inventory, not VM/container disk-image ops). See decisions log. |
+| `storage/darwin/smart.js` | move → `host/darwin/smart.js` | Mirrors above. |
+
+After moves, `linux/host/` and `darwin/host/` directories are empty and removed.
+
+Target layout:
+
+```
+backend/src/lib/host/
+  index.js                          # facade: platform dispatch + re-exports
+  linux/
+    hostHardware.js
+    hostGpus.js
+    hostPower.js
+    usbMonitor.js
+    procStats.js
+    rebootRequired.js
+    osUpdates.js
+    smart.js                        # SMART — moved from storage/linux/
+    pciIds.js                       # internal helper — moved from lib/
+  darwin/
+    hostHardware.js
+    hostGpus.js
+    hostPower.js
+    usbMonitor.js
+    procStats.js
+    rebootRequired.js
+    osUpdates.js
+    smart.js                        # darwin stub
+    systemProfilerHardware.js       # internal helper for darwin hostHardware
+    systemProfilerSoftware.js       # internal helper
+```
+
+### `host/index.js` public surface
+
+Single facade — platform dispatch via top-level `await import()`, then re-export. Mirrors mdns/storage facades.
+
+```js
+// from hostHardware
+export const getHostHardwareInfo
+// from hostGpus
+export const listHostGpus
+// from hostPower
+export const hostShutdown, hostReboot
+// from usbMonitor
+export const start, stop, getDevices, onChange
+// from procStats
+export const getHostStats
+// from rebootRequired
+export const getRebootSignal
+// from osUpdates  (replaces aptUpdates.js facade)
+export const getPendingUpdatesCount, setCachedUpdateCount, getLastCheckedAt,
+             checkForUpdates, performUpgrade, listUpgradablePackages,
+             startUpdateChecker, stopUpdateChecker
+// from smart  (moved from storage/index.js)
+export const readDiskSmartSummary, readAllDiskSmartSummaries
+```
+
+`pciIds.js` is **not** part of the public surface — it's an internal helper used only by host's own Linux impls.
+
+### Call sites to update
+
+Confirmed by grep at plan-write time:
+
+- `backend/src/index.js` — imports from `aptUpdates.js`, `usbMonitor.js`
+- `backend/src/routes/host.js` — imports from `aptUpdates.js`, `hostHardware.js`, `hostPower.js`, `hostGpus.js`, `usbMonitor.js`
+- `backend/src/routes/stats.js` — imports from `procStats.js`, `aptUpdates.js`, `rebootRequired.js`
+- `backend/src/lib/storage/index.js` — drop SMART re-exports + the `smartImpl` dynamic import
+- `backend/src/lib/linux/containerManager/containerManagerList.js` — `linuxProcUptime` import path
+- `backend/src/lib/linux/containerManager/containerManagerStats.js` — same
+
+(Re-grep before starting — new sites may have appeared.)
+
+### Internal relative-path updates inside moved files
+
+- `host/linux/hostHardware.js`: `'../../pciIds.js'` → `'./pciIds.js'`; `'../../storage/index.js'` (for `readAllDiskSmartSummaries`) → `'./smart.js'`.
+- `host/linux/hostGpus.js`: `'../../pciIds.js'` → `'./pciIds.js'`.
+- `host/{linux,darwin}/hostPower.js`: `'../../routeErrors.js'` → `'../../routeErrors.js'` (path identical from new depth — both old and new are two levels deep). **Verify**.
+- `host/{linux,darwin}/osUpdates.js`: same routeErrors-relative-depth check.
+- `linux/containerManager/procUptime.js`: no external imports today (pure /proc reads).
+
+### Done when
+
+- New `backend/src/lib/host/` module exists with `linux/`, `darwin/`, and a single `index.js` facade.
+- The seven top-level facade files are gone (`hostHardware.js`, `hostGpus.js`, `hostPower.js`, `usbMonitor.js`, `procStats.js`, `rebootRequired.js`, `aptUpdates.js`).
+- `pciIds.js` no longer at `lib/` top-level.
+- `lib/linux/host/` and `lib/darwin/host/` directories no longer exist.
+- `storage/index.js` no longer re-exports SMART; `storage/linux/smart.js` and `storage/darwin/smart.js` no longer exist.
+- `containerManager` no longer imports from `host/` at all (run: `grep -rE "from ['\"].*/host/" backend/src/lib/linux/containerManager/` returns nothing).
+- Backend boots, host stats SSE works, `/api/host` returns hardware/GPU/USB data, OS-update check still works, container list shows uptime correctly.
+- Docs updated: `ARCHITECTURE.md` (flat-lib table + tree), `HOST-MONITORING.md` (paths to darwin profiler / hostHardware), `CONTAINERS.md` (`linuxProcUptime` → `procUptime`), `lib/CLAUDE.md` if needed. `CHANGELOG.md` updated.
+
+### Open questions for implementation
+
+(All major questions resolved before starting — see decisions log entries dated 2026-05-03 [step 4]. The remaining unknowns are local relative-path checks during execution, listed under "Internal relative-path updates" above.)
+
+### Out of scope (deferred to step 6)
+
+- Splitting `routeErrors.js` into a Wisp-glue translator (`handleRouteError` + `errorCodeToStatus` + `sendError` + `curateDetail`) and per-module `errors.js` factories. The host impls already import `createAppError` from `lib/routeErrors.js`; preserve those imports as-is in step 4. Step 6 does the cross-cutting refactor uniformly across all modules — same mechanism applied piecemeal here would be inconsistent for one or two sessions.
 
 ---
 
@@ -177,3 +308,14 @@ Append one line per non-obvious tradeoff resolved during execution. Format: `YYY
 - 2026-05-03 — [step 2] — Internal-only exports (`lookupLocalEntry`, `resolveLocalName`, `resolveLocalAddress`) stay private to the linux pair `avahi.js` ↔ `forwarder.js` — used only by the forwarder, not part of the public mDNS surface. Preserves the existing circular static import (no TLA, function bindings only — ESM handles it).
 - 2026-05-03 — [step 3] — `diskSmart` (SMART summaries) moves into `storage/`, NOT host introspection. Reason: SMART is a property of disks, not of the host's hardware enumeration. `hostHardware.js` (which moves in step 4) becomes the *consumer* of `storage.readAllDiskSmartSummaries`, not the owner. Renamed `diskSmart.js` → `linux/smart.js` inside the new module (drop redundant prefix; sibling to `diskMount.js`/`smbMount.js`). Added a darwin stub returning `[]`.
 - 2026-05-03 — [step 3] — Quietest step so far. No manager↔manager cross-leaks, no TLA cycles. Storage doesn't import either manager (consumers only flow one way: `vmManager`/`containerManager`/`mountsAutoMount`/`settings`/routes → storage). `mountsAutoMount.js` stays at `lib/` top-level as Wisp app-level glue (boot mount-reconcile + hotplug policy).
+- 2026-05-03 — [step 4] — Module root is `lib/host/` (new), not consolidating into the existing `lib/linux/host/` directory. Reason: matches the pattern of `lib/networking/`, `lib/mdns/`, `lib/storage/` — cross-platform module root with `linux/`/`darwin/` subdirs inside. Step 4's earlier sketch was ambiguous; this pins the layout.
+- 2026-05-03 — [step 4] — `linuxProcUptime.js` moves into `linux/containerManager/` (renamed `procUptime.js` — already platform-scoped by directory) instead of being exposed from the host facade. Reason: containerManager is the sole consumer; the file is functionally a containerManager helper that happens to read /proc, not a general host-introspection primitive. Resolves the only manager→host deep import.
+- 2026-05-03 — [step 4] — `pciIds.js` moves to `host/linux/pciIds.js` as an internal helper (not facade-exported). Reason: only consumers are `host/linux/hostHardware.js` and `host/linux/hostGpus.js`. De-facto host-Linux internal data; not part of the host module's public contract.
+- 2026-05-03 — [step 4] — The `apt`-named facade (`aptUpdates.js`) is dropped at consolidation time. Reason: facade was named after the Linux package manager but already dispatched to a generic `osUpdates.js` (Linux + darwin stub). Consolidating into `host/index.js` is the cheap moment to normalize the public surface name. Three call sites updated.
+- 2026-05-03 — [step 4] — Single facade with re-exports (matching `mdns/index.js`, `storage/index.js`), not multiple sub-facades. Reason: keep import shape uniform across modules; ~15 exports is fine.
+- 2026-05-03 — [step 4] — `bootCleanup.js` is **not** in scope. Reason: it's `paths.js` + `atomicJson.js` + `settings.js` glue (atomic-write janitor), not host introspection. Belongs to step 5 (paths & config). Calling it out to preempt scope drift since the name sounds host-y.
+- 2026-05-03 — [step 4] — Revising step 3's SMART decision: `storage/linux/smart.js` and `storage/darwin/smart.js` move to `host/linux/smart.js` and `host/darwin/smart.js`. Public `readDiskSmartSummary` / `readAllDiskSmartSummaries` exports move from `storage/index.js` to `host/index.js`. Reason: sole consumer is `hostHardware.js`. Step 3 placed SMART in `storage/` on conceptual grounds ("SMART is a property of disks"), but the empirical test for the extraction goal is "what does each consumer of the module actually use?" — neither `vmManager` nor `containerManager` will ever need SMART (they care about VM disk-image files via `diskOps.js`). Keeping SMART in `storage/` means storage carries a public export no extracted consumer would call. Host introspection is the better home: SMART is part of the machine inventory the user sees in the dashboard.
+- 2026-05-03 — [step 4] — `routeErrors.js` consolidation deferred to step 6. Existing `createAppError` imports inside host impls (`hostPower.js`, `osUpdates.js` on both platforms) preserved as-is. Reason: the right end-state is to split `routeErrors.js` into a Wisp-glue translator (`handleRouteError` + `errorCodeToStatus` + `sendError` + `curateDetail`, kept under `routes/`) and per-module `errors.js` factories — but doing this in step 4 only would leave storage/networking/mdns/managers using the shared factory, an asymmetry that lasts a session or two. Step 6 applies the split uniformly across all modules.
+- 2026-05-03 — [step 4] — Two extra `host/` deep-imports surfaced during execution that the plan-write call-site list missed: `linux/vmManager/vmManagerHost.js` and `darwin/vmManager/index.js` both reached into the old `host/usbMonitor.js` for `getDevices` (VM USB attach needs to know what's plugged in). Fixed by switching both to `host/index.js` (facade, not deep). `linux/containerManager/apps/jellyfin.js` had the same shape against `host/hostGpus.js` (GPU passthrough lookup) — also moved to facade. **Lesson for step 5+:** when grepping call sites, search for `linux/host/` and `darwin/host/` deep imports as well as the top-level facade imports — the deep imports inside other manager modules are easy to miss in the initial sweep.
+- 2026-05-03 — [step 4 follow-up] — Dropped `vmManager.listHostUSBDevices()` entirely (Linux + darwin). The function was a one-line pass-through to `host.getDevices()`; the only consumer (`GET /api/host/usb`) now calls the host facade directly. Reason: the relay added a fake responsibility to vmManager (it didn't *do* anything with the data, just forwarded it) and meant vmManager carried a host dependency for purely cosmetic reasons. With this gone, vmManager → host has zero imports. The only manager → host coupling left is `containerManager/apps/jellyfin.js` calling `listHostGpus()` — that's real policy (existence check + first-device pick for `/dev/dri/renderD*` passthrough), not a relay; deferred decision on whether to push the policy into the route layer or keep it in the app module.
+- 2026-05-03 — [step 4b] — Carved `apps/` out of `linux/containerManager/` into a new top-level `lib/containerApps/` (cross-platform — apps are pure config translators, not OS-specific). containerApps is now a *peer* of routes, not an extension of containerManager. It consumes containerManager primitives (`createContainer`, `updateContainerConfig`, `putMountFileTextContent`, `execCommandInContainer`, `getContainerConfig`, `getTaskState`, `deleteContainer`) and orchestrates the app create/patch/eject flows. Schema change: `container.json` now persists app identity in opaque `metadata.app` (string id) + `metadata.appConfig` (object) — containerManager never introspects `metadata`, just persists it verbatim. UI updated to read `config.metadata?.app` / `config.metadata?.appConfig`. **Manager drops ~160 lines** of app-aware code (`containerManagerCreate.js` lines 408–451 for app expansion + mount-content writing; `containerManagerConfig.js` lines 128–242 for eject/appConfig handling, reload-vs-restart logic, mount-layout-changed computation). Manager **gains** `metadata` and `pendingRestart` as generic writable fields plus generic spec-field handling for env/mounts/devices/services/runAsRoot at create. Existing app containers under feature-building mode: `metadata` field absent → UI treats them as generic containers; users can recreate to restore app UI activation. **Net dependency edges:** `containerManager → containerApps` = ZERO; `containerApps → containerManager` = consumer-only; `containerApps → host` = jellyfin's GPU enumeration (legitimate glue → host coupling); `containerApps → settings` = jellyfin's storage-mount lookup. Routes dispatch on `config.metadata?.app` to either containerApps glue or generic manager calls.

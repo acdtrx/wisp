@@ -1,8 +1,9 @@
 /**
  * Storage module facade — qemu-img wrappers (cross-platform), block-device
  * enumeration + hotplug, removable disk and SMB mount via the wisp-mount
- * helper, and SMART summaries. Single public surface for VM/container
- * managers, host routes, and Wisp app-level glue (mountsAutoMount).
+ * helper. Single public surface for VM/container managers, host routes, and
+ * Wisp app-level glue (mountsAutoMount). SMART summaries live in the host
+ * module (sole consumer is hostHardware).
  */
 import { platform } from 'node:os';
 
@@ -16,9 +17,6 @@ const mountImpl = await import(
 );
 const smbImpl = await import(
   isLinux ? './linux/smbMount.js' : './darwin/smbMount.js',
-);
-const smartImpl = await import(
-  isLinux ? './linux/smart.js' : './darwin/smart.js',
 );
 
 export { getDiskInfo, copyAndConvert, resizeDisk } from './diskOps.js';
@@ -40,7 +38,3 @@ export const checkSMBConnection = smbImpl.checkSMBConnection;
 export const unmountSMB = smbImpl.unmountSMB;
 export const getMountStatus = smbImpl.getMountStatus;
 export const rmdirMountpoint = smbImpl.rmdirMountpoint;
-
-// SMART
-export const readDiskSmartSummary = smartImpl.readDiskSmartSummary;
-export const readAllDiskSmartSummaries = smartImpl.readAllDiskSmartSummaries;

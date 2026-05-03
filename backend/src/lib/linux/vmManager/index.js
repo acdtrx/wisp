@@ -21,7 +21,6 @@ export {
   getHostInfo,
   getHostHardware,
   listHostFirmware,
-  listHostUSBDevices,
 } from './vmManagerHost.js';
 
 export {

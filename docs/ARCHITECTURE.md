@@ -183,6 +183,20 @@ Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux 
 | `containerManagerMountsContent.js` | File/zip upload, content read/write for mounts |
 | `containerPaths.js` | Path helpers under `containersPath` |
 
+containerManager has zero awareness of "apps" — it persists `metadata` opaquely on `container.json` and exposes the primitives that the `containerApps` glue layer composes (see `containerApps/index.js`).
+
+### containerApps (`backend/src/lib/containerApps/`)
+
+Wisp's app recipe layer. A peer of routes and a *consumer* of containerManager (not an extension of it). Owns the create/patch/eject flows for app containers; translates the high-level "I want a Jellyfin with these libraries and GPU on" into a sequence of containerManager API calls (`createContainer`, `updateContainerConfig`, `putMountFileTextContent`, `execCommandInContainer`).
+
+| Module | Responsibility |
+|--------|----------------|
+| `index.js` | Facade: `createAppContainer`, `applyAppConfig`, `eject`, `maskAppSecrets`, registry helpers (`getAppModule`, `getAppEntry`, `isKnownApp`) |
+| `appRegistry.js` | `APP_REGISTRY` map of app id → `{ label, defaultImage, allowCustomImage, module, requiresRoot?, defaultServices? }` |
+| `caddy.js`, `jellyfin.js`, `tinySamba.js`, `zot.js` | Per-app modules: `getDefaultAppConfig`, `validateAppConfig`, `generateDerivedConfig`, `maskSecrets`, `getReloadCommand`, `requiresRestartForChange` |
+
+App identity persists in `container.json.metadata.app` (string id) + `container.json.metadata.appConfig` (object). containerManager treats `metadata` as opaque pass-through.
+
 ### Supporting libraries (`backend/src/lib/`)
 
 | Module | Purpose |
@@ -198,13 +212,12 @@ Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux 
 | `downloadUtils.js` | Shared helpers for library downloads (`findUniqueFilename`, streaming) |
 | `fileTypes.js` | `detectType` for image library files |
 | `networking/index.js` | Networking facade — host bridge enumeration (`listHostBridges`, `getDefaultBridge`, `getDefaultContainerParentBridge`), `/proc` IPv4 readout (`ipv4CidrFromProcFibTrie`), netplan-managed VLAN bridges, and the `isVlanLikeBridgeName` heuristic. Linux impl under `networking/linux/{hostBridges,managedBridges}.js`; macOS stubs under `networking/darwin/`. |
-| `pciIds.js` | PCI vendor/device name lookup from system `pci.ids` |
 | `paths.js` | `getVMBasePath(name)`, `getImagePath()`, `ensureImageDir()` (container roots: `containerManager` `containerPaths.js` / `getContainersPath()`) |
 | `routeErrors.js` | `createAppError()`, `handleRouteError()`, `sendError()`, error code-to-HTTP mapping |
 | `validation.js` | VM name validation |
 | `sse.js` | SSE response helper (`setupSSE`, `closeAllSSE` on shutdown) |
-| `usbMonitor.js` | Facade: Linux implementation under `linux/host/usbMonitor.js` (sysfs + `/dev/bus/usb` watch); macOS stub under `darwin/host/usbMonitor.js` |
-| `storage/index.js` | Storage module facade — qemu-img wrappers (`storage/diskOps.js`, cross-platform), block-device enumeration + hotplug (`storage/{linux,darwin}/diskMonitor.js`), removable disk mount via `wisp-mount disk` (`storage/{linux,darwin}/diskMount.js`), SMB mount via `wisp-mount smb` (`storage/{linux,darwin}/smbMount.js`), and SMART summaries via `wisp-smartctl` (`storage/linux/smart.js`; darwin returns empty). Public surface: disk-image ops (`getDiskInfo`, `copyAndConvert`, `resizeDisk`), block-device monitor (`start`, `stop`, `getDevices`, `onChange`, `refresh`), mounts (`mountDisk`/`unmountDisk`, `mountSMB`/`unmountSMB`/`getMountStatus`/`checkSMBConnection`/`rmdirMountpoint`), SMART (`readDiskSmartSummary`/`readAllDiskSmartSummaries`). |
+| `host/index.js` | Host introspection module facade — hardware inventory (`host/{linux,darwin}/hostHardware.js`; Linux uses sysfs/proc + `wisp-dmidecode` for RAM, macOS uses `system_profiler` via `host/darwin/systemProfiler{Hardware,Software}.js`), GPU enumeration (`host/{linux,darwin}/hostGpus.js`), power control via `wisp-power` (`host/linux/hostPower.js`; darwin stub), USB monitor (`host/{linux,darwin}/usbMonitor.js`; sysfs + `/dev/bus/usb` watch on Linux), `/proc` stats (`host/{linux,darwin}/procStats.js`), reboot-required signal (`host/{linux,darwin}/rebootRequired.js`), OS-update checker via `wisp-os-update` (`host/{linux,darwin}/osUpdates.js`), disk SMART summaries via `wisp-smartctl` (`host/linux/smart.js`; darwin returns empty). PCI vendor/device name lookup (`host/linux/pciIds.js`) is an internal helper. Public surface: `getHostHardwareInfo`, `listHostGpus`, `hostShutdown`/`hostReboot`, USB (`start`/`stop`/`getDevices`/`onChange`), `getHostStats`, `getRebootSignal`, OS updates (`getPendingUpdatesCount`, `setCachedUpdateCount`, `getLastCheckedAt`, `checkForUpdates`, `performUpgrade`, `listUpgradablePackages`, `startUpdateChecker`, `stopUpdateChecker`), SMART (`readDiskSmartSummary`/`readAllDiskSmartSummaries`). |
+| `storage/index.js` | Storage module facade — qemu-img wrappers (`storage/diskOps.js`, cross-platform), block-device enumeration + hotplug (`storage/{linux,darwin}/diskMonitor.js`), removable disk mount via `wisp-mount disk` (`storage/{linux,darwin}/diskMount.js`), SMB mount via `wisp-mount smb` (`storage/{linux,darwin}/smbMount.js`). Public surface: disk-image ops (`getDiskInfo`, `copyAndConvert`, `resizeDisk`), block-device monitor (`start`, `stop`, `getDevices`, `onChange`, `refresh`), mounts (`mountDisk`/`unmountDisk`, `mountSMB`/`unmountSMB`/`getMountStatus`/`checkSMBConnection`/`rmdirMountpoint`). (SMART summaries are exposed by the host module — sole consumer is `host/linux/hostHardware.js`.) |
 | `cloudInit.js` | Cloud-init ISO generation via `cloud-localds` or `genisoimage` |
 | `jobStore.js` | Generic async job store with progress tracking (`kind`, `title`, `listJobs`) |
 | `backgroundJobTitles.js` | Display titles for background jobs (parity with UI) |
@@ -215,10 +228,6 @@ Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux 
 | `downloadUbuntuCloud.js` | Ubuntu Server cloud image download |
 | `downloadHaos.js` | Home Assistant OS image download |
 | `mountsAutoMount.js` | Startup mount reconciliation + hard-converge for `/mnt/wisp/` + disk hotplug handlers (auto-mount on insertion, lazy-unmount on removal) |
-| `hostHardware.js` | Facade: hardware inventory on Linux (`linux/host/hostHardware.js`); macOS stub |
-| `hostPower.js` | Facade: `wisp-power` on Linux; macOS stub |
-| `procStats.js` | Facade: host stats from `/proc` on Linux; macOS stub |
-| `aptUpdates.js` | Facade: `wisp-os-update` on Linux; macOS stub |
 | `mdns/index.js` | mDNS module facade — Avahi-backed Linux backend (`mdns/linux/avahi.js`) plus an in-process DNS forwarder for container `.local` queries (`mdns/linux/forwarder.js`); macOS stubs (`mdns/darwin/avahi.js`). Public surface: `connect`/`disconnect`, address + service registration, `lookupLocalEntry`/`resolveLocalName` are private to the linux pair. Also exports the platform-agnostic helpers (`mdns/hostname.js` — `stripCidr`, `sanitizeHostname`) and service-type catalog (`mdns/serviceTypes.js`). |
 | `vmMdnsPublisher.js` | App-level glue (Wisp wiring, not part of vmManager). Facade for VM mDNS reconciler on Linux (`linux/vmMdnsPublisher.js`); macOS stub. Owns desired→actual mDNS mapping for VMs, driven by libvirt `DomainEvent` + per-domain `AgentEvent` signals — independent of any UI/SSE activity |
 | `containerMdnsReconciler.js` | App-level glue. Periodic 60s reconciler that re-registers a container's mDNS A record when its DHCP lease changes IP under it. |
@@ -341,10 +350,12 @@ wisp/
 │           ├── containerManager.js
 │           ├── networking/       # Cross-platform: bridge enumeration, default-bridge, /proc IPv4, netplan VLAN bridges
 │           ├── mdns/              # Cross-platform: Avahi backend (linux), DNS forwarder, hostname helpers, service-type catalog
-│           ├── linux/            # Linux-only manager internals: vmManager/, containerManager/, host/
-│           ├── darwin/           # macOS dev stubs (no libvirt/containerd)
-│           ├── storage/          # Cross-platform: qemu-img ops, block-device monitor + hotplug, disk/SMB mount via wisp-mount, SMART
-│           └── *.js              # Auth, config, paths, facades (procStats, hostHardware, …), app-level glue (mountsAutoMount, vmMdnsPublisher, containerMdnsReconciler), etc.
+│           ├── host/              # Cross-platform: hardware/GPU enumeration, power, USB monitor, /proc stats, reboot-required, OS updates, SMART, pciIds
+│           ├── containerApps/     # Cross-platform: app recipes (caddy, jellyfin, tinySamba, zot) + glue (createAppContainer, applyAppConfig, eject)
+│           ├── linux/             # Linux-only manager internals: vmManager/, containerManager/
+│           ├── darwin/            # macOS dev stubs (no libvirt/containerd)
+│           ├── storage/           # Cross-platform: qemu-img ops, block-device monitor + hotplug, disk/SMB mount via wisp-mount
+│           └── *.js               # Auth, config, paths, app-level glue (mountsAutoMount, vmMdnsPublisher, containerMdnsReconciler), etc.
 ├── frontend/
 │   ├── package.json
 │   ├── index.html

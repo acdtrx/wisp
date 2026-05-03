@@ -6,7 +6,6 @@ import { platform } from 'node:os';
 import {
   getHostInfo,
   listHostFirmware,
-  listHostUSBDevices,
 } from '../lib/vmManager.js';
 import {
   listHostBridges,
@@ -20,13 +19,15 @@ import {
   performUpgrade,
   listUpgradablePackages,
   setCachedUpdateCount,
-} from '../lib/aptUpdates.js';
-import { getHostHardwareInfo } from '../lib/hostHardware.js';
-import { hostShutdown, hostReboot } from '../lib/hostPower.js';
-import { listHostGpus } from '../lib/hostGpus.js';
+  getHostHardwareInfo,
+  hostShutdown,
+  hostReboot,
+  listHostGpus,
+  getDevices as getHostUSBDevicesCached,
+  onChange as onHostUSBChange,
+} from '../lib/host/index.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
 import { setupSSE } from '../lib/sse.js';
-import { getDevices as getHostUSBDevicesCached, onChange as onHostUSBChange } from '../lib/usbMonitor.js';
 import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/storage/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -97,7 +98,7 @@ export default async function hostRoutes(fastify) {
 
         if (platform() === 'darwin') {
           try {
-            const { getDarwinSoftwareFromProfiler } = await import('../lib/darwin/host/systemProfilerSoftware.js');
+            const { getDarwinSoftwareFromProfiler } = await import('../lib/host/darwin/systemProfilerSoftware.js');
             const extra = await getDarwinSoftwareFromProfiler();
             if (extra) {
               if (extra.osRelease) info.osRelease = extra.osRelease;
@@ -390,7 +391,7 @@ export default async function hostRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        return await listHostUSBDevices();
+        return getHostUSBDevicesCached();
       } catch (err) {
         request.log.error({ err }, 'GET /host/usb failed');
         sendError(reply, 500, 'Failed to list USB devices', err.message);

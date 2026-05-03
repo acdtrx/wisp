@@ -44,7 +44,7 @@ function makeRowId() {
 }
 
 function librariesFromConfig(config) {
-  const ac = config?.appConfig || {};
+  const ac = config?.metadata?.appConfig || {};
   const list = Array.isArray(ac.libraries) ? ac.libraries : [];
   return list.map((lib) => ({
     rowId: makeRowId(),
@@ -55,7 +55,7 @@ function librariesFromConfig(config) {
 }
 
 function parseAppConfig(config) {
-  const ac = config?.appConfig || {};
+  const ac = config?.metadata?.appConfig || {};
   return {
     libraries: librariesFromConfig(config),
     gpuEnabled: !!ac.gpuEnabled,
@@ -106,7 +106,7 @@ export default function JellyfinAppSection({ config, onSave }) {
     setOriginal(parsed);
     setRequiresRestart(false);
     setError(null);
-  }, [JSON.stringify(config?.appConfig)]);
+  }, [JSON.stringify(config?.metadata?.appConfig)]);
 
   const dirty = useMemo(() => (
     !librariesEqual(form.libraries, original.libraries)

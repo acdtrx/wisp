@@ -312,7 +312,7 @@ XML parsing and building utilities using fast-xml-parser. Handles the conversion
 - Host hardware (CPU cores, total memory)
 - Network bridge enumeration
 - UEFI firmware path discovery
-- USB device listing via sysfs (`usbMonitor.js`; see [USB.md](USB.md))
+- USB device listing via sysfs (`host/linux/usbMonitor.js`, exposed via `host/index.js`; see [USB.md](USB.md))
 
 ### vmManagerList.js
 

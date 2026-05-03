@@ -44,7 +44,7 @@ const ICON_MODEL_DEFAULT = 'TimeCapsule6,106';
 const ICON_MODEL_DISABLED = '-';
 
 function parseAppConfig(config) {
-  const ac = config?.appConfig || {};
+  const ac = config?.metadata?.appConfig || {};
   const server = ac.server || {};
   return {
     server: {
@@ -100,7 +100,7 @@ export default function TinySambaAppSection({ config, onSave }) {
   // Reset on appConfig identity change. We hash users / shares at the field level rather than
   // trusting object identity because the parent containerStore replaces the full config object
   // on every SSE tick.
-  const appConfigKey = useMemo(() => JSON.stringify(config?.appConfig || {}), [config?.appConfig]);
+  const appConfigKey = useMemo(() => JSON.stringify(config?.metadata?.appConfig || {}), [config?.metadata?.appConfig]);
   useEffect(() => {
     const parsed = parseAppConfig(config);
     setForm(parsed);

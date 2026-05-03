@@ -525,7 +525,7 @@ Lazy-loaded (`ContainerConsolePanel`). **xterm.js** terminal + toolbar (Paste, F
 
 ### Custom App Container Overview
 
-When `config.app` is set and recognized:
+When `config.metadata?.app` is set and recognized:
 - **Overview tab** replaces ContainerEnvSection + ContainerMountsSection with the app's dedicated component (e.g. CaddyAppSection) wrapped in AppConfigWrapper
 - ContainerGeneralSection and ContainerNetworkSection remain unchanged
 - **pendingRestart badge** in the header (visible across all tabs) when `config.pendingRestart` is true

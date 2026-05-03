@@ -1,9 +1,12 @@
-import { getHostStats } from '../lib/procStats.js';
+import {
+  getHostStats,
+  getPendingUpdatesCount,
+  getLastCheckedAt,
+  getRebootSignal,
+} from '../lib/host/index.js';
 import { getRunningVMAllocations, getHostHardware } from '../lib/vmManager.js';
 import { getRunningContainerCount } from '../lib/containerManager.js';
-import { getPendingUpdatesCount, getLastCheckedAt } from '../lib/aptUpdates.js';
 import { getCachedStatus as getWispUpdateStatus } from '../lib/wispUpdate.js';
-import { getRebootSignal } from '../lib/rebootRequired.js';
 import { setupSSE } from '../lib/sse.js';
 
 export default async function statsRoutes(fastify) {

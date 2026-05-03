@@ -33,7 +33,13 @@ import { getMountStatus, mountSMB } from '../lib/storage/index.js';
 import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
 import { validateContainerName } from '../lib/validation.js';
-import { isKnownApp, getAppModule } from '../lib/linux/containerManager/apps/appRegistry.js';
+import {
+  isKnownApp,
+  createAppContainer,
+  applyAppConfig,
+  eject as ejectAppContainer,
+  maskAppSecrets,
+} from '../lib/containerApps/index.js';
 
 function maskContainerSecrets(config) {
   if (!config || !config.env || typeof config.env !== 'object') return config;
@@ -49,17 +55,7 @@ function maskContainerSecrets(config) {
       env[k] = { value: v?.value ?? '' };
     }
   }
-  const masked = { ...config, env };
-
-  // Mask app-specific secrets
-  if (masked.app && masked.appConfig) {
-    const appModule = getAppModule(masked.app);
-    if (appModule?.maskSecrets) {
-      masked.appConfig = appModule.maskSecrets(masked.appConfig);
-    }
-  }
-
-  return masked;
+  return maskAppSecrets({ ...config, env });
 }
 
 /**
@@ -163,7 +159,10 @@ export default async function containerRoutes(fastify) {
       'Background job started',
     );
 
-    createContainer(spec, (ev) => containerJobStore.pushEvent(jobId, ev))
+    const createPromise = spec.app
+      ? createAppContainer(spec, (ev) => containerJobStore.pushEvent(jobId, ev))
+      : createContainer(spec, (ev) => containerJobStore.pushEvent(jobId, ev));
+    createPromise
       .then((result) => containerJobStore.completeJob(jobId, result))
       .catch((err) => containerJobStore.failJob(jobId, err));
 
@@ -316,6 +315,35 @@ export default async function containerRoutes(fastify) {
       if (Object.keys(rest).length === 0) {
         return { ok: true, name: workingName };
       }
+
+      // Dispatch to containerApps for app-driven flows; everything else goes
+      // through the generic manager. The manager itself has no app awareness.
+      const config = await getContainerConfig(workingName);
+      const isAppContainer = !!config?.metadata?.app;
+
+      if (rest.eject === true) {
+        if (isAppContainer) await ejectAppContainer(workingName);
+        return { ok: true, name: workingName };
+      }
+
+      if (isAppContainer && 'appConfig' in rest) {
+        if ('env' in rest || 'envPatch' in rest || 'mounts' in rest || 'devices' in rest) {
+          throw createAppError(
+            'APP_CONFIG_ONLY',
+            'Use appConfig to configure app containers, or eject to generic first',
+          );
+        }
+        const result = await applyAppConfig(workingName, rest.appConfig);
+        return { ...result, name: workingName };
+      }
+
+      if (isAppContainer && ('env' in rest || 'envPatch' in rest || 'mounts' in rest)) {
+        throw createAppError(
+          'APP_CONFIG_ONLY',
+          'Use appConfig to configure app containers, or eject to generic first',
+        );
+      }
+
       const result = await updateContainerConfig(workingName, rest);
       return { ...result, name: workingName };
     } catch (err) {

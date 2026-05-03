@@ -296,7 +296,7 @@ export default function ContainerOverviewPanel() {
       ) : (
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           <ContainerGeneralSection config={config} onSave={handleSectionSave} />
-          {config.app && getAppEntry(config.app) ? (
+          {config.metadata?.app && getAppEntry(config.metadata.app) ? (
             <AppConfigWrapper config={config} onSave={handleSectionSave} onRefresh={refreshSelectedContainer} />
           ) : (
             <>

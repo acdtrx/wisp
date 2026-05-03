@@ -8,10 +8,35 @@
  * enables hardware acceleration inside Jellyfin's admin UI — we only expose
  * the device.
  */
-import { containerError } from '../containerManagerConnection.js';
-import { getRawMounts } from '../../../settings.js';
-import { listHostGpus } from '../../host/hostGpus.js';
-import { validateMountSegmentName, validateSubPath } from '../containerManagerMounts.js';
+import { basename } from 'node:path';
+
+import { createAppError as containerError } from '../routeErrors.js';
+import { getRawMounts } from '../settings.js';
+import { listHostGpus } from '../host/index.js';
+
+/** Validate a path segment used as a mount name. Returns normalized name or null. */
+function validateMountSegmentName(name) {
+  if (!name || typeof name !== 'string') return null;
+  const t = name.trim();
+  if (t.includes('/') || t.includes('\\') || t.includes('..')) return null;
+  if (t.startsWith('.')) return null;
+  if (t !== basename(t)) return null;
+  return t;
+}
+
+/** Validate a relative sub-path (no `..`, no leading `/`). Empty string allowed. */
+function validateSubPath(value) {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (trimmed === '') return '';
+  if (trimmed.startsWith('/')) return null;
+  const segments = trimmed.split('/').filter((s) => s.length > 0);
+  for (const seg of segments) {
+    if (seg === '..' || seg === '.') return null;
+  }
+  return segments.join('/');
+}
 
 const RESERVED_LIBRARY_LABELS = new Set(['config', 'cache']);
 

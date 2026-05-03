@@ -11,8 +11,6 @@ import {
   formatVersion,
   generateMAC,
 } from '../../vmManagerShared.js';
-import { getDevices as getHostUSBDevicesFromMonitor } from '../../usbMonitor.js';
-
 export const IS_DARWIN = true;
 
 export const connectionState = {
@@ -96,10 +94,6 @@ export async function getRunningVMAllocations() {
 
 export async function listHostFirmware() {
   return [];
-}
-
-export async function listHostUSBDevices() {
-  return getHostUSBDevicesFromMonitor();
 }
 
 export function getCachedLocalDns() {

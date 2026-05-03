@@ -23,7 +23,7 @@ const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
 function parseAppConfig(config) {
-  const ac = config?.appConfig || {};
+  const ac = config?.metadata?.appConfig || {};
   return {
     domain: ac.domain ?? '',
     email: ac.email ?? '',
@@ -52,7 +52,7 @@ export default function CaddyAppSection({ config, onSave }) {
     setOriginal(parsed);
     setRequiresRestart(false);
     setError(null);
-  }, [config?.appConfig?.domain, config?.appConfig?.email, JSON.stringify(config?.appConfig?.hosts), config?.appConfig?.cloudflareApiToken?.isSet]);
+  }, [config?.metadata?.appConfig?.domain, config?.metadata?.appConfig?.email, JSON.stringify(config?.metadata?.appConfig?.hosts), config?.metadata?.appConfig?.cloudflareApiToken?.isSet]);
 
   const isDirty = useCallback(() => {
     if (form.domain !== original.domain) return true;

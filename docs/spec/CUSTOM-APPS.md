@@ -2,33 +2,35 @@
 
 Custom App Containers are containers created from hardcoded app templates that provide dedicated configuration UIs instead of generic env vars and mounts sections. Each app has a backend module (validates config, generates derived files) and a frontend component (dedicated form UI).
 
+**Architecture note:** App orchestration lives in `backend/src/lib/containerApps/`, a peer of routes and a *consumer* of containerManager. containerManager itself has zero knowledge of apps — it persists arbitrary `metadata` verbatim and exposes the primitives (createContainer, updateContainerConfig, putMountFileTextContent, execCommandInContainer) that containerApps composes into the app create/patch/eject flows.
+
 ## Overview
 
 - User picks an app template (or "Generic Container") when creating a container
-- The `app` and `appConfig` fields in `container.json` identify the app type and store structured configuration
-- The backend app module generates env vars, mounts, and config files from `appConfig`
-- The frontend renders a dedicated component instead of the Env and Mounts sections
-- Users can "eject" an app container to a generic container (one-way, keeps generated config)
+- containerApps validates the choice, computes derived env/mounts/devices/files, and writes them by calling containerManager primitives
+- App identity lives in `container.json.metadata.app` (string id) and `container.json.metadata.appConfig` (object)
+- The frontend renders a dedicated component instead of the Env and Mounts sections when `config.metadata?.app` is set
+- Users can "eject" an app container to a generic container — clears `metadata.app`/`metadata.appConfig`, leaves env/mounts/devices/files in place
 
 ## Data Model
 
-Three optional fields on `container.json`:
+`container.json` carries an opaque `metadata` field that containerManager persists but never introspects. containerApps writes app identity into it:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `app` | string \| omitted | omitted | App registry ID (e.g. `"caddy-reverse-proxy"`). Immutable after create except via eject. |
-| `appConfig` | object \| omitted | omitted | Structured config for the app. Shape is app-specific. Only present when `app` is set. Source of truth — env/mounts/files are derived from it. |
-| `pendingRestart` | boolean \| omitted | omitted | Set `true` when `appConfig` changes while container is running. Cleared on start/restart. |
+| `metadata.app` | string \| omitted | omitted | App registry ID (e.g. `"caddy-reverse-proxy"`). Immutable after create except via eject. |
+| `metadata.appConfig` | object \| omitted | omitted | Structured config for the app. Shape is app-specific. Only present when `metadata.app` is set. Source of truth — env/mounts/files are derived from it. |
+| `pendingRestart` | boolean \| omitted | omitted | Top-level field. Set `true` when an `appConfig` change can't be applied via live reload while the container is running, or when generic config changes (mounts, env, network) require a restart. Cleared on start/restart. |
 
 ## App Registry
 
-### Backend — `backend/src/lib/linux/containerManager/apps/appRegistry.js`
+### Backend — `backend/src/lib/containerApps/appRegistry.js`
 
-Maps app IDs to `{ label, description, defaultImage, allowCustomImage, module, requiresRoot? }`. `getAppModule(appId)` returns the module or null; `getAppEntry(appId)` returns the full entry (used by the create flow to read flags like `requiresRoot`).
+Maps app IDs to `{ label, description, defaultImage, allowCustomImage, module, requiresRoot? }`. `getAppModule(appId)` returns the module or null; `getAppEntry(appId)` returns the full entry (used by `createAppContainer` to read flags like `requiresRoot`). Re-exported from `containerApps/index.js`.
 
-**`requiresRoot: true`** flips on `container.runAsRoot` at create time. Use for apps that need UID 0 inside the container — binding privileged ports, calling `setuid` per session, or writing to root-owned dirs in the image (smbd, OpenWebUI, etc.). Without this flag, the user has to toggle General → runAsRoot manually after create.
+**`requiresRoot: true`** is included in the expanded spec as `runAsRoot: true` when containerApps creates the container. Use for apps that need UID 0 inside the container — binding privileged ports, calling `setuid` per session, or writing to root-owned dirs in the image (smbd, OpenWebUI, etc.). Without this flag, the user has to toggle General → runAsRoot manually after create.
 
-**`defaultServices: [{ port, type, txt }]`** seeds `container.services[]` at create time so the app's mDNS records publish out of the box (e.g. `_smb._tcp` for tiny-samba, `_https._tcp` for Caddy). After create the user owns the services list — PATCH does not re-seed, and the Services section can edit/remove any of these entries.
+**`defaultServices: [{ port, type, txt }]`** is passed through containerApps into the create spec so containerManager seeds `container.services[]` at create time and the app's mDNS records publish out of the box (e.g. `_smb._tcp` for tiny-samba, `_https._tcp` for Caddy). After create the user owns the services list — PATCH does not re-seed, and the Services section can edit/remove any of these entries.
 
 ### Frontend — `frontend/src/apps/appRegistry.js`
 
@@ -36,7 +38,7 @@ Maps app IDs to `{ label, description, defaultImage, allowCustomImage, component
 
 ## Backend App Module Interface
 
-Each module (`backend/src/lib/linux/containerManager/apps/<app>.js`) exports:
+Each module (`backend/src/lib/containerApps/<app>.js`) exports:
 
 | Function | Signature | Purpose |
 |----------|-----------|---------|
@@ -61,13 +63,16 @@ Each module (`backend/src/lib/linux/containerManager/apps/<app>.js`) exports:
 
 ### POST /api/containers — Create
 
-Body gains optional fields: `app` (string, validated against registry) and `appConfig` (object). If `app` is provided without `appConfig`, the module's `getDefaultAppConfig()` is used.
+Body gains optional fields: `app` (string, validated against registry) and `appConfig` (object). If `app` is provided without `appConfig`, the module's `getDefaultAppConfig()` is used. The route dispatches to `containerApps.createAppContainer(spec)` which expands the spec (validates appConfig, calls `generateDerivedConfig`, builds spec with `metadata.app`/`metadata.appConfig`/`env`/`mounts`/`devices`/`services`/`runAsRoot`) and then calls `containerManager.createContainer`. Mount file contents from `derived.mountContents` are written via `containerManager.putMountFileTextContent` after create. On any failure after create, the container is rolled back.
 
 ### PATCH /api/containers/:name — Update
 
-- When `config.app` is set and `appConfig` is in the body: validated via app module, derived config regenerated, env/mounts/files replaced.
-- When `config.app` is set and `envPatch` or `mounts` is in the body: rejected with `APP_CONFIG_ONLY` (422).
-- `{ eject: true }`: removes `app`, `appConfig`, `pendingRestart`. Keeps env/mounts as-is.
+The route reads `config.metadata?.app` and dispatches:
+
+- `{ appConfig }` on an app container → `containerApps.applyAppConfig(name, appConfig)`. Validates via app module, regenerates derived config, persists new `metadata.appConfig` + `env`/`mounts`/`devices`, writes mount file contents, attempts live reload if running.
+- `{ envPatch }` / `{ env }` / `{ mounts }` / `{ devices }` on an app container → rejected with `APP_CONFIG_ONLY` (422). Enforced at the route layer.
+- `{ eject: true }` on an app container → `containerApps.eject(name)`. Clears `metadata.app`/`metadata.appConfig`. Env, mounts, devices, files all preserved.
+- Anything else → straight through to `containerManager.updateContainerConfig`.
 
 ### Error Codes (422)
 
@@ -83,7 +88,7 @@ App selector buttons above the name/image form. Selecting an app prefills the im
 
 ### Overview Flow — ContainerOverviewPanel
 
-When `config.app` is set, renders `AppConfigWrapper` (which loads the app's dedicated component) instead of ContainerEnvSection + ContainerMountsSection. Network and General sections remain unchanged.
+When `config.metadata?.app` is set, renders `AppConfigWrapper` (which loads the app's dedicated component) instead of ContainerEnvSection + ContainerMountsSection. Network and General sections remain unchanged.
 
 ### AppConfigWrapper
 
@@ -99,24 +104,27 @@ Components use SectionCard for consistent styling, handle their own dirty tracki
 
 ## Live Reload
 
-When an app module provides `getReloadCommand()`, the backend attempts a live reload after saving `appConfig` on a running container instead of requiring a restart:
+`containerApps.applyAppConfig` orchestrates live reload after persisting the new appConfig on a running container:
 
-1. Config and mount files are written to disk
-2. The reload command is executed inside the container via `execCommandInContainer` (non-interactive containerd exec)
-3. If the command exits 0: the response includes `{ requiresRestart: false, reloaded: true }` — no restart needed
-4. If the command exits non-zero: throws `APP_RELOAD_FAILED` (422) with stderr/stdout as detail — the config is saved but the app rejected it
-5. If the exec itself fails (e.g. command not found): falls back to `pendingRestart: true` behavior
+1. New appConfig validated; `generateDerivedConfig` produces new env/mounts/devices/mountContents
+2. `containerManager.updateContainerConfig` persists the metadata + env/mounts/devices changes (manager handles backing-store cleanup for removed mounts generically)
+3. Mount file contents written via `containerManager.putMountFileTextContent`
+4. Container task state checked via `containerManager.getTaskState`; if not running, return immediately
+5. If the app module provides `getReloadCommand()`, run it via `containerManager.execCommandInContainer` (non-interactive containerd exec)
+6. If the command exits 0: response includes `{ requiresRestart, reloaded: true }`. `requiresRestart` is true when the app module's `requiresRestartForChange` hook returns true OR the mount layout changed structurally.
+7. If the command exits non-zero: throws `APP_RELOAD_FAILED` (422) with stderr/stdout as detail — config saved, app rejected the new state
+8. If the exec itself fails for a non-app reason (e.g. command not found): falls back to setting `pendingRestart: true` and returning `{ requiresRestart: true }`
 
-Apps that don't support live reload (return `null` from `getReloadCommand`) always use `pendingRestart`.
+Apps that don't supply `getReloadCommand` always set `pendingRestart` instead of attempting reload.
 
-**Mount layout vs file contents.** The reload-without-restart path covers *file contents* but not the *bind mount layout*. Bind mounts are captured in the OCI spec at task create — adding a new share, changing a share's `source`, retargeting a `subPath`, or resizing a tmpfs cannot be applied to a running task by reload alone. The backend compares the mount list before/after generateDerivedConfig and forces `pendingRestart: true` when the structural shape (count / name / containerPath / sourceId / subPath / sizeMiB) differs, even if the app's reload command returned exit 0. This is in addition to the app module's `requiresRestartForChange` hook — the two signals are OR-ed.
+**Mount layout vs file contents.** Live reload covers *file contents* but not *bind mount layout*. Bind mounts are captured in the OCI spec at task create — adding/removing a share, retargeting `subPath`, resizing tmpfs cannot apply to a running task via reload. containerApps compares the structural mount signature (type/name/containerPath/sourceId/subPath/sizeMiB) before vs after `generateDerivedConfig` and forces `pendingRestart: true` when it differs, even if the reload command returned exit 0. OR-combined with the app module's `requiresRestartForChange` hook.
 
-`execCommandInContainer` is a general-purpose non-interactive exec utility (`containerManagerExec.js`) available for future use beyond app reload.
+`execCommandInContainer` is a general-purpose non-interactive exec utility (`containerManagerExec.js`) — exposed on the containerManager facade for any caller, not specific to app reload.
 
 ## Adding a New App
 
-1. **Backend module** — Create `backend/src/lib/linux/containerManager/apps/<app>.js` exporting `{ getDefaultAppConfig, validateAppConfig, generateDerivedConfig, maskSecrets, getReloadCommand }` as a named module object.
-2. **Register backend** — Add entry to `APP_REGISTRY` in `apps/appRegistry.js`.
+1. **Backend module** — Create `backend/src/lib/containerApps/<app>.js` exporting `{ getDefaultAppConfig, validateAppConfig, generateDerivedConfig, maskSecrets, getReloadCommand }` as a named module object.
+2. **Register backend** — Add entry to `APP_REGISTRY` in `containerApps/appRegistry.js`.
 3. **Frontend component** — Create `frontend/src/apps/<app>/<AppName>Section.jsx` using SectionCard.
 4. **Register frontend** — Add entry to `APP_REGISTRY` in `frontend/src/apps/appRegistry.js`.
 5. **Update docs** — Add the app's `appConfig` schema and behavior to this file.
