@@ -27,7 +27,7 @@ import { listHostGpus } from '../lib/hostGpus.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
 import { setupSSE } from '../lib/sse.js';
 import { getDevices as getHostUSBDevicesCached, onChange as onHostUSBChange } from '../lib/usbMonitor.js';
-import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/diskMonitor.js';
+import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/storage/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

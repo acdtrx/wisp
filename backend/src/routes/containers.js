@@ -29,7 +29,7 @@ import {
   titleForImageUpdateCheckSingle,
 } from '../lib/backgroundJobTitles.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
-import { getMountStatus, mountSMB } from '../lib/smbMount.js';
+import { getMountStatus, mountSMB } from '../lib/storage/index.js';
 import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
 import { validateContainerName } from '../lib/validation.js';

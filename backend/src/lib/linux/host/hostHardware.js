@@ -16,7 +16,7 @@ import {
   lookupVendorName,
   normalizePciClassHex,
 } from '../../pciIds.js';
-import { readAllDiskSmartSummaries } from './diskSmart.js';
+import { readAllDiskSmartSummaries } from '../../storage/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);

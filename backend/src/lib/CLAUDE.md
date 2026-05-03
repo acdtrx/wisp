@@ -1,7 +1,7 @@
-# Backend Ops Rules (diskOps, cloudInit, paths)
+# Backend Ops Rules (storage, cloudInit, paths)
 
 - **paths.js:** Export `getVMBasePath(name)` — base directory for a VM under `vmsPath` (from `config/wisp-config.json`). All VM-specific files (disk, cloud-init ISO, NVRAM, cloud-init config) live under this path. Image library is `imagePath` from config (shared templates/ISOs).
-- **Disk copy + resize (diskOps.js):** `qemu-img convert -O qcow2 <src> <dst>` then `qemu-img resize <dst> <size>G` if needed. Destination is the per-VM directory. Progress via child process stdout with `-p` flag; stream to client via SSE. Source file never modified or moved.
+- **Disk copy + resize (storage/diskOps.js, exposed via `storage/index.js`):** `qemu-img convert -O qcow2 <src> <dst>` then `qemu-img resize <dst> <size>G` if needed. Destination is the per-VM directory. Progress via child process stdout with `-p` flag; stream to client via SSE. Source file never modified or moved.
 - **Cloud-init (cloudInit.js):** Password hashed via `openssl passwd -6` (child process). ISO via `cloud-localds` if available, else `genisoimage -V cidata -r -J`. Store cloud-init ISO and config under per-VM directory (getVMBasePath). GitHub key fetch is server-side only; frontend never calls github.com.
 
 # vmManager Rules

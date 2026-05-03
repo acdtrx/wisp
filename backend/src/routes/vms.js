@@ -35,7 +35,7 @@ import {
 import * as createJobStore from '../lib/createJobStore.js';
 import * as backupJobStore from '../lib/backupJobStore.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
-import { getMountStatus, mountSMB } from '../lib/smbMount.js';
+import { getMountStatus, mountSMB } from '../lib/storage/index.js';
 import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError } from '../lib/routeErrors.js';
 import { validateVMName } from '../lib/validation.js';

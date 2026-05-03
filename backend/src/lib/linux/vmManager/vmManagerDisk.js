@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError } from './vmManagerConnection.js';
 import { parseDomainRaw, parseVMFromXML, buildXml } from './vmManagerXml.js';
 import { getVMBasePath, assertPathInsideAllowedRoots } from '../../paths.js';
-import { resizeDisk as resizeDiskImage } from '../../diskOps.js';
+import { resizeDisk as resizeDiskImage } from '../../storage/index.js';
 
 const execFile = promisify(execFileCb);
 

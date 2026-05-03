@@ -2,7 +2,7 @@
  * VM listing and config (list VMs, get VM config).
  * Maintains an in-memory cache of the VM list, refreshed on DomainEvent signals.
  */
-import { getDiskInfo } from '../../diskOps.js';
+import { getDiskInfo } from '../../storage/index.js';
 import {
   connectionState,
   getDomainObjAndIface,

@@ -42,7 +42,7 @@ See [CONFIGURATION.md](CONFIGURATION.md) for the full schema and validation rule
 
 ## Detection (disks)
 
-`backend/src/lib/linux/host/diskMonitor.js` enumerates block devices with filesystems:
+`backend/src/lib/storage/linux/diskMonitor.js` enumerates block devices with filesystems:
 
 1. List `/dev/disk/by-uuid/` — symlinks to underlying `/dev/sdXN` or `/dev/nvmeXnYpZ`.
 2. For each UUID, read `/sys/class/block/<name>/dev` to get `major:minor`, then parse `/run/udev/data/b<maj>:<min>` for `ID_FS_TYPE`, `ID_FS_LABEL`, etc.
@@ -119,9 +119,9 @@ The reconciler is awaited before the HTTP listener starts, so Host Mgmt API traf
 
 ## Hotplug (`installMountHotplugHandlers`)
 
-After reconciliation, Wisp subscribes to `diskMonitor.onChange`. The handler diffs the previous UUID set against the current:
+After reconciliation, Wisp subscribes to `storage.onChange` (re-exported from `storage/linux/diskMonitor.js`). The handler diffs the previous UUID set against the current:
 
-- **UUID appeared** and matches an adopted disk with `autoMount`: `mountDisk()` → `diskMonitor.refresh()` so the SSE stream pushes the new `mountedAt`.
+- **UUID appeared** and matches an adopted disk with `autoMount`: `mountDisk()` → `storage.refresh()` so the SSE stream pushes the new `mountedAt`.
 - **UUID disappeared** and matches an adopted disk that was mounted: `unmountDisk({ lazy: true })`. Kernel cleans up after user error (pulled without safely-remove).
 
 SMB mount toggles come only from explicit user action (`POST /api/host/mounts/:id/mount` / `…/unmount`) or the startup reconcile; SMB has no equivalent of physical hotplug.

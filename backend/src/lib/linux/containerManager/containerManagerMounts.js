@@ -15,7 +15,7 @@ import { mkdir, stat, writeFile, realpath } from 'node:fs/promises';
 
 import { containerError } from './containerManagerConnection.js';
 import { getContainerFilesDir } from './containerPaths.js';
-import { getMountStatus } from '../../smbMount.js';
+import { getMountStatus } from '../../storage/index.js';
 
 /**
  * @param {string} name

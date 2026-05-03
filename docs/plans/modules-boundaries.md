@@ -24,8 +24,8 @@ This refactor stays **inside Wisp** — no package extraction, no port interface
 
 ## Status
 
-- **Current step:** Step 3 — Storage primitives (sketched, needs detailing)
-- **Completed:** Step 1 — Networking & Bridges (2026-05-03), Step 2 — mDNS (2026-05-03)
+- **Current step:** Step 4 — Host introspection (sketched, needs detailing)
+- **Completed:** Step 1 — Networking & Bridges (2026-05-03), Step 2 — mDNS (2026-05-03), Step 3 — Storage primitives (2026-05-03)
 
 ## Boundaries identified (overview)
 
@@ -35,7 +35,7 @@ These are the internal modules to carve out of the flat `backend/src/lib/` surfa
 |---|--------|----------------|--------|
 | 1 | **Networking & bridges** | Only true cross-leak: `containerManager` imports from `vmManager`. Unblocking this means the two managers become independent. | done |
 | 2 | **mDNS** | Both managers and several other modules reach into mDNS directly. Group under one named module. | done |
-| 3 | **Storage primitives** | `diskOps`, `smbMount`, `diskMount` — generic disk operations, currently flat. | sketched |
+| 3 | **Storage primitives** | `diskOps`, `smbMount`, `diskMount` — generic disk operations, currently flat. | done |
 | 4 | **Host introspection** | `hostHardware`, `hostGpus`, `usbMonitor`, proc readers. Already partially under `linux/host/`. | sketched |
 | 5 | **Paths & config** | Hardest. Wisp-specific `wisp-config.json` schema lives here. Save for last — this is the policy boundary that will eventually become the port interface. | sketched |
 | 6 | **Validation, errors** | `validation.js` is fine to share. `routeErrors.js` stays in routes (managers throw structured errors already — that's the right boundary). Mostly a naming/organizing pass. | sketched |
@@ -175,3 +175,5 @@ Append one line per non-obvious tradeoff resolved during execution. Format: `YYY
 - 2026-05-03 — [step 2] — `mdnsServiceTypes.js` lifted from `lib/linux/` to `lib/mdns/serviceTypes.js` — was misfiled as Linux-specific despite being a platform-agnostic catalog + regex validators. Re-exported from the facade.
 - 2026-05-03 — [step 2] — Renamed `mdnsManager.js` → `avahi.js` inside the module — more accurate (the Linux backend is specifically Avahi, not generic mDNS), and the directory `mdns/` already carries the context. Same for `mdnsForwarder.js` → `forwarder.js`, `mdnsHostname.js` → `hostname.js`.
 - 2026-05-03 — [step 2] — Internal-only exports (`lookupLocalEntry`, `resolveLocalName`, `resolveLocalAddress`) stay private to the linux pair `avahi.js` ↔ `forwarder.js` — used only by the forwarder, not part of the public mDNS surface. Preserves the existing circular static import (no TLA, function bindings only — ESM handles it).
+- 2026-05-03 — [step 3] — `diskSmart` (SMART summaries) moves into `storage/`, NOT host introspection. Reason: SMART is a property of disks, not of the host's hardware enumeration. `hostHardware.js` (which moves in step 4) becomes the *consumer* of `storage.readAllDiskSmartSummaries`, not the owner. Renamed `diskSmart.js` → `linux/smart.js` inside the new module (drop redundant prefix; sibling to `diskMount.js`/`smbMount.js`). Added a darwin stub returning `[]`.
+- 2026-05-03 — [step 3] — Quietest step so far. No manager↔manager cross-leaks, no TLA cycles. Storage doesn't import either manager (consumers only flow one way: `vmManager`/`containerManager`/`mountsAutoMount`/`settings`/routes → storage). `mountsAutoMount.js` stays at `lib/` top-level as Wisp app-level glue (boot mount-reconcile + hotplug policy).

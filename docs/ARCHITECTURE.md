@@ -204,7 +204,7 @@ Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux 
 | `validation.js` | VM name validation |
 | `sse.js` | SSE response helper (`setupSSE`, `closeAllSSE` on shutdown) |
 | `usbMonitor.js` | Facade: Linux implementation under `linux/host/usbMonitor.js` (sysfs + `/dev/bus/usb` watch); macOS stub under `darwin/host/usbMonitor.js` |
-| `diskOps.js` | `qemu-img` operations: info, copy/convert, resize (with progress) |
+| `storage/index.js` | Storage module facade — qemu-img wrappers (`storage/diskOps.js`, cross-platform), block-device enumeration + hotplug (`storage/{linux,darwin}/diskMonitor.js`), removable disk mount via `wisp-mount disk` (`storage/{linux,darwin}/diskMount.js`), SMB mount via `wisp-mount smb` (`storage/{linux,darwin}/smbMount.js`), and SMART summaries via `wisp-smartctl` (`storage/linux/smart.js`; darwin returns empty). Public surface: disk-image ops (`getDiskInfo`, `copyAndConvert`, `resizeDisk`), block-device monitor (`start`, `stop`, `getDevices`, `onChange`, `refresh`), mounts (`mountDisk`/`unmountDisk`, `mountSMB`/`unmountSMB`/`getMountStatus`/`checkSMBConnection`/`rmdirMountpoint`), SMART (`readDiskSmartSummary`/`readAllDiskSmartSummaries`). |
 | `cloudInit.js` | Cloud-init ISO generation via `cloud-localds` or `genisoimage` |
 | `jobStore.js` | Generic async job store with progress tracking (`kind`, `title`, `listJobs`) |
 | `backgroundJobTitles.js` | Display titles for background jobs (parity with UI) |
@@ -214,9 +214,6 @@ Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux 
 | `downloadFromUrl.js` | Generic URL download with progress |
 | `downloadUbuntuCloud.js` | Ubuntu Server cloud image download |
 | `downloadHaos.js` | Home Assistant OS image download |
-| `smbMount.js` | Facade: SMB via `wisp-mount smb ...` on Linux (`linux/host/smbMount.js`); macOS stub |
-| `diskMount.js` | Facade: removable/fixed disk mount via `wisp-mount disk ...` on Linux (`linux/host/diskMount.js`); macOS stub |
-| `diskMonitor.js` | Facade: block-device enumeration (sysfs + `/run/udev/data`) and hotplug via `fs.watch` on Linux (`linux/host/diskMonitor.js`); macOS no-op |
 | `mountsAutoMount.js` | Startup mount reconciliation + hard-converge for `/mnt/wisp/` + disk hotplug handlers (auto-mount on insertion, lazy-unmount on removal) |
 | `hostHardware.js` | Facade: hardware inventory on Linux (`linux/host/hostHardware.js`); macOS stub |
 | `hostPower.js` | Facade: `wisp-power` on Linux; macOS stub |
@@ -346,7 +343,8 @@ wisp/
 │           ├── mdns/              # Cross-platform: Avahi backend (linux), DNS forwarder, hostname helpers, service-type catalog
 │           ├── linux/            # Linux-only manager internals: vmManager/, containerManager/, host/
 │           ├── darwin/           # macOS dev stubs (no libvirt/containerd)
-│           └── *.js              # Auth, config, paths, facades (procStats, smbMount, …), etc.
+│           ├── storage/          # Cross-platform: qemu-img ops, block-device monitor + hotplug, disk/SMB mount via wisp-mount, SMART
+│           └── *.js              # Auth, config, paths, facades (procStats, hostHardware, …), app-level glue (mountsAutoMount, vmMdnsPublisher, containerMdnsReconciler), etc.
 ├── frontend/
 │   ├── package.json
 │   ├── index.html

@@ -13,7 +13,7 @@ import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomain
 import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
 import { validateVMName } from '../../validation.js';
 import { getVMBasePath, getImagePath, assertPathInsideAllowedRoots } from '../../paths.js';
-import { resizeDisk as resizeDiskImage, copyAndConvert, getDiskInfo } from '../../diskOps.js';
+import { resizeDisk as resizeDiskImage, copyAndConvert, getDiskInfo } from '../../storage/index.js';
 import { deleteCloudInitISO } from '../../cloudInit.js';
 import { listHostFirmware } from './vmManagerHost.js';
 import { getDefaultBridge } from '../../networking/index.js';

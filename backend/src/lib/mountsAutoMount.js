@@ -9,13 +9,13 @@
  */
 import { readFile } from 'node:fs/promises';
 import { getRawMounts } from './settings.js';
-import { getMountStatus, mountSMB, unmountSMB } from './smbMount.js';
-import { mountDisk, unmountDisk } from './diskMount.js';
 import {
+  getMountStatus, mountSMB, unmountSMB,
+  mountDisk, unmountDisk,
   getDevices as getDiskDevices,
   onChange as onDiskChange,
   refresh as refreshDiskSnapshot,
-} from './diskMonitor.js';
+} from './storage/index.js';
 
 const WISP_MOUNT_ROOT = '/mnt/wisp';
 

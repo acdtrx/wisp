@@ -5,9 +5,11 @@ import {
   updateMount,
   removeMount,
 } from '../lib/settings.js';
-import { mountSMB, unmountSMB, getMountStatus, checkSMBConnection, rmdirMountpoint } from '../lib/smbMount.js';
-import { mountDisk, unmountDisk } from '../lib/diskMount.js';
-import { refresh as refreshDiskSnapshot, getDevices as getDiskDevices } from '../lib/diskMonitor.js';
+import {
+  mountSMB, unmountSMB, getMountStatus, checkSMBConnection, rmdirMountpoint,
+  mountDisk, unmountDisk,
+  refresh as refreshDiskSnapshot, getDevices as getDiskDevices,
+} from '../lib/storage/index.js';
 import { findContainersUsingStorageMount } from '../lib/containerManager.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
 

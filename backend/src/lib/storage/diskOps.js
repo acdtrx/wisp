@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { access, constants } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 
-import { createAppError } from './routeErrors.js';
+import { createAppError } from '../routeErrors.js';
 
 const execFile = promisify(execFileCb);
 

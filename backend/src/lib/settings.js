@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { CONFIG_PATH } from './config.js';
-import { getMountStatus } from './smbMount.js';
+import { getMountStatus } from './storage/index.js';
 import { createAppError } from './routeErrors.js';
 import { writeJsonAtomic } from './atomicJson.js';
 
