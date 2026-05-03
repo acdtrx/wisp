@@ -2,6 +2,9 @@
 
 ## 2026-05-03
 
+### Bug Fixes
+- **Container `.local` resolution broke after creating/deleting a managed VLAN bridge** — `wisp-bridge` runs `netplan apply` which re-renders bridges from declared YAML, dropping the runtime-only `169.254.53.53/32` from br0. Containers' DNS queries to the in-process forwarder then black-holed. Fix: declare the stub IP in `/etc/netplan/90-wisp-bridge.yaml` so `netplan apply` preserves it as part of br0's declared state. `bridge.sh` includes it for new installs; new `scripts/linux/setup/bridge-config.sh` (idempotent, Python-based YAML patcher) brings existing installs into compliance — called by `setup-server.sh` (push.sh path) and `wisp-updater` (self-update path). Pre-existing fragility, surfaced while testing the modules-boundaries step 1 refactor.
+
 ### Refactor
 - **Networking module carved out of the flat `lib/` surface** — new `lib/networking/` (facade, `bridgeNaming`, plus `linux/{hostBridges,managedBridges}` and `darwin/` stubs). Removes the only true `containerManager` → `vmManager` cross-import (`getDefaultContainerParentBridge`); `listHostBridges` and `getDefaultBridge` follow as cohesive siblings. Step 1 of the modules-boundaries refactor campaign.
 - **mDNS module carved out** — new `lib/mdns/` (facade `index.js`, platform-agnostic `hostname.js` + `serviceTypes.js`, `linux/{avahi,forwarder}.js`, `darwin/avahi.js`). Replaces the flat `mdnsManager.js`/`mdnsHostname.js`/`linux/mdnsForwarder.js`/`linux/mdnsServiceTypes.js` constellation with one named module + one facade. `vmMdnsPublisher` and `containerMdnsReconciler` stay at `lib/` top-level as Wisp app-level glue (codified in `WISP-RULES.md` § Architecture: glue between extractable modules is intentionally outside both modules to keep them independently reusable). Step 2 of the modules-boundaries refactor campaign.
