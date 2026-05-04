@@ -5,7 +5,7 @@
  * Local-DNS registration is owned by lib/vmMdnsReconciler.js, driven by the
  * vmManager.subscribeVMNetworkChange event, not by SSE/UI activity.
  */
-import { connectionState, resolveDomain, getDomainXML, getDomainObjAndIface, unwrapVariant, unwrapDict, vmError } from './vmManagerConnection.js';
+import { connectionState, resolveDomain, getDomainXML, getDomainObjAndIface, unwrapVariant, unwrapDict, vmError, subscribeAgentEvent } from './vmManagerConnection.js';
 import { parseVMFromXML } from './vmManagerXml.js';
 import { STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, VM_STATS_MASK } from './libvirtConstants.js';
 import { getCachedLocalDns, getCachedStaleBinary, getCachedVcpus, getCachedGuestAgent, getCachedStateCode, getCachedDomainPath } from './vmManagerList.js';
@@ -66,8 +66,11 @@ export async function getGuestHostnameFromIface(iface) {
  * renewal (typically hours). The per-VM stats SSE refreshes every 5 s but we only
  * hit the agent every GUEST_INFO_TTL_MS, so 5 in 6 ticks read straight from cache.
  *
- * Entries are dropped when the cached state turns non-running, so a stop/start cycle
- * always re-fetches from the live agent on the next running tick.
+ * Invalidation happens on three boundaries: cached state turns non-running (stop /
+ * start cycles re-fetch on the next running tick), libvirt AgentLifecycle fires
+ * (a fresh qemu-ga connect/disconnect collapses lag from up to 30 s to one stats
+ * tick — important for first-boot installs via cloud-init), and TTL expiry covers
+ * the rest (DHCP renewals, hostnamectl, missed signals).
  */
 const guestInfoCache = new Map(); // name -> { ip, hostname, fetchedAt }
 const GUEST_INFO_TTL_MS = 30_000;
@@ -75,6 +78,10 @@ const GUEST_INFO_TTL_MS = 30_000;
 function invalidateGuestInfo(name) {
   guestInfoCache.delete(name);
 }
+
+// AgentLifecycle on either edge (connect or disconnect) means our cached probe
+// result is now stale — drop it so the next stats tick re-probes fresh.
+subscribeAgentEvent((name) => { invalidateGuestInfo(name); });
 
 /**
  * Fetch guest-agent IP + hostname for a VM in one libvirt round-trip.

@@ -278,7 +278,7 @@ dbus-next 0.10.x auto-installs the match rule when you attach a listener on the 
 
 ### Guest agent state surfacing
 
-`getVMStats()` derives `guestAgent.connected` from whether `InterfaceAddresses` or `GetHostname` produced a value during the current poll. The flag is `undefined` when the domain XML has no guest_agent channel configured (so the UI hides the pill entirely). `vmManagerNetwork.js` independently observes the same `AgentEvent` signal to fast-path network-change events — the two paths are deliberately decoupled so the stats stream remains side-effect free.
+`getVMStats()` derives `guestAgent.connected` from whether `InterfaceAddresses` or `GetHostname` produced a value during the current poll. The flag is `undefined` when the domain XML has no guest_agent channel configured (so the UI hides the pill entirely). The probe is cached per-VM with a 30 s TTL (`GUEST_INFO_TTL_MS`) — the per-VM stats SSE ticks every 5 s but only one in six ticks hits qemu-ga; the rest read from cache. The cache is invalidated on three boundaries: cached state turns non-running (stop/start cycles re-fetch on the next running tick), libvirt `AgentEvent` fires (subscribed in `vmManagerStats.js` so a fresh qemu-ga connect/disconnect collapses lag from up to 30 s to one stats tick — important for first-boot VMs that install qemu-ga via cloud-init), and TTL expiry covers the rest (DHCP renewals, in-guest hostname changes, missed signals). `vmManagerNetwork.js` independently observes the same `AgentEvent` signal to fast-path network-change events; the two `AgentEvent` subscribers are independent (one invalidates the stats cache, the other emits mDNS-relevant network snapshots).
 
 ## Backend Module Structure
 
