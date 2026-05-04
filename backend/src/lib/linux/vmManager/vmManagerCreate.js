@@ -11,14 +11,12 @@ import dbus from 'dbus-next';
 
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError, generateMAC } from './vmManagerConnection.js';
 import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
-import { validateVMName } from '../../validation.js';
+import { validateVMName } from './vmManagerValidation.js';
 import { getVMBasePath } from './vmManagerPaths.js';
 import { resizeDisk as resizeDiskImage, copyAndConvert, getDiskInfo } from '../../storage/index.js';
-import { deleteCloudInitISO } from '../../cloudInit.js';
 import { listHostFirmware } from './vmManagerHost.js';
 import { getDefaultBridge } from '../../networking/index.js';
 import { listSnapshots, deleteSnapshot } from './vmManagerSnapshots.js';
-import { generateCloudInit } from './vmManagerCloudInit.js';
 import { refreshVMListCache } from './vmManagerList.js';
 
 const execFile = promisify(execFileCb);
@@ -343,11 +341,14 @@ export async function createVM(spec, { onStep } = {}) {
     bus: dspec.bus || 'virtio',
   }));
 
+  // Cloud-init ISO/JSON are built by the route layer (Wisp glue) before createVM is
+  // called. We just record the expected path so buildDomainXML can wire up the sde
+  // slot. Caller must ensure the ISO already exists at this path when cloudInit is
+  // requested for non-Windows guests.
   let sdePath = null;
   const osCategory = s.osType === 'Windows' ? 'windows' : 'linux';
   if (s.cloudInit && osCategory !== 'windows' && s.cloudInit.enabled !== false) {
     emit('cloudinit');
-    await generateCloudInit(name, s.cloudInit);
     sdePath = join(vmBasePath, 'cloud-init.iso');
   }
 
@@ -376,11 +377,8 @@ export async function createVM(spec, { onStep } = {}) {
           /* rollback — file may not exist */
         });
       }
-      if (sdePath) {
-        await deleteCloudInitISO(name).catch(() => {
-          /* rollback */
-        });
-      }
+      // Cloud-init ISO cleanup on rollback is the route's responsibility — see
+      // POST /vms in routes/vms.js, which catches this throw and runs the cleanup.
       throw vmError('LIBVIRT_ERROR', `Failed to define VM "${name}"`, err.message);
     }
   }

@@ -35,7 +35,7 @@ import { getContainerDir, getContainerFilesDir, getContainersPath } from './cont
 import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { generateContainerMac, resolveContainerResolvConf } from './containerManagerNetwork.js';
-import { validateContainerName } from '../../validation.js';
+import { validateContainerName } from './containerValidation.js';
 import { pullImage } from './containerManagerCreate.js';
 import { buildOCISpec } from './containerManagerSpec.js';
 import { resolveDeviceSpecs } from './containerDeviceNode.js';

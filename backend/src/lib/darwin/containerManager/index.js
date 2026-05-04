@@ -1,7 +1,6 @@
 /**
  * macOS dev stub: no containerd.
  */
-import { createAppError } from '../../routeErrors.js';
 import { setContainerManagerConfig } from '../../linux/containerManager/containerPaths.js';
 
 export function configure(cfg) {
@@ -20,7 +19,10 @@ export { buildOCISpec } from '../../linux/containerManager/containerManagerSpec.
 export const IS_DARWIN = true;
 
 export function containerError(code, message, raw) {
-  return createAppError(code, message, raw);
+  const err = new Error(message);
+  err.code = code;
+  if (raw) err.raw = raw;
+  return err;
 }
 
 export const containerState = {

@@ -34,6 +34,8 @@ import {
 } from '../lib/vmManager.js';
 import * as createJobStore from '../lib/createJobStore.js';
 import * as backupJobStore from '../lib/backupJobStore.js';
+import { publishVm, unpublishVm } from '../lib/vmMdnsPublisher.js';
+import { generateCloudInit, deleteCloudInitISO } from '../lib/cloudInit.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { getMountStatus, mountSMB } from '../lib/storage/index.js';
 import { setupSSE } from '../lib/sse.js';
@@ -245,8 +247,19 @@ export default async function vmsRoutes(fastify) {
         { jobId, kind: BACKGROUND_JOB_KIND.VM_CREATE, title },
         'Background job started',
       );
+      const wantsCloudInit = !!(
+        spec.cloudInit
+        && spec.osType !== 'Windows'
+        && spec.cloudInit.enabled !== false
+      );
       (async () => {
         try {
+          // Build cloud-init artifacts before vmManager runs — vmManager doesn't
+          // touch cloud-init at all, just wires up the sde slot if the file is there.
+          if (wantsCloudInit) {
+            createJobStore.pushEvent(jobId, { step: 'cloudinit' });
+            await generateCloudInit(vmName, spec.cloudInit);
+          }
           const result = await createVM(spec, {
             onStep(step, data) {
               createJobStore.pushEvent(jobId, { step, ...data });
@@ -254,6 +267,10 @@ export default async function vmsRoutes(fastify) {
           });
           createJobStore.completeJob(jobId, result);
         } catch (err) {
+          // Cloud-init rollback: vmManager used to do this; the route owns it now.
+          if (wantsCloudInit) {
+            await deleteCloudInitISO(vmName).catch(() => { /* rollback */ });
+          }
           request.log.error({ err, jobId }, 'Background create-VM job failed');
           try {
             createJobStore.failJob(jobId, err);
@@ -568,7 +585,15 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        return await updateVMConfig(request.params.name, request.body);
+        const result = await updateVMConfig(request.params.name, request.body);
+        // mDNS toggle/rename: vmManager doesn't fire DomainEvent for metadata-only
+        // changes, so the publisher won't reconcile on its own. Nudge it here.
+        if (request.body.localDns === false) {
+          await unpublishVm(result.name).catch(() => { /* best effort */ });
+        } else if (request.body.localDns === true) {
+          await publishVm(result.name).catch(() => { /* best effort */ });
+        }
+        return result;
       } catch (err) {
         handleRouteError(err, reply, request);
       }

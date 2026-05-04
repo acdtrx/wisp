@@ -3,10 +3,11 @@
  */
 import { randomBytes } from 'node:crypto';
 
-import { createAppError } from './routeErrors.js';
-
 export function vmError(code, message, raw) {
-  return createAppError(code, message, raw);
+  const err = new Error(message);
+  err.code = code;
+  if (raw) err.raw = raw;
+  return err;
 }
 
 export function unwrapVariant(v) {

@@ -3,7 +3,7 @@
  */
 import { hostname, release, uptime, networkInterfaces, cpus, totalmem } from 'node:os';
 
-import { parseDomainRaw } from '../../linux/vmManager/vmManagerXml.js';
+import { parseDomainRaw, parseVMFromXML } from '../../linux/vmManager/vmManagerXml.js';
 import {
   vmError,
   unwrapVariant,
@@ -11,6 +11,8 @@ import {
   formatVersion,
   generateMAC,
 } from '../../vmManagerShared.js';
+
+export { parseVMFromXML };
 export const IS_DARWIN = true;
 
 export function configure(_cfg) {
@@ -253,26 +255,6 @@ export async function attachISO() {
 }
 
 export async function ejectISO() {
-  throw noConn();
-}
-
-export async function generateCloudInit() {
-  throw noConn();
-}
-
-export async function attachCloudInitDisk() {
-  throw noConn();
-}
-
-export async function detachCloudInitDisk() {
-  throw noConn();
-}
-
-export async function getCloudInitConfig() {
-  throw noConn();
-}
-
-export async function updateCloudInit() {
   throw noConn();
 }
 

@@ -23,6 +23,8 @@ export {
   getDomainObjAndIface,
 } from './vmManagerConnection.js';
 
+export { parseVMFromXML } from './vmManagerXml.js';
+
 export {
   getHostInfo,
   getHostHardware,
@@ -68,14 +70,6 @@ export {
 } from './vmManagerDisk.js';
 
 export { attachISO, ejectISO } from './vmManagerIso.js';
-
-export {
-  generateCloudInit,
-  attachCloudInitDisk,
-  detachCloudInitDisk,
-  getCloudInitConfig,
-  updateCloudInit,
-} from './vmManagerCloudInit.js';
 
 export {
   listSnapshots,

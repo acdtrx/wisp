@@ -2,7 +2,7 @@ import {
   getCloudInitConfig,
   updateCloudInit,
   detachCloudInitDisk,
-} from '../lib/vmManager.js';
+} from '../lib/cloudInit.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
 import { validateVMName } from '../lib/validation.js';
 
@@ -67,7 +67,7 @@ export default async function cloudInitRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        await updateCloudInit(request.params.name, request.body);
+        await updateCloudInit(request.params.name, request.body, request.log);
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);

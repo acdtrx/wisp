@@ -9,8 +9,6 @@ import grpc from '@grpc/grpc-js';
 import protoLoader from '@grpc/proto-loader';
 import protobuf from 'protobufjs';
 
-import { createAppError } from '../../routeErrors.js';
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROTOS_DIR = resolve(__dirname, '../../../protos');
 const SOCKET_PATH = process.env.WISP_CONTAINERD_SOCK || '/run/containerd/containerd.sock';
@@ -54,7 +52,10 @@ function fireDisconnect() {
 }
 
 export function containerError(code, message, raw) {
-  return createAppError(code, message, raw);
+  const err = new Error(message);
+  err.code = code;
+  if (raw) err.raw = raw;
+  return err;
 }
 
 const PROTO_OPTS = {

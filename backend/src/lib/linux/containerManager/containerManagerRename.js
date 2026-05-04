@@ -18,8 +18,7 @@ import { getContainerDir, getContainerNetnsPath } from './containerPaths.js';
 import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { deregisterAddress, deregisterServicesForContainer } from '../../mdns/index.js';
-import { validateContainerName } from '../../validation.js';
-import { renameWorkloadAssignment } from '../../sections.js';
+import { validateContainerName } from './containerValidation.js';
 
 const execFile = promisify(execFileCb);
 const SNAPSHOTTER = 'overlayfs';
@@ -95,13 +94,13 @@ async function bestEffortRemoveOrphanNetns(name) {
  *     snapshot is recreated on next start anyway.
  *  5. Containers.Create(new) using the captured runtime/spec/labels.
  *  6. fs.rename old dir → new dir.
- *  7. Move any custom-section assignment (settings.assignments). The
- *     frontend reads sections from /api/sections, not from the list SSE,
- *     so order vs. step 8 is not load-bearing — but doing it before
- *     step 8 keeps disk state consistent before any config-write fanout.
- *  8. Rewrite container.json with the new name (also fans out config-write
+ *  7. Rewrite container.json with the new name (also fans out config-write
  *     → list cache refresh → SSE push).
- *  9. Best-effort: deregister stale mDNS records and orphan netns.
+ *  8. Best-effort: deregister stale mDNS records and orphan netns.
+ *
+ * The route layer (PATCH /containers/:name) is responsible for moving any
+ * custom-section assignment under the new name after this function returns
+ * — sections are Wisp app glue, not a containerManager concern.
  *
  * Rollback on partial failure between steps 3–6 recreates the old containerd
  * container from the captured record so the user can retry.
@@ -216,20 +215,13 @@ export async function renameContainer(oldName, newName) {
     );
   }
 
-  /* Step 7: move any custom-section assignment so the container keeps its
-   * sidebar section after rename. Best-effort — assignments are pure UI
-   * metadata. The frontend reads sections from /api/sections (mirrored into
-   * sectionsStore), so the renamed container picks up its section the next
-   * time the client refetches that endpoint. */
-  try { await renameWorkloadAssignment('container', oldName, newNameTrim); } catch { /* best effort */ }
-
-  /* Step 8: rewrite container.json under the new path with the updated name.
+  /* Step 7: rewrite container.json under the new path with the updated name.
    * writeContainerConfig fires notifyContainerConfigWrite, which refreshes
    * the container list cache and pushes /containers/stream subscribers. */
   const nextConfig = { ...config, name: newNameTrim };
   await writeContainerConfig(newNameTrim, nextConfig);
 
-  /* Step 9: best-effort cleanup of stale mDNS + netns under the old name.
+  /* Step 8: best-effort cleanup of stale mDNS + netns under the old name.
    * mDNS should already be deregistered (stopContainer deregisters on stop),
    * but call defensively in case a previous stop crashed mid-flight. */
   try { await deregisterServicesForContainer(oldName); } catch { /* best effort */ }

@@ -24,7 +24,7 @@ This refactor stays **inside Wisp** — no package extraction, no port interface
 
 ## Status
 
-- **Current step:** Step 6 — Validation, errors, leftovers (sketched, needs detailing)
+- **Current step:** Step 6 — Manager independence + leftovers grouping (detailed, in progress)
 - **Completed:** Step 1 — Networking & Bridges (2026-05-03), Step 2 — mDNS (2026-05-03), Step 3 — Storage primitives (2026-05-03), Step 4 — Host introspection (2026-05-03), Step 4b — containerApps carve-out (2026-05-03), Step 5 — Manager configure() / push model (2026-05-04)
 
 ## Boundaries identified (overview)
@@ -315,9 +315,109 @@ Both managers carry **zero Wisp-glue policy imports** after this step. Wisp push
 
 ---
 
-## Step 6 — Validation, errors, leftovers  *(sketched)*
+## Step 6 — Manager independence, leftovers grouping
 
-Mostly cleanup. `validation.js` stays shared. `routeErrors.js` stays in routes (managers already throw structured errors — correct boundary). Anything still flat in `backend/src/lib/` that didn't fit a category gets sorted or kept flat with justification.
+### Outcome
+
+After this step:
+
+- **`vmManager` and `containerManager` import zero Wisp app glue.** Their only outside imports are stdlib + the cross-cutting carved modules (`mdns/`, `networking/`, `storage/`) + their own `vmManagerShared.js`. Going forward they are modified only when the change is generic (libvirt/containerd functionality), never for Wisp-specific concerns.
+- **Other carved modules (`host/`, `networking/`, `mdns/`, `storage/`) stay looser** — they may reach into `routeErrors.js` for `createAppError` since they're cross-cutting Wisp-internal modules, not earmarked for extraction as standalone libs.
+- **`lib/jobs/` and `lib/downloads/`** group two clusters of flat files that share an obvious purpose.
+- The strict-managers rule is documented in `WISP-RULES.md` so future devs preserve the boundary.
+
+### Goal scope (manager → wisp-glue edges that break)
+
+Pre-step grep finds five edges from `vmManager`/`containerManager` into Wisp glue. All five break in this step:
+
+| Edge | Source files | Action |
+|------|--------------|--------|
+| **A1** `routeErrors.js` (`createAppError`) | `vmManagerShared.js`, `linux/containerManager/containerManagerConnection.js`, `darwin/containerManager/index.js` | Inline the 4-line factory body into `vmError` and `containerError`. Drop the imports. |
+| **A2** `validation.js` (`validateVMName`, `validateSnapshotName`, `validateContainerName`) | `vmManagerCreate.js`, `vmManagerConfig.js`, `vmManagerSnapshots.js`, `containerManagerBackup.js`, `containerManagerRename.js` | Vendor private copies into each manager (`vmManagerValidation.js`, `containerValidation.js`). Routes keep using `lib/validation.js` unchanged. Two implementations is fine — the validators are simple regexes and contracts won't drift. |
+| **A3** `cloudInit.js` (file ops) — and the entire `vmManagerCloudInit.js` orchestrator | `vmManagerCreate.js` (`generateCloudInit`/`deleteCloudInitISO`), `vmManagerCloudInit.js` (5 imports) | Generalize `vmManager.attachISO` with `{ createIfMissing: true }` and `vmManager.ejectISO` with `{ removeSlot: true }` so cloud-init's slot-create / slot-remove cases ride the public ISO primitives. Move `vmManagerCloudInit.js` out of vmManager and merge into `lib/cloudInit.js` (Wisp glue now owns the orchestrator). Move the create-time `generateCloudInit` + rollback `deleteCloudInitISO` calls from `vmManagerCreate.js` to `routes/vms.js` POST handler. |
+| **A4** `vmMdnsPublisher.js` (`publishVm`/`unpublishVm`) | `vmManagerConfig.js:329-333` | Drop the imperative call from the manager. The vmMdnsPublisher already subscribes to DomainEvent, but flipping `localDns` doesn't fire one (it's a metadata-only change). Move the conditional `publishVm`/`unpublishVm` to `routes/vms.js` PATCH `/vms/:name` after `updateVMConfig` succeeds. |
+| **A5** `sections.js` (`renameWorkloadAssignment`) | `containerManagerRename.js:22, 224` | Move the best-effort rename to `routes/containers.js` PATCH `/containers/:name` after `renameContainer` succeeds. |
+
+After A1–A5, this grep returns nothing:
+
+```
+grep -rE "from ['\"][^'\"]*\.\./?(routeErrors|validation|cloudInit|vmMdnsPublisher|sections)\.js" \
+  backend/src/lib/{linux,darwin}/{vmManager,containerManager}
+```
+
+### Out of scope for this step
+
+- **`vmManager` → `mdns/`, `networking/`, `storage/`**: kept. These are carved cross-cutting modules, not Wisp policy. (mDNS publishing *policy* — what to publish, when — lives in `vmMdnsPublisher.js` glue, which is broken from manager via A4.)
+- **`vmManagerShared.js`** stays at `lib/` top-level. After A1 it's pure helpers (no policy imports). The library-extraction effort moves it inside the manager tree later.
+- **Per-module `errors.js` factories** — step 4's note suggested splitting codes per module; rejected for this step. One shared `errorCodeToStatus` in `routeErrors.js` is fine; the leak that mattered (manager → that file) is broken by A1.
+
+### B — `routeErrors.js` final shape
+
+Keep `lib/routeErrors.js` filename and location. After A1, no manager touches it. Non-manager modules (`host/`, `networking/`, `storage/`, `mdns/`, downloads, app-glue, routes) keep importing `createAppError` from there. The translator side (`handleRouteError`, `sendError`, `errorCodeToStatus`, `curateDetail`) remains route-side only.
+
+No moves; just verify and document.
+
+### C — group `lib/jobs/`
+
+Move 9 flat job files into `lib/jobs/` with an `index.js` facade.
+
+```
+backend/src/lib/jobs/
+  index.js                  # re-exports
+  jobStore.js               # generic in-memory store
+  backgroundJobKinds.js     # constants
+  backgroundJobTitles.js    # title helpers
+  listBackgroundJobs.js     # cross-area list aggregator
+  backupJobStore.js
+  containerJobStore.js
+  createJobStore.js
+  downloadJobStore.js
+  imageUpdateJobStore.js
+```
+
+Re-grep all consumers and rewrite import paths.
+
+### D — group `lib/downloads/`
+
+Move 6 flat download files into `lib/downloads/` with an `index.js` facade.
+
+```
+backend/src/lib/downloads/
+  index.js
+  downloadFromUrl.js
+  downloadUtils.js
+  downloadArchCloud.js
+  downloadHaos.js
+  downloadUbuntuCloud.js
+  fileTypes.js
+```
+
+Primary consumer is `routes/library.js`; verify others.
+
+### E — document the strict-managers rule
+
+Add to `docs/WISP-RULES.md` (and a brief pointer in root `CLAUDE.md` + `lib/CLAUDE.md`):
+
+> **vmManager and containerManager are strict.** They must not import any Wisp app glue (`routeErrors`, `validation`, `cloudInit`, `vmMdnsPublisher`, `sections`, `paths`, `config`, `settings`, `atomicJson`, `loadRuntimeEnv`, `bootCleanup`, `mountsAutoMount`, job stores, downloads). They may import only stdlib, their own internal files, `vmManagerShared.js`, and the carved cross-cutting modules `mdns/`, `networking/`, `storage/`. Future changes to vmManager or containerManager are appropriate only for generic libvirt/containerd functionality. Wisp-specific orchestration goes in routes or app-glue files (which call into the managers via their public surface). Other carved modules (`host/`, `networking/`, `mdns/`, `storage/`) are looser — they may import `createAppError` from `routeErrors.js`.
+
+### Done when
+
+- Manager-edge greps return nothing (A1–A5).
+- `vmManagerCloudInit.js` no longer exists inside the manager tree; `lib/cloudInit.js` exposes the cloud-init orchestrator surface (`generateCloudInit`, `attachCloudInitDisk`, `detachCloudInitDisk`, `getCloudInitConfig`, `updateCloudInit`).
+- `vmManager.attachISO` / `ejectISO` accept the new option flags; cloud-init's create-slot path rides the generalized primitive.
+- `routes/vms.js` POST creates cloud-init artifacts before `createVM` and cleans up on failure.
+- `routes/vms.js` PATCH calls `publishVm`/`unpublishVm` based on the body patch.
+- `routes/containers.js` PATCH calls `renameWorkloadAssignment` after rename.
+- `lib/jobs/` and `lib/downloads/` exist; old flat files removed; consumers updated.
+- `docs/WISP-RULES.md` carries the strict-managers rule. `CLAUDE.md`, `lib/CLAUDE.md` updated.
+- Backend boots; PATCH a VM `localDns` toggle still publishes/unpublishes; rename a container still moves its section assignment; create a VM with cloud-init still works; update a VM's cloud-init config still works.
+- Three commits: (1) A1–A5 + E, (2) `lib/jobs/`, (3) `lib/downloads/`. CHANGELOG updated.
+
+### Open questions for execution
+
+- **A3 attachISO/ejectISO option shape**: confirmed during execution that `{ createIfMissing: true }` and `{ removeSlot: true }` are the right knobs (vs. separate primitives like `installCDROMSlot` / `removeCDROMSlot`). The opts approach reuses the existing exports; new primitive names would have grown the public surface for one caller.
+- **A4 PATCH semantics**: `updateVMConfig` already returns `{ ok, requiresRestart }`. Route reads `body.localDns` after the call to decide publish/unpublish. Verify nothing in `updateVMConfig`'s internal flow relies on the publish call landing before the function returns.
+- **A5 ordering**: rename succeeds → call sections rename. If sections rename throws, log + continue (best-effort, matches current behavior).
 
 ---
 

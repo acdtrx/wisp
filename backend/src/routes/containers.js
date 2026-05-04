@@ -29,6 +29,7 @@ import {
   titleForImageUpdateCheckSingle,
 } from '../lib/backgroundJobTitles.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
+import { renameWorkloadAssignment } from '../lib/sections.js';
 import { getMountStatus, mountSMB } from '../lib/storage/index.js';
 import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
@@ -308,8 +309,13 @@ export default async function containerRoutes(fastify) {
 
       if (typeof requestedName === 'string' && requestedName.trim()
         && requestedName.trim() !== workingName) {
+        const oldName = workingName;
         const renamed = await renameContainer(workingName, requestedName.trim());
         workingName = renamed.name;
+        // Carry any custom-section assignment over to the new name so the
+        // container keeps its sidebar section. Best-effort: assignments are
+        // pure UI metadata and the frontend re-reads /api/sections.
+        try { await renameWorkloadAssignment('container', oldName, workingName); } catch { /* best effort */ }
       }
 
       if (Object.keys(rest).length === 0) {

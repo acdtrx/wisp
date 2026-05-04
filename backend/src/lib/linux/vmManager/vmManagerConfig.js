@@ -4,12 +4,11 @@
  */
 import dbus from 'dbus-next';
 
-import { validateVMName } from '../../validation.js';
+import { validateVMName } from './vmManagerValidation.js';
 import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
 import { parseVMFromXML, parseDomainRaw, buildXml, setWispMetadata } from './vmManagerXml.js';
 import { getWindowsFeatures, getWindowsClock, getLinuxFeatures } from './vmManagerCreate.js';
-import { publishVm, unpublishVm } from '../vmMdnsPublisher.js';
 import { moveVmDirectory, rewriteDomainPaths, rewriteSnapshotMemoryPaths, findActualVmDir, pathExists } from './vmManagerRename.js';
 
 /** Parsed `<name>` may be a string or `{ '#text': string }` from fast-xml-parser. */
@@ -323,14 +322,12 @@ export async function updateVMConfig(name, changes) {
     }
   }
 
-  // Rename requires VM offline (enforced above), so there's no live mDNS entry
-  // under the old name to clean up — when the VM starts again, the publisher's
-  // reconcile handles publishing under the new name.
-  if (patch.localDns === false) {
-    await unpublishVm(effectiveName);
-  } else if (patch.localDns === true) {
-    await publishVm(effectiveName);
-  }
+  // mDNS publish/unpublish is the route's responsibility — see PATCH /vms/:name
+  // in routes/vms.js. The route reads body.localDns and calls publishVm or
+  // unpublishVm against the effective (post-rename) name. Rename requires VM
+  // offline (enforced above), so there's no live mDNS entry under the old name
+  // to clean up — when the VM starts again, the publisher's reconcile handles
+  // publishing under the new name.
 
-  return { ok: true, requiresRestart };
+  return { ok: true, requiresRestart, name: effectiveName };
 }

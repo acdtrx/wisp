@@ -1,3 +1,17 @@
+/**
+ * Cloud-init: Wisp app glue.
+ *
+ * Owns:
+ *   - building the cloud-init ISO (cloud-localds / genisoimage) with hashed password
+ *     and netplan match,
+ *   - persisting cloud-init.json next to the VM,
+ *   - orchestrating attach/detach against vmManager via the generic ISO primitives
+ *     (`attachISO(name, slot, path, { createIfMissing: true })` /
+ *      `ejectISO(name, slot, { removeSlot: true })`).
+ *
+ * vmManager itself never imports this file — the route layer (and previously
+ * `vmManagerCloudInit.js` until step 6 moved it here) drives the orchestration.
+ */
 import { execFile as execFileCb, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { writeFile, readFile, unlink, mkdir, rmdir, access, constants } from 'node:fs/promises';
@@ -9,6 +23,12 @@ import yaml from 'js-yaml';
 
 import { getVMBasePath } from './paths.js';
 import { createAppError } from './routeErrors.js';
+import {
+  attachISO,
+  ejectISO,
+  getVMXML,
+  parseVMFromXML,
+} from './vmManager.js';
 
 const execFile = promisify(execFileCb);
 
@@ -182,4 +202,106 @@ export async function deleteCloudInitConfig(vmName) {
   await unlink(configPath(vmName)).catch(() => {
     /* config file may not exist */
   });
+}
+
+// ─── Orchestration (called from routes/cloudinit.js + routes/vms.js) ─────
+
+/** Build the ISO and persist the config. Looks up the first NIC's MAC if the VM
+ * already exists so netplan match works against the real interface. */
+export async function generateCloudInit(vmName, config) {
+  let firstNicMac;
+  try {
+    const xml = await getVMXML(vmName);
+    const vm = parseVMFromXML(xml);
+    firstNicMac = vm?.nics?.[0]?.mac ?? undefined;
+  } catch {
+    /* VM missing or XML unreadable (typical at create time before define) — cloud-init
+       still works without a MAC hint; netplan falls back to default match. */
+    firstNicMac = undefined;
+  }
+
+  const prior = await loadCloudInitConfig(vmName);
+  const priorPasswordHash = prior?.passwordHash || '';
+
+  const { isoPath, passwordHash } = await generateCloudInitISO(vmName, config, {
+    firstNicMac,
+    priorPasswordHash,
+  });
+
+  const stored = {
+    ...config,
+    enabled: true,
+    password: passwordHash ? '***' : '',
+    passwordHash: passwordHash || '',
+  };
+  await saveCloudInitConfig(vmName, stored);
+  return isoPath;
+}
+
+function mergeCloudInitDisablePayload(existing, incoming) {
+  const base = existing && typeof existing === 'object' ? { ...existing } : {};
+  const { enabled: _en, password: incomingPassword, ...rest } = incoming;
+  const merged = { ...base, ...rest, enabled: false };
+  // `passwordHash` is internal — preserve from prior state, never accept from client.
+  merged.passwordHash = base.passwordHash || '';
+  const isPlaceholder = incomingPassword === '***' || incomingPassword === 'set';
+  if (incomingPassword && !isPlaceholder && String(incomingPassword).trim() !== '') {
+    // A new plaintext password came in even though we're disabling — store
+    // the placeholder; the hash will be regenerated when cloud-init is
+    // re-enabled.
+    merged.password = '***';
+  } else if (base.password !== undefined && base.password !== '') {
+    merged.password = base.password;
+  } else if (merged.passwordHash) {
+    merged.password = '***';
+  } else {
+    merged.password = '';
+  }
+  return merged;
+}
+
+/** Attach (or update) the cloud-init ISO at sde via the generic vmManager primitive. */
+export async function attachCloudInitDisk(vmName) {
+  const isoPath = join(getVMBasePath(vmName), 'cloud-init.iso');
+  await attachISO(vmName, 'sde', isoPath, { createIfMissing: true });
+}
+
+/** Detach the cloud-init disk from sde (best-effort), remove the ISO file, and clear the JSON config. */
+export async function detachCloudInitDisk(vmName) {
+  await ejectISO(vmName, 'sde', { removeSlot: true });
+  await deleteCloudInitISO(vmName);
+  await deleteCloudInitConfig(vmName);
+}
+
+export async function getCloudInitConfig(vmName) {
+  const config = await loadCloudInitConfig(vmName);
+  if (!config) return null;
+  // Internal-only fields (passwordHash) must not flow back to the client.
+  const { passwordHash: _hash, ...safe } = config;
+  const hasPassword = Boolean(safe.password) || Boolean(_hash);
+  return {
+    ...safe,
+    enabled: safe.enabled !== false,
+    password: hasPassword ? 'set' : '',
+    sshKey: safe.sshKey || '',
+  };
+}
+
+export async function updateCloudInit(vmName, config, log) {
+  if (config.enabled === false) {
+    const existing = await loadCloudInitConfig(vmName);
+    const merged = mergeCloudInitDisablePayload(existing, config);
+    await ejectISO(vmName, 'sde', { removeSlot: true });
+    await deleteCloudInitISO(vmName);
+    await saveCloudInitConfig(vmName, merged);
+    return;
+  }
+
+  await generateCloudInit(vmName, config);
+  try {
+    await attachCloudInitDisk(vmName);
+  } catch (err) {
+    /* ISO regenerated; live attach can fail if VM state disallows it — config still saved */
+    log?.warn?.({ err: err.message, vm: vmName }, '[cloudInit] Could not hot-swap cloud-init disk');
+  }
 }

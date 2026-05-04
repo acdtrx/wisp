@@ -69,12 +69,7 @@ export const extractDiskSnippet = impl.extractDiskSnippet;
 
 export const attachISO = impl.attachISO;
 export const ejectISO = impl.ejectISO;
-
-export const generateCloudInit = impl.generateCloudInit;
-export const attachCloudInitDisk = impl.attachCloudInitDisk;
-export const detachCloudInitDisk = impl.detachCloudInitDisk;
-export const getCloudInitConfig = impl.getCloudInitConfig;
-export const updateCloudInit = impl.updateCloudInit;
+export const parseVMFromXML = impl.parseVMFromXML;
 
 export const listSnapshots = impl.listSnapshots;
 export const createSnapshot = impl.createSnapshot;
