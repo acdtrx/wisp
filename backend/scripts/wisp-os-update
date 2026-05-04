@@ -5,9 +5,32 @@
 #               PKG<TAB>name<TAB>from<TAB>to     (one line per package, "from" empty for new installs)
 #               TOTAL <bytes>                    (estimated download size; 0 if unknown)
 #   upgrade - sync package database and perform a full upgrade (non-interactive).
+# Exit codes:
+#   0   success
+#   75  EX_TEMPFAIL — another apt/dpkg/pacman process is holding the package-manager lock
+#   1   any other failure (privilege, missing tools, parse error, etc.)
 # Must be run with sufficient privilege (root or sudo).
 # Supports: Debian/Ubuntu (apt) and Arch Linux (pacman).
 set -euo pipefail
+
+# Pattern matched against apt/pacman stderr to identify lock-contention errors.
+# When matched, the script exits 75 so callers can distinguish "busy" from "broken".
+LOCK_PATTERN='Could not get lock|Could not open lock|Unable to (acquire|lock)|Resource temporarily unavailable|already locked|unable to lock database|could not lock database|database is locked|frontend is locked'
+
+# Run a command, capturing stderr. On failure, if stderr matches LOCK_PATTERN,
+# print the stderr and exit 75. Otherwise print stderr and exit 1.
+# stdout from the wrapped command is discarded; use directly when you need stdout.
+run_or_busy() {
+  local err
+  if ! err=$("$@" 2>&1 >/dev/null); then
+    if echo "$err" | grep -qE "$LOCK_PATTERN"; then
+      echo "$err" >&2
+      exit 75
+    fi
+    echo "$err" >&2
+    exit 1
+  fi
+}
 
 # Detect distro from /etc/os-release
 DISTRO="unknown"
@@ -35,11 +58,11 @@ case "$DISTRO" in
   arch)
     case "$CMD" in
       check)
-        pacman -Sy >/dev/null 2>&1
+        run_or_busy pacman -Sy
         pacman -Qu 2>/dev/null | wc -l
         ;;
       list)
-        pacman -Sy >/dev/null 2>&1
+        run_or_busy pacman -Sy
         # pacman -Qu prints "name from -> to" for each upgradable package.
         pacman -Qu 2>/dev/null | awk -v OFS='\t' '
           NF >= 4 && $3 == "->" { printf "PKG%s%s%s%s%s%s\n", "\t", $1, "\t", $2, "\t", $4 }
@@ -49,7 +72,15 @@ case "$DISTRO" in
         echo "TOTAL 0"
         ;;
       upgrade)
-        pacman -Syu --noconfirm
+        # pacman -Syu prints progress on stdout; stderr only on lock/error.
+        if ! err=$(pacman -Syu --noconfirm 2>&1 >/dev/null); then
+          if echo "$err" | grep -qE "$LOCK_PATTERN"; then
+            echo "$err" >&2
+            exit 75
+          fi
+          echo "$err" >&2
+          exit 1
+        fi
         ;;
       *)
         echo "Usage: $0 check|list|upgrade" >&2
@@ -60,7 +91,7 @@ case "$DISTRO" in
   debian)
     case "$CMD" in
       check)
-        apt-get update -qq >/dev/null 2>&1
+        run_or_busy apt-get update -qq
         # Simulate upgrade so count matches what apt-get upgrade would install (excludes phased-only, etc.).
         OUT=$(LC_ALL=C apt-get -s upgrade 2>&1 || true)
         SUMMARY=$(echo "$OUT" | grep -E '^[0-9]+ upgraded,' | tail -n1 || true)
@@ -73,7 +104,7 @@ case "$DISTRO" in
         fi
         ;;
       list)
-        apt-get update -qq >/dev/null 2>&1
+        run_or_busy apt-get update -qq
         OUT=$(LC_ALL=C apt-get -s upgrade 2>&1 || true)
         # `Inst <name> [<from>] (<to> ...)` for upgrades; `Inst <name> (<to> ...)` for new pulls.
         echo "$OUT" | awk -v OFS='\t' '
@@ -104,8 +135,16 @@ case "$DISTRO" in
         echo "TOTAL ${BYTES}"
         ;;
       upgrade)
-        apt-get update -qq
-        apt-get upgrade -y
+        run_or_busy apt-get update -qq
+        # apt-get upgrade prints progress on stdout; capture stderr for lock detection.
+        if ! err=$(apt-get upgrade -y 2>&1 >/dev/null); then
+          if echo "$err" | grep -qE "$LOCK_PATTERN"; then
+            echo "$err" >&2
+            exit 75
+          fi
+          echo "$err" >&2
+          exit 1
+        fi
         ;;
       *)
         echo "Usage: $0 check|list|upgrade" >&2

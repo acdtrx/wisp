@@ -5,18 +5,20 @@ import { createAppError } from '../../routeErrors.js';
 
 const UNAVAILABLE = 'UPDATE_CHECK_UNAVAILABLE';
 
-let cachedUpdateCount = 0;
-
 export function getPendingUpdatesCount() {
-  return cachedUpdateCount;
-}
-
-export function setCachedUpdateCount(count) {
-  cachedUpdateCount = count;
+  return 0;
 }
 
 export function getLastCheckedAt() {
   return null;
+}
+
+export function getCachedPackages() {
+  return null;
+}
+
+export function isOperationInProgress() {
+  return false;
 }
 
 export async function checkForUpdates() {

@@ -18,7 +18,6 @@ import {
   checkForUpdates,
   performUpgrade,
   listUpgradablePackages,
-  setCachedUpdateCount,
   getHostHardwareInfo,
   hostShutdown,
   hostReboot,
@@ -119,6 +118,16 @@ export default async function hostRoutes(fastify) {
     },
   });
 
+  /* Map osUpdates error codes to HTTP status:
+   *   UPDATE_BUSY            → 409 (transient: another op is running, retry later)
+   *   UPDATE_CHECK_UNAVAILABLE → 503 (script missing, sudo refused, parser error)
+   *   anything else          → 500 */
+  function osUpdateErrorStatus(err) {
+    if (err.code === 'UPDATE_BUSY') return 409;
+    if (err.code === 'UPDATE_CHECK_UNAVAILABLE') return 503;
+    return 500;
+  }
+
   fastify.post('/host/updates/check', {
     schema: {
       response: {
@@ -130,15 +139,13 @@ export default async function hostRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        const result = await checkForUpdates();
-        setCachedUpdateCount(result.count);
-        return result;
+        return await checkForUpdates();
       } catch (err) {
         request.log.error({ err }, 'POST /host/updates/check failed');
-        const code = err.code === 'UPDATE_CHECK_UNAVAILABLE' ? 503 : 500;
-        reply.code(code).send({
+        reply.code(osUpdateErrorStatus(err)).send({
           error: err.message || 'Update check failed',
           detail: err.raw || err.detail || err.message,
+          code: err.code,
         });
       }
     },
@@ -146,6 +153,10 @@ export default async function hostRoutes(fastify) {
 
   fastify.get('/host/updates/packages', {
     schema: {
+      querystring: {
+        type: 'object',
+        properties: { refresh: { type: ['string', 'number', 'boolean'] } },
+      },
       response: {
         200: {
           type: 'object',
@@ -162,21 +173,25 @@ export default async function hostRoutes(fastify) {
               },
             },
             downloadBytes: { type: 'number' },
+            cached: { type: 'boolean' },
+            lastCheckedAt: { type: ['string', 'null'] },
           },
         },
       },
     },
     handler: async (request, reply) => {
+      /* Default: serve cache when available (instant; populated by background hourly check
+       * or any prior call). ?refresh=1 forces a fresh apt invocation. */
+      const refresh = request.query?.refresh;
+      const useCache = !(refresh === '1' || refresh === 1 || refresh === true || refresh === 'true');
       try {
-        const result = await listUpgradablePackages();
-        setCachedUpdateCount(result.packages.length);
-        return result;
+        return await listUpgradablePackages(undefined, { useCache });
       } catch (err) {
         request.log.error({ err }, 'GET /host/updates/packages failed');
-        const code = err.code === 'UPDATE_CHECK_UNAVAILABLE' ? 503 : 500;
-        reply.code(code).send({
+        reply.code(osUpdateErrorStatus(err)).send({
           error: err.message || 'Package list failed',
           detail: err.raw || err.detail || err.message,
+          code: err.code,
         });
       }
     },
@@ -193,15 +208,13 @@ export default async function hostRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        const result = await performUpgrade();
-        setCachedUpdateCount(0);
-        return result;
+        return await performUpgrade();
       } catch (err) {
         request.log.error({ err }, 'POST /host/updates/upgrade failed');
-        const code = err.code === 'UPDATE_CHECK_UNAVAILABLE' ? 503 : 500;
-        reply.code(code).send({
+        reply.code(osUpdateErrorStatus(err)).send({
           error: err.message || 'Upgrade failed',
           detail: err.raw || err.detail || err.message,
+          code: err.code,
         });
       }
     },

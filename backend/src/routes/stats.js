@@ -2,6 +2,7 @@ import {
   getHostStats,
   getPendingUpdatesCount,
   getLastCheckedAt,
+  isUpdateOperationInProgress,
   getRebootSignal,
 } from '../lib/host/index.js';
 import { getRunningVMAllocations, getHostHardware } from '../lib/vmManager/index.js';
@@ -70,6 +71,7 @@ export default async function statsRoutes(fastify) {
             runningContainers,
             pendingUpdates: getPendingUpdatesCount(),
             updatesLastChecked: getLastCheckedAt(),
+            updateOperationInProgress: isUpdateOperationInProgress(),
             rebootRequired: reboot.required,
             rebootReasons: reboot.reasons,
             wispUpdate: (() => {

@@ -241,10 +241,41 @@ When `/usr/local/bin/wisp-os-update` is installed:
 
 | Endpoint | Action |
 |----------|--------|
-| `POST /api/host/updates/check` | Runs `wisp-os-update check`, returns `{ count }` of upgradable packages; also updates cached count used in SSE `pendingUpdates` and sets `updatesLastChecked` timestamp |
-| `GET /api/host/updates/packages` | Runs `wisp-os-update list`, returns `{ packages: [{ name, from, to }], downloadBytes }`. Used by the Software tab "View packages" details modal. Refreshes the cached count and `updatesLastChecked` timestamp as a side-effect. On Arch `downloadBytes` is `0` (size cannot be computed non-interactively). |
-| `POST /api/host/updates/upgrade` | Runs `wisp-os-update upgrade`, returns `{ ok: true }` on success; resets cached count to 0 |
+| `POST /api/host/updates/check` | Returns `{ count }` of upgradable packages. Internally runs the `list` op and shares its in-flight promise with `GET /packages` so concurrent calls coalesce. Updates the cached count, package list, and `updatesLastChecked` timestamp. |
+| `GET /api/host/updates/packages` | Returns `{ packages: [{ name, from, to }], downloadBytes, cached, lastCheckedAt }`. **Serves the in-memory cache by default** (instant). Pass `?refresh=1` to force a fresh `wisp-os-update list` invocation. Used by the Software tab "View packages" details modal. On Arch `downloadBytes` is `0` (size cannot be computed non-interactively). |
+| `POST /api/host/updates/upgrade` | Runs `wisp-os-update upgrade`, returns `{ ok: true }` on success; resets cached count and package list. |
 
-`wisp-os-update` supports Debian/Ubuntu (apt) and Arch Linux (pacman); distro is detected at runtime. The script is invoked via `sudo`. Returns 503 if the script is not configured or the distro is unrecognised.
+### Concurrency and lock contention
 
-A **background hourly check** runs automatically (first check after 30s delay). The result is stored and exposed as `pendingUpdates` in the stats SSE stream so the UI can show a badge when updates are available. The timestamp of the last successful check is exposed as `updatesLastChecked` (ISO string or `null`).
+apt/pacman serialize their work via lock files, so only one package-manager op can succeed at a time. Wisp guards this in two layers:
+
+- **In-process dedup.** A single shared in-flight promise covers `check` and `list` (both run the same apt invocation under the hood). A second concurrent `check`/`list` reuses that promise instead of spawning a duplicate. `upgrade` is exclusive — any concurrent op returns `409` with code `UPDATE_BUSY`.
+- **External lock detection.** When apt/dpkg/pacman is held by another process on the host (e.g. `unattended-upgrades`), `wisp-os-update` exits `75` (EX_TEMPFAIL). The backend translates that to code `UPDATE_BUSY` with HTTP `409`. The UI renders this as a soft "another package manager operation is running" status rather than a red error, prompting the user to retry.
+
+### Caching
+
+`getCachedPackages()` keeps the most recent `list` result in memory across calls. It is populated by:
+- The background hourly checker (which now uses the `list` op, primed ~30s after backend boot).
+- Any successful `check` (same apt invocation produces both count + list).
+- Any non-cached `GET /packages?refresh=1`.
+
+Cleared on successful `upgrade`. The cache is in-memory only — backend restart loses it; the next background tick repopulates within 30s.
+
+### Stats SSE fields
+
+| Field | Meaning |
+|-------|---------|
+| `pendingUpdates` | Cached upgradable-package count |
+| `updatesLastChecked` | ISO timestamp of the last successful list/check (or `null`) |
+| `updateOperationInProgress` | `true` while a `check`/`list`/`upgrade` subprocess is running — the UI uses this to disable buttons and avoid surprise BUSY errors |
+
+### Error codes (osUpdate routes)
+
+| Code | HTTP | Meaning |
+|------|------|---------|
+| `UPDATE_BUSY` | 409 | Another package-manager op is running (Wisp's own or external). UI surfaces as a transient warn, not an error. |
+| `UPDATE_CHECK_UNAVAILABLE` | 503 | Script missing, sudo refused, or unsupported distro. |
+
+`wisp-os-update` supports Debian/Ubuntu (apt) and Arch Linux (pacman); distro is detected at runtime. The script is invoked via `sudo`.
+
+A **background hourly check** runs automatically (first check after 30s delay). It uses the `list` op so the package cache is primed for free. If a user-triggered op is already in flight when the timer fires, the background tick is skipped — the running op's result populates the same caches.

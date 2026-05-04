@@ -20,8 +20,8 @@ export function performUpgrade() {
   return api('/api/host/updates/upgrade', { method: 'POST' });
 }
 
-export function listUpgradablePackages() {
-  return api('/api/host/updates/packages');
+export function listUpgradablePackages({ refresh = false } = {}) {
+  return api(`/api/host/updates/packages${refresh ? '?refresh=1' : ''}`);
 }
 
 export function listManagedNetworkBridges() {
