@@ -4,7 +4,7 @@
  * to a small hardcoded list if the endpoint is unreachable or unparseable.
  */
 
-import { ensureImageDir } from './paths.js';
+import { ensureImageDir } from '../paths.js';
 import { findUniqueFilename, downloadWithProgress } from './downloadUtils.js';
 
 const SIMPLESTREAMS_URL =

@@ -8,9 +8,9 @@ import { createWriteStream } from 'node:fs';
 import { unlink, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { ensureImageDir } from './paths.js';
+import { ensureImageDir } from '../paths.js';
 import { findUniqueFilename, downloadWithProgress } from './downloadUtils.js';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from '../routeErrors.js';
 
 const GITHUB_API = 'https://api.github.com/repos/home-assistant/operating-system/releases/latest';
 const ASSET_PATTERNS = [

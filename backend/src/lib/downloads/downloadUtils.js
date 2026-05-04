@@ -5,7 +5,7 @@
 import { createWriteStream } from 'node:fs';
 import { access, unlink, stat } from 'node:fs/promises';
 import { join, basename } from 'node:path';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from '../routeErrors.js';
 import { detectType } from './fileTypes.js';
 import { ssrfSafeFetch } from './downloadFromUrl.js';
 

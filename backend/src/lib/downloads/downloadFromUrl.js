@@ -17,9 +17,9 @@ import { basename } from 'node:path';
 import { lookup } from 'node:dns/promises';
 import { Agent, fetch as undiciFetch } from 'undici';
 
-import { ensureImageDir } from './paths.js';
+import { ensureImageDir } from '../paths.js';
 import { detectType } from './fileTypes.js';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from '../routeErrors.js';
 import { findUniqueFilename, streamResponseToFile } from './downloadUtils.js';
 
 const MAX_REDIRECTS = 5;
