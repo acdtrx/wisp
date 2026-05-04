@@ -15,3 +15,8 @@ reports/
 config/wisp-config.json
 config/runtime.env
 config/wisp-password
+
+# Claude Code working directory (personal settings + runtime artifacts).
+# Carve out exceptions (e.g. !.claude/settings.json) if shared content
+# is ever added.
+.claude/
