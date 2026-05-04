@@ -1,6 +1,12 @@
 /**
  * Linux vmManager implementation (libvirt over DBus).
  */
+import { setVmManagerPaths } from './vmManagerPaths.js';
+
+export function configure(cfg) {
+  setVmManagerPaths(cfg);
+}
+
 export {
   connect,
   disconnect,

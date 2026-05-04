@@ -7,6 +7,7 @@ const impl = await import(
   platform() === 'linux' ? './linux/vmManager/index.js' : './darwin/vmManager/index.js',
 );
 
+export const configure = impl.configure;
 export const connect = impl.connect;
 export const disconnect = impl.disconnect;
 export const connectionState = impl.connectionState;

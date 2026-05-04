@@ -7,6 +7,7 @@ const impl = await import(
   platform() === 'linux' ? './linux/containerManager/index.js' : './darwin/containerManager/index.js',
 );
 
+export const configure = impl.configure;
 export const connect = impl.connect;
 export const disconnect = impl.disconnect;
 export const containerState = impl.containerState;

@@ -9,8 +9,10 @@ import fastifyWebsocket from '@fastify/websocket';
 
 import { loadRuntimeEnv } from './lib/loadRuntimeEnv.js';
 import { createAuthHook } from './lib/auth.js';
-import { connect as connectLibvirt } from './lib/vmManager.js';
+import { getConfigSync } from './lib/config.js';
+import { configure as configureVmManager, connect as connectLibvirt } from './lib/vmManager.js';
 import {
+  configure as configureContainerManager,
   connect as connectContainerd,
   disconnect as disconnectContainerd,
   startImageUpdateChecker,
@@ -50,6 +52,26 @@ import { startContainerMdnsReconciler, stopContainerMdnsReconciler } from './lib
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, '..', '..');
 loadRuntimeEnv(projectRoot);
+
+/* Push Wisp paths + storage-mount resolver into the managers before any route
+   registers or any manager-internal code runs. After this point, vmManager and
+   containerManager have no Wisp-glue dependencies — they read everything from
+   the configure() slots. The resolver is sync (matches the pre-refactor
+   getConfigSync pattern in paths.js); wisp-config.json is small and the OS
+   caches the read. */
+{
+  const cfg = getConfigSync();
+  configureVmManager({ vmsPath: cfg.vmsPath });
+  configureContainerManager({
+    containersPath: cfg.containersPath,
+    resolveMount: (id) => {
+      if (typeof id !== 'string' || !id) return null;
+      const mounts = getConfigSync().mounts || [];
+      const m = mounts.find((x) => x && x.id === id);
+      return m ? { id: m.id, mountPath: m.mountPath, label: m.label } : null;
+    },
+  });
+}
 
 const PORT = parseInt(process.env.WISP_PORT, 10) || 8080;
 

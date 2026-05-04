@@ -71,6 +71,26 @@ Strong lean toward A.
 
 ## Improvements
 
+### Attaching/swapping ISOs requires the VM to be stopped
+
+**Found:** 2026-05-04, during step 5 modules-boundaries spot testing.
+
+**Symptom:** Attaching an ISO to a CDROM slot, or swapping the inserted ISO, requires the VM to be powered off first. On a running VM the operation fails. QEMU's standard CDROM model supports media swap on a live guest, so this is unnecessary friction — the ergonomic equivalent of physically inserting a CD into a running machine.
+
+**Fix sketch:**
+1. `vmManagerIso.js` `attachISO`/`ejectISO` already build the disk XML and call `iface.UpdateDevice(xml, flags)`. Today the code path likely uses `flags = VIR_DOMAIN_AFFECT_CONFIG` (2) or refuses when running. Switch to `flags = VIR_DOMAIN_AFFECT_LIVE | VIR_DOMAIN_AFFECT_CONFIG` (3) so the change applies to both the live domain and the persistent config — same pattern as `dual CDROM` rule in `lib/CLAUDE.md` and `updateDiskBus`/disk attach.
+2. Verify the CDROM `<target>` keeps `tray='open'` ↔ `tray='closed'` semantics correctly when swapping media (libvirt may need an explicit eject-then-insert sequence; UpdateDevice with the right XML usually handles this).
+3. Routes already accept the call — no API change. UI doesn't gate on running state for these endpoints (or if it does, remove that guard).
+
+**Spot test after fix:**
+1. Start a VM with an empty CDROM. While running, attach an ISO. Inside the guest, the disc should mount.
+2. While still running, eject and attach a different ISO. Guest should see the new disc.
+3. Eject. Stop the VM. Attach an ISO. Start the VM. The ISO should still be there (config-side change persisted).
+
+**Why deferred:** Quality-of-life feature, not a regression. Wisp has shipped requiring a stop-attach-start cycle since day one. Worth fixing — the guard is doing nothing useful — but not blocking anything.
+
+---
+
 ### Backup directory layout: VMs at top level, containers under `containers/` subdir — should be symmetric
 
 **Found:** 2026-05-03.

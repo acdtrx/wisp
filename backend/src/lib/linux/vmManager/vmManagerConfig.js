@@ -5,8 +5,7 @@
 import dbus from 'dbus-next';
 
 import { validateVMName } from '../../validation.js';
-import { getVMBasePath } from '../../paths.js';
-import { getConfigSync } from '../../config.js';
+import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
 import { parseVMFromXML, parseDomainRaw, buildXml, setWispMetadata } from './vmManagerXml.js';
 import { getWindowsFeatures, getWindowsClock, getLinuxFeatures } from './vmManagerCreate.js';
@@ -65,10 +64,9 @@ export async function updateVMConfig(name, changes) {
       // leave the files at a different path. Read the XML and find the
       // directory the disks/NVRAM actually reference.
       const expectedOldDir = getVMBasePath(currentName);
-      const { vmsPath } = getConfigSync();
       const xmlBeforeRename = await getDomainXML(domPath);
       const parsedBeforeRename = parseDomainRaw(xmlBeforeRename);
-      const inferredDir = findActualVmDir(parsedBeforeRename?.domain, vmsPath);
+      const inferredDir = findActualVmDir(parsedBeforeRename?.domain, getVmsPath());
       // Prefer the expected dir when it both exists and matches inference.
       // When inference disagrees, trust inference (legacy convergence).
       // When no path lives under vmsPath at all (CDROM-only VMs), fall back

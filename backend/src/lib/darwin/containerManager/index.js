@@ -2,6 +2,11 @@
  * macOS dev stub: no containerd.
  */
 import { createAppError } from '../../routeErrors.js';
+import { setContainerManagerConfig } from '../../linux/containerManager/containerPaths.js';
+
+export function configure(cfg) {
+  setContainerManagerConfig(cfg);
+}
 
 export {
   getContainersPath,

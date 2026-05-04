@@ -17,7 +17,7 @@ import {
   TMPFS_MAX_SIZE_MIB,
 } from './containerManagerMounts.js';
 import { deleteMountBackingStore } from './containerManagerMountsContent.js';
-import { getRawMounts } from '../../settings.js';
+import { resolveMount } from './containerPaths.js';
 import { readContainerConfig as loadContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
 const RESTART_WHEN_RUNNING = true;
@@ -32,8 +32,7 @@ function taskIsRunning(task) {
  * @param {{ type: string, name: string, containerPath: string, readonly?: boolean, sourceId?: string|null, subPath?: string }} mountDef
  */
 export async function addContainerMount(containerName, mountDef) {
-  const storageMounts = await getRawMounts();
-  const [normalized] = validateAndNormalizeMounts([mountDef], storageMounts);
+  const [normalized] = validateAndNormalizeMounts([mountDef], resolveMount);
   const config = await loadContainerConfig(containerName);
   const list = Array.isArray(config.mounts) ? [...config.mounts] : [];
   const names = new Set(list.map((m) => m.name));
@@ -177,9 +176,8 @@ export async function updateContainerMount(containerName, mountName, changes) {
       if (current.type !== 'directory') {
         throw containerError('INVALID_CONTAINER_MOUNTS', 'sourceId is only allowed on directory mounts');
       }
-      const storageMounts = await getRawMounts();
       const sid = changes.sourceId.trim();
-      if (!storageMounts.some((m) => m.id === sid)) {
+      if (!resolveMount(sid)) {
         throw containerError('INVALID_CONTAINER_MOUNTS', `sourceId "${sid}" does not reference a configured storage mount`);
       }
       nextSourceId = sid;

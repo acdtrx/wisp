@@ -24,8 +24,8 @@ This refactor stays **inside Wisp** — no package extraction, no port interface
 
 ## Status
 
-- **Current step:** Step 5 — Paths & config (sketched, needs detailing)
-- **Completed:** Step 1 — Networking & Bridges (2026-05-03), Step 2 — mDNS (2026-05-03), Step 3 — Storage primitives (2026-05-03), Step 4 — Host introspection (2026-05-03), Step 4b — containerApps carve-out (2026-05-03)
+- **Current step:** Step 6 — Validation, errors, leftovers (sketched, needs detailing)
+- **Completed:** Step 1 — Networking & Bridges (2026-05-03), Step 2 — mDNS (2026-05-03), Step 3 — Storage primitives (2026-05-03), Step 4 — Host introspection (2026-05-03), Step 4b — containerApps carve-out (2026-05-03), Step 5 — Manager configure() / push model (2026-05-04)
 
 ## Boundaries identified (overview)
 
@@ -37,7 +37,7 @@ These are the internal modules to carve out of the flat `backend/src/lib/` surfa
 | 2 | **mDNS** | Both managers and several other modules reach into mDNS directly. Group under one named module. | done |
 | 3 | **Storage primitives** | `diskOps`, `smbMount`, `diskMount` — generic disk operations, currently flat. | done |
 | 4 | **Host introspection** | `hostHardware`, `hostGpus`, `usbMonitor`, proc readers. Already partially under `linux/host/`. | done |
-| 5 | **Paths & config** | Hardest. Wisp-specific `wisp-config.json` schema lives here. Save for last — this is the policy boundary that will eventually become the port interface. | sketched |
+| 5 | **Paths & config** | Hardest. Wisp-specific `wisp-config.json` schema lives here. Save for last — this is the policy boundary that will eventually become the port interface. | done |
 | 6 | **Validation, errors** | `validation.js` is fine to share. `routeErrors.js` stays in routes (managers throw structured errors already — that's the right boundary). Mostly a naming/organizing pass. | sketched |
 
 ---
@@ -278,13 +278,40 @@ Confirmed by grep at plan-write time:
 
 ---
 
-## Step 5 — Paths & config (the policy boundary)  *(sketched)*
+## Step 5 — Manager configure() / push model
 
-**Hardest step.** This is where Wisp-specific `wisp-config.json` schema, install paths, and VM/container directory conventions live. Files: `paths.js`, `config.js`, `loadRuntimeEnv.js`, `atomicJson.js`, `settings.js`.
+### Outcome
 
-When we eventually extract the libs, *this* is the surface that becomes a port interface (the lib asks "where do I store container X's config?" and Wisp answers). For now, just consolidate and name the boundary clearly so the eventual port design is obvious.
+Both managers carry **zero Wisp-glue policy imports** after this step. Wisp pushes paths and the storage-mount resolver via `configure()` at boot; managers never reach for `paths.js`, `config.js`, `settings.js`, or `atomicJson.js`.
 
-**Detail before starting:** map every `paths.js` and `config.js` consumer; identify which calls are policy ("which directory?") vs. generic ("write JSON atomically").
+### What we did (no folder reorg — push model only)
+
+1. **vmManager**
+   - New private `lib/linux/vmManager/vmManagerPaths.js` holds `getVMBasePath`, `getImagePath`, `getVmsPath`, `assertPathInsideAllowedRoots`. Reads from a configure-time slot.
+   - Linux + darwin facades expose `configure({ vmsPath, imagePath })`.
+   - 7 internal files (`Create`, `Disk`, `Iso`, `CloudInit`, `Snapshots`, `Backup`, `Config`) switched from `'../../paths.js'` / `'../../config.js'` to `'./vmManagerPaths.js'`.
+   - `assertPathInsideAllowedRoots` removed from `lib/paths.js` entirely (no external consumer).
+2. **containerManager**
+   - `containerPaths.js` (private, inside containerManager) refactored to take `containersPath` from a configure-time slot — no more `getConfigSync()` import. Adds a sync `resolveMount(id)` slot.
+   - Linux + darwin facades expose `configure({ containersPath, resolveMount })`.
+   - 4 internal files (`Create`, `Config`, `MountCrud`, `Backup`) switched from `getRawMounts()` (settings.js) to per-id `resolveMount()` lookup. Helper signatures (`validateAndNormalizeMounts`, `resolveMountHostPath`, `assertBindSourcesReady`, `buildOCISpec`) changed to take `resolveMount` callback instead of `storageMounts` array.
+   - `lib/atomicJson.js` **vendored** into `lib/linux/containerManager/atomicJson.js` — manager owns its own copy. `containerManagerImages.js` and `containerManagerConfigIo.js` import the vendored copy.
+   - `oci-image-meta.json` relocated from `dirname(CONFIG_PATH)/oci-image-meta.json` to `<containersPath>/.oci-image-meta.json`. Drops the last `CONFIG_PATH` import.
+3. **Boot wiring** (`backend/src/index.js`)
+   - Right after `loadRuntimeEnv`, call `configureVmManager(...)` and `configureContainerManager(...)` with values pulled from `getConfigSync()`.
+   - `resolveMount` is a sync closure over `getConfigSync().mounts` — matches the per-call sync pattern paths.js used.
+4. **`lib/paths.js`** — narrowed. Now only exports `getVMBasePath`, `getImagePath`, `ensureImageDir` for non-manager consumers (cloudInit, downloads, routes/library). No `assertPathInsideAllowedRoots`, no `routeErrors` import.
+
+### What's NOT in this step
+
+- **No folder reorg.** vmManager + containerManager stay at `lib/{linux,darwin}/<manager>/`. The eventual `lib/<manager>/{linux,darwin}/` normalization is part of the separate library-extraction effort.
+- **No grouping into `lib/wispConfig/`.** `paths.js`, `config.js`, `settings.js`, `atomicJson.js`, `loadRuntimeEnv.js`, `bootCleanup.js` stay flat at `lib/`. The leak that mattered is *manager → policy*; push fixes that. Grouping flat files would have been churn for organizational cleanup with no functional gain (per decision below).
+
+### Done when
+
+- `grep -rE "from ['\"]\.\.(/\.\.)?/(paths|config|settings|atomicJson)\.js" backend/src/lib/{linux,darwin}/{vmManager,containerManager}` returns nothing. ✓
+- Both managers' linux + darwin facades export `configure(cfg)`. ✓
+- Boot smoke: imports + configure() succeed on darwin (real impl) and on linux/* facades imported directly. ✓
 
 ---
 
@@ -319,3 +346,10 @@ Append one line per non-obvious tradeoff resolved during execution. Format: `YYY
 - 2026-05-03 — [step 4] — Two extra `host/` deep-imports surfaced during execution that the plan-write call-site list missed: `linux/vmManager/vmManagerHost.js` and `darwin/vmManager/index.js` both reached into the old `host/usbMonitor.js` for `getDevices` (VM USB attach needs to know what's plugged in). Fixed by switching both to `host/index.js` (facade, not deep). `linux/containerManager/apps/jellyfin.js` had the same shape against `host/hostGpus.js` (GPU passthrough lookup) — also moved to facade. **Lesson for step 5+:** when grepping call sites, search for `linux/host/` and `darwin/host/` deep imports as well as the top-level facade imports — the deep imports inside other manager modules are easy to miss in the initial sweep.
 - 2026-05-03 — [step 4 follow-up] — Dropped `vmManager.listHostUSBDevices()` entirely (Linux + darwin). The function was a one-line pass-through to `host.getDevices()`; the only consumer (`GET /api/host/usb`) now calls the host facade directly. Reason: the relay added a fake responsibility to vmManager (it didn't *do* anything with the data, just forwarded it) and meant vmManager carried a host dependency for purely cosmetic reasons. With this gone, vmManager → host has zero imports. The only manager → host coupling left is `containerManager/apps/jellyfin.js` calling `listHostGpus()` — that's real policy (existence check + first-device pick for `/dev/dri/renderD*` passthrough), not a relay; deferred decision on whether to push the policy into the route layer or keep it in the app module.
 - 2026-05-03 — [step 4b] — Carved `apps/` out of `linux/containerManager/` into a new top-level `lib/containerApps/` (cross-platform — apps are pure config translators, not OS-specific). containerApps is now a *peer* of routes, not an extension of containerManager. It consumes containerManager primitives (`createContainer`, `updateContainerConfig`, `putMountFileTextContent`, `execCommandInContainer`, `getContainerConfig`, `getTaskState`, `deleteContainer`) and orchestrates the app create/patch/eject flows. Schema change: `container.json` now persists app identity in opaque `metadata.app` (string id) + `metadata.appConfig` (object) — containerManager never introspects `metadata`, just persists it verbatim. UI updated to read `config.metadata?.app` / `config.metadata?.appConfig`. **Manager drops ~160 lines** of app-aware code (`containerManagerCreate.js` lines 408–451 for app expansion + mount-content writing; `containerManagerConfig.js` lines 128–242 for eject/appConfig handling, reload-vs-restart logic, mount-layout-changed computation). Manager **gains** `metadata` and `pendingRestart` as generic writable fields plus generic spec-field handling for env/mounts/devices/services/runAsRoot at create. Existing app containers under feature-building mode: `metadata` field absent → UI treats them as generic containers; users can recreate to restore app UI activation. **Net dependency edges:** `containerManager → containerApps` = ZERO; `containerApps → containerManager` = consumer-only; `containerApps → host` = jellyfin's GPU enumeration (legitimate glue → host coupling); `containerApps → settings` = jellyfin's storage-mount lookup. Routes dispatch on `config.metadata?.app` to either containerApps glue or generic manager calls.
+- 2026-05-04 — [step 5] — Skipped the `lib/wispConfig/` folder reorg the original step-5 sketch implied. Reason: the leak that blocks library extraction is *manager → policy import*, not *flat policy files*. Push-via-configure() kills the import edge regardless of where the policy files live. Moving `paths.js`/`config.js`/`settings.js` into a folder would have been ~30 import-path rewrites in routes + app-glue for organizational tidiness only. Step 5 ended up much smaller than sketched: just `configure()` + helper file + ~12 import rewrites inside the managers.
+- 2026-05-04 — [step 5] — `assertPathInsideAllowedRoots` moved fully into vmManager (private `vmManagerPaths.js`), removed from `lib/paths.js`. Reason: only consumer was vmManager; the function is defense-in-depth security right before DBus `UpdateDevice` (vmManager's responsibility) parameterized by the two roots (Wisp policy data). Push the data, own the gate. Switched its error factory from `createAppError` to vmManager's `vmError` for consistency with the rest of the manager.
+- 2026-05-04 — [step 5] — `oci-image-meta.json` relocated from `dirname(CONFIG_PATH)/oci-image-meta.json` to `<containersPath>/.oci-image-meta.json`. Reason: the file is a containerManager-private cache (image-pull-timestamp pinning), not Wisp app config. Original "lives next to wisp-config.json" placement was for a stable host dir; `containersPath` is the natural home now that containerManager owns it after configure(). Cache-only — code returns `{}` if missing, rebuilds on next pull. Existing installs orphan the old few-KB file (acceptable per feature-building mode: no migration; missing cache rebuilds on first pull).
+- 2026-05-04 — [step 5] — `atomicJson.js` vendored into containerManager (`lib/linux/containerManager/atomicJson.js`) instead of staying as a shared import. Reason: `writeJsonAtomic` is consumed by both Wisp glue (settings.js, bootCleanup.js) and containerManager (container.json, oci-image-meta.json) — vmManager doesn't use it (libvirt persists XML). Vendoring means containerManager has zero non-stdlib lib-glue imports (cleaner extraction surface). Tmp-suffix regex matches the source file, so bootCleanup's janitor still finds tmp leftovers in the containers dir even though containerManager wrote them with its private copy. Cost: ~40 lines duplicated; benefit: containerManager's import graph is one step closer to self-contained.
+- 2026-05-04 — [step 5] — `resolveMount(id)` callback is **sync**, returning `null | { id, mountPath, label? }`. Reason: existing callers (`validateAndNormalizeMounts`, `resolveMountHostPath`, `buildOCISpec`) are synchronous helpers used inside async loops; an async resolver would have cascaded into making them all async. Wisp's resolver implementation is `getConfigSync().mounts.find(...)` — same per-call file-read pattern that `paths.js` used (small JSON, OS-cached). Per-mount-entry disk hits are negligible.
+- 2026-05-04 — [step 5] — Boot smoke: validated by importing the linux facades directly (`lib/linux/{vmManager,containerManager}/index.js`) and calling `configure()` — no TLA cycles, no init-order issues. Step 1's "verify with the facade entry point" lesson applied; this time it passed clean on first try because there are no static cross-imports between the new helper files and any other manager-internal file (vmManagerPaths only depends on `vmManagerShared`; containerPaths has no manager imports).
+- 2026-05-04 — [step 5 follow-up] — `assertPathInsideAllowedRoots` and the library-relative path resolution moved BACK into Wisp glue (`lib/paths.js`) — initial step-5 design pulled them into vmManager-private as "defense-in-depth at the libvirt boundary," but the user pushed back that the function is API-input validation against Wisp policy roots, not a libvirt operation. Routes (`POST /vms`, `POST /vms/:name/disks`, `POST /vms/:name/cdrom/:slot`) now call `resolveLibraryPath(p)` + `assertPathInsideAllowedRoots(abs, vmName)` before handing absolute paths to vmManager. vmManager.configure() drops `imagePath` and only takes `{ vmsPath }`. vmManagerPaths.js shrinks to `getVMBasePath` + `getVmsPath`. End state is cleaner: vmManager is policy-agnostic about which host paths are "allowed" (a reusable lib has no opinion on this); Wisp owns its security policy in one place (`paths.js`). Re-verified live: PATH_NOT_ALLOWED still returns 422 with the exact error shape (smoke tested via DevTools fetch on the deployed instance).

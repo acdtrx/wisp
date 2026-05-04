@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
 import { extractDiskSnippet } from './vmManagerDisk.js';
 import { parseDomainRaw, buildXml, buildDiskXml, parseVMFromXML } from './vmManagerXml.js';
-import { getVMBasePath } from '../../paths.js';
+import { getVMBasePath } from './vmManagerPaths.js';
 import {
   generateCloudInitISO,
   deleteCloudInitISO,

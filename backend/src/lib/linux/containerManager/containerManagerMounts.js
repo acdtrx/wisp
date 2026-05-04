@@ -52,15 +52,15 @@ export function validateSubPath(value) {
  * Resolve the host-side bind-mount source path for a single mount entry.
  * @param {{ type: string, name: string, sourceId?: string|null, subPath?: string }} mount
  * @param {string} filesDir - absolute path to <containersPath>/<name>/files/
- * @param {Array<{ id: string, mountPath: string }>} [storageMounts] - storage mounts from settings; required for Storage-sourced entries
+ * @param {(id: string) => null | { id: string, mountPath: string, label?: string }} [resolveMount] - storage-mount resolver supplied via configure()
  * @returns {{ source: 'local'|'storage', hostPath: string, storageMount?: object }}
  */
-export function resolveMountHostPath(mount, filesDir, storageMounts = []) {
+export function resolveMountHostPath(mount, filesDir, resolveMount = null) {
   if (!mount || !mount.name) {
     throw containerError('INVALID_CONTAINER_MOUNTS', 'Mount is missing name');
   }
   if (mount.sourceId) {
-    const storage = storageMounts.find((m) => m.id === mount.sourceId);
+    const storage = typeof resolveMount === 'function' ? resolveMount(mount.sourceId) : null;
     if (!storage) {
       throw containerError(
         'CONTAINER_MOUNT_SOURCE_MISSING',
@@ -104,15 +104,15 @@ export function validateTmpfsSizeMiB(value) {
 
 /**
  * Validate and normalize mounts for persistence. Rejects duplicate name or containerPath.
- * When `storageMounts` is provided, validates that every `sourceId` references a real mount.
+ * When `resolveMount` is provided, validates that every `sourceId` resolves to a real mount.
  * @param {unknown} mounts
- * @param {Array<{ id: string, mountPath: string }>} [storageMounts]
+ * @param {((id: string) => null | { id: string, mountPath: string, label?: string }) | null} [resolveMount]
  * @returns {Array<
  *   | { type: 'file'|'directory', name: string, containerPath: string, readonly: boolean, sourceId: string|null, subPath: string, containerOwnerUid: number, containerOwnerGid: number }
  *   | { type: 'tmpfs', name: string, containerPath: string, sizeMiB: number }
  * >}
  */
-export function validateAndNormalizeMounts(mounts, storageMounts = null) {
+export function validateAndNormalizeMounts(mounts, resolveMount = null) {
   if (!Array.isArray(mounts)) {
     throw containerError('INVALID_CONTAINER_MOUNTS', 'mounts must be an array');
   }
@@ -183,8 +183,8 @@ export function validateAndNormalizeMounts(mounts, storageMounts = null) {
         throw containerError('INVALID_CONTAINER_MOUNTS', 'sourceId must be a non-empty string');
       }
       sourceId = raw.sourceId.trim();
-      if (Array.isArray(storageMounts)) {
-        if (!storageMounts.some((m) => m.id === sourceId)) {
+      if (typeof resolveMount === 'function') {
+        if (!resolveMount(sourceId)) {
           throw containerError(
             'INVALID_CONTAINER_MOUNTS',
             `sourceId "${sourceId}" does not reference a configured storage mount`,
@@ -316,8 +316,8 @@ async function assertBindSourcesReadyLocal(containerName, m, filesDir) {
   }
 }
 
-async function assertBindSourcesReadyStorage(m, storageMounts) {
-  const storage = (storageMounts || []).find((x) => x.id === m.sourceId);
+async function assertBindSourcesReadyStorage(m, resolveMount) {
+  const storage = typeof resolveMount === 'function' ? resolveMount(m.sourceId) : null;
   if (!storage) {
     throw containerError(
       'CONTAINER_MOUNT_SOURCE_MISSING',
@@ -368,15 +368,15 @@ async function assertBindSourcesReadyStorage(m, storageMounts) {
  * @param {string} containerName
  * @param {object} config
  * @param {string} filesDir - absolute path to container files/
- * @param {Array<{ id: string, mountPath: string, label?: string }>} [storageMounts]
+ * @param {((id: string) => null | { id: string, mountPath: string, label?: string }) | null} [resolveMount]
  */
-export async function assertBindSourcesReady(containerName, config, filesDir, storageMounts = []) {
+export async function assertBindSourcesReady(containerName, config, filesDir, resolveMount = null) {
   const list = config.mounts;
   if (!Array.isArray(list) || list.length === 0) return;
   for (const m of list) {
     if (m.type === 'tmpfs') continue;
     if (m.sourceId) {
-      await assertBindSourcesReadyStorage(m, storageMounts);
+      await assertBindSourcesReadyStorage(m, resolveMount);
     } else {
       await assertBindSourcesReadyLocal(containerName, m, filesDir);
     }

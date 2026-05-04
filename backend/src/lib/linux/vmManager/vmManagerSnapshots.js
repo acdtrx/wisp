@@ -5,7 +5,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { connectionState, resolveDomain, getDomainState, getDomainObjAndIface, unwrapVariant, vmError } from './vmManagerConnection.js';
 import { parseSnapshotFromXML, buildXml } from './vmManagerXml.js';
-import { getVMBasePath } from '../../paths.js';
+import { getVMBasePath } from './vmManagerPaths.js';
 import { validateSnapshotName } from '../../validation.js';
 import { VIR_DOMAIN_SNAPSHOT_CREATE_LIVE } from './libvirtConstants.js';
 

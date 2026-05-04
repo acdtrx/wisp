@@ -37,6 +37,7 @@ import * as backupJobStore from '../lib/backupJobStore.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { getMountStatus, mountSMB } from '../lib/storage/index.js';
 import { setupSSE } from '../lib/sse.js';
+import { resolveLibraryPath, assertPathInsideAllowedRoots } from '../lib/paths.js';
 import { createAppError, handleRouteError } from '../lib/routeErrors.js';
 import { validateVMName } from '../lib/validation.js';
 import { BACKGROUND_JOB_KIND } from '../lib/backgroundJobKinds.js';
@@ -212,6 +213,23 @@ export default async function vmsRoutes(fastify) {
       const spec = request.body;
       try {
         validateVMName(spec?.name);
+        /* Resolve library-relative paths to absolute and run the security check
+           here, in Wisp glue, before vmManager touches them. vmManager itself
+           is policy-agnostic about which host paths are "allowed". */
+        if (spec.cdrom1Path) {
+          spec.cdrom1Path = resolveLibraryPath(spec.cdrom1Path);
+          assertPathInsideAllowedRoots(spec.cdrom1Path, spec.name);
+        }
+        if (spec.cdrom2Path) {
+          spec.cdrom2Path = resolveLibraryPath(spec.cdrom2Path);
+          assertPathInsideAllowedRoots(spec.cdrom2Path, spec.name);
+        }
+        for (const dspec of [spec.disk, spec.disk2]) {
+          if (dspec && dspec.type === 'existing' && dspec.sourcePath) {
+            dspec.sourcePath = resolveLibraryPath(dspec.sourcePath);
+            assertPathInsideAllowedRoots(dspec.sourcePath, spec.name);
+          }
+        }
       } catch (err) {
         return handleRouteError(err, reply, request);
       }
@@ -608,7 +626,9 @@ export default async function vmsRoutes(fastify) {
           return reply.code(422).send({ error: 'Invalid request', detail: 'Provide path (attach existing) or sizeGB (create new)' });
         }
         if (hasPath) {
-          await attachDisk(request.params.name, slot, path, bus);
+          const absPath = resolveLibraryPath(path);
+          assertPathInsideAllowedRoots(absPath, request.params.name);
+          await attachDisk(request.params.name, slot, absPath, bus);
         } else {
           await createAndAttachDisk(request.params.name, slot, sizeGB, bus);
         }
@@ -723,7 +743,9 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        await attachISO(request.params.name, request.params.slot, request.body.path);
+        const absPath = resolveLibraryPath(request.body.path);
+        assertPathInsideAllowedRoots(absPath, request.params.name);
+        await attachISO(request.params.name, request.params.slot, absPath);
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);

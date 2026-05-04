@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 
 import { containerError, containerState } from './containerManagerConnection.js';
 import { getContainerDir } from './containerPaths.js';
-import { writeJsonAtomic } from '../../atomicJson.js';
+import { writeJsonAtomic } from './atomicJson.js';
 
 const configWriteHandlers = new Set();
 

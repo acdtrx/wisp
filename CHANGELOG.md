@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-05-04
+
+### Refactor
+- **Manager configure() (push model)** — `vmManager.configure({ vmsPath })` and `containerManager.configure({ containersPath, resolveMount })` are called at boot; both managers now carry zero Wisp-glue policy imports (no more `paths.js`/`config.js`/`settings.js`/`atomicJson.js` reach-arounds). `assertPathInsideAllowedRoots` and library-relative path resolution stay in Wisp glue (`lib/paths.js`); routes (`POST /vms`, `/disks`, `/cdrom/:slot`) validate before handing absolute paths to vmManager. ContainerManager vendors its own copy of `atomicJson.js` and now stores `oci-image-meta.json` at `<containersPath>/.oci-image-meta.json` (was beside `wisp-config.json`). `getRawMounts()` array-passing replaced with sync per-id `resolveMount(id)` lookups across `validateAndNormalizeMounts`/`resolveMountHostPath`/`assertBindSourcesReady`/`buildOCISpec`. Step 5 of the modules-boundaries refactor campaign.
+
 ## 2026-05-03
 
 ### Bug Fixes

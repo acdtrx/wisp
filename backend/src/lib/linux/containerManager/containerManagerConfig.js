@@ -12,7 +12,7 @@ import { registerAllContainerServices } from './containerManagerServices.js';
 import { validateAndNormalizeMounts, ensureMissingMountArtifacts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';
 import { deleteMountBackingStore } from './containerManagerMountsContent.js';
-import { getRawMounts } from '../../settings.js';
+import { resolveMount } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
 const RESTART_FIELDS = new Set([
@@ -202,8 +202,7 @@ export async function updateContainerConfig(name, changes) {
     }
     if (key === 'mounts') {
       const prevMounts = Array.isArray(config.mounts) ? [...config.mounts] : [];
-      const storageMounts = await getRawMounts();
-      const normalized = validateAndNormalizeMounts(value, storageMounts);
+      const normalized = validateAndNormalizeMounts(value, resolveMount);
       const nextNames = new Set(normalized.map((m) => m.name));
       for (const m of prevMounts) {
         if (!nextNames.has(m.name) && !m.sourceId && m.type !== 'tmpfs') {

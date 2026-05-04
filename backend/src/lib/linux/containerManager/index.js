@@ -1,6 +1,12 @@
 /**
  * Linux containerManager implementation (containerd over gRPC).
  */
+import { setContainerManagerConfig } from './containerPaths.js';
+
+export function configure(cfg) {
+  setContainerManagerConfig(cfg);
+}
+
 export {
   connect,
   disconnect,

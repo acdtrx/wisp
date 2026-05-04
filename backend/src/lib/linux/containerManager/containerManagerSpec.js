@@ -42,7 +42,7 @@ const READONLY_PATHS = [
  * @param {string} containerFilesDir - Absolute path to the container's files/ directory
  * @param {object} [opts] - Extra options
  * @param {string} [opts.resolvConfPath] - Host resolv.conf to bind-mount (default: /etc/resolv.conf)
- * @param {Array<{ id: string, mountPath: string }>} [opts.storageMounts] - settings.mounts, required when any mount uses sourceId
+ * @param {(id: string) => null | { id: string, mountPath: string, label?: string }} [opts.resolveMount] - storage-mount resolver, required when any mount uses sourceId
  * @param {Array<{ type: 'gpu', path: string, major: number, minor: number }>} [opts.deviceSpecs] - Resolved host devices for passthrough (see resolveDeviceSpecs)
  * @param {number | null} [opts.renderGid] - Host GID for the `render` group; pushed onto process.user.additionalGids when devices are exposed
  * @returns {object} OCI runtime spec (JSON-serializable)
@@ -73,7 +73,7 @@ export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', o
   const deployGid = typeof process.getgid === 'function' ? process.getgid() : 0;
 
   const mounts = [...DEFAULT_MOUNTS];
-  const storageMounts = opts.storageMounts || [];
+  const resolveMount = typeof opts.resolveMount === 'function' ? opts.resolveMount : null;
   if (config.mounts) {
     for (const m of config.mounts) {
       if (!m?.name) continue;
@@ -91,7 +91,7 @@ export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', o
         continue;
       }
       if (m.type !== 'file' && m.type !== 'directory') continue;
-      const { hostPath, source } = resolveMountHostPath(m, containerFilesDir, storageMounts);
+      const { hostPath, source } = resolveMountHostPath(m, containerFilesDir, resolveMount);
       const mountOpts = ['rbind'];
       if (m.readonly) mountOpts.push('ro');
       const entry = {

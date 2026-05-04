@@ -1,13 +1,12 @@
 /**
  * List and delete OCI images in containerd (wisp namespace).
  */
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
 
 import { getClient, callUnary, containerError } from './containerManagerConnection.js';
 import { getContainersPath } from './containerPaths.js';
-import { CONFIG_PATH } from '../../config.js';
-import { writeJsonAtomic } from '../../atomicJson.js';
+import { writeJsonAtomic } from './atomicJson.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { compressedBlobSizeForImageName } from './containerManagerOciSize.js';
 
@@ -18,14 +17,15 @@ import { compressedBlobSizeForImageName } from './containerManagerOciSize.js';
  * idempotent re-pulls during update checks. Without a pin, every check resets
  * every image's displayed Modified timestamp to "just now". We remember the
  * first containerd `updatedAt` we see for each (ref, digest) and keep returning
- * it until the digest actually changes. Lives next to wisp-config.json —
- * OCI images are independent of containers, so the file does not belong under
- * containersPath.
+ * it until the digest actually changes. Hidden file inside `containersPath` —
+ * containerManager owns this directory after configure(), so the sidecar
+ * lives with the manager's other private state. Cache only; if missing,
+ * code returns `{}` and rebuilds on next pull.
  */
-const OCI_META_FILE = 'oci-image-meta.json';
+const OCI_META_FILE = '.oci-image-meta.json';
 
 function imageMetaPath() {
-  return join(dirname(CONFIG_PATH), OCI_META_FILE);
+  return join(getContainersPath(), OCI_META_FILE);
 }
 
 async function readImageMeta() {

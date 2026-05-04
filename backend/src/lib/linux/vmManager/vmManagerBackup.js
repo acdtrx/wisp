@@ -13,7 +13,7 @@ import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError, generateMAC } from './vmManagerConnection.js';
 import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
-import { getVMBasePath } from '../../paths.js';
+import { getVMBasePath } from './vmManagerPaths.js';
 import { VIR_DOMAIN_STATE_SHUTOFF, VIR_DOMAIN_STATE_SHUTDOWN } from './libvirtConstants.js';
 
 const execFile = promisify(execFileCb);

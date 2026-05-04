@@ -39,7 +39,7 @@ import { validateContainerName } from '../../validation.js';
 import { pullImage } from './containerManagerCreate.js';
 import { buildOCISpec } from './containerManagerSpec.js';
 import { resolveDeviceSpecs } from './containerDeviceNode.js';
-import { getRawMounts } from '../../settings.js';
+import { resolveMount } from './containerPaths.js';
 import { getImageDigest } from './containerManagerImages.js';
 
 const RUNTIME_NAME = 'io.containerd.runc.v2';
@@ -461,10 +461,9 @@ export async function restoreContainerBackup(backupPath, newName) {
   } catch { /* ignore */ }
   const filesDir = getContainerFilesDir(newNameTrim);
   const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
-  const storageMounts = await getRawMounts();
   const { deviceSpecs, renderGid } = await resolveDeviceSpecs(config);
   const ociSpec = buildOCISpec(config, imageConfig, filesDir, {
-    resolvConfPath, storageMounts, deviceSpecs, renderGid,
+    resolvConfPath, resolveMount, deviceSpecs, renderGid,
   });
 
   try {

@@ -13,6 +13,11 @@ import {
 } from '../../vmManagerShared.js';
 export const IS_DARWIN = true;
 
+export function configure(_cfg) {
+  /* macOS dev stub: no on-disk VM directories. configure() kept symmetric with
+     Linux so backend/src/index.js can call it unconditionally. */
+}
+
 export const connectionState = {
   bus: null,
   connectIface: null,

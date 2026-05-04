@@ -27,7 +27,7 @@ import {
 import { registerAllContainerServices } from './containerManagerServices.js';
 import { assertBindSourcesReady } from './containerManagerMounts.js';
 import { resolveDeviceSpecs } from './containerDeviceNode.js';
-import { getRawMounts } from '../../settings.js';
+import { resolveMount } from './containerPaths.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { getImageDigest } from './containerManagerImages.js';
 import { writeContainerConfig, notifyContainerConfigWrite } from './containerManagerConfigIo.js';
@@ -412,8 +412,7 @@ export async function createContainer(spec, onStep) {
     config.env = spec.env;
   }
   if (Array.isArray(spec.mounts) && spec.mounts.length) {
-    const storageMounts = await getRawMounts();
-    config.mounts = validateAndNormalizeMounts(spec.mounts, storageMounts);
+    config.mounts = validateAndNormalizeMounts(spec.mounts, resolveMount);
   }
   if (Array.isArray(spec.devices) && spec.devices.length) {
     config.devices = validateAndNormalizeDevices(spec.devices);
@@ -444,10 +443,9 @@ export async function createContainer(spec, onStep) {
 
   // Build OCI spec
   const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
-  const storageMounts = await getRawMounts();
   const { deviceSpecs, renderGid } = await resolveDeviceSpecs(config);
   const ociSpec = buildOCISpec(config, imageConfig, filesDir, {
-    resolvConfPath, storageMounts, deviceSpecs, renderGid,
+    resolvConfPath, resolveMount, deviceSpecs, renderGid,
   });
 
   // Prepare snapshot (required before containerd Containers.Create)
@@ -549,10 +547,9 @@ export async function startExistingContainer(name) {
 
   // Rebuild OCI spec
   const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
-  const storageMounts = await getRawMounts();
   const { deviceSpecs, renderGid } = await resolveDeviceSpecs(config);
   const ociSpec = buildOCISpec(config, imageConfig, filesDir, {
-    resolvConfPath, storageMounts, deviceSpecs, renderGid,
+    resolvConfPath, resolveMount, deviceSpecs, renderGid,
   });
 
   // Update the container spec in containerd
@@ -566,7 +563,7 @@ export async function startExistingContainer(name) {
 
   const mounts = await prepareSnapshot(name, imageConfig);
 
-  await assertBindSourcesReady(name, config, filesDir, storageMounts);
+  await assertBindSourcesReady(name, config, filesDir, resolveMount);
 
   // Set up networking
   try {

@@ -12,7 +12,7 @@ import dbus from 'dbus-next';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError, generateMAC } from './vmManagerConnection.js';
 import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
 import { validateVMName } from '../../validation.js';
-import { getVMBasePath, getImagePath, assertPathInsideAllowedRoots } from '../../paths.js';
+import { getVMBasePath } from './vmManagerPaths.js';
 import { resizeDisk as resizeDiskImage, copyAndConvert, getDiskInfo } from '../../storage/index.js';
 import { deleteCloudInitISO } from '../../cloudInit.js';
 import { listHostFirmware } from './vmManagerHost.js';
@@ -301,13 +301,11 @@ export async function createVM(spec, { onStep } = {}) {
   const vmBasePath = getVMBasePath(name);
   await mkdir(vmBasePath, { recursive: true });
 
-  const libraryPath = getImagePath();
-  let cdrom1Path = s.cdrom1Path || null;
-  let cdrom2Path = s.cdrom2Path || null;
-  if (cdrom1Path && !cdrom1Path.startsWith('/')) cdrom1Path = join(libraryPath, cdrom1Path);
-  if (cdrom2Path && !cdrom2Path.startsWith('/')) cdrom2Path = join(libraryPath, cdrom2Path);
-  if (cdrom1Path) assertPathInsideAllowedRoots(cdrom1Path, name);
-  if (cdrom2Path) assertPathInsideAllowedRoots(cdrom2Path, name);
+  /* cdrom1Path / cdrom2Path are caller-provided absolute paths — the route
+     resolves library-relative input and runs the security check before
+     reaching vmManager. */
+  const cdrom1Path = s.cdrom1Path || null;
+  const cdrom2Path = s.cdrom2Path || null;
 
   /** Ordered non-none disk specs; first file is disk0.qcow2 → sda, second is disk1.qcow2 → sdb. */
   const physicalSpecs = [];
@@ -320,8 +318,8 @@ export async function createVM(spec, { onStep } = {}) {
     const dspec = physicalSpecs[i];
     const destPath = join(vmBasePath, `disk${i}.qcow2`);
     if (dspec.type === 'existing') {
-      const src = dspec.sourcePath.startsWith('/') ? dspec.sourcePath : join(libraryPath, dspec.sourcePath);
-      assertPathInsideAllowedRoots(src, name);
+      /* sourcePath is caller-provided absolute (route resolved + validated). */
+      const src = dspec.sourcePath;
       emit('copying', { percent: 0 });
       await copyAndConvert(src, destPath, (pct) => emit('copying', { percent: pct }));
       if (dspec.resizeGB != null && dspec.resizeGB > 0) {
