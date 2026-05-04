@@ -3,7 +3,14 @@ import { createWriteStream } from 'node:fs';
 import { join, basename } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { randomBytes } from 'node:crypto';
-import * as downloadJobStore from '../lib/downloadJobStore.js';
+import {
+  downloadJobStore,
+  BACKGROUND_JOB_KIND,
+  titleForLibraryDownloadUrl,
+  TITLE_LIBRARY_ARCH_CLOUD,
+  TITLE_LIBRARY_HAOS,
+  TITLE_LIBRARY_UBUNTU_CLOUD,
+} from '../lib/jobs/index.js';
 import { checkUrl, downloadToLibrary, isAllowedUrl } from '../lib/downloadFromUrl.js';
 import { downloadAndDecompressHaos } from '../lib/downloadHaos.js';
 import { downloadUbuntuCloudImage } from '../lib/downloadUbuntuCloud.js';
@@ -13,13 +20,6 @@ import { detectType } from '../lib/fileTypes.js';
 import { findVMsUsingImage } from '../lib/vmManager.js';
 import { setupSSE } from '../lib/sse.js';
 import { sendError } from '../lib/routeErrors.js';
-import { BACKGROUND_JOB_KIND } from '../lib/backgroundJobKinds.js';
-import {
-  titleForLibraryDownloadUrl,
-  TITLE_LIBRARY_ARCH_CLOUD,
-  TITLE_LIBRARY_HAOS,
-  TITLE_LIBRARY_UBUNTU_CLOUD,
-} from '../lib/backgroundJobTitles.js';
 
 function validateFilename(name) {
   if (!name || typeof name !== 'string') return false;

@@ -1,4 +1,4 @@
-import { listBackgroundJobs } from '../lib/listBackgroundJobs.js';
+import { listBackgroundJobs } from '../lib/jobs/index.js';
 
 export default async function backgroundJobsRoutes(fastify) {
   fastify.get('/background-jobs', {

@@ -32,8 +32,13 @@ import {
   createBackup,
   subscribeVMListChange,
 } from '../lib/vmManager.js';
-import * as createJobStore from '../lib/createJobStore.js';
-import * as backupJobStore from '../lib/backupJobStore.js';
+import {
+  createJobStore,
+  backupJobStore,
+  BACKGROUND_JOB_KIND,
+  titleForVmCreate,
+  titleForBackup,
+} from '../lib/jobs/index.js';
 import { publishVm, unpublishVm } from '../lib/vmMdnsPublisher.js';
 import { generateCloudInit, deleteCloudInitISO } from '../lib/cloudInit.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
@@ -42,8 +47,6 @@ import { setupSSE } from '../lib/sse.js';
 import { resolveLibraryPath, assertPathInsideAllowedRoots } from '../lib/paths.js';
 import { createAppError, handleRouteError } from '../lib/routeErrors.js';
 import { validateVMName } from '../lib/validation.js';
-import { BACKGROUND_JOB_KIND } from '../lib/backgroundJobKinds.js';
-import { titleForVmCreate, titleForBackup } from '../lib/backgroundJobTitles.js';
 
 export default async function vmsRoutes(fastify) {
   fastify.addHook('preHandler', async (request, reply) => {

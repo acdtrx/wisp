@@ -18,16 +18,16 @@ import {
   checkAllImagesForUpdates, checkSingleImageForUpdates, getImageUpdateStatus,
   subscribeContainerListChange, notifyContainerConfigWrite,
 } from '../lib/containerManager.js';
-import { containerJobStore } from '../lib/containerJobStore.js';
-import { imageUpdateJobStore } from '../lib/imageUpdateJobStore.js';
-import * as backupJobStore from '../lib/backupJobStore.js';
-import { BACKGROUND_JOB_KIND } from '../lib/backgroundJobKinds.js';
 import {
+  containerJobStore,
+  imageUpdateJobStore,
+  backupJobStore,
+  BACKGROUND_JOB_KIND,
   titleForContainerCreate,
   titleForContainerBackup,
   TITLE_IMAGE_UPDATE_CHECK_ALL,
   titleForImageUpdateCheckSingle,
-} from '../lib/backgroundJobTitles.js';
+} from '../lib/jobs/index.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { renameWorkloadAssignment } from '../lib/sections.js';
 import { getMountStatus, mountSMB } from '../lib/storage/index.js';

@@ -4,7 +4,7 @@ import {
   downloadAndStage,
   applyUpdate,
 } from '../lib/wispUpdate.js';
-import { listBackgroundJobs } from '../lib/listBackgroundJobs.js';
+import { listBackgroundJobs } from '../lib/jobs/index.js';
 import { handleRouteError } from '../lib/routeErrors.js';
 
 function activeOtherJobs() {
