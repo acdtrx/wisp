@@ -264,9 +264,9 @@ VMs can be registered on the local network via mDNS (`.local`) using avahi-daemo
 - Controlled by VM metadata `wisp:prefs.localDns`
 - Name source: guest hostname from QEMU guest agent (`GetHostname`) when available; fallback to sanitized VM name
 - Address source: guest primary IP from guest agent interface addresses
-- Publishing is owned by **`backend/src/lib/linux/vmMdnsPublisher.js`** — a backend reconciler driven by libvirt lifecycle (`DomainEvent`) and qemu-ga lifecycle (`AgentEvent`) signals. It is **not** triggered by the SSE stats stream or any UI activity, so hostnames keep resolving even when no one is viewing the VM in the UI.
-- Triggers: backend boot (initial reconcile), `DomainEvent` (any VM start/stop, including externally via `virsh`), `AgentEvent` `state=connected` (publishes immediately when qemu-ga comes up — no IP-fetch retry loop), config endpoint (toggle on/off), and a 45 s periodic reconcile as a safety net for DHCP drift or missed signals.
-- The publisher tracks the desired set as `running + localDns=true`, attaches a per-domain `AgentEvent` listener for each tracked VM, and detaches when the VM leaves the set (stop, localDns off, delete).
+- Publishing is owned by **`backend/src/lib/vmMdnsReconciler.js`** — a single flat platform-agnostic file that subscribes to `vmManager.subscribeVMNetworkChange`. It is **not** triggered by the SSE stats stream or any UI activity, so hostnames keep resolving even when no one is viewing the VM in the UI.
+- Network-change events are fired by **`linux/vmManager/vmManagerNetwork.js`** internally — driven by libvirt lifecycle (`DomainEvent`), qemu-ga lifecycle (`AgentEvent` `state=1`), and a 60 s periodic IP probe as a safety net for DHCP drift / missed signals. The reconciler reads each VM's `localDns` flag via `vmManager.getCachedLocalDns(name)` and registers/deregisters accordingly. Routes call `publishVm(name)` / `unpublishVm(name)` directly when the user toggles `localDns`, renames, or deletes a VM.
+- vmManager auto-attaches `AgentEvent` listeners for every running VM and detaches when a VM leaves the running set; the reconciler doesn't track per-domain subscriptions.
 - Registration is removed when the VM stops, is undefined, or `localDns` is toggled off.
 - UI: Advanced section has a **Local DNS** toggle; VM stats bar shows the registered `.local` hostname when active, plus a guest-agent `connected/disconnected` pill.
 
@@ -278,7 +278,7 @@ dbus-next 0.10.x auto-installs the match rule when you attach a listener on the 
 
 ### Guest agent state surfacing
 
-`getVMStats()` derives `guestAgent.connected` from whether `InterfaceAddresses` or `GetHostname` produced a value during the current poll. The flag is `undefined` when the domain XML has no guest_agent channel configured (so the UI hides the pill entirely). `vmMdnsPublisher` independently maintains its own per-VM agent state via the `AgentEvent` signal — the two paths are deliberately decoupled so the stats stream remains side-effect free.
+`getVMStats()` derives `guestAgent.connected` from whether `InterfaceAddresses` or `GetHostname` produced a value during the current poll. The flag is `undefined` when the domain XML has no guest_agent channel configured (so the UI hides the pill entirely). `vmManagerNetwork.js` independently observes the same `AgentEvent` signal to fast-path network-change events — the two paths are deliberately decoupled so the stats stream remains side-effect free.
 
 ## Backend Module Structure
 
@@ -295,8 +295,8 @@ The VM management backend is organized as a **platform facade** plus implementat
 - Domain lookup by name (`DomainLookupByName`)
 - Domain state retrieval (`GetState`)
 - Domain XML retrieval (`GetXMLDesc`)
-- DomainEvent signal listener for state change tracking, fanned out to subscribers via `subscribeDomainChange(handler)` (used by `vmManagerList` for cache refresh and by `vmMdnsPublisher` for reconcile)
-- Per-domain `AgentEvent` (qemu-ga lifecycle) subscription helpers: `attachAgentSubscription(path, name)` / `detachAgentSubscription(path)`. Handlers register via `subscribeAgentEvent((vmName, { state, reason, domainPath }))` — `state=1` is connected, `state=0` is disconnected. Note: libvirt's C constant is `VIR_DOMAIN_EVENT_ID_AGENT_LIFECYCLE`, but libvirt-dbus surfaces it as the `AgentEvent` signal on the per-domain `org.libvirt.Domain` interface.
+- DomainEvent signal listener for state change tracking, fanned out to subscribers via `subscribeDomainChange(handler)` (used by `vmManagerList` for cache refresh and indirectly by `vmManagerNetwork` via `subscribeVMListChange`)
+- Per-domain `AgentEvent` (qemu-ga lifecycle) subscription helpers: `attachAgentSubscription(path, name)` / `detachAgentSubscription(path)`. Handlers register via `subscribeAgentEvent((vmName, { state, reason, domainPath }))` — `state=1` is connected, `state=0` is disconnected. Note: libvirt's C constant is `VIR_DOMAIN_EVENT_ID_AGENT_LIFECYCLE`, but libvirt-dbus surfaces it as the `AgentEvent` signal on the per-domain `org.libvirt.Domain` interface. These helpers are linux-internal — external glue uses `vmManager.subscribeVMNetworkChange` instead.
 
 ### macOS: `backend/src/lib/darwin/vmManager/index.js`
 

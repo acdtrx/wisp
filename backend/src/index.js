@@ -46,7 +46,7 @@ import { closeAllSSE } from './lib/sse.js';
 import { disconnect as disconnectLibvirtBus } from './lib/vmManager.js';
 import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/storage/index.js';
 import { connect as connectMdns, disconnect as disconnectMdns, registerAddress, sanitizeHostname } from './lib/mdns/index.js';
-import { startVmMdnsPublisher, stopVmMdnsPublisher } from './lib/vmMdnsPublisher.js';
+import { startVmMdnsReconciler, stopVmMdnsReconciler } from './lib/vmMdnsReconciler.js';
 import { startContainerMdnsReconciler, stopContainerMdnsReconciler } from './lib/containerMdnsReconciler.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -249,10 +249,10 @@ async function start() {
     /* mDNS warm-up is best effort */
   }
 
-  // VM mDNS publisher: subscribes to libvirt lifecycle + AgentEvent, runs an initial
-  // reconcile, and keeps a 45s safety-net interval. Replaces the prior coupling that
-  // only re-published while a user had a VM's stats SSE open.
-  startVmMdnsPublisher(app.log);
+  // VM mDNS reconciler: listens to vmManager.subscribeVMNetworkChange and
+  // (de)registers Avahi A records based on each VM's localDns flag. The
+  // libvirt lifecycle + AgentEvent + 60s safety probe live inside vmManager.
+  startVmMdnsReconciler(app.log);
   startContainerMdnsReconciler(app.log);
 
   await app.listen({ port: PORT, host: '0.0.0.0' });
@@ -286,7 +286,7 @@ async function shutdown(signal) {
   stopUpdateChecker();
   stopImageUpdateChecker();
   stopWispUpdateChecker();
-  stopVmMdnsPublisher();
+  stopVmMdnsReconciler();
   stopContainerMdnsReconciler();
   disconnectLibvirtBus();
   disconnectContainerd();

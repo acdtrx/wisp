@@ -2,8 +2,8 @@
  * VM stats, raw XML, VNC port; guest agent (IP, hostname).
  *
  * Note: this file is intentionally side-effect-free w.r.t. mDNS publishing.
- * Local-DNS registration is owned by lib/linux/vmMdnsPublisher.js, which is
- * driven by libvirt lifecycle + AgentEvent signals, not by SSE/UI activity.
+ * Local-DNS registration is owned by lib/vmMdnsReconciler.js, driven by the
+ * vmManager.subscribeVMNetworkChange event, not by SSE/UI activity.
  */
 import { connectionState, resolveDomain, getDomainXML, getDomainObjAndIface, unwrapVariant, unwrapDict, vmError } from './vmManagerConnection.js';
 import { parseVMFromXML } from './vmManagerXml.js';
@@ -78,10 +78,10 @@ function invalidateGuestInfo(name) {
 
 /**
  * Fetch guest-agent IP + hostname for a VM in one libvirt round-trip.
- * Returns `{ ip, hostname }` with either field possibly null. Used by callers
- * outside `linux/vmManager/` (e.g. vmMdnsPublisher) so they don't need to touch
- * libvirt ifaces directly. Returns `{ ip: null, hostname: null }` if the domain
- * can't be resolved or the agent is not configured/responding.
+ * Returns `{ ip, hostname }` with either field possibly null. Exposed on the
+ * vmManager facade so glue (e.g. vmMdnsReconciler) can read current network
+ * state without touching libvirt ifaces. Returns `{ ip: null, hostname: null }`
+ * if the domain can't be resolved or the agent is not configured/responding.
  */
 export async function getGuestNetwork(name) {
   let path;

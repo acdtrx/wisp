@@ -187,8 +187,8 @@ export async function getDomainXML(path, { inactive = false } = {}) {
 
 /**
  * Attach an AgentEvent listener to a per-domain DBus proxy. Idempotent: calling twice
- * for the same path replaces the prior subscription. Used by vmMdnsPublisher to react
- * to qemu-ga connect/disconnect without polling.
+ * for the same path replaces the prior subscription. Used by vmManagerNetwork
+ * to react to qemu-ga connect/disconnect without polling.
  */
 export async function attachAgentSubscription(domainPath, vmName) {
   if (!connectionState.bus) return;

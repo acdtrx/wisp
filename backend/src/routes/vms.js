@@ -39,7 +39,7 @@ import {
   titleForVmCreate,
   titleForBackup,
 } from '../lib/jobs/index.js';
-import { publishVm, unpublishVm } from '../lib/vmMdnsPublisher.js';
+import { publishVm, unpublishVm } from '../lib/vmMdnsReconciler.js';
 import { generateCloudInit, deleteCloudInitISO } from '../lib/cloudInit.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { getMountStatus, mountSMB } from '../lib/storage/index.js';

@@ -2,7 +2,7 @@
  * mDNS module facade — Avahi-backed Linux backend (publish .local hostnames
  * and services, plus an in-process DNS forwarder for container queries) and
  * macOS stubs. Single public surface for VM/container managers and any
- * Wisp app-level glue (vmMdnsPublisher, containerMdnsReconciler).
+ * Wisp app-level glue (vmMdnsReconciler, containerMdnsReconciler).
  */
 import { platform } from 'node:os';
 

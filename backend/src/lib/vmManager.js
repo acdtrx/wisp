@@ -33,6 +33,8 @@ export const findVMsUsingImage = impl.findVMsUsingImage;
 export const getCachedLocalDns = impl.getCachedLocalDns;
 export const getCachedStaleBinary = impl.getCachedStaleBinary;
 export const subscribeVMListChange = impl.subscribeVMListChange;
+export const subscribeVMNetworkChange = impl.subscribeVMNetworkChange;
+export const getGuestNetwork = impl.getGuestNetwork;
 
 export const startVM = impl.startVM;
 export const stopVM = impl.stopVM;

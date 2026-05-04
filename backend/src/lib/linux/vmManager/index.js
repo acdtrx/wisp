@@ -41,6 +41,10 @@ export {
   subscribeVMListChange,
 } from './vmManagerList.js';
 
+export { subscribeVMNetworkChange } from './vmManagerNetwork.js';
+
+export { getGuestNetwork } from './vmManagerStats.js';
+
 export { startVM, stopVM, forceStopVM, rebootVM, suspendVM, resumeVM } from './vmManagerLifecycle.js';
 
 export { getVMStats, getVMXML, getVNCPort } from './vmManagerStats.js';

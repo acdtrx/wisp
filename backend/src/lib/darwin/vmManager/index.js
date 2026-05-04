@@ -115,6 +115,14 @@ export function subscribeVMListChange() {
   return () => {};
 }
 
+export function subscribeVMNetworkChange() {
+  return () => {};
+}
+
+export async function getGuestNetwork() {
+  return { ip: null, hostname: null };
+}
+
 export async function listVMs() {
   return [];
 }
