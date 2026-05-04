@@ -88,6 +88,10 @@ export function subscribeContainerListChange() {
   return () => {};
 }
 
+export function subscribeContainerNetworkChange() {
+  return () => {};
+}
+
 export function notifyContainerConfigWrite() {
   /* no-op on darwin (no containerd) */
 }

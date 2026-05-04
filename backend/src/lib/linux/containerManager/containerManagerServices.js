@@ -1,8 +1,8 @@
 /**
  * Per-container mDNS service definitions: validation + row-scoped CRUD.
  * Services advertise SRV/TXT records (e.g. `_smb._tcp` on port 445) for the
- * container's `<name>.local` host record (which itself is published by
- * `registerAddress` when `localDns` is true).
+ * container's `<name>.local` host record (the host record itself is published
+ * by `lib/containerMdnsReconciler.js` glue when `localDns` is true).
  */
 import { containerError } from './containerManagerConnection.js';
 import { getTaskState } from './containerManagerLifecycle.js';

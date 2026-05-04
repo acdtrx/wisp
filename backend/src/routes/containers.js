@@ -30,6 +30,7 @@ import {
 } from '../lib/jobs/index.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { renameWorkloadAssignment } from '../lib/sections.js';
+import { publishContainer, unpublishContainer } from '../lib/containerMdnsReconciler.js';
 import { getMountStatus, mountSMB } from '../lib/storage/index.js';
 import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
@@ -316,6 +317,10 @@ export default async function containerRoutes(fastify) {
         // container keeps its sidebar section. Best-effort: assignments are
         // pure UI metadata and the frontend re-reads /api/sections.
         try { await renameWorkloadAssignment('container', oldName, workingName); } catch { /* best effort */ }
+        // mDNS A-record follows the rename: drop old name, register new. Best
+        // effort — the reconciler will pick up the new name on the next event.
+        try { await unpublishContainer(oldName); } catch { /* best effort */ }
+        try { await publishContainer(workingName); } catch { /* best effort */ }
       }
 
       if (Object.keys(rest).length === 0) {
@@ -351,6 +356,15 @@ export default async function containerRoutes(fastify) {
       }
 
       const result = await updateContainerConfig(workingName, rest);
+      // Metadata-only flips don't fire a network-change event — call the
+      // reconciler imperatively when localDns toggles. Same shape as the VM
+      // PATCH handler in routes/vms.js.
+      if ('localDns' in rest) {
+        try {
+          if (rest.localDns === false) await unpublishContainer(workingName);
+          else if (rest.localDns === true) await publishContainer(workingName);
+        } catch { /* best effort */ }
+      }
       return { ...result, name: workingName };
     } catch (err) {
       handleRouteError(err, reply, request);
@@ -361,6 +375,10 @@ export default async function containerRoutes(fastify) {
   fastify.delete('/containers/:name', async (request, reply) => {
     try {
       const deleteFiles = request.query.deleteFiles !== 'false';
+      // Drop the mDNS A-record before tearing down the container so the
+      // name doesn't keep resolving to a vanishing IP. Services are
+      // deregistered inside deleteContainer.
+      try { await unpublishContainer(request.params.name); } catch { /* best effort */ }
       await deleteContainer(request.params.name, deleteFiles);
       return { ok: true };
     } catch (err) {

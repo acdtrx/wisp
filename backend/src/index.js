@@ -18,11 +18,7 @@ import {
   startImageUpdateChecker,
   stopImageUpdateChecker,
 } from './lib/containerManager.js';
-import {
-  listContainers,
-  getContainerConfig,
-  startAutostartContainersAtBackendBoot,
-} from './lib/containerManager.js';
+import { startAutostartContainersAtBackendBoot } from './lib/containerManager.js';
 import authRoutes from './routes/auth.js';
 import hostRoutes from './routes/host.js';
 import statsRoutes from './routes/stats.js';
@@ -45,7 +41,7 @@ import { startUpdateChecker as startWispUpdateChecker, stopUpdateChecker as stop
 import { closeAllSSE } from './lib/sse.js';
 import { disconnect as disconnectLibvirtBus } from './lib/vmManager.js';
 import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/storage/index.js';
-import { connect as connectMdns, disconnect as disconnectMdns, registerAddress, sanitizeHostname } from './lib/mdns/index.js';
+import { connect as connectMdns, disconnect as disconnectMdns } from './lib/mdns/index.js';
 import { startVmMdnsReconciler, stopVmMdnsReconciler } from './lib/vmMdnsReconciler.js';
 import { startContainerMdnsReconciler, stopContainerMdnsReconciler } from './lib/containerMdnsReconciler.js';
 
@@ -236,22 +232,10 @@ async function start() {
 
   await startAutostartContainersAtBackendBoot(app.log);
 
-  try {
-    const containers = await listContainers();
-    for (const c of containers) {
-      if (c.state !== 'running') continue;
-      const cfg = await getContainerConfig(c.name);
-      if (cfg.localDns === true && cfg.network?.ip) {
-        await registerAddress(c.name, sanitizeHostname(c.name), cfg.network.ip);
-      }
-    }
-  } catch {
-    /* mDNS warm-up is best effort */
-  }
-
-  // VM mDNS reconciler: listens to vmManager.subscribeVMNetworkChange and
-  // (de)registers Avahi A records based on each VM's localDns flag. The
-  // libvirt lifecycle + AgentEvent + 60s safety probe live inside vmManager.
+  // mDNS reconcilers subscribe to vm/containerManager.subscribeVMNetworkChange /
+  // subscribeContainerNetworkChange. Both managers replay current snapshots to
+  // any new subscriber, so boot-time registration happens automatically once
+  // these start — no separate warm-up loop needed.
   startVmMdnsReconciler(app.log);
   startContainerMdnsReconciler(app.log);
 

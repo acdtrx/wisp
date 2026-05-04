@@ -141,9 +141,17 @@ function onLibvirtDisconnect() {
  * Subscribe to VM network-state changes. Handler signature: (name, snapshot)
  * where snapshot = { stateCode, ip, hostname } when running, or null when the
  * VM is no longer running. Returns an unsubscribe function.
+ *
+ * Replay-on-subscribe: the handler is invoked once per known snapshot
+ * synchronously before this function returns, so a late subscriber catches up
+ * on running VMs without waiting for the next libvirt event or the 60s probe.
  */
 export function subscribeVMNetworkChange(handler) {
   networkChangeHandlers.add(handler);
+  for (const [name, snapshot] of emittedSnapshots) {
+    try { handler(name, snapshot); }
+    catch (err) { log().warn?.({ err: err?.message || err }, '[vmManager] vm-network-change replay handler threw'); }
+  }
   return () => networkChangeHandlers.delete(handler);
 }
 

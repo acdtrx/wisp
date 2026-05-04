@@ -17,7 +17,7 @@ import { containerError, getClient, callUnary } from './containerManagerConnecti
 import { getContainerDir, getContainerNetnsPath } from './containerPaths.js';
 import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
-import { deregisterAddress, deregisterServicesForContainer } from '../../mdns/index.js';
+import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { validateContainerName } from './containerValidation.js';
 
 const execFile = promisify(execFileCb);
@@ -221,11 +221,12 @@ export async function renameContainer(oldName, newName) {
   const nextConfig = { ...config, name: newNameTrim };
   await writeContainerConfig(newNameTrim, nextConfig);
 
-  /* Step 8: best-effort cleanup of stale mDNS + netns under the old name.
-   * mDNS should already be deregistered (stopContainer deregisters on stop),
-   * but call defensively in case a previous stop crashed mid-flight. */
+  /* Step 8: best-effort cleanup of stale services + netns under the old name.
+   * SRV/TXT services are managed by containerManager — clean them defensively
+   * in case a previous stop crashed mid-flight. The A-record under oldName is
+   * dropped by routes/containers.js calling unpublishContainer after this
+   * function returns. */
   try { await deregisterServicesForContainer(oldName); } catch { /* best effort */ }
-  try { await deregisterAddress(oldName); } catch { /* best effort */ }
   await bestEffortRemoveOrphanNetns(oldName);
 
   return { name: newNameTrim };

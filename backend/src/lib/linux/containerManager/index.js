@@ -110,6 +110,8 @@ export {
 
 export { setupNetwork, teardownNetwork, discoverIpv4InNetnsOnce } from './containerManagerNetwork.js';
 
+export { subscribeContainerNetworkChange } from './containerManagerNetworkEvents.js';
+
 export { buildOCISpec } from './containerManagerSpec.js';
 
 export { execInContainer, execCommandInContainer, resizeExec } from './containerManagerExec.js';

@@ -5,9 +5,7 @@
 import { containerError } from './containerManagerConnection.js';
 import { getTaskState } from './containerManagerLifecycle.js';
 import { normalizeContainerMac } from './containerManagerNetwork.js';
-import {
-  deregisterAddress, registerAddress, deregisterServicesForContainer, sanitizeHostname,
-} from '../../mdns/index.js';
+import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { registerAllContainerServices } from './containerManagerServices.js';
 import { validateAndNormalizeMounts, ensureMissingMountArtifacts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';
@@ -225,11 +223,13 @@ export async function updateContainerConfig(name, changes) {
     if (isRunning && RESTART_FIELDS.has(key)) requiresRestart = true;
   }
 
+  // A-record (de)registration is owned by routes/containers.js — it calls
+  // publishContainer/unpublishContainer on the reconciler after this function
+  // returns. We only handle SRV/TXT services here (still managed inside
+  // containerManager because they're tied to the container's service array).
   if (changes.localDns === false) {
     await deregisterServicesForContainer(name);
-    await deregisterAddress(name);
   } else if (changes.localDns === true && isRunning && config.network?.ip) {
-    await registerAddress(name, sanitizeHostname(name), config.network.ip);
     await registerAllContainerServices(name, config);
   }
 

@@ -8,7 +8,7 @@ import grpc from '@grpc/grpc-js';
 import {
   containerError, containerState, getClient, callUnary,
 } from './containerManagerConnection.js';
-import { deregisterAddress, deregisterServicesForContainer } from '../../mdns/index.js';
+import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { findCurrentRunId, finalizeRun } from './containerManagerLogs.js';
 import { getContainerDir } from './containerPaths.js';
 
@@ -187,8 +187,10 @@ export async function stopContainer(name) {
 
   await cleanupTask(name);
   containerState.containerStartTimes.delete(name);
+  // A-record deregistration: handled by the reconciler when the /tasks/exit
+  // event fires the network-change event with a null snapshot. Services stay
+  // here because they're tied to the container's services array, not the IP.
   await deregisterServicesForContainer(name);
-  await deregisterAddress(name);
 }
 
 export async function killContainer(name) {
@@ -210,8 +212,9 @@ export async function killContainer(name) {
   await waitForStop(name, 5000);
   await cleanupTask(name);
   containerState.containerStartTimes.delete(name);
+  // A-record deregistration: handled by the reconciler via the network-change
+  // event. Services stay here, tied to the container's services array.
   await deregisterServicesForContainer(name);
-  await deregisterAddress(name);
 }
 
 export async function restartContainer(name) {

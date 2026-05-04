@@ -230,7 +230,7 @@ App identity persists in `container.json.metadata.app` (string id) + `container.
 | `mountsAutoMount.js` | Startup mount reconciliation + hard-converge for `/mnt/wisp/` + disk hotplug handlers (auto-mount on insertion, lazy-unmount on removal) |
 | `mdns/index.js` | mDNS module facade — Avahi-backed Linux backend (`mdns/linux/avahi.js`) plus an in-process DNS forwarder for container `.local` queries (`mdns/linux/forwarder.js`); macOS stubs (`mdns/darwin/avahi.js`). Public surface: `connect`/`disconnect`, address + service registration, `lookupLocalEntry`/`resolveLocalName` are private to the linux pair. Also exports the platform-agnostic helpers (`mdns/hostname.js` — `stripCidr`, `sanitizeHostname`) and service-type catalog (`mdns/serviceTypes.js`). |
 | `vmMdnsReconciler.js` | App-level glue (Wisp wiring, not part of vmManager). Single flat platform-agnostic file. Subscribes to `vmManager.subscribeVMNetworkChange` and (de)registers Avahi A records based on each VM's `localDns` flag. Libvirt `DomainEvent` + `AgentEvent` + 60s safety probe live inside vmManager (`linux/vmManager/vmManagerNetwork.js`). |
-| `containerMdnsReconciler.js` | App-level glue. Periodic 60s reconciler that re-registers a container's mDNS A record when its DHCP lease changes IP under it. |
+| `containerMdnsReconciler.js` | App-level glue. Subscribes to `containerManager.subscribeContainerNetworkChange` and (de)registers Avahi A records based on each container's `localDns` flag. The 60 s netns probe + `container.json` IP persistence live inside containerManager (`linux/containerManager/containerManagerNetworkEvents.js`). |
 
 ### Backend helper scripts (`backend/scripts/`)
 

@@ -21,9 +21,7 @@ import {
 } from './containerManagerNetwork.js';
 import { getDefaultContainerParentBridge } from '../../networking/index.js';
 import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
-import {
-  registerAddress, deregisterAddress, deregisterServicesForContainer, sanitizeHostname,
-} from '../../mdns/index.js';
+import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { registerAllContainerServices } from './containerManagerServices.js';
 import { assertBindSourcesReady } from './containerManagerMounts.js';
 import { resolveDeviceSpecs } from './containerDeviceNode.js';
@@ -570,8 +568,12 @@ export async function startExistingContainer(name) {
     const lease = await setupNetwork(name, config.network);
     if (lease) {
       config = await mergeNetworkLeaseIntoConfig(name, config, lease);
+      // A-record registration is owned by the reconciler — the upcoming
+      // /tasks/start event triggers a list refresh + network-change event,
+      // and the reconciler picks up running + localDns containers there.
+      // Services (SRV/TXT) are registered here because they're tied to the
+      // container's services array, not the mDNS lifecycle.
       if (config.localDns) {
-        await registerAddress(name, sanitizeHostname(name), config.network?.ip);
         await registerAllContainerServices(name, config);
       }
     }
@@ -616,12 +618,11 @@ export async function deleteContainer(name, deleteFiles = true) {
   } catch {
     // No task
   }
-  /* Deregister mDNS *after* the task is gone so we never have a window where
-   * `<name>.local` resolves to nothing while the container is still serving;
-   * the brief overlap where the name still resolves to a tearing-down
-   * container is preferable to "name gone, container still answering". */
+  /* Services (SRV/TXT) are deregistered here after the task is gone so we
+   * never have a window where a service resolves to a tearing-down container.
+   * A-record (de)registration is owned by routes/containers.js, which calls
+   * unpublishContainer before invoking deleteContainer. */
   await deregisterServicesForContainer(name);
-  await deregisterAddress(name);
 
   // Tear down networking
   try {

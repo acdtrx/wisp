@@ -21,7 +21,7 @@ import {
   normalizeContainerMac,
 } from './containerManagerNetwork.js';
 import { processUptimeMsFromProc } from './procUptime.js';
-import { getRegisteredHostname, registerAddress, sanitizeHostname } from '../../mdns/index.js';
+import { getRegisteredHostname } from '../../mdns/index.js';
 import { readLibraryDigestMap } from './containerManagerImages.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import {
@@ -328,9 +328,6 @@ export async function getContainerConfig(name) {
   }
 
   const localDns = merged.localDns === true;
-  if (state === 'running' && localDns && merged.network?.ip) {
-    await registerAddress(name, sanitizeHostname(name), merged.network.ip);
-  }
 
   const libraryDigests = await readLibraryDigestMap();
 

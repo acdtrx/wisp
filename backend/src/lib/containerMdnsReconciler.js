@@ -1,84 +1,107 @@
 /**
- * Periodic reconciler for container mDNS records when the netns IP changes
- * out from under us — typically a DHCP lease renewal that hands out a
- * different address. The initial network setup persists `network.ip` once at
- * container start; without this loop the mDNS A record would advertise the
- * stale IP forever after a renewal.
+ * Container mDNS reconciler — Wisp-glue between containerManager and the mDNS
+ * module. Subscribe-only: containerManager fires `subscribeContainerNetworkChange`
+ * whenever a container's `(state, ip)` differs from the last emitted snapshot,
+ * including DHCP renewals (containerManager owns the periodic netns probe and
+ * persists the new IP into container.json before firing).
  *
- * Cadence: 60 s. Skips containers without `localDns: true` and avoids any
- * mDNS churn when the IP hasn't actually changed.
+ * Mirrors `vmMdnsReconciler.js` — same single-flat-file shape, no platform
+ * split, no own polling, no own writes. Routes call `publishContainer` /
+ * `unpublishContainer` directly when `localDns` toggles, on rename, and on
+ * delete (those are metadata flips, not network changes).
  */
 import {
-  listContainers,
+  subscribeContainerNetworkChange,
   getContainerConfig,
-  discoverIpv4InNetnsOnce,
-  writeContainerConfig,
 } from './containerManager.js';
-import { registerAddress, sanitizeHostname } from './mdns/index.js';
+import { deregisterAddress, registerAddress, sanitizeHostname } from './mdns/index.js';
 
-const RECONCILE_INTERVAL_MS = 60 * 1000;
+const registered = new Set();
 
-let intervalHandle = null;
+let logger = null;
+let unsubscribe = null;
 
-async function reconcileOne(name, log) {
-  let config;
+function log() {
+  return logger || console;
+}
+
+async function readLocalDns(name) {
   try {
-    config = await getContainerConfig(name);
+    const cfg = await getContainerConfig(name);
+    return cfg?.localDns === true;
   } catch {
-    return;
-  }
-  if (!config || config.localDns !== true) return;
-  if (config.network?.type !== 'bridge') return;
-
-  let liveIp;
-  try {
-    liveIp = await discoverIpv4InNetnsOnce(name, 'eth0');
-  } catch {
-    return;
-  }
-  if (!liveIp) return;
-  if (liveIp === config.network?.ip) return;
-
-  log?.info?.(
-    { container: name, oldIp: config.network?.ip, newIp: liveIp },
-    'Container IP changed; refreshing mDNS A record',
-  );
-  config.network = { ...(config.network || {}), ip: liveIp };
-  try {
-    await writeContainerConfig(name, config);
-  } catch (err) {
-    log?.warn?.({ err: err.message, container: name }, 'Failed to persist new container IP');
-    return;
-  }
-  try {
-    await registerAddress(name, sanitizeHostname(name), liveIp);
-  } catch (err) {
-    log?.warn?.({ err: err.message, container: name, ip: liveIp }, 'Failed to refresh mDNS A record');
+    return false;
   }
 }
 
-async function tick(log) {
-  let list;
-  try {
-    list = await listContainers();
-  } catch {
+async function onNetworkChange(name, snapshot) {
+  if (snapshot === null) {
+    if (registered.has(name)) {
+      try { await deregisterAddress(name); }
+      catch (err) { log().warn?.({ err: err?.message || err, container: name }, '[containerMdns] deregister on stop failed'); }
+      registered.delete(name);
+    }
     return;
   }
-  for (const entry of list) {
-    if (entry.state !== 'running') continue;
-    await reconcileOne(entry.name, log);
+
+  const localDns = await readLocalDns(name);
+  if (!localDns) {
+    if (registered.has(name)) {
+      try { await deregisterAddress(name); }
+      catch (err) { log().warn?.({ err: err?.message || err, container: name }, '[containerMdns] deregister on toggle-off failed'); }
+      registered.delete(name);
+    }
+    return;
+  }
+
+  if (!snapshot.ip) return; // no IP yet; leave any prior entry alone
+  try {
+    await registerAddress(name, sanitizeHostname(name), snapshot.ip);
+    registered.add(name);
+  } catch (err) {
+    log().warn?.({ err: err?.message || err, container: name, ip: snapshot.ip }, '[containerMdns] register failed');
   }
 }
 
-export function startContainerMdnsReconciler(log) {
-  if (intervalHandle) return;
-  intervalHandle = setInterval(() => { void tick(log); }, RECONCILE_INTERVAL_MS);
-  intervalHandle.unref();
+export function startContainerMdnsReconciler(log_) {
+  if (unsubscribe) return; // already started
+  logger = log_ || null;
+  unsubscribe = subscribeContainerNetworkChange((name, snapshot) => {
+    onNetworkChange(name, snapshot).catch((err) => {
+      log().warn?.({ err: err?.message || err, container: name }, '[containerMdns] handler threw');
+    });
+  });
 }
 
 export function stopContainerMdnsReconciler() {
-  if (intervalHandle) {
-    clearInterval(intervalHandle);
-    intervalHandle = null;
+  if (unsubscribe) {
+    unsubscribe();
+    unsubscribe = null;
   }
+  registered.clear();
+}
+
+/**
+ * Force a publish attempt for a single container (called by routes when the
+ * user toggles localDns on, or after a rename). Reads the current network
+ * config via the public containerManager facade. Safe to call when the
+ * container isn't running — there just won't be an IP to register.
+ */
+export async function publishContainer(name) {
+  let config;
+  try { config = await getContainerConfig(name); }
+  catch { return; }
+  const ip = config?.network?.ip;
+  if (!ip) return;
+  await registerAddress(name, sanitizeHostname(name), ip);
+  registered.add(name);
+}
+
+/**
+ * Drop the container's mDNS entry. Used by routes when the user toggles
+ * localDns off, on rename (old name), and before delete.
+ */
+export async function unpublishContainer(name) {
+  await deregisterAddress(name);
+  registered.delete(name);
 }
