@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { containerError, containerState } from './containerManagerConnection.js';
 import { CONTAINER_NETNS_DIR, getContainerDir, getContainerNetnsPath } from './containerPaths.js';
 import { writeContainerConfig } from './containerManagerConfigIo.js';
-import { ipv4CidrFromProcFibTrie } from '../../networking/index.js';
+import { ipv4CidrFromProcFibTrie, isVlanLikeBridgeName } from '../../networking/index.js';
 
 const execFile = promisify(execFileCb);
 
@@ -488,23 +488,21 @@ const WISP_MDNS_STUB_IP = '169.254.53.53';
 const WISP_CONTAINER_RESOLV_CONF = '/var/lib/wisp/container-resolv.conf';
 
 /**
- * Check if a bridge carries the Wisp mDNS stub IP. Written by
- * `scripts/linux/setup/container-dns.sh` to br0 as a stable link-local address
- * that wisp's in-process DNS forwarder (mdnsForwarder.js) listens on.
- * If present, containers on this bridge can query 169.254.53.53 to reach the
- * forwarder, which resolves `.local` via avahi DBus and relays everything else
- * to the host's upstream DNS.
+ * Whether the wisp DNS forwarder (`169.254.53.53`) is reachable from a container
+ * on this bridge. The stub IP lives on the primary bridge (br0) — installed by
+ * `scripts/linux/setup/container-dns.sh` and re-asserted by `wisp.service`
+ * `ExecStartPre=+`. VLAN sub-bridges (`br0-vlan10`, `eth0.100`, …) don't carry
+ * it and have no path to it (Linux bridges switch, they don't route), so
+ * containers attached there fall back to upstream resolvers and don't get
+ * `.local` resolution — same as before this feature existed.
+ *
+ * Decided by name (not by probing the bridge's current addresses): the stub IP
+ * is asserted on every wisp start, so probing introduces a timing race
+ * (container created during a window where the IP is briefly missing keeps
+ * the wrong resolv.conf for its whole run).
  */
-async function bridgeHasMdnsStubIp(bridgeInterface) {
-  if (!bridgeInterface) return false;
-  try {
-    const { stdout } = await execFile('ip', ['-4', 'addr', 'show', 'dev', bridgeInterface], {
-      timeout: 5000, encoding: 'utf8', maxBuffer: 65536,
-    });
-    return stdout.includes(`${WISP_MDNS_STUB_IP}/`);
-  } catch {
-    return false;
-  }
+function bridgeHasMdnsForwarder(bridgeInterface) {
+  return Boolean(bridgeInterface) && !isVlanLikeBridgeName(bridgeInterface);
 }
 
 /**
@@ -540,20 +538,21 @@ async function installMdnsStubRoute(name) {
 
 /**
  * Determine the resolv.conf to bind-mount into a container.
- * When the container's bridge has the Wisp mDNS stub IP and the shared resolv.conf
- * exists (setup-server.sh ran `container-dns.sh`), use it so `.local` names resolve
- * through wisp's DNS forwarder. Otherwise fall back to the host's upstream
- * resolvers — on systemd-resolved hosts, `/etc/resolv.conf` points at the stub
- * (`127.0.0.53`) which is unreachable from a container netns, so prefer
- * `/run/systemd/resolve/resolv.conf` when present.
+ * On the primary bridge — where wisp's DNS forwarder is reachable — use the
+ * shared `/var/lib/wisp/container-resolv.conf` (single `nameserver 169.254.53.53`
+ * line) so `.local` names resolve through the forwarder. On VLAN sub-bridges,
+ * or when the shared file is missing (setup-server.sh never ran), fall back to
+ * the host's upstream resolvers — on systemd-resolved hosts, `/etc/resolv.conf`
+ * points at the stub (`127.0.0.53`) which is unreachable from a container
+ * netns, so prefer `/run/systemd/resolve/resolv.conf` when present.
  */
 export async function resolveContainerResolvConf(bridgeInterface = null) {
-  if (await bridgeHasMdnsStubIp(bridgeInterface)) {
+  if (bridgeHasMdnsForwarder(bridgeInterface)) {
     try {
       await access(WISP_CONTAINER_RESOLV_CONF);
       return WISP_CONTAINER_RESOLV_CONF;
     } catch {
-      /* Stub IP exists but shared file is missing — fall through to host resolv.conf. */
+      /* Shared file missing (container-dns.sh never ran) — fall through. */
     }
   }
   const upstream = '/run/systemd/resolve/resolv.conf';
@@ -644,7 +643,7 @@ export async function setupNetwork(name, networkConfig = {}) {
     pluginConfig,
   );
 
-  if (await bridgeHasMdnsStubIp(networkConfig.interface)) {
+  if (bridgeHasMdnsForwarder(networkConfig.interface)) {
     await installMdnsStubRoute(name);
   }
 

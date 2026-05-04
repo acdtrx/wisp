@@ -50,25 +50,6 @@ pointer. Keep this file scannable.
 
 ---
 
-### Container `/etc/resolv.conf` bind-mount decision is frozen at create-time
-
-**Found:** 2026-05-03, during step 2 modules-boundaries spot testing.
-
-**Symptom:** A container that was started during a window when `169.254.53.53/32` was missing from `br0` permanently uses the host's `/run/systemd/resolve/resolv.conf` as its `/etc/resolv.conf`, instead of the Wisp stub `nameserver 169.254.53.53` config. `.local` resolution from inside that container black-holes. Restarting the container is the only fix.
-
-**Root cause:** `resolveContainerResolvConf()` decides whether to bind-mount the Wisp stub `/var/lib/wisp/container-resolv.conf` based on whether the container's bridge has the stub IP **at the moment the OCI spec is built**. The OCI spec is fixed once defined; if the bridge state was wrong when the container was created, the container is permanently mis-configured until it's recreated/restarted.
-
-**Fix sketch:** Re-evaluate the bind-mount decision on every container *start*, not just create. Two ways:
-
-- **A. Always bind-mount the stub when bridge networking is selected**, even if the IP isn't on the bridge yet. If 169.254.53.53 isn't reachable, DNS just fails (current behavior with the wrong config: DNS goes to 192.168.1.1 which doesn't speak mDNS — also fails for `.local`). Simpler: one code path.
-- **B. Re-derive the resolv.conf path on each `setupNetwork()`/start**, write it into the container's runtime config, and make sure the bind-mount in the OCI spec points at a stable per-container resolv.conf file (not the shared `/var/lib/wisp/container-resolv.conf`). More moving parts.
-
-Strong lean toward A.
-
-**Why deferred:** Workaround is "restart the container" — known and rare since the underlying stub-IP-missing trigger was fixed in `d8ca472`. Worth fixing for robustness but no immediate user pain.
-
----
-
 ## Improvements
 
 ### `wisp-os-update upgrade` uses `apt-get upgrade -y` — packages requiring new deps stay kept-back
@@ -91,26 +72,6 @@ Strong lean toward A.
 3. After upgrade, Check again — list should be empty (or only contain genuinely-blocked items like phased updates).
 
 **Why deferred:** Behavior change with safety implications (dist-upgrade can remove packages). Wants explicit decision before flipping the default — possibly a setting or a confirmation in the UI ("show what will be removed"). Discovered while fixing concurrency/caching, scope-separated.
-
----
-
-### Attaching/swapping ISOs requires the VM to be stopped
-
-**Found:** 2026-05-04, during step 5 modules-boundaries spot testing.
-
-**Symptom:** Attaching an ISO to a CDROM slot, or swapping the inserted ISO, requires the VM to be powered off first. On a running VM the operation fails. QEMU's standard CDROM model supports media swap on a live guest, so this is unnecessary friction — the ergonomic equivalent of physically inserting a CD into a running machine.
-
-**Fix sketch:**
-1. `vmManagerIso.js` `attachISO`/`ejectISO` already build the disk XML and call `iface.UpdateDevice(xml, flags)`. Today the code path likely uses `flags = VIR_DOMAIN_AFFECT_CONFIG` (2) or refuses when running. Switch to `flags = VIR_DOMAIN_AFFECT_LIVE | VIR_DOMAIN_AFFECT_CONFIG` (3) so the change applies to both the live domain and the persistent config — same pattern as `dual CDROM` rule in `lib/CLAUDE.md` and `updateDiskBus`/disk attach.
-2. Verify the CDROM `<target>` keeps `tray='open'` ↔ `tray='closed'` semantics correctly when swapping media (libvirt may need an explicit eject-then-insert sequence; UpdateDevice with the right XML usually handles this).
-3. Routes already accept the call — no API change. UI doesn't gate on running state for these endpoints (or if it does, remove that guard).
-
-**Spot test after fix:**
-1. Start a VM with an empty CDROM. While running, attach an ISO. Inside the guest, the disc should mount.
-2. While still running, eject and attach a different ISO. Guest should see the new disc.
-3. Eject. Stop the VM. Attach an ISO. Start the VM. The ISO should still be there (config-side change persisted).
-
-**Why deferred:** Quality-of-life feature, not a regression. Wisp has shipped requiring a stop-attach-start cycle since day one. Worth fixing — the guard is doing nothing useful — but not blocking anything.
 
 ---
 

@@ -452,49 +452,47 @@ export default function DisksSection({
           )}
         </div>
       )
-    : isStopped
-      ? (
-          <div className="flex items-center gap-1.5">
-            {canAddDisk && (
-              <>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSdbDraft({ mode: 'new', sizeGB: 32, bus: sda?.bus || 'virtio' })
-                  }
-                  className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
-                  title="New empty disk (confirm in table)"
-                  aria-label="New disk"
-                >
-                  <Plus size={14} aria-hidden />
-                  <HardDrive size={14} aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openPicker({ type: 'disk', slot: 'sdb', defer: true })}
-                  className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
-                  title="Select existing disk image (confirm in table)"
-                  aria-label="Select disk image"
-                >
-                  <Plus size={14} aria-hidden />
-                  <FileImage size={14} aria-hidden />
-                </button>
-              </>
-            )}
-            <button
-              type="button"
-              onClick={handlePlusCdrom}
-              disabled={!canAddAnotherCdrom()}
-              className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none"
-              title="Attach ISO (opens image library)"
-              aria-label="Attach ISO"
-            >
-              <Plus size={14} aria-hidden />
-              <Disc size={14} aria-hidden />
-            </button>
-          </div>
-        )
-      : null;
+    : (
+        <div className="flex items-center gap-1.5">
+          {canAddDisk && (
+            <>
+              <button
+                type="button"
+                onClick={() =>
+                  setSdbDraft({ mode: 'new', sizeGB: 32, bus: sda?.bus || 'virtio' })
+                }
+                className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
+                title="New empty disk (confirm in table)"
+                aria-label="New disk"
+              >
+                <Plus size={14} aria-hidden />
+                <HardDrive size={14} aria-hidden />
+              </button>
+              <button
+                type="button"
+                onClick={() => openPicker({ type: 'disk', slot: 'sdb', defer: true })}
+                className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
+                title="Select existing disk image (confirm in table)"
+                aria-label="Select disk image"
+              >
+                <Plus size={14} aria-hidden />
+                <FileImage size={14} aria-hidden />
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={handlePlusCdrom}
+            disabled={!canAddAnotherCdrom()}
+            className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none"
+            title="Attach ISO (opens image library)"
+            aria-label="Attach ISO"
+          >
+            <Plus size={14} aria-hidden />
+            <Disc size={14} aria-hidden />
+          </button>
+        </div>
+      );
 
   if (isCreating) {
     const showCreateEmptyHint =
@@ -607,7 +605,7 @@ export default function DisksSection({
     <SectionCard
       title="Disks"
       titleIcon={<HardDrive size={14} strokeWidth={2} />}
-      helpText="Edit a disk from its row Actions menu — stop the VM first to change size or bus. Use + CD-ROM to attach an ISO from the library; row actions let you unmount or eject."
+      helpText="Edit a disk from its row Actions menu — stop the VM first to change size or bus. ISO attach, change, and eject work while the VM is running."
       error={error}
       headerAction={headerActions}
     >
@@ -885,9 +883,10 @@ export default function DisksSection({
                 <DataTableTd dense className="text-xs text-text-muted">{formatImageType(sdc)}</DataTableTd>
                 <DataTableTd dense className="text-xs text-text-muted">{formatDriverLabel(sdc) || '—'}</DataTableTd>
                 <DataTableTd dense align="right">
-                  <CdromEjectButton
+                  <CdromRowActions
                     slot="sdc"
                     loading={loading}
+                    onSwap={() => openPicker({ type: 'cdrom', slot: 'sdc' })}
                     onEject={() => executeDiskOperation('eject-sdc', () => ejectISO(vmName, 'sdc'))}
                   />
                 </DataTableTd>
@@ -906,9 +905,10 @@ export default function DisksSection({
                 <DataTableTd dense className="text-xs text-text-muted">{formatImageType(sdd)}</DataTableTd>
                 <DataTableTd dense className="text-xs text-text-muted">{formatDriverLabel(sdd) || '—'}</DataTableTd>
                 <DataTableTd dense align="right">
-                  <CdromEjectButton
+                  <CdromRowActions
                     slot="sdd"
                     loading={loading}
+                    onSwap={() => openPicker({ type: 'cdrom', slot: 'sdd' })}
                     onEject={() => executeDiskOperation('eject-sdd', () => ejectISO(vmName, 'sdd'))}
                   />
                 </DataTableTd>
@@ -1022,10 +1022,20 @@ function DiskRowActions({
   );
 }
 
-function CdromEjectButton({ slot, loading, onEject }) {
+function CdromRowActions({ slot, loading, onSwap, onEject }) {
   const isLoading = loading?.includes(slot);
   return (
     <DataTableRowActions forceVisible={isLoading}>
+      <button
+        type="button"
+        onClick={onSwap}
+        disabled={!!loading}
+        className={`${iconBtn} hover:bg-surface`}
+        title="Change ISO"
+        aria-label={`Change ISO in ${slot}`}
+      >
+        <FileImage size={14} aria-hidden />
+      </button>
       <button
         type="button"
         onClick={onEject}
