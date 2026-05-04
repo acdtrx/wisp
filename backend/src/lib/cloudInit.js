@@ -17,7 +17,7 @@ import { promisify } from 'node:util';
 import { writeFile, readFile, unlink, mkdir, rmdir, access, constants } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 
 import yaml from 'js-yaml';
 
@@ -73,12 +73,6 @@ export async function generateCloudInitISO(vmName, config, opts = {}) {
   try {
     const hostname = config.hostname || vmName;
 
-    // Build meta-data through js-yaml so any unusual hostname is properly quoted.
-    const metaData = yaml.dump(
-      { 'instance-id': vmName, 'local-hostname': hostname },
-      { lineWidth: -1, noRefs: true },
-    );
-
     // The UI sends `'***'` (or legacy `'set'`) to mean "keep the existing password".
     // Never feed those placeholders to openssl — that would silently set the VM
     // password to the literal placeholder string. Reuse the stored hash instead.
@@ -120,20 +114,69 @@ export async function generateCloudInitISO(vmName, config, opts = {}) {
         },
       };
     }
+    // cloud-init's `users:` module (cc_users_groups) only sets `passwd:` on user
+    // creation — for an existing user it logs "already exists, skipping" and
+    // leaves the password untouched, even with a fresh instance-id forcing the
+    // module to re-run. The dedicated `chpasswd` module (cc_set_passwords) is
+    // the one that runs `chpasswd -e` against existing accounts unconditionally.
+    // Emit it alongside so password edits in the UI actually land on next boot.
+    // `expire: false` skips the "must change password on first login" prompt.
+    if (resolvedPasswordHash) {
+      userDataObj.chpasswd = {
+        users: [{ name: userEntry.name, password: resolvedPasswordHash, type: 'hash' }],
+        expire: false,
+      };
+    }
     if (config.packageUpgrade) userDataObj.package_upgrade = true;
     if (config.growPartition) {
       userDataObj.growpart = { mode: 'auto', devices: ['/'] };
     }
     const packages = [];
-    if (config.installQemuGuestAgent !== false) packages.push('qemu-guest-agent');
+    const runcmd = [];
+    if (config.installQemuGuestAgent !== false) {
+      packages.push('qemu-guest-agent');
+      // The qemu-guest-agent.service unit is BindsTo= the virtio-port device.
+      // When the package is installed mid-boot via cloud-init the device-binding
+      // window has already passed, so the postinst leaves the unit disabled and
+      // libvirt never sees the agent connect — power-cycle would be the only
+      // recovery. Explicitly enable+start it here so the agent is reachable on
+      // first boot without user intervention.
+      runcmd.push(['systemctl', 'enable', '--now', 'qemu-guest-agent']);
+    }
     if (config.installAvahiDaemon !== false) packages.push('avahi-daemon');
     if (packages.length) userDataObj.packages = packages;
+    if (runcmd.length) userDataObj.runcmd = runcmd;
 
     const userData =
       '#cloud-config\n' + yaml.dump(userDataObj, { lineWidth: -1, noRefs: true });
 
+    // Content-derived instance-id. cloud-init keys nearly every module
+    // (users, set_passwords, runcmd, packages, write_files, ...) off
+    // instance-id with frequency=once-per-instance: same id on next boot
+    // means those modules are skipped entirely. A constant id therefore
+    // makes every config edit a silent no-op on already-booted VMs. By
+    // hashing the user-data, an unchanged config keeps the same id (no
+    // surprise re-runs) while any edit — password, SSH key, hostname,
+    // packages — produces a fresh id and cloud-init re-applies on next
+    // boot. Hostname goes into the hash via userData (set as
+    // userDataObj.hostname above).
+    const userDataHash = createHash('sha256').update(userData).digest('hex').slice(0, 12);
+    const instanceId = `${vmName}-${userDataHash}`;
+    const metaData = yaml.dump(
+      { 'instance-id': instanceId, 'local-hostname': hostname },
+      { lineWidth: -1, noRefs: true },
+    );
+
     await writeFile(join(tmpDir, 'meta-data'), metaData);
     await writeFile(join(tmpDir, 'user-data'), userData);
+
+    // Unlink any existing ISO before regenerating. libvirt's dynamic_ownership
+    // chowns the file to libvirt-qemu:kvm when the VM starts and only chowns it
+    // back on a clean stop, so on regenerate we'd hit EACCES trying to truncate
+    // a file we no longer own. The per-VM directory is wisp:libvirt 0775, which
+    // lets us unlink any file inside regardless of file ownership; the fresh
+    // file ends up owned by us and libvirt will re-chown it on next start.
+    await unlink(isoPath).catch(() => { /* not present yet — fine */ });
 
     // Try cloud-localds first, fall back to genisoimage
     try {

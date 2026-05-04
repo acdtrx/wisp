@@ -20,14 +20,16 @@ Cloud-init provides automated VM provisioning: setting hostname, creating users,
 ## Seed ISO Generation
 
 The seed ISO contains two files:
-- **user-data** — YAML cloud-init configuration (users, SSH keys, packages, etc.). When `installQemuGuestAgent` or `installAvahiDaemon` is enabled, a `packages:` list is added so cloud-init installs those packages on first boot.
-- **meta-data** — YAML with instance ID and hostname
+- **user-data** — YAML cloud-init configuration (users, SSH keys, packages, etc.). When `installQemuGuestAgent` or `installAvahiDaemon` is enabled, a `packages:` list is added so cloud-init installs those packages on first boot. When `installQemuGuestAgent` is enabled, a `runcmd:` entry also runs `systemctl enable --now qemu-guest-agent` after package install — the unit's `BindsTo=` the virtio-port device, and the device-binding window passes before cloud-init's package install finishes, so the postinst alone leaves the unit disabled-and-stopped (libvirt then never sees the agent connect, even across in-guest reboots).
+- **meta-data** — YAML with instance ID and hostname. The instance ID is **`<vmName>-<sha256(user-data) prefix 12 chars>`**, not just `<vmName>`. cloud-init gates nearly every module (`users`, `set_passwords`, `ssh_authkey_fingerprints`, `runcmd`, `package_update_upgrade_install`, `write_files`, `bootcmd`) on instance ID with frequency `once-per-instance` — a stable instance ID makes every config change a silent no-op on already-booted VMs. Hashing the user-data means an unchanged config preserves the ID (no surprise re-runs), while any edit (password, SSH key, packages, hostname, runcmd) produces a fresh ID and cloud-init re-applies on the next boot. Module re-runs are idempotent for our generated user-data (apt is no-op for already-installed packages, `systemctl enable --now` is idempotent, user creation/password set just rewrites).
 
 ### Password hashing
 
 Passwords are hashed using `openssl passwd -6` (SHA-512 crypt) before being written to the user-data YAML. The plaintext password is never stored on disk; the SHA-512 crypt hash is persisted in `cloud-init.json` as **`passwordHash`** so subsequent saves can re-emit the same hash without re-hashing.
 
 **Placeholder semantics.** The API never returns the plaintext or hash; `password` is exposed to clients as `"set"` (or empty). When the UI sends `password` back as `"***"` (or legacy `"set"`), the backend treats it as **"leave password unchanged"** and re-uses the stored `passwordHash`. Re-hashing the literal placeholder string would silently downgrade the VM password — explicitly avoided.
+
+**Dual emission (`users[].passwd` + `chpasswd`).** cloud-init's `cc_users_groups` module only applies `passwd:` on user *creation* — for an existing user it logs "already exists, skipping" and leaves the password untouched, even when a fresh instance-id forces the module to re-run. The user-data therefore also emits a top-level `chpasswd:` block (cc_set_passwords module) which runs `chpasswd -e` against existing accounts unconditionally. The two are complementary: `users[].passwd` covers the first-boot creation path, `chpasswd` covers every subsequent password edit. `expire: false` is set on `chpasswd` so the user isn't prompted to change the password on first login.
 
 ### YAML emission
 
@@ -116,6 +118,8 @@ The Cloud-Init section in the UI then shows a way to configure again from scratc
 ### Regenerate
 
 Rebuild the seed ISO from the current stored configuration without opening the edit form. Useful after making manual changes to `cloud-init.json`.
+
+The generator unlinks any existing `cloud-init.iso` before invoking `cloud-localds` / `genisoimage`. libvirt's `dynamic_ownership` chowns the file to `libvirt-qemu:kvm` on VM start and only chowns it back on a clean stop, so without the unlink a regenerate after the VM has run (especially after a force-stop or crash) hits `EACCES` trying to truncate a file the wisp user no longer owns. Per-VM directories are `wisp:libvirt 0775`, which grants unlink regardless of file ownership; the freshly created ISO is owned by the wisp user and libvirt re-chowns it on the next start.
 
 ## GitHub SSH Key Import
 
