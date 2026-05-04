@@ -10,7 +10,7 @@ import {
   mountDisk, unmountDisk,
   refresh as refreshDiskSnapshot, getDevices as getDiskDevices,
 } from '../lib/storage/index.js';
-import { findContainersUsingStorageMount } from '../lib/containerManager.js';
+import { findContainersUsingStorageMount } from '../lib/containerManager/index.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
 
 /* Response schema deliberately omits `password`: the field never leaves the

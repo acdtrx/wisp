@@ -17,7 +17,7 @@ import {
   listContainerImages, deleteContainerImage,
   checkAllImagesForUpdates, checkSingleImageForUpdates, getImageUpdateStatus,
   subscribeContainerListChange, notifyContainerConfigWrite,
-} from '../lib/containerManager.js';
+} from '../lib/containerManager/index.js';
 import {
   containerJobStore,
   imageUpdateJobStore,

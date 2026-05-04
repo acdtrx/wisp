@@ -1,11 +1,11 @@
 import { realpath } from 'node:fs/promises';
 
-import { listBackups, restoreBackup, deleteBackup } from '../lib/vmManager.js';
+import { listBackups, restoreBackup, deleteBackup } from '../lib/vmManager/index.js';
 import {
   listContainerBackups,
   restoreContainerBackup,
   deleteContainerBackup,
-} from '../lib/containerManager.js';
+} from '../lib/containerManager/index.js';
 import { getSettings, listConfiguredBackupRoots, listBackupDestinationsWithMountCheck } from '../lib/settings.js';
 import { createAppError, handleRouteError } from '../lib/routeErrors.js';
 import { validateVMName, validateContainerName } from '../lib/validation.js';

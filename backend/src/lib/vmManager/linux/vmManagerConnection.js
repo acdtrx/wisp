@@ -9,7 +9,7 @@ import {
   unwrapDict,
   formatVersion,
   generateMAC,
-} from '../../vmManagerShared.js';
+} from '../vmManagerShared.js';
 import { STATE_NAMES } from './libvirtConstants.js';
 import { watchQemuBinaries } from './vmManagerProc.js';
 

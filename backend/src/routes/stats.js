@@ -4,8 +4,8 @@ import {
   getLastCheckedAt,
   getRebootSignal,
 } from '../lib/host/index.js';
-import { getRunningVMAllocations, getHostHardware } from '../lib/vmManager.js';
-import { getRunningContainerCount } from '../lib/containerManager.js';
+import { getRunningVMAllocations, getHostHardware } from '../lib/vmManager/index.js';
+import { getRunningContainerCount } from '../lib/containerManager/index.js';
 import { getCachedStatus as getWispUpdateStatus } from '../lib/wispUpdate.js';
 import { setupSSE } from '../lib/sse.js';
 

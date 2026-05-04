@@ -6,7 +6,7 @@ import { platform } from 'node:os';
 import {
   getHostInfo,
   listHostFirmware,
-} from '../lib/vmManager.js';
+} from '../lib/vmManager/index.js';
 import {
   listHostBridges,
   listManagedNetworkBridges,

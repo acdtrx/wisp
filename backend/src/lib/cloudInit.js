@@ -28,7 +28,7 @@ import {
   ejectISO,
   getVMXML,
   parseVMFromXML,
-} from './vmManager.js';
+} from './vmManager/index.js';
 
 const execFile = promisify(execFileCb);
 

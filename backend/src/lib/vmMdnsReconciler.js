@@ -14,7 +14,7 @@ import {
   subscribeVMNetworkChange,
   getCachedLocalDns,
   getGuestNetwork,
-} from './vmManager.js';
+} from './vmManager/index.js';
 import { deregisterAddress, registerAddress, sanitizeHostname } from './mdns/index.js';
 
 const registered = new Set();

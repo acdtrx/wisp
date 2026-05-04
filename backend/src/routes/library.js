@@ -21,7 +21,7 @@ import {
   detectType,
 } from '../lib/downloads/index.js';
 import { ensureImageDir, getImagePath } from '../lib/paths.js';
-import { findVMsUsingImage } from '../lib/vmManager.js';
+import { findVMsUsingImage } from '../lib/vmManager/index.js';
 import { setupSSE } from '../lib/sse.js';
 import { sendError } from '../lib/routeErrors.js';
 

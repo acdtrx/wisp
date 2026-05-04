@@ -1,5 +1,5 @@
 import { createConnection } from 'node:net';
-import { getVNCPort } from '../lib/vmManager.js';
+import { getVNCPort } from '../lib/vmManager/index.js';
 import { validateVMName } from '../lib/validation.js';
 import { isAllowedWsOrigin } from '../lib/wsOrigin.js';
 import { trackWebSocket } from '../lib/wsTracking.js';

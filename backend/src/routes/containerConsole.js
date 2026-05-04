@@ -1,7 +1,7 @@
 /**
  * WebSocket: interactive shell in a running container (containerd exec + PTY).
  */
-import { execInContainer, resizeExec } from '../lib/containerManager.js';
+import { execInContainer, resizeExec } from '../lib/containerManager/index.js';
 import { validateContainerName } from '../lib/validation.js';
 import { isAllowedWsOrigin } from '../lib/wsOrigin.js';
 import { trackWebSocket } from '../lib/wsTracking.js';

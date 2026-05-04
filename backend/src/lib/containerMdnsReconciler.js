@@ -13,7 +13,7 @@
 import {
   subscribeContainerNetworkChange,
   getContainerConfig,
-} from './containerManager.js';
+} from './containerManager/index.js';
 import { deregisterAddress, registerAddress, sanitizeHostname } from './mdns/index.js';
 
 const registered = new Set();

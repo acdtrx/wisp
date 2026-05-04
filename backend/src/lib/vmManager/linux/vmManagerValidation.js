@@ -5,7 +5,7 @@
  * the manager — these vendored copies are the manager's defense-in-depth at
  * the libvirt boundary, kept here so vmManager has no Wisp-glue imports.
  */
-import { vmError } from '../../vmManagerShared.js';
+import { vmError } from '../vmManagerShared.js';
 
 const VM_NAME_MAX_LEN = 128;
 const VM_NAME_REGEX = /^[a-zA-Z0-9._-]+$/;

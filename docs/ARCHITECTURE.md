@@ -137,11 +137,11 @@ Each file registers routes under a common prefix. Routes handle HTTP concerns (v
 | `backups.js` | `/api` | Backup listing, restore, delete |
 | `console.js` | `/ws` | VNC WebSocket proxy |
 
-### vmManager (`backend/src/lib/vmManager.js`)
+### vmManager (`backend/src/lib/vmManager/index.js`)
 
-Platform facade: at load time it imports **`backend/src/lib/linux/vmManager/`** on Linux (libvirt over DBus) or **`backend/src/lib/darwin/vmManager/`** on macOS (dev stub). This is the single integration boundary with libvirt — no route or other module imports `dbus-next` for libvirt or calls libvirt except through this facade; only code under `linux/vmManager/` does. Avahi (mDNS) uses `dbus-next` in **`lib/mdns/linux/avahi.js`** only (separate DBus service).
+Platform facade: at load time it imports **`backend/src/lib/vmManager/linux/`** on Linux (libvirt over DBus) or **`backend/src/lib/vmManager/darwin/`** on macOS (dev stub). This is the single integration boundary with libvirt — no route or other module imports `dbus-next` for libvirt or calls libvirt except through this facade; only code under `vmManager/linux/` does. Avahi (mDNS) uses `dbus-next` in **`lib/mdns/linux/avahi.js`** only (separate DBus service).
 
-Shared pure helpers live in **`backend/src/lib/vmManagerShared.js`** (re-exported through the facade).
+Shared pure helpers live in **`backend/src/lib/vmManager/vmManagerShared.js`** (private to vmManager, used by both linux and darwin platform impls).
 
 | Module (under `linux/vmManager/`) | Responsibility |
 |--------|---------------|
@@ -161,9 +161,9 @@ Shared pure helpers live in **`backend/src/lib/vmManagerShared.js`** (re-exporte
 | `vmManagerXml.js` | XML parsing and building utilities (fast-xml-parser) |
 | `libvirtConstants.js` | Libvirt state names and constant mappings |
 
-### containerManager (`backend/src/lib/containerManager.js`)
+### containerManager (`backend/src/lib/containerManager/index.js`)
 
-Platform facade: imports **`backend/src/lib/linux/containerManager/`** on Linux (gRPC to containerd) or **`backend/src/lib/darwin/containerManager/`** on macOS (dev stub). Path helpers and `buildOCISpec` are re-used from the Linux tree where they have no gRPC dependency. Routes import only the facade; only `linux/containerManager/*` imports `@grpc/grpc-js`.
+Platform facade: imports **`backend/src/lib/containerManager/linux/`** on Linux (gRPC to containerd) or **`backend/src/lib/containerManager/darwin/`** on macOS (dev stub). Path helpers and `buildOCISpec` are re-used from the Linux tree where they have no gRPC dependency. Routes import only the facade; only `containerManager/linux/*` imports `@grpc/grpc-js`.
 
 | Module (under `linux/containerManager/`) | Responsibility |
 |--------|---------------|

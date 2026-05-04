@@ -4,7 +4,7 @@
 import { platform } from 'node:os';
 
 const impl = await import(
-  platform() === 'linux' ? './linux/vmManager/index.js' : './darwin/vmManager/index.js',
+  platform() === 'linux' ? './linux/index.js' : './darwin/index.js',
 );
 
 export const configure = impl.configure;

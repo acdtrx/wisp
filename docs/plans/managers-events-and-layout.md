@@ -17,8 +17,8 @@ After this campaign, the only thing left in `lib/linux/` and `lib/darwin/` is no
 
 ## Status
 
-- **Current step:** Step 1 (in progress).
-- **Completed:** —
+- **Current step:** None — campaign complete.
+- **Completed:** Step 1 (2026-05-04), Step 2 (2026-05-04), Step 3 (2026-05-04).
 
 ## Steps overview
 

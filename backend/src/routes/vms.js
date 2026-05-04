@@ -31,7 +31,7 @@ import {
   deleteSnapshot,
   createBackup,
   subscribeVMListChange,
-} from '../lib/vmManager.js';
+} from '../lib/vmManager/index.js';
 import {
   createJobStore,
   backupJobStore,

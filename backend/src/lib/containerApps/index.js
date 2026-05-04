@@ -17,7 +17,7 @@ import {
   getTaskState,
   putMountFileTextContent,
   execCommandInContainer,
-} from '../containerManager.js';
+} from '../containerManager/index.js';
 import { createAppError } from '../routeErrors.js';
 
 import {

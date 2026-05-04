@@ -284,10 +284,10 @@ dbus-next 0.10.x auto-installs the match rule when you attach a listener on the 
 
 The VM management backend is organized as a **platform facade** plus implementations:
 
-- **`backend/src/lib/vmManager.js`** — facade. At load time it imports either `linux/vmManager/` (libvirt over DBus) or `darwin/vmManager/` (dev stub: no libvirt). Routes import only this module.
-- **`backend/src/lib/vmManagerShared.js`** — pure helpers shared by both platforms (`vmError`, `unwrapVariant`, `unwrapDict`, `formatVersion`, `generateMAC`); no DBus.
+- **`backend/src/lib/vmManager/index.js`** — facade. At load time it imports either `vmManager/linux/index.js` (libvirt over DBus) or `vmManager/darwin/index.js` (dev stub: no libvirt). Routes import only this module.
+- **`backend/src/lib/vmManager/vmManagerShared.js`** — pure helpers shared by both platforms (`vmError`, `unwrapVariant`, `unwrapDict`, `formatVersion`, `generateMAC`); no DBus.
 
-### Linux: `backend/src/lib/linux/vmManager/vmManagerConnection.js`
+### Linux: `backend/src/lib/vmManager/linux/vmManagerConnection.js`
 
 - DBus system bus connection to `org.libvirt` at `/org/libvirt/QEMU`
 - Connection state management (bus, connectIface, connectProps)
@@ -298,7 +298,7 @@ The VM management backend is organized as a **platform facade** plus implementat
 - DomainEvent signal listener for state change tracking, fanned out to subscribers via `subscribeDomainChange(handler)` (used by `vmManagerList` for cache refresh and indirectly by `vmManagerNetwork` via `subscribeVMListChange`)
 - Per-domain `AgentEvent` (qemu-ga lifecycle) subscription helpers: `attachAgentSubscription(path, name)` / `detachAgentSubscription(path)`. Handlers register via `subscribeAgentEvent((vmName, { state, reason, domainPath }))` — `state=1` is connected, `state=0` is disconnected. Note: libvirt's C constant is `VIR_DOMAIN_EVENT_ID_AGENT_LIFECYCLE`, but libvirt-dbus surfaces it as the `AgentEvent` signal on the per-domain `org.libvirt.Domain` interface. These helpers are linux-internal — external glue uses `vmManager.subscribeVMNetworkChange` instead.
 
-### macOS: `backend/src/lib/darwin/vmManager/index.js`
+### macOS: `backend/src/lib/vmManager/darwin/index.js`
 
 - No DBus; `connect()` logs a dev-mode warning; VM APIs throw `NO_CONNECTION` or return empty lists where appropriate (same behavior as the former `IS_DARWIN` branches).
 

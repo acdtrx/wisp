@@ -3,14 +3,14 @@
  */
 import { hostname, release, uptime, networkInterfaces, cpus, totalmem } from 'node:os';
 
-import { parseDomainRaw, parseVMFromXML } from '../../linux/vmManager/vmManagerXml.js';
+import { parseDomainRaw, parseVMFromXML } from '../linux/vmManagerXml.js';
 import {
   vmError,
   unwrapVariant,
   unwrapDict,
   formatVersion,
   generateMAC,
-} from '../../vmManagerShared.js';
+} from '../vmManagerShared.js';
 
 export { parseVMFromXML };
 export const IS_DARWIN = true;

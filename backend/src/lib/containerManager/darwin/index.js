@@ -1,7 +1,7 @@
 /**
  * macOS dev stub: no containerd.
  */
-import { setContainerManagerConfig } from '../../linux/containerManager/containerPaths.js';
+import { setContainerManagerConfig } from '../linux/containerPaths.js';
 
 export function configure(cfg) {
   setContainerManagerConfig(cfg);
@@ -12,9 +12,9 @@ export {
   getContainerDir,
   getContainerFilesDir,
   ensureContainersDir,
-} from '../../linux/containerManager/containerPaths.js';
+} from '../linux/containerPaths.js';
 
-export { buildOCISpec } from '../../linux/containerManager/containerManagerSpec.js';
+export { buildOCISpec } from '../linux/containerManagerSpec.js';
 
 export const IS_DARWIN = true;
 

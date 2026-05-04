@@ -10,15 +10,15 @@ import fastifyWebsocket from '@fastify/websocket';
 import { loadRuntimeEnv } from './lib/loadRuntimeEnv.js';
 import { createAuthHook } from './lib/auth.js';
 import { getConfigSync } from './lib/config.js';
-import { configure as configureVmManager, connect as connectLibvirt } from './lib/vmManager.js';
+import { configure as configureVmManager, connect as connectLibvirt } from './lib/vmManager/index.js';
 import {
   configure as configureContainerManager,
   connect as connectContainerd,
   disconnect as disconnectContainerd,
   startImageUpdateChecker,
   stopImageUpdateChecker,
-} from './lib/containerManager.js';
-import { startAutostartContainersAtBackendBoot } from './lib/containerManager.js';
+} from './lib/containerManager/index.js';
+import { startAutostartContainersAtBackendBoot } from './lib/containerManager/index.js';
 import authRoutes from './routes/auth.js';
 import hostRoutes from './routes/host.js';
 import statsRoutes from './routes/stats.js';
@@ -39,7 +39,7 @@ import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
 import { startUpdateChecker, stopUpdateChecker, start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
 import { startUpdateChecker as startWispUpdateChecker, stopUpdateChecker as stopWispUpdateChecker } from './lib/wispUpdate.js';
 import { closeAllSSE } from './lib/sse.js';
-import { disconnect as disconnectLibvirtBus } from './lib/vmManager.js';
+import { disconnect as disconnectLibvirtBus } from './lib/vmManager/index.js';
 import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/storage/index.js';
 import { connect as connectMdns, disconnect as disconnectMdns } from './lib/mdns/index.js';
 import { startVmMdnsReconciler, stopVmMdnsReconciler } from './lib/vmMdnsReconciler.js';

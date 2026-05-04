@@ -15,7 +15,7 @@ Frontend (containerStore) ──REST+SSE──▶ containers.js route ──▶ 
 
 Containers follow the same architectural patterns as VMs:
 
-- **Backend**: `backend/src/lib/containerManager.js` is a platform facade (loads `linux/containerManager/` on Linux or `darwin/containerManager/` on macOS). Linux modules live under `backend/src/lib/linux/containerManager/`; only those import `@grpc/grpc-js`.
+- **Backend**: `backend/src/lib/containerManager/index.js` is a platform facade (loads `containerManager/linux/` on Linux or `containerManager/darwin/` on macOS). Linux modules live under `backend/src/lib/containerManager/linux/`; only those import `@grpc/grpc-js`.
 - **Communication**: gRPC to containerd (via `@grpc/grpc-js`) instead of DBus to libvirt
 - **Frontend**: Dedicated Zustand store (`containerStore.js`), SSE for live data
 - **API routes**: `backend/src/routes/containers.js` mirroring VM routes
@@ -385,7 +385,7 @@ Wisp checks every OCI image in the library for upstream changes and flags contai
 - **Cached summary:** `GET /api/containers/images/update-status` returns `{ lastCheckedAt, imagesChecked, imagesUpdated }` from the last bulk or single-image run (in-memory, lost on restart).
 - **Modified timestamp stability:** containerd's Transfer service bumps the image's `updatedAt` on every pull, including idempotent re-pulls. To keep the Image Library's **Modified** column meaningful, Wisp pins each image's displayed timestamp in a sidecar `oci-image-meta.json` next to `wisp-config.json` (shape: `{ ref: { digest, updatedAt } }`). The sidecar tracks all OCI images regardless of whether any container uses them. `listContainerImages` returns the pinned value while the digest is unchanged, adopts containerd's current `updatedAt` when the digest changes or the entry is new, and prunes refs no longer present in containerd.
 - **Pinned digests:** containers whose `image` is `ref@sha256:…` never flag updates — correct behavior (immutable by design).
-- **Module:** `backend/src/lib/linux/containerManager/containerManagerImageUpdates.js` (bulk/single entry points + `startImageUpdateChecker`/`stopImageUpdateChecker`). The background timer and SIGTERM-safe AbortController mirror `osUpdates.js`.
+- **Module:** `backend/src/lib/containerManager/linux/containerManagerImageUpdates.js` (bulk/single entry points + `startImageUpdateChecker`/`stopImageUpdateChecker`). The background timer and SIGTERM-safe AbortController mirror `osUpdates.js`.
 
 ### Debugging slow or stuck image pulls (on the server)
 
