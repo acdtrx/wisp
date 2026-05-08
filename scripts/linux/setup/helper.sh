@@ -35,8 +35,17 @@ if [[ ! -f "$SCRIPT_SRC" ]]; then
 fi
 
 if [[ ${#EXTRA_PACKAGES[@]} -gt 0 ]]; then
-  pkg_install "${EXTRA_PACKAGES[@]}"
-  echo "  Installed packages: ${EXTRA_PACKAGES[*]}"
+  # Best-effort: dpkg/apt lock contention (unattended-upgrades, apt daily
+  # cron) is a transient condition that should NOT block installing the
+  # helper script + sudoers entry. The packages are normally already
+  # present from setup/packages.sh; this call is a safety net. Re-run
+  # `wispctl helpers` after the lock clears if the package was actually
+  # missing.
+  if pkg_install "${EXTRA_PACKAGES[@]}"; then
+    echo "  Installed packages: ${EXTRA_PACKAGES[*]}"
+  else
+    echo "  WARNING: Could not install ${EXTRA_PACKAGES[*]} (often dpkg lock). Helper script + sudoers still installed; re-run 'wispctl helpers' later if the package is missing."
+  fi
 fi
 
 # Write to a temp file then atomic-rename into place. `cp src dst` keeps
