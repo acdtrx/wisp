@@ -1,5 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Modal from './Modal.jsx';
+
+// How long to keep showing "Backup complete." before the modal auto-dismisses.
+// Long enough to be a clear "did it succeed?" signal, short enough that the
+// user doesn't have to click Close on a redundant confirmation.
+const AUTO_CLOSE_DELAY_MS = 1200;
 
 /**
  * Workload-agnostic backup modal. Shared by VM Overview and Container
@@ -29,6 +34,16 @@ export default function BackupModal({
     onStart();
     setStarting(false);
   };
+
+  // Auto-dismiss on success. Errors stay visible until the user closes —
+  // they need to read the message. The background-jobs indicator in the
+  // top bar still surfaces the completed job for ~5 minutes if anyone
+  // wants to confirm.
+  useEffect(() => {
+    if (!isDone) return;
+    const t = setTimeout(() => onClose?.(), AUTO_CLOSE_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [isDone, onClose]);
 
   if (!destinations?.length) {
     return (

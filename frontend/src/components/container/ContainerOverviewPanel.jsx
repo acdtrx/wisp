@@ -96,13 +96,17 @@ export default function ContainerOverviewPanel() {
   );
   const backupInProgress = !!backupRunningJob;
 
+  // Auto-clear backupJobId once the job ends, but ONLY while the modal is
+  // closed. Clearing while it is open would blank `progress` and revert the
+  // dialog to its initial Cancel/Start state. See sibling logic in vm/OverviewPanel.jsx.
   useEffect(() => {
+    if (backupModalOpen) return;
     if (!backupJobId) return;
     const row = bgJobs[backupJobId];
     if (row && (row.status === 'done' || row.status === 'error')) {
       setBackupJobId(null);
     }
-  }, [backupJobId, bgJobs]);
+  }, [backupJobId, bgJobs, backupModalOpen]);
 
   useEffect(() => {
     setBackupJobId(null);

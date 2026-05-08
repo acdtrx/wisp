@@ -126,13 +126,20 @@ export default function OverviewPanel() {
   const [backupJobId, setBackupJobId] = useState(null);
   const [backupError, setBackupError] = useState(null);
 
+  // Auto-clear backupJobId once the job ends, but ONLY while the modal is
+  // closed. Clearing while it is open would blank `progress` and revert the
+  // dialog to its initial Cancel/Start state — the user would never see the
+  // "Backup complete." confirmation. With the gate, jobId is cleared at the
+  // earliest of: modal close (handled in onClose), or this effect firing
+  // after the modal is already gone.
   useEffect(() => {
+    if (backupModalOpen) return;
     if (!backupJobId) return;
     const row = bgJobs[backupJobId];
     if (row && (row.status === 'done' || row.status === 'error')) {
       setBackupJobId(null);
     }
-  }, [backupJobId, bgJobs]);
+  }, [backupJobId, bgJobs, backupModalOpen]);
 
   useEffect(() => {
     setBackupJobId(null);
