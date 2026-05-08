@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-05-08
+## 2026-05-08 (v1.2.2)
 
 ### New Features
 - **Clone now shows live progress.** Cloning a VM previously just spun the action button while it ran; the user had no idea what step was active or how long was left, especially on big disks. Clone is now a background job parallel to backup: `POST /api/vms/:name/clone` returns `{ jobId, title }` and pushes progress events over `GET /api/vms/clone-progress/:jobId` (steps: `disk`, `nvram`, `define`, `cloudinit`, `done`). The Clone dialog gains a progress view (per-file label + percent bar) with the same "Continue in background" / auto-dismiss-on-done UX as Backup, and the run shows up in the top-bar background-jobs panel.
