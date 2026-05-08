@@ -328,17 +328,18 @@ export async function createBackup(vmName, destinationPath, { onProgress } = {})
 
 /**
  * List backups from one or more destination roots. Optionally filter by vmName.
- * @param {Array<{ path: string, label: string }>} destinations - Absolute paths with display labels (e.g. Local, SMB name)
+ * @param {Array<{ id: string, path: string, label: string }>} destinations - Caller-supplied roots; `id` is opaque (the route layer maps it to/from the API's `destinationId`).
  * @param {string} [vmName] - If set, only return backups for this VM
- * @returns { Promise<Array<{ vmName: string, timestamp: string, path: string, sizeBytes?: number, destinationLabel: string }>> }
+ * @returns { Promise<Array<{ vmName: string, timestamp: string, destinationId: string, destinationLabel: string, path: string, sizeBytes?: number }>> } - `path` is internal; routes drop it before serializing.
  */
 export async function listBackups(destinations, vmName = null) {
   const results = [];
   const list = Array.isArray(destinations) ? destinations : [];
   for (const dest of list) {
-    const basePath = dest && typeof dest.path === 'string' ? dest.path : dest;
+    const basePath = dest && typeof dest.path === 'string' ? dest.path : null;
     const label = dest && typeof dest.label === 'string' ? dest.label : 'Backup';
-    if (!basePath || !basePath.startsWith('/')) continue;
+    const destId = dest && typeof dest.id === 'string' ? dest.id : null;
+    if (!basePath || !basePath.startsWith('/') || !destId) continue;
     let vmDirs;
     try {
       vmDirs = await readdir(basePath, { withFileTypes: true });
@@ -384,9 +385,10 @@ export async function listBackups(destinations, vmName = null) {
         results.push({
           vmName: name,
           timestamp: tsEnt.name,
+          destinationId: destId,
+          destinationLabel: label,
           path: backupPath,
           sizeBytes,
-          destinationLabel: label,
         });
       }
     }

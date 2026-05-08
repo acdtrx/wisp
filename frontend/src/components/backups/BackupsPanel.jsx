@@ -23,15 +23,17 @@ import { formatSize } from '../../utils/formatters.js';
 
 /* Merge VM + container backup lists into a single shape with a `type`
  * discriminator. VM rows carry `vmName`, container rows carry `name`; the
- * panel normalizes both to `displayName` for the table. */
+ * panel normalizes both to `displayName` for the table while preserving the
+ * original key on `sourceName` for round-tripping into restore/delete. */
 function decorateVmRow(row) {
   return {
     type: 'vm',
     displayName: row.vmName,
+    sourceName: row.vmName,
     timestamp: row.timestamp,
-    path: row.path,
-    sizeBytes: row.sizeBytes,
+    destinationId: row.destinationId,
     destinationLabel: row.destinationLabel,
+    sizeBytes: row.sizeBytes,
   };
 }
 
@@ -39,10 +41,11 @@ function decorateContainerRow(row) {
   return {
     type: 'container',
     displayName: row.name,
+    sourceName: row.name,
     timestamp: row.timestamp,
-    path: row.path,
-    sizeBytes: row.sizeBytes,
+    destinationId: row.destinationId,
     destinationLabel: row.destinationLabel,
+    sizeBytes: row.sizeBytes,
     image: row.image,
   };
 }
@@ -95,9 +98,15 @@ export default function BackupsPanel() {
     setRestoreSaving(true);
     try {
       if (restoreTarget.type === 'container') {
-        await restoreContainerBackup(restoreTarget.path, restoreName.trim());
+        await restoreContainerBackup(
+          { destinationId: restoreTarget.destinationId, name: restoreTarget.sourceName, timestamp: restoreTarget.timestamp },
+          restoreName.trim(),
+        );
       } else {
-        await restoreBackup(restoreTarget.path, restoreName.trim());
+        await restoreBackup(
+          { destinationId: restoreTarget.destinationId, vmName: restoreTarget.sourceName, timestamp: restoreTarget.timestamp },
+          restoreName.trim(),
+        );
       }
       setRestoreTarget(null);
       setRestoreName('');
@@ -115,9 +124,9 @@ export default function BackupsPanel() {
     setDeleteSaving(true);
     try {
       if (deleteTarget.type === 'container') {
-        await deleteContainerBackup(deleteTarget.path);
+        await deleteContainerBackup({ destinationId: deleteTarget.destinationId, name: deleteTarget.sourceName, timestamp: deleteTarget.timestamp });
       } else {
-        await deleteBackup(deleteTarget.path);
+        await deleteBackup({ destinationId: deleteTarget.destinationId, vmName: deleteTarget.sourceName, timestamp: deleteTarget.timestamp });
       }
       setDeleteTarget(null);
       fetchList();
@@ -168,7 +177,7 @@ export default function BackupsPanel() {
                 </thead>
                 <tbody>
                   {list.map((b) => (
-                    <tr key={`${b.type}:${b.path}-${b.timestamp}`} className={dataTableInteractiveRowClass}>
+                    <tr key={`${b.type}:${b.destinationId}:${b.sourceName}:${b.timestamp}`} className={dataTableInteractiveRowClass}>
                       <DataTableTd>
                         <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${b.type === 'container' ? 'bg-accent/15 text-accent' : 'bg-surface-border text-text-secondary'}`}>
                           {b.type === 'container' ? 'container' : 'vm'}

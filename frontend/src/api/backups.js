@@ -20,16 +20,20 @@ export function listBackups(vmName = null) {
 
 /**
  * Restore a backup as a new VM.
+ * @param {{ destinationId: string, vmName: string, timestamp: string }} target — typically a row from listBackups()
  */
-export function restoreBackup(backupPath, newVmName) {
-  return api('/api/backups/restore', { method: 'POST', body: { backupPath, newVmName } });
+export function restoreBackup(target, newVmName) {
+  const { destinationId, vmName, timestamp } = target;
+  return api('/api/backups/restore', { method: 'POST', body: { destinationId, vmName, timestamp, newVmName } });
 }
 
 /**
- * Delete a backup. Path must be under a configured destination.
+ * Delete a backup.
+ * @param {{ destinationId: string, vmName: string, timestamp: string }} target
  */
-export function deleteBackup(backupPath) {
-  return api('/api/backups', { method: 'DELETE', body: { backupPath } });
+export function deleteBackup(target) {
+  const { destinationId, vmName, timestamp } = target;
+  return api('/api/backups', { method: 'DELETE', body: { destinationId, vmName, timestamp } });
 }
 
 /* ── Container backups ──────────────────────────────────────────── */
@@ -49,10 +53,14 @@ export function listContainerBackups(containerName = null) {
   return api(`/api/container-backups${q}`);
 }
 
-export function restoreContainerBackup(backupPath, newName) {
-  return api('/api/container-backups/restore', { method: 'POST', body: { backupPath, newName } });
+/** @param {{ destinationId: string, name: string, timestamp: string }} target */
+export function restoreContainerBackup(target, newName) {
+  const { destinationId, name, timestamp } = target;
+  return api('/api/container-backups/restore', { method: 'POST', body: { destinationId, name, timestamp, newName } });
 }
 
-export function deleteContainerBackup(backupPath) {
-  return api('/api/container-backups', { method: 'DELETE', body: { backupPath } });
+/** @param {{ destinationId: string, name: string, timestamp: string }} target */
+export function deleteContainerBackup(target) {
+  const { destinationId, name, timestamp } = target;
+  return api('/api/container-backups', { method: 'DELETE', body: { destinationId, name, timestamp } });
 }

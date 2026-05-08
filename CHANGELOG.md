@@ -2,6 +2,9 @@
 
 ## 2026-05-08
 
+### Refactor
+- **Backup API stops leaking server filesystem paths.** `GET /api/backups` and `GET /api/container-backups` no longer return a `path` field; backups are now identified by the tuple `(destinationId, vmName/name, timestamp)`. Restore/delete bodies switch from `{ backupPath }` to `{ destinationId, vmName/name, timestamp[, newVmName/newName] }`. The route layer resolves `destinationId` ('local' or the configured `backupMountId`) to an absolute root, validates `vmName` and `timestamp` against a strict character class, and constructs the path server-side — no path traversal possible from the API. Frontend `api/backups.js` callers take the row object as `target`. The on-disk layout becomes a private server-side detail.
+
 ### Bug Fixes
 - **UEFI NVRAM file ops no longer EACCES; backup/restore stop silently dropping NVRAM state.** libvirt creates `<vmDir>/VARS.fd` as `libvirt-qemu:kvm` mode `600` — group membership in `kvm` doesn't grant read. Clone of a UEFI VM was failing with `EACCES`; backup and restore wrapped their copies in a try/catch that swallowed every error including `EACCES`, so backups silently shipped without NVRAM and restore template-filled boot order / Secure Boot keys. New `wisp-nvram` privileged helper (`copy <src> <dst>`) does `cp -p` then chowns to the deploy user; vmManager clone, backup, restore go through it. Helper validates basename `VARS.fd` and confines paths to `/var/lib/wisp/` or `/mnt/wisp/`. Restore distinguishes a legitimately absent NVRAM (BIOS-only VM, silent) from any other failure (loud).
 

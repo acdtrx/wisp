@@ -226,16 +226,17 @@ export async function createContainerBackup(name, destinationPath, { onProgress 
 /**
  * List container backups under each destination's `containers/` subdirectory.
  *
- * @param {Array<{ path: string, label: string }>} destinations
+ * @param {Array<{ id: string, path: string, label: string }>} destinations - Caller-supplied roots; `id` is opaque (the route layer maps it to/from the API's `destinationId`).
  * @param {string} [containerName] - optional filter
- * @returns {Promise<Array<{ name: string, timestamp: string, path: string, sizeBytes?: number, destinationLabel: string, image?: string | null }>>}
+ * @returns {Promise<Array<{ name: string, timestamp: string, destinationId: string, destinationLabel: string, path: string, sizeBytes?: number, image?: string | null }>>} - `path` is internal; routes drop it before serializing.
  */
 export async function listContainerBackups(destinations, containerName = null) {
   const results = [];
   for (const dest of (Array.isArray(destinations) ? destinations : [])) {
     const basePath = dest && typeof dest.path === 'string' ? dest.path : null;
     const label = dest && typeof dest.label === 'string' ? dest.label : 'Backup';
-    if (!basePath || !basePath.startsWith('/')) continue;
+    const destId = dest && typeof dest.id === 'string' ? dest.id : null;
+    if (!basePath || !basePath.startsWith('/') || !destId) continue;
 
     const containersRoot = join(basePath, CONTAINERS_BACKUP_DIRNAME);
     let nameDirs;
@@ -275,9 +276,10 @@ export async function listContainerBackups(destinations, containerName = null) {
         results.push({
           name: cName,
           timestamp: ts.name,
+          destinationId: destId,
+          destinationLabel: label,
           path: backupPath,
           sizeBytes: typeof manifest.sizeBytes === 'number' ? manifest.sizeBytes : undefined,
-          destinationLabel: label,
           image: manifest.image ?? null,
         });
       }

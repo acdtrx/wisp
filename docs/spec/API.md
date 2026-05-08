@@ -804,12 +804,12 @@ Start a backup job. Returns a job ID; monitor progress via SSE.
 SSE stream for backup progress.
 
 - **Progress events:** `{ step, percent?, currentFile? }` — `step` values include `domain`, `disk`, `nvram`, `cloudinit`, `manifest`, and an internal `done` step with progress fields before completion.
-- **Completion (from job store):** `{ step: "done", path: string, timestamp: string }` — `path` is the backup directory; `timestamp` matches the folder name under `<dest>/<vmName>/`.
+- **Completion (from job store):** `{ step: "done", timestamp: string }` — `timestamp` is the backup's folder name (e.g. `2026-05-08T06-30-00`).
 - **Failure (terminal):** `{ step: "error", error: string, detail: string }`
 
 ### GET /api/backups
 
-List all backups across configured destinations.
+List all backups across configured destinations. The backup is identified by the tuple `(destinationId, vmName, timestamp)`; the on-disk path is a server-side detail and not exposed.
 
 - **Query:** `?vmName=ubuntu-server` (optional filter)
 - **200:**
@@ -818,29 +818,33 @@ List all backups across configured destinations.
 [
   {
     "vmName": "ubuntu-server",
-    "timestamp": "2025-01-15T10:30:00.000Z",
-    "path": "/var/lib/wisp/backups/ubuntu-server/20250115-103000",
-    "sizeBytes": 5368709120,
-    "destinationLabel": "Local"
+    "timestamp": "2026-05-08T06-30-00",
+    "destinationId": "local",
+    "destinationLabel": "Local",
+    "sizeBytes": 5368709120
   }
 ]
 ```
 
+`destinationId` is `'local'` or the configured `backupMountId`. Pass it back unchanged on restore/delete.
+
 ### POST /api/backups/restore
 
-Restore a backup as a new VM. `backupPath` must resolve to a path under a configured backup destination (same validation as DELETE).
+Restore a backup as a new VM.
 
-- **Body:** `{ backupPath: string, newVmName: string }`
+- **Body:** `{ destinationId: string, vmName: string, timestamp: string, newVmName: string }` — `(destinationId, vmName, timestamp)` are typically copied from a `GET /api/backups` row.
 - **200:** `{ name: string }`
 - **404:** backup not found
-- **422:** `{ error, detail }` — path not under a configured destination or invalid path
+- **422:** unknown `destinationId`, invalid `vmName`/`newVmName`, or invalid `timestamp`
 
 ### DELETE /api/backups
 
-Delete a backup. Path must be under a configured destination root.
+Delete a backup.
 
-- **Body:** `{ backupPath: string }`
+- **Body:** `{ destinationId: string, vmName: string, timestamp: string }`
 - **200:** `{ ok: true }`
+- **404:** backup not found
+- **422:** invalid input
 
 ### POST /api/containers/:name/backup
 
@@ -857,12 +861,12 @@ Start a container backup job. Mirrors `POST /api/vms/:name/backup` — same body
 SSE stream for container backup progress.
 
 - **Progress events:** `{ step, percent?, currentFile? }` — `step` values include `measuring`, `archiving`, `done`. Percent is driven by uncompressed bytes through tar against the pre-walked source size (so it tracks real progress through the archive, not output bytes).
-- **Completion (from job store):** `{ step: "done", path: string, timestamp: string }`
+- **Completion (from job store):** `{ step: "done", timestamp: string }`
 - **Failure:** `{ step: "error", error: string, detail: string }`
 
 ### GET /api/container-backups
 
-List all container backups across currently-usable destinations. Container backups live at `<dest>/containers/<name>/<timestamp>/` so they don't share a namespace with VM backups.
+List all container backups across currently-usable destinations. Container backups have their own namespace; VM and container backups can never collide on identical names.
 
 - **Query:** `?containerName=foo` (optional filter)
 - **200:**
@@ -872,9 +876,9 @@ List all container backups across currently-usable destinations. Container backu
   {
     "name": "caddy",
     "timestamp": "2026-05-02T15-30-00",
-    "path": "/var/lib/wisp/backups/containers/caddy/2026-05-02T15-30-00",
-    "sizeBytes": 12345678,
+    "destinationId": "local",
     "destinationLabel": "Local",
+    "sizeBytes": 12345678,
     "image": "caddy:latest"
   }
 ]
@@ -884,18 +888,18 @@ List all container backups across currently-usable destinations. Container backu
 
 Restore a container backup under a new name. The new name must be free both on disk and in containerd. Image is re-pulled if missing locally; MAC address is regenerated; section assignment is **not** carried over (storage assignments live in `wisp-config.json`, not in the backup).
 
-- **Body:** `{ backupPath: string, newName: string }`
+- **Body:** `{ destinationId: string, name: string, timestamp: string, newName: string }`
 - **200:** `{ name: string, sourceName: string, image: string | null }` — `sourceName` is the original container name from the manifest, useful when the user picked a backup whose folder name no longer matches.
 - **404:** backup not found
 - **409:** `CONTAINER_EXISTS` if the new name is already in use
-- **422:** `INVALID_CONTAINER_NAME`, `BACKUP_INVALID` (path not under a configured destination, or archive missing/malformed)
+- **422:** `INVALID_CONTAINER_NAME`, `BACKUP_INVALID` (unknown destination or invalid timestamp), or archive missing/malformed
 - **500:** `BACKUP_RESTORE_FAILED` if extraction or containerd record creation fails
 
 ### DELETE /api/container-backups
 
-Delete a container backup. Path must resolve to a directory under one of the configured destination roots (same validation as `DELETE /api/backups`).
+Delete a container backup.
 
-- **Body:** `{ backupPath: string }`
+- **Body:** `{ destinationId: string, name: string, timestamp: string }`
 - **200:** `{ ok: true }`
 
 ---

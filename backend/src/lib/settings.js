@@ -486,34 +486,18 @@ export function listConfiguredBackupRoots(settings) {
 }
 
 /**
- * Backup destinations for labels/paths (no mount check).
- * @param {Awaited<ReturnType<typeof getSettings>>} settings
- */
-export function buildBackupDestinationsFromSettings(settings) {
-  const destinations = [];
-  const seen = new Set();
-  if (settings.backupLocalPath) {
-    destinations.push({ path: settings.backupLocalPath, label: 'Local' });
-    seen.add(settings.backupLocalPath);
-  }
-  const id = settings.backupMountId;
-  if (!id) return destinations;
-  const d = (settings.mounts || []).find((m) => m.id === id);
-  const path = d && d.mountPath;
-  if (!path || seen.has(path)) return destinations;
-  seen.add(path);
-  destinations.push({ path, label: (d.label && d.label.trim()) || (d.type === 'smb' ? 'Network' : 'Disk') });
-  return destinations;
-}
-
-/**
  * Destinations to scan for backup listings; SMB paths only if currently mounted.
+ * The `id` is the same vocabulary the client uses on `POST /api/vms/:name/backup`
+ * (`destinationIds`): `'local'` for the configured backupLocalPath, or the
+ * mount UUID for the configured backupMountId.
+ *
  * @param {Awaited<ReturnType<typeof getSettings>>} settings
+ * @returns {Promise<Array<{ id: string, path: string, label: string }>>}
  */
 export async function listBackupDestinationsWithMountCheck(settings) {
   const destinations = [];
   if (settings.backupLocalPath) {
-    destinations.push({ path: settings.backupLocalPath, label: 'Local' });
+    destinations.push({ id: 'local', path: settings.backupLocalPath, label: 'Local' });
   }
   const id = settings.backupMountId;
   if (!id) return destinations;
@@ -525,7 +509,7 @@ export async function listBackupDestinationsWithMountCheck(settings) {
     if (!mounted) return destinations;
   }
   if (!destinations.some((x) => x.path === path)) {
-    destinations.push({ path, label: (d.label && d.label.trim()) || (d.type === 'smb' ? 'Network' : 'Disk') });
+    destinations.push({ id, path, label: (d.label && d.label.trim()) || (d.type === 'smb' ? 'Network' : 'Disk') });
   }
   return destinations;
 }

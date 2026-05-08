@@ -35,7 +35,9 @@ Disk images and the cloud-init ISO are gzipped to reduce backup size. NVRAM and 
 └── cloud-init.json
 ```
 
-The timestamp format is used as the directory name (e.g. `20250115-103000`).
+The timestamp folder name is `YYYY-MM-DDTHH-mm-ss` (ISO with `:` swapped to `-`, e.g. `2026-05-08T06-30-00`).
+
+**The on-disk layout is a server-side detail, not part of the API.** Backups are identified across the API as `(destinationId, vmName, timestamp)`; clients never receive or send the absolute backup path. See [API.md → Backups](API.md#backups).
 
 ## Backup Destinations
 
@@ -72,7 +74,7 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
 
 ## Listing Backups
 
-`GET /api/backups` scans configured destinations that are currently usable: always the local backup path; the extra destination only if `backupMountId` is set **and** the corresponding mount is currently mounted. For each found backup, returns: VM name, timestamp, full path, total size in bytes, and destination label.
+`GET /api/backups` scans configured destinations that are currently usable: always the local backup path; the extra destination only if `backupMountId` is set **and** the corresponding mount is currently mounted. For each found backup, returns: VM name, timestamp, total size in bytes, plus `destinationId` (`'local'` or the mount UUID) and `destinationLabel` for display.
 
 Optional `?vmName=` filter restricts results to a specific VM.
 
@@ -80,7 +82,7 @@ A configured network backup path that is not mounted is omitted from the scan (s
 
 ## Restoring a Backup
 
-`POST /api/backups/restore` with `{ backupPath, newVmName }`:
+`POST /api/backups/restore` with `{ destinationId, vmName, timestamp, newVmName }` — `(destinationId, vmName, timestamp)` are typically copied from a list row:
 
 1. Read `domain.xml` and, when present, `manifest.json` from the backup
 2. Decompress and copy disk images to the new VM's directory (`<vmsPath>/<newVmName>/`)
@@ -98,10 +100,10 @@ Where it can fail: if a backup was produced under one `vmsPath` and you later mo
 
 ## Deleting a Backup
 
-`DELETE /api/backups` with `{ backupPath }`:
+`DELETE /api/backups` with `{ destinationId, vmName, timestamp }`:
 
-- The path is validated to be under one of the configured backup destination roots (local path and, when set, the selected extra mount path — safety check to prevent arbitrary path deletion)
-- The entire backup directory is removed
+- The route resolves `destinationId` to a configured destination root (rejecting unknown ids), validates `vmName` and `timestamp` against the same character class as backup creation, then constructs the absolute path server-side. The client never sends a path.
+- The entire backup directory is removed.
 
 ## Progress Tracking
 
@@ -152,7 +154,7 @@ Progress events are emitted via the shared `backupJobStore` — same SSE consume
 
 ### Restoring
 
-`POST /api/container-backups/restore` with `{ backupPath, newName }`:
+`POST /api/container-backups/restore` with `{ destinationId, name, timestamp, newName }`:
 
 1. Validate `newName` (same rules as create — `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, 1–63 chars). Reject if a container with that name already exists either on disk or in containerd.
 2. Extract `data.tar.gz` into a temporary `.restore-<rand>` directory under `<containersPath>`. Verify the archive contains exactly one top-level directory (the original name).
@@ -175,7 +177,7 @@ The restored container is **independent** of the source: new MAC, new DHCP lease
 
 ### Deleting
 
-`DELETE /api/container-backups` with `{ backupPath }` — same path-under-allowed-root validation as VM backups, then `rm -rf` of the timestamp directory.
+`DELETE /api/container-backups` with `{ destinationId, name, timestamp }` — route resolves the destination root from `destinationId` and constructs the path; manager `rm -rf`s the timestamp directory after defense-in-depth allowed-root validation.
 
 ### CLI inspection
 
