@@ -420,9 +420,15 @@ export async function cloneVM(name, newName) {
   const config = parseVMFromXML(xml);
   if (!config) throw vmError('PARSE_ERROR', `Failed to parse XML for VM "${name}"`);
 
-  // Copy disks into the new VM's own directory so a future deleteVM(newName)
+  // Copy files into the new VM's own directory so a future deleteVM(newName)
   // / renameVM(newName) doesn't have to chase files that live under the
-  // source VM's path. Keeps the "directory == VM name" invariant.
+  // source VM's path. Keeps the "directory == VM name" invariant. Applies to
+  // every block device or CDROM whose <source file> lives inside the source
+  // VM directory — including disks AND the cloud-init.iso CDROM (sde slot).
+  // Files that live OUTSIDE the source VM dir (e.g. install ISOs in the
+  // image library, shared library disks) stay shared by reference: the
+  // cloned XML keeps pointing at the same library file.
+  const srcVmDir = getVMBasePath(name);
   const newVmDir = getVMBasePath(newName);
   await mkdir(newVmDir, { recursive: true });
 
@@ -430,10 +436,14 @@ export async function cloneVM(name, newName) {
   let dirCleanupNeeded = true;
   try {
     for (const disk of config.disks) {
-      if (disk.device !== 'disk' || !disk.source) continue;
+      if (!disk.source) continue;
+      // Only files inside the source VM dir are clone-private. External
+      // refs (image library) stay unchanged in the cloned XML.
+      if (!disk.source.startsWith(`${srcVmDir}/`)) continue;
 
-      // Use the source's basename (e.g. disk0.qcow2) inside newVmDir so the
-      // cloned VM has the same on-disk layout as a freshly-created VM.
+      // Use the source's basename (e.g. disk0.qcow2, cloud-init.iso) inside
+      // newVmDir so the cloned VM has the same on-disk layout as a freshly
+      // created VM.
       const baseName = disk.source.slice(disk.source.lastIndexOf('/') + 1);
       const newDiskPath = join(newVmDir, baseName);
 

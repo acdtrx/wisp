@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import { copyFile, access } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import {
   listVMs,
@@ -44,7 +46,7 @@ import { generateCloudInit, deleteCloudInitISO } from '../lib/cloudInit.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { getMountStatus, mountSMB } from '../lib/storage/index.js';
 import { setupSSE } from '../lib/sse.js';
-import { resolveLibraryPath, assertPathInsideAllowedRoots } from '../lib/paths.js';
+import { resolveLibraryPath, assertPathInsideAllowedRoots, getVMBasePath } from '../lib/paths.js';
 import { createAppError, handleRouteError } from '../lib/routeErrors.js';
 import { validateVMName } from '../lib/validation.js';
 
@@ -529,8 +531,28 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        validateVMName(request.body.newName);
-        await cloneVM(request.params.name, request.body.newName);
+        const srcName = request.params.name;
+        const newName = request.body.newName;
+        validateVMName(newName);
+        await cloneVM(srcName, newName);
+
+        // cloud-init.json is Wisp-glue metadata (not in domain XML), so
+        // vmManager.cloneVM doesn't know about it — copy it sibling-to-sibling
+        // here. cloud-init.iso is already cloned by vmManager via the disk
+        // path rewrite. Carrying both keeps the clone's cloud-init state
+        // identical to the source; the user can edit cloud-init for the
+        // clone afterwards if they want a fresh first-boot run (editing
+        // changes the user-data hash → new instance-id → cloud-init re-runs).
+        const ciJsonSrc = join(getVMBasePath(srcName), 'cloud-init.json');
+        const ciJsonDst = join(getVMBasePath(newName), 'cloud-init.json');
+        try {
+          await access(ciJsonSrc);
+          await copyFile(ciJsonSrc, ciJsonDst);
+        } catch (err) {
+          if (err.code !== 'ENOENT') throw err;
+          /* source had no cloud-init.json — nothing to carry over */
+        }
+
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);
