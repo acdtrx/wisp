@@ -3,6 +3,7 @@
 ## 2026-05-08
 
 ### Refactor
+- **VM backups land under `vms/` subdir, symmetric with `containers/`.** New backups go to `<dest>/vms/<vmName>/<timestamp>/` so VM and container namespaces are siblings under a backup root. Legacy backups at `<dest>/<vmName>/<timestamp>/` remain listable, restorable, and deletable — the scanner walks both layouts and dedupes; a new `resolveVmBackupDir(root, name, ts)` helper picks the right path. Nothing is moved on disk; an in-flight backup at the old layout is impossible because creates always use `vms/` now. Pure server-internal change — possible only because the previous commit removed `path` from the API surface.
 - **Backup API stops leaking server filesystem paths.** `GET /api/backups` and `GET /api/container-backups` no longer return a `path` field; backups are now identified by the tuple `(destinationId, vmName/name, timestamp)`. Restore/delete bodies switch from `{ backupPath }` to `{ destinationId, vmName/name, timestamp[, newVmName/newName] }`. The route layer resolves `destinationId` ('local' or the configured `backupMountId`) to an absolute root, validates `vmName` and `timestamp` against a strict character class, and constructs the path server-side — no path traversal possible from the API. Frontend `api/backups.js` callers take the row object as `target`. The on-disk layout becomes a private server-side detail.
 
 ### Bug Fixes

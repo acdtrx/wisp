@@ -19,6 +19,12 @@ import { copyNvram } from './vmManagerNvram.js';
 
 const execFile = promisify(execFileCb);
 
+// New layout: VM backups under <root>/vms/. Mirrors container backups under
+// <root>/containers/. listBackups still walks the legacy <root>/<vmName>/
+// layout so backups taken before this change remain visible and restorable.
+const VMS_BACKUP_DIRNAME = 'vms';
+const CONTAINERS_BACKUP_DIRNAME = 'containers';
+
 function backupTimestamp() {
   return new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
 }
@@ -215,7 +221,11 @@ export async function createBackup(vmName, destinationPath, { onProgress } = {})
   }
 
   const timestamp = backupTimestamp();
-  const backupDir = join(destinationPath, vmName, timestamp);
+  // Layout: <dest>/vms/<vmName>/<timestamp>/. Symmetric with container backups
+  // (<dest>/containers/<name>/<timestamp>/). Older Wisp versions used
+  // <dest>/<vmName>/<timestamp>/ — listBackups still walks that path so legacy
+  // backups remain restorable/deletable, but new backups always land under vms/.
+  const backupDir = join(destinationPath, VMS_BACKUP_DIRNAME, vmName, timestamp);
   await mkdir(backupDir, { recursive: true });
 
   const emit = (step, data = {}) => {
@@ -328,75 +338,130 @@ export async function createBackup(vmName, destinationPath, { onProgress } = {})
 
 /**
  * List backups from one or more destination roots. Optionally filter by vmName.
+ * Walks both layouts:
+ *   - new: <root>/vms/<vmName>/<timestamp>/
+ *   - legacy: <root>/<vmName>/<timestamp>/   (skipping `vms/` and `containers/`)
+ * Dedupes by (destinationId, vmName, timestamp), preferring the new layout.
+ *
  * @param {Array<{ id: string, path: string, label: string }>} destinations - Caller-supplied roots; `id` is opaque (the route layer maps it to/from the API's `destinationId`).
  * @param {string} [vmName] - If set, only return backups for this VM
  * @returns { Promise<Array<{ vmName: string, timestamp: string, destinationId: string, destinationLabel: string, path: string, sizeBytes?: number }>> } - `path` is internal; routes drop it before serializing.
  */
 export async function listBackups(destinations, vmName = null) {
   const results = [];
+  const seen = new Set();
   const list = Array.isArray(destinations) ? destinations : [];
+
+  /** Read one VM's directory under either layout, push valid backup entries. */
+  async function scanVmDir({ vmDirPath, name, destId, label }) {
+    let timestamps;
+    try {
+      timestamps = await readdir(vmDirPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const tsEnt of timestamps) {
+      if (!tsEnt.isDirectory()) continue;
+      const dedupeKey = `${destId}\0${name}\0${tsEnt.name}`;
+      if (seen.has(dedupeKey)) continue;
+      const backupPath = join(vmDirPath, tsEnt.name);
+      const manifestPath = join(backupPath, 'manifest.json');
+      const domainPath = join(backupPath, 'domain.xml');
+      let sizeBytes;
+      try {
+        const raw = await readFile(manifestPath, 'utf8');
+        const manifest = JSON.parse(raw);
+        sizeBytes = manifest.sizeBytes;
+      } catch {
+        try {
+          await access(domainPath, constants.R_OK);
+        } catch {
+          /* not a valid backup dir */
+          continue;
+        }
+      }
+      seen.add(dedupeKey);
+      results.push({
+        vmName: name,
+        timestamp: tsEnt.name,
+        destinationId: destId,
+        destinationLabel: label,
+        path: backupPath,
+        sizeBytes,
+      });
+    }
+  }
+
   for (const dest of list) {
     const basePath = dest && typeof dest.path === 'string' ? dest.path : null;
     const label = dest && typeof dest.label === 'string' ? dest.label : 'Backup';
     const destId = dest && typeof dest.id === 'string' ? dest.id : null;
     if (!basePath || !basePath.startsWith('/') || !destId) continue;
-    let vmDirs;
+
+    // 1. New layout: <root>/vms/<name>/<ts>/. Scanned first so dedupe prefers it.
+    const vmsRoot = join(basePath, VMS_BACKUP_DIRNAME);
+    let newDirs;
     try {
-      vmDirs = await readdir(basePath, { withFileTypes: true });
+      newDirs = await readdir(vmsRoot, { withFileTypes: true });
     } catch {
-      /* destination unreadable — skip this root */
-      continue;
+      newDirs = null; /* vms/ subdir absent — fine, nothing here yet */
     }
-    for (const dirent of vmDirs) {
+    if (newDirs) {
+      for (const dirent of newDirs) {
+        if (!dirent.isDirectory()) continue;
+        const name = dirent.name;
+        if (vmName != null && vmName !== '' && name !== vmName) continue;
+        await scanVmDir({ vmDirPath: join(vmsRoot, name), name, destId, label });
+      }
+    }
+
+    // 2. Legacy layout: <root>/<name>/<ts>/, skipping vms/ and containers/.
+    let legacyDirs;
+    try {
+      legacyDirs = await readdir(basePath, { withFileTypes: true });
+    } catch {
+      continue; /* destination unreadable */
+    }
+    for (const dirent of legacyDirs) {
       if (!dirent.isDirectory()) continue;
       const name = dirent.name;
-      /* `containers/` under each backup root holds container backups
-       * (parallel namespace, different layout). Skip it explicitly so the
-       * VM scanner doesn't try to interpret container subdirs as VM
-       * timestamps. */
-      if (name === 'containers') continue;
+      if (name === VMS_BACKUP_DIRNAME || name === CONTAINERS_BACKUP_DIRNAME) continue;
       if (vmName != null && vmName !== '' && name !== vmName) continue;
-      const vmPath = join(basePath, name);
-      let timestamps;
-      try {
-        timestamps = await readdir(vmPath, { withFileTypes: true });
-      } catch {
-        /* VM directory unreadable */
-        continue;
-      }
-      for (const tsEnt of timestamps) {
-        if (!tsEnt.isDirectory()) continue;
-        const backupPath = join(vmPath, tsEnt.name);
-        const manifestPath = join(backupPath, 'manifest.json');
-        const domainPath = join(backupPath, 'domain.xml');
-        let sizeBytes;
-        try {
-          const raw = await readFile(manifestPath, 'utf8');
-          const manifest = JSON.parse(raw);
-          sizeBytes = manifest.sizeBytes;
-        } catch {
-          try {
-            await access(domainPath, constants.R_OK);
-          } catch {
-            /* not a valid backup dir */
-            continue;
-          }
-        }
-        results.push({
-          vmName: name,
-          timestamp: tsEnt.name,
-          destinationId: destId,
-          destinationLabel: label,
-          path: backupPath,
-          sizeBytes,
-        });
-      }
+      await scanVmDir({ vmDirPath: join(basePath, name), name, destId, label });
     }
   }
   return results.sort((a, b) => {
     const d = (a.vmName || '').localeCompare(b.vmName || '');
     return d !== 0 ? d : (b.timestamp || '').localeCompare(a.timestamp || '');
   });
+}
+
+/**
+ * Resolve `(rootPath, vmName, timestamp)` to the absolute backup directory,
+ * checking the new layout (`<root>/vms/<name>/<ts>/`) first and falling back
+ * to the legacy layout (`<root>/<name>/<ts>/`). Throws BACKUP_NOT_FOUND if
+ * neither exists. Routes use this before calling restoreBackup / deleteBackup
+ * so the layout choice stays inside vmManager.
+ *
+ * @param {string} rootPath - Configured backup destination root
+ * @param {string} vmName
+ * @param {string} timestamp
+ * @returns {Promise<string>} absolute backup directory
+ */
+export async function resolveVmBackupDir(rootPath, vmName, timestamp) {
+  const candidates = [
+    join(rootPath, VMS_BACKUP_DIRNAME, vmName, timestamp),
+    join(rootPath, vmName, timestamp),
+  ];
+  for (const candidate of candidates) {
+    try {
+      await access(candidate, constants.R_OK);
+      return candidate;
+    } catch {
+      /* try next candidate */
+    }
+  }
+  throw vmError('BACKUP_NOT_FOUND', `Backup not found for ${vmName} @ ${timestamp}`);
 }
 
 /**

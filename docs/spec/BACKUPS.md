@@ -26,7 +26,7 @@ Disk images and the cloud-init ISO are gzipped to reduce backup size. NVRAM and 
 ## Backup Directory Structure
 
 ```
-<destination>/<vm-name>/<timestamp>/
+<destination>/vms/<vm-name>/<timestamp>/
 ├── manifest.json
 ├── domain.xml
 ├── disk0.qcow2.gz
@@ -35,7 +35,11 @@ Disk images and the cloud-init ISO are gzipped to reduce backup size. NVRAM and 
 └── cloud-init.json
 ```
 
+VM backups land under a `vms/` subdirectory of each destination root. This mirrors container backups, which already live at `<destination>/containers/<name>/<timestamp>/` — VM and container namespaces are now symmetric and never collide.
+
 The timestamp folder name is `YYYY-MM-DDTHH-mm-ss` (ISO with `:` swapped to `-`, e.g. `2026-05-08T06-30-00`).
+
+**Legacy layout:** Backups taken before this layout flip live at `<destination>/<vm-name>/<timestamp>/` (no `vms/` prefix). `listBackups` walks both paths and dedupes by `(vmName, timestamp)` preferring the new layout. Restore/delete still work on legacy backups — `resolveVmBackupDir(root, name, ts)` checks the new path first, then falls back. New backups always use the new layout; nothing is moved on disk.
 
 **The on-disk layout is a server-side detail, not part of the API.** Backups are identified across the API as `(destinationId, vmName, timestamp)`; clients never receive or send the absolute backup path. See [API.md → Backups](API.md#backups).
 
@@ -63,7 +67,7 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
 2. Backend resolves paths from `backupLocalPath` and, when requested, the mount referenced by `backupMountId` (with mount check / auto-mount for SMB)
 3. A background job is created (returns `jobId`)
 4. For each destination path:
-   - Create backup directory `<dest>/<vmName>/<timestamp>/`
+   - Create backup directory `<dest>/vms/<vmName>/<timestamp>/`
    - Save domain XML
    - Gzip and copy each disk image
    - Copy NVRAM file (if present)

@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { listBackups, restoreBackup, deleteBackup } from '../lib/vmManager/index.js';
+import { listBackups, restoreBackup, deleteBackup, resolveVmBackupDir } from '../lib/vmManager/index.js';
 import {
   listContainerBackups,
   restoreContainerBackup,
@@ -119,7 +119,7 @@ export default async function backupsRoutes(fastify) {
         assertSafeTimestamp(timestamp);
         const settings = await getSettings();
         const root = resolveBackupRoot(settings, destinationId);
-        const backupPath = join(root, vmName, timestamp);
+        const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
         return await restoreBackup(backupPath, newVmName);
       } catch (err) {
         handleRouteError(err, reply, request);
@@ -154,7 +154,7 @@ export default async function backupsRoutes(fastify) {
         assertSafeTimestamp(timestamp);
         const settings = await getSettings();
         const root = resolveBackupRoot(settings, destinationId);
-        const backupPath = join(root, vmName, timestamp);
+        const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
         const roots = listConfiguredBackupRoots(settings);
         await deleteBackup(backupPath, roots);
         return { ok: true };

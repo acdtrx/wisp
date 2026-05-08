@@ -40,34 +40,3 @@ pointer. Keep this file scannable.
 3. After upgrade, Check again — list should be empty (or only contain genuinely-blocked items like phased updates).
 
 **Why deferred:** Behavior change with safety implications (dist-upgrade can remove packages). Wants explicit decision before flipping the default — possibly a setting or a confirmation in the UI ("show what will be removed"). Discovered while fixing concurrency/caching, scope-separated.
-
----
-
-### Backup directory layout: VMs at top level, containers under `containers/` subdir — should be symmetric
-
-**Found:** 2026-05-03.
-
-**Current state:**
-- VM backups land at `<destinationPath>/<vmName>/<timestamp>/` (top-level under the backup root)
-- Container backups land at `<destinationPath>/containers/<name>/<timestamp>/` (under a `containers/` subdir)
-
-This made sense when only VMs had backups (single bucket, no namespacing needed). After container backups landed (`cdc5234`, v1.2.0), the asymmetry remains. A backup destination directory mixes `<vmName>/` and `containers/` at the same level, which is confusing — and it precludes ever using `vms/` as a VM name.
-
-**Fix sketch:**
-1. Move VMs under their own subdir: `<destinationPath>/vms/<vmName>/<timestamp>/`. Mirror what containers already do.
-2. `vmManagerBackup.js`: `createBackup`, `listBackups`, `restoreBackup`, `deleteBackup` all need updated paths. Search for `join(destinationPath, vmName, ...)`.
-3. **One-time corrective sweep on existing installs.** Per CLAUDE.md feature-building rules, this is a structural change, not a bug-state repair — so we either:
-   - Accept the asymmetry permanently and only enforce `vms/` for *new* backups (loses the symmetry benefit, leaves old backups discoverable via fallback path);
-   - Decide this is bug-state repair (the asymmetry was a structural mistake) and write a one-time mover script that walks the destination root, identifies VM backup dirs (those with `domain.xml` at the right depth), and `mv` them into a new `vms/` subdir;
-   - Document the new layout and require users to manually move existing backups (clunky; users might miss it).
-
-   Real call needed at design time. Lean toward bug-state-repair sweep — it's simple, idempotent, and the alternative is permanent ugliness in the API/spec.
-
-4. Doc updates: `docs/spec/BACKUPS.md`, API spec for the routes, CHANGELOG.
-
-**Spot test after fix:**
-1. Fresh backup destination → take a VM backup → it lands under `<dest>/vms/<name>/<ts>/`.
-2. Existing destination with old-style VM backups → after upgrade, they appear under `<dest>/vms/`. Listing/restoring works.
-3. Container backup still works under `<dest>/containers/...`.
-
-**Why deferred:** Asymmetry is ugly but not actively broken. Touches a persistence boundary that needs careful design (existing-data handling) — not a "do it in 30 min" change.

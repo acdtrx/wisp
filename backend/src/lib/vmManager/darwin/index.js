@@ -297,3 +297,7 @@ export async function deleteBackup() {
 export async function restoreBackup() {
   throw noConn();
 }
+
+export async function resolveVmBackupDir() {
+  throw noConn();
+}

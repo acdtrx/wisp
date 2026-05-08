@@ -87,4 +87,5 @@ export {
   listBackups,
   restoreBackup,
   deleteBackup,
+  resolveVmBackupDir,
 } from './vmManagerBackup.js';
