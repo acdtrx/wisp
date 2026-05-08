@@ -380,6 +380,18 @@ The backend tries **`/usr/local/bin/wisp-power`** first, then the bundled `backe
 
 **Troubleshooting:** As deploy user, `sudo -n /usr/local/bin/wisp-power` should print usage and exit 1 if sudoers allow the script (do not pass `shutdown`/`reboot` except on a host you intend to power off). Confirm `/etc/sudoers.d/wisp-power`: `<deploy_user> ALL=(root) NOPASSWD: /usr/local/bin/wisp-power`.
 
+### `wisp-nvram` (installed to `/usr/local/bin/`)
+
+Privileged copy of a UEFI NVRAM file (`VARS.fd`). libvirt creates `<vmDir>/VARS.fd` as `libvirt-qemu:kvm` mode `600`; the deploy user is in the `kvm` group but mode `600` only grants the owner read access — group membership doesn't help. Without the helper, **clone** of a UEFI VM fails with `EACCES`, and **backup**/**restore** silently drop NVRAM state (boot order, Secure Boot enrolled keys, custom NVRAM settings).
+
+| Command | Description |
+|---------|-------------|
+| `wisp-nvram copy <src> <dst>` | `cp -p` then chown destination to the invoking user (`SUDO_UID`/`SUDO_GID`). libvirt's `dynamic_ownership=1` reclaims ownership when the cloned/restored VM is started. |
+
+**Path validation:** Both paths must be absolute, basename must be `VARS.fd`, and after `realpath -m` both must sit under `/var/lib/wisp/` or `/mnt/wisp/`. Custom `vmsPath` / `backupLocalPath` outside these roots are not supported by the helper — keep backup destinations under `/var/lib/wisp/backups/` or use a Wisp-managed mount under `/mnt/wisp/`.
+
+The backend invokes `sudo -n /usr/local/bin/wisp-nvram copy ...` from `vmManager` (clone, backup, restore). `install-helpers.sh` installs the helper and `/etc/sudoers.d/wisp-nvram`.
+
 ### `wisp-netns` (installed to `/usr/local/bin/`)
 
 Creates or removes a network namespace under `/var/run/netns/<name>` using `mkdir -p` and `ip netns add|delete`. The backend runs as the deploy user and cannot create that directory or netns without privilege; it invokes **`sudo -n /usr/local/bin/wisp-netns add|delete <name>`**.

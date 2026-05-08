@@ -112,6 +112,15 @@ else
 fi
 echo ""
 
+echo "--- wisp-nvram (UEFI NVRAM file copy for clone/backup/restore) ---"
+if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-nvram" ]]; then
+  "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-nvram" wisp-nvram "$DEPLOY_USER"
+  echo "  Installed /usr/local/bin/wisp-nvram."
+else
+  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-nvram)"
+fi
+echo ""
+
 echo "--- wisp-updater (self-update applier, runs as wisp-updater.service) ---"
 if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-updater" && -f "$PROJECT_ROOT/systemd/linux/wisp-updater.service" ]]; then
   # rsync is needed by the updater script itself.

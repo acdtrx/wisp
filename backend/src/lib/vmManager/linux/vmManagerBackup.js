@@ -15,6 +15,7 @@ import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError, 
 import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
 import { getVMBasePath } from './vmManagerPaths.js';
 import { VIR_DOMAIN_STATE_SHUTOFF, VIR_DOMAIN_STATE_SHUTDOWN } from './libvirtConstants.js';
+import { copyNvram } from './vmManagerNvram.js';
 
 const execFile = promisify(execFileCb);
 
@@ -258,12 +259,8 @@ export async function createBackup(vmName, destinationPath, { onProgress } = {})
   const vmBase = getVMBasePath(vmName);
   if (nvramPath) {
     emit('nvram', { percent: Math.round((done / totalItems) * 100), currentFile: 'Copying NVRAM' });
-    try {
-      await access(nvramPath, constants.R_OK);
-      await copyWithProgress(nvramPath, join(backupDir, 'VARS.fd'), () => {});
-    } catch {
-      /* NVRAM file missing — VM may not use UEFI vars on disk */
-    }
+    // allowMissing skips a legitimately-absent NVRAM (XML declared, disk empty); other failures surface.
+    await copyNvram(nvramPath, join(backupDir, 'VARS.fd'), { allowMissing: true });
     done += 1;
     emit('nvram', { percent: Math.round((done / totalItems) * 100), currentFile: 'NVRAM' });
   }
@@ -489,12 +486,8 @@ export async function restoreBackup(backupPath, newVmName) {
   }
 
   const nvramBackup = join(backupPath, 'VARS.fd');
-  try {
-    await access(nvramBackup, constants.R_OK);
-    await copyWithProgress(nvramBackup, join(newBase, 'VARS.fd'), () => {});
-  } catch {
-    /* optional NVRAM in backup */
-  }
+  // allowMissing skips BIOS-only and older silent-skip backups; permission/IO failures surface.
+  await copyNvram(nvramBackup, join(newBase, 'VARS.fd'), { allowMissing: true });
 
   try {
     await copyOrGunzip(backupPath, 'cloud-init.iso', join(newBase, 'cloud-init.iso'));

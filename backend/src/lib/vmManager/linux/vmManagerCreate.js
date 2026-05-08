@@ -18,6 +18,7 @@ import { listHostFirmware } from './vmManagerHost.js';
 import { getDefaultBridge } from '../../networking/index.js';
 import { listSnapshots, deleteSnapshot } from './vmManagerSnapshots.js';
 import { refreshVMListCache } from './vmManagerList.js';
+import { copyNvram } from './vmManagerNvram.js';
 
 const execFile = promisify(execFileCb);
 
@@ -471,12 +472,7 @@ export async function cloneVM(name, newName) {
         : (os.nvram && typeof os.nvram === 'object' && typeof os.nvram['#text'] === 'string' ? os.nvram['#text'] : null);
       if (nvramSrc) {
         const newNvramPath = join(newVmDir, 'VARS.fd');
-        try {
-          await copyFile(nvramSrc, newNvramPath);
-        } catch (err) {
-          if (!err || err.code !== 'ENOENT') throw err;
-          /* source NVRAM missing — let libvirt template-fill on define */
-        }
+        await copyNvram(nvramSrc, newNvramPath, { allowMissing: true });
         if (typeof os.nvram === 'string') {
           os.nvram = newNvramPath;
         } else if (os.nvram && typeof os.nvram === 'object') {

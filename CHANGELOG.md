@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-05-08
+
+### Bug Fixes
+- **UEFI NVRAM file ops no longer EACCES; backup/restore stop silently dropping NVRAM state.** libvirt creates `<vmDir>/VARS.fd` as `libvirt-qemu:kvm` mode `600` — group membership in `kvm` doesn't grant read. Clone of a UEFI VM was failing with `EACCES`; backup and restore wrapped their copies in a try/catch that swallowed every error including `EACCES`, so backups silently shipped without NVRAM and restore template-filled boot order / Secure Boot keys. New `wisp-nvram` privileged helper (`copy <src> <dst>`) does `cp -p` then chowns to the deploy user; vmManager clone, backup, restore go through it. Helper validates basename `VARS.fd` and confines paths to `/var/lib/wisp/` or `/mnt/wisp/`. Restore distinguishes a legitimately absent NVRAM (BIOS-only VM, silent) from any other failure (loud).
+
 ## 2026-05-05 (v1.2.1)
 
 ### Bug Fixes

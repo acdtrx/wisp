@@ -17,7 +17,7 @@ A backup directory contains:
 | `domain.xml` | The original libvirt domain XML at time of backup |
 | `disk0.qcow2.gz` | Gzipped primary disk image |
 | `disk1.qcow2.gz` | Gzipped secondary disk image (if present) |
-| `VARS.fd` | UEFI NVRAM file (if UEFI firmware) |
+| `VARS.fd` | UEFI NVRAM file (if UEFI firmware). Copied via the **`wisp-nvram`** privileged helper because libvirt creates the source as `libvirt-qemu:kvm` mode `600`. |
 | `cloud-init.iso.gz` | Gzipped cloud-init seed ISO (if cloud-init was enabled) |
 | `cloud-init.json` | Cloud-init configuration (if cloud-init was enabled) |
 
