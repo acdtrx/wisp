@@ -591,11 +591,19 @@ Immediate force stop (destroy).
 
 ### POST /api/vms/:name/clone
 
-Clone a VM (must be stopped).
+Start a clone job (VM must be stopped). Returns a job ID; monitor progress via SSE.
 
 - **Body:** `{ newName: string (1-128 chars; alphanumeric, dot, hyphen, underscore; no .. or path separators) }`. Schema is **`additionalProperties: false`**.
-- **200:** `{ ok: true }`
+- **201:** `{ jobId: string, title: string }` — `title` is `Clone <newName>`.
 - **422:** `INVALID_VM_NAME` if `newName` fails `validateVMName`.
+
+### GET /api/vms/clone-progress/:jobId
+
+SSE stream for clone progress.
+
+- **Progress events:** `{ step, percent?, currentFile? }` — `step` values include `disk` (per file copied), `nvram` (UEFI VMs), `define` (DomainDefineXML), `cloudinit` (cloud-init.json carry-over), `done`.
+- **Completion (from job store):** `{ step: "done", name: string }` — `name` is the new VM name.
+- **Failure (terminal):** `{ step: "error", error: string, detail: string }`
 
 ---
 

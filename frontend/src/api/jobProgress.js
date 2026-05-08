@@ -3,6 +3,7 @@ import { createJobSSE } from './sse.js';
 /** Discriminator for progress URL (see registerBackgroundJob). */
 export const JOB_KIND = {
   VM_CREATE: 'vm-create',
+  VM_CLONE: 'vm-clone',
   CONTAINER_CREATE: 'container-create',
   CONTAINER_IMAGE_UPDATE_CHECK: 'container-image-update-check',
   BACKUP: 'backup',
@@ -12,6 +13,7 @@ export const JOB_KIND = {
 
 const PATHS = {
   [JOB_KIND.VM_CREATE]: (jobId) => `/api/vms/create-progress/${encodeURIComponent(jobId)}`,
+  [JOB_KIND.VM_CLONE]: (jobId) => `/api/vms/clone-progress/${encodeURIComponent(jobId)}`,
   [JOB_KIND.CONTAINER_CREATE]: (jobId) => `/api/containers/create-progress/${encodeURIComponent(jobId)}`,
   [JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK]: (jobId) => `/api/containers/images/check-updates/${encodeURIComponent(jobId)}`,
   [JOB_KIND.BACKUP]: (jobId) => `/api/vms/backup-progress/${encodeURIComponent(jobId)}`,

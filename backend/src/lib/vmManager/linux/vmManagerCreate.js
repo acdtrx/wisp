@@ -401,7 +401,15 @@ export async function createVM(spec, { onStep } = {}) {
   return { name };
 }
 
-export async function cloneVM(name, newName) {
+/**
+ * Clone a stopped VM under a new name. Copies disk + (UEFI) NVRAM + any CDROM
+ * whose <source file> lives in the source VM dir (cloud-init.iso). Optional
+ * onProgress callback is invoked with `{ step, percent, currentFile }` events
+ * for: 'disk' per file copied, 'nvram' (when UEFI), 'define' for the
+ * DomainDefineXML call. Caller is expected to add a 'done' event after
+ * follow-up work (e.g. cloud-init.json copy in the route).
+ */
+export async function cloneVM(name, newName, { onProgress } = {}) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
   validateVMName(newName);
 
@@ -432,21 +440,26 @@ export async function cloneVM(name, newName) {
   const newVmDir = getVMBasePath(newName);
   await mkdir(newVmDir, { recursive: true });
 
+  // Pre-scan inputs so progress percent is accurate from the first event.
+  // disksToCopy + (UEFI ? 1 NVRAM : 0) + 1 define.
+  const disksToCopy = (config.disks || []).filter(
+    (d) => d.source && d.source.startsWith(`${srcVmDir}/`),
+  );
+  const isUefi = config.firmware && config.firmware.startsWith('uefi');
+  const totalItems = disksToCopy.length + (isUefi ? 1 : 0) + 1;
+  let done = 0;
+  const emit = (step, data = {}) => {
+    if (typeof onProgress === 'function') onProgress({ step, ...data });
+  };
+  const pct = () => Math.round((done / totalItems) * 100);
+
   const diskMapping = [];
   let dirCleanupNeeded = true;
   try {
-    for (const disk of config.disks) {
-      if (!disk.source) continue;
-      // Only files inside the source VM dir are clone-private. External
-      // refs (image library) stay unchanged in the cloned XML.
-      if (!disk.source.startsWith(`${srcVmDir}/`)) continue;
-
-      // Use the source's basename (e.g. disk0.qcow2, cloud-init.iso) inside
-      // newVmDir so the cloned VM has the same on-disk layout as a freshly
-      // created VM.
+    for (const disk of disksToCopy) {
       const baseName = disk.source.slice(disk.source.lastIndexOf('/') + 1);
       const newDiskPath = join(newVmDir, baseName);
-
+      emit('disk', { percent: pct(), currentFile: `Copying ${baseName}` });
       try {
         await execFile('cp', ['--reflink=auto', disk.source, newDiskPath]);
       } catch {
@@ -454,6 +467,8 @@ export async function cloneVM(name, newName) {
         await copyFile(disk.source, newDiskPath);
       }
       diskMapping.push({ oldPath: disk.source, newPath: newDiskPath });
+      done += 1;
+      emit('disk', { percent: pct(), currentFile: baseName });
     }
 
     const parsed = parseDomainRaw(xml);
@@ -482,7 +497,10 @@ export async function cloneVM(name, newName) {
         : (os.nvram && typeof os.nvram === 'object' && typeof os.nvram['#text'] === 'string' ? os.nvram['#text'] : null);
       if (nvramSrc) {
         const newNvramPath = join(newVmDir, 'VARS.fd');
+        emit('nvram', { percent: pct(), currentFile: 'Copying NVRAM' });
         await copyNvram(nvramSrc, newNvramPath, { allowMissing: true });
+        done += 1;
+        emit('nvram', { percent: pct(), currentFile: 'NVRAM' });
         if (typeof os.nvram === 'string') {
           os.nvram = newNvramPath;
         } else if (os.nvram && typeof os.nvram === 'object') {
@@ -495,7 +513,9 @@ export async function cloneVM(name, newName) {
     }
     const newXml = buildXml(parsed);
 
+    emit('define', { percent: pct(), currentFile: 'Defining VM' });
     await connectionState.connectIface.DomainDefineXML(newXml);
+    done += 1;
     dirCleanupNeeded = false;
   } catch (err) {
     if (dirCleanupNeeded) {
@@ -514,6 +534,7 @@ export async function cloneVM(name, newName) {
     throw vmError('CLONE_FAILED', `Failed to define cloned VM "${newName}"`, err.message);
   }
   refreshVMListCache();
+  return { name: newName };
 }
 
 // libvirt VIR_DOMAIN_UNDEFINE_* flags — declared inline since this is the

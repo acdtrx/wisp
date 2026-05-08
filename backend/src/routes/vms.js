@@ -36,9 +36,11 @@ import {
 } from '../lib/vmManager/index.js';
 import {
   createJobStore,
+  cloneJobStore,
   backupJobStore,
   BACKGROUND_JOB_KIND,
   titleForVmCreate,
+  titleForVmClone,
   titleForBackup,
 } from '../lib/jobs/index.js';
 import { publishVm, unpublishVm } from '../lib/vmMdnsReconciler.js';
@@ -512,7 +514,7 @@ export default async function vmsRoutes(fastify) {
     });
   }
 
-  // POST /vms/:name/clone
+  // POST /vms/:name/clone — start clone job; returns jobId; progress via GET /vms/clone-progress/:jobId
   fastify.post('/vms/:name/clone', {
     schema: {
       params: {
@@ -528,35 +530,88 @@ export default async function vmsRoutes(fastify) {
         },
         additionalProperties: false,
       },
+      response: {
+        201: {
+          type: 'object',
+          properties: {
+            jobId: { type: 'string' },
+            title: { type: 'string' },
+          },
+        },
+      },
     },
     handler: async (request, reply) => {
       try {
         const srcName = request.params.name;
         const newName = request.body.newName;
         validateVMName(newName);
-        await cloneVM(srcName, newName);
 
-        // cloud-init.json is Wisp-glue metadata (not in domain XML), so
-        // vmManager.cloneVM doesn't know about it — copy it sibling-to-sibling
-        // here. cloud-init.iso is already cloned by vmManager via the disk
-        // path rewrite. Carrying both keeps the clone's cloud-init state
-        // identical to the source; the user can edit cloud-init for the
-        // clone afterwards if they want a fresh first-boot run (editing
-        // changes the user-data hash → new instance-id → cloud-init re-runs).
-        const ciJsonSrc = join(getVMBasePath(srcName), 'cloud-init.json');
-        const ciJsonDst = join(getVMBasePath(newName), 'cloud-init.json');
-        try {
-          await access(ciJsonSrc);
-          await copyFile(ciJsonSrc, ciJsonDst);
-        } catch (err) {
-          if (err.code !== 'ENOENT') throw err;
-          /* source had no cloud-init.json — nothing to carry over */
-        }
+        const jobId = randomBytes(12).toString('hex');
+        const title = titleForVmClone(newName);
+        cloneJobStore.createJob(jobId, {
+          kind: BACKGROUND_JOB_KIND.VM_CLONE,
+          title,
+          log: request.log,
+        });
+        request.log.info(
+          { jobId, kind: BACKGROUND_JOB_KIND.VM_CLONE, title },
+          'Background job started',
+        );
+        (async () => {
+          await cloneVM(srcName, newName, {
+            onProgress(ev) {
+              cloneJobStore.pushEvent(jobId, { step: ev.step, percent: ev.percent, currentFile: ev.currentFile });
+            },
+          });
 
-        return { ok: true };
+          // cloud-init.json is Wisp-glue metadata (not in domain XML), so
+          // vmManager.cloneVM doesn't know about it — copy it sibling-to-sibling
+          // here. cloud-init.iso is already cloned by vmManager via the disk
+          // path rewrite. Carrying both keeps the clone's cloud-init state
+          // identical to the source; the user can edit cloud-init for the
+          // clone afterwards if they want a fresh first-boot run (editing
+          // changes the user-data hash → new instance-id → cloud-init re-runs).
+          const ciJsonSrc = join(getVMBasePath(srcName), 'cloud-init.json');
+          const ciJsonDst = join(getVMBasePath(newName), 'cloud-init.json');
+          try {
+            await access(ciJsonSrc);
+            cloneJobStore.pushEvent(jobId, { step: 'cloudinit', percent: 99, currentFile: 'Copying cloud-init config' });
+            await copyFile(ciJsonSrc, ciJsonDst);
+          } catch (err) {
+            if (err.code !== 'ENOENT') throw err;
+            /* source had no cloud-init.json — nothing to carry over */
+          }
+
+          cloneJobStore.completeJob(jobId, { name: newName });
+        })().catch((err) => {
+          cloneJobStore.failJob(jobId, err);
+          request.log.error({ err, jobId }, 'Background clone job failed');
+        });
+        return reply.code(201).send({ jobId, title });
       } catch (err) {
         handleRouteError(err, reply, request);
       }
+    },
+  });
+
+  // GET /vms/clone-progress/:jobId — SSE stream for clone progress
+  fastify.get('/vms/clone-progress/:jobId', {
+    schema: { hide: true },
+    handler: async (request, reply) => {
+      const { jobId } = request.params;
+      const job = cloneJobStore.getJob(jobId);
+      if (!job) {
+        return reply.code(404).send({ error: 'Job not found', detail: jobId });
+      }
+      setupSSE(reply);
+      const ok = cloneJobStore.registerStream(jobId, reply.raw);
+      if (!ok) {
+        reply.raw.end();
+        return;
+      }
+      request.raw.on('close', () => {
+        cloneJobStore.unregisterStream(jobId, reply.raw);
+      });
     },
   });
 

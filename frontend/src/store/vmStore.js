@@ -213,9 +213,6 @@ export const useVmStore = create((set, get) => {
     resumeVM: async (name) => {
       await get().withAction('resume', () => vmApi.resumeVM(name));
     },
-    cloneVM: async (name, newName) => {
-      await get().withAction('clone', () => vmApi.cloneVM(name, newName));
-    },
     deleteVM: async (name, deleteDisks) => {
       await get().withAction('delete', () => vmApi.deleteVM(name, deleteDisks));
     },
