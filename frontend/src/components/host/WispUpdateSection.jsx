@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import { Loader2, Rocket, AlertCircle, ExternalLink } from 'lucide-react';
 import UpdateCard from './UpdateCard.jsx';
 import UpdateDetailsModal from './UpdateDetailsModal.jsx';
@@ -27,6 +28,25 @@ function formatRelativeTime(isoString) {
 const POLL_INTERVAL_MS = 5_000;
 const SLOW_AFTER_FAILED_POLLS = 12; // 12 × 5s = 1 min of "backend not responding"
 const MAX_TOTAL_POLLS = 60;          // 60 × 5s = 5 min hard cap
+
+// Force every rendered <a> in release notes to open in a new tab. DOMPurify
+// strips javascript: URLs and dangerous tags before this hook runs, so we only
+// have to worry about presentation here. Module-load runs once, and DOMPurify
+// is used nowhere else in the app — no risk of leaking the rewrite.
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName === 'A') {
+    node.setAttribute('target', '_blank');
+    node.setAttribute('rel', 'noopener noreferrer');
+  }
+});
+
+function NotesHtml({ markdown }) {
+  const html = useMemo(
+    () => DOMPurify.sanitize(marked.parse(markdown, { gfm: true, breaks: false })),
+    [markdown],
+  );
+  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+}
 
 export default function WispUpdateSection() {
   /* SSE-driven badge data (current/latest/available/lastChecked); hydrate on
@@ -256,15 +276,7 @@ export default function WispUpdateSection() {
       >
         <div className="prose prose-sm prose-slate max-w-none break-words text-text-secondary prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-text-primary prose-p:my-1.5 prose-li:my-0.5 prose-code:rounded prose-code:bg-surface prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none prose-a:text-accent">
           {notes ? (
-            <ReactMarkdown
-              components={{
-                a: ({ node, ...props }) => (
-                  <a {...props} target="_blank" rel="noopener noreferrer" />
-                ),
-              }}
-            >
-              {notes}
-            </ReactMarkdown>
+            <NotesHtml markdown={notes} />
           ) : (
             <p className="text-text-muted">No release notes.</p>
           )}

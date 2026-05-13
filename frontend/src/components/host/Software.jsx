@@ -2,9 +2,9 @@ import { lazy, Suspense } from 'react';
 import OsUpdateSection from './OsUpdateSection.jsx';
 import ImageLibrary from '../library/ImageLibrary.jsx';
 
-/* react-markdown (used to render release notes) is the heaviest tree on this
- * tab and the notes only render once the user opens the details modal. Defer
- * the whole section so the markdown stack stays out of the main bundle. */
+/* marked + dompurify (used to render release notes) only matter when the user
+ * opens the details modal. Defer the whole section so they stay out of the
+ * main bundle. */
 const WispUpdateSection = lazy(() => import('./WispUpdateSection.jsx'));
 
 export default function Software({ onRequestRestart }) {

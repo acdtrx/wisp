@@ -43,7 +43,7 @@ This is the single source of truth for all technology choices in the project. No
 | State management | Zustand | ^5.0 | Minimal global state with no boilerplate. |
 | Routing | react-router-dom | ^6.28 | Client-side routing (login page vs. app shell). |
 | Icons | lucide-react | ^0.468 | Tree-shakeable icon library. No CDN. |
-| Markdown | react-markdown | ^10 | Renders GitHub-flavored release notes in the Wisp Update section. |
+| Markdown | marked + dompurify | ^18 / ^3 | Parses GitHub-flavored release notes (marked) and sanitizes the HTML (dompurify) before injection in the Wisp Update section. |
 | HTTP client | Native `fetch` | — | No Axios or similar; plain browser fetch API. |
 | VNC console | noVNC | vendored | ESM source files served from `public/vendor/novnc/`. Not installed via npm. See [noVNC.md](spec/noVNC.md). |
 | Container console | @xterm/xterm | ^6.0 | In-browser terminal emulator for container shell sessions. |
