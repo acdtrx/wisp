@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-13 (v1.2.3)
+
+### Bug Fixes
+- **Idle SSE streams now survive long quiet periods.** Event-driven streams (vms, containers, host disks, host USB) could sit silent for hours between backend events; if the TCP connection died in that window (NAT timeout, server restart, network blip) the browser's `reader.read()` blocked forever and the next libvirt `DomainEvent` had nowhere to land — the workloads list could stay green after a guest `sudo poweroff`. Backend `setupSSE` now writes a `: keepalive` comment every 25s, and `createSSE` / `createJobSSE` arm a 60s read-watchdog per chunk that aborts and reconnects on timeout. The reader's catch block treats any abort-while-open as a dead connection so watchdog-triggered aborts actually retry instead of silently exiting.
+
+### Refactor
+- **Swapped `react-markdown` for `marked` + `dompurify`.** react-markdown's last release was March 2025 (14 months stale); marked and dompurify are both actively maintained. Removes 78 packages from `node_modules` and lightens the lazy `WispUpdateSection` chunk; GFM (tables, strikethrough, task lists) now renders in GitHub release notes. A module-level DOMPurify hook adds `target="_blank" rel="noopener noreferrer"` to every rendered `<a>` — replaces the per-component override and is safe because DOMPurify is used nowhere else in the app.
+- **Backend `npm audit fix` — transitive bumps only.** `package.json` untouched; lockfile-only updates resolve 4 advisories (1 moderate, 3 high): `protobufjs` 7.5.5→7.5.8 and 8.0.1→8.2.1, `fast-xml-builder` 1.1.5→1.2.0, `fast-uri` 3.1.0→3.1.2.
+
 ## 2026-05-08 (v1.2.2)
 
 ### New Features
