@@ -5,6 +5,11 @@ const SSE_INITIAL_RETRY_MS = 1000;
 const SSE_MAX_RETRY_MS = 30000;
 /** Max time to wait for response headers/body on a single fetch attempt */
 const SSE_FETCH_TIMEOUT_MS = 90_000;
+/** Max gap between any bytes (real event or `: keepalive` comment) before we treat
+ *  the stream as dead and reconnect. Backend writes a keepalive every 25s in
+ *  setupSSE; this catches silently-dropped TCP (NAT expiry, server crash) where
+ *  reader.read() would otherwise block forever. */
+const SSE_READ_IDLE_MS = 60_000;
 
 function sseBackoffMs(previousMs) {
   const cap = Math.min(previousMs * 2, SSE_MAX_RETRY_MS);
@@ -47,6 +52,14 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
     const myController = new AbortController();
     controller = myController;
     const tid = setTimeout(() => myController.abort(), SSE_FETCH_TIMEOUT_MS);
+    let watchdog = null;
+    const armWatchdog = () => {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(() => myController.abort(), SSE_READ_IDLE_MS);
+    };
+    const clearWatchdog = () => {
+      if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+    };
 
     try {
       const res = await fetch(url, { signal: myController.signal, credentials: 'include' });
@@ -72,10 +85,12 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      armWatchdog();
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        armWatchdog();
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -107,7 +122,10 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
       }
     } catch (err) {
       clearTimeout(tid);
-      if (closed || err.name === 'AbortError') return;
+      // Treat any abort while open as a dead connection — could be the read
+      // watchdog, the initial fetch timeout, or a network drop. close() flips
+      // `closed` before aborting, so user-initiated teardowns short-circuit here.
+      if (closed) return;
       retryTimer = setTimeout(() => {
         retryTimer = null;
         retryDelay = sseBackoffMs(retryDelay);
@@ -115,6 +133,7 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
       }, withJitterMs(retryDelay));
     } finally {
       clearTimeout(tid);
+      clearWatchdog();
     }
   }
 
@@ -149,6 +168,14 @@ export function createSSE(url, onMessage, onError) {
     const myController = new AbortController();
     controller = myController;
     const tid = setTimeout(() => myController.abort(), SSE_FETCH_TIMEOUT_MS);
+    let watchdog = null;
+    const armWatchdog = () => {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(() => myController.abort(), SSE_READ_IDLE_MS);
+    };
+    const clearWatchdog = () => {
+      if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+    };
 
     try {
       const res = await fetch(url, { signal: myController.signal, credentials: 'include' });
@@ -168,10 +195,12 @@ export function createSSE(url, onMessage, onError) {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      armWatchdog();
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        armWatchdog();
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -198,7 +227,10 @@ export function createSSE(url, onMessage, onError) {
       }
     } catch (err) {
       clearTimeout(tid);
-      if (closed || err.name === 'AbortError') return;
+      // Treat any abort while open as a dead connection — could be the read
+      // watchdog, the initial fetch timeout, or a network drop. close() flips
+      // `closed` before aborting, so user-initiated teardowns short-circuit here.
+      if (closed) return;
       if (onError) onError();
       retryTimer = setTimeout(() => {
         retryTimer = null;
@@ -207,6 +239,7 @@ export function createSSE(url, onMessage, onError) {
       }, withJitterMs(retryDelay));
     } finally {
       clearTimeout(tid);
+      clearWatchdog();
     }
   }
 

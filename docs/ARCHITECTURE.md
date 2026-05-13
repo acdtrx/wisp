@@ -94,6 +94,8 @@ Three SSE patterns:
 | Job progress | `/api/vms/create-progress/:jobId`, `/api/vms/backup-progress/:jobId`, `/api/library/download-progress/:jobId`, `/api/containers/create-progress/:jobId` | Emits progress events until completion/failure, then closes |
 | One-shot | URL check responses | Single response, no streaming |
 
+All SSE responses go through `setupSSE` (`backend/src/lib/sse.js`), which writes a `: keepalive` comment line every 25 s so idle event-driven streams (e.g. `/api/vms/stream` between libvirt events) don't get torn down by NAT/proxy idle timers. The client (`frontend/src/api/sse.js`) arms a 60 s read-watchdog after the first byte and re-arms it on every chunk; missing bytes for that long aborts and reconnects, catching silently-dropped TCP that `reader.read()` would otherwise wait on forever.
+
 ### WebSocket (VNC Console)
 
 ```mermaid
