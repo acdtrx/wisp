@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-05-28
+
+### Bug Fixes
+- **Sidebar container icons no longer freeze on stale state after a transient containerd hiccup.** The list cache's containerd events subscription had no auto-restart on stream-level errors (`14 UNAVAILABLE: Connection dropped`); once it died, every subsequent `/tasks/*` and `/containers/*` event was silently dropped and the cache stayed deaf until backend restart, leaving icons stuck on whatever snapshot it last took (gray after a restart whose `/tasks/start` was missed; amber if the cache caught the brief `CREATED` window before `Tasks.Start`). Subscription now auto-reconnects with exponential backoff (1s → 30s cap) on stream `error`/`end`, refreshes the cache after each successful re-subscribe to catch up on missed events, and resets the backoff on full containerd reconnect.
+
 ## 2026-05-13 (v1.2.3)
 
 ### Bug Fixes

@@ -157,24 +157,60 @@ function invalidateContainerListCache() {
   fireListChange();
 }
 
+// Stream-level errors (e.g. `UNAVAILABLE: Connection dropped`) don't trigger
+// the gRPC channel-level disconnect handler, so without an explicit reconnect
+// the subscription stays dead until backend restart and the list cache goes
+// deaf to every subsequent lifecycle event.
+const EVENTS_RECONNECT_INITIAL_MS = 1000;
+const EVENTS_RECONNECT_MAX_MS = 30000;
+let eventsReconnectDelayMs = EVENTS_RECONNECT_INITIAL_MS;
+let eventsReconnectTimer = null;
+
+function scheduleEventsReconnect() {
+  if (eventsReconnectTimer || !containerState.connected) return;
+  const delay = eventsReconnectDelayMs;
+  eventsReconnectDelayMs = Math.min(eventsReconnectDelayMs * 2, EVENTS_RECONNECT_MAX_MS);
+  eventsReconnectTimer = setTimeout(() => {
+    eventsReconnectTimer = null;
+    if (!containerState.connected) return;
+    startEventsStream();
+    // Catch up on anything that happened during the gap.
+    refreshContainerListCache();
+  }, delay);
+}
+
+function clearEventsReconnect() {
+  if (eventsReconnectTimer) {
+    clearTimeout(eventsReconnectTimer);
+    eventsReconnectTimer = null;
+  }
+  eventsReconnectDelayMs = EVENTS_RECONNECT_INITIAL_MS;
+}
+
 function startEventsStream() {
   if (eventsStream || !containerState.connected) return;
   try {
     eventsStream = callStream(getClient('events'), 'subscribe', { filters: [] });
     eventsStream.on('data', (envelope) => {
+      // First event after a (re)subscribe proves the stream is healthy.
+      eventsReconnectDelayMs = EVENTS_RECONNECT_INITIAL_MS;
       if (envelope?.topic && LIST_AFFECTING_TOPICS.has(envelope.topic)) {
         refreshContainerListCache();
       }
     });
     eventsStream.on('error', (err) => {
-      /* Stream broke — cleanup; the disconnect handler (or next reconnect) will rebuild. */
-      containerState.logger?.warn?.({ err: err?.message || String(err) }, 'containerd events stream error');
+      containerState.logger?.warn?.({ err: err?.message || String(err) }, 'containerd events stream error — will reconnect');
       stopEventsStream();
+      scheduleEventsReconnect();
     });
-    eventsStream.on('end', () => { eventsStream = null; });
+    eventsStream.on('end', () => {
+      eventsStream = null;
+      scheduleEventsReconnect();
+    });
   } catch (err) {
-    containerState.logger?.warn?.({ err: err?.message || String(err) }, 'containerd events subscribe failed');
+    containerState.logger?.warn?.({ err: err?.message || String(err) }, 'containerd events subscribe failed — will reconnect');
     eventsStream = null;
+    scheduleEventsReconnect();
   }
 }
 
@@ -185,10 +221,12 @@ function stopEventsStream() {
 }
 
 subscribeContainerdConnect(() => {
+  clearEventsReconnect();
   startEventsStream();
   refreshContainerListCache();
 });
 subscribeContainerdDisconnect(() => {
+  clearEventsReconnect();
   stopEventsStream();
   invalidateContainerListCache();
 });
