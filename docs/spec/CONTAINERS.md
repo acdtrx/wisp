@@ -316,6 +316,7 @@ Containers are attached as **veth ports on a host Linux bridge** (`br0`, or a VL
 - Network namespace per container at `/var/run/netns/<name>`
 - CNI plugins are invoked via the **`wisp-cni`** privileged helper and **`sudo -n`** when the backend runs as the deploy user (`User=` in systemd). Stdin netconf merges **`.conflist` top-level `cniVersion` and `name` into the bridge `plugins[0]` object** (the fragment alone is not valid for a direct plugin exec). **`wisp-netns`** creates `/var/run/netns/<name>` with `ip netns add`. Install both with **`install-helpers.sh`** / **`wispctl.sh helpers`** (same pattern as `wisp-mount`). **`cni-dhcp.service`** must be running when using `ipam.type: dhcp`.
 - Before **ADD**, if the netns file already exists, **`setupNetwork`** runs **CNI DEL** and **`ip netns delete`** so a leftover **`eth0`** from a failed stop does not cause `ADD` to error on "device exists".
+- **Network setup failure aborts the start.** If `setupNetwork` throws (missing bridge, CNI plugin failure, DHCP lease timeout, stale netns that won't release, etc.), `startExistingContainer` tears down partial state (CNI DEL + netns + snapshot) and re-throws as `CONTAINER_NETWORK_SETUP_FAILED` (HTTP 503) — the task is never created, so the user sees the action fail in the UI instead of getting a "running" container with logs flowing but no reachable service.
 
 ## Local DNS (mDNS)
 

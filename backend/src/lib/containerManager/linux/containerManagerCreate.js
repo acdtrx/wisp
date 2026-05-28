@@ -563,25 +563,35 @@ export async function startExistingContainer(name) {
 
   await assertBindSourcesReady(name, config, filesDir, resolveMount);
 
-  // Set up networking
+  // Set up networking. A failure here used to be logged and swallowed, which
+  // let the task come up with no network — logs would flow but the service
+  // was unreachable, looking to the user like a successful start. Surface the
+  // error so the action fails visibly; tear down partial state so the next
+  // start isn't blocked by a half-attached netns or stale snapshot.
+  let lease;
   try {
-    const lease = await setupNetwork(name, config.network);
-    if (lease) {
-      config = await mergeNetworkLeaseIntoConfig(name, config, lease);
-      // A-record registration is owned by the reconciler — the upcoming
-      // /tasks/start event triggers a list refresh + network-change event,
-      // and the reconciler picks up running + localDns containers there.
-      // Services (SRV/TXT) are registered here because they're tied to the
-      // container's services array, not the mDNS lifecycle.
-      if (config.localDns) {
-        await registerAllContainerServices(name, config);
-      }
-    }
+    lease = await setupNetwork(name, config.network);
   } catch (err) {
-    containerState.logger?.warn(
-      { err: err.message, raw: err.raw, container: name },
-      'Network setup failed during container start',
+    try { await teardownNetwork(name, config.network); } catch { /* best-effort */ }
+    try {
+      await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name });
+    } catch { /* best-effort */ }
+    throw containerError(
+      'CONTAINER_NETWORK_SETUP_FAILED',
+      `Network setup failed for "${name}": ${err.message}`,
+      err.raw || err.message,
     );
+  }
+  if (lease) {
+    config = await mergeNetworkLeaseIntoConfig(name, config, lease);
+    // A-record registration is owned by the reconciler — the upcoming
+    // /tasks/start event triggers a list refresh + network-change event,
+    // and the reconciler picks up running + localDns containers there.
+    // Services (SRV/TXT) are registered here because they're tied to the
+    // container's services array, not the mDNS lifecycle.
+    if (config.localDns) {
+      await registerAllContainerServices(name, config);
+    }
   }
 
   // Allocate a fresh log run (per-start file under runs/<runId>.log + sidecar).

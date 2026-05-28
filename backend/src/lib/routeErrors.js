@@ -121,6 +121,7 @@ function errorCodeToStatus(code) {
     case 'NETWORK_BRIDGE_APPLY_FAILED':
     case 'CONTAINER_MOUNT_SOURCE_NOT_MOUNTED':
     case 'CONTAINER_DEVICE_MISSING':
+    case 'CONTAINER_NETWORK_SETUP_FAILED':
       return 503;
     case 'CONTAINERD_ERROR':
     case 'GITHUB_API':
