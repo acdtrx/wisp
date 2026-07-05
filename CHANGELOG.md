@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-06
+
+### New Features
+- **Backend major dependency upgrades** — `@fastify/multipart` 10, `js-yaml` 5 (named `dump` import; v5 drops the default export), `undici` 8 (HTTP/2 by default), `pino-pretty` 13. Update check, SSRF-safe downloads, multipart uploads, and dev logging verified.
+
 ## 2026-07-05
 
 ### Bug Fixes

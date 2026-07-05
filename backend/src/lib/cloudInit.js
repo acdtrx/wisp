@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes, createHash } from 'node:crypto';
 
-import yaml from 'js-yaml';
+import { dump as yamlDump } from 'js-yaml';
 
 import { getVMBasePath } from './paths.js';
 import { createAppError } from './routeErrors.js';
@@ -148,7 +148,7 @@ export async function generateCloudInitISO(vmName, config, opts = {}) {
     if (runcmd.length) userDataObj.runcmd = runcmd;
 
     const userData =
-      '#cloud-config\n' + yaml.dump(userDataObj, { lineWidth: -1, noRefs: true });
+      '#cloud-config\n' + yamlDump(userDataObj, { lineWidth: -1, noRefs: true });
 
     // Content-derived instance-id. cloud-init keys nearly every module
     // (users, set_passwords, runcmd, packages, write_files, ...) off
@@ -162,7 +162,7 @@ export async function generateCloudInitISO(vmName, config, opts = {}) {
     // userDataObj.hostname above).
     const userDataHash = createHash('sha256').update(userData).digest('hex').slice(0, 12);
     const instanceId = `${vmName}-${userDataHash}`;
-    const metaData = yaml.dump(
+    const metaData = yamlDump(
       { 'instance-id': instanceId, 'local-hostname': hostname },
       { lineWidth: -1, noRefs: true },
     );

@@ -9,7 +9,7 @@ This is the single source of truth for all technology choices in the project. No
 | Runtime | Node.js | 24+ LTS | Server runtime. Optional `config/runtime.env` parsed in-process; `--watch` for dev mode. |
 | Framework | Fastify | ^5.8 | HTTP server with built-in JSON schema validation, low overhead, plugin system. |
 | CORS | @fastify/cors | ^11.2 | Cross-origin support for development mode only. |
-| File uploads | @fastify/multipart | ^9.4 | Streaming multipart uploads (50GB limit). |
+| File uploads | @fastify/multipart | ^10.0 | Streaming multipart uploads (50GB limit). |
 | Static files | @fastify/static | ^9.0 | Serves the prebuilt SPA (`frontend/dist/`) and `/vendor/` (noVNC). |
 | WebSocket | @fastify/websocket | ^11.2 | WebSocket support for VNC console proxy and container interactive shell. |
 | Hypervisor | dbus-next | ^0.10 | Pure-JS DBus client for communicating with libvirt via its DBus API (`org.libvirt`). Chosen over native bindings (node-libvirt) because it requires no native compilation, works across Node versions, and libvirt's DBus API is a stable first-class interface. |
@@ -17,9 +17,9 @@ This is the single source of truth for all technology choices in the project. No
 | gRPC client | @grpc/grpc-js | ^1.14.3 | gRPC client for communicating with containerd via its unix socket API. |
 | Proto loader | @grpc/proto-loader | ^0.8.0 | Dynamic protobuf definition loading for containerd proto files. |
 | Proto encoding | protobufjs | ^8.0.0 | Binary protobuf encoding for containerd Transfer API `Any` fields. Direct usage needed because `@grpc/proto-loader` only exposes descriptor objects, not encodable Type instances. |
-| Log pretty-print (dev only) | pino-pretty | ^11.3 | `devDependency`. Single-line, time-formatted log output when `NODE_ENV=development`. Production keeps Pino's default JSON output. |
-| HTTP client | undici | ^7.20 | Used directly for SSRF-hardened fetches: single-DNS-resolve + IP-pinned `Agent` + manual redirect re-validation. Node ≥18 ships undici as the global `fetch`; we depend on it explicitly to import `Agent` / `fetch`. |
-| YAML emitter | js-yaml | ^4.1 | `yaml.dump` for cloud-init `user-data` / `meta-data`. Replaces hand-rolled template-literal YAML which was vulnerable to scalar-break injection from user-controlled fields. |
+| Log pretty-print (dev only) | pino-pretty | ^13.1 | `devDependency`. Single-line, time-formatted log output when `NODE_ENV=development`. Production keeps Pino's default JSON output. |
+| HTTP client | undici | ^8.7 | Used directly for SSRF-hardened fetches: single-DNS-resolve + IP-pinned `Agent` + manual redirect re-validation. Node ships undici as the global `fetch`; we depend on it explicitly to import `Agent` / `fetch`. v8 negotiates HTTP/2 by default. |
+| YAML emitter | js-yaml | ^5.2 | `dump()` (named export; v5 has no default export) for cloud-init `user-data` / `meta-data`. Replaces hand-rolled template-literal YAML which was vulnerable to scalar-break injection from user-controlled fields. |
 
 ### Backend dependencies NOT used
 
