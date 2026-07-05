@@ -12,6 +12,9 @@ frontend/public/vendor/
 .logs/
 *.log
 reports/
+# Security-audit drafts kept private until triaged (may list unpatched findings).
+# Reversible: `git add -f docs/reviews/...` to track a redacted copy.
+docs/reviews/
 config/wisp-config.json
 config/runtime.env
 config/wisp-password
