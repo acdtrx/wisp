@@ -34,15 +34,15 @@ This is the single source of truth for all technology choices in the project. No
 
 | Component | Technology | Version | Purpose |
 |-----------|-----------|---------|---------|
-| UI library | React | ^18.3 | Component-based UI. |
-| Build tool | Vite | ^6.4.2 | Dev server with HMR, production bundler. |
-| Vite plugin | @vitejs/plugin-react | ^4.3 | JSX transform and React fast refresh. |
+| UI library | React | ^19.2 | Component-based UI. |
+| Build tool | Vite | ^8.1 | Dev server with HMR, production bundler (Rolldown-based; vendor chunk via `build.rolldownOptions.output.codeSplitting`). |
+| Vite plugin | @vitejs/plugin-react | ^6.0 | JSX transform and React fast refresh (Oxc-based, no Babel). |
 | Styling | Tailwind CSS | ^3.4 | Utility-first CSS framework. Custom theme with project-specific design tokens. |
 | Tailwind plugin | @tailwindcss/typography | ^0.5 | `prose` utility classes for rendering arbitrary markdown content (release notes). |
 | CSS processing | PostCSS + Autoprefixer | ^8.4 / ^10.4 | Required by Tailwind for CSS processing. |
 | State management | Zustand | ^5.0 | Minimal global state with no boilerplate. |
-| Routing | react-router-dom | ^6.28 | Client-side routing (login page vs. app shell). |
-| Icons | lucide-react | ^0.468 | Tree-shakeable icon library. No CDN. |
+| Routing | react-router-dom | ^7.18 | Client-side routing (login page vs. app shell). Declarative mode (`BrowserRouter`/`Routes`). |
+| Icons | lucide-react | ^1.23 | Tree-shakeable icon library. No CDN. v1 dropped brand icons (GitHub → `AtSign` in cloud-init section). |
 | Markdown | marked + dompurify | ^18 / ^3 | Parses GitHub-flavored release notes (marked) and sanitizes the HTML (dompurify) before injection in the Wisp Update section. |
 | HTTP client | Native `fetch` | — | No Axios or similar; plain browser fetch API. |
 | VNC console | noVNC | vendored | ESM source files served from `public/vendor/novnc/`. Not installed via npm. See [noVNC.md](spec/noVNC.md). |

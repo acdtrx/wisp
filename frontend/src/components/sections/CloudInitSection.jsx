@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Cloud, Github, RefreshCw, Trash2, Loader2, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { Cloud, AtSign, RefreshCw, Trash2, Loader2, Eye, EyeOff, KeyRound } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
@@ -402,7 +402,7 @@ function EditForm({
           </Field>
         </div>
         <div className="w-44 shrink-0">
-          <Field label={<span className="flex items-center gap-1"><Github size={11} /> GitHub Username</span>}>
+          <Field label={<span className="flex items-center gap-1"><AtSign size={11} /> GitHub Username</span>}>
             <input
               type="text"
               value={ghUsername}

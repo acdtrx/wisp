@@ -4,6 +4,7 @@
 
 ### New Features
 - **Backend major dependency upgrades** — `@fastify/multipart` 10, `js-yaml` 5 (named `dump` import; v5 drops the default export), `undici` 8 (HTTP/2 by default), `pino-pretty` 13. Update check, SSRF-safe downloads, multipart uploads, and dev logging verified.
+- **Frontend major dependency upgrades (part 1)** — React 19, react-router-dom 7, lucide-react 1 (removed GitHub brand icon replaced with `AtSign`), Vite 8 (Rolldown; vendor chunk migrated to `codeSplitting`), @vitejs/plugin-react 6. Tailwind 4 deferred to its own migration.
 
 ## 2026-07-05
 
