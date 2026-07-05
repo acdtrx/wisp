@@ -79,6 +79,20 @@ export function verifyJWT(token) {
 
   const secret = getSecret();
   const [headerB64, payloadB64, signatureB64] = parts;
+
+  // Pin the algorithm. We only ever issue HS256; reject any other alg (including
+  // "none") before verifying so a future asymmetric verification branch can't be
+  // tricked via alg-confusion. Defense-in-depth — the HMAC check below already
+  // fails closed for a forged signature.
+  let header;
+  try {
+    header = base64UrlDecode(headerB64);
+  } catch {
+    /* malformed JWT header JSON */
+    return null;
+  }
+  if (!header || header.alg !== 'HS256') return null;
+
   const segments = `${headerB64}.${payloadB64}`;
 
   const expected = createHmac('sha256', secret).update(segments).digest('base64url');

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-05
+
+### Bug Fixes
+- **Dependency advisories cleared** — `npm audit fix` on backend + frontend lockfiles (undici, vite, react-router); `package.json` untouched.
+- **`wisp-cni` privileged helper hardened** — validates its plugin-name argument and `realpath`-confines the resolved plugin under the CNI bin dir, closing a path-traversal-to-root-exec gap; matches the validation its sibling helpers already do.
+- **CNI plugins verified against a repo-pinned SHA-256** (per-arch) before extraction, instead of trusting an unverified download.
+- **Node.js installed from NodeSource's GPG-signed apt repo** instead of piping the setup script into root `bash`.
+- **`push.sh` validates the remote path** before it is spliced into the remote SSH command.
+- **JWT verification pins `alg` to HS256** — rejects `none`/asymmetric algorithms up front (defense-in-depth against alg-confusion).
+- **Cloud-init seed ISO is now mode 0600** — it bakes in the password hash and the per-VM directory is group-readable.
+- **Self-update downloads routed through the SSRF-safe fetch** — DNS-pinned, private/loopback IPs blocked, redirects re-validated.
+
 ## 2026-05-28 (v1.2.4)
 
 ### Bug Fixes

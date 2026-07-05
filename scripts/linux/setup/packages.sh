@@ -70,6 +70,24 @@ else
     apt-get install -y -qq curl
   fi
 
+  # Install Node.js 24 from NodeSource's GPG-signed apt repo. We deliberately do
+  # NOT `curl https://deb.nodesource.com/setup_24.x | bash -` (piping the network
+  # straight into root bash): instead we pin their signing key and let apt verify
+  # every package signature against it — the same trust model as containerd.sh.
+  install_nodejs_debian() {
+    apt-get install -y -qq ca-certificates curl gnupg
+    install -m 0755 -d /etc/apt/keyrings
+    if [[ ! -f /etc/apt/keyrings/nodesource.gpg ]]; then
+      curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+        | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+      chmod a+r /etc/apt/keyrings/nodesource.gpg
+    fi
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" \
+      > /etc/apt/sources.list.d/nodesource.list
+    apt-get update -qq
+    apt-get install -y -qq nodejs
+  }
+
   # Require Node.js >= 24
   if command -v node &>/dev/null; then
     NODE_MAJOR="$(node -v | sed 's/^v//' | cut -d. -f1)"
@@ -77,13 +95,11 @@ else
       echo "Node.js $(node -v) already installed, skipping."
     else
       echo "Node.js $(node -v) is too old (need >= 24). Installing Node.js 24..."
-      curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-      apt-get install -y -qq nodejs
+      install_nodejs_debian
     fi
   else
     echo "Installing Node.js 24..."
-    curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-    apt-get install -y -qq nodejs
+    install_nodejs_debian
   fi
 
   # qemu-system-x86 is the concrete package on modern Debian/Ubuntu.

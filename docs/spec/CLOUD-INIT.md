@@ -27,6 +27,8 @@ The seed ISO contains two files:
 
 Passwords are hashed using `openssl passwd -6` (SHA-512 crypt) before being written to the user-data YAML. The plaintext password is never stored on disk; the SHA-512 crypt hash is persisted in `cloud-init.json` as **`passwordHash`** so subsequent saves can re-emit the same hash without re-hashing.
 
+The generated `cloud-init.iso` is `chmod 0600` after creation. It bakes in user-data containing the crypt hash, and the per-VM directory is group-readable (`wisp:libvirt 0775`), so `0600` keeps the credential out of group/other reach. libvirt re-chowns the ISO to its qemu user when the VM starts, so the running guest can still read it.
+
 **Placeholder semantics.** The API never returns the plaintext or hash; `password` is exposed to clients as `"set"` (or empty). When the UI sends `password` back as `"***"` (or legacy `"set"`), the backend treats it as **"leave password unchanged"** and re-uses the stored `passwordHash`. Re-hashing the literal placeholder string would silently downgrade the VM password — explicitly avoided.
 
 **Dual emission (`users[].passwd` + `chpasswd`).** cloud-init's `cc_users_groups` module only applies `passwd:` on user *creation* — for an existing user it logs "already exists, skipping" and leaves the password untouched, even when a fresh instance-id forces the module to re-run. The user-data therefore also emits a top-level `chpasswd:` block (cc_set_passwords module) which runs `chpasswd -e` against existing accounts unconditionally. The two are complementary: `users[].passwd` covers the first-boot creation path, `chpasswd` covers every subsequent password edit. `expire: false` is set on `chpasswd` so the user isn't prompted to change the password on first login.

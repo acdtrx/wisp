@@ -16,6 +16,7 @@ import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Agent, fetch as undiciFetch } from 'undici';
 import { createAppError } from './routeErrors.js';
+import { ssrfSafeFetch } from './downloads/downloadFromUrl.js';
 
 const execFileAsync = promisify(execFileCb);
 
@@ -176,12 +177,14 @@ export async function checkForUpdate(signal) {
 }
 
 async function downloadToFile(url, destPath, onProgress, signal) {
-  const dispatcher = new Agent({ headersTimeout: HTTP_TIMEOUT_MS, bodyTimeout: 5 * 60_000 });
-  const res = await undiciFetch(url, {
+  // Route through the same SSRF-safe fetch used for library downloads: DNS-pinned,
+  // private/loopback IPs blocked, and every redirect Location re-validated. The
+  // asset URL comes from the GitHub API (not user input at the API layer), so this
+  // is defense-in-depth against a hostile WISP_UPDATE_REPO or a redirect to an
+  // internal endpoint.
+  const res = await ssrfSafeFetch(url, {
     method: 'GET',
     headers: { 'User-Agent': `wisp-updater/${cache.current}`, 'Accept': 'application/octet-stream' },
-    redirect: 'follow',
-    dispatcher,
     signal,
   });
   if (!res.ok) {

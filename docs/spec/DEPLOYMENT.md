@@ -41,7 +41,7 @@ One-time server preparation script. Run as root with `sudo`. Safe to re-run. It 
 
 2. **Runs `scripts/linux/setup/packages.sh`** — Detects distro and installs Node.js 24+ and system packages:
 
-   **Debian/Ubuntu** — Node.js via NodeSource; packages:
+   **Debian/Ubuntu** — Node.js from NodeSource's **GPG-signed apt repo** (key pinned under `/etc/apt/keyrings/nodesource.gpg`, so apt verifies package signatures — the setup script is not piped into root `bash`); packages:
    - `qemu-system-x86` — KVM hypervisor (the old `qemu-kvm` transitional package was dropped in Ubuntu 24.04)
    - `libvirt-daemon-system` — libvirt daemon
    - `libvirt-clients` — CLI tools (virsh)

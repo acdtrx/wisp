@@ -18,18 +18,40 @@ CNI_CONF_DIR="/etc/cni/net.d"
 CNI_VERSION="v1.9.1"
 ARCH="$(sys_arch)"
 
+# Pinned SHA-256 of the CNI plugin tarballs for CNI_VERSION, per arch. These are
+# committed to the repo so a tampered/MITM'd download is rejected. Do NOT verify
+# against the sibling .tgz.sha256 from the same release — anyone able to alter
+# the release can regenerate a matching sidecar. Update these when bumping
+# CNI_VERSION (values come from the upstream release .sha256 files).
+declare -A CNI_SHA256=(
+  [amd64]="b98f74a0f8522f0a83867178729c1aa70f2158f90c45a2ca8fa791db1c76b303"
+  [arm64]="56171987d3947707c3563db2f4001bccaf50fd63468611b9f3cbecb1375ee7ec"
+  [arm]="21416880bea0541d78afaf106373d6dbb471edb92c0114fa263494fe4aec8d3b"
+)
+
 # Install CNI plugins if not present
 if [[ ! -x "$CNI_BIN_DIR/bridge" ]]; then
   echo "  Downloading CNI plugins ${CNI_VERSION}..."
   mkdir -p "$CNI_BIN_DIR"
 
+  EXPECTED_SHA="${CNI_SHA256[$ARCH]:-}"
+  if [[ -z "$EXPECTED_SHA" ]]; then
+    echo "ERROR: No pinned CNI checksum for arch '$ARCH' (version $CNI_VERSION)." >&2
+    exit 1
+  fi
+
   TMP_DIR="$(mktemp -d)"
   TARBALL="cni-plugins-linux-${ARCH}-${CNI_VERSION}.tgz"
   curl -fsSL "https://github.com/containernetworking/plugins/releases/download/${CNI_VERSION}/${TARBALL}" \
     -o "$TMP_DIR/$TARBALL"
+  if ! echo "${EXPECTED_SHA}  $TMP_DIR/$TARBALL" | sha256sum -c - >/dev/null 2>&1; then
+    echo "ERROR: CNI plugin checksum mismatch for $TARBALL — refusing to install." >&2
+    rm -rf "$TMP_DIR"
+    exit 1
+  fi
   tar -xzf "$TMP_DIR/$TARBALL" -C "$CNI_BIN_DIR"
   rm -rf "$TMP_DIR"
-  echo "  CNI plugins installed to $CNI_BIN_DIR"
+  echo "  CNI plugins installed to $CNI_BIN_DIR (checksum verified)"
 else
   echo "  CNI plugins already installed."
 fi

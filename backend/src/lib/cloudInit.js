@@ -14,7 +14,7 @@
  */
 import { execFile as execFileCb, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { writeFile, readFile, unlink, mkdir, rmdir, access, constants } from 'node:fs/promises';
+import { writeFile, readFile, unlink, mkdir, rmdir, access, chmod, constants } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes, createHash } from 'node:crypto';
@@ -195,6 +195,12 @@ export async function generateCloudInitISO(vmName, config, opts = {}) {
         join(tmpDir, 'meta-data'),
       ]);
     }
+
+    // The ISO bakes in user-data containing the SHA-512-crypt password hash. The
+    // per-VM dir is group-readable (wisp:libvirt 0775), so keep the credential
+    // out of group/other reach. libvirt re-chowns the file to its qemu user on
+    // VM start, so 0600 doesn't block the running guest from reading it.
+    await chmod(isoPath, 0o600);
 
     return { isoPath, passwordHash: resolvedPasswordHash };
   } finally {

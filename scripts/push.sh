@@ -32,6 +32,13 @@ if [[ -z "$TARGET" ]] || [[ -z "$REMOTE_PATH" ]]; then
   exit 1
 fi
 
+# REMOTE_PATH is spliced into a remote shell command below. Constrain it to a
+# plain absolute path so it cannot inject shell metacharacters server-side.
+if [[ ! "$REMOTE_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+  echo "ERROR: Remote path must be an absolute path containing only [A-Za-z0-9._/-]: $REMOTE_PATH"
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 

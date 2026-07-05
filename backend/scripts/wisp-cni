@@ -12,10 +12,22 @@ CONF="${5:?config_file}"
 CNI_PATH="${6:-/opt/cni/bin}"
 
 [[ "$CID" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$ ]] || { echo "wisp-cni: invalid container id" >&2; exit 1; }
+# Plugin name is a bare CNI plugin type (e.g. bridge, dhcp). Reject any path
+# separator or traversal so "$CNI_PATH/$PLUGIN_NAME" can't escape the bin dir.
+[[ "$PLUGIN_NAME" =~ ^[a-z0-9-]+$ ]] || { echo "wisp-cni: invalid plugin name" >&2; exit 1; }
+[[ "$CNI_PATH" =~ ^/ ]] || { echo "wisp-cni: cni bin dir must be absolute path" >&2; exit 1; }
 [[ "$NETNS" =~ ^/ ]] || { echo "wisp-cni: netns must be absolute path" >&2; exit 1; }
 [[ -f "$CONF" ]] || { echo "wisp-cni: missing config file" >&2; exit 1; }
-PLUGIN="$CNI_PATH/$PLUGIN_NAME"
-[[ -x "$PLUGIN" ]] || { echo "wisp-cni: plugin not executable: $PLUGIN" >&2; exit 1; }
+# Resolve the bin dir and confine the plugin under it — belt-and-suspenders on
+# top of the plugin-name charset check, matching the confinement wisp-mount /
+# wisp-nvram do for their path arguments.
+BIN_ROOT="$(realpath -e "$CNI_PATH" 2>/dev/null)" || { echo "wisp-cni: cni bin dir not found: $CNI_PATH" >&2; exit 1; }
+PLUGIN="$(realpath -e "$BIN_ROOT/$PLUGIN_NAME" 2>/dev/null)" || { echo "wisp-cni: plugin not found: $CNI_PATH/$PLUGIN_NAME" >&2; exit 1; }
+case "$PLUGIN" in
+  "$BIN_ROOT"/*) : ;;
+  *) echo "wisp-cni: plugin escapes cni bin dir: $PLUGIN" >&2; exit 1 ;;
+esac
+[[ -f "$PLUGIN" && -x "$PLUGIN" ]] || { echo "wisp-cni: plugin not executable: $PLUGIN" >&2; exit 1; }
 
 export CNI_COMMAND="$CMD"
 export CNI_CONTAINERID="$CID"

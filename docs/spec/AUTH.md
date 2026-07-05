@@ -57,10 +57,11 @@ The signing secret is the stored scrypt-derived key (64 bytes). Changing the pas
 ### Verification
 
 1. Split token into three parts
-2. Recompute HMAC-SHA256 of `header.payload`
-3. Compare signatures using `timingSafeEqual` (constant-time comparison to prevent timing attacks)
-4. Check `exp` claim against current time
-5. Return decoded payload on success, `null` on failure
+2. Decode the header and require `alg === 'HS256'` — any other value (including `none`) is rejected before verification, so a future asymmetric branch can't be tricked via alg-confusion
+3. Recompute HMAC-SHA256 of `header.payload`
+4. Compare signatures using `timingSafeEqual` (constant-time comparison to prevent timing attacks)
+5. Check `exp` claim against current time
+6. Return decoded payload on success, `null` on failure
 
 ## Route Protection
 
