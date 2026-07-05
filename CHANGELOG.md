@@ -11,6 +11,7 @@
 - **JWT verification pins `alg` to HS256** — rejects `none`/asymmetric algorithms up front (defense-in-depth against alg-confusion).
 - **Cloud-init seed ISO is now mode 0600** — it bakes in the password hash and the per-VM directory is group-readable.
 - **Self-update downloads routed through the SSRF-safe fetch** — DNS-pinned, private/loopback IPs blocked, redirects re-validated.
+- **Dependency refresh (in-range, lockfile-only)** — backend `fastify` 5.10, `fast-xml-parser` 5.9.3, `@grpc/proto-loader` 0.8.1; frontend `zustand`, `marked`, `postcss`, `autoprefixer`, `@tailwindcss/typography`. `package.json` ranges untouched; majors (React 19, Vite 8, Tailwind 4, react-router 7) deferred to their own migrations.
 
 ## 2026-05-28 (v1.2.4)
 
