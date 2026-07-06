@@ -224,7 +224,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
       <button
         type="button"
         onClick={addNic}
-        className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
+        className="hidden sm:inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
         title="Add NIC"
         aria-label="Add NIC"
       >
@@ -261,17 +261,17 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
               <DataTableTh dense className="w-16">
                 #
               </DataTableTh>
-              <DataTableTh dense className="min-w-28">
+              <DataTableTh dense className="hidden min-w-28 sm:table-cell">
                 Bridge
               </DataTableTh>
-              <DataTableTh dense className="w-20">
+              <DataTableTh dense className="hidden w-20 sm:table-cell">
                 VLAN
               </DataTableTh>
-              <DataTableTh dense>Model</DataTableTh>
-              <DataTableTh dense className="min-w-48">
+              <DataTableTh dense className="hidden sm:table-cell">Model</DataTableTh>
+              <DataTableTh dense className="hidden min-w-48 sm:table-cell">
                 MAC
               </DataTableTh>
-              <DataTableTh dense align="right">
+              <DataTableTh dense align="right" className="hidden sm:table-cell">
                 Actions
               </DataTableTh>
             </tr>
@@ -299,10 +299,17 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
               return (
                 <tr key={nic._key} className={dataTableInteractiveRowClass}>
                   <DataTableTd dense className="text-xs font-medium text-text-secondary">
-                    net
-                    {idx}
+                    <div className="flex items-baseline gap-2">
+                      <span>net{idx}</span>
+                      <span className="min-w-0 flex-1 truncate font-sans font-normal text-text-muted sm:hidden">
+                        {[nic.source || '—', nic.model].filter(Boolean).join(' · ')}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 font-mono font-normal text-text-muted sm:hidden">
+                      {nic.mac || '—'}{nic.vlan ? ` · VLAN ${nic.vlan}` : ''}
+                    </div>
                   </DataTableTd>
-                  <DataTableTd dense>
+                  <DataTableTd dense className="hidden sm:table-cell">
                     {showInputs ? (
                       <select
                         value={nic.source}
@@ -324,7 +331,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                       <span className="font-mono text-sm text-text-primary">{nic.source || '—'}</span>
                     )}
                   </DataTableTd>
-                  <DataTableTd dense>
+                  <DataTableTd dense className="hidden sm:table-cell">
                     {showInputs ? (
                       <input
                         type="number"
@@ -340,7 +347,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                       <span className="text-sm text-text-muted tabular-nums">{nic.vlan || '—'}</span>
                     )}
                   </DataTableTd>
-                  <DataTableTd dense>
+                  <DataTableTd dense className="hidden sm:table-cell">
                     {showInputs ? (
                       <NicModelSegmentedControl
                         value={nic.model}
@@ -351,7 +358,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                       <span className="text-sm text-text-secondary">{nic.model}</span>
                     )}
                   </DataTableTd>
-                  <DataTableTd dense>
+                  <DataTableTd dense className="hidden sm:table-cell">
                     {showInputs ? (
                       <div className="flex flex-wrap items-center gap-1.5">
                         <input
@@ -395,7 +402,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                       </span>
                     )}
                   </DataTableTd>
-                  <DataTableTd dense align="right">
+                  <DataTableTd dense align="right" className="hidden sm:table-cell">
                     <DataTableRowActions forceVisible={actionsForce}>
                       {!isCreating && !networkLocked && !showInputs && (
                         <button

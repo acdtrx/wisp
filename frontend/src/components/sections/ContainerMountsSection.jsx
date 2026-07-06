@@ -494,7 +494,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
   };
 
   const headerAdds = (
-    <div className="flex items-center gap-1">
+    // Adding a mount opens an inline field editor — desktop only
+    <div className="hidden sm:flex items-center gap-1">
       <button
         type="button"
         onClick={() => addRow('file')}
@@ -864,27 +865,31 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                             );
                           })()
                         )}
-                        {row.serverMountName && !fieldEdit && (
+                        {/* Field editing and delete are desktop-only; edit-file
+                            and upload above stay available on mobile */}
+                        <span className="hidden sm:contents">
+                          {row.serverMountName && !fieldEdit && (
+                            <button
+                              type="button"
+                              onClick={() => setFieldEditRowId(row.rowId)}
+                              className={iconBtn}
+                              title="Edit fields"
+                              aria-label="Edit mount fields"
+                            >
+                              <Pencil size={14} aria-hidden />
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => setFieldEditRowId(row.rowId)}
-                            className={iconBtn}
-                            title="Edit fields"
-                            aria-label="Edit mount fields"
+                            onClick={() => handleRemove(row)}
+                            disabled={rowBusy || saving || rowDeleting}
+                            className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
+                            title={row.serverMountName ? 'Remove mount' : 'Remove row'}
+                            aria-label={row.serverMountName ? 'Remove mount' : 'Remove row'}
                           >
-                            <Pencil size={14} aria-hidden />
+                            {rowDeleting ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleRemove(row)}
-                          disabled={rowBusy || saving || rowDeleting}
-                          className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
-                          title={row.serverMountName ? 'Remove mount' : 'Remove row'}
-                          aria-label={row.serverMountName ? 'Remove mount' : 'Remove row'}
-                        >
-                          {rowDeleting ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
-                        </button>
+                        </span>
                       </DataTableRowActions>
                     </DataTableTd>
                   </tr>

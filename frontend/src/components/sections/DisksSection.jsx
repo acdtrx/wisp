@@ -453,7 +453,8 @@ export default function DisksSection({
         </div>
       )
     : (
-        <div className="flex items-center gap-1.5">
+        // Disk/ISO add flows open editors/pickers — desktop only
+        <div className="hidden sm:flex items-center gap-1.5">
           {canAddDisk && (
             <>
               <button
@@ -996,16 +997,19 @@ function DiskRowActions({
     <DataTableRowActions forceVisible={isDetaching}>
       {isStopped && disk?.source && (
         <>
-          <button
-            type="button"
-            onClick={onEdit}
-            disabled={busy}
-            className={`${iconBtn} hover:bg-surface`}
-            title="Edit size and bus"
-            aria-label={`Edit ${slot}`}
-          >
-            <Pencil size={14} aria-hidden />
-          </button>
+          {/* Size/bus editing is desktop-only; detach stays available on mobile */}
+          <span className="hidden sm:contents">
+            <button
+              type="button"
+              onClick={onEdit}
+              disabled={busy}
+              className={`${iconBtn} hover:bg-surface`}
+              title="Edit size and bus"
+              aria-label={`Edit ${slot}`}
+            >
+              <Pencil size={14} aria-hidden />
+            </button>
+          </span>
           <button
             type="button"
             onClick={onDetach}

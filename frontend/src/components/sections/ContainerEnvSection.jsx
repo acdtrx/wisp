@@ -277,7 +277,7 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
     <button
       type="button"
       onClick={addEntry}
-      className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
+      className="hidden sm:inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
       title="Add environment variable"
       aria-label="Add environment variable"
     >
@@ -307,8 +307,8 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
               <DataTableTh dense className="w-[40%]">
                 Key
               </DataTableTh>
-              <DataTableTh dense>Value</DataTableTh>
-              <DataTableTh dense align="right" className="w-44">
+              <DataTableTh dense className="hidden sm:table-cell">Value</DataTableTh>
+              <DataTableTh dense align="right" className="hidden w-44 sm:table-cell">
                 Actions
               </DataTableTh>
             </tr>
@@ -352,10 +352,22 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
                         className="input-field w-full font-mono text-xs"
                       />
                     ) : (
-                      <span className="font-mono text-sm text-text-primary">{truncate(row.key, 48)}</span>
+                      <>
+                        <span className="font-mono text-sm text-text-primary">{truncate(row.key, 48)}</span>
+                        <div className="mt-0.5 font-mono text-xs text-text-secondary sm:hidden">
+                          {row.secret ? (
+                            <>
+                              {showMask ? MASK : '—'}
+                              <span className="ml-2 text-[10px] uppercase tracking-wide text-text-muted">secret</span>
+                            </>
+                          ) : (
+                            truncate(row.value, 48)
+                          )}
+                        </div>
+                      </>
                     )}
                   </DataTableTd>
-                  <DataTableTd dense>
+                  <DataTableTd dense className="hidden sm:table-cell">
                     {editing ? (
                       row.secret ? (
                         <input
@@ -384,7 +396,7 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
                       <span className="font-mono text-sm text-text-secondary">{truncate(row.value, 64)}</span>
                     )}
                   </DataTableTd>
-                  <DataTableTd dense align="right">
+                  <DataTableTd dense align="right" className="hidden sm:table-cell">
                     <DataTableRowActions forceVisible={actionsForce}>
                       <button
                         type="button"

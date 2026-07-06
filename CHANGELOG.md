@@ -11,6 +11,7 @@
 - **Image library fits phones** — name + actions as the only columns below `sm`, with type, size, and modified stacked under the name; digest is desktop-only.
 - **Host Mgmt works on phones (read-only + mount toggle)** — SMB shares and removable drives show label/share (or fs) and status/mount-path on two lines with a mount/unmount toggle; network bridges are read-only; add/edit/delete/adopt are desktop-only (deferred to a future modal editor). Backup form stays editable.
 - **VM detail mobile polish** — cloud-init is view-only on phones (summary shown, edit/regenerate/configure hidden below `sm`); USB detach and container GPU device controls get larger touch targets.
+- **VM/container detail sections read-only on phones** — Container Env and VM Network interfaces stack to no-scroll read-only rows; VM Disks and Container Mounts keep their useful actions (eject/change ISO, detach; edit-file, upload) while hiding inline field editing and add controls below `sm`.
 - **Teal identity refresh** — new "Will-o'-the-Wisp" palette (luminous teal accent, teal-tinted neutrals), soft-tint tokens replacing hand-rolled color washes, gradient brand glyph, bundled display font for wordmark and login, refreshed favicon.
 - **LAN auto-discovery of Wisp instances** — each instance announces a `_wisp._tcp` mDNS service and browses for peers; discovered servers appear in a top-bar dropdown next to the server name, opening in a new tab. New App Config settings: LAN discovery toggle (default on) and Advertised URL for reverse-proxied instances.
 
