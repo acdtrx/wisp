@@ -202,9 +202,9 @@ export default function USBSection({ vmConfig }) {
                     <DataTableTd dense className="font-mono text-text-secondary">
                       {dev.vendorId}:{dev.productId}
                     </DataTableTd>
-                    <DataTableTd dense className="text-text-muted">
+                    <DataTableTd dense className="font-mono text-text-muted">
                       {dev.bus != null && dev.device != null
-                        ? `Bus ${dev.bus} · Device ${dev.device}`
+                        ? `${dev.bus} · ${dev.device}`
                         : dev.missing
                           ? 'not connected'
                           : '—'}

@@ -251,8 +251,6 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
       requiresRestart={requiresRestart}
       error={error}
       headerAction={headerAdd}
-      locked={networkLocked && !isCreating}
-      lockedMessage="Stop the VM to edit interfaces"
     >
       <DataTableScroll>
         <DataTable minWidthRem={52}>
@@ -469,7 +467,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
       </DataTableScroll>
 
       {networkLocked && !isCreating && (
-        <p className="mt-2 flex items-center gap-1 text-[11px] text-text-muted">
+        <p className="mt-2 hidden items-center gap-1 text-[11px] text-text-muted sm:flex">
           <Lock size={11} aria-hidden />
           Stop the VM to change bridges, models, or MACs.
         </p>

@@ -623,13 +623,13 @@ export default function DisksSection({
               <DataTableTh dense className="max-w-28 w-28">
                 Image
               </DataTableTh>
-              <DataTableTh dense className="w-20">
+              <DataTableTh dense className="hidden w-20 sm:table-cell">
                 Image type
               </DataTableTh>
               <DataTableTh dense className="w-32">
                 Bus
               </DataTableTh>
-              <DataTableTh dense align="right" className="w-36">
+              <DataTableTh dense align="right" className="hidden w-36 sm:table-cell">
                 Actions
               </DataTableTh>
             </tr>
@@ -665,7 +665,7 @@ export default function DisksSection({
                   {formatSource(sda?.source) || '—'}
                 </span>
               </DataTableTd>
-              <DataTableTd dense className="text-xs text-text-muted">{formatImageType(sda)}</DataTableTd>
+              <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{formatImageType(sda)}</DataTableTd>
               <DataTableTd dense className="text-xs">
                 {diskEdit?.slot === 'sda' ? (
                   <select
@@ -687,7 +687,7 @@ export default function DisksSection({
                   <span className="text-text-muted">{formatDriverLabel(sda) || '—'}</span>
                 )}
               </DataTableTd>
-              <DataTableTd dense align="right">
+              <DataTableTd dense align="right" className="hidden sm:table-cell">
                 <DiskRowActions
                   slot="sda"
                   disk={sda}
@@ -832,7 +832,7 @@ export default function DisksSection({
                     {formatSource(sdb.source) || '—'}
                   </span>
                 </DataTableTd>
-                <DataTableTd dense className="text-xs text-text-muted">{formatImageType(sdb)}</DataTableTd>
+                <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{formatImageType(sdb)}</DataTableTd>
                 <DataTableTd dense className="text-xs">
                   {diskEdit?.slot === 'sdb' ? (
                     <select
@@ -854,7 +854,7 @@ export default function DisksSection({
                     <span className="text-text-muted">{formatDriverLabel(sdb) || '—'}</span>
                   )}
                 </DataTableTd>
-                <DataTableTd dense align="right">
+                <DataTableTd dense align="right" className="hidden sm:table-cell">
                   <DiskRowActions
                     slot="sdb"
                     disk={sdb}
@@ -881,9 +881,9 @@ export default function DisksSection({
                     {formatSource(sdc.source)}
                   </span>
                 </DataTableTd>
-                <DataTableTd dense className="text-xs text-text-muted">{formatImageType(sdc)}</DataTableTd>
+                <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{formatImageType(sdc)}</DataTableTd>
                 <DataTableTd dense className="text-xs text-text-muted">{formatDriverLabel(sdc) || '—'}</DataTableTd>
-                <DataTableTd dense align="right">
+                <DataTableTd dense align="right" className="hidden sm:table-cell">
                   <CdromRowActions
                     slot="sdc"
                     loading={loading}
@@ -903,9 +903,9 @@ export default function DisksSection({
                     {formatSource(sdd.source)}
                   </span>
                 </DataTableTd>
-                <DataTableTd dense className="text-xs text-text-muted">{formatImageType(sdd)}</DataTableTd>
+                <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{formatImageType(sdd)}</DataTableTd>
                 <DataTableTd dense className="text-xs text-text-muted">{formatDriverLabel(sdd) || '—'}</DataTableTd>
-                <DataTableTd dense align="right">
+                <DataTableTd dense align="right" className="hidden sm:table-cell">
                   <CdromRowActions
                     slot="sdd"
                     loading={loading}
@@ -929,9 +929,9 @@ export default function DisksSection({
                     <span className="text-xs text-text-muted">—</span>
                   )}
                 </DataTableTd>
-                <DataTableTd dense className="text-xs text-text-muted">{formatImageType(sde)}</DataTableTd>
+                <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{formatImageType(sde)}</DataTableTd>
                 <DataTableTd dense className="text-xs text-text-muted">{formatDriverLabel(sde) || 'SATA'}</DataTableTd>
-                <DataTableTd dense align="right" />
+                <DataTableTd dense align="right" className="hidden sm:table-cell" />
               </tr>
             )}
           </tbody>
@@ -997,19 +997,16 @@ function DiskRowActions({
     <DataTableRowActions forceVisible={isDetaching}>
       {isStopped && disk?.source && (
         <>
-          {/* Size/bus editing is desktop-only; detach stays available on mobile */}
-          <span className="hidden sm:contents">
-            <button
-              type="button"
-              onClick={onEdit}
-              disabled={busy}
-              className={`${iconBtn} hover:bg-surface`}
-              title="Edit size and bus"
-              aria-label={`Edit ${slot}`}
-            >
-              <Pencil size={14} aria-hidden />
-            </button>
-          </span>
+          <button
+            type="button"
+            onClick={onEdit}
+            disabled={busy}
+            className={`${iconBtn} hover:bg-surface`}
+            title="Edit size and bus"
+            aria-label={`Edit ${slot}`}
+          >
+            <Pencil size={14} aria-hidden />
+          </button>
           <button
             type="button"
             onClick={onDetach}
