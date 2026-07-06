@@ -95,14 +95,14 @@ export function DataTableTd({ dense = false, align = 'left', valign = 'middle', 
  * Use for non-primary actions (edit, delete, cancel).
  */
 export const rowActionIconBtn =
-  'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
+  'inline-flex items-center justify-center rounded-md border border-surface-border p-2 lg:p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
 /**
  * Primary-action variant of rowActionIconBtn — filled accent background.
  * Use for the Save / Confirm button when committing a row edit (disks, mounts, env, drives).
  */
 export const rowActionIconBtnPrimary =
-  'inline-flex items-center justify-center rounded-md bg-accent p-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
+  'inline-flex items-center justify-center rounded-md bg-accent p-2 lg:p-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
 export function DataTableRowActions({ children, forceVisible = false }) {
   return (
@@ -110,7 +110,7 @@ export function DataTableRowActions({ children, forceVisible = false }) {
       className={
         forceVisible
           ? 'flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap'
-          : 'flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150'
+          : 'flex flex-nowrap items-center justify-end gap-1 whitespace-nowrap lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100 transition-opacity duration-150'
       }
     >
       {children}

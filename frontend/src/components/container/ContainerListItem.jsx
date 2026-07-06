@@ -76,12 +76,12 @@ export default function ContainerListItem({ container }) {
           <SectionPickerButton type="container" name={container.name} />
         </div>
       ) : (
-        <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+        <div className="flex shrink-0 items-center gap-0.5 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-150">
           {isStopped && (
             <button
               onClick={(e) => { e.stopPropagation(); startContainer(container.name); }}
               disabled={!!actionLoading}
-              className="rounded-sm p-1 text-text-secondary hover:bg-status-running-soft hover:text-status-running disabled:opacity-40"
+              className="rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-status-running-soft hover:text-status-running disabled:opacity-40"
               title="Start"
             >
               <Play size={14} />
@@ -91,7 +91,7 @@ export default function ContainerListItem({ container }) {
             <button
               onClick={(e) => { e.stopPropagation(); stopContainer(container.name); }}
               disabled={!!actionLoading}
-              className="rounded-sm p-1 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped disabled:opacity-40"
+              className="rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped disabled:opacity-40"
               title="Stop"
             >
               <Square size={14} />
@@ -101,7 +101,7 @@ export default function ContainerListItem({ container }) {
             <button
               onClick={(e) => { e.stopPropagation(); restartContainer(container.name); }}
               disabled={!!actionLoading}
-              className="rounded-sm p-1 text-text-secondary hover:bg-accent-soft hover:text-accent disabled:opacity-40"
+              className="rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-accent-soft hover:text-accent disabled:opacity-40"
               title="Restart"
             >
               <RotateCcw size={14} />

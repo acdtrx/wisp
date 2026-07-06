@@ -320,6 +320,8 @@ export default function LeftPanel() {
   const setListFilter = useUiStore((s) => s.setListFilter);
   const organizeMode = useUiStore((s) => s.organizeMode);
   const setOrganizeMode = useUiStore((s) => s.setOrganizeMode);
+  const sidebarOpen = useUiStore((s) => s.sidebarOpen);
+  const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
   const sections = useSectionsStore((s) => s.sections);
   const assignments = useSectionsStore((s) => s.assignments);
   const loadSections = useSectionsStore((s) => s.loadSections);
@@ -351,11 +353,22 @@ export default function LeftPanel() {
   useEffect(() => { loadSections().catch(() => {}); }, [loadSections]);
 
   /* Exit organize mode when the user navigates away — stale "edit" state
-   * shouldn't leak across views. */
+   * shouldn't leak across views. Below lg the panel is a drawer; navigating
+   * to a workload/host view should also dismiss it. */
   useEffect(() => {
     if (organizeMode) setOrganizeMode(false);
+    setSidebarOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!sidebarOpen) return undefined;
+    function onKeyDown(e) {
+      if (e.key === 'Escape') setSidebarOpen(false);
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [sidebarOpen, setSidebarOpen]);
 
   const allItems = useMemo(() => {
     const vmItems = (listFilter === 'all' || listFilter === 'vms')
@@ -432,7 +445,18 @@ export default function LeftPanel() {
   };
 
   return (
-    <aside className="flex w-[280px] flex-col border-r border-surface-border bg-surface-sidebar">
+    <>
+      {/* Drawer backdrop — only below lg while the drawer is open */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden
+        />
+      )}
+      <aside
+        className={`${sidebarOpen ? 'flex' : 'hidden'} fixed inset-y-0 left-0 z-40 w-[280px] flex-col border-r border-surface-border bg-surface-sidebar lg:static lg:z-auto lg:flex`}
+      >
       <button
         type="button"
         onClick={openHost}
@@ -609,6 +633,7 @@ export default function LeftPanel() {
         tone="error"
         onClose={() => setErrorMsg(null)}
       />
-    </aside>
+      </aside>
+    </>
   );
 }

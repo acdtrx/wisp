@@ -65,7 +65,7 @@ export default function AppConfig() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+    <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
       <SectionCard
         title="General"
         onSave={handleSave}

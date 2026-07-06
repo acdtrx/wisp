@@ -250,8 +250,9 @@ export default function OverviewPanel() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Header row: VM name + status | tabs | actions */}
-      <div className="flex h-11 shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4">
+      {/* Header row: VM name + status | tabs | actions. Below lg it wraps to
+          two rows (title+tabs / actions) instead of clipping in a fixed h-11. */}
+      <div className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-surface-border bg-surface-card px-4 py-1 lg:h-11 lg:flex-nowrap lg:py-0">
         <div className="flex min-w-0 items-center gap-3">
           <button
             onClick={() => setIconPickerOpen(true)}
@@ -272,10 +273,11 @@ export default function OverviewPanel() {
             >
               Overview
             </button>
+            {/* VNC console is desktop-only — hidden below lg */}
             <button
               type="button"
               onClick={() => navigate(`/vm/${encodeURIComponent(name)}/console`)}
-              className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
+              className={`hidden lg:block border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
                 activeTab === 'console' ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
               }`}
             >
@@ -405,7 +407,7 @@ export default function OverviewPanel() {
         </Suspense>
       ) : (
       /* Overview content */
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+      <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
         {/* Sections */}
         <GeneralSection
           vmConfig={vmConfig}

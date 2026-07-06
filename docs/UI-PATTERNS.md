@@ -59,7 +59,7 @@ Use **[frontend/src/components/shared/DataTableChrome.jsx](../frontend/src/compo
 | Empty / `colSpan` rows | Same horizontal inset: e.g. **`px-4 py-4`** (`dataTableEmptyCellClass`) so empty states are not flush to the edge. |
 | Body rows | `border-b border-surface-border/60 last:border-0` (`dataTableBodyRowClass`) |
 | **Interactive body rows** | `dataTableInteractiveRowClass` on `<tr>` — `group` + bottom border + **`hover:bg-surface`** for tables where actions are hidden until hover |
-| **Row actions cell** | Wrap icon buttons in **`DataTableRowActions`** — **`opacity-0 group-hover:opacity-100`**; use **`forceVisible`** when the row is editing, saving, or deleting so actions stay visible without hover |
+| **Row actions cell** | Wrap icon buttons in **`DataTableRowActions`** — hover-reveal is desktop-only (**`lg:opacity-0 lg:group-hover:opacity-100`**; always visible below `lg` for touch); use **`forceVisible`** when the row is editing, saving, or deleting so actions stay visible without hover |
 
 Accessibility:
 

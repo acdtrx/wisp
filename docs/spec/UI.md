@@ -76,12 +76,23 @@ For row-based persistence, **header add** controls (`Plus` or `Plus`+kind icon),
 └──────────────┴───────────────────────────────────────────────────────────────┘
 ```
 
-- **Full height:** `flex h-screen flex-col`
+- **Full height:** `flex h-dvh flex-col` (`dvh` so mobile browser chrome doesn't hide the bottom)
 - **Top bar:** Single row, fixed at top
 - **Below top bar:** `flex flex-1 overflow-hidden`
 - **Left panel:** Fixed width ~280px, full height below top bar, scrollable, `bg-surface-sidebar`
 - **Center panel:** Fills remaining width, `bg-surface`, content scrollable
 - **VM stats bar:** Fixed at bottom of center panel when a VM is selected
+
+### Responsive behavior (below `lg`, 1024px)
+
+The desktop shell above applies at `lg` and up. Below 1024px (phones, portrait tablets):
+
+- **Left panel becomes an off-canvas drawer** (`fixed inset-y-0 left-0 z-40` over a `bg-black/40` backdrop), toggled by a hamburger (`Menu`) button that appears leftmost in the top bar. It closes on backdrop tap, Escape, and any route change. Drawer state lives in `uiStore.sidebarOpen`.
+- **Row actions are always visible** — the desktop hover-reveal (`lg:opacity-0 lg:group-hover:opacity-100`) only applies at `lg`+; touch devices see the lifecycle/table actions directly, with larger hit targets (`p-2` below lg).
+- **Detail headers wrap** — the VM/container/host header rows (`min-h-11 flex-wrap`) break into title+tabs / actions rows instead of clipping; Host power buttons become icon-only.
+- **Consoles are desktop-only** — the VM Console and container Console tab buttons are hidden below `lg` (container Logs stays). Create flows and drag-to-organize remain desktop-oriented (the tap-based section picker still works).
+- **Content gutters** shrink to `px-4 py-4`; modal overlays carry `p-4` so dialogs never sit edge-to-edge; wide tables keep their horizontal scroll.
+- **PWA-lite:** `manifest.webmanifest` (standalone display, teal theme color) + apple-touch-icon, so Wisp can be pinned to a phone home screen. No service worker/offline support.
 
 ---
 

@@ -6,4 +6,9 @@ export const useUiStore = create((set) => ({
   organizeMode: false,
   setOrganizeMode: (on) => set({ organizeMode: !!on }),
   toggleOrganizeMode: () => set((s) => ({ organizeMode: !s.organizeMode })),
+  /* Below lg the left panel is an off-canvas drawer; this drives it.
+     Harmless on desktop where the panel is statically visible. */
+  sidebarOpen: false,
+  setSidebarOpen: (on) => set({ sidebarOpen: !!on }),
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
 }));

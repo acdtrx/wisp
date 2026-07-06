@@ -53,7 +53,7 @@ export default function AppLayout() {
   }, []);
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-dvh flex-col">
       <TopBar />
 
       <div className="flex flex-1 overflow-hidden">

@@ -144,7 +144,7 @@ export default function BackupsPanel() {
         <p className="mt-0.5 text-sm text-text-secondary">Restore VM or container backups under a new name, or delete backups you no longer need. Create backups from a VM or container Overview → Backup. Configure destinations in Host Mgmt.</p>
       </div>
 
-      <div className="flex-1 space-y-5 px-6 py-5">
+      <div className="flex-1 space-y-5 px-4 py-4 lg:px-6 lg:py-5">
         <SectionCard
           title="Backups"
           helpText="Restore a backup as a new VM or container, or delete backups you no longer need."

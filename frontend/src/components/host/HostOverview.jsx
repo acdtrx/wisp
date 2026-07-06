@@ -275,7 +275,10 @@ function CoreUsageGrid({ title, cores }) {
       {title && (
         <p className="text-[11px] font-medium text-text-muted uppercase tracking-wider">{title}</p>
       )}
-      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(cores.length, 8)}, 1fr)` }}>
+      <div
+        className="grid gap-1.5 grid-cols-[repeat(var(--core-cols-sm),1fr)] lg:grid-cols-[repeat(var(--core-cols),1fr)]"
+        style={{ '--core-cols-sm': Math.min(cores.length, 4), '--core-cols': Math.min(cores.length, 8) }}
+      >
         {cores.map(({ index, percent }) => (
           <div key={index} className="min-w-0">
             <div className="flex justify-between text-[10px] text-text-muted mb-0.5">
@@ -332,7 +335,7 @@ export default function HostOverview() {
   const allCores = perCore.map((percent, index) => ({ index, percent }));
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+    <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
       {/* CPU */}
       <SectionCard title="CPU" titleIcon={<Cpu size={14} strokeWidth={2} />}>
         {hardwareError && <p className="text-sm text-status-stopped mb-2">{hardwareError}</p>}

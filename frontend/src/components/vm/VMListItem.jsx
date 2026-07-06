@@ -77,12 +77,12 @@ export default function VMListItem({ vm }) {
           <SectionPickerButton type="vm" name={vm.name} />
         </div>
       ) : (
-        <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+        <div className="flex shrink-0 items-center gap-0.5 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-150">
           {isStopped && (
             <button
               onClick={(e) => { e.stopPropagation(); startVM(vm.name); }}
               disabled={!!actionLoading}
-              className="rounded-sm p-1 text-text-secondary hover:bg-status-running-soft hover:text-status-running disabled:opacity-40"
+              className="rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-status-running-soft hover:text-status-running disabled:opacity-40"
               title="Start"
             >
               <Play size={14} />
@@ -92,7 +92,7 @@ export default function VMListItem({ vm }) {
             <button
               onClick={(e) => { e.stopPropagation(); stopVM(vm.name); }}
               disabled={!!actionLoading}
-              className="rounded-sm p-1 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped disabled:opacity-40"
+              className="rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped disabled:opacity-40"
               title="Stop"
             >
               <Square size={14} />
@@ -102,7 +102,7 @@ export default function VMListItem({ vm }) {
             <button
               onClick={(e) => { e.stopPropagation(); rebootVM(vm.name); }}
               disabled={!!actionLoading || isPaused}
-              className="relative rounded-sm p-1 text-text-secondary hover:bg-accent-soft hover:text-accent disabled:opacity-40"
+              className="relative rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-accent-soft hover:text-accent disabled:opacity-40"
               title={staleBinary ? 'Reboot (qemu binary updated since VM started)' : 'Reboot'}
             >
               <RotateCcw size={14} />

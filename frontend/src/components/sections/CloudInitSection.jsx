@@ -228,7 +228,7 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
         <div className="space-y-3">
           {hasConfig ? (
             <>
-              <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+              <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
                 <SummaryRow
                   label="Cloud Init"
                   value={config.enabled === false ? 'Off' : 'On'}

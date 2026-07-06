@@ -85,13 +85,13 @@ export default function HostPanel() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex h-11 shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4">
+      <div className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-surface-border bg-surface-card px-4 py-1 lg:h-11 lg:flex-nowrap lg:py-0">
         <div className="flex min-w-0 items-center gap-3">
           <div className="shrink-0 rounded-lg p-1 text-text-secondary" aria-hidden>
             <Server size={18} />
           </div>
-          <span className="truncate text-sm font-semibold text-text-primary">Host</span>
-          <div className="flex border-l border-surface-border pl-3">
+          <span className="hidden truncate text-sm font-semibold text-text-primary sm:block">Host</span>
+          <div className="flex overflow-x-auto border-l border-surface-border pl-3">
             {TABS.map(({ id, label }) => {
               let badgeTitle = null;
               if (id === 'software') {
@@ -128,7 +128,7 @@ export default function HostPanel() {
             title="Power Off"
           >
             {powerLoading === 'shutdown' ? <Loader2 size={18} className="animate-spin" /> : <Power size={18} />}
-            Power Off
+            <span className="hidden lg:inline">Power Off</span>
           </button>
           <button
             type="button"
@@ -138,7 +138,7 @@ export default function HostPanel() {
             title={rebootRequired ? `Restart (reboot required: ${rebootReasons.join(', ') || 'kernel update'})` : 'Restart'}
           >
             {powerLoading === 'restart' ? <Loader2 size={18} className="animate-spin" /> : <RotateCcw size={18} />}
-            Restart
+            <span className="hidden lg:inline">Restart</span>
             {rebootRequired && (
               <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2 rounded-full bg-status-warning" />
             )}
