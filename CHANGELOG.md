@@ -7,6 +7,9 @@
 - **Frontend major dependency upgrades (part 1)** — React 19, react-router-dom 7, lucide-react 1 (removed GitHub brand icon replaced with `AtSign`), Vite 8 (Rolldown; vendor chunk migrated to `codeSplitting`), @vitejs/plugin-react 6. Tailwind 4 deferred to its own migration.
 - **Tailwind CSS 4 migration** — CSS-first config (`@theme` in `index.css`, `tailwind.config.js` removed), first-party `@tailwindcss/vite` plugin (PostCSS + Autoprefixer dropped), v4 utility renames applied across 34 components. Rendering verified pixel-identical against the v3 baseline.
 
+### Bug Fixes
+- **Docs: removed stale `frontend/server.js` references** — the standalone frontend proxy no longer exists (backend serves the SPA directly); ARCHITECTURE.md tree and AUTH.md `trustProxy` rationale updated to match, and the frontend tree now lists `src/apps/` and `src/lib/`.
+
 ## 2026-07-05
 
 ### Bug Fixes

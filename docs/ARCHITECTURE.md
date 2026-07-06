@@ -362,7 +362,6 @@ wisp/
 │   ├── package.json
 │   ├── index.html
 │   ├── vite.config.js            # Includes Tailwind v4 (@tailwindcss/vite); theme lives in src/index.css @theme
-│   ├── server.js                 # Production static + proxy server
 │   ├── scripts/
 │   │   └── ensure-novnc.js       # Prebuild noVNC check
 │   ├── public/
@@ -372,8 +371,10 @@ wisp/
 │       ├── main.jsx, App.jsx
 │       ├── index.css
 │       ├── api/                  # Fetch wrappers, SSE helpers
+│       ├── apps/                 # Container-app UI (registry + per-app config sections: caddy, jellyfin, tinySamba, zot)
 │       ├── components/           # UI components by domain
 │       ├── hooks/                # Custom React hooks
+│       ├── lib/                  # Shared non-UI helpers (mDNS service types)
 │       ├── pages/                # Login
 │       ├── store/                # Zustand stores
 │       └── utils/                # Formatters, helpers
