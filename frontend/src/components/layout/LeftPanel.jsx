@@ -554,7 +554,9 @@ export default function LeftPanel() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto py-1">
+      {/* overscroll-contain stops the drawer's scroll from chaining to the
+          content behind it on iOS when the list hits its top/bottom edge. */}
+      <div className="flex-1 overflow-y-auto overscroll-contain py-1">
         {totalCount === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Monitor size={32} className="text-text-muted mb-2" />
