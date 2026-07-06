@@ -62,14 +62,16 @@ function OciTypeBadge() {
   );
 }
 
+/* Below sm only Name + Actions render as columns; type, size, and modified
+ * stack on a second line inside the Name cell (digest is desktop-only). */
 function LibraryTableHead({ mode, compactPicker }) {
   return (
     <tr className={dataTableHeadRowClass}>
       <DataTableTh>Name</DataTableTh>
-      <DataTableTh>Type</DataTableTh>
-      {!compactPicker && <DataTableTh>Digest</DataTableTh>}
-      <DataTableTh>Size</DataTableTh>
-      {!compactPicker && <DataTableTh>Modified</DataTableTh>}
+      <DataTableTh className="hidden sm:table-cell">Type</DataTableTh>
+      {!compactPicker && <DataTableTh className="hidden sm:table-cell">Digest</DataTableTh>}
+      <DataTableTh className="hidden sm:table-cell">Size</DataTableTh>
+      {!compactPicker && <DataTableTh className="hidden sm:table-cell">Modified</DataTableTh>}
       <DataTableTh align="right">{mode === 'picker' ? '' : 'Actions'}</DataTableTh>
     </tr>
   );
@@ -80,16 +82,24 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onChe
   const anyChecking = !!checkState?.running;
   return (
     <tr className={dataTableInteractiveRowClass}>
-      <DataTableTd className="max-w-56 break-all text-sm font-medium text-text-primary">{row.name}</DataTableTd>
-      <DataTableTd>
+      <DataTableTd className="max-w-56 break-all text-sm font-medium text-text-primary">
+        {row.name}
+        <div className="mt-1 flex items-center gap-2 sm:hidden">
+          <OciTypeBadge />
+          <span className="text-xs font-normal text-text-muted">
+            {formatSize(row.size)} · {formatRelativeTime(row.updated)}
+          </span>
+        </div>
+      </DataTableTd>
+      <DataTableTd className="hidden sm:table-cell">
         <OciTypeBadge />
       </DataTableTd>
       {!compactPicker && (
-        <DataTableTd className="font-mono text-xs text-text-secondary">{shortDigest(row.digest)}</DataTableTd>
+        <DataTableTd className="hidden font-mono text-xs text-text-secondary sm:table-cell">{shortDigest(row.digest)}</DataTableTd>
       )}
-      <DataTableTd className="text-sm text-text-secondary">{formatSize(row.size)}</DataTableTd>
+      <DataTableTd className="hidden text-sm text-text-secondary sm:table-cell">{formatSize(row.size)}</DataTableTd>
       {!compactPicker && (
-        <DataTableTd className="text-sm text-text-muted">{formatRelativeTime(row.updated)}</DataTableTd>
+        <DataTableTd className="hidden text-sm text-text-muted sm:table-cell">{formatRelativeTime(row.updated)}</DataTableTd>
       )}
       <DataTableTd align="right">
         {mode === 'picker' ? (
@@ -203,16 +213,22 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
         ) : (
           <span className="text-sm font-medium text-text-primary">{file.name}</span>
         )}
+        <div className="mt-1 flex items-center gap-2 sm:hidden">
+          <TypeBadge type={file.type} />
+          <span className="text-xs text-text-muted">
+            {formatSize(file.size)} · {formatRelativeTime(file.modified)}
+          </span>
+        </div>
       </DataTableTd>
-      <DataTableTd>
+      <DataTableTd className="hidden sm:table-cell">
         <TypeBadge type={file.type} />
       </DataTableTd>
       {!compactPicker && (
-        <DataTableTd className="font-mono text-xs text-text-muted">—</DataTableTd>
+        <DataTableTd className="hidden font-mono text-xs text-text-muted sm:table-cell">—</DataTableTd>
       )}
-      <DataTableTd className="text-sm text-text-secondary">{formatSize(file.size)}</DataTableTd>
+      <DataTableTd className="hidden text-sm text-text-secondary sm:table-cell">{formatSize(file.size)}</DataTableTd>
       {!compactPicker && (
-        <DataTableTd className="text-sm text-text-muted">{formatRelativeTime(file.modified)}</DataTableTd>
+        <DataTableTd className="hidden text-sm text-text-muted sm:table-cell">{formatRelativeTime(file.modified)}</DataTableTd>
       )}
       <DataTableTd align="right">
         {mode === 'picker' ? (
@@ -303,7 +319,9 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
 
   const isOciView = filter === 'container';
   const compactPicker = mode === 'picker';
-  const tableMinWidthRem = compactPicker ? 32 : 56;
+  // String form = literal responsive class: no min-width below sm (the table
+  // collapses to Name + Actions there), full width from sm up.
+  const tableMinWidthRem = compactPicker ? 'sm:min-w-[32rem]' : 'sm:min-w-[56rem]';
 
   useEffect(() => {
     if (mode === 'picker' && pickerKind !== 'container' && filter === 'container') {

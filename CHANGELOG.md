@@ -8,6 +8,7 @@
 - **Hardware inventory slimmed** — device-kind icons replace the Type column (full type in tooltip); on phones only Device renders, with vendor (first word) and temp stacked underneath — no horizontal scroll. Desktop keeps full Vendor/Driver/Address/Temp. Nested drives keep the `└` marker without indent.
 - **Tables align flush with card padding everywhere** — the shared table scroll wrapper cancels the cells' edge inset, removing the double indent inside every section card.
 - **Two-row top bar on phones** — brand and actions on the first row, host stats pills full-width on their own second row; update cards (Wisp/OS) stack text above buttons on mobile and the OS update description is shorter.
+- **Image library fits phones** — name + actions as the only columns below `sm`, with type, size, and modified stacked under the name; digest is desktop-only.
 - **Teal identity refresh** — new "Will-o'-the-Wisp" palette (luminous teal accent, teal-tinted neutrals), soft-tint tokens replacing hand-rolled color washes, gradient brand glyph, bundled display font for wordmark and login, refreshed favicon.
 - **LAN auto-discovery of Wisp instances** — each instance announces a `_wisp._tcp` mDNS service and browses for peers; discovered servers appear in a top-bar dropdown next to the server name, opening in a new tab. New App Config settings: LAN discovery toggle (default on) and Advertised URL for reverse-proxied instances.
 

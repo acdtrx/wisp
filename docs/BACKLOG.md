@@ -20,6 +20,18 @@ pointer. Keep this file scannable.
 
 ## Improvements
 
+### `DataTable` numeric `minWidthRem` never generates CSS
+
+**Found:** 2026-07-06, during the mobile table polish.
+
+**Symptom:** None visible — tables size by natural content width, which happens to look right.
+
+**Root cause:** `DataTable` builds `min-w-[${n}rem]` at runtime; Tailwind's scanner never sees the literal class, so no CSS is emitted for the numeric path. Only string-literal values passed by callers (e.g. `"sm:min-w-[56rem]"`) work.
+
+**Fix sketch:** Convert the numeric path to an inline `style={{ minWidth: … }}` (or drop the prop where content width suffices). Note this would *introduce* min-widths that never actually applied — check each table for new scrollbars before shipping.
+
+**Why deferred:** Zero user-visible impact today; changing it silently alters accepted layouts.
+
 ### Two version readers can disagree: `routes/host.js` `getWispVersion()` vs `wispUpdate.js` `getCurrentVersion()`
 
 **Found:** 2026-07-06, during LAN-discovery review (discovery TXT now uses `getCurrentVersion`).

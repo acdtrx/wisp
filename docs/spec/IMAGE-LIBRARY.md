@@ -81,7 +81,7 @@ The image library appears in two contexts:
 
 Accessed via a top-bar button. On the Host **Library** tab the UI is a single **`SectionCard`** (same bordered white card as Host Overview sections), with **`Images`** **`titleIcon`**, type filter and actions in **`headerAction`**, and the table in the card body. Shows the full file list with type badges, file size, and last modified. Supports upload via an **Upload** icon in the section header (opens a file picker), delete with confirmation, and inline rename.
 
-A type filter (All / ISO / Disk Image / **OCI**) sits in the **`SectionCard`** header next to icon-only actions (**Upload**, **Download from URL**, **Preset image** menu — same on every filter including **OCI**). **All** merges VM files and OCI images in one table (name, type, digest, size, modified). **ISO** and **Disk Image** use the same columns; digest is blank for files. The **OCI** tab lists only containerd images. Preset downloads also appear in the app-wide background jobs list.
+A type filter (All / ISO / Disk Image / **OCI**) sits in the **`SectionCard`** header next to icon-only actions (**Upload**, **Download from URL**, **Preset image** menu — same on every filter including **OCI**). **All** merges VM files and OCI images in one table (name, type, digest, size, modified). **ISO** and **Disk Image** use the same columns; digest is blank for files. Below `sm`, only **Name** and **Actions** render as columns — the type badge, size, and modified stack on a second line inside the Name cell, and digest is desktop-only — so the table fits phones without horizontal scroll. The **OCI** tab lists only containerd images. Preset downloads also appear in the app-wide background jobs list.
 
 ### Picker modal
 
