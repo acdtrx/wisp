@@ -193,7 +193,7 @@ When the VM is **stopped**: shows a single muted label "Stopped" with no metrics
 | uptimeSeconds | Host uptime |
 | kernel | Kernel version |
 | osRelease | Linux: `/etc/os-release`. macOS: `system_profiler -json SPSoftwareDataType` (`os_overview.os_version` → `prettyName` with the **last** trailing ` (…)` removed — usually the build id; `id` `macos`, semver-ish `versionId` from the raw string) when profiler succeeds; otherwise `null` |
-| primaryAddress | Primary network interface IP |
+| primaryAddress | Primary network interface IP — first non-internal IPv4, skipping `lo` and the link-local `169.254.0.0/16` range (which includes Wisp's own mDNS DNS forwarder at `169.254.53.53`) |
 
 ## Host Hardware Endpoint
 

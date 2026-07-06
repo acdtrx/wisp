@@ -17,7 +17,9 @@ function getPrimaryAddress() {
     const addrs = ifaces[name];
     if (!addrs) continue;
     for (const a of addrs) {
-      if (a.family === 'IPv4' && !a.internal) return a.address;
+      // Skip link-local (169.254.0.0/16) — includes Wisp's own mDNS DNS
+      // forwarder at 169.254.53.53, which is not the host's network address.
+      if (a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.')) return a.address;
     }
   }
   return null;

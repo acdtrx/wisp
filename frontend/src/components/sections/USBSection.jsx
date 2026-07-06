@@ -164,7 +164,7 @@ export default function USBSection({ vmConfig }) {
             <thead>
               <tr className={dataTableHeadRowClass}>
                 <DataTableTh dense>Name</DataTableTh>
-                <DataTableTh dense className="whitespace-nowrap">
+                <DataTableTh dense className="hidden whitespace-nowrap sm:table-cell">
                   ID
                 </DataTableTh>
                 <DataTableTh dense>Bus / device</DataTableTh>
@@ -199,7 +199,7 @@ export default function USBSection({ vmConfig }) {
                         <span className={dev.missing ? 'text-status-stopped' : undefined}>{dev.name}</span>
                       </span>
                     </DataTableTd>
-                    <DataTableTd dense className="font-mono text-text-secondary">
+                    <DataTableTd dense className="hidden font-mono text-text-secondary sm:table-cell">
                       {dev.vendorId}:{dev.productId}
                     </DataTableTd>
                     <DataTableTd dense className="font-mono text-text-muted">

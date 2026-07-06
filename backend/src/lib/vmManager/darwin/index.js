@@ -70,7 +70,8 @@ function getPrimaryAddress() {
     const addrs = ifaces[name];
     if (!addrs) continue;
     for (const a of addrs) {
-      if (a.family === 'IPv4' && !a.internal) return a.address;
+      // Skip link-local (169.254.0.0/16), consistent with the Linux host-info path.
+      if (a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.')) return a.address;
     }
   }
   return null;

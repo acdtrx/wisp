@@ -98,11 +98,11 @@ The desktop shell above applies at `lg` and up. Below 1024px (phones, portrait t
 - **Cloud-init is view-only on phones** — the VM detail Cloud-Init section shows its summary below `sm` but hides the Regenerate / Remove / Configure buttons, so the edit form (a desktop-oriented multi-field layout) is never reached on mobile.
 - **VM/container detail sections are read-only on phones** with inline editing and add controls hidden below `sm`:
   - **Container Env** — value stacked under the key; Value + Actions columns hidden (fully single-column, no scroll).
-  - **VM Network interfaces** — bridge/model/MAC/VLAN stacked under `net<n>`; all other columns and the Actions column hidden (single column, no scroll). The header lock badge is dropped (the note below the table carries the "stop the VM to edit" message, desktop-only).
+  - **VM Network interfaces** — only the Actions column is hidden below `sm`; bridge/VLAN/model/MAC stay on one line with relaxed column widths. The duplicate header lock badge is dropped (the note below the table carries the "stop the VM to edit" message, desktop-only).
   - **VM Disks** — the Image type and Actions columns are hidden below `sm` (Disk / Size / Image / Bus remain), so it fits without the action set; size/bus editing and ISO/detach actions are desktop-only.
   - **Container Mounts** — inline field editing + delete hidden, but Edit-file / Upload / Zip-upload kept; the table keeps its horizontal scroll (widest section).
   - Full add/edit returns via the deferred modal-editor redesign (`docs/BACKLOG.md`).
-- **USB bus/device** shows bare numbers (`<bus> · <device>`) under the "Bus / device" header on all screen sizes, instead of repeating the `Bus …`/`Device …` labels per row.
+- **USB devices** — the ID column is hidden below `sm` (Name gets the room), and the bus/device cell shows bare numbers (`<bus> · <device>`) under the "Bus / device" header on all screen sizes instead of repeating the `Bus …`/`Device …` labels.
 - **PWA-lite:** `manifest.webmanifest` (standalone display, teal theme color) + apple-touch-icon, so Wisp can be pinned to a phone home screen. No service worker/offline support.
 
 ---
