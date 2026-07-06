@@ -3,6 +3,7 @@
 ## 2026-07-06
 
 ### New Features
+- **Teal identity refresh** — new "Will-o'-the-Wisp" palette (luminous teal accent, teal-tinted neutrals), soft-tint tokens replacing hand-rolled color washes, gradient brand glyph, bundled display font for wordmark and login, refreshed favicon.
 - **LAN auto-discovery of Wisp instances** — each instance announces a `_wisp._tcp` mDNS service and browses for peers; discovered servers appear in a top-bar dropdown next to the server name, opening in a new tab. New App Config settings: LAN discovery toggle (default on) and Advertised URL for reverse-proxied instances.
 
 ### Bug Fixes

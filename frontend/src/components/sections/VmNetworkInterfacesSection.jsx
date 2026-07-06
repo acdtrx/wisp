@@ -374,7 +374,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                         )}
                         {macWarn && (
                           <span
-                            className="shrink-0 text-amber-500"
+                            className="shrink-0 text-status-warning"
                             title="If this VM uses cloud-init, re-save cloud-init after changing the MAC."
                           >
                             <AlertTriangle size={16} aria-hidden />
@@ -386,7 +386,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                         {nic.mac || '—'}
                         {macWarn && (
                           <span
-                            className="text-amber-500"
+                            className="text-status-warning"
                             title="If this VM uses cloud-init, re-save cloud-init after changing the MAC."
                           >
                             <AlertTriangle size={14} aria-hidden />
@@ -441,7 +441,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                           type="button"
                           onClick={() => removeNicAt(idx)}
                           disabled={removingIdx === idx || savingIdx === idx}
-                          className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-red-50`}
+                          className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
                           title="Remove NIC"
                           aria-label={`Remove NIC net${idx}`}
                         >

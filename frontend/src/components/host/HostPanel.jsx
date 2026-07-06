@@ -32,7 +32,7 @@ function TabButton({ id, label, active, badgeTitle, onClick }) {
       <span>{label}</span>
       {badgeTitle && (
         <span
-          className="flex h-2 w-2 shrink-0 rounded-full bg-amber-500"
+          className="flex h-2 w-2 shrink-0 rounded-full bg-status-warning"
           title={badgeTitle}
         />
       )}
@@ -140,7 +140,7 @@ export default function HostPanel() {
             {powerLoading === 'restart' ? <Loader2 size={18} className="animate-spin" /> : <RotateCcw size={18} />}
             Restart
             {rebootRequired && (
-              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2 rounded-full bg-amber-500" />
+              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2 rounded-full bg-status-warning" />
             )}
           </button>
         </div>

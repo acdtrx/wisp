@@ -41,6 +41,8 @@ Table and list **row actions** (edit, delete, mount, check, revert, etc.) are **
 
 - **Mount state:** Do not show a separate “Mounted / Not mounted” text column when a single mount/unmount control exists; encode state with the **background** of that control (e.g. green tint when mounted).
 
+- **Tinted washes use the soft tokens.** Status/accent background tints (error banners, success/warning badges, action hover tints, selected rows) use the theme tokens `bg-status-stopped-soft`, `bg-status-running-soft`, `bg-status-warning-soft`, `bg-accent-soft` — never raw Tailwind palette classes (`bg-red-50`, `bg-green-50`, …). Tinted borders use the solid token with opacity (`border-status-stopped/30`).
+
 ---
 
 ## Table chrome (shared layout)

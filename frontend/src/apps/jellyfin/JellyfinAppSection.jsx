@@ -246,7 +246,7 @@ export default function JellyfinAppSection({ config, onSave }) {
                       />
                       <button
                         type="button"
-                        className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-red-50`}
+                        className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
                         title="Remove library"
                         aria-label="Remove library"
                         onClick={() => removeLibrary(lib.rowId)}

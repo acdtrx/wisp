@@ -4,33 +4,41 @@ Layout, visual system, navigation, and user-visible behavior for Wisp. **API req
 
 ## Design Language
 
-**Inspiration:** Linear, Vercel — clean, professional, light theme with subtle depth.
+**Inspiration:** Linear, Vercel — clean, professional, light theme with subtle depth. Identity: the **"Will-o'-the-Wisp"** palette — a luminous teal accent on cool neutrals that carry a faint teal cast, so surfaces read as one material rather than gray-with-a-color-on-top.
 
 ### Color Scheme
 
 | Token | Value | Usage |
 |-------|-------|-------|
-| `surface` | `#f8fafc` | Main background |
-| `surface-sidebar` | `#f1f5f9` | Left panel background |
+| `surface` | `#f6faf9` | Main background |
+| `surface-sidebar` | `#edf4f2` | Left panel background |
 | `surface-card` | `#ffffff` | Card backgrounds |
-| `surface-border` | `#e2e8f0` | All borders and dividers |
-| `accent` | `#2563eb` | Primary actions, active states |
-| `accent-hover` | `#1d4ed8` | Hover state for accent elements |
-| `status-running` | `#16a34a` | Running VMs, success states |
-| `status-warning` | `#d97706` | Paused VMs, warnings, restart-required |
-| `status-stopped` | `#dc2626` | Stopped VMs, errors, danger actions |
-| `status-transition` | `#2563eb` | Transitioning states (starting, shutting down) |
-| `text-primary` | `#0f172a` | Primary text |
-| `text-secondary` | `#475569` | Secondary text, descriptions |
-| `text-muted` | `#94a3b8` | Muted text, labels, placeholders |
+| `surface-border` | `#dce8e5` | All borders and dividers |
+| `accent` | `#0fa396` | Primary actions, active states |
+| `accent-hover` | `#0b8578` | Hover state for accent elements |
+| `accent-soft` | `#dff3f0` | Accent background wash (selected rows, active tabs, hover tints) |
+| `status-running` | `#2e9e4f` | Running VMs, success states |
+| `status-warning` | `#d98a06` | Paused VMs, warnings, restart-required |
+| `status-stopped` | `#d64545` | Stopped VMs, errors, danger actions |
+| `status-transition` | `#0fa396` | Transitioning states (starting, shutting down) |
+| `status-running-soft` | `#e2f4e6` | Success background wash |
+| `status-warning-soft` | `#faf0d7` | Warning background wash (badges, notices) |
+| `status-stopped-soft` | `#fbe5e5` | Error background wash (error banners, danger hovers) |
+| `text-primary` | `#0e1f1c` | Primary text |
+| `text-secondary` | `#435d58` | Secondary text, descriptions |
+| `text-muted` | `#8fa6a1` | Muted text, labels, placeholders |
+
+The `*-soft` tokens are the standard for status/accent **background washes** — do not hand-roll raw Tailwind palette classes (`bg-red-50`, `bg-green-50`, …) for tinted surfaces.
 
 ### Typography
 
-System fonts only — no web fonts, no CDN font loading:
+Body/UI text uses the system stack — no runtime font loading from external hosts:
 
 ```
 font-family: system-ui, -apple-system, sans-serif
 ```
+
+Custom fonts are allowed only when **bundled** with the app (self-hosted woff2 + license file in `frontend/src/assets/fonts/`). One display face is bundled: **Bricolage Grotesque 600** (`--font-display`, class `font-display`), used **only** for brand moments — the top-bar wordmark, the login title, and empty-state headings. Tables, labels, and body copy stay on the system stack.
 
 ### Favicon
 

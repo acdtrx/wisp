@@ -417,9 +417,9 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
               const checkBtnClass = checkLoading
                 ? iconBtn
                 : check?.ok
-                  ? 'inline-flex items-center justify-center rounded-md border border-green-200 bg-green-50 p-1.5 text-green-800 hover:bg-green-100 transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none'
+                  ? 'inline-flex items-center justify-center rounded-md border border-status-running/30 bg-status-running-soft p-1.5 text-status-running hover:bg-status-running-soft transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none'
                   : check?.error
-                    ? 'inline-flex items-center justify-center rounded-md border border-red-200 bg-red-50 p-1.5 text-red-800 hover:bg-red-100 transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none'
+                    ? 'inline-flex items-center justify-center rounded-md border border-status-stopped/30 bg-status-stopped-soft p-1.5 text-status-stopped hover:bg-status-stopped-soft transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none'
                     : iconBtn;
               const checkTitle = checkLoading
                 ? 'Testing…'
@@ -430,7 +430,7 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
                     : 'Test SMB connection';
 
               const mountBtnClass = mounted
-                ? 'border-green-200 bg-green-50 text-green-800 hover:bg-green-100'
+                ? 'border-status-running/30 bg-status-running-soft text-status-running hover:bg-status-running-soft'
                 : 'border-surface-border bg-surface text-text-secondary hover:bg-surface-hover';
 
               return (
@@ -506,7 +506,7 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
                           <Pencil size={14} aria-hidden />
                         </button>
                       )}
-                      <button type="button" onClick={() => handleRemoveClick(row)} disabled={deletingId === row.id || savingId === row.id} className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-red-50`} title="Remove" aria-label="Remove SMB mount">
+                      <button type="button" onClick={() => handleRemoveClick(row)} disabled={deletingId === row.id || savingId === row.id} className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`} title="Remove" aria-label="Remove SMB mount">
                         {deletingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
                       </button>
                     </DataTableRowActions>
@@ -721,10 +721,10 @@ function RemovableDrivesSection({
                 const mounted = !!(diskState && diskState.mountedAt === row.mountPath);
 
                 const mountBtnClass = mounted
-                  ? 'border-green-200 bg-green-50 text-green-800 hover:bg-green-100'
+                  ? 'border-status-running/30 bg-status-running-soft text-status-running hover:bg-status-running-soft'
                   : present
                     ? 'border-surface-border bg-surface text-text-secondary hover:bg-surface-hover'
-                    : 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100';
+                    : 'border-status-stopped/30 bg-status-stopped-soft text-status-stopped hover:bg-status-stopped-soft';
 
                 return (
                   <tr key={row.id} className={dataTableInteractiveRowClass}>
@@ -787,7 +787,7 @@ function RemovableDrivesSection({
                             <Pencil size={14} aria-hidden />
                           </button>
                         )}
-                        <button type="button" onClick={() => handleRemoveClick(row)} disabled={deletingId === row.id || savingId === row.id} className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-red-50`} title="Remove" aria-label="Remove drive">
+                        <button type="button" onClick={() => handleRemoveClick(row)} disabled={deletingId === row.id || savingId === row.id} className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`} title="Remove" aria-label="Remove drive">
                           {deletingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
                         </button>
                       </DataTableRowActions>
@@ -895,9 +895,9 @@ function SubHeading({ label, hint, headerAction }) {
 }
 
 const STATUS_PILL_TONES = {
-  green: 'bg-green-50 text-green-800 border border-green-200',
+  green: 'bg-status-running-soft text-status-running border border-status-running/30',
   gray: 'bg-surface text-text-secondary border border-surface-border',
-  red: 'bg-red-50 text-red-700 border border-red-200',
+  red: 'bg-status-stopped-soft text-status-stopped border border-status-stopped/30',
 };
 
 function StatusPill({ tone, label }) {

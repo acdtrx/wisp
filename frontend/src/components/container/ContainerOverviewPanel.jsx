@@ -33,7 +33,7 @@ function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default
   const base = 'flex items-center justify-center rounded-md p-2 text-sm font-medium transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed';
   const variants = {
     default: 'border border-surface-border text-text-secondary hover:bg-surface hover:text-text-primary',
-    danger: 'border border-red-200 text-status-stopped hover:bg-red-50',
+    danger: 'border border-status-stopped/30 text-status-stopped hover:bg-status-stopped-soft',
     primary: 'bg-accent text-white hover:bg-accent-hover',
   };
   return (
@@ -241,7 +241,7 @@ export default function ContainerOverviewPanel() {
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
           {config.pendingRestart && (
-            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-status-warning mr-1">
+            <span className="rounded-full bg-status-warning-soft px-2 py-0.5 text-[10px] font-medium text-status-warning mr-1">
               Restart required
             </span>
           )}
@@ -268,16 +268,16 @@ export default function ContainerOverviewPanel() {
       </div>
 
       {error && (
-        <div className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-status-stopped">
+        <div className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-status-stopped/30 bg-status-stopped-soft px-4 py-2 text-xs text-status-stopped">
           <span className="min-w-0 flex-1">{error}</span>
-          <button type="button" onClick={clearError} className="shrink-0 rounded-sm p-1 hover:bg-red-100 transition-colors duration-150" title="Dismiss">
+          <button type="button" onClick={clearError} className="shrink-0 rounded-sm p-1 hover:bg-status-stopped/20 transition-colors duration-150" title="Dismiss">
             <X size={14} />
           </button>
         </div>
       )}
 
       {config.updateAvailable && (
-        <div className="shrink-0 border-b border-orange-200 bg-orange-50 px-4 py-2 text-xs text-orange-900">
+        <div className="shrink-0 border-b border-status-warning/30 bg-status-warning-soft px-4 py-2 text-xs text-status-warning">
           New image version available. Restart to apply.
         </div>
       )}

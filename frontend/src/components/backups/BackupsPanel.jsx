@@ -151,7 +151,7 @@ export default function BackupsPanel() {
           error={restoreError || deleteError}
         >
           {error && (
-            <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-status-stopped">
+            <div className="mb-3 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-3 py-2 text-sm text-status-stopped">
               {error}
             </div>
           )}
@@ -205,7 +205,7 @@ export default function BackupsPanel() {
                           <button
                             type="button"
                             onClick={() => { setDeleteTarget(b); setDeleteError(null); }}
-                            className="rounded-sm p-1.5 text-text-secondary hover:bg-red-50 hover:text-status-stopped"
+                            className="rounded-sm p-1.5 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped"
                             title="Delete backup"
                             aria-label={`Delete backup ${b.displayName}`}
                           >
@@ -237,7 +237,7 @@ export default function BackupsPanel() {
                   type="button"
                   onClick={handleDeleteBackup}
                   disabled={deleteSaving}
-                  className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  className="rounded-md bg-status-stopped px-3 py-1.5 text-xs font-medium text-white hover:bg-status-stopped/90 disabled:opacity-50"
                 >
                   {deleteSaving ? 'Deleting…' : 'Delete'}
                 </button>

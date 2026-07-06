@@ -59,7 +59,7 @@ export default function ContainerListItem({ container }) {
           <span className="truncate text-sm font-medium text-text-primary">{container.name}</span>
           {container.updateAvailable && (
             <span
-              className="shrink-0 rounded-full bg-orange-50 px-1.5 py-0.5 text-[10px] font-medium text-orange-800"
+              className="shrink-0 rounded-full bg-status-warning-soft px-1.5 py-0.5 text-[10px] font-medium text-status-warning"
               title="A new image version is available. Restart to apply."
             >
               Update
@@ -81,7 +81,7 @@ export default function ContainerListItem({ container }) {
             <button
               onClick={(e) => { e.stopPropagation(); startContainer(container.name); }}
               disabled={!!actionLoading}
-              className="rounded-sm p-1 text-text-secondary hover:bg-green-50 hover:text-status-running disabled:opacity-40"
+              className="rounded-sm p-1 text-text-secondary hover:bg-status-running-soft hover:text-status-running disabled:opacity-40"
               title="Start"
             >
               <Play size={14} />
@@ -91,7 +91,7 @@ export default function ContainerListItem({ container }) {
             <button
               onClick={(e) => { e.stopPropagation(); stopContainer(container.name); }}
               disabled={!!actionLoading}
-              className="rounded-sm p-1 text-text-secondary hover:bg-red-50 hover:text-status-stopped disabled:opacity-40"
+              className="rounded-sm p-1 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped disabled:opacity-40"
               title="Stop"
             >
               <Square size={14} />
@@ -101,7 +101,7 @@ export default function ContainerListItem({ container }) {
             <button
               onClick={(e) => { e.stopPropagation(); restartContainer(container.name); }}
               disabled={!!actionLoading}
-              className="rounded-sm p-1 text-text-secondary hover:bg-blue-50 hover:text-accent disabled:opacity-40"
+              className="rounded-sm p-1 text-text-secondary hover:bg-accent-soft hover:text-accent disabled:opacity-40"
               title="Restart"
             >
               <RotateCcw size={14} />

@@ -12,7 +12,7 @@
 - **Minimize dependencies:** Don't add a module for functionality that can be implemented as a small function — write the function instead.
 - **No duplicated functionality:** Overview and Create VM share section components via `isCreating` prop. vmManager is the single implementation for every VM operation.
 - **CORS:** Backend allows CORS from `localhost:5173` only when `NODE_ENV=development`. Production: frontend proxies `/api` and `/ws`.
-- **No CDN assets:** No cdn, jsdelivr, unpkg, googleapis in frontend. Fonts: `font-family: system-ui, -apple-system, sans-serif` only.
+- **No CDN assets:** No cdn, jsdelivr, unpkg, googleapis in frontend. Fonts must be bundled with the app (self-hosted, license file alongside) — no runtime font loading from external hosts. Body/UI default stays `font-family: system-ui, -apple-system, sans-serif`; the bundled display face (`--font-display`) is for brand moments only.
 - **Shell/CLI:** No shell exec of binaries unless the alternative is very complex; validate with the user if the code should exec a CLI.
 - **No regex for XML:** Do not parse or mutate XML with regex. Use `fast-xml-parser` (parseDomainRaw / parseVMFromXML, buildXml, buildDiskXml) already used in the project.
 - **Live data via SSE:** All data that updates over time (host stats, VM list, per-VM stats, job progress, etc.) must be pushed via SSE (or WebSocket where applicable). Do not use repeated GET requests (polling). One-time GET is fine for static or user-triggered data.
@@ -78,7 +78,7 @@ Before writing or modifying any code (skip only for trivial typo/comment-only ed
 2. **Verify your plan** — check existing behavior in specs, error handling patterns (`{ code, message, raw? }` → `{ error, detail }`), API contract, SSE for live data, `fast-xml-parser` for XML, dependency justification, architecture boundaries (vmManager for libvirt, containerManager for containerd, paths.js for filesystem).
 3. **Implement following documented patterns:**
    - Backend: Purpose-named functions, structured errors, single DBus caller (vmManager), no sleep for races
-   - Frontend: Zustand stores, SSE via `createSSE`/`createJobSSE`, shared sections with `isCreating`, system fonts only
+   - Frontend: Zustand stores, SSE via `createSSE`/`createJobSSE`, shared sections with `isCreating`, bundled fonts only (no CDN)
    - Routes: `{ error, detail }` on failure, `handleRouteError` for vmManager errors, `sendError` for others
    - Scripts: Fix in the install/setup pipeline, quote variables, `set -e`
 4. **Update docs** to reflect changes (see Docs and Spec Sync section above).

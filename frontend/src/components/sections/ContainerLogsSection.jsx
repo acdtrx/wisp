@@ -193,9 +193,9 @@ export default function ContainerLogsSection({ containerName }) {
               aria-hidden
               className={
                 !selectedRun.endedAt
-                  ? 'fill-emerald-500 text-emerald-500'
+                  ? 'fill-status-running text-status-running'
                   : (typeof selectedRun.exitCode === 'number' && selectedRun.exitCode !== 0)
-                    ? 'fill-red-500 text-red-500'
+                    ? 'fill-status-stopped text-status-stopped'
                     : 'fill-text-muted text-text-muted'
               }
             />

@@ -262,7 +262,7 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
                 <button
                   onClick={handleDelete}
                   disabled={saving}
-                  className="flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-status-stopped hover:bg-red-50 disabled:opacity-50 transition-colors duration-150"
+                  className="flex items-center gap-1.5 rounded-md border border-status-stopped/30 px-3 py-1.5 text-xs font-medium text-status-stopped hover:bg-status-stopped-soft disabled:opacity-50 transition-colors duration-150"
                 >
                   {saving ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                   Remove
@@ -434,7 +434,7 @@ function EditForm({
               onClick={() => onSelectKey(key)}
               className={`block w-full truncate rounded-md border px-2.5 py-1 text-left font-mono text-[10px] transition-colors duration-150 ${
                 form.sshKey === key
-                  ? 'border-accent bg-blue-50 text-accent'
+                  ? 'border-accent bg-accent-soft text-accent'
                   : 'border-surface-border text-text-secondary hover:bg-surface'
               }`}
             >

@@ -1010,7 +1010,7 @@ function DiskRowActions({
             type="button"
             onClick={onDetach}
             disabled={busy}
-            className={`${iconBtn} hover:bg-red-50 hover:text-status-stopped`}
+            className={`${iconBtn} hover:bg-status-stopped-soft hover:text-status-stopped`}
             title="Unmount disk"
             aria-label={`Unmount ${slot}`}
           >
@@ -1040,7 +1040,7 @@ function CdromRowActions({ slot, loading, onSwap, onEject }) {
         type="button"
         onClick={onEject}
         disabled={!!loading}
-        className={`${iconBtn} hover:bg-amber-50`}
+        className={`${iconBtn} hover:bg-status-warning-soft`}
         title="Eject ISO"
         aria-label={`Eject ISO from ${slot}`}
       >
@@ -1224,7 +1224,7 @@ function CreateCommittedDiskRow({ slot, disk, onChange, onRemove }) {
             <button
               type="button"
               onClick={onRemove}
-              className={`${iconBtn} hover:bg-red-50 hover:text-status-stopped`}
+              className={`${iconBtn} hover:bg-status-stopped-soft hover:text-status-stopped`}
               title="Remove disk"
               aria-label={`Remove ${slot}`}
             >
@@ -1249,7 +1249,7 @@ function CreateCdromTableRow({ slot, path, onClear }) {
       <DataTableTd dense className="text-xs text-text-muted">SATA</DataTableTd>
       <DataTableTd dense align="right">
         <DataTableRowActions forceVisible>
-          <button type="button" onClick={onClear} className={`${iconBtn} hover:bg-amber-50`} title="Remove ISO" aria-label="Remove ISO">
+          <button type="button" onClick={onClear} className={`${iconBtn} hover:bg-status-warning-soft`} title="Remove ISO" aria-label="Remove ISO">
             <CircleX size={14} aria-hidden />
           </button>
         </DataTableRowActions>

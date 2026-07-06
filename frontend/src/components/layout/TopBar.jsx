@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Wind } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
 import HostStatsBar from './HostStatsBar.jsx';
 import BackgroundJobsIndicator from './BackgroundJobsIndicator.jsx';
 import ServerSwitcher from './ServerSwitcher.jsx';
+import WispGlyph from '../shared/WispGlyph.jsx';
 
 export default function TopBar() {
   const logout = useAuthStore((s) => s.logout);
@@ -17,8 +18,8 @@ export default function TopBar() {
   return (
     <header className="flex h-12 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4">
       <div className="flex shrink-0 items-center gap-3">
-        <Wind size={22} className="shrink-0 text-blue-500" strokeWidth={2} aria-hidden />
-        <span className="text-base font-semibold text-text-primary tracking-tight">Wisp</span>
+        <WispGlyph size={22} className="shrink-0" />
+        <span className="font-display text-base font-semibold text-text-primary tracking-tight">Wisp</span>
         <ServerSwitcher />
       </div>
 

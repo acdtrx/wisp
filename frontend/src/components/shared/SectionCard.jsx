@@ -52,7 +52,7 @@ export default function SectionCard({
           onClick={collapsible ? (e) => e.stopPropagation() : undefined}
         >
           {requiresRestart && (
-            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-status-warning">
+            <span className="rounded-full bg-status-warning-soft px-2 py-0.5 text-[10px] font-medium text-status-warning">
               Restart required
             </span>
           )}
@@ -72,7 +72,7 @@ export default function SectionCard({
       </div>
 
       {error && (
-        <div className="mx-5 mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-status-stopped">
+        <div className="mx-5 mb-3 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-3 py-1.5 text-xs text-status-stopped">
           {error}
         </div>
       )}

@@ -236,7 +236,7 @@ export default function WispUpdateSection() {
               </span>
             </div>
             {installSlow && !installStuck && (
-              <div className="mt-1 flex items-start gap-2 text-amber-700">
+              <div className="mt-1 flex items-start gap-2 text-status-warning">
                 <AlertCircle size={13} className="mt-0.5 shrink-0" />
                 <span>
                   Backend hasn't come back yet — install may be slow. Still trying.
@@ -295,7 +295,7 @@ export default function WispUpdateSection() {
           briefly disconnect; the page will reload automatically once the new version is up.
         </p>
         {confirmForce && (
-          <p className="mt-2 text-amber-700">
+          <p className="mt-2 text-status-warning">
             <span className="font-medium">{runningOtherJobs.length} background job(s) are still running.</span>{' '}
             They will be interrupted by the restart.
           </p>

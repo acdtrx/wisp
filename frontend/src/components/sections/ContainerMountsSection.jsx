@@ -879,7 +879,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                           type="button"
                           onClick={() => handleRemove(row)}
                           disabled={rowBusy || saving || rowDeleting}
-                          className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-red-50`}
+                          className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
                           title={row.serverMountName ? 'Remove mount' : 'Remove row'}
                           aria-label={row.serverMountName ? 'Remove mount' : 'Remove row'}
                         >

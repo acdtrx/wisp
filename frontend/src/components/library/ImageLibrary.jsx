@@ -56,7 +56,7 @@ function shortDigest(digest) {
 
 function OciTypeBadge() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+    <span className="inline-flex items-center gap-1 rounded-full bg-status-running-soft px-2 py-0.5 text-[11px] font-medium text-status-running">
       <Package size={12} /> OCI
     </span>
   );
@@ -117,7 +117,7 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onChe
             <button
               type="button"
               onClick={() => onDelete(row)}
-              className="rounded-sm p-1.5 text-text-secondary hover:bg-red-50 hover:text-status-stopped"
+              className="rounded-sm p-1.5 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped"
               title="Delete"
               aria-label={`Delete image ${row.name}`}
             >
@@ -133,20 +133,20 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onChe
 function TypeBadge({ type }) {
   if (type === 'iso') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">
         <Disc size={12} /> ISO
       </span>
     );
   }
   if (type === 'disk') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">
         <HardDrive size={12} /> Disk Image
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-500">
+    <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium text-text-muted">
       <FileQuestion size={12} /> Other
     </span>
   );
@@ -193,10 +193,10 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
               }}
               className="rounded-sm border border-surface-border bg-white px-2 py-0.5 text-sm text-text-primary outline-hidden focus:border-accent"
             />
-            <button type="button" onClick={commitRename} className="rounded-sm p-0.5 text-status-running hover:bg-green-50" title="Confirm rename" aria-label="Confirm rename">
+            <button type="button" onClick={commitRename} className="rounded-sm p-0.5 text-status-running hover:bg-status-running-soft" title="Confirm rename" aria-label="Confirm rename">
               <Check size={14} aria-hidden />
             </button>
-            <button type="button" onClick={cancelRename} className="rounded-sm p-0.5 text-text-muted hover:bg-gray-100" title="Cancel rename" aria-label="Cancel rename">
+            <button type="button" onClick={cancelRename} className="rounded-sm p-0.5 text-text-muted hover:bg-surface" title="Cancel rename" aria-label="Cancel rename">
               <X size={14} aria-hidden />
             </button>
           </div>
@@ -237,7 +237,7 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
             <button
               type="button"
               onClick={() => onDelete(file)}
-              className="rounded-sm p-1.5 text-text-secondary hover:bg-red-50 hover:text-status-stopped"
+              className="rounded-sm p-1.5 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped"
               title="Delete"
               aria-label={`Delete ${file.name}`}
             >
@@ -794,7 +794,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             </button>
           </div>
           {urlCheckResult && (
-            <div className={`mb-3 rounded-sm px-3 py-2 text-xs ${urlCheckResult.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-status-stopped'}`}>
+            <div className={`mb-3 rounded-sm px-3 py-2 text-xs ${urlCheckResult.ok ? 'bg-status-running-soft text-status-running' : 'bg-status-stopped-soft text-status-stopped'}`}>
               {urlCheckResult.ok
                 ? `OK${urlCheckResult.contentLength != null ? ` — ${(urlCheckResult.contentLength / 1024 / 1024).toFixed(1)} MB` : ''}`
                 : urlCheckResult.error}

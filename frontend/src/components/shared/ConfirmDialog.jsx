@@ -14,7 +14,7 @@ export default function ConfirmDialog({
   const confirmCls =
     variant === 'primary'
       ? 'rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover transition-colors duration-150'
-      : 'rounded-md bg-status-stopped px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 transition-colors duration-150';
+      : 'rounded-md bg-status-stopped px-3 py-1.5 text-xs font-medium text-white hover:bg-status-stopped/90 transition-colors duration-150';
 
   return (
     <Modal

@@ -33,8 +33,8 @@ function JobProgressBar({ percent, status }) {
         <div
           className={`h-full rounded-full transition-[width] duration-500 ease-out ${
             isDone
-              ? 'bg-linear-to-r from-emerald-500 to-teal-600 shadow-xs'
-              : 'bg-linear-to-r from-accent via-blue-500 to-indigo-500 shadow-[0_1px_2px_rgba(37,99,235,0.35)]'
+              ? 'bg-status-running shadow-xs'
+              : 'bg-linear-to-r from-accent to-[#3ec3d5] shadow-[0_1px_2px_rgba(15,163,150,0.35)]'
           }`}
           style={{ width: `${p}%` }}
         />

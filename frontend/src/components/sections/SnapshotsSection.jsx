@@ -122,19 +122,19 @@ export default function SnapshotsSection({ vmConfig }) {
   return (
     <SectionCard title="Snapshots" headerAction={snapshotHeaderAdd}>
       {!diskIsQcow2 && (
-        <div className="mb-3 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-status-warning">
+        <div className="mb-3 rounded-md bg-status-warning-soft border border-status-warning/30 px-3 py-2 text-xs text-status-warning">
           Snapshots require qcow2 disk format.
         </div>
       )}
 
       {actionError && (
-        <div className="mb-3 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-status-stopped">
+        <div className="mb-3 rounded-md bg-status-stopped-soft border border-status-stopped/30 px-3 py-2 text-xs text-status-stopped">
           {actionError}
         </div>
       )}
 
       {loadError && (
-        <div className="mb-3 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-status-stopped">
+        <div className="mb-3 rounded-md bg-status-stopped-soft border border-status-stopped/30 px-3 py-2 text-xs text-status-stopped">
           {loadError}
         </div>
       )}
@@ -183,7 +183,7 @@ export default function SnapshotsSection({ vmConfig }) {
                         <button
                           type="button"
                           onClick={() => setDeleteTarget(snap)}
-                          className="inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-muted hover:bg-red-50 hover:text-status-stopped transition-colors"
+                          className="inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-muted hover:bg-status-stopped-soft hover:text-status-stopped transition-colors"
                           title="Delete snapshot"
                           aria-label={`Delete snapshot ${snap.name}`}
                         >

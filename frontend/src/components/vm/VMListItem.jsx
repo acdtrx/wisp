@@ -62,7 +62,7 @@ export default function VMListItem({ vm }) {
           <span className="truncate text-sm font-medium text-text-primary">{vm.name}</span>
           {staleBinary && (
             <span
-              className="inline-block h-2 w-2 shrink-0 rounded-full bg-amber-500"
+              className="inline-block h-2 w-2 shrink-0 rounded-full bg-status-warning"
               title="Restart required: qemu binary was updated after this VM started"
             />
           )}
@@ -82,7 +82,7 @@ export default function VMListItem({ vm }) {
             <button
               onClick={(e) => { e.stopPropagation(); startVM(vm.name); }}
               disabled={!!actionLoading}
-              className="rounded-sm p-1 text-text-secondary hover:bg-green-50 hover:text-status-running disabled:opacity-40"
+              className="rounded-sm p-1 text-text-secondary hover:bg-status-running-soft hover:text-status-running disabled:opacity-40"
               title="Start"
             >
               <Play size={14} />
@@ -92,7 +92,7 @@ export default function VMListItem({ vm }) {
             <button
               onClick={(e) => { e.stopPropagation(); stopVM(vm.name); }}
               disabled={!!actionLoading}
-              className="rounded-sm p-1 text-text-secondary hover:bg-red-50 hover:text-status-stopped disabled:opacity-40"
+              className="rounded-sm p-1 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped disabled:opacity-40"
               title="Stop"
             >
               <Square size={14} />
@@ -102,12 +102,12 @@ export default function VMListItem({ vm }) {
             <button
               onClick={(e) => { e.stopPropagation(); rebootVM(vm.name); }}
               disabled={!!actionLoading || isPaused}
-              className="relative rounded-sm p-1 text-text-secondary hover:bg-blue-50 hover:text-accent disabled:opacity-40"
+              className="relative rounded-sm p-1 text-text-secondary hover:bg-accent-soft hover:text-accent disabled:opacity-40"
               title={staleBinary ? 'Reboot (qemu binary updated since VM started)' : 'Reboot'}
             >
               <RotateCcw size={14} />
               {staleBinary && (
-                <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-amber-500" />
+                <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-status-warning" />
               )}
             </button>
           )}

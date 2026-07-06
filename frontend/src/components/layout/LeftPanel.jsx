@@ -451,7 +451,7 @@ export default function LeftPanel() {
         </div>
         {(pendingUpdates > 0 || wispUpdateAvailable) && (
           <span
-            className="flex h-2 w-2 shrink-0 rounded-full bg-amber-500"
+            className="flex h-2 w-2 shrink-0 rounded-full bg-status-warning"
             title={
               wispUpdateAvailable && pendingUpdates > 0
                 ? `Wisp update available · ${pendingUpdates} OS package update(s)`

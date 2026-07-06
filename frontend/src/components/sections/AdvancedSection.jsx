@@ -245,7 +245,7 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
                         onClick={() => toggleBootDev(dev.value)}
                         className={`rounded-md px-2.5 py-1 text-xs font-medium border transition-colors duration-150 ${
                           active
-                            ? 'border-accent bg-blue-50 text-accent'
+                            ? 'border-accent bg-accent-soft text-accent'
                             : 'border-surface-border text-text-muted hover:text-text-secondary'
                         }`}
                       >
@@ -282,7 +282,7 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
 
         {hasHyperv && (
           <FieldRow label="Windows Optimisations">
-            <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-[11px] font-medium text-status-running">
+            <span className="inline-flex items-center rounded-full bg-status-running-soft px-2.5 py-0.5 text-[11px] font-medium text-status-running">
               Applied
             </span>
           </FieldRow>

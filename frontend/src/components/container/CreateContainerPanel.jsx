@@ -160,7 +160,7 @@ export default function CreateContainerPanel() {
         </div>
 
         {createError && (
-          <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3">
+          <div className="mt-4 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-4 py-3">
             <p className="text-sm font-medium text-status-stopped">{createError}</p>
             {createDetail && <p className="mt-1 text-xs text-status-stopped/80">{createDetail}</p>}
           </div>

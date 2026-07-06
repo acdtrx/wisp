@@ -295,7 +295,7 @@ export default function CreateVMPanel() {
         </div>
 
         {createError && (
-          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+          <div className="mt-4 rounded-lg border border-status-stopped/30 bg-status-stopped-soft p-4">
             <p className="text-sm font-medium text-status-stopped">{createError}</p>
             {createDetail && (
               <button

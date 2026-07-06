@@ -33,7 +33,7 @@ Wisp is a **deployable application**. When fixing or changing behaviour, do it i
 
 - Optional `config/runtime.env`: parsed by backend/frontend when present; no `dotenv` package.
 - Use `@xterm/xterm` and `@xterm/addon-fit` (not deprecated `xterm` / `xterm-addon-fit`).
-- Fonts: `font-family: system-ui, -apple-system, sans-serif` for body UI; Tailwind `font-mono` / system monospace stack only for code-like content (no webfonts, no CDN).
+- Fonts: `font-family: system-ui, -apple-system, sans-serif` for body UI; Tailwind `font-mono` / system monospace stack for code-like content. Custom fonts must be **bundled** (self-hosted woff2 + license in `frontend/src/assets/fonts/`, e.g. the `--font-display` face) — never loaded from a CDN or external host.
 - No cdn, jsdelivr, unpkg, or googleapis links in frontend code.
 - noVNC vendored locally via `scripts/vendor-novnc.sh`.
 - `npm ci` for reproducible installs; include `package-lock.json` in deploys.

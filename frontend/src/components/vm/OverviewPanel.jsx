@@ -55,7 +55,7 @@ function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default
   const base = 'relative flex items-center justify-center rounded-md p-2 text-sm font-medium transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed';
   const variants = {
     default: 'border border-surface-border text-text-secondary hover:bg-surface hover:text-text-primary',
-    danger: 'border border-red-200 text-status-stopped hover:bg-red-50',
+    danger: 'border border-status-stopped/30 text-status-stopped hover:bg-status-stopped-soft',
     primary: 'bg-accent text-white hover:bg-accent-hover',
   };
   const tip = hint ?? label;
@@ -71,7 +71,7 @@ function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default
     >
       {loading ? <Loader2 size={18} className="animate-spin" /> : <Icon size={18} />}
       {badge && (
-        <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500" />
+        <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-status-warning" />
       )}
     </button>
   );
@@ -381,12 +381,12 @@ export default function OverviewPanel() {
 
       {/* Error display - visible in both tabs */}
       {error && (
-        <div className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-status-stopped">
+        <div className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-status-stopped/30 bg-status-stopped-soft px-4 py-2 text-xs text-status-stopped">
           <span className="min-w-0 flex-1">{error}</span>
           <button
             type="button"
             onClick={clearError}
-            className="shrink-0 rounded-sm p-1 hover:bg-red-100 transition-colors duration-150"
+            className="shrink-0 rounded-sm p-1 hover:bg-status-stopped/20 transition-colors duration-150"
             title="Dismiss"
             aria-label="Dismiss error"
           >

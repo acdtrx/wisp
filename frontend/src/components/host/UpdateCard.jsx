@@ -97,8 +97,8 @@ export default function UpdateCard({
           )}
           {status?.type === 'warn' && (
             <>
-              <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-amber-500" />
-              <span className="text-amber-600">
+              <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-status-warning" />
+              <span className="text-status-warning">
                 {status.message}
                 {status.suffix && <span className="ml-1 text-text-muted">{status.suffix}</span>}
               </span>

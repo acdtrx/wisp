@@ -464,7 +464,7 @@ export default function ContainerNetworkSection({
             {strip && (
               <>
               {strip.error && (
-                <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[11px] text-status-stopped">
+                <div className="mb-2 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-2 py-1 text-[11px] text-status-stopped">
                   {strip.error}
                 </div>
               )}
@@ -563,7 +563,7 @@ export default function ContainerNetworkSection({
                       type="button"
                       onClick={handleStripDelete}
                       disabled={strip.saving}
-                      className="rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-status-stopped hover:bg-red-50 disabled:opacity-50"
+                      className="rounded-md border border-status-stopped/30 px-2 py-1 text-[11px] font-medium text-status-stopped hover:bg-status-stopped-soft disabled:opacity-50"
                     >
                       Remove advertisement
                     </button>

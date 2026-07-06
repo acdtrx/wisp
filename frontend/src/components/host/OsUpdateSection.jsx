@@ -193,7 +193,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
         autoCheckLabel="Checked hourly"
       >
         {rebootRequired && (
-          <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700">
+          <div className="mt-2 flex items-start gap-2 rounded-md border border-status-warning/30 bg-status-warning-soft px-2.5 py-1.5 text-xs text-status-warning">
             <AlertCircle size={13} className="mt-0.5 shrink-0" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
@@ -202,7 +202,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
                   <button
                     type="button"
                     onClick={onRequestRestart}
-                    className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 transition-colors duration-150"
+                    className="inline-flex items-center gap-1 rounded-md border border-status-warning/30 bg-white px-2 py-0.5 text-[11px] font-medium text-status-warning hover:bg-status-warning-soft transition-colors duration-150"
                   >
                     <RotateCcw size={11} />
                     Restart now
@@ -210,7 +210,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
                 )}
               </div>
               {rebootReasons.length > 0 && (
-                <div className="mt-0.5 wrap-break-word text-amber-600/90">
+                <div className="mt-0.5 wrap-break-word text-status-warning/90">
                   {rebootReasons.slice(0, 6).join(', ')}
                   {rebootReasons.length > 6 && ` +${rebootReasons.length - 6} more`}
                 </div>

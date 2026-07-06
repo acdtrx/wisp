@@ -161,7 +161,7 @@ export default function HostNetworkBridges({ onError }) {
                           type="button"
                           onClick={() => onDelete(item.name)}
                           disabled={deletingName === item.name}
-                          className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-red-50`}
+                          className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
                           title={`Delete ${item.name}`}
                           aria-label={`Delete bridge ${item.name}`}
                         >

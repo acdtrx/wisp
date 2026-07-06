@@ -389,7 +389,7 @@ export default function HostOverview() {
             </span>
             {(memory.cachedBytes ?? 0) > 0 && (
               <span className="flex items-center gap-1">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-200 shrink-0" aria-hidden />
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-status-warning/40 shrink-0" aria-hidden />
                 <span className="text-text-muted">Cached:</span> {formatBytes(memory.cachedBytes)}
               </span>
             )}
@@ -405,7 +405,7 @@ export default function HostOverview() {
               />
               {(memory.cachedBytes ?? 0) > 0 && (
                 <div
-                  className="bg-amber-200"
+                  className="bg-status-warning/40"
                   style={{ width: `${Math.min(100, (memory.cachedBytes / (memory.totalGB * 1024 ** 3)) * 100)}%` }}
                 />
               )}

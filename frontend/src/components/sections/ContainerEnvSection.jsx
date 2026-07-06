@@ -439,7 +439,7 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
                         type="button"
                         onClick={() => removeRow(row)}
                         disabled={deletingId === row.id || savingId === row.id}
-                        className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-red-50`}
+                        className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
                         title="Remove variable"
                         aria-label="Remove variable"
                       >

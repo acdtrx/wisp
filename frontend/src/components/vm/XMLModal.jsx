@@ -23,7 +23,7 @@ function highlightXml(xml) {
 
       const attrMatch = remaining.match(/^(\s+[\w:.-]+=)/);
       if (attrMatch) {
-        segments.push(<span key={key++} className="text-purple-600">{attrMatch[1]}</span>);
+        segments.push(<span key={key++} className="text-status-warning">{attrMatch[1]}</span>);
         remaining = remaining.slice(attrMatch[1].length);
         continue;
       }
