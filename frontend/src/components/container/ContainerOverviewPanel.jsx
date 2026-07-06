@@ -30,7 +30,7 @@ import AppConfigWrapper from '../../apps/AppConfigWrapper.jsx';
 const ContainerConsolePanel = lazy(() => import('../console/ContainerConsolePanel.jsx'));
 
 function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default', loading }) {
-  const base = 'flex items-center justify-center rounded-md p-2 text-sm font-medium transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed';
+  const base = 'flex shrink-0 items-center justify-center rounded-md p-2 text-sm font-medium transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed';
   const variants = {
     default: 'border border-surface-border text-text-secondary hover:bg-surface hover:text-text-primary',
     danger: 'border border-status-stopped/30 text-status-stopped hover:bg-status-stopped-soft',
@@ -241,9 +241,11 @@ export default function ContainerOverviewPanel() {
             </button>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+        {/* Below lg the actions become a full-width horizontally-scrollable row
+            (primary actions leftmost); at lg+ they wrap right-aligned as before. */}
+        <div className="flex w-full shrink-0 items-center justify-start gap-1 overflow-x-auto lg:w-auto lg:flex-wrap lg:justify-end lg:overflow-visible">
           {config.pendingRestart && (
-            <span className="rounded-full bg-status-warning-soft px-2 py-0.5 text-[10px] font-medium text-status-warning mr-1">
+            <span className="shrink-0 rounded-full bg-status-warning-soft px-2 py-0.5 text-[10px] font-medium text-status-warning mr-1">
               Restart required
             </span>
           )}
@@ -257,7 +259,7 @@ export default function ContainerOverviewPanel() {
           <ActionButton icon={Square} label="Stop" onClick={() => stopContainer(name)} disabled={isStopped} loading={actionLoading === 'stop'} />
           <ActionButton icon={Zap} label="Kill" onClick={() => killContainer(name)} disabled={isStopped} loading={actionLoading === 'kill'} variant="danger" />
           <ActionButton icon={RotateCcw} label="Restart" onClick={() => restartContainer(name)} disabled={!isRunning} loading={actionLoading === 'restart'} />
-          <div className="mx-0.5 h-4 w-px bg-surface-border" />
+          <div className="mx-0.5 h-4 w-px shrink-0 bg-surface-border" />
           <ActionButton
             icon={Archive}
             label={isStopped ? 'Backup' : 'Backup (stop the container first)'}

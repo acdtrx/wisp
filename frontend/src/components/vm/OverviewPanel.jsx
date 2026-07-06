@@ -52,7 +52,7 @@ const STATE_ICON_COLOR = {
 };
 
 function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default', loading, hint, badge }) {
-  const base = 'relative flex items-center justify-center rounded-md p-2 text-sm font-medium transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed';
+  const base = 'relative flex shrink-0 items-center justify-center rounded-md p-2 text-sm font-medium transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed';
   const variants = {
     default: 'border border-surface-border text-text-secondary hover:bg-surface hover:text-text-primary',
     danger: 'border border-status-stopped/30 text-status-stopped hover:bg-status-stopped-soft',
@@ -263,7 +263,8 @@ export default function OverviewPanel() {
           </button>
           <span className="truncate text-sm font-semibold text-text-primary">{name}</span>
           <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-medium text-text-muted shrink-0">vm</span>
-          <div className="flex border-l border-surface-border pl-3">
+          {/* Overview is the only tab once Console is hidden on mobile — drop the strip below lg */}
+          <div className="hidden border-l border-surface-border pl-3 lg:flex">
             <button
               type="button"
               onClick={() => navigate(`/vm/${encodeURIComponent(name)}/overview`)}
@@ -285,7 +286,9 @@ export default function OverviewPanel() {
             </button>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+        {/* Below lg the actions become a full-width horizontally-scrollable row
+            (primary actions leftmost); at lg+ they wrap right-aligned as before. */}
+        <div className="flex w-full shrink-0 items-center justify-start gap-1 overflow-x-auto lg:w-auto lg:flex-wrap lg:justify-end lg:overflow-visible">
           <ActionButton
             icon={Play} label="Start"
             onClick={() => startVM(name)}
@@ -327,7 +330,7 @@ export default function OverviewPanel() {
             disabled={!isPaused}
             loading={actionLoading === 'resume'}
           />
-          <div className="mx-0.5 h-4 w-px bg-surface-border" />
+          <div className="mx-0.5 h-4 w-px shrink-0 bg-surface-border" />
           <ActionButton
             icon={Archive} label="Backup"
             onClick={handleOpenBackup}
@@ -374,10 +377,13 @@ export default function OverviewPanel() {
             variant="danger"
             loading={actionLoading === 'delete'}
           />
-          <ActionButton
-            icon={Code2} label="View XML"
-            onClick={() => setXmlModalOpen(true)}
-          />
+          {/* View XML is a debug affordance — desktop only */}
+          <span className="hidden lg:contents">
+            <ActionButton
+              icon={Code2} label="View XML"
+              onClick={() => setXmlModalOpen(true)}
+            />
+          </span>
         </div>
       </div>
 
