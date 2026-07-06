@@ -23,3 +23,7 @@ export async function registerService() {
 export async function deregisterService() {}
 
 export async function deregisterServicesForContainer() {}
+
+export function subscribeServiceBrowse() {
+  return () => {};
+}

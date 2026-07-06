@@ -1001,6 +1001,24 @@ SSE stream for download progress.
 
 ---
 
+## Discovery
+
+### GET /api/discovery/stream
+
+SSE stream of Wisp instances discovered on the LAN (see [DISCOVERY.md](DISCOVERY.md)). Sends the current peer list immediately, then pushes the full list on every change (peer appeared, peer left, avahi restart). No polling timer.
+
+- **Payload:** bare array, sorted by `name`:
+
+```json
+[
+  { "name": "Other Box", "url": "http://otherbox.local:8080", "version": "1.3.0", "host": "otherbox.local" }
+]
+```
+
+The instance's own announcement is filtered out server-side. On macOS dev (no Avahi) the stream stays `[]`.
+
+---
+
 ## Settings
 
 ### GET /api/settings
@@ -1017,7 +1035,9 @@ Get application settings.
   "containersPath": "/var/lib/wisp/containers",
   "backupLocalPath": "/var/lib/wisp/backups",
   "mounts": [],
-  "backupMountId": null
+  "backupMountId": null,
+  "discoveryEnabled": true,
+  "advertisedUrl": null
 }
 ```
 
@@ -1027,9 +1047,10 @@ The shipped `wisp-config.json.example` has empty `mounts`. Mounts are added via 
 
 Update settings. Partial update — only include fields to change.
 
-- **Body:** Partial settings object (`serverName`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`)
+- **Body:** Partial settings object (`serverName`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`, `discoveryEnabled`, `advertisedUrl`)
 - **200:** Updated settings object
-- **Validation:** Paths must be absolute (start with `/`).
+- **Validation:** Paths must be absolute (start with `/`). `advertisedUrl` must be a valid `http`/`https` URL of at most 251 bytes (mDNS TXT record limit), or `null`/empty to clear — invalid values return **422** `{ error, detail }` with code `INVALID_URL`.
+- **Side effect:** A successful PATCH that changes `serverName`, `discoveryEnabled`, or `advertisedUrl` re-announces the instance's `_wisp._tcp` mDNS service (see [DISCOVERY.md](DISCOVERY.md)).
 - **`containersPath`:** Optional; container storage root (same default as `config.js`; exposed for scripts — App Config UI does not edit it yet).
 - **Mount CRUD:** Not available via PATCH /api/settings. Use `/api/host/mounts` endpoints below.
 

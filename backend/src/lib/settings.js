@@ -31,6 +31,8 @@ const DEFAULTS = {
   backupMountId: null,
   sections: [],
   assignments: {},
+  discoveryEnabled: true,
+  advertisedUrl: null,
 };
 
 /* "main" is the implicit fallback bucket — never persisted as a section, but
@@ -148,6 +150,12 @@ async function readSettingsFile() {
     backupMountId,
     sections,
     assignments,
+    discoveryEnabled:
+      typeof data.discoveryEnabled === 'boolean' ? data.discoveryEnabled : DEFAULTS.discoveryEnabled,
+    advertisedUrl:
+      typeof data.advertisedUrl === 'string' && data.advertisedUrl.trim() !== ''
+        ? data.advertisedUrl.trim()
+        : DEFAULTS.advertisedUrl,
   };
 }
 
@@ -200,6 +208,8 @@ export async function getSettings() {
     backupMountId,
     sections: fromFile.sections || [],
     assignments: fromFile.assignments || {},
+    discoveryEnabled: fromFile.discoveryEnabled,
+    advertisedUrl: fromFile.advertisedUrl,
   };
 }
 
@@ -211,7 +221,29 @@ let writeLock = Promise.resolve();
  * happen inside the lock to avoid lost-update races.
  */
 export async function updateSettings(updates) {
+  if (updates?.advertisedUrl !== undefined) assertValidAdvertisedUrl(updates.advertisedUrl);
   return withSettingsWriteLock((fromFile) => buildUpdatedSettings(fromFile, updates));
+}
+
+function assertValidAdvertisedUrl(value) {
+  if (value === null || value === '') return; // clears back to the default announcement
+  if (typeof value !== 'string') {
+    throw createAppError('INVALID_URL', 'advertisedUrl must be a string or null');
+  }
+  const trimmed = value.trim();
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw createAppError('INVALID_URL', 'advertisedUrl must be a valid URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw createAppError('INVALID_URL', 'advertisedUrl must use http or https');
+  }
+  // The URL travels in a single mDNS TXT entry ("url=<value>", 255 bytes max).
+  if (Buffer.byteLength(trimmed, 'utf8') > 251) {
+    throw createAppError('INVALID_URL', 'advertisedUrl must be at most 251 bytes (mDNS TXT record limit)');
+  }
 }
 
 function buildUpdatedSettings(fromFile, updates) {
@@ -256,6 +288,15 @@ function buildUpdatedSettings(fromFile, updates) {
         ? updates.containersPath.trim()
         : DEFAULTS.containersPath;
   }
+  if (updates.discoveryEnabled !== undefined) {
+    next.discoveryEnabled = updates.discoveryEnabled === true;
+  }
+  if (updates.advertisedUrl !== undefined) {
+    next.advertisedUrl =
+      typeof updates.advertisedUrl === 'string' && updates.advertisedUrl.trim() !== ''
+        ? updates.advertisedUrl.trim()
+        : null;
+  }
 
   return next;
 }
@@ -268,12 +309,15 @@ function buildUpdatedSettings(fromFile, updates) {
  * Returns the merged settings as `getSettings()` would.
  */
 export async function withSettingsWriteLock(mutate) {
-  writeLock = writeLock.then(async () => {
+  const run = writeLock.then(async () => {
     const fromFile = await readSettingsFile();
     const next = await mutate(fromFile);
     if (next) await persistSettings(next);
   });
-  await writeLock;
+  // Keep the chain alive past rejections — a throwing mutate (validation) must
+  // fail its own caller only, not poison every subsequent settings write.
+  writeLock = run.catch(() => {});
+  await run;
   return getSettings();
 }
 
@@ -311,6 +355,8 @@ async function persistSettings(state) {
       return out;
     }),
     backupMountId: state.backupMountId,
+    discoveryEnabled: state.discoveryEnabled !== false,
+    advertisedUrl: state.advertisedUrl ?? null,
   };
   await writeJsonAtomic(CONFIG_PATH, toWrite);
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
+import Toggle from '../shared/Toggle.jsx';
 import PasswordChangeForm from '../settings/PasswordChangeForm.jsx';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { updateSettings } from '../../api/settings.js';
@@ -14,6 +15,8 @@ export default function AppConfig() {
   const [serverName, setServerName] = useState('');
   const [vmsPath, setVmsPath] = useState('');
   const [imagePath, setImagePath] = useState('');
+  const [discoveryEnabled, setDiscoveryEnabled] = useState(true);
+  const [advertisedUrl, setAdvertisedUrl] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -23,6 +26,8 @@ export default function AppConfig() {
       setServerName(settings.serverName || '');
       setVmsPath(settings.vmsPath ?? '');
       setImagePath(settings.imagePath ?? '');
+      setDiscoveryEnabled(settings.discoveryEnabled !== false);
+      setAdvertisedUrl(settings.advertisedUrl ?? '');
     }
   }, [settings]);
 
@@ -31,9 +36,11 @@ export default function AppConfig() {
       settings != null &&
       (serverName !== (settings.serverName || '') ||
         vmsPath !== (settings.vmsPath ?? '') ||
-        imagePath !== (settings.imagePath ?? ''))
+        imagePath !== (settings.imagePath ?? '') ||
+        discoveryEnabled !== (settings.discoveryEnabled !== false) ||
+        advertisedUrl !== (settings.advertisedUrl ?? ''))
     );
-  }, [settings, serverName, vmsPath, imagePath]);
+  }, [settings, serverName, vmsPath, imagePath, discoveryEnabled, advertisedUrl]);
 
   const handleSave = async () => {
     setError(null);
@@ -43,6 +50,9 @@ export default function AppConfig() {
         serverName: serverName.trim() || undefined,
         vmsPath: vmsPath.trim().startsWith('/') ? vmsPath.trim() : undefined,
         imagePath: imagePath.trim().startsWith('/') ? imagePath.trim() : undefined,
+        discoveryEnabled,
+        // explicit null clears back to the default announcement
+        advertisedUrl: advertisedUrl.trim() || null,
       });
       setSettings(updated);
       await loadSettings();
@@ -108,6 +118,32 @@ export default function AppConfig() {
                   className="input-field font-mono placeholder:text-text-muted w-full max-w-md"
                 />
                 <p className="mt-1 text-[10px] text-text-muted">Path for ISOs and disk images.</p>
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
+                  LAN discovery
+                </label>
+                <Toggle checked={discoveryEnabled} onChange={setDiscoveryEnabled} />
+                <p className="mt-1 text-[10px] text-text-muted">
+                  Announce this server on the local network and list other Wisp servers in the top bar.
+                </p>
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
+                  Advertised URL
+                </label>
+                <input
+                  type="text"
+                  value={advertisedUrl}
+                  onChange={(e) => setAdvertisedUrl(e.target.value)}
+                  placeholder="http://myserver.local:8080"
+                  disabled={!discoveryEnabled}
+                  className="input-field font-mono placeholder:text-text-muted w-full max-w-md disabled:opacity-60"
+                />
+                <p className="mt-1 text-[10px] text-text-muted">
+                  Full URL other Wisp servers use to open this one (e.g. behind a reverse proxy).
+                  Leave empty to announce http://&lt;hostname&gt;.local:&lt;port&gt;.
+                </p>
               </div>
             </div>
             <PasswordChangeForm />

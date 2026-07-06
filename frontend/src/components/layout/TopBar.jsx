@@ -1,12 +1,11 @@
 import { useNavigate } from 'react-router-dom';
 import { LogOut, Wind } from 'lucide-react';
-import { useSettingsStore } from '../../store/settingsStore.js';
 import { useAuthStore } from '../../store/authStore.js';
 import HostStatsBar from './HostStatsBar.jsx';
 import BackgroundJobsIndicator from './BackgroundJobsIndicator.jsx';
+import ServerSwitcher from './ServerSwitcher.jsx';
 
 export default function TopBar() {
-  const serverName = useSettingsStore((s) => s.settings?.serverName ?? 'My Server');
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
 
@@ -20,7 +19,7 @@ export default function TopBar() {
       <div className="flex shrink-0 items-center gap-3">
         <Wind size={22} className="shrink-0 text-blue-500" strokeWidth={2} aria-hidden />
         <span className="text-base font-semibold text-text-primary tracking-tight">Wisp</span>
-        <span className="text-sm text-text-muted">{serverName}</span>
+        <ServerSwitcher />
       </div>
 
       <div className="flex min-w-0 flex-1 items-center gap-3">

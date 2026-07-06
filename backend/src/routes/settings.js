@@ -1,5 +1,6 @@
 import { getSettings, updateSettings } from '../lib/settings.js';
-import { sendError } from '../lib/routeErrors.js';
+import { sendError, handleRouteError } from '../lib/routeErrors.js';
+import { refreshWispAnnouncement } from '../lib/wispDiscovery.js';
 
 const mountResponseSchema = {
   type: 'object',
@@ -26,6 +27,8 @@ const settingsResponseProps = {
   containersPath: { type: 'string' },
   mounts: { type: 'array', items: mountResponseSchema },
   backupMountId: { type: ['string', 'null'] },
+  discoveryEnabled: { type: 'boolean' },
+  advertisedUrl: { type: ['string', 'null'] },
 };
 
 export default async function settingsRoutes(fastify) {
@@ -54,6 +57,8 @@ export default async function settingsRoutes(fastify) {
           backupLocalPath: { type: 'string' },
           containersPath: { type: 'string' },
           backupMountId: { type: ['string', 'null'] },
+          discoveryEnabled: { type: 'boolean' },
+          advertisedUrl: { type: ['string', 'null'] },
         },
         additionalProperties: false,
       },
@@ -65,9 +70,28 @@ export default async function settingsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
+      const body = request.body || {};
       try {
-        return await updateSettings(request.body || {});
+        const result = await updateSettings(body);
+        // Re-announce on the LAN when a discovery-relevant field changed —
+        // not on every save: re-registering is a goodbye+announce on the
+        // wire, so peers would see this server flicker in their dropdowns.
+        // Fire-and-forget: PATCH latency must not depend on DBus.
+        if (
+          body.serverName !== undefined ||
+          body.discoveryEnabled !== undefined ||
+          body.advertisedUrl !== undefined
+        ) {
+          refreshWispAnnouncement().catch(() => {});
+        }
+        return result;
       } catch (err) {
+        // Only the validation code takes the 422 path — Node fs errors also
+        // carry a truthy `code` (EACCES, ENOSPC) and must keep the generic 500.
+        if (err?.code === 'INVALID_URL') {
+          handleRouteError(err, reply, request);
+          return;
+        }
         fastify.log.error({ err }, 'Failed to update settings');
         sendError(reply, 500, 'Failed to save settings', err.message);
       }

@@ -34,6 +34,7 @@ import backupsRoutes from './routes/backups.js';
 import containerRoutes from './routes/containers.js';
 import backgroundJobsRoutes from './routes/backgroundJobs.js';
 import updatesRoutes from './routes/updates.js';
+import discoveryRoutes from './routes/discovery.js';
 import { ensureMounts, installMountHotplugHandlers, startAutoMountRetry } from './lib/mountsAutoMount.js';
 import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
 import { startUpdateChecker, stopUpdateChecker, start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
@@ -44,6 +45,7 @@ import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/storag
 import { connect as connectMdns, disconnect as disconnectMdns } from './lib/mdns/index.js';
 import { startVmMdnsReconciler, stopVmMdnsReconciler } from './lib/vmMdnsReconciler.js';
 import { startContainerMdnsReconciler, stopContainerMdnsReconciler } from './lib/containerMdnsReconciler.js';
+import { startWispDiscovery, stopWispDiscovery } from './lib/wispDiscovery.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, '..', '..');
@@ -184,6 +186,7 @@ app.register(backupsRoutes, { prefix: '/api' });
 app.register(containerRoutes, { prefix: '/api' });
 app.register(backgroundJobsRoutes, { prefix: '/api' });
 app.register(updatesRoutes, { prefix: '/api' });
+app.register(discoveryRoutes, { prefix: '/api' });
 app.register(consoleRoutes, { prefix: '/ws' });
 app.register(containerConsoleRoutes, { prefix: '/ws' });
 
@@ -239,6 +242,10 @@ async function start() {
   startVmMdnsReconciler(app.log);
   startContainerMdnsReconciler(app.log);
 
+  // Announce this instance and browse for peers (settings-gated, best-effort,
+  // never rejects). Not awaited: a hung avahi/DBus must not delay app.listen.
+  startWispDiscovery(app.log, { port: PORT });
+
   await app.listen({ port: PORT, host: '0.0.0.0' });
 
   startUsbMonitor();
@@ -272,6 +279,7 @@ async function shutdown(signal) {
   stopWispUpdateChecker();
   stopVmMdnsReconciler();
   stopContainerMdnsReconciler();
+  await stopWispDiscovery(); // needs the live bus — before disconnectMdns
   disconnectLibvirtBus();
   disconnectContainerd();
   await disconnectMdns();

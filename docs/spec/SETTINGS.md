@@ -11,6 +11,8 @@ Settings are split across the Host panel: **App Config** tab (application-wide c
 | Image library path | string | Must start with `/` | Absolute path for the image library. |
 | Container storage path | string | Must start with `/` | Absolute root for container bundles (persisted in `wisp-config.json`; not edited in the App Config UI today). |
 | Backup local path | string | Must start with `/` | Absolute path for local backups. |
+| LAN discovery | boolean | — | Announce this server as a `_wisp._tcp` mDNS service and list other Wisp servers in the top bar. Default **on**. |
+| Advertised URL | string or null | Valid `http`/`https` URL, ≤ 251 bytes | Full URL other Wisp servers use to open this one (e.g. behind a reverse proxy). Empty/null → announce `http://<hostname>.local:<port>`. Invalid URLs are rejected with 422. |
 | Refresh interval | integer | 1–60 seconds | Interval (in seconds) at which the VM list SSE stream sends updates. |
 
 Settings are persisted in `config/wisp-config.json`. The config file is updated with a mutex to prevent concurrent writes.
@@ -61,6 +63,10 @@ Configured in **Host → Host Mgmt → Backup**.
 | `backupMountId` | Optional. If set to a mount `id` from `mounts`, that mount appears as a second destination in the VM Overview backup modal. Use `(none)` when no extra destination should be offered for backups. |
 
 Backups still require the VM to be stopped. The VM modal lists **Local** plus at most one extra destination when `backupMountId` is set.
+
+## LAN Discovery (`discoveryEnabled`, `advertisedUrl`)
+
+Configured in **Host → App Config**. When enabled (default), the backend announces this instance on the LAN and lists discovered peer instances in the top bar. Saving settings re-announces immediately (no restart). Full behavior in [DISCOVERY.md](DISCOVERY.md).
 
 ## Password Change
 

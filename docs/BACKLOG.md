@@ -20,6 +20,18 @@ pointer. Keep this file scannable.
 
 ## Improvements
 
+### Two version readers can disagree: `routes/host.js` `getWispVersion()` vs `wispUpdate.js` `getCurrentVersion()`
+
+**Found:** 2026-07-06, during LAN-discovery review (discovery TXT now uses `getCurrentVersion`).
+
+**Symptom:** None today. If root `package.json` and `backend/package.json` versions ever diverge (partial release-script change, manual bump), the Host panel (`wispVersion` from `getWispVersion`, reads `backend/package.json`) and the LAN-advertised discovery version (`getCurrentVersion`, reads install-root `package.json` with backend fallback) report different numbers.
+
+**Root cause:** Two independent package.json readers predate discovery; discovery exported the wispUpdate one instead of adding a third.
+
+**Fix sketch:** Make `routes/host.js` call the now-exported `getCurrentVersion()` and delete `getWispVersion()`.
+
+**Why deferred:** No user-visible effect while release.sh bumps both files in lockstep; pure consolidation.
+
 ### `wisp-os-update upgrade` uses `apt-get upgrade -y` — packages requiring new deps stay kept-back
 
 **Found:** 2026-05-04, during osUpdate apt-path review.

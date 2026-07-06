@@ -58,7 +58,7 @@ const cache = {
   lastError: null,
 };
 
-function getCurrentVersion() {
+export function getCurrentVersion() {
   try {
     const pkg = JSON.parse(readFileSync(resolve(INSTALL_DIR, 'package.json'), 'utf8'));
     return pkg.version || '0.0.0';

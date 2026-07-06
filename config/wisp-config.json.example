@@ -6,5 +6,7 @@
   "containersPath": "/var/lib/wisp/containers",
   "backupLocalPath": "/var/lib/wisp/backups",
   "mounts": [],
-  "backupMountId": null
+  "backupMountId": null,
+  "discoveryEnabled": true,
+  "advertisedUrl": null
 }
