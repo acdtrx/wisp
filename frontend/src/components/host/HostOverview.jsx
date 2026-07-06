@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { CircuitBoard, Cpu, HardDrive, Loader2, MemoryStick, Network, Package } from 'lucide-react';
+import { CircuitBoard, Cpu, Gpu, HardDrive, Loader2, MemoryStick, Network, Package, Usb } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import {
   DataTableScroll,
@@ -243,14 +243,49 @@ function HardwareInventoryTableHead() {
   return (
     <thead>
       <tr className={dataTableHeadRowClass}>
-        <DataTableTh dense>Type</DataTableTh>
         <DataTableTh dense>Device</DataTableTh>
-        <DataTableTh dense>Vendor</DataTableTh>
-        <DataTableTh dense>Driver</DataTableTh>
-        <DataTableTh dense>Address</DataTableTh>
-        <DataTableTh dense>Temp</DataTableTh>
+        <DataTableTh dense className="hidden sm:table-cell">Vendor</DataTableTh>
+        <DataTableTh dense className="hidden sm:table-cell">Driver</DataTableTh>
+        <DataTableTh dense className="hidden sm:table-cell">Address</DataTableTh>
+        <DataTableTh dense className="hidden sm:table-cell">Temp</DataTableTh>
       </tr>
     </thead>
+  );
+}
+
+/** First word of a vendor string — "Intel Corporation" → "Intel". */
+function vendorShort(vendor) {
+  const v = String(vendor || '').trim();
+  if (!v || v === '—') return null;
+  return v.split(/\s+/)[0];
+}
+
+/* Device-kind icons replace the old Type column; the full type label lives in
+ * the icon tooltip. Prefix-matched against the sysfs PCI class code. */
+const PCI_CLASS_ICONS = [
+  ['0c03', Usb],
+  ['01', HardDrive],
+  ['02', Network],
+  ['03', Gpu],
+];
+
+function pciClassIcon(classCode) {
+  const c = String(classCode || '').toLowerCase();
+  for (const [prefix, Icon] of PCI_CLASS_ICONS) {
+    if (c.startsWith(prefix)) return Icon;
+  }
+  return CircuitBoard;
+}
+
+function HardwareTypeIcon({ icon: Icon, label, muted = false }) {
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      className={`mt-0.5 inline-flex shrink-0 ${muted ? 'text-text-muted' : 'text-text-secondary'}`}
+    >
+      <Icon size={14} aria-hidden />
+    </span>
   );
 }
 
@@ -484,7 +519,8 @@ export default function HostOverview() {
                 </div>
               ))}
             </div>
-            <div className="hidden sm:block">
+            {/* -mx-4 cancels the cells' px-4 edge inset (aligns with card padding) */}
+            <div className="-mx-4 hidden sm:block">
               <DataTableScroll>
                 <DataTable minWidthRem={28}>
                   <thead>
@@ -632,7 +668,8 @@ function HostHardwareInventorySection({
   const renderPciRow = (d, { nested }) => {
     const addrKey = normalizePciBdf(d.address);
     const tempC = pciTempByAddress.get(addrKey);
-    const typeCell = nested ? `└ ${d.className}` : d.className;
+    const tempLabel = tempC != null ? `${formatDecimal(tempC)} °C` : null;
+    const vendor = vendorShort(d.vendor);
     return (
       <tr
         key={nested ? `pci-nested-${d.address}` : `pci-${d.address}`}
@@ -641,16 +678,26 @@ function HostHardwareInventorySection({
         <DataTableTd
           dense
           valign="top"
-          className={`whitespace-nowrap ${nested ? 'pl-9! text-text-muted' : ''}`}
+          className={nested ? 'text-text-muted' : 'text-text-primary'}
         >
-          {typeCell}
+          <div className="flex items-start gap-2">
+            {nested && <span className="text-text-muted" aria-hidden>└</span>}
+            <HardwareTypeIcon icon={pciClassIcon(d.classCode)} label={d.className} muted={nested} />
+            <div className="min-w-0">
+              <div>{d.device}</div>
+              <div className="mt-0.5 text-xs text-text-muted sm:hidden">
+                {[vendor, tempLabel].filter(Boolean).join(' · ') || '—'}
+              </div>
+            </div>
+          </div>
         </DataTableTd>
-        <DataTableTd dense valign="top" className={nested ? 'text-text-muted' : 'text-text-primary'}>{d.device}</DataTableTd>
-        <DataTableTd dense valign="top" className={nested ? 'text-text-muted' : 'text-text-primary'}>{d.vendor}</DataTableTd>
-        <DataTableTd dense valign="top" className="font-mono text-text-secondary">{d.driver ?? '—'}</DataTableTd>
-        <DataTableTd dense valign="top" className="font-mono text-text-secondary">{d.address}</DataTableTd>
-        <DataTableTd dense valign="top" className="whitespace-nowrap tabular-nums text-text-muted">
-          {tempC != null ? `${formatDecimal(tempC)} °C` : '—'}
+        <DataTableTd dense valign="top" className={`hidden sm:table-cell ${nested ? 'text-text-muted' : 'text-text-primary'}`}>
+          {d.vendor || '—'}
+        </DataTableTd>
+        <DataTableTd dense valign="top" className="hidden font-mono text-text-secondary sm:table-cell">{d.driver ?? '—'}</DataTableTd>
+        <DataTableTd dense valign="top" className="hidden font-mono text-text-secondary sm:table-cell">{d.address}</DataTableTd>
+        <DataTableTd dense valign="top" className="hidden whitespace-nowrap tabular-nums text-text-muted sm:table-cell">
+          {tempLabel || '—'}
         </DataTableTd>
       </tr>
     );
@@ -670,30 +717,33 @@ function HostHardwareInventorySection({
       formatAtaSectorLine(smart),
     ].filter(Boolean).join(' - ');
     const warningText = smart?.criticalWarning || smart?.error || null;
-    const typeLabel = nested ? `└ ${blockDeviceStorageTypeLabel(d)}` : blockDeviceStorageTypeLabel(d);
+    const typeLabel = blockDeviceStorageTypeLabel(d);
+    const tempLabel = tempC != null ? `${formatDecimal(tempC)} °C` : null;
     return (
       <tr
         key={nested ? `disk-nested-${d.name}` : `disk-${d.name}`}
         className={`${dataTableBodyRowClass} ${nested ? 'bg-surface/30' : ''}`}
       >
-        <DataTableTd
-          dense
-          valign="top"
-          className={`whitespace-nowrap text-text-primary ${nested ? 'pl-9!' : ''}`}
-        >
-          {typeLabel}
-        </DataTableTd>
         <DataTableTd dense valign="top" className="text-text-primary">
-          <div>{[d.model, formatBytes(d.sizeBytes)].filter(Boolean).join(' - ')}</div>
-          <div className="text-xs text-text-secondary mt-0.5">{smartLine}</div>
-          {warningText ? (
-            <div className="text-xs text-status-paused mt-0.5">{warningText}</div>
-          ) : null}
+          <div className="flex items-start gap-2">
+            {nested && <span className="text-text-muted" aria-hidden>└</span>}
+            <HardwareTypeIcon icon={HardDrive} label={typeLabel} muted={nested} />
+            <div className="min-w-0">
+              <div>{[d.model, formatBytes(d.sizeBytes)].filter(Boolean).join(' - ')}</div>
+              <div className="text-xs text-text-secondary mt-0.5">{smartLine}</div>
+              {warningText ? (
+                <div className="text-xs text-status-paused mt-0.5">{warningText}</div>
+              ) : null}
+              {tempLabel && (
+                <div className="mt-0.5 text-xs text-text-muted sm:hidden">{tempLabel}</div>
+              )}
+            </div>
+          </div>
         </DataTableTd>
-        <DataTableTd dense valign="top" className="text-text-primary">—</DataTableTd>
-        <DataTableTd dense valign="top" className="font-mono text-text-secondary">{d.name}</DataTableTd>
-        <DataTableTd dense valign="top" className="font-mono text-text-secondary">—</DataTableTd>
-        <DataTableTd dense valign="top" className="whitespace-nowrap tabular-nums text-text-muted">
+        <DataTableTd dense valign="top" className="hidden text-text-primary sm:table-cell">—</DataTableTd>
+        <DataTableTd dense valign="top" className="hidden font-mono text-text-secondary sm:table-cell">{d.name}</DataTableTd>
+        <DataTableTd dense valign="top" className="hidden font-mono text-text-secondary sm:table-cell">—</DataTableTd>
+        <DataTableTd dense valign="top" className="hidden whitespace-nowrap tabular-nums text-text-muted sm:table-cell">
           {tempC != null ? (
             <span title={formatThresholdTooltip(nvmeZone) || undefined}>
               {`${formatDecimal(tempC)} °C`}
@@ -743,28 +793,41 @@ function HostHardwareInventorySection({
         </p>
       )}
       {(hasMain || hasIo || hasOthers) ? (
-        <DataTableScroll>
-          <DataTable minWidthRem={36}>
-            <HardwareInventoryTableHead />
+        // -mx-4 cancels the cells' px-4 edge inset so the first column aligns
+        // with the card's own padding instead of double-indenting.
+        <div className="-mx-4">
+          <DataTableScroll>
+            {/* Phones show only the Device column (no min-width needed) */}
+            <DataTable minWidthRem="sm:min-w-[30rem]">
+              <HardwareInventoryTableHead />
             <tbody>
               {hasMain && (
                 <>
                   <tr>
                     <td
                       className={`${dataTableCellPadX} pt-2 pb-1 text-[11px] font-medium text-text-muted uppercase tracking-wider`}
-                      colSpan={6}
+                      colSpan={5}
                     >
                       Main
                     </td>
                   </tr>
                   {ramSorted.map((m, i) => (
                     <tr key={`ram-${i}-${m.slot}`} className={dataTableBodyRowClass}>
-                      <DataTableTd dense valign="top" className="whitespace-nowrap">{formatRamInventoryType(m)}</DataTableTd>
-                      <DataTableTd dense valign="top" className="text-text-primary">{formatRamInventoryDevice(m)}</DataTableTd>
-                      <DataTableTd dense valign="top" className="text-text-primary">{m.manufacturer || '—'}</DataTableTd>
-                      <DataTableTd dense valign="top" className="font-mono text-text-secondary">—</DataTableTd>
-                      <DataTableTd dense valign="top" className="font-mono text-text-secondary">—</DataTableTd>
-                      <DataTableTd dense valign="top" className="whitespace-nowrap tabular-nums text-text-muted">—</DataTableTd>
+                      <DataTableTd dense valign="top" className="text-text-primary">
+                        <div className="flex items-start gap-2">
+                          <HardwareTypeIcon icon={MemoryStick} label={formatRamInventoryType(m)} />
+                          <div className="min-w-0">
+                            <div>{formatRamInventoryDevice(m)}</div>
+                            <div className="mt-0.5 text-xs text-text-muted sm:hidden">
+                              {vendorShort(m.manufacturer) || '—'}
+                            </div>
+                          </div>
+                        </div>
+                      </DataTableTd>
+                      <DataTableTd dense valign="top" className="hidden text-text-primary sm:table-cell">{m.manufacturer || '—'}</DataTableTd>
+                      <DataTableTd dense valign="top" className="hidden font-mono text-text-secondary sm:table-cell">—</DataTableTd>
+                      <DataTableTd dense valign="top" className="hidden font-mono text-text-secondary sm:table-cell">—</DataTableTd>
+                      <DataTableTd dense valign="top" className="hidden whitespace-nowrap tabular-nums text-text-muted sm:table-cell">—</DataTableTd>
                     </tr>
                   ))}
                   {mainNetworkPci.map((d) => renderPciRow(d, { nested: false }))}
@@ -786,7 +849,7 @@ function HostHardwareInventorySection({
                   <tr>
                     <td
                       className={`${dataTableCellPadX} pt-4 pb-1 text-[11px] font-medium text-text-muted uppercase tracking-wider`}
-                      colSpan={6}
+                      colSpan={5}
                     >
                       I/O
                     </td>
@@ -799,7 +862,7 @@ function HostHardwareInventorySection({
                   <tr>
                     <td
                       className={`${dataTableCellPadX} pt-4 pb-1 text-[11px] font-medium text-text-muted uppercase tracking-wider`}
-                      colSpan={6}
+                      colSpan={5}
                     >
                       Misc
                     </td>
@@ -808,8 +871,9 @@ function HostHardwareInventorySection({
                 </>
               )}
             </tbody>
-          </DataTable>
-        </DataTableScroll>
+            </DataTable>
+          </DataTableScroll>
+        </div>
       ) : (
         <p className="text-sm text-text-muted">
           {hardwareError ? 'Could not load hardware inventory.' : 'No hardware inventory listed (or still loading).'}

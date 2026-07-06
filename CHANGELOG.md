@@ -5,6 +5,7 @@
 ### New Features
 - **Mobile-friendly layout** — below 1024px the sidebar becomes a drawer with a hamburger toggle, lifecycle/table actions are always visible with larger touch targets, detail headers wrap, dialogs get gutters, and Wisp is pinnable to a phone home screen (web manifest). Consoles stay desktop-only.
 - **Mobile polish** — full-width drawer under the top bar on phones (hamburger toggles to an X), Host Overview network as stacked two-line rows without horizontal scroll, no-wrap host tabs.
+- **Hardware inventory slimmed** — device-kind icons replace the Type column (full type in tooltip); on phones only Device renders, with vendor (first word) and temp stacked underneath — no horizontal scroll. Desktop keeps full Vendor/Driver/Address/Temp. Nested drives keep the `└` marker without indent, and Overview tables align flush with card padding.
 - **Teal identity refresh** — new "Will-o'-the-Wisp" palette (luminous teal accent, teal-tinted neutrals), soft-tint tokens replacing hand-rolled color washes, gradient brand glyph, bundled display font for wordmark and login, refreshed favicon.
 - **LAN auto-discovery of Wisp instances** — each instance announces a `_wisp._tcp` mDNS service and browses for peers; discovered servers appear in a top-bar dropdown next to the server name, opening in a new tab. New App Config settings: LAN discovery toggle (default on) and Advertised URL for reverse-proxied instances.
 
