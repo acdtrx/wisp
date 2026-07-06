@@ -9,6 +9,7 @@
 
 ### Bug Fixes
 - **Peer discovery now picks up Advertised URL / name changes live** — browsing uses a persistent Avahi resolver per instance instead of a one-shot resolve, so a peer's settings change no longer shows stale until restart.
+- **Server-switcher dropdown labels show the advertised hostname** (where the link goes) instead of the mDNS `.local` host.
 - **Settings write-lock no longer poisoned by a failed update** — a validation error thrown mid-write previously left the mutex rejected, failing every later settings save until restart.
 
 ## 2026-07-06 (v1.3.0)

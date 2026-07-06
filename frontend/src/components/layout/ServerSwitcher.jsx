@@ -9,6 +9,19 @@ import { useDiscoveryStore } from '../../store/discoveryStore.js';
  * LAN (via the discovery SSE stream) it grows a chevron that opens a menu of
  * peers, each opening in a new tab. With no peers it renders the plain name.
  */
+
+/**
+ * The muted label under a peer's name shows where the link actually goes —
+ * the advertised URL's hostname (e.g. a reverse-proxy domain), not the mDNS
+ * SRV host, which may differ. Falls back to the SRV host if the URL is odd.
+ */
+function peerHostLabel(peer) {
+  try {
+    return new URL(peer.url).hostname;
+  } catch {
+    return peer.host;
+  }
+}
 export default function ServerSwitcher() {
   const serverName = useSettingsStore((s) => s.settings?.serverName ?? 'My Server');
   const peers = useDiscoveryStore((s) => s.peers);
@@ -78,7 +91,7 @@ export default function ServerSwitcher() {
             >
               <span className="text-sm text-text-primary">{peer.name}</span>
               <span className="text-[10px] text-text-muted">
-                {peer.host}
+                {peerHostLabel(peer)}
                 {peer.version ? ` · v${peer.version}` : ''}
               </span>
             </a>
