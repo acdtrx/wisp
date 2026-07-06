@@ -9,6 +9,7 @@
 - **Tables align flush with card padding everywhere** — the shared table scroll wrapper cancels the cells' edge inset, removing the double indent inside every section card.
 - **Two-row top bar on phones** — brand and actions on the first row, host stats pills full-width on their own second row; update cards (Wisp/OS) stack text above buttons on mobile and the OS update description is shorter.
 - **Image library fits phones** — name + actions as the only columns below `sm`, with type, size, and modified stacked under the name; digest is desktop-only.
+- **Host Mgmt works on phones (read-only + mount toggle)** — SMB shares and removable drives show label/share (or fs) and status/mount-path on two lines with a mount/unmount toggle; network bridges are read-only; add/edit/delete/adopt are desktop-only (deferred to a future modal editor). Backup form stays editable.
 - **Teal identity refresh** — new "Will-o'-the-Wisp" palette (luminous teal accent, teal-tinted neutrals), soft-tint tokens replacing hand-rolled color washes, gradient brand glyph, bundled display font for wordmark and login, refreshed favicon.
 - **LAN auto-discovery of Wisp instances** — each instance announces a `_wisp._tcp` mDNS service and browses for peers; discovered servers appear in a top-bar dropdown next to the server name, opening in a new tab. New App Config settings: LAN discovery toggle (default on) and Advertised URL for reverse-proxied instances.
 

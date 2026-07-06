@@ -110,7 +110,7 @@ export default function HostNetworkBridges({ onError }) {
     <button
       type="button"
       onClick={openCreate}
-      className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
+      className="hidden sm:inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
       title="Add VLAN bridge"
       aria-label="Add VLAN bridge"
     >
@@ -135,10 +135,10 @@ export default function HostNetworkBridges({ onError }) {
               <thead>
                 <tr className={dataTableHeadRowClass}>
                   <DataTableTh dense className="w-48">Name</DataTableTh>
-                  <DataTableTh dense>Parent</DataTableTh>
-                  <DataTableTh dense>VLAN Id</DataTableTh>
-                  <DataTableTh dense>Status</DataTableTh>
-                  <DataTableTh dense align="right">Actions</DataTableTh>
+                  <DataTableTh dense className="hidden sm:table-cell">Parent</DataTableTh>
+                  <DataTableTh dense className="hidden sm:table-cell">VLAN Id</DataTableTh>
+                  <DataTableTh dense className="hidden sm:table-cell">Status</DataTableTh>
+                  <DataTableTh dense align="right" className="hidden sm:table-cell">Actions</DataTableTh>
                 </tr>
               </thead>
               <tbody>
@@ -151,11 +151,19 @@ export default function HostNetworkBridges({ onError }) {
                 )}
                 {managed.map((item) => (
                   <tr key={item.name} className={dataTableInteractiveRowClass}>
-                    <DataTableTd dense className="w-48 font-mono text-sm text-text-primary">{item.name}</DataTableTd>
-                    <DataTableTd dense className="font-mono text-sm text-text-secondary">{item.baseBridge}</DataTableTd>
-                    <DataTableTd dense className="tabular-nums text-sm text-text-secondary">{item.vlanId}</DataTableTd>
-                    <DataTableTd dense className="text-sm text-text-secondary">{item.present ? 'present' : 'missing'}</DataTableTd>
-                    <DataTableTd dense align="right">
+                    <DataTableTd dense className="w-48 font-mono text-sm text-text-primary">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span>{item.name}</span>
+                        <span className="font-sans text-xs text-text-muted sm:hidden">{item.baseBridge}</span>
+                      </div>
+                      <div className="mt-0.5 font-sans text-xs text-text-muted sm:hidden">
+                        VLAN {item.vlanId} · {item.present ? 'present' : 'missing'}
+                      </div>
+                    </DataTableTd>
+                    <DataTableTd dense className="hidden font-mono text-sm text-text-secondary sm:table-cell">{item.baseBridge}</DataTableTd>
+                    <DataTableTd dense className="hidden tabular-nums text-sm text-text-secondary sm:table-cell">{item.vlanId}</DataTableTd>
+                    <DataTableTd dense className="hidden text-sm text-text-secondary sm:table-cell">{item.present ? 'present' : 'missing'}</DataTableTd>
+                    <DataTableTd dense align="right" className="hidden sm:table-cell">
                       <DataTableRowActions forceVisible={deletingName === item.name}>
                         <button
                           type="button"

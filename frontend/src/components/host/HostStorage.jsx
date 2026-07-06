@@ -369,7 +369,7 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
     <button
       type="button"
       onClick={handleAdd}
-      className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
+      className="hidden sm:inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
       title="Add SMB share"
       aria-label="Add SMB share"
     >
@@ -386,11 +386,11 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
           <thead>
             <tr className={dataTableHeadRowClass}>
               <DataTableTh dense>Label</DataTableTh>
-              <DataTableTh dense className="min-w-40">Share</DataTableTh>
-              <DataTableTh dense className="min-w-36">Mount path</DataTableTh>
-              <DataTableTh dense>User</DataTableTh>
-              <DataTableTh dense>Password</DataTableTh>
-              <DataTableTh dense>Status</DataTableTh>
+              <DataTableTh dense className="hidden min-w-40 sm:table-cell">Share</DataTableTh>
+              <DataTableTh dense className="hidden min-w-36 sm:table-cell">Mount path</DataTableTh>
+              <DataTableTh dense className="hidden sm:table-cell">User</DataTableTh>
+              <DataTableTh dense className="hidden sm:table-cell">Password</DataTableTh>
+              <DataTableTh dense className="hidden sm:table-cell">Status</DataTableTh>
               <DataTableTh dense align="right">Actions</DataTableTh>
             </tr>
           </thead>
@@ -439,31 +439,42 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
                     {editing ? (
                       <input type="text" value={row.label} onChange={(e) => updateField(row.id, 'label', e.target.value)} placeholder="Label" className="input-field w-full min-w-24 text-xs" />
                     ) : (
-                      <span className="text-text-primary">{truncate(row.label, 24)}</span>
+                      <>
+                        <div className="flex min-w-0 items-baseline gap-2">
+                          <span className="shrink-0 text-text-primary">{truncate(row.label, 24)}</span>
+                          <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-muted sm:hidden">{row.share}</span>
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-2 sm:hidden">
+                          {persisted && (
+                            <StatusPill {...(mounted ? { tone: 'green', label: 'mounted' } : { tone: 'gray', label: 'unmounted' })} />
+                          )}
+                          <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-muted">{row.mountPath}</span>
+                        </div>
+                      </>
                     )}
                   </DataTableTd>
-                  <DataTableTd dense className="text-sm font-mono text-text-secondary">
+                  <DataTableTd dense className="hidden text-sm font-mono text-text-secondary sm:table-cell">
                     {editing ? (
                       <input type="text" value={row.share} onChange={(e) => updateField(row.id, 'share', e.target.value)} placeholder="//server/share" className="input-field w-full min-w-0 text-xs" />
                     ) : (
                       truncate(row.share, 36)
                     )}
                   </DataTableTd>
-                  <DataTableTd dense className="text-sm font-mono text-text-secondary">
+                  <DataTableTd dense className="hidden text-sm font-mono text-text-secondary sm:table-cell">
                     {editing ? (
                       <input type="text" value={row.mountPath} onChange={(e) => updateField(row.id, 'mountPath', e.target.value)} placeholder="/mnt/wisp/smb" className="input-field w-full min-w-0 text-xs" />
                     ) : (
                       truncate(row.mountPath, 28)
                     )}
                   </DataTableTd>
-                  <DataTableTd dense className="text-sm">
+                  <DataTableTd dense className="hidden text-sm sm:table-cell">
                     {editing ? (
                       <input type="text" value={row.username} onChange={(e) => updateField(row.id, 'username', e.target.value)} placeholder="Username" className="input-field w-full min-w-24 text-xs" />
                     ) : (
                       <span className="text-text-muted">{row.username ? truncate(row.username, 16) : '—'}</span>
                     )}
                   </DataTableTd>
-                  <DataTableTd dense className="text-sm">
+                  <DataTableTd dense className="hidden text-sm sm:table-cell">
                     {editing ? (
                       <input type="password" value={row.password} onChange={(e) => updateField(row.id, 'password', e.target.value)} placeholder="Password" className="input-field w-full min-w-24 text-xs" />
                     ) : (
@@ -472,7 +483,7 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
                       </span>
                     )}
                   </DataTableTd>
-                  <DataTableTd dense className="text-sm">
+                  <DataTableTd dense className="hidden text-sm sm:table-cell">
                     {persisted ? (
                       <StatusPill {...(mounted ? { tone: 'green', label: 'mounted' } : { tone: 'gray', label: 'unmounted' })} />
                     ) : (
@@ -481,34 +492,37 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
                   </DataTableTd>
                   <DataTableTd dense align="right">
                     <DataTableRowActions forceVisible={editing}>
-                      {editing && (
-                        <>
-                          <button type="button" onClick={() => handleSave(row)} disabled={!canSave} className={rowActionIconBtnPrimary} title="Save" aria-label="Save SMB mount">
-                            {savingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Save size={14} aria-hidden />}
-                          </button>
-                          <button type="button" onClick={() => cancelEdit(row)} disabled={savingId === row.id} className={iconBtn} title="Cancel edit" aria-label="Cancel edit">
-                            <X size={14} aria-hidden />
-                          </button>
-                        </>
-                      )}
-                      {pathOk(row) && (
-                        <button type="button" onClick={() => handleCheck(row)} disabled={checkLoading} className={checkBtnClass} title={checkTitle} aria-label={checkTitle}>
-                          {checkLoading ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <ShieldCheck size={14} aria-hidden />}
-                        </button>
-                      )}
+                      {/* Mount toggle is the only management action on phones */}
                       {persisted && (
                         <button type="button" onClick={() => handleMountToggle(row.id, mounted)} disabled={mountActionId === row.id || editing} className={`inline-flex items-center justify-center rounded-md border p-1.5 transition-colors duration-150 disabled:opacity-40 ${mountBtnClass}`} title={mounted ? 'Unmount share' : 'Mount share'} aria-label={mounted ? 'Unmount share' : 'Mount share'}>
                           {mountActionId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : mounted ? <Unplug size={14} aria-hidden /> : <Plug size={14} aria-hidden />}
                         </button>
                       )}
-                      {!editing && (
-                        <button type="button" onClick={() => startEdit(row)} className={iconBtn} title="Edit" aria-label="Edit SMB mount">
-                          <Pencil size={14} aria-hidden />
+                      <span className="hidden sm:contents">
+                        {editing && (
+                          <>
+                            <button type="button" onClick={() => handleSave(row)} disabled={!canSave} className={rowActionIconBtnPrimary} title="Save" aria-label="Save SMB mount">
+                              {savingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Save size={14} aria-hidden />}
+                            </button>
+                            <button type="button" onClick={() => cancelEdit(row)} disabled={savingId === row.id} className={iconBtn} title="Cancel edit" aria-label="Cancel edit">
+                              <X size={14} aria-hidden />
+                            </button>
+                          </>
+                        )}
+                        {pathOk(row) && (
+                          <button type="button" onClick={() => handleCheck(row)} disabled={checkLoading} className={checkBtnClass} title={checkTitle} aria-label={checkTitle}>
+                            {checkLoading ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <ShieldCheck size={14} aria-hidden />}
+                          </button>
+                        )}
+                        {!editing && (
+                          <button type="button" onClick={() => startEdit(row)} className={iconBtn} title="Edit" aria-label="Edit SMB mount">
+                            <Pencil size={14} aria-hidden />
+                          </button>
+                        )}
+                        <button type="button" onClick={() => handleRemoveClick(row)} disabled={deletingId === row.id || savingId === row.id} className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`} title="Remove" aria-label="Remove SMB mount">
+                          {deletingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
                         </button>
-                      )}
-                      <button type="button" onClick={() => handleRemoveClick(row)} disabled={deletingId === row.id || savingId === row.id} className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`} title="Remove" aria-label="Remove SMB mount">
-                        {deletingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
-                      </button>
+                      </span>
                     </DataTableRowActions>
                   </DataTableTd>
                 </tr>
@@ -692,12 +706,12 @@ function RemovableDrivesSection({
             <thead>
               <tr className={dataTableHeadRowClass}>
                 <DataTableTh dense>Label</DataTableTh>
-                <DataTableTh dense>UUID</DataTableTh>
-                <DataTableTh dense>FS</DataTableTh>
-                <DataTableTh dense className="min-w-36">Mount path</DataTableTh>
-                <DataTableTh dense>RO</DataTableTh>
-                <DataTableTh dense>Auto</DataTableTh>
-                <DataTableTh dense>Status</DataTableTh>
+                <DataTableTh dense className="hidden sm:table-cell">UUID</DataTableTh>
+                <DataTableTh dense className="hidden sm:table-cell">FS</DataTableTh>
+                <DataTableTh dense className="hidden min-w-36 sm:table-cell">Mount path</DataTableTh>
+                <DataTableTh dense className="hidden sm:table-cell">RO</DataTableTh>
+                <DataTableTh dense className="hidden sm:table-cell">Auto</DataTableTh>
+                <DataTableTh dense className="hidden sm:table-cell">Status</DataTableTh>
                 <DataTableTh dense align="right">Actions</DataTableTh>
               </tr>
             </thead>
@@ -732,29 +746,44 @@ function RemovableDrivesSection({
                       {editing ? (
                         <input type="text" value={row.label} onChange={(e) => updateField(row.id, 'label', e.target.value)} placeholder="Label" className="input-field w-full min-w-24 text-xs" />
                       ) : (
-                        <span className="text-text-primary">{truncate(row.label, 24)}</span>
+                        <>
+                          <div className="flex min-w-0 items-baseline gap-2">
+                            <span className="shrink-0 text-text-primary">{truncate(row.label, 24)}</span>
+                            <span className="font-mono text-xs text-text-muted sm:hidden">{row.fsType || '—'}</span>
+                          </div>
+                          <div className="mt-0.5 flex items-center gap-2 sm:hidden">
+                            {persisted && (
+                              mounted
+                                ? <StatusPill tone="green" label="mounted" />
+                                : present
+                                  ? <StatusPill tone="gray" label="present" />
+                                  : <StatusPill tone="red" label="disconnected" />
+                            )}
+                            <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-muted">{row.mountPath}</span>
+                          </div>
+                        </>
                       )}
                     </DataTableTd>
-                    <DataTableTd dense className="text-sm font-mono text-text-muted">
+                    <DataTableTd dense className="hidden text-sm font-mono text-text-muted sm:table-cell">
                       {shortUuid(row.uuid)}
                     </DataTableTd>
-                    <DataTableTd dense className="text-sm font-mono text-text-secondary">
+                    <DataTableTd dense className="hidden text-sm font-mono text-text-secondary sm:table-cell">
                       {row.fsType || '—'}
                     </DataTableTd>
-                    <DataTableTd dense className="text-sm font-mono text-text-secondary">
+                    <DataTableTd dense className="hidden text-sm font-mono text-text-secondary sm:table-cell">
                       {editing ? (
                         <input type="text" value={row.mountPath} onChange={(e) => updateField(row.id, 'mountPath', e.target.value)} placeholder="/mnt/wisp/drive" className="input-field w-full min-w-0 text-xs" />
                       ) : (
                         truncate(row.mountPath, 28)
                       )}
                     </DataTableTd>
-                    <DataTableTd dense className="text-sm">
+                    <DataTableTd dense className="hidden text-sm sm:table-cell">
                       <input type="checkbox" checked={row.readOnly === true} onChange={(e) => updateField(row.id, 'readOnly', e.target.checked)} disabled={!editing || row.fsType === 'ntfs3'} title={row.fsType === 'ntfs3' ? 'NTFS mounts are read-only' : 'Read-only mount'} />
                     </DataTableTd>
-                    <DataTableTd dense className="text-sm">
+                    <DataTableTd dense className="hidden text-sm sm:table-cell">
                       <input type="checkbox" checked={row.autoMount !== false} onChange={(e) => updateField(row.id, 'autoMount', e.target.checked)} disabled={!editing} title="Auto-mount on device insertion" />
                     </DataTableTd>
-                    <DataTableTd dense className="text-sm">
+                    <DataTableTd dense className="hidden text-sm sm:table-cell">
                       {persisted ? (
                         mounted
                           ? <StatusPill tone="green" label="mounted" />
@@ -767,29 +796,32 @@ function RemovableDrivesSection({
                     </DataTableTd>
                     <DataTableTd dense align="right">
                       <DataTableRowActions forceVisible={editing}>
-                        {editing && (
-                          <>
-                            <button type="button" onClick={() => handleSave(row)} disabled={!canSave} className={rowActionIconBtnPrimary} title="Save" aria-label="Save drive">
-                              {savingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Save size={14} aria-hidden />}
-                            </button>
-                            <button type="button" onClick={() => cancelEdit(row)} disabled={savingId === row.id} className={iconBtn} title="Cancel edit" aria-label="Cancel edit">
-                              <X size={14} aria-hidden />
-                            </button>
-                          </>
-                        )}
+                        {/* Mount toggle is the only management action on phones */}
                         {persisted && present && (
                           <button type="button" onClick={() => handleMountToggle(row.id, mounted)} disabled={mountActionId === row.id || editing} className={`inline-flex items-center justify-center rounded-md border p-1.5 transition-colors duration-150 disabled:opacity-40 ${mountBtnClass}`} title={mounted ? 'Unmount drive' : 'Mount drive'} aria-label={mounted ? 'Unmount drive' : 'Mount drive'}>
                             {mountActionId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : mounted ? <Unplug size={14} aria-hidden /> : <Plug size={14} aria-hidden />}
                           </button>
                         )}
-                        {!editing && (
-                          <button type="button" onClick={() => startEdit(row)} className={iconBtn} title="Edit" aria-label="Edit drive">
-                            <Pencil size={14} aria-hidden />
+                        <span className="hidden sm:contents">
+                          {editing && (
+                            <>
+                              <button type="button" onClick={() => handleSave(row)} disabled={!canSave} className={rowActionIconBtnPrimary} title="Save" aria-label="Save drive">
+                                {savingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Save size={14} aria-hidden />}
+                              </button>
+                              <button type="button" onClick={() => cancelEdit(row)} disabled={savingId === row.id} className={iconBtn} title="Cancel edit" aria-label="Cancel edit">
+                                <X size={14} aria-hidden />
+                              </button>
+                            </>
+                          )}
+                          {!editing && (
+                            <button type="button" onClick={() => startEdit(row)} className={iconBtn} title="Edit" aria-label="Edit drive">
+                              <Pencil size={14} aria-hidden />
+                            </button>
+                          )}
+                          <button type="button" onClick={() => handleRemoveClick(row)} disabled={deletingId === row.id || savingId === row.id} className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`} title="Remove" aria-label="Remove drive">
+                            {deletingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
                           </button>
-                        )}
-                        <button type="button" onClick={() => handleRemoveClick(row)} disabled={deletingId === row.id || savingId === row.id} className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`} title="Remove" aria-label="Remove drive">
-                          {deletingId === row.id ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
-                        </button>
+                        </span>
                       </DataTableRowActions>
                     </DataTableTd>
                   </tr>
@@ -801,7 +833,8 @@ function RemovableDrivesSection({
       </div>
 
       {unadoptedDetected.length > 0 && (
-        <div className="space-y-2">
+        /* Adopting is an add-style flow (inline config) — desktop only */
+        <div className="hidden space-y-2 sm:block">
           <SubHeading label="Detected drives" hint="Adopt saves the UUID and mount settings. Auto-mount triggers on re-insertion." />
           <DataTableScroll>
             <DataTable minWidthRem={56}>

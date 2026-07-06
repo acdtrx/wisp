@@ -20,6 +20,18 @@ pointer. Keep this file scannable.
 
 ## Improvements
 
+### Host Mgmt add/edit is inline-row only — no mobile create/edit path
+
+**Found:** 2026-07-06, during the mobile Host Mgmt pass.
+
+**Symptom:** On phones, Host Mgmt (SMB shares, removable drives, VLAN bridges) is read-only + mount/unmount only. Adding, editing, or deleting a mount/bridge, and adopting a detected drive, are all hidden below `sm` because they expand a table row into a multi-field inline editor that doesn't work at narrow widths.
+
+**Root cause:** Create/edit use inline table-row editors (`editingId`/`showCreate` state swapping cells for inputs), a desktop-only interaction.
+
+**Fix sketch:** Replace inline-row editing with a **modal editor** (reuse `Modal.jsx`; `UsbAttachModal` is the closest existing pattern) for add/edit/adopt across the three sections. A modal form works identically on desktop and mobile and would let add/edit/delete return to phones. Do it as one focused pass, not per-section.
+
+**Why deferred:** The read-only+mount mobile view covers the common phone use case; the editor redesign is its own scoped piece.
+
 ### `DataTable` numeric `minWidthRem` never generates CSS
 
 **Found:** 2026-07-06, during the mobile table polish.
