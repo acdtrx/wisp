@@ -468,28 +468,47 @@ export default function HostOverview() {
       <SectionCard title="Network" titleIcon={<Network size={14} strokeWidth={2} />}>
         {hardwareError && <p className="text-sm text-status-stopped mb-2">{hardwareError}</p>}
         {hardware?.network?.length > 0 ? (
-          <DataTableScroll>
-            <DataTable minWidthRem={28}>
-              <thead>
-                <tr className={dataTableHeadRowClass}>
-                  <DataTableTh dense>Interface</DataTableTh>
-                  <DataTableTh dense>MAC</DataTableTh>
-                  <DataTableTh dense>Speed</DataTableTh>
-                  <DataTableTh dense>State</DataTableTh>
-                </tr>
-              </thead>
-              <tbody>
-                {hardware.network.map((nic) => (
-                  <tr key={nic.name} className={dataTableBodyRowClass}>
-                    <DataTableTd dense className="font-medium text-text-primary">{nic.name}</DataTableTd>
-                    <DataTableTd dense className="font-mono text-text-secondary">{nic.mac || '—'}</DataTableTd>
-                    <DataTableTd dense>{nic.speedMbps != null ? `${nic.speedMbps} Mbps` : '—'}</DataTableTd>
-                    <DataTableTd dense className="text-text-muted">{nic.state ?? '—'}</DataTableTd>
-                  </tr>
-                ))}
-              </tbody>
-            </DataTable>
-          </DataTableScroll>
+          <>
+            {/* Phones: two-line stacked rows (name/speed/state, then MAC) — no horizontal scroll */}
+            <div className="sm:hidden">
+              {hardware.network.map((nic) => (
+                <div key={nic.name} className="border-b border-surface-border/60 py-2 last:border-0">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-sm font-medium text-text-primary">{nic.name}</span>
+                    <span className="text-xs text-text-secondary">
+                      {nic.speedMbps != null ? `${nic.speedMbps} Mbps` : '—'}
+                      <span className="text-text-muted">{` · ${nic.state ?? '—'}`}</span>
+                    </span>
+                  </div>
+                  <div className="font-mono text-xs text-text-secondary">{nic.mac || '—'}</div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden sm:block">
+              <DataTableScroll>
+                <DataTable minWidthRem={28}>
+                  <thead>
+                    <tr className={dataTableHeadRowClass}>
+                      <DataTableTh dense>Interface</DataTableTh>
+                      <DataTableTh dense>MAC</DataTableTh>
+                      <DataTableTh dense>Speed</DataTableTh>
+                      <DataTableTh dense>State</DataTableTh>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hardware.network.map((nic) => (
+                      <tr key={nic.name} className={dataTableBodyRowClass}>
+                        <DataTableTd dense className="font-medium text-text-primary">{nic.name}</DataTableTd>
+                        <DataTableTd dense className="font-mono text-text-secondary">{nic.mac || '—'}</DataTableTd>
+                        <DataTableTd dense>{nic.speedMbps != null ? `${nic.speedMbps} Mbps` : '—'}</DataTableTd>
+                        <DataTableTd dense className="text-text-muted">{nic.state ?? '—'}</DataTableTd>
+                      </tr>
+                    ))}
+                  </tbody>
+                </DataTable>
+              </DataTableScroll>
+            </div>
+          </>
         ) : hardware && !hardwareError ? (
           <p className="text-sm text-text-muted">No network interfaces listed.</p>
         ) : !hardwareError ? (

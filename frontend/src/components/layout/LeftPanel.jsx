@@ -446,16 +446,19 @@ export default function LeftPanel() {
 
   return (
     <>
-      {/* Drawer backdrop — only below lg while the drawer is open */}
+      {/* Drawer backdrop — only below lg while the drawer is open. Sits below
+          the top bar so the hamburger stays reachable as a close toggle. */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          className="fixed inset-x-0 top-12 bottom-0 z-30 bg-black/40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
           aria-hidden
         />
       )}
+      {/* Below lg: drawer under the top bar — full-width on phones, 280px rail
+          from sm up. At lg+ it is the static sidebar. */}
       <aside
-        className={`${sidebarOpen ? 'flex' : 'hidden'} fixed inset-y-0 left-0 z-40 w-[280px] flex-col border-r border-surface-border bg-surface-sidebar lg:static lg:z-auto lg:flex`}
+        className={`${sidebarOpen ? 'flex' : 'hidden'} fixed top-12 bottom-0 left-0 z-40 w-full flex-col border-r border-surface-border bg-surface-sidebar sm:w-[280px] lg:static lg:z-auto lg:flex`}
       >
       <button
         type="button"

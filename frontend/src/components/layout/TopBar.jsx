@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Menu } from 'lucide-react';
+import { LogOut, Menu, X } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
 import { useUiStore } from '../../store/uiStore.js';
 import HostStatsBar from './HostStatsBar.jsx';
@@ -10,6 +10,7 @@ import WispGlyph from '../shared/WispGlyph.jsx';
 export default function TopBar() {
   const logout = useAuthStore((s) => s.logout);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+  const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -24,10 +25,11 @@ export default function TopBar() {
           type="button"
           onClick={toggleSidebar}
           className="flex items-center justify-center rounded-md border border-surface-border p-2 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 lg:hidden"
-          title="Open workload list"
-          aria-label="Open workload list"
+          title={sidebarOpen ? 'Close workload list' : 'Open workload list'}
+          aria-label={sidebarOpen ? 'Close workload list' : 'Open workload list'}
+          aria-expanded={sidebarOpen}
         >
-          <Menu size={18} aria-hidden />
+          {sidebarOpen ? <X size={18} aria-hidden /> : <Menu size={18} aria-hidden />}
         </button>
         <WispGlyph size={22} className="shrink-0" />
         <span className="font-display text-base font-semibold text-text-primary tracking-tight">Wisp</span>
