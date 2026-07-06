@@ -19,14 +19,6 @@ function domainNameFromParsed(dom) {
   return String(n).trim();
 }
 
-function normalizeNicVlan(nic, index) {
-  if (nic?.vlan == null || nic.vlan === '') return null;
-  throw vmError(
-    'CONFIG_ERROR',
-    `NIC ${index + 1}: VLAN tagging is not supported for VM bridge interfaces on this host. Use a VLAN-specific bridge instead (for example br0.22).`
-  );
-}
-
 export async function updateVMConfig(name, changes) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
 
@@ -233,16 +225,14 @@ export async function updateVMConfig(name, changes) {
   }
 
   if (patch.nics != null && dom.devices) {
-    dom.devices.interface = patch.nics.map((nic, index) => {
+    dom.devices.interface = patch.nics.map((nic) => {
       const type = nic.type || 'bridge';
       const iface = { '@_type': type };
-      const vlan = normalizeNicVlan(nic, index);
       if (nic.mac) iface.mac = { '@_address': nic.mac };
       if (nic.source) {
         iface.source = type === 'bridge' ? { '@_bridge': nic.source } : { '@_network': nic.source };
       }
       if (nic.model) iface.model = { '@_type': nic.model };
-      if (vlan != null) iface.vlan = { tag: { '@_id': String(vlan) } };
       return iface;
     });
   }

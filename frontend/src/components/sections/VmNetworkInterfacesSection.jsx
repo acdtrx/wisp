@@ -67,7 +67,6 @@ function initNicsFromConfig(nicsConfig) {
     mac: nic.mac || '',
     source: nic.source || '',
     model: nic.model || 'virtio',
-    vlan: nic.vlan ?? '',
   }));
 }
 
@@ -77,7 +76,6 @@ function normalizeNicsForApi(nics) {
     mac,
     source,
     model,
-    vlan: null,
   }));
 }
 
@@ -87,7 +85,6 @@ function nicRowEquals(a, b) {
     && a.mac === b.mac
     && a.source === b.source
     && a.model === b.model
-    && String(a.vlan ?? '') === String(b.vlan ?? '')
   );
 }
 
@@ -141,7 +138,6 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
           mac: randomMac(),
           source: bridges[0] || '',
           model: 'virtio',
-          vlan: '',
         },
       ];
       syncNicsToParent(next);
@@ -169,7 +165,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
     try {
       const result = await onSave({ nics: normalizeNicsForApi(next) });
       if (result?.requiresRestart) setRequiresRestart(true);
-      const normalizedUi = next.map((nic) => ({ ...nic, vlan: '' }));
+      const normalizedUi = next.map((nic) => ({ ...nic }));
       setNics(normalizedUi);
       setOriginalNics(normalizedUi);
       setEditingIdx(null);
@@ -207,7 +203,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
     try {
       const normalizedNics = normalizeNicsForApi(nics);
       const result = await onSave({ nics: normalizedNics });
-      const normalizedUi = nics.map((nic) => ({ ...nic, vlan: '' }));
+      const normalizedUi = nics.map((nic) => ({ ...nic }));
       setNics(normalizedUi);
       setOriginalNics(normalizedUi);
       if (result?.requiresRestart) setRequiresRestart(true);
@@ -262,9 +258,6 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
               <DataTableTh dense className="sm:min-w-28">
                 Bridge
               </DataTableTh>
-              <DataTableTh dense className="w-12 sm:w-20">
-                VLAN
-              </DataTableTh>
               <DataTableTh dense>Model</DataTableTh>
               <DataTableTh dense className="sm:min-w-48">
                 MAC
@@ -277,7 +270,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
           <tbody>
             {nics.length === 0 && (
               <tr className={dataTableBodyRowClass}>
-                <td colSpan={6} className={`${dataTableEmptyCellClass} text-xs text-text-muted`}>
+                <td colSpan={5} className={`${dataTableEmptyCellClass} text-xs text-text-muted`}>
                   No network interfaces. Use Add in the header.
                 </td>
               </tr>
@@ -319,22 +312,6 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                       </select>
                     ) : (
                       <span className="font-mono text-sm text-text-primary">{nic.source || '—'}</span>
-                    )}
-                  </DataTableTd>
-                  <DataTableTd dense>
-                    {showInputs ? (
-                      <input
-                        type="number"
-                        min={1}
-                        max={4094}
-                        placeholder="—"
-                        value={nic.vlan}
-                        onChange={(e) => updateNic(idx, 'vlan', e.target.value)}
-                        disabled
-                        className="input-field h-8 w-full text-xs"
-                      />
-                    ) : (
-                      <span className="text-sm text-text-muted tabular-nums">{nic.vlan || '—'}</span>
                     )}
                   </DataTableTd>
                   <DataTableTd dense>

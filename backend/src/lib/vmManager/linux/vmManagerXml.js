@@ -140,15 +140,12 @@ export function parseVMFromXML(xmlString) {
 
   const nics = [];
   for (const i of (dom.devices?.interface || [])) {
-    const vlanNode = i.vlan?.tag;
-    const vlanId = Array.isArray(vlanNode) ? vlanNode[0]?.['@_id'] : vlanNode?.['@_id'];
     nics.push({
       type: i['@_type'] || null,
       mac: i.mac?.['@_address'] || null,
       source: i.source?.['@_bridge'] || i.source?.['@_network'] || null,
       model: i.model?.['@_type'] || null,
       target: i.target?.['@_dev'] || null,
-      vlan: vlanId != null ? parseInt(vlanId, 10) : null,
     });
   }
 

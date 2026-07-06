@@ -16,6 +16,7 @@
 - **LAN auto-discovery of Wisp instances** — each instance announces a `_wisp._tcp` mDNS service and browses for peers; discovered servers appear in a top-bar dropdown next to the server name, opening in a new tab. New App Config settings: LAN discovery toggle (default on) and Advertised URL for reverse-proxied instances.
 
 ### Bug Fixes
+- **Removed the vestigial per-NIC VLAN column** from VM network interfaces — it was permanently disabled and never written (the backend rejected it); VLAN tagging is done via a VLAN-specific host bridge. Dropped from the UI, create flow, API schema, and domain-XML parse/build.
 - **Host IP no longer shows the link-local DNS-forwarder address** — the Software section's IP skips the `169.254.0.0/16` range (which includes Wisp's own `169.254.53.53` mDNS forwarder) and reports the real network IP.
 - **Peer discovery now picks up Advertised URL / name changes live** — browsing uses a persistent Avahi resolver per instance instead of a one-shot resolve, so a peer's settings change no longer shows stale until restart.
 - **Server-switcher dropdown labels show the advertised hostname** (where the link goes) instead of the mDNS `.local` host.

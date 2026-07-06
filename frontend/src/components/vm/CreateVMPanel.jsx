@@ -43,7 +43,7 @@ const defaultForm = () => ({
   virtioRng: true,
   nestedVirt: false,
   localDns: true,
-  nics: [{ type: 'bridge', source: '', model: 'virtio', mac: '', vlan: null }],
+  nics: [{ type: 'bridge', source: '', model: 'virtio', mac: '' }],
   disk: { type: 'none', sizeGB: 32, bus: 'virtio', sourcePath: null, sourceName: null, resizeGB: null },
   disk2: { type: 'none', sizeGB: 32, bus: 'virtio', sourcePath: null, sourceName: null, resizeGB: null },
   cdrom1Path: null,
@@ -180,7 +180,6 @@ export default function CreateVMPanel() {
           source: n.source || bridges[0] || 'virbr0',
           model: n.model || 'virtio',
           mac: n.mac || undefined,
-          vlan: n.vlan !== '' && n.vlan != null ? parseInt(n.vlan, 10) : undefined,
         })),
         disk:
           form.disk?.type === 'none'

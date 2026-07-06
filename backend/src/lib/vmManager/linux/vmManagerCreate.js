@@ -101,14 +101,6 @@ export function getLinuxFeatures() {
   return { acpi: {} };
 }
 
-function normalizeNicVlan(nic, index) {
-  if (nic?.vlan == null || nic.vlan === '') return null;
-  throw vmError(
-    'CONFIG_ERROR',
-    `NIC ${index + 1}: VLAN tagging is not supported for VM bridge interfaces on this host. Use a VLAN-specific bridge instead (for example br0.22).`
-  );
-}
-
 /**
  * @param {object} spec
  * @param {{ path: string, bus: string }[]} blockDisks Up to two entries: first → sda, second → sdb in domain XML.
@@ -218,17 +210,12 @@ function buildDomainXML(spec, blockDisks, cdrom1Path, cdrom2Path, sdePath, { loa
     });
   }
 
-  const ifaces = nics.map((nic, index) => {
-    const vlan = normalizeNicVlan(nic, index);
-    const iface = {
-      '@_type': nic.type || 'bridge',
-      mac: { '@_address': nic.mac || generateMAC() },
-      source: { '@_bridge': nic.source || defaultBridge },
-      model: { '@_type': nic.model || 'virtio' },
-    };
-    if (vlan != null) iface.vlan = { tag: { '@_id': String(vlan) } };
-    return iface;
-  });
+  const ifaces = nics.map((nic) => ({
+    '@_type': nic.type || 'bridge',
+    mac: { '@_address': nic.mac || generateMAC() },
+    source: { '@_bridge': nic.source || defaultBridge },
+    model: { '@_type': nic.model || 'virtio' },
+  }));
 
   const devices = {
     ...(controllers.length ? { controller: controllers } : {}),
