@@ -24,6 +24,7 @@ const AVAHI_SERVER_PATH = '/';
 const AVAHI_SERVER_IFACE = 'org.freedesktop.Avahi.Server';
 const AVAHI_GROUP_IFACE = 'org.freedesktop.Avahi.EntryGroup';
 const AVAHI_BROWSER_IFACE = 'org.freedesktop.Avahi.ServiceBrowser';
+const AVAHI_RESOLVER_IFACE = 'org.freedesktop.Avahi.ServiceResolver';
 const AVAHI_IF_UNSPEC = -1;
 const AVAHI_PROTO_UNSPEC = -1;
 const AVAHI_PROTO_INET = 0;
@@ -41,11 +42,13 @@ const state = {
   entries: new Map(),
   /** serviceKey -> { group: EntryGroup iface | null, instanceName, type, port, txt, host } */
   services: new Map(),
-  /** type -> { type, path, starting, sightings, resolved, resolveInFlight, subscribers } */
+  /** type -> { type, path, starting, sightings, resolved, resolvers, subscribers } */
   browses: new Map(),
   /** browser object path -> browse record (signal dispatch index) */
   browsePaths: new Map(),
-  /** path -> signals that arrived before ServiceBrowserNew resolved to that path */
+  /** resolver object path -> { record, name } (signal dispatch index) */
+  resolverPaths: new Map(),
+  /** path -> signals that arrived before the *New call resolved to that path */
   pendingBrowseSignals: new Map(),
   browseCreationsInFlight: 0,
   browseDispatchInstalled: false,
@@ -167,12 +170,16 @@ export async function disconnect() {
   }
   state.services.clear();
   for (const record of state.browses.values()) {
+    for (const name of [...record.resolvers.keys()]) {
+      freeResolverForName(record, name);
+    }
     const path = record.path;
     record.path = null;
     if (path) await freeBrowserPath(path);
   }
   state.browses.clear();
   state.browsePaths.clear();
+  state.resolverPaths.clear();
   state.pendingBrowseSignals.clear();
   if (state.bus) {
     try { state.bus.disconnect(); } catch { /* best effort */ }
@@ -338,35 +345,52 @@ function txtMapFromAvahi(txtPairs) {
 }
 
 /**
- * Free an avahi browser object by path with a raw method call — no proxy
- * introspection needed (the object may already be half-dead).
+ * Free an avahi signal object (browser/resolver) by path with a raw method
+ * call — no proxy introspection needed (the object may already be half-dead).
  */
-async function freeBrowserPath(path) {
+async function freeAvahiPath(path, iface) {
   if (!path || !state.bus) return;
-  state.browsePaths.delete(path);
   try {
     await state.bus.call(new dbus.Message({
       destination: AVAHI_BUS_NAME,
       path,
-      interface: AVAHI_BROWSER_IFACE,
+      interface: iface,
       member: 'Free',
     }));
   } catch { /* best effort — avahi may be gone */ }
 }
 
+async function freeBrowserPath(path) {
+  state.browsePaths.delete(path);
+  await freeAvahiPath(path, AVAHI_BROWSER_IFACE);
+}
+
+function freeResolverForName(record, name) {
+  const path = record.resolvers.get(name);
+  record.resolvers.delete(name);
+  // Entries hold a reservation token (symbol) while ServiceResolverNew is in
+  // flight — only real object paths (strings) exist on the bus to be freed.
+  if (typeof path === 'string') {
+    state.resolverPaths.delete(path);
+    freeAvahiPath(path, AVAHI_RESOLVER_IFACE);
+  }
+}
+
 /**
- * Drop a browser's runtime state (path registration, sightings, resolved
- * services) and tell subscribers to start over. Used when avahi goes away
- * and on browser Failure signals.
+ * Drop a browser's runtime state (path registration, sightings, resolvers,
+ * resolved services) and tell subscribers to start over. Used when avahi
+ * goes away and on browser Failure signals.
  */
 function resetBrowseRecord(record) {
   if (record.path) {
     state.browsePaths.delete(record.path);
     record.path = null;
   }
+  for (const name of [...record.resolvers.keys()]) {
+    freeResolverForName(record, name);
+  }
   record.sightings.clear();
   record.resolved.clear();
-  record.resolveInFlight.clear();
   notifyBrowseSubscribers(record, 'onReset');
 }
 
@@ -385,8 +409,8 @@ function notifyBrowseSubscribers(record, event, arg) {
 }
 
 /**
- * Raw bus-level dispatch for ServiceBrowser signals. Avahi starts emitting
- * ItemNew for cached services immediately after ServiceBrowserNew returns —
+ * Raw bus-level dispatch for ServiceBrowser/ServiceResolver signals. Avahi
+ * starts emitting signals immediately after the *New method returns —
  * possibly in the same parsed socket batch as the method reply, before our
  * promise handler learns the object path. The proxy/getInterface idiom would
  * lose those, so we listen to every inbound message (dbus-next emits
@@ -396,11 +420,21 @@ function notifyBrowseSubscribers(record, event, arg) {
 function installBrowseDispatch() {
   if (state.browseDispatchInstalled || !state.bus) return;
   state.bus.on('message', (msg) => {
-    if (msg.interface !== AVAHI_BROWSER_IFACE) return;
-    const record = state.browsePaths.get(msg.path);
-    if (record) {
-      dispatchBrowseSignal(record, msg);
-      return;
+    const isBrowser = msg.interface === AVAHI_BROWSER_IFACE;
+    const isResolver = msg.interface === AVAHI_RESOLVER_IFACE;
+    if (!isBrowser && !isResolver) return;
+    if (isBrowser) {
+      const record = state.browsePaths.get(msg.path);
+      if (record) {
+        dispatchBrowseSignal(record, msg);
+        return;
+      }
+    } else {
+      const entry = state.resolverPaths.get(msg.path);
+      if (entry) {
+        dispatchResolverSignal(entry, msg);
+        return;
+      }
     }
     if (state.browseCreationsInFlight > 0) {
       let queue = state.pendingBrowseSignals.get(msg.path);
@@ -414,11 +448,56 @@ function installBrowseDispatch() {
   state.browseDispatchInstalled = true;
 }
 
+function dispatchResolverSignal(entry, msg) {
+  const body = msg.body || [];
+  if (msg.member === 'Found') {
+    onResolverFound(entry.record, entry.name, body);
+  } else if (msg.member === 'Failure') {
+    state.logger?.warn?.(
+      { err: body[0], name: entry.name, type: entry.record.type },
+      '[mdns] service resolver failed',
+    );
+    onResolverFailure(entry.record, entry.name, msg.path);
+  }
+}
+
+/**
+ * Persistent-resolver result. Avahi re-emits Found whenever the service's
+ * records change (TXT/SRV/A updates), so onUp fires again with fresh data —
+ * this is how a peer's advertised URL change propagates without re-announce
+ * tricks or polling.
+ */
+function onResolverFound(record, name, body) {
+  // [interface, protocol, name, type, domain, host, aprotocol, address, port, txt, flags]
+  const flags = Number(body[10]) || 0;
+  const svc = {
+    name,
+    type: record.type,
+    host: String(body[5] || '').replace(/\.$/, ''),
+    address: body[7] || null,
+    port: Number(body[8]) || 0,
+    txt: txtMapFromAvahi(body[9]),
+    isLocal: (flags & (AVAHI_LOOKUP_RESULT_LOCAL | AVAHI_LOOKUP_RESULT_OUR_OWN)) !== 0,
+  };
+  const prev = record.resolved.get(name);
+  if (prev && JSON.stringify(prev) === JSON.stringify(svc)) return; // per-interface duplicate
+  record.resolved.set(name, svc);
+  notifyBrowseSubscribers(record, 'onUp', svc);
+}
+
+function onResolverFailure(record, name, path) {
+  state.resolverPaths.delete(path);
+  freeAvahiPath(path, AVAHI_RESOLVER_IFACE);
+  // A later ItemNew sighting re-creates the resolver.
+  if (record.resolvers.get(name) === path) record.resolvers.delete(name);
+  if (record.resolved.delete(name)) notifyBrowseSubscribers(record, 'onDown', name);
+}
+
 function dispatchBrowseSignal(record, msg) {
   const body = msg.body || [];
   if (msg.member === 'ItemNew') {
     // (interface, protocol, name, type, domain, flags)
-    onBrowseItemNew(record, body[0], body[1], body[2], body[4], body[5]).catch((err) =>
+    onBrowseItemNew(record, body[0], body[1], body[2], body[4]).catch((err) =>
       state.logger?.warn?.({ err: err?.message || err, type: record.type }, '[mdns] browse ItemNew failed'),
     );
   } else if (msg.member === 'ItemRemove') {
@@ -433,7 +512,7 @@ function dispatchBrowseSignal(record, msg) {
   // AllForNow / CacheExhausted are irrelevant to a continuous browse
 }
 
-async function onBrowseItemNew(record, iface, proto, name, domain, flags) {
+async function onBrowseItemNew(record, iface, proto, name, domain) {
   const pairKey = `${iface}/${proto}`;
   let pairs = record.sightings.get(name);
   if (!pairs) {
@@ -443,35 +522,59 @@ async function onBrowseItemNew(record, iface, proto, name, domain, flags) {
   if (pairs.has(pairKey)) return;
   pairs.add(pairKey);
 
-  // One resolve per instance name; extra sightings on other interfaces or
-  // protocols are only tracked for removal refcounting.
-  if (record.resolved.has(name) || record.resolveInFlight.has(name)) return;
-  record.resolveInFlight.add(name);
+  // One PERSISTENT resolver per instance name (extra sightings on other
+  // interfaces/protocols only feed the removal refcount). A persistent
+  // ServiceResolver keeps emitting Found when the peer's records change —
+  // one-shot ResolveService would freeze the first TXT forever, because a
+  // same-name re-registration updates records in place without any
+  // ItemRemove/ItemNew on remote browsers.
+  if (record.resolvers.has(name)) return;
+  // Reserve with a per-call token: overlapping create/remove/create cycles for
+  // the same name (interface flap) must not let an older call adopt or clean
+  // up a newer call's reservation — a null placeholder can't tell them apart.
+  const token = Symbol('resolver-pending');
+  record.resolvers.set(name, token);
+  let path = null;
+  let pending = null;
   try {
     const server = await ensureServer();
-    if (!server) return;
-    const out = await server.ResolveService(
-      iface, proto, name, record.type, domain, AVAHI_PROTO_UNSPEC, AVAHI_FLAG_DEFAULT,
-    );
-    // [interface, protocol, name, type, domain, host, aprotocol, address, port, txt, flags]
-    const combinedFlags = (Number(out[10]) || 0) | (Number(flags) || 0);
-    const svc = {
-      name,
-      type: record.type,
-      host: String(out[5] || '').replace(/\.$/, ''),
-      address: out[7] || null,
-      port: Number(out[8]) || 0,
-      txt: txtMapFromAvahi(out[9]),
-      isLocal: (combinedFlags & (AVAHI_LOOKUP_RESULT_LOCAL | AVAHI_LOOKUP_RESULT_OUR_OWN)) !== 0,
-    };
-    record.resolved.set(name, svc);
-    notifyBrowseSubscribers(record, 'onUp', svc);
+    if (!server) {
+      if (record.resolvers.get(name) === token) record.resolvers.delete(name);
+      return;
+    }
+    state.browseCreationsInFlight += 1;
+    try {
+      path = await server.ServiceResolverNew(
+        AVAHI_IF_UNSPEC, AVAHI_PROTO_UNSPEC, name, record.type, domain,
+        AVAHI_PROTO_UNSPEC, AVAHI_FLAG_DEFAULT,
+      );
+      if (record.resolvers.get(name) !== token) {
+        // service vanished, record reset, or a newer call took over while
+        // this one was in flight — this path is ours alone to free
+        await freeAvahiPath(path, AVAHI_RESOLVER_IFACE);
+        return;
+      }
+      record.resolvers.set(name, path);
+      state.resolverPaths.set(path, { record, name });
+      pending = state.pendingBrowseSignals.get(path) || null;
+      if (pending) state.pendingBrowseSignals.delete(path);
+    } finally {
+      state.browseCreationsInFlight -= 1;
+      if (state.browseCreationsInFlight === 0) state.pendingBrowseSignals.clear();
+    }
   } catch (err) {
-    // Resolution retries only on a fresh sighting (another iface/proto or
-    // after the peer re-announces) — acceptable for best-effort discovery.
-    state.logger?.warn?.({ err: err?.message || err, name, type: record.type }, '[mdns] service resolve failed');
-  } finally {
-    record.resolveInFlight.delete(name);
+    if (record.resolvers.get(name) === token) record.resolvers.delete(name);
+    // A later ItemNew sighting (another iface/proto or re-announce) retries.
+    state.logger?.warn?.({ err: err?.message || err, name, type: record.type }, '[mdns] ServiceResolverNew failed');
+    return;
+  }
+  // Drain outside the try so a throwing handler can't be mistaken for a
+  // failed ServiceResolverNew call. Stop if a replayed Failure freed us.
+  if (pending) {
+    for (const msg of pending) {
+      if (record.resolvers.get(name) !== path) break;
+      dispatchResolverSignal({ record, name }, msg);
+    }
   }
 }
 
@@ -481,6 +584,7 @@ function onBrowseItemRemove(record, iface, proto, name) {
   pairs.delete(`${iface}/${proto}`);
   if (pairs.size > 0) return;
   record.sightings.delete(name);
+  freeResolverForName(record, name);
   const hadResolved = record.resolved.delete(name);
   if (hadResolved) notifyBrowseSubscribers(record, 'onDown', name);
 }
@@ -532,7 +636,9 @@ async function startBrowse(record) {
  *
  * handlers:
  *   onUp(svc)     service resolved — { name, type, host, address, port, txt, isLocal }
- *                 (isLocal: announced by this host or this connection — for self-filtering)
+ *                 (isLocal: announced by this host or this connection — for
+ *                 self-filtering). Fires AGAIN with fresh data whenever the
+ *                 service's records change (persistent resolver per service).
  *   onDown(name)  service gone from every interface/protocol
  *   onReset()     browser lost (avahi restart/failure) — drop all known services
  *
@@ -552,7 +658,8 @@ export function subscribeServiceBrowse(type, handlers) {
       sightings: new Map(),
       /** name -> resolved svc */
       resolved: new Map(),
-      resolveInFlight: new Set(),
+      /** name -> persistent ServiceResolver path (null while creating) */
+      resolvers: new Map(),
       subscribers: new Set(),
     };
     state.browses.set(type, record);
@@ -566,6 +673,9 @@ export function subscribeServiceBrowse(type, handlers) {
     record.subscribers.delete(handlers);
     if (record.subscribers.size > 0) return;
     state.browses.delete(type);
+    for (const name of [...record.resolvers.keys()]) {
+      freeResolverForName(record, name);
+    }
     const path = record.path;
     record.path = null;
     if (path) freeBrowserPath(path);

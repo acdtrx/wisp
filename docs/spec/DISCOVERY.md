@@ -24,10 +24,10 @@ Re-announcing frees the old Avahi entry group and commits a new one — on the w
 `subscribeServiceBrowse(type, { onUp, onDown, onReset })` in the mdns module:
 
 - One Avahi `ServiceBrowser` per service type (`IF_UNSPEC`/`PROTO_UNSPEC`), shared across subscribers; freed when the last subscriber leaves.
-- Signals are dispatched at the raw bus level (dbus-next `bus.on('message')`) and routed by object path. Avahi emits `ItemNew` for cached services immediately after `ServiceBrowserNew` returns — signals for a not-yet-registered path are buffered while a creation is in flight so none are lost to the proxy-introspection race.
+- Signals are dispatched at the raw bus level (dbus-next `bus.on('message')`) and routed by object path. Avahi emits signals immediately after the `*New` method returns — signals for a not-yet-registered path are buffered while a creation is in flight so none are lost to the proxy-introspection race.
 - The same service is reported once per interface and protocol; sightings are refcounted per `(interface, protocol)` pair — `onUp` fires on the first sighting, `onDown` only when the last one is removed.
-- Resolution is a one-shot `ResolveService` per instance name (host, port, TXT, lookup-result flags). Continuous per-peer resolvers are unnecessary: config changes on a peer arrive as remove + re-announce.
-- Avahi restart (`NameOwnerChanged`): announcements are re-registered, browsers re-created, and subscribers get `onReset` (drop everything) followed by fresh `onUp` events as peers are re-learned.
+- Resolution uses a **persistent `ServiceResolver` per instance name** (freed when the service leaves or the browser resets). Avahi re-emits `Found` whenever the service's records change, so a peer changing its advertised URL / name / version propagates live as a fresh `onUp` — a one-shot resolve would freeze the first TXT forever, because a same-name re-registration updates records in place without any `ItemRemove`/`ItemNew` on remote browsers.
+- Avahi restart (`NameOwnerChanged`): announcements are re-registered, browsers re-created (resolvers follow via fresh `ItemNew`s), and subscribers get `onReset` (drop everything) followed by fresh `onUp` events as peers are re-learned.
 
 ## Self-filtering and peer-URL safety
 
@@ -61,4 +61,3 @@ Both live in `wisp-config.json` ([CONFIGURATION.md](CONFIGURATION.md)) and are e
 - **Instance-name collisions are not handled** (pre-existing mdns-module gap: no EntryGroup `StateChanged` listener). Two hosts with the same short hostname → the second announcement silently never establishes.
 - **macOS dev:** darwin stubs — no announcement, no peers, no chevron.
 - **TXT contents are public to the LAN** (server name, URL, version) — inherent to mDNS.
-- A peer that changes IP without re-announcing under the same instance name keeps its resolved TXT `url`; harmless when the URL is hostname-based (`.local` resolves at click time).

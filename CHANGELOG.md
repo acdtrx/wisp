@@ -8,6 +8,7 @@
 - **LAN auto-discovery of Wisp instances** — each instance announces a `_wisp._tcp` mDNS service and browses for peers; discovered servers appear in a top-bar dropdown next to the server name, opening in a new tab. New App Config settings: LAN discovery toggle (default on) and Advertised URL for reverse-proxied instances.
 
 ### Bug Fixes
+- **Peer discovery now picks up Advertised URL / name changes live** — browsing uses a persistent Avahi resolver per instance instead of a one-shot resolve, so a peer's settings change no longer shows stale until restart.
 - **Settings write-lock no longer poisoned by a failed update** — a validation error thrown mid-write previously left the mutex rejected, failing every later settings save until restart.
 
 ## 2026-07-06 (v1.3.0)
