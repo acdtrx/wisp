@@ -87,7 +87,8 @@ For row-based persistence, **header add** controls (`Plus` or `Plus`+kind icon),
 
 The desktop shell above applies at `lg` and up. Below 1024px (phones, portrait tablets):
 
-- **Left panel becomes an off-canvas drawer** (`fixed inset-y-0 left-0 z-40` over a `bg-black/40` backdrop), toggled by a hamburger (`Menu`) button that appears leftmost in the top bar. It closes on backdrop tap, Escape, and any route change. Drawer state lives in `uiStore.sidebarOpen`.
+- **Left panel becomes an off-canvas drawer** below the top bar's first row (`fixed top-12 bottom-0`, full-width on phones, 280px from `sm`) over a `bg-black/40` backdrop, toggled by a hamburger (`Menu` ↔ `X`) button that appears leftmost in the top bar. It closes on backdrop tap, Escape, and any route change. Drawer state lives in `uiStore.sidebarOpen`.
+- **Top bar splits into two rows** — first row: hamburger + brand + server name on the left, jobs + sign-out on the right; second row: the host stats pills full-width (left-aligned, horizontally scrollable). At `lg`+ it's the single centered-stats row.
 - **Row actions are always visible** — the desktop hover-reveal (`lg:opacity-0 lg:group-hover:opacity-100`) only applies at `lg`+; touch devices see the lifecycle/table actions directly, with larger hit targets (`p-2` below lg).
 - **Detail headers wrap** — the VM/container/host header rows (`min-h-11 flex-wrap`) break into title+tabs / actions rows instead of clipping; Host power buttons become icon-only.
 - **Consoles are desktop-only** — the VM Console and container Console tab buttons are hidden below `lg` (container Logs stays). Create flows and drag-to-organize remain desktop-oriented (the tap-based section picker still works).

@@ -61,7 +61,9 @@ export default function HostStatsBar({ embedded = false }) {
 
   if (embedded) {
     return (
-      <div className="flex min-w-0 flex-1 items-center justify-center gap-2 overflow-x-auto">
+      /* justify-start below lg: a centered flex container that overflows
+         clips its leading pills out of scroll reach on narrow screens. */
+      <div className="flex min-w-0 flex-1 items-center justify-start gap-2 overflow-x-auto lg:justify-center">
         {pills}
       </div>
     );

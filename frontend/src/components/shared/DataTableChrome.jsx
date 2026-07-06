@@ -2,9 +2,15 @@
  * Shared list/table layout tokens — see docs/UI-PATTERNS.md.
  */
 
+/**
+ * -mx-4 cancels the cells' px-4 edge inset so the first/last columns align
+ * with the parent card's own padding instead of double-indenting. Every
+ * caller sits inside a container with ≥16px horizontal padding (SectionCard
+ * body, modal inner card, library card).
+ */
 export function DataTableScroll({ className = '', children }) {
   return (
-    <div className={`overflow-x-auto -mx-1 px-1 ${className}`.trim()}>
+    <div className={`overflow-x-auto -mx-4 ${className}`.trim()}>
       {children}
     </div>
   );

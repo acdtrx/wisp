@@ -43,7 +43,8 @@ export default function UpdateCard({
 
   return (
     <SectionCard title={title} titleIcon={titleIcon}>
-      <div className="flex items-center justify-between gap-4">
+      {/* Below lg the description sits above the buttons instead of beside them */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
         <div className="min-w-0 flex-1 text-sm text-text-secondary">{description}</div>
         <div className="shrink-0 flex items-center gap-2">
           <button

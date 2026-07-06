@@ -19,8 +19,11 @@ export default function TopBar() {
   };
 
   return (
-    <header className="flex h-12 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4">
-      <div className="flex shrink-0 items-center gap-3">
+    /* Grid so the single HostStatsBar instance (it owns the stats SSE
+       subscription) moves to its own full-width second row below lg
+       instead of being squeezed between the topbar clusters. */
+    <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 border-b border-surface-border bg-surface-card px-4">
+      <div className="flex h-12 shrink-0 items-center gap-3">
         <button
           type="button"
           onClick={toggleSidebar}
@@ -36,20 +39,21 @@ export default function TopBar() {
         <ServerSwitcher />
       </div>
 
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+      <div className="col-span-3 row-start-2 flex min-w-0 items-center pb-2 lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:pb-0">
         <HostStatsBar embedded />
-        <div className="flex shrink-0 items-center gap-1.5">
-          <BackgroundJobsIndicator />
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
-            title="Sign out"
-            aria-label="Sign out"
-          >
-            <LogOut size={18} aria-hidden />
-          </button>
-        </div>
+      </div>
+
+      <div className="col-start-3 row-start-1 flex shrink-0 items-center gap-1.5">
+        <BackgroundJobsIndicator />
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
+          title="Sign out"
+          aria-label="Sign out"
+        >
+          <LogOut size={18} aria-hidden />
+        </button>
       </div>
     </header>
   );

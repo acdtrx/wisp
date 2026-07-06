@@ -159,7 +159,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
     }
   }
 
-  const description = 'Apply available package updates to keep the host OS up to date.';
+  const description = 'Install pending OS package updates.';
 
   /* Compose the modal subtitle: package count + size, plus a hint when
    * we're showing cached data so the user knows they can refresh. */

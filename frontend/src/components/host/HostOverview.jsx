@@ -519,8 +519,7 @@ export default function HostOverview() {
                 </div>
               ))}
             </div>
-            {/* -mx-4 cancels the cells' px-4 edge inset (aligns with card padding) */}
-            <div className="-mx-4 hidden sm:block">
+            <div className="hidden sm:block">
               <DataTableScroll>
                 <DataTable minWidthRem={28}>
                   <thead>
@@ -793,13 +792,10 @@ function HostHardwareInventorySection({
         </p>
       )}
       {(hasMain || hasIo || hasOthers) ? (
-        // -mx-4 cancels the cells' px-4 edge inset so the first column aligns
-        // with the card's own padding instead of double-indenting.
-        <div className="-mx-4">
-          <DataTableScroll>
-            {/* Phones show only the Device column (no min-width needed) */}
-            <DataTable minWidthRem="sm:min-w-[30rem]">
-              <HardwareInventoryTableHead />
+        <DataTableScroll>
+          {/* Phones show only the Device column (no min-width needed) */}
+          <DataTable minWidthRem="sm:min-w-[30rem]">
+            <HardwareInventoryTableHead />
             <tbody>
               {hasMain && (
                 <>
@@ -871,9 +867,8 @@ function HostHardwareInventorySection({
                 </>
               )}
             </tbody>
-            </DataTable>
-          </DataTableScroll>
-        </div>
+          </DataTable>
+        </DataTableScroll>
       ) : (
         <p className="text-sm text-text-muted">
           {hardwareError ? 'Could not load hardware inventory.' : 'No hardware inventory listed (or still loading).'}

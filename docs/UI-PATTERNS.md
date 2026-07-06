@@ -51,7 +51,7 @@ Use **[frontend/src/components/shared/DataTableChrome.jsx](../frontend/src/compo
 
 | Area | Typical classes |
 |------|-----------------|
-| Horizontal scroll wrapper | `overflow-x-auto -mx-1 px-1` (via `DataTableScroll`) |
+| Horizontal scroll wrapper | `overflow-x-auto -mx-4` (via `DataTableScroll`) — the negative margin cancels the cells' `px-4` edge inset so first/last columns align flush with the parent card's padding |
 | Table | `w-full min-w-[…rem] text-sm text-text-secondary border-collapse` (via `DataTable`) |
 | Header row | `text-left text-[11px] font-medium text-text-muted uppercase tracking-wider border-b border-surface-border` (`dataTableHeadRowClass`) |
 | **Cell horizontal inset** | **`px-4`** on every `<th>` and `<td>` (via **`DataTableTh`** / **`DataTableTd`** or exported `dataTableCellPadX`). Do **not** use **`pr-*` only** for column gutters — that removes left inset on the first column and often leaves the actions column flush to the scroll edge. |
