@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-07-06
+## 2026-07-06 (v1.4.0)
 
 ### New Features
 - **Mobile-friendly layout** — below 1024px the sidebar becomes a drawer with a hamburger toggle, lifecycle/table actions are always visible with larger touch targets, detail headers wrap, dialogs get gutters, and Wisp is pinnable to a phone home screen (web manifest). Consoles stay desktop-only.
