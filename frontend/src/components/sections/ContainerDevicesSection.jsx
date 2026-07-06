@@ -5,7 +5,7 @@ import SectionCard from '../shared/SectionCard.jsx';
 import { getHostGpus } from '../../api/host.js';
 
 const iconBtn =
-  'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
+  'inline-flex items-center justify-center rounded-md border border-surface-border p-2 lg:p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
 function vendorLabel(gpu) {
   const parts = [gpu.vendorName || gpu.vendor];
@@ -181,7 +181,7 @@ export default function ContainerDevicesSection({ config, onSave }) {
             disabled={saving}
             title="Remove GPU passthrough"
             aria-label="Remove GPU passthrough"
-            className="rounded-md p-1 text-text-muted hover:bg-surface-card hover:text-status-stopped disabled:opacity-50"
+            className="rounded-md p-2 lg:p-1 text-text-muted hover:bg-surface-card hover:text-status-stopped disabled:opacity-50"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
           </button>

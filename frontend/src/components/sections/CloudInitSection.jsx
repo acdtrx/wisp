@@ -252,7 +252,8 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
                 <SummaryRow label="QEMU Guest Agent" value={config.installQemuGuestAgent !== false ? 'Yes' : 'No'} />
                 <SummaryRow label="Avahi daemon" value={config.installAvahiDaemon !== false ? 'Yes' : 'No'} />
               </div>
-              <div className="flex items-center gap-2 pt-2">
+              {/* Editing cloud-init isn't a phone task — read-only below sm */}
+              <div className="hidden items-center gap-2 pt-2 sm:flex">
                 <button
                   onClick={startEditing}
                   className="flex items-center gap-1.5 rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface transition-colors duration-150"
@@ -273,9 +274,10 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
             <div className="flex flex-col items-center gap-3 py-4">
               <Cloud size={28} className="text-text-muted" />
               <p className="text-xs text-text-muted">No cloud-init configuration</p>
+              {/* Configuring cloud-init isn't a phone task — hidden below sm */}
               <button
                 onClick={startEditing}
-                className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover transition-colors duration-150"
+                className="hidden items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover transition-colors duration-150 sm:flex"
               >
                 <Cloud size={12} /> Configure Cloud-Init
               </button>

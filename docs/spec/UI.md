@@ -95,6 +95,7 @@ The desktop shell above applies at `lg` and up. Below 1024px (phones, portrait t
 - **Content gutters** shrink to `px-4 py-4`; modal overlays carry `p-4` so dialogs never sit edge-to-edge; wide tables keep their horizontal scroll.
 - **Wide data tables collapse to the essential columns** — Host Overview (network, hardware), Image Library, and Host Mgmt (SMB, removable drives, bridges) hide secondary columns below `sm` and stack their values on a muted second line inside the first cell, so each fits without horizontal scroll.
 - **Host Mgmt is read-only on phones** except mount/unmount — SMB shares and removable drives keep only the mount toggle; add, edit, delete, drive adoption, and the create/edit inline rows are hidden below `sm` (they use desktop-only inline-row editors). Network bridges are fully read-only. The Backup form (path + network-mount select) stays editable — it already reflows. Full add/edit on mobile is deferred to a modal-editor redesign (see `docs/BACKLOG.md`).
+- **Cloud-init is view-only on phones** — the VM detail Cloud-Init section shows its summary below `sm` but hides the Regenerate / Remove / Configure buttons, so the edit form (a desktop-oriented multi-field layout) is never reached on mobile.
 - **PWA-lite:** `manifest.webmanifest` (standalone display, teal theme color) + apple-touch-icon, so Wisp can be pinned to a phone home screen. No service worker/offline support.
 
 ---

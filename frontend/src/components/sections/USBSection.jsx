@@ -18,7 +18,7 @@ import {
 } from '../shared/DataTableChrome.jsx';
 
 const iconBtn =
-  'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface hover:text-status-stopped transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
+  'inline-flex items-center justify-center rounded-md border border-surface-border p-2 lg:p-1.5 text-text-secondary hover:bg-surface hover:text-status-stopped transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
 export default function USBSection({ vmConfig }) {
   const hostDevices = useUsbStore((s) => s.devices);
