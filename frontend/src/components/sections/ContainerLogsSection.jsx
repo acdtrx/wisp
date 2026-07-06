@@ -205,7 +205,7 @@ export default function ContainerLogsSection({ containerName }) {
             onChange={onPickRun}
             disabled={runs.length === 0}
             title="Select a run"
-            className="max-w-[22rem] truncate rounded-md border border-surface-border bg-surface-card px-2 py-1.5 text-xs text-text-primary outline-none focus:border-accent transition-colors duration-150 disabled:opacity-50"
+            className="max-w-88 truncate rounded-md border border-surface-border bg-surface-card px-2 py-1.5 text-xs text-text-primary outline-hidden focus:border-accent transition-colors duration-150 disabled:opacity-50"
           >
             {runs.length === 0 && <option value="">No runs yet</option>}
             {runs.map((r) => (
@@ -231,7 +231,7 @@ export default function ContainerLogsSection({ containerName }) {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter logs…"
-            className="w-full rounded-md border border-surface-border bg-surface-card pl-8 pr-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted outline-none focus:border-accent transition-colors duration-150"
+            className="w-full rounded-md border border-surface-border bg-surface-card pl-8 pr-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted outline-hidden focus:border-accent transition-colors duration-150"
           />
         </div>
 

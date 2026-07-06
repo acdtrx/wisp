@@ -563,7 +563,7 @@ function ShareRow({ share, storageMounts, declaredUserNames, onUpdate, onRemove,
         {share.sourceId && (
           <input
             type="text"
-            className="input-field text-xs flex-1 min-w-[12rem] font-mono"
+            className="input-field text-xs flex-1 min-w-48 font-mono"
             placeholder="sub-path inside the storage mount (empty = mount root)"
             title="Relative path inside the selected storage mount"
             value={share.subPath}

@@ -318,7 +318,7 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
         <button
           type="button"
           onClick={connect}
-          className="ml-2 rounded border border-surface-border px-2 py-1 text-xs hover:bg-surface"
+          className="ml-2 rounded-sm border border-surface-border px-2 py-1 text-xs hover:bg-surface"
         >
           Retry
         </button>

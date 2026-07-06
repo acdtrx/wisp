@@ -69,7 +69,7 @@ export default function SectionPickerButton({ type, name, disabled }) {
           if (!disabled) setOpen((o) => !o);
         }}
         disabled={disabled}
-        className="rounded p-1 text-text-secondary hover:bg-accent/10 hover:text-accent disabled:opacity-40"
+        className="rounded-sm p-1 text-text-secondary hover:bg-accent/10 hover:text-accent disabled:opacity-40"
         title="Move to section"
         aria-label="Move to section"
         aria-expanded={open}

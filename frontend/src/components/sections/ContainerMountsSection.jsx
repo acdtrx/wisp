@@ -551,23 +551,23 @@ export default function ContainerMountsSection({ config, onRefresh }) {
             <thead>
               <tr className={dataTableHeadRowClass}>
                 <DataTableTh dense className="w-10 font-normal" aria-hidden />
-                <DataTableTh dense className="min-w-[12rem]">
+                <DataTableTh dense className="min-w-48">
                   Container path
                 </DataTableTh>
-                <DataTableTh dense className="w-32 min-w-[8rem]">
+                <DataTableTh dense className="w-32 min-w-32">
                   Mount name
                 </DataTableTh>
-                <DataTableTh dense className="min-w-[9rem]">
+                <DataTableTh dense className="min-w-36">
                   Source
                 </DataTableTh>
-                <DataTableTh dense className="min-w-[8rem]">
+                <DataTableTh dense className="min-w-32">
                   Sub-path
                 </DataTableTh>
                 <DataTableTh dense className="w-14" title="Read-only">R/O</DataTableTh>
                 {runAsRoot && (
                   <DataTableTh
                     dense
-                    className="min-w-[7rem]"
+                    className="min-w-28"
                     title="In-container UID:GID that maps to the host deploy user (size:1 idmap; Local mounts only)"
                   >
                     Owner uid:gid
@@ -621,7 +621,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                             : <File size={16} aria-hidden />}
                       </span>
                     </DataTableTd>
-                    <DataTableTd dense className="min-w-[14rem]">
+                    <DataTableTd dense className="min-w-56">
                       {fieldEdit ? (
                         <input
                           type="text"
@@ -634,7 +634,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                         <span className="font-mono text-sm text-text-primary">{truncate(row.containerPath, 40)}</span>
                       )}
                     </DataTableTd>
-                    <DataTableTd dense className="w-32 min-w-[8rem]">
+                    <DataTableTd dense className="w-32 min-w-32">
                       {fieldEdit ? (
                         <input
                           type="text"
@@ -647,7 +647,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                         <span className="font-mono text-sm text-text-primary">{truncate(row.name, 24)}</span>
                       )}
                     </DataTableTd>
-                    <DataTableTd dense className="min-w-[9rem]">
+                    <DataTableTd dense className="min-w-36">
                       {row.type === 'tmpfs' ? (
                         fieldEdit ? (
                           <span className="inline-flex items-center gap-1 font-mono text-xs">
@@ -713,7 +713,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                         })()
                       )}
                     </DataTableTd>
-                    <DataTableTd dense className="min-w-[8rem]">
+                    <DataTableTd dense className="min-w-32">
                       {row.type === 'tmpfs' ? (
                         <span className="text-sm text-text-muted">—</span>
                       ) : row.type === 'file' ? (
@@ -744,7 +744,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                       )}
                     </DataTableTd>
                     {runAsRoot && (
-                      <DataTableTd dense className="min-w-[7rem]">
+                      <DataTableTd dense className="min-w-28">
                         {row.type === 'tmpfs' ? (
                           <span className="text-sm text-text-muted" title="Idmap does not apply to tmpfs (kernel-managed in-memory mount)">—</span>
                         ) : row.sourceId ? (

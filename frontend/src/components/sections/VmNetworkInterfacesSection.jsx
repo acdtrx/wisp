@@ -49,7 +49,7 @@ function NicModelSegmentedControl({ value, onChange, disabled }) {
           disabled={disabled}
           className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors duration-150 ${
             value === opt.value
-              ? 'bg-surface-card text-text-primary shadow-sm'
+              ? 'bg-surface-card text-text-primary shadow-xs'
               : 'text-text-secondary hover:text-text-primary'
           } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
         >
@@ -261,14 +261,14 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
               <DataTableTh dense className="w-16">
                 #
               </DataTableTh>
-              <DataTableTh dense className="min-w-[7rem]">
+              <DataTableTh dense className="min-w-28">
                 Bridge
               </DataTableTh>
               <DataTableTh dense className="w-20">
                 VLAN
               </DataTableTh>
               <DataTableTh dense>Model</DataTableTh>
-              <DataTableTh dense className="min-w-[12rem]">
+              <DataTableTh dense className="min-w-48">
                 MAC
               </DataTableTh>
               <DataTableTh dense align="right">
@@ -308,7 +308,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                         value={nic.source}
                         onChange={(e) => updateNic(idx, 'source', e.target.value)}
                         disabled={networkLocked}
-                        className="input-field h-8 w-full min-w-[6rem] max-w-[11rem] text-xs"
+                        className="input-field h-8 w-full min-w-24 max-w-44 text-xs"
                       >
                         {!nic.source && <option value="">Select…</option>}
                         {bridges.map((b) => (
@@ -359,7 +359,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                           value={nic.mac}
                           onChange={(e) => updateNic(idx, 'mac', e.target.value)}
                           disabled={networkLocked}
-                          className="input-field h-8 min-w-[8rem] max-w-[12rem] font-mono text-[11px]"
+                          className="input-field h-8 min-w-32 max-w-48 font-mono text-[11px]"
                         />
                         {(isStopped || isCreating) && (
                           <button

@@ -210,7 +210,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
                 )}
               </div>
               {rebootReasons.length > 0 && (
-                <div className="mt-0.5 break-words text-amber-600/90">
+                <div className="mt-0.5 wrap-break-word text-amber-600/90">
                   {rebootReasons.slice(0, 6).join(', ')}
                   {rebootReasons.length > 6 && ` +${rebootReasons.length - 6} more`}
                 </div>

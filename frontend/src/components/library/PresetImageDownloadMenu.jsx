@@ -51,7 +51,7 @@ export default function PresetImageDownloadMenu({ onSelectPreset }) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-50 mt-1 min-w-[14rem] rounded-md border border-surface-border bg-surface-card py-1 shadow-lg"
+          className="absolute right-0 top-full z-50 mt-1 min-w-56 rounded-md border border-surface-border bg-surface-card py-1 shadow-lg"
         >
           {PRESETS.map((p) => {
             const Icon = getVmIcon(p.iconId).component;

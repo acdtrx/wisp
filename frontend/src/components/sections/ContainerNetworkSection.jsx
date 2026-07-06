@@ -539,7 +539,7 @@ export default function ContainerNetworkSection({
                       <button
                         type="button"
                         onClick={() => removeTxtPair(idx)}
-                        className="rounded p-1 text-text-muted hover:bg-surface-card hover:text-text-primary"
+                        className="rounded-sm p-1 text-text-muted hover:bg-surface-card hover:text-text-primary"
                         title="Remove TXT record"
                       >
                         <X size={12} />

@@ -12,7 +12,7 @@ export function DataTableScroll({ className = '', children }) {
 
 /**
  * @param {object} props
- * @param {number | string} [props.minWidthRem] - number → min-w-[Nrem]; string → full class e.g. min-w-[56rem]
+ * @param {number | string} [props.minWidthRem] - number → min-w-[Nrem]; string → full class e.g. min-w-4xl
  * @param {import('react').ReactNode} props.children
  */
 export function DataTable({ minWidthRem = 42, children, ...rest }) {

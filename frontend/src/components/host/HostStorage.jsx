@@ -386,8 +386,8 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
           <thead>
             <tr className={dataTableHeadRowClass}>
               <DataTableTh dense>Label</DataTableTh>
-              <DataTableTh dense className="min-w-[10rem]">Share</DataTableTh>
-              <DataTableTh dense className="min-w-[9rem]">Mount path</DataTableTh>
+              <DataTableTh dense className="min-w-40">Share</DataTableTh>
+              <DataTableTh dense className="min-w-36">Mount path</DataTableTh>
               <DataTableTh dense>User</DataTableTh>
               <DataTableTh dense>Password</DataTableTh>
               <DataTableTh dense>Status</DataTableTh>
@@ -437,7 +437,7 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
                 <tr key={row.id} className={dataTableInteractiveRowClass}>
                   <DataTableTd dense className="text-sm">
                     {editing ? (
-                      <input type="text" value={row.label} onChange={(e) => updateField(row.id, 'label', e.target.value)} placeholder="Label" className="input-field w-full min-w-[6rem] text-xs" />
+                      <input type="text" value={row.label} onChange={(e) => updateField(row.id, 'label', e.target.value)} placeholder="Label" className="input-field w-full min-w-24 text-xs" />
                     ) : (
                       <span className="text-text-primary">{truncate(row.label, 24)}</span>
                     )}
@@ -458,14 +458,14 @@ function SmbMountsSection({ settings, smbSaved, mountStatus, refreshStatus, load
                   </DataTableTd>
                   <DataTableTd dense className="text-sm">
                     {editing ? (
-                      <input type="text" value={row.username} onChange={(e) => updateField(row.id, 'username', e.target.value)} placeholder="Username" className="input-field w-full min-w-[6rem] text-xs" />
+                      <input type="text" value={row.username} onChange={(e) => updateField(row.id, 'username', e.target.value)} placeholder="Username" className="input-field w-full min-w-24 text-xs" />
                     ) : (
                       <span className="text-text-muted">{row.username ? truncate(row.username, 16) : '—'}</span>
                     )}
                   </DataTableTd>
                   <DataTableTd dense className="text-sm">
                     {editing ? (
-                      <input type="password" value={row.password} onChange={(e) => updateField(row.id, 'password', e.target.value)} placeholder="Password" className="input-field w-full min-w-[6rem] text-xs" />
+                      <input type="password" value={row.password} onChange={(e) => updateField(row.id, 'password', e.target.value)} placeholder="Password" className="input-field w-full min-w-24 text-xs" />
                     ) : (
                       <span className="text-text-muted font-mono text-xs">
                         {(row.password || hasStoredPassword) ? '••••' : '—'}
@@ -694,7 +694,7 @@ function RemovableDrivesSection({
                 <DataTableTh dense>Label</DataTableTh>
                 <DataTableTh dense>UUID</DataTableTh>
                 <DataTableTh dense>FS</DataTableTh>
-                <DataTableTh dense className="min-w-[9rem]">Mount path</DataTableTh>
+                <DataTableTh dense className="min-w-36">Mount path</DataTableTh>
                 <DataTableTh dense>RO</DataTableTh>
                 <DataTableTh dense>Auto</DataTableTh>
                 <DataTableTh dense>Status</DataTableTh>
@@ -730,7 +730,7 @@ function RemovableDrivesSection({
                   <tr key={row.id} className={dataTableInteractiveRowClass}>
                     <DataTableTd dense className="text-sm">
                       {editing ? (
-                        <input type="text" value={row.label} onChange={(e) => updateField(row.id, 'label', e.target.value)} placeholder="Label" className="input-field w-full min-w-[6rem] text-xs" />
+                        <input type="text" value={row.label} onChange={(e) => updateField(row.id, 'label', e.target.value)} placeholder="Label" className="input-field w-full min-w-24 text-xs" />
                       ) : (
                         <span className="text-text-primary">{truncate(row.label, 24)}</span>
                       )}
@@ -903,7 +903,7 @@ const STATUS_PILL_TONES = {
 function StatusPill({ tone, label }) {
   const cls = STATUS_PILL_TONES[tone] || STATUS_PILL_TONES.gray;
   return (
-    <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
+    <span className={`inline-block rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
       {label}
     </span>
   );

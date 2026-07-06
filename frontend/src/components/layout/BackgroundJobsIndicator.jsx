@@ -33,8 +33,8 @@ function JobProgressBar({ percent, status }) {
         <div
           className={`h-full rounded-full transition-[width] duration-500 ease-out ${
             isDone
-              ? 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-sm'
-              : 'bg-gradient-to-r from-accent via-blue-500 to-indigo-500 shadow-[0_1px_2px_rgba(37,99,235,0.35)]'
+              ? 'bg-linear-to-r from-emerald-500 to-teal-600 shadow-xs'
+              : 'bg-linear-to-r from-accent via-blue-500 to-indigo-500 shadow-[0_1px_2px_rgba(37,99,235,0.35)]'
           }`}
           style={{ width: `${p}%` }}
         />
@@ -117,7 +117,7 @@ export default function BackgroundJobsIndicator() {
                     <button
                       type="button"
                       onClick={() => dismissJob(row.jobId)}
-                      className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-text-muted hover:bg-surface hover:text-text-secondary"
+                      className="shrink-0 rounded-sm px-1.5 py-0.5 text-[11px] text-text-muted hover:bg-surface hover:text-text-secondary"
                     >
                       Dismiss
                     </button>

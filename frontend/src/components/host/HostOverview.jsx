@@ -282,9 +282,9 @@ function CoreUsageGrid({ title, cores }) {
               <span>Core {index}</span>
               <span>{formatDecimal(percent)}%</span>
             </div>
-            <div className="h-2 rounded bg-surface overflow-hidden">
+            <div className="h-2 rounded-sm bg-surface overflow-hidden">
               <div
-                className="h-full bg-accent rounded transition-all duration-300"
+                className="h-full bg-accent rounded-sm transition-all duration-300"
                 style={{ width: `${Math.min(100, percent)}%` }}
               />
             </div>
@@ -398,7 +398,7 @@ export default function HostOverview() {
             )}
           </div>
           {memory.totalGB > 0 && (
-            <div className="h-2 rounded bg-surface overflow-hidden flex">
+            <div className="h-2 rounded-sm bg-surface overflow-hidden flex">
               <div
                 className="bg-accent"
                 style={{ width: `${Math.min(100, memory.usagePercent ?? 0)}%` }}
@@ -417,7 +417,7 @@ export default function HostOverview() {
                 <span><span className="text-text-muted">Swap total:</span> {formatBytes(memory.swapTotalBytes)}</span>
                 <span><span className="text-text-muted">Swap used:</span> {formatBytes(memory.swapUsedBytes ?? 0)}</span>
               </div>
-              <div className="h-2 rounded bg-surface overflow-hidden flex">
+              <div className="h-2 rounded-sm bg-surface overflow-hidden flex">
                 <div
                   className="bg-accent"
                   style={{ width: `${Math.min(100, (memory.swapTotalBytes > 0 ? ((memory.swapUsedBytes ?? 0) / memory.swapTotalBytes) * 100 : 0))}%` }}
@@ -444,8 +444,8 @@ export default function HostOverview() {
                       <span className="font-mono text-text-primary">{fs.mount}</span>
                       <span className="text-text-muted">{formatBytes(used)} / {formatBytes(total)} ({formatDecimal(pct)}%)</span>
                     </div>
-                    <div className="h-2 rounded bg-surface overflow-hidden">
-                      <div className="h-full bg-accent rounded" style={{ width: `${Math.min(100, pct)}%` }} />
+                    <div className="h-2 rounded-sm bg-surface overflow-hidden">
+                      <div className="h-full bg-accent rounded-sm" style={{ width: `${Math.min(100, pct)}%` }} />
                     </div>
                   </div>
                 );
@@ -619,7 +619,7 @@ function HostHardwareInventorySection({
         <DataTableTd
           dense
           valign="top"
-          className={`whitespace-nowrap ${nested ? '!pl-9 text-text-muted' : ''}`}
+          className={`whitespace-nowrap ${nested ? 'pl-9! text-text-muted' : ''}`}
         >
           {typeCell}
         </DataTableTd>
@@ -657,7 +657,7 @@ function HostHardwareInventorySection({
         <DataTableTd
           dense
           valign="top"
-          className={`whitespace-nowrap text-text-primary ${nested ? '!pl-9' : ''}`}
+          className={`whitespace-nowrap text-text-primary ${nested ? 'pl-9!' : ''}`}
         >
           {typeLabel}
         </DataTableTd>

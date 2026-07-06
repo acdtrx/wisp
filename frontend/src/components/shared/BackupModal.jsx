@@ -70,7 +70,7 @@ export default function BackupModal({
                 type="checkbox"
                 checked={selectedIds.includes(d.id)}
                 onChange={() => onToggleDestination(d.id)}
-                className="rounded border-surface-border"
+                className="rounded-sm border-surface-border"
                 disabled={inProgress}
               />
               <span className="text-sm text-text-primary">{d.label}</span>

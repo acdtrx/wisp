@@ -81,7 +81,7 @@ export default function ContainerListItem({ container }) {
             <button
               onClick={(e) => { e.stopPropagation(); startContainer(container.name); }}
               disabled={!!actionLoading}
-              className="rounded p-1 text-text-secondary hover:bg-green-50 hover:text-status-running disabled:opacity-40"
+              className="rounded-sm p-1 text-text-secondary hover:bg-green-50 hover:text-status-running disabled:opacity-40"
               title="Start"
             >
               <Play size={14} />
@@ -91,7 +91,7 @@ export default function ContainerListItem({ container }) {
             <button
               onClick={(e) => { e.stopPropagation(); stopContainer(container.name); }}
               disabled={!!actionLoading}
-              className="rounded p-1 text-text-secondary hover:bg-red-50 hover:text-status-stopped disabled:opacity-40"
+              className="rounded-sm p-1 text-text-secondary hover:bg-red-50 hover:text-status-stopped disabled:opacity-40"
               title="Stop"
             >
               <Square size={14} />
@@ -101,7 +101,7 @@ export default function ContainerListItem({ container }) {
             <button
               onClick={(e) => { e.stopPropagation(); restartContainer(container.name); }}
               disabled={!!actionLoading}
-              className="rounded p-1 text-text-secondary hover:bg-blue-50 hover:text-accent disabled:opacity-40"
+              className="rounded-sm p-1 text-text-secondary hover:bg-blue-50 hover:text-accent disabled:opacity-40"
               title="Restart"
             >
               <RotateCcw size={14} />

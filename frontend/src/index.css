@@ -1,25 +1,70 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
-@layer components {
-  .input-field {
-    /* h-[34px] forces inputs and selects to match height — without it, native <select>
+@plugin '@tailwindcss/typography';
+
+@theme {
+  --color-surface: #f8fafc;
+  --color-surface-sidebar: #f1f5f9;
+  --color-surface-card: #ffffff;
+  --color-surface-border: #e2e8f0;
+
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+
+  --color-status-running: #16a34a;
+  --color-status-warning: #d97706;
+  --color-status-stopped: #dc2626;
+  --color-status-transition: #2563eb;
+
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted: #94a3b8;
+
+  --font-sans: system-ui, -apple-system, sans-serif;
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
+
+  --radius-card: 8px;
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+@utility input-field {
+  /* h-[34px] forces inputs and selects to match height — without it, native <select>
        chrome (chevron padding) renders ~2px taller than text inputs at the same padding. */
-    @apply w-full h-[34px] rounded-md border border-surface-border bg-white px-3 py-1.5 text-sm text-text-primary
-      outline-none focus:border-accent focus:ring-1 focus:ring-accent
+  @apply w-full h-[34px] rounded-md border border-surface-border bg-white px-3 py-1.5 text-sm text-text-primary
+      outline-hidden focus:border-accent focus:ring-1 focus:ring-accent
       disabled:bg-surface disabled:text-text-muted disabled:cursor-not-allowed
       transition-colors duration-150;
-  }
+}
 
-  .input-field-no-spinner::-webkit-outer-spin-button,
-  .input-field-no-spinner::-webkit-inner-spin-button {
+@utility input-field-no-spinner {
+  &::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
   }
-  .input-field-no-spinner {
-    -moz-appearance: textfield;
+
+  &::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
   }
+  -moz-appearance: textfield;
 }
 
 body {

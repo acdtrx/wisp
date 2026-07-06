@@ -82,7 +82,7 @@ export default function VMListItem({ vm }) {
             <button
               onClick={(e) => { e.stopPropagation(); startVM(vm.name); }}
               disabled={!!actionLoading}
-              className="rounded p-1 text-text-secondary hover:bg-green-50 hover:text-status-running disabled:opacity-40"
+              className="rounded-sm p-1 text-text-secondary hover:bg-green-50 hover:text-status-running disabled:opacity-40"
               title="Start"
             >
               <Play size={14} />
@@ -92,7 +92,7 @@ export default function VMListItem({ vm }) {
             <button
               onClick={(e) => { e.stopPropagation(); stopVM(vm.name); }}
               disabled={!!actionLoading}
-              className="rounded p-1 text-text-secondary hover:bg-red-50 hover:text-status-stopped disabled:opacity-40"
+              className="rounded-sm p-1 text-text-secondary hover:bg-red-50 hover:text-status-stopped disabled:opacity-40"
               title="Stop"
             >
               <Square size={14} />
@@ -102,7 +102,7 @@ export default function VMListItem({ vm }) {
             <button
               onClick={(e) => { e.stopPropagation(); rebootVM(vm.name); }}
               disabled={!!actionLoading || isPaused}
-              className="relative rounded p-1 text-text-secondary hover:bg-blue-50 hover:text-accent disabled:opacity-40"
+              className="relative rounded-sm p-1 text-text-secondary hover:bg-blue-50 hover:text-accent disabled:opacity-40"
               title={staleBinary ? 'Reboot (qemu binary updated since VM started)' : 'Reboot'}
             >
               <RotateCcw size={14} />

@@ -306,7 +306,7 @@ export default function CreateVMPanel() {
                 {errorOpen ? 'Hide details' : 'Show details'}
               </button>
             )}
-            {errorOpen && createDetail && <pre className="mt-2 overflow-auto rounded bg-white/50 p-2 text-[11px] text-text-secondary">{createDetail}</pre>}
+            {errorOpen && createDetail && <pre className="mt-2 overflow-auto rounded-sm bg-white/50 p-2 text-[11px] text-text-secondary">{createDetail}</pre>}
           </div>
         )}
 

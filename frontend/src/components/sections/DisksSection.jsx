@@ -83,7 +83,7 @@ function guessImageTypeFromFileName(name) {
 }
 
 /** Narrow filename column — keeps the table balanced vs Size. */
-const imageColClass = 'min-w-0 max-w-[7rem] w-[7rem]';
+const imageColClass = 'min-w-0 max-w-28 w-28';
 
 export default function DisksSection({
   vmConfig,
@@ -517,7 +517,7 @@ export default function DisksSection({
                 <DataTableTh dense className="w-24">
                   Size
                 </DataTableTh>
-                <DataTableTh dense className="max-w-[7rem] w-[7rem]">
+                <DataTableTh dense className="max-w-28 w-28">
                   Image
                 </DataTableTh>
                 <DataTableTh dense className="w-20">
@@ -619,7 +619,7 @@ export default function DisksSection({
               <DataTableTh dense className="w-24">
                 Size
               </DataTableTh>
-              <DataTableTh dense className="max-w-[7rem] w-[7rem]">
+              <DataTableTh dense className="max-w-28 w-28">
                 Image
               </DataTableTh>
               <DataTableTh dense className="w-20">
@@ -636,7 +636,7 @@ export default function DisksSection({
           <tbody>
             <tr className={dataTableInteractiveRowClass}>
               <DataTableTd dense className="text-xs font-semibold text-text-secondary">sda</DataTableTd>
-              <DataTableTd dense className="text-xs max-w-[9rem]">
+              <DataTableTd dense className="text-xs max-w-36">
                 {diskEdit?.slot === 'sda' ? (
                   <label className="flex items-center gap-1 text-[11px] text-text-secondary">
                     <input
@@ -649,7 +649,7 @@ export default function DisksSection({
                           prev?.slot === 'sda' ? { ...prev, sizeGB: e.target.value } : prev,
                         )
                       }
-                      className="w-16 rounded border border-surface-border px-1.5 py-0.5 text-xs tabular-nums outline-none focus:border-accent"
+                      className="w-16 rounded-sm border border-surface-border px-1.5 py-0.5 text-xs tabular-nums outline-hidden focus:border-accent"
                     />
                     <span>GB</span>
                   </label>
@@ -674,7 +674,7 @@ export default function DisksSection({
                         prev?.slot === 'sda' ? { ...prev, bus: e.target.value } : prev,
                       )
                     }
-                    className="max-w-full rounded border border-surface-border px-1.5 py-0.5 text-xs outline-none focus:border-accent"
+                    className="max-w-full rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
                   >
                     {DISK_BUS_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>
@@ -718,7 +718,7 @@ export default function DisksSection({
                               : d,
                           )
                         }
-                        className="w-16 rounded border border-surface-border px-1.5 py-0.5 text-xs outline-none focus:border-accent"
+                        className="w-16 rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
                       />
                       <span>GB</span>
                     </label>
@@ -738,7 +738,7 @@ export default function DisksSection({
                               : d,
                           );
                         }}
-                        className="w-20 rounded border border-surface-border px-1.5 py-0.5 text-xs text-text-primary outline-none focus:border-accent"
+                        className="w-20 rounded-sm border border-surface-border px-1.5 py-0.5 text-xs text-text-primary outline-hidden focus:border-accent"
                       />
                     </label>
                   )}
@@ -761,7 +761,7 @@ export default function DisksSection({
                     onChange={(e) =>
                       setSdbDraft((d) => (d ? { ...d, bus: e.target.value } : d))
                     }
-                    className="max-w-full rounded border border-surface-border px-1.5 py-0.5 text-xs outline-none focus:border-accent"
+                    className="max-w-full rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
                   >
                     <option value="virtio">VirtIO</option>
                     <option value="scsi">VirtIO SCSI</option>
@@ -803,7 +803,7 @@ export default function DisksSection({
             {sdb && (
               <tr className={dataTableInteractiveRowClass}>
                 <DataTableTd dense className="text-xs font-semibold text-text-secondary">sdb</DataTableTd>
-                <DataTableTd dense className="text-xs max-w-[9rem]">
+                <DataTableTd dense className="text-xs max-w-36">
                   {diskEdit?.slot === 'sdb' ? (
                     <label className="flex items-center gap-1 text-[11px] text-text-secondary">
                       <input
@@ -816,7 +816,7 @@ export default function DisksSection({
                             prev?.slot === 'sdb' ? { ...prev, sizeGB: e.target.value } : prev,
                           )
                         }
-                        className="w-16 rounded border border-surface-border px-1.5 py-0.5 text-xs tabular-nums outline-none focus:border-accent"
+                        className="w-16 rounded-sm border border-surface-border px-1.5 py-0.5 text-xs tabular-nums outline-hidden focus:border-accent"
                       />
                       <span>GB</span>
                     </label>
@@ -841,7 +841,7 @@ export default function DisksSection({
                           prev?.slot === 'sdb' ? { ...prev, bus: e.target.value } : prev,
                         )
                       }
-                      className="max-w-full rounded border border-surface-border px-1.5 py-0.5 text-xs outline-none focus:border-accent"
+                      className="max-w-full rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
                     >
                       {DISK_BUS_OPTIONS.map((o) => (
                         <option key={o.value} value={o.value}>
@@ -1071,7 +1071,7 @@ function CreateDiskDraftTableRow({ draft, setDraft, onConfirm, onCancel }) {
                       : d,
                   )
                 }
-                className="w-16 rounded border border-surface-border px-1.5 py-0.5 text-xs outline-none focus:border-accent"
+                className="w-16 rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
               />
               <span>GB</span>
             </label>
@@ -1088,7 +1088,7 @@ function CreateDiskDraftTableRow({ draft, setDraft, onConfirm, onCancel }) {
                     d?.mode === 'existing' ? { ...d, resizeGB: v === '' ? null : parseFloat(v) } : d,
                   );
                 }}
-                className="w-16 rounded border border-surface-border px-1.5 py-0.5 text-xs outline-none focus:border-accent"
+                className="w-16 rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
               />
               <span>GB</span>
             </label>
@@ -1110,7 +1110,7 @@ function CreateDiskDraftTableRow({ draft, setDraft, onConfirm, onCancel }) {
           <select
             value={draft.bus}
             onChange={(e) => setDraft((d) => (d ? { ...d, bus: e.target.value } : d))}
-            className="max-w-full rounded border border-surface-border px-1.5 py-0.5 text-xs outline-none focus:border-accent"
+            className="max-w-full rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
           >
             <option value="virtio">VirtIO</option>
             <option value="scsi">VirtIO SCSI</option>
@@ -1180,7 +1180,7 @@ function CreateCommittedDiskRow({ slot, disk, onChange, onRemove }) {
                 min={1}
                 value={sizeGB}
                 onChange={(e) => onChange?.({ ...disk, sizeGB: parseInt(e.target.value, 10) || 32 })}
-                className="w-16 rounded border border-surface-border px-1.5 py-0.5 text-xs outline-none focus:border-accent"
+                className="w-16 rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
               />
               <span>GB</span>
             </label>
@@ -1197,7 +1197,7 @@ function CreateCommittedDiskRow({ slot, disk, onChange, onRemove }) {
                     resizeGB: e.target.value === '' ? null : parseFloat(e.target.value),
                   })
                 }
-                className="w-16 rounded border border-surface-border px-1.5 py-0.5 text-xs outline-none focus:border-accent"
+                className="w-16 rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
               />
               <span>GB</span>
             </label>
@@ -1211,7 +1211,7 @@ function CreateCommittedDiskRow({ slot, disk, onChange, onRemove }) {
           <select
             value={bus}
             onChange={(e) => onChange?.({ ...disk, bus: e.target.value })}
-            className="max-w-full rounded border border-surface-border px-1.5 py-0.5 text-xs outline-none focus:border-accent"
+            className="max-w-full rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
           >
             <option value="virtio">VirtIO</option>
             <option value="scsi">VirtIO SCSI</option>

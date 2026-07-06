@@ -32,7 +32,7 @@ function TabButton({ id, label, active, badgeTitle, onClick }) {
       <span>{label}</span>
       {badgeTitle && (
         <span
-          className="flex h-2 w-2 flex-shrink-0 rounded-full bg-amber-500"
+          className="flex h-2 w-2 shrink-0 rounded-full bg-amber-500"
           title={badgeTitle}
         />
       )}
@@ -85,9 +85,9 @@ export default function HostPanel() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex h-11 flex-shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4">
+      <div className="flex h-11 shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex-shrink-0 rounded-lg p-1 text-text-secondary" aria-hidden>
+          <div className="shrink-0 rounded-lg p-1 text-text-secondary" aria-hidden>
             <Server size={18} />
           </div>
           <span className="truncate text-sm font-semibold text-text-primary">Host</span>
@@ -119,7 +119,7 @@ export default function HostPanel() {
             })}
           </div>
         </div>
-        <div className="flex flex-shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
             onClick={() => setPowerOffOpen(true)}

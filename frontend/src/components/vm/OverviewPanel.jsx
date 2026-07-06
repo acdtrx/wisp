@@ -30,10 +30,10 @@ const ConsolePanel = lazy(() => import('../console/ConsolePanel.jsx'));
 function SectionSkeleton({ count = 3 }) {
   return Array.from({ length: count }, (_, i) => (
     <div key={i} className="rounded-xl border border-surface-border bg-surface-card p-4 space-y-3 animate-pulse">
-      <div className="h-4 w-32 rounded bg-surface" />
+      <div className="h-4 w-32 rounded-sm bg-surface" />
       <div className="space-y-2">
-        <div className="h-3 w-full rounded bg-surface" />
-        <div className="h-3 w-2/3 rounded bg-surface" />
+        <div className="h-3 w-full rounded-sm bg-surface" />
+        <div className="h-3 w-2/3 rounded-sm bg-surface" />
       </div>
     </div>
   ));
@@ -251,11 +251,11 @@ export default function OverviewPanel() {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header row: VM name + status | tabs | actions */}
-      <div className="flex h-11 flex-shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4">
+      <div className="flex h-11 shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4">
         <div className="flex min-w-0 items-center gap-3">
           <button
             onClick={() => setIconPickerOpen(true)}
-            className={`flex-shrink-0 rounded-lg p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 ${iconColorClass}`}
+            className={`shrink-0 rounded-lg p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 ${iconColorClass}`}
             title="Change icon"
           >
             <IconComp size={18} />
@@ -283,7 +283,7 @@ export default function OverviewPanel() {
             </button>
           </div>
         </div>
-        <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-1">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
           <ActionButton
             icon={Play} label="Start"
             onClick={() => startVM(name)}
@@ -381,12 +381,12 @@ export default function OverviewPanel() {
 
       {/* Error display - visible in both tabs */}
       {error && (
-        <div className="flex-shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-status-stopped">
+        <div className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-status-stopped">
           <span className="min-w-0 flex-1">{error}</span>
           <button
             type="button"
             onClick={clearError}
-            className="shrink-0 rounded p-1 hover:bg-red-100 transition-colors duration-150"
+            className="shrink-0 rounded-sm p-1 hover:bg-red-100 transition-colors duration-150"
             title="Dismiss"
             aria-label="Dismiss error"
           >
@@ -464,7 +464,7 @@ export default function OverviewPanel() {
             type="checkbox"
             checked={deleteDisks}
             onChange={(e) => setDeleteDisks(e.target.checked)}
-            className="rounded border-surface-border"
+            className="rounded-sm border-surface-border"
           />
           Also delete disk images
         </label>

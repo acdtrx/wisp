@@ -96,7 +96,7 @@ export default function MountFileEditorModal({
             value={text}
             onChange={(e) => setText(e.target.value)}
             spellCheck={false}
-            className="input-field flex-1 min-h-[12rem] w-full resize-y font-mono text-xs leading-relaxed text-text-primary"
+            className="input-field flex-1 min-h-48 w-full resize-y font-mono text-xs leading-relaxed text-text-primary"
             disabled={!!loadError}
           />
         )}

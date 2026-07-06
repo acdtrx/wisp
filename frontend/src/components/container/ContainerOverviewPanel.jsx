@@ -197,12 +197,12 @@ export default function ContainerOverviewPanel() {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex h-11 flex-shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4">
+      <div className="flex h-11 shrink-0 items-center justify-between gap-4 border-b border-surface-border bg-surface-card px-4">
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
             onClick={() => setIconPickerOpen(true)}
-            className={`flex-shrink-0 rounded-lg p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 ${iconColorClass}`}
+            className={`shrink-0 rounded-lg p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 ${iconColorClass}`}
             title="Change icon"
           >
             <IconComp size={18} />
@@ -239,7 +239,7 @@ export default function ContainerOverviewPanel() {
             </button>
           </div>
         </div>
-        <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-1">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
           {config.pendingRestart && (
             <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-status-warning mr-1">
               Restart required
@@ -268,16 +268,16 @@ export default function ContainerOverviewPanel() {
       </div>
 
       {error && (
-        <div className="flex-shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-status-stopped">
+        <div className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-status-stopped">
           <span className="min-w-0 flex-1">{error}</span>
-          <button type="button" onClick={clearError} className="shrink-0 rounded p-1 hover:bg-red-100 transition-colors duration-150" title="Dismiss">
+          <button type="button" onClick={clearError} className="shrink-0 rounded-sm p-1 hover:bg-red-100 transition-colors duration-150" title="Dismiss">
             <X size={14} />
           </button>
         </div>
       )}
 
       {config.updateAvailable && (
-        <div className="flex-shrink-0 border-b border-orange-200 bg-orange-50 px-4 py-2 text-xs text-orange-900">
+        <div className="shrink-0 border-b border-orange-200 bg-orange-50 px-4 py-2 text-xs text-orange-900">
           New image version available. Restart to apply.
         </div>
       )}
@@ -322,7 +322,7 @@ export default function ContainerOverviewPanel() {
       >
         <p>Are you sure you want to delete &ldquo;{name}&rdquo;? This cannot be undone.</p>
         <label className="mt-3 flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
-          <input type="checkbox" checked={deleteFiles} onChange={(e) => setDeleteFiles(e.target.checked)} className="rounded border-surface-border" />
+          <input type="checkbox" checked={deleteFiles} onChange={(e) => setDeleteFiles(e.target.checked)} className="rounded-sm border-surface-border" />
           Also delete uploaded files
         </label>
       </ConfirmDialog>

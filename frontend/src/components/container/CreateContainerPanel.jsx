@@ -133,7 +133,7 @@ export default function CreateContainerPanel() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex flex-shrink-0 items-center gap-3 border-b border-surface-border bg-surface-card px-4 py-3">
+      <div className="flex shrink-0 items-center gap-3 border-b border-surface-border bg-surface-card px-4 py-3">
         <button
           onClick={() => navigate('/host/overview')}
           className="rounded-md p-1 text-text-muted hover:text-text-primary hover:bg-surface transition-colors duration-150"
@@ -174,7 +174,7 @@ export default function CreateContainerPanel() {
                 <span>{STEP_LABELS[progressStep] || progressStep}</span>
               </div>
               {progressDetail && (
-                <span className="max-w-full break-words text-right text-[11px] leading-snug text-text-muted/90">
+                <span className="max-w-full wrap-break-word text-right text-[11px] leading-snug text-text-muted/90">
                   {progressDetail}
                 </span>
               )}

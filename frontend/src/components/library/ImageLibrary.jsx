@@ -80,7 +80,7 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onChe
   const anyChecking = !!checkState?.running;
   return (
     <tr className={dataTableInteractiveRowClass}>
-      <DataTableTd className="max-w-[14rem] break-all text-sm font-medium text-text-primary">{row.name}</DataTableTd>
+      <DataTableTd className="max-w-56 break-all text-sm font-medium text-text-primary">{row.name}</DataTableTd>
       <DataTableTd>
         <OciTypeBadge />
       </DataTableTd>
@@ -106,7 +106,7 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onChe
               type="button"
               onClick={() => onCheckUpdate?.(row)}
               disabled={anyChecking}
-              className="rounded p-1.5 text-text-secondary hover:bg-surface-sidebar hover:text-text-primary disabled:opacity-50"
+              className="rounded-sm p-1.5 text-text-secondary hover:bg-surface-sidebar hover:text-text-primary disabled:opacity-50"
               title="Check this image for updates"
               aria-label={`Check image ${row.name} for updates`}
             >
@@ -117,7 +117,7 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onChe
             <button
               type="button"
               onClick={() => onDelete(row)}
-              className="rounded p-1.5 text-text-secondary hover:bg-red-50 hover:text-status-stopped"
+              className="rounded-sm p-1.5 text-text-secondary hover:bg-red-50 hover:text-status-stopped"
               title="Delete"
               aria-label={`Delete image ${row.name}`}
             >
@@ -191,12 +191,12 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
                 if (e.key === 'Enter') commitRename();
                 if (e.key === 'Escape') cancelRename();
               }}
-              className="rounded border border-surface-border bg-white px-2 py-0.5 text-sm text-text-primary outline-none focus:border-accent"
+              className="rounded-sm border border-surface-border bg-white px-2 py-0.5 text-sm text-text-primary outline-hidden focus:border-accent"
             />
-            <button type="button" onClick={commitRename} className="rounded p-0.5 text-status-running hover:bg-green-50" title="Confirm rename" aria-label="Confirm rename">
+            <button type="button" onClick={commitRename} className="rounded-sm p-0.5 text-status-running hover:bg-green-50" title="Confirm rename" aria-label="Confirm rename">
               <Check size={14} aria-hidden />
             </button>
-            <button type="button" onClick={cancelRename} className="rounded p-0.5 text-text-muted hover:bg-gray-100" title="Cancel rename" aria-label="Cancel rename">
+            <button type="button" onClick={cancelRename} className="rounded-sm p-0.5 text-text-muted hover:bg-gray-100" title="Cancel rename" aria-label="Cancel rename">
               <X size={14} aria-hidden />
             </button>
           </div>
@@ -228,7 +228,7 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
             <button
               type="button"
               onClick={() => { setEditValue(file.name); setEditing(true); }}
-              className="rounded p-1.5 text-text-secondary hover:bg-surface-sidebar hover:text-text-primary"
+              className="rounded-sm p-1.5 text-text-secondary hover:bg-surface-sidebar hover:text-text-primary"
               title="Rename"
               aria-label={`Rename ${file.name}`}
             >
@@ -237,7 +237,7 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
             <button
               type="button"
               onClick={() => onDelete(file)}
-              className="rounded p-1.5 text-text-secondary hover:bg-red-50 hover:text-status-stopped"
+              className="rounded-sm p-1.5 text-text-secondary hover:bg-red-50 hover:text-status-stopped"
               title="Delete"
               aria-label={`Delete ${file.name}`}
             >
@@ -520,7 +520,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             onClick={() => setFilter(f.key)}
             className={`rounded-md px-3 py-1 text-xs font-medium transition-colors duration-150 ${
               filter === f.key
-                ? 'bg-surface-card text-text-primary shadow-sm'
+                ? 'bg-surface-card text-text-primary shadow-xs'
                 : 'text-text-secondary hover:text-text-primary'
             }`}
           >
@@ -788,13 +788,13 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
               type="button"
               onClick={handleUrlCheck}
               disabled={urlChecking || !urlInput.trim()}
-              className="rounded border border-surface-border bg-surface px-3 py-2 text-xs font-medium text-text-secondary hover:bg-surface-sidebar disabled:opacity-50"
+              className="rounded-sm border border-surface-border bg-surface px-3 py-2 text-xs font-medium text-text-secondary hover:bg-surface-sidebar disabled:opacity-50"
             >
               {urlChecking ? '…' : 'Check'}
             </button>
           </div>
           {urlCheckResult && (
-            <div className={`mb-3 rounded px-3 py-2 text-xs ${urlCheckResult.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-status-stopped'}`}>
+            <div className={`mb-3 rounded-sm px-3 py-2 text-xs ${urlCheckResult.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-status-stopped'}`}>
               {urlCheckResult.ok
                 ? `OK${urlCheckResult.contentLength != null ? ` — ${(urlCheckResult.contentLength / 1024 / 1024).toFixed(1)} MB` : ''}`
                 : urlCheckResult.error}
@@ -821,7 +821,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             <button
               type="button"
               onClick={closeUrlModal}
-              className="rounded border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface"
+              className="rounded-sm border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface"
             >
               {urlDownloading ? 'Close' : 'Cancel'}
             </button>
@@ -829,7 +829,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
               type="button"
               onClick={handleUrlDownload}
               disabled={urlDownloading || !urlInput.trim()}
-              className="flex items-center gap-1.5 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-sm bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
             >
               {urlDownloading && <Loader2 size={14} className="animate-spin" />}
               Download

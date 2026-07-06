@@ -308,7 +308,7 @@ export default function ContainerConsole({
         <button
           type="button"
           onClick={() => connectRef.current()}
-          className="ml-2 rounded border border-surface-border px-2 py-1 text-xs hover:bg-surface"
+          className="ml-2 rounded-sm border border-surface-border px-2 py-1 text-xs hover:bg-surface"
         >
           Retry
         </button>

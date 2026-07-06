@@ -99,13 +99,13 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
               if (e.key === 'Enter') submitRename();
               else if (e.key === 'Escape') setEditing(false);
             }}
-            className="w-28 rounded border border-surface-border bg-surface-card px-1.5 py-0.5 text-[10px] text-text-primary outline-none focus:border-accent"
+            className="w-28 rounded-sm border border-surface-border bg-surface-card px-1.5 py-0.5 text-[10px] text-text-primary outline-hidden focus:border-accent"
           />
           <button
             type="button"
             onClick={submitRename}
             disabled={busy}
-            className="rounded p-0.5 text-text-secondary hover:bg-surface hover:text-status-running disabled:opacity-40"
+            className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-status-running disabled:opacity-40"
             title="Save"
             aria-label="Save"
           >
@@ -114,7 +114,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
           <button
             type="button"
             onClick={() => setEditing(false)}
-            className="rounded p-0.5 text-text-secondary hover:bg-surface hover:text-status-stopped"
+            className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-status-stopped"
             title="Cancel"
             aria-label="Cancel"
           >
@@ -132,7 +132,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
                 type="button"
                 onClick={() => onMove?.('up')}
                 disabled={busy || !canMoveUp}
-                className="rounded p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
+                className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
                 title="Move up"
                 aria-label="Move section up"
               >
@@ -142,7 +142,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
                 type="button"
                 onClick={() => onMove?.('down')}
                 disabled={busy || !canMoveDown}
-                className="rounded p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
+                className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
                 title="Move down"
                 aria-label="Move section down"
               >
@@ -152,7 +152,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
                 type="button"
                 onClick={startRename}
                 disabled={busy}
-                className="rounded p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-40"
+                className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-40"
                 title="Rename section"
                 aria-label="Rename section"
               >
@@ -162,7 +162,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
                 type="button"
                 onClick={handleDelete}
                 disabled={busy}
-                className="rounded p-0.5 text-text-secondary hover:bg-surface hover:text-status-stopped disabled:opacity-40"
+                className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-status-stopped disabled:opacity-40"
                 title="Delete section"
                 aria-label="Delete section"
               >
@@ -440,7 +440,7 @@ export default function LeftPanel() {
           isHostSelected ? 'bg-surface-card border-l-2 border-l-accent' : 'hover:bg-surface-card'
         }`}
       >
-        <Server size={18} className="flex-shrink-0 text-text-secondary" />
+        <Server size={18} className="shrink-0 text-text-secondary" />
         <div className="min-w-0 flex-1 leading-tight">
           <span className="block truncate text-sm font-medium text-text-primary">Host</span>
           {stats?.cpu?.total != null && stats?.memory?.totalGB != null && (
@@ -451,7 +451,7 @@ export default function LeftPanel() {
         </div>
         {(pendingUpdates > 0 || wispUpdateAvailable) && (
           <span
-            className="flex h-2 w-2 flex-shrink-0 rounded-full bg-amber-500"
+            className="flex h-2 w-2 shrink-0 rounded-full bg-amber-500"
             title={
               wispUpdateAvailable && pendingUpdates > 0
                 ? `Wisp update available · ${pendingUpdates} OS package update(s)`
@@ -496,7 +496,7 @@ export default function LeftPanel() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search…"
-              className="w-full rounded-md border border-surface-border bg-surface-card pl-8 pr-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted outline-none focus:border-accent transition-colors duration-150"
+              className="w-full rounded-md border border-surface-border bg-surface-card pl-8 pr-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted outline-hidden focus:border-accent transition-colors duration-150"
             />
           </div>
           <div className="flex items-center justify-between">
@@ -507,7 +507,7 @@ export default function LeftPanel() {
                   onClick={() => setListFilter(opt.value)}
                   className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors duration-150 ${
                     listFilter === opt.value
-                      ? 'bg-surface-card text-text-primary shadow-sm'
+                      ? 'bg-surface-card text-text-primary shadow-xs'
                       : 'text-text-muted hover:text-text-secondary'
                   }`}
                 >

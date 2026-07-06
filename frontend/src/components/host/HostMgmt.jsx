@@ -15,7 +15,7 @@ export default function HostMgmt() {
           <button
             type="button"
             onClick={() => setBridgeError(null)}
-            className="shrink-0 rounded p-1 hover:bg-red-100 transition-colors duration-150"
+            className="shrink-0 rounded-sm p-1 hover:bg-red-100 transition-colors duration-150"
             title="Dismiss"
             aria-label="Dismiss network bridge error"
           >

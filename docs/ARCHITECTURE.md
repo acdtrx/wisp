@@ -361,9 +361,7 @@ wisp/
 ├── frontend/
 │   ├── package.json
 │   ├── index.html
-│   ├── vite.config.js
-│   ├── tailwind.config.js
-│   ├── postcss.config.js
+│   ├── vite.config.js            # Includes Tailwind v4 (@tailwindcss/vite); theme lives in src/index.css @theme
 │   ├── server.js                 # Production static + proxy server
 │   ├── scripts/
 │   │   └── ensure-novnc.js       # Prebuild noVNC check

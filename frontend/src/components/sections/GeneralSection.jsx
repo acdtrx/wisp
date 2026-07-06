@@ -194,7 +194,7 @@ function SegmentedControl({ options, value, onChange, disabled, icons }) {
             disabled={disabled}
             className={`flex items-center justify-center gap-1.5 flex-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
               value === opt.value
-                ? 'bg-surface-card text-text-primary shadow-sm'
+                ? 'bg-surface-card text-text-primary shadow-xs'
                 : 'text-text-secondary hover:text-text-primary'
             } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
           >

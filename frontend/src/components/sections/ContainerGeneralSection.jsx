@@ -15,7 +15,7 @@ const RESTART_OPTIONS = [
 
 function RestartPolicySegmentedControl({ value, onChange }) {
   return (
-    <div className="flex h-[2.25rem] max-w-full overflow-x-auto rounded-lg border border-surface-border bg-surface p-0.5">
+    <div className="flex h-9 max-w-full overflow-x-auto rounded-lg border border-surface-border bg-surface p-0.5">
       {RESTART_OPTIONS.map((opt) => (
         <button
           key={opt.value}
@@ -23,7 +23,7 @@ function RestartPolicySegmentedControl({ value, onChange }) {
           onClick={() => onChange(opt.value)}
           className={`flex shrink-0 items-center whitespace-nowrap rounded-md px-2.5 text-xs font-medium transition-colors duration-150 ${
             value === opt.value
-              ? 'bg-surface-card text-text-primary shadow-sm'
+              ? 'bg-surface-card text-text-primary shadow-xs'
               : 'text-text-secondary hover:text-text-primary'
           }`}
         >
@@ -239,13 +239,13 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
           </Field>
 
           <Field label="Auto Start">
-            <div className="flex h-[2.25rem] items-center">
+            <div className="flex h-9 items-center">
               <Toggle checked={form.autostart} onChange={(v) => updateField('autostart', v)} />
             </div>
           </Field>
 
           <Field label="Run as Root">
-            <div className="flex h-[2.25rem] items-center">
+            <div className="flex h-9 items-center">
               <Toggle checked={form.runAsRoot} onChange={(v) => updateField('runAsRoot', v)} />
             </div>
           </Field>

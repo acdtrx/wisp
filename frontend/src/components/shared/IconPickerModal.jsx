@@ -56,7 +56,7 @@ export default function IconPickerModal({ open, currentIconId, onSelect, onClose
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search icons…"
-              className="w-full rounded-md border border-surface-border bg-surface pl-8 pr-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted outline-none focus:border-accent transition-colors duration-150"
+              className="w-full rounded-md border border-surface-border bg-surface pl-8 pr-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted outline-hidden focus:border-accent transition-colors duration-150"
             />
           </div>
         </div>

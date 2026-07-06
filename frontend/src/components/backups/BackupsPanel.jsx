@@ -179,13 +179,13 @@ export default function BackupsPanel() {
                   {list.map((b) => (
                     <tr key={`${b.type}:${b.destinationId}:${b.sourceName}:${b.timestamp}`} className={dataTableInteractiveRowClass}>
                       <DataTableTd>
-                        <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${b.type === 'container' ? 'bg-accent/15 text-accent' : 'bg-surface-border text-text-secondary'}`}>
+                        <span className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${b.type === 'container' ? 'bg-accent/15 text-accent' : 'bg-surface-border text-text-secondary'}`}>
                           {b.type === 'container' ? 'container' : 'vm'}
                         </span>
                       </DataTableTd>
                       <DataTableTd className="text-sm font-medium text-text-primary">{b.displayName}</DataTableTd>
                       <DataTableTd>
-                        <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${b.destinationLabel === 'Local' ? 'bg-surface-border text-text-secondary' : 'bg-accent/15 text-accent'}`}>
+                        <span className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${b.destinationLabel === 'Local' ? 'bg-surface-border text-text-secondary' : 'bg-accent/15 text-accent'}`}>
                           {b.destinationLabel || '—'}
                         </span>
                       </DataTableTd>
@@ -196,7 +196,7 @@ export default function BackupsPanel() {
                           <button
                             type="button"
                             onClick={() => { setRestoreTarget(b); setRestoreName(''); setRestoreError(null); setDeleteError(null); }}
-                            className="rounded p-1.5 text-text-secondary hover:bg-surface-sidebar hover:text-text-primary"
+                            className="rounded-sm p-1.5 text-text-secondary hover:bg-surface-sidebar hover:text-text-primary"
                             title={b.type === 'container' ? 'Restore as new container' : 'Restore as new VM'}
                             aria-label={`Restore backup ${b.displayName}`}
                           >
@@ -205,7 +205,7 @@ export default function BackupsPanel() {
                           <button
                             type="button"
                             onClick={() => { setDeleteTarget(b); setDeleteError(null); }}
-                            className="rounded p-1.5 text-text-secondary hover:bg-red-50 hover:text-status-stopped"
+                            className="rounded-sm p-1.5 text-text-secondary hover:bg-red-50 hover:text-status-stopped"
                             title="Delete backup"
                             aria-label={`Delete backup ${b.displayName}`}
                           >

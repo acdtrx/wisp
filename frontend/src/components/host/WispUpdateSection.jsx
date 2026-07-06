@@ -248,7 +248,7 @@ export default function WispUpdateSection() {
                 <AlertCircle size={13} className="mt-0.5 shrink-0" />
                 <span>
                   Install hasn't completed after 5 minutes. Check{' '}
-                  <code className="rounded bg-surface-card px-1">sudo journalctl -u wisp-updater.service</code>{' '}
+                  <code className="rounded-sm bg-surface-card px-1">sudo journalctl -u wisp-updater.service</code>{' '}
                   on the server for details.
                 </span>
               </div>
@@ -274,7 +274,7 @@ export default function WispUpdateSection() {
           </a>
         )}
       >
-        <div className="prose prose-sm prose-slate max-w-none break-words text-text-secondary prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-text-primary prose-p:my-1.5 prose-li:my-0.5 prose-code:rounded prose-code:bg-surface prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none prose-a:text-accent">
+        <div className="prose prose-sm prose-slate max-w-none wrap-break-word text-text-secondary prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-text-primary prose-p:my-1.5 prose-li:my-0.5 prose-code:rounded-sm prose-code:bg-surface prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none prose-a:text-accent">
           {notes ? (
             <NotesHtml markdown={notes} />
           ) : (
