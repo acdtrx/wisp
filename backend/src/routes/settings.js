@@ -29,6 +29,15 @@ const settingsResponseProps = {
   backupMountId: { type: ['string', 'null'] },
   discoveryEnabled: { type: 'boolean' },
   advertisedUrl: { type: ['string', 'null'] },
+  oidc: {
+    type: 'object',
+    properties: {
+      enabled: { type: 'boolean' },
+      issuer: { type: 'string' },
+      clientId: { type: 'string' },
+      hasClientSecret: { type: 'boolean' },
+    },
+  },
 };
 
 export default async function settingsRoutes(fastify) {
@@ -59,6 +68,17 @@ export default async function settingsRoutes(fastify) {
           backupMountId: { type: ['string', 'null'] },
           discoveryEnabled: { type: 'boolean' },
           advertisedUrl: { type: ['string', 'null'] },
+          oidc: {
+            type: 'object',
+            properties: {
+              enabled: { type: 'boolean' },
+              issuer: { type: 'string' },
+              clientId: { type: 'string' },
+              // Write-only: empty/omitted keeps the saved secret. Never returned by GET.
+              clientSecret: { type: 'string' },
+            },
+            additionalProperties: false,
+          },
         },
         additionalProperties: false,
       },
@@ -86,9 +106,9 @@ export default async function settingsRoutes(fastify) {
         }
         return result;
       } catch (err) {
-        // Only the validation code takes the 422 path — Node fs errors also
+        // Only the validation codes take the 422 path — Node fs errors also
         // carry a truthy `code` (EACCES, ENOSPC) and must keep the generic 500.
-        if (err?.code === 'INVALID_URL') {
+        if (err?.code === 'INVALID_URL' || err?.code === 'INVALID_OIDC') {
           handleRouteError(err, reply, request);
           return;
         }

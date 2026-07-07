@@ -134,8 +134,16 @@ export function setPassword(newPassword) {
 
 // Routes whose canonical (post-routing) URL bypasses auth. Matched against
 // `request.routeOptions.url` so trailing-slash / percent-encoded variants
-// don't accidentally get marked public.
-const PUBLIC_ROUTES = new Set(['/api/auth/login']);
+// don't accidentally get marked public. The OIDC routes are public because
+// they run *before* a session exists: `status` tells the login page whether to
+// show the SSO button, `login` redirects the browser to the provider, and
+// `callback` receives the provider redirect and mints the session.
+const PUBLIC_ROUTES = new Set([
+  '/api/auth/login',
+  '/api/auth/oidc/status',
+  '/api/auth/oidc/login',
+  '/api/auth/oidc/callback',
+]);
 
 const SESSION_COOKIE = 'wisp_session';
 const CSRF_COOKIE = 'wisp_csrf';

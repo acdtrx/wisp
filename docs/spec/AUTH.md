@@ -69,9 +69,12 @@ An `onRequest` hook is registered globally on the backend server. Every incoming
 
 ### Public routes
 
-Only one route is public (no authentication required):
+These routes are public (no authentication required) — they all run before a session exists:
 
 - `POST /api/auth/login`
+- `GET /api/auth/oidc/status` — whether SSO is configured (login page reads it)
+- `GET /api/auth/oidc/login` — start the SSO flow (redirects to the provider)
+- `GET /api/auth/oidc/callback` — provider redirect target (mints the session)
 
 ### Token extraction
 
@@ -114,7 +117,38 @@ The global `onRequest` auth hook validates the cookie before the WebSocket upgra
 
 Failed login attempts are tracked per source IP (in-memory `Map`). The window is **60 s** with a maximum of **5 failed attempts per IP**; further attempts in the same window return **429**. The map is swept every 60 s for expired entries and capped at 10 000 distinct IPs to bound memory under flood conditions.
 
-The IP used as the map key is **`request.ip`**. Backend Fastify is configured with `trustProxy: ['127.0.0.1', '::1']` — loopback only. In production the backend serves the SPA itself and browsers connect to it directly, so no proxy is involved and `request.ip` is the real peer address; the loopback allow-list exists so an *optional* TLS-terminating reverse proxy (Caddy/nginx) running on the same host can pass `X-Forwarded-For` / `X-Forwarded-Proto` and cookies still pick the right `Secure` flag. Trust is intentionally narrow: only headers from loopback connections are honored, so an attacker connecting directly to the backend port over the LAN cannot forge `X-Forwarded-For` to bypass the rate limit. If a future deployment puts the reverse proxy on a different host, extend the allow-list to that proxy's IP — never set `trustProxy: true`.
+The IP used as the map key is **`request.ip`**. Backend Fastify is configured with `trustProxy: ['127.0.0.1', '::1', ...trustedProxies]` — loopback is always trusted, plus any entries from the `trustedProxies` config field. In production the backend serves the SPA itself and browsers connect to it directly, so with no proxy `request.ip` is the real peer address; the loopback allow-list covers an *optional* TLS-terminating reverse proxy (Caddy/nginx) running on the **same host** that can pass `X-Forwarded-For` / `X-Forwarded-Proto` so cookies pick the right `Secure` flag. When the proxy runs on a **different host/container**, add its IP or subnet to `trustedProxies` in `wisp-config.json` (read at boot; see [CONFIGURATION.md](CONFIGURATION.md) § Reverse proxy / HTTPS). Trust is intentionally narrow: only headers from trusted sources are honored, so an attacker connecting directly to the backend port over the LAN cannot forge `X-Forwarded-For` to bypass the rate limit — never set `trustProxy: true`.
+
+## OIDC / SSO login
+
+Optional single sign-on via **OpenID Connect** (e.g. [Pocket ID](https://pocket-id.org)). Wisp stays **single-user**: a successful OIDC login is treated exactly like a correct password — it yields the same `wisp_session` / `wisp_csrf` cookies, signed with the same password-derived secret. The password therefore **remains configured and works as a backup**, and OIDC cannot be used without a password on file (the session JWT secret is derived from it).
+
+No third-party OIDC/JWT library is used: discovery and token exchange go over `fetch`, and ID-token signatures are verified with `node:crypto` (`createPublicKey({ format: 'jwk' })`, RS256/ES256). Implementation in `backend/src/lib/oidc.js`; routes in `backend/src/routes/auth.js`.
+
+### Access control
+
+Delegated to the identity provider. Restrict the Wisp OIDC client to your own user/group **in the provider**; Wisp accepts any subject that authenticates for that client as the single user. Wisp does **not** maintain its own allowlist. It still fully validates every login (below), so a token minted for a different client or a tampered token is rejected.
+
+### Configuration
+
+Stored under `settings.oidc` in `wisp-config.json` (`{ enabled, issuer, clientId, clientSecret }`) and edited in **Host → App Config → Single sign-on**. The client secret is masked on read (`hasClientSecret` boolean, like SMB passwords) and the file is written `0600`. `enabled` only sticks when `issuer` (valid `http`/`https`), `clientId`, and `clientSecret` are all present.
+
+### Flow (authorization code + PKCE, confidential client)
+
+1. `GET /api/auth/oidc/login` fetches the provider's `/.well-known/openid-configuration` (cached), generates `state` + `nonce` + a PKCE verifier (held in a short-lived in-memory map, 10-minute TTL, one-time use), and **302**-redirects the browser to the authorization endpoint.
+2. The `redirect_uri` is derived from the request origin — `<scheme>://<host>/api/auth/oidc/callback`. The scheme comes from `X-Forwarded-Proto`, so **behind a TLS proxy on another host you must set `trustedProxies`** (see [CONFIGURATION.md](CONFIGURATION.md) § Reverse proxy / HTTPS) or the callback is built as `http://…` and the provider rejects it as an invalid callback URL. **Register this exact URL** as the client's allowed redirect in the provider.
+3. The provider redirects back to `GET /api/auth/oidc/callback`. Wisp validates and consumes the `state`, exchanges `code` at the token endpoint (client auth chosen from the provider's advertised `token_endpoint_auth_methods_supported` — `client_secret_basic`, else `client_secret_post`), and validates the ID token: **JWKS signature**, `iss`, `aud` contains the client id, `exp`/`nbf` (60 s skew), and `nonce`.
+4. On success Wisp issues the session cookies and **302**s to `/`.
+
+### Failure / cancel handling (no dead ends)
+
+`login` and `callback` never leave the user stranded at a broken provider page — they bounce back to the SPA with a marker the login page reads:
+
+- Provider returns `error=access_denied` (user cancelled) → `/login?sso=cancelled`
+- SSO disabled mid-flow → `/login?sso=disabled`
+- Provider unreachable, discovery/JWKS failure, invalid/expired state, token-exchange or ID-token validation failure → `/login?sso=error`
+
+The login page auto-redirects to the provider when SSO is enabled **and** no `?sso=` marker is present; the marker both shows the message and breaks the redirect loop so the password form (with a "Sign in with SSO" button below it) is reachable. See [UI.md](UI.md) § Login Page.
 
 ## Security Considerations
 
@@ -127,3 +161,4 @@ The IP used as the map key is **`request.ip`**. Backend Fastify is configured wi
 - **`HttpOnly + Secure + SameSite=Lax`** session cookie + double-submit `X-CSRF-Token` — both layers must be defeated for cross-site abuse to succeed.
 - **WS Origin allow-list** since CORS does not apply to WebSocket — cross-origin pages with a stolen cookie still get `close 1008`.
 - **Single password change invalidates all tokens** since the signing secret changes; live SSE/WS are explicitly closed and the user's session is re-issued.
+- **OIDC** uses authorization-code flow with **PKCE** and a confidential client secret; `state` (one-time, CSRF/replay defence) and `nonce` (binds the ID token to the login) are enforced, and the ID token's **signature is verified against the provider JWKS** — a token from another client or a tampered token is rejected. The client secret is stored `0600` and never leaves the server.

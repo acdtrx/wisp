@@ -114,14 +114,18 @@ const loggerConfig = {
     : {}),
 };
 
-// trustProxy honors X-Forwarded-Proto / X-Forwarded-For only when the connection
-// itself comes from loopback. A TLS-terminating reverse proxy (Caddy/nginx)
-// sitting in front lets cookies pick the right `Secure` flag based on the
-// browser's actual scheme without trusting headers from arbitrary networks.
+// trustProxy decides whose X-Forwarded-Proto / X-Forwarded-For are honored —
+// which drives request.protocol (https redirects + the cookie `Secure` flag) and
+// request.ip (login rate-limit key). Loopback is always trusted (an optional
+// same-host TLS proxy). When the reverse proxy (Caddy/nginx/Traefik) runs on a
+// DIFFERENT host or container, add its IP/subnet to `trustedProxies` in
+// wisp-config.json so the browser's real https scheme survives the hop.
+// Never `true` — that would trust forged headers from anyone on the network.
+const trustedProxies = getConfigSync().trustedProxies || [];
 const app = Fastify({
   logger: loggerConfig,
   forceCloseConnections: true,
-  trustProxy: ['127.0.0.1', '::1'],
+  trustProxy: ['127.0.0.1', '::1', ...trustedProxies],
 });
 
 // In prod the backend also serves the SPA — apply baseline security headers to

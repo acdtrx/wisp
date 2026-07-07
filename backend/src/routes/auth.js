@@ -4,6 +4,8 @@ import { verifyPassword, signJWT, setPassword } from '../lib/auth.js';
 import { appendSetCookie, buildSetCookie } from '../lib/cookies.js';
 import { closeAllSSE } from '../lib/sse.js';
 import { closeAllWebSockets } from '../lib/wsTracking.js';
+import { getRawOidcConfig } from '../lib/settings.js';
+import { beginLogin, completeLogin } from '../lib/oidc.js';
 
 const SESSION_COOKIE = 'wisp_session';
 const CSRF_COOKIE = 'wisp_csrf';
@@ -35,6 +37,12 @@ function clearSessionCookies(reply, request) {
   };
   appendSetCookie(reply, buildSetCookie(SESSION_COOKIE, '', { ...baseAttrs, httpOnly: true }));
   appendSetCookie(reply, buildSetCookie(CSRF_COOKIE, '', { ...baseAttrs, httpOnly: false }));
+}
+
+// Browser-facing 302. Set-Cookie headers (via reply.raw.appendHeader) already
+// staged by setSessionCookies survive this — same mechanism the login route uses.
+function redirect(reply, location) {
+  reply.code(302).header('Location', location).send();
 }
 
 const LOGIN_RATE_WINDOW_MS = 60 * 1000;
@@ -179,6 +187,110 @@ export default async function authRoutes(fastify) {
           error: 'Failed to update password',
           detail: err.message,
         });
+      }
+    },
+  });
+
+  // --- OIDC / SSO (public routes; see PUBLIC_ROUTES in lib/auth.js) ---------
+
+  // Tells the login page whether to show (and auto-redirect to) SSO. Public and
+  // secret-free — only the enabled boolean, never issuer/client details.
+  fastify.get('/oidc/status', {
+    schema: {
+      response: {
+        200: { type: 'object', properties: { enabled: { type: 'boolean' } } },
+      },
+    },
+    handler: async () => {
+      const config = await getRawOidcConfig();
+      return { enabled: config.enabled === true };
+    },
+  });
+
+  // Kicks off the auth-code flow: build the provider authorization URL (with
+  // PKCE + state + nonce) and 302 the browser to it. On any failure — including
+  // an unreachable provider — bounce back to /login?sso=error so the password
+  // form (and its "try SSO again" button) is shown instead of a dead end.
+  fastify.get('/oidc/login', {
+    handler: async (request, reply) => {
+      const config = await getRawOidcConfig();
+      if (!config.enabled) {
+        redirect(reply, '/login?sso=disabled');
+        return;
+      }
+      const host = request.headers.host;
+      if (!host) {
+        request.log.warn('OIDC login: request has no Host header');
+        redirect(reply, '/login?sso=error');
+        return;
+      }
+      // Derive the callback from the request origin. trustProxy (loopback) makes
+      // request.protocol honor X-Forwarded-Proto so this is the browser-facing
+      // URL even behind a TLS-terminating reverse proxy. Register this exact URL
+      // as the redirect URI in the provider.
+      const redirectUri = `${request.protocol}://${host}/api/auth/oidc/callback`;
+      try {
+        const { authorizationUrl } = await beginLogin({
+          issuer: config.issuer,
+          clientId: config.clientId,
+          redirectUri,
+        });
+        redirect(reply, authorizationUrl);
+      } catch (err) {
+        request.log.error({ err: err.message, code: err.code }, 'OIDC login start failed');
+        redirect(reply, '/login?sso=error');
+      }
+    },
+  });
+
+  // Provider redirect target. Validates state + exchanges the code + verifies
+  // the ID token, then issues the SAME session as a password login. Access
+  // control is delegated to the provider (restrict the client to your user
+  // there); any subject that authenticates is the single Wisp user.
+  fastify.get('/oidc/callback', {
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          code: { type: 'string' },
+          state: { type: 'string' },
+          error: { type: 'string' },
+          error_description: { type: 'string' },
+        },
+        // Providers may append extra params (iss, session_state, …).
+        additionalProperties: true,
+      },
+    },
+    handler: async (request, reply) => {
+      const { code, state, error } = request.query || {};
+      if (error) {
+        // access_denied = the user cancelled/denied consent at the provider.
+        const dest = error === 'access_denied' ? '/login?sso=cancelled' : '/login?sso=error';
+        request.log.info({ error }, 'OIDC callback returned provider error');
+        redirect(reply, dest);
+        return;
+      }
+      const config = await getRawOidcConfig();
+      if (!config.enabled) {
+        redirect(reply, '/login?sso=disabled');
+        return;
+      }
+      try {
+        const { claims } = await completeLogin({
+          issuer: config.issuer,
+          clientId: config.clientId,
+          clientSecret: config.clientSecret,
+          state,
+          code,
+        });
+        request.log.info({ sub: claims.sub }, 'OIDC login succeeded');
+        const token = signJWT({ role: 'admin' });
+        const csrfToken = randomBytes(32).toString('base64url');
+        setSessionCookies(reply, request, token, csrfToken);
+        redirect(reply, '/');
+      } catch (err) {
+        request.log.warn({ err: err.message, code: err.code }, 'OIDC callback failed');
+        redirect(reply, '/login?sso=error');
       }
     },
   });

@@ -32,6 +32,34 @@ Change the application password. On success, re-issues fresh `wisp_session` and 
 - **401:** `{ error, detail }` — current password incorrect
 - **500:** `{ error, detail }` — failed to write new password
 
+### OIDC / SSO login
+
+Optional single sign-on via OpenID Connect (authorization-code flow with PKCE + confidential client secret). Configured under `settings.oidc` (see `GET/PATCH /api/settings` and [CONFIGURATION.md](CONFIGURATION.md)). All three routes are **public** (they run before a session exists). Access control is delegated to the provider — any subject that authenticates for the Wisp client becomes the single Wisp user; the ID token is still fully validated (issuer, audience, expiry, nonce, JWKS signature). A successful callback issues the **same** `wisp_session` / `wisp_csrf` cookies as password login (the session JWT is still signed with the password-derived secret, so a password must be configured). See [AUTH.md](AUTH.md) § OIDC.
+
+#### GET /api/auth/oidc/status
+
+Tells the login page whether to show (and auto-redirect to) SSO. Secret-free.
+
+- **Auth:** Public
+- **200:** `{ enabled: boolean }`
+
+#### GET /api/auth/oidc/login
+
+Begins the flow: generates state + nonce + PKCE, then **302**-redirects the browser to the provider authorization endpoint. The `redirect_uri` is derived from the request origin (`<scheme>://<host>/api/auth/oidc/callback`; `X-Forwarded-Proto` honored via loopback `trustProxy`). On any failure — SSO disabled, missing `Host`, unreachable/invalid provider — it **302**s to `/login?sso=<disabled|error>` instead of dead-ending.
+
+- **Auth:** Public
+- **302:** `Location: <provider authorize URL>` on success; `Location: /login?sso=error` (or `?sso=disabled`) on failure
+
+#### GET /api/auth/oidc/callback
+
+Provider redirect target. Validates the one-time `state`, exchanges `code` for tokens (client auth per the provider's advertised method), verifies the ID token, and issues the session.
+
+- **Auth:** Public
+- **Query:** `code`, `state` (success) or `error`, `error_description` (provider-side failure); extra params ignored
+- **302 (success):** `Location: /` + `Set-Cookie: wisp_session=…; HttpOnly`, `Set-Cookie: wisp_csrf=…`
+- **302 (cancelled):** `Location: /login?sso=cancelled` when the provider returns `error=access_denied`
+- **302 (failure):** `Location: /login?sso=error` for any other provider error, invalid/expired state, token-exchange failure, or ID-token validation failure
+
 ---
 
 ## Background jobs
@@ -1037,19 +1065,21 @@ Get application settings.
   "mounts": [],
   "backupMountId": null,
   "discoveryEnabled": true,
-  "advertisedUrl": null
+  "advertisedUrl": null,
+  "oidc": { "enabled": false, "issuer": "", "clientId": "", "hasClientSecret": false }
 }
 ```
 
-The shipped `wisp-config.json.example` has empty `mounts`. Mounts are added via **Host → Host Mgmt → Storage** (row-scoped **POST**/**PATCH**/**DELETE** on `/api/host/mounts`). SMB passwords are masked as `***` in the response.
+The shipped `wisp-config.json.example` has empty `mounts`. Mounts are added via **Host → Host Mgmt → Storage** (row-scoped **POST**/**PATCH**/**DELETE** on `/api/host/mounts`). SMB passwords are masked as `***` in the response. The **OIDC client secret is never returned** — GET exposes `oidc.hasClientSecret` (boolean) only.
 
 ### PATCH /api/settings
 
 Update settings. Partial update — only include fields to change.
 
-- **Body:** Partial settings object (`serverName`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`, `discoveryEnabled`, `advertisedUrl`)
+- **Body:** Partial settings object (`serverName`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`, `discoveryEnabled`, `advertisedUrl`, `oidc`)
 - **200:** Updated settings object
 - **Validation:** Paths must be absolute (start with `/`). `advertisedUrl` must be a valid `http`/`https` URL of at most 251 bytes (mDNS TXT record limit), or `null`/empty to clear — invalid values return **422** `{ error, detail }` with code `INVALID_URL`.
+- **`oidc`:** Object `{ enabled?, issuer?, clientId?, clientSecret? }`. `clientSecret` is write-only — omit or send empty to keep the saved secret (the masked GET never returns it to echo back). When `enabled: true`, the merged config must have a valid `http`/`https` `issuer`, a `clientId`, and a `clientSecret` on file, else **422** `{ error, detail }` with code `INVALID_OIDC`. Persisted to `wisp-config.json` (written `0600`).
 - **Side effect:** A successful PATCH that changes `serverName`, `discoveryEnabled`, or `advertisedUrl` re-announces the instance's `_wisp._tcp` mDNS service (see [DISCOVERY.md](DISCOVERY.md)).
 - **`containersPath`:** Optional; container storage root (same default as `config.js`; exposed for scripts — App Config UI does not edit it yet).
 - **Mount CRUD:** Not available via PATCH /api/settings. Use `/api/host/mounts` endpoints below.

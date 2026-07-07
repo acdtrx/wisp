@@ -1,5 +1,5 @@
 {
-  "_comment": "Copied to wisp-config.json on first install. Lives in config/; chmod 600 if you later add SMB passwords via Settings.",
+  "_comment": "Copied to wisp-config.json on first install. Lives in config/; kept chmod 600 because it may hold SMB passwords and the OIDC client secret (Settings writes it 0600).",
   "serverName": "My Server",
   "vmsPath": "/var/lib/wisp/vms",
   "imagePath": "/var/lib/wisp/images",
@@ -8,5 +8,7 @@
   "mounts": [],
   "backupMountId": null,
   "discoveryEnabled": true,
-  "advertisedUrl": null
+  "advertisedUrl": null,
+  "oidc": { "enabled": false, "issuer": "", "clientId": "", "clientSecret": "" },
+  "trustedProxies": []
 }

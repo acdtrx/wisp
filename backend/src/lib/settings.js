@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { CONFIG_PATH } from './config.js';
+import { CONFIG_PATH, parseTrustedProxies } from './config.js';
 import { getMountStatus } from './storage/index.js';
 import { createAppError } from './routeErrors.js';
 import { writeJsonAtomic } from './atomicJson.js';
@@ -33,6 +33,8 @@ const DEFAULTS = {
   assignments: {},
   discoveryEnabled: true,
   advertisedUrl: null,
+  oidc: { enabled: false, issuer: '', clientId: '', clientSecret: '' },
+  trustedProxies: [],
 };
 
 /* "main" is the implicit fallback bucket — never persisted as a section, but
@@ -68,6 +70,22 @@ function normalizeAssignments(map, sectionIds) {
     out[key] = value;
   }
   return out;
+}
+
+function normalizeOidc(obj) {
+  const src = obj && typeof obj === 'object' ? obj : {};
+  const issuer = typeof src.issuer === 'string' ? src.issuer.trim() : '';
+  const clientId = typeof src.clientId === 'string' ? src.clientId.trim() : '';
+  const clientSecret = typeof src.clientSecret === 'string' ? src.clientSecret : '';
+  return {
+    // Enabled only ever sticks when the config is actually complete — a
+    // half-configured `enabled: true` would auto-redirect logins into a broken
+    // provider flow.
+    enabled: src.enabled === true && !!issuer && !!clientId && !!clientSecret,
+    issuer,
+    clientId,
+    clientSecret,
+  };
 }
 
 const VALID_DISK_FSTYPES = new Set(['ext4', 'btrfs', 'vfat', 'exfat', 'ntfs3']);
@@ -156,6 +174,11 @@ async function readSettingsFile() {
       typeof data.advertisedUrl === 'string' && data.advertisedUrl.trim() !== ''
         ? data.advertisedUrl.trim()
         : DEFAULTS.advertisedUrl,
+    oidc: normalizeOidc(data.oidc),
+    // Not editable from the UI — an operator sets it directly in wisp-config.json
+    // for a non-loopback reverse proxy. Preserved here so a Settings save from the
+    // UI (which rewrites the whole file) can't silently drop it.
+    trustedProxies: parseTrustedProxies(data.trustedProxies),
   };
 }
 
@@ -210,7 +233,31 @@ export async function getSettings() {
     assignments: fromFile.assignments || {},
     discoveryEnabled: fromFile.discoveryEnabled,
     advertisedUrl: fromFile.advertisedUrl,
+    oidc: oidcForApi(fromFile.oidc),
   };
+}
+
+/* Never return the client secret to the client — expose a boolean so the UI can
+ * render an empty input with a "saved" affordance, mirroring how SMB mount
+ * passwords are masked (`hasPassword`). */
+function oidcForApi(oidc) {
+  const o = oidc || DEFAULTS.oidc;
+  return {
+    enabled: o.enabled === true,
+    issuer: o.issuer || '',
+    clientId: o.clientId || '',
+    hasClientSecret: !!o.clientSecret,
+  };
+}
+
+/**
+ * Full OIDC config including the client secret, for server-side use only
+ * (the OIDC login/callback routes). Never sent to the client.
+ * @returns {Promise<{ enabled: boolean, issuer: string, clientId: string, clientSecret: string }>}
+ */
+export async function getRawOidcConfig() {
+  const fromFile = await readSettingsFile();
+  return normalizeOidc(fromFile.oidc);
 }
 
 let writeLock = Promise.resolve();
@@ -222,7 +269,13 @@ let writeLock = Promise.resolve();
  */
 export async function updateSettings(updates) {
   if (updates?.advertisedUrl !== undefined) assertValidAdvertisedUrl(updates.advertisedUrl);
-  return withSettingsWriteLock((fromFile) => buildUpdatedSettings(fromFile, updates));
+  return withSettingsWriteLock((fromFile) => {
+    const next = buildUpdatedSettings(fromFile, updates);
+    // Validate the *merged* result: the secret may already be on file even when
+    // this PATCH doesn't include it, so completeness can only be judged post-merge.
+    if (updates.oidc !== undefined) assertValidOidc(next.oidc);
+    return next;
+  });
 }
 
 function assertValidAdvertisedUrl(value) {
@@ -243,6 +296,27 @@ function assertValidAdvertisedUrl(value) {
   // The URL travels in a single mDNS TXT entry ("url=<value>", 255 bytes max).
   if (Buffer.byteLength(trimmed, 'utf8') > 251) {
     throw createAppError('INVALID_URL', 'advertisedUrl must be at most 251 bytes (mDNS TXT record limit)');
+  }
+}
+
+function assertValidOidc(oidc) {
+  // Only fully-configured OIDC may be enabled. A disabled/blank config is fine.
+  if (!oidc || oidc.enabled !== true) return;
+  const issuer = oidc.issuer || '';
+  let parsed;
+  try {
+    parsed = new URL(issuer);
+  } catch {
+    throw createAppError('INVALID_OIDC', 'OIDC issuer must be a valid URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw createAppError('INVALID_OIDC', 'OIDC issuer must use http or https');
+  }
+  if (!oidc.clientId) {
+    throw createAppError('INVALID_OIDC', 'OIDC client ID is required');
+  }
+  if (!oidc.clientSecret) {
+    throw createAppError('INVALID_OIDC', 'OIDC client secret is required');
   }
 }
 
@@ -296,6 +370,18 @@ function buildUpdatedSettings(fromFile, updates) {
       typeof updates.advertisedUrl === 'string' && updates.advertisedUrl.trim() !== ''
         ? updates.advertisedUrl.trim()
         : null;
+  }
+  if (updates.oidc !== undefined && updates.oidc && typeof updates.oidc === 'object') {
+    const cur = normalizeOidc(next.oidc);
+    const u = updates.oidc;
+    const merged = { ...cur };
+    if (u.issuer !== undefined) merged.issuer = typeof u.issuer === 'string' ? u.issuer.trim() : '';
+    if (u.clientId !== undefined) merged.clientId = typeof u.clientId === 'string' ? u.clientId.trim() : '';
+    // Empty / omitted secret means "keep the saved one" — the masked GET never
+    // returns it, so the client can't echo it back. Same pattern as SMB passwords.
+    if (typeof u.clientSecret === 'string' && u.clientSecret !== '') merged.clientSecret = u.clientSecret;
+    if (u.enabled !== undefined) merged.enabled = u.enabled === true;
+    next.oidc = normalizeOidc(merged);
   }
 
   return next;
@@ -357,8 +443,13 @@ async function persistSettings(state) {
     backupMountId: state.backupMountId,
     discoveryEnabled: state.discoveryEnabled !== false,
     advertisedUrl: state.advertisedUrl ?? null,
+    oidc: normalizeOidc(state.oidc),
+    trustedProxies: parseTrustedProxies(state.trustedProxies),
   };
-  await writeJsonAtomic(CONFIG_PATH, toWrite);
+  // 0600: the file holds secrets (SMB passwords, OIDC client secret). Without an
+  // explicit mode the atomic temp file lands at the umask default (usually 0644),
+  // silently widening the config back to world-readable on every save.
+  await writeJsonAtomic(CONFIG_PATH, toWrite, { mode: 0o600 });
 }
 
 /**

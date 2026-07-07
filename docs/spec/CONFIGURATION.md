@@ -50,6 +50,8 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 | `assignments` | `object` | `{}` | Map of `"<type>:<workload-name>"` → `sectionId`. Missing entries (or entries pointing at a removed section) fall back to `Main`. `<type>` is `vm` or `container`. |
 | `discoveryEnabled` | `boolean` | `true` | Announce this instance as a `_wisp._tcp` mDNS service and browse for peers (see [DISCOVERY.md](DISCOVERY.md)). |
 | `advertisedUrl` | `string \| null` | `null` | URL other Wisp instances use to open this one; must be `http`/`https`. `null` → announce `http://<hostname>.local:<port>`. |
+| `oidc` | `object` | `{ enabled: false, issuer: "", clientId: "", clientSecret: "" }` | Optional OpenID Connect SSO (see [AUTH.md](AUTH.md) § OIDC). `enabled` only holds when `issuer` (valid `http`/`https`), `clientId`, and `clientSecret` are all set. **`clientSecret` is a secret** — masked in the API as `hasClientSecret` (boolean), never returned. |
+| `trustedProxies` | `string[]` | `[]` | Extra reverse-proxy sources whose `X-Forwarded-Proto` / `X-Forwarded-For` Wisp honors (in addition to the always-trusted loopback). See **Reverse proxy / HTTPS** below. Not editable from the UI. |
 
 ### Section object (`sections[]`)
 
@@ -93,7 +95,24 @@ Config file fields override hard-coded defaults when valid. If the file is missi
 
 ### Config file permissions
 
-Restrict the file if it contains SMB passwords (e.g. `chmod 600`).
+The file may hold secrets (SMB passwords, the OIDC `clientSecret`), so it is kept **`0600`**: `permissions.sh` sets it at install, and every Settings write re-stages the atomic temp file with mode `0600` so a save can't silently widen it back to the umask default.
+
+### Reverse proxy / HTTPS (`trustedProxies`)
+
+Wisp itself serves plain HTTP; TLS is expected to terminate at an optional reverse proxy (Caddy / nginx / Traefik). Wisp derives the request scheme from `X-Forwarded-Proto`, which in turn decides:
+
+- the session cookie's `Secure` flag, and
+- the scheme of generated absolute URLs — notably the **OIDC redirect/callback URI**. If Wisp thinks the request was `http` when the browser used `https`, the callback it sends to the identity provider is `http://…` and the provider rejects it as an invalid callback URL.
+
+For safety, forwarded headers are honored **only from trusted sources**. Loopback (`127.0.0.1`, `::1`) is always trusted — enough for a proxy on the same host that connects to Wisp over localhost. When the **proxy runs on a different host or container** (so Wisp sees the connection from a LAN/Docker IP), add that source to `trustedProxies`:
+
+```jsonc
+// wisp-config.json
+"trustedProxies": ["192.168.1.20"]        // the proxy's IP …
+"trustedProxies": ["192.168.1.0/24"]      // … or its subnet (CIDR)
+```
+
+Entries may be IPv4/IPv6 addresses, CIDR subnets, or the named ranges `loopback` / `linklocal` / `uniquelocal`. Invalid entries are ignored (logged) rather than crashing the service. This field is read at process start, so **restart Wisp after changing it** (`systemctl restart wisp`); it is not editable from the UI. Also ensure the proxy actually sends the headers (Caddy/Traefik do by default; nginx needs `proxy_set_header X-Forwarded-Proto $scheme;` and `proxy_set_header Host $host;`). **Never** widen this to trust the whole world — an attacker who can reach Wisp directly could otherwise forge `X-Forwarded-For` to defeat the login rate limit.
 
 ## Password Storage
 

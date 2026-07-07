@@ -3,6 +3,7 @@
  * Settings (getSettings/updateSettings) is the single writer; this module is for sync consumers (e.g. paths.js).
  */
 import { readFileSync } from 'node:fs';
+import { isIP } from 'node:net';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,10 +19,46 @@ const DEFAULTS = {
   containersPath: '/var/lib/wisp/containers',
   mounts: [],
   backupMountId: null,
+  trustedProxies: [],
 };
 
 function validatePath(val, defaultVal) {
   return typeof val === 'string' && val.trim().startsWith('/') ? val.trim() : defaultVal;
+}
+
+// proxy-addr (Fastify's trustProxy backend) accepts these named ranges.
+const NAMED_PROXY_RANGES = new Set(['loopback', 'linklocal', 'uniquelocal']);
+
+function isValidProxyEntry(entry) {
+  if (typeof entry !== 'string') return false;
+  const s = entry.trim();
+  if (!s) return false;
+  if (NAMED_PROXY_RANGES.has(s)) return true;
+  const slash = s.indexOf('/');
+  if (slash === -1) return isIP(s) !== 0; // bare IPv4/IPv6
+  const fam = isIP(s.slice(0, slash)); // CIDR: <ip>/<prefix>
+  if (fam === 0) return false;
+  const prefix = s.slice(slash + 1);
+  if (!/^\d+$/.test(prefix)) return false;
+  return Number(prefix) >= 0 && Number(prefix) <= (fam === 4 ? 32 : 128);
+}
+
+/**
+ * Sanitize the `trustedProxies` config value into a list Fastify's trustProxy
+ * accepts (IPv4/IPv6 addresses, CIDR subnets, or the named ranges loopback /
+ * linklocal / uniquelocal). Invalid entries are skipped with a warning rather
+ * than thrown — a typo must not crash-loop the systemd service at boot.
+ */
+export function parseTrustedProxies(val) {
+  if (!Array.isArray(val)) return [];
+  const out = [];
+  for (const e of val) {
+    if (isValidProxyEntry(e)) out.push(String(e).trim());
+    else if (e != null && e !== '') {
+      console.warn(`wisp-config.json: ignoring invalid trustedProxies entry: ${JSON.stringify(e)}`);
+    }
+  }
+  return out;
 }
 
 /**
@@ -43,6 +80,7 @@ export function getConfigSync() {
         typeof data.backupMountId === 'string' && data.backupMountId.trim()
           ? data.backupMountId.trim()
           : null,
+      trustedProxies: parseTrustedProxies(data.trustedProxies),
     };
   } catch (err) {
     if (err.code === 'ENOENT') return { ...DEFAULTS };

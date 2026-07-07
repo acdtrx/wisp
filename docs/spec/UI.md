@@ -196,12 +196,14 @@ VM/container selection is derived from the URL: `VmRoute` / `ContainerRoute` rea
 ## Login Page
 
 Centered card with:
-- Title "Wisp" and subtitle "Sign in to manage your VMs"
+- Title "Wisp" and subtitle "Sign in to manage your server"
 - Password input with placeholder "Enter password"
 - Submit button labeled "Sign in" (shows "Signing in…" while loading)
 - Error message in red on failed login
 
-Redirects to the main app on success. The main app redirects here if no valid JWT is stored.
+Redirects to the main app on success. The main app redirects here if no valid session cookie is present.
+
+**SSO (when configured).** On load the page queries `GET /api/auth/oidc/status`. If SSO is enabled **and** the URL has no `?sso=` marker, it auto-redirects to the provider (a spinner shows during the check so the password form doesn't flash). If it returns from a cancelled or failed attempt (`?sso=cancelled` / `?sso=error`), it shows a notice and the password form with a **"Sign in with SSO"** button below the Sign in button (separated by an "or" divider) so the user can retry SSO or fall back to the password. The `?sso=` marker is what prevents an auto-redirect loop. See [AUTH.md](AUTH.md) § OIDC.
 
 ---
 
@@ -379,8 +381,9 @@ Same as the former Backups panel: table of backups with restore/delete; descript
 
 ### Tab: App Config
 
-- **General** — Server display name, VM storage path, image library path, refresh interval (seconds). Save button when dirty.
+- **General** — Server display name, VM storage path, image library path, LAN discovery, advertised URL. Save button when dirty.
 - **Password** — Change application password (current + new).
+- **Single sign-on (SSO)** — Its own card (`OidcSettings.jsx`): Enable toggle, Issuer URL, Client ID, Client secret (write-only; placeholder shows "saved — leave blank to keep" once one is stored), and a read-only **Redirect URI** field (derived from the current origin) with a copy button to register in the provider. Save validates the config; enabling requires issuer + client ID + a secret on file (422 `INVALID_OIDC` otherwise). See [AUTH.md](AUTH.md) § OIDC.
 
 ---
 

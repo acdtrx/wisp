@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import PasswordChangeForm from '../settings/PasswordChangeForm.jsx';
+import OidcSettings from '../settings/OidcSettings.jsx';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { updateSettings } from '../../api/settings.js';
 
@@ -150,6 +151,8 @@ export default function AppConfig() {
           </div>
         )}
       </SectionCard>
+
+      <OidcSettings />
     </div>
   );
 }

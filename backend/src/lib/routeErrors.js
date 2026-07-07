@@ -52,6 +52,7 @@ function errorCodeToStatus(code) {
     case 'INVALID_REQUEST':
     case 'PATH_NOT_ALLOWED':
     case 'PASSWORD_EMPTY':
+    case 'INVALID_OIDC':
       return 422;
     case 'BACKUP_DEST_NOT_FOUND':
     case 'BACKUP_DEST_NOT_WRITABLE':

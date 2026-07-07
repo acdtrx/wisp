@@ -76,3 +76,20 @@ pointer. Keep this file scannable.
 3. After upgrade, Check again — list should be empty (or only contain genuinely-blocked items like phased updates).
 
 **Why deferred:** Behavior change with safety implications (dist-upgrade can remove packages). Wants explicit decision before flipping the default — possibly a setting or a confirmation in the UI ("show what will be removed"). Discovered while fixing concurrency/caching, scope-separated.
+
+### SSO auto-redirect defeats logout (immediate re-login)
+
+**Found:** 2026-07-08, while testing OIDC/SSO login against Pocket ID.
+
+**Symptom:** With SSO enabled, clicking **Log out** bounces the user straight back into the app — they can't stay logged out. Logout clears Wisp's session and lands on `/login`, which auto-redirects to the provider; the provider still holds a live SSO session, so it silently issues a fresh code and Wisp logs the user right back in.
+
+**Root cause:** `Login.jsx` auto-redirects to `/api/auth/oidc/login` whenever SSO is enabled and the URL has no `?sso=` marker. Logout produces exactly that state (no marker), so the happy-path auto-redirect fires. Wisp only performs a **local** logout; it does not end the provider's session, and the IdP re-authenticates without interaction.
+
+**Fix sketch (options, not binding):**
+1. Cheapest: on logout, land on `/login?sso=logout` (or set a short-lived "just logged out" flag) so the login page shows the form + SSO button instead of auto-redirecting, with a "You've been signed out" notice. Leaves the IdP session intact (next SSO login is still one tap). Stops the re-login loop without touching the provider.
+2. RP-initiated logout: after local logout, redirect to the provider's `end_session_endpoint` (from discovery) with `id_token_hint` + `post_logout_redirect_uri` so the IdP session ends too. Requires stashing the ID token (currently discarded after validation) and registering a post-logout redirect URI in Pocket ID. Also signs the user out of the IdP globally, which may be unwanted if they use it for other apps.
+3. Combination: option 1 by default, option 2 as an opt-in setting.
+
+Option 1 is likely sufficient for the single-user case; option 2 is a follow-up if a true global sign-out is wanted.
+
+**Why deferred:** Normal login works; logout-with-SSO is an edge case the user chose to defer. Option 2 touches token storage + provider config and wants a deliberate decision.
