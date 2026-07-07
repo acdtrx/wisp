@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-08 (v1.5.0)
+
+### New Features
+- **Single sign-on (OIDC/SSO) login** — sign in through an OpenID Connect provider (e.g. Pocket ID) instead of typing the password, configured under Host → App Config → Single sign-on (issuer, client ID, client secret). Wisp stays single-user and the password remains as a backup; access control is delegated to the provider. The login page auto-redirects to SSO when enabled and offers a "Sign in with SSO" button (with password fallback) if a sign-in is cancelled or the provider is unreachable. Authorization-code flow with PKCE; ID tokens verified against the provider JWKS with no new dependencies.
+- **`trustedProxies` config for reverse proxies on another host** — set proxy IPs/subnets in `wisp-config.json` so Wisp honors `X-Forwarded-Proto`/`-For` from a non-loopback TLS proxy (Caddy/Traefik/nginx). Fixes the `Secure` cookie flag and the `https` scheme of the OIDC callback URL when TLS terminates on a separate host/container.
+
 ## 2026-07-06 (v1.4.0)
 
 ### New Features
