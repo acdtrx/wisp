@@ -558,9 +558,17 @@ export default async function containerRoutes(fastify) {
       try {
         const config = await getContainerConfig(name);
         const stats = await getContainerStats(name);
+        // `mdnsHostname` and `ip` both arrive *after* start — Avahi registration and the
+        // CNI address land once the task is up — so they can't ride the container config
+        // snapshot the client fetched when it selected the workload. getContainerConfig
+        // re-reads them live on every tick (registered hostname from Avahi, IP from
+        // container.json), which is exactly what this stream is for. Mirrors the VM stats
+        // payload, which has carried `mdnsHostname`/`guestIp` all along.
         const payload = {
           ...stats,
           memoryLimitMiB: config.memoryLimitMiB || 0,
+          mdnsHostname: config.mdnsHostname || null,
+          ip: config.network?.ip || null,
         };
         reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
       } catch (err) {

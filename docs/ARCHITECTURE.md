@@ -89,12 +89,14 @@ Three SSE patterns:
 
 | Pattern | Endpoints | Behavior |
 |---------|-----------|----------|
-| Event-driven stream | `/api/vms/stream`, `/api/containers/stream` | Pushes on backend events (libvirt `DomainEvent` + qemu binary changes for VMs; containerd events + container.json writes + image-update completion for containers). No polling timer. |
+| Event-driven stream | `/api/vms/stream`, `/api/containers/stream`, `/api/sections/stream` | Pushes on backend events (libvirt `DomainEvent` + qemu binary changes for VMs; containerd events + container.json writes + image-update completion for containers; every persisted sections/assignments write). No polling timer. |
 | Long-lived stream | `/api/stats`, `/api/vms/:name/stats`, `/api/containers/:name/stats` | Continuous push at intervals (sampled metrics); client reconnects on error |
 | Job progress | `/api/vms/create-progress/:jobId`, `/api/vms/backup-progress/:jobId`, `/api/library/download-progress/:jobId`, `/api/containers/create-progress/:jobId` | Emits progress events until completion/failure, then closes |
 | One-shot | URL check responses | Single response, no streaming |
 
 All SSE responses go through `setupSSE` (`backend/src/lib/sse.js`), which writes a `: keepalive` comment line every 25 s so idle event-driven streams (e.g. `/api/vms/stream` between libvirt events) don't get torn down by NAT/proxy idle timers. The client (`frontend/src/api/sse.js`) arms a 60 s read-watchdog after the first byte and re-arms it on every chunk; missing bytes for that long aborts and reconnects, catching silently-dropped TCP that `reader.read()` would otherwise wait on forever.
+
+The watchdog can't fire while the page is frozen, though — iOS suspends a backgrounded home-screen app's JS context, and the socket dies with it. So every stream also resyncs on `visibilitychange → visible` and on `online`: if it has produced no bytes for longer than the 25 s keepalive it aborts and reconnects at once, and if it was already waiting out reconnect backoff it connects immediately instead. A stream still receiving keepalives is left alone, so an ordinary desktop tab switch costs nothing. Since every event-driven stream opens with a full snapshot, one reconnect is all it takes to replace a stale list.
 
 ### WebSocket (VNC Console)
 
@@ -136,6 +138,7 @@ Each file registers routes under a common prefix. Routes handle HTTP concerns (v
 | `containers.js` | `/api` | Container CRUD, lifecycle, mounts, logs, stats, create job + SSE |
 | `cloudinit.js` | `/api` | Cloud-init config, GitHub SSH keys |
 | `settings.js` | `/api` | App settings, network mount status/mount |
+| `sections.js` | `/api` | Sidebar sections + workload assignments, SSE stream |
 | `backups.js` | `/api` | Backup listing, restore, delete |
 | `console.js` | `/ws` | VNC WebSocket proxy |
 

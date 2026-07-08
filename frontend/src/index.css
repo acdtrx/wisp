@@ -74,6 +74,28 @@
       transition-colors duration-150;
 }
 
+/* Safe-area insets, enabled by `viewport-fit=cover` in index.html. Only iOS reports
+   non-zero values (home indicator, landscape notch), so these are no-ops elsewhere.
+   `pb-safe` belongs on bottom-flush chrome: the inset both lifts it out of the system
+   gesture band — where a horizontal swipe reaches the app switcher, not the page — and
+   lets the element's own background paint the home-indicator strip. */
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* `pt-safe` grows the top bar into the status-bar strip rather than letting content slide
+   under it. iOS reports 0 here unless the app opts into a translucent status bar, so this
+   is normally a no-op — but the drawer offsets below are written against it either way,
+   so the shell stays correct if that ever changes. */
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+@utility px-safe {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
 @utility input-field-no-spinner {
   &::-webkit-outer-spin-button {
     -webkit-appearance: none;

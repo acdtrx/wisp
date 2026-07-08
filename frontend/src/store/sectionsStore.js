@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as sectionsApi from '../api/sections.js';
+import { createSSE } from '../api/sse.js';
 
 export const MAIN_SECTION_ID = 'main';
 
@@ -37,6 +38,10 @@ function uniqueDefaultName(sections) {
   return candidate;
 }
 
+/** Single subscriber: only one sections SSE is ever active. Held at module scope (the
+ *  store is a singleton) so startSectionsSSE/stopSectionsSSE can clean up after it. */
+let sectionsCloseFn = null;
+
 export const useSectionsStore = create((set, get) => ({
   sections: [DEFAULT_MAIN],
   assignments: {},
@@ -47,6 +52,29 @@ export const useSectionsStore = create((set, get) => ({
   loading: false,
   error: null,
 
+  /**
+   * Subscribe to `/api/sections/stream`. The server sends the full `{ sections,
+   * assignments }` envelope on connect and again after every mutation, so this both
+   * seeds the store and keeps it live — a workload moved from another device (or while
+   * this client was suspended in the iOS app switcher) lands here without a reload.
+   */
+  startSectionsSSE: () => {
+    if (sectionsCloseFn) return;
+    sectionsCloseFn = createSSE('/api/sections/stream', (data) => {
+      if (!data || !Array.isArray(data.sections)) return; // error frame; keep the last good envelope
+      applyResponse(set, data);
+    });
+  },
+
+  stopSectionsSSE: () => {
+    if (sectionsCloseFn) {
+      sectionsCloseFn();
+      sectionsCloseFn = null;
+    }
+  },
+
+  /** One-shot read. The stream is the steady-state source; this exists for the one flow
+   *  that needs the envelope *before* it navigates — see ContainerOverviewPanel's rename. */
   loadSections: async () => {
     set({ loading: true, error: null });
     try {

@@ -22,7 +22,7 @@ export default function TopBar() {
     /* Grid so the single HostStatsBar instance (it owns the stats SSE
        subscription) moves to its own full-width second row below lg
        instead of being squeezed between the topbar clusters. */
-    <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 border-b border-surface-border bg-surface-card px-4">
+    <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 border-b border-surface-border bg-surface-card px-4 pt-safe">
       <div className="flex h-12 shrink-0 items-center gap-3">
         <button
           type="button"

@@ -52,8 +52,11 @@ export default function AppLayout() {
     };
   }, []);
 
+  /* px-safe keeps the shell out of the landscape notch, which viewport-fit=cover would
+     otherwise let it slide under. The bottom inset is handled by the stats bars and the
+     drawer footer, so their own backgrounds paint the home-indicator strip. */
   return (
-    <div className="flex h-dvh flex-col">
+    <div className="flex h-dvh flex-col px-safe">
       <TopBar />
 
       <div className="flex flex-1 overflow-hidden">

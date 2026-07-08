@@ -324,7 +324,8 @@ export default function LeftPanel() {
   const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
   const sections = useSectionsStore((s) => s.sections);
   const assignments = useSectionsStore((s) => s.assignments);
-  const loadSections = useSectionsStore((s) => s.loadSections);
+  const startSectionsSSE = useSectionsStore((s) => s.startSectionsSSE);
+  const stopSectionsSSE = useSectionsStore((s) => s.stopSectionsSSE);
   const assignWorkload = useSectionsStore((s) => s.assignWorkload);
   const reorderSections = useSectionsStore((s) => s.reorderSections);
   const createAndAssign = useSectionsStore((s) => s.createAndAssign);
@@ -350,7 +351,10 @@ export default function LeftPanel() {
     return () => stopContainerListSSE();
   }, [startContainerListSSE, stopContainerListSSE]);
 
-  useEffect(() => { loadSections().catch(() => {}); }, [loadSections]);
+  useEffect(() => {
+    startSectionsSSE();
+    return () => stopSectionsSSE();
+  }, [startSectionsSSE, stopSectionsSSE]);
 
   /* Exit organize mode when the user navigates away — stale "edit" state
    * shouldn't leak across views. Below lg the panel is a drawer; navigating
@@ -447,10 +451,12 @@ export default function LeftPanel() {
   return (
     <>
       {/* Drawer backdrop — only below lg while the drawer is open. Sits below
-          the top bar so the hamburger stays reachable as a close toggle. */}
+          the top bar so the hamburger stays reachable as a close toggle.
+          The offset tracks the top bar's own height: 3rem (its `h-12` first row)
+          plus whatever `pt-safe` added to it. */}
       {sidebarOpen && (
         <div
-          className="fixed inset-x-0 top-12 bottom-0 z-30 bg-black/40 lg:hidden"
+          className="fixed inset-x-0 top-[calc(3rem+env(safe-area-inset-top))] bottom-0 z-30 bg-black/40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
           aria-hidden
         />
@@ -458,7 +464,8 @@ export default function LeftPanel() {
       {/* Below lg: drawer under the top bar — full-width on phones, 280px rail
           from sm up. At lg+ it is the static sidebar. */}
       <aside
-        className={`${sidebarOpen ? 'flex' : 'hidden'} fixed top-12 bottom-0 left-0 z-40 w-full flex-col border-r border-surface-border bg-surface-sidebar sm:w-[280px] lg:static lg:z-auto lg:flex`}
+        /* px-safe: the drawer is `fixed`, so AppLayout's inset doesn't reach it. */
+        className={`${sidebarOpen ? 'flex' : 'hidden'} fixed top-[calc(3rem+env(safe-area-inset-top))] bottom-0 left-0 z-40 w-full flex-col border-r border-surface-border bg-surface-sidebar px-safe sm:w-[280px] lg:static lg:z-auto lg:flex`}
       >
       <button
         type="button"
@@ -615,7 +622,9 @@ export default function LeftPanel() {
         )}
       </div>
 
-      <div className="flex border-t border-surface-border px-3 py-2">
+      {/* Bottom-flush in the mobile drawer: pad past the home indicator so Organize
+          isn't sitting in the strip. Base 0.5rem is the desktop `py-2` half. */}
+      <div className="flex border-t border-surface-border px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
         <button
           type="button"
           onClick={() => setOrganizeMode(!organizeMode)}

@@ -6,8 +6,10 @@ import {
   assignWorkload,
   reorderSections,
   getAssignments,
+  subscribeSectionsChange,
 } from '../lib/sections.js';
 import { handleRouteError } from '../lib/routeErrors.js';
+import { setupSSE } from '../lib/sse.js';
 
 const sectionSchema = {
   type: 'object',
@@ -39,6 +41,38 @@ export default async function sectionsRoutes(fastify) {
   fastify.get('/sections', {
     schema: { response: { 200: responseSchema } },
     handler: async () => buildResponse(),
+  });
+
+  // GET /sections/stream — SSE: the same `{ sections, assignments }` envelope as
+  // GET /sections, sent on connect and again after every section or assignment write.
+  // Sections are pure Wisp metadata, so no libvirt or containerd event announces them —
+  // without this stream a client that never reloads (an iOS home-screen app resumed from
+  // the app switcher, a long-lived desktop tab) keeps the ordering it saw at mount, and
+  // a workload moved from another device never arrives.
+  fastify.get('/sections/stream', {
+    schema: { hide: true },
+    handler: async (request, reply) => {
+      setupSSE(reply);
+
+      async function sendEnvelope() {
+        let payload;
+        try {
+          payload = await buildResponse();
+        } catch (err) {
+          request.log.warn({ err: err.message }, 'sections/stream read failed');
+          payload = { error: err.message, detail: err.raw || err.message, code: err.code };
+        }
+        try {
+          reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+        } catch {
+          /* Client vanished mid-write; the close handler below unsubscribes. */
+        }
+      }
+
+      await sendEnvelope();
+      const unsubscribe = subscribeSectionsChange(() => { sendEnvelope(); });
+      request.raw.on('close', () => unsubscribe());
+    },
   });
 
   fastify.post('/sections', {

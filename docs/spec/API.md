@@ -471,7 +471,7 @@ List all VMs with summary info.
 ```
 
 - `staleBinary` is `true` when the VM's running qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt package upgrade); the VM needs to be restarted to pick up the new binary. Always `false` for non-running VMs. Detected by reading `/var/run/libvirt/qemu/<name>.pid` and checking whether `/proc/<pid>/exe` ends with ` (deleted)`.
-- The list payload does **not** carry section assignment. Section info is read separately from `GET /api/sections` (see [Sections](#sections)) — libvirt/containerd events don't fire on assignment changes, so the SSE list streams aren't a usable carrier for it; the dedicated sections endpoint is the only source.
+- The list payload does **not** carry section assignment. Section info arrives on its own channel, `GET /api/sections/stream` (see [Sections](#sections)) — libvirt/containerd events don't fire on assignment changes, so the SSE list streams aren't a usable carrier for it.
 
 ### GET /api/vms/stream
 
@@ -1144,7 +1144,7 @@ Unmount a mount by settings id.
 
 User-defined groupings for the sidebar workload list. The synthetic **Main** section (`id: "main"`, `builtin: true`) is always present in responses but never persisted. Workloads with no explicit assignment — or with an assignment pointing at a deleted section — fall back to Main on the next read.
 
-All section endpoints (GET, POST, PATCH, DELETE, PUT assign) return the same `{ sections, assignments }` envelope so the client can keep its local copy in sync from a single response — no separate fetch needed after a mutation.
+All section endpoints (GET, POST, PATCH, DELETE, PUT assign) return the same `{ sections, assignments }` envelope so the client can keep its local copy in sync from a single response — no separate fetch needed after a mutation. `GET /api/sections/stream` pushes that same envelope to every connected client, so a mutation from one device reaches the others.
 
 ### Response envelope
 
@@ -1168,6 +1168,15 @@ All section endpoints (GET, POST, PATCH, DELETE, PUT assign) return the same `{ 
 Return the current sections + assignments envelope.
 
 - **200:** Envelope above.
+
+### GET /api/sections/stream
+
+SSE stream of the envelope. Event-driven: sends a full snapshot on connect, then pushes again after every successful section or assignment write (create, rename, delete, reorder, assign, and the assignment move that rides a container rename). A rejected write pushes nothing. No polling timer.
+
+This is the sidebar's live channel for grouping. It exists because sections are pure Wisp metadata — no libvirt or containerd event announces them — so without it a client that never reloads keeps the ordering it saw at mount: an iOS home-screen app resumed from the app switcher, or a desktop tab left open while another device reorders.
+
+- **Event data:** The envelope above, or `{ error, detail, code? }` if the settings read fails. Clients keep their last good envelope on an error frame.
+- `Main`'s `order` is `-Infinity`, which serialises to `null` in both this stream and `GET /api/sections`. Clients must take array order as authoritative, not the `order` field.
 
 ### POST /api/sections
 
@@ -1216,7 +1225,7 @@ Move a workload to a section.
 
 The workload itself isn't validated — assignments are pure metadata, so referencing an unknown VM/container name is a no-op (the entry is ignored on the next list read).
 
-> Section info is **not** embedded in the VM/container list payloads or their SSE streams. libvirt/containerd don't emit events on assignment changes, so the lists wouldn't be a reliable carrier — the SSE could stay stale until the next workload event. Read sections from `GET /api/sections` directly; every section/assignment mutation returns the full envelope so a single API response keeps the client in sync.
+> Section info is **not** embedded in the VM/container list payloads or their SSE streams. libvirt/containerd don't emit events on assignment changes, so the lists wouldn't be a reliable carrier — the SSE could stay stale until the next workload event. Sections get their own stream instead: subscribe to `GET /api/sections/stream` for steady state. `GET /api/sections` remains for the one case that needs the envelope synchronously before acting on it (the container-rename flow, which must know the moved assignment before it navigates).
 
 ---
 
@@ -1425,7 +1434,8 @@ Kill a container (SIGKILL).
 SSE stream for per-container stats.
 
 - **Query:** `?intervalMs=` (default **3000**, min **2000**, max **60000**) — push interval in milliseconds for sampled metrics (CPU, memory, uptime).
-- **Event data:** `{ state, cpuPercent, memoryUsageMiB, memoryLimitMiB, uptime, pid }` (and related fields from `getContainerStats`).
+- **Event data:** `{ state, cpuPercent, memoryUsageMiB, memoryLimitMiB, uptime, pid, mdnsHostname, ip }` (and related fields from `getContainerStats`).
+- `mdnsHostname` (registered `<hostname>.local`, or `null`) and `ip` (CNI-assigned address, or `null`) are re-read from the live container config on every tick. Both only exist once the container is *running*, so they cannot ride the `GET /api/containers/:name` snapshot the client takes when it selects a workload — clients must read them from this stream, exactly as the VM stats stream carries `mdnsHostname`/`guestIp`.
 - **Errors:** `{ error, detail, code }` (same shape as other SSE error payloads).
 
 Default interval is **3s** when `intervalMs` is omitted.

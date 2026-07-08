@@ -5,6 +5,28 @@ import { withSettingsWriteLock, MAIN_SECTION_ID, getSettings } from './settings.
 const MAX_NAME = 64;
 const VALID_TYPES = new Set(['vm', 'container']);
 
+/** Notified after every successful sections/assignments write. Sections are the one
+ *  piece of sidebar state no libvirt or containerd event can carry, so this emitter is
+ *  their only live signal — `/api/sections/stream` is its sole consumer today. */
+const sectionsChangeHandlers = new Set();
+
+export function subscribeSectionsChange(handler) {
+  sectionsChangeHandlers.add(handler);
+  return () => sectionsChangeHandlers.delete(handler);
+}
+
+/**
+ * Persist a sections/assignments change, then announce it. Every mutation in this
+ * module goes through here rather than calling `withSettingsWriteLock` directly, so
+ * no write can quietly skip the notification and strand a client on a stale list.
+ * A mutator that throws (validation) rejects before any handler runs.
+ */
+async function commitSections(mutate) {
+  const settings = await withSettingsWriteLock(mutate);
+  for (const handler of sectionsChangeHandlers) handler();
+  return settings;
+}
+
 function assignmentKey(type, name) {
   return `${type}:${name}`;
 }
@@ -51,7 +73,7 @@ export async function createSection(rawName) {
   if (!name) {
     throw createAppError('SECTION_INVALID', 'Section name is required');
   }
-  return withSettingsWriteLock((fromFile) => {
+  return commitSections((fromFile) => {
     const sections = fromFile.sections || [];
     const exists = sections.some((s) => s.name.toLowerCase() === name.toLowerCase());
     if (exists) {
@@ -71,7 +93,7 @@ export async function renameSection(id, rawName) {
   if (!name) {
     throw createAppError('SECTION_INVALID', 'Section name is required');
   }
-  return withSettingsWriteLock((fromFile) => {
+  return commitSections((fromFile) => {
     const sections = fromFile.sections || [];
     const idx = sections.findIndex((s) => s.id === id);
     if (idx < 0) {
@@ -100,7 +122,7 @@ export async function reorderSections(orderedIds) {
   if (!Array.isArray(orderedIds) || orderedIds.some((id) => typeof id !== 'string')) {
     throw createAppError('SECTION_INVALID', 'orderedIds must be an array of section ids');
   }
-  return withSettingsWriteLock((fromFile) => {
+  return commitSections((fromFile) => {
     const sections = fromFile.sections || [];
     const currentIds = new Set(sections.map((s) => s.id));
     const givenIds = new Set(orderedIds);
@@ -122,7 +144,7 @@ export async function deleteSection(id) {
   if (id === MAIN_SECTION_ID) {
     throw createAppError('SECTION_INVALID', 'The Main section cannot be deleted');
   }
-  return withSettingsWriteLock((fromFile) => {
+  return commitSections((fromFile) => {
     const sections = fromFile.sections || [];
     const next = sections.filter((s) => s.id !== id);
     if (next.length === sections.length) {
@@ -154,7 +176,7 @@ export async function assignWorkload({ type, name, sectionId }) {
   if (!wname) {
     throw createAppError('SECTION_INVALID', 'workload name is required');
   }
-  return withSettingsWriteLock((fromFile) => {
+  return commitSections((fromFile) => {
     const sections = fromFile.sections || [];
     const assign = { ...(fromFile.assignments || {}) };
     const key = assignmentKey(type, wname);
@@ -180,7 +202,7 @@ export async function assignWorkload({ type, name, sectionId }) {
 export async function renameWorkloadAssignment(type, oldName, newName) {
   if (!VALID_TYPES.has(type)) return;
   if (typeof oldName !== 'string' || typeof newName !== 'string' || oldName === newName) return;
-  return withSettingsWriteLock((fromFile) => {
+  return commitSections((fromFile) => {
     const assign = { ...(fromFile.assignments || {}) };
     const oldKey = assignmentKey(type, oldName);
     if (!(oldKey in assign)) return fromFile;

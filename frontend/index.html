@@ -2,7 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: an iOS home-screen launch already renders edge-to-edge, but
+         without `cover` every env(safe-area-inset-*) reads 0 and bottom-anchored chrome
+         (the VM/container stats bars) lands inside the home-indicator gesture band, where
+         iOS swallows horizontal swipes. With it, the `*-safe` utilities in index.css can
+         hold that chrome clear. Inert everywhere the insets are 0. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0fa396" />
     <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any" />
