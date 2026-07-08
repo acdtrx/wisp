@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Bump version across root + backend + frontend package.json, retitle the topmost
+# Bump version across root + backend + frontend package.json (and each sibling
+# package-lock.json, where one exists), retitle the topmost
 # CHANGELOG section, commit, and tag v<version>. CHANGELOG.md may be dirty going
 # in — its contents are folded into the same release commit so a release lands as
 # a single commit. Push is left to the operator so the tag is reviewable before
@@ -50,23 +51,44 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
   exit 1
 fi
 
-bump_pkg_version() {
-  local pkg="$1"
-  if [[ ! -f "$pkg" ]]; then
-    echo "ERROR: $pkg not found."
-    exit 1
-  fi
-  # Replace the first "version": "..." line. node -e is more reliable than sed
-  # for JSON, and we already require Node.
+# Every file the bump touches, collected so the commit stages exactly what changed.
+BUMPED=()
+
+# Rewrites a JSON file's version fields in place. node is more reliable than sed for
+# JSON, and we already require Node. Re-serializing with 2-space indent + trailing
+# newline matches what npm itself writes, so the diff is only the version lines.
+write_version() {
   node -e '
     const fs = require("node:fs");
     const path = process.argv[1];
     const v = process.argv[2];
     const j = JSON.parse(fs.readFileSync(path, "utf8"));
     j.version = v;
+    // Lockfiles (lockfileVersion >= 2) record the project version a second time under
+    // the root package entry. npm rewrites both from package.json on every install, so
+    // a stale value here surfaces as a spurious diff on the next dependency change.
+    if (j.packages && j.packages[""]) j.packages[""].version = v;
     fs.writeFileSync(path, JSON.stringify(j, null, 2) + "\n");
-  ' "$pkg" "$VERSION"
+  ' "$1" "$VERSION"
+}
+
+bump_pkg_version() {
+  local pkg="$1"
+  if [[ ! -f "$pkg" ]]; then
+    echo "ERROR: $pkg not found."
+    exit 1
+  fi
+  write_version "$pkg"
+  BUMPED+=("$pkg")
   echo "  Bumped $pkg → $VERSION"
+
+  # Keep the sibling lockfile in step. The repo root has no lockfile (no dependencies),
+  # so absence is expected rather than an error.
+  local lock="${pkg%package.json}package-lock.json"
+  [[ -f "$lock" ]] || return 0
+  write_version "$lock"
+  BUMPED+=("$lock")
+  echo "  Bumped $lock → $VERSION"
 }
 
 echo "=== Wisp release: $TAG ==="
@@ -117,7 +139,7 @@ echo "  Retitled topmost section → ## $TODAY ($TAG)"
 echo ""
 
 echo "--- Commit + tag ---"
-git add package.json backend/package.json frontend/package.json CHANGELOG.md
+git add "${BUMPED[@]}" CHANGELOG.md
 git commit -m "release: $TAG"
 git tag -a "$TAG" -m "Wisp $TAG"
 echo "  Committed and tagged $TAG"

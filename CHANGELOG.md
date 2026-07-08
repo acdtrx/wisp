@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-08
+
+### Bug Fixes
+- The release script now bumps each `package-lock.json` alongside its `package.json`; both lockfiles had been stuck at `1.2.4` since that release. Corrected in the tree as well.
+
 ## 2026-07-08 (v1.6.0)
 
 ### New Features
