@@ -43,7 +43,7 @@ Each module (`backend/src/lib/containerApps/<app>.js`) exports:
 | Function | Signature | Purpose |
 |----------|-----------|---------|
 | `getDefaultAppConfig` | `(context?) → appConfig` | Starting appConfig for new containers. The optional `context` is `{ containerName }`, passed by the create flow so apps can derive sensible defaults from the container name (e.g. tiny-samba uses it for `server.netbiosName`). |
-| `validateAppConfig` | `(appConfig, oldAppConfig?) → appConfig` | Validate and normalize. Throws `INVALID_APP_CONFIG` on failure. The optional second arg lets the module merge unchanged secrets forward (`maskSecrets` strips them on output, so the frontend can't round-trip them). For create, `oldAppConfig` is `null`. |
+| `validateAppConfig` | `(appConfig, oldAppConfig?) → appConfig` | Validate and normalize. Throws `INVALID_APP_CONFIG` on failure. For create, `oldAppConfig` is `null`. **Any module with a secret must use the second arg to merge it forward.** `maskSecrets` strips secrets on output, so a form that doesn't retype one omits it — a module that ignores `oldAppConfig` silently blanks the stored value on every unrelated save. Corollary: never trust a secret (or a password hash) that arrives from the client when the stored config already has one. |
 | `generateDerivedConfig` | `(appConfig) → { env, mounts, mountContents, appConfig? }` | Generate derived artifacts from appConfig. May return a transformed `appConfig` (e.g. zot stores hashed passwords back into appConfig). |
 | `maskSecrets` | `(appConfig) → appConfig` | Redact secrets for API responses |
 | `getReloadCommand` | `() → string[] \| null` | Optional. Command to live-reload config inside the running container (e.g. `['caddy', 'reload', ...]`). Return `null` if the app doesn't support live reload. |
@@ -111,13 +111,15 @@ Components use SectionCard for consistent styling, handle their own dirty tracki
 3. Mount file contents written via `containerManager.putMountFileTextContent`
 4. Container task state checked via `containerManager.getTaskState`; if not running, return immediately
 5. If the app module provides `getReloadCommand()`, run it via `containerManager.execCommandInContainer` (non-interactive containerd exec)
-6. If the command exits 0: response includes `{ requiresRestart, reloaded: true }`. `requiresRestart` is true when the app module's `requiresRestartForChange` hook returns true OR the mount layout changed structurally.
+6. If the command exits 0: response includes `{ requiresRestart, reloaded: true }`. `requiresRestart` is true when the app module's `requiresRestartForChange` hook returns true, OR the mount layout changed structurally, OR any env var changed.
 7. If the command exits non-zero: throws `APP_RELOAD_FAILED` (422) with stderr/stdout as detail — config saved, app rejected the new state
 8. If the exec itself fails for a non-app reason (e.g. command not found): falls back to setting `pendingRestart: true` and returning `{ requiresRestart: true }`
 
 Apps that don't supply `getReloadCommand` always set `pendingRestart` instead of attempting reload.
 
 **Mount layout vs file contents.** Live reload covers *file contents* but not *bind mount layout*. Bind mounts are captured in the OCI spec at task create — adding/removing a share, retargeting `subPath`, resizing tmpfs cannot apply to a running task via reload. containerApps compares the structural mount signature (type/name/containerPath/sourceId/subPath/sizeMiB) before vs after `generateDerivedConfig` and forces `pendingRestart: true` when it differs, even if the reload command returned exit 0. OR-combined with the app module's `requiresRestartForChange` hook.
+
+**Env vars never reload.** Same reason, sharper edge: the OCI process env is built from `config.env` when the task starts (`containerManagerSpec.js`), so a running process keeps the environment it was exec'd with. No reload command can change it. containerApps compares an env signature (name + value; the `secret` flag is presentation-only) and forces `pendingRestart: true` on any diff. Caddy is the cautionary case — its Caddyfile refers to the Cloudflare token as `{env.CLOUDFLARE_API_TOKEN}`, which the *running* server resolves against its own environment, so adding the token and reloading used to report success while leaving DNS-01 silently token-less.
 
 `execCommandInContainer` is a general-purpose non-interactive exec utility (`containerManagerExec.js`) — exposed on the containerManager facade for any caller, not specific to app reload.
 
@@ -155,7 +157,7 @@ Eject converts an app container to a generic container. The `app` and `appConfig
 
 - `domain` — Base domain for wildcard certificate (e.g. `example.com`)
 - `hosts[]` — Reverse proxy entries. `subdomain` is a DNS label; `target` is IP/hostname with optional port (also accepts `scheme://host[:port][/path]`). The Caddyfile is generated with `target` interpolated into a `reverse_proxy` directive, so the validator rejects `\n` / `\r` / `{` / `}` and any shape that doesn't match `host[:port]` or `scheme://host[:port][/path]`. Returns **422 INVALID_APP_CONFIG** otherwise.
-- `cloudflareApiToken` — Cloudflare API token for DNS-01 challenge. Stored as secret, masked in API responses as `{ isSet: boolean }`.
+- `cloudflareApiToken` — Cloudflare API token for DNS-01 challenge. Stored as secret, masked in API responses as `{ isSet: boolean }`. Omit it (or send the `{ isSet }` mask back) to keep the stored token; send an explicit `""` to clear it.
 
 ### Derived Config
 
@@ -177,19 +179,54 @@ Eject converts an app container to a generic container. The `app` and `appConfig
 {
   "users": [
     { "username": "admin", "hash": "$6$..." }
-  ]
+  ],
+  "externalUrl": "https://registry.example.com",
+  "oidc": {
+    "enabled": true,
+    "name": "Pocket ID",
+    "issuer": "https://id.example.com",
+    "clientId": "zot-registry",
+    "clientSecret": "s3cr3t",
+    "scopes": ["openid", "profile", "email"],
+    "usernameClaim": "preferred_username"
+  },
+  "sessionKeys": { "hashKey": "…", "encryptKey": "…" }
 }
 ```
 
-- `users[]` — htpasswd authentication entries. When empty, the registry allows anonymous push/pull. Passwords are hashed with SHA-512 crypt on save; only hashes are stored in `appConfig`. Masked in API responses as `{ username, hasPassword }`.
+- `users[]` — htpasswd authentication entries. Passwords are hashed with SHA-512 crypt on save; only hashes are stored in `appConfig`. Masked in API responses as `{ username, hasPassword }`. zot's own docs claim bcrypt-only, but `pkg/api/htpasswd.go` sniffs the prefix and accepts `$2a$`/`$2b$`/`$2y$`, `$5$` and `$6$`.
+- `externalUrl` — the address browsers reach the registry on. **Required when `oidc.enabled`:** zot builds the OIDC `redirect_uri` from it, and with it unset falls back to `http.address:port` (`0.0.0.0:5000`), which no browser can be redirected to.
+- `oidc` — OpenID Connect sign-on for the registry's web UI. `clientSecret` is masked in API responses as `{ isSet: boolean }`. `usernameClaim` picks the ID-token claim that becomes the user's identity; defaults to `preferred_username` (zot's own default is `email`).
+- `sessionKeys` — session cookie HMAC + AES keys, minted on first enable and **never returned by the API**. zot invents random keys when the file is absent, dropping every browser session on each restart — and Wisp restarts zot on every config save. Cleared when OIDC is disabled, so re-enabling mints fresh keys.
 
-When adding or updating a user, send `{ username, password }` — the backend hashes the password and stores only the hash. To keep an existing password, omit the `password` field.
+When adding or updating a user, send `{ username, password }` — the backend hashes the password and stores only the hash. To keep an existing password, omit the `password` field; the backend recovers the stored hash **by username**, so a *renamed* user reads as new and must supply a password. A `hash` sent by a client is ignored — hashes only ever come from the stored config. Same contract for `oidc.clientSecret`: omit it (or send back the `{ isSet }` mask) to keep the stored value.
+
+#### Identity model — htpasswd vs OIDC
+
+zot has **no user table**. Both paths resolve a login to a bare *identity string*, and that string is the only thing tying together an access-control policy, an API key, and a session:
+
+| Path | Identity is | Used by |
+|------|-------------|---------|
+| htpasswd | the username in the file | basic auth — `docker login`, `skopeo`, the UI's password form |
+| OIDC | the value of `usernameClaim` from the ID token | browser redirect flow only |
+
+They are the same user **iff the strings are equal** — which is what `usernameClaim` is for. There is nothing to "migrate": no account record exists to move.
+
+> **The IdP is a hard startup dependency.** `authn.go`'s `tryAuthnHandlers` builds the relying party *before* it returns the middleware closure, and `NewRelyingPartyOIDC` performs OIDC discovery against `<issuer>/.well-known/openid-configuration`, then `log.Panic()`s if it fails. So:
+> - IdP goes down **while zot is running** → htpasswd basic auth is unaffected (a separate path in `basicAuthn`). The fallback works.
+> - IdP is unreachable **when zot starts** → zot exits. The whole registry is down, not just SSO — htpasswd cannot save you.
+>
+> This matters because Wisp restarts the container on every appConfig save (`getReloadCommand()` returns `null`), and on host boot via autostart. If the IdP is another container on the same host, mind the ordering.
+
+`docker login` cannot follow an OIDC redirect, so an SSO-only identity needs an **API key** (`zak_…`, minted in the web UI, used as the basic-auth password). Wisp therefore sets `http.auth.apikey: true` whenever OIDC is on — zot does *not* enable it implicitly (`basicAuthn` checks `IsAPIKeyEnabled()` independently, contrary to a note in zot's `examples/README.md`), and API keys live in MetaDB, which the always-on `extensions.search` provides.
+
+The redirect URI to register with the provider is `<externalUrl>/zot/auth/callback/oidc`. The provider key must literally be `oidc` — zot's `openIDSupportedProviders` is `["google", "gitlab", "oidc"]`, and `oidc` is the generic one.
 
 ### Derived Config
 
 - **env:** (none)
-- **mounts:** `config-json` (file → `/etc/zot/config.json`, readonly), `registry` (dir → `/var/lib/registry`), optionally `htpasswd` (file → `/etc/zot/htpasswd`, readonly) when users are configured
-- **config.json:** Generated zot config with storage and HTTP settings; htpasswd auth block when users exist
+- **mounts:** `config-json` (file → `/etc/zot/config.json`, readonly), `registry` (dir → `/var/lib/registry`), optionally `htpasswd` (file → `/etc/zot/htpasswd`, readonly) when users are configured, optionally `session-keys` (file → `/etc/zot/session-keys.json`, readonly) when OIDC is enabled
+- **config.json:** Generated zot config with storage and HTTP settings. `http.auth.htpasswd` when users exist; `http.auth.openid.providers.oidc` + `http.auth.apikey` + `http.auth.sessionKeysFile` when OIDC is enabled; `http.externalUrl` when set. Provider keys are lowercase-concatenated (`clientid`, `clientsecret`, `claimmapping`) because zot reads its config through viper/mapstructure. Whenever any auth is on, `http.accessControl` grants anonymous `read` and every authenticated identity `read,create,update,delete`.
 - **Reload:** Not supported — config changes require container restart
 
 ---

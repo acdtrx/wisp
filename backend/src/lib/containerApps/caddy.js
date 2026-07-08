@@ -18,8 +18,13 @@ function getDefaultAppConfig() {
 
 /**
  * Validate and normalize appConfig. Throws INVALID_APP_CONFIG on failure.
+ *
+ * `oldAppConfig` carries the stored secret forward: `maskSecrets` replaces the token with
+ * `{ isSet }`, and the form omits it entirely when the user didn't retype it, so without
+ * the merge below an unrelated save (adding a host) would silently blank the token and
+ * break the DNS-01 challenge at the next certificate renewal.
  */
-function validateAppConfig(appConfig) {
+function validateAppConfig(appConfig, oldAppConfig = null) {
   if (!appConfig || typeof appConfig !== 'object' || Array.isArray(appConfig)) {
     throw containerError('INVALID_APP_CONFIG', 'appConfig must be an object');
   }
@@ -87,11 +92,15 @@ function validateAppConfig(appConfig) {
     return { subdomain: sub, target };
   });
 
-  // cloudflareApiToken: optional string
-  if (cloudflareApiToken != null && typeof cloudflareApiToken !== 'string') {
+  // cloudflareApiToken: optional. A non-string (absent, or the `{ isSet }` mask coming
+  // back round) means "unchanged" — keep what's on disk. An explicit '' clears it.
+  if (cloudflareApiToken != null && typeof cloudflareApiToken !== 'string'
+      && !(typeof cloudflareApiToken === 'object' && 'isSet' in cloudflareApiToken)) {
     throw containerError('INVALID_APP_CONFIG', 'cloudflareApiToken must be a string');
   }
-  const token = typeof cloudflareApiToken === 'string' ? cloudflareApiToken.trim() : '';
+  const token = typeof cloudflareApiToken === 'string'
+    ? cloudflareApiToken.trim()
+    : (oldAppConfig?.cloudflareApiToken || '');
 
   return {
     domain: trimmedDomain,

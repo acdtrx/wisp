@@ -47,6 +47,24 @@ function mountLayoutSig(list) {
 }
 
 /**
+ * Stable signature of an env map by name + value. `secret` is presentation-only.
+ *
+ * A reload can never apply an env change: the OCI spec's process env is built from
+ * `config.env` when the task starts (containerManagerSpec.js), so a running process keeps
+ * the environment it was exec'd with. Caddy shows why this matters — its Caddyfile refers
+ * to the Cloudflare token as `{env.CLOUDFLARE_API_TOKEN}`, which the *running* server
+ * resolves against its own environment, so `caddy reload` after adding the token yields a
+ * silently token-less DNS-01 config. Callers must treat an env diff as restart-worthy.
+ */
+function envSig(env) {
+  return JSON.stringify(
+    Object.entries(env || {})
+      .map(([key, entry]) => [key, entry && typeof entry === 'object' ? entry.value : entry])
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1)),
+  );
+}
+
+/**
  * Mask app secrets in a container config response. Routes call this before
  * sending container details out over the wire.
  */
@@ -144,6 +162,7 @@ export async function applyAppConfig(name, newAppConfig) {
   const oldMounts = Array.isArray(config.mounts) ? config.mounts : [];
   const nextMounts = Array.isArray(derived.mounts) ? derived.mounts : [];
   const mountLayoutChanged = mountLayoutSig(oldMounts) !== mountLayoutSig(nextMounts);
+  const envChanged = envSig(config.env) !== envSig(derived.env);
 
   const updateChanges = {
     env: derived.env || {},
@@ -175,7 +194,7 @@ export async function applyAppConfig(name, newAppConfig) {
   }
 
   const appWantsRestart = !!appModule.requiresRestartForChange?.(oldAppConfig, validated);
-  const stillNeedsRestart = appWantsRestart || mountLayoutChanged;
+  const stillNeedsRestart = appWantsRestart || mountLayoutChanged || envChanged;
 
   try {
     const result = await execCommandInContainer(name, reloadCmd, { timeoutMs: 15000 });
