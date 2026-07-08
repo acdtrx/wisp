@@ -44,6 +44,18 @@ pointer. Keep this file scannable.
 
 **Why deferred:** Zero user-visible impact today; changing it silently alters accepted layouts.
 
+### A failed app reload leaves a persisted config the container can't boot
+
+**Found:** 2026-07-08, debugging Caddy's `APP_RELOAD_FAILED` after the Cloudflare token was re-added.
+
+**Symptom:** None, until the next restart. `applyAppConfig` persists the new appConfig, env, mounts and mount file contents (steps 2–3) *before* asking the app to reload (step 5). When the reload fails, the error surfaces and the running container keeps serving its previous config — but the rejected config is already on disk. The container now boots into a config its own app refused. A host reboot, an autostart, or any unrelated restart turns a handled 422 into a container that won't come up. Caddy makes this sharp: it also fronts Wisp, so the failure mode is "reboot the host, lose the UI".
+
+**Root cause:** Persist-then-validate. There is no dry-run gate and no rollback on `APP_RELOAD_FAILED` — the catch rethrows without restoring the previous appConfig, and deliberately does not set `pendingRestart` (which would invite the user to restart straight into the broken config).
+
+**Fix sketch:** Either (a) roll back to `oldAppConfig` + previous mount contents when the reload rejects the new state, or (b) add an optional `getValidateCommand()` to the module contract and run it *before* persisting (`caddy validate --config …`, `nginx -t`, `testparm` for samba). (b) is better — it also catches the case where the container is stopped and nothing validates at all — but it needs the config file on disk first, so it wants a temp path the app can read.
+
+**Why deferred:** Needs a design pass on the module contract, and the reload-failure path is rare now that env changes no longer attempt a doomed reload. Not a regression; this has been true since app containers shipped.
+
 ### Two version readers can disagree: `routes/host.js` `getWispVersion()` vs `wispUpdate.js` `getCurrentVersion()`
 
 **Found:** 2026-07-06, during LAN-discovery review (discovery TXT now uses `getCurrentVersion`).

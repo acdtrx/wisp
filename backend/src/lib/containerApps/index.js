@@ -46,6 +46,30 @@ function mountLayoutSig(list) {
   })));
 }
 
+const RELOAD_DETAIL_MAX = 1000;
+
+/**
+ * Extract the useful part of a failed reload's output.
+ *
+ * Reload tools narrate before they fail: `caddy reload` emits several JSON log lines
+ * ("using config from file", "adapted config to JSON", a formatting warning) and only then
+ * prints the error that actually matters. Taking the *first* N characters therefore shows
+ * the noise and truncates the diagnosis. Prefer the lines that look like errors, and when
+ * falling back to raw output keep the tail, where the failure lives.
+ */
+function reloadFailureDetail(result) {
+  const raw = (result.stderr || result.stdout || '').trim();
+  if (!raw) return `exit ${result.exitCode}`;
+
+  // Structured loggers put level/severity in the line; a bare `Error: …` has none.
+  const errorLines = raw
+    .split('\n')
+    .filter((line) => /^error\b|"level":"(error|fatal|panic)"|\berror\b:/i.test(line.trim()));
+  const chosen = errorLines.length ? errorLines.join('\n') : raw;
+
+  return chosen.length > RELOAD_DETAIL_MAX ? `…${chosen.slice(-RELOAD_DETAIL_MAX)}` : chosen;
+}
+
 /**
  * Stable signature of an env map by name + value. `secret` is presentation-only.
  *
@@ -188,19 +212,25 @@ export async function applyAppConfig(name, newAppConfig) {
   }
 
   const reloadCmd = appModule.getReloadCommand?.();
-  if (!reloadCmd) {
+  // Skip the reload outright when the env changed. It cannot apply — the OCI process env is
+  // fixed at task start — and attempting it is worse than useless: step 2 has already written
+  // a config that refers to the new variable, which the running process then resolves against
+  // an environment that lacks it. Adding Caddy's Cloudflare token this way yields
+  //   provision dns.providers.cloudflare: API token '' appears invalid
+  // and a hard APP_RELOAD_FAILED for a save that only ever needed a restart. Restarting
+  // applies the new env and the new mount contents together — the only order that works.
+  if (!reloadCmd || envChanged) {
     await updateContainerConfig(name, { pendingRestart: true });
     return { requiresRestart: true };
   }
 
   const appWantsRestart = !!appModule.requiresRestartForChange?.(oldAppConfig, validated);
-  const stillNeedsRestart = appWantsRestart || mountLayoutChanged || envChanged;
+  const stillNeedsRestart = appWantsRestart || mountLayoutChanged;
 
   try {
     const result = await execCommandInContainer(name, reloadCmd, { timeoutMs: 15000 });
     if (result.exitCode !== 0) {
-      const detail = (result.stderr || result.stdout || '').trim().slice(0, 500);
-      throw createAppError('APP_RELOAD_FAILED', `Reload failed (exit ${result.exitCode})`, detail);
+      throw createAppError('APP_RELOAD_FAILED', `Reload failed (exit ${result.exitCode})`, reloadFailureDetail(result));
     }
     if (stillNeedsRestart) {
       await updateContainerConfig(name, { pendingRestart: true });

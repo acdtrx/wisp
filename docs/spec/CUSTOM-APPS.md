@@ -110,16 +110,25 @@ Components use SectionCard for consistent styling, handle their own dirty tracki
 2. `containerManager.updateContainerConfig` persists the metadata + env/mounts/devices changes (manager handles backing-store cleanup for removed mounts generically)
 3. Mount file contents written via `containerManager.putMountFileTextContent`
 4. Container task state checked via `containerManager.getTaskState`; if not running, return immediately
-5. If the app module provides `getReloadCommand()`, run it via `containerManager.execCommandInContainer` (non-interactive containerd exec)
-6. If the command exits 0: response includes `{ requiresRestart, reloaded: true }`. `requiresRestart` is true when the app module's `requiresRestartForChange` hook returns true, OR the mount layout changed structurally, OR any env var changed.
-7. If the command exits non-zero: throws `APP_RELOAD_FAILED` (422) with stderr/stdout as detail — config saved, app rejected the new state
+5. If any env var changed, **skip the reload** and set `pendingRestart: true` (see *Env vars never reload* below). Otherwise, if the app module provides `getReloadCommand()`, run it via `containerManager.execCommandInContainer` (non-interactive containerd exec)
+6. If the command exits 0: response includes `{ requiresRestart, reloaded: true }`. `requiresRestart` is true when the app module's `requiresRestartForChange` hook returns true, OR the mount layout changed structurally.
+7. If the command exits non-zero: throws `APP_RELOAD_FAILED` (422) — config saved, app rejected the new state. The detail is built by `reloadFailureDetail()`, which keeps the lines that look like errors and otherwise falls back to the **tail** of the output: reload tools narrate before they fail (`caddy reload` emits three JSON log lines first), so a head-truncated detail shows noise and cuts the diagnosis.
 8. If the exec itself fails for a non-app reason (e.g. command not found): falls back to setting `pendingRestart: true` and returning `{ requiresRestart: true }`
 
 Apps that don't supply `getReloadCommand` always set `pendingRestart` instead of attempting reload.
 
 **Mount layout vs file contents.** Live reload covers *file contents* but not *bind mount layout*. Bind mounts are captured in the OCI spec at task create — adding/removing a share, retargeting `subPath`, resizing tmpfs cannot apply to a running task via reload. containerApps compares the structural mount signature (type/name/containerPath/sourceId/subPath/sizeMiB) before vs after `generateDerivedConfig` and forces `pendingRestart: true` when it differs, even if the reload command returned exit 0. OR-combined with the app module's `requiresRestartForChange` hook.
 
-**Env vars never reload.** Same reason, sharper edge: the OCI process env is built from `config.env` when the task starts (`containerManagerSpec.js`), so a running process keeps the environment it was exec'd with. No reload command can change it. containerApps compares an env signature (name + value; the `secret` flag is presentation-only) and forces `pendingRestart: true` on any diff. Caddy is the cautionary case — its Caddyfile refers to the Cloudflare token as `{env.CLOUDFLARE_API_TOKEN}`, which the *running* server resolves against its own environment, so adding the token and reloading used to report success while leaving DNS-01 silently token-less.
+**Env vars never reload.** Same reason, sharper edge: the OCI process env is built from `config.env` when the task starts (`containerManagerSpec.js`), so a running process keeps the environment it was exec'd with. No reload command can change it. containerApps compares an env signature (name + value; the `secret` flag is presentation-only) and, on any diff, **skips the reload entirely** and sets `pendingRestart: true`.
+
+Skipping matters — a reload here isn't merely a no-op, it fails. Step 2 has already written the new config, which refers to the new variable. Caddy's Caddyfile carries the Cloudflare token as `{env.CLOUDFLARE_API_TOKEN}`; the *running* server resolves that against its own environment, gets an empty string, and rejects the whole config:
+
+```
+provision dns.providers.cloudflare: API token '' appears invalid;
+ensure it's correctly entered and not wrapped in braces nor quotes
+```
+
+Caddy keeps serving its previous config (reload is atomic), but the save surfaces `APP_RELOAD_FAILED` for what was only ever a restart. The restart applies new env and new mount contents together — the only order that works.
 
 `execCommandInContainer` is a general-purpose non-interactive exec utility (`containerManagerExec.js`) — exposed on the containerManager facade for any caller, not specific to app reload.
 
