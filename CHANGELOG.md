@@ -1,8 +1,12 @@
 # Changelog
 
-## 2026-07-08
+## 2026-07-08 (v1.6.1)
 
 ### Bug Fixes
+- **Stale lists after the app sat in the background** — reopening the home-screen app (or any tab suspended or offline for a while) kept showing the workloads, states and job progress it had when it went away, for up to a minute and a half. Every live stream now reconnects the moment the app is foregrounded or the network returns, and reloads a fresh snapshot.
+- **Sidebar sections never refreshed** — creating, renaming, reordering or reassigning a section only showed up after a full page reload, so a phone app left open kept the layout it saw at launch, and two open clients never saw each other's changes. Sections now stream like VMs and containers.
+- **The container stats bar couldn't be scrolled on iPhone** — launched from the home screen, the pill row sat inside the bottom system gesture band, so swiping it opened the app switcher instead of scrolling. App chrome now clears the home indicator, and the landscape notch.
+- **A container's mDNS name and IP stayed missing until you switched workloads** — both are assigned after the container starts, but the stats bar read them from a config snapshot taken before that. They now arrive on the stats stream.
 - The release script now bumps each `package-lock.json` alongside its `package.json`; both lockfiles had been stuck at `1.2.4` since that release. Corrected in the tree as well.
 
 ## 2026-07-08 (v1.6.0)
