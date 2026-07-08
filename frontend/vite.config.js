@@ -20,6 +20,10 @@ export default defineConfig({
     },
   },
   build: {
+    // Emitted so scripts/generate-sw-precache.js can resolve the eager chunk graph
+    // (entry + static imports + css) without parsing index.html. Deleted from dist
+    // once the precache list is baked into sw.js.
+    manifest: true,
     rolldownOptions: {
       external: [/^\/vendor\//],
       output: {

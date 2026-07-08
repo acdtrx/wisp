@@ -38,6 +38,18 @@ The deploy user can do exactly one root-side thing:
 
 Sudoers matches argv exactly — no other systemctl verbs, no other units. The unit file is root-owned at `/etc/systemd/system/wisp-updater.service`, so the deploy user can't redirect what runs. The install dir is hardcoded into the unit (templated at install time as `WISP_INSTALL_DIR=<path>`), so a tampered target file cannot point the updater at an arbitrary install location. The staging path read from the target file is validated to start with `/var/lib/wisp/updates/staging-`.
 
+## Service worker interaction
+
+The offline shell (`frontend/public/sw.js`, see [ARCHITECTURE.md](../ARCHITECTURE.md#offline-shell-frontendpublicswjs)) controls every navigation, so it sits directly in the update path. Three invariants keep a self-update from stranding a client on a stale build:
+
+1. **Navigations are network-first**, never cache-first. After the updater swaps `frontend/dist/`, the next launch fetches the new `index.html`; the cached shell is only a fallback for when the server does not answer.
+2. **`sw.js` and `index.html` are served `Cache-Control: no-cache`; `/assets/*` is `immutable`** (set in `applyShellCachePolicy`, `backend/src/index.js`). A stale `sw.js` pinned in the HTTP cache would outlive the update it is supposed to notice. Asset filenames are content-hashed, so they can pin for a year.
+3. **Cache names are scoped by a build id** derived from the hashed asset list, injected into `dist/sw.js` by `frontend/scripts/generate-sw-precache.js`. A new release changes the asset hashes → changes `sw.js` → the browser installs the new worker, which precaches the new assets and purges the previous build's caches on `activate`.
+
+`sw.js` ships because it lives in `frontend/public/` and Vite copies it into `dist/`, which the release tarball contains prebuilt. The precache list is baked in during `npm run build`, so the tarball's `dist/sw.js` differs from the repo's `public/sw.js` (which carries `__WISP_BUILD_ID__` / `__WISP_PRECACHE_URLS__` placeholders). A build that cannot resolve the manifest fails loudly rather than shipping the placeholders.
+
+Because `WispUpdateSection` polls `GET /api/host` to detect that the new version is live, and the worker never intercepts `/api`, the post-update reload path is unaffected.
+
 ## Repo configuration
 
 The default repo is `acdtrx/wisp`. To point at a fork (testing, mirror), set `WISP_UPDATE_REPO=<owner>/<repo>` in `config/runtime.env`.
@@ -68,6 +80,8 @@ systemd/linux/
 frontend/
   src/api/updates.js                 ← REST client
   src/components/host/WispUpdateSection.jsx  ← polls /api/host for completion
+  public/sw.js                       ← offline shell; network-first navigations
+  scripts/generate-sw-precache.js    ← bakes precache list + build id into dist/sw.js
 scripts/
   release.sh                         ← local release tagger
   linux/setup/install-helpers.sh     ← installs script + unit + sudoers

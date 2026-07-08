@@ -145,12 +145,45 @@ const CSP =
   "base-uri 'self'; " +
   "form-action 'self'";
 
+/**
+ * Cache policy for the SPA shell and its assets. Set here rather than through
+ * `@fastify/static`'s `setHeaders` for two reasons: that hook writes to
+ * `reply.raw` and is immediately overwritten by the plugin's own `reply.headers()`
+ * call, and it never runs for the deep-link shell served by setNotFoundHandler.
+ *
+ * The service worker controls every navigation, so a stale `sw.js` or `index.html`
+ * pinned in the HTTP cache would outlive a self-update. Both revalidate. Assets
+ * under /assets/ are content-hashed by Vite — a changed file gets a changed name,
+ * so a cached copy can never be wrong and pins for a year.
+ */
+function applyShellCachePolicy(request, reply) {
+  const path = request.url.split('?')[0];
+  if (path.startsWith('/api') || path.startsWith('/ws')) return;
+
+  if (path === '/sw.js') {
+    reply.header('Cache-Control', 'no-cache');
+    return;
+  }
+  if (path.startsWith('/assets/')) {
+    reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+    return;
+  }
+  // The shell is the only HTML Wisp serves, from both fastify-static and the
+  // deep-link fallback. Without this it has no Cache-Control and browsers apply
+  // heuristic freshness, which can outlive an update.
+  const contentType = reply.getHeader('content-type');
+  if (typeof contentType === 'string' && contentType.startsWith('text/html')) {
+    reply.header('Cache-Control', 'no-cache');
+  }
+}
+
 if (!isDev) {
-  app.addHook('onSend', async (_request, reply, payload) => {
+  app.addHook('onSend', async (request, reply, payload) => {
     reply.header('Content-Security-Policy', CSP);
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Referrer-Policy', 'same-origin');
+    applyShellCachePolicy(request, reply);
     return payload;
   });
 }

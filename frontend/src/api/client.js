@@ -32,6 +32,20 @@ export function isAuthenticated() {
   return readCsrfToken() !== null;
 }
 
+/** Shown wherever a request never reached the server. Wisp is usually only
+ *  reachable over a VPN, so that is the first thing worth checking. */
+export const NETWORK_ERROR_MESSAGE = 'Can’t reach Wisp. Check your VPN or network connection.';
+
+/**
+ * True when the request never reached the server — DNS failure, connection
+ * refused, connection timed out, VPN down. `fetch()` rejects with a `TypeError`
+ * in exactly those cases; every error `api()` raises from an HTTP response
+ * carries a numeric `status` instead.
+ */
+export function isNetworkError(err) {
+  return err instanceof TypeError;
+}
+
 export function broadcastLogout() {
   try {
     if (typeof window !== 'undefined') {

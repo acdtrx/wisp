@@ -104,6 +104,8 @@ Wisp itself serves plain HTTP; TLS is expected to terminate at an optional rever
 - the session cookie's `Secure` flag, and
 - the scheme of generated absolute URLs — notably the **OIDC redirect/callback URI**. If Wisp thinks the request was `http` when the browser used `https`, the callback it sends to the identity provider is `http://…` and the provider rejects it as an invalid callback URL.
 
+**HTTPS also enables the offline shell.** Service workers only run in a secure context (HTTPS, or `localhost`). Reached over plain HTTP at a LAN IP, `navigator.serviceWorker` is undefined, registration is skipped, and Wisp still works — but a launch made while the server is unreachable (VPN down, app installed to a phone's home screen) cannot render a "Can't reach Wisp" page, because the browser never gets the HTML. Put TLS in front of Wisp if you use it as an installed web app. See [ARCHITECTURE.md](../ARCHITECTURE.md#offline-shell-frontendpublicswjs).
+
 For safety, forwarded headers are honored **only from trusted sources**. Loopback (`127.0.0.1`, `::1`) is always trusted — enough for a proxy on the same host that connects to Wisp over localhost. When the **proxy runs on a different host or container** (so Wisp sees the connection from a LAN/Docker IP), add that source to `trustedProxies`:
 
 ```jsonc

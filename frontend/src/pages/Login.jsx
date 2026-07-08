@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, LogIn } from 'lucide-react';
+import { LogIn } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { getOidcStatus, OIDC_LOGIN_URL } from '../api/auth';
+import FullScreenSpinner from '../components/shared/FullScreenSpinner.jsx';
 import WispGlyph from '../components/shared/WispGlyph.jsx';
 
 // Messages shown when the browser returns from an SSO attempt. The presence of
@@ -51,11 +52,7 @@ export default function Login() {
   };
 
   if (checking) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-surface">
-        <Loader2 size={24} className="animate-spin text-text-muted" />
-      </div>
-    );
+    return <FullScreenSpinner />;
   }
 
   return (

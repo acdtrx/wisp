@@ -254,7 +254,23 @@ Source copies live in the repo; **`scripts/linux/setup/install-helpers.sh`** cop
 
 ### Entry point
 
-`frontend/src/main.jsx` renders the React app into the DOM. `App.jsx` sets up routing: `/login` is public, all other routes are protected by authentication.
+`frontend/src/main.jsx` renders the React app into the DOM. `App.jsx` sets up routing: `/login` is public, all other routes are protected by authentication. `main.jsx` also registers the offline service worker (production builds only — in dev a worker caching the bundle would shadow every edit).
+
+### Offline shell (`frontend/public/sw.js`)
+
+Wisp is usually reachable only over a VPN, so the app is routinely launched with the server unreachable. Launched from an iOS home-screen icon there is no browser chrome to render a "cannot connect" page, so an uncached navigation paints white with no way to retry. The service worker keeps the app shell so the launch always boots React, which then renders `ServerUnreachable` (message + Retry button).
+
+- **Navigations** → network-first with a 4 s timeout, falling back to the cached shell, then to a self-contained HTML page if even that is missing. Never cache-first: `wisp-updater` swaps `frontend/dist/` in place, and a cache-first shell would pin the user to a stale build.
+- **`/assets/*`** → cache-first. Vite content-hashes these names, so entries are immutable.
+- **`/api`, `/ws`, `/vendor`** → never intercepted. API responses must not be served stale, SSE/WebSocket streams must not pass through a cache, and noVNC is unhashed.
+
+The eager chunk graph (entry + static imports + CSS + fonts) is precached on `install`, resolved at build time by `frontend/scripts/generate-sw-precache.js` from Vite's build manifest. Runtime caching alone is not sufficient: browsers may serve subresources from their own HTTP cache without dispatching a fetch event, leaving the worker's asset cache sparse and blanking an offline launch. Cache names are scoped by a build id derived from that asset list, so `activate` purges the previous build's entries.
+
+**Service workers require a secure context.** On a plain-HTTP install `navigator.serviceWorker` is undefined, registration is skipped, and Wisp runs normally without the offline shell. See [CONFIGURATION.md](spec/CONFIGURATION.md#reverse-proxy--https-trustedproxies).
+
+### Boot probe (`ProtectedRoute`)
+
+Protected routes gate on a single `GET /api/host`. The probe is aborted after 5 s (a dead VPN swallows the connection rather than refusing it, so the request would otherwise hang until the OS connect timeout), and any failure renders `ServerUnreachable` rather than an empty page. It re-probes with exponential backoff (1 s → 15 s), and immediately on `online` or when the tab becomes visible again — the two moments the server is most likely to have come back. Once ready the gate stops probing; a mid-session drop is handled by the SSE streams' own reconnect logic.
 
 ### View management
 

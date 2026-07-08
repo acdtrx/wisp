@@ -205,6 +205,27 @@ Redirects to the main app on success. The main app redirects here if no valid se
 
 **SSO (when configured).** On load the page queries `GET /api/auth/oidc/status`. If SSO is enabled **and** the URL has no `?sso=` marker, it auto-redirects to the provider (a spinner shows during the check so the password form doesn't flash). If it returns from a cancelled or failed attempt (`?sso=cancelled` / `?sso=error`), it shows a notice and the password form with a **"Sign in with SSO"** button below the Sign in button (separated by an "or" divider) so the user can retry SSO or fall back to the password. The `?sso=` marker is what prevents an auto-redirect loop. See [AUTH.md](AUTH.md) § OIDC.
 
+A failed sign-in that never reached the server (VPN down, no network) shows **"Can't reach Wisp. Check your VPN or network connection."** rather than the browser's raw `fetch` message.
+
+---
+
+## Server Unreachable Screen
+
+Shown by `ProtectedRoute` when the boot probe (`GET /api/host`) fails — the app is installed to a home screen and launched away from the VPN, or the service is restarting. It replaces what used to be a blank page.
+
+Centered card matching the Login page, with:
+- The Wisp glyph, then a round tinted badge (`bg-status-stopped-soft`) holding a status icon
+- **Offline** (request never reached the server, including a timeout): `WifiOff`, title "Can't reach Wisp", body "Your device can't reach the server. If you're away from home, connect to your VPN and try again."
+- **Server** (server answered with an HTTP error): `ServerCrash`, title "Wisp isn't responding", body "The server answered, but Wisp is not ready yet. It may be restarting or finishing an update."
+- Full-width accent **Retry** button (`RefreshCw`). Deliberately static — it never shows a pending/disabled state. A probe against an unreachable server settles in a couple of milliseconds, so reflecting it would flash the button on every backoff tick.
+- Footer hint: "Retrying automatically. Wisp reconnects on its own once the server is reachable."
+
+The screen re-probes on its own (backoff 1 s → 15 s, plus immediately on `online` and on tab re-focus), so it clears itself once the VPN is back — the button only skips the wait.
+
+**Boot spinner.** While the first probe is in flight the route renders nothing for 500 ms (so a fast load never flashes), then a centered spinner (`FullScreenSpinner`, shared with the Login SSO check). The page is never left blank indefinitely.
+
+**Offline fallback page.** If the service worker has no cached shell at all (worker installed while offline, or storage evicted), it serves a small self-contained HTML page with the same "Can't reach Wisp" copy and a Retry link. Inline styles only — the CSP forbids inline scripts.
+
 ---
 
 ## VM Overview Panel

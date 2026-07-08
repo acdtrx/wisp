@@ -100,6 +100,15 @@ jobs:
           # Sanity: dist/index.html must be present (proves prebuilt frontend is in)
           test -f "$STAGE/frontend/dist/index.html"
 
+          # Sanity: the offline shell must ship, with its precache list baked in by
+          # scripts/generate-sw-precache.js. A missing or unsubstituted sw.js silently
+          # returns every installed client to a blank page when the server is down.
+          test -f "$STAGE/frontend/dist/sw.js"
+          if grep -q '__WISP_BUILD_ID__\|__WISP_PRECACHE_URLS__' "$STAGE/frontend/dist/sw.js"; then
+            echo "ERROR: dist/sw.js still contains build placeholders."
+            exit 1
+          fi
+
           echo "Staged tree size:"
           du -sh "$STAGE"
 

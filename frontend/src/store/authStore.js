@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, isAuthenticated, broadcastLogout } from '../api/client';
+import { api, isAuthenticated, broadcastLogout, isNetworkError, NETWORK_ERROR_MESSAGE } from '../api/client';
 
 export const useAuthStore = create((set) => ({
   // Cookie-based session — the HttpOnly session cookie is invisible to JS.
@@ -27,7 +27,8 @@ export const useAuthStore = create((set) => ({
       set({ authenticated: true, loading: false });
       return true;
     } catch (err) {
-      set({ error: err.message, loading: false });
+      // A dead VPN surfaces here as fetch's bare "Load failed" — name the actual cause.
+      set({ error: isNetworkError(err) ? NETWORK_ERROR_MESSAGE : err.message, loading: false });
       return false;
     }
   },

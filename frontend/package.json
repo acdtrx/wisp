@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/ensure-novnc.js && vite build",
+    "build": "node scripts/ensure-novnc.js && vite build && node scripts/generate-sw-precache.js",
     "preview": "vite preview"
   },
   "dependencies": {
