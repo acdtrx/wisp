@@ -20,6 +20,18 @@ pointer. Keep this file scannable.
 
 ## Improvements
 
+### Caddy app's default image can't use the Cloudflare token field it presents
+
+**Found:** 2026-07-09, after confirming the user's working Caddy runs a custom image.
+
+**Symptom:** A user creates a Caddy app (default image `caddy:latest`), fills in the Cloudflare API token field Wisp puts right in front of them, and saves. The generated Caddyfile carries `dns cloudflare {env.CLOUDFLARE_API_TOKEN}`, which the stock Caddy binary can't adapt (unknown module), so the container exits on start with nothing pointing at the image as the cause. The token field is a trap for anyone on the default image.
+
+**Root cause:** `appRegistry.js` sets `defaultImage: 'caddy:latest'`. The official Caddy image does not include `caddy-dns/cloudflare` — Caddy's DNS providers are Go plugins that must be compiled in via `xcaddy`. Wisp's Caddy module always offered the token field regardless of image, on the unstated assumption of a Cloudflare-enabled build. (The user's own registry-fronting Caddy is a custom `xcaddy` image, which is why their config adapted fine.)
+
+**Fix sketch:** Cheapest — help text on the token field noting it needs a Caddy build with the Cloudflare DNS module, and a line in CUSTOM-APPS.md. Better — change `defaultImage` to a Cloudflare-enabled build (e.g. a `ghcr.io/acdtrx/*` image like tiny-samba already ships, built with `xcaddy build --with github.com/caddy-dns/cloudflare`), so the token field works out of the box; keep `allowCustomImage`. Best — only emit the `dns cloudflare` block when the image is known to support it, but Wisp can't introspect a plugin set, so this collapses to "document + sane default."
+
+**Why deferred:** Needs a decision on whether to own/publish a Caddy image vs just documenting the requirement; not blocking anyone today (only affects a fresh Caddy app on the default image that also wants DNS-01).
+
 ### Host Mgmt add/edit is inline-row only — no mobile create/edit path
 
 **Found:** 2026-07-06, during the mobile Host Mgmt pass.
