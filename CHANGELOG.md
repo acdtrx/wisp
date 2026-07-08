@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-08 (v1.7.0)
+
+### New Features
+- **Zot registry: OIDC single sign-on** — configure it on the zot container's Overview panel: issuer, client ID/secret, scopes, and which claim becomes the username. Adds a sign-in button to the registry's own web UI. Password users keep working alongside it, so `docker login` and an unreachable identity provider both still have a way in. API keys are enabled automatically, since `docker login` can't follow an SSO redirect. Note that zot contacts the provider at startup and won't start without it.
+
+### Bug Fixes
+- **Zot's user table couldn't be edited after the first save** — adding, renaming or removing a user failed with "requires a password" unless you retyped every other user's password.
+- **Caddy silently discarded its Cloudflare API token** on any unrelated save (adding a host, changing the domain), breaking the DNS-01 challenge at the next certificate renewal.
+- **App containers reported a successful reload after an env var changed, but the change never took effect** — environment variables are fixed when a container starts, so no live reload can apply them. Wisp now asks for a restart. Most visible on Caddy: adding the Cloudflare token appeared to work while certificate issuance stayed broken.
+
 ## 2026-07-08 (v1.6.1)
 
 ### Bug Fixes
