@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-08 (v1.7.1)
+
+### Bug Fixes
+- **Saving an app container's environment variable failed instead of asking for a restart** — v1.7.0 correctly worked out that a restart was needed, then tried to live-reload anyway. Adding Caddy's Cloudflare token hit this: the reload wrote a config referencing a variable the running process didn't have yet, and Caddy rejected it. The reload is now skipped outright when an environment variable changes.
+- **Reload errors were cut off before the useful part** — the app told you why it refused the config in its last line, and Wisp showed you the first 500 characters of startup chatter.
+
 ## 2026-07-08 (v1.7.0)
 
 ### New Features
