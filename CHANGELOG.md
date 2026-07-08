@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-08 (v1.6.0)
+
+### New Features
+- **Offline app shell** — a service worker caches the app shell, so launching Wisp from a phone's home screen while away from the VPN shows a "Can't reach Wisp" screen with a Retry button instead of a blank page. It reconnects on its own once the server is reachable (on retry, on network return, and when the app is reopened). Requires HTTPS, as service workers only run in a secure context; plain-HTTP installs are unaffected and simply run without it.
+
+### Bug Fixes
+- **Blank page when the backend was unreachable** — protected routes rendered nothing while silently retrying, with no message and no way to recover. They now show the unreachable screen, distinguishing a network failure from a server error, and never leave the page empty while a slow check is in flight.
+- **App hung on a white screen instead of failing** — a dead VPN swallows the connection rather than refusing it, so both the initial page load and the session check waited out the OS connect timeout (~75 s on iOS). Both are now bounded.
+- The login page reports "Can't reach Wisp. Check your VPN or network connection." instead of the browser's raw `fetch` error.
+- The SPA shell served on deep-link refresh had no `Cache-Control` header and could be heuristically cached by the browser, outliving an update.
+
 ## 2026-07-08 (v1.5.0)
 
 ### New Features
