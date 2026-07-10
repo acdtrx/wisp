@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-10 (v1.8.0)
+
+### New Features
+- **API tokens** — scoped bearer tokens for scripts and coding agents, managed in Host → App Config. Read-only tokens can only read; admin tokens can change state. Shown once at creation, stored hashed, revocable at any time. Tokens can never open consoles, change the password, or manage other tokens, and rotating the login password doesn't break them.
+- **MCP endpoint** (`/mcp`) — coding agents can inspect the deployment over the Model Context Protocol using an API token: a one-call deployment overview (every VM and container with LAN IP, mDNS name, and app template), per-workload detail with all secrets masked (including app configs, e.g. Caddy's exposed hosts), container logs, image inventory with update flags, live host stats, and the hardware inventory. Register with `claude mcp add --transport http wisp https://<host>/mcp --header "Authorization: Bearer <token>"`.
+
 ## 2026-07-08 (v1.7.1)
 
 ### Bug Fixes
