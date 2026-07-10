@@ -20,8 +20,10 @@ Make a Wisp deployment inspectable — and eventually drivable — by coding age
 
 ## Status
 
-- **Current step:** Step 2 — MCP endpoint + read-only tools (next).
-- **Completed:** Step 1 (2026-07-10) — scoped API tokens (lib/apiTokens.js, bearer branch in the auth hook, shared lib/loginRateLimit.js, /api/auth/tokens routes, ApiTokensSettings UI card, docs).
+- **Current step:** Step 3 — admin tools (deploy / lifecycle), when the read layer has proven itself in use.
+- **Completed:**
+  - Step 1 (2026-07-10) — scoped API tokens (lib/apiTokens.js, bearer branch in the auth hook, shared lib/loginRateLimit.js, /api/auth/tokens routes, ApiTokensSettings UI card, docs).
+  - Step 2 (2026-07-10) — MCP endpoint (lib/mcp/mcpServer.js + routes/mcp.js, bearer-only) with the 7 read tools; extracted `maskContainerConfigSecrets` (containerApps) and `buildHostStatsPayload` (lib/hostStatsSnapshot.js) so routes and tools share one implementation; docs/spec/MCP.md.
 
 ## Steps overview
 

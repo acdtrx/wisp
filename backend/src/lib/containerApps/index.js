@@ -103,6 +103,29 @@ export function maskAppSecrets(config) {
 }
 
 /**
+ * Full outbound masking for a container config: env secrets become
+ * `{ value: null, secret: true, isSet }` and the app's appConfig is masked via
+ * the app module. Every surface that returns container details (REST routes,
+ * MCP tools) must pass the config through here.
+ */
+export function maskContainerConfigSecrets(config) {
+  if (!config || !config.env || typeof config.env !== 'object') return maskAppSecrets(config);
+  const env = {};
+  for (const [k, v] of Object.entries(config.env)) {
+    if (v?.secret) {
+      env[k] = {
+        value: null,
+        secret: true,
+        isSet: typeof v.value === 'string' && v.value.length > 0,
+      };
+    } else {
+      env[k] = { value: v?.value ?? '' };
+    }
+  }
+  return maskAppSecrets({ ...config, env });
+}
+
+/**
  * Create an app container. Computes the derived config from the app module,
  * builds an expanded spec with all the regular containerManager fields plus
  * `metadata.app`/`metadata.appConfig`, then writes derived file contents into

@@ -40,25 +40,8 @@ import {
   createAppContainer,
   applyAppConfig,
   eject as ejectAppContainer,
-  maskAppSecrets,
+  maskContainerConfigSecrets,
 } from '../lib/containerApps/index.js';
-
-function maskContainerSecrets(config) {
-  if (!config || !config.env || typeof config.env !== 'object') return config;
-  const env = {};
-  for (const [k, v] of Object.entries(config.env)) {
-    if (v?.secret) {
-      env[k] = {
-        value: null,
-        secret: true,
-        isSet: typeof v.value === 'string' && v.value.length > 0,
-      };
-    } else {
-      env[k] = { value: v?.value ?? '' };
-    }
-  }
-  return maskAppSecrets({ ...config, env });
-}
 
 /**
  * @returns {import('@fastify/multipart').MultipartFile | null}
@@ -291,7 +274,7 @@ export default async function containerRoutes(fastify) {
   // ── Get single ────────────────────────────────────────────────────
   fastify.get('/containers/:name', async (request, reply) => {
     try {
-      return maskContainerSecrets(await getContainerConfig(request.params.name));
+      return maskContainerConfigSecrets(await getContainerConfig(request.params.name));
     } catch (err) {
       handleRouteError(err, reply, request);
     }

@@ -37,6 +37,11 @@ The philosophy: direct flows and clear choices instead of exhaustive configurati
 - **Hybrid CPU awareness** (P-core / E-core topology) and Intel RAPL power measurement when available.
 - **OS package update checker** (runs hourly) for the host, with in-app upgrade on Debian/Ubuntu (apt) and Arch (pacman). **Host shutdown/reboot** from the UI.
 
+### Agents & automation
+
+- **Scoped API tokens** (read-only or admin) for non-interactive clients — created in the UI, shown once, revocable; the REST API becomes scriptable without the browser session dance.
+- **MCP endpoint** (`/mcp`) so coding agents can inspect the deployment: one tool call maps every VM and container with its LAN IP and mDNS name; others return per-workload config (secrets masked), logs, images, live host stats, and the hardware inventory.
+
 ## What it's not
 
 Wisp is not trying to replace anything. If one of these fits your workflow better, use it:

@@ -35,6 +35,7 @@ import containerRoutes from './routes/containers.js';
 import backgroundJobsRoutes from './routes/backgroundJobs.js';
 import updatesRoutes from './routes/updates.js';
 import discoveryRoutes from './routes/discovery.js';
+import mcpRoutes from './routes/mcp.js';
 import { ensureMounts, installMountHotplugHandlers, startAutoMountRetry } from './lib/mountsAutoMount.js';
 import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
 import { startUpdateChecker, stopUpdateChecker, start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
@@ -224,6 +225,7 @@ app.register(containerRoutes, { prefix: '/api' });
 app.register(backgroundJobsRoutes, { prefix: '/api' });
 app.register(updatesRoutes, { prefix: '/api' });
 app.register(discoveryRoutes, { prefix: '/api' });
+app.register(mcpRoutes); // /mcp — bearer-token-only MCP endpoint (see docs/spec/MCP.md)
 app.register(consoleRoutes, { prefix: '/ws' });
 app.register(containerConsoleRoutes, { prefix: '/ws' });
 

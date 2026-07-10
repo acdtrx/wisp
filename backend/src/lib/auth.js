@@ -163,13 +163,13 @@ function timingSafeEqualString(a, b) {
 
 /**
  * Bearer API tokens authenticate non-interactive clients (agents, scripts) on
- * the REST API only. Consoles (/ws) and everything under /api/auth stay
- * session-only, so a leaked token can never open a shell, change the password,
- * or mint more tokens. Bearer requests skip the CSRF check on purpose:
- * double-submit defends against ambient cookie credentials, which a bearer
- * request doesn't carry.
+ * the REST API and the MCP endpoint. Consoles (/ws) and everything under
+ * /api/auth stay session-only, so a leaked token can never open a shell,
+ * change the password, or mint more tokens. Bearer requests skip the CSRF
+ * check on purpose: double-submit defends against ambient cookie credentials,
+ * which a bearer request doesn't carry.
  */
-async function handleBearerAuth(request, reply, token, routeUrl) {
+async function handleBearerAuth(request, reply, token, routeUrl, isMcpRoute) {
   if (request.url.startsWith('/ws')) {
     reply.code(401).send({ error: 'Authentication failed', detail: 'API tokens cannot open console connections' });
     return;
@@ -192,7 +192,9 @@ async function handleBearerAuth(request, reply, token, routeUrl) {
     reply.code(401).send({ error: 'Authentication failed', detail: 'Invalid API token' });
     return;
   }
-  if (info.scope === 'read' && !READ_ONLY_METHODS.has(request.method)) {
+  // MCP is JSON-RPC over POST, so the HTTP method says nothing about whether
+  // the call mutates — per-tool scope is enforced in the MCP layer instead.
+  if (!isMcpRoute && info.scope === 'read' && !READ_ONLY_METHODS.has(request.method)) {
     reply.code(403).send({
       error: 'Insufficient scope',
       detail: 'This token is read-only; state-changing requests require an admin-scoped token',
@@ -204,16 +206,30 @@ async function handleBearerAuth(request, reply, token, routeUrl) {
 
 export function createAuthHook() {
   return async (request, reply) => {
-    // Static assets and SPA fallback bypass auth — only /api and /ws require it.
-    // The login UI is part of the SPA, so the bundle must load before any session exists.
-    if (!request.url.startsWith('/api') && !request.url.startsWith('/ws')) return;
-
+    // Matched via routeOptions so an unregistered /mcp* path still falls
+    // through to the SPA handler like any other non-API URL.
     const routeUrl = request.routeOptions?.url;
+    const isMcpRoute = routeUrl === '/mcp';
+
+    // Static assets and SPA fallback bypass auth — only /api, /ws, and /mcp require it.
+    // The login UI is part of the SPA, so the bundle must load before any session exists.
+    if (!request.url.startsWith('/api') && !request.url.startsWith('/ws') && !isMcpRoute) return;
+
     if (routeUrl && PUBLIC_ROUTES.has(routeUrl)) return;
 
     const authHeader = request.headers?.authorization;
     if (typeof authHeader === 'string' && authHeader.slice(0, 7).toLowerCase() === 'bearer ') {
-      await handleBearerAuth(request, reply, authHeader.slice(7).trim(), routeUrl);
+      await handleBearerAuth(request, reply, authHeader.slice(7).trim(), routeUrl, isMcpRoute);
+      return;
+    }
+
+    // /mcp is bearer-only: cookies are ignored entirely (no ambient-credential
+    // surface, no CSRF concern), so a missing bearer header ends here.
+    if (isMcpRoute) {
+      reply
+        .code(401)
+        .header('WWW-Authenticate', 'Bearer realm="wisp"')
+        .send({ error: 'Authentication required', detail: 'The MCP endpoint requires an API token (Authorization: Bearer wisp_…)' });
       return;
     }
 

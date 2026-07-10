@@ -126,10 +126,14 @@ Scoped bearer tokens let non-interactive clients (coding agents, scripts, future
 | `read` | `GET` / `HEAD` on `/api` routes only (includes SSE streams). Anything else → **403 Insufficient scope**. |
 | `admin` | All methods on `/api` routes. |
 
+On **`/mcp`** the method gate does not apply (MCP is JSON-RPC over POST); scope is enforced **per tool** in the MCP layer instead — see [MCP.md](MCP.md).
+
 ### Denied surfaces (both scopes)
 
 - **`/ws/*`** — consoles stay session-only; bearer requests get 401. A leaked token can never open a VM VNC session or a container shell.
 - **`/api/auth/*`** — login, logout, change-password, and token management are interactive concerns; bearer requests get **403 Session required**. A token can never mint or revoke tokens.
+
+Conversely, **`/mcp` is bearer-only**: session cookies are ignored there entirely (which also makes it CSRF-irrelevant); a request without a valid token gets **401** with `WWW-Authenticate: Bearer`.
 
 ### Semantics
 

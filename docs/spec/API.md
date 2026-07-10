@@ -1251,6 +1251,14 @@ The workload itself isn't validated — assignments are pure metadata, so refere
 
 ---
 
+## MCP
+
+### POST /mcp
+
+Model Context Protocol endpoint (streamable HTTP, stateless, JSON-RPC 2.0) exposing read-only inspection tools to coding agents. **Bearer API tokens only** — cookies are ignored, so the endpoint is CSRF-irrelevant; missing/invalid tokens get 401 with `WWW-Authenticate: Bearer`. The REST method gate for `read` tokens does not apply here; scope is enforced per tool. `GET /mcp` and `DELETE /mcp` return 405. Full protocol subset, tool catalogue, and client registration in [MCP.md](MCP.md).
+
+---
+
 ## WebSocket
 
 ### WS /ws/console/:name/vnc
