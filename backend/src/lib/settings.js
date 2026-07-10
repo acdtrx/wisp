@@ -35,6 +35,7 @@ const DEFAULTS = {
   advertisedUrl: null,
   oidc: { enabled: false, issuer: '', clientId: '', clientSecret: '' },
   trustedProxies: [],
+  apiTokens: [],
 };
 
 /* "main" is the implicit fallback bucket — never persisted as a section, but
@@ -86,6 +87,29 @@ function normalizeOidc(obj) {
     clientId,
     clientSecret,
   };
+}
+
+const API_TOKEN_SCOPES = new Set(['read', 'admin']);
+const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
+
+function normalizeApiTokens(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  const seenIds = new Set();
+  for (const t of arr) {
+    if (!t || typeof t.id !== 'string' || !t.id.trim() || seenIds.has(t.id)) continue;
+    if (!API_TOKEN_SCOPES.has(t.scope)) continue;
+    if (typeof t.tokenHash !== 'string' || !SHA256_HEX_RE.test(t.tokenHash)) continue;
+    seenIds.add(t.id);
+    out.push({
+      id: t.id,
+      label: typeof t.label === 'string' ? t.label.trim() : '',
+      scope: t.scope,
+      tokenHash: t.tokenHash,
+      createdAt: typeof t.createdAt === 'string' ? t.createdAt : '',
+    });
+  }
+  return out;
 }
 
 const VALID_DISK_FSTYPES = new Set(['ext4', 'btrfs', 'vfat', 'exfat', 'ntfs3']);
@@ -179,6 +203,9 @@ async function readSettingsFile() {
     // for a non-loopback reverse proxy. Preserved here so a Settings save from the
     // UI (which rewrites the whole file) can't silently drop it.
     trustedProxies: parseTrustedProxies(data.trustedProxies),
+    // Managed via /api/auth/tokens, never via PATCH /api/settings — carried
+    // through here so any settings save preserves them.
+    apiTokens: normalizeApiTokens(data.apiTokens),
   };
 }
 
@@ -445,11 +472,22 @@ async function persistSettings(state) {
     advertisedUrl: state.advertisedUrl ?? null,
     oidc: normalizeOidc(state.oidc),
     trustedProxies: parseTrustedProxies(state.trustedProxies),
+    apiTokens: normalizeApiTokens(state.apiTokens),
   };
   // 0600: the file holds secrets (SMB passwords, OIDC client secret). Without an
   // explicit mode the atomic temp file lands at the umask default (usually 0644),
   // silently widening the config back to world-readable on every save.
   await writeJsonAtomic(CONFIG_PATH, toWrite, { mode: 0o600 });
+}
+
+/**
+ * API tokens as stored (hashes included). Server-side only — the auth hook
+ * verifies bearer tokens against these; the UI lists them via lib/apiTokens.js
+ * which strips the hashes. Never part of getSettings().
+ */
+export async function getRawApiTokens() {
+  const fromFile = await readSettingsFile();
+  return fromFile.apiTokens || [];
 }
 
 /**

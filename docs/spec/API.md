@@ -1,6 +1,9 @@
 # API Reference
 
-All routes are prefixed with `/api/` (REST) or `/ws/` (WebSocket). All endpoints except `POST /api/auth/login` require an authenticated session — the `wisp_session` cookie set by login. State-changing methods (`POST` / `PUT` / `PATCH` / `DELETE`) additionally require the `X-CSRF-Token` header to match the (non-HttpOnly) `wisp_csrf` cookie. Send `credentials: 'include'` on fetch requests so the browser carries the cookies cross-port in dev.
+All routes are prefixed with `/api/` (REST) or `/ws/` (WebSocket). All endpoints except `POST /api/auth/login` require authentication, by one of two means:
+
+- **Session cookie** (the browser/SPA path) — the `wisp_session` cookie set by login. State-changing methods (`POST` / `PUT` / `PATCH` / `DELETE`) additionally require the `X-CSRF-Token` header to match the (non-HttpOnly) `wisp_csrf` cookie. Send `credentials: 'include'` on fetch requests so the browser carries the cookies cross-port in dev.
+- **Bearer API token** (the non-interactive path) — `Authorization: Bearer wisp_…` on `/api` routes only. No CSRF header needed. `read`-scoped tokens may only `GET`/`HEAD` (403 otherwise); `admin` tokens may use all methods. Tokens are rejected on `/ws/*` and on every `/api/auth/*` route. See [AUTH.md](AUTH.md) § API tokens.
 
 All error responses return `{ error: string, detail: string }`. See [ERROR-HANDLING.md](ERROR-HANDLING.md) for details.
 
@@ -31,6 +34,25 @@ Change the application password. On success, re-issues fresh `wisp_session` and 
 - **204:** No content + new `Set-Cookie` lines for both cookies
 - **401:** `{ error, detail }` — current password incorrect
 - **500:** `{ error, detail }` — failed to write new password
+
+### API tokens
+
+Scoped bearer tokens for non-interactive clients (coding agents, scripts). All three routes are **session-only** — the auth hook rejects bearer authentication on `/api/auth/*`, so a token can never list, mint, or revoke tokens. Tokens are stored as SHA-256 hashes in `wisp-config.json` (`apiTokens[]`, see [CONFIGURATION.md](CONFIGURATION.md)); the plaintext is returned exactly once at creation. Changing the application password does **not** revoke API tokens — revoke them explicitly.
+
+#### GET /api/auth/tokens
+
+- **200:** `[{ id, label, scope: "read" | "admin", createdAt }]` (never includes the hash or plaintext)
+
+#### POST /api/auth/tokens
+
+- **Body:** `{ label: string (1–64), scope: "read" | "admin" }`
+- **201:** `{ id, label, scope, createdAt, token }` — `token` (`wisp_<scope>_<random>`) is shown only in this response
+- **422:** `{ error, detail }` — `TOKEN_INVALID` (bad label/scope)
+
+#### DELETE /api/auth/tokens/:id
+
+- **204:** No content — clients using the token get 401 immediately
+- **404:** `{ error, detail }` — `TOKEN_NOT_FOUND`
 
 ### OIDC / SSO login
 
@@ -213,7 +235,7 @@ List all USB devices on the host (snapshot from sysfs; same data as the initial 
 
 ### GET /api/host/usb/stream
 
-Server-Sent Events stream of the host USB device list. Requires authentication (JWT in `Authorization: Bearer` or `?token=` query).
+Server-Sent Events stream of the host USB device list. Requires authentication (session cookie, or a bearer API token).
 
 - Sends an immediate `data:` line with a JSON array of devices (same shape as `GET /api/host/usb`).
 - Sends another `data:` line whenever the set of devices changes (hotplug), after debouncing.
@@ -243,7 +265,7 @@ List host block devices (removable + fixed) with mount state. Snapshot from `lsb
 
 ### GET /api/host/disks/stream
 
-Server-Sent Events stream of the host block-device list. Requires authentication (JWT in `Authorization: Bearer` or `?token=` query).
+Server-Sent Events stream of the host block-device list. Requires authentication (session cookie, or a bearer API token).
 
 - Sends an immediate `data:` line with a JSON array of devices (same shape as `GET /api/host/disks`).
 - Sends another `data:` line whenever the diskMonitor detects a change (insertion / removal / partition rescan).
@@ -1235,10 +1257,10 @@ The workload itself isn't validated — assignments are pure metadata, so refere
 
 VNC console WebSocket proxy. Bridges the browser's noVNC client to QEMU's VNC server on localhost.
 
-- **Auth:** `?token=<jwt>` query parameter (WebSocket handshake cannot carry Authorization header)
+- **Auth:** `wisp_session` cookie on the upgrade handshake (sent automatically same-origin); bearer API tokens are rejected on `/ws/*`. `Origin` allow-list enforced.
 - **Protocol:** Binary frames — bidirectional TCP-to-WebSocket bridge
 - **Connection flow:**
-  1. Verify JWT from query parameter
+  1. Global auth hook validates the session cookie before the upgrade completes
   2. Validate VM name
   3. Read VNC port from domain XML
   4. Open TCP connection to `127.0.0.1:<port>`
@@ -1252,13 +1274,13 @@ VNC console WebSocket proxy. Bridges the browser's noVNC client to QEMU's VNC se
 
 Interactive shell in a **running** container. Uses containerd `Tasks.Exec` with a PTY (`/bin/sh`); I/O is bridged over WebSocket.
 
-- **Auth:** `?token=<jwt>` query parameter (same as VNC console)
+- **Auth:** `wisp_session` cookie on the upgrade handshake (same as VNC console); bearer API tokens are rejected on `/ws/*`
 - **Query:** `cols` and `rows` (optional, defaults 80×24) — initial PTY size; client may send further resize messages after connect
 - **Protocol:**
   - **Binary frames** — terminal input (client → server) and output (server → client)
   - **Text frames** — JSON control only: `{ "type": "resize", "cols": number, "rows": number }` (client → server)
 - **Connection flow:**
-  1. Verify JWT from query parameter
+  1. Global auth hook validates the session cookie before the upgrade completes
   2. Validate container name
   3. Ensure the container task is running; create a unique exec session with named pipes + `Tasks.Exec` / `Tasks.Start`
   4. Bridge WebSocket ↔ FIFO streams; forward `resize` to `Tasks.ResizePty`

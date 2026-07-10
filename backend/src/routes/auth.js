@@ -6,6 +6,9 @@ import { closeAllSSE } from '../lib/sse.js';
 import { closeAllWebSockets } from '../lib/wsTracking.js';
 import { getRawOidcConfig } from '../lib/settings.js';
 import { beginLogin, completeLogin } from '../lib/oidc.js';
+import { listApiTokens, createApiToken, revokeApiToken, API_TOKEN_SCOPES } from '../lib/apiTokens.js';
+import { isAuthRateLimited, recordFailedAuthAttempt, AUTH_RATE_WINDOW_SECONDS } from '../lib/loginRateLimit.js';
+import { handleRouteError } from '../lib/routeErrors.js';
 
 const SESSION_COOKIE = 'wisp_session';
 const CSRF_COOKIE = 'wisp_csrf';
@@ -45,42 +48,6 @@ function redirect(reply, location) {
   reply.code(302).header('Location', location).send();
 }
 
-const LOGIN_RATE_WINDOW_MS = 60 * 1000;
-const LOGIN_RATE_MAX_ATTEMPTS = 5;
-const LOGIN_ATTEMPTS_MAX_ENTRIES = 10_000;
-const LOGIN_SWEEP_INTERVAL_MS = 60 * 1000;
-const loginAttempts = new Map();
-
-// Periodic sweep so the map can't grow unbounded (one entry per failing IP).
-// `unref()` so the sweep timer doesn't hold the process open during shutdown.
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, entry] of loginAttempts) {
-    if (now > entry.resetAt) loginAttempts.delete(ip);
-  }
-}, LOGIN_SWEEP_INTERVAL_MS).unref();
-
-function isLoginRateLimited(ip) {
-  const now = Date.now();
-  const entry = loginAttempts.get(ip);
-  if (!entry || now > entry.resetAt) return false;
-  return entry.count >= LOGIN_RATE_MAX_ATTEMPTS;
-}
-
-function recordFailedLogin(ip) {
-  const now = Date.now();
-  let entry = loginAttempts.get(ip);
-  if (!entry || now > entry.resetAt) {
-    // Hard cap on map size in case the sweep falls behind a flood of distinct
-    // IPs. Returning early means we just stop counting failures for new IPs
-    // until the window rolls — acceptable trade-off vs. unbounded memory.
-    if (loginAttempts.size >= LOGIN_ATTEMPTS_MAX_ENTRIES) return;
-    entry = { count: 0, resetAt: now + LOGIN_RATE_WINDOW_MS };
-    loginAttempts.set(ip, entry);
-  }
-  entry.count += 1;
-}
-
 export default async function authRoutes(fastify) {
   fastify.post('/login', {
     schema: {
@@ -103,10 +70,10 @@ export default async function authRoutes(fastify) {
     },
     handler: async (request, reply) => {
       const ip = request.ip || 'unknown';
-      if (isLoginRateLimited(ip)) {
+      if (isAuthRateLimited(ip)) {
         reply.code(429).send({
           error: 'Too many login attempts',
-          detail: `Try again after ${Math.ceil(LOGIN_RATE_WINDOW_MS / 1000)} seconds`,
+          detail: `Try again after ${AUTH_RATE_WINDOW_SECONDS} seconds`,
         });
         return;
       }
@@ -114,7 +81,7 @@ export default async function authRoutes(fastify) {
       const { password } = request.body;
 
       if (!verifyPassword(password)) {
-        recordFailedLogin(ip);
+        recordFailedAuthAttempt(ip);
         reply.code(401).send({ error: 'Invalid password', detail: 'The provided password is incorrect' });
         return;
       }
@@ -187,6 +154,81 @@ export default async function authRoutes(fastify) {
           error: 'Failed to update password',
           detail: err.message,
         });
+      }
+    },
+  });
+
+  // --- API tokens ------------------------------------------------------------
+  // Session-only by construction: the auth hook rejects bearer auth on every
+  // /api/auth route, so a token can never list, mint, or revoke tokens.
+
+  const tokenResponseProps = {
+    id: { type: 'string' },
+    label: { type: 'string' },
+    scope: { type: 'string', enum: API_TOKEN_SCOPES },
+    createdAt: { type: 'string' },
+  };
+
+  fastify.get('/tokens', {
+    schema: {
+      response: {
+        200: {
+          type: 'array',
+          items: { type: 'object', properties: tokenResponseProps },
+        },
+      },
+    },
+    handler: async () => listApiTokens(),
+  });
+
+  fastify.post('/tokens', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['label', 'scope'],
+        properties: {
+          label: { type: 'string', minLength: 1, maxLength: 64 },
+          scope: { type: 'string', enum: API_TOKEN_SCOPES },
+        },
+        additionalProperties: false,
+      },
+      response: {
+        201: {
+          type: 'object',
+          properties: {
+            ...tokenResponseProps,
+            // Plaintext, returned exactly once — only the hash is stored.
+            token: { type: 'string' },
+          },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      try {
+        const created = await createApiToken(request.body.label, request.body.scope);
+        reply.code(201);
+        return created;
+      } catch (err) {
+        handleRouteError(err, reply, request);
+      }
+    },
+  });
+
+  fastify.delete('/tokens/:id', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: { id: { type: 'string', minLength: 1 } },
+      },
+      response: { 204: { type: 'null' } },
+    },
+    handler: async (request, reply) => {
+      try {
+        await revokeApiToken(request.params.id);
+        reply.code(204).send();
+      } catch (err) {
+        handleRouteError(err, reply, request);
       }
     },
   });

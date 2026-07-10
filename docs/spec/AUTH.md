@@ -78,7 +78,9 @@ These routes are public (no authentication required) — they all run before a s
 
 ### Token extraction
 
-The auth hook extracts the JWT from the `wisp_session` cookie. There is **no** `Authorization: Bearer …` header path and **no** `?token=…` query string fallback — both were removed when sessions moved to cookies. The browser sends the cookie automatically on every same-origin request (HTTP, SSE via fetch, WebSocket upgrade, link clicks for the run-log download), so no custom client code is needed to forward it.
+For browser sessions, the auth hook extracts the JWT from the `wisp_session` cookie. There is **no** bearer or `?token=…` path for the session JWT — the browser sends the cookie automatically on every same-origin request (HTTP, SSE via fetch, WebSocket upgrade, link clicks for the run-log download), so no custom client code is needed to forward it.
+
+When a request carries an `Authorization: Bearer …` header instead, the hook takes the **API token** path (see § API tokens below) and never falls through to the cookie flow.
 
 ### Rejection
 
@@ -107,6 +109,35 @@ The frontend fetch wrapper sends `credentials: 'include'` on every request, read
 
 **Password change closes live connections.** `POST /api/auth/change-password` writes the new hash, calls `closeAllSSE()` + `closeAllWebSockets('password changed')`, then re-issues a fresh `wisp_session` and `wisp_csrf` against the new secret so the user who just changed their password isn't immediately bounced. Pre-rotation tokens can no longer keep streaming on connections that were authed before the secret changed.
 
+## API tokens
+
+Scoped bearer tokens let non-interactive clients (coding agents, scripts, future MCP clients) call the REST API without the password + cookie + CSRF dance. Implementation: `backend/src/lib/apiTokens.js` (mint/verify/revoke), bearer branch in the auth hook (`backend/src/lib/auth.js`), management routes in `backend/src/routes/auth.js`, UI in **Host → App Config → API tokens**.
+
+### Format and storage
+
+- Token string: `wisp_<scope>_<base64url(32 random bytes)>`. The scope in the prefix is cosmetic; the stored record is authoritative.
+- Stored in `wisp-config.json` under `apiTokens[]` as `{ id, label, scope, tokenHash, createdAt }` — **SHA-256 hash only**, file mode `0600`, atomic writes under the settings mutex. The plaintext is returned exactly once by `POST /api/auth/tokens` and never again.
+- Verification hashes the presented token and compares against each stored hash with `timingSafeEqual`, scanning the full list regardless of match position.
+
+### Scopes
+
+| Scope | Allowed |
+|-------|---------|
+| `read` | `GET` / `HEAD` on `/api` routes only (includes SSE streams). Anything else → **403 Insufficient scope**. |
+| `admin` | All methods on `/api` routes. |
+
+### Denied surfaces (both scopes)
+
+- **`/ws/*`** — consoles stay session-only; bearer requests get 401. A leaked token can never open a VM VNC session or a container shell.
+- **`/api/auth/*`** — login, logout, change-password, and token management are interactive concerns; bearer requests get **403 Session required**. A token can never mint or revoke tokens.
+
+### Semantics
+
+- Bearer requests **skip the CSRF check** — double-submit defends against ambient cookie credentials, which bearer requests don't carry.
+- Invalid bearer attempts feed the **same per-IP rate-limit window as failed logins** (`backend/src/lib/loginRateLimit.js`), so an attacker can't double their guessing budget by alternating surfaces.
+- **Password change does not revoke API tokens** — they are independent credentials (rotating the login password must not break agents). Revoke tokens explicitly from the UI or `DELETE /api/auth/tokens/:id`; revocation takes effect on the next request.
+- `request.user` for token-authed requests is `{ via: 'token', tokenId, label, scope }`.
+
 ## WebSocket Authentication
 
 WebSocket connections (VNC + container console) carry the same `wisp_session` cookie that authenticates HTTP requests. The browser sends cookies on the upgrade handshake automatically for same-origin URLs (Wisp's prod deployment serves the frontend and backend from the same origin; dev uses Vite's WS proxy so it's still same-origin from the browser's view).
@@ -115,7 +146,7 @@ The global `onRequest` auth hook validates the cookie before the WebSocket upgra
 
 ## Login Rate Limiting
 
-Failed login attempts are tracked per source IP (in-memory `Map`). The window is **60 s** with a maximum of **5 failed attempts per IP**; further attempts in the same window return **429**. The map is swept every 60 s for expired entries and capped at 10 000 distinct IPs to bound memory under flood conditions.
+Failed authentication attempts — wrong passwords on `POST /api/auth/login` **and** invalid bearer API tokens — are tracked per source IP in a shared in-memory `Map` (`backend/src/lib/loginRateLimit.js`). The window is **60 s** with a maximum of **5 failed attempts per IP**; further attempts in the same window return **429**. The map is swept every 60 s for expired entries and capped at 10 000 distinct IPs to bound memory under flood conditions.
 
 The IP used as the map key is **`request.ip`**. Backend Fastify is configured with `trustProxy: ['127.0.0.1', '::1', ...trustedProxies]` — loopback is always trusted, plus any entries from the `trustedProxies` config field. In production the backend serves the SPA itself and browsers connect to it directly, so with no proxy `request.ip` is the real peer address; the loopback allow-list covers an *optional* TLS-terminating reverse proxy (Caddy/nginx) running on the **same host** that can pass `X-Forwarded-For` / `X-Forwarded-Proto` so cookies pick the right `Secure` flag. When the proxy runs on a **different host/container**, add its IP or subnet to `trustedProxies` in `wisp-config.json` (read at boot; see [CONFIGURATION.md](CONFIGURATION.md) § Reverse proxy / HTTPS). Trust is intentionally narrow: only headers from trusted sources are honored, so an attacker connecting directly to the backend port over the LAN cannot forge `X-Forwarded-For` to bypass the rate limit — never set `trustProxy: true`.
 
@@ -160,5 +191,6 @@ The login page auto-redirects to the provider when SSO is enabled **and** no `?s
 - **No token on the URL** — the JWT lives in an `HttpOnly` cookie, so it never appears in `Authorization`, `?token=`, image tags, link previews, or browser history.
 - **`HttpOnly + Secure + SameSite=Lax`** session cookie + double-submit `X-CSRF-Token` — both layers must be defeated for cross-site abuse to succeed.
 - **WS Origin allow-list** since CORS does not apply to WebSocket — cross-origin pages with a stolen cookie still get `close 1008`.
-- **Single password change invalidates all tokens** since the signing secret changes; live SSE/WS are explicitly closed and the user's session is re-issued.
+- **Single password change invalidates all sessions** since the signing secret changes; live SSE/WS are explicitly closed and the user's session is re-issued. API tokens survive by design and must be revoked explicitly.
+- **API tokens** are hashed at rest (SHA-256 in a `0600` file), shown once, scoped (`read` is method-gated before any handler runs), revocable, barred from consoles and auth routes, and rate-limited alongside logins.
 - **OIDC** uses authorization-code flow with **PKCE** and a confidential client secret; `state` (one-time, CSRF/replay defence) and `nonce` (binds the ID token to the login) are enforced, and the ID token's **signature is verified against the provider JWKS** — a token from another client or a tampered token is rejected. The client secret is stored `0600` and never leaves the server.

@@ -4,6 +4,8 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAppError } from './routeErrors.js';
 import { parseCookieHeader } from './cookies.js';
+import { verifyApiToken } from './apiTokens.js';
+import { isAuthRateLimited, recordFailedAuthAttempt, AUTH_RATE_WINDOW_SECONDS } from './loginRateLimit.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PASSWORD_FILE = resolve(__dirname, '../../../config/wisp-password');
@@ -149,6 +151,7 @@ const SESSION_COOKIE = 'wisp_session';
 const CSRF_COOKIE = 'wisp_csrf';
 const CSRF_HEADER = 'x-csrf-token';
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const READ_ONLY_METHODS = new Set(['GET', 'HEAD']);
 
 function timingSafeEqualString(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
@@ -156,6 +159,47 @@ function timingSafeEqualString(a, b) {
   const bb = Buffer.from(b);
   if (ab.length !== bb.length) return false;
   return timingSafeEqual(ab, bb);
+}
+
+/**
+ * Bearer API tokens authenticate non-interactive clients (agents, scripts) on
+ * the REST API only. Consoles (/ws) and everything under /api/auth stay
+ * session-only, so a leaked token can never open a shell, change the password,
+ * or mint more tokens. Bearer requests skip the CSRF check on purpose:
+ * double-submit defends against ambient cookie credentials, which a bearer
+ * request doesn't carry.
+ */
+async function handleBearerAuth(request, reply, token, routeUrl) {
+  if (request.url.startsWith('/ws')) {
+    reply.code(401).send({ error: 'Authentication failed', detail: 'API tokens cannot open console connections' });
+    return;
+  }
+  if (request.url.startsWith('/api/auth') || (routeUrl && routeUrl.startsWith('/api/auth'))) {
+    reply.code(403).send({ error: 'Session required', detail: 'API tokens cannot access authentication routes' });
+    return;
+  }
+  const ip = request.ip || 'unknown';
+  if (isAuthRateLimited(ip)) {
+    reply.code(429).send({
+      error: 'Too many authentication attempts',
+      detail: `Try again after ${AUTH_RATE_WINDOW_SECONDS} seconds`,
+    });
+    return;
+  }
+  const info = await verifyApiToken(token);
+  if (!info) {
+    recordFailedAuthAttempt(ip);
+    reply.code(401).send({ error: 'Authentication failed', detail: 'Invalid API token' });
+    return;
+  }
+  if (info.scope === 'read' && !READ_ONLY_METHODS.has(request.method)) {
+    reply.code(403).send({
+      error: 'Insufficient scope',
+      detail: 'This token is read-only; state-changing requests require an admin-scoped token',
+    });
+    return;
+  }
+  request.user = { via: 'token', tokenId: info.id, label: info.label, scope: info.scope };
 }
 
 export function createAuthHook() {
@@ -166,6 +210,12 @@ export function createAuthHook() {
 
     const routeUrl = request.routeOptions?.url;
     if (routeUrl && PUBLIC_ROUTES.has(routeUrl)) return;
+
+    const authHeader = request.headers?.authorization;
+    if (typeof authHeader === 'string' && authHeader.slice(0, 7).toLowerCase() === 'bearer ') {
+      await handleBearerAuth(request, reply, authHeader.slice(7).trim(), routeUrl);
+      return;
+    }
 
     const cookies = parseCookieHeader(request.headers?.cookie);
     const token = cookies[SESSION_COOKIE] || null;

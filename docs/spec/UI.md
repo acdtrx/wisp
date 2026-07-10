@@ -352,7 +352,7 @@ These are tabs inside the Host panel (not a separate `/settings` page):
 
 Section-based layout:
 
-1. **App Config tab** — General (server name, VM storage path, image library path, refresh interval). Save button. Password change (current + new, Change button).
+1. **App Config tab** — General (server name, VM storage path, image library path, refresh interval). Save button. Password change (current + new, Change button). Single sign-on card. API tokens card.
 2. **Host Mgmt tab** — **Network Storage** (SMB/CIFS mounts in a **table** with shared DataTable chrome; header **`Plus`+server** adds a row; icon-only row actions; **Pencil** enters inline edit, then save/cancel icons; combined **mount/unmount** control with **green background when mounted**; **Check** (shield) turns **green after success** and **red after failure** (failure text on hover), not inline under the row; delete as icon; no separate “mounted” text column); **Backup** (one row: local path input and network-mount select aligned to the same control height; optional `(none)` or one configured mount). **Software tab** renders **Wisp Update** and **OS Update** side-by-side in a 2-column grid (1 col below `lg`), then the **Image Library** stacked below.
 3. **Overview tab** — Software section shows Wisp, Node.js, libvirt, QEMU, OS info (see Host Panel).
 
@@ -406,6 +406,7 @@ Same as the former Backups panel: table of backups with restore/delete; descript
 - **General** — Server display name, VM storage path, image library path, LAN discovery, advertised URL. Save button when dirty.
 - **Password** — Change application password (current + new).
 - **Single sign-on (SSO)** — Its own card (`OidcSettings.jsx`): Enable toggle, Issuer URL, Client ID, Client secret (write-only; placeholder shows "saved — leave blank to keep" once one is stored), and a read-only **Redirect URI** field (derived from the current origin) with a copy button to register in the provider. Save validates the config; enabling requires issuer + client ID + a secret on file (422 `INVALID_OIDC` otherwise). See [AUTH.md](AUTH.md) § OIDC.
+- **API tokens** — Its own card (`ApiTokensSettings.jsx`, `KeyRound` **`titleIcon`**): table of tokens (Label, Scope badge — `admin` warning-tinted / `read-only` neutral —, Created, Actions) with shared DataTable chrome. Header **`Plus`+`KeyRound`** opens an **inline create row** (label input, scope select, confirm/cancel icons — same pattern as Bridge create). After create, a one-time accent-soft strip shows the plaintext token with a copy button and a dismiss `X` ("copy it now, it won't be shown again"). Row **Revoke** (`Trash2`) opens a `ConfirmDialog`. Row-scoped API (`GET/POST/DELETE /api/auth/tokens`). See [AUTH.md](AUTH.md) § API tokens.
 
 ---
 

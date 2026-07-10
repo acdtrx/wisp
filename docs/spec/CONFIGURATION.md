@@ -52,6 +52,7 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 | `advertisedUrl` | `string \| null` | `null` | URL other Wisp instances use to open this one; must be `http`/`https`. `null` → announce `http://<hostname>.local:<port>`. |
 | `oidc` | `object` | `{ enabled: false, issuer: "", clientId: "", clientSecret: "" }` | Optional OpenID Connect SSO (see [AUTH.md](AUTH.md) § OIDC). `enabled` only holds when `issuer` (valid `http`/`https`), `clientId`, and `clientSecret` are all set. **`clientSecret` is a secret** — masked in the API as `hasClientSecret` (boolean), never returned. |
 | `trustedProxies` | `string[]` | `[]` | Extra reverse-proxy sources whose `X-Forwarded-Proto` / `X-Forwarded-For` Wisp honors (in addition to the always-trusted loopback). See **Reverse proxy / HTTPS** below. Not editable from the UI. |
+| `apiTokens` | `array` | `[]` | Bearer API tokens for non-interactive clients: `{ id, label, scope: "read" \| "admin", tokenHash, createdAt }`. **SHA-256 hashes only — the plaintext is never stored.** Managed exclusively via `GET/POST/DELETE /api/auth/tokens` (Host → App Config → API tokens), never via `PATCH /api/settings`, and never returned by `GET /api/settings`. See [AUTH.md](AUTH.md) § API tokens. |
 
 ### Section object (`sections[]`)
 
@@ -95,7 +96,7 @@ Config file fields override hard-coded defaults when valid. If the file is missi
 
 ### Config file permissions
 
-The file may hold secrets (SMB passwords, the OIDC `clientSecret`), so it is kept **`0600`**: `permissions.sh` sets it at install, and every Settings write re-stages the atomic temp file with mode `0600` so a save can't silently widen it back to the umask default.
+The file may hold secrets (SMB passwords, the OIDC `clientSecret`, API token hashes), so it is kept **`0600`**: `permissions.sh` sets it at install, and every Settings write re-stages the atomic temp file with mode `0600` so a save can't silently widen it back to the umask default.
 
 ### Reverse proxy / HTTPS (`trustedProxies`)
 
