@@ -1,5 +1,6 @@
 import { overviewTools } from './overviewTools.js';
 import { containerTools } from './containerTools.js';
+import { containerAdminTools } from './containerAdminTools.js';
 import { vmTools } from './vmTools.js';
 import { hostTools } from './hostTools.js';
 
@@ -8,7 +9,7 @@ import { hostTools } from './hostTools.js';
  * `scope` is the minimum token scope required ('read' | 'admin'); an admin
  * token can call everything.
  */
-export const allTools = [...overviewTools, ...containerTools, ...vmTools, ...hostTools];
+export const allTools = [...overviewTools, ...containerTools, ...containerAdminTools, ...vmTools, ...hostTools];
 
 {
   const names = new Set();

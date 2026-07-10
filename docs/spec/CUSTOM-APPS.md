@@ -48,6 +48,7 @@ Each module (`backend/src/lib/containerApps/<app>.js`) exports:
 | `maskSecrets` | `(appConfig) → appConfig` | Redact secrets for API responses |
 | `getReloadCommand` | `() → string[] \| null` | Optional. Command to live-reload config inside the running container (e.g. `['caddy', 'reload', ...]`). Return `null` if the app doesn't support live reload. |
 | `requiresRestartForChange` | `(oldAppConfig, newAppConfig) → boolean` | Optional. Returns `true` when the diff includes fields that the app's reload can't apply live (e.g. tiny-samba's `server.workgroup`). When true, the backend sets `pendingRestart: true` and reports `requiresRestart: true` even after a successful reload. |
+| `agentWritableAppConfigFields` | `string[]` | Optional. Top-level appConfig keys the MCP `update_app_config` tool may change (see [MCP.md](MCP.md)). Absent or empty = the app is not agent-configurable. Never list secrets, certificate identity, or auth settings — the point of the filter is that an agent can't touch them by mistake (caddy lists only `hosts`). The UI/REST surface is unaffected. |
 
 ### generateDerivedConfig return shape
 

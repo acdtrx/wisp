@@ -1,7 +1,9 @@
 /**
  * App registry — maps app IDs to their backend modules.
  * Each module exports: getDefaultAppConfig, validateAppConfig, generateDerivedConfig, maskSecrets,
- * getReloadCommand, and optionally requiresRestartForChange.
+ * getReloadCommand, and optionally requiresRestartForChange and
+ * agentWritableAppConfigFields (top-level appConfig keys the MCP update_app_config
+ * tool may change; absent/empty = the app is not agent-configurable).
  *
  * Registry-level flags:
  *   - `requiresRoot: true` flips on container.runAsRoot at create time. Use for apps that need

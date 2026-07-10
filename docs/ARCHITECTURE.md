@@ -211,7 +211,7 @@ App identity persists in `container.json.metadata.app` (string id) + `container.
 | `apiTokens.js` | Scoped bearer API tokens: mint (`wisp_<scope>_…`, plaintext returned once), verify (SHA-256 + `timingSafeEqual`), revoke, list. Persisted in `wisp-config.json` `apiTokens[]` via the settings mutex. |
 | `loginRateLimit.js` | Shared per-IP rate limiting for failed logins **and** invalid bearer tokens (one 60 s / 5-attempt window). |
 | `hostStatsSnapshot.js` | `buildHostStatsPayload()` — the `/api/stats` SSE payload builder, shared with the MCP `get_host_stats` tool. |
-| `mcp/` | MCP server (app-glue): `mcpServer.js` (stateless JSON-RPC dispatch: initialize/ping/tools) + `tools/` (read-only tool catalogue calling the same facades as routes, secrets masked). See `docs/spec/MCP.md`. |
+| `mcp/` | MCP server (app-glue): `mcpServer.js` (stateless JSON-RPC dispatch: initialize/ping/tools) + `tools/` (tool catalogue calling the same facades as routes, secrets masked — read tools plus admin-scoped mutating tools that expose a deliberate subset of the API; app config writes filtered by each app module's `agentWritableAppConfigFields`). See `docs/spec/MCP.md`. |
 | `atomicJson.js` | `writeJsonAtomic(path, obj)`: stage to `*.tmp.<pid>.<ts>.<rand>`, fsync, rename(2). Used for `wisp-config.json`, `container.json`, `oci-image-meta.json`. |
 | `bootCleanup.js` | `cleanPartialJsonArtifacts(log)` runs at boot, removes orphan atomic-write temp files left by a crash mid-rename. |
 | `config.js` | Sync reader for `wisp-config.json` with defaults (including `containersPath`) |

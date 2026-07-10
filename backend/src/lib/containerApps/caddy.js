@@ -217,4 +217,8 @@ export const caddyAppModule = {
   generateDerivedConfig,
   maskSecrets,
   getReloadCommand,
+  // Only the reverse-proxy host rows are agent-writable (MCP update_app_config).
+  // domain and email are the certificate identity and cloudflareApiToken is a
+  // secret — all three stay human-only so an agent can't break TLS by mistake.
+  agentWritableAppConfigFields: ['hosts'],
 };

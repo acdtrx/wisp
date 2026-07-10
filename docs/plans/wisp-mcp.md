@@ -13,17 +13,18 @@ Make a Wisp deployment inspectable — and eventually drivable — by coding age
 - **No multi-user accounts or roles.** Tokens are credentials for the single user; `scope` is capability, not identity.
 - **No third-party MCP SDK.** Hand-rolled minimal streamable-HTTP server (tools-only, stateless) — consistent with the no-JWT-lib / no-OIDC-lib precedent and the minimal-dependencies rule. If we later need resources/prompts/sessions, revisit.
 - **No console/shell exposure to tokens or MCP.** The WS routes (VNC, container exec) stay cookie-session only. No MCP tool ever returns a shell.
-- **No app-template-specific tools.** More than one instance of an app can be deployed (e.g. several Caddy containers), so no tool may assume a singleton or bake in per-app logic. App containers are inspected generically — `get_container` returns `metadata.app` plus the masked `appConfig`. Dedicated app tools (exposure maps, Caddy host editing, appConfig patching) are a later decision.
+- **No app-template-specific tools.** More than one instance of an app can be deployed (e.g. several Caddy containers), so no tool may assume a singleton or bake in per-app logic. App containers are inspected generically — `get_container` returns `metadata.app` plus the masked `appConfig` — and written generically through `update_app_config`, whose per-app `agentWritableAppConfigFields` filter (declared in the app modules) decides what agents may change.
 - **No webhooks, no OpenAPI generation.** MCP tool schemas are the machine-readable surface.
 - **No VM mutations via MCP** in phase 2 (containers + Caddy only). No `delete_container` tool — destructive deletes stay in the UI.
 - **No changes to the existing cookie/CSRF session model** for the SPA.
 
 ## Status
 
-- **Current step:** Step 3 — admin tools (deploy / lifecycle), when the read layer has proven itself in use.
+- **Current step:** None — campaign complete (all three steps shipped).
 - **Completed:**
-  - Step 1 (2026-07-10) — scoped API tokens (lib/apiTokens.js, bearer branch in the auth hook, shared lib/loginRateLimit.js, /api/auth/tokens routes, ApiTokensSettings UI card, docs).
-  - Step 2 (2026-07-10) — MCP endpoint (lib/mcp/mcpServer.js + routes/mcp.js, bearer-only) with the 7 read tools; extracted `maskContainerConfigSecrets` (containerApps) and `buildHostStatsPayload` (lib/hostStatsSnapshot.js) so routes and tools share one implementation; docs/spec/MCP.md.
+  - Step 1 (2026-07-10) — scoped API tokens (lib/apiTokens.js, bearer branch in the auth hook, shared lib/loginRateLimit.js, /api/auth/tokens routes, ApiTokensSettings UI card, docs). Released in v1.8.0.
+  - Step 2 (2026-07-10) — MCP endpoint (lib/mcp/mcpServer.js + routes/mcp.js, bearer-only) with the 7 read tools; extracted `maskContainerConfigSecrets` (containerApps) and `buildHostStatsPayload` (lib/hostStatsSnapshot.js) so routes and tools share one implementation; docs/spec/MCP.md. Released in v1.8.0; verified live against the production host.
+  - Step 3 (2026-07-10) — 7 admin-scoped tools (lib/mcp/tools/containerAdminTools.js): deploy_container, update_container_image, start/stop/restart_container, update_app_config (per-app `agentWritableAppConfigFields` filter, declared in the app modules), check_image_updates.
 
 ## Steps overview
 
@@ -113,9 +114,10 @@ New `docs/spec/MCP.md` (protocol subset, auth, tool catalogue with schemas, clie
 | `deploy_container` | `{ name, image, env?, autostart?, restartPolicy?, memoryLimitMiB?, cpuLimit? }` | Create a new generic container (same path as `POST /api/containers`), then start it. Rejects if the name exists. |
 | `update_container_image` | `{ name, image? }` | Point an existing container at a new ref (or re-pull the current tag), restart — rootfs re-prepared picks up the new digest. |
 | `start_container` / `stop_container` / `restart_container` | `{ name }` | Lifecycle, same lib calls as the routes. |
+| `update_app_config` | `{ name, appConfig }` | Patch an app container's appConfig **filtered to that app module's `agentWritableAppConfigFields`** (caddy: `hosts` only; zot/jellyfin/tiny-samba: none). Blocked fields are rejected by name; protected fields (secrets, certificate identity, auth) are carried forward from the stored config, structurally out of the agent's reach. Standard `applyAppConfig` path (validate → derive → reload/pendingRestart). |
 | `check_image_updates` | — | Trigger the digest check, return the flags. |
 
-Notes: no VM mutations, no deletes, no mount/file editing, and no appConfig writes in this phase (per the no-app-specific-tools non-goal — app configuration changes happen in the UI). Container create via MCP is intentionally a **simple** shape (image + env + limits); anything richer (app templates, storage mounts) is done in the UI. Errors surface as `{ error, detail }` tool errors, same mapping as routes.
+Notes: no VM mutations, no deletes, no mount/file editing. App configuration is writable only through the per-app field filter above — no generic appConfig access (user decision 2026-07-10: "the tools we add for containers filter those settings", e.g. an agent may add a Caddy host row but can never set the Cloudflare token). Container create via MCP is intentionally a **simple** shape (image + env/secretEnv + limits + flags); anything richer (app templates, storage mounts, devices, runAsRoot) is done in the UI. `secretEnv` values are stored write-only. Errors surface as `{ error, detail }` tool errors, same mapping as routes.
 
 ---
 
