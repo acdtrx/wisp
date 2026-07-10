@@ -70,6 +70,12 @@ When you change behavior, APIs, UI, or configuration, update the corresponding d
 | Project rules / coding standards | `docs/CODING-RULES.md`, `docs/WISP-RULES.md` |
 | Discovered-but-deferred bugs / improvements | `docs/BACKLOG.md` (single file; graduate to `docs/plans/<topic>.md` when an entry grows) |
 
+## Kora Memory Sync
+
+Wisp's cross-project description lives in kora (the user's persistent memory, reachable via the kora MCP tools). Two documents matter: **"Project: wisp — opinionated single-user KVM/QEMU + containerd manager"** and **"Deploying projects to the homelab (Wisp + zot registry)"**. Other agent sessions — in any repo — rely on them to understand the user's deployment target (Wisp at `wisp.anapana.trixbits.ro`, zot OCI registry at `zotty.anapana.trixbits.ro`).
+
+When a change alters what Wisp can do or how workloads deploy onto it — capabilities, app templates, container/networking model, API or auth surface, agent access (API tokens/MCP), deployment flow — update those kora documents in the same session (`search_memory` for "wisp", then `update_document`). Treat this like the Docs and Spec Sync rule, but for cross-project memory.
+
 ## Pre-Implementation Analysis
 
 Before writing or modifying any code (skip only for trivial typo/comment-only edits):
