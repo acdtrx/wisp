@@ -10,7 +10,8 @@ export const overviewTools = [
     title: 'Deployment overview',
     description:
       'One-call map of everything on this Wisp host: wisp version, host identity, network bridges, ' +
-      'sidebar sections, every container (state, image, LAN IP, mDNS name, app template, autostart) ' +
+      'sidebar sections, every container (state, image, LAN IP while running — stopped containers ' +
+      'report lastKnownIp, a possibly-reassigned DHCP lease — mDNS name, app template, autostart) ' +
       'and every VM (state, resources, LAN IP when the guest agent reports one). Start here to ' +
       'understand the deployment; drill into a workload with get_container / get_vm.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -33,9 +34,14 @@ export const overviewTools = [
         };
         try {
           const cfg = await getContainerConfig(c.name);
+          // A stopped container's persisted address is only a DHCP lease
+          // memory — the lease may have been reassigned to another workload
+          // by now, so never present it as a current `ip`.
+          const running = c.state === 'running';
           return {
             ...summary,
-            ip: cfg.network?.ip ?? null,
+            ip: running ? cfg.network?.ip ?? null : null,
+            ...(running ? {} : { lastKnownIp: cfg.network?.ip ?? null }),
             bridge: cfg.network?.interface ?? null,
             mdnsName: cfg.localDns ? `${c.name}.local` : null,
             app: cfg.metadata?.app ?? null,
@@ -57,12 +63,14 @@ export const overviewTools = [
             /* guest agent not running — IP unknown */
           }
         }
+        // No autostart here: listVMs() items don't carry it (only the full
+        // getVMConfig does) — use get_vm for per-VM detail.
         return {
           name: vm.name,
           state: vm.state,
           vcpus: vm.vcpus,
           memoryMiB: vm.memoryMiB,
-          autostart: vm.autostart === true,
+          osCategory: vm.osCategory ?? null,
           ip: net.ip ?? null,
           guestHostname: net.hostname ?? null,
           mdnsName: vm.localDns ? `${vm.name}.local` : null,

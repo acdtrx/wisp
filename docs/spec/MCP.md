@@ -29,7 +29,7 @@ JSON-RPC batching is rejected (`-32600`; removed from the MCP spec in 2025-06-18
 
 | Tool | Input | Returns |
 |------|-------|---------|
-| `get_deployment_overview` | — | wisp version, serverName, host identity, bridges, sections; per-container `{ name, state, image, ip, bridge, mdnsName, app, autostart, restartPolicy, updateAvailable }`; per-VM `{ name, state, vcpus, memoryMiB, autostart, ip, guestHostname, mdnsName }` |
+| `get_deployment_overview` | — | wisp version, serverName, host identity, bridges, sections; per-container `{ name, state, image, ip, bridge, mdnsName, app, autostart, restartPolicy, updateAvailable }` (`ip` only while running; stopped containers report `lastKnownIp` — a stale DHCP lease, possibly reassigned); per-VM `{ name, state, vcpus, memoryMiB, osCategory, ip, guestHostname, mdnsName }` (VM `autostart` only on `get_vm`) |
 | `get_container` | `{ name }` | Full container config + state with **all secrets masked** — including `metadata.app` and the masked `appConfig`. This is how agents read app configuration generically (e.g. a Caddy container's `appConfig.hosts[]` = the exposure map); there are deliberately no app-specific tools |
 | `get_container_logs` | `{ name, lines?, runId? }` | Tail of a run log (newest run by default; `lines` 1–1000, default 100) |
 | `list_images` | — | Images in the `wisp` containerd namespace, containers with a newer digest available, last update-check info |
