@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-10 (v1.8.5)
+
+### New Features
+- **Agent deploys over MCP** — seven admin-scoped tools on top of the read layer: deploy a container (image + env + limits; secret env values stored write-only), update a container's image, start/stop/restart, run the image update check, and edit app configuration **filtered per app** — an agent can add a Caddy reverse-proxy host row but can never touch the domain, ACME email, or Cloudflare token, and other apps stay agent-read-only. No deletes, no VM changes, no mounts or root via MCP.
+
 ## 2026-07-10 (v1.8.0)
 
 ### New Features
