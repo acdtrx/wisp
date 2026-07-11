@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Plus, Trash2, Braces, Pencil, Save, X, Loader2, Lock, LockOpen,
+  Plus, Trash2, Braces, Pencil, Save, X, Loader2, Lock, LockOpen, Dices, Copy, Check,
 } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
@@ -22,6 +22,15 @@ const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
 const MASK = '••••••••';
+
+// 32 random bytes as hex (same shape as `openssl rand -hex 32`) — hex keeps the
+// value safe for apps with naive env parsing. `getRandomValues` works in
+// non-secure (HTTP) contexts, unlike `crypto.randomUUID`.
+function generateSecretValue() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 function rowsFromEnv(env) {
   if (!env || typeof env !== 'object') return [];
@@ -115,6 +124,8 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
   const [error, setError] = useState(null);
   const [requiresRestart, setRequiresRestart] = useState(false);
   const [pendingToggle, setPendingToggle] = useState(null); // { rowId, key, toSecret }
+  const [pendingGenerate, setPendingGenerate] = useState(null); // { rowId, key, value, replacing }
+  const [genCopied, setGenCopied] = useState(false);
 
   const originalMap = useMemo(() => {
     const map = {};
@@ -215,6 +226,41 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
 
   const cancelToggleSecret = () => setPendingToggle(null);
 
+  const requestGenerate = (row) => {
+    setGenCopied(false);
+    setPendingGenerate({
+      rowId: row.id,
+      key: (row.key || '').trim() || row.initialKey || '',
+      value: generateSecretValue(),
+      replacing: row.initialIsSet || row.secretValueDirty || !!(row.value || '').trim(),
+    });
+  };
+
+  // Apply fills the row and enters edit mode; the row's Save stays the single
+  // commit affordance (nothing is persisted until the user saves the row).
+  const applyGenerate = () => {
+    if (!pendingGenerate) return;
+    const { rowId, value } = pendingGenerate;
+    setRows((prev) => prev.map((r) => (
+      r.id === rowId ? { ...r, value, secretValueDirty: true } : r
+    )));
+    setEditingId(rowId);
+    setPendingGenerate(null);
+  };
+
+  const cancelGenerate = () => setPendingGenerate(null);
+
+  const copyGenerated = async () => {
+    if (!pendingGenerate) return;
+    try {
+      await navigator.clipboard.writeText(pendingGenerate.value);
+      setGenCopied(true);
+      setTimeout(() => setGenCopied(false), 1500);
+    } catch {
+      /* clipboard blocked (insecure context) — the field is selectable anyway */
+    }
+  };
+
   const saveRow = async (row) => {
     const msg = validateRows(rows);
     if (msg) {
@@ -295,7 +341,7 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
   return (
     <SectionCard
       title="Environment Variables"
-      helpText="Hover a row to see actions. Toggle the lock to mark a value as secret — secrets are never read back, only overwritten."
+      helpText="Hover a row to see actions. Toggle the lock to mark a value as secret — secrets are never read back, only overwritten. The dice generates a random value for a secret, with a one-time copy."
       requiresRestart={requiresRestart}
       error={error}
       headerAction={headerAdd}
@@ -408,6 +454,18 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
                       >
                         {row.secret ? <Lock size={14} aria-hidden /> : <LockOpen size={14} aria-hidden />}
                       </button>
+                      {row.secret && (
+                        <button
+                          type="button"
+                          onClick={() => requestGenerate(row)}
+                          disabled={savingId === row.id || deletingId === row.id}
+                          className={iconBtn}
+                          title="Generate random value"
+                          aria-label="Generate random value"
+                        >
+                          <Dices size={14} aria-hidden />
+                        </button>
+                      )}
                       {!editing && (
                         <button
                           type="button"
@@ -488,6 +546,49 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
             value. You&apos;ll need to enter a new non-secret value before saving. Continue?
           </p>
         )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={!!pendingGenerate}
+        title="Generate new secret?"
+        confirmLabel="Apply"
+        variant={pendingGenerate?.replacing ? 'danger' : 'primary'}
+        onConfirm={applyGenerate}
+        onCancel={cancelGenerate}
+      >
+        {pendingGenerate?.replacing ? (
+          <p>
+            This replaces the value of <span className="font-mono text-text-primary">{pendingGenerate?.key || 'this variable'}</span> when
+            you save the row. The old value cannot be recovered — make sure nothing still depends on it.
+          </p>
+        ) : (
+          <p>
+            A random value was generated for <span className="font-mono text-text-primary">{pendingGenerate?.key || 'this variable'}</span>.
+            It will be stored when you save the row.
+          </p>
+        )}
+        <p className="mt-2">Copy it now — it won&apos;t be shown again after this dialog closes.</p>
+        <div className="mt-3">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">New secret</span>
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              type="text"
+              value={pendingGenerate?.value || ''}
+              readOnly
+              onFocus={(e) => e.target.select()}
+              className="input-field w-full font-mono text-xs text-text-secondary"
+            />
+            <button
+              type="button"
+              onClick={copyGenerated}
+              title="Copy new secret"
+              aria-label="Copy new secret"
+              className="flex h-[34px] shrink-0 items-center gap-1 rounded-md border border-surface-border bg-surface px-2.5 text-xs text-text-secondary hover:bg-surface-sidebar transition-colors duration-150"
+            >
+              {genCopied ? <Check size={14} className="text-status-running" aria-hidden /> : <Copy size={14} aria-hidden />}
+            </button>
+          </div>
+        </div>
       </ConfirmDialog>
     </SectionCard>
   );

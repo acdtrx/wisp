@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-11
+
+### New Features
+- **Generate secret env values in one click** — secret rows in a container's Environment Variables get a dice action: confirm dialog shows a random value (openssl-rand-hex-32 style) with a one-time copy, Apply fills the row, row Save rotates the secret.
+
 ## 2026-07-10 (v1.8.5)
 
 ### New Features
