@@ -25,9 +25,9 @@
   --color-accent-hover: #0b8578;
   --color-accent-soft: #dff3f0;
 
-  --color-status-running: #2e9e4f;
-  --color-status-warning: #d98a06;
-  --color-status-stopped: #d64545;
+  --color-status-running: #21813f;
+  --color-status-warning: #9c6203;
+  --color-status-stopped: #c93a3a;
   --color-status-transition: #0fa396;
   /* Soft tints — the standard for status/accent background washes.
      Use these instead of raw palette classes like bg-red-50. */
@@ -35,9 +35,11 @@
   --color-status-warning-soft: #faf0d7;
   --color-status-stopped-soft: #fbe5e5;
 
+  /* Text and status colors hold WCAG AA (≥4.5:1) against all three surfaces —
+     muted is the floor at 4.7:1 on the sidebar. Check before lightening. */
   --color-text-primary: #0e1f1c;
-  --color-text-secondary: #435d58;
-  --color-text-muted: #8fa6a1;
+  --color-text-secondary: #3a524d;
+  --color-text-muted: #56716b;
 
   --font-sans: system-ui, -apple-system, sans-serif;
   --font-display: 'Bricolage Grotesque', system-ui, sans-serif;

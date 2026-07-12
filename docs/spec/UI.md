@@ -17,16 +17,18 @@ Layout, visual system, navigation, and user-visible behavior for Wisp. **API req
 | `accent` | `#0fa396` | Primary actions, active states |
 | `accent-hover` | `#0b8578` | Hover state for accent elements |
 | `accent-soft` | `#dff3f0` | Accent background wash (selected rows, active tabs, hover tints) |
-| `status-running` | `#2e9e4f` | Running VMs, success states |
-| `status-warning` | `#d98a06` | Paused VMs, warnings, restart-required |
-| `status-stopped` | `#d64545` | Stopped VMs, errors, danger actions |
+| `status-running` | `#21813f` | Running VMs, success states |
+| `status-warning` | `#9c6203` | Paused VMs, warnings, restart-required |
+| `status-stopped` | `#c93a3a` | Stopped VMs, errors, danger actions |
 | `status-transition` | `#0fa396` | Transitioning states (starting, shutting down) |
 | `status-running-soft` | `#e2f4e6` | Success background wash |
 | `status-warning-soft` | `#faf0d7` | Warning background wash (badges, notices) |
 | `status-stopped-soft` | `#fbe5e5` | Error background wash (error banners, danger hovers) |
 | `text-primary` | `#0e1f1c` | Primary text |
-| `text-secondary` | `#435d58` | Secondary text, descriptions |
-| `text-muted` | `#8fa6a1` | Muted text, labels, placeholders |
+| `text-secondary` | `#3a524d` | Secondary text, descriptions |
+| `text-muted` | `#56716b` | Muted text, labels, placeholders |
+
+Text and solid status tokens hold WCAG AA contrast (≥4.5:1) on `surface`, `surface-sidebar`, and white cards — check contrast before lightening any of them.
 
 The `*-soft` tokens are the standard for status/accent **background washes** — do not hand-roll raw Tailwind palette classes (`bg-red-50`, `bg-green-50`, …) for tinted surfaces.
 

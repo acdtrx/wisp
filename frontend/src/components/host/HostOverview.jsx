@@ -731,7 +731,7 @@ function HostHardwareInventorySection({
               <div>{[d.model, formatBytes(d.sizeBytes)].filter(Boolean).join(' - ')}</div>
               <div className="text-xs text-text-secondary mt-0.5">{smartLine}</div>
               {warningText ? (
-                <div className="text-xs text-status-paused mt-0.5">{warningText}</div>
+                <div className="text-xs text-status-warning mt-0.5">{warningText}</div>
               ) : null}
               {tempLabel && (
                 <div className="mt-0.5 text-xs text-text-muted sm:hidden">{tempLabel}</div>
