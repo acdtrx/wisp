@@ -20,6 +20,18 @@ pointer. Keep this file scannable.
 
 ## Improvements
 
+### `text-accent` as link/action text is below AA contrast
+
+**Found:** 2026-07-12, during the text-contrast pass that darkened the text and status tokens to WCAG AA.
+
+**Symptom:** Accent-colored text (`text-accent`, ~29 uses as links/inline actions) sits at 3.1:1 on white — readable but below the 4.5:1 AA threshold for small text. White text on accent buttons has the same 3.1:1 ratio.
+
+**Root cause:** `--color-accent: #0fa396` is the brand color; it was deliberately left out of the contrast pass because darkening it to AA lands near the current hover shade (`#0b8578`) and shifts the brand feel everywhere (buttons, focus rings, active states).
+
+**Fix sketch:** Either darken the accent/hover pair together (e.g. accent ≈ `#0b8578`, hover darker still) and accept the brand shift, or introduce a separate `--color-accent-text` token used only where accent appears as small text, keeping buttons on the current accent.
+
+**Why deferred:** Brand-identity call for the user; the readability complaint that drove the pass was about muted labels, which are fixed.
+
 ### Host Mgmt add/edit is inline-row only — no mobile create/edit path
 
 **Found:** 2026-07-06, during the mobile Host Mgmt pass.
