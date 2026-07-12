@@ -1,11 +1,13 @@
 /**
  * Caddy Reverse Proxy app configuration — single SectionCard:
- * TLS fields (domain, email, Cloudflare token) on one row,
- * then a Hosts sub-header with add button, then the hosts table.
+ * TLS fields (domain, email) on one row, a Cloudflare DNS toggle that
+ * reveals the API token field, then a Hosts sub-header with add button,
+ * then the hosts table.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, Globe, Eye, EyeOff, Server } from 'lucide-react';
 import SectionCard from '../../components/shared/SectionCard.jsx';
+import Toggle from '../../components/shared/Toggle.jsx';
 import {
   DataTableScroll,
   DataTable,
@@ -27,6 +29,8 @@ function parseAppConfig(config) {
   return {
     domain: ac.domain ?? '',
     email: ac.email ?? '',
+    // Configs saved before the flag existed expressed intent via the token.
+    cloudflareDnsEnabled: ac.cloudflareDnsEnabled ?? (ac.cloudflareApiToken?.isSet ?? false),
     cloudflareApiToken: '',
     cloudflareTokenIsSet: ac.cloudflareApiToken?.isSet ?? false,
     cloudflareTokenDirty: false,
@@ -52,11 +56,12 @@ export default function CaddyAppSection({ config, onSave }) {
     setOriginal(parsed);
     setRequiresRestart(false);
     setError(null);
-  }, [config?.metadata?.appConfig?.domain, config?.metadata?.appConfig?.email, JSON.stringify(config?.metadata?.appConfig?.hosts), config?.metadata?.appConfig?.cloudflareApiToken?.isSet]);
+  }, [config?.metadata?.appConfig?.domain, config?.metadata?.appConfig?.email, JSON.stringify(config?.metadata?.appConfig?.hosts), config?.metadata?.appConfig?.cloudflareDnsEnabled, config?.metadata?.appConfig?.cloudflareApiToken?.isSet]);
 
   const isDirty = useCallback(() => {
     if (form.domain !== original.domain) return true;
     if (form.email !== original.email) return true;
+    if (form.cloudflareDnsEnabled !== original.cloudflareDnsEnabled) return true;
     if (form.cloudflareTokenDirty) return true;
     if (form.hosts.length !== original.hosts.length) return true;
     for (let i = 0; i < form.hosts.length; i++) {
@@ -98,6 +103,7 @@ export default function CaddyAppSection({ config, onSave }) {
       const appConfig = {
         domain: form.domain.trim(),
         email: form.email.trim(),
+        cloudflareDnsEnabled: form.cloudflareDnsEnabled,
         hosts: form.hosts.map((h) => ({
           subdomain: h.subdomain.trim(),
           target: h.target.trim(),
@@ -158,32 +164,52 @@ export default function CaddyAppSection({ config, onSave }) {
             />
           </div>
 
-          <div className="min-w-[160px] flex-1">
-            <label className="flex items-center gap-1.5 text-xs font-medium text-text-secondary mb-1.5">
-              Cloudflare API Token
-            </label>
-            <div className="flex items-stretch gap-2">
-              <input
-                type={showToken ? 'text' : 'password'}
-                className="input-field flex-1"
-                placeholder={form.cloudflareTokenIsSet && !form.cloudflareTokenDirty ? 'Set (leave empty to keep)' : 'Cloudflare API token'}
-                value={form.cloudflareApiToken}
-                onChange={(e) => {
-                  updateField('cloudflareApiToken', e.target.value);
-                  updateField('cloudflareTokenDirty', true);
-                }}
-              />
-              <button
-                type="button"
-                className={iconBtn}
-                onClick={() => setShowToken((v) => !v)}
-                title={showToken ? 'Hide token' : 'Show token'}
-                aria-label={showToken ? 'Hide token' : 'Show token'}
-              >
-                {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
+        </div>
+
+        {/* Cloudflare DNS — opt-in assertion that the image ships the DNS module */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Toggle
+              checked={form.cloudflareDnsEnabled}
+              onChange={(v) => updateField('cloudflareDnsEnabled', v)}
+            />
+            <span className="text-xs font-medium text-text-secondary">
+              Cloudflare DNS (DNS-01 certificates)
+            </span>
           </div>
+          <p className="text-[11px] text-text-muted">
+            Requires a Caddy image built with the caddy-dns/cloudflare module (via xcaddy).
+            The default caddy:latest image does not include it and will fail to start with
+            this enabled.
+          </p>
+          {form.cloudflareDnsEnabled && (
+            <div className="max-w-md">
+              <label className="flex items-center gap-1.5 text-xs font-medium text-text-secondary mb-1.5">
+                Cloudflare API Token
+              </label>
+              <div className="flex items-stretch gap-2">
+                <input
+                  type={showToken ? 'text' : 'password'}
+                  className="input-field flex-1"
+                  placeholder={form.cloudflareTokenIsSet && !form.cloudflareTokenDirty ? 'Set (leave empty to keep)' : 'Cloudflare API token'}
+                  value={form.cloudflareApiToken}
+                  onChange={(e) => {
+                    updateField('cloudflareApiToken', e.target.value);
+                    updateField('cloudflareTokenDirty', true);
+                  }}
+                />
+                <button
+                  type="button"
+                  className={iconBtn}
+                  onClick={() => setShowToken((v) => !v)}
+                  title={showToken ? 'Hide token' : 'Show token'}
+                  aria-label={showToken ? 'Hide token' : 'Show token'}
+                >
+                  {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Hosts sub-header */}

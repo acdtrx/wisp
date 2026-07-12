@@ -12,6 +12,7 @@ function getDefaultAppConfig() {
     domain: '',
     email: '',
     hosts: [],
+    cloudflareDnsEnabled: false,
     cloudflareApiToken: '',
   };
 }
@@ -29,7 +30,7 @@ function validateAppConfig(appConfig, oldAppConfig = null) {
     throw containerError('INVALID_APP_CONFIG', 'appConfig must be an object');
   }
 
-  const { domain, email, hosts, cloudflareApiToken } = appConfig;
+  const { domain, email, hosts, cloudflareDnsEnabled, cloudflareApiToken } = appConfig;
 
   // email: optional string for Let's Encrypt registration
   if (email != null && typeof email !== 'string') {
@@ -102,10 +103,25 @@ function validateAppConfig(appConfig, oldAppConfig = null) {
     ? cloudflareApiToken.trim()
     : (oldAppConfig?.cloudflareApiToken || '');
 
+  // cloudflareDnsEnabled: the user's assertion that the image ships the
+  // caddy-dns/cloudflare module (a compile-time xcaddy plugin the stock caddy
+  // image lacks — a Caddyfile referencing it makes that image fail to start).
+  // Absent means "unchanged"; configs stored before this field existed
+  // expressed the same intent by setting the token.
+  if (cloudflareDnsEnabled != null && typeof cloudflareDnsEnabled !== 'boolean') {
+    throw containerError('INVALID_APP_CONFIG', 'cloudflareDnsEnabled must be a boolean');
+  }
+  const dnsEnabled = typeof cloudflareDnsEnabled === 'boolean'
+    ? cloudflareDnsEnabled
+    : typeof oldAppConfig?.cloudflareDnsEnabled === 'boolean'
+      ? oldAppConfig.cloudflareDnsEnabled
+      : !!token;
+
   return {
     domain: trimmedDomain,
     email: trimmedEmail,
     hosts: normalizedHosts,
+    cloudflareDnsEnabled: dnsEnabled,
     cloudflareApiToken: token,
   };
 }
@@ -114,7 +130,10 @@ function validateAppConfig(appConfig, oldAppConfig = null) {
  * Build a Caddyfile string from appConfig.
  */
 function generateCaddyfile(appConfig) {
-  const { domain, email, hosts, cloudflareApiToken } = appConfig;
+  const { domain, email, hosts, cloudflareDnsEnabled, cloudflareApiToken } = appConfig;
+  // Both gates: the token without the module assertion would emit directives
+  // the image can't parse; the assertion without a token has nothing to send.
+  const dnsActive = !!(cloudflareDnsEnabled && cloudflareApiToken);
   const lines = [];
 
   // Global options block. Always emitted so SSE-aware log filtering is in place:
@@ -123,7 +142,7 @@ function generateCaddyfile(appConfig) {
   // still surface while per-disconnect warns don't spam the log on SSE-heavy apps like Wisp.
   lines.push('{');
   if (email) lines.push(`  email ${email}`);
-  if (cloudflareApiToken) lines.push('  acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}');
+  if (dnsActive) lines.push('  acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}');
   lines.push('  log default {');
   lines.push('    exclude http.handlers.reverse_proxy');
   lines.push('  }');
@@ -143,7 +162,7 @@ function generateCaddyfile(appConfig) {
   // Wildcard site block
   lines.push(`*.${domain} {`);
 
-  if (cloudflareApiToken) {
+  if (dnsActive) {
     lines.push('  tls {');
     lines.push('    dns cloudflare {env.CLOUDFLARE_API_TOKEN}');
     lines.push('  }');
@@ -173,7 +192,7 @@ function generateCaddyfile(appConfig) {
  */
 function generateDerivedConfig(appConfig) {
   const env = {};
-  if (appConfig.cloudflareApiToken) {
+  if (appConfig.cloudflareDnsEnabled && appConfig.cloudflareApiToken) {
     env.CLOUDFLARE_API_TOKEN = { value: appConfig.cloudflareApiToken, secret: true };
   }
 

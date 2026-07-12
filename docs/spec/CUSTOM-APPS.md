@@ -108,13 +108,14 @@ Components use SectionCard for consistent styling, handle their own dirty tracki
 `containerApps.applyAppConfig` orchestrates live reload after persisting the new appConfig on a running container:
 
 1. New appConfig validated; `generateDerivedConfig` produces new env/mounts/devices/mountContents
-2. `containerManager.updateContainerConfig` persists the metadata + env/mounts/devices changes (manager handles backing-store cleanup for removed mounts generically)
-3. Mount file contents written via `containerManager.putMountFileTextContent`
-4. Container task state checked via `containerManager.getTaskState`; if not running, return immediately
-5. If any env var changed, **skip the reload** and set `pendingRestart: true` (see *Env vars never reload* below). Otherwise, if the app module provides `getReloadCommand()`, run it via `containerManager.execCommandInContainer` (non-interactive containerd exec)
-6. If the command exits 0: response includes `{ requiresRestart, reloaded: true }`. `requiresRestart` is true when the app module's `requiresRestartForChange` hook returns true, OR the mount layout changed structurally.
-7. If the command exits non-zero: throws `APP_RELOAD_FAILED` (422) — config saved, app rejected the new state. The detail is built by `reloadFailureDetail()`, which keeps the lines that look like errors and otherwise falls back to the **tail** of the output: reload tools narrate before they fail (`caddy reload` emits three JSON log lines first), so a head-truncated detail shows noise and cuts the diagnosis.
-8. If the exec itself fails for a non-app reason (e.g. command not found): falls back to setting `pendingRestart: true` and returning `{ requiresRestart: true }`
+2. If a reload will be attempted (running + reload command + no env change), the backing content of every local file mount is snapshotted first — the rollback state for step 7
+3. `containerManager.updateContainerConfig` persists the metadata + env/mounts/devices changes (manager handles backing-store cleanup for removed mounts generically)
+4. Mount file contents written via `containerManager.putMountFileTextContent`
+5. Container task state checked via `containerManager.getTaskState`; if not running, return immediately
+6. If any env var changed, **skip the reload** and set `pendingRestart: true` (see *Env vars never reload* below). Otherwise, if the app module provides `getReloadCommand()`, run it via `containerManager.execCommandInContainer` (non-interactive containerd exec)
+7. If the command exits 0: response includes `{ requiresRestart, reloaded: true }`. `requiresRestart` is true when the app module's `requiresRestartForChange` hook returns true, OR the mount layout changed structurally.
+8. If the command exits non-zero: **rolls back** the persisted config (metadata/env/mounts/devices) and mount file contents to the step-2 snapshot, then throws `APP_RELOAD_FAILED` (422). The app rejected the new state and kept serving its previous config (reload commands judge-then-apply), so the rollback re-syncs disk with what is actually running — without it, the next restart/autostart/reboot would boot the container into a config its own app already refused. The detail is built by `reloadFailureDetail()`, which keeps the lines that look like errors and otherwise falls back to the **tail** of the output: reload tools narrate before they fail (`caddy reload` emits three JSON log lines first), so a head-truncated detail shows noise and cuts the diagnosis. If the rollback itself fails, the error detail says so and the persisted config may not match the running app.
+9. If the exec itself fails for a non-app reason (e.g. command not found): falls back to setting `pendingRestart: true` and returning `{ requiresRestart: true }` — no rollback; the app never judged the config
 
 Apps that don't supply `getReloadCommand` always set `pendingRestart` instead of attempting reload.
 
@@ -122,7 +123,7 @@ Apps that don't supply `getReloadCommand` always set `pendingRestart` instead of
 
 **Env vars never reload.** Same reason, sharper edge: the OCI process env is built from `config.env` when the task starts (`containerManagerSpec.js`), so a running process keeps the environment it was exec'd with. No reload command can change it. containerApps compares an env signature (name + value; the `secret` flag is presentation-only) and, on any diff, **skips the reload entirely** and sets `pendingRestart: true`.
 
-Skipping matters — a reload here isn't merely a no-op, it fails. Step 2 has already written the new config, which refers to the new variable. Caddy's Caddyfile carries the Cloudflare token as `{env.CLOUDFLARE_API_TOKEN}`; the *running* server resolves that against its own environment, gets an empty string, and rejects the whole config:
+Skipping matters — a reload here isn't merely a no-op, it fails. The persist steps have already written the new config, which refers to the new variable. Caddy's Caddyfile carries the Cloudflare token as `{env.CLOUDFLARE_API_TOKEN}`; the *running* server resolves that against its own environment, gets an empty string, and rejects the whole config:
 
 ```
 provision dns.providers.cloudflare: API token '' appears invalid;
@@ -161,19 +162,21 @@ Eject converts an app container to a generic container. The `app` and `appConfig
     { "subdomain": "ha", "target": "192.168.1.100" },
     { "subdomain": "plex", "target": "192.168.1.101:32400" }
   ],
+  "cloudflareDnsEnabled": true,
   "cloudflareApiToken": "cf-token"
 }
 ```
 
 - `domain` — Base domain for wildcard certificate (e.g. `example.com`)
 - `hosts[]` — Reverse proxy entries. `subdomain` is a DNS label; `target` is IP/hostname with optional port (also accepts `scheme://host[:port][/path]`). The Caddyfile is generated with `target` interpolated into a `reverse_proxy` directive, so the validator rejects `\n` / `\r` / `{` / `}` and any shape that doesn't match `host[:port]` or `scheme://host[:port][/path]`. Returns **422 INVALID_APP_CONFIG** otherwise.
-- `cloudflareApiToken` — Cloudflare API token for DNS-01 challenge. Stored as secret, masked in API responses as `{ isSet: boolean }`. Omit it (or send the `{ isSet }` mask back) to keep the stored token; send an explicit `""` to clear it.
+- `cloudflareDnsEnabled` — The user's assertion that the container image ships the `caddy-dns/cloudflare` module. Caddy's DNS providers are compile-time Go plugins (`xcaddy build --with github.com/caddy-dns/cloudflare`); the stock `caddy:latest` image does **not** include it, and a Caddyfile referencing `dns cloudflare` makes that image fail to start with an unknown-module error. No `dns cloudflare` / `acme_dns cloudflare` directives are emitted unless this is `true` **and** a token is set, so the default image stays usable for plain local proxying. In the UI this is a toggle that reveals the token field. Absent means "unchanged"; configs stored before this field existed are read as enabled when a token is set (the old shape's only way to express the intent).
+- `cloudflareApiToken` — Cloudflare API token for DNS-01 challenge. Stored as secret, masked in API responses as `{ isSet: boolean }`. Omit it (or send the `{ isSet }` mask back) to keep the stored token; send an explicit `""` to clear it. Kept in storage (but inert) while `cloudflareDnsEnabled` is `false`, so toggling off and back on doesn't require re-entering it.
 
 ### Derived Config
 
-- **env:** `CLOUDFLARE_API_TOKEN` (secret) when token is set
+- **env:** `CLOUDFLARE_API_TOKEN` (secret) when Cloudflare DNS is enabled and a token is set
 - **mounts:** `Caddyfile` (file → `/etc/caddy/Caddyfile`, readonly), `caddy-data` (dir → `/data`), `caddy-config` (dir → `/config`)
-- **Caddyfile:** Generated with wildcard site block, per-host reverse proxy handlers, Cloudflare DNS TLS block (when token set), and a global log filter that routes `http.handlers.reverse_proxy` logs to a separate logger capped at `ERROR` (suppresses the per-disconnect `aborting with incomplete response` WARN that SSE-heavy apps like Wisp trigger on every client refresh or navigation)
+- **Caddyfile:** Generated with wildcard site block, per-host reverse proxy handlers, Cloudflare DNS TLS block (when Cloudflare DNS is enabled and a token is set), and a global log filter that routes `http.handlers.reverse_proxy` logs to a separate logger capped at `ERROR` (suppresses the per-disconnect `aborting with incomplete response` WARN that SSE-heavy apps like Wisp trigger on every client refresh or navigation)
 - **Reload:** `caddy reload --config /etc/caddy/Caddyfile` — live reload without restart
 
 ---

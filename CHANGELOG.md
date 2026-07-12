@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-12
+
+### New Features
+- **Caddy: Cloudflare DNS is an explicit toggle** — DNS-01 directives and the token env var are only generated when the user asserts their image ships the cloudflare module; the stock `caddy:latest` image stays usable for plain proxying, and the token field appears only with the toggle on. Existing configs with a token read as enabled.
+
+### Bug Fixes
+- **Rejected app reloads no longer poison the persisted config** — when a running app refuses a config reload, the stored config and generated files roll back to the last accepted state instead of the next restart booting into a config the app already rejected.
+- **Single version source** — the Host panel reads the same version as self-update and LAN discovery.
+
 ## 2026-07-11
 
 ### New Features
