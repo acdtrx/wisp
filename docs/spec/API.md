@@ -1427,7 +1427,7 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 **200:** `{ requiresRestart: boolean, reloaded?: boolean, name: string }` — `reloaded: true` when the app was live-reloaded (no restart needed). `name` always reflects the container's current name (unchanged unless the body included a `name` rename).
 
-**422:** `APP_RELOAD_FAILED` — the app's reload command exited non-zero. Config is saved but the app rejected it; check `detail` for stderr.
+**422:** `APP_RELOAD_FAILED` — the app's reload command exited non-zero. The persisted config and mount file contents are rolled back to the previous (accepted) state, matching what the running app kept serving; check `detail` for stderr.
 
 ### DELETE /api/containers/:name
 

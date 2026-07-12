@@ -15,6 +15,7 @@ import {
   deleteContainer,
   getContainerConfig,
   getTaskState,
+  getMountFileTextContent,
   putMountFileTextContent,
   execCommandInContainer,
 } from '../containerManager/index.js';
@@ -188,6 +189,12 @@ export async function createAppContainer(spec, onStep) {
  * change can't be applied live (no reload command, mount layout changed,
  * app reports `requiresRestartForChange`, or reload exec fails).
  *
+ * When the reload itself rejects the new state (`APP_RELOAD_FAILED`), the
+ * persisted config and mount file contents are rolled back to the previous
+ * state before the error propagates — the app kept serving its old config,
+ * so leaving the rejected one on disk would make the next restart/reboot
+ * boot the container into a config its own app already refused.
+ *
  * Returns `{ requiresRestart, reloaded? }`.
  */
 export async function applyAppConfig(name, newAppConfig) {
@@ -220,6 +227,30 @@ export async function applyAppConfig(name, newAppConfig) {
     updateChanges.devices = derived.devices;
   }
 
+  const task = await getTaskState(name);
+  const isRunning = task && (task.status === 'RUNNING' || task.status === 'PAUSED');
+  const reloadCmd = appModule.getReloadCommand?.();
+  const willReload = isRunning && !!reloadCmd && !envChanged;
+
+  // Snapshot every local file mount's backing content before persisting: the
+  // update below overwrites files named in mountContents and deletes the
+  // backing file of any file mount whose row disappears from the list. Only
+  // needed when a reload will judge the new state — every other path keeps
+  // the persisted config unconditionally. (Directory mounts have no capture
+  // primitive; no app module derives a local dir mount from appConfig.)
+  let prevFileContents = null;
+  if (willReload) {
+    prevFileContents = {};
+    for (const m of oldMounts) {
+      if (m.type !== 'file' || m.sourceId) continue;
+      try {
+        prevFileContents[m.name] = (await getMountFileTextContent(name, m.name)).content;
+      } catch {
+        /* no backing file on disk — nothing to restore for this mount */
+      }
+    }
+  }
+
   await updateContainerConfig(name, updateChanges);
 
   if (derived.mountContents && Object.keys(derived.mountContents).length) {
@@ -228,17 +259,13 @@ export async function applyAppConfig(name, newAppConfig) {
     }
   }
 
-  const task = await getTaskState(name);
-  const isRunning = task && (task.status === 'RUNNING' || task.status === 'PAUSED');
   if (!isRunning) {
     return { requiresRestart: false };
   }
-
-  const reloadCmd = appModule.getReloadCommand?.();
   // Skip the reload outright when the env changed. It cannot apply — the OCI process env is
-  // fixed at task start — and attempting it is worse than useless: step 2 has already written
-  // a config that refers to the new variable, which the running process then resolves against
-  // an environment that lacks it. Adding Caddy's Cloudflare token this way yields
+  // fixed at task start — and attempting it is worse than useless: the persist above has
+  // already written a config that refers to the new variable, which the running process then
+  // resolves against an environment that lacks it. Adding Caddy's Cloudflare token this way yields
   //   provision dns.providers.cloudflare: API token '' appears invalid
   // and a hard APP_RELOAD_FAILED for a save that only ever needed a restart. Restarting
   // applies the new env and the new mount contents together — the only order that works.
@@ -260,7 +287,30 @@ export async function applyAppConfig(name, newAppConfig) {
     }
     return { requiresRestart: stillNeedsRestart, reloaded: true };
   } catch (err) {
-    if (err.code === 'APP_RELOAD_FAILED') throw err;
+    if (err.code === 'APP_RELOAD_FAILED') {
+      // The app rejected the new state and kept serving its previous config
+      // (reload commands judge-then-apply). Restore the persisted config and
+      // file contents to match; restoring the old mounts list also deletes
+      // backing files the persist created for rejected-state-only mounts.
+      try {
+        const rollbackChanges = {
+          env: config.env || {},
+          mounts: oldMounts,
+          metadata: config.metadata,
+        };
+        if (Array.isArray(derived.devices)) {
+          rollbackChanges.devices = Array.isArray(config.devices) ? config.devices : [];
+        }
+        await updateContainerConfig(name, rollbackChanges);
+        for (const [mountName, content] of Object.entries(prevFileContents)) {
+          await putMountFileTextContent(name, mountName, content);
+        }
+      } catch (rollbackErr) {
+        err.raw = `${err.raw}\nRollback to the previous config also failed (${rollbackErr.message}); `
+          + 'the persisted config may not match the running app — re-save a known-good config.';
+      }
+      throw err;
+    }
     // Reload exec failed for non-app-related reason (e.g. command not found in
     // image). Surface as pendingRestart instead of bubbling the exec error.
     await updateContainerConfig(name, { pendingRestart: true });
