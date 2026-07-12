@@ -1,6 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { platform } from 'node:os';
 
 import {
@@ -28,19 +26,7 @@ import {
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
 import { setupSSE } from '../lib/sse.js';
 import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/storage/index.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-function getWispVersion() {
-  try {
-    const pkgPath = resolve(__dirname, '../../package.json');
-    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
-    return pkg.version || '0.0.0';
-  } catch {
-    /* package.json missing or unreadable — show placeholder version */
-    return '0.0.0';
-  }
-}
+import { getCurrentVersion } from '../lib/wispUpdate.js';
 
 function getOsRelease() {
   try {
@@ -92,7 +78,7 @@ export default async function hostRoutes(fastify) {
     handler: async (request, reply) => {
       try {
         const info = await getHostInfo();
-        info.wispVersion = getWispVersion();
+        info.wispVersion = getCurrentVersion();
         info.osRelease = getOsRelease();
 
         if (platform() === 'darwin') {
