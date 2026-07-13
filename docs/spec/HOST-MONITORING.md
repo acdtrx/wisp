@@ -42,7 +42,7 @@ VM allocation fields are summed from the event-driven `vmListCache` in `vmManage
 
 ### SSE stream
 
-`GET /api/stats` returns an SSE stream that pushes every 5 seconds:
+Host statistics are pushed on the `stats` topic of `GET /api/events` (the single multiplexed always-on SSE stream, see [API.md](API.md) § Events stream) every 5 seconds. Topic `data`:
 
 ```json
 {

@@ -16,7 +16,7 @@ import {
   getMountFileTextContent, putMountFileTextContent,
   listContainerImages, deleteContainerImage,
   checkAllImagesForUpdates, checkSingleImageForUpdates, getImageUpdateStatus,
-  subscribeContainerListChange, notifyContainerConfigWrite,
+  notifyContainerConfigWrite,
 } from '../lib/containerManager/index.js';
 import {
   containerJobStore,
@@ -95,31 +95,6 @@ export default async function containerRoutes(fastify) {
       },
     },
     handler: async () => listContainers(),
-  });
-
-  // ── List SSE stream ───────────────────────────────────────────────
-  // Event-driven: pushes on containerd events (tasks/containers create/start/exit/etc.),
-  // container.json writes, and image-update completion. No polling timer.
-  // Section assignment is *not* part of this payload — the frontend reads
-  // sections via /api/sections (mirrored into sectionsStore) because moving
-  // a workload between sections doesn't trigger a containerd event.
-  fastify.get('/containers/stream', async (request, reply) => {
-    setupSSE(reply);
-
-    const send = async () => {
-      try {
-        const list = await listContainers();
-        reply.raw.write(`data: ${JSON.stringify(list)}\n\n`);
-      } catch (err) {
-        const payload = { error: 'Failed to list containers', detail: err.raw || err.message, code: err.code };
-        try { reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`); }
-        catch { /* client gone */ }
-      }
-    };
-
-    await send();
-    const unsubscribe = subscribeContainerListChange(() => { send(); });
-    request.raw.on('close', () => unsubscribe());
   });
 
   // ── Create ────────────────────────────────────────────────────────

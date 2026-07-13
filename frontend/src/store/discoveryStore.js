@@ -1,26 +1,25 @@
 import { create } from 'zustand';
-import { createSSE } from '../api/sse.js';
+import { subscribeTopic } from '../api/events.js';
 
 export const useDiscoveryStore = create((set) => {
-  let closeFn = null;
+  let unsubscribe = null;
 
   return {
     peers: [],
 
     connect: () => {
-      if (closeFn) return;
+      if (unsubscribe) return;
 
-      closeFn = createSSE(
-        '/api/discovery/stream',
+      unsubscribe = subscribeTopic(
+        'discovery',
         (data) => set({ peers: Array.isArray(data) ? data : [] }),
-        () => {},
       );
     },
 
     disconnect: () => {
-      if (closeFn) {
-        closeFn();
-        closeFn = null;
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
       }
       set({ peers: [] });
     },

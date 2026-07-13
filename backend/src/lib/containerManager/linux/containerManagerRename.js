@@ -217,7 +217,7 @@ export async function renameContainer(oldName, newName) {
 
   /* Step 7: rewrite container.json under the new path with the updated name.
    * writeContainerConfig fires notifyContainerConfigWrite, which refreshes
-   * the container list cache and pushes /containers/stream subscribers. */
+   * the container list cache and pushes container-list subscribers. */
   const nextConfig = { ...config, name: newNameTrim };
   await writeContainerConfig(newNameTrim, nextConfig);
 

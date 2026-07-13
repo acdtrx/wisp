@@ -6,10 +6,8 @@ import {
   assignWorkload,
   reorderSections,
   getAssignments,
-  subscribeSectionsChange,
 } from '../lib/sections.js';
 import { handleRouteError } from '../lib/routeErrors.js';
-import { setupSSE } from '../lib/sse.js';
 
 const sectionSchema = {
   type: 'object',
@@ -32,7 +30,9 @@ const responseSchema = {
   },
 };
 
-async function buildResponse() {
+/** `{ sections, assignments }` — the envelope every sections route returns, and the
+ *  payload of the `sections` topic on /api/events (which imports it from here). */
+export async function buildSectionsEnvelope() {
   const [sections, assignments] = await Promise.all([listSections(), getAssignments()]);
   return { sections, assignments };
 }
@@ -40,39 +40,7 @@ async function buildResponse() {
 export default async function sectionsRoutes(fastify) {
   fastify.get('/sections', {
     schema: { response: { 200: responseSchema } },
-    handler: async () => buildResponse(),
-  });
-
-  // GET /sections/stream — SSE: the same `{ sections, assignments }` envelope as
-  // GET /sections, sent on connect and again after every section or assignment write.
-  // Sections are pure Wisp metadata, so no libvirt or containerd event announces them —
-  // without this stream a client that never reloads (an iOS home-screen app resumed from
-  // the app switcher, a long-lived desktop tab) keeps the ordering it saw at mount, and
-  // a workload moved from another device never arrives.
-  fastify.get('/sections/stream', {
-    schema: { hide: true },
-    handler: async (request, reply) => {
-      setupSSE(reply);
-
-      async function sendEnvelope() {
-        let payload;
-        try {
-          payload = await buildResponse();
-        } catch (err) {
-          request.log.warn({ err: err.message }, 'sections/stream read failed');
-          payload = { error: err.message, detail: err.raw || err.message, code: err.code };
-        }
-        try {
-          reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
-        } catch {
-          /* Client vanished mid-write; the close handler below unsubscribes. */
-        }
-      }
-
-      await sendEnvelope();
-      const unsubscribe = subscribeSectionsChange(() => { sendEnvelope(); });
-      request.raw.on('close', () => unsubscribe());
-    },
+    handler: async () => buildSectionsEnvelope(),
   });
 
   fastify.post('/sections', {
@@ -88,7 +56,7 @@ export default async function sectionsRoutes(fastify) {
     handler: async (request, reply) => {
       try {
         await createSection(request.body.name);
-        return await buildResponse();
+        return await buildSectionsEnvelope();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -109,7 +77,7 @@ export default async function sectionsRoutes(fastify) {
     handler: async (request, reply) => {
       try {
         await renameSection(request.params.id, request.body.name);
-        return await buildResponse();
+        return await buildSectionsEnvelope();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -124,7 +92,7 @@ export default async function sectionsRoutes(fastify) {
     handler: async (request, reply) => {
       try {
         await deleteSection(request.params.id);
-        return await buildResponse();
+        return await buildSectionsEnvelope();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -146,7 +114,7 @@ export default async function sectionsRoutes(fastify) {
     handler: async (request, reply) => {
       try {
         await reorderSections(request.body.ids);
-        return await buildResponse();
+        return await buildSectionsEnvelope();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -171,7 +139,7 @@ export default async function sectionsRoutes(fastify) {
       try {
         const { type, name, sectionId } = request.body;
         await assignWorkload({ type, name, sectionId: sectionId ?? null });
-        return await buildResponse();
+        return await buildSectionsEnvelope();
       } catch (err) {
         handleRouteError(err, reply, request);
       }

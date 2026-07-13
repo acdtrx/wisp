@@ -327,7 +327,7 @@ XML parsing and building utilities using fast-xml-parser. Handles the conversion
 - `getCachedStateCode(name)` — reads the libvirt state code from the cached list; used by `getVMStats` to fast-path non-running VMs to a zero-DBus tick
 - `getCachedDomainPath(name)` — returns the libvirt-dbus domain path captured during cache population; used by `getVMStats` to skip `DomainLookupByName` on the hot path
 - `getCachedStaleBinary(name)` — reads the `staleBinary` flag from the cached list; used by `getVMStats` to avoid per-tick `/proc` syscalls
-- `subscribeVMListChange(handler)` — subscribe to cache-refresh events. Used by the `/vms/stream` SSE handler to push the list to clients without a polling timer. Returns an unsubscribe function.
+- `subscribeVMListChange(handler)` — subscribe to cache-refresh events. Used by the `/api/events` route to push the `vms` topic to clients without a polling timer. Returns an unsubscribe function.
 
 ### vmManagerLifecycle.js
 

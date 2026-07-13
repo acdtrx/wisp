@@ -7,7 +7,7 @@ const activeSseResponses = new Set();
 
 /** Keepalive comment cadence — keeps NAT/proxy entries warm and lets the client's
  *  read-watchdog detect dead TCP without waiting for the next real event. Event-driven
- *  streams (e.g. /api/vms/stream) can sit idle for hours between libvirt events. */
+ *  streams can sit idle for hours between pushes (e.g. /api/events with no host activity). */
 const SSE_KEEPALIVE_MS = 25_000;
 
 /**

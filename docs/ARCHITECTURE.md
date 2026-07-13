@@ -77,11 +77,11 @@ sequenceDiagram
     participant P as /proc filesystem
     participant L as libvirt
 
-    B->>A: GET /api/stats (Accept: text/event-stream)
-    loop Every 3 seconds
+    B->>A: GET /api/events (Accept: text/event-stream)
+    loop Every 5 seconds
         A->>P: Read /proc/stat, meminfo, diskstats, net/dev
         A->>L: GetRunningVMAllocations
-        A-->>B: SSE event: { cpu, ram, disk, net, vms }
+        A-->>B: SSE frame: { topic: "stats", data: { cpu, ram, disk, net, vms } }
     end
 ```
 
@@ -89,12 +89,12 @@ Three SSE patterns:
 
 | Pattern | Endpoints | Behavior |
 |---------|-----------|----------|
-| Event-driven stream | `/api/vms/stream`, `/api/containers/stream`, `/api/sections/stream` | Pushes on backend events (libvirt `DomainEvent` + qemu binary changes for VMs; containerd events + container.json writes + image-update completion for containers; every persisted sections/assignments write). No polling timer. |
-| Long-lived stream | `/api/stats`, `/api/vms/:name/stats`, `/api/containers/:name/stats` | Continuous push at intervals (sampled metrics); client reconnects on error |
+| Multiplexed events stream | `/api/events` | The single always-on connection. Carries `{ topic, data }` frames for `stats` (5 s sampled metrics), `vms`, `containers`, `sections`, `discovery` (all event-driven: libvirt `DomainEvent` + qemu binary changes; containerd events + container.json writes + image-update completion; persisted sections/assignments writes; mDNS browse events). One connection instead of five because browsers cap plain-HTTP/1.1 at 6 connections per origin — see [API.md](spec/API.md) § Events stream. |
+| Scoped stream | `/api/vms/:name/stats`, `/api/containers/:name/stats`, `/api/containers/:name/logs`, `/api/host/disks/stream`, `/api/host/usb/stream` | Open only while the matching view is on screen; sampled or event-driven per endpoint |
 | Job progress | `/api/vms/create-progress/:jobId`, `/api/vms/backup-progress/:jobId`, `/api/library/download-progress/:jobId`, `/api/containers/create-progress/:jobId` | Emits progress events until completion/failure, then closes |
 | One-shot | URL check responses | Single response, no streaming |
 
-All SSE responses go through `setupSSE` (`backend/src/lib/sse.js`), which writes a `: keepalive` comment line every 25 s so idle event-driven streams (e.g. `/api/vms/stream` between libvirt events) don't get torn down by NAT/proxy idle timers. The client (`frontend/src/api/sse.js`) arms a 60 s read-watchdog after the first byte and re-arms it on every chunk; missing bytes for that long aborts and reconnects, catching silently-dropped TCP that `reader.read()` would otherwise wait on forever.
+All SSE responses go through `setupSSE` (`backend/src/lib/sse.js`), which writes a `: keepalive` comment line every 25 s so idle event-driven streams (e.g. `/api/events` on a quiet host) don't get torn down by NAT/proxy idle timers. The client (`frontend/src/api/sse.js`) arms a 60 s read-watchdog after the first byte and re-arms it on every chunk; missing bytes for that long aborts and reconnects, catching silently-dropped TCP that `reader.read()` would otherwise wait on forever.
 
 The watchdog can't fire while the page is frozen, though — iOS suspends a backgrounded home-screen app's JS context, and the socket dies with it. So every stream also resyncs on `visibilitychange → visible` and on `online`: if it has produced no bytes for longer than the 25 s keepalive it aborts and reconnects at once, and if it was already waiting out reconnect backoff it connects immediately instead. A stream still receiving keepalives is left alone, so an ordinary desktop tab switch costs nothing. Since every event-driven stream opens with a full snapshot, one reconnect is all it takes to replace a stale list.
 
@@ -210,7 +210,7 @@ App identity persists in `container.json.metadata.app` (string id) + `container.
 | `auth.js` | JWT sign/verify, password verification, auth hook factory (session cookies + bearer API tokens + the bearer-only `/mcp` gate) |
 | `apiTokens.js` | Scoped bearer API tokens: mint (`wisp_<scope>_…`, plaintext returned once), verify (SHA-256 + `timingSafeEqual`), revoke, list. Persisted in `wisp-config.json` `apiTokens[]` via the settings mutex. |
 | `loginRateLimit.js` | Shared per-IP rate limiting for failed logins **and** invalid bearer tokens (one 60 s / 5-attempt window). |
-| `hostStatsSnapshot.js` | `buildHostStatsPayload()` — the `/api/stats` SSE payload builder, shared with the MCP `get_host_stats` tool. |
+| `hostStatsSnapshot.js` | `buildHostStatsPayload()` — the `stats` topic payload builder for `/api/events`, shared with the MCP `get_host_stats` tool. |
 | `mcp/` | MCP server (app-glue): `mcpServer.js` (stateless JSON-RPC dispatch: initialize/ping/tools) + `tools/` (tool catalogue calling the same facades as routes, secrets masked — read tools plus admin-scoped mutating tools that expose a deliberate subset of the API; app config writes filtered by each app module's `agentWritableAppConfigFields`). See `docs/spec/MCP.md`. |
 | `atomicJson.js` | `writeJsonAtomic(path, obj)`: stage to `*.tmp.<pid>.<ts>.<rand>`, fsync, rename(2). Used for `wisp-config.json`, `container.json`, `oci-image-meta.json`. |
 | `bootCleanup.js` | `cleanPartialJsonArtifacts(log)` runs at boot, removes orphan atomic-write temp files left by a crash mid-rename. |
@@ -244,7 +244,7 @@ App identity persists in `container.json.metadata.app` (string id) + `container.
 | `mdns/index.js` | mDNS module facade — Avahi-backed Linux backend (`mdns/linux/avahi.js`) plus an in-process DNS forwarder for container `.local` queries (`mdns/linux/forwarder.js`); macOS stubs (`mdns/darwin/avahi.js`). Public surface: `connect`/`disconnect`, address + service registration, `subscribeServiceBrowse` (generic LAN service browsing — per-(interface,protocol) dedup, persistent per-service resolvers that push live record updates, survives avahi restarts); `lookupLocalEntry`/`resolveLocalName` are private to the linux pair. Also exports the platform-agnostic helpers (`mdns/hostname.js` — `stripCidr`, `sanitizeHostname`) and service-type catalog (`mdns/serviceTypes.js`). |
 | `vmMdnsReconciler.js` | App-level glue (Wisp wiring, not part of vmManager). Single flat platform-agnostic file. Subscribes to `vmManager.subscribeVMNetworkChange` and (de)registers Avahi A records based on each VM's `localDns` flag. Libvirt `DomainEvent` + `AgentEvent` + 60s safety probe live inside vmManager (`linux/vmManager/vmManagerNetwork.js`). |
 | `containerMdnsReconciler.js` | App-level glue. Subscribes to `containerManager.subscribeContainerNetworkChange` and (de)registers Avahi A records based on each container's `localDns` flag. The 60 s netns probe + `container.json` IP persistence live inside containerManager (`linux/containerManager/containerManagerNetworkEvents.js`). |
-| `wispDiscovery.js` | App-level glue. Announces this instance as a `_wisp._tcp` mDNS service (TXT: url/name/version from settings) and browses for peer instances via `subscribeServiceBrowse`, self-filtering via avahi lookup-result flags. Feeds the `/api/discovery/stream` SSE route. See `docs/spec/DISCOVERY.md`. |
+| `wispDiscovery.js` | App-level glue. Announces this instance as a `_wisp._tcp` mDNS service (TXT: url/name/version from settings) and browses for peer instances via `subscribeServiceBrowse`, self-filtering via avahi lookup-result flags. Feeds the `discovery` topic on `/api/events`. See `docs/spec/DISCOVERY.md`. |
 
 ### Backend helper scripts (`backend/scripts/`)
 

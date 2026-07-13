@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as containerApi from '../api/containers.js';
 import { createSSE } from '../api/sse.js';
+import { subscribeTopic } from '../api/events.js';
 import { subscribeJobProgress, JOB_KIND } from '../api/jobProgress.js';
 
 export const useContainerStore = create((set, get) => {
@@ -90,8 +91,8 @@ export const useContainerStore = create((set, get) => {
     startContainerListSSE: () => {
       if (listCloseFn) return;
       get().fetchContainers();
-      listCloseFn = createSSE(
-        '/api/containers/stream',
+      listCloseFn = subscribeTopic(
+        'containers',
         (data) => {
           if (!Array.isArray(data)) return;
           const state = get();
@@ -116,9 +117,6 @@ export const useContainerStore = create((set, get) => {
             }
             return next;
           });
-        },
-        () => {
-          /* createSSE reconnects on failure; no extra UI for list stream */
         },
       );
     },
@@ -264,7 +262,7 @@ export const useContainerStore = create((set, get) => {
               imageUpdateJobClose = null;
             }
             // Backend fires notifyContainerConfigWrite after the job completes
-            // → /containers/stream pushes a fresh list automatically.
+            // → the `containers` topic pushes a fresh list automatically.
             get().refreshSelectedContainer();
           } else if (ev.step === 'error') {
             set((prev) => ({

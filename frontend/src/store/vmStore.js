@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import * as vmApi from '../api/vms.js';
 import { createSSE } from '../api/sse.js';
+import { subscribeTopic } from '../api/events.js';
 
 export const useVmStore = create((set, get) => {
-  // Single subscriber per stream: only one VM list and one stats SSE are active at a time.
-  // Close functions are stored here so stopVMListSSE/stopStatsSSE/deselectVM can clean up.
+  // Single subscriber per feed: one `vms` topic subscription (shared /api/events
+  // stream) and one per-VM stats SSE are active at a time. Close functions are
+  // stored here so stopVMListSSE/stopStatsSSE/deselectVM can clean up.
   let listCloseFn = null;
   let statsCloseFn = null;
 
@@ -86,8 +88,8 @@ export const useVmStore = create((set, get) => {
 
     startVMListSSE: () => {
       if (listCloseFn) return;
-      listCloseFn = createSSE(
-        '/api/vms/stream',
+      listCloseFn = subscribeTopic(
+        'vms',
         (data) => {
           if (!Array.isArray(data)) return;
           migrateSelectionIfRenamed(data);
@@ -117,7 +119,6 @@ export const useVmStore = create((set, get) => {
             return next;
           });
         },
-        () => {},
       );
     },
 

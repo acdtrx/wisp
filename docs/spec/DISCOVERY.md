@@ -37,7 +37,7 @@ The peer's TXT `url` is attacker-controllable (any LAN device can announce `_wis
 
 ## Peer list → frontend
 
-`GET /api/discovery/stream` (SSE, cookie-authenticated like every `/api` route) sends the sorted peer list immediately, then on every change — no polling ([API.md](API.md) § Discovery). Peer shape:
+The `discovery` topic of `GET /api/events` (SSE, cookie-authenticated like every `/api` route) sends the sorted peer list on connect, then on every change — no polling ([API.md](API.md) § Discovery). Peer shape:
 
 ```json
 { "name": "Other Box", "url": "http://otherbox.local:8080", "version": "1.3.0", "host": "otherbox.local" }

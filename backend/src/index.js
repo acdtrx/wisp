@@ -28,7 +28,7 @@ import {
 } from './lib/containerBackupScheduler.js';
 import authRoutes from './routes/auth.js';
 import hostRoutes from './routes/host.js';
-import statsRoutes from './routes/stats.js';
+import eventsRoutes from './routes/events.js';
 import libraryRoutes from './routes/library.js';
 import vmsRoutes from './routes/vms.js';
 import cloudInitRoutes from './routes/cloudinit.js';
@@ -41,7 +41,6 @@ import backupsRoutes from './routes/backups.js';
 import containerRoutes from './routes/containers.js';
 import backgroundJobsRoutes from './routes/backgroundJobs.js';
 import updatesRoutes from './routes/updates.js';
-import discoveryRoutes from './routes/discovery.js';
 import mcpRoutes from './routes/mcp.js';
 import { ensureMounts, installMountHotplugHandlers, startAutoMountRetry } from './lib/mountsAutoMount.js';
 import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
@@ -220,7 +219,7 @@ await app.register(fastifyWebsocket);
 
 app.register(authRoutes, { prefix: '/api/auth' });
 app.register(hostRoutes, { prefix: '/api' });
-app.register(statsRoutes, { prefix: '/api' });
+app.register(eventsRoutes, { prefix: '/api' });
 app.register(libraryRoutes, { prefix: '/api' });
 app.register(vmsRoutes, { prefix: '/api' });
 app.register(cloudInitRoutes, { prefix: '/api' });
@@ -231,7 +230,6 @@ app.register(backupsRoutes, { prefix: '/api' });
 app.register(containerRoutes, { prefix: '/api' });
 app.register(backgroundJobsRoutes, { prefix: '/api' });
 app.register(updatesRoutes, { prefix: '/api' });
-app.register(discoveryRoutes, { prefix: '/api' });
 app.register(mcpRoutes); // /mcp — bearer-token-only MCP endpoint (see docs/spec/MCP.md)
 app.register(consoleRoutes, { prefix: '/ws' });
 app.register(containerConsoleRoutes, { prefix: '/ws' });

@@ -34,7 +34,7 @@ JSON-RPC batching is rejected (`-32600`; removed from the MCP spec in 2025-06-18
 | `get_container_logs` | `{ name, lines?, runId? }` | Tail of a run log (newest run by default; `lines` 1–1000, default 100) |
 | `list_images` | — | Images in the `wisp` containerd namespace, containers with a newer digest available, last update-check info |
 | `get_vm` | `{ name }` | Full VM config plus `guestNetwork` (qemu-guest-agent; nulls without it) and `snapshots` |
-| `get_host_stats` | — | One sample of the `/api/stats` SSE payload (shared builder `lib/hostStatsSnapshot.js`) |
+| `get_host_stats` | — | One sample of the `stats` topic payload from `/api/events` (shared builder `lib/hostStatsSnapshot.js`) |
 | `get_host_hardware` | — | Static inventory from `getHostHardwareInfo()`: CPU topology, DMI, RAM modules, disks + SMART, PCI, GPUs |
 
 Tool handlers call the same facades and glue as the REST routes (`containerManager`, `vmManager`, `lib/host`, `lib/containerApps`, settings) and go through the same masking (`maskContainerConfigSecrets`) — no tool output ever contains a secret. Container names are validated (`validateContainerName`) before any path-derived read.

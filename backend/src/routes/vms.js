@@ -32,7 +32,6 @@ import {
   revertSnapshot,
   deleteSnapshot,
   createBackup,
-  subscribeVMListChange,
 } from '../lib/vmManager/index.js';
 import {
   createJobStore,
@@ -94,36 +93,6 @@ export default async function vmsRoutes(fastify) {
       } catch (err) {
         handleRouteError(err, reply, _request);
       }
-    },
-  });
-
-  // GET /vms/stream — SSE endpoint for VM list updates. Pushes on libvirt
-  // domain events and qemu binary changes; no polling timer. Section
-  // assignment is *not* part of this payload — the frontend reads sections
-  // via /api/sections (mirrored into sectionsStore) because moving a
-  // workload between sections doesn't trigger a libvirt event.
-  fastify.get('/vms/stream', {
-    schema: { hide: true },
-    handler: async (request, reply) => {
-      setupSSE(reply);
-
-      async function sendList() {
-        try {
-          const vms = await listVMs();
-          reply.raw.write(`data: ${JSON.stringify(vms)}\n\n`);
-        } catch (err) {
-          request.log.warn({ err: err.message }, 'vms/stream listVMs failed');
-          const payload = { error: err.message, detail: err.raw || err.message, code: err.code };
-          reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
-        }
-      }
-
-      await sendList();
-      const unsubscribe = subscribeVMListChange(() => { sendList(); });
-
-      request.raw.on('close', () => {
-        unsubscribe();
-      });
     },
   });
 

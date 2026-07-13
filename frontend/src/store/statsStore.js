@@ -1,27 +1,27 @@
 import { create } from 'zustand';
-import { createSSE } from '../api/sse.js';
+import { subscribeTopic } from '../api/events.js';
 
 export const useStatsStore = create((set, get) => {
-  let closeFn = null;
+  let unsubscribe = null;
 
   return {
     stats: null,
     connected: false,
 
     connect: () => {
-      if (closeFn) return;
+      if (unsubscribe) return;
 
-      closeFn = createSSE(
-        '/api/stats',
+      unsubscribe = subscribeTopic(
+        'stats',
         (data) => set({ stats: data, connected: true }),
         () => set({ connected: false }),
       );
     },
 
     disconnect: () => {
-      if (closeFn) {
-        closeFn();
-        closeFn = null;
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
       }
       set({ stats: null, connected: false });
     },

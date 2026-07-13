@@ -408,14 +408,29 @@ Reboot the host. Same requirements as shutdown (`wisp-power reboot`).
 
 ---
 
-## Stats (SSE)
+## Events stream (SSE)
 
-### GET /api/stats
+### GET /api/events
 
-Server-Sent Events stream of host statistics. Pushes every 5 seconds.
+The single always-on Server-Sent Events stream. Multiplexes every feed the UI needs continuously as `{ "topic": <name>, "data": <payload> }` frames over one connection — browsers cap plain-HTTP/1.1 connections at 6 per origin and each open SSE stream holds one, so dedicated per-topic streams exhausted the pool on direct `http://host:8080` access and queued all further requests indefinitely (behind an HTTP/2 proxy the cap never applies). Scoped streams (per-entity stats, container logs, host disks/usb, job progress) remain separate endpoints: they are transient and bounded well below the cap.
+
+Every topic sends a snapshot frame on connect (and after every client reconnect), then pushes on its own cadence. A topic that fails to gather sends its usual `{ error, detail, code? }` object as its `data`; the stream stays up and the other topics keep flowing.
 
 - **Content-Type:** `text/event-stream`
-- **Event data:**
+- **Frame:** `data: { "topic": "<name>", "data": <payload> }`
+- **Topics:**
+
+| Topic | Payload (`data`) | Pushed |
+|-------|------------------|--------|
+| `stats` | Host statistics (below) | Every 5 s |
+| `vms` | Same array as `GET /api/vms` | On libvirt `DomainEvent` (define/undefine/start/stop/…) and qemu binary replacement on disk |
+| `containers` | Same array as `GET /api/containers` | On containerd events, `container.json` writes, image-update completion |
+| `sections` | The `{ sections, assignments }` envelope (see [Sections](#sections)) | After every successful section or assignment write |
+| `discovery` | Sorted peer array (see [Discovery](#discovery)) | On mDNS browse events (peer appeared/left, avahi restart) |
+
+No topic uses a polling timer except the sampled `stats` metrics.
+
+#### `stats` topic payload
 
 ```json
 {
@@ -493,15 +508,8 @@ List all VMs with summary info.
 ```
 
 - `staleBinary` is `true` when the VM's running qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt package upgrade); the VM needs to be restarted to pick up the new binary. Always `false` for non-running VMs. Detected by reading `/var/run/libvirt/qemu/<name>.pid` and checking whether `/proc/<pid>/exe` ends with ` (deleted)`.
-- The list payload does **not** carry section assignment. Section info arrives on its own channel, `GET /api/sections/stream` (see [Sections](#sections)) — libvirt/containerd events don't fire on assignment changes, so the SSE list streams aren't a usable carrier for it.
-
-### GET /api/vms/stream
-
-SSE stream of the full VM list. Event-driven: pushes when libvirt emits a `DomainEvent` (define/undefine/start/stop/etc.) or when a `qemu-system-*` binary is replaced on disk (apt/dnf upgrade). No polling timer — clients receive updates as they happen.
-
-- **Query:** none
-- **Content-Type:** `text/event-stream`
-- **Event data:** Same array as `GET /api/vms`. An initial event is sent on connect.
+- The list payload does **not** carry section assignment. Section info arrives on its own channel, the `sections` topic of `GET /api/events` (see [Sections](#sections)) — libvirt/containerd events don't fire on assignment changes, so the list feeds aren't a usable carrier for it.
+- Live updates arrive on the `vms` topic of `GET /api/events` (see [Events stream](#events-stream-sse)): the same array, pushed when libvirt emits a `DomainEvent` (define/undefine/start/stop/etc.) or when a `qemu-system-*` binary is replaced on disk (apt/dnf upgrade). No polling timer.
 
 ### POST /api/vms
 
@@ -1056,9 +1064,7 @@ SSE stream for download progress.
 
 ## Discovery
 
-### GET /api/discovery/stream
-
-SSE stream of Wisp instances discovered on the LAN (see [DISCOVERY.md](DISCOVERY.md)). Sends the current peer list immediately, then pushes the full list on every change (peer appeared, peer left, avahi restart). No polling timer.
+Wisp instances discovered on the LAN (see [DISCOVERY.md](DISCOVERY.md)) are pushed on the `discovery` topic of `GET /api/events`: the current peer list on connect, then the full list on every change (peer appeared, peer left, avahi restart). No polling timer.
 
 - **Payload:** bare array, sorted by `name`:
 
@@ -1068,7 +1074,7 @@ SSE stream of Wisp instances discovered on the LAN (see [DISCOVERY.md](DISCOVERY
 ]
 ```
 
-The instance's own announcement is filtered out server-side. On macOS dev (no Avahi) the stream stays `[]`.
+The instance's own announcement is filtered out server-side. On macOS dev (no Avahi) the topic stays `[]`.
 
 ---
 
@@ -1171,7 +1177,7 @@ Unmount a mount by settings id.
 
 User-defined groupings for the sidebar workload list. The synthetic **Main** section (`id: "main"`, `builtin: true`) is always present in responses but never persisted. Workloads with no explicit assignment — or with an assignment pointing at a deleted section — fall back to Main on the next read.
 
-All section endpoints (GET, POST, PATCH, DELETE, PUT assign) return the same `{ sections, assignments }` envelope so the client can keep its local copy in sync from a single response — no separate fetch needed after a mutation. `GET /api/sections/stream` pushes that same envelope to every connected client, so a mutation from one device reaches the others.
+All section endpoints (GET, POST, PATCH, DELETE, PUT assign) return the same `{ sections, assignments }` envelope so the client can keep its local copy in sync from a single response — no separate fetch needed after a mutation. The `sections` topic of `GET /api/events` pushes that same envelope to every connected client, so a mutation from one device reaches the others.
 
 ### Response envelope
 
@@ -1196,14 +1202,14 @@ Return the current sections + assignments envelope.
 
 - **200:** Envelope above.
 
-### GET /api/sections/stream
+### `sections` topic (live channel)
 
-SSE stream of the envelope. Event-driven: sends a full snapshot on connect, then pushes again after every successful section or assignment write (create, rename, delete, reorder, assign, and the assignment move that rides a container rename). A rejected write pushes nothing. No polling timer.
+The envelope is pushed on the `sections` topic of `GET /api/events`: a full snapshot on connect, then again after every successful section or assignment write (create, rename, delete, reorder, assign, and the assignment move that rides a container rename). A rejected write pushes nothing. No polling timer.
 
 This is the sidebar's live channel for grouping. It exists because sections are pure Wisp metadata — no libvirt or containerd event announces them — so without it a client that never reloads keeps the ordering it saw at mount: an iOS home-screen app resumed from the app switcher, or a desktop tab left open while another device reorders.
 
-- **Event data:** The envelope above, or `{ error, detail, code? }` if the settings read fails. Clients keep their last good envelope on an error frame.
-- `Main`'s `order` is `-Infinity`, which serialises to `null` in both this stream and `GET /api/sections`. Clients must take array order as authoritative, not the `order` field.
+- **Topic `data`:** The envelope above, or `{ error, detail, code? }` if the settings read fails. Clients keep their last good envelope on an error frame.
+- `Main`'s `order` is `-Infinity`, which serialises to `null` in both the topic frames and `GET /api/sections`. Clients must take array order as authoritative, not the `order` field.
 
 ### POST /api/sections
 
@@ -1252,7 +1258,7 @@ Move a workload to a section.
 
 The workload itself isn't validated — assignments are pure metadata, so referencing an unknown VM/container name is a no-op (the entry is ignored on the next list read).
 
-> Section info is **not** embedded in the VM/container list payloads or their SSE streams. libvirt/containerd don't emit events on assignment changes, so the lists wouldn't be a reliable carrier — the SSE could stay stale until the next workload event. Sections get their own stream instead: subscribe to `GET /api/sections/stream` for steady state. `GET /api/sections` remains for the one case that needs the envelope synchronously before acting on it (the container-rename flow, which must know the moved assignment before it navigates).
+> Section info is **not** embedded in the VM/container list payloads or their live topics. libvirt/containerd don't emit events on assignment changes, so the lists wouldn't be a reliable carrier — the feed could stay stale until the next workload event. Sections get their own topic instead: subscribe to `sections` on `GET /api/events` for steady state. `GET /api/sections` remains for the one case that needs the envelope synchronously before acting on it (the container-rename flow, which must know the moved assignment before it navigates).
 
 ---
 
@@ -1317,13 +1323,7 @@ List all containers (summary).
 
 `iconId` is the optional UI icon key (same registry as VM icons); omit or `null` means the client uses the default container icon.
 
-### GET /api/containers/stream
-
-SSE stream of the container list. Event-driven: pushes when containerd emits a relevant event (`tasks/start`, `tasks/exit`, `tasks/delete`, `containers/create`, `containers/update`, `containers/delete`, etc.), when a `container.json` is written by wisp, or when an image-update check completes. No polling timer — clients receive updates as they happen.
-
-- **Query:** none
-- **Content-Type:** `text/event-stream`
-- **Event data:** Same array as `GET /api/containers`. An initial event is sent on connect.
+Live updates arrive on the `containers` topic of `GET /api/events` (see [Events stream](#events-stream-sse)): the same array, pushed when containerd emits a relevant event (`tasks/start`, `tasks/exit`, `tasks/delete`, `containers/create`, `containers/update`, `containers/delete`, etc.), when a `container.json` is written by wisp, or when an image-update check completes. No polling timer.
 
 ### POST /api/containers
 

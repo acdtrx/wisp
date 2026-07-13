@@ -26,7 +26,7 @@ The update applier is **a separate systemd unit** (`wisp-updater.service`, `Type
 | `POST` | `/api/updates/check` | Forces an immediate check; returns the same shape as `/status`. 503 on network or rate-limit failure. |
 | `POST` | `/api/updates/install` | Synchronously downloads + verifies + extracts (~5–15 s), writes the target marker, triggers `wisp-updater.service` and returns 202 `{ targetVersion }`. 409 if `available=false` or if other background jobs are running (pass `?force=1` to override). 500/503 from `handleRouteError` if download/verify fail or the unit file is missing. After this returns, the backend dies as the updater runs `systemctl stop wisp` — the UI polls `/api/host` to detect completion. |
 
-The host stats SSE payload (`/api/stats`) includes `wispUpdate: { current, latest, available, lastChecked }` for badge rendering and the section's hydration.
+The host stats payload (the `stats` topic on `/api/events`) includes `wispUpdate: { current, latest, available, lastChecked }` for badge rendering and the section's hydration.
 
 ## Privilege model
 

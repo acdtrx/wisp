@@ -7,7 +7,7 @@ const VALID_TYPES = new Set(['vm', 'container']);
 
 /** Notified after every successful sections/assignments write. Sections are the one
  *  piece of sidebar state no libvirt or containerd event can carry, so this emitter is
- *  their only live signal — `/api/sections/stream` is its sole consumer today. */
+ *  their only live signal — the `sections` topic on `/api/events` is its sole consumer today. */
 const sectionsChangeHandlers = new Set();
 
 export function subscribeSectionsChange(handler) {
