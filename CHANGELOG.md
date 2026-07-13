@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-07-14
+## 2026-07-14 (v1.9.0)
 
 ### New Features
 - **Back up running containers without stopping them** — the container's task is paused (frozen) for the seconds the archive takes, then resumed; connections and process state survive. The "stop the container first" requirement is gone.
