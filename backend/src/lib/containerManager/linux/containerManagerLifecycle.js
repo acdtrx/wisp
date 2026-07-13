@@ -93,7 +93,7 @@ export async function startContainer(name) {
   }
 
   if (task && st === 'PAUSED') {
-    await callUnary(getClient('tasks'), 'resume', { containerId: name });
+    await resumeContainer(name);
     containerState.containerStartTimes.set(name, Date.now());
     return;
   }
@@ -148,6 +148,49 @@ export async function startAutostartContainersAtBackendBoot(log) {
       await startContainer(c.name);
     } catch (err) {
       log.warn({ err, container: c.name }, 'Container autostart failed');
+    }
+  }
+}
+
+/**
+ * Freeze all processes of a running container's task (cgroup freezer).
+ * The task keeps its PIDs, memory, and sockets; it stops consuming CPU and
+ * cannot write to disk until resumed.
+ */
+export async function pauseContainer(name) {
+  await callUnary(getClient('tasks'), 'pause', { containerId: name });
+}
+
+/** Unfreeze a paused container task. */
+export async function resumeContainer(name) {
+  await callUnary(getClient('tasks'), 'resume', { containerId: name });
+}
+
+/**
+ * Resume any container whose task is still paused at backend boot.
+ * Wisp exposes no user-facing pause — tasks are only ever paused around a
+ * backup archive, so a paused task at boot means a backup was interrupted
+ * by a crash. Best-effort: logs and continues per container.
+ */
+export async function resumeStalePausedContainersAtBackendBoot(log) {
+  if (!containerState.connected) return;
+
+  const { listContainers } = await import('./containerManagerList.js');
+  let list;
+  try {
+    list = await listContainers();
+  } catch (err) {
+    log.warn({ err }, 'Stale-pause recovery: listContainers failed');
+    return;
+  }
+
+  for (const c of list) {
+    if (c.state !== 'paused') continue;
+    try {
+      await resumeContainer(c.name);
+      log.info({ container: c.name }, 'Resumed container left paused by an interrupted backup');
+    } catch (err) {
+      log.warn({ err, container: c.name }, 'Failed to resume stale paused container');
     }
   }
 }

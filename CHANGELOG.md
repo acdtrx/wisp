@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-14
+
+### New Features
+- **Back up running containers without stopping them** — the container's task is paused (frozen) for the seconds the archive takes, then resumed; connections and process state survive. The "stop the container first" requirement is gone.
+- **Scheduled container backups** — new Backup Scheduler section (Host Mgmt) runs a daily backup of every container with the new Auto Backup toggle, at a set time, to the configured destinations.
+- **Backup retention** — scheduled backups keep the newest per day for N days plus one per week for S weeks; manual backups are never auto-pruned.
+- **Crash safety** — a container left frozen by an interrupted backup is resumed automatically at the next backend start.
+- Container General section reordered: Run as Root now sits before Restart Policy; Auto Backup joins after Auto Start. Agent tools (MCP) expose the new flag.
+
 ## 2026-07-12
 
 ### New Features

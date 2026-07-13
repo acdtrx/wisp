@@ -18,7 +18,14 @@ import {
   startImageUpdateChecker,
   stopImageUpdateChecker,
 } from './lib/containerManager/index.js';
-import { startAutostartContainersAtBackendBoot } from './lib/containerManager/index.js';
+import {
+  startAutostartContainersAtBackendBoot,
+  resumeStalePausedContainersAtBackendBoot,
+} from './lib/containerManager/index.js';
+import {
+  startContainerBackupScheduler,
+  stopContainerBackupScheduler,
+} from './lib/containerBackupScheduler.js';
 import authRoutes from './routes/auth.js';
 import hostRoutes from './routes/host.js';
 import statsRoutes from './routes/stats.js';
@@ -272,6 +279,9 @@ async function start() {
   unsubscribeMountHotplug = installMountHotplugHandlers(app.log);
   stopMountRetry = startAutoMountRetry(app.log);
 
+  // A paused task at boot can only be a backup interrupted by a crash —
+  // resume before autostart so the pass sees accurate states.
+  await resumeStalePausedContainersAtBackendBoot(app.log);
   await startAutostartContainersAtBackendBoot(app.log);
 
   // mDNS reconcilers subscribe to vm/containerManager.subscribeVMNetworkChange /
@@ -292,6 +302,7 @@ async function start() {
   startUpdateChecker(app.log);
   startImageUpdateChecker(app.log);
   startWispUpdateChecker(app.log);
+  startContainerBackupScheduler(app.log);
 }
 
 let shuttingDown = false;
@@ -316,6 +327,7 @@ async function shutdown(signal) {
   stopUpdateChecker();
   stopImageUpdateChecker();
   stopWispUpdateChecker();
+  stopContainerBackupScheduler();
   stopVmMdnsReconciler();
   stopContainerMdnsReconciler();
   await stopWispDiscovery(); // needs the live bus — before disconnectMdns

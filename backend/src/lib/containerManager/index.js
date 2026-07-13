@@ -34,6 +34,7 @@ export const notifyContainerConfigWrite = impl.notifyContainerConfigWrite;
 
 export const startContainer = impl.startContainer;
 export const startAutostartContainersAtBackendBoot = impl.startAutostartContainersAtBackendBoot;
+export const resumeStalePausedContainersAtBackendBoot = impl.resumeStalePausedContainersAtBackendBoot;
 export const stopContainer = impl.stopContainer;
 export const killContainer = impl.killContainer;
 export const restartContainer = impl.restartContainer;

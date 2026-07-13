@@ -31,7 +31,7 @@ import {
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { renameWorkloadAssignment } from '../lib/sections.js';
 import { publishContainer, unpublishContainer } from '../lib/containerMdnsReconciler.js';
-import { getMountStatus, mountSMB } from '../lib/storage/index.js';
+import { resolveBackupDestinations } from '../lib/backupDestinations.js';
 import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
 import { validateContainerName } from '../lib/validation.js';
@@ -407,8 +407,9 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Backup (start) + progress SSE ────────────────────────────────
-  // Mirrors POST /vms/:name/backup. Container must be stopped (enforced
-  // inside createContainerBackup → ensureContainerStopped). Body shape:
+  // Mirrors POST /vms/:name/backup. Works on running containers too — the
+  // task is paused for the duration of the archive and resumed (enforced
+  // inside createContainerBackup → freezeForBackup). Body shape:
   // { destinationIds: ["local"] | ["local", "<backupMountId>"] }.
   fastify.post('/containers/:name/backup', {
     schema: {
@@ -433,54 +434,25 @@ export default async function containerRoutes(fastify) {
       try {
         const { name } = request.params;
         const body = request.body || {};
-        const ids = body.destinationIds && body.destinationIds.length > 0 ? body.destinationIds : ['local'];
         const settings = await getSettings();
         const rawMounts = await getRawMounts();
-        const backupMountId = settings.backupMountId;
-        const paths = [];
-        for (const id of ids) {
-          if (id === 'local') {
-            if (settings.backupLocalPath) paths.push(settings.backupLocalPath);
-          } else if (backupMountId && id === backupMountId) {
-            const dest = rawMounts.find((d) => d.id === id);
-            if (!dest) {
-              return reply.code(422).send({
-                error: 'Invalid backup destination',
-                detail: 'Mount is not configured for backup',
-              });
-            }
-            const mountPath = dest.mountPath;
-            if (dest.type === 'smb' && mountPath) {
-              const { mounted } = await getMountStatus(mountPath);
-              if (!mounted) {
-                try {
-                  await mountSMB(dest.share, mountPath, { username: dest.username, password: dest.password });
-                } catch (mountErr) {
-                  return reply.code(503).send({
-                    error: 'Network mount failed',
-                    detail: mountErr.message || 'Could not mount network share. Mount it from Host Mgmt first.',
-                  });
-                }
-              }
-              paths.push(mountPath);
-            } else if (mountPath) {
-              paths.push(mountPath);
-            }
-          } else {
-            return reply.code(422).send({
-              error: 'Invalid backup destination',
-              detail: `Unknown or disallowed destination id: ${id}`,
-            });
-          }
-        }
-        if (paths.length === 0) {
-          return reply.code(422).send({
-            error: 'No backup destination',
-            detail: 'No configured destination resolved for the requested ids',
-          });
-        }
-        const jobId = randomBytes(12).toString('hex');
+        const destinations = await resolveBackupDestinations(settings, rawMounts, body.destinationIds);
+
         const title = titleForContainerBackup(name);
+        /* One backup at a time per container — the pause/resume dance around
+         * the archive must not interleave with a second job's. */
+        const running = backupJobStore.listJobs().some(
+          (j) => !j.done && j.kind === BACKGROUND_JOB_KIND.CONTAINER_BACKUP && j.title === title,
+        );
+        if (running) {
+          throw createAppError(
+            'CONTAINER_BACKUP_IN_PROGRESS',
+            'Backup already in progress',
+            `A backup of "${name}" is already running`,
+          );
+        }
+
+        const jobId = randomBytes(12).toString('hex');
         backupJobStore.createJob(jobId, {
           kind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP,
           title,
@@ -492,8 +464,9 @@ export default async function containerRoutes(fastify) {
         );
         (async () => {
           let lastResult;
-          for (const destPath of paths) {
-            lastResult = await createContainerBackup(name, destPath, {
+          for (const dest of destinations) {
+            lastResult = await createContainerBackup(name, dest.path, {
+              origin: 'manual',
               onProgress(ev) {
                 backupJobStore.pushEvent(jobId, { step: ev.step, percent: ev.percent, currentFile: ev.currentFile });
               },

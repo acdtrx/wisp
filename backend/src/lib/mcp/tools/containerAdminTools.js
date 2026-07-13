@@ -56,6 +56,7 @@ function buildSettingsChanges(args) {
     changes.restartPolicy = args.restartPolicy;
   }
   if (args.autostart !== undefined) changes.autostart = args.autostart === true;
+  if (args.autoBackup !== undefined) changes.autoBackup = args.autoBackup === true;
   if (args.localDns !== undefined) changes.localDns = args.localDns === true;
   if (args.cpuLimit !== undefined) {
     if (!(typeof args.cpuLimit === 'number' && args.cpuLimit > 0)) {
@@ -91,6 +92,7 @@ export const containerAdminTools = [
         secretEnv: { type: 'object', additionalProperties: { type: 'string' }, description: 'Secret env vars (write-only)' },
         restartPolicy: { type: 'string', enum: RESTART_POLICIES, description: 'Default: unless-stopped' },
         autostart: { type: 'boolean', description: 'Start at host boot (default false)' },
+        autoBackup: { type: 'boolean', description: 'Include in the daily scheduled backup (default false)' },
         localDns: { type: 'boolean', description: 'Register <name>.local via mDNS (default true)' },
         cpuLimit: { type: 'number', minimum: 0, description: 'CPU cores cap' },
         memoryLimitMiB: { type: 'integer', minimum: 1, description: 'Memory cap in MiB' },

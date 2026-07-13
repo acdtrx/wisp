@@ -188,6 +188,7 @@ export default async function backupsRoutes(fastify) {
               destinationLabel: { type: 'string' },
               sizeBytes: { type: 'number' },
               image: { type: ['string', 'null'] },
+              origin: { type: 'string' },
             },
           },
         },

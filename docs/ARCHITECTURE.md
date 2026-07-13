@@ -233,6 +233,9 @@ App identity persists in `container.json.metadata.app` (string id) + `container.
 | `backgroundJobTitles.js` | Display titles for background jobs (parity with UI) |
 | `listBackgroundJobs.js` | Merges job rows from create/backup/download/container stores for `GET /api/background-jobs` |
 | `backupJobStore.js` | Backup-specific job store |
+| `backupDestinations.js` | `resolveBackupDestinations(settings, rawMounts, ids)` — shared destination-id → root resolution (SMB auto-mount included) for the VM/container backup routes and the backup scheduler |
+| `backupRetention.js` | `computeScheduledBackupPruneList()` — pure GFS-lite keep-set over scheduled container backups (newest per day for N days + newest per ISO week for S weeks); manual/legacy backups never returned |
+| `containerBackupScheduler.js` | App-level glue. 60 s tick fires daily at `settings.backupSchedule.time`; sequentially backs up every container with `autoBackup: true` (pause→tar→resume via `createContainerBackup`), registers jobs in `backupJobStore`, prunes retention per destination. No persisted state (no catch-up); started/stopped from `index.js`. |
 | `downloadJobStore.js` | Download-specific job store |
 | `downloadFromUrl.js` | Generic URL download with progress |
 | `downloadUbuntuCloud.js` | Ubuntu Server cloud image download |

@@ -32,6 +32,18 @@ pointer. Keep this file scannable.
 
 **Why deferred:** Brand-identity call for the user; the readability complaint that drove the pass was about muted labels, which are fixed.
 
+### Six concurrent SSE streams saturate the browser's HTTP/1.1 connection budget
+
+**Found:** 2026-07-14, while verifying the Backup Scheduler card in the local dev stack (Vite → backend proxy).
+
+**Symptom:** On pages where six SSE streams are open at once (Host Mgmt holds discovery, stats, vms, containers, sections, **and** disks streams), any further same-origin request — e.g. the Backup or Backup Scheduler section's Save PATCH — queues in the browser forever and never reaches the backend. The Save button spins indefinitely; even a page reload hangs until a stream closes.
+
+**Root cause:** Browsers cap HTTP/1.1 connections at 6 per origin, and each open `EventSource` holds one. Six streams = zero connections left for regular fetches. Production behind Caddy is unaffected (HTTP/2 multiplexes everything over one connection); plain-HTTP access (dev stack, direct `http://host:8080` on the LAN) hits the cap on any page that reaches 6 concurrent streams.
+
+**Fix sketch:** Reduce concurrent streams below the cap — e.g. multiplex the host-page streams (sections + disks + discovery could ride one combined stream), or open page-scoped streams (disks only while Host Mgmt Storage is visible) lazily/close them eagerly. Alternatively serve HTTP/2 from the backend (h2c behind the Vite proxy is fiddly; h2 needs TLS) — stream-count reduction is the practical route.
+
+**Why deferred:** Production (Caddy/h2) is unaffected and the dev workaround is trivial (drive the API directly or use another page). Scope-separated from the scheduled-backups feature where it was found.
+
 ### Host Mgmt add/edit is inline-row only — no mobile create/edit path
 
 **Found:** 2026-07-06, during the mobile Host Mgmt pass.

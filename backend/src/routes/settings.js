@@ -19,6 +19,18 @@ const mountResponseSchema = {
   },
 };
 
+const backupScheduleSchema = {
+  type: 'object',
+  properties: {
+    enabled: { type: 'boolean' },
+    time: { type: 'string' },
+    destinationIds: { type: 'array', items: { type: 'string' } },
+    retainDays: { type: 'integer' },
+    retainWeeks: { type: 'integer' },
+  },
+  additionalProperties: false,
+};
+
 const settingsResponseProps = {
   serverName: { type: 'string' },
   vmsPath: { type: 'string' },
@@ -27,6 +39,7 @@ const settingsResponseProps = {
   containersPath: { type: 'string' },
   mounts: { type: 'array', items: mountResponseSchema },
   backupMountId: { type: ['string', 'null'] },
+  backupSchedule: backupScheduleSchema,
   discoveryEnabled: { type: 'boolean' },
   advertisedUrl: { type: ['string', 'null'] },
   oidc: {
@@ -66,6 +79,7 @@ export default async function settingsRoutes(fastify) {
           backupLocalPath: { type: 'string' },
           containersPath: { type: 'string' },
           backupMountId: { type: ['string', 'null'] },
+          backupSchedule: backupScheduleSchema,
           discoveryEnabled: { type: 'boolean' },
           advertisedUrl: { type: ['string', 'null'] },
           oidc: {
@@ -108,7 +122,7 @@ export default async function settingsRoutes(fastify) {
       } catch (err) {
         // Only the validation codes take the 422 path — Node fs errors also
         // carry a truthy `code` (EACCES, ENOSPC) and must keep the generic 500.
-        if (err?.code === 'INVALID_URL' || err?.code === 'INVALID_OIDC') {
+        if (err?.code === 'INVALID_URL' || err?.code === 'INVALID_OIDC' || err?.code === 'INVALID_BACKUP_SCHEDULE') {
           handleRouteError(err, reply, request);
           return;
         }

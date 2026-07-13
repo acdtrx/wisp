@@ -46,6 +46,7 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 | `containersPath` | `string` | `/var/lib/wisp/containers` | Container storage root (absolute). |
 | `mounts` | `array` | `[]` | Configured mounts (see object shape below). Includes SMB shares and adopted removable drives. |
 | `backupMountId` | `string \| null` | `null` | Optional `id` of a `mounts` entry to expose as a backup destination in the UI. |
+| `backupSchedule` | `object` | `{ enabled: false, time: "03:00", destinationIds: ["local"], retainDays: 7, retainWeeks: 4 }` | Daily scheduled container backups. `time` is `HH:MM` (24h, host-local); `destinationIds` is a non-empty subset of `'local'` + `backupMountId`; `retainDays` 1–365; `retainWeeks` 0–52. Invalid persisted values fall back to defaults on read; stale mount ids are dropped from `destinationIds`. See [BACKUPS.md → Scheduled backups](BACKUPS.md#scheduled-backups). |
 | `sections` | `array` | `[]` | User-defined sidebar sections (see object shape below). The synthetic `Main` section is implicit and never persisted. |
 | `assignments` | `object` | `{}` | Map of `"<type>:<workload-name>"` → `sectionId`. Missing entries (or entries pointing at a removed section) fall back to `Main`. `<type>` is `vm` or `container`. |
 | `discoveryEnabled` | `boolean` | `true` | Announce this instance as a `_wisp._tcp` mDNS service and browse for peers (see [DISCOVERY.md](DISCOVERY.md)). |

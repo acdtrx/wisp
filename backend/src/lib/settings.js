@@ -29,6 +29,13 @@ const DEFAULTS = {
   containersPath: '/var/lib/wisp/containers',
   mounts: [],
   backupMountId: null,
+  backupSchedule: {
+    enabled: false,
+    time: '03:00',
+    destinationIds: ['local'],
+    retainDays: 7,
+    retainWeeks: 4,
+  },
   sections: [],
   assignments: {},
   discoveryEnabled: true,
@@ -87,6 +94,84 @@ function normalizeOidc(obj) {
     clientId,
     clientSecret,
   };
+}
+
+const BACKUP_SCHEDULE_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * Lenient read-side normalization for the scheduled-backup config: invalid
+ * fields fall back to defaults, out-of-range retains are replaced, and
+ * destination ids not currently valid ('local' or the configured
+ * backupMountId) are dropped — so removing/renaming the backup mount
+ * self-heals the schedule on the next read.
+ */
+function normalizeBackupSchedule(obj, validMountIds) {
+  const src = obj && typeof obj === 'object' ? obj : {};
+  const d = DEFAULTS.backupSchedule;
+  const time =
+    typeof src.time === 'string' && BACKUP_SCHEDULE_TIME_RE.test(src.time.trim())
+      ? src.time.trim()
+      : d.time;
+  const retainDays =
+    Number.isInteger(src.retainDays) && src.retainDays >= 1 && src.retainDays <= 365
+      ? src.retainDays
+      : d.retainDays;
+  const retainWeeks =
+    Number.isInteger(src.retainWeeks) && src.retainWeeks >= 0 && src.retainWeeks <= 52
+      ? src.retainWeeks
+      : d.retainWeeks;
+  const allowed = new Set(['local', ...(validMountIds || [])]);
+  let destinationIds = Array.isArray(src.destinationIds)
+    ? [...new Set(src.destinationIds.filter((id) => typeof id === 'string' && allowed.has(id)))]
+    : [...d.destinationIds];
+  if (destinationIds.length === 0) destinationIds = ['local'];
+  return { enabled: src.enabled === true, time, destinationIds, retainDays, retainWeeks };
+}
+
+/**
+ * Strict PATCH-side merge: any field the client actually sends must be valid,
+ * otherwise the whole update is rejected with INVALID_BACKUP_SCHEDULE (422).
+ * Mirrors the lenient-read / strict-write dual the oidc key uses.
+ */
+function mergeBackupSchedule(current, updates, backupMountId) {
+  if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+    throw createAppError('INVALID_BACKUP_SCHEDULE', 'backupSchedule must be an object');
+  }
+  const validMountIds = backupMountId ? [backupMountId] : [];
+  const merged = normalizeBackupSchedule(current, validMountIds);
+  if (updates.enabled !== undefined) merged.enabled = updates.enabled === true;
+  if (updates.time !== undefined) {
+    if (typeof updates.time !== 'string' || !BACKUP_SCHEDULE_TIME_RE.test(updates.time.trim())) {
+      throw createAppError('INVALID_BACKUP_SCHEDULE', 'Schedule time must be HH:MM (24-hour)');
+    }
+    merged.time = updates.time.trim();
+  }
+  if (updates.retainDays !== undefined) {
+    if (!Number.isInteger(updates.retainDays) || updates.retainDays < 1 || updates.retainDays > 365) {
+      throw createAppError('INVALID_BACKUP_SCHEDULE', 'retainDays must be an integer between 1 and 365');
+    }
+    merged.retainDays = updates.retainDays;
+  }
+  if (updates.retainWeeks !== undefined) {
+    if (!Number.isInteger(updates.retainWeeks) || updates.retainWeeks < 0 || updates.retainWeeks > 52) {
+      throw createAppError('INVALID_BACKUP_SCHEDULE', 'retainWeeks must be an integer between 0 and 52');
+    }
+    merged.retainWeeks = updates.retainWeeks;
+  }
+  if (updates.destinationIds !== undefined) {
+    if (!Array.isArray(updates.destinationIds) || updates.destinationIds.length === 0) {
+      throw createAppError('INVALID_BACKUP_SCHEDULE', 'destinationIds must be a non-empty array');
+    }
+    const allowed = new Set(['local', ...validMountIds]);
+    const ids = [...new Set(updates.destinationIds)];
+    for (const id of ids) {
+      if (typeof id !== 'string' || !allowed.has(id)) {
+        throw createAppError('INVALID_BACKUP_SCHEDULE', `Unknown backup destination id: ${id}`);
+      }
+    }
+    merged.destinationIds = ids;
+  }
+  return merged;
 }
 
 const API_TOKEN_SCOPES = new Set(['read', 'admin']);
@@ -190,6 +275,7 @@ async function readSettingsFile() {
         : DEFAULTS.containersPath,
     mounts,
     backupMountId,
+    backupSchedule: normalizeBackupSchedule(data.backupSchedule, backupMountId ? [backupMountId] : []),
     sections,
     assignments,
     discoveryEnabled:
@@ -256,6 +342,7 @@ export async function getSettings() {
     containersPath: fromFile.containersPath,
     mounts: mountsStored.map(mountForApi),
     backupMountId,
+    backupSchedule: fromFile.backupSchedule,
     sections: fromFile.sections || [],
     assignments: fromFile.assignments || {},
     discoveryEnabled: fromFile.discoveryEnabled,
@@ -371,6 +458,11 @@ function buildUpdatedSettings(fromFile, updates) {
       next.backupMountId = ids.includes(id) ? id : null;
     }
   }
+  /* After the backupMountId branch on purpose — a PATCH that swaps the backup
+   * mount and updates the schedule in one request validates against the new id. */
+  if (updates.backupSchedule !== undefined) {
+    next.backupSchedule = mergeBackupSchedule(next.backupSchedule, updates.backupSchedule, next.backupMountId);
+  }
   if (updates.vmsPath !== undefined) {
     next.vmsPath =
       typeof updates.vmsPath === 'string' && updates.vmsPath.trim().startsWith('/')
@@ -468,6 +560,10 @@ async function persistSettings(state) {
       return out;
     }),
     backupMountId: state.backupMountId,
+    backupSchedule: normalizeBackupSchedule(
+      state.backupSchedule,
+      state.backupMountId ? [state.backupMountId] : [],
+    ),
     discoveryEnabled: state.discoveryEnabled !== false,
     advertisedUrl: state.advertisedUrl ?? null,
     oidc: normalizeOidc(state.oidc),

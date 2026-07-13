@@ -852,10 +852,10 @@ Fetch SSH public keys for a GitHub user (server-side proxy to avoid CORS).
 Start a backup job. Returns a job ID; monitor progress via SSE.
 
 - **Body:** `{ destinationIds?: ["local", "<mountId>"] }` (defaults to `["local"]`)
-- **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted. Any other id returns **422**.
+- **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted (resolved by the shared `lib/backupDestinations.js` helper). Any other id returns **422**.
 - **201:** `{ jobId: string, title: string }` — `title` is e.g. `Backup <vmName>`
-- **422:** No valid destination
-- **503:** SMB mount failed
+- **422:** `BACKUP_DEST_UNKNOWN` / `BACKUP_DEST_NONE` — unknown destination id, or nothing resolved
+- **503:** `BACKUP_MOUNT_FAILED` — SMB mount failed
 
 ### GET /api/vms/backup-progress/:jobId
 
@@ -906,19 +906,19 @@ Delete a backup.
 
 ### POST /api/containers/:name/backup
 
-Start a container backup job. Mirrors `POST /api/vms/:name/backup` — same body shape, same destination resolution, same SMB auto-mount behavior. Container must be **stopped** (returns **409** `CONTAINER_MUST_BE_STOPPED` otherwise; enforced inside the backup module). The on-disk layout is described in [BACKUPS.md → Container Backups](BACKUPS.md#container-backups).
+Start a container backup job. Mirrors `POST /api/vms/:name/backup` — same body shape, same destination resolution (shared `lib/backupDestinations.js` helper), same SMB auto-mount behavior. The container does **not** need to be stopped: a running container is paused (cgroup freezer) for the duration of the archive and resumed automatically; stopped/created containers are archived cold. Manual backups record `origin: "manual"` in the manifest. Details in [BACKUPS.md → Container Backups](BACKUPS.md#container-backups).
 
 - **Body:** `{ destinationIds?: ["local", "<mountId>"] }` (defaults to `["local"]`)
 - **201:** `{ jobId: string, title: string }` — `title` is `Backup <name>`
-- **409:** `CONTAINER_MUST_BE_STOPPED` (container is running/paused)
-- **422:** No valid destination, or unknown destination id
-- **503:** SMB mount failed
+- **409:** `CONTAINER_TASK_TRANSIENT` (task is `pausing`/`unknown` — retry shortly), `CONTAINER_BACKUP_IN_PROGRESS` (a backup of this container is already running)
+- **422:** `BACKUP_DEST_UNKNOWN` / `BACKUP_DEST_NONE` — unknown destination id, or nothing resolved
+- **503:** `BACKUP_MOUNT_FAILED` — SMB mount failed
 
 ### GET /api/containers/backup-progress/:jobId
 
 SSE stream for container backup progress.
 
-- **Progress events:** `{ step, percent?, currentFile? }` — `step` values include `measuring`, `archiving`, `done`. Percent is driven by uncompressed bytes through tar against the pre-walked source size (so it tracks real progress through the archive, not output bytes).
+- **Progress events:** `{ step, percent?, currentFile? }` — `step` values include `pausing`, `measuring`, `archiving`, `resuming`, `done` (pause/resume steps only when the container was running). Percent is driven by uncompressed bytes through tar against the pre-walked source size (so it tracks real progress through the archive, not output bytes).
 - **Completion (from job store):** `{ step: "done", timestamp: string }`
 - **Failure:** `{ step: "error", error: string, detail: string }`
 
@@ -937,10 +937,13 @@ List all container backups across currently-usable destinations. Container backu
     "destinationId": "local",
     "destinationLabel": "Local",
     "sizeBytes": 12345678,
-    "image": "caddy:latest"
+    "image": "caddy:latest",
+    "origin": "manual"
   }
 ]
 ```
+
+`origin` is `"manual"` or `"scheduled"`; backups predating the field list as `"manual"`.
 
 ### POST /api/container-backups/restore
 
@@ -1086,6 +1089,7 @@ Get application settings.
   "backupLocalPath": "/var/lib/wisp/backups",
   "mounts": [],
   "backupMountId": null,
+  "backupSchedule": { "enabled": false, "time": "03:00", "destinationIds": ["local"], "retainDays": 7, "retainWeeks": 4 },
   "discoveryEnabled": true,
   "advertisedUrl": null,
   "oidc": { "enabled": false, "issuer": "", "clientId": "", "hasClientSecret": false }
@@ -1098,9 +1102,10 @@ The shipped `wisp-config.json.example` has empty `mounts`. Mounts are added via 
 
 Update settings. Partial update — only include fields to change.
 
-- **Body:** Partial settings object (`serverName`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`, `discoveryEnabled`, `advertisedUrl`, `oidc`)
+- **Body:** Partial settings object (`serverName`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`, `backupSchedule`, `discoveryEnabled`, `advertisedUrl`, `oidc`)
 - **200:** Updated settings object
 - **Validation:** Paths must be absolute (start with `/`). `advertisedUrl` must be a valid `http`/`https` URL of at most 251 bytes (mDNS TXT record limit), or `null`/empty to clear — invalid values return **422** `{ error, detail }` with code `INVALID_URL`.
+- **`backupSchedule`:** Object `{ enabled?, time?, destinationIds?, retainDays?, retainWeeks? }`, merged per-field. Any field the client actually sends must be valid — `time` matching `HH:MM` (24-hour), `retainDays` 1–365, `retainWeeks` 0–52, `destinationIds` a non-empty subset of `'local'` + the configured `backupMountId` (validated against the merged result, so swapping the mount and updating the schedule in one PATCH works) — else **422** with code `INVALID_BACKUP_SCHEDULE`. On read, invalid persisted values fall back leniently to defaults and stale mount ids self-heal out of `destinationIds`. See [BACKUPS.md → Scheduled backups](BACKUPS.md#scheduled-backups).
 - **`oidc`:** Object `{ enabled?, issuer?, clientId?, clientSecret? }`. `clientSecret` is write-only — omit or send empty to keep the saved secret (the masked GET never returns it to echo back). When `enabled: true`, the merged config must have a valid `http`/`https` `issuer`, a `clientId`, and a `clientSecret` on file, else **422** `{ error, detail }` with code `INVALID_OIDC`. Persisted to `wisp-config.json` (written `0600`).
 - **Side effect:** A successful PATCH that changes `serverName`, `discoveryEnabled`, or `advertisedUrl` re-announces the instance's `_wisp._tcp` mDNS service (see [DISCOVERY.md](DISCOVERY.md)).
 - **`containersPath`:** Optional; container storage root (same default as `config.js`; exposed for scripts — App Config UI does not edit it yet).
@@ -1308,7 +1313,7 @@ All container routes require JWT authentication. Routes with a `:name` path para
 
 List all containers (summary).
 
-**200:** `[{ name, type: "container", image, state, iconId, updateAvailable }]`. List payload is intentionally minimal — only what the sidebar renders. `updateAvailable` is set by the image update checker (see CONTAINERS.md → *Image updates*) and defaults to `false` when the field is not set on disk. Section assignment is not part of this payload — read it from `GET /api/sections` (see [Sections](#sections)). Detail fields (`pid`, `cpuLimit`, `memoryLimitMiB`, `restartPolicy`, `autostart`, `pendingRestart`, etc.) are returned by `GET /api/containers/:name`; runtime samples (`uptime`, live CPU/IO) come from the per-container stats SSE.
+**200:** `[{ name, type: "container", image, state, iconId, updateAvailable }]`. List payload is intentionally minimal — only what the sidebar renders. `updateAvailable` is set by the image update checker (see CONTAINERS.md → *Image updates*) and defaults to `false` when the field is not set on disk. Section assignment is not part of this payload — read it from `GET /api/sections` (see [Sections](#sections)). Detail fields (`pid`, `cpuLimit`, `memoryLimitMiB`, `restartPolicy`, `autostart`, `autoBackup`, `pendingRestart`, etc.) are returned by `GET /api/containers/:name`; runtime samples (`uptime`, live CPU/IO) come from the per-container stats SSE.
 
 `iconId` is the optional UI icon key (same registry as VM icons); omit or `null` means the client uses the default container icon.
 
@@ -1402,7 +1407,7 @@ The **`env`** field uses a structured shape: `{ KEY: { value, secret?, isSet? } 
 
 Partially update container config.
 
-**Body:** Any subset of container.json fields, except environment variables — those must use **`envPatch`** (see below). **`iconId`:** set to a string to choose a UI icon (same ids as VM icons), or `null` / empty string to clear and use the client default. **`localDns`:** boolean toggle for mDNS registration. **`runAsRoot`:** boolean — when `true`, the container process runs as UID/GID 0 instead of the Wisp deploy user (required for images that write to root-owned paths inside the container, e.g. OpenWebUI); requires restart.
+**Body:** Any subset of container.json fields, except environment variables — those must use **`envPatch`** (see below). **`iconId`:** set to a string to choose a UI icon (same ids as VM icons), or `null` / empty string to clear and use the client default. **`localDns`:** boolean toggle for mDNS registration. **`autoBackup`:** boolean — include this container in the daily scheduled backup (no restart needed). **`runAsRoot`:** boolean — when `true`, the container process runs as UID/GID 0 instead of the Wisp deploy user (required for images that write to root-owned paths inside the container, e.g. OpenWebUI); requires restart.
 
 **`name`:** Renaming the container. The container must be **stopped** (no running/paused task) — otherwise **409** `CONTAINER_MUST_BE_STOPPED`. The new name is validated with the same rules as create (1–63 chars, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..` / path separators); invalid → **422** `INVALID_CONTAINER_NAME`. Conflicts with an existing container or directory → **409** `CONTAINER_EXISTS`. The rename runs first, then any other fields in the body apply to the renamed container; the response always carries the name actually in effect (`{ ..., name: <newOrUnchangedName> }`). URL paths and SSE channels under the old name stop responding immediately — clients should follow the response and re-subscribe under the returned `name`. The on-disk container directory and the containerd container record are renamed in lockstep; the (ephemeral) rootfs snapshot is dropped and re-prepared on next start. See CONTAINERS.md → [Rename](../spec/CONTAINERS.md#rename).
 

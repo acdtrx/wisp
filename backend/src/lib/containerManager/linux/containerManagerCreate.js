@@ -394,6 +394,7 @@ export async function createContainer(spec, onStep) {
     memoryLimitMiB: null,
     restartPolicy: 'unless-stopped',
     autostart: false,
+    autoBackup: false,
     localDns: true,
     env: {},
     mounts: [],

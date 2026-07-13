@@ -46,6 +46,7 @@ export const overviewTools = [
             mdnsName: cfg.localDns ? `${c.name}.local` : null,
             app: cfg.metadata?.app ?? null,
             autostart: cfg.autostart === true,
+            autoBackup: cfg.autoBackup === true,
             restartPolicy: cfg.restartPolicy ?? null,
           };
         } catch {

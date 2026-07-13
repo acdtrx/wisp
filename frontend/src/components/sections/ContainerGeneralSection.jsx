@@ -43,6 +43,7 @@ export function buildGeneralFormDefaults(config) {
     memoryLimitMiB: config.memoryLimitMiB ?? '',
     restartPolicy: config.restartPolicy || 'unless-stopped',
     autostart: config.autostart ?? false,
+    autoBackup: config.autoBackup ?? false,
     runAsRoot: config.runAsRoot ?? false,
   };
 }
@@ -76,6 +77,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
     config?.memoryLimitMiB,
     config?.restartPolicy,
     config?.autostart,
+    config?.autoBackup,
     config?.runAsRoot,
   ]);
 
@@ -116,6 +118,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
       }
       if (form.restartPolicy !== original.restartPolicy) changes.restartPolicy = form.restartPolicy;
       if (form.autostart !== original.autostart) changes.autostart = form.autostart;
+      if (form.autoBackup !== original.autoBackup) changes.autoBackup = form.autoBackup;
       if (form.runAsRoot !== original.runAsRoot) changes.runAsRoot = form.runAsRoot;
 
       const result = await onSave(changes);
@@ -231,6 +234,12 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
 
           <div className="mx-0.5 h-6 w-px bg-surface-border" />
 
+          <Field label="Run as Root">
+            <div className="flex h-9 items-center">
+              <Toggle checked={form.runAsRoot} onChange={(v) => updateField('runAsRoot', v)} />
+            </div>
+          </Field>
+
           <Field label="Restart Policy" icon={RefreshCw}>
             <RestartPolicySegmentedControl
               value={form.restartPolicy}
@@ -244,9 +253,12 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
             </div>
           </Field>
 
-          <Field label="Run as Root">
+          <Field
+            label="Auto Backup"
+            helpText="Included in the daily scheduled backup (Host Mgmt → Backup Scheduler). A running container is briefly paused while it's archived."
+          >
             <div className="flex h-9 items-center">
-              <Toggle checked={form.runAsRoot} onChange={(v) => updateField('runAsRoot', v)} />
+              <Toggle checked={form.autoBackup} onChange={(v) => updateField('autoBackup', v)} />
             </div>
           </Field>
         </div>

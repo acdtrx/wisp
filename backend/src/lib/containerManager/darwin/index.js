@@ -124,6 +124,10 @@ export async function startAutostartContainersAtBackendBoot() {
   /* macOS dev stub — no containerd */
 }
 
+export async function resumeStalePausedContainersAtBackendBoot() {
+  /* macOS dev stub — no containerd */
+}
+
 export async function stopContainer() {
   throw noContainerd();
 }

@@ -53,12 +53,16 @@ function errorCodeToStatus(code) {
     case 'PATH_NOT_ALLOWED':
     case 'PASSWORD_EMPTY':
     case 'INVALID_OIDC':
+    case 'INVALID_BACKUP_SCHEDULE':
     case 'TOKEN_INVALID':
+    case 'BACKUP_DEST_UNKNOWN':
+    case 'BACKUP_DEST_NONE':
       return 422;
     case 'TOKEN_NOT_FOUND':
       return 404;
     case 'BACKUP_DEST_NOT_FOUND':
     case 'BACKUP_DEST_NOT_WRITABLE':
+    case 'BACKUP_MOUNT_FAILED':
     case 'UPDATE_CHECK_UNAVAILABLE':
     case 'POWER_UNAVAILABLE':
       return 503;
@@ -82,6 +86,8 @@ function errorCodeToStatus(code) {
     case 'CONTAINER_NOT_RUNNING':
     case 'CONTAINER_EXISTS':
     case 'CONTAINER_MUST_BE_STOPPED':
+    case 'CONTAINER_TASK_TRANSIENT':
+    case 'CONTAINER_BACKUP_IN_PROGRESS':
     case 'CONTAINER_IMAGE_IN_USE':
     case 'CONTAINER_SERVICE_DUPLICATE':
     case 'CONTAINER_LOCAL_DNS_DISABLED':

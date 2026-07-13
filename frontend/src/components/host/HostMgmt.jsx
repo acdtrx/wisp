@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import HostBackup from './HostBackup.jsx';
+import HostBackupScheduler from './HostBackupScheduler.jsx';
 import HostStorage from './HostStorage.jsx';
 import HostNetworkBridges from './HostNetworkBridges.jsx';
 
@@ -29,6 +30,8 @@ export default function HostMgmt() {
       <HostStorage />
 
       <HostBackup />
+
+      <HostBackupScheduler />
     </div>
   );
 }

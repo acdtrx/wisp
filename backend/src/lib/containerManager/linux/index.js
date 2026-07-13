@@ -44,6 +44,7 @@ export {
   restartContainer,
   getTaskState,
   startAutostartContainersAtBackendBoot,
+  resumeStalePausedContainersAtBackendBoot,
 } from './containerManagerLifecycle.js';
 
 export {

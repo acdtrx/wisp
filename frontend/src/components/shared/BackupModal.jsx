@@ -61,7 +61,11 @@ export default function BackupModal({
     <Modal open={!!onClose} onClose={onClose} size="md" bodyPadding="none">
       <div className="p-6">
         <h3 className="text-sm font-semibold text-text-primary">Backup — {name}</h3>
-        <p className="mt-1 text-xs text-text-secondary">Choose backup destinations. {subjectLabel} must be stopped.</p>
+        <p className="mt-1 text-xs text-text-secondary">
+          {subjectLabel === 'Container'
+            ? 'Choose backup destinations. A running container is paused for the duration of the archive and resumed automatically.'
+            : `Choose backup destinations. ${subjectLabel} must be stopped.`}
+        </p>
 
         <div className={`mt-4 space-y-2 ${inProgress ? 'opacity-60' : ''}`}>
           {destinations.map((d) => (

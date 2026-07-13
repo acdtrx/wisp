@@ -29,7 +29,7 @@ JSON-RPC batching is rejected (`-32600`; removed from the MCP spec in 2025-06-18
 
 | Tool | Input | Returns |
 |------|-------|---------|
-| `get_deployment_overview` | — | wisp version, serverName, host identity, bridges, sections; per-container `{ name, state, image, ip, bridge, mdnsName, app, autostart, restartPolicy, updateAvailable }` (`ip` only while running; stopped containers report `lastKnownIp` — a stale DHCP lease, possibly reassigned); per-VM `{ name, state, vcpus, memoryMiB, osCategory, ip, guestHostname, mdnsName }` (VM `autostart` only on `get_vm`) |
+| `get_deployment_overview` | — | wisp version, serverName, host identity, bridges, sections; per-container `{ name, state, image, ip, bridge, mdnsName, app, autostart, autoBackup, restartPolicy, updateAvailable }` (`ip` only while running; stopped containers report `lastKnownIp` — a stale DHCP lease, possibly reassigned); per-VM `{ name, state, vcpus, memoryMiB, osCategory, ip, guestHostname, mdnsName }` (VM `autostart` only on `get_vm`) |
 | `get_container` | `{ name }` | Full container config + state with **all secrets masked** — including `metadata.app` and the masked `appConfig`. This is how agents read app configuration generically (e.g. a Caddy container's `appConfig.hosts[]` = the exposure map); there are deliberately no app-specific tools |
 | `get_container_logs` | `{ name, lines?, runId? }` | Tail of a run log (newest run by default; `lines` 1–1000, default 100) |
 | `list_images` | — | Images in the `wisp` containerd namespace, containers with a newer digest available, last update-check info |
@@ -45,7 +45,7 @@ Deliberately a **subset** of the REST API (`lib/mcp/tools/containerAdminTools.js
 
 | Tool | Input | Behaviour |
 |------|-------|-----------|
-| `deploy_container` | `{ name, image, env?, secretEnv?, restartPolicy?, autostart?, localDns?, cpuLimit?, memoryLimitMiB? }` | Create a generic container on the default bridge and start it. `secretEnv` values are stored write-only (`secret: true`) so no read token can recover them later. On start failure the container stays defined (stopped) and the error says so. |
+| `deploy_container` | `{ name, image, env?, secretEnv?, restartPolicy?, autostart?, autoBackup?, localDns?, cpuLimit?, memoryLimitMiB? }` | Create a generic container on the default bridge and start it. `secretEnv` values are stored write-only (`secret: true`) so no read token can recover them later. On start failure the container stays defined (stopped) and the error says so. |
 | `update_container_image` | `{ name, image? }` | Pull the given ref (or re-pull the current tag), point the container at it, restart if running. Locally-imported images skip the pull when present. |
 | `start_container` / `stop_container` / `restart_container` | `{ name }` | Lifecycle; same facade calls as the routes. |
 | `update_app_config` | `{ name, appConfig }` | Patch an app container's appConfig **restricted to that app's `agentWritableAppConfigFields`** (see below). Blocked fields are rejected with an error naming the writable set; everything else is carried forward verbatim from the stored config. Runs the standard `applyAppConfig` path: validate → regenerate derived config → live reload or `pendingRestart`. |

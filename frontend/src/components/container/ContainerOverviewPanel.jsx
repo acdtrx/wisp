@@ -256,15 +256,34 @@ export default function ContainerOverviewPanel() {
             loading={actionLoading === 'start'}
             variant="primary"
           />
-          <ActionButton icon={Square} label="Stop" onClick={() => stopContainer(name)} disabled={isStopped} loading={actionLoading === 'stop'} />
-          <ActionButton icon={Zap} label="Kill" onClick={() => killContainer(name)} disabled={isStopped} loading={actionLoading === 'kill'} variant="danger" />
-          <ActionButton icon={RotateCcw} label="Restart" onClick={() => restartContainer(name)} disabled={!isRunning} loading={actionLoading === 'restart'} />
+          <ActionButton
+            icon={Square}
+            label={backupInProgress ? 'Unavailable while a backup is in progress' : 'Stop'}
+            onClick={() => stopContainer(name)}
+            disabled={isStopped || backupInProgress}
+            loading={actionLoading === 'stop'}
+          />
+          <ActionButton
+            icon={Zap}
+            label={backupInProgress ? 'Unavailable while a backup is in progress' : 'Kill'}
+            onClick={() => killContainer(name)}
+            disabled={isStopped || backupInProgress}
+            loading={actionLoading === 'kill'}
+            variant="danger"
+          />
+          <ActionButton
+            icon={RotateCcw}
+            label={backupInProgress ? 'Unavailable while a backup is in progress' : 'Restart'}
+            onClick={() => restartContainer(name)}
+            disabled={!isRunning || backupInProgress}
+            loading={actionLoading === 'restart'}
+          />
           <div className="mx-0.5 h-4 w-px shrink-0 bg-surface-border" />
           <ActionButton
             icon={Archive}
-            label={isStopped ? 'Backup' : 'Backup (stop the container first)'}
+            label={backupInProgress ? 'Backup in progress' : 'Backup'}
             onClick={handleOpenBackup}
-            disabled={!isStopped}
+            disabled={backupInProgress || state === 'pausing' || state === 'unknown'}
             loading={backupInProgress}
           />
           <ActionButton icon={Trash2} label="Delete" onClick={() => setDeleteDialogOpen(true)} variant="danger" loading={actionLoading === 'delete'} />

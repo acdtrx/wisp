@@ -122,6 +122,8 @@ Backup creation and restore operations run as background jobs with SSE-based pro
 
 Containers reuse the same backup destinations and pre-checks (configured roots, mount-when-needed for SMB) as VMs, but the on-disk layout and contents are different — there is no analog to a VM's qcow2 disk. The container's writable rootfs is **ephemeral** (re-prepared from the image on every start, see [CONTAINERS.md → Ephemeral rootfs](CONTAINERS.md#ephemeral-rootfs)), so a backup only needs to capture the container directory itself: `container.json` plus Local mount data (`files/<mountName>/`) and recent run logs (`runs/`).
 
+Unlike VMs, containers do **not** need to be stopped: a running container is **paused** (containerd `Tasks.Pause` → cgroup freezer) for the duration of the archive and resumed automatically. Nothing can write to the container directory while its processes are frozen, so the archive is a point-in-time capture — equivalent to a power cut, which well-behaved apps (SQLite incl. WAL, Postgres, registries) recover from by design. The container keeps its PIDs, memory, and open TCP connections; clients just see a stall for the seconds the tar takes. The UI shows the container as `paused` for that window.
+
 ### Layout
 
 Container backups live under a sibling `containers/` subdirectory at each backup root, kept separate from VM backups so VM and container names can never collide:
@@ -140,6 +142,7 @@ Container backups live under a sibling `containers/` subdirectory at each backup
 | `schemaVersion` | Manifest schema version (currently `1`) |
 | `name` | Container name at backup time |
 | `timestamp` | ISO 8601 timestamp (filesystem-safe form, used as the dir name) |
+| `origin` | `"manual"` or `"scheduled"` — who took the backup. Backups predating this field list as `manual`. Retention pruning only ever deletes `scheduled` backups. |
 | `image` | OCI image reference from `container.json` (e.g. `nginx:latest`) |
 | `imageDigest` | Top-level manifest digest at backup time (`sha256:…`) — informational; restore re-pulls and adopts whatever the registry currently advertises |
 | `sourceBytes` | Pre-walked total bytes of the container directory (uncompressed) |
@@ -148,13 +151,49 @@ Container backups live under a sibling `containers/` subdirectory at each backup
 
 ### Creating a container backup
 
-`POST /api/containers/:name/backup` with `{ destinationIds }` — same body shape and destination resolution as the VM backup route. Container must be **stopped** (returns **409** `CONTAINER_MUST_BE_STOPPED` otherwise). The job spawns `tar -cf - <containerDir>`, pipes its stdout through Node's `createGzip()` and a bytes-counter `Transform` (driving percent against the pre-walked source size), then writes to `data.tar.gz`. After the archive is finalized, the manifest is written.
+`POST /api/containers/:name/backup` with `{ destinationIds }` — same body shape as the VM backup route; both routes resolve ids via the shared `lib/backupDestinations.js` helper (`'local'` → `backupLocalPath`; the configured `backupMountId` → its mount path, auto-mounting SMB; unknown ids → 422, mount failure → 503). A second backup request for the same container while one is running returns **409** `CONTAINER_BACKUP_IN_PROGRESS`.
 
-Progress events are emitted via the shared `backupJobStore` — same SSE consumer (`backgroundJobsStore` on the frontend, top-bar progress + modal mirror) as VM backups, just routed via `/api/containers/backup-progress/:jobId` and `JOB_KIND.CONTAINER_BACKUP`.
+The task state decides how the archive is taken (`freezeForBackup` in `containerManagerBackup.js`):
+
+- **RUNNING** → `pauseContainer` (cgroup freezer), tar, then resume in a `finally` (a resume failure — e.g. the task was killed externally while frozen — is logged and never masks a tar error nor fails a good archive).
+- **STOPPED** → task record deleted (`cleanupTask`), archived cold — unchanged behavior.
+- **CREATED** / no task → archived cold, nothing to pause.
+- **PAUSED** (pre-existing) → archived as-is and **left paused** (the backup didn't pause it, it won't resume it).
+- **PAUSING / UNKNOWN** → **409** `CONTAINER_TASK_TRANSIENT` — retry when the state settles.
+
+The pause happens as late as possible (after destination validation and dir creation) so the frozen window covers only measure + tar. If the archive fails, the partial backup dir is removed. The job spawns `tar -cf - <containerDir>`, pipes its stdout through Node's `createGzip()` and a bytes-counter `Transform` (driving percent against the pre-walked source size), then writes to `data.tar.gz`. After the archive is finalized, the manifest is written.
+
+Progress steps are `pausing → measuring → archiving → resuming → done` (the pause/resume steps are skipped for cold archives). Events are emitted via the shared `backupJobStore` — same SSE consumer (`backgroundJobsStore` on the frontend, top-bar progress + modal mirror) as VM backups, just routed via `/api/containers/backup-progress/:jobId` and `JOB_KIND.CONTAINER_BACKUP`.
+
+**Crash recovery:** if the backend dies mid-archive, the container stays frozen until the next backend boot, where `resumeStalePausedContainersAtBackendBoot` resumes any paused wisp-managed task (Wisp exposes no user-facing pause, so a paused task at boot can only be an interrupted backup). Runs before the autostart pass.
+
+### Scheduled backups
+
+A daily scheduler (`lib/containerBackupScheduler.js`, app-glue — started/stopped from `index.js` alongside the update checkers) backs up every container whose `container.json` has **`autoBackup: true`** (toggle in the container's General section; default `false`).
+
+**Configuration** lives in `settings.backupSchedule` (**Host → Host Mgmt → Backup Scheduler**):
+
+| Field | Default | Constraints | Description |
+|-------|---------|-------------|-------------|
+| `enabled` | `false` | boolean | Master switch |
+| `time` | `"03:00"` | `HH:MM` 24h, host-local | Daily fire time |
+| `destinationIds` | `["local"]` | non-empty subset of `'local'` + the configured `backupMountId` | Where scheduled backups go |
+| `retainDays` | `7` | integer 1–365 | Daily retention window |
+| `retainWeeks` | `4` | integer 0–52 | Weekly retention window |
+
+**Firing semantics:** a 60-second tick fires when the configured time is crossed between two ticks (`target ∈ (lastTick, now]`), at most once per boundary. There is **no missed-window catch-up** — the server is assumed to run 24/7; if the backend was down (or the scheduler disabled) at the configured time, that day is skipped. The tick baseline is set at boot, so booting *after* today's time does not fire. A clock-backwards jump re-baselines instead of double-firing.
+
+**Run:** containers are processed **sequentially** (at most one container frozen at a time), each as a `CONTAINER_BACKUP` job in the shared `backupJobStore` — visible in `GET /api/background-jobs`, streamable via the normal progress SSE, and picked up by the frontend's page-load job rehydration (an already-open tab doesn't learn of a scheduler-started job until reload). A container with a manual backup already running is skipped. Destination resolution failure (e.g. unreachable SMB share) aborts the run with a warning — containers are never left paused because a destination was missing. Per-container failures are logged and the run continues.
+
+**Retention (GFS-lite, scheduled backups only):** after each successful backup, per container and per destination (`lib/backupRetention.js`):
+
+- keep the **newest scheduled backup per calendar day** for the last `retainDays` days (today inclusive);
+- among older scheduled backups, keep the **newest per ISO week** for the `retainWeeks` most recent weeks that have backups (presence-based, so a gap in the schedule never causes the only remaining old backups to be deleted);
+- delete every other **scheduled** backup. **Manual backups — and backups predating the manifest `origin` field — are never auto-pruned.**
 
 ### Listing
 
-`GET /api/container-backups[?containerName=]` scans each currently-usable destination's `containers/` subdirectory and reads each `manifest.json`. Entries without `type === "container"` are skipped (defensive). The VM list scanner (`GET /api/backups`) explicitly skips a top-level `containers/` directory under each root for the symmetric reason — keeps the two namespaces independent.
+`GET /api/container-backups[?containerName=]` scans each currently-usable destination's `containers/` subdirectory and reads each `manifest.json`. Entries without `type === "container"` are skipped (defensive). Rows carry `origin` (`"manual"` / `"scheduled"`). The VM list scanner (`GET /api/backups`) explicitly skips a top-level `containers/` directory under each root for the symmetric reason — keeps the two namespaces independent.
 
 ### Restoring
 

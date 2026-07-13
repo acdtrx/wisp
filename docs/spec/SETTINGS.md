@@ -59,10 +59,24 @@ Configured in **Host → Host Mgmt → Backup**.
 
 | Setting | Description |
 |---------|-------------|
-| `backupLocalPath` | Local directory for VM backups (always available as a destination in the VM backup modal). |
-| `backupMountId` | Optional. If set to a mount `id` from `mounts`, that mount appears as a second destination in the VM Overview backup modal. Use `(none)` when no extra destination should be offered for backups. |
+| `backupLocalPath` | Local directory for backups (always available as a destination in the backup modals). |
+| `backupMountId` | Optional. If set to a mount `id` from `mounts`, that mount appears as a second destination in the backup modals and the Backup Scheduler. Use `(none)` when no extra destination should be offered for backups. |
 
-Backups still require the VM to be stopped. The VM modal lists **Local** plus at most one extra destination when `backupMountId` is set.
+VM backups still require the VM to be stopped; container backups pause a running container for the duration of the archive instead. The modals list **Local** plus at most one extra destination when `backupMountId` is set.
+
+## Backup Scheduler (`backupSchedule`)
+
+Configured in **Host → Host Mgmt → Backup Scheduler**. Runs a daily backup of every container with **Auto Backup** enabled (container General section).
+
+| Setting | Description |
+|---------|-------------|
+| `enabled` | Master switch (default off). |
+| `time` | Daily fire time, `HH:MM` 24-hour, host-local (default `03:00`). |
+| `destinationIds` | Where scheduled backups go — Local and/or the configured backup mount (default `["local"]`; at least one required). |
+| `retainDays` | Keep the newest scheduled backup per day for this many days (default 7, range 1–365). |
+| `retainWeeks` | Beyond the daily window, keep one scheduled backup per week for this many weeks (default 4, range 0–52). |
+
+Manual backups are never auto-pruned. The scheduler runs only while the backend is up — a missed time is skipped until the next day. Full semantics in [BACKUPS.md → Scheduled backups](BACKUPS.md#scheduled-backups).
 
 ## LAN Discovery (`discoveryEnabled`, `advertisedUrl`)
 

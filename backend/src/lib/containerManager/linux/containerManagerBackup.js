@@ -13,6 +13,12 @@
  * a VM's qcow2 disk to capture. State that survives stop/start lives only
  * in Local mounts (`files/<mountName>/`), which travel with the dir.
  *
+ * Running containers are backed up without stopping: the task is paused
+ * (cgroup freezer) for the duration of the archive and resumed in a finally
+ * block, giving a point-in-time capture. `manifest.origin` records whether
+ * a backup was taken manually or by the scheduler (retention only ever
+ * prunes scheduled backups).
+ *
  * Restore creates an independent copy under a new name with a fresh MAC.
  * The image referenced in `container.json` is re-pulled if not already in
  * containerd's content store. Storage-sourced mounts are preserved
@@ -30,9 +36,11 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 
-import { containerError, getClient, callUnary, packAny } from './containerManagerConnection.js';
+import { containerError, containerState, getClient, callUnary, packAny } from './containerManagerConnection.js';
 import { getContainerDir, getContainerFilesDir, getContainersPath } from './containerPaths.js';
-import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
+import {
+  getTaskState, normalizeTaskStatus, cleanupTask, pauseContainer, resumeContainer,
+} from './containerManagerLifecycle.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { generateContainerMac, resolveContainerResolvConf } from './containerManagerNetwork.js';
 import { validateContainerName } from './containerValidation.js';
@@ -147,36 +155,52 @@ async function ensureWritableDir(p) {
   }
 }
 
-async function ensureContainerStopped(name) {
+/**
+ * Prepare the container's task for a consistent archive and report whether
+ * this call paused it. A RUNNING task is frozen (cgroup freezer) so nothing
+ * writes to the container dir while tar reads it — a point-in-time capture
+ * equivalent to a power cut, which apps recover from by design. A STOPPED
+ * task is deleted as before; CREATED / no-task dirs are already quiescent.
+ * An already-PAUSED task is left as found (we didn't pause it, we won't
+ * resume it). Transient states are rejected — retry when they settle.
+ */
+async function freezeForBackup(name) {
   const task = await getTaskState(name);
-  if (!task) return;
+  if (!task) return false;
   const st = normalizeTaskStatus(task.status);
   if (st === 'STOPPED') {
     await cleanupTask(name);
-    return;
+    return false;
+  }
+  if (st === 'CREATED' || st === 'PAUSED') return false;
+  if (st === 'RUNNING') {
+    await pauseContainer(name);
+    return true;
   }
   throw containerError(
-    'CONTAINER_MUST_BE_STOPPED',
-    `Container "${name}" must be stopped to create a backup (current state: ${st.toLowerCase()})`,
+    'CONTAINER_TASK_TRANSIENT',
+    `Container "${name}" is in a transient state (${st.toLowerCase()}) — retry in a moment`,
   );
 }
 
 /**
- * Create a backup of a stopped container at `<destinationPath>/containers/<name>/<timestamp>/`.
+ * Create a backup of a container at `<destinationPath>/containers/<name>/<timestamp>/`.
+ * A running container is paused for the duration of the archive and resumed
+ * automatically; stopped containers are archived cold.
  *
  * @param {string} name
  * @param {string} destinationPath - existing backup root (already validated by route)
- * @param {{ onProgress?: (e: { step: string, percent?: number, currentFile?: string }) => void }} [options]
+ * @param {{ onProgress?: (e: { step: string, percent?: number, currentFile?: string }) => void,
+ *           origin?: 'manual' | 'scheduled' }} [options]
  * @returns {Promise<{ path: string, timestamp: string }>}
  */
-export async function createContainerBackup(name, destinationPath, { onProgress } = {}) {
+export async function createContainerBackup(name, destinationPath, { onProgress, origin = 'manual' } = {}) {
   if (!destinationPath || !destinationPath.startsWith('/')) {
     throw containerError('BACKUP_DEST_NOT_FOUND', 'Invalid backup destination path');
   }
   await ensureWritableDir(destinationPath);
 
   const config = await readContainerConfig(name);
-  await ensureContainerStopped(name);
 
   const containerDir = getContainerDir(name);
   const containersRoot = getContainersPath();
@@ -189,19 +213,47 @@ export async function createContainerBackup(name, destinationPath, { onProgress 
     if (typeof onProgress === 'function') onProgress({ step, ...data });
   };
 
-  emit('measuring', { percent: 0, currentFile: 'Measuring contents…' });
-  const totalBytes = await dirTotalBytes(containerDir);
-
+  /* Freeze as late as possible — destination validation and dir creation
+   * above run while the container is still live, keeping the paused window
+   * to just measure + tar. */
+  let totalBytes = 0;
   const archivePath = join(backupDir, 'data.tar.gz');
-  emit('archiving', { percent: 0, currentFile: `Archiving ${name}` });
+  try {
+    emit('pausing', { percent: 0, currentFile: 'Pausing container…' });
+    const wePaused = await freezeForBackup(name);
+    try {
+      emit('measuring', { percent: 0, currentFile: 'Measuring contents…' });
+      totalBytes = await dirTotalBytes(containerDir);
 
-  await tarGzipDir(
-    containersRoot,
-    name,
-    archivePath,
-    totalBytes,
-    (pct) => emit('archiving', { percent: pct, currentFile: `Archiving ${name}` }),
-  );
+      emit('archiving', { percent: 0, currentFile: `Archiving ${name}` });
+      await tarGzipDir(
+        containersRoot,
+        name,
+        archivePath,
+        totalBytes,
+        (pct) => emit('archiving', { percent: pct, currentFile: `Archiving ${name}` }),
+      );
+    } finally {
+      if (wePaused) {
+        emit('resuming', { currentFile: 'Resuming container…' });
+        try {
+          await resumeContainer(name);
+        } catch (err) {
+          /* The task may have been killed/deleted while frozen; the archive is
+           * still valid and a tar failure must not be masked — log and move on. */
+          containerState.logger?.warn?.(
+            { err, container: name },
+            'Failed to resume container after backup',
+          );
+        }
+      }
+    }
+  } catch (err) {
+    /* Don't leave an empty/partial backup dir behind (it would be skipped by
+     * listings but still consume disk). */
+    await rm(backupDir, { recursive: true, force: true }).catch(() => {});
+    throw err;
+  }
 
   let archiveBytes = 0;
   try { archiveBytes = (await stat(archivePath)).size; } catch { /* ignore */ }
@@ -211,6 +263,7 @@ export async function createContainerBackup(name, destinationPath, { onProgress 
     schemaVersion: 1,
     name,
     timestamp,
+    origin: origin === 'scheduled' ? 'scheduled' : 'manual',
     image: config.image || null,
     imageDigest: config.imageDigest || null,
     sourceBytes: totalBytes,
@@ -281,6 +334,9 @@ export async function listContainerBackups(destinations, containerName = null) {
           path: backupPath,
           sizeBytes: typeof manifest.sizeBytes === 'number' ? manifest.sizeBytes : undefined,
           image: manifest.image ?? null,
+          /* Backups predating the origin field are treated as manual so
+           * retention pruning never touches them. */
+          origin: manifest.origin === 'scheduled' ? 'scheduled' : 'manual',
         });
       }
     }

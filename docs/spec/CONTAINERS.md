@@ -88,6 +88,7 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 | `memoryLimitMiB` | number \| null | null | Memory limit in MiB |
 | `restartPolicy` | string | `"unless-stopped"` | One of: `never`, `on-failure`, `unless-stopped`, `always` |
 | `autostart` | boolean | false | Start on backend boot |
+| `autoBackup` | boolean | false | Include in the daily scheduled backup (see [BACKUPS.md → Scheduled backups](BACKUPS.md#scheduled-backups)). A running container is briefly paused while archived. |
 | `runAsRoot` | boolean | false | Run the container process as UID/GID 0 instead of the Wisp deploy user. Required for images that write to root-owned directories (e.g. OpenWebUI). When true, **Local** bind mounts get a per-mount **idmapped mount** (size:1) that maps the configured `containerOwnerUid`/`containerOwnerGid` (defaults 0/0) to the host deploy UID/GID — so files written by that in-container UID land on disk owned by the deploy user and the backend can clean them up without `sudo`. Storage-sourced mounts never get idmappings. See [Mount entry](#mount-entry) and [Idmapped Local mounts](#idmapped-local-mounts). Requires restart. |
 | `localDns` | boolean | false | Enable mDNS registration for this container on the LAN. New containers default to `true`; existing containers without this field are treated as `false` for upgrade safety. |
 | `services` | array | `[]` | Optional mDNS service advertisements (SRV+TXT) tied to the container's `<name>.local` host. See [Service entry](#service-entry). Requires `localDns: true`. |
@@ -255,7 +256,7 @@ All under `backend/src/lib/`:
 | `containerManager.js` | Facade re-exporting all container operations |
 | `containerManagerConnection.js` | gRPC client setup, proto loading, connect/disconnect |
 | `containerManagerList.js` | `listContainers()`, `getContainerConfig()`, `getRunningContainerCount()` (running count for host stats SSE), `subscribeContainerListChange()` (SSE consumers subscribe to cache-refresh events). Maintains an in-memory cache populated on containerd connect, refreshed on **(a)** containerd events that affect the list (`/tasks/{start,exit,oom,delete,paused,resumed}`, `/containers/{create,update,delete}`), **(b)** any `container.json` write via `subscribeContainerConfigWrite`, and **(c)** image-update job completion (route handler calls `notifyContainerConfigWrite('*')` after refreshing the meta sidecar). The events subscription auto-reconnects with exponential backoff (1s→30s cap) on stream-level errors (e.g. `UNAVAILABLE: Connection dropped`) — without this the cache would go deaf to lifecycle events until backend restart, leaving sidebar icons frozen on stale state. |
-| `containerManagerLifecycle.js` | `startContainer()`, `stopContainer()`, `restartContainer()`, `killContainer()`, `getTaskState()`, `startAutostartContainersAtBackendBoot()`, `normalizeTaskStatus()`, `containerTaskStatusToUi()` (gRPC task enums may arrive as names, indices, or string digits — normalize before API/UI) |
+| `containerManagerLifecycle.js` | `startContainer()`, `stopContainer()`, `restartContainer()`, `killContainer()`, `pauseContainer()` / `resumeContainer()` (cgroup freezer; module-internal — used by the backup flow, no user-facing pause), `getTaskState()`, `startAutostartContainersAtBackendBoot()`, `resumeStalePausedContainersAtBackendBoot()`, `normalizeTaskStatus()`, `containerTaskStatusToUi()` (gRPC task enums may arrive as names, indices, or string digits — normalize before API/UI) |
 | `containerImageRef.js` | `normalizeImageRef()` — docker.io/library/ prefix rules (shared with pull/delete) |
 | `containerManagerCreate.js` | `pullImage()`, `createContainer()`, `deleteContainer()` |
 | `containerManagerRename.js` | `renameContainer(oldName, newName)` — stopped-container rename (containerd Containers.Delete + Create + fs.rename + config rewrite); see [Rename](#rename) |
@@ -438,8 +439,9 @@ A container's name is its containerd container ID, the directory key under `cont
 When the Wisp backend process starts (`backend/src/index.js`), after libvirt and containerd connection attempts and after mDNS manager connect:
 
 1. **Configured mounts** — `ensureMounts()` runs to completion (awaited) so Host Mgmt SMB shares and removable-drive adoptions are mounted before any autostart container starts (avoids bind mounts whose host paths live under those shares). The same pass also hard-converges: any mount under `/mnt/wisp/` not present in settings is unmounted.
-2. **Container autostart** — `startAutostartContainersAtBackendBoot()` lists containers from disk + containerd; for each with `autostart: true` that is not already `running`, it calls `startContainer()`. Failures are logged per container and do not block other containers.
-3. **mDNS warm-up** — For each running container (including any just started), if `localDns` is true and `network.ip` is set, the backend registers the `.local` address.
+2. **Stale-pause recovery** — `resumeStalePausedContainersAtBackendBoot()` resumes any container whose task is still `paused`. Wisp has no user-facing pause; tasks are only paused around backup archives, so a paused task at boot means a backup was interrupted by a crash. Runs before autostart so that pass sees accurate states.
+3. **Container autostart** — `startAutostartContainersAtBackendBoot()` lists containers from disk + containerd; for each with `autostart: true` that is not already `running`, it calls `startContainer()`. Failures are logged per container and do not block other containers.
+4. **mDNS warm-up** — For each running container (including any just started), if `localDns` is true and `network.ip` is set, the backend registers the `.local` address.
 
 The HTTP server listens **after** these steps, so hosts with mounts configured may accept API traffic slightly later; when no mounts are configured, `ensureMounts` returns immediately.
 
@@ -451,7 +453,9 @@ The HTTP server listens **after** these steps, so hosts with mounts configured m
 | `CONTAINER_RUN_NOT_FOUND` | 404 | Referenced `runId` does not exist in `runs/` |
 | `CONTAINER_ALREADY_RUNNING` | 409 | Start called on running container |
 | `CONTAINER_NOT_RUNNING` | 409 | Stop/kill called on stopped container |
-| `CONTAINER_MUST_BE_STOPPED` | 409 | Operation requires the container to be stopped (e.g. rename) |
+| `CONTAINER_MUST_BE_STOPPED` | 409 | Operation requires the container to be stopped (e.g. rename, MAC/interface change) |
+| `CONTAINER_TASK_TRANSIENT` | 409 | Backup requested while the task is in a transient state (`pausing`/`unknown`) — retry shortly |
+| `CONTAINER_BACKUP_IN_PROGRESS` | 409 | A backup of this container is already running |
 | `CONTAINER_EXISTS` | 409 | Name conflict on create or rename |
 | `IMAGE_PULL_FAILED` | 422 | Failed to pull OCI image |
 | `INVALID_CONTAINER_NAME` | 422 | Name validation failed |
