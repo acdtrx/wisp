@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-07-14
+## 2026-07-14 (v1.9.1)
 
 ### Bug Fixes
 - **VM/container pages and Host Mgmt no longer hang when Wisp is accessed directly over plain HTTP (no reverse proxy)** — the five always-on SSE streams are consolidated into one multiplexed `/api/events` stream; browsers allow only 6 HTTP/1.1 connections per origin, and the dedicated streams exhausted the budget so any further request queued in the browser forever.
