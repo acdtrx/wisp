@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-14 (v2.0.0)
+
+### New Features
+- **Backups panel regrouped per workload** — one collapsible card per VM/container (including ones with no backups yet, and orphaned backups of deleted workloads) with last-backup status dot, manual/scheduled origin badges, auto-backup badge, counts, and a Back up now button.
+- **Restore in place** — a backup can now overwrite the workload it was taken from (stopped VMs and containers), preserving name and network identity, with an optional safety backup of the current state first and typed-name confirmation.
+- **Backup failure visibility** — the last backup attempt per workload (including failures, e.g. an overnight scheduled run) is persisted and pushed live to the UI; stale-backup warnings for auto-backup containers.
+- Live Backups tab — the panel refreshes itself when scheduled backups run, backups finish, or retention prunes (new `backups` topic on the multiplexed events stream).
+
 ## 2026-07-14 (v1.9.1)
 
 ### Bug Fixes
