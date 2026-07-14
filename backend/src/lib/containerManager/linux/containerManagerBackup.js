@@ -28,7 +28,7 @@
  */
 import { spawn } from 'node:child_process';
 import {
-  access, constants, mkdir, readFile, readdir, realpath, rm, stat, writeFile,
+  access, constants, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile,
 } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { join } from 'node:path';
@@ -374,6 +374,118 @@ export async function deleteContainerBackup(backupPath, allowedRoots) {
   await rm(resolvedBackup, { recursive: true, force: true });
 }
 
+/** Read and type-check a container backup's manifest; verify the archive is readable. */
+async function readContainerBackupManifest(backupPath) {
+  const archivePath = join(backupPath, 'data.tar.gz');
+  let manifest;
+  try {
+    manifest = JSON.parse(await readFile(join(backupPath, 'manifest.json'), 'utf8'));
+  } catch (err) {
+    throw containerError('BACKUP_INVALID', `Backup missing manifest.json: ${backupPath}`, err.message);
+  }
+  if (manifest?.type !== 'container') {
+    throw containerError('BACKUP_INVALID', `Not a container backup: ${backupPath}`);
+  }
+  try { await access(archivePath, constants.R_OK); } catch (err) {
+    throw containerError('BACKUP_INVALID', `Backup missing data.tar.gz: ${backupPath}`, err.message);
+  }
+  return { manifest, archivePath };
+}
+
+/**
+ * Extract the backup archive into a staging directory under the containers
+ * root and verify it holds exactly one top-level directory (the source
+ * container name). Caller owns removing stagingDir when done.
+ */
+async function extractArchiveToStaging(archivePath) {
+  const containersRoot = getContainersPath();
+  await mkdir(containersRoot, { recursive: true });
+
+  const stagingName = `.restore-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const stagingDir = join(containersRoot, stagingName);
+  await mkdir(stagingDir, { recursive: true });
+
+  try {
+    await untarGzipTo(archivePath, stagingDir);
+  } catch (err) {
+    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    throw containerError('BACKUP_RESTORE_FAILED', `Failed to extract backup: ${err.message}`);
+  }
+
+  let extractedTop;
+  try {
+    const entries = await readdir(stagingDir, { withFileTypes: true });
+    const dirs = entries.filter((e) => e.isDirectory());
+    if (dirs.length !== 1) {
+      throw new Error(`expected exactly one top-level directory in archive, got ${dirs.length}`);
+    }
+    extractedTop = dirs[0].name;
+  } catch (err) {
+    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    throw containerError('BACKUP_INVALID', `Unexpected archive layout: ${err.message}`);
+  }
+  return { stagingDir, extractedTop };
+}
+
+/**
+ * Ensure the image referenced by `config` is present in containerd (pull if
+ * missing — throws IMAGE_PULL_FAILED) and best-effort refresh the persisted
+ * digest to whatever containerd now holds.
+ */
+async function ensureImageAndDigest(name, config) {
+  const imageRef = config.image;
+  if (!imageRef) return;
+  let imagePresent = false;
+  try {
+    await callUnary(getClient('images'), 'get', { name: imageRef });
+    imagePresent = true;
+  } catch { /* not local — pull below */ }
+  if (!imagePresent) {
+    try {
+      await pullImage(imageRef);
+    } catch (err) {
+      throw containerError('IMAGE_PULL_FAILED', `Failed to pull image "${imageRef}" during restore`, err.message);
+    }
+  }
+  /* Refresh imageDigest to whatever's now in containerd (may differ from
+   * the manifest's digest if the registry has moved on). */
+  try {
+    const digest = await getImageDigest(imageRef);
+    if (digest) {
+      config.imageDigest = digest;
+      config.imagePulledAt = new Date().toISOString();
+      await writeContainerConfig(name, config);
+    }
+  } catch { /* best-effort digest refresh */ }
+}
+
+/**
+ * Create the containerd container record for a restored container. The OCI
+ * spec here is a placeholder — it is rebuilt on every start
+ * (`startExistingContainer`) — but `Containers.Create` requires a spec
+ * field, so emit a real one for cleanliness.
+ */
+async function createContainerdRecord(name, config) {
+  const filesDir = getContainerFilesDir(name);
+  const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
+  const { deviceSpecs, renderGid } = await resolveDeviceSpecs(config);
+  const ociSpec = buildOCISpec(config, {}, filesDir, {
+    resolvConfPath, resolveMount, deviceSpecs, renderGid,
+  });
+
+  await callUnary(getClient('containers'), 'create', {
+    container: {
+      id: name,
+      image: config.image || '',
+      runtime: { name: RUNTIME_NAME },
+      spec: packAny(OCI_SPEC_TYPE_URL, ociSpec),
+      snapshotter: SNAPSHOTTER,
+      snapshotKey: name,
+      labels: { 'wisp.managed': 'true' },
+    },
+  });
+}
+
 /**
  * Restore a container backup as a brand-new container with `newName`.
  * Container directory is recreated from the archive; container.json is
@@ -401,57 +513,15 @@ export async function restoreContainerBackup(backupPath, newName) {
     /* NOT_FOUND — good */
   }
 
-  /* Read manifest (presence already verified by listContainerBackups path) and archive. */
-  const manifestPath = join(backupPath, 'manifest.json');
-  const archivePath = join(backupPath, 'data.tar.gz');
-  let manifest;
-  try {
-    manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-  } catch (err) {
-    throw containerError('BACKUP_INVALID', `Backup missing manifest.json: ${backupPath}`, err.message);
-  }
-  if (manifest?.type !== 'container') {
-    throw containerError('BACKUP_INVALID', `Not a container backup: ${backupPath}`);
-  }
-  try { await access(archivePath, constants.R_OK); } catch (err) {
-    throw containerError('BACKUP_INVALID', `Backup missing data.tar.gz: ${backupPath}`, err.message);
-  }
+  const { manifest, archivePath } = await readContainerBackupManifest(backupPath);
 
   /* Extract the tar into the containers root. The archive's top-level
    * entry is the *original* container name (we tarred `<name>` from
    * containersRoot). After extraction we rename the top-level directory
    * to `newName`. */
-  const containersRoot = getContainersPath();
-  await mkdir(containersRoot, { recursive: true });
+  const { stagingDir, extractedTop } = await extractArchiveToStaging(archivePath);
 
-  const stagingName = `.restore-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const stagingDir = join(containersRoot, stagingName);
-  await mkdir(stagingDir, { recursive: true });
-
-  try {
-    await untarGzipTo(archivePath, stagingDir);
-  } catch (err) {
-    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
-    throw containerError('BACKUP_RESTORE_FAILED', `Failed to extract backup: ${err.message}`);
-  }
-
-  /* The archive contains exactly one top-level directory — the source name. */
-  let extractedTop;
-  try {
-    const entries = await readdir(stagingDir, { withFileTypes: true });
-    const dirs = entries.filter((e) => e.isDirectory());
-    if (dirs.length !== 1) {
-      throw new Error(`expected exactly one top-level directory in archive, got ${dirs.length}`);
-    }
-    extractedTop = dirs[0].name;
-  } catch (err) {
-    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
-    throw containerError('BACKUP_INVALID', `Unexpected archive layout: ${err.message}`);
-  }
-
-  /* Move the extracted dir up to its final path under the new name. */
   const finalDir = getContainerDir(newNameTrim);
-  const { rename } = await import('node:fs/promises');
   try {
     await rename(join(stagingDir, extractedTop), finalDir);
   } catch (err) {
@@ -477,65 +547,15 @@ export async function restoreContainerBackup(backupPath, newName) {
 
   await writeContainerConfig(newNameTrim, config);
 
-  /* Ensure the image is present in containerd. If not, pull it using the
-   * canonical reference recorded in container.json. */
-  const imageRef = config.image;
-  if (imageRef) {
-    let imagePresent = false;
-    try {
-      await callUnary(getClient('images'), 'get', { name: imageRef });
-      imagePresent = true;
-    } catch { /* not local — pull below */ }
-    if (!imagePresent) {
-      try {
-        await pullImage(imageRef);
-      } catch (err) {
-        await rm(finalDir, { recursive: true, force: true }).catch(() => {});
-        throw containerError('IMAGE_PULL_FAILED', `Failed to pull image "${imageRef}" during restore`, err.message);
-      }
-    }
-    /* Refresh imageDigest to whatever's now in containerd (may differ from
-     * the manifest's digest if the registry has moved on). */
-    try {
-      const digest = await getImageDigest(imageRef);
-      if (digest) {
-        config.imageDigest = digest;
-        config.imagePulledAt = new Date().toISOString();
-        await writeContainerConfig(newNameTrim, config);
-      }
-    } catch { /* best-effort digest refresh */ }
+  try {
+    await ensureImageAndDigest(newNameTrim, config);
+  } catch (err) {
+    await rm(finalDir, { recursive: true, force: true }).catch(() => {});
+    throw err;
   }
 
-  /* Build a placeholder OCI spec and create the containerd container.
-   * The spec is rebuilt on every start (`startExistingContainer`) so its
-   * content here is non-load-bearing — but `Containers.Create` requires
-   * a spec field, so emit a real one for cleanliness. */
-  let imageConfig = {};
   try {
-    /* getImageConfig is internal to containerManagerCreate; reuse its
-     * effect by re-pulling metadata via the same code path. We don't
-     * have an exported helper, so fall back to an empty image config —
-     * buildOCISpec tolerates it for an unstarted container. */
-  } catch { /* ignore */ }
-  const filesDir = getContainerFilesDir(newNameTrim);
-  const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
-  const { deviceSpecs, renderGid } = await resolveDeviceSpecs(config);
-  const ociSpec = buildOCISpec(config, imageConfig, filesDir, {
-    resolvConfPath, resolveMount, deviceSpecs, renderGid,
-  });
-
-  try {
-    await callUnary(getClient('containers'), 'create', {
-      container: {
-        id: newNameTrim,
-        image: imageRef || '',
-        runtime: { name: RUNTIME_NAME },
-        spec: packAny(OCI_SPEC_TYPE_URL, ociSpec),
-        snapshotter: SNAPSHOTTER,
-        snapshotKey: newNameTrim,
-        labels: { 'wisp.managed': 'true' },
-      },
-    });
+    await createContainerdRecord(newNameTrim, config);
   } catch (err) {
     /* Container record creation failed — clean up the directory so the
      * user can retry with a different name. */
@@ -547,5 +567,118 @@ export async function restoreContainerBackup(backupPath, newName) {
     );
   }
 
-  return { name: newNameTrim, sourceName: manifest.name, image: imageRef };
+  return { name: newNameTrim, sourceName: manifest.name, image: config.image || null };
+}
+
+/**
+ * Restore a container backup over the live container it was taken from
+ * ("restore in place"). The target is identified by the backup's manifest
+ * name, must still exist on disk, and must be stopped — the container
+ * directory is swapped under whatever would be reading it otherwise.
+ *
+ * Identity is preserved: same name, same MAC (and therefore the same DHCP
+ * lease), same containerd record (kept if present, recreated if missing —
+ * the rootfs snapshot is re-prepared from the image on next start either
+ * way). The archived container.json replaces the live one wholesale, so
+ * config edits made after the backup was taken revert with it.
+ */
+export async function restoreContainerBackupInPlace(backupPath, { onProgress } = {}) {
+  const emit = (step, data = {}) => {
+    if (typeof onProgress === 'function') onProgress({ step, ...data });
+  };
+
+  const { manifest, archivePath } = await readContainerBackupManifest(backupPath);
+  const name = manifest.name;
+  validateContainerName(name);
+
+  const finalDir = getContainerDir(name);
+  try {
+    await access(finalDir);
+  } catch (err) {
+    throw containerError(
+      'CONTAINER_NOT_FOUND',
+      `Container "${name}" no longer exists — restore the backup as a new container instead`,
+      err.message,
+    );
+  }
+
+  /* Must be stopped: the directory is about to be swapped out from under
+   * any running rootfs mounts, and a paused task would resume onto files
+   * that no longer exist. */
+  const task = await getTaskState(name);
+  if (task) {
+    const st = normalizeTaskStatus(task.status);
+    if (st === 'STOPPED') {
+      await cleanupTask(name);
+    } else if (st !== 'CREATED') {
+      throw containerError('CONTAINER_MUST_BE_STOPPED', `Container "${name}" must be stopped to restore in place`);
+    }
+  }
+
+  emit('extracting', { percent: 10, currentFile: 'Extracting archive' });
+  const { stagingDir, extractedTop } = await extractArchiveToStaging(archivePath);
+  if (extractedTop !== name) {
+    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    throw containerError('BACKUP_INVALID', `Archive top-level directory "${extractedTop}" does not match container "${name}"`);
+  }
+
+  /* Validate the staged container.json before touching the live directory. */
+  let config;
+  try {
+    config = JSON.parse(await readFile(join(stagingDir, extractedTop, 'container.json'), 'utf8'));
+  } catch (err) {
+    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    throw containerError('BACKUP_INVALID', `Backup container.json missing or invalid: ${err.message}`);
+  }
+  config.name = name;
+
+  /* Swap: move the live dir aside, move the staged dir in, then drop the
+   * old dir. If the second rename fails the old dir is moved back. */
+  emit('swapping', { percent: 60, currentFile: 'Replacing container directory' });
+  const containersRoot = getContainersPath();
+  const oldDir = join(containersRoot, `.replaced-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  try {
+    await rename(finalDir, oldDir);
+  } catch (err) {
+    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    throw containerError('BACKUP_RESTORE_FAILED', `Failed to move current container directory aside: ${err.message}`);
+  }
+  try {
+    await rename(join(stagingDir, extractedTop), finalDir);
+  } catch (err) {
+    await rename(oldDir, finalDir).catch(() => {
+      /* rollback failed too — oldDir still holds the pre-restore data for manual recovery */
+    });
+    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    throw containerError('BACKUP_RESTORE_FAILED', `Failed to place restored container directory: ${err.message}`);
+  }
+  await rm(oldDir, { recursive: true, force: true }).catch(() => {});
+  await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+
+  /* Write-through so config normalization and the config-write notification
+   * fire (list caches, UI refresh). */
+  await writeContainerConfig(name, config);
+
+  emit('registering', { percent: 85, currentFile: 'Ensuring image and container record' });
+  /* Restored data stays in place even if these fail — the error surfaces
+   * and a later start / retry can finish the job. */
+  await ensureImageAndDigest(name, config);
+  let recordExists = true;
+  try {
+    await callUnary(getClient('containers'), 'get', { id: name });
+  } catch { recordExists = false; /* NOT_FOUND — recreate below */ }
+  if (!recordExists) {
+    try {
+      await createContainerdRecord(name, config);
+    } catch (err) {
+      throw containerError(
+        'BACKUP_RESTORE_FAILED',
+        `Failed to register restored container "${name}" in containerd`,
+        err.raw || err.message,
+      );
+    }
+  }
+
+  emit('done', { percent: 100, currentFile: 'Restore complete' });
+  return { name, image: config.image || null };
 }

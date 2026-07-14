@@ -28,6 +28,18 @@ export function restoreBackup(target, newVmName) {
 }
 
 /**
+ * Restore a backup over the live VM it was taken from. VM must be stopped.
+ * Returns { jobId, title }; subscribe via JOB_KIND.VM_RESTORE.
+ * @param {{ destinationId: string, vmName: string, timestamp: string }} target
+ * @param {{ safetyBackup?: boolean }} [options] — back up current state first (default true)
+ */
+export function restoreBackupInPlace(target, options = {}) {
+  const { destinationId, vmName, timestamp } = target;
+  const safetyBackup = options.safetyBackup !== false;
+  return api('/api/backups/restore-in-place', { method: 'POST', body: { destinationId, vmName, timestamp, safetyBackup } });
+}
+
+/**
  * Delete a backup.
  * @param {{ destinationId: string, vmName: string, timestamp: string }} target
  */
@@ -57,6 +69,18 @@ export function listContainerBackups(containerName = null) {
 export function restoreContainerBackup(target, newName) {
   const { destinationId, name, timestamp } = target;
   return api('/api/container-backups/restore', { method: 'POST', body: { destinationId, name, timestamp, newName } });
+}
+
+/**
+ * Restore a backup over the live container it was taken from. Container must
+ * be stopped. Returns { jobId, title }; subscribe via JOB_KIND.CONTAINER_RESTORE.
+ * @param {{ destinationId: string, name: string, timestamp: string }} target
+ * @param {{ safetyBackup?: boolean }} [options] — back up current state first (default true)
+ */
+export function restoreContainerBackupInPlace(target, options = {}) {
+  const { destinationId, name, timestamp } = target;
+  const safetyBackup = options.safetyBackup !== false;
+  return api('/api/container-backups/restore-in-place', { method: 'POST', body: { destinationId, name, timestamp, safetyBackup } });
 }
 
 /** @param {{ destinationId: string, name: string, timestamp: string }} target */

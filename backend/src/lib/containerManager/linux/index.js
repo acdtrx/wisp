@@ -60,6 +60,7 @@ export {
   createContainerBackup,
   listContainerBackups,
   restoreContainerBackup,
+  restoreContainerBackupInPlace,
   deleteContainerBackup,
 } from './containerManagerBackup.js';
 

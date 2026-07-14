@@ -31,6 +31,7 @@ import {
   deleteContainerBackup,
 } from './containerManager/index.js';
 import { backupJobStore, BACKGROUND_JOB_KIND, titleForContainerBackup } from './jobs/index.js';
+import { recordBackupAttempt } from './backupStatus.js';
 
 const TICK_MS = 60 * 1000;
 
@@ -149,9 +150,25 @@ async function runScheduledBackups(schedule) {
         await pruneScheduledBackups(name, dest, allowedRoots);
       }
       backupJobStore.completeJob(jobId, lastResult);
+      await recordBackupAttempt({
+        kind: 'container',
+        name,
+        ok: true,
+        origin: 'scheduled',
+        destinationIds: destinations.map((d) => d.id),
+        timestamp: lastResult?.timestamp,
+      });
     } catch (err) {
       backupJobStore.failJob(jobId, err);
       log?.error({ err, container: name, jobId }, 'Backup scheduler: container backup failed');
+      await recordBackupAttempt({
+        kind: 'container',
+        name,
+        ok: false,
+        origin: 'scheduled',
+        destinationIds: destinations.map((d) => d.id),
+        error: err?.message,
+      });
       /* Continue with the remaining containers. */
     }
   }

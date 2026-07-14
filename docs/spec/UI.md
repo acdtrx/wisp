@@ -330,20 +330,31 @@ Same layout but with Select button per file. Auto-filtered by context.
 
 ## Backups Panel
 
-Accessed as the **Backups** tab inside the Host panel. Panel heading "Backups" with short description (restore as new VM or delete; create backups from VM Overview; configure destinations in Host → Host Mgmt).
+Accessed as the **Backups** tab inside the Host panel. Panel heading "Backups" with short description (backup coverage per workload; scheduler configured in Host Mgmt).
 
-Table of all backups across destinations:
+**One collapsible card per workload** (VM or container), not a flat table. Every live workload appears — including ones with zero backups — plus a card for any backups whose workload no longer exists (dimmed, amber `workload deleted` badge). Live workloads sort first, then by name. Cards start collapsed; the header carries the full summary:
+
+- Chevron, **workload name**, kind badge (`vm` / `container`).
+- Containers: auto-backup badge — green `auto · daily HH:MM` (from `settings.backupSchedule`), `auto · scheduler off` when the toggle is on but the scheduler disabled, or a dashed `auto off`.
+- **Status dot + line** from the `backups` events topic and the newest on-disk backup: green (recent good backup), amber (stale: >26 h for scheduled containers, >7 days otherwise), red `last attempt failed · good <rel>` (persisted attempt status), gray (no backups / deleted workload). While a backup or restore job for the workload runs, the status line is replaced by a spinner with the job title and percent.
+- Backup count + total size.
+- **Back up now** header action (accent `Plus`+`Archive` icon button) — opens the shared `BackupModal` (destination checkboxes, progress). Disabled for running VMs (title explains), `pausing`/`unknown` containers, deleted workloads, and while a job runs.
+
+Expanding a card shows the backup table (shared DataTable chrome, actions on row hover):
 
 | Column | Content |
 |--------|---------|
-| VM | Name of the backed-up VM |
-| Location | Label (Local, NAS, etc.) |
-| Timestamp | When the backup was created |
-| Size | Total backup size (formatted) |
-| Actions | Restore, Delete (icons **on row hover**, shared `DataTableRowActions`) |
+| When | Timestamp folder name (mono) + relative time |
+| Origin | `scheduled` (accent badge) / `manual` (outline badge) |
+| Location | Destination label (Local, NAS, …) |
+| Size | Formatted size |
+| Actions | **Restore in place** (`ArchiveRestore`), **Restore as new** (`CopyPlus`), **Delete** (`Trash2`) |
 
-- **Restore** opens a dialog prompting for new VM name
-- **Delete** opens confirmation dialog
+- **Restore in place** — enabled only when the workload exists and is stopped (disabled title explains why). Opens a `ConfirmDialog` with a summary, a **safety backup** checkbox (default on), and a **type-the-name-to-confirm** input; on confirm the restore job registers in the background-jobs tray and the card header mirrors its progress.
+- **Restore as new** — inline strip inside the card prompting for the new name (as before).
+- **Delete** — shared `ConfirmDialog`.
+
+Data flow: workload lists come from the `vms`/`containers` topics (container rows carry `autoBackup`); backup lists via one-time GETs re-fetched whenever the `backups` events topic pushes (attempt recorded, delete, prune) — no polling.
 - Empty state: points to **Host → Host Mgmt → Backup** for paths and **VM Overview → Backup** to create a backup.
 
 ---

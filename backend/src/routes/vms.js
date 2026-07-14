@@ -46,6 +46,7 @@ import { publishVm, unpublishVm } from '../lib/vmMdnsReconciler.js';
 import { generateCloudInit, deleteCloudInitISO } from '../lib/cloudInit.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { resolveBackupDestinations } from '../lib/backupDestinations.js';
+import { recordBackupAttempt } from '../lib/backupStatus.js';
 import { setupSSE } from '../lib/sse.js';
 import { resolveLibraryPath, assertPathInsideAllowedRoots, getVMBasePath } from '../lib/paths.js';
 import { createAppError, handleRouteError } from '../lib/routeErrors.js';
@@ -322,6 +323,7 @@ export default async function vmsRoutes(fastify) {
           { jobId, kind: BACKGROUND_JOB_KIND.BACKUP, title },
           'Background job started',
         );
+        const destinationIds = destinations.map((d) => d.id);
         (async () => {
           let lastResult;
           for (const dest of destinations) {
@@ -332,9 +334,15 @@ export default async function vmsRoutes(fastify) {
             });
           }
           backupJobStore.completeJob(jobId, lastResult);
-        })().catch((err) => {
+          await recordBackupAttempt({
+            kind: 'vm', name, ok: true, origin: 'manual', destinationIds, timestamp: lastResult?.timestamp,
+          });
+        })().catch(async (err) => {
           backupJobStore.failJob(jobId, err);
           request.log.error({ err, jobId }, 'Background backup job failed');
+          await recordBackupAttempt({
+            kind: 'vm', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
+          });
         });
         return reply.code(201).send({ jobId, title });
       } catch (err) {

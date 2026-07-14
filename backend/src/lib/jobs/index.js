@@ -23,6 +23,8 @@ export {
   titleForBackup,
   titleForContainerCreate,
   titleForContainerBackup,
+  titleForVmRestore,
+  titleForContainerRestore,
   TITLE_IMAGE_UPDATE_CHECK_ALL,
   titleForImageUpdateCheckSingle,
   TITLE_LIBRARY_UBUNTU_CLOUD,

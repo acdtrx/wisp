@@ -117,7 +117,7 @@ Single-section views (e.g. **Image Library**) use one **`SectionCard`** with the
 - **[ContainerNetworkSection.jsx](../frontend/src/components/sections/ContainerNetworkSection.jsx)** — Pill row of exposed ports with **inline disclosure strip** for per-port mDNS service editing (`Radio` icon inside pill when configured, no color encoding; trailing dashed `+` pill for non-EXPOSE ports; one strip open at a time, silent discard on switch).
 - **[HostStorage.jsx](../frontend/src/components/host/HostStorage.jsx)** — Row-scoped mount API (`/api/host/mounts`) for SMB + adopted removable drives; `DataTable` chrome; header `Plus`+`Server`; combined mount/unmount with mounted-state background; SMB **Check** uses green/red on the shield button (errors on hover); separate "Detected drives" table rendered only when non-empty.
 - **[SnapshotsSection.jsx](../frontend/src/components/sections/SnapshotsSection.jsx)** — Header `Plus`+`Camera` when qcow2; icon-only row actions (hover-reveal).
-- **[BackupsPanel.jsx](../frontend/src/components/backups/BackupsPanel.jsx)** — Restore/delete on row hover.
+- **[BackupsPanel.jsx](../frontend/src/components/backups/BackupsPanel.jsx)** — Collapsible per-workload cards (custom rich headers on the SectionCard visual tokens); per-backup icon actions on row hover; typed-name `ConfirmDialog` for restore-in-place.
 - **[HostOverview.jsx](../frontend/src/components/host/HostOverview.jsx)** (hardware inventory) — Read-only; **`SectionCard`** + **`titleIcon`** per section; shared table chrome.
 - **[HostMgmt.jsx](../frontend/src/components/host/HostMgmt.jsx)** — Stacked **`SectionCard`**s (**OS Update**, **Network Bridges**, **Network Storage**, **Backup**) with **`titleIcon`** on each; same page gutters as Overview.
 

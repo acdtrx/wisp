@@ -32,6 +32,7 @@ import { getSettings, getRawMounts } from '../lib/settings.js';
 import { renameWorkloadAssignment } from '../lib/sections.js';
 import { publishContainer, unpublishContainer } from '../lib/containerMdnsReconciler.js';
 import { resolveBackupDestinations } from '../lib/backupDestinations.js';
+import { recordBackupAttempt } from '../lib/backupStatus.js';
 import { setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
 import { validateContainerName } from '../lib/validation.js';
@@ -88,6 +89,7 @@ export default async function containerRoutes(fastify) {
               image: { type: 'string' },
               state: { type: 'string' },
               iconId: { type: ['string', 'null'] },
+              autoBackup: { type: 'boolean' },
               updateAvailable: { type: 'boolean' },
             },
           },
@@ -437,6 +439,7 @@ export default async function containerRoutes(fastify) {
           { jobId, kind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP, title },
           'Background job started',
         );
+        const destinationIds = destinations.map((d) => d.id);
         (async () => {
           let lastResult;
           for (const dest of destinations) {
@@ -448,9 +451,15 @@ export default async function containerRoutes(fastify) {
             });
           }
           backupJobStore.completeJob(jobId, lastResult);
-        })().catch((err) => {
+          await recordBackupAttempt({
+            kind: 'container', name, ok: true, origin: 'manual', destinationIds, timestamp: lastResult?.timestamp,
+          });
+        })().catch(async (err) => {
           backupJobStore.failJob(jobId, err);
           request.log.error({ err, jobId }, 'Background container backup failed');
+          await recordBackupAttempt({
+            kind: 'container', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
+          });
         });
         return reply.code(201).send({ jobId, title });
       } catch (err) {

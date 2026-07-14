@@ -174,10 +174,11 @@ function resolveOldVmBasePath(manifest, config, diskMapping) {
  * Create a point-in-time backup of a VM to destinationPath. VM must be stopped.
  * @param {string} vmName
  * @param {string} destinationPath - Absolute path (local or pre-mounted SMB)
- * @param {{ onProgress?: (event: { step: string, percent?: number, currentFile?: string }) => void }} options
+ * @param {{ onProgress?: (event: { step: string, percent?: number, currentFile?: string }) => void,
+ *           origin?: 'manual' | 'scheduled' }} options
  * @returns { Promise<{ path: string, timestamp: string }> }
  */
-export async function createBackup(vmName, destinationPath, { onProgress } = {}) {
+export async function createBackup(vmName, destinationPath, { onProgress, origin = 'manual' } = {}) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
 
   if (!destinationPath || typeof destinationPath !== 'string' || !destinationPath.startsWith('/')) {
@@ -327,6 +328,7 @@ export async function createBackup(vmName, destinationPath, { onProgress } = {})
   const manifest = {
     vmName,
     timestamp,
+    origin: origin === 'scheduled' ? 'scheduled' : 'manual',
     vmBasePath: vmBasePathForManifest,
     disks: disks.map((d) => ({ slot: d.slot, file: basename(d.source) })),
     sizeBytes: totalBytes,
@@ -368,10 +370,13 @@ export async function listBackups(destinations, vmName = null) {
       const manifestPath = join(backupPath, 'manifest.json');
       const domainPath = join(backupPath, 'domain.xml');
       let sizeBytes;
+      /* Backups predating the origin field list as manual. */
+      let origin = 'manual';
       try {
         const raw = await readFile(manifestPath, 'utf8');
         const manifest = JSON.parse(raw);
         sizeBytes = manifest.sizeBytes;
+        if (manifest.origin === 'scheduled') origin = 'scheduled';
       } catch {
         try {
           await access(domainPath, constants.R_OK);
@@ -388,6 +393,7 @@ export async function listBackups(destinations, vmName = null) {
         destinationLabel: label,
         path: backupPath,
         sizeBytes,
+        origin,
       });
     }
   }
@@ -505,6 +511,95 @@ export async function deleteBackup(backupPath, allowedRoots) {
   await rm(resolvedBackup, { recursive: true, force: true });
 }
 
+/** Read a backup's domain.xml (required) and manifest.json (optional, legacy backups lack it). */
+async function readBackupDomain(backupPath) {
+  let xml;
+  try {
+    xml = await readFile(join(backupPath, 'domain.xml'), 'utf8');
+  } catch (err) {
+    throw vmError('BACKUP_INVALID', `Backup missing domain.xml: ${backupPath}`, err.message);
+  }
+  let manifest = null;
+  try {
+    manifest = JSON.parse(await readFile(join(backupPath, 'manifest.json'), 'utf8'));
+  } catch {
+    /* legacy backup without manifest.json */
+  }
+  return { xml, manifest };
+}
+
+/**
+ * Copy a backup's payload (disks, NVRAM, cloud-init) into destBase.
+ * @returns {Promise<Array<{ oldPath: string, newPath: string }>>} disk mapping for XML path rewrites
+ */
+async function copyBackupPayload(backupPath, config, destBase, { onProgress } = {}) {
+  const disks = (config.disks || []).filter((d) => d.device === 'disk' && d.source);
+  const totalItems = disks.length + 2; // +1 NVRAM, +1 cloud-init pair
+  let done = 0;
+  const emit = (step, currentFile) => {
+    if (typeof onProgress === 'function') {
+      onProgress({ step, percent: Math.round((done / totalItems) * 100), currentFile });
+    }
+  };
+
+  const diskMapping = [];
+  for (const disk of disks) {
+    const logicalName = basename(disk.source);
+    emit('disk', `Restoring ${logicalName}`);
+    const newDiskPath = join(destBase, logicalName);
+    await copyOrGunzip(backupPath, logicalName, newDiskPath);
+    diskMapping.push({ oldPath: disk.source, newPath: newDiskPath });
+    done += 1;
+    emit('disk', logicalName);
+  }
+
+  emit('nvram', 'Restoring NVRAM');
+  // allowMissing skips BIOS-only and older silent-skip backups; permission/IO failures surface.
+  await copyNvram(join(backupPath, 'VARS.fd'), join(destBase, 'VARS.fd'), { allowMissing: true });
+  done += 1;
+
+  emit('cloudinit', 'Restoring cloud-init');
+  try {
+    await copyOrGunzip(backupPath, 'cloud-init.iso', join(destBase, 'cloud-init.iso'));
+  } catch {
+    /* optional — cloud-init ISO not in backup */
+  }
+  const cloudInitJsonSrc = join(backupPath, 'cloud-init.json');
+  try {
+    await access(cloudInitJsonSrc, constants.R_OK);
+    await copyWithProgress(cloudInitJsonSrc, join(destBase, 'cloud-init.json'), () => {});
+  } catch {
+    /* optional — cloud-init JSON not in backup */
+  }
+  done += 1;
+  emit('cloudinit', 'Cloud-init');
+
+  return diskMapping;
+}
+
+/**
+ * Rewrite every path in the parsed domain that referenced the backed-up VM
+ * directory (prefix rewrite via manifest.vmBasePath) plus any disk that lived
+ * outside it (e.g. image library), which the per-disk mapping covers.
+ */
+function rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping, newBase }) {
+  const oldBase = resolveOldVmBasePath(manifest, config, diskMapping);
+  if (oldBase) {
+    applyVmBasePrefixToDomain(dom, oldBase, newBase);
+  }
+
+  const diskList = Array.isArray(dom.devices?.disk) ? dom.devices.disk : dom.devices?.disk ? [dom.devices.disk] : [];
+  for (const d of diskList) {
+    const src = d.source;
+    if (!src || typeof src !== 'object') continue;
+    for (const { oldPath, newPath } of diskMapping) {
+      if (src['@_file'] === oldPath) src['@_file'] = newPath;
+      if (src['@_dev'] === oldPath) src['@_dev'] = newPath;
+      if (src['@_volume'] === oldPath) src['@_volume'] = newPath;
+    }
+  }
+}
+
 /**
  * Restore a backup as a new VM.
  * @param {string} backupPath - Full path to the backup directory (e.g. .../vmName/timestamp)
@@ -521,53 +616,14 @@ export async function restoreBackup(backupPath, newVmName) {
     if (err.code === 'VM_EXISTS') throw err;
   }
 
-  const domainPath = join(backupPath, 'domain.xml');
-  let xml;
-  try {
-    xml = await readFile(domainPath, 'utf8');
-  } catch (err) {
-    throw vmError('BACKUP_INVALID', `Backup missing domain.xml: ${backupPath}`, err.message);
-  }
-
-  let manifest = null;
-  try {
-    const raw = await readFile(join(backupPath, 'manifest.json'), 'utf8');
-    manifest = JSON.parse(raw);
-  } catch {
-    /* legacy backup without manifest.json */
-  }
-
+  const { xml, manifest } = await readBackupDomain(backupPath);
   const config = parseVMFromXML(xml);
   if (!config) throw vmError('PARSE_ERROR', 'Failed to parse backup domain.xml');
 
   const newBase = normalizeBasePath(getVMBasePath(newVmName));
   await mkdir(newBase, { recursive: true });
 
-  const diskMapping = [];
-  for (const disk of (config.disks || [])) {
-    if (disk.device !== 'disk' || !disk.source) continue;
-    const logicalName = basename(disk.source);
-    const newDiskPath = join(newBase, logicalName);
-    await copyOrGunzip(backupPath, logicalName, newDiskPath);
-    diskMapping.push({ oldPath: disk.source, newPath: newDiskPath });
-  }
-
-  const nvramBackup = join(backupPath, 'VARS.fd');
-  // allowMissing skips BIOS-only and older silent-skip backups; permission/IO failures surface.
-  await copyNvram(nvramBackup, join(newBase, 'VARS.fd'), { allowMissing: true });
-
-  try {
-    await copyOrGunzip(backupPath, 'cloud-init.iso', join(newBase, 'cloud-init.iso'));
-  } catch {
-    /* optional — cloud-init ISO not in backup */
-  }
-  const cloudInitJsonSrc = join(backupPath, 'cloud-init.json');
-  try {
-    await access(cloudInitJsonSrc, constants.R_OK);
-    await copyWithProgress(cloudInitJsonSrc, join(newBase, 'cloud-init.json'), () => {});
-  } catch {
-    /* optional — cloud-init JSON not in backup */
-  }
+  const diskMapping = await copyBackupPayload(backupPath, config, newBase);
 
   const parsed = parseDomainRaw(xml);
   const dom = parsed.domain;
@@ -576,22 +632,7 @@ export async function restoreBackup(backupPath, newVmName) {
   dom.name = newVmName;
   dom.uuid = randomUUID();
 
-  const oldBase = resolveOldVmBasePath(manifest, config, diskMapping);
-  if (oldBase) {
-    applyVmBasePrefixToDomain(dom, oldBase, newBase);
-  }
-
-  /* Disks outside the VM directory (e.g. image library) are not covered by prefix rewrite */
-  const diskList = Array.isArray(dom.devices?.disk) ? dom.devices.disk : dom.devices?.disk ? [dom.devices.disk] : [];
-  for (const d of diskList) {
-    const src = d.source;
-    if (!src || typeof src !== 'object') continue;
-    for (const { oldPath, newPath } of diskMapping) {
-      if (src['@_file'] === oldPath) src['@_file'] = newPath;
-      if (src['@_dev'] === oldPath) src['@_dev'] = newPath;
-      if (src['@_volume'] === oldPath) src['@_volume'] = newPath;
-    }
-  }
+  rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping, newBase });
 
   const ifaces = dom.devices?.interface;
   if (Array.isArray(ifaces)) {
@@ -616,4 +657,90 @@ export async function restoreBackup(backupPath, newVmName) {
   }
 
   return { name: newVmName };
+}
+
+/**
+ * Restore a backup over the live VM it was taken from ("restore in place").
+ *
+ * The target VM is identified by the backup itself (manifest.vmName, falling
+ * back to the domain XML name), must exist, and must be stopped. Disks,
+ * NVRAM, and cloud-init files are copied back into the VM's current
+ * directory, and the backed-up domain XML is re-defined over the live
+ * definition. Identity semantics:
+ *   - name and UUID stay those of the live domain (the UUID only differs
+ *     when a same-named VM was deleted and recreated since the backup —
+ *     adopting the live UUID keeps DomainDefineXML from rejecting the
+ *     name/uuid mismatch);
+ *   - MAC addresses, hardware config, and disk contents revert to the
+ *     backup's state;
+ *   - disks that lived outside the VM directory at backup time (e.g. image
+ *     library) are restored into the VM directory and remapped, same as
+ *     restore-as-new — the outside file is never overwritten.
+ * Files in the VM directory that the backup does not reference (e.g. a disk
+ * added after the backup was taken) are left in place, orphaned.
+ *
+ * @param {string} backupPath - Full path to the backup directory
+ * @param {{ onProgress?: (event: { step: string, percent?: number, currentFile?: string }) => void }} options
+ * @returns { Promise<{ name: string }> }
+ */
+export async function restoreBackupInPlace(backupPath, { onProgress } = {}) {
+  if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
+
+  const { xml, manifest } = await readBackupDomain(backupPath);
+  const config = parseVMFromXML(xml);
+  if (!config) throw vmError('PARSE_ERROR', 'Failed to parse backup domain.xml');
+
+  const name = typeof manifest?.vmName === 'string' && manifest.vmName ? manifest.vmName : config.name;
+  if (!name) throw vmError('BACKUP_INVALID', 'Backup does not identify its VM');
+
+  const path = await resolveDomain(name);
+  const state = await getDomainState(path);
+  if (state.code !== VIR_DOMAIN_STATE_SHUTOFF && state.code !== VIR_DOMAIN_STATE_SHUTDOWN) {
+    throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to restore in place`);
+  }
+
+  let currentUuid = null;
+  try {
+    const current = parseDomainRaw(await getDomainXML(path));
+    currentUuid = typeof current?.domain?.uuid === 'string' ? current.domain.uuid : null;
+  } catch {
+    /* current XML unreadable — keep the backup's UUID (same-VM case works) */
+  }
+
+  const emit = (step, data = {}) => {
+    if (typeof onProgress === 'function') onProgress({ step, ...data });
+  };
+
+  const newBase = normalizeBasePath(getVMBasePath(name));
+  await mkdir(newBase, { recursive: true });
+
+  /* Payload copy owns 0–90% of the progress range; define takes the rest. */
+  const diskMapping = await copyBackupPayload(backupPath, config, newBase, {
+    onProgress: (ev) => emit(ev.step, { percent: Math.round((ev.percent ?? 0) * 0.9), currentFile: ev.currentFile }),
+  });
+
+  const parsed = parseDomainRaw(xml);
+  const dom = parsed.domain;
+  if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse backup domain XML');
+
+  dom.name = name;
+  if (currentUuid) dom.uuid = currentUuid;
+
+  rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping, newBase });
+
+  emit('define', { percent: 90, currentFile: 'Applying domain configuration' });
+  let newXml;
+  try {
+    newXml = buildXml(parsed);
+  } catch (err) {
+    throw vmError('CONFIG_ERROR', 'Failed to build restored domain XML', err.message);
+  }
+  try {
+    await connectionState.connectIface.DomainDefineXML(newXml);
+  } catch (err) {
+    throw vmError('BACKUP_RESTORE_FAILED', `Failed to redefine VM "${name}" from backup`, err.message);
+  }
+
+  emit('done', { percent: 100, currentFile: 'Restore complete' });
+  return { name };
 }

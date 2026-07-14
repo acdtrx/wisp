@@ -26,6 +26,7 @@ function errorCodeToStatus(code) {
     case 'VM_RUNNING':
     case 'VM_EXISTS':
     case 'VM_MUST_BE_OFFLINE':
+    case 'BACKUP_IN_PROGRESS':
       return 409;
     case 'PARSE_ERROR':
     case 'CLONE_FAILED':

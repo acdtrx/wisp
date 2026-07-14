@@ -13,7 +13,7 @@ A backup directory contains:
 
 | File | Description |
 |------|-------------|
-| `manifest.json` | Backup metadata: VM name, timestamp, **`vmBasePath`** (absolute path to the VM’s directory at backup time, used when restoring under a new name or after `vmsPath` changes), disk file list, total size |
+| `manifest.json` | Backup metadata: VM name, timestamp, **`origin`** (`"manual"` / `"scheduled"` — all VM backups are manual today; the field exists for API symmetry with containers and backups predating it list as manual), **`vmBasePath`** (absolute path to the VM’s directory at backup time, used when restoring under a new name or after `vmsPath` changes), disk file list, total size |
 | `domain.xml` | The original libvirt domain XML at time of backup |
 | `disk0.qcow2.gz` | Gzipped primary disk image |
 | `disk1.qcow2.gz` | Gzipped secondary disk image (if present) |
@@ -78,7 +78,7 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
 
 ## Listing Backups
 
-`GET /api/backups` scans configured destinations that are currently usable: always the local backup path; the extra destination only if `backupMountId` is set **and** the corresponding mount is currently mounted. For each found backup, returns: VM name, timestamp, total size in bytes, plus `destinationId` (`'local'` or the mount UUID) and `destinationLabel` for display.
+`GET /api/backups` scans configured destinations that are currently usable: always the local backup path; the extra destination only if `backupMountId` is set **and** the corresponding mount is currently mounted. For each found backup, returns: VM name, timestamp, total size in bytes, `origin` (`"manual"` / `"scheduled"`, manual when the manifest predates the field), plus `destinationId` (`'local'` or the mount UUID) and `destinationLabel` for display.
 
 Optional `?vmName=` filter restricts results to a specific VM.
 
@@ -101,6 +101,38 @@ The restored VM gets a new name, new UUID, and new MAC addresses — it is a ful
 `manifest.vmBasePath` is recorded as an **absolute path** at backup time (e.g. `/var/lib/wisp/vms/<oldName>`). Restore uses it as the prefix to rewrite when emitting the new domain XML. This is resilient to the VM being renamed since the backup was taken (the manifest still points at the old path, which is what disk `<source file>` entries in the backup XML refer to), and also tolerates `vmsPath` changes (the rewrite produces paths under whatever `vmsPath` is configured **at restore time**).
 
 Where it can fail: if a backup was produced under one `vmsPath` and you later move the entire `vms/` tree to a different absolute path **and** edit `wisp-config.json` accordingly, the manifest's recorded `vmBasePath` no longer matches anything Wisp recognises. In that uncommon case the restore falls back to inferring from the original VM name — and if that also doesn't match, the operator must edit `manifest.vmBasePath` to the path that was current when the backup was taken before retrying. We accept this rare manual step rather than carrying historical `vmsPath` history in the manifest.
+
+## Restoring in place
+
+Both workload kinds can also be restored **over the live workload the backup was taken from** — same name, identity preserved — via `POST /api/backups/restore-in-place` and `POST /api/container-backups/restore-in-place`. Both run as background jobs (kinds `vm-restore` / `container-restore`, title `Restore <name>`) streaming progress over the same per-kind backup-progress SSE endpoints, and both accept `safetyBackup` (default `true`): the job first takes a normal manual-origin backup of the *current* state to the same destination (progress steps prefixed `safety-`, mapped to 0–45% of the job's bar), then restores (45–100%). If the safety backup fails, the job aborts before touching the live workload. A restore-in-place request is rejected with **409** `BACKUP_IN_PROGRESS` while another backup or restore job for the same workload is running.
+
+**VM** (`restoreBackupInPlace` in vmManager): the target VM is identified by the backup itself (`manifest.vmName`, falling back to the domain XML name), must exist (404 `VM_NOT_FOUND` otherwise — restore-as-new covers deleted VMs), and must be stopped (409 `VM_MUST_BE_OFFLINE`). Disks, NVRAM, and cloud-init files are copied back into the VM's current directory and the backed-up domain XML is re-defined over the live definition:
+
+- **Name and UUID stay those of the live domain.** The UUID only differs when a same-named VM was deleted and recreated since the backup; adopting the live UUID lets `DomainDefineXML` replace the definition without an undefine/define window.
+- **MAC addresses, hardware config, and disk contents revert to the backup's state** (unlike restore-as-new, which regenerates them).
+- **Disks that lived outside the VM directory at backup time** (e.g. image library) are restored into the VM directory and remapped — identical to restore-as-new; the outside file is never overwritten.
+- Files in the VM directory the backup does not reference (e.g. a disk added later) are left in place, orphaned.
+
+**Container** (`restoreContainerBackupInPlace` in containerManager): the target is the backup's manifest name, must still exist on disk (404 `CONTAINER_NOT_FOUND`), and must be stopped (409 `CONTAINER_MUST_BE_STOPPED` — the directory is swapped out from under any rootfs mounts, so pausing is not enough; a lingering STOPPED task record is cleaned up like backup does). The archive is extracted to a staging dir and validated (single top-level dir matching the name, parsable `container.json`) *before* the live directory is moved aside and the staged one renamed in; a failed swap rolls the old directory back. Then:
+
+- **Identity is preserved**: same name, same MAC (and therefore the same DHCP lease), same containerd record (kept if present, recreated if missing). The rootfs snapshot is re-prepared from the image on next start either way.
+- The archived `container.json` replaces the live one wholesale — config edits made after the backup revert with it. The write goes through `writeContainerConfig` so list caches and the UI refresh.
+- The image is re-pulled if missing and the persisted digest refreshed, same as restore-as-new. If that fails the restored directory stays in place and the error surfaces — a later start or retry finishes the job.
+
+## Backup attempt status
+
+The on-disk backup tree only records successes (a failed backup removes its partial directory), so "did last night's scheduled backup work?" is unanswerable from disk. Wisp persists the **most recent backup attempt per workload** in `config/backup-status.json` (app-glue `lib/backupStatus.js`, atomic JSON writes, preserved across self-updates via the updater's `RSYNC_EXCLUDES`):
+
+```json
+{
+  "vms":        { "<name>": { "at": "<ISO>", "ok": true,  "origin": "manual",    "destinationIds": ["local"], "timestamp": "<backup dir name>" } },
+  "containers": { "<name>": { "at": "<ISO>", "ok": false, "origin": "scheduled", "destinationIds": ["local"], "error": "<message>" } }
+}
+```
+
+Recorded on every completion of a manual backup (both route handlers), a scheduled backup (the scheduler), and the safety backup inside a restore-in-place job. It is a last-outcome cache, not history — safe to delete, self-healing.
+
+The map is pushed on the **`backups` topic of `GET /api/events`**: a snapshot on connect, then a frame after every attempt record and every backup delete/prune (`notifyBackupsChanged`). The frontend's Backups panel uses each frame both for the status badges and as its cue to refetch the backup lists — there is no polling.
 
 ## Deleting a Backup
 
@@ -196,6 +228,8 @@ A daily scheduler (`lib/containerBackupScheduler.js`, app-glue — started/stopp
 `GET /api/container-backups[?containerName=]` scans each currently-usable destination's `containers/` subdirectory and reads each `manifest.json`. Entries without `type === "container"` are skipped (defensive). Rows carry `origin` (`"manual"` / `"scheduled"`). The VM list scanner (`GET /api/backups`) explicitly skips a top-level `containers/` directory under each root for the symmetric reason — keeps the two namespaces independent.
 
 ### Restoring
+
+Container backups can also be restored **in place** over the still-existing container — see [Restoring in place](#restoring-in-place) above. Restore-as-new:
 
 `POST /api/container-backups/restore` with `{ destinationId, name, timestamp, newName }`:
 

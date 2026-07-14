@@ -3,6 +3,7 @@ import { listVMs, subscribeVMListChange } from '../lib/vmManager/index.js';
 import { listContainers, subscribeContainerListChange } from '../lib/containerManager/index.js';
 import { subscribeSectionsChange } from '../lib/sections.js';
 import { getDiscoveredPeers, subscribeDiscoveredPeersChange } from '../lib/wispDiscovery.js';
+import { getBackupStatus, subscribeBackupEvents } from '../lib/backupStatus.js';
 import { setupSSE } from '../lib/sse.js';
 import { buildSectionsEnvelope } from './sections.js';
 
@@ -81,7 +82,19 @@ export default async function eventsRoutes(fastify) {
         sendTopic('discovery', getDiscoveredPeers());
       }
 
-      await Promise.all([sendStats(), sendVMs(), sendContainers(), sendSections()]);
+      /* Per-workload last-backup-attempt map. Fires on every backup-shaped
+       * change (attempt recorded, backup deleted/pruned) — consumers also use
+       * the frame as their cue to refetch the backup lists. */
+      async function sendBackups() {
+        try {
+          sendTopic('backups', await getBackupStatus());
+        } catch (err) {
+          request.log.warn({ err: err.message }, 'events: backup status read failed');
+          sendTopic('backups', { error: err.message, detail: err.raw || err.message, code: err.code });
+        }
+      }
+
+      await Promise.all([sendStats(), sendVMs(), sendContainers(), sendSections(), sendBackups()]);
       sendDiscovery();
 
       const statsTimer = setInterval(sendStats, HOST_STATS_INTERVAL_MS);
@@ -90,6 +103,7 @@ export default async function eventsRoutes(fastify) {
         subscribeContainerListChange(() => { sendContainers(); }),
         subscribeSectionsChange(() => { sendSections(); }),
         subscribeDiscoveredPeersChange(() => { sendDiscovery(); }),
+        subscribeBackupEvents(() => { sendBackups(); }),
       ];
 
       request.raw.on('close', () => {

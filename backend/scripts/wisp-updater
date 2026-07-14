@@ -49,6 +49,7 @@ RSYNC_EXCLUDES=(
   --exclude '/config/wisp-config.json'
   --exclude '/config/wisp-password'
   --exclude '/config/runtime.env'
+  --exclude '/config/backup-status.json'
   --exclude '/.pids'
   --exclude '/.logs'
 )

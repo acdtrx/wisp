@@ -30,6 +30,14 @@ export function titleForContainerBackup(name) {
   return `Backup ${name}`;
 }
 
+export function titleForVmRestore(name) {
+  return `Restore ${name}`;
+}
+
+export function titleForContainerRestore(name) {
+  return `Restore ${name}`;
+}
+
 export const TITLE_IMAGE_UPDATE_CHECK_ALL = 'Check OCI image updates';
 export function titleForImageUpdateCheckSingle(ref) {
   const shortRef = ref.length > 48 ? `${ref.slice(0, 45)}…` : ref;

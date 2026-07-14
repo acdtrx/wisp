@@ -49,6 +49,7 @@ export const renameContainer = impl.renameContainer;
 export const createContainerBackup = impl.createContainerBackup;
 export const listContainerBackups = impl.listContainerBackups;
 export const restoreContainerBackup = impl.restoreContainerBackup;
+export const restoreContainerBackupInPlace = impl.restoreContainerBackupInPlace;
 export const deleteContainerBackup = impl.deleteContainerBackup;
 
 export const listContainerImages = impl.listContainerImages;

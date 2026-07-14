@@ -168,6 +168,10 @@ export async function restoreContainerBackup() {
   throw noContainerd();
 }
 
+export async function restoreContainerBackupInPlace() {
+  throw noContainerd();
+}
+
 export async function deleteContainerBackup() {
   throw noContainerd();
 }

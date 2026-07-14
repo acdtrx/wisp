@@ -124,6 +124,7 @@ async function fetchContainerListFromDisk() {
       image: config.image || '',
       state,
       iconId: config.iconId ?? null,
+      autoBackup: config.autoBackup === true,
       updateAvailable: deriveUpdateAvailable(config, state, libraryDigests),
     });
   }

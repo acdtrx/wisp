@@ -97,7 +97,7 @@ In-memory job registry (server process only; no persistence across restart). Use
   "jobs": [
     {
       "jobId": "string",
-      "kind": "vm-create | container-create | backup | library-download",
+      "kind": "vm-create | container-create | backup | container-backup | vm-restore | container-restore | library-download",
       "title": "string",
       "done": false,
       "createdAt": 1730000000000
@@ -427,8 +427,20 @@ Every topic sends a snapshot frame on connect (and after every client reconnect)
 | `containers` | Same array as `GET /api/containers` | On containerd events, `container.json` writes, image-update completion |
 | `sections` | The `{ sections, assignments }` envelope (see [Sections](#sections)) | After every successful section or assignment write |
 | `discovery` | Sorted peer array (see [Discovery](#discovery)) | On mDNS browse events (peer appeared/left, avahi restart) |
+| `backups` | Per-workload last-backup-attempt map (below) | After every backup attempt (manual or scheduled, success or failure) and every backup delete/prune — consumers also use the frame as the cue to refetch the backup lists |
 
 No topic uses a polling timer except the sampled `stats` metrics.
+
+#### `backups` topic payload
+
+The persisted last-attempt status map (see [BACKUPS.md → Backup attempt status](BACKUPS.md#backup-attempt-status)):
+
+```json
+{
+  "vms": { "ubuntu-server": { "at": "2026-07-14T03:00:12.000Z", "ok": true, "origin": "manual", "destinationIds": ["local"], "timestamp": "2026-07-14T03-00-05" } },
+  "containers": { "caddy": { "at": "2026-07-14T03:00:41.000Z", "ok": false, "origin": "scheduled", "destinationIds": ["local"], "error": "Backup destination not writable" } }
+}
+```
 
 #### `stats` topic payload
 
@@ -887,12 +899,13 @@ List all backups across configured destinations. The backup is identified by the
     "timestamp": "2026-05-08T06-30-00",
     "destinationId": "local",
     "destinationLabel": "Local",
-    "sizeBytes": 5368709120
+    "sizeBytes": 5368709120,
+    "origin": "manual"
   }
 ]
 ```
 
-`destinationId` is `'local'` or the configured `backupMountId`. Pass it back unchanged on restore/delete.
+`destinationId` is `'local'` or the configured `backupMountId`. Pass it back unchanged on restore/delete. `origin` is `"manual"` or `"scheduled"`; VM backups predating the manifest field (and all backups today — there is no VM scheduler) list as `"manual"`.
 
 ### POST /api/backups/restore
 
@@ -902,6 +915,16 @@ Restore a backup as a new VM.
 - **200:** `{ name: string }`
 - **404:** backup not found
 - **422:** unknown `destinationId`, invalid `vmName`/`newVmName`, or invalid `timestamp`
+
+### POST /api/backups/restore-in-place
+
+Restore a backup **over the live VM it was taken from**. Runs as a background job (kind `vm-restore`, title `Restore <vmName>`); progress streams via `GET /api/vms/backup-progress/:jobId`. With `safetyBackup` (default `true`), the job first takes a normal backup of the current state to the same destination (its progress steps are prefixed `safety-` and mapped to 0–45% of the bar), then restores. Semantics (identity preserved, disks/config revert) in [BACKUPS.md → Restoring in place](BACKUPS.md#restoring-in-place).
+
+- **Body:** `{ destinationId: string, vmName: string, timestamp: string, safetyBackup?: boolean }`
+- **201:** `{ jobId: string, title: string }`
+- **404:** `VM_NOT_FOUND` (workload deleted — restore as new instead), `BACKUP_NOT_FOUND`
+- **409:** `VM_MUST_BE_OFFLINE` (VM running), `BACKUP_IN_PROGRESS` (a backup/restore job for this VM is already running)
+- **422 / 503:** destination errors as for `POST /api/vms/:name/backup`
 
 ### DELETE /api/backups
 
@@ -963,6 +986,16 @@ Restore a container backup under a new name. The new name must be free both on d
 - **409:** `CONTAINER_EXISTS` if the new name is already in use
 - **422:** `INVALID_CONTAINER_NAME`, `BACKUP_INVALID` (unknown destination or invalid timestamp), or archive missing/malformed
 - **500:** `BACKUP_RESTORE_FAILED` if extraction or containerd record creation fails
+
+### POST /api/container-backups/restore-in-place
+
+Restore a backup **over the live container it was taken from** (same name, same MAC and DHCP lease; the containerd record is kept, or recreated if missing). The container must be stopped. Runs as a background job (kind `container-restore`, title `Restore <name>`); progress via `GET /api/containers/backup-progress/:jobId`. `safetyBackup` (default `true`) archives the current state first, same phase mapping as the VM route. Semantics in [BACKUPS.md → Restoring in place](BACKUPS.md#restoring-in-place).
+
+- **Body:** `{ destinationId: string, name: string, timestamp: string, safetyBackup?: boolean }`
+- **201:** `{ jobId: string, title: string }`
+- **404:** `CONTAINER_NOT_FOUND` (workload deleted — restore as new instead)
+- **409:** `CONTAINER_MUST_BE_STOPPED`, `BACKUP_IN_PROGRESS` (a backup/restore job for this container is already running)
+- **422 / 503:** destination errors as for `POST /api/containers/:name/backup`
 
 ### DELETE /api/container-backups
 
@@ -1319,7 +1352,7 @@ All container routes require JWT authentication. Routes with a `:name` path para
 
 List all containers (summary).
 
-**200:** `[{ name, type: "container", image, state, iconId, updateAvailable }]`. List payload is intentionally minimal — only what the sidebar renders. `updateAvailable` is set by the image update checker (see CONTAINERS.md → *Image updates*) and defaults to `false` when the field is not set on disk. Section assignment is not part of this payload — read it from `GET /api/sections` (see [Sections](#sections)). Detail fields (`pid`, `cpuLimit`, `memoryLimitMiB`, `restartPolicy`, `autostart`, `autoBackup`, `pendingRestart`, etc.) are returned by `GET /api/containers/:name`; runtime samples (`uptime`, live CPU/IO) come from the per-container stats SSE.
+**200:** `[{ name, type: "container", image, state, iconId, autoBackup, updateAvailable }]`. List payload is intentionally minimal — only what the sidebar and the Backups panel render. `updateAvailable` is set by the image update checker (see CONTAINERS.md → *Image updates*) and defaults to `false` when the field is not set on disk. `autoBackup` mirrors the `container.json` flag (drives the auto-backup badge in Host → Backups). Section assignment is not part of this payload — read it from `GET /api/sections` (see [Sections](#sections)). Detail fields (`pid`, `cpuLimit`, `memoryLimitMiB`, `restartPolicy`, `autostart`, `pendingRestart`, etc.) are returned by `GET /api/containers/:name`; runtime samples (`uptime`, live CPU/IO) come from the per-container stats SSE.
 
 `iconId` is the optional UI icon key (same registry as VM icons); omit or `null` means the client uses the default container icon.
 

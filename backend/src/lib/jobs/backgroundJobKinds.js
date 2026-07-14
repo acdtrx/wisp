@@ -8,5 +8,7 @@ export const BACKGROUND_JOB_KIND = {
   CONTAINER_IMAGE_UPDATE_CHECK: 'container-image-update-check',
   BACKUP: 'backup',
   CONTAINER_BACKUP: 'container-backup',
+  VM_RESTORE: 'vm-restore',
+  CONTAINER_RESTORE: 'container-restore',
   LIBRARY_DOWNLOAD: 'library-download',
 };
