@@ -20,6 +20,18 @@ pointer. Keep this file scannable.
 
 ## Improvements
 
+### Scheduled VM backups (deferred by design)
+
+**Found:** 2026-07-14, while shipping the v2.0.0 backup overhaul (per-workload panel, restore-in-place, attempt status).
+
+**Symptom:** The Backup Scheduler covers containers only. VMs are backed up manually; the panel shows them as implicitly `manual` origin.
+
+**Root cause:** Not a bug — a scope decision. VM backups require the VM stopped, so a schedule means planned downtime per run (or a future live-backup design: qcow2 external snapshot + backing-chain copy while running).
+
+**Fix sketch:** Either (a) scheduled stop→backup→start windows per VM with an explicit downtime warning, or (b) live backups via libvirt external snapshots, which removes the stopped-precondition everywhere. The plumbing is ready: VM manifests already record `origin`, retention/pruning and attempt-status recording are shared, and the scheduler would gain a VM pass next to the container pass.
+
+**Why deferred:** Downtime semantics need a real design decision (option a vs b); the 2026-07-14 decision (artifact D7) was to add the manifest field only and defer the scheduler.
+
 ### `text-accent` as link/action text is below AA contrast
 
 **Found:** 2026-07-12, during the text-contrast pass that darkened the text and status tokens to WCAG AA.
