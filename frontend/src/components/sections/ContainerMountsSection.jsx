@@ -33,10 +33,12 @@ import {
   addContainerMount,
   updateContainerMount,
   removeContainerMount,
+  getContainerMountUsage,
   uploadMountFile,
   uploadMountZip,
 } from '../../api/containers.js';
 import { randomId } from '../../utils/randomId.js';
+import { formatSize } from '../../utils/formatters.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { getMountStatus } from '../../api/settings.js';
 
@@ -229,6 +231,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorMountName, setEditorMountName] = useState('');
   const [storageStatus, setStorageStatus] = useState([]);
+  const [mountUsage, setMountUsage] = useState(null);
 
   // The parent containerStore replaces `containerConfig` (and therefore `config.mounts`) on
   // every SSE/refresh tick — even when mount content is unchanged — so depending on the array
@@ -256,6 +259,25 @@ export default function ContainerMountsSection({ config, onRefresh }) {
       return next;
     });
   }, [mountsKey]);
+
+  /* Host-side disk usage per mount — one on-demand snapshot per mounts change, not a live feed
+   * (sizing walks the data dir and can take seconds for large trees). Best-effort: on failure
+   * the Size column just shows em-dashes. */
+  useEffect(() => {
+    let cancelled = false;
+    setMountUsage(null);
+    if (!config.name || (config.mounts || []).length === 0) return undefined;
+    getContainerMountUsage(config.name)
+      .then((res) => { if (!cancelled) setMountUsage(res.mounts || []); })
+      .catch(() => { if (!cancelled) setMountUsage([]); });
+    return () => { cancelled = true; };
+  }, [config.name, mountsKey]);
+
+  const usageByName = useMemo(() => {
+    const map = new Map();
+    for (const u of mountUsage || []) map.set(u.name, u);
+    return map;
+  }, [mountUsage]);
 
   /* Settings store holds the storage-mount catalogue and is cheap to (re)load; the mount-status
    * endpoint tells us which ones are currently mounted so we can warn on orphan references. */
@@ -536,7 +558,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
   };
 
   const runAsRoot = !!config.runAsRoot;
-  const colCount = runAsRoot ? 8 : 7;
+  const colCount = runAsRoot ? 9 : 8;
 
   return (
     <SectionCard
@@ -563,6 +585,9 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                 </DataTableTh>
                 <DataTableTh dense className="min-w-32">
                   Sub-path
+                </DataTableTh>
+                <DataTableTh dense className="w-20" title="Host-side disk usage of the mount data (snapshot)">
+                  Size
                 </DataTableTh>
                 <DataTableTh dense className="w-14" title="Read-only">R/O</DataTableTh>
                 {runAsRoot && (
@@ -734,6 +759,29 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                       ) : (
                         <span className="text-sm text-text-muted">—</span>
                       )}
+                    </DataTableTd>
+                    <DataTableTd dense className="w-20 whitespace-nowrap">
+                      {(() => {
+                        if (row.type === 'tmpfs') {
+                          return <span className="text-sm text-text-muted" title="tmpfs has no host backing">—</span>;
+                        }
+                        if (!row.serverMountName) {
+                          return <span className="text-sm text-text-muted">—</span>;
+                        }
+                        if (mountUsage === null) {
+                          return <span className="text-xs text-text-muted">…</span>;
+                        }
+                        const u = usageByName.get(row.serverMountName);
+                        if (!u || u.sizeBytes == null) {
+                          return <span className="text-sm text-text-muted">—</span>;
+                        }
+                        const title = `${u.hostPath || ''}${u.partial ? ' — some entries were unreadable; size is an undercount' : ''}`;
+                        return (
+                          <span className="font-mono text-xs text-text-secondary" title={title}>
+                            {formatSize(u.sizeBytes)}{u.partial ? '+' : ''}
+                          </span>
+                        );
+                      })()}
                     </DataTableTd>
                     <DataTableTd dense className="w-14">
                       {row.type === 'tmpfs' ? (

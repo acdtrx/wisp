@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-15
+
+### New Features
+- **Host Mgmt works fully on phones** — SMB shares, removable drives (including adopting detected drives), and VLAN bridges now create/edit through modal editors instead of desktop-only inline table rows; add, edit, and delete are available at every screen size. The SMB editor gains an in-form Test connection with visible result. Mount state is a dot next to the name (Status column dropped), and on phones row actions expand under the row on tap — no more horizontal scrolling.
+- **Container mount disk usage** — the Mounts table shows each mount's host-side data size; new `GET /api/containers/:name/mounts/usage` and MCP read tool `get_container_mount_usage` let agents spot growing data directories.
+
 ## 2026-07-14 (v2.0.0)
 
 ### New Features

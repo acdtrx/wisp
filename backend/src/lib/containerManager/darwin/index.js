@@ -116,6 +116,10 @@ export async function getContainerConfig(name) {
   throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
 }
 
+export async function getContainerMountUsage(name) {
+  throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
+}
+
 export async function startContainer() {
   throw noContainerd();
 }

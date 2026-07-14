@@ -20,6 +20,7 @@ const smbImpl = await import(
 );
 
 export { getDiskInfo, copyAndConvert, resizeDisk } from './diskOps.js';
+export { measurePathSize } from './dirSize.js';
 
 // Block-device enumeration + hotplug
 export const start = monitorImpl.start;

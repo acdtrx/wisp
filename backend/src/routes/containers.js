@@ -4,7 +4,7 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 
 import {
-  listContainers, getContainerConfig, createContainer, deleteContainer, renameContainer,
+  listContainers, getContainerConfig, getContainerMountUsage, createContainer, deleteContainer, renameContainer,
   createContainerBackup,
   startContainer, stopContainer, killContainer, restartContainer,
   updateContainerConfig, addContainerMount, updateContainerMount, removeContainerMount,
@@ -252,6 +252,43 @@ export default async function containerRoutes(fastify) {
   fastify.get('/containers/:name', async (request, reply) => {
     try {
       return maskContainerConfigSecrets(await getContainerConfig(request.params.name));
+    } catch (err) {
+      handleRouteError(err, reply, request);
+    }
+  });
+
+  // ── Mount disk usage ──────────────────────────────────────────────
+  // On-demand snapshot: sizes each mount's host-side bind source (sum of
+  // file sizes). Can take seconds for large data directories.
+  fastify.get('/containers/:name/mounts/usage', {
+    schema: {
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            mounts: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  containerPath: { type: 'string' },
+                  type: { type: 'string' },
+                  source: { type: 'string' },
+                  hostPath: { type: ['string', 'null'] },
+                  sizeBytes: { type: ['number', 'null'] },
+                  partial: { type: 'boolean' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    try {
+      return await getContainerMountUsage(request.params.name);
     } catch (err) {
       handleRouteError(err, reply, request);
     }

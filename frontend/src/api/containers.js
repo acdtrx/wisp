@@ -42,6 +42,11 @@ export function updateContainer(name, changes) {
   return api(`/api/containers/${encodeURIComponent(name)}`, { method: 'PATCH', body: changes });
 }
 
+/** On-demand host-side disk usage of each bind mount (can take seconds for large data dirs). */
+export function getContainerMountUsage(name) {
+  return api(`/api/containers/${encodeURIComponent(name)}/mounts/usage`);
+}
+
 /** Append one bind mount (row-scoped). */
 export function addContainerMount(containerName, mountDef) {
   return api(`/api/containers/${encodeURIComponent(containerName)}/mounts`, {

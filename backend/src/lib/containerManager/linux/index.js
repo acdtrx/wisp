@@ -84,6 +84,8 @@ export {
   removeContainerMount,
 } from './containerManagerMountCrud.js';
 
+export { getContainerMountUsage } from './containerManagerUsage.js';
+
 export {
   addContainerService,
   updateContainerService,

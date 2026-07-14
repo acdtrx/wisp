@@ -1,5 +1,6 @@
 import {
   getContainerConfig,
+  getContainerMountUsage,
   resolveRunId,
   getContainerRunLogs,
   listContainerImages,
@@ -33,6 +34,29 @@ export const containerTools = [
     handler: async ({ name }) => {
       validateContainerName(name);
       return maskContainerConfigSecrets(await getContainerConfig(name));
+    },
+  },
+  {
+    name: 'get_container_mount_usage',
+    title: 'Container mount disk usage',
+    description:
+      'Host-side disk usage of one container\'s bind mounts (Local data dirs and storage-backed ' +
+      'mounts), sized on demand as the sum of file sizes — expect a few seconds for large data ' +
+      'directories. Use it to spot growing data dirs (media libraries, registries, shares). ' +
+      'tmpfs mounts have no host backing (sizeBytes null); partial=true means some entries were ' +
+      'unreadable and the size is an undercount.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Container name' },
+      },
+      required: ['name'],
+      additionalProperties: false,
+    },
+    scope: 'read',
+    handler: async ({ name }) => {
+      validateContainerName(name);
+      return getContainerMountUsage(name);
     },
   },
   {

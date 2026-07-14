@@ -68,6 +68,7 @@ export const updateContainerConfig = impl.updateContainerConfig;
 export const addContainerMount = impl.addContainerMount;
 export const updateContainerMount = impl.updateContainerMount;
 export const removeContainerMount = impl.removeContainerMount;
+export const getContainerMountUsage = impl.getContainerMountUsage;
 
 export const addContainerService = impl.addContainerService;
 export const updateContainerService = impl.updateContainerService;

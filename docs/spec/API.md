@@ -1436,6 +1436,18 @@ The **`env`** field uses a structured shape: `{ KEY: { value, secret?, isSet? } 
 
 **404:** `{ error, detail }` if container not found.
 
+### GET /api/containers/:name/mounts/usage
+
+Host-side disk usage of each bind mount. On-demand snapshot (not a live feed): each mount's bind source — Local `files/<name>` dir or storage `mountPath/subPath` — is sized as the sum of file byte lengths (stdlib walk, symlinks not followed). Can take seconds for large data directories.
+
+**200:** `{ name, mounts: [{ name, containerPath, type, source, hostPath, sizeBytes, partial }] }`
+
+- `source`: `local` | `storage` | `tmpfs` | `missing` (`missing` = the mount's `sourceId` no longer resolves to a configured storage mount).
+- `hostPath` / `sizeBytes`: `null` for `tmpfs` (no host backing) and `missing`.
+- `partial`: `true` when some entries were unreadable or vanished mid-walk — `sizeBytes` is an undercount.
+
+**404:** `{ error, detail }` if container not found.
+
 ### PATCH /api/containers/:name
 
 Partially update container config.
