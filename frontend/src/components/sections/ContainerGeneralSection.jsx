@@ -15,7 +15,7 @@ const RESTART_OPTIONS = [
 
 function RestartPolicySegmentedControl({ value, onChange }) {
   return (
-    <div className="flex h-9 max-w-full overflow-x-auto rounded-lg border border-surface-border bg-surface p-0.5">
+    <div className="flex h-[34px] max-w-full overflow-x-auto rounded-lg border border-surface-border bg-surface p-0.5">
       {RESTART_OPTIONS.map((opt) => (
         <button
           key={opt.value}
@@ -45,6 +45,7 @@ export function buildGeneralFormDefaults(config) {
     autostart: config.autostart ?? false,
     autoBackup: config.autoBackup ?? false,
     runAsRoot: config.runAsRoot ?? false,
+    localDns: config.localDns === true,
   };
 }
 
@@ -79,6 +80,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
     config?.autostart,
     config?.autoBackup,
     config?.runAsRoot,
+    config?.localDns,
   ]);
 
   useEffect(() => {
@@ -120,6 +122,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
       if (form.autostart !== original.autostart) changes.autostart = form.autostart;
       if (form.autoBackup !== original.autoBackup) changes.autoBackup = form.autoBackup;
       if (form.runAsRoot !== original.runAsRoot) changes.runAsRoot = form.runAsRoot;
+      if (form.localDns !== original.localDns) changes.localDns = form.localDns;
 
       const result = await onSave(changes);
       if (result?.requiresRestart) setRequiresRestart(true);
@@ -157,6 +160,45 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
               className="input-field"
             />
           </Field>
+
+          {!isCreating && (
+            <>
+              <Field label="DNS" helpText="Local DNS — advertise this container on the LAN as <name>.local via mDNS">
+                <div className="flex h-[34px] items-center">
+                  <Toggle checked={form.localDns} onChange={(v) => updateField('localDns', v)} />
+                </div>
+              </Field>
+
+              <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border" />
+
+              <Field label="CPU" icon={Cpu} className="w-16">
+                <input
+                  type="number"
+                  min={0.1}
+                  step={0.1}
+                  value={form.cpuLimit}
+                  onChange={(e) => updateField('cpuLimit', e.target.value)}
+                  placeholder="∞"
+                  className="input-field input-field-no-spinner w-full text-right text-sm"
+                />
+              </Field>
+
+              <Field label="RAM (MiB)" icon={MemoryStick} className="w-24">
+                <input
+                  type="number"
+                  min={32}
+                  step={64}
+                  value={form.memoryLimitMiB}
+                  onChange={(e) => updateField('memoryLimitMiB', e.target.value)}
+                  placeholder="∞"
+                  className="input-field input-field-no-spinner w-full text-right text-sm"
+                />
+              </Field>
+
+              <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border" />
+            </>
+          )}
+
           <Field label="Image" className="flex-1 min-w-[200px]">
             <div className="flex items-stretch gap-2">
               <input
@@ -192,50 +234,23 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
         />
 
         {!isCreating && (
-        <>
-        <Field
-          label="Command Override"
-          helpText="Space-separated argv — no shell parsing. For shell syntax, prefix with sh -c."
-          className="w-full"
-        >
-          <input
-            type="text"
-            value={form.command}
-            onChange={(e) => updateField('command', e.target.value)}
-            placeholder="Leave empty for image default"
-            className="input-field"
-          />
-        </Field>
-
         <div className="flex items-end gap-4 flex-wrap">
-          <Field label="CPU Cores" icon={Cpu} className="w-24">
+          <Field
+            label="Command Override"
+            helpText="Space-separated argv — no shell parsing. For shell syntax, prefix with sh -c."
+            className="flex-1 min-w-[240px]"
+          >
             <input
-              type="number"
-              min={0.1}
-              step={0.1}
-              value={form.cpuLimit}
-              onChange={(e) => updateField('cpuLimit', e.target.value)}
-              placeholder="∞"
-              className="input-field input-field-no-spinner w-full text-right text-sm"
+              type="text"
+              value={form.command}
+              onChange={(e) => updateField('command', e.target.value)}
+              placeholder="Leave empty for image default"
+              className="input-field"
             />
           </Field>
-
-          <Field label="Memory (MiB)" icon={MemoryStick} className="w-32">
-            <input
-              type="number"
-              min={32}
-              step={64}
-              value={form.memoryLimitMiB}
-              onChange={(e) => updateField('memoryLimitMiB', e.target.value)}
-              placeholder="∞"
-              className="input-field input-field-no-spinner w-full text-right text-sm"
-            />
-          </Field>
-
-          <div className="mx-0.5 h-6 w-px bg-surface-border" />
 
           <Field label="Run as Root">
-            <div className="flex h-9 items-center">
+            <div className="flex h-[34px] items-center">
               <Toggle checked={form.runAsRoot} onChange={(v) => updateField('runAsRoot', v)} />
             </div>
           </Field>
@@ -247,8 +262,10 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
             />
           </Field>
 
+          <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border" />
+
           <Field label="Auto Start">
-            <div className="flex h-9 items-center">
+            <div className="flex h-[34px] items-center">
               <Toggle checked={form.autostart} onChange={(v) => updateField('autostart', v)} />
             </div>
           </Field>
@@ -257,12 +274,11 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
             label="Auto Backup"
             helpText="Included in the daily scheduled backup (Host Mgmt → Backup Scheduler). A running container is briefly paused while it's archived."
           >
-            <div className="flex h-9 items-center">
+            <div className="flex h-[34px] items-center">
               <Toggle checked={form.autoBackup} onChange={(v) => updateField('autoBackup', v)} />
             </div>
           </Field>
         </div>
-        </>
         )}
       </div>
     </SectionCard>

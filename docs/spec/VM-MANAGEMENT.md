@@ -269,7 +269,7 @@ VMs can be registered on the local network via mDNS (`.local`) using avahi-daemo
 - Network-change events are fired by **`linux/vmManager/vmManagerNetwork.js`** internally — driven by libvirt lifecycle (`DomainEvent`), qemu-ga lifecycle (`AgentEvent` `state=1`), and a 60 s periodic IP probe as a safety net for DHCP drift / missed signals. The reconciler reads each VM's `localDns` flag via `vmManager.getCachedLocalDns(name)` and registers/deregisters accordingly. Routes call `publishVm(name)` / `unpublishVm(name)` directly when the user toggles `localDns`, renames, or deletes a VM.
 - vmManager auto-attaches `AgentEvent` listeners for every running VM and detaches when a VM leaves the running set; the reconciler doesn't track per-domain subscriptions.
 - Registration is removed when the VM stops, is undefined, or `localDns` is toggled off.
-- UI: Advanced section has a **Local DNS** toggle; VM stats bar shows the registered `.local` hostname when active, plus a guest-agent `connected/disconnected` pill.
+- UI: General section has a **DNS** toggle (Local DNS); VM stats bar shows the registered `.local` hostname when active, plus a guest-agent `connected/disconnected` pill.
 
 ### Avahi restart recovery
 

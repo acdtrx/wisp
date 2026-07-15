@@ -48,14 +48,12 @@ function advancedFormFromVmConfig(vmConfig) {
     videoDriver: vmConfig.videoModel || 'virtio',
     graphicsType: vmConfig.graphics?.type || 'vnc',
     bootOrder: vmConfig.bootOrder?.length ? [...vmConfig.bootOrder] : ['hd'],
-    autostart: vmConfig.autostart || false,
     bootMenu: vmConfig.bootMenu || false,
     memBalloon: vmConfig.memBalloon ?? true,
     guestAgent: vmConfig.guestAgent ?? true,
     vtpm: vmConfig.vtpm || false,
     virtioRng: vmConfig.virtioRng ?? true,
     nestedVirt: vmConfig.nestedVirt || false,
-    localDns: vmConfig.localDns === true,
   };
 }
 
@@ -89,8 +87,8 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
   const defaults = {
     firmware: 'bios', machineType: 'q35', cpuMode: 'host-passthrough',
     videoDriver: 'virtio', graphicsType: 'vnc', bootOrder: ['hd'],
-    autostart: false, bootMenu: false, memBalloon: true, guestAgent: true,
-    vtpm: false, virtioRng: true, nestedVirt: false, localDns: false,
+    bootMenu: false, memBalloon: true, guestAgent: true,
+    vtpm: false, virtioRng: true, nestedVirt: false,
   };
   const [form, setForm] = useState(defaults);
   const [original, setOriginal] = useState(defaults);
@@ -106,8 +104,8 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
     setRequiresRestart(false);
   }, [
     vmConfig?.firmware, vmConfig?.machineType, vmConfig?.cpuMode, vmConfig?.videoModel,
-    vmConfig?.graphics?.type, JSON.stringify(vmConfig?.bootOrder), vmConfig?.autostart, vmConfig?.bootMenu, vmConfig?.memBalloon,
-    vmConfig?.guestAgent, vmConfig?.vtpm, vmConfig?.virtioRng, vmConfig?.nestedVirt, vmConfig?.localDns,
+    vmConfig?.graphics?.type, JSON.stringify(vmConfig?.bootOrder), vmConfig?.bootMenu, vmConfig?.memBalloon,
+    vmConfig?.guestAgent, vmConfig?.vtpm, vmConfig?.virtioRng, vmConfig?.nestedVirt,
   ]);
 
   useEffect(() => {
@@ -122,8 +120,8 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
   }, [
     isCreating,
     vmConfig?.firmware, vmConfig?.machineType, vmConfig?.cpuMode, vmConfig?.videoModel,
-    vmConfig?.graphics?.type, JSON.stringify(vmConfig?.bootOrder), vmConfig?.autostart, vmConfig?.bootMenu, vmConfig?.memBalloon,
-    vmConfig?.guestAgent, vmConfig?.vtpm, vmConfig?.virtioRng, vmConfig?.nestedVirt, vmConfig?.localDns,
+    vmConfig?.graphics?.type, JSON.stringify(vmConfig?.bootOrder), vmConfig?.bootMenu, vmConfig?.memBalloon,
+    vmConfig?.guestAgent, vmConfig?.vtpm, vmConfig?.virtioRng, vmConfig?.nestedVirt,
   ]);
 
   const isDirty = JSON.stringify(form) !== JSON.stringify(original);
@@ -227,9 +225,6 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
 
           <div className="space-y-4 min-w-0">
             <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
-              <FieldRow label="Auto Start">
-                <Toggle checked={form.autostart} onChange={(v) => updateField('autostart', v)} />
-              </FieldRow>
               <FieldRow label="Boot Menu">
                 <Toggle checked={form.bootMenu} onChange={(v) => updateField('bootMenu', v)} />
               </FieldRow>
@@ -272,9 +267,6 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
               </FieldRow>
               <FieldRow label="VirtIO RNG">
                 <Toggle checked={form.virtioRng} onChange={(v) => updateField('virtioRng', v)} />
-              </FieldRow>
-              <FieldRow label="Local DNS">
-                <Toggle checked={form.localDns} onChange={(v) => updateField('localDns', v)} />
               </FieldRow>
             </div>
           </div>

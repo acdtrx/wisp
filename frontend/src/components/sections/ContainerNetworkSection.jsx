@@ -6,7 +6,6 @@ import {
 import SectionCard from '../shared/SectionCard.jsx';
 import Modal from '../shared/Modal.jsx';
 import { randomMac } from '../../utils/randomMac.js';
-import Toggle from '../shared/Toggle.jsx';
 import { getHostBridges } from '../../api/vms.js';
 import { isVlanLikeBridgeName } from '../../utils/bridgeNames.js';
 import {
@@ -95,8 +94,6 @@ export default function ContainerNetworkSection({
   const [originalMac, setOriginalMac] = useState(() => net.mac || '');
   const [interfaceDraft, setInterfaceDraft] = useState(() => net.interface || '');
   const [originalInterface, setOriginalInterface] = useState(() => net.interface || '');
-  const [localDns, setLocalDns] = useState(() => config.localDns === true);
-  const [originalLocalDns, setOriginalLocalDns] = useState(() => config.localDns === true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [requiresRestart, setRequiresRestart] = useState(false);
@@ -226,12 +223,9 @@ export default function ContainerNetworkSection({
     const iface = config.network?.interface || '';
     setInterfaceDraft(iface);
     setOriginalInterface(iface);
-    const localDnsEnabled = config.localDns === true;
-    setLocalDns(localDnsEnabled);
-    setOriginalLocalDns(localDnsEnabled);
     setError(null);
     setRequiresRestart(false);
-  }, [config.name, config.network?.mac, config.network?.interface, config.localDns]);
+  }, [config.name, config.network?.mac, config.network?.interface]);
 
   useEffect(() => {
     syncFromConfig();
@@ -266,8 +260,7 @@ export default function ContainerNetworkSection({
   const normInterface = (s) => (s || '').trim();
   const interfaceChanged = interfaceEditable && normInterface(interfaceDraft) !== normInterface(originalInterface);
   const isDirty = (macEditable && norm(macDraft) !== norm(originalMac))
-    || interfaceChanged
-    || localDns !== originalLocalDns;
+    || interfaceChanged;
 
   const applyInterfaceDraft = (value) => {
     setInterfaceDraft(value);
@@ -280,14 +273,8 @@ export default function ContainerNetworkSection({
     });
   };
 
-  const applyLocalDns = (value) => {
-    setLocalDns(value);
-    if (isCreating && onFormChange) onFormChange({ localDns: value });
-  };
-
   const handleSave = async () => {
     if (isCreating) {
-      setOriginalLocalDns(localDns);
       setOriginalInterface(interfaceDraft.trim());
       return;
     }
@@ -306,14 +293,10 @@ export default function ContainerNetworkSection({
       if (Object.keys(networkChanges).length > 0) {
         changes.network = { ...net, ...networkChanges };
       }
-      if (localDns !== originalLocalDns) {
-        changes.localDns = localDns;
-      }
       const result = await onSave(changes);
       if (result?.requiresRestart) setRequiresRestart(true);
       setOriginalMac(macDraft.trim());
       setOriginalInterface(interfaceDraft.trim());
-      setOriginalLocalDns(localDns);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -334,11 +317,6 @@ export default function ContainerNetworkSection({
       requiresRestart={requiresRestart}
     >
       <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
-        <Field label="Local DNS">
-          <div className="flex h-8 items-center">
-            <Toggle checked={localDns} onChange={applyLocalDns} />
-          </div>
-        </Field>
         <Field label="Interface">
           {interfaceEditable ? (
             <select
@@ -409,7 +387,7 @@ export default function ContainerNetworkSection({
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-text-secondary">Exposed Ports</span>
             {!servicesEnabled && (
-              <span className="text-[10px] text-text-muted">Enable Local DNS to advertise services</span>
+              <span className="text-[10px] text-text-muted">Enable Local DNS (General section) to advertise services</span>
             )}
           </div>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
