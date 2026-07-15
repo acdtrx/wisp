@@ -6,6 +6,7 @@
 - **Host Mgmt works fully on phones** — SMB shares, removable drives (including adopting detected drives), and VLAN bridges now create/edit through modal editors instead of desktop-only inline table rows; add, edit, and delete are available at every screen size. The SMB editor gains an in-form Test connection with visible result. Mount state is a dot next to the name (Status column dropped), and on phones row actions expand under the row on tap — no more horizontal scrolling.
 - **Container mount disk usage** — the Mounts table shows each mount's host-side data size; new `GET /api/containers/:name/mounts/usage` and MCP read tool `get_container_mount_usage` let agents spot growing data directories.
 - **VM and container General sections unified** — container CPU/RAM sit next to the name (VM-style compact fields), Run as Root and Restart Policy join the command row, and DNS (Local DNS) plus Auto Start / Auto Backup now live in General for both workload types; all labels and controls on aligned rows.
+- **Backups panel lists only workloads that carry a backup** — VMs/containers with zero backups are hidden (start their first backup from the workload page); failed last attempts and in-flight backup jobs still get a card.
 
 ## 2026-07-14 (v2.0.0)
 

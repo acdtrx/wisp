@@ -332,7 +332,7 @@ Same layout but with Select button per file. Auto-filtered by context.
 
 Accessed as the **Backups** tab inside the Host panel. Panel heading "Backups" with short description (backup coverage per workload; scheduler configured in Host Mgmt).
 
-**One collapsible card per workload** (VM or container), not a flat table. Every live workload appears — including ones with zero backups — plus a card for any backups whose workload no longer exists (dimmed, amber `workload deleted` badge). Live workloads sort first, then by name. Cards start collapsed; the header carries the full summary:
+**One collapsible card per workload** (VM or container), not a flat table. Only workloads that **carry at least one backup** appear — plus two exceptions that also earn a card: a failed last backup attempt (the failure signal has no other surface) and a currently running backup/restore job. Backups whose workload no longer exists keep their card (dimmed, amber `workload deleted` badge). Workloads with zero backups are hidden — the first backup is started from the VM/container page (or by the scheduler). Live workloads sort first, then by name. Cards start collapsed; the header carries the full summary:
 
 - Chevron, **workload name**, kind badge (`vm` / `container`).
 - Containers: auto-backup badge — green `auto · daily HH:MM` (from `settings.backupSchedule`), `auto · scheduler off` when the toggle is on but the scheduler disabled, or a dashed `auto off`.
@@ -355,7 +355,7 @@ Expanding a card shows the backup table (shared DataTable chrome, actions on row
 - **Delete** — shared `ConfirmDialog`.
 
 Data flow: workload lists come from the `vms`/`containers` topics (container rows carry `autoBackup`); backup lists via one-time GETs re-fetched whenever the `backups` events topic pushes (attempt recorded, delete, prune) — no polling.
-- Empty state: points to **Host → Host Mgmt → Backup** for paths and **VM Overview → Backup** to create a backup.
+- Empty state (no backups anywhere): points to the VM/container pages to create the first backup.
 
 ---
 

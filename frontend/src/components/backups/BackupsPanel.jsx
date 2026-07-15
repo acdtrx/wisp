@@ -267,6 +267,13 @@ export default function BackupsPanel() {
       : group.state === 'stopped' || group.state === 'created'
   );
 
+  /* Only workloads that carry a backup get a card — first backups start from
+   * the VM/container page. A failed last attempt or a running backup/restore
+   * job also earns one: that signal has no other surface on this panel. */
+  const visibleGroups = groups.filter(
+    (g) => g.backups.length > 0 || g.status?.ok === false || activeJobFor(g),
+  );
+
   /* ── Back up now ── */
 
   const handleOpenBackup = (group) => {
@@ -583,7 +590,7 @@ export default function BackupsPanel() {
       <div className="border-b border-surface-border px-6 py-4">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">Backups</h2>
         <p className="mt-0.5 text-sm text-text-secondary">
-          Backup coverage per VM and container: back up now, restore in place or as a new copy, and delete old backups.
+          Every VM and container that carries a backup: back up again, restore in place or as a new copy, and delete old backups.
           Containers with Auto Backup follow the scheduler in Host Mgmt.
         </p>
       </div>
@@ -599,10 +606,12 @@ export default function BackupsPanel() {
             <Loader2 size={16} className="animate-spin" />
             Loading…
           </div>
-        ) : groups.length === 0 ? (
-          <p className="text-sm text-text-muted">No VMs or containers yet. Backups will show up here per workload.</p>
+        ) : visibleGroups.length === 0 ? (
+          <p className="text-sm text-text-muted">
+            No backups yet. Back up a VM or container from its page and it will appear here.
+          </p>
         ) : (
-          groups.map(renderGroupCard)
+          visibleGroups.map(renderGroupCard)
         )}
       </div>
 
