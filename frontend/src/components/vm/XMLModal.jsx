@@ -16,7 +16,7 @@ function highlightXml(xml) {
     while (remaining.length > 0) {
       const tagMatch = remaining.match(/^(<\/?[\w:.-]+)/);
       if (tagMatch) {
-        segments.push(<span key={key++} className="text-accent">{tagMatch[1]}</span>);
+        segments.push(<span key={key++} className="text-accent-text">{tagMatch[1]}</span>);
         remaining = remaining.slice(tagMatch[1].length);
         continue;
       }
@@ -37,7 +37,7 @@ function highlightXml(xml) {
 
       const closeMatch = remaining.match(/^(\/?>)/);
       if (closeMatch) {
-        segments.push(<span key={key++} className="text-accent">{closeMatch[1]}</span>);
+        segments.push(<span key={key++} className="text-accent-text">{closeMatch[1]}</span>);
         remaining = remaining.slice(closeMatch[1].length);
         continue;
       }

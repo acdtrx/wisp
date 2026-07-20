@@ -24,6 +24,11 @@
   --color-accent: #0fa396;
   --color-accent-hover: #0b8578;
   --color-accent-soft: #dff3f0;
+  /* Accent as small text (links, tabs, badges). The brand accent sits at
+     3.1:1 on white — below AA for text. This shade holds ≥4.5:1 on every
+     surface including accent-soft. Icons and filled buttons keep the brand
+     accent (graphics need only 3:1). */
+  --color-accent-text: #0a7568;
 
   --color-status-running: #21813f;
   --color-status-warning: #9c6203;

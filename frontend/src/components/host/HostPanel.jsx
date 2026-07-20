@@ -26,7 +26,7 @@ function TabButton({ id, label, active, badgeTitle, onClick }) {
       type="button"
       onClick={() => onClick(id)}
       className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors duration-150 ${
-        active ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
+        active ? 'border-accent text-accent-text font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
       }`}
     >
       <span>{label}</span>

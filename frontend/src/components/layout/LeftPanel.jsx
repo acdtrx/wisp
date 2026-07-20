@@ -298,7 +298,7 @@ function CreateSectionGhost({ onCreateAndAssign }) {
       onDrop={handleDrop}
       className={`mx-3 my-2 flex flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed py-4 text-[11px] transition-colors duration-100 ${
         dragOver
-          ? 'border-accent bg-accent/5 text-accent'
+          ? 'border-accent bg-accent/5 text-accent-text'
           : 'border-surface-border text-text-muted'
       }`}
     >
@@ -552,7 +552,7 @@ export default function LeftPanel() {
             <button
               onClick={() => setSortRunningFirst(!sortRunningFirst)}
               className={`text-[10px] font-medium transition-colors duration-150 ${
-                sortRunningFirst ? 'text-accent' : 'text-text-muted hover:text-text-secondary'
+                sortRunningFirst ? 'text-accent-text' : 'text-text-muted hover:text-text-secondary'
               }`}
             >
               {sortRunningFirst ? '● Running first' : '○ Alphabetical'}

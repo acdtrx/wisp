@@ -110,7 +110,7 @@ export default function SectionPickerButton({ type, name, disabled }) {
                 type="button"
                 onClick={pickNew}
                 disabled={busy}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-secondary transition-colors duration-100 hover:bg-surface hover:text-accent disabled:opacity-40"
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-secondary transition-colors duration-100 hover:bg-surface hover:text-accent-text disabled:opacity-40"
               >
                 <FolderPlus size={12} className="shrink-0" />
                 <span>New section…</span>

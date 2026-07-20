@@ -269,7 +269,7 @@ export default function OverviewPanel() {
               type="button"
               onClick={() => navigate(`/vm/${encodeURIComponent(name)}/overview`)}
               className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
-                activeTab === 'overview' ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
+                activeTab === 'overview' ? 'border-accent text-accent-text font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
               }`}
             >
               Overview
@@ -279,7 +279,7 @@ export default function OverviewPanel() {
               type="button"
               onClick={() => navigate(`/vm/${encodeURIComponent(name)}/console`)}
               className={`hidden lg:block border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
-                activeTab === 'console' ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
+                activeTab === 'console' ? 'border-accent text-accent-text font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
               }`}
             >
               Console

@@ -436,7 +436,7 @@ function EditForm({
               onClick={() => onSelectKey(key)}
               className={`block w-full truncate rounded-md border px-2.5 py-1 text-left font-mono text-[10px] transition-colors duration-150 ${
                 form.sshKey === key
-                  ? 'border-accent bg-accent-soft text-accent'
+                  ? 'border-accent bg-accent-soft text-accent-text'
                   : 'border-surface-border text-text-secondary hover:bg-surface'
               }`}
             >

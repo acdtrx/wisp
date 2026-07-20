@@ -215,7 +215,7 @@ export default function ContainerOverviewPanel() {
               type="button"
               onClick={() => navigate(`/container/${encodeURIComponent(name)}/overview`)}
               className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
-                activeTab === 'overview' ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
+                activeTab === 'overview' ? 'border-accent text-accent-text font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
               }`}
             >
               Overview
@@ -224,7 +224,7 @@ export default function ContainerOverviewPanel() {
               type="button"
               onClick={() => navigate(`/container/${encodeURIComponent(name)}/logs`)}
               className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
-                activeTab === 'logs' ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
+                activeTab === 'logs' ? 'border-accent text-accent-text font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
               }`}
             >
               Logs
@@ -234,7 +234,7 @@ export default function ContainerOverviewPanel() {
               type="button"
               onClick={() => navigate(`/container/${encodeURIComponent(name)}/console`)}
               className={`hidden lg:block border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-150 ${
-                activeTab === 'console' ? 'border-accent text-accent font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
+                activeTab === 'console' ? 'border-accent text-accent-text font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
               }`}
             >
               Console

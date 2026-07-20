@@ -17,6 +17,7 @@ Layout, visual system, navigation, and user-visible behavior for Wisp. **API req
 | `accent` | `#0fa396` | Primary actions, active states |
 | `accent-hover` | `#0b8578` | Hover state for accent elements |
 | `accent-soft` | `#dff3f0` | Accent background wash (selected rows, active tabs, hover tints) |
+| `accent-text` | `#0a7568` | Accent as small text — links, active tab labels, badge text, XML tag highlight. AA (≥4.5:1) on all surfaces incl. `accent-soft`; the brand `accent` (3.1:1) stays on icons and filled buttons |
 | `status-running` | `#21813f` | Running VMs, success states |
 | `status-warning` | `#9c6203` | Paused VMs, warnings, restart-required |
 | `status-stopped` | `#c93a3a` | Stopped VMs, errors, danger actions |
@@ -28,7 +29,7 @@ Layout, visual system, navigation, and user-visible behavior for Wisp. **API req
 | `text-secondary` | `#3a524d` | Secondary text, descriptions |
 | `text-muted` | `#56716b` | Muted text, labels, placeholders |
 
-Text and solid status tokens hold WCAG AA contrast (≥4.5:1) on `surface`, `surface-sidebar`, and white cards — check contrast before lightening any of them.
+Text and solid status tokens hold WCAG AA contrast (≥4.5:1) on `surface`, `surface-sidebar`, and white cards — check contrast before lightening any of them. When accent colors **text glyphs** use `text-accent-text`, not `text-accent`; plain `accent` on text is reserved for icons and icon buttons (graphics only need 3:1).
 
 The `*-soft` tokens are the standard for status/accent **background washes** — do not hand-roll raw Tailwind palette classes (`bg-red-50`, `bg-green-50`, …) for tinted surfaces.
 

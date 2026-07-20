@@ -240,7 +240,7 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
                         onClick={() => toggleBootDev(dev.value)}
                         className={`rounded-md px-2.5 py-1 text-xs font-medium border transition-colors duration-150 ${
                           active
-                            ? 'border-accent bg-accent-soft text-accent'
+                            ? 'border-accent bg-accent-soft text-accent-text'
                             : 'border-surface-border text-text-muted hover:text-text-secondary'
                         }`}
                       >

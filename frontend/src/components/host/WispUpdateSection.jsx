@@ -267,14 +267,14 @@ export default function WispUpdateSection() {
             href={releaseUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-accent hover:underline"
+            className="inline-flex items-center gap-1 text-accent-text hover:underline"
           >
             <ExternalLink size={11} />
             View on GitHub
           </a>
         )}
       >
-        <div className="prose prose-sm prose-slate max-w-none wrap-break-word text-text-secondary prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-text-primary prose-p:my-1.5 prose-li:my-0.5 prose-code:rounded-sm prose-code:bg-surface prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none prose-a:text-accent">
+        <div className="prose prose-sm prose-slate max-w-none wrap-break-word text-text-secondary prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-text-primary prose-p:my-1.5 prose-li:my-0.5 prose-code:rounded-sm prose-code:bg-surface prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none prose-a:text-accent-text">
           {notes ? (
             <NotesHtml markdown={notes} />
           ) : (

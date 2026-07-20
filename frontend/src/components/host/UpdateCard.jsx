@@ -73,7 +73,7 @@ export default function UpdateCard({
           <button
             type="button"
             onClick={details.onClick}
-            className="text-xs text-accent hover:underline"
+            className="text-xs text-accent-text hover:underline"
           >
             {details.label}
           </button>
