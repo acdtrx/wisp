@@ -1,6 +1,6 @@
 # UI patterns: section lists and tables
 
-Conventions for repeating rows in Host, VM, Container, and Library panels. Use this together with [docs/spec/UI.md](spec/UI.md) (visual system) and [docs/CODING-RULES.md](CODING-RULES.md) §8.
+Conventions for repeating rows in Host, VM, Container, and Library panels. Use this together with [docs/spec/UI.md](spec/UI.md) (visual system) and "Wisp — Coding Rules" §8 (in kora — see the root `CLAUDE.md`).
 
 ---
 
@@ -163,6 +163,5 @@ Never call native `window.alert()` or `window.confirm()` — async-error reporti
 ## Related documentation
 
 - [docs/spec/UI.md](spec/UI.md) — Layout, tokens, and view inventory.
-- [docs/CODING-RULES.md](CODING-RULES.md) §8 — General frontend patterns.
-- [docs/WISP-RULES.md](WISP-RULES.md) — Wisp-specific frontend notes.
+- "Wisp — Coding Rules" §8 (kora) — general frontend patterns.
 - [docs/spec/API.md](spec/API.md) — Mount row endpoints (`/api/host/mounts`).

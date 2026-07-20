@@ -309,7 +309,7 @@ When you add a new **`backend/scripts/wisp-*`** script that the app runs via **`
 
 1. **Register it** in **`scripts/linux/setup/install-helpers.sh`** (one `helper.sh` invocation; add apt packages as extra args if needed).
 2. **Backend** — Prefer **`/usr/local/bin/<name>`** first, then bundled `backend/scripts/`, with an optional env override (match `host/linux/osUpdates.js` / `host/linux/hostPower.js` / `host/linux/hostHardware.js` patterns).
-3. **Docs** — `docs/spec/DEPLOYMENT.md` (this section), `docs/spec/API.md` / `CONFIGURATION.md` / `docs/ARCHITECTURE.md` as appropriate; **`docs/WISP-RULES.md`** shell-exec list.
+3. **Docs** — `docs/spec/DEPLOYMENT.md` (this section), `docs/spec/API.md` / `CONFIGURATION.md` / `docs/ARCHITECTURE.md` as appropriate; the **shell-exec allowlist in the root `CLAUDE.md`**.
 4. **Install / upgrade** — Covered automatically if step 1 is done (`setup-server.sh`, **`wispctl.sh helpers`**, **`push.sh`** all invoke `install-helpers.sh`).
 
 ### `wisp-os-update` (installed to `/usr/local/bin/`)

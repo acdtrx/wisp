@@ -102,7 +102,7 @@ Authentication: one password per host (scrypt-hashed in `config/wisp-password`),
 
 Technical docs live under [`docs/`](./docs/):
 
-- [Architecture](./docs/ARCHITECTURE.md) · [Tech stack](./docs/TECHSTACK.md) · [Coding rules](./docs/CODING-RULES.md)
+- [Architecture](./docs/ARCHITECTURE.md) · [Tech stack](./docs/TECHSTACK.md) · [UI patterns](./docs/UI-PATTERNS.md)
 - API ([`docs/spec/API.md`](./docs/spec/API.md)), Deployment ([`docs/spec/DEPLOYMENT.md`](./docs/spec/DEPLOYMENT.md))
 - Feature specs in [`docs/spec/`](./docs/spec/) — VMs, containers, cloud-init, backups, snapshots, USB, console, host monitoring, and more.
 

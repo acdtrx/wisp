@@ -441,9 +441,7 @@ wisp/
 │   ├── TECHSTACK.md
 │   ├── DESCRIPTION.md
 │   ├── PLAN.md
-│   ├── UI-PATTERNS.md
-│   ├── CODING-RULES.md
-│   └── WISP-RULES.md
+│   └── UI-PATTERNS.md
 ├── config/
 │   ├── runtime.env.example
 │   └── wisp-config.json.example

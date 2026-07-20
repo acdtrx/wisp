@@ -292,7 +292,7 @@ The VM management backend is organized as a **platform facade** plus implementat
 
 - DBus system bus connection to `org.libvirt` at `/org/libvirt/QEMU`
 - Connection state management (bus, connectIface, connectProps)
-- Automatic reconnection on DBus error (2-second delay via `setTimeout`; other timers are used for non-race housekeeping — e.g. job-store TTL in `jobStore.js`, SSE intervals — see project timing rules in `docs/WISP-RULES.md`)
+- Automatic reconnection on DBus error (2-second delay via `setTimeout`; other timers are used for non-race housekeeping — e.g. job-store TTL in `jobStore.js`, SSE intervals — see the timing rules in "Wisp — Coding Rules" §6, in kora)
 - Domain lookup by name (`DomainLookupByName`)
 - Domain state retrieval (`GetState`)
 - Domain XML retrieval (`GetXMLDesc`)
