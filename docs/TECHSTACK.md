@@ -1,6 +1,6 @@
-# Tech Stack
+# Tech Stack — Inventory
 
-This is the single source of truth for all technology choices in the project. No other spec file should name specific libraries or frameworks unless the technology is inherent to the domain (e.g. libvirt, QEMU, DBus).
+The full technology inventory: what each dependency, system package, CLI tool, and vendored asset is for, and why it was chosen. The at-a-glance stack view — and wisp's deviations from the family stack template — live in kora ("Wisp — Tech Stack"). No other spec file should name specific libraries or frameworks unless the technology is inherent to the domain (e.g. libvirt, QEMU, DBus).
 
 ## Backend
 
@@ -122,14 +122,3 @@ These are invoked via `child_process` where no native Node.js alternative exists
 | Self-update | `backend/src/lib/wispUpdate.js` + `wisp-updater.service` (Type=oneshot, runs `/usr/local/bin/wisp-updater`) | Hourly poll of GitHub Releases; in-app Install button downloads, verifies, atomic-swaps via the dedicated systemd unit. See [spec/UPDATES.md](spec/UPDATES.md) |
 | Containerization | None | No Docker. Services run directly on the Linux host. |
 
-## Dependency Philosophy
-
-Use the platform where possible. Only add an npm package if it provides substantial functionality that would take significant effort to replicate correctly (e.g. `dbus-next` for DBus protocol, `fast-xml-parser` for XML handling, `fastify` for HTTP server, `zustand` for state). Do not add packages for things like date formatting, simple HTTP requests, UUID generation, or JWT handling — use Node.js built-ins or small inline implementations instead.
-
-## Fonts
-
-System fonts only. No font downloads, no CDN font loading. Body UI uses the sans stack below; Tailwind `font-mono` (or equivalent) is allowed for code paths, XML, and technical strings using the **system monospace** stack only (no webfonts).
-
-```
-font-family: system-ui, -apple-system, sans-serif
-```
