@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-20
+
+### New Features
+- **OS Upgrade applies everything on Debian** — the Upgrade button now runs dist-upgrade, so kept-back packages that need new dependencies (kernel meta jumps) install too; the pending count matches exactly what Upgrade will do.
+- **Project rules migrated to kora** — `CLAUDE.md` is now a thin pointer; agent/coding rules, the stack overview, and the backlog live in kora (`docs/CODING-RULES.md`, `docs/WISP-RULES.md`, `docs/BACKLOG.md` removed; `docs/TECHSTACK.md` keeps the inventory tables).
+
+### Bug Fixes
+- **Accent-colored text meets WCAG AA** — links, active tab labels, badges, and XML highlighting use a darker accent-text token on every surface; icons and filled buttons keep the brand accent.
+- **DataTable numeric min-width prop removed** — it never generated CSS (tables always sized by natural content width); the working class-string path is renamed `minWidthClass`.
+
 ## 2026-07-15
 
 ### New Features
