@@ -169,7 +169,7 @@ export default function ApiTokensSettings() {
           <p className="text-xs text-text-muted">Loading…</p>
         ) : (
           <DataTableScroll>
-            <DataTable minWidthRem={36}>
+            <DataTable>
               <thead>
                 <tr className={dataTableHeadRowClass}>
                   <DataTableTh dense>Label</DataTableTh>

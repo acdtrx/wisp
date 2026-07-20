@@ -92,7 +92,7 @@ export default function HostNetworkBridges({ onError }) {
           <p className="text-xs text-text-muted">Loading…</p>
         ) : (
           <DataTableScroll>
-            <DataTable minWidthRem={42}>
+            <DataTable>
               <thead>
                 <tr className={dataTableHeadRowClass}>
                   <DataTableTh dense className="w-48">Name</DataTableTh>

@@ -17,15 +17,17 @@ export function DataTableScroll({ className = '', children }) {
 }
 
 /**
+ * Tables size by natural content width by default. Pass `minWidthClass` only when
+ * a table needs a floor below which it scrolls instead of squashing — as a literal
+ * Tailwind class string (e.g. `"sm:min-w-[30rem]"`) so the scanner emits the CSS.
  * @param {object} props
- * @param {number | string} [props.minWidthRem] - number → min-w-[Nrem]; string → full class e.g. min-w-4xl
+ * @param {string} [props.minWidthClass]
  * @param {import('react').ReactNode} props.children
  */
-export function DataTable({ minWidthRem = 42, children, ...rest }) {
-  const minW = typeof minWidthRem === 'number' ? `min-w-[${minWidthRem}rem]` : minWidthRem;
+export function DataTable({ minWidthClass = '', children, ...rest }) {
   return (
     <table
-      className={`w-full ${minW} text-sm text-text-secondary border-collapse`}
+      className={`w-full ${minWidthClass} text-sm text-text-secondary border-collapse`}
       {...rest}
     >
       {children}

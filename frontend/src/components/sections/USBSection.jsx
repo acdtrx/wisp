@@ -160,7 +160,7 @@ export default function USBSection({ vmConfig }) {
         </div>
       ) : (
         <DataTableScroll>
-          <DataTable minWidthRem={36}>
+          <DataTable>
             <thead>
               <tr className={dataTableHeadRowClass}>
                 <DataTableTh dense>Name</DataTableTh>

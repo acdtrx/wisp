@@ -71,7 +71,7 @@ function decorateContainerRow(row) {
 
 function OriginBadge({ origin }) {
   return origin === 'scheduled' ? (
-    <span className="inline-flex items-center rounded-sm bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent">scheduled</span>
+    <span className="inline-flex items-center rounded-sm bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent-text">scheduled</span>
   ) : (
     <span className="inline-flex items-center rounded-sm border border-surface-border px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">manual</span>
   );
@@ -79,7 +79,7 @@ function OriginBadge({ origin }) {
 
 function DestinationBadge({ label }) {
   return (
-    <span className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${label === 'Local' ? 'bg-surface-border text-text-secondary' : 'bg-accent-soft text-accent'}`}>
+    <span className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${label === 'Local' ? 'bg-surface-border text-text-secondary' : 'bg-accent-soft text-accent-text'}`}>
       {label || '—'}
     </span>
   );
@@ -414,7 +414,7 @@ export default function BackupsPanel() {
             ? <ChevronDown size={14} className="shrink-0 text-text-muted" aria-hidden />
             : <ChevronRight size={14} className="shrink-0 text-text-muted" aria-hidden />}
           <span className="text-sm font-semibold text-text-primary">{group.name}</span>
-          <span className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${group.kind === 'container' ? 'bg-accent-soft text-accent' : 'bg-surface-border text-text-secondary'}`}>
+          <span className={`inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${group.kind === 'container' ? 'bg-accent-soft text-accent-text' : 'bg-surface-border text-text-secondary'}`}>
             {group.kind === 'container' ? 'container' : 'vm'}
           </span>
           {group.kind === 'container' && group.live && (
@@ -477,7 +477,7 @@ export default function BackupsPanel() {
               </p>
             ) : (
               <DataTableScroll>
-                <DataTable minWidthRem={44}>
+                <DataTable>
                   <thead>
                     <tr className={dataTableHeadRowClass}>
                       <DataTableTh>When</DataTableTh>

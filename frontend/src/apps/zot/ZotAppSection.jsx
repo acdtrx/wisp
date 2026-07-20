@@ -213,7 +213,7 @@ export default function ZotAppSection({ config, onSave }) {
         <div>
           <p className={labelClass}>Users (htpasswd)</p>
           <DataTableScroll>
-            <DataTable minWidthRem={28}>
+            <DataTable>
               <thead>
                 <tr className={dataTableHeadRowClass}>
                   <DataTableTh dense className="w-1/3">Username</DataTableTh>

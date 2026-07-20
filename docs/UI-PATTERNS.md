@@ -54,7 +54,7 @@ Use **[frontend/src/components/shared/DataTableChrome.jsx](../frontend/src/compo
 | Area | Typical classes |
 |------|-----------------|
 | Horizontal scroll wrapper | `overflow-x-auto -mx-4` (via `DataTableScroll`) — the negative margin cancels the cells' `px-4` edge inset so first/last columns align flush with the parent card's padding |
-| Table | `w-full min-w-[…rem] text-sm text-text-secondary border-collapse` (via `DataTable`) |
+| Table | `w-full text-sm text-text-secondary border-collapse` (via `DataTable`). Tables size by natural content width; when one needs a scroll floor, pass `minWidthClass` as a **literal** Tailwind class string (e.g. `"sm:min-w-[30rem]"`) so the scanner emits the CSS — computed class names never generate CSS. |
 | Header row | `text-left text-[11px] font-medium text-text-muted uppercase tracking-wider border-b border-surface-border` (`dataTableHeadRowClass`) |
 | **Cell horizontal inset** | **`px-4`** on every `<th>` and `<td>` (via **`DataTableTh`** / **`DataTableTd`** or exported `dataTableCellPadX`). Do **not** use **`pr-*` only** for column gutters — that removes left inset on the first column and often leaves the actions column flush to the scroll edge. |
 | **Cell vertical rhythm** | **Comfortable:** `py-2` (header) / `py-2.5` (body) — default on `DataTableTh` / `DataTableTd` when `dense` is false. **Dense:** `py-1.5` for form-heavy tables (NICs, disks, mounts, env) — `dense` on `DataTableTh` / `DataTableTd`. Horizontal **`px-4`** stays the same. |

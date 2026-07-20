@@ -229,7 +229,7 @@ export default function CaddyAppSection({ config, onSave }) {
 
         {/* Hosts table */}
         <DataTableScroll>
-          <DataTable minWidthRem={30}>
+          <DataTable>
             <thead>
               <tr className={dataTableHeadRowClass}>
                 <DataTableTh dense className="w-1/3">Subdomain</DataTableTh>

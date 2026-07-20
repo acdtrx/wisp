@@ -249,7 +249,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
       headerAction={headerAdd}
     >
       <DataTableScroll>
-        <DataTable minWidthRem={52}>
+        <DataTable>
           <thead>
             <tr className={dataTableHeadRowClass}>
               <DataTableTh dense className="w-12 sm:w-16">

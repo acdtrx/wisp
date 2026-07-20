@@ -347,7 +347,7 @@ export default function ContainerEnvSection({ config, isCreating, onSave, onForm
       headerAction={headerAdd}
     >
       <DataTableScroll>
-        <DataTable minWidthRem={28}>
+        <DataTable>
           <thead>
             <tr className={dataTableHeadRowClass}>
               <DataTableTh dense className="w-[40%]">

@@ -521,7 +521,7 @@ export default function HostOverview() {
             </div>
             <div className="hidden sm:block">
               <DataTableScroll>
-                <DataTable minWidthRem={28}>
+                <DataTable>
                   <thead>
                     <tr className={dataTableHeadRowClass}>
                       <DataTableTh dense>Interface</DataTableTh>
@@ -794,7 +794,7 @@ function HostHardwareInventorySection({
       {(hasMain || hasIo || hasOthers) ? (
         <DataTableScroll>
           {/* Phones show only the Device column (no min-width needed) */}
-          <DataTable minWidthRem="sm:min-w-[30rem]">
+          <DataTable minWidthClass="sm:min-w-[30rem]">
             <HardwareInventoryTableHead />
             <tbody>
               {hasMain && (

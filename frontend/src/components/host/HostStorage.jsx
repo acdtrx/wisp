@@ -212,7 +212,7 @@ function SmbMountsSection({ smbSaved, mountStatus, refreshStatus, loadSettings, 
     <div className="space-y-2">
       <SubHeading label="Network mounts (SMB)" headerAction={headerAdd} />
       <DataTableScroll>
-        <DataTable minWidthRem={60}>
+        <DataTable>
           <thead>
             <tr className={dataTableHeadRowClass}>
               <DataTableTh dense>Label</DataTableTh>
@@ -418,7 +418,7 @@ function RemovableDrivesSection({
       <div className="space-y-2">
         <SubHeading label="Removable drives" />
         <DataTableScroll>
-          <DataTable minWidthRem={60}>
+          <DataTable>
             <thead>
               <tr className={dataTableHeadRowClass}>
                 <DataTableTh dense>Label</DataTableTh>
@@ -528,7 +528,7 @@ function RemovableDrivesSection({
         <div className="space-y-2">
           <SubHeading label="Detected drives" hint="Adopt saves the UUID and mount settings. Auto-mount triggers on re-insertion." />
           <DataTableScroll>
-            <DataTable minWidthRem={56}>
+            <DataTable>
               <thead>
                 <tr className={dataTableHeadRowClass}>
                   <DataTableTh dense>Device</DataTableTh>

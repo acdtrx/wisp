@@ -39,7 +39,7 @@ export default function UsbAttachModal({ open, onClose, devices, onAttach, actio
       <div className="px-4 py-4">
         <div className="rounded-card border border-surface-border bg-surface-card px-5 py-4">
           <DataTableScroll>
-            <DataTable minWidthRem={32}>
+            <DataTable>
               <thead>
                 <tr className={dataTableHeadRowClass}>
                   <DataTableTh dense>Name</DataTableTh>

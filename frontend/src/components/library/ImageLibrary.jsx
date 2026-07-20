@@ -143,14 +143,14 @@ function ContainerImageRow({ row, mode, onSelect, onDelete, compactPicker, onChe
 function TypeBadge({ type }) {
   if (type === 'iso') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">
+      <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent-text">
         <Disc size={12} /> ISO
       </span>
     );
   }
   if (type === 'disk') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">
+      <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent-text">
         <HardDrive size={12} /> Disk Image
       </span>
     );
@@ -321,7 +321,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   const compactPicker = mode === 'picker';
   // String form = literal responsive class: no min-width below sm (the table
   // collapses to Name + Actions there), full width from sm up.
-  const tableMinWidthRem = compactPicker ? 'sm:min-w-[32rem]' : 'sm:min-w-[56rem]';
+  const tableMinWidthClass = compactPicker ? 'sm:min-w-[32rem]' : 'sm:min-w-[56rem]';
 
   useEffect(() => {
     if (mode === 'picker' && pickerKind !== 'container' && filter === 'container') {
@@ -674,7 +674,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             </div>
           ) : (
             <DataTableScroll>
-              <DataTable minWidthRem={tableMinWidthRem}>
+              <DataTable minWidthClass={tableMinWidthClass}>
                 <thead>
                   <LibraryTableHead mode={mode} compactPicker={compactPicker} />
                 </thead>
@@ -706,7 +706,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             </div>
           ) : (
             <DataTableScroll>
-              <DataTable minWidthRem={tableMinWidthRem}>
+              <DataTable minWidthClass={tableMinWidthClass}>
                 <thead>
                   <LibraryTableHead mode={mode} compactPicker={compactPicker} />
                 </thead>
@@ -747,7 +747,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
           </div>
         ) : (
           <DataTableScroll>
-            <DataTable minWidthRem={tableMinWidthRem}>
+            <DataTable minWidthClass={tableMinWidthClass}>
               <thead>
                 <LibraryTableHead mode={mode} compactPicker={compactPicker} />
               </thead>

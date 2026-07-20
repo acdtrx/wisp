@@ -509,7 +509,7 @@ export default function DisksSection({
         headerAction={headerActions}
       >
         <DataTableScroll>
-          <DataTable minWidthRem={52}>
+          <DataTable>
             <thead>
               <tr className={dataTableHeadRowClass}>
                 <DataTableTh dense className="w-14">
@@ -611,7 +611,7 @@ export default function DisksSection({
       headerAction={headerActions}
     >
       <DataTableScroll>
-        <DataTable minWidthRem={52}>
+        <DataTable>
           <thead>
             <tr className={dataTableHeadRowClass}>
               <DataTableTh dense className="w-14">

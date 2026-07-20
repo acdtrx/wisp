@@ -570,7 +570,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     >
       <div className="space-y-3">
         <DataTableScroll>
-          <DataTable minWidthRem={runAsRoot ? 68 : 60}>
+          <DataTable>
             <thead>
               <tr className={dataTableHeadRowClass}>
                 <DataTableTh dense className="w-10 font-normal" aria-hidden />

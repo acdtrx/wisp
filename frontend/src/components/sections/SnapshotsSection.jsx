@@ -151,7 +151,7 @@ export default function SnapshotsSection({ vmConfig }) {
         </div>
       ) : (
         <DataTableScroll>
-          <DataTable minWidthRem={36}>
+          <DataTable>
             <thead>
               <tr className={dataTableHeadRowClass}>
                 <DataTableTh>Name</DataTableTh>
