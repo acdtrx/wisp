@@ -245,6 +245,8 @@ When `/usr/local/bin/wisp-os-update` is installed:
 | `GET /api/host/updates/packages` | Returns `{ packages: [{ name, from, to }], downloadBytes, cached, lastCheckedAt }`. **Serves the in-memory cache by default** (instant). Pass `?refresh=1` to force a fresh `wisp-os-update list` invocation. Used by the Software tab "View packages" details modal. On Arch `downloadBytes` is `0` (size cannot be computed non-interactively). |
 | `POST /api/host/updates/upgrade` | Runs `wisp-os-update upgrade`, returns `{ ok: true }` on success; resets cached count and package list. |
 
+On Debian/Ubuntu the `upgrade` action runs `apt-get dist-upgrade -y` (not plain `upgrade`) so kept-back packages that require installing or removing dependencies — kernel-meta ABI jumps, transitional packages — are applied too. The `check`/`list` actions simulate with `apt-get -s dist-upgrade` so the count and package list match exactly what the Upgrade button will do. On Arch, `pacman -Syu` already has these semantics.
+
 ### Concurrency and lock contention
 
 apt/pacman serialize their work via lock files, so only one package-manager op can succeed at a time. Wisp guards this in two layers:

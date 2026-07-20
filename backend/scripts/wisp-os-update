@@ -5,6 +5,9 @@
 #               PKG<TAB>name<TAB>from<TAB>to     (one line per package, "from" empty for new installs)
 #               TOTAL <bytes>                    (estimated download size; 0 if unknown)
 #   upgrade - sync package database and perform a full upgrade (non-interactive).
+#             Debian uses dist-upgrade so kept-back packages needing new deps
+#             (kernel-meta jumps etc.) install too; check/list simulate the same
+#             action so the count matches what upgrade will do.
 # Exit codes:
 #   0   success
 #   75  EX_TEMPFAIL — another apt/dpkg/pacman process is holding the package-manager lock
@@ -92,8 +95,8 @@ case "$DISTRO" in
     case "$CMD" in
       check)
         run_or_busy apt-get update -qq
-        # Simulate upgrade so count matches what apt-get upgrade would install (excludes phased-only, etc.).
-        OUT=$(LC_ALL=C apt-get -s upgrade 2>&1 || true)
+        # Simulate dist-upgrade so count matches what the upgrade action would install (excludes phased-only, etc.).
+        OUT=$(LC_ALL=C apt-get -s dist-upgrade 2>&1 || true)
         SUMMARY=$(echo "$OUT" | grep -E '^[0-9]+ upgraded,' | tail -n1 || true)
         if [[ -z "$SUMMARY" ]]; then
           echo 0
@@ -105,7 +108,7 @@ case "$DISTRO" in
         ;;
       list)
         run_or_busy apt-get update -qq
-        OUT=$(LC_ALL=C apt-get -s upgrade 2>&1 || true)
+        OUT=$(LC_ALL=C apt-get -s dist-upgrade 2>&1 || true)
         # `Inst <name> [<from>] (<to> ...)` for upgrades; `Inst <name> (<to> ...)` for new pulls.
         echo "$OUT" | awk -v OFS='\t' '
           /^Inst / {
@@ -136,8 +139,8 @@ case "$DISTRO" in
         ;;
       upgrade)
         run_or_busy apt-get update -qq
-        # apt-get upgrade prints progress on stdout; capture stderr for lock detection.
-        if ! err=$(apt-get upgrade -y 2>&1 >/dev/null); then
+        # apt-get dist-upgrade prints progress on stdout; capture stderr for lock detection.
+        if ! err=$(apt-get dist-upgrade -y 2>&1 >/dev/null); then
           if echo "$err" | grep -qE "$LOCK_PATTERN"; then
             echo "$err" >&2
             exit 75
