@@ -31,7 +31,23 @@ const IGNORED_FSTYPES = new Set([
   'swap',
 ]);
 
-/** @type { Array<import('./diskMonitor.types.js').DetectedDisk> | null } */
+/**
+ * One filesystem found under /dev/disk/by-uuid — the shape `enumerateDisks()`
+ * produces and `getDetectedDisks()` hands out.
+ *
+ * @typedef {object} DetectedDisk
+ * @property {string} uuid        filesystem UUID (the by-uuid entry name)
+ * @property {string} devPath     e.g. "/dev/sdb1"
+ * @property {string} fsType      udev ID_FS_TYPE, never empty
+ * @property {string} label       udev ID_FS_LABEL, "" when unlabelled
+ * @property {number} sizeBytes   partition size, 0 when unreadable
+ * @property {boolean} removable  parent disk's sysfs `removable` flag
+ * @property {string} vendor      parent disk's sysfs vendor, "" when absent
+ * @property {string} model       parent disk's sysfs model, "" when absent
+ * @property {string|null} mountedAt  current mount point, null when unmounted
+ */
+
+/** @type { DetectedDisk[] | null } */
 let cache = null;
 
 /** @type { ReturnType<typeof fsWatch> | null } */

@@ -4,6 +4,7 @@
   "private": true,
   "description": "Wisp — VM and container management",
   "scripts": {
-    "release": "bash scripts/release.sh"
+    "release": "bash scripts/release.sh",
+    "check-imports": "node scripts/check-imports.mjs"
   }
 }

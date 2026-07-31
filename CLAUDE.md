@@ -54,6 +54,7 @@ Large work gets `docs/plans/<topic>.md` — goal, scope, out-of-scope, constrain
 Wisp has no automated test suite — verification is running the real thing:
 
 - The frontend build must pass.
+- `npm run check-imports` must pass after any backend file move or rename. The backend has no build step, so nothing else validates import paths — and a *dynamic* import only resolves when its code path runs, so a stale one boots fine and 500s a single route later.
 - Drive the change in the local dev stack where the platform supports it; the Mac dev environment runs stubs (no libvirt/containerd), so host-level pages verify locally while manager paths verify on the Linux server. Component-level UI can be driven through a temporary Vite harness with canned fetch/SSE responses.
 - A change is **done** only after something was actually run and observed — never claim success without running something, and say plainly what could not be verified in the current environment.
 
