@@ -437,15 +437,18 @@ wisp/
 │       └── wisp-updater.service   # Type=oneshot atomic-swap applier
 ├── docs/
 │   ├── spec/                     # Feature and API specs (concrete behavior)
+│   ├── plans/                    # Plans for large work
+│   ├── review/                   # Audits
 │   ├── ARCHITECTURE.md           # System overview (this file)
-│   ├── TECHSTACK.md
+│   ├── CODING-RULES.md           # Coding principles (CODING-RULES §N in source)
+│   ├── TECH-STACK.md             # Stack at a glance + dependency inventory
 │   ├── DESCRIPTION.md
 │   ├── PLAN.md
 │   └── UI-PATTERNS.md
 ├── config/
 │   ├── runtime.env.example
 │   └── wisp-config.json.example
-└── RULES.md
+└── CLAUDE.md                     # Working rules for this repo
 ```
 
 ## Runtime Filesystem Layout

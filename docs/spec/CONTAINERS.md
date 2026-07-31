@@ -101,7 +101,7 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 | `iconId` | string \| omitted | omitted | Optional UI icon key (same ids as VM icons in the app; default client icon when omitted) |
 | `app` | string \| omitted | omitted | App registry ID (e.g. `”caddy-reverse-proxy”`). When set, the container uses a dedicated app module for config management. See [CUSTOM-APPS.md](CUSTOM-APPS.md). |
 | `appConfig` | object \| omitted | omitted | Structured config for the app. Shape is app-specific. Only present when `app` is set. Source of truth — `env`, `mounts`, and mount files are derived from it. |
-| `pendingRestart` | boolean \| omitted | omitted | Set `true` when `appConfig` changes while the container is running and the app cannot live-reload. Cleared on start/restart. Not writable via PATCH. (Image-version drift is surfaced via the derived `updateAvailable` field on API responses; it's not persisted.) |
+| `pendingRestart` | boolean \| omitted | omitted | Set `true` when a change lands that the running process can't pick up live — any `RESTART_FIELDS` change while running, or an `appConfig` change the app cannot live-reload. See [Config changes that need a restart](#config-changes-that-need-a-restart). Cleared on start/restart. Not writable via PATCH. (Image-version drift is surfaced via the derived `updateAvailable` field on API responses; it's not persisted.) |
 | `imageDigest` | string \| omitted | omitted | Server-managed: top-level manifest/index digest (`sha256:…`) of the library image the container's rootfs was last built from. Written at **create** and refreshed on every start when the library digest has changed. Used by the image update checker to detect drift. Not writable via PATCH. |
 | `imagePulledAt` | string \| omitted | omitted | Server-managed: ISO 8601 timestamp of the last `imageDigest` change (i.e. when the container last adopted a new image). Not writable via PATCH. |
 | `updateAvailable` | boolean (derived) | omitted | Not stored on disk — derived at read time when the list/detail endpoints build their response. `true` when the container's task is RUNNING or PAUSED **and** its stored `imageDigest` no longer matches the library's current digest for `image` (looked up from `oci-image-meta.json`). Stopped containers always read as `false`; they adopt the new digest automatically on next start. Not writable via PATCH. |
@@ -232,7 +232,7 @@ Host device passthrough for containers. Unlike VM PCI passthrough (VFIO), the ho
 
 **Concurrency:** DRM render nodes are designed for concurrent open by multiple processes. Multiple Wisp containers (and the host itself) can hold the same device simultaneously; the kernel driver schedules access. No exclusivity bookkeeping in Wisp.
 
-**Restart required:** any change to `devices` requires a task restart — devices are baked into the OCI spec at task create. Treated like `mounts` in `RESTART_FIELDS`.
+**Restart required:** any change to `devices` requires a task restart — devices are baked into the OCI spec at task create. Treated like `mounts` in `RESTART_FIELDS` — see [Config changes that need a restart](#config-changes-that-need-a-restart).
 
 **Detection (host side):** `GET /api/host/gpus` enumerates `/dev/dri/renderD*`, reads `/sys/class/drm/<name>/device/vendor` (`0x8086` Intel, `0x1002` AMD; `0x10de` NVIDIA filtered out for v1), and returns `[{ device, vendor, vendorName, pciSlot, model? }]`. UI uses this to populate the picker. When multiple GPUs are present, the user picks one — Wisp does not auto-select beyond what the picker offers.
 
@@ -246,6 +246,24 @@ Individual env vars can be marked `secret: true` to hide their values from the U
 - Creating a brand-new secret key without a `value` is rejected with `CONFIG_ERROR` (`Secret env var "X" requires a value`).
 
 Legacy `container.json` files with a flat `env: { KEY: "value" }` dict are normalized on first **GET** `/api/containers/:name` (written back to disk as `{ KEY: { value: "value" } }`) — existing entries become non-secret.
+
+## Config changes that need a restart
+
+`PATCH /api/containers/:name` always writes `container.json`; it never restarts the container. For a **running** container, changes to these fields do not reach the process until the next start — the process environment, mounts, devices, and resource limits are baked into the OCI runtime spec at task create:
+
+`image` · `command` · `cpuLimit` · `memoryLimitMiB` · `env` · `mounts` · `devices` · `network` · `runAsRoot`
+
+(`RESTART_FIELDS` in `containerManager/linux/containerManagerConfig.js`. The mount CRUD endpoints set the same flag. MAC/interface changes are the exception — rejected outright while running with `CONTAINER_MUST_BE_STOPPED` rather than deferred.)
+
+When one of them changes while the container is running:
+
+- `pendingRestart: true` is persisted in `container.json` and the PATCH response carries `{ requiresRestart: true }`.
+- The UI shows the amber **Restart required** badge in the section header (see [UI.md → SectionCard](UI.md#sectioncard)).
+- The flag is cleared automatically when the task next starts.
+
+**Env and secrets in particular.** After a change the value reads back correct everywhere — `container.json`, the API response, the UI — while the running process still holds the environment it started with. Restart the container after any env or secret change before debugging anything else. Discriminator when auth is involved: a **401 from the service** means the variable is set, just not to what you expect; the service behaving as if **unconfigured** means it isn't set at all in the running process.
+
+**App containers** (`app` set) normally live-reload through the app module's reload command, but the reload is **skipped outright when env changed** — the new config has already been persisted, so reloading would make the app resolve it against a process environment that still lacks the variable, turning a save that only needed a restart into a hard `APP_RELOAD_FAILED`. Restarting applies the new env and the new mount contents together. See [CUSTOM-APPS.md](CUSTOM-APPS.md); the MCP `update_app_config` tool runs the same path.
 
 ## Backend Modules
 

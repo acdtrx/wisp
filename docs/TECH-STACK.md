@@ -1,6 +1,42 @@
-# Tech Stack — Inventory
+# Tech Stack
 
-The full technology inventory: what each dependency, system package, CLI tool, and vendored asset is for, and why it was chosen. The at-a-glance stack view — and wisp's deviations from the family stack template — live in kora ("Wisp — Tech Stack"). No other spec file should name specific libraries or frameworks unless the technology is inherent to the domain (e.g. libvirt, QEMU, DBus).
+What wisp runs on. **At a glance** is the map — the stack in one screen, with the deliberate deviations from a conventional Node web app called out with their reasons. Everything after it is the territory: the full inventory of what each dependency, system package, CLI tool, and vendored asset is for, and why it was chosen.
+
+No other spec file should name specific libraries or frameworks unless the technology is inherent to the domain (e.g. libvirt, QEMU, DBus).
+
+## At a glance
+
+### Runtime
+
+- **Node.js 24+ LTS**, ESM only, **plain JavaScript — no TypeScript** (deviation: the codebase predates the TS default; a migration would be its own spec-sized decision, not a routine upgrade).
+- npm; no `dotenv` — optional `config/runtime.env` parsed in-process.
+- Zero-native-deps goal **holds** — it is why `dbus-next` (pure JS) was chosen over native libvirt bindings.
+
+### Domain integrations
+
+Domain-inherent dependencies outside any conventional web stack: **`dbus-next`** (libvirt's DBus API — sole caller `lib/vmManager/`), **`@grpc/grpc-js`** + proto-loader + protobufjs (containerd's gRPC API — sole caller `lib/containerManager/`), **`fast-xml-parser`** (libvirt domain XML, never regex).
+
+### Server
+
+- **Fastify 5** — JSON-schema validation at the boundary; response schemas authoritative for serialized output. Plugins: cors (dev only), multipart (streamed uploads), static (serves the SPA + vendored noVNC), websocket (VNC proxy, container shell).
+- Logging: pino-pretty single-line in dev, plain JSON in production.
+- **`undici`** used directly for SSRF-hardened fetches; **`js-yaml`** for cloud-init YAML emission.
+
+### Auth
+
+Password login yielding `node:crypto`-signed session JWTs in cookies (no JWT library), optional library-less OIDC SSO layered on top (password stays as backup — the session secret derives from it), scoped bearer API tokens (read/admin) and the `/mcp` endpoint for agents. Contract: [spec/AUTH.md](spec/AUTH.md).
+
+### Frontend
+
+- **React 19** SPA, **Vite 8** (Rolldown-based), **Tailwind 4** CSS-first (`@theme` in `index.css`) + typography plugin, **Zustand** stores, `lucide-react`, `marked` + `dompurify`, native `fetch`.
+- **`react-router-dom` v7 declarative mode** — the successor package is `react-router` v8; the upgrade is a recorded block per [CODING-RULES.md](CODING-RULES.md) §3, rechecked on the next routing-touching work.
+- Hand-written service worker (no PWA plugin); **noVNC vendored** as ESM source (its npm package can't be bundled); `@xterm/xterm` for container shells.
+- **Live data pushed**: always-on feeds as topics on the multiplexed `/api/events` SSE stream; scoped per-entity streams and WebSocket consoles beside it.
+
+### Testing & deployment
+
+- **No automated test suite** (deviation) — verification is running the real app per [CLAUDE.md](../CLAUDE.md) § Verification; macOS dev runs stub managers.
+- **Bare-metal systemd** (`wisp.service`, one process for API + SPA) — deliberate deviation from a container pipeline: wisp **is** the platform that pipeline deploys onto, so it runs on the host, not in a container. Self-update from GitHub Releases via `wisp-updater` atomic swap. No Docker anywhere in the project.
 
 ## Backend
 

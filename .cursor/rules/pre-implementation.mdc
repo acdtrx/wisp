@@ -14,9 +14,9 @@ Map the requested change to one or more areas below.
 | Area | Trigger (you're touching…) | Read BEFORE coding |
 |------|---------------------------|---------------------|
 | **Coding standards** | Any code | `docs/CODING-RULES.md` |
-| **Project conventions** | Any code | `docs/WISP-RULES.md` |
+| **Project conventions** | Any code | `CLAUDE.md` |
 | **Architecture** | New modules, new processes, data flow | `docs/ARCHITECTURE.md` |
-| **Tech stack** | Adding/removing/upgrading a dependency | `docs/TECHSTACK.md` |
+| **Tech stack** | Adding/removing/upgrading a dependency | `docs/TECH-STACK.md` |
 | **API routes** | `backend/src/routes/*` | `docs/spec/API.md` |
 | **Error handling** | Throwing/catching errors, error responses | `docs/spec/ERROR-HANDLING.md` |
 | **VM operations** | `backend/src/lib/vmManager.js`, `backend/src/lib/linux/vmManager/`, VM lifecycle | `docs/spec/VM-MANAGEMENT.md` |
@@ -34,7 +34,7 @@ Map the requested change to one or more areas below.
 | **Settings UI** | `AppConfig`, `HostMgmt`, `HostBackup` | `docs/spec/SETTINGS.md` |
 | **Frontend UI** | Any component in `frontend/src/components/*` | `docs/spec/UI.md` (if it exists) |
 
-**Always read `docs/CODING-RULES.md` and `docs/WISP-RULES.md`** — they apply to every change. Then read the area-specific specs from the table above.
+**Always read `CLAUDE.md` and `docs/CODING-RULES.md`** — they apply to every change. Then read the area-specific specs from the table above.
 
 ## Step 2 — Verify your plan against the docs
 
@@ -45,7 +45,7 @@ After reading, before coding, verify:
 3. **API contract**: If adding/changing a route, does the request/response shape match the API spec? Are all new endpoints documented?
 4. **State management**: If the feature involves live-updating data, does it use SSE (not polling)?
 5. **XML handling**: If touching libvirt XML, are you using `fast-xml-parser` (not regex)?
-6. **Dependencies**: If adding a package, is it justified per `docs/TECHSTACK.md` philosophy? Could a small function replace it?
+6. **Dependencies**: If adding a package, is it justified per `docs/TECH-STACK.md` philosophy? Could a small function replace it?
 7. **Architecture boundaries**: If calling libvirt, is it going through `vmManager`? If accessing the filesystem, is it using `paths.js`?
 
 ## Step 3 — Implement following the documented patterns
@@ -65,7 +65,7 @@ After implementing, update the relevant spec docs **in the same edit**. Use the 
 - **New error code** → add to `docs/spec/ERROR-HANDLING.md` mapping table
 - **New VM operation** → add to `docs/spec/VM-MANAGEMENT.md`
 - **New config field** → add to `docs/spec/CONFIGURATION.md` schema table
-- **New dependency** → add to `docs/TECHSTACK.md` table
+- **New dependency** → add to `docs/TECH-STACK.md` table
 - **New component/view** → add to `docs/spec/UI.md` and `docs/ARCHITECTURE.md` component table
 - **Changed behavior** → update the description in the relevant spec to match the new behavior
 - **New setup step** → add to `docs/spec/DEPLOYMENT.md`

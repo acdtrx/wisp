@@ -8,7 +8,7 @@ alwaysApply: true
 When you change behavior, APIs, UI, or configuration, update the corresponding doc in the same edit.
 
 - **Architecture** (system overview, modules, data flow): `docs/ARCHITECTURE.md`
-- **Tech stack** (dependencies, versions): `docs/TECHSTACK.md`
+- **Tech stack** (dependencies, versions): `docs/TECH-STACK.md`
 - **API** (routes, request/response, errors): `docs/spec/API.md`
 - **UI** (layout, components, views, empty states): `docs/spec/UI.md`
 - **Backend** (vmManager, lifecycle, XML): `docs/spec/VM-MANAGEMENT.md`, `docs/spec/ERROR-HANDLING.md`
@@ -18,6 +18,6 @@ When you change behavior, APIs, UI, or configuration, update the corresponding d
 - **Console / VNC**: `docs/spec/CONSOLE.md`, `docs/spec/noVNC.md`
 - **Host stats / monitoring**: `docs/spec/HOST-MONITORING.md`
 - **Backups, snapshots, cloud-init, USB, image library, deployment, etc.**: same-name spec in `docs/spec/`
-- **Project rules / coding standards**: `docs/CODING-RULES.md`, `docs/WISP-RULES.md`
+- **Project rules / coding standards**: `CLAUDE.md`, `docs/CODING-RULES.md`
 
 Update the relevant section(s); keep wording consistent with the existing spec style.
