@@ -118,9 +118,9 @@ write_file_atomic() {
 
 apply_netplan() {
   # No stub-IP re-assert here. `netplan apply` re-renders bridges and drops
-  # foreign addresses, but 169.254.53.53/32 is no longer one: container-dns.sh
-  # declares it in a systemd-networkd drop-in on br0's .network unit, so
-  # networkd re-applies it as part of the re-render. See docs/spec/CONTAINERS.md
+  # foreign addresses, but 169.254.53.53/32 is not on a bridge at all: it lives
+  # on the dedicated wisp-dns0 dummy interface, which netplan does not manage
+  # and this re-render cannot touch. See docs/spec/CONTAINERS.md
   # § Local DNS (Persistence).
   netplan apply
 }
