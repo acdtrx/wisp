@@ -147,7 +147,10 @@ echo ""
 
 echo "=== Done ==="
 echo ""
-echo "Next:"
-echo "  git push && git push origin $TAG"
+echo "Next — push the release commit and the tag to each remote:"
+for remote in $(git remote); do
+  echo "  git push $remote $BRANCH && git push $remote $TAG"
+done
 echo ""
-echo "The release workflow will run on the tag push and create a GitHub Release with the tarball + sha256."
+echo "The release workflow runs on the tag push to the GitHub remote and creates a"
+echo "GitHub Release with the tarball + sha256."

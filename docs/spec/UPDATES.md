@@ -64,6 +64,16 @@ The release workflow detects prereleases by the presence of a hyphen in the tag:
 
 `POST /api/updates/install` refuses to start while any other background job is running. The UI handles this with a confirm dialog that calls `?force=1` when the user explicitly chooses to proceed.
 
+## The updater updates itself one release late
+
+`install-helpers.sh` refreshes `/usr/local/bin/wisp-updater` with an atomic `mv -f`, so the **currently running** updater keeps executing its old inode to completion. A release that changes `wisp-updater` therefore ships the new script but runs the old one — the change only takes effect on the *next* update.
+
+Consequences when editing `wisp-updater`:
+
+- **A new step does not run on the release that introduces it.** Observed with the `container-dns` step in v2.0.1: the step was in the shipped tarball and installed correctly, but the v2.0.0 → v2.0.1 run executed the v2.0.0 script and skipped it. Anything the step is responsible for must be applied by hand (or by `setup-server.sh`) on that one upgrade.
+- **Verify the step on the release after.** A green update log is not evidence that a newly added step works — check for its `step:` line, not just `step:done`.
+- **Never make a release depend on its own updater changes** for correctness. Put anything load-bearing in the setup scripts the updater already calls, or accept a one-release delay.
+
 ## Rollback
 
 After a successful update, the old install tree is kept at `<install>.prev/` (one-deep). The `wisp-updater` script restores from there automatically if any step after the snapshot fails. There is no UI for explicit user-initiated rollback in v1; if needed, a user can manually `rsync -a --delete <install>.prev/ <install>/ && systemctl restart wisp`.
