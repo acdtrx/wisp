@@ -95,13 +95,13 @@ echo ""
 run_step "CNI plugins" "$SETUP_DIR/cni.sh"
 echo ""
 
-run_step "Container DNS" "$SETUP_DIR/container-dns.sh"
+# Container DNS + privileged helpers, shared verbatim with the self-updater —
+# see scripts/linux/setup/common-steps.sh. Add steps there, not here, when they
+# should also reach existing installs on update.
+run_step "Common steps (container DNS + privileged helpers)" "$SETUP_DIR/common-steps.sh" "$PROJECT_ROOT" "$DEPLOY_USER"
 echo ""
 
 run_step "Sanity checks" "$SETUP_DIR/sanity.sh"
-echo ""
-
-run_step "Privileged helpers" "$SETUP_DIR/install-helpers.sh" "$PROJECT_ROOT" "$DEPLOY_USER"
 echo ""
 
 run_step "RAPL permissions" "$SETUP_DIR/rapl.sh" "$DEPLOY_USER"

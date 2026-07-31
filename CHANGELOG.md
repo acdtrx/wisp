@@ -2,6 +2,9 @@
 
 ## 2026-07-31
 
+### New Features
+- **One setup step list for install and update** — new `scripts/linux/setup/common-steps.sh` holds the steps both paths run (container DNS host config, privileged helpers) and is called by `setup-server.sh` and `wisp-updater` alike, replacing the updater's hand-picked subset. Because the updater invokes it from the freshly swapped tree, a step added there reaches installs and updates at the same time instead of one release late.
+
 ### Bug Fixes
 - **`container-dns.sh` aborted before writing anything** — the br0 network-unit lookup piped `networkctl` into an `awk` that exits on first match; the resulting SIGPIPE became the pipeline's status under `set -o pipefail` and killed the script via `set -e`, silently. Shipped in v2.0.1, where it also skipped the container resolv.conf. Both that lookup and the address check now capture output first instead of piping.
 - **`release.sh` next-steps hint names real remotes** — it printed `git push origin <tag>`, a remote this repo does not have; it now prints an explicit branch+tag push line per configured remote.

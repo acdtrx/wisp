@@ -57,6 +57,26 @@ Verified on the production host: `networkctl status br0` settles at `routable (c
 
 Phase 1 explicitly did NOT solve the broader update strategy. The runtime-assertion fix doesn't need a `wisp-updater` hook because it lives entirely in `wisp-bridge` (which is re-installed on every update by `install-helpers.sh`, already in `wisp-updater`).
 
+## Step 1 landed 2026-07-31 — `common-steps.sh`
+
+Symptom #1 ("self-updated installs miss new setup logic") now has a seam. `scripts/linux/setup/common-steps.sh` holds the steps both paths run — `container-dns.sh` then `install-helpers.sh` — and is called by `setup-server.sh` and `wisp-updater` alike. Behaviour is unchanged; the point is that there is now **one list** instead of the updater hand-picking a subset, and that the updater invokes it from the freshly swapped tree, so adding a step there reaches installs and updates simultaneously with no one-release lag.
+
+An audit done while landing this corrected several assumptions in the list below — most steps are far safer to re-run than "unaudited" implied:
+
+| Script | Re-run behaviour | Safe on a live update? |
+| --- | --- | --- |
+| `groups` `dirs` `libvirt` `cni` `container-dns` `install-helpers` `rapl` | no service restarts, no prompts, idempotent | yes |
+| `bridge` | early-exits when a non-virbr bridge exists, before any config write; the `read` calls are `ip route` / nameserver parsing, **not** prompts | yes (still `--skip-bridge` from the updater — an unattended `netplan apply` has no operator to reconnect) |
+| `containerd` | `systemctl enable --now` plus `restart` **only** `if $NEEDS_RESTART` (its config actually changed) | yes on routine updates; a release that changes containerd config will bounce running containers |
+| `sanity` | `check_fail()` only prints; always exits 0 | yes (but it therefore cannot report failure) |
+| `packages` | `apt-get update` + install | **the one real hazard** — takes the dpkg lock, so overlapping `apt-daily-upgrade` fails the step; under strict semantics a transient lock would roll back a good update |
+
+So "wisp-updater just calls `setup-server.sh`" is close to viable. What still blocks it:
+
+1. **`run_step` always returns 0** and `setup-server.sh` exits 0 even with failures, so the updater would lose its rollback trigger entirely. Needs a `--strict` mode used only by the updater, leaving the install path's leniency intact.
+2. **`packages.sh` needs to be non-fatal even under strict**, for the dpkg-lock reason above — best-effort by nature, unlike helper installation.
+3. `packages.sh` installs most packages while `containerd.sh` installs containerd itself — the same accretion this document is about. Worth consolidating before, or as part of, the move.
+
 ## Ideas for the bigger refactor
 
 Some are mutually exclusive; some compose. Listed without committing to any.

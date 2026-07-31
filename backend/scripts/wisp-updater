@@ -85,23 +85,19 @@ echo "step:install-deps"
 sudo -u "$DEPLOY_USER" bash -c "cd '$INSTALL_DIR/backend' && npm ci --omit=dev --omit=optional" \
   || fail "backend npm ci failed"
 
-echo "step:install-helpers"
-# Re-runs helper.sh against every wisp-* helper (atomic-rename via mv -f, so the
-# currently-running wisp-updater inode persists; new invocations get the new file).
-# Also re-installs/re-templates wisp-updater.service and its sudoers rule.
-if [[ -x "$INSTALL_DIR/scripts/linux/setup/install-helpers.sh" ]]; then
-  "$INSTALL_DIR/scripts/linux/setup/install-helpers.sh" "$INSTALL_DIR" "$DEPLOY_USER" \
-    || fail "install-helpers failed"
-fi
-
-echo "step:container-dns"
-# Re-assert container DNS host config. Carries the systemd-networkd drop-in that
-# owns the mDNS stub IP (169.254.53.53) — without this step a self-updated
-# install never gains it, and the next networkd restart silently kills all
-# container DNS. Idempotent, non-disruptive, and a no-op when br0 is absent.
-if [[ -x "$INSTALL_DIR/scripts/linux/setup/container-dns.sh" ]]; then
-  "$INSTALL_DIR/scripts/linux/setup/container-dns.sh" || fail "container-dns failed"
-fi
+echo "step:common-setup"
+# The setup steps the installer runs too — container DNS host config, then every
+# privileged wisp-* helper (which re-installs this script and wisp-updater.service
+# via atomic rename, so the running inode survives to finish this update).
+#
+# Invoked by path from the freshly swapped tree, so the step list is whatever THIS
+# release ships: adding a step to common-steps.sh takes effect on the very next
+# update, with no change here. Editing THIS file, by contrast, only takes effect
+# one release later — see docs/spec/UPDATES.md.
+COMMON_STEPS="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
+[[ -x "$COMMON_STEPS" ]] \
+  || fail "missing $COMMON_STEPS — releases older than v2.0.2 cannot be installed by this updater"
+"$COMMON_STEPS" "$INSTALL_DIR" "$DEPLOY_USER" || fail "common setup steps failed"
 
 echo "step:install-unit"
 # Re-template wisp.service so unit-file changes in the new release apply.
