@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-07-31
+## 2026-07-31 (v2.0.1)
 
 ### New Features
 - **Project rules live in the repo again** — `CLAUDE.md` carries the full agent rules (triage, plans, verification, debugging, docs sync, git, deployability, shell-exec allowlist), coding principles return as `docs/CODING-RULES.md`, and the stack map merged into `docs/TECHSTACK.md` → renamed `docs/TECH-STACK.md`. Kora keeps the backlog, ideas, and the project overview. Stale `.cursor/rules` and architecture-tree references fixed.
