@@ -230,8 +230,8 @@ async function assertCreateInput(baseBridgeRaw, vlanRaw) {
 
 async function assertBridgeNotInUse(bridgeName) {
   const [{ listVMs, getVMConfig }, { listContainers, getContainerConfig }] = await Promise.all([
-    import('../../vmManager.js'),
-    import('../../containerManager.js'),
+    import('../../vmManager/index.js'),
+    import('../../containerManager/index.js'),
   ]);
 
   const vmRefs = [];

@@ -8,6 +8,7 @@
 
 ### Bug Fixes
 - **Container DNS no longer dies when systemd-networkd restarts** — the mDNS stub IP (`169.254.53.53`) was a runtime-only address on br0, so any networkd restart (an unattended systemd upgrade is enough) flushed it. The forwarder's socket stayed bound to the vanished address and silently black-holed *every* container DNS query — not just `.local` — until wisp restarted. The address is now declared to networkd via a drop-in on br0's `.network` unit, and `wisp-updater` re-runs `container-dns.sh` so existing installs pick it up.
+- **Deleting a VLAN bridge works again** — the in-use check imported the VM and container managers by their pre-refactor paths, so every delete failed with `ERR_MODULE_NOT_FOUND`. Creating one was unaffected, since the imports are dynamic and only that path runs them.
 
 ## 2026-07-20
 
