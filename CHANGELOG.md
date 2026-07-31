@@ -3,6 +3,7 @@
 ## 2026-07-31
 
 ### Bug Fixes
+- **`container-dns.sh` aborted before writing anything** — the br0 network-unit lookup piped `networkctl` into an `awk` that exits on first match; the resulting SIGPIPE became the pipeline's status under `set -o pipefail` and killed the script via `set -e`, silently. Shipped in v2.0.1, where it also skipped the container resolv.conf. Both that lookup and the address check now capture output first instead of piping.
 - **`release.sh` next-steps hint names real remotes** — it printed `git push origin <tag>`, a remote this repo does not have; it now prints an explicit branch+tag push line per configured remote.
 - **Updater self-replacement documented** — `docs/spec/UPDATES.md` records that `wisp-updater` changes take effect one release late (the running process keeps its old inode through the atomic-rename refresh), so a newly added step does not run on the release that introduces it. Seen with v2.0.1's `container-dns` step.
 

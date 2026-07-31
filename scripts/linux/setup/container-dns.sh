@@ -50,10 +50,16 @@ DROPIN_FILE="wisp-mdns-stub.conf"
 # networkctl rather than guessing the path covers both layouts we produce:
 # netplan renders /run/systemd/network/10-netplan-br0.network on Ubuntu, and
 # bridge.sh writes /etc/systemd/network/90-wisp-br0.network directly on Arch.
+# Capture first, match second — deliberately NOT a pipeline. awk's `exit` closes
+# the pipe while networkctl is still writing, so networkctl dies of SIGPIPE (141);
+# under `set -o pipefail` that becomes the pipeline's status and `set -e` aborts
+# the whole script, silently, because stderr is discarded. `|| return 0` likewise
+# keeps a non-zero networkctl (br0 unmanaged) from killing the run.
 br0_network_unit() {
   command -v networkctl >/dev/null 2>&1 || return 0
-  networkctl status br0 2>/dev/null \
-    | awk -F': +' '/^ *Network File:/ { print $2; exit }'
+  local status_output
+  status_output="$(networkctl --no-pager status br0 2>/dev/null)" || return 0
+  awk -F': +' '/^ *Network File:/ { print $2; exit }' <<<"$status_output"
 }
 
 # 1. Declare the stub IP so networkd owns it and re-applies it on every
@@ -81,7 +87,12 @@ fi
 
 # 2. Assign the stub IP right now, for this boot. A no-op once the drop-in
 #    above has been applied; the only assignment on non-networkd hosts.
-if ip -4 addr show dev br0 | grep -q "${STUB_IP}/32"; then
+# Same no-pipeline discipline as br0_network_unit: `grep -q` exits on its first
+# match, and a SIGPIPE'd `ip` would make this condition read false, sending an
+# already-present address down the `ip addr add` branch — which then fails and
+# takes `set -e` with it.
+BR0_ADDRS="$(ip -4 addr show dev br0 2>/dev/null || true)"
+if [[ "$BR0_ADDRS" == *"${STUB_IP}/32"* ]]; then
   echo "  ${STUB_IP}/32 already present on br0."
 else
   ip addr add "${STUB_IP}/32" dev br0 scope link
