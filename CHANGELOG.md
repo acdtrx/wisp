@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-01
+
+### Bug Fixes
+- **Host no longer renames itself to `<host>-2` on a network reconfigure** — v2.0.1 declared the mDNS stub IP in br0's own networkd unit, so a reconfigure left br0 momentarily holding only that link-local address; avahi published it as the host's address, conflicted with its own re-announcement, and renamed the host, breaking everything that resolves `<host>.local`. The stub IP now lives on a dedicated `wisp-dns0` dummy interface, independent of br0's lifecycle, so neither failure mode can occur. Stale br0 drop-ins are removed automatically.
+
 ## 2026-07-31 (v2.0.2)
 
 ### New Features

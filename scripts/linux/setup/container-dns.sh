@@ -3,22 +3,36 @@
 # forwarder (backend/src/lib/mdns/linux/forwarder.js).
 #
 # How it works:
-#   - Give br0 the link-local 169.254.53.53/32. The wisp process
-#     binds UDP+TCP 53 on this IP (via CAP_NET_BIND_SERVICE) and answers
-#     container DNS queries: `.local` names go to avahi over DBus,
-#     everything else is forwarded to the host's upstream DNS.
+#   - Hold the link-local 169.254.53.53/32 on a dedicated dummy interface,
+#     wisp-dns0. The wisp process binds UDP+TCP 53 on this IP (via
+#     CAP_NET_BIND_SERVICE) and answers container DNS queries: `.local` names
+#     go to avahi over DBus, everything else goes to the host's upstream DNS.
 #   - Drop a ready-to-bind-mount resolv.conf so Wisp containers on br0
 #     use the stub IP as their sole nameserver.
 #
-# The stub IP is DECLARED to systemd-networkd through a drop-in on whichever
-# .network unit manages br0, so networkd re-applies it after a restart or a
-# `networkctl reconfigure` instead of flushing it as a foreign address. It used
-# to be runtime-only, and any networkd restart (an unattended systemd upgrade
-# is enough) silently killed all container DNS: the address goes away, wisp's
-# socket stays bound to it, and every query black-holes until wisp restarts.
-# A networkd drop-in bypasses netplan's bridge handler — declaring the address
-# in netplan alongside `dhcp4: true` is what caused the reconcile loop recorded
-# in docs/plans/setup-refactor.md.
+# Containers still reach it: they carry an on-link `169.254.53.53/32 dev eth0`
+# route and ARP for it on the bridge segment, and Linux's weak host model means
+# the host answers that ARP from br0 even though the address lives elsewhere.
+#
+# Why a dedicated interface rather than br0 — two failure modes, both observed:
+#
+#   1. Runtime-only on br0: any systemd-networkd restart (an unattended systemd
+#      upgrade is enough) re-applied br0's .network and flushed the address.
+#      wisp's socket stays bound to the vanished IP, so `ss` still reports it
+#      listening while every container DNS query black-holes. Silent and total.
+#
+#   2. Declared on br0 (a drop-in on its .network unit): networkd then applies
+#      the static address immediately on reconfigure while the DHCP lease takes
+#      a round-trip, so br0 briefly has ONLY the link-local. avahi published
+#      `<host>.local -> 169.254.53.53` in that window, then re-announced with the
+#      real address, hit a name conflict and renamed the host to `<host>-2`.
+#      That broke every consumer of the host's .local name. Worse than (1).
+#
+# On its own interface the address is independent of br0's lifecycle entirely —
+# networkd restarts, `netplan apply`, DHCP renewals and carrier flaps cannot
+# touch it — and avahi never sees br0 without a routable address. Declaring it
+# in netplan is a third dead end: an `addresses:` entry alongside `dhcp4: true`
+# on a bridge sends networkd into a reconcile loop (docs/plans/setup-refactor.md).
 #
 # Does NOT touch systemd-resolved. Earlier Wisp versions (< 2026-04-18)
 # configured resolved with MulticastDNS=resolve — clean that up manually on
@@ -42,61 +56,106 @@ if [[ ! -d /sys/class/net/br0/bridge ]]; then
 fi
 
 STUB_IP="169.254.53.53"
+STUB_IFACE="wisp-dns0"
 RESOLV_OUT="/var/lib/wisp/container-resolv.conf"
-DROPIN_FILE="wisp-mdns-stub.conf"
+NETWORKD_DIR="/etc/systemd/network"
+OLD_DROPIN_NAME="wisp-mdns-stub.conf"
 
-# The .network unit systemd-networkd applied to br0, or empty when networkd
-# isn't managing it (NetworkManager host, or a manually built bridge). Asking
-# networkctl rather than guessing the path covers both layouts we produce:
-# netplan renders /run/systemd/network/10-netplan-br0.network on Ubuntu, and
-# bridge.sh writes /etc/systemd/network/90-wisp-br0.network directly on Arch.
-# Capture first, match second — deliberately NOT a pipeline. awk's `exit` closes
-# the pipe while networkctl is still writing, so networkctl dies of SIGPIPE (141);
-# under `set -o pipefail` that becomes the pipeline's status and `set -e` aborts
-# the whole script, silently, because stderr is discarded. `|| return 0` likewise
-# keeps a non-zero networkctl (br0 unmanaged) from killing the run.
-br0_network_unit() {
-  command -v networkctl >/dev/null 2>&1 || return 0
-  local status_output
-  status_output="$(networkctl --no-pager status br0 2>/dev/null)" || return 0
-  awk -F': +' '/^ *Network File:/ { print $2; exit }' <<<"$status_output"
-}
+# 1. Remove the previous design's drop-ins: a `[Network] Address=` snippet on
+#    br0's own .network unit. Wisp wrote those (v2.0.1/v2.0.2) and they are the
+#    direct cause of failure mode (2) above, so clearing them is corrective
+#    repair of our own bad state, not a migration.
+shopt -s nullglob
+for stale in "$NETWORKD_DIR"/*.network.d/"$OLD_DROPIN_NAME"; do
+  rm -f "$stale"
+  echo "  Removed stale drop-in $stale (stub IP no longer lives on br0)."
+  NEEDS_RELOAD=1
+done
+shopt -u nullglob
 
-# 1. Declare the stub IP so networkd owns it and re-applies it on every
-#    reconfigure. Drop-ins live under /etc even when the unit is in /run.
-NET_UNIT="$(br0_network_unit)"
-if [[ "$NET_UNIT" == /*.network ]]; then
-  DROPIN_DIR="/etc/systemd/network/$(basename "$NET_UNIT").d"
-  mkdir -p "$DROPIN_DIR"
-  cat > "${DROPIN_DIR}/${DROPIN_FILE}" <<EOF
-# Generated by Wisp container-dns.sh — mDNS stub IP for Wisp's container DNS
-# forwarder. Declared here so a systemd-networkd restart re-applies it instead
-# of flushing it; a runtime-only address silently breaks all container DNS.
+# 2. Declare the dummy interface that carries the stub IP. Two files, because
+#    networkd needs the device (.netdev) and its addressing (.network) apart.
+#    LinkLocalAddressing/IPv6AcceptRA off: this device exists to hold exactly one
+#    address, and every extra one is another record avahi would register.
+NETDEV_FILE="$NETWORKD_DIR/10-${STUB_IFACE}.netdev"
+NETWORK_FILE="$NETWORKD_DIR/10-${STUB_IFACE}.network"
+
+read -r -d '' NETDEV_BODY <<EOF || true
+# Generated by Wisp container-dns.sh — carries the mDNS stub IP for Wisp's
+# container DNS forwarder, off br0 so bridge reconfigures cannot disturb it.
+[NetDev]
+Name=${STUB_IFACE}
+Kind=dummy
+EOF
+
+read -r -d '' NETWORK_BODY <<EOF || true
+# Generated by Wisp container-dns.sh — see 10-${STUB_IFACE}.netdev.
+# Scope must stay global: replies to containers leave via br0 with this as the
+# source address, and a link-scoped source on a different interface than the
+# outbound route fails the kernel's source-address validation.
+[Match]
+Name=${STUB_IFACE}
+
 [Network]
 Address=${STUB_IP}/32
+LinkLocalAddressing=no
+IPv6AcceptRA=no
 EOF
-  chmod 0644 "${DROPIN_DIR}/${DROPIN_FILE}"
-  echo "  Wrote ${DROPIN_DIR}/${DROPIN_FILE} — networkd owns ${STUB_IP}/32."
-  if ! networkctl reload 2>/dev/null; then
-    echo "  WARNING: 'networkctl reload' failed; the drop-in applies on the next networkd restart."
+
+# Byte-compare against a temp file rather than string-compare against $(cat …),
+# which strips trailing newlines and would report a spurious change every run —
+# and every spurious change means a needless `networkctl reload`.
+write_if_changed() {
+  local path="$1" body="$2" tmp
+  tmp="$(mktemp "${path}.XXXXXX")"
+  printf '%s\n' "$body" > "$tmp"
+  if [[ -f "$path" ]] && cmp -s "$tmp" "$path"; then
+    rm -f "$tmp"
+    echo "  $path already current."
+    return 0
   fi
-else
-  echo "  systemd-networkd does not manage br0 — ${STUB_IP}/32 stays runtime-only."
-  echo "  It is re-asserted by wisp.service ExecStartPre on every service start."
+  chmod 0644 "$tmp"
+  mv "$tmp" "$path"
+  echo "  Wrote $path"
+  NEEDS_RELOAD=1
+}
+
+write_if_changed "$NETDEV_FILE" "$NETDEV_BODY"
+write_if_changed "$NETWORK_FILE" "$NETWORK_BODY"
+
+if [[ -n "${NEEDS_RELOAD:-}" ]] && command -v networkctl >/dev/null 2>&1; then
+  if ! networkctl reload 2>/dev/null; then
+    echo "  WARNING: 'networkctl reload' failed; config applies on the next networkd restart."
+  fi
 fi
 
-# 2. Assign the stub IP right now, for this boot. A no-op once the drop-in
-#    above has been applied; the only assignment on non-networkd hosts.
-# Same no-pipeline discipline as br0_network_unit: `grep -q` exits on its first
-# match, and a SIGPIPE'd `ip` would make this condition read false, sending an
-# already-present address down the `ip addr add` branch — which then fails and
-# takes `set -e` with it.
+# 3. Bring the interface up for this boot. networkd does this itself where it is
+#    in charge; this covers NetworkManager hosts and the window before reload
+#    has taken effect. Both steps are guarded so re-runs stay silent no-ops.
+if [[ ! -d "/sys/class/net/${STUB_IFACE}" ]]; then
+  ip link add "${STUB_IFACE}" type dummy
+  echo "  Created ${STUB_IFACE}."
+fi
+ip link set "${STUB_IFACE}" up
+
+# Capture-then-match, never a pipeline: `grep -q` exits on first match, and a
+# SIGPIPE'd `ip` under `set -o pipefail` would read as "absent", sending an
+# already-present address down `ip addr add`, which fails and takes `set -e`
+# with it. That exact shape silently killed this script in v2.0.1.
+STUB_ADDRS="$(ip -4 addr show dev "${STUB_IFACE}" 2>/dev/null || true)"
+if [[ "$STUB_ADDRS" == *"${STUB_IP}/32"* ]]; then
+  echo "  ${STUB_IP}/32 already present on ${STUB_IFACE}."
+else
+  ip addr add "${STUB_IP}/32" dev "${STUB_IFACE}"
+  echo "  Added ${STUB_IP}/32 to ${STUB_IFACE}."
+fi
+
+# The address moved off br0 in this design; drop a leftover copy so the two
+# cannot both answer and so br0 never sits on a lone link-local address.
 BR0_ADDRS="$(ip -4 addr show dev br0 2>/dev/null || true)"
 if [[ "$BR0_ADDRS" == *"${STUB_IP}/32"* ]]; then
-  echo "  ${STUB_IP}/32 already present on br0."
-else
-  ip addr add "${STUB_IP}/32" dev br0 scope link
-  echo "  Added ${STUB_IP}/32 to br0."
+  ip addr del "${STUB_IP}/32" dev br0
+  echo "  Removed ${STUB_IP}/32 from br0 (now on ${STUB_IFACE})."
 fi
 
 # 3. Drop a ready-to-bind-mount resolv.conf for containers. The backend's
