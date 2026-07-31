@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-07-31
+## 2026-07-31 (v2.0.2)
 
 ### New Features
 - **One setup step list for install and update** — new `scripts/linux/setup/common-steps.sh` holds the steps both paths run (container DNS host config, privileged helpers) and is called by `setup-server.sh` and `wisp-updater` alike, replacing the updater's hand-picked subset. Because the updater invokes it from the freshly swapped tree, a step added there reaches installs and updates at the same time instead of one release late.
