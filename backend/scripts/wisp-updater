@@ -8,7 +8,7 @@
 #
 # Steps (echoed to journald):
 #   stop-service → snapshot → swap → install-deps → install-helpers
-#   → install-unit → start-service → done
+#   → container-dns → install-unit → start-service → done
 #
 # On any failure after `snapshot`, rolls back from <install>.prev and exits non-zero.
 # User config (config/wisp-config.json, wisp-password, runtime.env) and runtime
@@ -92,6 +92,15 @@ echo "step:install-helpers"
 if [[ -x "$INSTALL_DIR/scripts/linux/setup/install-helpers.sh" ]]; then
   "$INSTALL_DIR/scripts/linux/setup/install-helpers.sh" "$INSTALL_DIR" "$DEPLOY_USER" \
     || fail "install-helpers failed"
+fi
+
+echo "step:container-dns"
+# Re-assert container DNS host config. Carries the systemd-networkd drop-in that
+# owns the mDNS stub IP (169.254.53.53) — without this step a self-updated
+# install never gains it, and the next networkd restart silently kills all
+# container DNS. Idempotent, non-disruptive, and a no-op when br0 is absent.
+if [[ -x "$INSTALL_DIR/scripts/linux/setup/container-dns.sh" ]]; then
+  "$INSTALL_DIR/scripts/linux/setup/container-dns.sh" || fail "container-dns failed"
 fi
 
 echo "step:install-unit"

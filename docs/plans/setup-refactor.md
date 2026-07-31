@@ -45,7 +45,15 @@ When tempted to make the stub IP netplan-declared in the future:
 2. Watch `networkctl status br0` — `routable (configured)` settled vs `routable (configuring)` looping is the signal.
 3. The trigger is bridge-specific. Same YAML on a non-bridge ethernet may behave differently.
 
-A future refactor *might* solve this with a separate netplan dropin file using `Address=` directly in a per-bridge networkd `.network` snippet, bypassing netplan's bridge handler. Not pursuing now — runtime assertion works, and the refactor would touch the network config system enough to need its own audit.
+### Resolved 2026-07-31 — the networkd drop-in shipped
+
+The escape hatch this section left open ("a separate dropin using `Address=` directly in a per-bridge networkd `.network` snippet, bypassing netplan's bridge handler") is what runtime assertion ultimately needed, because the three assertion points had a hole: **none of them covers a `systemd-networkd` restart while wisp is already running.** Ubuntu's `apt-daily-upgrade.timer` restarts networkd often enough to hit this every few days. When it does, networkd re-applies `10-netplan-br0.network` to the existing bridge and flushes the foreign `169.254.53.53/32`; wisp's forwarder socket stays bound to the vanished address and silently black-holes *all* container DNS until the process restarts. Diagnosed from a 10-hour outage that surfaced only as Caddy 502s.
+
+`container-dns.sh` now writes `/etc/systemd/network/<br0-unit>.d/wisp-mdns-stub.conf`, resolving `<br0-unit>` from `networkctl status br0` so one code path covers netplan-rendered and `bridge.sh`-written units alike. `wisp-updater` gained a `container-dns` step so self-updated installs pick it up — exactly the class of drift item #1 of this document warns about.
+
+The Phase 1 workaround above (`wisp-bridge`'s `apply_netplan()` re-assert) was **removed**, not kept alongside: networkd re-applies the drop-in when netplan re-renders the bridge, so the re-assert became dead code. Safe to drop because the updater installs the new `wisp-bridge` and writes the drop-in before starting the service, and a `container-dns` failure rolls the whole update back to the previous install — which still carries the old re-assert. Residual gap: netplan rendering to NetworkManager gets neither mechanism (no networkd-managed br0 → no drop-in), a config Wisp does not target.
+
+Verified on the production host: `networkctl status br0` settles at `routable (configured)` with no address flapping, and the address survives both `networkctl reconfigure br0` and `systemctl restart systemd-networkd` — the reproducer that reliably destroyed it beforehand.
 
 Phase 1 explicitly did NOT solve the broader update strategy. The runtime-assertion fix doesn't need a `wisp-updater` hook because it lives entirely in `wisp-bridge` (which is re-installed on every update by `install-helpers.sh`, already in `wisp-updater`).
 

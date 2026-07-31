@@ -6,6 +6,9 @@
 - **Project rules live in the repo again** — `CLAUDE.md` carries the full agent rules (triage, plans, verification, debugging, docs sync, git, deployability, shell-exec allowlist), coding principles return as `docs/CODING-RULES.md`, and the stack map merged into `docs/TECHSTACK.md` → renamed `docs/TECH-STACK.md`. Kora keeps the backlog, ideas, and the project overview. Stale `.cursor/rules` and architecture-tree references fixed.
 - **Restart-required config changes documented** — new `docs/spec/CONTAINERS.md` § Config changes that need a restart: the `RESTART_FIELDS` set, the persisted `pendingRestart` flag and its amber badge, why env/secret edits only reach the process on restart, and why app-container reloads are skipped when env changed. The `pendingRestart` schema row was narrower than the code.
 
+### Bug Fixes
+- **Container DNS no longer dies when systemd-networkd restarts** — the mDNS stub IP (`169.254.53.53`) was a runtime-only address on br0, so any networkd restart (an unattended systemd upgrade is enough) flushed it. The forwarder's socket stayed bound to the vanished address and silently black-holed *every* container DNS query — not just `.local` — until wisp restarted. The address is now declared to networkd via a drop-in on br0's `.network` unit, and `wisp-updater` re-runs `container-dns.sh` so existing installs pick it up.
+
 ## 2026-07-20
 
 ### New Features
