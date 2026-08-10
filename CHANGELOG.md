@@ -6,6 +6,9 @@
 - **Home page** — a new first host tab (and the app's landing page) showing launcher tiles for every service this Wisp publishes, derived with zero configuration from app-container URLs (Caddy hosts, Jellyfin, zot) and declared `_http(s)._tcp` mDNS services, joined back to their workloads for live state; the "Lanterns" design lights running services and dims sleeping ones, and an inline edit mode adds groups, renames, icons, and manual links.
 - **Backlog returns to the repo** — `docs/BACKLOG.md` holds backlog and ideas; all kora references removed from `CLAUDE.md`, specs, and plans, and stale "Coding Rules (in kora)" pointers now reference `docs/CODING-RULES.md`.
 
+### Bug Fixes
+- **Dependency security updates** — `npm audit` clean in both packages: backend `@fastify/static` 9→10 (path-traversal and route-guard-bypass advisories; traversal now answers 403, verified), plus in-range bumps for `find-my-way`, `js-yaml`, `undici`, and frontend `react-router`, `dompurify`, `nanoid`, `postcss`.
+
 ## 2026-08-01 (v2.0.3)
 
 ### Bug Fixes

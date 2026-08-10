@@ -46,7 +46,7 @@ Password login yielding `node:crypto`-signed session JWTs in cookies (no JWT lib
 | Framework | Fastify | ^5.8 | HTTP server with built-in JSON schema validation, low overhead, plugin system. |
 | CORS | @fastify/cors | ^11.2 | Cross-origin support for development mode only. |
 | File uploads | @fastify/multipart | ^10.0 | Streaming multipart uploads (50GB limit). |
-| Static files | @fastify/static | ^9.0 | Serves the prebuilt SPA (`frontend/dist/`) and `/vendor/` (noVNC). |
+| Static files | @fastify/static | ^10.1 | Serves the prebuilt SPA (`frontend/dist/`) and `/vendor/` (noVNC). |
 | WebSocket | @fastify/websocket | ^11.2 | WebSocket support for VNC console proxy and container interactive shell. |
 | Hypervisor | dbus-next | ^0.10 | Pure-JS DBus client for communicating with libvirt via its DBus API (`org.libvirt`). Chosen over native bindings (node-libvirt) because it requires no native compilation, works across Node versions, and libvirt's DBus API is a stable first-class interface. |
 | XML parsing | fast-xml-parser | ^5.5.7 | Parse and build libvirt domain XML. No regex-based XML manipulation anywhere. |
