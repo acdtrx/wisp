@@ -402,10 +402,21 @@ function getReloadCommand() {
   return null;
 }
 
+/**
+ * URL this container publishes, for the Home page launcher. No `target`: the
+ * external URL is this container's own address, so the tile joins back to the
+ * container that owns the appConfig.
+ */
+function getPublishedLinks(appConfig) {
+  const url = typeof appConfig?.externalUrl === 'string' ? appConfig.externalUrl.trim() : '';
+  return url ? [{ url }] : [];
+}
+
 export const zotAppModule = {
   getDefaultAppConfig,
   validateAppConfig,
   generateDerivedConfig,
   maskSecrets,
   getReloadCommand,
+  getPublishedLinks,
 };

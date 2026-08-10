@@ -175,6 +175,16 @@ function requiresRestartForChange(oldCfg, newCfg) {
   return false;
 }
 
+/**
+ * URL this container publishes, for the Home page launcher. No `target`: the
+ * published URL is this container's own address, so the tile joins back to the
+ * container that owns the appConfig.
+ */
+function getPublishedLinks(appConfig) {
+  const url = typeof appConfig?.publishedUrl === 'string' ? appConfig.publishedUrl.trim() : '';
+  return url ? [{ url }] : [];
+}
+
 export const jellyfinAppModule = {
   getDefaultAppConfig,
   validateAppConfig,
@@ -182,4 +192,5 @@ export const jellyfinAppModule = {
   maskSecrets,
   getReloadCommand,
   requiresRestartForChange,
+  getPublishedLinks,
 };

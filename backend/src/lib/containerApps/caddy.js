@@ -230,12 +230,31 @@ function getReloadCommand() {
   return ['caddy', 'reload', '--config', '/etc/caddy/Caddyfile'];
 }
 
+/**
+ * URLs this container publishes, for the Home page launcher. One per proxied
+ * host; `target` is carried so the tile can be joined back to the workload it
+ * actually fronts (a Caddy host may also point at another machine entirely,
+ * which then renders as a stateless external tile).
+ */
+function getPublishedLinks(appConfig) {
+  const domain = typeof appConfig?.domain === 'string' ? appConfig.domain.trim() : '';
+  if (!domain) return [];
+  const hosts = Array.isArray(appConfig?.hosts) ? appConfig.hosts : [];
+  return hosts
+    .filter((h) => h && typeof h.subdomain === 'string' && h.subdomain.trim())
+    .map((h) => ({
+      url: `https://${h.subdomain.trim()}.${domain}`,
+      target: typeof h.target === 'string' ? h.target : undefined,
+    }));
+}
+
 export const caddyAppModule = {
   getDefaultAppConfig,
   validateAppConfig,
   generateDerivedConfig,
   maskSecrets,
   getReloadCommand,
+  getPublishedLinks,
   // Only the reverse-proxy host rows are agent-writable (MCP update_app_config).
   // domain and email are the certificate identity and cloudflareApiToken is a
   // secret — all three stay human-only so an agent can't break TLS by mistake.
