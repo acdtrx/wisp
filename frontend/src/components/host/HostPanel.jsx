@@ -7,10 +7,12 @@ import HostOverview from './HostOverview.jsx';
 import HostMgmt from './HostMgmt.jsx';
 import AppConfig from './AppConfig.jsx';
 import Software from './Software.jsx';
+import HomePanel from '../home/HomePanel.jsx';
 import BackupsPanel from '../backups/BackupsPanel.jsx';
 import { hostShutdown, hostReboot } from '../../api/host.js';
 
 const TABS = [
+  { id: 'home', label: 'Home' },
   { id: 'overview', label: 'Overview' },
   { id: 'host-mgmt', label: 'Host Mgmt' },
   { id: 'software', label: 'Software' },
@@ -54,7 +56,7 @@ export default function HostPanel() {
   const [powerLoading, setPowerLoading] = useState(null);
 
   if (!tab || !VALID_TAB_IDS.has(tab)) {
-    return <Navigate to="/host/overview" replace />;
+    return <Navigate to="/host/home" replace />;
   }
 
   const handleTabChange = (id) => navigate(`/host/${id}`);
@@ -147,6 +149,7 @@ export default function HostPanel() {
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
+        {tab === 'home' && <HomePanel />}
         {tab === 'overview' && <HostOverview />}
         {tab === 'host-mgmt' && <HostMgmt />}
         {tab === 'software' && <Software onRequestRestart={() => setRestartOpen(true)} />}

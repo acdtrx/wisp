@@ -31,8 +31,8 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/host/overview" replace />} />
-        <Route path="host" element={<Navigate to="/host/overview" replace />} />
+        <Route index element={<Navigate to="/host/home" replace />} />
+        <Route path="host" element={<Navigate to="/host/home" replace />} />
         <Route path="host/:tab" element={<HostPanel />} />
         <Route path="vm/:name" element={<VmRoute />} />
         <Route path="vm/:name/:tab" element={<VmRoute />} />
@@ -47,7 +47,7 @@ export default function App() {
             </Suspense>
           }
         />
-        <Route path="*" element={<Navigate to="/host/overview" replace />} />
+        <Route path="*" element={<Navigate to="/host/home" replace />} />
       </Route>
     </Routes>
   );

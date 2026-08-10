@@ -116,6 +116,106 @@
   -moz-appearance: textfield;
 }
 
+/* ── Home page: the "Lanterns" look ─────────────────────────────────────────
+   Every colour below is derived from the palette tokens above — the glow, the
+   motes, and the canvas wash are the accent at varying strengths, nothing new.
+   Motion is applied from the components as `animate-[…]` so Tailwind's
+   `motion-reduce:animate-none` can switch it off (docs/spec/UI.md § Home). */
+
+/* A running service is a lit lantern: the icon well breathes. */
+@keyframes wisp-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, white),
+      0 0 14px color-mix(in srgb, var(--color-accent) 24%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, white),
+      0 0 24px color-mix(in srgb, var(--color-accent) 42%, transparent);
+  }
+}
+
+/* Stray wisps drifting across the canvas — the page's only ambient motion. */
+@keyframes wisp-drift-a {
+  0%,
+  100% {
+    transform: translate(0, 0);
+    opacity: 0.9;
+  }
+  50% {
+    transform: translate(46px, -30px);
+    opacity: 0.35;
+  }
+}
+
+@keyframes wisp-drift-b {
+  0%,
+  100% {
+    transform: translate(0, 0);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translate(-60px, 22px);
+    opacity: 0.25;
+  }
+}
+
+@keyframes wisp-drift-c {
+  0%,
+  100% {
+    transform: translate(0, 0);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translate(28px, 38px);
+    opacity: 0.2;
+  }
+}
+
+/* Canvas: a soft accent wash falling from the top-left over the page surface. */
+@utility home-canvas {
+  background:
+    radial-gradient(
+      1100px 420px at 18% -8%,
+      color-mix(in srgb, var(--color-accent-soft) 80%, transparent) 0%,
+      transparent 60%
+    ),
+    var(--color-surface);
+}
+
+/* An unlit tile sits a shade off white — visibly asleep without receding into
+   the canvas the way a full `bg-surface` would. */
+@utility home-tile-asleep {
+  background-color: color-mix(in srgb, var(--color-surface) 45%, white);
+}
+
+/* The two mote tints: the accent itself, and the accent lifted toward white. */
+@utility home-mote-teal {
+  background-color: color-mix(in srgb, var(--color-accent) 42%, transparent);
+}
+
+@utility home-mote-pale {
+  background-color: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--color-accent) 62%, white) 40%,
+    transparent
+  );
+}
+
+/* Icon well of a lit tile — the glow the breathe keyframes animate. */
+@utility home-lantern-lit {
+  background: radial-gradient(
+    circle at 50% 42%,
+    var(--color-accent-soft) 0%,
+    color-mix(in srgb, var(--color-accent-soft) 40%, white) 70%
+  );
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, white),
+    0 0 18px color-mix(in srgb, var(--color-accent) 32%, transparent);
+}
+
 body {
   margin: 0;
   min-height: 100vh; /* fallback for browsers without dvh */
