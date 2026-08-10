@@ -13,7 +13,7 @@ What lives where:
 - [`docs/spec/`](docs/spec/) — the contract docs, one per area.
 - [`docs/plans/`](docs/plans/) — plans for large work.
 - [`backend/src/lib/CLAUDE.md`](backend/src/lib/CLAUDE.md) — file-level backend mechanics.
-- **kora** (MCP server `kora`) — the backlog and ideas (`Backlog: <item>` / `Idea: <item>` notes, tag `wisp`), never as repo files, plus the project overview and homelab deployment context.
+- [`docs/BACKLOG.md`](docs/BACKLOG.md) — the backlog and ideas, one entry each; delete an entry when it ships.
 
 ## Facts & commands
 
@@ -108,9 +108,3 @@ Prefer DBus/gRPC APIs over shelling out. Exec is permitted only for: `qemu-img`,
 Anything else needs user validation first. New privileged `wisp-*` helpers must
 be registered in `scripts/linux/setup/install-helpers.sh` and documented per the
 checklist in [`docs/spec/DEPLOYMENT.md`](docs/spec/DEPLOYMENT.md).
-
-## Kora duties
-
-- When a change alters what wisp can do or how workloads deploy onto it — capabilities, app templates, container/networking model, API/auth surface, agent access, deployment flow — update the kora documents "Project: wisp — opinionated single-user KVM/QEMU + containerd manager" and "Deploying projects to the homelab (Wisp + zot registry)" in the same session.
-- On shipping, settle the statuses of the backlog/idea notes involved (`completed` / `superseded`). Current status is inferred from the overview plus the active `wisp`-tagged notes — there is no hand-maintained status document.
-- Reference the repo from kora documents per the kora skill "Working in a kora-driven project": stable named surfaces only, repo-root-relative; file-level paths only in backlog implementation sketches.

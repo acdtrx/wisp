@@ -99,7 +99,7 @@ Host → App Config → new **API Tokens** `SectionCard` (below Single sign-on).
 
 ### Docs
 
-New `docs/spec/MCP.md` (protocol subset, auth, tool catalogue with schemas, client registration examples incl. Claude Code). Update `docs/ARCHITECTURE.md` (module + request flow), `docs/spec/API.md` (`/mcp` route), `docs/spec/AUTH.md` (bearer-only endpoint), `README.md` feature bullet. Per `CLAUDE.md` § Kora Memory Sync, update the kora documents when this ships.
+New `docs/spec/MCP.md` (protocol subset, auth, tool catalogue with schemas, client registration examples incl. Claude Code). Update `docs/ARCHITECTURE.md` (module + request flow), `docs/spec/API.md` (`/mcp` route), `docs/spec/AUTH.md` (bearer-only endpoint), `README.md` feature bullet.
 
 ### Verification
 

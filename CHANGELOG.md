@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-10
+
+### New Features
+- **Backlog returns to the repo** — `docs/BACKLOG.md` holds backlog and ideas; all kora references removed from `CLAUDE.md`, specs, and plans, and stale "Coding Rules (in kora)" pointers now reference `docs/CODING-RULES.md`.
+
 ## 2026-08-01 (v2.0.3)
 
 ### Bug Fixes

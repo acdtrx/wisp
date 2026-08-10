@@ -105,7 +105,7 @@ The desktop shell above applies at `lg` and up. Below 1024px (phones, portrait t
   - **VM Network interfaces** — only the Actions column is hidden below `sm`; bridge/model/MAC stay on one line with relaxed column widths. The duplicate header lock badge is dropped (the note below the table carries the "stop the VM to edit" message, desktop-only).
   - **VM Disks** — the Image type and Actions columns are hidden below `sm` (Disk / Size / Image / Bus remain), so it fits without the action set; size/bus editing and ISO/detach actions are desktop-only.
   - **Container Mounts** — inline field editing + delete hidden, but Edit-file / Upload / Zip-upload kept; the table keeps its horizontal scroll (widest section).
-  - Full add/edit on phones returns as these sections move to modal form editors (kora backlog, tag `wisp`).
+  - Full add/edit on phones returns as these sections move to modal form editors (see `docs/BACKLOG.md`).
 - **USB devices** — the ID column is hidden below `sm` (Name gets the room), and the bus/device cell shows bare numbers (`<bus> · <device>`) under the "Bus / device" header on all screen sizes instead of repeating the `Bus …`/`Device …` labels.
 - **PWA-lite:** `manifest.webmanifest` (standalone display, teal theme color) + apple-touch-icon, so Wisp can be pinned to a phone home screen. No service worker/offline support.
 
