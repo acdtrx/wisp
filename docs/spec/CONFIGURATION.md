@@ -49,6 +49,7 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 | `backupSchedule` | `object` | `{ enabled: false, time: "03:00", destinationIds: ["local"], retainDays: 7, retainWeeks: 4 }` | Daily scheduled container backups. `time` is `HH:MM` (24h, host-local); `destinationIds` is a non-empty subset of `'local'` + `backupMountId`; `retainDays` 1–365; `retainWeeks` 0–52. Invalid persisted values fall back to defaults on read; stale mount ids are dropped from `destinationIds`. See [BACKUPS.md → Scheduled backups](BACKUPS.md#scheduled-backups). |
 | `sections` | `array` | `[]` | User-defined sidebar sections (see object shape below). The synthetic `Main` section is implicit and never persisted. |
 | `assignments` | `object` | `{}` | Map of `"<type>:<workload-name>"` → `sectionId`. Missing entries (or entries pointing at a removed section) fall back to `Main`. `<type>` is `vm` or `container`. |
+| `homepage` | `object` | `{ groups: [], overrides: {}, manualTiles: [] }` | Home page overlay (see object shape below). Managed exclusively via `GET/POST/PATCH/PUT/DELETE /api/homepage`, never via `PATCH /api/settings`, and not part of `GET /api/settings` — the client reads it through the derived `home` events topic. |
 | `discoveryEnabled` | `boolean` | `true` | Announce this instance as a `_wisp._tcp` mDNS service and browse for peers (see [DISCOVERY.md](DISCOVERY.md)). |
 | `advertisedUrl` | `string \| null` | `null` | URL other Wisp instances use to open this one; must be `http`/`https`. `null` → announce `http://<hostname>.local:<port>`. |
 | `oidc` | `object` | `{ enabled: false, issuer: "", clientId: "", clientSecret: "" }` | Optional OpenID Connect SSO (see [AUTH.md](AUTH.md) § OIDC). `enabled` only holds when `issuer` (valid `http`/`https`), `clientId`, and `clientSecret` are all set. **`clientSecret` is a secret** — masked in the API as `hasClientSecret` (boolean), never returned. |
@@ -62,6 +63,32 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 | `id` | `string` | UUID. The constant `"main"` is reserved for the implicit Main bucket and never appears in the persisted array. |
 | `name` | `string` | Display name (1–64 chars; case-insensitive uniqueness within `sections`). |
 | `order` | `number` | Stable sort order. New sections take `max(order)+1`. |
+
+### Home page object (`homepage`)
+
+Only the human half of the Home page is persisted — every tile is re-derived from live workload data on each read (see [API.md § Home page](API.md#home-page) and [UI.md § Tab: Home](UI.md#tab-home)). A Wisp with no `homepage` key renders a complete launcher.
+
+```jsonc
+{
+  "groups": [
+    { "id": "c81f…", "name": "Every day", "tiles": ["https://jelly.example.com", "6f2c…"] }
+  ],
+  "overrides": {
+    "https://jelly.example.com": { "hidden": true, "name": "Jellyfin", "iconId": "film" }
+  },
+  "manualTiles": [
+    { "id": "6f2c…", "name": "Router", "url": "https://192.168.1.1", "iconId": "router" }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `groups[]` | `array` | User-defined groups, **in render order** (array order is authoritative — there is no `order` field). Each is `{ id: UUID, name: 1–64 chars, tiles: [tileId] }`; `tiles` is the in-group ordering. The id `ungrouped` is reserved for the implicit bucket and never persisted. |
+| `overrides` | `object` | `tileId` → `{ hidden?: true, name?: string, iconId?: string }`. Only the keys the user actually set are stored; an override that would be empty is dropped. |
+| `manualTiles[]` | `array` | User-added links: `{ id: UUID, name, url, iconId: string \| null }`. |
+
+Keys are `tileId`s — a derived tile's id is its canonical URL, a manual tile's is its UUID. Normalization on read is lenient and self-healing: malformed groups/tiles/overrides are dropped, and a tile id claimed by more than one group is kept only by the first, so a hand-edited file can't render one tile twice.
 
 ### Mount object (`mounts[]`)
 

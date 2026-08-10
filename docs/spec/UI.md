@@ -128,7 +128,7 @@ The top bar shows "Wisp" text and the server display name (from settings; render
 
 ### Host entry
 
-A **Host** row appears above the Virtual Machines section. It shows a Server icon, the label "Host", a secondary line with physical CPU count and total RAM (same `formatMemory` style as VM list rows, from host stats SSE), and an optional badge dot when pending OS updates are available (from the background hourly check). Clicking it navigates to `/host/overview` and renders the Host panel in the center with tabs: Overview, Host Mgmt, Software, Backups, App Config. The Host row height is fixed at **`h-11`** (44px) to match the central-panel top bars, and has active state styling (accent border) when the Host panel is visible.
+A **Host** row appears above the Virtual Machines section. It shows a Server icon, the label "Host", a secondary line with physical CPU count and total RAM (same `formatMemory` style as VM list rows, from host stats SSE), and an optional badge dot when pending OS updates are available (from the background hourly check). Clicking it navigates to `/host/overview` and renders the Host panel in the center with tabs: Home, Overview, Host Mgmt, Software, Backups, App Config. The Host row height is fixed at **`h-11`** (44px) to match the central-panel top bars, and has active state styling (accent border) when the Host panel is visible.
 
 ### Workloads — Header
 
@@ -184,14 +184,16 @@ The center panel content is controlled by the URL. `AppLayout` is a shell that r
 
 | URL | Content |
 |-----|---------|
-| `/` | Redirects to `/host/overview` |
-| `/host/:tab` | Host panel (`tab` ∈ `overview`, `host-mgmt`, `software`, `backups`, `app-config`) |
+| `/` | Redirects to `/host/home` |
+| `/host/:tab` | Host panel (`tab` ∈ `home`, `overview`, `host-mgmt`, `software`, `backups`, `app-config`) |
 | `/vm/:name/:tab?` | Overview panel + VM Stats Bar (`tab` ∈ `overview`, `console`; default `overview`) |
 | `/container/:name/:tab?` | Container Overview panel + Container Stats Bar (`tab` ∈ `overview`, `logs`, `console`; default `overview`) |
 | `/create/vm` | Create VM panel |
 | `/create/container` | Create Container panel |
 | `/login` | Login page |
-| `*` | Redirects to `/host/overview` |
+| `*` | Redirects to `/host/home` |
+
+`/host/home` is the app's landing page: `/`, a bare `/host`, and any unknown path all land there, as does a host tab id that doesn't exist. Escape from a VM/container view and the "back to host" actions still go to `/host/overview` — those mean "leave this workload", not "go home".
 
 VM/container selection is derived from the URL: `VmRoute` / `ContainerRoute` read `:name` from params and call `selectVM` / `selectContainer` on mount, `deselectVM` / `deselectContainer` on unmount. Tab buttons and sidebar list items call `navigate()` rather than setting store state.
 
@@ -378,9 +380,50 @@ The Host panel is opened from the left panel "Host" entry. It uses the same layo
 
 ### Header row
 
-- **Left:** Server icon (non-clickable), "Host" label, tab strip: **Overview** | **Host Mgmt** | **Software** | **Backups** | **App Config**. Height is fixed at **`h-11`** (44px) to match the left-sidebar Host row, the VM header, and the container header.
+- **Left:** Server icon (non-clickable), "Host" label, tab strip: **Home** | **Overview** | **Host Mgmt** | **Software** | **Backups** | **App Config**. Height is fixed at **`h-11`** (44px) to match the left-sidebar Host row, the VM header, and the container header.
 - **Right:** Power Off button, Restart button (each opens a simple confirmation dialog before executing)
 - **Badge:** A dot on the "Software" tab when **either** a Wisp self-update is available (from `wispUpdate.available` in the host stats SSE) **or** pending OS package updates are available (background hourly check or manual check). The same dot serves both signals — clicking the tab takes the user to the Software panel where the relevant section explains which one.
+
+### Tab: Home
+
+The launcher, and the app's landing page — homelab-homepage tiles for the services this Wisp hosts, derived from data Wisp already holds. First tab, before Overview. No host-vitals strip: the top bar's `HostStatsBar` already carries it.
+
+Components live in `frontend/src/components/home/` (`HomePanel.jsx`, `HomeGroup.jsx`, `HomeTile.jsx`, `HomeMotes.jsx`, `TileGroupPicker.jsx`, `ManualLinkModal.jsx`); data comes from `homeStore` subscribing to the **`home`** topic on `/api/events` (see [API.md](API.md)). The server sends the full `{ tiles, groups }` envelope, so the page is correct on first paint with **zero configuration**.
+
+#### Tile derivation
+
+Tiles are links, not workloads — **a workload with no published URL gets no tile** (the sidebar covers workloads). Three sources, descending priority, deduped by URL:
+
+1. **App modules** — `getPublishedLinks(appConfig)` on any container carrying `metadata.app` (see [CUSTOM-APPS.md](CUSTOM-APPS.md)). Every app container is iterated; no container name is hardcoded, so zero, one, or many Caddy instances all work.
+2. **Declared mDNS services** of type `_http._tcp` / `_https._tcp` on containers with Local DNS on → `http(s)://<hostname>.local:<port>`.
+3. **Manual links** the user added.
+
+Each derived link joins back to a workload by its **target** hostname (container name / `<name>.local` / running IP; VM name / `<name>.local` / guest hostname / IP) — that join is what gives the tile live state. A link whose target resolves to nothing (a Caddy host fronting another machine) renders as a **stateless external tile**. A link with no target at all — a Jellyfin `publishedUrl`, a zot `externalUrl`, an mDNS service — *is* its publisher's own address, so it joins to the publishing container. Manual links never join.
+
+Same-URL collisions keep one tile: app beats mDNS beats manual, and within a tier the link whose backing container **runs** wins. The losers appear on the winner's `conflicts` and are surfaced in edit mode; a duplicate raised by the *same* publisher (a Jellyfin container that both publishes a URL and advertises `_http._tcp` on that port) is one fact stated twice and is not reported.
+
+#### Layout — the "Lanterns" design
+
+- **Header:** time-of-day greeting (`Good morning/afternoon/evening.` in `font-display`), a counts line (`5 lanterns lit · 3 asleep · 2 links live elsewhere on the network`), and **Edit home**.
+- **Groups** render as small uppercase labels with a count over a `repeat(auto-fill, minmax(236px, 1fr))` grid. An empty group is hidden outside edit mode. The implicit **Ungrouped** group is always last and goes unlabelled when it is the only group (a zero-config page is just a grid).
+- **Tile:** icon well + name + hostname. State is the light — a running workload's well glows and **breathes** (`wisp-breathe`, 4.2s), a stopped one wears an **asleep** chip on a dimmed card, an external one gets a flat ringed well and a `· elsewhere` suffix on its hostname and shows no state at all. An amber dot follows `updateAvailable`.
+- **Right edge is one action lane**, both affordances always visible:
+  - **Launch notch** — a 26×15px tab sitting *in* the top border at `right: 15px`, filling accent on hover. The whole tile opens the URL in a new tab; the notch is its cue.
+  - **Cogwheel** below it, vertically centred, 28px, navigating to the workload's Wisp page. It renders outside the anchor (a button can't nest in a link) at `right: 15px` so its axis lands 29px from the card's outer edge — exactly where the notch's axis falls from inside the 1px border. External tiles have no cogwheel.
+- **Ambient:** four blurred accent motes drift across the canvas on long unsynchronised loops.
+- **Motion** — the breathing glow, the motes, and the tile transitions all carry `motion-reduce:` variants, so `prefers-reduced-motion` parks the page.
+- Colours come only from the palette tokens; the canvas wash, glow, mote tints, and asleep-card shade are `color-mix` derivations of `--color-accent` / `--color-surface` declared in `index.css`.
+
+#### Edit mode
+
+**Edit home** toggles in-place controls (interaction style follows the sidebar's Organize mode); **Done** exits. The header gains **Add link** (`Plus`+`Link`, opens `ManualLinkModal` — a modal form editor) and **Add group** (`Plus`+`FolderPlus`, mints an auto-suffixed "New Group" and opens its rename input immediately).
+
+- **Group labels** grow inline **ChevronUp** / **ChevronDown** (reorder), **Pencil** (rename) and **Trash2** (delete, confirm dialog; its tiles return to Ungrouped). Ungrouped has none of these.
+- **Tiles** stop being links and grow a toolbar under their text: **Eye/EyeOff** (hide/show), **Pencil** (rename — inline input with confirm/cancel), **Palette** (icon, via the shared `IconPickerModal`), **FolderInput** (move to group, popover listing every group plus "New group…"), **ChevronLeft/ChevronRight** (reorder within a real group), and **Trash2** for manual links only.
+- Hidden tiles stay visible in edit mode at reduced opacity with a dashed border so they can be brought back; outside edit mode they are not rendered.
+- Renaming a **manual** link edits the link itself; renaming a **derived** tile writes an override, so the tile keeps tracking the workload it points at.
+
+Empty state (no visible tiles): "No lanterns yet", explaining that a container with a published URL appears here on its own, and pointing at **Edit home → Add link** for everything else.
 
 ### Tab: Overview
 
@@ -501,6 +544,7 @@ Used in Image Library, Backups, Snapshots, and other DataTable-based lists. On *
 - **UI icons:** lucide-react (tree-shakeable, no CDN).
 - **VM icons:** Custom selectable set; default follows OS type. Choice is **persisted** in libvirt domain metadata (`iconId` via the VM config API).
 - **Container icons:** Same picker; **`iconId`** is stored in the container’s persisted config.
+- **Home tiles:** Same picker. A tile inherits the `iconId` of the workload it points at (or its own, for a manual link) and falls back to `globe`; the picker writes a per-tile override in the `homepage` config.
 
 ---
 

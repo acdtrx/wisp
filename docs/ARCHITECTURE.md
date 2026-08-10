@@ -139,6 +139,7 @@ Each file registers routes under a common prefix. Routes handle HTTP concerns (v
 | `cloudinit.js` | `/api` | Cloud-init config, GitHub SSH keys |
 | `settings.js` | `/api` | App settings, network mount status/mount |
 | `sections.js` | `/api` | Sidebar sections + workload assignments, SSE stream |
+| `homepage.js` | `/api` | Home page groups, tile overrides, manual links (derived tiles ride the `home` events topic) |
 | `backups.js` | `/api` | Backup listing, restore, delete |
 | `mcp.js` | `/mcp` | MCP endpoint (JSON-RPC over POST, bearer-token-only; see `docs/spec/MCP.md`) |
 | `console.js` | `/ws` | VNC WebSocket proxy |

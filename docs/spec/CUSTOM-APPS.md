@@ -49,6 +49,17 @@ Each module (`backend/src/lib/containerApps/<app>.js`) exports:
 | `getReloadCommand` | `() → string[] \| null` | Optional. Command to live-reload config inside the running container (e.g. `['caddy', 'reload', ...]`). Return `null` if the app doesn't support live reload. |
 | `requiresRestartForChange` | `(oldAppConfig, newAppConfig) → boolean` | Optional. Returns `true` when the diff includes fields that the app's reload can't apply live (e.g. tiny-samba's `server.workgroup`). When true, the backend sets `pendingRestart: true` and reports `requiresRestart: true` even after a successful reload. |
 | `agentWritableAppConfigFields` | `string[]` | Optional. Top-level appConfig keys the MCP `update_app_config` tool may change (see [MCP.md](MCP.md)). Absent or empty = the app is not agent-configurable. Never list secrets, certificate identity, or auth settings — the point of the filter is that an agent can't touch them by mistake (caddy lists only `hosts`). The UI/REST surface is unaffected. |
+| `getPublishedLinks` | `(appConfig) → [{ url, target?, label? }]` | Optional. URLs this app makes reachable, for the Home page launcher (see [UI.md § Tab: Home](UI.md#tab-home)). Absent = the app publishes nothing. Return only what the config *proves* exists — an empty array when the relevant fields are unset — and never throw: a malformed appConfig must not take the launcher down. |
+
+### getPublishedLinks
+
+The Home page iterates **every** container carrying `metadata.app` and asks its module for links; no container name is ever hardcoded, so zero, one, or many instances of an app all work.
+
+- **`url`** — absolute `http`/`https`. It is canonicalized (host lowercased, default port and bare trailing slash dropped) and becomes the tile's id.
+- **`target`** — set it when the URL fronts *something else*, and carry through whatever the config holds (`host`, `host:port`, or `scheme://host[:port][/path]`). The Home page resolves it against workload hostnames to give the tile live state, and renders a stateless external tile when it resolves to nothing. **Omit `target` when the URL is the container's own address** — the tile then joins to the publishing container itself. Getting this backwards matters: a reverse proxy that omitted `target` would light its own lantern for every host it proxies off-box.
+- **`label`** — optional display name. Omit it to let the tile name itself from the workload it points at (or the URL's first hostname label).
+
+Implemented by: **caddy-reverse-proxy** (one link per `hosts[]` entry → `https://<subdomain>.<domain>`, `target` carried), **jellyfin** (`publishedUrl`, no target), **zot-registry** (`externalUrl`, no target). **tiny-samba** publishes no HTTP surface and omits the method.
 
 ### generateDerivedConfig return shape
 
@@ -136,7 +147,7 @@ Caddy keeps serving its previous config (reload is atomic), but the save surface
 
 ## Adding a New App
 
-1. **Backend module** — Create `backend/src/lib/containerApps/<app>.js` exporting `{ getDefaultAppConfig, validateAppConfig, generateDerivedConfig, maskSecrets, getReloadCommand }` as a named module object.
+1. **Backend module** — Create `backend/src/lib/containerApps/<app>.js` exporting `{ getDefaultAppConfig, validateAppConfig, generateDerivedConfig, maskSecrets, getReloadCommand }` as a named module object. Add `getPublishedLinks` too if the app exposes a URL a human would open.
 2. **Register backend** — Add entry to `APP_REGISTRY` in `containerApps/appRegistry.js`.
 3. **Frontend component** — Create `frontend/src/apps/<app>/<AppName>Section.jsx` using SectionCard.
 4. **Register frontend** — Add entry to `APP_REGISTRY` in `frontend/src/apps/appRegistry.js`.
