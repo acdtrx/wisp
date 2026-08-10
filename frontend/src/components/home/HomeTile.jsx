@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowUpRight, Settings, Eye, EyeOff, Pencil, Check, X,
-  Trash2, ChevronLeft, ChevronRight, Palette, AlertTriangle,
+  Trash2, ChevronLeft, ChevronRight, AlertTriangle,
 } from 'lucide-react';
 import { getVmIcon } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
@@ -91,9 +91,21 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
 
   const body = (
     <>
-      <span className={`grid size-[42px] shrink-0 place-items-center rounded-[10px] ${iconWellClass}`}>
-        <Icon size={21} aria-hidden />
-      </span>
+      {editing ? (
+        <button
+          type="button"
+          onClick={() => setIconPickerOpen(true)}
+          className={`grid size-[42px] shrink-0 cursor-pointer place-items-center rounded-[10px] transition-shadow duration-150 hover:ring-2 hover:ring-accent ${iconWellClass}`}
+          title="Change icon"
+          aria-label="Change icon"
+        >
+          <Icon size={21} aria-hidden />
+        </button>
+      ) : (
+        <span className={`grid size-[42px] shrink-0 place-items-center rounded-[10px] ${iconWellClass}`}>
+          <Icon size={21} aria-hidden />
+        </span>
+      )}
       <span className="min-w-0 flex-1">
         {renaming ? (
           <span className="flex items-center gap-0.5">
@@ -156,7 +168,14 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
   );
 
   return (
-    <div className="group relative transition-transform duration-150 motion-reduce:transition-none hover:-translate-y-0.5">
+    /* The modals below render inside this wrapper and position with `fixed` —
+       a transformed ancestor becomes their containing block, so the hover lift
+       must never apply in edit mode, the only time a modal can open. */
+    <div
+      className={`group relative ${
+        editing ? '' : 'transition-transform duration-150 motion-reduce:transition-none hover:-translate-y-0.5'
+      }`}
+    >
       {editing ? (
         <div className={`${cardClass} flex-col items-stretch gap-2`}>
           <div className="flex items-center gap-3">{body}</div>
@@ -180,16 +199,6 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
               aria-label="Rename tile"
             >
               <Pencil size={13} aria-hidden />
-            </button>
-            <button
-              type="button"
-              onClick={() => setIconPickerOpen(true)}
-              disabled={busy}
-              className={editBtn}
-              title="Change icon"
-              aria-label="Change icon"
-            >
-              <Palette size={13} aria-hidden />
             </button>
             <TileGroupPicker tileId={tile.id} currentGroupId={groupId} className={editBtn} />
             {groupId !== UNGROUPED_GROUP_ID && (

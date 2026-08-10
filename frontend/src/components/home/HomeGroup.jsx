@@ -104,10 +104,10 @@ export default function HomeGroup({ group, tiles, editing, hideLabel, autoEdit, 
           </div>
         ) : (
           <>
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+            <h3 className="text-[13px] font-semibold uppercase tracking-wider text-text-secondary">
               {group.name}
             </h3>
-            <span className="text-[11px] text-text-muted/70">{tiles.length}</span>
+            <span className="text-xs text-text-muted/70">{tiles.length}</span>
             {editing && !group.builtin && (
               <div className="flex items-center gap-0.5">
                 <button

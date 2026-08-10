@@ -419,7 +419,7 @@ Same-URL collisions keep one tile: app beats mDNS beats manual, and within a tie
 **Edit home** toggles in-place controls (interaction style follows the sidebar's Organize mode); **Done** exits. The header gains **Add link** (`Plus`+`Link`, opens `ManualLinkModal` — a modal form editor) and **Add group** (`Plus`+`FolderPlus`, mints an auto-suffixed "New Group" and opens its rename input immediately).
 
 - **Group labels** grow inline **ChevronUp** / **ChevronDown** (reorder), **Pencil** (rename) and **Trash2** (delete, confirm dialog; its tiles return to Ungrouped). Ungrouped has none of these.
-- **Tiles** stop being links and grow a toolbar under their text: **Eye/EyeOff** (hide/show), **Pencil** (rename — inline input with confirm/cancel), **Palette** (icon, via the shared `IconPickerModal`), **FolderInput** (move to group, popover listing every group plus "New group…"), **ChevronLeft/ChevronRight** (reorder within a real group), and **Trash2** for manual links only.
+- **Tiles** stop being links and grow a toolbar under their text: **Eye/EyeOff** (hide/show), **Pencil** (rename — inline input with confirm/cancel), **FolderInput** (move to group, popover listing every group plus "New group…"), **ChevronLeft/ChevronRight** (reorder within a real group), and **Trash2** for manual links only. The tile's **icon well itself is the icon button** — clicking it (accent ring on hover) opens the shared `IconPickerModal`.
 - Hidden tiles stay visible in edit mode at reduced opacity with a dashed border so they can be brought back; outside edit mode they are not rendered.
 - Renaming a **manual** link edits the link itself; renaming a **derived** tile writes an override, so the tile keeps tracking the workload it points at.
 

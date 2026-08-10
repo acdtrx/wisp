@@ -76,7 +76,7 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
         <FolderInput size={13} aria-hidden />
       </button>
       {open && (
-        <div className="absolute right-0 bottom-full z-30 mb-1 w-44 rounded-lg border border-surface-border bg-surface-card py-1 shadow-lg">
+        <div className="absolute left-0 bottom-full z-30 mb-1 w-44 rounded-lg border border-surface-border bg-surface-card py-1 shadow-lg">
           <div className="border-b border-surface-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
             Move to
           </div>

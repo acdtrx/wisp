@@ -7,6 +7,7 @@
 - **Backlog returns to the repo** — `docs/BACKLOG.md` holds backlog and ideas; all kora references removed from `CLAUDE.md`, specs, and plans, and stale "Coding Rules (in kora)" pointers now reference `docs/CODING-RULES.md`.
 
 ### Bug Fixes
+- **Home edit-mode polish** — dialogs opened from a tile (icon picker, delete confirm) no longer anchor to the tile, flicker on hover, or hide under neighbours: the tile's hover lift created a transformed ancestor that hijacked their fixed positioning, and is now disabled while editing. The move-to-group popover opens to the right so it can't clip off the panel's left edge; group headers are larger; the icon is changed by clicking the tile's icon itself (Palette button dropped); and the icon catalog gains the Wisp brand glyph.
 - **Dependency security updates** — `npm audit` clean in both packages: backend `@fastify/static` 9→10 (path-traversal and route-guard-bypass advisories; traversal now answers 403, verified), plus in-range bumps for `find-my-way`, `js-yaml`, `undici`, and frontend `react-router`, `dompurify`, `nanoid`, `postcss`.
 
 ## 2026-08-01 (v2.0.3)

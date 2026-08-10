@@ -2,6 +2,7 @@ import {
   Monitor, Server, Home, Film, HardDrive, Shield, Globe,
   Database, Cloud, Gamepad2, Box, Cpu, Router, Container,
 } from 'lucide-react';
+import WispGlyph from './WispGlyph.jsx';
 
 // ─── Custom SVG Brand Icons ─────────────────────
 
@@ -132,6 +133,7 @@ export const VM_ICONS = [
   { id: 'freebsd',    name: 'FreeBSD',        category: 'OS', component: FreeBSDIcon },
 
   // Services
+  { id: 'wisp',       name: 'Wisp',           category: 'Service', component: WispGlyph },
   { id: 'homeassistant', name: 'Home Assistant', category: 'Service', component: HomeAssistantIcon },
   { id: 'jellyfin',     name: 'Jellyfin',       category: 'Service', component: JellyfinIcon },
   { id: 'plex',         name: 'Plex',           category: 'Service', component: PlexIcon },
