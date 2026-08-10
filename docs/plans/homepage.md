@@ -1,5 +1,9 @@
 # Home page — launcher for the services hosted on Wisp
 
+**Shipped in v2.1.0** (2026-08-11), plus follow-ups: edit-mode dialog fixes,
+click-the-icon-to-change, the Wisp glyph in the icon catalog, and the top-bar
+brand as a Home button.
+
 Design exploration and decisions: 2026-08-10 session. Visual reference (mockups
 in the real shell, "Lanterns" direction chosen): Claude artifact
 `https://claude.ai/code/artifact/b5bfd239-65f3-41d2-a621-fb7eb16f0176`.
