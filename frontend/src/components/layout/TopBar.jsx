@@ -34,8 +34,16 @@ export default function TopBar() {
         >
           {sidebarOpen ? <X size={18} aria-hidden /> : <Menu size={18} aria-hidden />}
         </button>
-        <WispGlyph size={22} className="shrink-0" />
-        <span className="font-display text-base font-semibold text-text-primary tracking-tight">Wisp</span>
+        <button
+          type="button"
+          onClick={() => navigate('/host/home')}
+          className="flex items-center gap-3 rounded-md transition-opacity duration-150 hover:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          title="Home"
+          aria-label="Go to Home"
+        >
+          <WispGlyph size={22} className="shrink-0" />
+          <span className="font-display text-base font-semibold text-text-primary tracking-tight">Wisp</span>
+        </button>
         <ServerSwitcher />
       </div>
 

@@ -193,7 +193,7 @@ The center panel content is controlled by the URL. `AppLayout` is a shell that r
 | `/login` | Login page |
 | `*` | Redirects to `/host/home` |
 
-`/host/home` is the app's landing page: `/`, a bare `/host`, and any unknown path all land there, as does a host tab id that doesn't exist. Escape from a VM/container view and the "back to host" actions still go to `/host/overview` — those mean "leave this workload", not "go home".
+`/host/home` is the app's landing page: `/`, a bare `/host`, and any unknown path all land there, as does a host tab id that doesn't exist. The top-bar brand (glyph + wordmark) is a button back to `/host/home` from anywhere. Escape from a VM/container view and the "back to host" actions still go to `/host/overview` — those mean "leave this workload", not "go home"; the left panel's Host row likewise opens `/host/overview`, the host's own page.
 
 VM/container selection is derived from the URL: `VmRoute` / `ContainerRoute` read `:name` from params and call `selectVM` / `selectContainer` on mount, `deselectVM` / `deselectContainer` on unmount. Tab buttons and sidebar list items call `navigate()` rather than setting store state.
 

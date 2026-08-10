@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-11
+
+### New Features
+- **The top-bar Wisp brand is a Home button** — clicking the glyph or wordmark returns to `/host/home` from anywhere; the sidebar's Host row keeps opening Overview, the host's own page.
+
 ## 2026-08-11 (v2.1.0)
 
 ### New Features
