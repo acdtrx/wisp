@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-08-10
+## 2026-08-11 (v2.1.0)
 
 ### New Features
 - **Home page** — a new first host tab (and the app's landing page) showing launcher tiles for every service this Wisp publishes, derived with zero configuration from app-container URLs (Caddy hosts, Jellyfin, zot) and declared `_http(s)._tcp` mDNS services, joined back to their workloads for live state; the "Lanterns" design lights running services and dims sleeping ones, and an inline edit mode adds groups, renames, icons, and manual links.
