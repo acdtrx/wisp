@@ -2,6 +2,8 @@ import { buildHostStatsPayload } from '../lib/hostStatsSnapshot.js';
 import { listVMs, subscribeVMListChange } from '../lib/vmManager/index.js';
 import { listContainers, subscribeContainerListChange } from '../lib/containerManager/index.js';
 import { subscribeSectionsChange } from '../lib/sections.js';
+import { subscribeHomepageChange } from '../lib/homepage.js';
+import { buildHomeEnvelope } from '../lib/homeTiles.js';
 import { getDiscoveredPeers, subscribeDiscoveredPeersChange } from '../lib/wispDiscovery.js';
 import { getBackupStatus, subscribeBackupEvents } from '../lib/backupStatus.js';
 import { setupSSE } from '../lib/sse.js';
@@ -23,8 +25,8 @@ const HOST_STATS_INTERVAL_MS = 5000;
  * progress) stay separate — they are transient and bounded well below the cap.
  *
  * Per-topic payloads and cadence are unchanged from the former dedicated
- * endpoints: stats on a 5s timer; vms/containers/sections/discovery pushed on
- * their change events; every topic replays a snapshot on connect. A topic
+ * endpoints: stats on a 5s timer; vms/containers/sections/home/discovery pushed
+ * on their change events; every topic replays a snapshot on connect. A topic
  * that fails to gather sends `{ error, detail, code }` as its `data` and the
  * stream stays up for the others.
  */
@@ -78,6 +80,19 @@ export default async function eventsRoutes(fastify) {
         }
       }
 
+      /* Home page launcher tiles. Recomputed from live workload state joined with
+       * the persisted overlay — so a container starting, a Caddy host being added,
+       * or a tile being renamed all reach the page on the event that caused them.
+       * No timer: every input has a change event of its own. */
+      async function sendHome() {
+        try {
+          sendTopic('home', await buildHomeEnvelope());
+        } catch (err) {
+          request.log.warn({ err: err.message }, 'events: home tiles build failed');
+          sendTopic('home', { error: err.message, detail: err.raw || err.message, code: err.code });
+        }
+      }
+
       function sendDiscovery() {
         sendTopic('discovery', getDiscoveredPeers());
       }
@@ -94,14 +109,17 @@ export default async function eventsRoutes(fastify) {
         }
       }
 
-      await Promise.all([sendStats(), sendVMs(), sendContainers(), sendSections(), sendBackups()]);
+      await Promise.all([
+        sendStats(), sendVMs(), sendContainers(), sendSections(), sendBackups(), sendHome(),
+      ]);
       sendDiscovery();
 
       const statsTimer = setInterval(sendStats, HOST_STATS_INTERVAL_MS);
       const unsubscribes = [
-        subscribeVMListChange(() => { sendVMs(); }),
-        subscribeContainerListChange(() => { sendContainers(); }),
+        subscribeVMListChange(() => { sendVMs(); sendHome(); }),
+        subscribeContainerListChange(() => { sendContainers(); sendHome(); }),
         subscribeSectionsChange(() => { sendSections(); }),
+        subscribeHomepageChange(() => { sendHome(); }),
         subscribeDiscoveredPeersChange(() => { sendDiscovery(); }),
         subscribeBackupEvents(() => { sendBackups(); }),
       ];
