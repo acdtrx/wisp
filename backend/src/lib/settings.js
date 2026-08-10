@@ -38,6 +38,7 @@ const DEFAULTS = {
   },
   sections: [],
   assignments: {},
+  homepage: { groups: [], overrides: {}, manualTiles: [] },
   discoveryEnabled: true,
   advertisedUrl: null,
   oidc: { enabled: false, issuer: '', clientId: '', clientSecret: '' },
@@ -78,6 +79,93 @@ function normalizeAssignments(map, sectionIds) {
     out[key] = value;
   }
   return out;
+}
+
+/* "ungrouped" is the Home page's implicit bucket — never persisted as a group,
+ * but the id every tile reports when no group claims it (a freshly derived
+ * link, or one whose group was deleted). Mirrors MAIN_SECTION_ID. */
+export const UNGROUPED_GROUP_ID = 'ungrouped';
+
+const MAX_HOME_NAME = 64;
+
+function normalizeHomeGroups(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  const seenIds = new Set();
+  /* A tile belongs to at most one group; the first group listing it wins, so a
+   * hand-edited config that repeats an id can't render the same tile twice. */
+  const claimedTiles = new Set();
+  for (const g of arr) {
+    if (!g || typeof g.id !== 'string' || !g.id.trim()) continue;
+    const id = g.id.trim();
+    if (id === UNGROUPED_GROUP_ID || seenIds.has(id)) continue;
+    const name = typeof g.name === 'string' ? g.name.trim() : '';
+    if (!name) continue;
+    seenIds.add(id);
+    const tiles = [];
+    for (const t of Array.isArray(g.tiles) ? g.tiles : []) {
+      if (typeof t !== 'string' || !t || claimedTiles.has(t)) continue;
+      claimedTiles.add(t);
+      tiles.push(t);
+    }
+    out.push({ id, name: name.slice(0, MAX_HOME_NAME), tiles });
+  }
+  return out;
+}
+
+function normalizeHomeOverrides(map) {
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return {};
+  const out = {};
+  for (const [key, value] of Object.entries(map)) {
+    if (typeof key !== 'string' || !key) continue;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const entry = {};
+    if (value.hidden === true) entry.hidden = true;
+    if (typeof value.name === 'string' && value.name.trim()) {
+      entry.name = value.name.trim().slice(0, MAX_HOME_NAME);
+    }
+    if (typeof value.iconId === 'string' && value.iconId.trim()) {
+      entry.iconId = value.iconId.trim();
+    }
+    /* An override that says nothing is dropped — the write path removes empty
+     * entries too, so the file never accumulates `{}` husks. */
+    if (Object.keys(entry).length) out[key] = entry;
+  }
+  return out;
+}
+
+function normalizeManualTiles(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  const seenIds = new Set();
+  for (const t of arr) {
+    if (!t || typeof t.id !== 'string' || !t.id.trim() || seenIds.has(t.id.trim())) continue;
+    const url = typeof t.url === 'string' ? t.url.trim() : '';
+    if (!url) continue;
+    const id = t.id.trim();
+    seenIds.add(id);
+    out.push({
+      id,
+      name: typeof t.name === 'string' ? t.name.trim().slice(0, MAX_HOME_NAME) : '',
+      url,
+      iconId: typeof t.iconId === 'string' && t.iconId.trim() ? t.iconId.trim() : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Home page overlay: user-defined groups, per-tile overrides, manual links.
+ * Everything derived (the tiles themselves) is recomputed from live workload
+ * state on every read — only the human touches are persisted here.
+ */
+function normalizeHomepage(obj) {
+  const src = obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : {};
+  return {
+    groups: normalizeHomeGroups(src.groups),
+    overrides: normalizeHomeOverrides(src.overrides),
+    manualTiles: normalizeManualTiles(src.manualTiles),
+  };
 }
 
 function normalizeOidc(obj) {
@@ -278,6 +366,7 @@ async function readSettingsFile() {
     backupSchedule: normalizeBackupSchedule(data.backupSchedule, backupMountId ? [backupMountId] : []),
     sections,
     assignments,
+    homepage: normalizeHomepage(data.homepage),
     discoveryEnabled:
       typeof data.discoveryEnabled === 'boolean' ? data.discoveryEnabled : DEFAULTS.discoveryEnabled,
     advertisedUrl:
@@ -540,6 +629,7 @@ async function persistSettings(state) {
     containersPath: state.containersPath,
     sections,
     assignments,
+    homepage: normalizeHomepage(state.homepage),
     mounts: (state.mounts || []).map((d) => {
       const out = {
         id: d.id,
@@ -584,6 +674,17 @@ async function persistSettings(state) {
 export async function getRawApiTokens() {
   const fromFile = await readSettingsFile();
   return fromFile.apiTokens || [];
+}
+
+/**
+ * Home page overlay as stored. Deliberately outside `getSettings()`: it is
+ * managed exclusively via `/api/homepage` (never `PATCH /api/settings`) and
+ * the client reads it through the `home` topic's derived envelope, not the
+ * settings payload.
+ */
+export async function getRawHomepage() {
+  const fromFile = await readSettingsFile();
+  return fromFile.homepage || { groups: [], overrides: {}, manualTiles: [] };
 }
 
 /**
