@@ -62,6 +62,7 @@ is the authority for list/table/row-editor UI, and file-level backend mechanics
 - **Single external-system callers.** Only `backend/src/lib/vmManager/linux/` (plus the `vmManager.js` facade) imports `dbus-next` for libvirt; only `backend/src/lib/containerManager/linux/` (plus facade) imports `@grpc/grpc-js`. Avahi's `dbus-next` use lives in `lib/mdns/linux/` only. New operations = new purpose-named facade exports.
 - **Strict managers.** vmManager and containerManager carry **zero Wisp-glue imports** — stdlib, their own internals, and the carved cross-cutting modules (`mdns/`, `networking/`, `storage/`) only. Changes to them are appropriate only for **generic libvirt/containerd functionality**; Wisp-specific orchestration (cloud-init flow, mDNS hooks, section assignments, cleanup rollbacks) lives in routes or app-glue files, which stay flat at `lib/` top-level so each manager remains independently extractable.
 - **Manager events are push, not pull**: subscribe-and-replay surfaces on the facade — fire only on change, replay current state to new subscribers, keep platform plumbing private. New event surfaces follow the same pattern.
+- **Decouple mechanism from trigger.** Any background or maintenance mechanism (update poll, apt checks, job-TTL cleanup, reconcilers) is an invocable unit; its triggers — boot, schedule, events, a manual run — are wired separately, and any trigger can invoke any mechanism. A manual invocation must always work, for testing or because it is needed now. Every execution logs what triggered it and the result.
 - `paths.js` is the **API-input security gate**: routes resolve and validate user-supplied paths there before passing absolute paths to the policy-agnostic managers.
 - Prefer DBus/gRPC over shelling out. Every exec'd binary must be on the approved allowlist in [`CLAUDE.md`](../CLAUDE.md); new binaries — and especially new privileged `wisp-*` helpers — are a team decision, registered per the checklist in [`spec/DEPLOYMENT.md`](spec/DEPLOYMENT.md).
 - **Live data is pushed.** Always-on feeds are topics on the single multiplexed `/api/events` SSE stream — never new dedicated always-on endpoints (browsers cap plain HTTP/1.1 at 6 connections per origin). View-scoped streams (per-entity stats, logs, job progress) stay dedicated. No repeated-GET polling for live data. The stream stays on the custom fetch-based `createSSE`: native EventSource was evaluated and rejected — it can't observe keepalive comments (no dead-TCP watchdog) nor distinguish 401s.
@@ -87,6 +88,7 @@ is the authority for list/table/row-editor UI, and file-level backend mechanics
 - Rate-limit auth endpoints; keying uses `request.ip` only — no `x-forwarded-for` fallback.
 - SSRF: block private/loopback addresses in user-supplied download URLs.
 - The WebSocket console route requires JWT verification.
+- Never put auth tokens in URLs (`?token=...`) — they get logged. Use cookies or `Authorization` headers.
 - Temp directories holding credentials are created with a restrictive umask.
 
 ## 10. Code Quality
@@ -95,6 +97,7 @@ is the authority for list/table/row-editor UI, and file-level backend mechanics
 - Fix root causes, not symptoms; no workaround scripts patching over bugs.
 - Split large modules by **domain of functionality**, not arbitrarily; small single-use helpers stay inline.
 - No commented-out code — version control history holds the past.
+- **Comments hold current agreements only.** A comment states the constraint, invariant, or reasoning that is true *now* — never the code's own history: no "since <date>", no "used to be", no narration of previous iterations. Git is the archive. Naming a rejected alternative is allowed only when it documents a live constraint (why the obvious approach fails), not what this code did before. When touching code, bring any history-narrating comment you meet up to this rule.
 - New subsystems mirror existing patterns: facade module, domain split, dedicated store, dedicated routes (containers deliberately mirrored VMs).
 
 ## 11. Code Style
@@ -110,3 +113,10 @@ is the authority for list/table/row-editor UI, and file-level backend mechanics
 - New app registry entries default to **non-root** — omit `requiresRoot` unless there is a concrete identified need: a privileged port bound without capability tricks, startup writes to root-owned paths *inside the image rootfs* (not mount points), or capabilities effectively tied to UID 0.
 - "The upstream image's `USER` defaults to 0" is not a reason. Wisp's mount pre-owning and GID model already solve the pain points that push raw-Docker setups to root. Try non-root, watch the first-boot logs, and flip only on a real `EACCES` that a tmpfs or pre-owned Local mount can't fix.
 - Unnecessary root costs real things: storage-sourced writes landing as overflowuid on SMB shares, delete-time idmap gymnastics, and a worse blast radius.
+
+## 13. Prompts and Model-Facing Text
+
+Wisp does not call LLMs; its model-facing text is the MCP server instructions
+and tool descriptions.
+
+- **Prompt fixes generalize.** When model-facing text produces a wrong outcome in a tested case, improve the general definition or accept the variance — never add an exception targeting exactly the observed case. A rule per failure is overfit teaching; if the general wording cannot be made better, the miss is recorded in the backlog and watched, not patched.
