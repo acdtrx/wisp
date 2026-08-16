@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-08-17
+## 2026-08-17 (v2.1.1)
 
 ### Bug Fixes
 - **Container `.local` names resolve instantly on dual-stack clients** — Wisp now observes the SLAAC IPv6 a container's netns picks up from the LAN's router advertisements, persists it as `network.ip6`, and publishes it as an AAAA record beside the A record; previously the unanswered AAAA query stalled macOS resolvers ~5s per lookup. The in-process container DNS forwarder answers per-family for Wisp-published names too.
