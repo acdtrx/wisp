@@ -5,23 +5,29 @@
  * subscription on the containerManager facade: `subscribeContainerNetworkChange`.
  *
  * Handler signature: (name, snapshot) where
- *   snapshot = { state, ip }   when running on a bridge network
- *   snapshot = null            when stopped, deleted, or not on a bridge
+ *   snapshot = { state, ip, ip6 }   when running on a bridge network
+ *   snapshot = null                 when stopped, deleted, or not on a bridge
  *
- * Fires only when (state | ip) differs from the last emitted snapshot. List-
- * cache change events fire on every containerd lifecycle event (/tasks/start,
- * /tasks/exit, /tasks/delete, etc.), so most transitions get a fast-path
- * emission; the 60s timer is the safety net for in-netns DHCP renewals where
- * neither containerd nor Wisp gets a signal.
+ * `ip` is the DHCP IPv4; `ip6` is the kernel-SLAAC global IPv6 read from
+ * /proc/<taskPid>/net/if_inet6 (null when the LAN advertises no prefix).
+ * Nothing in the CNI/DHCP layer asks for IPv6 — it is observed here only.
  *
- * On IP diff for a running bridge container, the new IP is persisted to
- * container.json before the event fires — containerManager owns the durable
- * record, glue (containerMdnsReconciler) reacts only to the event.
+ * Fires only when (state | ip | ip6) differs from the last emitted snapshot.
+ * List-cache change events fire on every containerd lifecycle event
+ * (/tasks/start, /tasks/exit, /tasks/delete, etc.), so most transitions get a
+ * fast-path emission; the 60s timer is the safety net for in-netns DHCP
+ * renewals and SLAAC changes where neither containerd nor Wisp gets a signal.
+ *
+ * On address diff for a running bridge container, the new addresses are
+ * persisted to container.json before the event fires — containerManager owns
+ * the durable record, glue (containerMdnsReconciler) reacts only to the event.
  */
 import { containerState } from './containerManagerConnection.js';
 import { subscribeContainerListChange, listContainers } from './containerManagerList.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { discoverIpv4InNetnsOnce } from './containerManagerNetwork.js';
+import { getTaskState } from './containerManagerLifecycle.js';
+import { ipv6GlobalCidrFromProcIfInet6 } from '../../networking/index.js';
 
 const PERIODIC_INTERVAL_MS = 60_000;
 
@@ -45,7 +51,7 @@ function fireNetworkChange(name, snapshot) {
 
 function snapshotEqual(a, b) {
   if (!a || !b) return false;
-  return a.state === b.state && a.ip === b.ip;
+  return a.state === b.state && a.ip === b.ip && a.ip6 === b.ip6;
 }
 
 async function probeAndEmit(name, state) {
@@ -60,7 +66,7 @@ async function probeAndEmit(name, state) {
   // Non-bridge networks (host, none) have no netns IP we can probe — emit a
   // null-ip snapshot so subscribers know there's nothing to publish.
   if (config.network?.type !== 'bridge') {
-    const next = { state, ip: null };
+    const next = { state, ip: null, ip6: null };
     const prev = emittedSnapshots.get(name);
     if (snapshotEqual(prev, next)) return;
     emittedSnapshots.set(name, next);
@@ -75,19 +81,36 @@ async function probeAndEmit(name, state) {
     /* netns missing or helper failed — treat as "no IP this tick" */
   }
 
-  // Persist the live IP to container.json if it diverges. This keeps other
-  // consumers of getContainerConfig consistent after a DHCP renewal — they'd
-  // otherwise see the IP from the last setupNetwork.
-  if (liveIp && config.network?.ip !== liveIp) {
-    config.network = { ...(config.network || {}), ip: liveIp };
+  let liveIp6 = null;
+  try {
+    const task = await getTaskState(name);
+    const pid = Number(task?.pid) || 0;
+    if (pid > 0) liveIp6 = await ipv6GlobalCidrFromProcIfInet6(pid, 'eth0');
+  } catch {
+    /* task gone mid-tick — treat as "no IPv6 this tick" */
+  }
+
+  // Persist live addresses to container.json if they diverge. This keeps other
+  // consumers of getContainerConfig consistent after a DHCP renewal or SLAAC
+  // change — they'd otherwise see the addresses from the last setupNetwork.
+  const ipDiverged = liveIp && config.network?.ip !== liveIp;
+  const ip6Diverged = liveIp6 && config.network?.ip6 !== liveIp6;
+  if (ipDiverged || ip6Diverged) {
+    config.network = { ...(config.network || {}) };
+    if (ipDiverged) config.network.ip = liveIp;
+    if (ip6Diverged) config.network.ip6 = liveIp6;
     try {
       await writeContainerConfig(name, config);
     } catch (err) {
-      log().warn?.({ err: err?.message || err, container: name, ip: liveIp }, '[containerManager] persist new IP failed');
+      log().warn?.({ err: err?.message || err, container: name, ip: liveIp, ip6: liveIp6 }, '[containerManager] persist new IP failed');
     }
   }
 
-  const next = { state, ip: liveIp || config.network?.ip || null };
+  const next = {
+    state,
+    ip: liveIp || config.network?.ip || null,
+    ip6: liveIp6 || config.network?.ip6 || null,
+  };
   const prev = emittedSnapshots.get(name);
   if (snapshotEqual(prev, next)) return;
   emittedSnapshots.set(name, next);

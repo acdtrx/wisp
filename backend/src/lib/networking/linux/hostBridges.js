@@ -1,7 +1,7 @@
 /**
  * Linux host network introspection: bridge enumeration from /sys/class/net,
  * default-bridge selection for new VMs and container CNI parents, and
- * container IPv4 CIDR readout from /proc/<pid>/net/fib_trie.
+ * container IPv4/IPv6 CIDR readout from /proc/<pid>/net/{fib_trie,if_inet6}.
  */
 import { access, readdir, readFile } from 'node:fs/promises';
 
@@ -90,6 +90,54 @@ export async function ipv4CidrFromProcFibTrie(pid) {
     return null;
   } catch {
     /* /proc unavailable, wrong pid, or fib_trie format changed */
+    return null;
+  }
+}
+
+// IFA_F_* bits from the if_inet6 flags column that mark an address unusable
+// or unstable: temporary (privacy), dadfailed, deprecated, tentative.
+const IFA_F_UNUSABLE = 0x01 | 0x08 | 0x20 | 0x40;
+
+/** 32-hex-digit /proc address → colon-grouped text (leading zeros stripped). */
+function ifInet6HexToText(hex) {
+  const groups = [];
+  for (let i = 0; i < 32; i += 4) {
+    groups.push(hex.slice(i, i + 4).replace(/^0{1,3}/, ''));
+  }
+  return groups.join(':');
+}
+
+/**
+ * First usable global-scope IPv6 CIDR on `ifname` from /proc/<pid>/net/if_inet6
+ * (kernel SLAAC lands there; nothing asks the CNI/DHCP layer for IPv6).
+ * Line format: `<32-hex address> <ifindex> <prefixlen> <scope> <flags> <ifname>`,
+ * numeric fields hex. GUA (2000::/3) preferred over ULA (fc00::/7); link-local
+ * and tentative/deprecated/temporary/dadfailed addresses are skipped.
+ *
+ * @param {number} pid - Host PID (container init from containerd Tasks.Get)
+ * @param {string} [ifname]
+ * @returns {Promise<string|null>} e.g. `fdc0:b179:e4ea:4cbc:5054:ff:fe91:ad5f/64` or null
+ */
+export async function ipv6GlobalCidrFromProcIfInet6(pid, ifname = 'eth0') {
+  if (pid == null || pid <= 0 || !Number.isFinite(pid)) return null;
+  try {
+    const text = await readFile(`/proc/${pid}/net/if_inet6`, 'utf8');
+    let fallback = null;
+    for (const line of text.split('\n')) {
+      const m = line.trim().match(/^([0-9a-f]{32})\s+[0-9a-f]+\s+([0-9a-f]+)\s+([0-9a-f]+)\s+([0-9a-f]+)\s+(\S+)$/i);
+      if (!m) continue;
+      const [, hex, prefixHex, scopeHex, flagsHex, dev] = m;
+      if (dev !== ifname) continue;
+      if (parseInt(scopeHex, 16) !== 0) continue; // global scope only
+      if (parseInt(flagsHex, 16) & IFA_F_UNUSABLE) continue;
+      const cidr = `${ifInet6HexToText(hex.toLowerCase())}/${parseInt(prefixHex, 16)}`;
+      const firstNibble = hex[0];
+      if (firstNibble === '2' || firstNibble === '3') return cidr; // GUA wins
+      if (!fallback) fallback = cidr; // ULA (or other global-scope)
+    }
+    return fallback;
+  } catch {
+    /* /proc unavailable, wrong pid, or if_inet6 format changed */
     return null;
   }
 }

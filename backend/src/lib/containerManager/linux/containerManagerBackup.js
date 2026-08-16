@@ -542,8 +542,9 @@ export async function restoreContainerBackup(backupPath, newName) {
   config.name = newNameTrim;
   if (!config.network || typeof config.network !== 'object') config.network = { type: 'bridge' };
   config.network.mac = generateContainerMac();
-  /* Drop any persisted DHCP lease — it belonged to the old MAC. */
+  /* Drop persisted addresses — DHCP lease and SLAAC IPv6 both derive from the old MAC. */
   if (config.network.ip) delete config.network.ip;
+  if (config.network.ip6) delete config.network.ip6;
 
   await writeContainerConfig(newNameTrim, config);
 

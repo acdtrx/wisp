@@ -1,9 +1,13 @@
 /**
  * Container mDNS reconciler — Wisp-glue between containerManager and the mDNS
  * module. Subscribe-only: containerManager fires `subscribeContainerNetworkChange`
- * whenever a container's `(state, ip)` differs from the last emitted snapshot,
- * including DHCP renewals (containerManager owns the periodic netns probe and
- * persists the new IP into container.json before firing).
+ * whenever a container's `(state, ip, ip6)` differs from the last emitted
+ * snapshot, including DHCP renewals and SLAAC changes (containerManager owns
+ * the periodic netns probe and persists the new addresses into container.json
+ * before firing). Both families are published under one `<name>.local` entry —
+ * a dual-stack resolver that gets no AAAA answer stalls for its full local
+ * timeout (~5s on macOS), so the AAAA rides along whenever the netns has a
+ * global IPv6.
  *
  * Mirrors `vmMdnsReconciler.js` — same single-flat-file shape, no platform
  * split, no own polling, no own writes. Routes call `publishContainer` /
@@ -54,12 +58,12 @@ async function onNetworkChange(name, snapshot) {
     return;
   }
 
-  if (!snapshot.ip) return; // no IP yet; leave any prior entry alone
+  if (!snapshot.ip && !snapshot.ip6) return; // no address yet; leave any prior entry alone
   try {
-    await registerAddress(name, sanitizeHostname(name), snapshot.ip);
+    await registerAddress(name, sanitizeHostname(name), snapshot.ip, snapshot.ip6);
     registered.add(name);
   } catch (err) {
-    log().warn?.({ err: err?.message || err, container: name, ip: snapshot.ip }, '[containerMdns] register failed');
+    log().warn?.({ err: err?.message || err, container: name, ip: snapshot.ip, ip6: snapshot.ip6 }, '[containerMdns] register failed');
   }
 }
 
@@ -92,8 +96,9 @@ export async function publishContainer(name) {
   try { config = await getContainerConfig(name); }
   catch { return; }
   const ip = config?.network?.ip;
-  if (!ip) return;
-  await registerAddress(name, sanitizeHostname(name), ip);
+  const ip6 = config?.network?.ip6;
+  if (!ip && !ip6) return;
+  await registerAddress(name, sanitizeHostname(name), ip, ip6);
   registered.add(name);
 }
 

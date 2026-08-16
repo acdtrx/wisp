@@ -19,3 +19,7 @@ export async function getDefaultBridge() {
 export async function ipv4CidrFromProcFibTrie() {
   return null;
 }
+
+export async function ipv6GlobalCidrFromProcIfInet6() {
+  return null;
+}

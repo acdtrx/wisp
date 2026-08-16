@@ -1,6 +1,6 @@
 /**
  * Networking module facade — host bridge enumeration, default-bridge selection,
- * /proc-based container IPv4 readout, and netplan-managed VLAN bridges.
+ * /proc-based container IPv4/IPv6 readout, and netplan-managed VLAN bridges.
  * Single public surface for VM/container managers and host routes.
  */
 import { platform } from 'node:os';
@@ -20,6 +20,7 @@ export const listHostBridges = hostImpl.listHostBridges;
 export const getDefaultBridge = hostImpl.getDefaultBridge;
 export const getDefaultContainerParentBridge = hostImpl.getDefaultContainerParentBridge;
 export const ipv4CidrFromProcFibTrie = hostImpl.ipv4CidrFromProcFibTrie;
+export const ipv6GlobalCidrFromProcIfInet6 = hostImpl.ipv6GlobalCidrFromProcIfInet6;
 
 export const listManagedNetworkBridges = managedImpl.listManagedNetworkBridges;
 export const listEligibleParentBridges = managedImpl.listEligibleParentBridges;

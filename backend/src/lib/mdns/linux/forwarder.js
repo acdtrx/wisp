@@ -264,8 +264,9 @@ async function handleQuery(packet) {
     // multicast wait inside avahi that stalls the caller.
     const local = lookupLocalEntry(q.qname);
     if (local) {
-      if (local.family !== wantedFamily) return buildNoAnswer(q, RCODE_NOERROR);
-      const rdata = q.qtype === QTYPE_A ? encodeIPv4(local.address) : encodeIPv6(local.address);
+      const address = wantedFamily === 'inet' ? local.ip4 : local.ip6;
+      if (!address) return buildNoAnswer(q, RCODE_NOERROR);
+      const rdata = q.qtype === QTYPE_A ? encodeIPv4(address) : encodeIPv6(address);
       if (!rdata) return buildNoAnswer(q, RCODE_SERVFAIL);
       return buildAnswer(q, q.qtype, rdata);
     }

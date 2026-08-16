@@ -38,7 +38,7 @@ const AVAHI_LOOKUP_RESULT_OUR_OWN = 16;
 const state = {
   bus: null,
   server: null,
-  /** key -> { group: EntryGroup iface | null, host, ip, fqdn } */
+  /** key -> { group: EntryGroup iface | null, host, ip4, ip6, fqdn } */
   entries: new Map(),
   /** serviceKey -> { group: EntryGroup iface | null, instanceName, type, port, txt, host } */
   services: new Map(),
@@ -123,11 +123,11 @@ async function createGroup() {
 async function reregisterAll() {
   const storedAddresses = [];
   for (const [key, entry] of state.entries.entries()) {
-    storedAddresses.push({ key, host: entry.host, ip: entry.ip });
+    storedAddresses.push({ key, host: entry.host, ip4: entry.ip4, ip6: entry.ip6 });
   }
   state.entries.clear();
-  for (const { key, host, ip } of storedAddresses) {
-    await registerAddress(key, host, ip);
+  for (const { key, host, ip4, ip6 } of storedAddresses) {
+    await registerAddress(key, host, ip4, ip6);
   }
   const storedServices = [];
   for (const [serviceKey, svc] of state.services.entries()) {
@@ -190,13 +190,19 @@ export async function disconnect() {
   state.browseDispatchInstalled = false;
 }
 
-export async function registerAddress(key, preferredName, ipOrCidr) {
-  const ip = stripCidr(ipOrCidr);
+export async function registerAddress(key, preferredName, ipOrCidr, ip6OrCidr = null) {
   const host = sanitizeHostname(preferredName);
-  if (!key || !host || !ip) return null;
+  // Classify by literal, not by parameter position — a caller whose only
+  // address is IPv6 (e.g. a VM guest agent reporting v6 first) may pass it in
+  // the third slot; both records land under the same name either way.
+  const given = [stripCidr(ipOrCidr), stripCidr(ip6OrCidr)].filter(Boolean);
+  const ip4 = given.find((a) => !a.includes(':')) || null;
+  const ip6 = given.find((a) => a.includes(':')) || null;
+  if (!key || !host || (!ip4 && !ip6)) return null;
 
   const current = state.entries.get(key);
-  if (current && current.group && current.host === host && current.ip === ip) {
+  if (current && current.group && current.host === host
+      && current.ip4 === ip4 && current.ip6 === ip6) {
     return current.fqdn;
   }
   if (current && current.group) {
@@ -209,22 +215,29 @@ export async function registerAddress(key, preferredName, ipOrCidr) {
     const group = await createGroup();
     if (!group) {
       // avahi unavailable — keep the entry so NameOwnerChanged re-registers it
-      state.entries.set(key, { group: null, host, ip, fqdn });
+      state.entries.set(key, { group: null, host, ip4, ip6, fqdn });
       return null;
     }
-    await group.AddAddress(
-      AVAHI_IF_UNSPEC,
-      AVAHI_PROTO_UNSPEC,
-      AVAHI_FLAG_DEFAULT,
-      fqdn,
-      ip,
-    );
+    // One entry group carries both families: dual-stack resolvers query A and
+    // AAAA together, and an unanswered family stalls them for its full local
+    // timeout (~5s on macOS). Avahi has no negative-response support, so the
+    // only cure is answering both queries with real records.
+    for (const address of [ip4, ip6]) {
+      if (!address) continue;
+      await group.AddAddress(
+        AVAHI_IF_UNSPEC,
+        AVAHI_PROTO_UNSPEC,
+        AVAHI_FLAG_DEFAULT,
+        fqdn,
+        address,
+      );
+    }
     await group.Commit();
-    state.entries.set(key, { group, host, ip, fqdn });
+    state.entries.set(key, { group, host, ip4, ip6, fqdn });
     return fqdn;
   } catch (err) {
-    state.logger?.warn?.({ err: err?.message || err, host, ip }, '[mdns] registerAddress failed');
-    state.entries.set(key, { group: null, host, ip, fqdn });
+    state.logger?.warn?.({ err: err?.message || err, host, ip4, ip6 }, '[mdns] registerAddress failed');
+    state.entries.set(key, { group: null, host, ip4, ip6, fqdn });
     return null;
   }
 }
@@ -686,22 +699,18 @@ export function subscribeServiceBrowse(type, handlers) {
  * Look up a Wisp-published `.local` name in our own in-memory state.
  *
  * Used by forwarder.js for a fast path that avoids DBus + avahi entirely
- * for names we know we own. Returns the address and its family (inferred
- * from the literal — `:` → inet6, else inet), or null if the name is not
- * published by this Wisp instance.
+ * for names we know we own. Returns the per-family addresses (either may be
+ * null), or null if the name is not published by this Wisp instance.
  *
  * @param {string} fqdn FQDN (trailing dot tolerated, case-insensitive).
- * @returns {{address: string, family: 'inet'|'inet6'} | null}
+ * @returns {{ip4: string|null, ip6: string|null} | null}
  */
 export function lookupLocalEntry(fqdn) {
   const clean = String(fqdn || '').toLowerCase().replace(/\.$/, '');
   if (!clean) return null;
   for (const entry of state.entries.values()) {
     if (entry.fqdn === clean) {
-      return {
-        address: entry.ip,
-        family: entry.ip.includes(':') ? 'inet6' : 'inet',
-      };
+      return { ip4: entry.ip4, ip6: entry.ip6 };
     }
   }
   return null;
