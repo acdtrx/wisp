@@ -6,6 +6,10 @@
 # a single commit. Push is left to the operator so the tag is reviewable before
 # it triggers the release workflow.
 #
+# Prereleases (a version with a -prerelease part) skip the CHANGELOG retitle: the
+# topmost dated section stays unreleased so the eventual stable cut folds the whole
+# batch into its notes. Everything else — bumps, commit, tag — is identical.
+#
 # Usage: ./scripts/release.sh <version>
 #   version  — semver without v prefix, e.g. 1.0.6 or 1.0.6-rc.1
 set -euo pipefail
@@ -23,6 +27,15 @@ TAG="v$VERSION"
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
   echo "ERROR: '$VERSION' is not a valid semver string."
   exit 1
+fi
+
+# Prerelease iff the version carries a -<prerelease> part. Build metadata (+...) may
+# itself contain hyphens, so strip it before looking — mirrors the release workflow's
+# `[[ "$VERSION" == *-* ]]` tag check, which only ever sees plain tags.
+if [[ "${VERSION%%+*}" == *-* ]]; then
+  PRERELEASE=1
+else
+  PRERELEASE=0
 fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -102,6 +115,13 @@ echo ""
 # Retitle the topmost CHANGELOG date heading. Project rule: every push has a
 # new dated section at the top; this turns "## YYYY-MM-DD" into
 # "## YYYY-MM-DD (vX.Y.Z)" for the version that's about to be tagged.
+#
+# Prereleases skip this entirely: a beta consumes no CHANGELOG section, so the
+# unreleased batch stays unreleased and the stable cut that follows retitles it and
+# ships the full notes. (The release workflow's notes extraction finds no matching
+# section for a prerelease tag and falls back to a one-line "Wisp <tag>" note — the
+# intended behavior for a beta.) A dirty CHANGELOG.md is still folded into the
+# release commit either way, just not retitled.
 CHANGELOG="$ROOT/CHANGELOG.md"
 if [[ ! -f "$CHANGELOG" ]]; then
   echo "ERROR: CHANGELOG.md missing."
@@ -111,7 +131,10 @@ fi
 TODAY="$(date +%Y-%m-%d)"
 
 echo "--- Update CHANGELOG ---"
-node -e '
+if [[ "$PRERELEASE" == "1" ]]; then
+  echo "  Prerelease — CHANGELOG left untouched; its notes land with the stable release."
+else
+  node -e '
   const fs = require("node:fs");
   const path = process.argv[1];
   const today = process.argv[2];
@@ -135,7 +158,8 @@ node -e '
   }
   fs.writeFileSync(path, lines.join("\n"));
 ' "$CHANGELOG" "$TODAY" "$TAG"
-echo "  Retitled topmost section → ## $TODAY ($TAG)"
+  echo "  Retitled topmost section → ## $TODAY ($TAG)"
+fi
 echo ""
 
 echo "--- Commit + tag ---"
