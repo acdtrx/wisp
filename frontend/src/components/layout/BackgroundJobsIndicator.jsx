@@ -87,7 +87,7 @@ export default function BackgroundJobsIndicator() {
       </button>
 
       {open && !isEmpty && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-[min(100vw-2rem,22rem)] rounded-lg border border-surface-border bg-surface-card py-1 shadow-lg">
+        <div className="absolute right-0 top-full z-50 mt-1 w-[min(100vw-2rem,22rem)] rounded-lg border border-surface-border bg-surface-card py-1 shadow-popover">
           <div className="border-b border-surface-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
             Background jobs
           </div>

@@ -34,6 +34,14 @@
      card in dark — the light theme's `bg-white` inputs cannot flip on their own. */
   --color-surface-input: #ffffff;
 
+  /* Console well — the xterm/noVNC viewport. Dark in *both* themes (a terminal
+     is dark), so it is its own token pair rather than a surface: light keeps the
+     slate the consoles have always used, dark drops to the Dusk input well so it
+     stops reading as a blue-grey patch in a spruce app. Read from JS by
+     ContainerConsole to build the xterm palette — one source of truth. */
+  --color-console: #1e293b;
+  --color-console-text: #e2e8f0;
+
   --color-status-running: #21813f;
   --color-status-warning: #9c6203;
   --color-status-stopped: #c93a3a;
@@ -53,9 +61,36 @@
   --font-sans: system-ui, -apple-system, sans-serif;
   --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
 
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
-
   --radius-card: 8px;
+}
+
+:root {
+  /* Native widget chrome — select popups, scrollbars, focus rings, autofill —
+     follows the app's theme, not the OS's. Without this a dark app opens white
+     dropdown menus and keeps light scrollbars. `light` is stated explicitly so an
+     OS-dark machine viewing the light theme still gets light widgets; it matches
+     the UA default, so light rendering is unchanged. */
+  color-scheme: light;
+
+  /* Elevation. Deliberately *outside* `@theme`: Tailwind resolves a `--shadow-*`
+     theme key into the generated utility at build time, so `.shadow-card` would
+     carry the light value literally and redefining the variable under
+     `[data-theme='dark']` would change nothing. Declared here and read through
+     the `@utility` rules below, the dark override actually lands.
+
+     `--shadow-popover` is floating chrome — dropdowns, popovers, modals. Its
+     light value is exactly Tailwind's `shadow-lg`, which those elements used
+     before, so light rendering is unchanged. */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-popover: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+@utility shadow-card {
+  box-shadow: var(--shadow-card);
+}
+
+@utility shadow-popover {
+  box-shadow: var(--shadow-popover);
 }
 
 /* ── Dark theme: "Dusk" ─────────────────────────────────────────────────────
@@ -78,11 +113,18 @@
    docs/spec/UI.md § Design Language. Muted is the floor at 5.2:1 on a card.
    Check before lightening a surface or darkening a text token. */
 :root[data-theme='dark'] {
+  color-scheme: dark;
+
   --color-surface: #0e1c1a;
   --color-surface-sidebar: #0a1715;
   --color-surface-card: #142523;
   --color-surface-border: #28453f;
   --color-surface-input: #0b1a18;
+
+  /* The console well drops to the input well's spruce — the terminal stays the
+     darkest thing on screen, and the slate hue leaves the palette. */
+  --color-console: #0b1a18;
+  --color-console-text: #e8f2ef;
 
   /* The brand teal does not shift: it already reads luminous against spruce,
      and lifting it would drop white-on-accent-fill below the 3:1 graphics
@@ -108,9 +150,13 @@
   --color-text-secondary: #b3c6c2;
   --color-text-muted: #7e9994;
 
-  /* A drop shadow is invisible on dark; depth comes from the edge instead —
-     a darker shadow plus the hairline the border already draws. */
+  /* A featherweight drop shadow is invisible on dark; depth comes from the edge
+     instead — a much darker shadow plus the hairline the border already draws.
+     Floating chrome needs more of the same: near-opaque black spread wider, so a
+     popover reads as hovering over the page rather than as a same-coloured
+     rectangle glued to it. */
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.6);
+  --shadow-popover: 0 12px 28px -6px rgb(0 0 0 / 0.7), 0 4px 10px -4px rgb(0 0 0 / 0.55);
 }
 
 /* For the rare utility that has to differ beyond a token swap. Tailwind v4's
@@ -145,6 +191,16 @@
   :root[data-theme='dark'] ::file-selector-button {
     border-color: var(--color-surface-border);
   }
+}
+
+/* The letterbox around the VM framebuffer. noVNC builds its own screen element
+   inside the viewport and paints it a fixed dark grey as an *inline* style — the
+   element carries no class, so overriding that inline value is the only hook,
+   and `!important` is what reaches it. Scoped to dark: the grey is off-palette
+   there, while in light noVNC keeps its own default untouched. The framebuffer
+   itself is whatever the guest renders. */
+:root[data-theme='dark'] [data-wisp-vnc-viewport] > div {
+  background: var(--color-console) !important;
 }
 
 @utility input-field {

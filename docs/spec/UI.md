@@ -41,8 +41,9 @@ desaturated green-teal (hue ~171°, the same family as the light neutrals' teal
 cast), deliberately not slate and not black. The light theme's depth order is
 **kept, not mirrored** — sidebar deepest, canvas above it, cards lightest — so
 "raised" still means lighter and every component's existing surface choice stays
-meaningful without edits. Every token in the light table has a dark value;
-nothing new is introduced except `surface-input`.
+meaningful without edits. Every token in the light table has a dark value; the
+only tokens the dark theme introduced are `surface-input`, the console pair, and
+`--shadow-popover`.
 
 | Token | Light | Dark | Notes |
 |-------|-------|------|-------|
@@ -65,11 +66,36 @@ nothing new is introduced except `surface-input`.
 | `text-primary` | `#0e1f1c` | `#e8f2ef` | Warm white with the same faint teal cast |
 | `text-secondary` | `#3a524d` | `#b3c6c2` | |
 | `text-muted` | `#56716b` | `#7e9994` | The floor |
+| `console` | `#1e293b` | `#0b1a18` | The terminal/framebuffer well. Dark in **both** themes — see [CONSOLE.md](CONSOLE.md) § Viewport |
+| `console-text` | `#e2e8f0` | `#e8f2ef` | |
 | `--shadow-card` | `0 1px 3px rgba(0,0,0,.08)` | `0 1px 3px rgba(0,0,0,.6)` | A drop shadow is invisible on dark; depth comes from the border edge plus a much darker shadow |
+| `--shadow-popover` | `0 10px 15px -3px rgb(0 0 0/.1), 0 4px 6px -4px rgb(0 0 0/.1)` | `0 12px 28px -6px rgb(0 0 0/.7), 0 4px 10px -4px rgb(0 0 0/.55)` | Floating chrome — dropdowns, popovers, modals. Light value is exactly Tailwind's `shadow-lg`, which those elements used before it became a token |
 
 The dark `*-soft` washes are the status hue mixed **~18% into the canvas surface,
 never toward white** — a tinted shadow of the surface, so they read as
 translucent rather than as pale chips.
+
+**The two shadows live outside `@theme`** *(settled 2026-08-25)*. Tailwind v4
+resolves a `--shadow-*` theme key into the generated utility at build time, so
+`.shadow-card` would carry the light value literally and redefining the variable
+under `[data-theme='dark']` would silently do nothing. They are declared on plain
+`:root` and read back through `@utility shadow-card` / `@utility shadow-popover`,
+which is what makes the dark override land. Colour tokens are unaffected — those
+utilities do emit `var(--color-…)`.
+
+**`color-scheme`** is set on `:root` (`light`) and flipped to `dark` under the
+attribute, so native widget chrome — `<select>` popups, scrollbars, the time
+picker, autofill — follows the app's theme rather than the OS's. Light states its
+value explicitly (it matches the UA default, so nothing changes there) to keep an
+OS-dark machine from painting dark widgets into the light theme.
+
+**White-on-fill labels.** `text-white` stays on `accent`-filled buttons in both
+themes: `accent` does not shift, so the ratio is the same 3.13:1 it has always
+been. The one exception is the **danger** confirm button: `status-stopped` lifts
+to a bright coral in dark, where white falls to 2.9:1 — it takes `dark:text-surface`
+instead (canvas-dark ink on the coral, 6.1:1). The `Toggle` knob stays `bg-white`
+in both themes; it sits on a solid track and holds 3.13:1 on the accent (on) and
+10.4:1 on `surface-border` (off).
 
 **Computed contrast (WCAG 2.1 relative luminance), dark theme.** Same discipline
 as the light side: every text and status token clears AA (≥4.5:1) on all three

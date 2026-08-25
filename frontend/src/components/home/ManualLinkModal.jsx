@@ -114,7 +114,7 @@ export default function ManualLinkModal({ open, tile, onClose }) {
             <button
               type="button"
               onClick={() => setIconPickerOpen(true)}
-              className="flex items-center gap-2 rounded-md border border-surface-border bg-white px-3 py-1.5 text-xs text-text-secondary hover:bg-surface transition-colors duration-150"
+              className="flex items-center gap-2 rounded-md border border-surface-border bg-surface-input px-3 py-1.5 text-xs text-text-secondary hover:bg-surface transition-colors duration-150"
             >
               <Icon size={16} aria-hidden />
               <span>{getVmIcon(iconId).name}</span>

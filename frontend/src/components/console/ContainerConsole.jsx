@@ -4,6 +4,8 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
 import { consoleWsUrl } from '../../api/console.js';
+import { useThemeStore } from '../../store/themeStore.js';
+import { consoleTheme } from './consoleTheme.js';
 
 const MAX_RECONNECT_ATTEMPTS = 12;
 const INITIAL_BACKOFF_MS = 1000;
@@ -50,6 +52,10 @@ export default function ContainerConsole({
   onDisconnectRef.current = onDisconnect;
 
   const [error, setError] = useState(null);
+  /* Only used to re-apply the palette below; `connect` reads the tokens itself,
+     so a theme flip must not make the connect callback a new identity and
+     re-open the session. */
+  const effectiveTheme = useThemeStore((s) => s.effective);
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -105,10 +111,7 @@ export default function ContainerConsole({
       const term = new Terminal({
         cursorBlink: true,
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-        theme: {
-          background: '#1e293b',
-          foreground: '#e2e8f0',
-        },
+        theme: consoleTheme(),
       });
       const fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
@@ -270,6 +273,11 @@ export default function ContainerConsole({
       if (apiRef) apiRef.current = null;
     };
   }, [apiRef, disconnect, pasteFromClipboard]);
+
+  /* A live terminal repaints on a theme flip — no reconnect, no lost scrollback. */
+  useEffect(() => {
+    if (termRef.current) termRef.current.options.theme = consoleTheme();
+  }, [effectiveTheme]);
 
   useEffect(() => {
     if (!containerName || !isRunning) return undefined;

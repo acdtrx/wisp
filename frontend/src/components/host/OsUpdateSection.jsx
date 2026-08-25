@@ -202,7 +202,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
                   <button
                     type="button"
                     onClick={onRequestRestart}
-                    className="inline-flex items-center gap-1 rounded-md border border-status-warning/30 bg-white px-2 py-0.5 text-[11px] font-medium text-status-warning hover:bg-status-warning-soft transition-colors duration-150"
+                    className="inline-flex items-center gap-1 rounded-md border border-status-warning/30 bg-surface-card px-2 py-0.5 text-[11px] font-medium text-status-warning hover:bg-status-warning-soft transition-colors duration-150"
                   >
                     <RotateCcw size={11} />
                     Restart now

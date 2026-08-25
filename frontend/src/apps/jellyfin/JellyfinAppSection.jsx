@@ -223,12 +223,12 @@ export default function JellyfinAppSection({ config, onSave }) {
                         placeholder="Label (e.g. movies)"
                         value={lib.label}
                         onChange={(e) => updateLibrary(lib.rowId, { label: e.target.value })}
-                        className="w-32 shrink-0 rounded-md border border-surface-border bg-white px-2 py-1 text-xs"
+                        className="w-32 shrink-0 rounded-md border border-surface-border bg-surface-input px-2 py-1 text-xs"
                       />
                       <select
                         value={lib.sourceId}
                         onChange={(e) => updateLibrary(lib.rowId, { sourceId: e.target.value })}
-                        className="h-[26px] min-w-0 flex-1 rounded-md border border-surface-border bg-white px-2 py-0 text-xs"
+                        className="h-[26px] min-w-0 flex-1 rounded-md border border-surface-border bg-surface-input px-2 py-0 text-xs"
                       >
                         <option value="">— Select Storage source —</option>
                         {storageMounts.map((m) => (
@@ -242,7 +242,7 @@ export default function JellyfinAppSection({ config, onSave }) {
                         placeholder="Sub-path (optional)"
                         value={lib.subPath}
                         onChange={(e) => updateLibrary(lib.rowId, { subPath: e.target.value })}
-                        className="min-w-0 flex-1 rounded-md border border-surface-border bg-white px-2 py-1 text-xs"
+                        className="min-w-0 flex-1 rounded-md border border-surface-border bg-surface-input px-2 py-1 text-xs"
                       />
                       <button
                         type="button"
@@ -289,7 +289,7 @@ export default function JellyfinAppSection({ config, onSave }) {
             placeholder="http://jellyfin.local:8096"
             value={form.publishedUrl}
             onChange={(e) => setForm((f) => ({ ...f, publishedUrl: e.target.value }))}
-            className="w-full rounded-md border border-surface-border bg-white px-2 py-1 text-xs"
+            className="w-full rounded-md border border-surface-border bg-surface-input px-2 py-1 text-xs"
           />
         </div>
 

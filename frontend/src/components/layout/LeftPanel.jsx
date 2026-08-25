@@ -456,7 +456,7 @@ export default function LeftPanel() {
           plus whatever `pt-safe` added to it. */}
       {sidebarOpen && (
         <div
-          className="fixed inset-x-0 top-[calc(3rem+env(safe-area-inset-top))] bottom-0 z-30 bg-black/40 lg:hidden"
+          className="fixed inset-x-0 top-[calc(3rem+env(safe-area-inset-top))] bottom-0 z-30 bg-black/40 dark:bg-black/60 lg:hidden"
           onClick={() => setSidebarOpen(false)}
           aria-hidden
         />

@@ -26,8 +26,9 @@ const BODY_PADDING_CLASS = {
 
 /**
  * Shared modal shell. Owns backdrop, escape, modal-root marker, and an
- * optional title/X header + footer. Standardized on `bg-black/40` backdrop
- * and `bg-surface-card` body.
+ * optional title/X header + footer. Standardized on a `bg-black/40` backdrop
+ * (deepened to /60 in dark, where 40% over an already-dark canvas barely
+ * separates the dialog from the page) and a `bg-surface-card` body.
  *
  * @param {boolean} open
  * @param {() => void} onClose - called on backdrop click, X, and Escape
@@ -76,11 +77,11 @@ export default function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 p-4"
       onClick={handleBackdrop}
     >
       <div
-        className={`relative flex w-full ${widthCls} ${heightCls} flex-col overflow-hidden rounded-card border border-surface-border bg-surface-card shadow-lg ${className}`}
+        className={`relative flex w-full ${widthCls} ${heightCls} flex-col overflow-hidden rounded-card border border-surface-border bg-surface-card shadow-popover ${className}`}
         data-wisp-modal-root
         onClick={(e) => e.stopPropagation()}
       >

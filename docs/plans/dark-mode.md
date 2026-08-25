@@ -142,32 +142,90 @@ against a **production** build (CSP active): the inline script's
 still null and `document.styleSheets.length === 0`, and no CSP violation is
 raised — so the pinned hash matches and nothing can have painted.
 
-**Expected-broken until Step 2** (accepted intermediate state per the phase
-rules): the 43 files still carrying hardcoded `white`/`black` classes show light
-spots in dark. Audited inventory for the sweep:
-
-- `bg-white` fills — `ManualLinkModal`, `ContainerDevicesSection` (×2),
-  `OsUpdateSection`, `ImageLibrary`, `JellyfinAppSection` (×4),
-  `Toggle` (the knob), `CreateVMPanel` (`bg-white/50` detail `<pre>`).
-- `text-white` — 36 files. Mostly glyphs on accent fills (visually fine, and
-  white-on-accent holds the same 3.13:1 it holds in light); the ones on
-  card/surface backgrounds (`DataTableChrome`, `SectionCard`,
-  `FormModalChrome`) are the ones that actually need tokens.
-- `bg-black/40` scrims — `Modal`, `LeftPanel`'s drawer backdrop. Fine on dark,
-  worth a look for whether they should deepen.
-- Step 3 territory, not Step 2: the `home-tile-asleep` / `home-lantern-lit` /
-  `wisp-breathe` utilities still `color-mix(…, white)`, and Tailwind's default
-  `shadow-lg` on dropdowns is near-invisible on dark.
-
 No raw Tailwind palette classes (`bg-gray-200`, `text-red-500`, …) exist
-anywhere in `src/` — the token discipline held, so the sweep really is only the
-white/black list above.
+anywhere in `src/` — the token discipline held, so the sweep really was only the
+white/black list Step 2 cleared.
 
 Deliberately not changed: `public/manifest.webmanifest`'s `theme_color` /
 `background_color`. A manifest is static and cannot follow the theme, and the
 values only drive the PWA **install splash** — the live status bar is the
 `<meta name="theme-color">` the controller maintains. Darkening them would
 change the splash for light users too.
+
+### Step 2 — Sweep ✅ (2026-08-25)
+
+Every remaining light-spot outside the Home glow is gone. What changed, by kind:
+
+- **`bg-white` → tokens**, chosen by what the element means. Input-like controls
+  (`ManualLinkModal`'s icon picker trigger, `ContainerDevicesSection`'s GPU
+  select, `ImageLibrary`'s rename field, `JellyfinAppSection`'s four fields) took
+  `bg-surface-input`; panels and lifts back out of a wash (the GPU row —
+  matching its sibling picker row — `OsUpdateSection`'s "Restart now" inside the
+  warning notice, `CreateVMPanel`'s `bg-white/50` detail `<pre>`) took
+  `bg-surface-card`. Light is identical: both tokens are `#ffffff` there.
+- **`text-white`** — the Step 1 audit's three "on card/surface" flags
+  (`DataTableChrome`, `SectionCard`, `FormModalChrome`) were false positives:
+  all three sit on `bg-accent`, so they stay, as does every other accent fill.
+  The real one the audit missed is `ConfirmDialog`'s **danger** button on
+  `bg-status-stopped` — that token lifts to a bright coral in dark, where white
+  drops to 2.9:1. It takes `dark:text-surface` (6.1:1).
+- **Scrims** — `Modal` and `LeftPanel`'s drawer backdrop gain `dark:bg-black/60`.
+  40% over an already-dark canvas barely separates the dialog from the page.
+- **Shadows** — this uncovered a Step 1 bug: Tailwind v4 **inlines** a
+  `--shadow-*` `@theme` key into the generated utility, so `.shadow-card` carried
+  the light value literally and Step 1's dark `--shadow-card` override was dead
+  code. Both shadows moved out of `@theme` onto plain `:root` and are read back
+  through `@utility shadow-card` / `@utility shadow-popover`; the dark values now
+  actually land. `--shadow-popover` is new — its light value is byte-identical to
+  Tailwind's `shadow-lg` (verified: computed `box-shadow` matches), and the six
+  floating elements (`Modal` + five dropdowns) moved onto it.
+- **Consoles** — `--color-console` / `--color-console-text`, dark in both themes,
+  read by `consoleTheme()` so the `bg-console` viewport class and the xterm
+  palette share one source. The container terminal repaints live on a theme flip
+  via `terminal.options.theme` (@xterm/xterm 6). noVNC's letterbox is recoloured
+  by a dark-only `!important` rule on `[data-wisp-vnc-viewport] > div` — its
+  screen element is inline-styled and classless. Details in `spec/CONSOLE.md`.
+- **Also found in the audit**: `WispUpdateSection`'s release notes render through
+  `@tailwindcss/typography`, whose baked greys (near-black bold, pale bullets and
+  rules) are not tokens — it gains `dark:prose-invert`. And `color-scheme` is now
+  declared (`light` on `:root`, `dark` under the attribute) so native `<select>`
+  popups, scrollbars, the time picker and autofill follow the app's theme; that
+  also covers the "styled scrollbars" item with nothing hand-rolled.
+
+Deliberately left as they are:
+
+- **`Toggle`'s knob stays `bg-white`** in both themes. It sits on a solid track
+  and holds 3.13:1 on the accent (on) and 10.4:1 on `surface-border` (off) —
+  a switch handle is supposed to be the bright part. Verified on the App Config
+  toggles at both widths.
+- **Native checkbox tint** stays the browser default (blue) in both themes.
+  Setting `accent-color` to the brand teal would change light too, and a
+  theme-only override would leave the two themes disagreeing.
+- **`BackgroundJobsIndicator`'s progress bar** keeps its brand-cyan gradient and
+  its 6%-black inset shadow. Both read correctly on spruce; neither is a light
+  spot. Same for `WispGlyph`'s cyan gradient stop.
+
+**Verified** — build passes. Dev stack at 1440px and 375px in **dark**: login,
+Home, Overview, Host Mgmt, Software (incl. Image Library), Backups, App Config,
+Create VM, Create Container, plus a `Modal`, a `ConfirmDialog` and a dropdown;
+every screenshot reviewed, no remaining light surface, no unreadable text, and
+the dropdown now visibly floats. Drawer scrim checked at 640px (at 375px the
+drawer is full-width and no scrim shows). Same walk in **light** confirmed
+unchanged, and the equivalences were checked numerically in the page rather than
+by eye: `shadow-popover` resolves to Tailwind's `shadow-lg` values exactly,
+`shadow-card` to `rgba(0,0,0,.08) 0 1px 3px`, `bg-surface-input` /
+`bg-surface-card` to `rgb(255,255,255)`, `bg-console` to `rgb(30,41,59)`.
+
+**Consoles could not run** — macOS stubs have no libvirt/containerd, so no real
+VM or container exists to attach to. Verified instead through a temporary Vite
+harness (since removed) mounting a real `Terminal` with `consoleTheme()`: light
+resolved `#1e293b`/`#e2e8f0` — today's exact values — dark resolved
+`#0b1a18`/`#e8f2ef`, and cycling the theme repainted the **same** terminal
+instance without a remount. The noVNC rule was proven by probing a stand-in
+`[data-wisp-vnc-viewport] > div` carrying noVNC's inline `rgb(40,40,40)`: light
+keeps it, dark computes `rgb(11,26,24)`. What still needs the Linux server: the
+consoles attached to a live session (font rendering, real ANSI output, the
+framebuffer letterbox at a non-fitting resolution).
 
 ## Verification
 

@@ -54,7 +54,7 @@ export default function ContainerConsolePanel({ containerName }) {
       <div className="relative min-h-0 min-w-0 flex-1" style={{ minHeight: 200 }}>
         <div
           ref={consoleViewportRef}
-          className="absolute inset-0 overflow-hidden rounded-b-md bg-[#1e293b] p-1"
+          className="absolute inset-0 overflow-hidden rounded-b-md bg-console p-1"
         />
         <ContainerConsole
           containerName={containerName}

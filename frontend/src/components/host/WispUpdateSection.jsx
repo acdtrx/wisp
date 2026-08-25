@@ -332,7 +332,11 @@ export default function WispUpdateSection() {
           </a>
         )}
       >
-        <div className="prose prose-sm prose-slate max-w-none wrap-break-word text-text-secondary prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-text-primary prose-p:my-1.5 prose-li:my-0.5 prose-code:rounded-sm prose-code:bg-surface prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none prose-a:text-accent-text">
+        {/* `dark:prose-invert`: the typography plugin's own colours are baked
+            light greys (bold text near-black, bullets and rules pale) and none of
+            them are tokens, so only the plugin's inverted set makes release notes
+            readable on a dark card. */}
+        <div className="prose prose-sm prose-slate dark:prose-invert max-w-none wrap-break-word text-text-secondary prose-headings:mt-3 prose-headings:mb-1.5 prose-headings:text-text-primary prose-p:my-1.5 prose-li:my-0.5 prose-code:rounded-sm prose-code:bg-surface prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:before:content-none prose-code:after:content-none prose-a:text-accent-text">
           {notes ? (
             <NotesHtml markdown={notes} />
           ) : (

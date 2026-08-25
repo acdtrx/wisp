@@ -201,7 +201,7 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
                 if (e.key === 'Enter') commitRename();
                 if (e.key === 'Escape') cancelRename();
               }}
-              className="rounded-sm border border-surface-border bg-white px-2 py-0.5 text-sm text-text-primary outline-hidden focus:border-accent"
+              className="rounded-sm border border-surface-border bg-surface-input px-2 py-0.5 text-sm text-text-primary outline-hidden focus:border-accent"
             />
             <button type="button" onClick={commitRename} className="rounded-sm p-0.5 text-status-running hover:bg-status-running-soft" title="Confirm rename" aria-label="Confirm rename">
               <Check size={14} aria-hidden />

@@ -78,7 +78,7 @@ export default function SectionPickerButton({ type, name, disabled }) {
       </button>
       {open && (
         <div
-          className="absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-surface-border bg-surface-card py-1 shadow-lg"
+          className="absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-surface-border bg-surface-card py-1 shadow-popover"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="border-b border-surface-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">

@@ -127,7 +127,7 @@ export default function ContainerDevicesSection({ config, onSave }) {
             value={pickValue}
             onChange={(e) => setPickValue(e.target.value)}
             disabled={saving || !hostGpus?.length}
-            className="flex-1 min-w-0 rounded-md border border-surface-border bg-white px-2 py-1.5 text-xs"
+            className="flex-1 min-w-0 rounded-md border border-surface-border bg-surface-input px-2 py-1.5 text-xs"
           >
             {hostGpus?.map((g) => (
               <option key={g.device} value={g.device}>
@@ -159,7 +159,7 @@ export default function ContainerDevicesSection({ config, onSave }) {
       )}
 
       {currentGpu && (
-        <div className="flex items-center justify-between gap-3 rounded-md border border-surface-border bg-white px-3 py-2">
+        <div className="flex items-center justify-between gap-3 rounded-md border border-surface-border bg-surface-card px-3 py-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-xs font-medium text-text">
               <Cpu size={12} className="text-text-muted" />

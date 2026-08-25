@@ -43,9 +43,12 @@ export default function ConsolePanel({ vmName }) {
         onReconnect={() => consoleApiRef.current?.connect?.()}
         connected={consoleConnected}
       />
+      {/* data-wisp-vnc-viewport: the hook index.css uses to recolour the screen
+          element noVNC injects here — see its `[data-wisp-vnc-viewport]` rule. */}
       <div
         ref={consoleViewportRef}
-        className="min-h-0 flex-1 bg-[#1e293b]"
+        data-wisp-vnc-viewport
+        className="min-h-0 flex-1 bg-console"
         style={{ minHeight: 200 }}
       />
       <VNCConsole

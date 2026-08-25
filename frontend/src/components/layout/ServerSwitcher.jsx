@@ -77,7 +77,7 @@ export default function ServerSwitcher() {
       {open && (
         <div
           role="menu"
-          className="absolute left-0 top-full z-50 mt-1 min-w-56 rounded-md border border-surface-border bg-surface-card py-1 shadow-lg"
+          className="absolute left-0 top-full z-50 mt-1 min-w-56 rounded-md border border-surface-border bg-surface-card py-1 shadow-popover"
         >
           {peers.map((peer) => (
             <a
