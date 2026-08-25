@@ -247,6 +247,42 @@
   -moz-appearance: textfield;
 }
 
+/* iOS Safari zooms the page whenever a focused input/select/textarea computes
+   below 16px — and it never zooms back out — so on touch devices every
+   text-entry control renders at 16px minimum. Pointer devices keep the designed
+   text-sm / text-xs sizes untouched. The `maximum-scale=1` viewport meta is the
+   other way to stop the zoom and is rejected: it disables pinch-zoom for
+   everyone, Android included.
+
+   Deliberately *unlayered*: Tailwind's `text-sm`/`text-xs` utilities live in the
+   utilities layer, and an `@layer base` rule loses to them regardless of
+   specificity. Unlayered normal declarations outrank every layer, so this is the
+   one place that reliably wins — which also makes it the single home for the
+   rule; components must not try to opt out with a smaller `text-*` class.
+
+   `max(16px, 1em)` rather than a flat 16px: preflight gives form controls
+   `font: inherit`, so `1em` is the size the control would inherit from its
+   context — a control sitting in larger text keeps that size instead of being
+   shrunk. Checkbox and radio sizing does not follow font-size, so they ride
+   along inert. */
+@media (hover: none) and (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+
+  /* Dense desktop rows shrink the well with `h-7` / `h-8` while keeping the
+     utility's `py-1.5`, which leaves 14–18px of content box — less than the
+     ~19px a 16px glyph needs, so ascenders and descenders get cut. On touch the
+     well returns to its standard height and the text sits centred again.
+     `textarea` is excluded: its `min-h-*` utility is the intended floor and this
+     would override it. */
+  .input-field:not(textarea) {
+    min-height: 34px;
+  }
+}
+
 /* ── Home page: the "Lanterns" look ─────────────────────────────────────────
    Every colour below is derived from the palette tokens above — the glow, the
    motes, and the canvas wash are the accent at varying strengths, nothing new.
