@@ -96,3 +96,13 @@ each step commits before the next starts.
 - **Deferred to the next release cycle** (needs the Linux hosts + a real tag):
   cut `vX.Y.Z-beta.1`, confirm a beta host offers + installs it, a stable host
   ignores it, and the later stable release converges both.
+
+## Status
+
+Implemented 2026-08-25 (steps 1–4). Verified: comparator case table, both
+channels driven against the live GitHub API (plus a mechanism probe on a repo
+where `releases/latest` and the release list disagree), the card toggle driven
+in the dev stack with persistence across reload, and the release-script
+beta.1 → dirty-beta.2 → stable sequence exercised on a scratch repo. Still
+deferred to the next release cycle: cutting a real `v*-beta.1` tag and watching
+a beta host install it while a stable host ignores it.
