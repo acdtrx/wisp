@@ -9,6 +9,29 @@
          hold that chrome clear. Inert everywhere the insets are 0. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0fa396" />
+    <!-- No-flash theme resolve. Must run before first paint, so it is inline and
+         ahead of the stylesheet — deferring it to the bundle would paint the
+         light theme first and snap to dark. Deliberately duplicates three
+         constants from src/theme.js (the storage key, the dark surface-card the
+         phone status bar takes, the media query); everything else — the OS
+         listener, writes — the controller re-derives after hydration.
+         Its sha256 is pinned in the prod CSP (backend/src/index.js,
+         THEME_INIT_SCRIPT_HASH) — editing this script means refreshing that. -->
+    <script>
+      (function () {
+        var stored = null;
+        try {
+          stored = localStorage.getItem('wisp_theme');
+        } catch (e) {
+          /* private window: fall through to the OS preference */
+        }
+        if (stored === 'light') return;
+        if (stored !== 'dark' && !window.matchMedia('(prefers-color-scheme: dark)').matches) return;
+        document.documentElement.setAttribute('data-theme', 'dark');
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', '#142523');
+      })();
+    </script>
     <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

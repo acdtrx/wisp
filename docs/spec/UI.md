@@ -33,6 +33,75 @@ Text and solid status tokens hold WCAG AA contrast (≥4.5:1) on `surface`, `sur
 
 The `*-soft` tokens are the standard for status/accent **background washes** — do not hand-roll raw Tailwind palette classes (`bg-red-50`, `bg-green-50`, …) for tinted surfaces.
 
+### Dark theme — "Dusk"
+
+The dark counterpart of the palette above, in `frontend/src/index.css` under
+`:root[data-theme='dark']`. Surfaces are **deep spruce** — a very dark,
+desaturated green-teal (hue ~171°, the same family as the light neutrals' teal
+cast), deliberately not slate and not black. The light theme's depth order is
+**kept, not mirrored** — sidebar deepest, canvas above it, cards lightest — so
+"raised" still means lighter and every component's existing surface choice stays
+meaningful without edits. Every token in the light table has a dark value;
+nothing new is introduced except `surface-input`.
+
+| Token | Light | Dark | Notes |
+|-------|-------|------|-------|
+| `surface` | `#f6faf9` | `#0e1c1a` | Canvas |
+| `surface-sidebar` | `#edf4f2` | `#0a1715` | Deepest surface |
+| `surface-card` | `#ffffff` | `#142523` | Lightest surface |
+| `surface-border` | `#dce8e5` | `#28453f` | 1.5–1.8:1 against the surfaces, slightly *more* present than the light theme's 1.2–1.3:1 |
+| `surface-input` | `#ffffff` | `#0b1a18` | Text-input fill. New token — `input-field` was hardcoded `bg-white`, which cannot flip |
+| `accent` | `#0fa396` | `#0fa396` | **Unchanged.** It already reads luminous against spruce, and lifting it would drop white-on-accent-fill below the 3:1 it currently holds |
+| `accent-hover` | `#0b8578` | `#14b5a7` | Lifts instead of darkening — on a dark surface a darker fill recedes rather than responding |
+| `accent-soft` | `#dff3f0` | `#0f342f` | |
+| `accent-text` | `#0a7568` | `#4fd1c0` | |
+| `status-running` | `#21813f` | `#45c97a` | |
+| `status-warning` | `#9c6203` | `#e0a63a` | |
+| `status-stopped` | `#c93a3a` | `#f2706b` | |
+| `status-transition` | `#0fa396` | `#0fa396` | Tracks `accent` |
+| `status-running-soft` | `#e2f4e6` | `#183b2b` | |
+| `status-warning-soft` | `#faf0d7` | `#343520` | |
+| `status-stopped-soft` | `#fbe5e5` | `#372b29` | |
+| `text-primary` | `#0e1f1c` | `#e8f2ef` | Warm white with the same faint teal cast |
+| `text-secondary` | `#3a524d` | `#b3c6c2` | |
+| `text-muted` | `#56716b` | `#7e9994` | The floor |
+| `--shadow-card` | `0 1px 3px rgba(0,0,0,.08)` | `0 1px 3px rgba(0,0,0,.6)` | A drop shadow is invisible on dark; depth comes from the border edge plus a much darker shadow |
+
+The dark `*-soft` washes are the status hue mixed **~18% into the canvas surface,
+never toward white** — a tinted shadow of the surface, so they read as
+translucent rather than as pale chips.
+
+**Computed contrast (WCAG 2.1 relative luminance), dark theme.** Same discipline
+as the light side: every text and status token clears AA (≥4.5:1) on all three
+surfaces *and* on the input well. `text-muted` is the floor at 5.21:1 on a card
+(light's floor is 4.74:1 on the sidebar). Check before lightening a surface or
+darkening a text token.
+
+| Token | on `sidebar` | on `surface` | on `surface-card` | on `surface-input` |
+|-------|-------------|--------------|-------------------|--------------------|
+| `text-primary` | 16.03 | 15.32 | 13.94 | 15.64 |
+| `text-secondary` | 10.27 | 9.81 | 8.93 | 10.02 |
+| `text-muted` | 5.99 | 5.73 | **5.21** | 5.85 |
+| `accent-text` | 9.78 | 9.35 | 8.50 | 9.54 |
+| `status-running` | 8.63 | 8.24 | 7.50 | 8.41 |
+| `status-warning` | 8.45 | 8.07 | 7.34 | 8.24 |
+| `status-stopped` | 6.37 | 6.09 | 5.54 | 6.22 |
+| `status-transition` | 5.84 | 5.58 | 5.08 | 5.70 |
+
+Text on its own soft wash: `accent-text` 7.22, `status-running` 5.82,
+`status-warning` 5.78, `status-stopped` 4.74. Brand `accent` as a graphic clears
+the 3:1 floor on every surface (5.08–5.84).
+
+### Theme activation and persistence *(settled 2026-08-25)*
+
+- **Three states**: `light`, `dark`, `system` — **`system` is the default**, following the OS `prefers-color-scheme` and tracking it **live** (the media query is subscribed while the tab is open, so a phone flipping to dark at sunset recolors without a reload). An explicit `light` or `dark` overrides the OS.
+- **Mechanism**: `data-theme="dark"` on `<html>`. `system` and `light` carry no attribute; only `dark` sets one. Redefining the `@theme` variables under that attribute is the whole implementation — no per-component theming. A `@custom-variant dark` keyed to `[data-theme='dark'] &` exists for the rare utility that needs more than a token swap; Tailwind v4's built-in `dark:` is repointed at the attribute, because its default `prefers-color-scheme` behavior would ignore a manual choice.
+- **Persistence is per-device**, `localStorage` key **`wisp_theme`** (matching the existing `wisp_logout` key style), *not* `wisp-config.json`. `system` is only meaningful per device, and the phone wants dark at night while the desktop stays light. CODING-RULES §7's "server is source of truth" governs workload and config data, not per-viewer presentation. Rejected: server-side persistence — revisit only if multi-device sync is actually missed. Every access is wrapped in `try`/`catch`; a private window falls back to `system` and still themes correctly for the page's lifetime.
+- **Owner**: `frontend/src/theme.js` — framework-free, because the same state must be resolved before React exists. `store/themeStore.js` is a thin Zustand mirror for React; it never writes the attribute itself.
+- **No flash on load**: a small inline script in `index.html`'s `<head>` resolves the theme and sets the attribute before the parser reaches `<body>` or any stylesheet. It cannot move into the bundle — a deferred module script paints light first and snaps to dark. Because it is inline, the prod CSP (`script-src 'self'`) would block it, so its **sha256 is pinned in `backend/src/index.js` as `THEME_INIT_SCRIPT_HASH`** rather than opening `unsafe-inline`. Editing that script means refreshing that constant (the file carries the regeneration one-liner); a stale hash blocks the script and dark devices flash light on load.
+- **`<meta name="theme-color">`** is updated on every effective-theme change: light keeps the brand teal `#0fa396` it has always used, dark takes `surface-card` `#142523` — the top bar the phone's status strip sits above. A luminous teal band over a dark app is precisely the flash worth avoiding; the light value is deliberately left alone.
+- **The control** lives in the top bar's right cluster, between background jobs and sign out: icon-only per CODING-RULES §8 (`Sun` / `Moon` / `Monitor`), cycling light → dark → system on tap, with `title`/`aria-label` announcing the current mode ("Theme: system (following OS)"). It sits in the cluster that is row 1 in both top-bar layouts, so it works unchanged on the phone's two-row bar.
+
 ### Typography
 
 Body/UI text uses the system stack — no runtime font loading from external hosts:
@@ -117,7 +186,8 @@ Single row containing (left to right):
 1. **Wisp logo/label** + server display name. When other Wisp instances are discovered on the LAN (the `discovery` topic on `/api/events`, see [DISCOVERY.md](DISCOVERY.md)), the server name grows a small chevron (`ChevronDown`) and becomes a dropdown trigger; the menu lists each discovered server (display name, plus the advertised URL's hostname and version muted underneath — the label reflects where the link goes, not the mDNS SRV host) and each row opens that server's URL in a **new tab**. With zero peers the name renders as plain text — no chevron, no button.
 2. **Host stats pills** — CPU, RAM, Disk I/O, Net I/O, **RUNNING** (running VM count and running container count as `monitor · n | box · m`, embedded inline, centered in the remaining width)
 3. **Background jobs** — list icon, always rendered. Dimmed and non-interactive when no jobs exist; otherwise carries a badge count of *running* jobs and opens a dropdown listing in-progress and recently finished jobs (VM create, container create, VM backup, library downloads). Each row shows title, step, optional detail, and a **gradient progress bar** when a numeric percent is available (running), or a full **success** bar when the job completed. **Dismiss** appears for completed or failed jobs. Jobs are tracked app-wide so progress continues if you navigate away from the panel that started the operation. After a full page reload, the shell loads the in-memory job list from **GET /api/background-jobs** and re-subscribes to each job’s progress SSE (server is source of truth for titles; jobs disappear after server TTL or process restart).
-4. **Sign out** — rightmost, icon-only (LogOut). Hits `POST /api/auth/logout` and broadcasts the multi-tab logout signal.
+4. **Theme** — icon-only three-state control (`Sun` / `Moon` / `Monitor`) cycling light → dark → system. See § Design Language → Theme activation and persistence.
+5. **Sign out** — rightmost, icon-only (LogOut). Hits `POST /api/auth/logout` and broadcasts the multi-tab logout signal.
 
 The top bar shows "Wisp" text and the server display name (from settings; rendered by `ServerSwitcher.jsx`). There is no logo image. The **browser tab title** is `{server display name} — Wisp` after settings load (same name as the top bar; default **My Server** when unset), so multiple tabs to different servers are easy to tell apart — which is also why discovered peers open in a new tab. The host stats are live (SSE, every 5 seconds) and use the `StatPill` component with color thresholds. Host management, Backups, Software (OS Update + Image Library), and App Config are accessed via the **Host** entry in the left panel.
 

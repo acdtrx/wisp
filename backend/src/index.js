@@ -142,9 +142,18 @@ const app = Fastify({
 // `img-src data:` covers favicons / lucide-react inline data URIs. HSTS is
 // intentionally not set — Wisp is often deployed on plain HTTP behind a LAN;
 // the operator's reverse proxy enforces HSTS where TLS terminates.
+// The one inline script Wisp ships is the no-flash theme resolve in
+// frontend/index.html — it has to run before first paint, so it cannot move
+// into the bundle, and 'self' alone would block it. Its hash is pinned here
+// rather than opening 'unsafe-inline'. Vite copies the script through
+// verbatim, so source and dist hash alike; if that script is edited, refresh
+// this constant (a stale hash blocks it, and dark devices flash light on load):
+//   node -e "const m=require('fs').readFileSync('frontend/index.html','utf8').match(/<script>([\s\S]*?)<\/script>/);console.log('sha256-'+require('crypto').createHash('sha256').update(m[1]).digest('base64'))"
+const THEME_INIT_SCRIPT_HASH = "'sha256-j2zDGxDR0XLnp4WwmvJ+mV1TOkaJklFtKEh668AC76A='";
+
 const CSP =
   "default-src 'self'; " +
-  "script-src 'self'; " +
+  `script-src 'self' ${THEME_INIT_SCRIPT_HASH}; ` +
   "style-src 'self' 'unsafe-inline'; " +
   "img-src 'self' data:; " +
   "font-src 'self' data:; " +

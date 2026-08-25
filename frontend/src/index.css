@@ -30,6 +30,10 @@
      accent (graphics need only 3:1). */
   --color-accent-text: #0a7568;
 
+  /* Text-input well. White in light (identical to a card), a well *below* the
+     card in dark — the light theme's `bg-white` inputs cannot flip on their own. */
+  --color-surface-input: #ffffff;
+
   --color-status-running: #21813f;
   --color-status-warning: #9c6203;
   --color-status-stopped: #c93a3a;
@@ -54,6 +58,66 @@
   --radius-card: 8px;
 }
 
+/* ── Dark theme: "Dusk" ─────────────────────────────────────────────────────
+   Activated by `data-theme="dark"` on <html> (set before first paint by the
+   inline script in index.html, maintained by src/theme.js). Redefining the
+   `@theme` variables here is the whole mechanism — every `bg-surface-card`,
+   `text-text-muted`, `border-surface-border` follows without component work.
+
+   Surfaces are deep spruce: a very dark, desaturated green-teal (hue ~171°,
+   the same family as the light neutrals' teal cast), not slate and not black.
+   The light theme's depth order is kept rather than mirrored — sidebar
+   deepest, canvas above it, cards lightest — so "raised" still means lighter
+   and every component's existing surface choice stays meaningful.
+
+   `:root[data-theme]` (0,2,0) outranks the `:root` that `@theme` emits, so the
+   overrides land regardless of layer ordering.
+
+   Every text and status value below was contrast-checked against all three
+   surfaces plus the input well; ratios are recorded in
+   docs/spec/UI.md § Design Language. Muted is the floor at 5.2:1 on a card.
+   Check before lightening a surface or darkening a text token. */
+:root[data-theme='dark'] {
+  --color-surface: #0e1c1a;
+  --color-surface-sidebar: #0a1715;
+  --color-surface-card: #142523;
+  --color-surface-border: #28453f;
+  --color-surface-input: #0b1a18;
+
+  /* The brand teal does not shift: it already reads luminous against spruce,
+     and lifting it would drop white-on-accent-fill below the 3:1 graphics
+     floor it currently holds. Hover lifts instead of darkening — on a dark
+     surface a darker fill recedes rather than responding. */
+  --color-accent: #0fa396;
+  --color-accent-hover: #14b5a7;
+  --color-accent-soft: #0f342f;
+  --color-accent-text: #4fd1c0;
+
+  --color-status-running: #45c97a;
+  --color-status-warning: #e0a63a;
+  --color-status-stopped: #f2706b;
+  --color-status-transition: #0fa396;
+  /* Soft washes are the status hue mixed ~18% into the canvas, never toward
+     white — a tinted shadow of the surface, so they read as translucent. */
+  --color-status-running-soft: #183b2b;
+  --color-status-warning-soft: #343520;
+  --color-status-stopped-soft: #372b29;
+
+  /* Warm white carrying the same faint teal cast as the light theme's ink. */
+  --color-text-primary: #e8f2ef;
+  --color-text-secondary: #b3c6c2;
+  --color-text-muted: #7e9994;
+
+  /* A drop shadow is invisible on dark; depth comes from the edge instead —
+     a darker shadow plus the hairline the border already draws. */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+/* For the rare utility that has to differ beyond a token swap. Tailwind v4's
+   built-in `dark:` follows prefers-color-scheme, which would ignore a manual
+   Light/Dark choice — this repoints it at the attribute. */
+@custom-variant dark ([data-theme='dark'] &);
+
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still
@@ -70,12 +134,23 @@
   ::file-selector-button {
     border-color: var(--color-gray-200, currentcolor);
   }
+
+  /* The v3 default above is a light gray, which paints a bright hairline on
+     dark wherever a bare `border` utility carries no colour of its own
+     (HomeTile, HostStorage's icon buttons, the toggle chips). */
+  :root[data-theme='dark'] *,
+  :root[data-theme='dark'] ::after,
+  :root[data-theme='dark'] ::before,
+  :root[data-theme='dark'] ::backdrop,
+  :root[data-theme='dark'] ::file-selector-button {
+    border-color: var(--color-surface-border);
+  }
 }
 
 @utility input-field {
   /* h-[34px] forces inputs and selects to match height — without it, native <select>
        chrome (chevron padding) renders ~2px taller than text inputs at the same padding. */
-  @apply w-full h-[34px] rounded-md border border-surface-border bg-white px-3 py-1.5 text-sm text-text-primary
+  @apply w-full h-[34px] rounded-md border border-surface-border bg-surface-input px-3 py-1.5 text-sm text-text-primary
       outline-hidden focus:border-accent focus:ring-1 focus:ring-accent
       disabled:bg-surface disabled:text-text-muted disabled:cursor-not-allowed
       transition-colors duration-150;

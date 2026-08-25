@@ -120,6 +120,55 @@ step commits before the next starts.
    CHANGELOG entry; cut `2.3.0-beta.2` for phone testing in real dark
    surroundings.
 
+## Progress
+
+### Step 1 — Foundation ✅ (2026-08-25)
+
+Shipped: the `:root[data-theme='dark']` token block + `@custom-variant dark` in
+`index.css`, `--color-surface-input` (replacing `input-field`'s hardcoded
+`bg-white`), a dark `--shadow-card`, a dark default for the v3 border-colour
+compat rule, the `theme.js` controller + `themeStore.js` mirror + `ThemeToggle`
+in the top bar, and the no-flash inline script with its sha256 pinned in the
+prod CSP. Palette values, computed contrast ratios, and the
+activation/persistence contract are recorded in
+[`docs/spec/UI.md`](../spec/UI.md) § Design Language.
+
+Verified in the dev stack: the control cycles light → dark → system with the
+attribute, `theme-color` meta, and page colours following; `system` tracks a
+live `prefers-color-scheme` flip in both directions with no reload; an explicit
+choice overrides the OS; the choice survives a reload. No-flash was proven
+against a **production** build (CSP active): the inline script's
+`setAttribute('data-theme')` fires at `readyState: loading` with `document.body`
+still null and `document.styleSheets.length === 0`, and no CSP violation is
+raised — so the pinned hash matches and nothing can have painted.
+
+**Expected-broken until Step 2** (accepted intermediate state per the phase
+rules): the 43 files still carrying hardcoded `white`/`black` classes show light
+spots in dark. Audited inventory for the sweep:
+
+- `bg-white` fills — `ManualLinkModal`, `ContainerDevicesSection` (×2),
+  `OsUpdateSection`, `ImageLibrary`, `JellyfinAppSection` (×4),
+  `Toggle` (the knob), `CreateVMPanel` (`bg-white/50` detail `<pre>`).
+- `text-white` — 36 files. Mostly glyphs on accent fills (visually fine, and
+  white-on-accent holds the same 3.13:1 it holds in light); the ones on
+  card/surface backgrounds (`DataTableChrome`, `SectionCard`,
+  `FormModalChrome`) are the ones that actually need tokens.
+- `bg-black/40` scrims — `Modal`, `LeftPanel`'s drawer backdrop. Fine on dark,
+  worth a look for whether they should deepen.
+- Step 3 territory, not Step 2: the `home-tile-asleep` / `home-lantern-lit` /
+  `wisp-breathe` utilities still `color-mix(…, white)`, and Tailwind's default
+  `shadow-lg` on dropdowns is near-invisible on dark.
+
+No raw Tailwind palette classes (`bg-gray-200`, `text-red-500`, …) exist
+anywhere in `src/` — the token discipline held, so the sweep really is only the
+white/black list above.
+
+Deliberately not changed: `public/manifest.webmanifest`'s `theme_color` /
+`background_color`. A manifest is static and cannot follow the theme, and the
+values only drive the PWA **install splash** — the live status bar is the
+`<meta name="theme-color">` the controller maintains. Darkening them would
+change the splash for light users too.
+
 ## Verification
 
 - Frontend build per step.

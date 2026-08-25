@@ -5,6 +5,7 @@ import { useUiStore } from '../../store/uiStore.js';
 import HostStatsBar from './HostStatsBar.jsx';
 import BackgroundJobsIndicator from './BackgroundJobsIndicator.jsx';
 import ServerSwitcher from './ServerSwitcher.jsx';
+import ThemeToggle from './ThemeToggle.jsx';
 import WispGlyph from '../shared/WispGlyph.jsx';
 
 export default function TopBar() {
@@ -53,6 +54,7 @@ export default function TopBar() {
 
       <div className="col-start-3 row-start-1 flex shrink-0 items-center gap-1.5">
         <BackgroundJobsIndicator />
+        <ThemeToggle />
         <button
           type="button"
           onClick={handleLogout}
