@@ -129,7 +129,8 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
     >
       <div className="space-y-0">
         <div className="flex items-end gap-4 flex-wrap">
-          <Field label="Name" className="w-[180px]">
+          {/* Phones: Name grows to fill line one; its floor keeps CPU from joining the line. */}
+          <Field label="Name" className="w-[180px] max-sm:flex-1 max-sm:min-w-[140px]">
             <input
               type="text"
               value={form.name}
@@ -146,9 +147,16 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
             </div>
           </Field>
 
-          <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border" />
+          <Field label="Auto Start">
+            <div className="flex h-[34px] items-center">
+              <Toggle checked={form.autostart} onChange={(v) => updateField('autostart', v)} />
+            </div>
+          </Field>
 
-          <Field label="CPU" icon={Cpu} className="w-16">
+          <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border max-sm:hidden" />
+
+          {/* Phones: CPU and RAM pair as equal halves of their own line. */}
+          <Field label="CPU" icon={Cpu} className="w-16 max-sm:basis-[calc(50%-0.5rem)] max-sm:min-w-0">
             <input
               type="number"
               min={1}
@@ -160,7 +168,7 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
             />
           </Field>
 
-          <Field label="RAM" icon={MemoryStick} className="w-32">
+          <Field label="RAM" icon={MemoryStick} className="w-32 max-sm:basis-[calc(50%-0.5rem)] max-sm:min-w-0">
             <div className="flex gap-0.5">
               <input
                 type="number"
@@ -180,9 +188,9 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
             </div>
           </Field>
 
-          <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border" />
+          <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border max-sm:hidden" />
 
-          {/* Full row below sm (wraps clear of Auto Start); content-sized on desktop. */}
+          {/* Full row below sm; content-sized on desktop. */}
           <Field label="OS Type" className="w-full sm:w-auto">
             <SegmentedControl
               options={OS_TYPES}
@@ -190,12 +198,6 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
               onChange={(v) => updateField('osType', v)}
               icons={OS_ICONS}
             />
-          </Field>
-
-          <Field label="Auto Start">
-            <div className="flex h-[34px] items-center">
-              <Toggle checked={form.autostart} onChange={(v) => updateField('autostart', v)} />
-            </div>
           </Field>
         </div>
       </div>
