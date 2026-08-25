@@ -109,3 +109,11 @@ dev stack).
 - Real acceptance: the user drives the `2.3.0-beta.1` beta on an actual
   phone against the Linux server — add/edit/delete in each of the four
   sections without reaching for a desktop.
+
+## Status
+
+Implemented 2026-08-25 (all five steps). Each section verified in a Vite
+harness at 375 px and desktop with canned APIs — payload/patch shapes and
+call sequences confirmed against the pre-rewrite contracts; the two
+`isCreating` draft flows verified unchanged in the real dev stack. Shipping
+in `v2.3.0-beta.1`; real-phone acceptance is the user's beta pass.
