@@ -19,3 +19,10 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   already work (referenced from `docs/spec/UI.md` § Responsive Behavior).
   Revisit when: a real phone session needs to add or edit one of these
   sections and the read-only fallback forces a trip to a desktop.
+- **Create VM: NIC draft sync warns during render** — `syncNicsToParent` calls
+  `onFormChange` from inside a `setNics` updater, so React logs "Cannot update
+  a component (`CreateVMPanel`) while rendering a different component"; the
+  sync belongs in an effect or plain handler. Predates the modal-editor
+  refactor (reproduced on the pre-refactor file, 2026-08-25). Revisit when:
+  touching the VM create form's draft wiring, or if the warning graduates to
+  an actual state bug.
