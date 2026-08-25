@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-08-25
+## 2026-08-25 (v2.2.0)
 
 ### New Features
 - **Beta update channel** — a host can opt into pre-releases from the Wisp Update card (Host → Software): `release.sh <x.y.z-beta.N>` cuts a GitHub prerelease that only beta hosts are offered via self-update, and the later stable release converges every host back onto the same version.
