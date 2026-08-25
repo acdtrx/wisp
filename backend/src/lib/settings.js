@@ -41,6 +41,7 @@ const DEFAULTS = {
   homepage: { groups: [], overrides: {}, manualTiles: [] },
   discoveryEnabled: true,
   advertisedUrl: null,
+  updateChannel: 'stable',
   oidc: { enabled: false, issuer: '', clientId: '', clientSecret: '' },
   trustedProxies: [],
   apiTokens: [],
@@ -373,6 +374,7 @@ async function readSettingsFile() {
       typeof data.advertisedUrl === 'string' && data.advertisedUrl.trim() !== ''
         ? data.advertisedUrl.trim()
         : DEFAULTS.advertisedUrl,
+    updateChannel: data.updateChannel === 'beta' ? 'beta' : DEFAULTS.updateChannel,
     oidc: normalizeOidc(data.oidc),
     // Not editable from the UI — an operator sets it directly in wisp-config.json
     // for a non-loopback reverse proxy. Preserved here so a Settings save from the
@@ -436,6 +438,7 @@ export async function getSettings() {
     assignments: fromFile.assignments || {},
     discoveryEnabled: fromFile.discoveryEnabled,
     advertisedUrl: fromFile.advertisedUrl,
+    updateChannel: fromFile.updateChannel,
     oidc: oidcForApi(fromFile.oidc),
   };
 }
@@ -579,6 +582,9 @@ function buildUpdatedSettings(fromFile, updates) {
         ? updates.advertisedUrl.trim()
         : null;
   }
+  if (updates.updateChannel !== undefined) {
+    next.updateChannel = updates.updateChannel === 'beta' ? 'beta' : 'stable';
+  }
   if (updates.oidc !== undefined && updates.oidc && typeof updates.oidc === 'object') {
     const cur = normalizeOidc(next.oidc);
     const u = updates.oidc;
@@ -656,6 +662,7 @@ async function persistSettings(state) {
     ),
     discoveryEnabled: state.discoveryEnabled !== false,
     advertisedUrl: state.advertisedUrl ?? null,
+    updateChannel: state.updateChannel === 'beta' ? 'beta' : 'stable',
     oidc: normalizeOidc(state.oidc),
     trustedProxies: parseTrustedProxies(state.trustedProxies),
     apiTokens: normalizeApiTokens(state.apiTokens),

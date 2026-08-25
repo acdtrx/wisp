@@ -12,7 +12,7 @@ The update applier is **a separate systemd unit** (`wisp-updater.service`, `Type
 |-------|--------------|
 | Release script (`scripts/release.sh <version>`) | Bumps `package.json` versions across root + backend + frontend, and each sibling `package-lock.json` where one exists (both the top-level `version` and `packages[""].version`; the repo root has no lockfile since it has no dependencies). Retitles the topmost `## YYYY-MM-DD` CHANGELOG section to `## YYYY-MM-DD (vX.Y.Z)`, commits, and tags `vX.Y.Z`. `CHANGELOG.md` may be the only dirty file in the working tree — its contents are folded into the same `release: vX.Y.Z` commit so a release lands as one commit. Push is left to the operator. |
 | GitHub Actions (`.github/workflows/release.yml`) | Triggered on `v*` tag push. Verifies tag matches all three `package.json` files, builds the frontend, packages a release tarball with **prebuilt** `frontend/dist/`, generates a SHA256, extracts the matching CHANGELOG section as release notes, and creates a GitHub Release with the tarball + sha256 attached. Tags shaped `v*-*` (e.g. `v1.0.6-rc.1`) are marked as prereleases. |
-| Backend checker (`backend/src/lib/wispUpdate.js`) | Polls `https://api.github.com/repos/<owner>/<repo>/releases/latest` once per hour starting 30s after backend boot. Caches `{ current, latest, available, notes, publishedAt, asset, sha256Asset, lastChecked }`. The `available` flag drives the Software-tab badge via the host stats SSE. |
+| Backend checker (`backend/src/lib/wispUpdate.js`) | Polls GitHub Releases once per hour starting 30s after backend boot, following the host's configured **update channel** (see below). Caches `{ current, latest, available, notes, publishedAt, asset, sha256Asset, lastChecked }`. The `available` flag drives the Software-tab badge via the host stats SSE. |
 | Backend apply (`applyUpdate` in `wispUpdate.js`) | Downloads tarball + sha256 (via the shared **SSRF-safe fetch** — DNS-pinned, private/loopback IPs blocked, every redirect `Location` re-validated), verifies, extracts to `/var/lib/wisp/updates/staging-<version>/`. Then writes the staging path to `/var/lib/wisp/updates/target` (atomic via `rename(2)`) and runs `sudo -n /usr/bin/systemctl start --no-block wisp-updater.service`. The HTTP request returns 202 with `{ targetVersion }` once the trigger is queued — the backend dies a moment later as the updater runs `systemctl stop wisp`. |
 | Updater unit (`systemd/linux/wisp-updater.service`) | `Type=oneshot`, `User=root`, `Environment=WISP_INSTALL_DIR=<install-dir>` (templated at install time), `ExecStart=/usr/local/bin/wisp-updater`, `StandardOutput=journal`. |
 | Updater script (`backend/scripts/wisp-updater`, installed at `/usr/local/bin/wisp-updater`) | Reads target staging path from `/var/lib/wisp/updates/target` (must start with `/var/lib/wisp/updates/staging-`). Stops `wisp.service` → snapshots install to `<install>.prev/` → rsyncs staging into install (preserving user config, `config/backup-status.json`, `.pids` / `.logs`) → runs `npm ci --omit=dev` in backend → runs **`setup/common-steps.sh`** (the step list shared with the installer — see below) → re-templates `wisp.service` → starts the service. Auto-rolls-back from `<install>.prev` on failure. |
@@ -55,11 +55,28 @@ Because `WispUpdateSection` polls `GET /api/host` to detect that the new version
 
 The default repo is `acdtrx/wisp`. To point at a fork (testing, mirror), set `WISP_UPDATE_REPO=<owner>/<repo>` in `config/runtime.env`.
 
+## Update channels
+
+A host picks which releases it is offered with `updateChannel` in `wisp-config.json` (`"stable"` | `"beta"`, default `"stable"`). It is set with `PATCH /api/settings` from the Wisp Update card (Host → Software), not from the Settings page — the channel is a property of *this* host's update behavior, and the card is the one surface that shows what that behavior produced.
+
+| Channel | What the checker asks GitHub for |
+|---------|----------------------------------|
+| `stable` | `GET /repos/<repo>/releases/latest` — GitHub excludes prereleases server-side, so this is always the newest stable release. |
+| `beta` | `GET /repos/<repo>/releases?per_page=15`, drafts dropped, then the **highest semver `tag_name`** among the rest (prereleases included). Not the newest by date: a stable cut published after a higher-numbered prerelease must not win. An empty list behaves like a repo with no releases — nothing to update to, not an error. |
+
+Everything past that release object is shared between the channels: notes, `publishedAt`, tarball + sha256 asset discovery, and the `available` computation.
+
+**The channel is read at check time** (settled 2026-08-25) — `checkForUpdate` calls `getSettings()` on every run. Nothing pushes the channel into the checker: the UI PATCHes the setting and then POSTs `/api/updates/check`, so the trigger stays separate from the mechanism (CODING-RULES §7). Flipping the channel installs nothing by itself.
+
+**Convergence.** `available` requires `compareSemver(latest, current) > 0`, and the comparator implements full semver precedence — a prerelease sorts *below* the release it leads to. So a beta host running `2.2.0-beta.3` is offered `2.2.0` the moment it is cut, and beta and stable hosts land on the same version at every stable release. Between releases the beta host is simply ahead.
+
+**No downgrades** (settled 2026-08-25). Switching from beta back to stable while running a prerelease newer than the latest stable offers nothing — `2.1.1 > 2.2.0-beta.1` is false, so the check reports no update and the host waits for stable to catch up. Getting back to an older release is a manual operation (the `<install>.prev/` rollback below, or a reinstall); the update path only ever moves forward.
+
 ## Tag convention
 
-Releases use the `v` prefix (`v1.0.5`, `v1.0.6-rc.1`) — matches Linux kernel, Kubernetes, Node, and most ecosystems. The asset filename strips the prefix (`wisp-1.0.5.tar.gz`).
+Releases use the `v` prefix (`v1.0.5`, `v1.0.6-rc.1`) — matches Linux kernel, Kubernetes, Node, and most ecosystems. The asset filename strips the prefix (`wisp-1.0.5.tar.gz`), for prereleases too (`wisp-2.2.0-beta.1.tar.gz`).
 
-The release workflow detects prereleases by the presence of a hyphen in the tag: `v1.0.6` is stable, `v1.0.6-rc.1` is prerelease. GitHub's `releases/latest` endpoint excludes prereleases server-side, so the auto-checker only ever surfaces stable releases.
+The release workflow detects prereleases by the presence of a hyphen in the tag: `v1.0.6` is stable, `v1.0.6-rc.1` is prerelease. GitHub's `releases/latest` endpoint excludes prereleases server-side, so a host on the stable channel never sees one; the beta channel reaches them by listing releases instead.
 
 ## Active-jobs guard
 

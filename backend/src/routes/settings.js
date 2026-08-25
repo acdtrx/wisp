@@ -42,6 +42,7 @@ const settingsResponseProps = {
   backupSchedule: backupScheduleSchema,
   discoveryEnabled: { type: 'boolean' },
   advertisedUrl: { type: ['string', 'null'] },
+  updateChannel: { type: 'string' },
   oidc: {
     type: 'object',
     properties: {
@@ -82,6 +83,7 @@ export default async function settingsRoutes(fastify) {
           backupSchedule: backupScheduleSchema,
           discoveryEnabled: { type: 'boolean' },
           advertisedUrl: { type: ['string', 'null'] },
+          updateChannel: { type: 'string', enum: ['stable', 'beta'] },
           oidc: {
             type: 'object',
             properties: {

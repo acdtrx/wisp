@@ -294,13 +294,13 @@ Install OS package updates.
 
 ### GET /api/updates/status
 
-Cached state of the Wisp self-update checker (hourly poll of GitHub Releases). See [UPDATES.md](UPDATES.md).
+Cached state of the Wisp self-update checker (hourly poll of GitHub Releases). See [UPDATES.md](UPDATES.md). The configured channel is not echoed here — the client reads `updateChannel` from `GET /api/settings`.
 
 - **200:** `{ current, latest, available, notes, publishedAt, lastChecked, lastError, repo }`
 
 ### POST /api/updates/check
 
-Force an immediate self-update check; returns the same shape as `/status`.
+Force an immediate self-update check; returns the same shape as `/status`. Which release is considered follows `updateChannel` from `wisp-config.json`, read at check time — see [UPDATES.md → Update channels](UPDATES.md#update-channels).
 
 - **200:** `{ current, latest, available, notes, publishedAt, lastChecked, lastError, repo }`
 - **503:** `{ error, detail }` — GitHub unreachable, rate-limited, or response malformed
@@ -1132,6 +1132,7 @@ Get application settings.
   "backupSchedule": { "enabled": false, "time": "03:00", "destinationIds": ["local"], "retainDays": 7, "retainWeeks": 4 },
   "discoveryEnabled": true,
   "advertisedUrl": null,
+  "updateChannel": "stable",
   "oidc": { "enabled": false, "issuer": "", "clientId": "", "hasClientSecret": false }
 }
 ```
@@ -1142,12 +1143,13 @@ The shipped `wisp-config.json.example` has empty `mounts`. Mounts are added via 
 
 Update settings. Partial update — only include fields to change.
 
-- **Body:** Partial settings object (`serverName`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`, `backupSchedule`, `discoveryEnabled`, `advertisedUrl`, `oidc`)
+- **Body:** Partial settings object (`serverName`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`, `backupSchedule`, `discoveryEnabled`, `advertisedUrl`, `updateChannel`, `oidc`)
 - **200:** Updated settings object
 - **Validation:** Paths must be absolute (start with `/`). `advertisedUrl` must be a valid `http`/`https` URL of at most 251 bytes (mDNS TXT record limit), or `null`/empty to clear — invalid values return **422** `{ error, detail }` with code `INVALID_URL`.
 - **`backupSchedule`:** Object `{ enabled?, time?, destinationIds?, retainDays?, retainWeeks? }`, merged per-field. Any field the client actually sends must be valid — `time` matching `HH:MM` (24-hour), `retainDays` 1–365, `retainWeeks` 0–52, `destinationIds` a non-empty subset of `'local'` + the configured `backupMountId` (validated against the merged result, so swapping the mount and updating the schedule in one PATCH works) — else **422** with code `INVALID_BACKUP_SCHEDULE`. On read, invalid persisted values fall back leniently to defaults and stale mount ids self-heal out of `destinationIds`. See [BACKUPS.md → Scheduled backups](BACKUPS.md#scheduled-backups).
 - **`oidc`:** Object `{ enabled?, issuer?, clientId?, clientSecret? }`. `clientSecret` is write-only — omit or send empty to keep the saved secret (the masked GET never returns it to echo back). When `enabled: true`, the merged config must have a valid `http`/`https` `issuer`, a `clientId`, and a `clientSecret` on file, else **422** `{ error, detail }` with code `INVALID_OIDC`. Persisted to `wisp-config.json` (written `0600`).
 - **Side effect:** A successful PATCH that changes `serverName`, `discoveryEnabled`, or `advertisedUrl` re-announces the instance's `_wisp._tcp` mDNS service (see [DISCOVERY.md](DISCOVERY.md)).
+- **`updateChannel`:** `"stable"` | `"beta"` — which releases self-update offers this host. No side effect: the next update check (hourly, or `POST /api/updates/check`) reads it. See [UPDATES.md → Update channels](UPDATES.md#update-channels).
 - **`containersPath`:** Optional; container storage root (same default as `config.js`; exposed for scripts — App Config UI does not edit it yet).
 - **Mount CRUD:** Not available via PATCH /api/settings. Use `/api/host/mounts` endpoints below.
 

@@ -4,6 +4,10 @@
  * (a Type=oneshot systemd unit) which performs the atomic swap and service
  * restart in its own cgroup, fully detached from this backend process.
  *
+ * Which release counts as "latest" depends on the host's `updateChannel`
+ * setting: stable takes GitHub's own latest (prereleases excluded server-side),
+ * beta takes the highest semver among the recent releases.
+ *
  * Repo defaults to acdtrx/wisp; override with WISP_UPDATE_REPO in runtime.env
  * for forks or testing.
  */
@@ -16,6 +20,7 @@ import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Agent, fetch as undiciFetch } from 'undici';
 import { createAppError } from './routeErrors.js';
+import { getSettings } from './settings.js';
 import { ssrfSafeFetch } from './downloads/downloadFromUrl.js';
 
 const execFileAsync = promisify(execFileCb);
@@ -45,6 +50,11 @@ const CHECK_INTERVAL_MS = 60 * 60 * 1000; // hourly
 const INITIAL_DELAY_MS = 30_000;
 const HTTP_TIMEOUT_MS = 30_000;
 
+/* Releases fetched per beta check. The newest release is always in the first
+ * page, so this only has to cover "the highest version isn't the newest by
+ * date" — a stable cut published after a later-numbered prerelease. */
+const BETA_LIST_SIZE = 15;
+
 /* In-memory cache. Shape exposed via getCachedStatus(). */
 const cache = {
   current: getCurrentVersion(),
@@ -73,18 +83,58 @@ export function getCurrentVersion() {
   }
 }
 
-/** Compare two semver-shaped strings. Returns >0 if a>b, 0 if eq, <0 if a<b. */
-function compareSemver(a, b) {
-  const parse = (v) => {
-    const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(v));
-    if (!m) return [0, 0, 0];
-    return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
+const NUMERIC_IDENTIFIER_RE = /^\d+$/;
+
+/* Leading `v` optional, trailing `+build` metadata (and anything else past the
+ * prerelease) ignored — build metadata carries no precedence. */
+function parseSemver(v) {
+  const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(String(v).trim());
+  if (!m) return { major: 0, minor: 0, patch: 0, prerelease: [] };
+  return {
+    major: parseInt(m[1], 10),
+    minor: parseInt(m[2], 10),
+    patch: parseInt(m[3], 10),
+    prerelease: m[4] ? m[4].split('.') : [],
   };
-  const [ax, ay, az] = parse(a);
-  const [bx, by, bz] = parse(b);
-  if (ax !== bx) return ax - bx;
-  if (ay !== by) return ay - by;
-  return az - bz;
+}
+
+/* Semver identifier precedence: two numeric identifiers compare numerically, a
+ * numeric identifier is always lower than an alphanumeric one, and two
+ * alphanumerics compare in ASCII order. */
+function comparePrereleaseIdentifier(a, b) {
+  const aNumeric = NUMERIC_IDENTIFIER_RE.test(a);
+  const bNumeric = NUMERIC_IDENTIFIER_RE.test(b);
+  if (aNumeric && bNumeric) return parseInt(a, 10) - parseInt(b, 10);
+  if (aNumeric) return -1;
+  if (bNumeric) return 1;
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
+function comparePrerelease(a, b) {
+  /* A version with a prerelease list is lower than the same version without. */
+  if (a.length === 0) return b.length === 0 ? 0 : 1;
+  if (b.length === 0) return -1;
+  const shared = Math.min(a.length, b.length);
+  for (let i = 0; i < shared; i++) {
+    const cmp = comparePrereleaseIdentifier(a[i], b[i]);
+    if (cmp !== 0) return cmp;
+  }
+  /* Prefix-equal: the shorter list is lower (2.2.0-beta < 2.2.0-beta.1). */
+  return a.length - b.length;
+}
+
+/**
+ * Compare two semver strings by spec precedence. Returns >0 if a>b, 0 if eq,
+ * <0 if a<b. Exported for verification.
+ */
+export function compareSemver(a, b) {
+  const va = parseSemver(a);
+  const vb = parseSemver(b);
+  if (va.major !== vb.major) return va.major - vb.major;
+  if (va.minor !== vb.minor) return va.minor - vb.minor;
+  if (va.patch !== vb.patch) return va.patch - vb.patch;
+  return comparePrerelease(va.prerelease, vb.prerelease);
 }
 
 export function getCachedStatus() {
@@ -100,17 +150,20 @@ export function getCachedStatus() {
   };
 }
 
-/**
- * Hit GitHub's releases/latest endpoint, parse, and update the cache. Returns
- * the new cached status. Throws { code: 'UPDATE_CHECK_UNAVAILABLE', ... } on
- * network/parse errors so route handlers can map to a 503.
- *
- * GitHub's `releases/latest` excludes prereleases server-side, which is exactly
- * what we want for the auto-check path.
- */
-export async function checkForUpdate(signal) {
-  const repo = getRepo();
-  const url = `https://api.github.com/repos/${repo}/releases/latest`;
+/* Records the failure on the cache and returns the error to throw, so every
+ * check failure timestamps itself the same way. */
+function checkFailure(lastError, message, detail) {
+  cache.lastError = lastError;
+  cache.lastChecked = new Date().toISOString();
+  return createAppError('UPDATE_CHECK_UNAVAILABLE', message, detail);
+}
+
+function malformedResponse() {
+  return checkFailure('Malformed GitHub API response', 'Malformed GitHub API response');
+}
+
+/** GET a GitHub API endpoint. Returns null on 404 — the repo has no releases. */
+async function fetchGithubJson(url, signal) {
   const dispatcher = new Agent({ headersTimeout: HTTP_TIMEOUT_MS, bodyTimeout: HTTP_TIMEOUT_MS });
   let res;
   try {
@@ -125,55 +178,103 @@ export async function checkForUpdate(signal) {
       signal,
     });
   } catch (err) {
-    cache.lastError = `Network error: ${err.message}`;
-    cache.lastChecked = new Date().toISOString();
-    throw createAppError('UPDATE_CHECK_UNAVAILABLE', 'Failed to reach GitHub Releases', err.message);
+    throw checkFailure(`Network error: ${err.message}`, 'Failed to reach GitHub Releases', err.message);
   }
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw checkFailure(`GitHub API ${res.status}`, `GitHub API returned ${res.status}`, body.slice(0, 200));
+  }
+  const data = await res.json().catch(() => null);
+  if (!data || typeof data !== 'object') throw malformedResponse();
+  return data;
+}
 
-  if (res.status === 404) {
-    /* Repo has no releases yet — not an error, just nothing to update to. */
+/**
+ * Stable channel. GitHub's `releases/latest` excludes prereleases server-side,
+ * so the release it names is always the newest stable one.
+ */
+async function fetchStableRelease(repo, signal) {
+  const data = await fetchGithubJson(`https://api.github.com/repos/${repo}/releases/latest`, signal);
+  if (data === null) return null;
+  if (Array.isArray(data)) throw malformedResponse();
+  return data;
+}
+
+/**
+ * Beta channel. Lists recent releases (prereleases included) and picks the
+ * highest semver tag among the published ones. No release in the window —
+ * empty repo, or drafts only — reads as "nothing to update to".
+ */
+async function fetchBetaRelease(repo, signal) {
+  const data = await fetchGithubJson(
+    `https://api.github.com/repos/${repo}/releases?per_page=${BETA_LIST_SIZE}`,
+    signal,
+  );
+  if (data === null) return null;
+  if (!Array.isArray(data)) throw malformedResponse();
+  let best = null;
+  for (const release of data) {
+    if (!release || typeof release !== 'object' || release.draft === true) continue;
+    if (best === null || compareSemver(release.tag_name || '', best.tag_name || '') > 0) {
+      best = release;
+    }
+  }
+  return best;
+}
+
+/** Fill the cache from a GitHub release object (or clear it when given null). */
+function cacheRelease(release) {
+  cache.lastError = null;
+  cache.lastChecked = new Date().toISOString();
+  if (!release) {
+    /* Nothing published on this channel — not an error, just nothing to update to. */
     cache.latest = null;
     cache.available = false;
     cache.notes = null;
     cache.publishedAt = null;
     cache.asset = null;
     cache.sha256Asset = null;
-    cache.lastError = null;
-    cache.lastChecked = new Date().toISOString();
     return getCachedStatus();
   }
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    cache.lastError = `GitHub API ${res.status}`;
-    cache.lastChecked = new Date().toISOString();
-    throw createAppError('UPDATE_CHECK_UNAVAILABLE', `GitHub API returned ${res.status}`, body.slice(0, 200));
-  }
-  const data = await res.json().catch(() => null);
-  if (!data || typeof data !== 'object') {
-    cache.lastError = 'Malformed GitHub API response';
-    cache.lastChecked = new Date().toISOString();
-    throw createAppError('UPDATE_CHECK_UNAVAILABLE', 'Malformed GitHub API response');
-  }
 
-  const tag = String(data.tag_name || '');
+  const tag = String(release.tag_name || '');
   const latest = tag.replace(/^v/, '');
-  const assets = Array.isArray(data.assets) ? data.assets : [];
+  const assets = Array.isArray(release.assets) ? release.assets : [];
   const tarballAsset = assets.find((a) => /^wisp-[\d].*\.tar\.gz$/.test(a.name || ''));
   const sha256Asset = assets.find((a) => /^wisp-[\d].*\.tar\.gz\.sha256$/.test(a.name || ''));
 
   cache.latest = latest || null;
-  cache.publishedAt = data.published_at || null;
-  cache.notes = data.body || null;
+  cache.publishedAt = release.published_at || null;
+  cache.notes = release.body || null;
   cache.asset = tarballAsset
     ? { name: tarballAsset.name, url: tarballAsset.browser_download_url, size: tarballAsset.size }
     : null;
   cache.sha256Asset = sha256Asset
     ? { name: sha256Asset.name, url: sha256Asset.browser_download_url }
     : null;
+  /* Strictly newer only — a beta host that flips back to stable is never
+   * offered a downgrade, it just waits for stable to catch up. */
   cache.available = !!latest && compareSemver(latest, cache.current) > 0 && !!cache.asset && !!cache.sha256Asset;
-  cache.lastError = null;
-  cache.lastChecked = new Date().toISOString();
   return getCachedStatus();
+}
+
+/**
+ * Find the release this host's channel should be on, parse it, and update the
+ * cache. Returns the new cached status. Throws
+ * { code: 'UPDATE_CHECK_UNAVAILABLE', ... } on network/parse errors so route
+ * handlers can map to a 503.
+ *
+ * The channel is read from settings at check time — flipping it in the UI takes
+ * effect on the next check, with no wiring from settings back into the checker.
+ */
+export async function checkForUpdate(signal) {
+  const repo = getRepo();
+  const { updateChannel } = await getSettings();
+  const release = updateChannel === 'beta'
+    ? await fetchBetaRelease(repo, signal)
+    : await fetchStableRelease(repo, signal);
+  return cacheRelease(release);
 }
 
 async function downloadToFile(url, destPath, onProgress, signal) {
