@@ -300,3 +300,14 @@ workload's row and detail header.
   notes).
 - Real-device pass: the user drives the beta on a phone at night — the
   feature's actual acceptance test.
+
+## Status
+
+Implemented 2026-08-25 (steps 1–4). Foundation, sweep, and glow pass each
+verified in the dev stack and harnesses with per-page screenshot review in
+both themes at desktop and 375 px; light mode proven numerically unchanged;
+contrast ratios computed and recorded in UI.md § Design Language. Shipping in
+`v2.3.0-beta.2`. Still needs the Linux server: consoles attached to live
+sessions, derived (non-manual) Home tiles lit by real workloads, and the
+running halos on live workload rows — the user's nighttime phone pass is the
+acceptance test.
