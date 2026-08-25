@@ -227,6 +227,68 @@ keeps it, dark computes `rgb(11,26,24)`. What still needs the Linux server: the
 consoles attached to a live session (font rendering, real ANSI output, the
 framebuffer letterbox at a non-fitting resolution).
 
+### Step 3 — Dusk glow pass ✅ (2026-08-25)
+
+The Lanterns look is now theme-aware rather than light-only. Mechanism: every
+Lanterns value moved from literals inside the `home-*` utilities onto `--wisp-*`
+variables on `:root`, overridden under `:root[data-theme='dark']`. That is what
+lets the **`wisp-breathe` keyframes** be theme-aware at all — keyframes are
+global, so the alternative was a second animation name plus a `dark:` class swap
+in `HomeTile`. The light values are the byte-identical expressions that were
+there before.
+
+What the dark side does, and why (the full table is in
+[`docs/spec/UI.md`](../spec/UI.md) § Home → Home in the dark theme): the wash
+becomes the **accent itself** at 15→9→4% over the spruce rather than
+`accent-soft`, which on dark is *darker* than the canvas and would dim the
+corner instead of lighting it — four stops, because a two-stop ramp that wide
+bands visibly on a near-black surface. Asleep tiles sink toward the canvas
+instead of lifting toward white. The lit well is the accent mixed *into the
+card* (42% centre → 13% edge) with a stronger ring and a wider glow, and the
+breathe swings 18px@34% ↔ 30px@55%. Motes brighten to 85% / 78%.
+
+Beyond Home, two named utilities carry the same language: **`wisp-lit-glyph`**
+(a static `drop-shadow` halo on the running workload's icon in the sidebar rows
+and the VM/container detail header — `drop-shadow`, not `box-shadow`, so it
+follows the strokes and not the hover-tinted button box) and **`wisp-brand-glow`**
+(the `WispGlyph` in the top bar and on the login card). Both dark-only.
+
+Two atmospheric extras, both dark-only, both derived: the brand-glyph glow above,
+and **`login-dusk`** — the login page borrows Home's wash, because it is the only
+other full-page canvas and a flat near-black field with one card on it is exactly
+the generic dark mode this theme exists to avoid.
+
+**Verified.** Build passes. macOS stubs report zero workloads, so lit/asleep
+lanterns, running sidebar rows and the detail headers were driven in a temporary
+Vite harness (since removed) seeding `homeStore` / `vmStore` / `containerStore`
+and mounting the **real** `HomePanel`, `VMListItem`, `ContainerListItem`,
+`OverviewPanel` and `ContainerOverviewPanel`. Reviewed at 1440px and 375px across
+three rounds: the canvas ambient layer was screenshot with the tile content
+hidden to check the wash for banding (none) and to judge the motes on their own —
+round 1 had them invisible, so they went from 70%→85% / 62%→78%; the lit well's
+fill went 32%→42% after an A/B, because at 32% the ring did all the work and the
+glass read unlit. Sidebar halos were checked at 1x and at 3x zoom: running rows
+glow, stopped and paused rows do not. The real dev app confirmed the top-bar
+glyph, the login wash, and Home's canvas at both widths with three throwaway
+manual tiles (since deleted).
+
+**Light is unchanged, proven numerically** rather than by eye: elements carrying
+the new utilities were compared against elements carrying the *old literal CSS*
+in the same page — `home-canvas`, `home-tile-asleep`, both mote tints and
+`home-lantern-lit` (fill *and* box-shadow) all compute byte-identical, and both
+glow utilities resolve to `filter: none`. The keyframes were sampled at 0% and
+50% in both themes (light 14.3px@.25 ↔ 23.7px@.41 — today's values). Light Home,
+sidebar and login re-shot and unchanged.
+
+**Contrast** re-checked for the three new derived backgrounds; the table is in
+UI.md § Design Language. Floor is `text-muted` at 5.47:1 on the asleep tile;
+the canvas wash's 4.63:1 is a worst case at the gradient centre, which sits
+*above* the canvas (the counts line actually sits at ~1% wash, ≈5.7:1).
+
+**Still needs the Linux server**: lanterns lit by *derived* tiles (Caddy hosts,
+app URLs, mDNS) rather than harness state, and the halos on a real running
+workload's row and detail header.
+
 ## Verification
 
 - Frontend build per step.

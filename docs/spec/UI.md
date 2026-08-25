@@ -118,6 +118,51 @@ Text on its own soft wash: `accent-text` 7.22, `status-running` 5.82,
 `status-warning` 5.78, `status-stopped` 4.74. Brand `accent` as a graphic clears
 the 3:1 floor on every surface (5.08–5.84).
 
+The dark theme adds three derived backgrounds that are not tokens — Home's
+asleep tile, Home's canvas wash, and the lit lantern well. Text on them clears
+AA too:
+
+| Derived background | Value | `text-primary` | `text-secondary` | `text-muted` | `accent-text` |
+|---|---|---|---|---|---|
+| Asleep tile (`--wisp-tile-asleep`) | `#11211f` | 14.64 | 9.38 | **5.47** | 8.93 |
+| Canvas wash **at its brightest** | `#0e302d` | 12.39 | 7.94 | **4.63** | 7.56 |
+| Lit lantern well, centre | `#125a53` | — | — | — | 4.29 *(icon — graphic, 3:1 floor)* |
+
+The wash figure is a worst case that no text actually sits on: the gradient's
+centre is at `18% -10%`, i.e. *above* the canvas, and at the counts line's real
+position the wash has fallen to ~1% (≈5.7:1). Recorded so a future strengthening
+of the wash is checked against the number, not the impression.
+
+### Glow — the Dusk light system *(settled 2026-08-25)*
+
+Dark is where the Will-o'-the-Wisp identity does real work: **a running workload
+glows**. Three utilities carry it, all in `index.css`, all `color-mix` of the
+tokens, all no-ops in light:
+
+- **Home's lanterns** — the full canvas treatment; see § Home → Home in the dark theme.
+- **`wisp-lit-glyph`** — the running workload's icon in the sidebar list rows
+  (`VMListItem`, `ContainerListItem`) and in the VM/container **detail header**.
+  A `drop-shadow(0 0 4px status-running/55%)`, so the halo follows the glyph's
+  strokes rather than its bounding box. **Static, not breathing**: this is
+  chrome, not the Home canvas, and a list of animated rows is a distraction.
+  Applied only while the workload runs, so a glow always means the same thing.
+- **`wisp-brand-glow`** — the `WispGlyph` at the two moments it stands for the
+  app itself: the top-bar wordmark and the login card. Accent instead of the
+  running green, `drop-shadow(0 0 6px accent/45%)`. Deliberately *not* inside
+  `WispGlyph`, which is also an icon-picker choice — a permanent glow there
+  would say "running" about a stopped workload.
+
+`login-dusk` is the one atmospheric extra: the login page is the only full-page
+canvas outside Home, and in dusk a flat near-black field with one card on it is
+exactly the generic dark mode this theme exists to avoid. It borrows Home's wash
+— the same light, from the same direction — so the two canvases read as one
+place. Dark only; the light login keeps its plain `bg-surface`.
+
+Rejected: a glow on the light theme's running rows (the green already carries
+the state, and a halo around a 14px icon reads as a rendering artefact), and
+`box-shadow` for the glyph halos (it outlines the icon's box, and on the header
+icon it would light up the whole hover-tinted button).
+
 ### Theme activation and persistence *(settled 2026-08-25)*
 
 - **Three states**: `light`, `dark`, `system` — **`system` is the default**, following the OS `prefers-color-scheme` and tracking it **live** (the media query is subscribed while the tab is open, so a phone flipping to dark at sunset recolors without a reload). An explicit `light` or `dark` overrides the OS.
@@ -506,8 +551,28 @@ Same-URL collisions keep one tile: app beats mDNS beats manual, and within a tie
   - **Launch notch** — a 26×15px tab sitting *in* the top border at `right: 15px`, filling accent on hover. The whole tile opens the URL in a new tab; the notch is its cue.
   - **Cogwheel** below it, vertically centred, 28px, navigating to the workload's Wisp page. It renders outside the anchor (a button can't nest in a link) at `right: 15px` so its axis lands 29px from the card's outer edge — exactly where the notch's axis falls from inside the 1px border. External tiles have no cogwheel.
 - **Ambient:** four blurred accent motes drift across the canvas on long unsynchronised loops.
-- **Motion** — the breathing glow, the motes, and the tile transitions all carry `motion-reduce:` variants, so `prefers-reduced-motion` parks the page.
+- **Motion** — the breathing glow, the motes, and the tile transitions all carry `motion-reduce:` variants, so `prefers-reduced-motion` parks the page. A parked lantern is still lit: `home-lantern-lit` carries a static glow under the animation, which is what remains when the keyframes are switched off.
 - Colours come only from the palette tokens; the canvas wash, glow, mote tints, and asleep-card shade are `color-mix` derivations of `--color-accent` / `--color-surface` declared in `index.css`.
+
+**Home in the dark theme** *(settled 2026-08-25)*. Light and dark are two settings
+of one system, not two designs — the theme only changes which way each mix goes.
+Light **lifts toward white**; dark **sinks toward the surface and lets the accent
+emit**:
+
+| | Light | Dark |
+|---|---|---|
+| Canvas wash | `accent-soft` at 80%, a pale tint | the **accent itself** at 15→9→4% over the canvas, four stops (`accent-soft` is *darker* than the spruce canvas — reusing it would dim the corner instead of lighting it, and a two-stop ramp this wide bands visibly on a near-black surface) |
+| Asleep tile | `surface` lifted 55% toward white | `surface-card` sunk 50% toward `surface` — the border keeps it a tile, the missing light keeps it unlit |
+| Lit well fill | `accent-soft` → `accent-soft` toward white | `accent` mixed **into the card**, 42% at the centre → 13% at the edge: glass with a light behind it |
+| Lit well ring / glow | `accent` 22% toward white, 18px @ 32% | `accent` @ 50%, 22px @ 42% |
+| Breathe | 14px @ 24% ↔ 24px @ 42% | 18px @ 34% ↔ 30px @ 55% — a lantern is meant to be the brightest thing in a dark frame |
+| Motes | accent @ 42% / pale @ 40% | accent @ 85% / `accent-text`-based pale @ 78%, so they read as actual wisps rather than smudges |
+
+Every value is a variable on `:root`, overridden under `:root[data-theme='dark']`,
+and read by both the `home-*` utilities **and the `wisp-breathe` keyframes**.
+Keyframes are global, so a second dark keyframe set would have meant a second
+animation name and a `dark:` class swap in `HomeTile`; one variable pair keeps
+that out of the JSX, and a theme flip re-resolves it on the running animation.
 
 #### Edit mode
 

@@ -251,20 +251,90 @@
    Every colour below is derived from the palette tokens above — the glow, the
    motes, and the canvas wash are the accent at varying strengths, nothing new.
    Motion is applied from the components as `animate-[…]` so Tailwind's
-   `motion-reduce:animate-none` can switch it off (docs/spec/UI.md § Home). */
+   `motion-reduce:animate-none` can switch it off (docs/spec/UI.md § Home).
+
+   Light and dark are two settings of one system, not two designs: the theme
+   only changes which way each mix goes. Light *lifts toward white* — the wash
+   is a pale tint, an asleep tile sits a shade off the card, the glow is a hint.
+   Dark *sinks toward the surface and lets the accent emit* — the wash becomes a
+   teal luminance falling over the spruce, an asleep tile sinks back toward the
+   canvas, and the lit wells burn warmer and wider because on a dark page a
+   lantern is supposed to be the brightest thing in the frame.
+
+   The values live on `:root` instead of inside the utilities because the
+   breathe keyframes need them too: keyframes are global, so a second dark
+   keyframe set would mean a second animation name and a `dark:` class swap in
+   the component. One variable pair, read from both places, keeps that out of
+   the JSX — and a theme flip re-resolves them on the running animation. */
+:root {
+  --wisp-canvas-wash: radial-gradient(
+    1100px 420px at 18% -8%,
+    color-mix(in srgb, var(--color-accent-soft) 80%, transparent) 0%,
+    transparent 60%
+  );
+  --wisp-tile-asleep: color-mix(in srgb, var(--color-surface) 45%, white);
+  --wisp-mote-teal: color-mix(in srgb, var(--color-accent) 42%, transparent);
+  --wisp-mote-pale: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--color-accent) 62%, white) 40%,
+    transparent
+  );
+  --wisp-lantern-fill: radial-gradient(
+    circle at 50% 42%,
+    var(--color-accent-soft) 0%,
+    color-mix(in srgb, var(--color-accent-soft) 40%, white) 70%
+  );
+  --wisp-lantern-ring: 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, white);
+  --wisp-lantern-glow: 0 0 18px color-mix(in srgb, var(--color-accent) 32%, transparent);
+  --wisp-breathe-low: 0 0 14px color-mix(in srgb, var(--color-accent) 24%, transparent);
+  --wisp-breathe-high: 0 0 24px color-mix(in srgb, var(--color-accent) 42%, transparent);
+}
+
+:root[data-theme='dark'] {
+  /* The wash is the accent itself at low alpha rather than `accent-soft`: on
+     dark, `accent-soft` is a *darker* teal than the canvas, so mixing it in
+     would dim the corner instead of lighting it. Four stops rather than two —
+     a two-stop ramp this wide bands visibly on a near-black surface. */
+  --wisp-canvas-wash: radial-gradient(
+    1200px 480px at 18% -10%,
+    color-mix(in srgb, var(--color-accent) 15%, transparent) 0%,
+    color-mix(in srgb, var(--color-accent) 9%, transparent) 30%,
+    color-mix(in srgb, var(--color-accent) 4%, transparent) 54%,
+    transparent 76%
+  );
+  /* Asleep sinks back toward the canvas instead of lifting toward white — the
+     card border keeps it a tile, the missing light keeps it unlit. */
+  --wisp-tile-asleep: color-mix(in srgb, var(--color-surface-card) 50%, var(--color-surface));
+  /* Barely-there by design in light; in dark they can read as actual wisps.
+     The pale one takes `accent-text` — the luminous teal — as its base. */
+  --wisp-mote-teal: color-mix(in srgb, var(--color-accent) 85%, transparent);
+  --wisp-mote-pale: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--color-accent-text) 72%, white) 78%,
+    transparent
+  );
+  /* The well is glass with a light behind it: the accent mixed *into the card*,
+     strongest under the icon. `accent-soft` (the light theme's fill) is darker
+     than the card here, so reusing it would put the lantern out. */
+  --wisp-lantern-fill: radial-gradient(
+    circle at 50% 42%,
+    color-mix(in srgb, var(--color-accent) 42%, var(--color-surface-card)) 0%,
+    color-mix(in srgb, var(--color-accent) 13%, var(--color-surface-card)) 74%
+  );
+  --wisp-lantern-ring: 0 0 0 1px color-mix(in srgb, var(--color-accent) 50%, transparent);
+  --wisp-lantern-glow: 0 0 22px color-mix(in srgb, var(--color-accent) 42%, transparent);
+  --wisp-breathe-low: 0 0 18px color-mix(in srgb, var(--color-accent) 34%, transparent);
+  --wisp-breathe-high: 0 0 30px color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
 
 /* A running service is a lit lantern: the icon well breathes. */
 @keyframes wisp-breathe {
   0%,
   100% {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, white),
-      0 0 14px color-mix(in srgb, var(--color-accent) 24%, transparent);
+    box-shadow: var(--wisp-lantern-ring), var(--wisp-breathe-low);
   }
   50% {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, white),
-      0 0 24px color-mix(in srgb, var(--color-accent) 42%, transparent);
+    box-shadow: var(--wisp-lantern-ring), var(--wisp-breathe-high);
   }
 }
 
@@ -307,44 +377,65 @@
 
 /* Canvas: a soft accent wash falling from the top-left over the page surface. */
 @utility home-canvas {
-  background:
-    radial-gradient(
-      1100px 420px at 18% -8%,
-      color-mix(in srgb, var(--color-accent-soft) 80%, transparent) 0%,
-      transparent 60%
-    ),
-    var(--color-surface);
+  background: var(--wisp-canvas-wash), var(--color-surface);
 }
 
-/* An unlit tile sits a shade off white — visibly asleep without receding into
-   the canvas the way a full `bg-surface` would. */
+/* An unlit tile sits a shade off the card — visibly asleep without receding
+   into the canvas the way a full `bg-surface` would. */
 @utility home-tile-asleep {
-  background-color: color-mix(in srgb, var(--color-surface) 45%, white);
+  background-color: var(--wisp-tile-asleep);
 }
 
-/* The two mote tints: the accent itself, and the accent lifted toward white. */
+/* The two mote tints: the accent itself, and a paler sibling. */
 @utility home-mote-teal {
-  background-color: color-mix(in srgb, var(--color-accent) 42%, transparent);
+  background-color: var(--wisp-mote-teal);
 }
 
 @utility home-mote-pale {
-  background-color: color-mix(
-    in srgb,
-    color-mix(in srgb, var(--color-accent) 62%, white) 40%,
-    transparent
-  );
+  background-color: var(--wisp-mote-pale);
 }
 
-/* Icon well of a lit tile — the glow the breathe keyframes animate. */
+/* Icon well of a lit tile — the glow the breathe keyframes animate. The static
+   shadow here is what `motion-reduce` leaves behind, so a parked lantern is
+   still lit. */
 @utility home-lantern-lit {
-  background: radial-gradient(
-    circle at 50% 42%,
-    var(--color-accent-soft) 0%,
-    color-mix(in srgb, var(--color-accent-soft) 40%, white) 70%
-  );
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, white),
-    0 0 18px color-mix(in srgb, var(--color-accent) 32%, transparent);
+  background: var(--wisp-lantern-fill);
+  box-shadow: var(--wisp-lantern-ring), var(--wisp-lantern-glow);
+}
+
+/* The lantern language at chrome scale: a running workload's glyph carries a
+   faint halo in the sidebar list and in the VM/container detail header. Dark
+   only — in light the green already carries the state on its own and a glow
+   around a 14px icon would read as a rendering artefact. `drop-shadow` rather
+   than `box-shadow` so the halo follows the glyph's strokes instead of its
+   bounding box, and static rather than breathing: this is chrome, not the Home
+   canvas, and a list of animated rows is a distraction. */
+@utility wisp-lit-glyph {
+  :root[data-theme='dark'] & {
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-status-running) 55%, transparent));
+  }
+}
+
+/* The brand glyph at the two moments it stands for the app itself — the top-bar
+   wordmark and the login card. In dusk the will-o'-the-wisp is the light
+   source; the same restraint as above, in the accent instead of the running
+   green. Deliberately not inside WispGlyph: the glyph is also an icon-picker
+   choice, where a permanent glow would say "running" about a stopped workload. */
+@utility wisp-brand-glow {
+  :root[data-theme='dark'] & {
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--color-accent) 45%, transparent));
+  }
+}
+
+/* Login is the only full-page canvas outside Home, and in dusk a flat near-black
+   field with one card on it is exactly the generic dark mode this theme exists
+   to avoid. It borrows Home's wash — the same light, from the same direction,
+   so the two canvases read as one place. Dark only: the light login keeps its
+   plain `bg-surface`. */
+@utility login-dusk {
+  :root[data-theme='dark'] & {
+    background: var(--wisp-canvas-wash), var(--color-surface);
+  }
 }
 
 body {

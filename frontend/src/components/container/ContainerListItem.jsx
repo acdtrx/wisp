@@ -55,7 +55,7 @@ export default function ContainerListItem({ container }) {
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <WorkloadIcon size={14} className={`shrink-0 ${iconColorClass}`} />
+          <WorkloadIcon size={14} className={`shrink-0 ${iconColorClass} ${isRunning ? 'wisp-lit-glyph' : ''}`} />
           <span className="truncate text-sm font-medium text-text-primary">{container.name}</span>
           {container.updateAvailable && (
             <span

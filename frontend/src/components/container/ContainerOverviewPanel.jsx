@@ -206,7 +206,7 @@ export default function ContainerOverviewPanel() {
             className={`shrink-0 rounded-lg p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 ${iconColorClass}`}
             title="Change icon"
           >
-            <IconComp size={18} />
+            <IconComp size={18} className={isRunning ? 'wisp-lit-glyph' : undefined} />
           </button>
           <span className="truncate text-sm font-semibold text-text-primary">{name}</span>
           <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-medium text-text-muted shrink-0">container</span>

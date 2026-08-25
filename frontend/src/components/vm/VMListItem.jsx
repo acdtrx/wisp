@@ -58,7 +58,7 @@ export default function VMListItem({ vm }) {
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <OsIcon size={14} className={`shrink-0 ${iconColorClass}`} />
+          <OsIcon size={14} className={`shrink-0 ${iconColorClass} ${isRunning ? 'wisp-lit-glyph' : ''}`} />
           <span className="truncate text-sm font-medium text-text-primary">{vm.name}</span>
           {staleBinary && (
             <span

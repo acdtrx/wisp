@@ -42,7 +42,7 @@ export default function TopBar() {
           title="Home"
           aria-label="Go to Home"
         >
-          <WispGlyph size={22} className="shrink-0" />
+          <WispGlyph size={22} className="wisp-brand-glow shrink-0" />
           <span className="font-display text-base font-semibold text-text-primary tracking-tight">Wisp</span>
         </button>
         <ServerSwitcher />
