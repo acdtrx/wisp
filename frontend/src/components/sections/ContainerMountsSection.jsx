@@ -6,16 +6,13 @@ import {
   MemoryStick,
   Trash2,
   Loader2,
-  Save,
   Upload,
   Archive,
   SquarePen,
   Pencil,
-  X,
   AlertCircle,
 } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
-import Toggle from '../shared/Toggle.jsx';
 import {
   DataTableScroll,
   DataTable,
@@ -26,239 +23,93 @@ import {
   DataTableTh,
   DataTableTd,
   dataTableEmptyCellClass,
-  rowActionIconBtnPrimary,
+  rowActionIconBtn,
 } from '../shared/DataTableChrome.jsx';
 import MountFileEditorModal from './MountFileEditorModal.jsx';
+import ContainerMountEditorModal, {
+  normalizeMountType,
+  normalizeOwnerId,
+  normalizeTmpfsSize,
+} from './ContainerMountEditorModal.jsx';
 import {
-  addContainerMount,
-  updateContainerMount,
   removeContainerMount,
   getContainerMountUsage,
   uploadMountFile,
   uploadMountZip,
 } from '../../api/containers.js';
-import { randomId } from '../../utils/randomId.js';
 import { formatSize } from '../../utils/formatters.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { getMountStatus } from '../../api/settings.js';
 
-const iconBtn =
-  'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
+const addBtn =
+  'inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150';
 
-function isValidSubPath(value) {
-  if (value === undefined || value === null || value === '') return true;
-  if (typeof value !== 'string') return false;
-  const t = value.trim();
-  if (t === '') return true;
-  if (t.startsWith('/')) return false;
-  return !t.split('/').filter(Boolean).some((seg) => seg === '..' || seg === '.');
-}
+/* Caps the phone-only stacked lines so the two-column table never scrolls
+   sideways; the desktop columns size themselves as before. */
+const phoneLineClamp = 'block max-w-[60vw] truncate sm:max-w-none';
 
-function normalizeSubPath(value) {
-  if (!value || typeof value !== 'string') return '';
-  return value.trim().replace(/^\/+/, '').replace(/\/+$/, '');
-}
-
-const TMPFS_DEFAULT_SIZE_MIB = 64;
-const TMPFS_MAX_SIZE_MIB = 2048;
-
-function normalizeRowType(t) {
-  if (t === 'directory' || t === 'tmpfs') return t;
-  return 'file';
+function truncate(s, n) {
+  const t = (s || '').trim();
+  if (t.length <= n) return t || '—';
+  return `${t.slice(0, n - 1)}…`;
 }
 
 function rowsFromServerMounts(mounts) {
   return (mounts || []).map((m) => ({
-    rowId: m.name,
-    serverMountName: m.name,
-    type: normalizeRowType(m.type),
     name: m.name || '',
+    type: normalizeMountType(m.type),
     containerPath: m.containerPath || '',
     readonly: !!m.readonly,
     sourceId: m.sourceId || null,
     subPath: m.subPath || '',
-    containerOwnerUid: Number.isInteger(m.containerOwnerUid) ? m.containerOwnerUid : 0,
-    containerOwnerGid: Number.isInteger(m.containerOwnerGid) ? m.containerOwnerGid : 0,
-    sizeMiB: Number.isInteger(m.sizeMiB) && m.sizeMiB > 0 ? m.sizeMiB : TMPFS_DEFAULT_SIZE_MIB,
+    containerOwnerUid: normalizeOwnerId(m.containerOwnerUid),
+    containerOwnerGid: normalizeOwnerId(m.containerOwnerGid),
+    sizeMiB: normalizeTmpfsSize(m.sizeMiB),
   }));
 }
 
-function isValidOwnerId(value) {
-  if (value === '' || value === null || value === undefined) return true;
-  const n = typeof value === 'string' ? Number(value) : value;
-  return Number.isInteger(n) && n >= 0 && n <= 65535;
-}
-
-function normalizeOwnerId(value) {
-  if (value === '' || value === null || value === undefined) return 0;
-  const n = typeof value === 'string' ? Number(value) : value;
-  return Number.isInteger(n) && n >= 0 && n <= 65535 ? n : 0;
-}
-
-function isValidTmpfsSize(value) {
-  if (value === '' || value === null || value === undefined) return false;
-  const n = typeof value === 'string' ? Number(value) : value;
-  return Number.isInteger(n) && n >= 1 && n <= TMPFS_MAX_SIZE_MIB;
-}
-
-function normalizeTmpfsSize(value) {
-  if (value === '' || value === null || value === undefined) return TMPFS_DEFAULT_SIZE_MIB;
-  const n = typeof value === 'string' ? Number(value) : value;
-  return Number.isInteger(n) && n >= 1 && n <= TMPFS_MAX_SIZE_MIB ? n : TMPFS_DEFAULT_SIZE_MIB;
-}
-
-function validateRowAgainstOthers(row, allRows) {
-  const name = row.name.trim();
-  const containerPath = row.containerPath.trim();
-  if (!name || !containerPath) {
-    return 'Each mount needs a container path and a mount name.';
-  }
-  if (!containerPath.startsWith('/')) {
-    return 'Container path must be absolute (start with /).';
-  }
-  if (row.type === 'tmpfs') {
-    if (!isValidTmpfsSize(row.sizeMiB)) {
-      return `Tmpfs size must be a whole number between 1 and ${TMPFS_MAX_SIZE_MIB} MiB.`;
-    }
-  } else {
-    if (row.sourceId && !isValidSubPath(row.subPath)) {
-      return 'Sub-path must be relative (no leading /) and cannot contain ".." segments.';
-    }
-    if (!isValidOwnerId(row.containerOwnerUid)) {
-      return 'Owner UID must be a whole number between 0 and 65535.';
-    }
-    if (!isValidOwnerId(row.containerOwnerGid)) {
-      return 'Owner GID must be a whole number between 0 and 65535.';
-    }
-  }
-  const names = new Set();
-  const paths = new Set();
-  for (const r of allRows) {
-    if (r.rowId === row.rowId) continue;
-    const n = r.name.trim();
-    const p = r.containerPath.trim();
-    if (n) names.add(n);
-    if (p) paths.add(p);
-  }
-  if (names.has(name)) {
-    return `Duplicate mount name: ${name}`;
-  }
-  if (paths.has(containerPath)) {
-    return `Duplicate container path: ${containerPath}`;
-  }
-  return null;
-}
-
-function rowMatchesServer(row, serverMounts) {
-  const mn = row.name.trim();
-  if (!mn || !row.serverMountName) return false;
-  const s = (serverMounts || []).find((m) => m.name === row.serverMountName);
-  if (!s) return false;
-  if (s.type !== row.type) return false;
-  if (s.name !== mn) return false;
-  if (s.containerPath !== row.containerPath.trim()) return false;
-  if (row.type === 'tmpfs') {
-    const savedSize = Number.isInteger(s.sizeMiB) && s.sizeMiB > 0 ? s.sizeMiB : TMPFS_DEFAULT_SIZE_MIB;
-    return savedSize === normalizeTmpfsSize(row.sizeMiB);
-  }
-  const savedSourceId = s.sourceId || null;
-  const savedSubPath = s.subPath || '';
-  const savedOwnerUid = Number.isInteger(s.containerOwnerUid) ? s.containerOwnerUid : 0;
-  const savedOwnerGid = Number.isInteger(s.containerOwnerGid) ? s.containerOwnerGid : 0;
+function MountTypeIcon({ type }) {
+  const label = type === 'tmpfs'
+    ? 'In-memory mount (tmpfs)'
+    : type === 'directory'
+      ? 'Folder mount'
+      : 'File mount';
   return (
-    Boolean(s.readonly) === Boolean(row.readonly)
-    && savedSourceId === (row.sourceId || null)
-    && savedSubPath === normalizeSubPath(row.subPath)
-    && savedOwnerUid === normalizeOwnerId(row.containerOwnerUid)
-    && savedOwnerGid === normalizeOwnerId(row.containerOwnerGid)
+    <span className="inline-flex" title={label} aria-label={label}>
+      {type === 'tmpfs'
+        ? <MemoryStick size={16} aria-hidden />
+        : type === 'directory'
+          ? <Folder size={16} aria-hidden />
+          : <File size={16} aria-hidden />}
+    </span>
   );
-}
-
-function isRowDirty(row, serverMounts) {
-  if (!row.serverMountName) {
-    if (row.type === 'tmpfs') {
-      return (
-        row.name.trim() !== ''
-        || row.containerPath.trim() !== ''
-        || normalizeTmpfsSize(row.sizeMiB) !== TMPFS_DEFAULT_SIZE_MIB
-      );
-    }
-    return (
-      row.name.trim() !== ''
-      || row.containerPath.trim() !== ''
-      || row.readonly
-      || !!row.sourceId
-      || !!normalizeSubPath(row.subPath)
-      || normalizeOwnerId(row.containerOwnerUid) !== 0
-      || normalizeOwnerId(row.containerOwnerGid) !== 0
-    );
-  }
-  const s = (serverMounts || []).find((m) => m.name === row.serverMountName);
-  if (!s) return true;
-  if (s.type !== row.type) return true;
-  if (s.name !== row.name.trim()) return true;
-  if (s.containerPath !== row.containerPath.trim()) return true;
-  if (row.type === 'tmpfs') {
-    const savedSize = Number.isInteger(s.sizeMiB) && s.sizeMiB > 0 ? s.sizeMiB : TMPFS_DEFAULT_SIZE_MIB;
-    return savedSize !== normalizeTmpfsSize(row.sizeMiB);
-  }
-  const savedSourceId = s.sourceId || null;
-  const savedSubPath = s.subPath || '';
-  const savedOwnerUid = Number.isInteger(s.containerOwnerUid) ? s.containerOwnerUid : 0;
-  const savedOwnerGid = Number.isInteger(s.containerOwnerGid) ? s.containerOwnerGid : 0;
-  return (
-    Boolean(s.readonly) !== Boolean(row.readonly)
-    || savedSourceId !== (row.sourceId || null)
-    || savedSubPath !== normalizeSubPath(row.subPath)
-    || savedOwnerUid !== normalizeOwnerId(row.containerOwnerUid)
-    || savedOwnerGid !== normalizeOwnerId(row.containerOwnerGid)
-  );
-}
-
-function isFieldEditing(row, fieldEditRowId) {
-  return !row.serverMountName || fieldEditRowId === row.rowId;
 }
 
 export default function ContainerMountsSection({ config, onRefresh }) {
   const settings = useSettingsStore((s) => s.settings);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
-  const [rows, setRows] = useState(() => rowsFromServerMounts(config.mounts));
-  const [fieldEditRowId, setFieldEditRowId] = useState(null);
-  const [savingRowId, setSavingRowId] = useState(null);
-  const [busyRowId, setBusyRowId] = useState(null);
-  const [deletingRowId, setDeletingRowId] = useState(null);
+  const [busyRowName, setBusyRowName] = useState(null);
+  const [deletingRowName, setDeletingRowName] = useState(null);
   const [error, setError] = useState(null);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editorMountName, setEditorMountName] = useState('');
+  /* The mount is snapshotted when the editor opens so a background refresh of
+   * `config.mounts` can't reset the open form; `kind` drives the create path. */
+  const [editor, setEditor] = useState({ open: false, kind: 'file', mount: null });
+  const [fileEditor, setFileEditor] = useState({ open: false, mountName: '' });
   const [storageStatus, setStorageStatus] = useState([]);
   const [mountUsage, setMountUsage] = useState(null);
+  /* Phones: row actions live in a strip that expands under the row text on tap. */
+  const [expandedName, setExpandedName] = useState(null);
 
   // The parent containerStore replaces `containerConfig` (and therefore `config.mounts`) on
   // every SSE/refresh tick — even when mount content is unchanged — so depending on the array
-  // reference would kick the user out of edit mode mid-edit. Use a content-hashed key instead.
+  // reference would re-run the usage fetch every tick. Use a content-hashed key instead.
   const mountsKey = useMemo(() => JSON.stringify(config.mounts || []), [config.mounts]);
+  const rows = useMemo(() => rowsFromServerMounts(config.mounts), [mountsKey]);
 
   useEffect(() => {
-    setFieldEditRowId(null);
     setError(null);
+    setExpandedName(null);
   }, [config.name]);
-
-  useEffect(() => {
-    setRows((prev) => {
-      const next = rowsFromServerMounts(config.mounts);
-      // Preserve any in-progress unsaved draft EXCEPT when it matches a row that just appeared
-      // on the server (i.e. it was just created by save — without this guard the draft would
-      // duplicate the persisted row until the next render). Match by user-entered name/path.
-      const unsaved = prev.find((r) => {
-        if (r.serverMountName) return false;
-        const name = r.name.trim();
-        const cpath = r.containerPath.trim();
-        return !next.some((s) => s.name === name || s.containerPath === cpath);
-      });
-      if (unsaved) next.push(unsaved);
-      return next;
-    });
-  }, [mountsKey]);
 
   /* Host-side disk usage per mount — one on-demand snapshot per mounts change, not a live feed
    * (sizing walks the data dir and can take seconds for large trees). Best-effort: on failure
@@ -301,194 +152,49 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     return map;
   }, [storageStatus]);
 
-  const serverMounts = config.mounts;
-  const saving = savingRowId !== null;
+  const runAsRoot = !!config.runAsRoot;
+  const colCount = runAsRoot ? 9 : 8;
 
-  const addRow = (type) => {
-    const rowId = randomId();
-    setRows((prev) => [
-      ...prev,
-      {
-        rowId,
-        serverMountName: null,
-        type,
-        name: '',
-        containerPath: '',
-        readonly: false,
-        sourceId: null,
-        subPath: '',
-        containerOwnerUid: 0,
-        containerOwnerGid: 0,
-        sizeMiB: TMPFS_DEFAULT_SIZE_MIB,
-      },
-    ]);
-    setFieldEditRowId(rowId);
-  };
-
-  const handleSourceChange = (row, nextSourceId) => {
-    setRows((prev) => prev.map((r) => {
-      if (r.rowId !== row.rowId) return r;
-      if (!nextSourceId) return { ...r, sourceId: null, subPath: '' };
-      return { ...r, sourceId: nextSourceId };
-    }));
-  };
-
-  const updateRow = (rowId, field, value) => {
-    setRows((prev) => prev.map((r) => (r.rowId === rowId ? { ...r, [field]: value } : r)));
-  };
-
-  const cancelFieldEdit = (row) => {
-    if (!row.serverMountName) {
-      setRows((prev) => prev.filter((r) => r.rowId !== row.rowId));
-      setFieldEditRowId(null);
-      return;
-    }
-    const s = (serverMounts || []).find((m) => m.name === row.serverMountName);
-    if (s) {
-      setRows((prev) =>
-        prev.map((r) =>
-          r.rowId === row.rowId
-            ? {
-                ...r,
-                type: normalizeRowType(s.type),
-                name: s.name,
-                containerPath: s.containerPath,
-                readonly: !!s.readonly,
-                sourceId: s.sourceId || null,
-                subPath: s.subPath || '',
-                containerOwnerUid: Number.isInteger(s.containerOwnerUid) ? s.containerOwnerUid : 0,
-                containerOwnerGid: Number.isInteger(s.containerOwnerGid) ? s.containerOwnerGid : 0,
-                sizeMiB: Number.isInteger(s.sizeMiB) && s.sizeMiB > 0 ? s.sizeMiB : TMPFS_DEFAULT_SIZE_MIB,
-              }
-            : r));
-    }
-    setFieldEditRowId(null);
-  };
-
-  const handleSave = async (row) => {
-    const msg = validateRowAgainstOthers(row, rows);
-    if (msg) {
-      setError(msg);
-      return;
-    }
-    setSavingRowId(row.rowId);
+  const openCreate = (kind) => {
     setError(null);
-    try {
-      if (row.type === 'tmpfs') {
-        const rowSize = normalizeTmpfsSize(row.sizeMiB);
-        if (!row.serverMountName) {
-          const payload = {
-            type: 'tmpfs',
-            name: row.name.trim(),
-            containerPath: row.containerPath.trim(),
-            sizeMiB: rowSize,
-          };
-          const result = await addContainerMount(config.name, payload);
-        } else {
-          const prev = (config.mounts || []).find((m) => m.name === row.serverMountName);
-          if (!prev) {
-            setError('Mount no longer exists on the server. Refresh and try again.');
-            return;
-          }
-          const patch = {};
-          if (row.name.trim() !== prev.name) patch.name = row.name.trim();
-          if (row.containerPath.trim() !== prev.containerPath) patch.containerPath = row.containerPath.trim();
-          const prevSize = Number.isInteger(prev.sizeMiB) && prev.sizeMiB > 0 ? prev.sizeMiB : TMPFS_DEFAULT_SIZE_MIB;
-          if (rowSize !== prevSize) patch.sizeMiB = rowSize;
-          if (Object.keys(patch).length === 0) {
-            setFieldEditRowId(null);
-            return;
-          }
-          const result = await updateContainerMount(config.name, row.serverMountName, patch);
-        }
-      } else {
-        const rowSub = normalizeSubPath(row.subPath);
-        const rowOwnerUid = normalizeOwnerId(row.containerOwnerUid);
-        const rowOwnerGid = normalizeOwnerId(row.containerOwnerGid);
-        if (!row.serverMountName) {
-          const payload = {
-            type: row.type,
-            name: row.name.trim(),
-            containerPath: row.containerPath.trim(),
-            readonly: !!row.readonly,
-          };
-          if (row.sourceId) {
-            payload.sourceId = row.sourceId;
-            payload.subPath = rowSub;
-          }
-          if (rowOwnerUid !== 0) payload.containerOwnerUid = rowOwnerUid;
-          if (rowOwnerGid !== 0) payload.containerOwnerGid = rowOwnerGid;
-          const result = await addContainerMount(config.name, payload);
-        } else {
-          const prev = (config.mounts || []).find((m) => m.name === row.serverMountName);
-          if (!prev) {
-            setError('Mount no longer exists on the server. Refresh and try again.');
-            return;
-          }
-          const patch = {};
-          if (row.name.trim() !== prev.name) patch.name = row.name.trim();
-          if (row.containerPath.trim() !== prev.containerPath) patch.containerPath = row.containerPath.trim();
-          if (!!row.readonly !== !!prev.readonly) patch.readonly = !!row.readonly;
-          const prevSourceId = prev.sourceId || null;
-          const nextSourceId = row.sourceId || null;
-          if (prevSourceId !== nextSourceId) patch.sourceId = nextSourceId;
-          const prevSub = prev.subPath || '';
-          if ((nextSourceId && rowSub !== prevSub) || (!nextSourceId && prevSub)) {
-            patch.subPath = nextSourceId ? rowSub : '';
-          }
-          const prevOwnerUid = Number.isInteger(prev.containerOwnerUid) ? prev.containerOwnerUid : 0;
-          const prevOwnerGid = Number.isInteger(prev.containerOwnerGid) ? prev.containerOwnerGid : 0;
-          if (rowOwnerUid !== prevOwnerUid) patch.containerOwnerUid = rowOwnerUid;
-          if (rowOwnerGid !== prevOwnerGid) patch.containerOwnerGid = rowOwnerGid;
-          if (Object.keys(patch).length === 0) {
-            setFieldEditRowId(null);
-            return;
-          }
-          const result = await updateContainerMount(config.name, row.serverMountName, patch);
-        }
-      }
-      if (onRefresh) await onRefresh();
-      refreshStorageStatus();
-      setFieldEditRowId(null);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSavingRowId(null);
-    }
+    setEditor({ open: true, kind, mount: null });
+  };
+
+  const openEdit = (row) => {
+    setError(null);
+    setEditor({ open: true, kind: row.type, mount: (config.mounts || []).find((m) => m.name === row.name) || row });
+  };
+
+  const closeEditor = () => setEditor({ open: false, kind: 'file', mount: null });
+
+  const handleSaved = async () => {
+    if (onRefresh) await onRefresh();
+    refreshStorageStatus();
   };
 
   const handleRemove = async (row) => {
     setError(null);
-    if (!row.serverMountName) {
-      setRows((prev) => prev.filter((r) => r.rowId !== row.rowId));
-      if (fieldEditRowId === row.rowId) setFieldEditRowId(null);
-      return;
-    }
-    setDeletingRowId(row.rowId);
+    setDeletingRowName(row.name);
     try {
-      const result = await removeContainerMount(config.name, row.serverMountName);
+      await removeContainerMount(config.name, row.name);
       if (onRefresh) await onRefresh();
     } catch (err) {
       setError(err.message);
     } finally {
-      setDeletingRowId(null);
+      setDeletingRowName(null);
     }
   };
 
   const runUploadForRow = async (row, uploadFn) => {
-    if (!row.serverMountName) {
-      setError('Save the mount before uploading.');
-      return;
-    }
-    setBusyRowId(row.rowId);
+    setBusyRowName(row.name);
     setError(null);
     try {
-      await uploadFn(row.serverMountName);
+      await uploadFn(row.name);
       if (onRefresh) await onRefresh();
     } catch (err) {
       setError(err.message);
     } finally {
-      setBusyRowId(null);
+      setBusyRowName(null);
     }
   };
 
@@ -508,20 +214,12 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     runUploadForRow(row, (mn) => uploadMountZip(config.name, mn, file));
   };
 
-  const openEditor = (row) => {
-    const mn = row.name.trim();
-    if (!mn || row.type !== 'file' || !row.serverMountName) return;
-    setEditorMountName(row.serverMountName);
-    setEditorOpen(true);
-  };
-
   const headerAdds = (
-    // Adding a mount opens an inline field editor — desktop only
-    <div className="hidden sm:flex items-center gap-1">
+    <div className="flex items-center gap-1">
       <button
         type="button"
-        onClick={() => addRow('file')}
-        className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
+        onClick={() => openCreate('file')}
+        className={addBtn}
         title="Add file mount"
         aria-label="Add file mount"
       >
@@ -530,8 +228,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
       </button>
       <button
         type="button"
-        onClick={() => addRow('directory')}
-        className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
+        onClick={() => openCreate('directory')}
+        className={addBtn}
         title="Add folder mount"
         aria-label="Add folder mount"
       >
@@ -540,8 +238,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
       </button>
       <button
         type="button"
-        onClick={() => addRow('tmpfs')}
-        className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
+        onClick={() => openCreate('tmpfs')}
+        className={addBtn}
         title="Add tmpfs mount (in-memory, gone on restart)"
         aria-label="Add tmpfs mount"
       >
@@ -551,19 +249,36 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     </div>
   );
 
-  const truncate = (s, n) => {
-    const t = (s || '').trim();
-    if (t.length <= n) return t || '—';
-    return `${t.slice(0, n - 1)}…`;
+  /* Source display: `Local`, or the storage mount's label with a warning when
+   * the reference is dangling or the mount is not currently mounted. */
+  const sourceInfo = (row) => {
+    if (!row.sourceId) return { label: 'Local', warn: false, warnMsg: '' };
+    const sm = storageMounts.find((m) => m.id === row.sourceId);
+    const missing = !sm;
+    const notMounted = sm && storageStatusById.get(sm.id) === false;
+    return {
+      label: sm ? ((sm.label && sm.label.trim()) || sm.mountPath) : row.sourceId,
+      warn: missing || notMounted,
+      warnMsg: missing
+        ? 'Referenced storage mount no longer exists'
+        : notMounted
+          ? 'Referenced storage mount is not currently mounted'
+          : '',
+    };
   };
 
-  const runAsRoot = !!config.runAsRoot;
-  const colCount = runAsRoot ? 9 : 8;
+  const usageText = (row) => {
+    if (row.type === 'tmpfs') return null;
+    if (mountUsage === null) return '…';
+    const u = usageByName.get(row.name);
+    if (!u || u.sizeBytes == null) return null;
+    return `${formatSize(u.sizeBytes)}${u.partial ? '+' : ''}`;
+  };
 
   return (
     <SectionCard
       title="Mounts"
-      helpText="Use the pencil to edit a mount. Saves, deletes, and uploads apply to one row at a time. Hover a row to see actions."
+      helpText="Add or edit a mount in a form. Deletes and uploads apply to one row at a time. On phones, tap a row to reach its actions."
       requiresRestart={!!config.pendingRestart}
       error={error}
       headerAction={headerAdds}
@@ -577,29 +292,29 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                 <DataTableTh dense className="min-w-48">
                   Container path
                 </DataTableTh>
-                <DataTableTh dense className="w-32 min-w-32">
+                <DataTableTh dense className="hidden w-32 min-w-32 sm:table-cell">
                   Mount name
                 </DataTableTh>
-                <DataTableTh dense className="min-w-36">
+                <DataTableTh dense className="hidden min-w-36 sm:table-cell">
                   Source
                 </DataTableTh>
-                <DataTableTh dense className="min-w-32">
+                <DataTableTh dense className="hidden min-w-32 sm:table-cell">
                   Sub-path
                 </DataTableTh>
-                <DataTableTh dense className="w-20" title="Host-side disk usage of the mount data (snapshot)">
+                <DataTableTh dense className="hidden w-20 sm:table-cell" title="Host-side disk usage of the mount data (snapshot)">
                   Size
                 </DataTableTh>
-                <DataTableTh dense className="w-14" title="Read-only">R/O</DataTableTh>
+                <DataTableTh dense className="hidden w-14 sm:table-cell" title="Read-only">R/O</DataTableTh>
                 {runAsRoot && (
                   <DataTableTh
                     dense
-                    className="min-w-28"
+                    className="hidden min-w-28 sm:table-cell"
                     title="In-container UID:GID that maps to the host deploy user (size:1 idmap; Local mounts only)"
                   >
                     Owner uid:gid
                   </DataTableTh>
                 )}
-                <DataTableTh dense align="right">
+                <DataTableTh dense align="right" className="hidden sm:table-cell">
                   Actions
                 </DataTableTh>
               </tr>
@@ -608,337 +323,202 @@ export default function ContainerMountsSection({ config, onRefresh }) {
               {rows.length === 0 && (
                 <tr className={dataTableBodyRowClass}>
                   <td colSpan={colCount} className={`${dataTableEmptyCellClass} text-xs text-text-muted`}>
-                    No mounts configured.
+                    No mounts configured. Use Add in the section header.
                   </td>
                 </tr>
               )}
               {rows.map((row) => {
-                const rowBusy = busyRowId === row.rowId;
-                const rowDeleting = deletingRowId === row.rowId;
-                const persisted = rowMatchesServer(row, serverMounts);
-                const canEditFile = persisted && row.type === 'file';
-                const dirty = isRowDirty(row, serverMounts);
-                const valid = !validateRowAgainstOthers(row, rows);
-                const fieldEdit = isFieldEditing(row, fieldEditRowId);
-                const canSaveRow = fieldEdit && dirty && valid && !saving;
-                const showSaveSpinner = savingRowId === row.rowId;
-                const actionsForce =
-                  fieldEdit
-                  || rowBusy
-                  || showSaveSpinner
-                  || rowDeleting
-                  || !row.serverMountName;
-
-                const tmpfsLabel = row.type === 'tmpfs'
-                  ? `tmpfs (${normalizeTmpfsSize(row.sizeMiB)} MiB)`
+                const rowBusy = busyRowName === row.name;
+                const rowDeleting = deletingRowName === row.name;
+                const expanded = expandedName === row.name;
+                const src = sourceInfo(row);
+                const size = usageText(row);
+                const usage = usageByName.get(row.name);
+                const usageTitle = usage
+                  ? `${usage.hostPath || ''}${usage.partial ? ' — some entries were unreadable; size is an undercount' : ''}`
                   : '';
+                const tmpfsLabel = row.type === 'tmpfs' ? `tmpfs (${row.sizeMiB} MiB)` : '';
+
+                /* Phone summary of the columns that are hidden below `sm`. */
+                const phoneBits = [];
+                if (row.type === 'tmpfs') {
+                  phoneBits.push(tmpfsLabel);
+                } else {
+                  phoneBits.push(row.sourceId && row.subPath ? `${src.label}/${row.subPath}` : src.label);
+                  if (size) phoneBits.push(size);
+                  if (row.readonly) phoneBits.push('read-only');
+                  if (runAsRoot && !row.sourceId && (row.containerOwnerUid || row.containerOwnerGid)) {
+                    phoneBits.push(`${row.containerOwnerUid}:${row.containerOwnerGid}`);
+                  }
+                }
+
+                const actionButtons = (
+                  <>
+                    {row.type === 'file' && (
+                      <>
+                        <button
+                          type="button"
+                          disabled={rowBusy || rowDeleting}
+                          onClick={() => setFileEditor({ open: true, mountName: row.name })}
+                          className={rowActionIconBtn}
+                          title="Edit file"
+                          aria-label={`Edit file of ${row.name}`}
+                        >
+                          <SquarePen size={14} aria-hidden />
+                        </button>
+                        <label
+                          className={`${rowActionIconBtn} cursor-pointer text-accent ${rowBusy || rowDeleting ? 'opacity-40 pointer-events-none' : ''}`}
+                          title="Upload file"
+                          aria-label={`Upload file to ${row.name}`}
+                        >
+                          {rowBusy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Upload size={14} aria-hidden />}
+                          <input
+                            type="file"
+                            className="hidden"
+                            disabled={rowBusy || rowDeleting}
+                            onChange={(e) => handleFileUpload(row, e)}
+                          />
+                        </label>
+                      </>
+                    )}
+                    {row.type === 'directory' && (() => {
+                      const zipDisabled = rowBusy || rowDeleting || !!row.sourceId;
+                      const zipTitle = row.sourceId
+                        ? 'Zip upload is available on Local mounts only'
+                        : 'Upload zip';
+                      return (
+                        <label
+                          className={`${rowActionIconBtn} cursor-pointer text-accent ${zipDisabled ? 'opacity-40 pointer-events-none' : ''}`}
+                          title={zipTitle}
+                          aria-label={zipTitle}
+                        >
+                          {rowBusy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Archive size={14} aria-hidden />}
+                          <input
+                            type="file"
+                            accept=".zip,application/zip"
+                            className="hidden"
+                            disabled={zipDisabled}
+                            onChange={(e) => handleZipUpload(row, e)}
+                          />
+                        </label>
+                      );
+                    })()}
+                    <button
+                      type="button"
+                      onClick={() => openEdit(row)}
+                      disabled={rowDeleting}
+                      className={rowActionIconBtn}
+                      title="Edit"
+                      aria-label={`Edit mount ${row.name}`}
+                    >
+                      <Pencil size={14} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(row)}
+                      disabled={rowBusy || rowDeleting}
+                      className={`${rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
+                      title="Remove mount"
+                      aria-label={`Remove mount ${row.name}`}
+                    >
+                      {rowDeleting ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
+                    </button>
+                  </>
+                );
 
                 return (
-                  <tr key={row.rowId} className={dataTableInteractiveRowClass}>
-                    <DataTableTd dense className="text-text-muted">
-                      <span
-                        className="inline-flex"
-                        title={row.type === 'tmpfs' ? 'In-memory mount (tmpfs)' : row.type === 'directory' ? 'Folder mount' : 'File mount'}
-                      >
-                        {row.type === 'tmpfs'
-                          ? <MemoryStick size={16} aria-hidden />
-                          : row.type === 'directory'
-                            ? <Folder size={16} aria-hidden />
-                            : <File size={16} aria-hidden />}
+                  <tr
+                    key={row.name}
+                    className={`${dataTableInteractiveRowClass} cursor-pointer sm:cursor-auto`}
+                    onClick={() => setExpandedName((prev) => (prev === row.name ? null : row.name))}
+                  >
+                    <DataTableTd dense valign="top" className="text-text-muted sm:align-middle">
+                      <MountTypeIcon type={row.type} />
+                    </DataTableTd>
+                    <DataTableTd dense className="min-w-0 sm:min-w-56">
+                      <span className={`${phoneLineClamp} font-mono text-sm text-text-primary`}>
+                        {truncate(row.containerPath, 40)}
                       </span>
-                    </DataTableTd>
-                    <DataTableTd dense className="min-w-56">
-                      {fieldEdit ? (
-                        <input
-                          type="text"
-                          value={row.containerPath}
-                          onChange={(e) => updateRow(row.rowId, 'containerPath', e.target.value)}
-                          placeholder="/path/in/container"
-                          className="input-field w-full min-w-0 font-mono text-xs"
-                        />
-                      ) : (
-                        <span className="font-mono text-sm text-text-primary">{truncate(row.containerPath, 40)}</span>
+                      {/* The remaining columns are hidden below `sm` and stack here instead. */}
+                      <span className={`${phoneLineClamp} mt-0.5 font-mono text-xs text-text-secondary sm:hidden`}>
+                        {row.name}
+                      </span>
+                      <span className={`${phoneLineClamp} text-[11px] text-text-muted sm:hidden`}>
+                        {src.warn && (
+                          <AlertCircle size={11} className="mr-1 inline align-[-1px] text-status-stopped" aria-label={src.warnMsg} />
+                        )}
+                        {phoneBits.join(' · ')}
+                      </span>
+                      {expanded && (
+                        /* Tap-to-expand action strip (phones only) */
+                        <span className="mt-2 flex items-center gap-1.5 sm:hidden" onClick={(e) => e.stopPropagation()}>
+                          {actionButtons}
+                        </span>
                       )}
                     </DataTableTd>
-                    <DataTableTd dense className="w-32 min-w-32">
-                      {fieldEdit ? (
-                        <input
-                          type="text"
-                          value={row.name}
-                          onChange={(e) => updateRow(row.rowId, 'name', e.target.value)}
-                          placeholder="storage key"
-                          className="input-field w-full min-w-0 font-mono text-xs"
-                        />
-                      ) : (
-                        <span className="font-mono text-sm text-text-primary">{truncate(row.name, 24)}</span>
-                      )}
+                    <DataTableTd dense className="hidden w-32 min-w-32 sm:table-cell">
+                      <span className="font-mono text-sm text-text-primary">{truncate(row.name, 24)}</span>
                     </DataTableTd>
-                    <DataTableTd dense className="min-w-36">
+                    <DataTableTd dense className="hidden min-w-36 sm:table-cell">
                       {row.type === 'tmpfs' ? (
-                        fieldEdit ? (
-                          <span className="inline-flex items-center gap-1 font-mono text-xs">
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              maxLength={4}
-                              value={row.sizeMiB}
-                              onChange={(e) => {
-                                const v = e.target.value.replace(/[^0-9]/g, '');
-                                updateRow(row.rowId, 'sizeMiB', v === '' ? '' : Number(v));
-                              }}
-                              className="input-field w-16 min-w-0 text-right"
-                              title={`Tmpfs cap in MiB (1–${TMPFS_MAX_SIZE_MIB})`}
-                              aria-label="Tmpfs size in MiB"
-                            />
-                            <span className="text-text-muted">MiB</span>
-                          </span>
-                        ) : (
-                          <span className="text-sm text-text-secondary" title={tmpfsLabel}>{tmpfsLabel}</span>
-                        )
-                      ) : row.type === 'file' ? (
+                        <span className="text-sm text-text-secondary" title={tmpfsLabel}>{tmpfsLabel}</span>
+                      ) : row.type === 'file' || !row.sourceId ? (
                         <span className="text-sm text-text-muted">Local</span>
-                      ) : fieldEdit ? (
-                        <select
-                          value={row.sourceId || ''}
-                          onChange={(e) => handleSourceChange(row, e.target.value || null)}
-                          className="input-field w-full min-w-0 text-xs"
-                        >
-                          <option value="">Local</option>
-                          {storageMounts.map((sm) => (
-                            <option key={sm.id} value={sm.id}>
-                              {(sm.label && sm.label.trim()) || sm.mountPath}
-                            </option>
-                          ))}
-                        </select>
                       ) : (
-                        (() => {
-                          if (!row.sourceId) return <span className="text-sm text-text-muted">Local</span>;
-                          const sm = storageMounts.find((m) => m.id === row.sourceId);
-                          const missing = !sm;
-                          const notMounted = sm && storageStatusById.get(sm.id) === false;
-                          const label = sm ? ((sm.label && sm.label.trim()) || sm.mountPath) : row.sourceId;
-                          const warn = missing || notMounted;
-                          const warnMsg = missing
-                            ? 'Referenced storage mount no longer exists'
-                            : notMounted
-                              ? 'Referenced storage mount is not currently mounted'
-                              : '';
-                          return (
-                            <span className="inline-flex items-center gap-1 text-sm">
-                              {warn && (
-                                <AlertCircle size={12} className="text-status-stopped" aria-label={warnMsg}>
-                                  <title>{warnMsg}</title>
-                                </AlertCircle>
-                              )}
-                              <span className={warn ? 'text-status-stopped' : 'text-text-secondary'} title={warn ? warnMsg : label}>
-                                {truncate(label, 20)}
-                              </span>
-                            </span>
-                          );
-                        })()
-                      )}
-                    </DataTableTd>
-                    <DataTableTd dense className="min-w-32">
-                      {row.type === 'tmpfs' ? (
-                        <span className="text-sm text-text-muted">—</span>
-                      ) : row.type === 'file' ? (
-                        <span className="text-sm text-text-muted">—</span>
-                      ) : row.sourceId ? (
-                        fieldEdit ? (
-                          <input
-                            type="text"
-                            value={row.subPath || ''}
-                            onChange={(e) => updateRow(row.rowId, 'subPath', e.target.value)}
-                            placeholder="(empty = mount root)"
-                            className="input-field w-full min-w-0 font-mono text-xs"
-                          />
-                        ) : (
-                          <span className="font-mono text-sm text-text-secondary">{row.subPath ? truncate(row.subPath, 20) : '—'}</span>
-                        )
-                      ) : (
-                        <span className="text-sm text-text-muted">—</span>
-                      )}
-                    </DataTableTd>
-                    <DataTableTd dense className="w-20 whitespace-nowrap">
-                      {(() => {
-                        if (row.type === 'tmpfs') {
-                          return <span className="text-sm text-text-muted" title="tmpfs has no host backing">—</span>;
-                        }
-                        if (!row.serverMountName) {
-                          return <span className="text-sm text-text-muted">—</span>;
-                        }
-                        if (mountUsage === null) {
-                          return <span className="text-xs text-text-muted">…</span>;
-                        }
-                        const u = usageByName.get(row.serverMountName);
-                        if (!u || u.sizeBytes == null) {
-                          return <span className="text-sm text-text-muted">—</span>;
-                        }
-                        const title = `${u.hostPath || ''}${u.partial ? ' — some entries were unreadable; size is an undercount' : ''}`;
-                        return (
-                          <span className="font-mono text-xs text-text-secondary" title={title}>
-                            {formatSize(u.sizeBytes)}{u.partial ? '+' : ''}
+                        <span className="inline-flex items-center gap-1 text-sm">
+                          {src.warn && (
+                            <AlertCircle size={12} className="text-status-stopped" aria-label={src.warnMsg} />
+                          )}
+                          <span className={src.warn ? 'text-status-stopped' : 'text-text-secondary'} title={src.warn ? src.warnMsg : src.label}>
+                            {truncate(src.label, 20)}
                           </span>
-                        );
-                      })()}
+                        </span>
+                      )}
                     </DataTableTd>
-                    <DataTableTd dense className="w-14">
+                    <DataTableTd dense className="hidden min-w-32 sm:table-cell">
+                      {row.type === 'directory' && row.sourceId ? (
+                        <span className="font-mono text-sm text-text-secondary">{row.subPath ? truncate(row.subPath, 20) : '—'}</span>
+                      ) : (
+                        <span className="text-sm text-text-muted">—</span>
+                      )}
+                    </DataTableTd>
+                    <DataTableTd dense className="hidden w-20 whitespace-nowrap sm:table-cell">
+                      {row.type === 'tmpfs' ? (
+                        <span className="text-sm text-text-muted" title="tmpfs has no host backing">—</span>
+                      ) : size === '…' ? (
+                        <span className="text-xs text-text-muted">…</span>
+                      ) : size ? (
+                        <span className="font-mono text-xs text-text-secondary" title={usageTitle}>{size}</span>
+                      ) : (
+                        <span className="text-sm text-text-muted">—</span>
+                      )}
+                    </DataTableTd>
+                    <DataTableTd dense className="hidden w-14 sm:table-cell">
                       {row.type === 'tmpfs' ? (
                         <span className="text-sm text-text-muted" title="tmpfs cannot be read-only">—</span>
-                      ) : fieldEdit ? (
-                        <Toggle checked={row.readonly} onChange={(v) => updateRow(row.rowId, 'readonly', v)} />
                       ) : (
                         <span className="text-sm text-text-secondary">{row.readonly ? 'Yes' : 'No'}</span>
                       )}
                     </DataTableTd>
                     {runAsRoot && (
-                      <DataTableTd dense className="min-w-28">
+                      <DataTableTd dense className="hidden min-w-28 sm:table-cell">
                         {row.type === 'tmpfs' ? (
                           <span className="text-sm text-text-muted" title="Idmap does not apply to tmpfs (kernel-managed in-memory mount)">—</span>
                         ) : row.sourceId ? (
                           <span className="text-sm text-text-muted" title="Idmap is not applied to Storage-sourced mounts">—</span>
-                        ) : fieldEdit ? (
-                          <span className="inline-flex items-center gap-1 font-mono text-xs">
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              maxLength={5}
-                              value={row.containerOwnerUid}
-                              onChange={(e) => {
-                                const v = e.target.value.replace(/[^0-9]/g, '');
-                                updateRow(row.rowId, 'containerOwnerUid', v === '' ? '' : Number(v));
-                              }}
-                              className="input-field w-20 min-w-0 text-right"
-                              title="Container UID that maps to host deploy UID"
-                              aria-label="Owner UID inside container"
-                            />
-                            <span className="text-text-muted">:</span>
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              maxLength={5}
-                              value={row.containerOwnerGid}
-                              onChange={(e) => {
-                                const v = e.target.value.replace(/[^0-9]/g, '');
-                                updateRow(row.rowId, 'containerOwnerGid', v === '' ? '' : Number(v));
-                              }}
-                              className="input-field w-20 min-w-0 text-right"
-                              title="Container GID that maps to host deploy GID"
-                              aria-label="Owner GID inside container"
-                            />
-                          </span>
                         ) : (
                           <span className="font-mono text-sm text-text-secondary">
-                            {`${normalizeOwnerId(row.containerOwnerUid)}:${normalizeOwnerId(row.containerOwnerGid)}`}
+                            {`${row.containerOwnerUid}:${row.containerOwnerGid}`}
                           </span>
                         )}
                       </DataTableTd>
                     )}
-                    <DataTableTd dense align="right">
-                      <DataTableRowActions forceVisible={actionsForce}>
-                        {fieldEdit && (
-                          <>
-                            <button
-                              type="button"
-                              disabled={!canSaveRow}
-                              onClick={() => handleSave(row)}
-                              className={rowActionIconBtnPrimary}
-                              title="Save mount"
-                              aria-label="Save mount"
-                            >
-                              {showSaveSpinner ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Save size={14} aria-hidden />}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => cancelFieldEdit(row)}
-                              disabled={showSaveSpinner}
-                              className={iconBtn}
-                              title={row.serverMountName ? 'Cancel field edit' : 'Remove unsaved row'}
-                              aria-label={row.serverMountName ? 'Cancel field edit' : 'Remove unsaved row'}
-                            >
-                              <X size={14} aria-hidden />
-                            </button>
-                          </>
-                        )}
-                        {row.type === 'tmpfs' ? null : row.type === 'file' ? (
-                          <>
-                            <button
-                              type="button"
-                              disabled={!canEditFile || rowBusy || saving || rowDeleting}
-                              onClick={() => openEditor(row)}
-                              className={iconBtn}
-                              title="Edit file"
-                              aria-label="Edit file"
-                            >
-                              <SquarePen size={14} aria-hidden />
-                            </button>
-                            <label
-                              className={`${iconBtn} cursor-pointer text-accent ${rowBusy || saving || rowDeleting ? 'opacity-40 pointer-events-none' : ''}`}
-                              title="Upload file"
-                              aria-label="Upload file"
-                            >
-                              {rowBusy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Upload size={14} aria-hidden />}
-                              <input
-                                type="file"
-                                className="hidden"
-                                disabled={rowBusy || saving || rowDeleting}
-                                onChange={(e) => handleFileUpload(row, e)}
-                              />
-                            </label>
-                          </>
-                        ) : (
-                          (() => {
-                            const zipDisabled = rowBusy || saving || rowDeleting || !!row.sourceId;
-                            const zipTitle = row.sourceId
-                              ? 'Zip upload is available on Local mounts only'
-                              : 'Upload zip';
-                            return (
-                              <label
-                                className={`${iconBtn} cursor-pointer text-accent ${zipDisabled ? 'opacity-40 pointer-events-none' : ''}`}
-                                title={zipTitle}
-                                aria-label={zipTitle}
-                              >
-                                {rowBusy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Archive size={14} aria-hidden />}
-                                <input
-                                  type="file"
-                                  accept=".zip,application/zip"
-                                  className="hidden"
-                                  disabled={zipDisabled}
-                                  onChange={(e) => handleZipUpload(row, e)}
-                                />
-                              </label>
-                            );
-                          })()
-                        )}
-                        {/* Field editing and delete are desktop-only; edit-file
-                            and upload above stay available on mobile */}
-                        <span className="hidden sm:contents">
-                          {row.serverMountName && !fieldEdit && (
-                            <button
-                              type="button"
-                              onClick={() => setFieldEditRowId(row.rowId)}
-                              className={iconBtn}
-                              title="Edit fields"
-                              aria-label="Edit mount fields"
-                            >
-                              <Pencil size={14} aria-hidden />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleRemove(row)}
-                            disabled={rowBusy || saving || rowDeleting}
-                            className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
-                            title={row.serverMountName ? 'Remove mount' : 'Remove row'}
-                            aria-label={row.serverMountName ? 'Remove mount' : 'Remove row'}
-                          >
-                            {rowDeleting ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
-                          </button>
-                        </span>
-                      </DataTableRowActions>
+                    <DataTableTd dense align="right" className="hidden sm:table-cell">
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <DataTableRowActions forceVisible={rowBusy || rowDeleting}>
+                          {actionButtons}
+                        </DataTableRowActions>
+                      </div>
                     </DataTableTd>
                   </tr>
                 );
@@ -948,14 +528,23 @@ export default function ContainerMountsSection({ config, onRefresh }) {
         </DataTableScroll>
       </div>
 
-      <MountFileEditorModal
-        open={editorOpen}
+      <ContainerMountEditorModal
+        open={editor.open}
         containerName={config.name}
-        mountName={editorMountName}
-        onClose={() => {
-          setEditorOpen(false);
-          setEditorMountName('');
-        }}
+        mount={editor.mount}
+        kind={editor.kind}
+        mounts={config.mounts || []}
+        storageMounts={storageMounts}
+        runAsRoot={runAsRoot}
+        onSaved={handleSaved}
+        onClose={closeEditor}
+      />
+
+      <MountFileEditorModal
+        open={fileEditor.open}
+        containerName={config.name}
+        mountName={fileEditor.mountName}
+        onClose={() => setFileEditor({ open: false, mountName: '' })}
         onSaved={onRefresh}
       />
     </SectionCard>
