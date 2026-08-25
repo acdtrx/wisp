@@ -182,7 +182,8 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
 
           <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border" />
 
-          <Field label="OS Type" className="flex-1 min-w-0">
+          {/* Full row below sm (wraps clear of Auto Start); content-sized on desktop. */}
+          <Field label="OS Type" className="w-full sm:w-auto">
             <SegmentedControl
               options={OS_TYPES}
               value={form.osType}
@@ -212,7 +213,7 @@ function SegmentedControl({ options, value, onChange, disabled, icons }) {
             key={opt.value}
             onClick={() => !disabled && onChange(opt.value)}
             disabled={disabled}
-            className={`flex items-center justify-center gap-1.5 flex-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
+            className={`flex items-center justify-center gap-1.5 flex-1 sm:flex-none rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
               value === opt.value
                 ? 'bg-surface-card text-text-primary shadow-xs'
                 : 'text-text-secondary hover:text-text-primary'

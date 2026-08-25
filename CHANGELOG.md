@@ -7,6 +7,7 @@
 - **Full VM/container management from a phone** — the Env, Disks, Network interfaces, and Mounts sections now add/edit through modal form editors at every screen size (previously read-only below `sm`), matching the Host Mgmt pattern; tables restack their columns on phones so nothing scrolls sideways.
 
 ### Bug Fixes
+- **VM OS Type selector sized to its content** — the Linux/Windows control no longer stretches across the General row on desktop, and on phones it takes its own line instead of colliding with Auto Start.
 - **Tapping a field no longer zooms the page on iOS** — form controls render at 16px on touch devices, below which Safari auto-zooms on focus and never zooms back out.
 - **Beta channel note on its own line** — the Wisp Update card's "Beta channel — pre-releases included." note no longer runs into the version sentence.
 
