@@ -1,16 +1,5 @@
 import { useState, useEffect } from 'react';
-import {
-  Lock,
-  Network,
-  Shuffle,
-  Plus,
-  Trash2,
-  Pencil,
-  Save,
-  X,
-  Loader2,
-  AlertTriangle,
-} from 'lucide-react';
+import { Lock, Network, Shuffle, Plus, Trash2, Pencil, Loader2 } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import { getHostBridges } from '../../api/vms.js';
@@ -26,39 +15,14 @@ import {
   DataTableTh,
   DataTableTd,
   dataTableEmptyCellClass,
-  rowActionIconBtnPrimary,
+  rowActionIconBtn,
 } from '../shared/DataTableChrome.jsx';
+import NicEditorModal from './NicEditorModal.jsx';
+import NicModelSegmentedControl from './NicModelSegmentedControl.jsx';
 
-const NIC_MODEL_OPTIONS = [
-  { value: 'virtio', label: 'VirtIO' },
-  { value: 'e1000', label: 'e1000' },
-  { value: 'rtl8139', label: 'rtl8139' },
-];
-
-const iconBtn =
+/** Compact icon button for the create-flow draft rows (desktop-only layout). */
+const draftIconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
-
-function NicModelSegmentedControl({ value, onChange, disabled }) {
-  return (
-    <div className="flex h-8 min-w-[220px] max-w-[300px] rounded-lg border border-surface-border bg-surface p-0.5">
-      {NIC_MODEL_OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => !disabled && onChange(opt.value)}
-          disabled={disabled}
-          className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors duration-150 ${
-            value === opt.value
-              ? 'bg-surface-card text-text-primary shadow-xs'
-              : 'text-text-secondary hover:text-text-primary'
-          } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function initNicsFromConfig(nicsConfig) {
   return (nicsConfig || []).map((nic, i) => ({
@@ -79,36 +43,23 @@ function normalizeNicsForApi(nics) {
   }));
 }
 
-function nicRowEquals(a, b) {
-  return (
-    a.type === b.type
-    && a.mac === b.mac
-    && a.source === b.source
-    && a.model === b.model
-  );
-}
-
 export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSave, onFormChange }) {
-  const isRunning = vmConfig.state === 'running' || vmConfig.state === 'blocked';
   const isStopped = vmConfig.state === 'shutoff' || vmConfig.state === 'nostate';
   const networkLocked = !isStopped && !isCreating;
 
   const [nics, setNics] = useState(() => initNicsFromConfig(vmConfig.nics));
-  const [originalNics, setOriginalNics] = useState(() => initNicsFromConfig(vmConfig.nics));
   const [bridges, setBridges] = useState([]);
   const nicsSignature = JSON.stringify(vmConfig.nics || []);
 
-  const [editingIdx, setEditingIdx] = useState(null);
-  const [savingIdx, setSavingIdx] = useState(null);
+  /* The row is snapshotted when the editor opens so a background refresh of
+   * `vmConfig.nics` can't reset the open form; `idx` is null when adding. */
+  const [editor, setEditor] = useState({ open: false, idx: null, nic: null });
   const [removingIdx, setRemovingIdx] = useState(null);
   const [error, setError] = useState(null);
   const [requiresRestart, setRequiresRestart] = useState(false);
 
   useEffect(() => {
-    const data = initNicsFromConfig(vmConfig.nics);
-    setNics(data);
-    setOriginalNics(data);
-    setEditingIdx(null);
+    setNics(initNicsFromConfig(vmConfig.nics));
   }, [nicsSignature]);
 
   useEffect(() => {
@@ -120,6 +71,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
     if (isCreating && onFormChange) onFormChange({ nics: nextNics });
   };
 
+  /* Create flow only: draft rows are edited in place and pushed to the parent form. */
   const updateNic = (idx, key, value) => {
     setNics((prev) => {
       const next = prev.map((n, i) => (i === idx ? { ...n, [key]: value } : n));
@@ -128,7 +80,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
     });
   };
 
-  const addNic = () => {
+  const addDraftNic = () => {
     setNics((prev) => {
       const next = [
         ...prev,
@@ -141,9 +93,34 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
         },
       ];
       syncNicsToParent(next);
-      if (!isCreating) setEditingIdx(next.length - 1);
       return next;
     });
+  };
+
+  const openEditor = (idx) => {
+    if (networkLocked) return;
+    setError(null);
+    setEditor({ open: true, idx, nic: idx === null ? null : nics[idx] });
+  };
+
+  const closeEditor = () => setEditor({ open: false, idx: null, nic: null });
+
+  /**
+   * Save path for the editor modal: every NIC change re-PATCHes the whole
+   * `nics` array (the documented exception, see docs/UI-PATTERNS.md § Variants
+   * — **VM — Network interfaces**). Failures propagate so the modal can show
+   * them and stay open.
+   */
+  const submitNic = async (fields) => {
+    const { idx } = editor;
+    const next = idx === null
+      ? [...nics, { _key: randomId(), type: 'bridge', ...fields }]
+      : nics.map((n, i) => (i === idx ? { ...n, ...fields } : n));
+    setError(null);
+    const result = await onSave({ nics: normalizeNicsForApi(next) });
+    if (result?.requiresRestart) setRequiresRestart(true);
+    setNics(next);
+    return result;
   };
 
   const removeNicAt = async (idx) => {
@@ -153,22 +130,13 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
     if (isCreating) {
       setNics(next);
       syncNicsToParent(next);
-      setEditingIdx((e) => {
-        if (e === null) return null;
-        if (e === idx) return null;
-        if (e > idx) return e - 1;
-        return e;
-      });
       return;
     }
     setRemovingIdx(idx);
     try {
       const result = await onSave({ nics: normalizeNicsForApi(next) });
       if (result?.requiresRestart) setRequiresRestart(true);
-      const normalizedUi = next.map((nic) => ({ ...nic }));
-      setNics(normalizedUi);
-      setOriginalNics(normalizedUi);
-      setEditingIdx(null);
+      setNics(next);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -176,65 +144,21 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
     }
   };
 
-  const startEdit = (idx) => {
-    if (networkLocked) return;
-    setEditingIdx(idx);
-    setError(null);
-  };
-
-  const cancelEdit = (idx) => {
-    setNics((prev) => {
-      const o = originalNics[idx];
-      if (!o) return prev;
-      const next = prev.map((n, i) => (i === idx ? { ...o, _key: n._key } : n));
-      if (isCreating) syncNicsToParent(next);
-      return next;
-    });
-    setEditingIdx(null);
-  };
-
-  const saveRow = async (idx) => {
-    if (isCreating) {
-      setEditingIdx(null);
-      return;
-    }
-    setSavingIdx(idx);
-    setError(null);
-    try {
-      const normalizedNics = normalizeNicsForApi(nics);
-      const result = await onSave({ nics: normalizedNics });
-      const normalizedUi = nics.map((nic) => ({ ...nic }));
-      setNics(normalizedUi);
-      setOriginalNics(normalizedUi);
-      if (result?.requiresRestart) setRequiresRestart(true);
-      setEditingIdx(null);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSavingIdx(null);
-    }
-  };
-
-  const headerAdd =
-    isStopped || isCreating ? (
-      <button
-        type="button"
-        onClick={addNic}
-        className="hidden sm:inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
-        title="Add NIC"
-        aria-label="Add NIC"
-      >
-        <Plus size={14} aria-hidden />
-        <Network size={14} aria-hidden />
-      </button>
-    ) : undefined;
-
-  const rowDirty = (idx) => {
-    const n = nics[idx];
-    const o = originalNics[idx];
-    if (!n || !o) return true;
-    return !nicRowEquals(n, o);
-  };
+  /* Create stays desktop-oriented (UI.md § Responsive behavior): its draft rows
+   * hide their Actions below `sm`, so Add hides with them. */
+  const headerAdd = (
+    <button
+      type="button"
+      onClick={() => (isCreating ? addDraftNic() : openEditor(null))}
+      disabled={networkLocked}
+      className={`${isCreating ? 'hidden sm:inline-flex' : 'inline-flex'} items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed`}
+      title={networkLocked ? 'Stop the VM to add a NIC' : 'Add NIC'}
+      aria-label="Add NIC"
+    >
+      <Plus size={14} aria-hidden />
+      <Network size={14} aria-hidden />
+    </button>
+  );
 
   return (
     <SectionCard
@@ -242,7 +166,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
       helpText={
         isCreating
           ? 'Configure bridges and MACs now — changes apply when you create the VM.'
-          : 'Each NIC saves with the row Save button. Hover a row to see actions.'
+          : 'Add or edit an interface in a form; every change re-saves the whole NIC list. Editing requires the VM to be stopped.'
       }
       requiresRestart={requiresRestart}
       error={error}
@@ -258,11 +182,13 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
               <DataTableTh dense className="sm:min-w-28">
                 Bridge
               </DataTableTh>
-              <DataTableTh dense>Model</DataTableTh>
-              <DataTableTh dense className="sm:min-w-48">
+              <DataTableTh dense className={isCreating ? '' : 'hidden sm:table-cell'}>
+                Model
+              </DataTableTh>
+              <DataTableTh dense className={`sm:min-w-48 ${isCreating ? '' : 'hidden sm:table-cell'}`}>
                 MAC
               </DataTableTh>
-              <DataTableTh dense align="right" className="hidden sm:table-cell">
+              <DataTableTh dense align="right" className={isCreating ? 'hidden sm:table-cell' : ''}>
                 Actions
               </DataTableTh>
             </tr>
@@ -276,16 +202,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
               </tr>
             )}
             {nics.map((nic, idx) => {
-              const showInputs = isCreating || editingIdx === idx;
-              const dirty = rowDirty(idx);
-              const canSave = !isCreating && editingIdx === idx && dirty && savingIdx !== idx;
-              const macWarn = !isCreating && idx === 0 && nic.mac !== (originalNics[0]?.mac ?? '');
-
-              const actionsForce =
-                isCreating
-                || editingIdx === idx
-                || savingIdx === idx
-                || removingIdx === idx;
+              const removing = removingIdx === idx;
 
               return (
                 <tr key={nic._key} className={dataTableInteractiveRowClass}>
@@ -293,11 +210,10 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                     net{idx}
                   </DataTableTd>
                   <DataTableTd dense>
-                    {showInputs ? (
+                    {isCreating ? (
                       <select
                         value={nic.source}
                         onChange={(e) => updateNic(idx, 'source', e.target.value)}
-                        disabled={networkLocked}
                         className="input-field h-8 w-full min-w-24 max-w-44 text-xs"
                       >
                         {!nic.source && <option value="">Select…</option>}
@@ -311,115 +227,76 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                         )}
                       </select>
                     ) : (
-                      <span className="font-mono text-sm text-text-primary">{nic.source || '—'}</span>
+                      <>
+                        <span className="font-mono text-sm text-text-primary">{nic.source || '—'}</span>
+                        {/* Model + MAC stack here below `sm`, where their columns are hidden. */}
+                        <div className="mt-0.5 font-mono text-[11px] text-text-secondary sm:hidden">
+                          {nic.model} · {nic.mac || '—'}
+                        </div>
+                      </>
                     )}
                   </DataTableTd>
-                  <DataTableTd dense>
-                    {showInputs ? (
+                  <DataTableTd dense className={isCreating ? '' : 'hidden sm:table-cell'}>
+                    {isCreating ? (
                       <NicModelSegmentedControl
                         value={nic.model}
                         onChange={(v) => updateNic(idx, 'model', v)}
-                        disabled={networkLocked}
                       />
                     ) : (
                       <span className="text-sm text-text-secondary">{nic.model}</span>
                     )}
                   </DataTableTd>
-                  <DataTableTd dense>
-                    {showInputs ? (
+                  <DataTableTd dense className={isCreating ? '' : 'hidden sm:table-cell'}>
+                    {isCreating ? (
                       <div className="flex flex-wrap items-center gap-1.5">
                         <input
                           type="text"
                           value={nic.mac}
                           onChange={(e) => updateNic(idx, 'mac', e.target.value)}
-                          disabled={networkLocked}
                           className="input-field h-8 min-w-32 max-w-48 font-mono text-[11px]"
                         />
-                        {(isStopped || isCreating) && (
-                          <button
-                            type="button"
-                            onClick={() => updateNic(idx, 'mac', randomMac())}
-                            className={`${iconBtn} shrink-0`}
-                            title="Randomize MAC"
-                            aria-label="Randomize MAC"
-                          >
-                            <Shuffle size={13} aria-hidden />
-                          </button>
-                        )}
-                        {macWarn && (
-                          <span
-                            className="shrink-0 text-status-warning"
-                            title="If this VM uses cloud-init, re-save cloud-init after changing the MAC."
-                          >
-                            <AlertTriangle size={16} aria-hidden />
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 font-mono text-xs text-text-primary">
-                        {nic.mac || '—'}
-                        {macWarn && (
-                          <span
-                            className="text-status-warning"
-                            title="If this VM uses cloud-init, re-save cloud-init after changing the MAC."
-                          >
-                            <AlertTriangle size={14} aria-hidden />
-                          </span>
-                        )}
-                      </span>
-                    )}
-                  </DataTableTd>
-                  <DataTableTd dense align="right" className="hidden sm:table-cell">
-                    <DataTableRowActions forceVisible={actionsForce}>
-                      {!isCreating && !networkLocked && !showInputs && (
                         <button
                           type="button"
-                          onClick={() => startEdit(idx)}
-                          className={iconBtn}
-                          title="Edit"
+                          onClick={() => updateNic(idx, 'mac', randomMac())}
+                          className={`${draftIconBtn} shrink-0`}
+                          title="Randomize MAC"
+                          aria-label="Randomize MAC"
+                        >
+                          <Shuffle size={13} aria-hidden />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="font-mono text-xs text-text-primary">{nic.mac || '—'}</span>
+                    )}
+                  </DataTableTd>
+                  <DataTableTd
+                    dense
+                    align="right"
+                    className={isCreating ? 'hidden sm:table-cell' : ''}
+                  >
+                    <DataTableRowActions forceVisible={isCreating || removing}>
+                      {!isCreating && (
+                        <button
+                          type="button"
+                          onClick={() => openEditor(idx)}
+                          disabled={networkLocked}
+                          className={rowActionIconBtn}
+                          title={networkLocked ? 'Stop the VM to edit NICs' : 'Edit'}
                           aria-label={`Edit NIC net${idx}`}
                         >
                           <Pencil size={14} aria-hidden />
                         </button>
                       )}
-                      {!isCreating && showInputs && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => saveRow(idx)}
-                            disabled={!canSave}
-                            className={rowActionIconBtnPrimary}
-                            title="Save NICs"
-                            aria-label={`Save network interfaces (${dirty ? 'unsaved' : 'unchanged'})`}
-                          >
-                            {savingIdx === idx ? (
-                              <Loader2 size={14} className="animate-spin" aria-hidden />
-                            ) : (
-                              <Save size={14} aria-hidden />
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => cancelEdit(idx)}
-                            disabled={savingIdx === idx}
-                            className={iconBtn}
-                            title="Cancel edit"
-                            aria-label="Cancel edit"
-                          >
-                            <X size={14} aria-hidden />
-                          </button>
-                        </>
-                      )}
-                      {nics.length > 1 && (isStopped || isCreating) && (
+                      {nics.length > 1 && (
                         <button
                           type="button"
                           onClick={() => removeNicAt(idx)}
-                          disabled={removingIdx === idx || savingIdx === idx}
-                          className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
-                          title="Remove NIC"
+                          disabled={networkLocked || removing}
+                          className={`${isCreating ? draftIconBtn : rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
+                          title={networkLocked ? 'Stop the VM to remove NICs' : 'Remove NIC'}
                           aria-label={`Remove NIC net${idx}`}
                         >
-                          {removingIdx === idx ? (
+                          {removing ? (
                             <Loader2 size={14} className="animate-spin" aria-hidden />
                           ) : (
                             <Trash2 size={13} aria-hidden />
@@ -435,12 +312,21 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
         </DataTable>
       </DataTableScroll>
 
-      {networkLocked && !isCreating && (
-        <p className="mt-2 hidden items-center gap-1 text-[11px] text-text-muted sm:flex">
+      {networkLocked && (
+        <p className="mt-2 flex items-center gap-1 text-[11px] text-text-muted">
           <Lock size={11} aria-hidden />
           Stop the VM to change bridges, models, or MACs.
         </p>
       )}
+
+      <NicEditorModal
+        open={editor.open}
+        nic={editor.nic}
+        index={editor.idx === null ? nics.length : editor.idx}
+        bridges={bridges}
+        onSubmit={submitNic}
+        onClose={closeEditor}
+      />
     </SectionCard>
   );
 }
