@@ -13,12 +13,6 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   reference for what Wisp's dark theme should feel like. Revisit when: regular
   use in dark surroundings makes the light-only UI an observed irritation —
   not on aesthetic impulse.
-- **Phones: modal form editors for VM/container detail sections** — Env,
-  Disks, Network interfaces, and Mounts are read-only below `sm`; move their
-  add/edit to modal form editors the way Host Mgmt's SMB/drives/bridges
-  already work (referenced from `docs/spec/UI.md` § Responsive Behavior).
-  Revisit when: a real phone session needs to add or edit one of these
-  sections and the read-only fallback forces a trip to a desktop.
 - **Create VM: NIC draft sync warns during render** — `syncNicsToParent` calls
   `onFormChange` from inside a `setNics` updater, so React logs "Cannot update
   a component (`CreateVMPanel`) while rendering a different component"; the
