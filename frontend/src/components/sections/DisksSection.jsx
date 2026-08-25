@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   HardDrive,
   Disc,
@@ -9,8 +9,7 @@ import {
   Check,
   FileImage,
   Pencil,
-  Save,
-  X,
+  Lock,
 } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import ImageLibraryModal from '../shared/ImageLibraryModal.jsx';
@@ -24,14 +23,12 @@ import {
   DataTableTh,
   DataTableTd,
   dataTableCellPadX,
+  rowActionIconBtn,
   rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
+import DiskEditorModal, { libraryImagePath } from './DiskEditorModal.jsx';
 import {
-  attachDiskToVM,
-  createDiskOnVM,
   detachDiskFromVM,
-  resizeDisk,
-  updateDiskBus,
   attachISO,
   ejectISO,
 } from '../../api/vms.js';
@@ -39,12 +36,9 @@ import {
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
-const DISK_BUS_OPTIONS = [
-  { value: 'virtio', label: 'VirtIO' },
-  { value: 'scsi', label: 'VirtIO SCSI' },
-  { value: 'sata', label: 'SATA' },
-  { value: 'ide', label: 'IDE' },
-];
+/* Caps the phone-only stacked lines so the two-column table never scrolls
+   sideways; the desktop columns size themselves as before. */
+const phoneLineClamp = 'block max-w-[60vw] truncate sm:max-w-none';
 
 function formatSource(source) {
   if (!source) return null;
@@ -104,10 +98,9 @@ export default function DisksSection({
   const [error, setError] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerContext, setPickerContext] = useState(null);
-  /** Inline edit for sda/sdb: size (GB) + bus; Save calls API. */
-  const [diskEdit, setDiskEdit] = useState(null);
-  /** Secondary disk (sdb) draft: confirm runs create or attach+optional resize. */
-  const [sdbDraft, setSdbDraft] = useState(null);
+  /* The disk is snapshotted when the editor opens so a background refresh of
+   * `vmConfig.disks` can't reset the open form; `disk` is null when adding. */
+  const [editor, setEditor] = useState({ open: false, slot: 'sdb', disk: null });
   /** Create VM: draft for adding sda/sdb from header (new or existing image picked). */
   const [createDiskDraft, setCreateDiskDraft] = useState(null);
 
@@ -139,10 +132,6 @@ export default function DisksSection({
       resizeGB: null,
     };
 
-  useEffect(() => {
-    if (sdb) setSdbDraft(null);
-  }, [sdb]);
-
   async function executeDiskOperation(actionName, fn, afterSuccess) {
     setLoading(actionName);
     setError(null);
@@ -163,7 +152,7 @@ export default function DisksSection({
   }
 
   function handlePickerSelect(file) {
-    const imagePath = file._fullPath || `/var/lib/wisp/images/${file.name}`;
+    const imagePath = libraryImagePath(file);
     const ctx = pickerContext;
     setPickerOpen(false);
     setPickerContext(null);
@@ -193,63 +182,17 @@ export default function DisksSection({
       }
       return;
     }
-    if (ctx?.type === 'disk' && ctx.defer && ctx.slot === 'sdb') {
-      setSdbDraft({
-        mode: 'existing',
-        path: imagePath,
-        name: file.name,
-        resizeGB: null,
-        bus: sda?.bus || 'virtio',
-      });
-      return;
-    }
-    if (ctx?.type === 'disk') {
-      executeDiskOperation(`attach-${ctx.slot}`, () => attachDiskToVM(vmName, ctx.slot, imagePath, 'virtio'));
-    } else if (ctx?.type === 'cdrom') {
+    /* Non-create: the only picker context left is the ISO slots — block disks
+     * are added and edited in DiskEditorModal. */
+    if (ctx?.type === 'cdrom') {
       executeDiskOperation(`iso-${ctx.slot}`, () => attachISO(vmName, ctx.slot, imagePath));
     }
   }
 
-  function startDiskEdit(slot) {
-    const d = slot === 'sda' ? sda : sdb;
-    setDiskEdit({
-      slot,
-      sizeGB: d?.sizeGiB != null ? String(d.sizeGiB) : '',
-      bus: d?.bus || 'virtio',
-    });
-  }
-
-  function saveDiskEdit() {
-    if (!diskEdit) return;
-    const { slot, sizeGB, bus } = diskEdit;
-    const disk = slot === 'sda' ? sda : sdb;
-    const newSize = parseFloat(sizeGB);
-    if (Number.isNaN(newSize) || newSize <= 0) {
-      setError('Enter a valid size in GB.');
-      return;
-    }
-    const prevBus = disk?.bus || 'virtio';
-    const busChanged = bus !== prevBus;
-    const sizeChanged =
-      disk?.sizeGiB == null || Math.abs(newSize - Number(disk.sizeGiB)) > 0.001;
-
-    if (!busChanged && !sizeChanged) {
-      setDiskEdit(null);
-      return;
-    }
-
-    executeDiskOperation(
-      `disk-edit-${slot}`,
-      async () => {
-        if (busChanged) {
-          await updateDiskBus(vmName, slot, bus);
-        }
-        if (sizeChanged) {
-          await resizeDisk(vmName, slot, newSize);
-        }
-      },
-      () => setDiskEdit(null),
-    );
+  function openDiskEditor(slot) {
+    setError(null);
+    const existing = slot === 'sda' ? sda : sdb;
+    setEditor({ open: true, slot, disk: existing || null });
   }
 
   function handlePlusCdrom() {
@@ -266,25 +209,8 @@ export default function DisksSection({
     return !sdc?.source || !sdd?.source;
   }
 
-  const canAddDisk = sda && !sdb && isStopped && !sdbDraft;
-
-  function confirmSdbDraft() {
-    if (!sdbDraft) return;
-    if (sdbDraft.mode === 'new') {
-      const { sizeGB, bus } = sdbDraft;
-      const gb = Math.max(1, parseInt(sizeGB, 10) || 32);
-      executeDiskOperation('create-sdb', () => createDiskOnVM(vmName, 'sdb', gb, bus));
-      return;
-    }
-    const { path, bus, resizeGB } = sdbDraft;
-    executeDiskOperation('attach-sdb', async () => {
-      await attachDiskToVM(vmName, 'sdb', path, bus);
-      const target = resizeGB != null && resizeGB > 0 ? Number(resizeGB) : null;
-      if (target != null && !Number.isNaN(target)) {
-        await resizeDisk(vmName, 'sdb', target);
-      }
-    });
-  }
+  /* The second slot is free — the button is disabled, not hidden, while the VM runs. */
+  const sdbSlotFree = !!sda && !sdb;
 
   const canAddFirstCreateDisk =
     !!isCreating && disk.type === 'none' && !createDiskDraft;
@@ -453,33 +379,19 @@ export default function DisksSection({
         </div>
       )
     : (
-        // Disk/ISO add flows open editors/pickers — desktop only
-        <div className="hidden sm:flex items-center gap-1.5">
-          {canAddDisk && (
-            <>
-              <button
-                type="button"
-                onClick={() =>
-                  setSdbDraft({ mode: 'new', sizeGB: 32, bus: sda?.bus || 'virtio' })
-                }
-                className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
-                title="New empty disk (confirm in table)"
-                aria-label="New disk"
-              >
-                <Plus size={14} aria-hidden />
-                <HardDrive size={14} aria-hidden />
-              </button>
-              <button
-                type="button"
-                onClick={() => openPicker({ type: 'disk', slot: 'sdb', defer: true })}
-                className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
-                title="Select existing disk image (confirm in table)"
-                aria-label="Select disk image"
-              >
-                <Plus size={14} aria-hidden />
-                <FileImage size={14} aria-hidden />
-              </button>
-            </>
+        <div className="flex items-center gap-1.5">
+          {sdbSlotFree && (
+            <button
+              type="button"
+              onClick={() => openDiskEditor('sdb')}
+              disabled={!isStopped}
+              className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
+              title={isStopped ? 'Add a second disk (new or from the library)' : 'Stop the VM to add a disk'}
+              aria-label="Add disk"
+            >
+              <Plus size={14} aria-hidden />
+              <HardDrive size={14} aria-hidden />
+            </button>
           )}
           <button
             type="button"
@@ -606,7 +518,7 @@ export default function DisksSection({
     <SectionCard
       title="Disks"
       titleIcon={<HardDrive size={14} strokeWidth={2} />}
-      helpText="Edit a disk from its row Actions menu — stop the VM first to change size or bus. ISO attach, change, and eject work while the VM is running."
+      helpText="Add or edit a block disk in a form — the VM must be stopped to add, resize, re-bus, or detach one. ISO attach, change, and eject work while it runs."
       error={error}
       headerAction={headerActions}
     >
@@ -614,329 +526,88 @@ export default function DisksSection({
         <DataTable>
           <thead>
             <tr className={dataTableHeadRowClass}>
-              <DataTableTh dense className="w-14">
+              <DataTableTh dense className="sm:w-14">
                 Disk
               </DataTableTh>
-              <DataTableTh dense className="w-24">
+              <DataTableTh dense className="hidden w-24 sm:table-cell">
                 Size
               </DataTableTh>
-              <DataTableTh dense className="max-w-28 w-28">
+              <DataTableTh dense className="hidden max-w-28 w-28 sm:table-cell">
                 Image
               </DataTableTh>
               <DataTableTh dense className="hidden w-20 sm:table-cell">
                 Image type
               </DataTableTh>
-              <DataTableTh dense className="w-32">
+              <DataTableTh dense className="hidden w-32 sm:table-cell">
                 Bus
               </DataTableTh>
-              <DataTableTh dense align="right" className="hidden w-36 sm:table-cell">
+              <DataTableTh dense align="right" className="sm:w-36">
                 Actions
               </DataTableTh>
             </tr>
           </thead>
           <tbody>
-            <tr className={dataTableInteractiveRowClass}>
-              <DataTableTd dense className="text-xs font-semibold text-text-secondary">sda</DataTableTd>
-              <DataTableTd dense className="text-xs max-w-36">
-                {diskEdit?.slot === 'sda' ? (
-                  <label className="flex items-center gap-1 text-[11px] text-text-secondary">
-                    <input
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={diskEdit.sizeGB}
-                      onChange={(e) =>
-                        setDiskEdit((prev) =>
-                          prev?.slot === 'sda' ? { ...prev, sizeGB: e.target.value } : prev,
-                        )
-                      }
-                      className="w-16 rounded-sm border border-surface-border px-1.5 py-0.5 text-xs tabular-nums outline-hidden focus:border-accent"
-                    />
-                    <span>GB</span>
-                  </label>
-                ) : (
-                  <span className="text-xs text-text-primary tabular-nums">
-                    {sda?.sizeGiB != null ? `${sda.sizeGiB} GB` : '—'}
-                  </span>
-                )}
-              </DataTableTd>
-              <DataTableTd dense className={imageColClass}>
-                <span className="truncate text-xs text-text-primary block" title={sda?.source || ''}>
-                  {formatSource(sda?.source) || '—'}
-                </span>
-              </DataTableTd>
-              <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{formatImageType(sda)}</DataTableTd>
-              <DataTableTd dense className="text-xs">
-                {diskEdit?.slot === 'sda' ? (
-                  <select
-                    value={diskEdit.bus}
-                    onChange={(e) =>
-                      setDiskEdit((prev) =>
-                        prev?.slot === 'sda' ? { ...prev, bus: e.target.value } : prev,
-                      )
-                    }
-                    className="max-w-full rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
-                  >
-                    {DISK_BUS_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="text-text-muted">{formatDriverLabel(sda) || '—'}</span>
-                )}
-              </DataTableTd>
-              <DataTableTd dense align="right" className="hidden sm:table-cell">
-                <DiskRowActions
-                  slot="sda"
-                  disk={sda}
-                  isStopped={isStopped}
-                  loading={loading}
-                  editing={diskEdit?.slot === 'sda'}
-                  onEdit={() => startDiskEdit('sda')}
-                  onSave={saveDiskEdit}
-                  onCancel={() => setDiskEdit(null)}
-                  onDetach={() => executeDiskOperation('detach-sda', () => detachDiskFromVM(vmName, 'sda'))}
-                />
-              </DataTableTd>
-            </tr>
-
-            {!sdb && sdbDraft && isStopped && (
-              <tr className={dataTableInteractiveRowClass}>
-                <DataTableTd dense className="text-xs font-semibold text-text-secondary">sdb</DataTableTd>
-                <DataTableTd dense className="text-xs text-text-primary">
-                  {sdbDraft.mode === 'new' ? (
-                    <label className="flex items-center gap-1 text-[11px] text-text-secondary">
-                      <input
-                        type="number"
-                        min={1}
-                        value={sdbDraft.sizeGB}
-                        onChange={(e) =>
-                          setSdbDraft((d) =>
-                            d?.mode === 'new'
-                              ? { ...d, sizeGB: parseInt(e.target.value, 10) || 32 }
-                              : d,
-                          )
-                        }
-                        className="w-16 rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
-                      />
-                      <span>GB</span>
-                    </label>
-                  ) : (
-                    <label className="flex flex-col gap-0.5 text-[10px] text-text-muted">
-                      <span>Optional resize after attach</span>
-                      <input
-                        type="number"
-                        min={1}
-                        placeholder="GB"
-                        value={sdbDraft.resizeGB ?? ''}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setSdbDraft((d) =>
-                            d?.mode === 'existing'
-                              ? { ...d, resizeGB: v === '' ? null : parseFloat(v) }
-                              : d,
-                          );
-                        }}
-                        className="w-20 rounded-sm border border-surface-border px-1.5 py-0.5 text-xs text-text-primary outline-hidden focus:border-accent"
-                      />
-                    </label>
-                  )}
-                </DataTableTd>
-                <DataTableTd dense className={`${imageColClass} text-xs text-text-primary`}>
-                  {sdbDraft.mode === 'existing' ? (
-                    <span className="truncate block" title={sdbDraft.path}>
-                      {sdbDraft.name}
-                    </span>
-                  ) : (
-                    <span className="text-text-muted">—</span>
-                  )}
-                </DataTableTd>
-                <DataTableTd dense className="text-xs text-text-muted">
-                  {sdbDraft.mode === 'existing' ? guessImageTypeFromFileName(sdbDraft.name) : '—'}
-                </DataTableTd>
-                <DataTableTd dense>
-                  <select
-                    value={sdbDraft.bus}
-                    onChange={(e) =>
-                      setSdbDraft((d) => (d ? { ...d, bus: e.target.value } : d))
-                    }
-                    className="max-w-full rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
-                  >
-                    <option value="virtio">VirtIO</option>
-                    <option value="scsi">VirtIO SCSI</option>
-                    <option value="sata">SATA</option>
-                    <option value="ide">IDE</option>
-                  </select>
-                </DataTableTd>
-                <DataTableTd dense align="right">
-                  <DataTableRowActions forceVisible>
-                    <button
-                      type="button"
-                      onClick={confirmSdbDraft}
-                      disabled={!!loading}
-                      className={rowActionIconBtnPrimary}
-                      title={sdbDraft.mode === 'new' ? 'Create disk' : 'Attach disk'}
-                      aria-label="Confirm"
-                    >
-                      {loading === 'create-sdb' || loading === 'attach-sdb' ? (
-                        <Loader2 size={14} className="animate-spin" aria-hidden />
-                      ) : (
-                        <Check size={14} aria-hidden />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSdbDraft(null)}
-                      disabled={!!loading}
-                      className={`${iconBtn} text-text-muted`}
-                      title="Cancel"
-                      aria-label="Cancel"
-                    >
-                      <CircleX size={14} aria-hidden />
-                    </button>
-                  </DataTableRowActions>
-                </DataTableTd>
-              </tr>
-            )}
+            <BlockDiskRow
+              slot="sda"
+              disk={sda}
+              isStopped={isStopped}
+              loading={loading}
+              onEdit={() => openDiskEditor('sda')}
+              onDetach={() => executeDiskOperation('detach-sda', () => detachDiskFromVM(vmName, 'sda'))}
+            />
 
             {sdb && (
-              <tr className={dataTableInteractiveRowClass}>
-                <DataTableTd dense className="text-xs font-semibold text-text-secondary">sdb</DataTableTd>
-                <DataTableTd dense className="text-xs max-w-36">
-                  {diskEdit?.slot === 'sdb' ? (
-                    <label className="flex items-center gap-1 text-[11px] text-text-secondary">
-                      <input
-                        type="number"
-                        min={1}
-                        step={1}
-                        value={diskEdit.sizeGB}
-                        onChange={(e) =>
-                          setDiskEdit((prev) =>
-                            prev?.slot === 'sdb' ? { ...prev, sizeGB: e.target.value } : prev,
-                          )
-                        }
-                        className="w-16 rounded-sm border border-surface-border px-1.5 py-0.5 text-xs tabular-nums outline-hidden focus:border-accent"
-                      />
-                      <span>GB</span>
-                    </label>
-                  ) : (
-                    <span className="text-xs text-text-primary tabular-nums">
-                      {sdb.sizeGiB != null ? `${sdb.sizeGiB} GB` : '—'}
-                    </span>
-                  )}
-                </DataTableTd>
-                <DataTableTd dense className={imageColClass}>
-                  <span className="truncate text-xs text-text-primary block" title={sdb.source || ''}>
-                    {formatSource(sdb.source) || '—'}
-                  </span>
-                </DataTableTd>
-                <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{formatImageType(sdb)}</DataTableTd>
-                <DataTableTd dense className="text-xs">
-                  {diskEdit?.slot === 'sdb' ? (
-                    <select
-                      value={diskEdit.bus}
-                      onChange={(e) =>
-                        setDiskEdit((prev) =>
-                          prev?.slot === 'sdb' ? { ...prev, bus: e.target.value } : prev,
-                        )
-                      }
-                      className="max-w-full rounded-sm border border-surface-border px-1.5 py-0.5 text-xs outline-hidden focus:border-accent"
-                    >
-                      {DISK_BUS_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className="text-text-muted">{formatDriverLabel(sdb) || '—'}</span>
-                  )}
-                </DataTableTd>
-                <DataTableTd dense align="right" className="hidden sm:table-cell">
-                  <DiskRowActions
-                    slot="sdb"
-                    disk={sdb}
-                    isStopped={isStopped}
-                    loading={loading}
-                    editing={diskEdit?.slot === 'sdb'}
-                    onEdit={() => startDiskEdit('sdb')}
-                    onSave={saveDiskEdit}
-                    onCancel={() => setDiskEdit(null)}
-                    onDetach={() =>
-                      executeDiskOperation('detach-sdb', () => detachDiskFromVM(vmName, 'sdb'))
-                    }
-                  />
-                </DataTableTd>
-              </tr>
+              <BlockDiskRow
+                slot="sdb"
+                disk={sdb}
+                isStopped={isStopped}
+                loading={loading}
+                onEdit={() => openDiskEditor('sdb')}
+                onDetach={() => executeDiskOperation('detach-sdb', () => detachDiskFromVM(vmName, 'sdb'))}
+              />
             )}
 
             {sdc?.source && (
-              <tr className={dataTableInteractiveRowClass}>
-                <DataTableTd dense className="text-xs font-semibold text-text-secondary">sdc</DataTableTd>
-                <DataTableTd dense className="text-xs text-text-muted">—</DataTableTd>
-                <DataTableTd dense className={`${imageColClass} text-xs`}>
-                  <span className="truncate text-xs text-text-primary block" title={sdc.source}>
-                    {formatSource(sdc.source)}
-                  </span>
-                </DataTableTd>
-                <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{formatImageType(sdc)}</DataTableTd>
-                <DataTableTd dense className="text-xs text-text-muted">{formatDriverLabel(sdc) || '—'}</DataTableTd>
-                <DataTableTd dense align="right" className="hidden sm:table-cell">
-                  <CdromRowActions
-                    slot="sdc"
-                    loading={loading}
-                    onSwap={() => openPicker({ type: 'cdrom', slot: 'sdc' })}
-                    onEject={() => executeDiskOperation('eject-sdc', () => ejectISO(vmName, 'sdc'))}
-                  />
-                </DataTableTd>
-              </tr>
+              <CdromRow
+                slot="sdc"
+                disk={sdc}
+                loading={loading}
+                onSwap={() => openPicker({ type: 'cdrom', slot: 'sdc' })}
+                onEject={() => executeDiskOperation('eject-sdc', () => ejectISO(vmName, 'sdc'))}
+              />
             )}
 
             {sdd?.source && (
-              <tr className={dataTableInteractiveRowClass}>
-                <DataTableTd dense className="text-xs font-semibold text-text-secondary">sdd</DataTableTd>
-                <DataTableTd dense className="text-xs text-text-muted">—</DataTableTd>
-                <DataTableTd dense className={`${imageColClass} text-xs`}>
-                  <span className="truncate text-xs text-text-primary block" title={sdd.source}>
-                    {formatSource(sdd.source)}
-                  </span>
-                </DataTableTd>
-                <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{formatImageType(sdd)}</DataTableTd>
-                <DataTableTd dense className="text-xs text-text-muted">{formatDriverLabel(sdd) || '—'}</DataTableTd>
-                <DataTableTd dense align="right" className="hidden sm:table-cell">
-                  <CdromRowActions
-                    slot="sdd"
-                    loading={loading}
-                    onSwap={() => openPicker({ type: 'cdrom', slot: 'sdd' })}
-                    onEject={() => executeDiskOperation('eject-sdd', () => ejectISO(vmName, 'sdd'))}
-                  />
-                </DataTableTd>
-              </tr>
+              <CdromRow
+                slot="sdd"
+                disk={sdd}
+                loading={loading}
+                onSwap={() => openPicker({ type: 'cdrom', slot: 'sdd' })}
+                onEject={() => executeDiskOperation('eject-sdd', () => ejectISO(vmName, 'sdd'))}
+              />
             )}
 
-            {sde && (
-              <tr className={dataTableBodyRowClass}>
-                <DataTableTd dense className="text-xs font-semibold text-text-secondary">sde</DataTableTd>
-                <DataTableTd dense className="text-xs text-text-muted">—</DataTableTd>
-                <DataTableTd dense className={`${imageColClass} text-xs`}>
-                  {sde.source ? (
-                    <span className="truncate text-xs text-text-primary block" title={sde.source}>
-                      {formatSource(sde.source)}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-text-muted">—</span>
-                  )}
-                </DataTableTd>
-                <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{formatImageType(sde)}</DataTableTd>
-                <DataTableTd dense className="text-xs text-text-muted">{formatDriverLabel(sde) || 'SATA'}</DataTableTd>
-                <DataTableTd dense align="right" className="hidden sm:table-cell" />
-              </tr>
-            )}
+            {sde && <CdromRow slot="sde" disk={sde} loading={loading} />}
           </tbody>
         </DataTable>
       </DataTableScroll>
+
+      {!isStopped && (
+        <p className="mt-2 flex items-center gap-1 text-[11px] text-text-muted">
+          <Lock size={11} aria-hidden />
+          Stop the VM to add, resize, re-bus, or detach block disks.
+        </p>
+      )}
+
+      <DiskEditorModal
+        open={editor.open}
+        vmName={vmName}
+        slot={editor.slot}
+        disk={editor.disk}
+        defaultBus={sda?.bus || 'virtio'}
+        onSaved={onRefresh}
+        onClose={() => setEditor({ open: false, slot: 'sdb', disk: null })}
+      />
 
       <ImageLibraryModal
         open={pickerOpen}
@@ -951,74 +622,122 @@ export default function DisksSection({
   );
 }
 
-function DiskRowActions({
-  slot,
-  disk,
-  isStopped,
-  loading,
-  editing,
-  onEdit,
-  onSave,
-  onCancel,
-  onDetach,
-}) {
-  const isSaving = loading === `disk-edit-${slot}`;
-  const isDetaching = loading?.startsWith(`detach-${slot}`);
+/**
+ * Detail-page block disk row (sda / sdb) — read-only cells; Size, Image, Image
+ * type, and Bus collapse into stacked lines under the slot label below `sm`.
+ */
+function BlockDiskRow({ slot, disk, isStopped, loading, onEdit, onDetach }) {
+  const sizeText = disk?.sizeGiB != null ? `${disk.sizeGiB} GB` : '—';
+  const busText = formatDriverLabel(disk) || '—';
+  const imageName = formatSource(disk?.source) || '—';
+
+  return (
+    <tr className={dataTableInteractiveRowClass}>
+      <DataTableTd dense valign="top" className="min-w-0 sm:w-14 sm:align-middle">
+        <span className="block text-xs font-semibold text-text-secondary">{slot}</span>
+        {/* The columns hidden below `sm` stack here instead. */}
+        <span className={`${phoneLineClamp} mt-0.5 text-xs text-text-primary sm:hidden`} title={disk?.source || ''}>
+          {imageName}
+        </span>
+        <span className={`${phoneLineClamp} text-[11px] text-text-muted sm:hidden`}>
+          {`${sizeText} · ${busText} · ${formatImageType(disk)}`}
+        </span>
+      </DataTableTd>
+      <DataTableTd dense className="hidden w-24 sm:table-cell">
+        <span className="text-xs text-text-primary tabular-nums">{sizeText}</span>
+      </DataTableTd>
+      <DataTableTd dense className={`hidden sm:table-cell ${imageColClass}`}>
+        <span className="truncate text-xs text-text-primary block" title={disk?.source || ''}>
+          {imageName}
+        </span>
+      </DataTableTd>
+      <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">
+        {formatImageType(disk)}
+      </DataTableTd>
+      <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{busText}</DataTableTd>
+      <DataTableTd dense align="right">
+        <DiskRowActions
+          slot={slot}
+          disk={disk}
+          isStopped={isStopped}
+          loading={loading}
+          onEdit={onEdit}
+          onDetach={onDetach}
+        />
+      </DataTableTd>
+    </tr>
+  );
+}
+
+/**
+ * Detail-page CDROM row (sdc / sdd, and the read-only cloud-init seed sde,
+ * which passes no handlers and so renders an empty Actions cell).
+ */
+function CdromRow({ slot, disk, loading, onSwap, onEject }) {
+  const imageName = formatSource(disk?.source) || '—';
+  const busText = formatDriverLabel(disk) || (slot === 'sde' ? 'SATA' : '—');
+  const interactive = !!onSwap || !!onEject;
+
+  return (
+    <tr className={interactive ? dataTableInteractiveRowClass : dataTableBodyRowClass}>
+      <DataTableTd dense valign="top" className="min-w-0 sm:w-14 sm:align-middle">
+        <span className="block text-xs font-semibold text-text-secondary">{slot}</span>
+        {/* The columns hidden below `sm` stack here instead. */}
+        <span className={`${phoneLineClamp} mt-0.5 text-xs text-text-primary sm:hidden`} title={disk?.source || ''}>
+          {imageName}
+        </span>
+        <span className={`${phoneLineClamp} text-[11px] text-text-muted sm:hidden`}>
+          {`${busText} · ${formatImageType(disk)}`}
+        </span>
+      </DataTableTd>
+      <DataTableTd dense className="hidden w-24 text-xs text-text-muted sm:table-cell">—</DataTableTd>
+      <DataTableTd dense className={`hidden sm:table-cell ${imageColClass}`}>
+        <span className="truncate text-xs text-text-primary block" title={disk?.source || ''}>
+          {imageName}
+        </span>
+      </DataTableTd>
+      <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">
+        {formatImageType(disk)}
+      </DataTableTd>
+      <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{busText}</DataTableTd>
+      <DataTableTd dense align="right">
+        {interactive && (
+          <CdromRowActions slot={slot} loading={loading} onSwap={onSwap} onEject={onEject} />
+        )}
+      </DataTableTd>
+    </tr>
+  );
+}
+
+/** Row actions for a block disk: edit (modal) and detach, both offline-only. */
+function DiskRowActions({ slot, disk, isStopped, loading, onEdit, onDetach }) {
+  const isDetaching = loading === `detach-${slot}`;
   const busy = !!loading;
 
-  if (editing) {
-    return (
-      <DataTableRowActions forceVisible={isSaving}>
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={busy && !isSaving}
-          className={rowActionIconBtnPrimary}
-          title="Save size and bus"
-          aria-label={`Save ${slot}`}
-        >
-          {isSaving ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Save size={14} aria-hidden />}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={isSaving}
-          className={`${iconBtn} text-text-muted`}
-          title="Cancel editing"
-          aria-label={`Cancel edit ${slot}`}
-        >
-          <X size={14} aria-hidden />
-        </button>
-      </DataTableRowActions>
-    );
-  }
+  if (!disk?.source) return null;
 
   return (
     <DataTableRowActions forceVisible={isDetaching}>
-      {isStopped && disk?.source && (
-        <>
-          <button
-            type="button"
-            onClick={onEdit}
-            disabled={busy}
-            className={`${iconBtn} hover:bg-surface`}
-            title="Edit size and bus"
-            aria-label={`Edit ${slot}`}
-          >
-            <Pencil size={14} aria-hidden />
-          </button>
-          <button
-            type="button"
-            onClick={onDetach}
-            disabled={busy}
-            className={`${iconBtn} hover:bg-status-stopped-soft hover:text-status-stopped`}
-            title="Unmount disk"
-            aria-label={`Unmount ${slot}`}
-          >
-            {isDetaching ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Minus size={14} aria-hidden />}
-          </button>
-        </>
-      )}
+      <button
+        type="button"
+        onClick={onEdit}
+        disabled={busy || !isStopped}
+        className={rowActionIconBtn}
+        title={isStopped ? 'Edit size and bus' : 'Stop the VM to change size or bus'}
+        aria-label={`Edit ${slot}`}
+      >
+        <Pencil size={14} aria-hidden />
+      </button>
+      <button
+        type="button"
+        onClick={onDetach}
+        disabled={busy || !isStopped}
+        className={`${rowActionIconBtn} hover:bg-status-stopped-soft hover:text-status-stopped`}
+        title={isStopped ? 'Unmount disk' : 'Stop the VM to unmount disks'}
+        aria-label={`Unmount ${slot}`}
+      >
+        {isDetaching ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Minus size={14} aria-hidden />}
+      </button>
     </DataTableRowActions>
   );
 }
@@ -1031,7 +750,7 @@ function CdromRowActions({ slot, loading, onSwap, onEject }) {
         type="button"
         onClick={onSwap}
         disabled={!!loading}
-        className={`${iconBtn} hover:bg-surface`}
+        className={rowActionIconBtn}
         title="Change ISO"
         aria-label={`Change ISO in ${slot}`}
       >
@@ -1041,7 +760,7 @@ function CdromRowActions({ slot, loading, onSwap, onEject }) {
         type="button"
         onClick={onEject}
         disabled={!!loading}
-        className={`${iconBtn} hover:bg-status-warning-soft`}
+        className={`${rowActionIconBtn} hover:bg-status-warning-soft`}
         title="Eject ISO"
         aria-label={`Eject ISO from ${slot}`}
       >
