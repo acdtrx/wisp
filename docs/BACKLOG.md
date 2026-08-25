@@ -15,3 +15,8 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   refactor (reproduced on the pre-refactor file, 2026-08-25). Revisit when:
   touching the VM create form's draft wiring, or if the warning graduates to
   an actual state bug.
+- **OIDC callback URL field overflows on phones** — the read-only callback URL
+  in `OidcSettings.jsx` renders ~395px of text in a ~270px field below `sm`
+  (pre-existing at 14px; observed 2026-08-25 during the iOS zoom sweep).
+  Revisit when: OIDC is actually configured from a phone, or the App Config
+  page gets its next styling pass.
