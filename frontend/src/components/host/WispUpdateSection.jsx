@@ -7,7 +7,9 @@ import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
+import { useSettingsStore } from '../../store/settingsStore.js';
 import { getHostInfo } from '../../api/host.js';
+import { updateSettings } from '../../api/settings.js';
 import {
   getUpdateStatus,
   checkForWispUpdate,
@@ -71,21 +73,40 @@ export default function WispUpdateSection() {
   const jobs = useBackgroundJobsStore((s) => s.jobs);
   const runningOtherJobs = Object.values(jobs).filter((j) => j.status === 'running');
 
+  /* The configured update channel lives in settings; the check result never
+   * echoes it back (see spec/UPDATES.md). */
+  const channel = useSettingsStore((s) => s.settings?.updateChannel ?? 'stable');
+  const settingsLoaded = useSettingsStore((s) => s.settings != null);
+  const loadSettings = useSettingsStore((s) => s.loadSettings);
+  const setSettings = useSettingsStore((s) => s.setSettings);
+
+  const applyStatus = useCallback((s) => {
+    setHydrated(s);
+    setNotes(s.notes ?? null);
+    setPublishedAt(s.publishedAt ?? null);
+    setRepo(s.repo ?? null);
+  }, []);
+
   const refreshFromServer = useCallback(async () => {
     try {
-      const s = await getUpdateStatus();
-      setHydrated(s);
-      setNotes(s.notes ?? null);
-      setPublishedAt(s.publishedAt ?? null);
-      setRepo(s.repo ?? null);
+      applyStatus(await getUpdateStatus());
     } catch (err) {
       setError(err.detail || err.message || 'Failed to load status');
     }
-  }, []);
+  }, [applyStatus]);
 
   useEffect(() => {
     refreshFromServer();
   }, [refreshFromServer]);
+
+  /* The Software tab can be the first page opened, so the settings store may
+   * still be empty — the channel select needs it. */
+  useEffect(() => {
+    if (settingsLoaded) return;
+    loadSettings().catch((err) => {
+      setError(err.detail || err.message || 'Failed to load update channel');
+    });
+  }, [settingsLoaded, loadSettings]);
 
   const current = wispUpdate?.current ?? hydrated?.current ?? null;
   const latest = wispUpdate?.latest ?? hydrated?.latest ?? null;
@@ -96,17 +117,31 @@ export default function WispUpdateSection() {
     setError(null);
     setChecking(true);
     try {
-      const s = await checkForWispUpdate();
-      setHydrated(s);
-      setNotes(s.notes ?? null);
-      setPublishedAt(s.publishedAt ?? null);
-      setRepo(s.repo ?? null);
+      applyStatus(await checkForWispUpdate());
     } catch (err) {
       setError(err.detail || err.message || 'Check failed');
     } finally {
       setChecking(false);
     }
-  }, []);
+  }, [applyStatus]);
+
+  /* Save the channel, then check on it right away: the backend reads the
+   * setting at check time, so the card would otherwise keep showing the
+   * previous channel's result until the next hourly poll. */
+  const handleChannelChange = useCallback(async (event) => {
+    const next = event.target.value;
+    setError(null);
+    setChecking(true);
+    try {
+      const saved = await updateSettings({ updateChannel: next });
+      setSettings({ updateChannel: saved.updateChannel });
+      applyStatus(await checkForWispUpdate());
+    } catch (err) {
+      setError(err.detail || err.message || 'Failed to switch update channel');
+    } finally {
+      setChecking(false);
+    }
+  }, [applyStatus, setSettings]);
 
   const beginInstall = useCallback(() => {
     setError(null);
@@ -196,18 +231,25 @@ export default function WispUpdateSection() {
     status = { type: 'success', message: 'Up to date' };
   }
 
-  const description = current ? (
+  const description = (
     <>
-      Currently running <span className="font-medium text-text-primary">v{current}</span>
-      {available && latest && (
+      {current ? (
         <>
-          {' '}· update <span className="font-medium text-text-primary">v{latest}</span> available
+          Currently running <span className="font-medium text-text-primary">v{current}</span>
+          {available && latest && (
+            <>
+              {' '}· update <span className="font-medium text-text-primary">v{latest}</span> available
+            </>
+          )}
+          .
         </>
+      ) : (
+        'Check for newer Wisp releases on GitHub.'
       )}
-      .
+      {channel === 'beta' && (
+        <span className="text-text-muted"> Beta channel — pre-releases included.</span>
+      )}
     </>
-  ) : (
-    'Check for newer Wisp releases on GitHub.'
   );
 
   return (
@@ -227,6 +269,22 @@ export default function WispUpdateSection() {
         lastChecked={lastChecked}
         autoCheckLabel="Checked hourly"
       >
+        <div className="mt-2 flex items-center gap-2 text-xs">
+          <label htmlFor="wisp-update-channel" className="text-text-muted">
+            Channel
+          </label>
+          <select
+            id="wisp-update-channel"
+            value={channel}
+            onChange={handleChannelChange}
+            disabled={checking || installing}
+            className="input-field h-7 w-auto py-0 text-xs"
+          >
+            <option value="stable">Stable</option>
+            <option value="beta">Beta</option>
+          </select>
+        </div>
+
         {installing && (
           <div className="mt-3 rounded-md border border-surface-border bg-surface px-3 py-2 text-xs">
             <div className="flex items-center gap-2">
