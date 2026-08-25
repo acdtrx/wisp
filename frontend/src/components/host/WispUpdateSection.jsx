@@ -247,7 +247,7 @@ export default function WispUpdateSection() {
         'Check for newer Wisp releases on GitHub.'
       )}
       {channel === 'beta' && (
-        <span className="text-text-muted"> Beta channel — pre-releases included.</span>
+        <span className="block text-text-muted">Beta channel — pre-releases included.</span>
       )}
     </>
   );

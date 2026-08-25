@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-25
+
+### Bug Fixes
+- **Beta channel note on its own line** — the Wisp Update card's "Beta channel — pre-releases included." note no longer runs into the version sentence.
+
 ## 2026-08-25 (v2.2.0)
 
 ### New Features
