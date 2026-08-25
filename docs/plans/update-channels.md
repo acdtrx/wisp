@@ -103,6 +103,12 @@ Implemented 2026-08-25 (steps 1–4). Verified: comparator case table, both
 channels driven against the live GitHub API (plus a mechanism probe on a repo
 where `releases/latest` and the release list disagree), the card toggle driven
 in the dev stack with persistence across reload, and the release-script
-beta.1 → dirty-beta.2 → stable sequence exercised on a scratch repo. Still
-deferred to the next release cycle: cutting a real `v*-beta.1` tag and watching
-a beta host install it while a stable host ignores it.
+beta.1 → dirty-beta.2 → stable sequence exercised on a scratch repo.
+
+Verified end to end on real releases the same day, with v2.2.0-beta.1 and
+v2.2.0: a beta-channel host was offered and installed the prerelease while
+`releases/latest` (what stable hosts see) kept answering v2.1.1; the prerelease
+consumed no CHANGELOG section and the stable cut shipped the full batch as its
+notes; and the beta host was then offered v2.2.0 and converged onto stable via
+the normal update flow. The one manual step, ever, was bootstrapping the first
+beta onto a v2.1.1 host whose checker predated channels.
