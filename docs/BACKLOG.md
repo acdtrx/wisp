@@ -8,11 +8,6 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   assignments so it is the single ordering shared by every consumer. Revisit
   when: the existing sorts demonstrably fight a real workflow — repeatedly
   hunting for a workload the sort keeps burying.
-- **Idea: dark mode** — the "Dusk" direction from the Home page design
-  exploration (deep spruce-dusk palette, glowing running workloads) is the
-  reference for what Wisp's dark theme should feel like. Revisit when: regular
-  use in dark surroundings makes the light-only UI an observed irritation —
-  not on aesthetic impulse.
 - **Create VM: NIC draft sync warns during render** — `syncNicsToParent` calls
   `onFormChange` from inside a `setNics` updater, so React logs "Cannot update
   a component (`CreateVMPanel`) while rendering a different component"; the
