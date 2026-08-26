@@ -158,13 +158,11 @@ export default function OidcSettings() {
             Redirect URI
           </label>
           <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={redirectUri}
-              readOnly
-              onFocus={(e) => e.target.select()}
-              className="input-field font-mono text-text-secondary"
-            />
+            {/* Read-only identity — muted summary box per UI-PATTERNS § Modal form
+              * editor; wraps on phones where a single-line input truncated it. */}
+            <div className="min-w-0 flex-1 select-all break-all rounded-md border border-surface-border bg-surface px-3 py-2 font-mono text-xs text-text-secondary">
+              {redirectUri}
+            </div>
             <button
               type="button"
               onClick={copyRedirect}

@@ -71,30 +71,28 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
     if (isCreating && onFormChange) onFormChange({ nics: nextNics });
   };
 
-  /* Create flow only: draft rows are edited in place and pushed to the parent form. */
+  /* Create flow only: draft rows are edited in place and pushed to the parent
+   * form. The parent sync stays outside setNics — calling it from inside the
+   * updater is a render-phase parent setState, which React warns about. */
   const updateNic = (idx, key, value) => {
-    setNics((prev) => {
-      const next = prev.map((n, i) => (i === idx ? { ...n, [key]: value } : n));
-      syncNicsToParent(next);
-      return next;
-    });
+    const next = nics.map((n, i) => (i === idx ? { ...n, [key]: value } : n));
+    setNics(next);
+    syncNicsToParent(next);
   };
 
   const addDraftNic = () => {
-    setNics((prev) => {
-      const next = [
-        ...prev,
-        {
-          _key: randomId(),
-          type: 'bridge',
-          mac: randomMac(),
-          source: bridges[0] || '',
-          model: 'virtio',
-        },
-      ];
-      syncNicsToParent(next);
-      return next;
-    });
+    const next = [
+      ...nics,
+      {
+        _key: randomId(),
+        type: 'bridge',
+        mac: randomMac(),
+        source: bridges[0] || '',
+        model: 'virtio',
+      },
+    ];
+    setNics(next);
+    syncNicsToParent(next);
   };
 
   const openEditor = (idx) => {

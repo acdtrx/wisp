@@ -7,6 +7,8 @@
 - **Full VM/container management from a phone** — the Env, Disks, Network interfaces, and Mounts sections now add/edit through modal form editors at every screen size (previously read-only below `sm`), matching the Host Mgmt pattern; tables restack their columns on phones so nothing scrolls sideways.
 
 ### Bug Fixes
+- **OIDC redirect URI readable on phones** — the callback URL renders as a wrapping summary box instead of a single-line field that truncated it.
+- **Create VM no longer warns in the console** — the NIC draft rows synced to the parent form from inside a state updater, which React flags as a render-phase update.
 - **VM General section layout** — Auto Start sits next to DNS, the Linux/Windows selector is content-sized instead of stretching across the row, and on phones the section stacks as three tidy lines: name + toggles, CPU + RAM paired, OS type.
 - **Tapping a field no longer zooms the page on iOS** — form controls render at 16px on touch devices, below which Safari auto-zooms on focus and never zooms back out.
 - **Beta channel note on its own line** — the Wisp Update card's "Beta channel — pre-releases included." note no longer runs into the version sentence.
