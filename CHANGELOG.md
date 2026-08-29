@@ -8,6 +8,7 @@
 - **Single-choice controls are radio pills app-wide** — the full-width segmented bars (VM Advanced, OS Type, NIC model, restart policy, disk add mode) became content-sized accent pills matching the Boot Order chips; the expanded Advanced section is roughly half its old height.
 
 ### Bug Fixes
+- **Host header works on phones** — the power buttons are square icon buttons on the title row (matching workload action buttons) and the tab strip gets its own full-width line; the Software tab's update dot sits before the label and mirrors onto the host icon so it's visible without scrolling the strip.
 - **OIDC redirect URI readable on phones** — the callback URL renders as a wrapping summary box instead of a single-line field that truncated it.
 - **Create VM no longer warns in the console** — the NIC draft rows synced to the parent form from inside a state updater, which React flags as a render-phase update.
 - **VM General section layout** — Auto Start sits next to DNS, the Linux/Windows selector is content-sized instead of stretching across the row, and on phones the section stacks as three tidy lines: name + toggles, CPU + RAM paired, OS type.

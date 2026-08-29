@@ -31,13 +31,14 @@ function TabButton({ id, label, active, badgeTitle, onClick }) {
         active ? 'border-accent text-accent-text font-semibold' : 'border-transparent text-text-muted hover:text-text-primary'
       }`}
     >
-      <span>{label}</span>
+      {/* Dot before the label so a partially scrolled tab clips its text, not the badge. */}
       {badgeTitle && (
         <span
           className="flex h-2 w-2 shrink-0 rounded-full bg-status-warning"
           title={badgeTitle}
         />
       )}
+      <span>{label}</span>
     </button>
   );
 }
@@ -60,6 +61,17 @@ export default function HostPanel() {
   }
 
   const handleTabChange = (id) => navigate(`/host/${id}`);
+
+  const softwareReasons = [];
+  if (wispUpdateAvailable) softwareReasons.push('Wisp update available');
+  if (pendingUpdates > 0) softwareReasons.push(`${pendingUpdates} OS package update(s)`);
+  if (rebootRequired) {
+    const detail = rebootReasons.length > 0
+      ? `: ${rebootReasons.slice(0, 4).join(', ')}${rebootReasons.length > 4 ? `, +${rebootReasons.length - 4} more` : ''}`
+      : '';
+    softwareReasons.push(`Reboot required${detail}`);
+  }
+  const softwareBadgeTitle = softwareReasons.length > 0 ? softwareReasons.join(' · ') : null;
 
   const handlePowerOff = async () => {
     setPowerLoading('shutdown');
@@ -87,47 +99,44 @@ export default function HostPanel() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-surface-border bg-surface-card px-4 py-1 lg:h-11 lg:flex-nowrap lg:py-0">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="shrink-0 rounded-lg p-1 text-text-secondary" aria-hidden>
+      {/* Below lg: identity + square power buttons on the first row, the tab strip
+        * full-width on a second row (mirrors the workload detail headers). At lg+
+        * everything sits on the single 44px row as before. */}
+      <div className="flex shrink-0 flex-wrap items-center border-b border-surface-border bg-surface-card px-4 lg:h-11 lg:flex-nowrap lg:gap-x-4">
+        <div className="flex min-h-11 min-w-0 items-center gap-3 lg:min-h-0">
+          <div className="relative shrink-0 rounded-lg p-1 text-text-secondary" aria-hidden>
             <Server size={18} />
+            {/* First-view badge for phones, where the Software tab may sit scrolled
+              * out of the strip. Desktop shows the whole strip, so the tab dot serves. */}
+            {softwareBadgeTitle && (
+              <span
+                className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-status-warning lg:hidden"
+                title={softwareBadgeTitle}
+              />
+            )}
           </div>
-          <span className="hidden truncate text-sm font-semibold text-text-primary sm:block">Host</span>
-          <div className="flex overflow-x-auto border-l border-surface-border pl-3">
-            {TABS.map(({ id, label }) => {
-              let badgeTitle = null;
-              if (id === 'software') {
-                const reasons = [];
-                if (wispUpdateAvailable) reasons.push('Wisp update available');
-                if (pendingUpdates > 0) reasons.push(`${pendingUpdates} OS package update(s)`);
-                if (rebootRequired) {
-                  const detail = rebootReasons.length > 0
-                    ? `: ${rebootReasons.slice(0, 4).join(', ')}${rebootReasons.length > 4 ? `, +${rebootReasons.length - 4} more` : ''}`
-                    : '';
-                  reasons.push(`Reboot required${detail}`);
-                }
-                if (reasons.length > 0) badgeTitle = reasons.join(' · ');
-              }
-              return (
-                <TabButton
-                  key={id}
-                  id={id}
-                  label={label}
-                  active={tab === id}
-                  badgeTitle={badgeTitle}
-                  onClick={handleTabChange}
-                />
-              );
-            })}
-          </div>
+          <span className="truncate text-sm font-semibold text-text-primary">Host</span>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="order-3 -mx-4 flex w-[calc(100%+2rem)] overflow-x-auto border-t border-surface-border px-2 lg:order-none lg:mx-0 lg:w-auto lg:min-w-0 lg:flex-1 lg:border-t-0 lg:border-l lg:px-0 lg:pl-3">
+          {TABS.map(({ id, label }) => (
+            <TabButton
+              key={id}
+              id={id}
+              label={label}
+              active={tab === id}
+              badgeTitle={id === 'software' ? softwareBadgeTitle : null}
+              onClick={handleTabChange}
+            />
+          ))}
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           <button
             type="button"
             onClick={() => setPowerOffOpen(true)}
             disabled={!!powerLoading}
-            className="flex items-center gap-1.5 rounded-md border border-surface-border px-2.5 py-1 text-sm font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-40"
+            className="flex items-center justify-center gap-1.5 rounded-md border border-surface-border p-2 text-sm font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-40 lg:px-2.5 lg:py-1"
             title="Power Off"
+            aria-label="Power Off"
           >
             {powerLoading === 'shutdown' ? <Loader2 size={18} className="animate-spin" /> : <Power size={18} />}
             <span className="hidden lg:inline">Power Off</span>
@@ -136,8 +145,9 @@ export default function HostPanel() {
             type="button"
             onClick={() => setRestartOpen(true)}
             disabled={!!powerLoading}
-            className="relative flex items-center gap-1.5 rounded-md border border-surface-border px-2.5 py-1 text-sm font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-40"
+            className="relative flex items-center justify-center gap-1.5 rounded-md border border-surface-border p-2 text-sm font-medium text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-40 lg:px-2.5 lg:py-1"
             title={rebootRequired ? `Restart (reboot required: ${rebootReasons.join(', ') || 'kernel update'})` : 'Restart'}
+            aria-label="Restart"
           >
             {powerLoading === 'restart' ? <Loader2 size={18} className="animate-spin" /> : <RotateCcw size={18} />}
             <span className="hidden lg:inline">Restart</span>
