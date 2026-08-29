@@ -129,7 +129,23 @@ export const useContainerStore = create((set, get) => {
     },
 
     selectContainer: async (name) => {
-      set({ selectedContainer: name, containerConfig: null, containerStats: null, loading: true, error: null });
+      /* Seed from the list item (mirrors vmStore.selectVM) so the panel header
+       * paints immediately from data already in memory — a stalled config fetch
+       * (phone waking on a dead socket) must not leave the whole panel on a
+       * spinner. The body still waits on `loading` for the full config. */
+      const listItem = get().containers.find((c) => c.name === name);
+      const seed = listItem
+        ? {
+            name: listItem.name,
+            type: 'container',
+            image: listItem.image,
+            state: listItem.state,
+            iconId: listItem.iconId,
+            autoBackup: listItem.autoBackup,
+            updateAvailable: listItem.updateAvailable,
+          }
+        : null;
+      set({ selectedContainer: name, containerConfig: seed, containerStats: null, loading: true, error: null });
       startStatsSSE(name);
       try {
         const config = await containerApi.getContainer(name);

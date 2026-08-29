@@ -129,7 +129,10 @@ export default function ContainerOverviewPanel() {
     );
   }
 
-  if (loading || !config) {
+  /* Full-page spinner only when there is no seed at all (deep link before the
+   * list arrived). With a seed the header renders instantly and the body below
+   * carries its own spinner until the full config lands. */
+  if (!config) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <Loader2 size={24} className="animate-spin text-text-muted" />
@@ -319,6 +322,10 @@ export default function ContainerOverviewPanel() {
       ) : activeTab === 'logs' ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <ContainerLogsSection containerName={name} />
+        </div>
+      ) : loading ? (
+        <div className="flex flex-1 items-center justify-center text-sm text-text-muted">
+          <Loader2 size={20} className="animate-spin" />
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
