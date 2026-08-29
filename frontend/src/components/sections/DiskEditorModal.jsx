@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import RadioPills from '../shared/RadioPills.jsx';
 import { Loader2 } from 'lucide-react';
 
 import Modal from '../shared/Modal.jsx';
@@ -36,25 +37,8 @@ const ADD_MODE_OPTIONS = [
   { value: 'existing', label: 'Existing image' },
 ];
 
-function AddModeSegmentedControl({ value, onChange }) {
-  return (
-    <div className="flex h-8 max-w-[300px] rounded-lg border border-surface-border bg-surface p-0.5">
-      {ADD_MODE_OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors duration-150 ${
-            value === opt.value
-              ? 'bg-surface-card text-text-primary shadow-xs'
-              : 'text-text-secondary hover:text-text-primary'
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
+function AddModePills({ value, onChange }) {
+  return <RadioPills options={ADD_MODE_OPTIONS} value={value} onChange={onChange} />;
 }
 
 function formFromDisk(disk, defaultBus) {
@@ -224,7 +208,7 @@ export default function DiskEditorModal({
       >
         {!isEdit && (
           <FormField label="Source">
-            <AddModeSegmentedControl
+            <AddModePills
               value={form.mode}
               onChange={(v) => setField('mode', v)}
             />

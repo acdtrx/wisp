@@ -8,7 +8,7 @@ import {
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
-import NicModelSegmentedControl from './NicModelSegmentedControl.jsx';
+import NicModelPills from './NicModelPills.jsx';
 import { randomMac } from '../../utils/randomMac.js';
 
 const FORM_ID = 'nic-editor-form';
@@ -115,7 +115,7 @@ export default function NicEditorModal({ open, nic, index, bridges = [], onSubmi
           </select>
         </FormField>
         <FormField label="Model">
-          <NicModelSegmentedControl
+          <NicModelPills
             value={form.model}
             onChange={(v) => setForm((f) => ({ ...f, model: v }))}
           />

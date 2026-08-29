@@ -18,7 +18,7 @@ import {
   rowActionIconBtn,
 } from '../shared/DataTableChrome.jsx';
 import NicEditorModal from './NicEditorModal.jsx';
-import NicModelSegmentedControl from './NicModelSegmentedControl.jsx';
+import NicModelPills from './NicModelPills.jsx';
 
 /** Compact icon button for the create-flow draft rows (desktop-only layout). */
 const draftIconBtn =
@@ -236,7 +236,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                   </DataTableTd>
                   <DataTableTd dense className={isCreating ? '' : 'hidden sm:table-cell'}>
                     {isCreating ? (
-                      <NicModelSegmentedControl
+                      <NicModelPills
                         value={nic.model}
                         onChange={(v) => updateNic(idx, 'model', v)}
                       />

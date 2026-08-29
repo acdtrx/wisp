@@ -3,6 +3,7 @@ import { Lock } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
+import RadioPills from '../shared/RadioPills.jsx';
 
 const FIRMWARE_OPTIONS = [
   { value: 'bios', label: 'BIOS' },
@@ -55,27 +56,6 @@ function advancedFormFromVmConfig(vmConfig) {
     virtioRng: vmConfig.virtioRng ?? true,
     nestedVirt: vmConfig.nestedVirt || false,
   };
-}
-
-function SegmentedControl({ options, value, onChange, disabled }) {
-  return (
-    <div className="flex rounded-lg border border-surface-border bg-surface p-0.5">
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => !disabled && onChange(opt.value)}
-          disabled={disabled}
-          className={`flex-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
-            value === opt.value
-              ? 'bg-surface-card text-text-primary shadow-xs'
-              : 'text-text-secondary hover:text-text-primary'
-          } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormChange }) {
@@ -182,9 +162,9 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
     >
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-          <div className="space-y-4 min-w-0">
+          <div className="flex flex-wrap items-start gap-x-8 gap-y-4 min-w-0 content-start">
             <FieldRow label="Machine Type" offlineOnly={offlineOnly}>
-              <SegmentedControl
+              <RadioPills
                 options={MACHINE_OPTIONS}
                 value={form.machineType}
                 onChange={(v) => updateField('machineType', v)}
@@ -192,7 +172,7 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
               />
             </FieldRow>
             <FieldRow label="CPU Model" offlineOnly={offlineOnly}>
-              <SegmentedControl
+              <RadioPills
                 options={CPU_MODELS}
                 value={form.cpuMode}
                 onChange={(v) => updateField('cpuMode', v)}
@@ -200,7 +180,7 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
               />
             </FieldRow>
             <FieldRow label="Firmware" offlineOnly={offlineOnly}>
-              <SegmentedControl
+              <RadioPills
                 options={FIRMWARE_OPTIONS}
                 value={form.firmware}
                 onChange={(v) => updateField('firmware', v)}
@@ -208,14 +188,14 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
               />
             </FieldRow>
             <FieldRow label="Video Driver">
-              <SegmentedControl
+              <RadioPills
                 options={VIDEO_DRIVERS}
                 value={form.videoDriver}
                 onChange={(v) => updateField('videoDriver', v)}
               />
             </FieldRow>
             <FieldRow label="Graphics">
-              <SegmentedControl
+              <RadioPills
                 options={GRAPHICS_OPTIONS}
                 value={form.graphicsType}
                 onChange={(v) => updateField('graphicsType', v)}

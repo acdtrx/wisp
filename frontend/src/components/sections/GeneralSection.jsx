@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Cpu, MemoryStick } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
+import RadioPills from '../shared/RadioPills.jsx';
 import HelpIcon from '../shared/HelpIcon.jsx';
 import { LinuxIcon, WindowsIcon } from '../shared/vmIcons.jsx';
 
@@ -192,7 +193,7 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
 
           {/* Full row below sm; content-sized on desktop. */}
           <Field label="OS Type" className="w-full sm:w-auto">
-            <SegmentedControl
+            <RadioPills
               options={OS_TYPES}
               value={form.osType}
               onChange={(v) => updateField('osType', v)}
@@ -205,30 +206,6 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
   );
 }
 
-function SegmentedControl({ options, value, onChange, disabled, icons }) {
-  return (
-    <div className="flex h-[34px] rounded-lg border border-surface-border bg-surface p-0.5">
-      {options.map(opt => {
-        const Icon = icons?.[opt.value];
-        return (
-          <button
-            key={opt.value}
-            onClick={() => !disabled && onChange(opt.value)}
-            disabled={disabled}
-            className={`flex items-center justify-center gap-1.5 flex-1 sm:flex-none rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
-              value === opt.value
-                ? 'bg-surface-card text-text-primary shadow-xs'
-                : 'text-text-secondary hover:text-text-primary'
-            } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
-          >
-            {Icon && <Icon size={11} />}
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 function Field({ label, icon: Icon, helpText, className, children }) {
   return (

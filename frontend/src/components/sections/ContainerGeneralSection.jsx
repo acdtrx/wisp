@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import RadioPills from '../shared/RadioPills.jsx';
 import { Cpu, MemoryStick, RefreshCw, Images } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
@@ -13,25 +14,8 @@ const RESTART_OPTIONS = [
   { value: 'always', label: 'Always' },
 ];
 
-function RestartPolicySegmentedControl({ value, onChange }) {
-  return (
-    <div className="flex h-[34px] max-w-full overflow-x-auto rounded-lg border border-surface-border bg-surface p-0.5">
-      {RESTART_OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          className={`flex shrink-0 items-center whitespace-nowrap rounded-md px-2.5 text-xs font-medium transition-colors duration-150 ${
-            value === opt.value
-              ? 'bg-surface-card text-text-primary shadow-xs'
-              : 'text-text-secondary hover:text-text-primary'
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
+function RestartPolicyPills({ value, onChange }) {
+  return <RadioPills options={RESTART_OPTIONS} value={value} onChange={onChange} />;
 }
 
 export function buildGeneralFormDefaults(config) {
@@ -256,7 +240,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
           </Field>
 
           <Field label="Restart Policy" icon={RefreshCw}>
-            <RestartPolicySegmentedControl
+            <RestartPolicyPills
               value={form.restartPolicy}
               onChange={(v) => updateField('restartPolicy', v)}
             />

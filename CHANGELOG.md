@@ -5,6 +5,7 @@
 ### New Features
 - **Dark mode — the Dusk theme** — deep spruce surfaces with the teal accent doing the lighting: running workloads glow (Home lanterns, sidebar and detail-header icons), consoles and native controls follow the theme, and every text/status color holds WCAG AA. Follows the OS setting by default with a Light/Dark/System control in the top bar; the choice is remembered per device.
 - **Full VM/container management from a phone** — the Env, Disks, Network interfaces, and Mounts sections now add/edit through modal form editors at every screen size (previously read-only below `sm`), matching the Host Mgmt pattern; tables restack their columns on phones so nothing scrolls sideways.
+- **Single-choice controls are radio pills app-wide** — the full-width segmented bars (VM Advanced, OS Type, NIC model, restart policy, disk add mode) became content-sized accent pills matching the Boot Order chips; the expanded Advanced section is roughly half its old height.
 
 ### Bug Fixes
 - **OIDC redirect URI readable on phones** — the callback URL renders as a wrapping summary box instead of a single-line field that truncated it.
