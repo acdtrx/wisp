@@ -234,16 +234,18 @@ export default function CaddyAppSection({ config, onSave }) {
           </button>
         </div>
 
-        {/* Hosts table */}
+        {/* Hosts table — contained on desktop so the inputs don't sprawl;
+          * tighter cell gutters below sm so the inputs get the width instead. */}
+        <div className="sm:max-w-2xl">
         <DataTableScroll>
           <DataTable>
             <thead>
               <tr className={dataTableHeadRowClass}>
-                <DataTableTh dense className="w-2/5 sm:w-1/3">Hostname</DataTableTh>
-                <DataTableTh dense>Target</DataTableTh>
+                <DataTableTh dense className="w-2/5 sm:w-1/3 max-sm:px-2">Hostname</DataTableTh>
+                <DataTableTh dense className="max-sm:px-2">Target</DataTableTh>
                 {/* Icon-only column — a visible "Actions" word forces the column
                   * wider than the delete button and starves the target on phones. */}
-                <DataTableTh dense align="right" className="w-12"><span className="sr-only">Actions</span></DataTableTh>
+                <DataTableTh dense align="right" className="w-12 max-sm:px-2"><span className="sr-only">Actions</span></DataTableTh>
               </tr>
             </thead>
             <tbody>
@@ -256,7 +258,7 @@ export default function CaddyAppSection({ config, onSave }) {
               )}
               {form.hosts.map((host) => (
                 <tr key={host.id} className={dataTableInteractiveRowClass}>
-                  <DataTableTd dense className="w-2/5 sm:w-1/3">
+                  <DataTableTd dense className="w-2/5 sm:w-1/3 max-sm:px-2">
                     <input
                       type="text"
                       className="input-field w-full min-w-0 text-xs"
@@ -265,7 +267,7 @@ export default function CaddyAppSection({ config, onSave }) {
                       onChange={(e) => updateHost(host.id, 'subdomain', e.target.value)}
                     />
                   </DataTableTd>
-                  <DataTableTd dense>
+                  <DataTableTd dense className="max-sm:px-2">
                     <input
                       type="text"
                       className="input-field w-full min-w-0 text-xs"
@@ -274,7 +276,7 @@ export default function CaddyAppSection({ config, onSave }) {
                       onChange={(e) => updateHost(host.id, 'target', e.target.value)}
                     />
                   </DataTableTd>
-                  <DataTableTd dense align="right">
+                  <DataTableTd dense align="right" className="max-sm:px-2">
                     <DataTableRowActions forceVisible>
                       <button
                         type="button"
@@ -292,6 +294,7 @@ export default function CaddyAppSection({ config, onSave }) {
             </tbody>
           </DataTable>
         </DataTableScroll>
+        </div>
       </div>
     </SectionCard>
   );
