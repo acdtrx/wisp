@@ -213,8 +213,15 @@ export default function CaddyAppSection({ config, onSave }) {
         </div>
 
         {/* Hosts sub-header */}
-        <div className="flex items-center justify-between border-t border-surface-border pt-3">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Hosts</span>
+        <div className="flex items-center justify-between gap-3 border-t border-surface-border pt-3">
+          <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wider text-text-muted">
+            Hosts
+            {/* The wildcard domain shows once here instead of repeating in every
+              * row, which starved the inputs on phones. */}
+            {form.domain && (
+              <span className="ml-1.5 font-normal normal-case tracking-normal">*.{form.domain}</span>
+            )}
+          </span>
           <button
             type="button"
             onClick={addHost}
@@ -232,9 +239,11 @@ export default function CaddyAppSection({ config, onSave }) {
           <DataTable>
             <thead>
               <tr className={dataTableHeadRowClass}>
-                <DataTableTh dense className="w-1/3">Subdomain</DataTableTh>
+                <DataTableTh dense className="w-2/5 sm:w-1/3">Hostname</DataTableTh>
                 <DataTableTh dense>Target</DataTableTh>
-                <DataTableTh dense align="right" className="w-12">Actions</DataTableTh>
+                {/* Icon-only column — a visible "Actions" word forces the column
+                  * wider than the delete button and starves the target on phones. */}
+                <DataTableTh dense align="right" className="w-12"><span className="sr-only">Actions</span></DataTableTh>
               </tr>
             </thead>
             <tbody>
@@ -247,19 +256,14 @@ export default function CaddyAppSection({ config, onSave }) {
               )}
               {form.hosts.map((host) => (
                 <tr key={host.id} className={dataTableInteractiveRowClass}>
-                  <DataTableTd dense className="w-1/3">
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="text"
-                        className="input-field flex-1 min-w-0 text-xs"
-                        placeholder="app"
-                        value={host.subdomain}
-                        onChange={(e) => updateHost(host.id, 'subdomain', e.target.value)}
-                      />
-                      <span className="text-[10px] text-text-muted whitespace-nowrap shrink-0">
-                        .{form.domain || '…'}
-                      </span>
-                    </div>
+                  <DataTableTd dense className="w-2/5 sm:w-1/3">
+                    <input
+                      type="text"
+                      className="input-field w-full min-w-0 text-xs"
+                      placeholder="app"
+                      value={host.subdomain}
+                      onChange={(e) => updateHost(host.id, 'subdomain', e.target.value)}
+                    />
                   </DataTableTd>
                   <DataTableTd dense>
                     <input

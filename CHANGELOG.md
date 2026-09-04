@@ -8,6 +8,7 @@
 - **Single-choice controls are radio pills app-wide** — the full-width segmented bars (VM Advanced, OS Type, NIC model, restart policy, disk add mode) became content-sized accent pills matching the Boot Order chips; the expanded Advanced section is roughly half its old height.
 
 ### Bug Fixes
+- **Caddy hosts editable on phones** — the wildcard domain shows once above the table instead of repeating in every row, the column is labeled Hostname, and the hostname/target inputs get real widths with the target filling the row up to the delete button.
 - **Container pages show their header instantly** — opening a container seeded nothing while VMs painted from the sidebar data, so a stalled phone connection left containers on a full-page loader (up to a minute) while VMs looked fine; the container panel now seeds the same way, with only the section body waiting on the config fetch.
 - **Host header works on phones** — the power buttons are square icon buttons on the title row (matching workload action buttons) and the tab strip gets its own full-width line; the Software tab's update dot sits before the label and mirrors onto the host icon so it's visible without scrolling the strip.
 - **OIDC redirect URI readable on phones** — the callback URL renders as a wrapping summary box instead of a single-line field that truncated it.
