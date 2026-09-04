@@ -153,7 +153,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
                 </div>
               </Field>
 
-              <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border" />
+              <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border max-sm:hidden" />
 
               <Field label="CPU" icon={Cpu} className="w-16">
                 <input
@@ -179,7 +179,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
                 />
               </Field>
 
-              <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border" />
+              <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border max-sm:hidden" />
             </>
           )}
 
@@ -239,14 +239,14 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
             </div>
           </Field>
 
-          <Field label="Restart Policy" icon={RefreshCw}>
+          <Field label="Restart Policy" icon={RefreshCw} className="max-sm:basis-full">
             <RestartPolicyPills
               value={form.restartPolicy}
               onChange={(v) => updateField('restartPolicy', v)}
             />
           </Field>
 
-          <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border" />
+          <div className="mx-0.5 mb-[5px] h-6 w-px bg-surface-border max-sm:hidden" />
 
           <Field label="Auto Start">
             <div className="flex h-[34px] items-center">

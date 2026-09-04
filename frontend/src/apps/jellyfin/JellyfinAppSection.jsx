@@ -5,13 +5,14 @@
  * on the LAN.
  */
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Cpu, Folder, Plus, X } from 'lucide-react';
+import { Cpu, Folder, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import SectionCard from '../../components/shared/SectionCard.jsx';
 import Toggle from '../../components/shared/Toggle.jsx';
 import HelpIcon from '../../components/shared/HelpIcon.jsx';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { getHostGpus } from '../../api/host.js';
+import JellyfinLibraryEditorModal from './JellyfinLibraryEditorModal.jsx';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -147,23 +148,34 @@ export default function JellyfinAppSection({ config, onSave }) {
     ? `${hostGpus[0].vendorName || hostGpus[0].vendor}${hostGpus[0].model ? ` — ${hostGpus[0].model}` : ''}`
     : null;
 
-  const updateLibrary = useCallback((rowId, patch) => {
-    setForm((f) => ({
-      ...f,
-      libraries: f.libraries.map((lib) => (lib.rowId === rowId ? { ...lib, ...patch } : lib)),
-    }));
-  }, []);
-
   const removeLibrary = useCallback((rowId) => {
     setForm((f) => ({ ...f, libraries: f.libraries.filter((lib) => lib.rowId !== rowId) }));
   }, []);
 
-  const addLibrary = useCallback(() => {
-    setForm((f) => ({
-      ...f,
-      libraries: [...f.libraries, { rowId: makeRowId(), label: '', sourceId: '', subPath: '' }],
-    }));
-  }, []);
+  /* Modal form editor state — rowId null means "add". */
+  const [editor, setEditor] = useState({ open: false, rowId: null });
+  const editingLibrary = editor.rowId != null
+    ? form.libraries.find((lib) => lib.rowId === editor.rowId) || null
+    : null;
+
+  const validateModalLabel = useCallback((label, editing) => {
+    const t = (label || '').trim();
+    if (!t) return 'Label is required';
+    if (!isValidLibraryLabel(t)) {
+      if (RESERVED_LIBRARY_LABELS.has(t)) return `"${t}" is reserved`;
+      return 'No slashes, leading dots, or ".."';
+    }
+    const clash = form.libraries.some(
+      (lib) => lib.rowId !== editing?.rowId && (lib.label || '').trim() === t,
+    );
+    return clash ? 'A library with this label already exists' : null;
+  }, [form.libraries]);
+
+  const applyLibrary = useCallback((values) => {
+    setForm((f) => (editor.rowId != null
+      ? { ...f, libraries: f.libraries.map((lib) => (lib.rowId === editor.rowId ? { ...lib, ...values } : lib)) }
+      : { ...f, libraries: [...f.libraries, { rowId: makeRowId(), ...values }] }));
+  }, [editor.rowId]);
 
   const handleSave = useCallback(async () => {
     setError(null);
@@ -212,38 +224,27 @@ export default function JellyfinAppSection({ config, onSave }) {
               No libraries configured. Add one to mount a Storage source at <code>/media/&lt;label&gt;</code> inside the container.
             </p>
           ) : (
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               {form.libraries.map((lib) => {
                 const err = rowError(lib);
+                const source = storageMounts.find((m) => m.id === lib.sourceId);
                 return (
-                  <div key={lib.rowId} className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        placeholder="Label (e.g. movies)"
-                        value={lib.label}
-                        onChange={(e) => updateLibrary(lib.rowId, { label: e.target.value })}
-                        className="w-32 shrink-0 rounded-md border border-surface-border bg-surface-input px-2 py-1 text-xs"
-                      />
-                      <select
-                        value={lib.sourceId}
-                        onChange={(e) => updateLibrary(lib.rowId, { sourceId: e.target.value })}
-                        className="h-[26px] min-w-0 flex-1 rounded-md border border-surface-border bg-surface-input px-2 py-0 text-xs"
+                  <div key={lib.rowId} className="space-y-0.5">
+                    <div className="flex items-center gap-2 rounded-md border border-surface-border px-2.5 py-1.5">
+                      <span className="shrink-0 font-mono text-xs text-text-primary">/media/{(lib.label || '?').trim() || '?'}</span>
+                      <span className="min-w-0 flex-1 truncate text-[11px] text-text-muted">
+                        {source ? (source.label || source.id) : lib.sourceId || '—'}
+                        {lib.subPath ? ` / ${lib.subPath}` : ''}
+                      </span>
+                      <button
+                        type="button"
+                        className={iconBtn}
+                        title="Edit library"
+                        aria-label="Edit library"
+                        onClick={() => setEditor({ open: true, rowId: lib.rowId })}
                       >
-                        <option value="">— Select Storage source —</option>
-                        {storageMounts.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.label || m.id} ({m.mountPath})
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="text"
-                        placeholder="Sub-path (optional)"
-                        value={lib.subPath}
-                        onChange={(e) => updateLibrary(lib.rowId, { subPath: e.target.value })}
-                        className="min-w-0 flex-1 rounded-md border border-surface-border bg-surface-input px-2 py-1 text-xs"
-                      />
+                        <Pencil size={13} />
+                      </button>
                       <button
                         type="button"
                         className={`${iconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
@@ -251,7 +252,7 @@ export default function JellyfinAppSection({ config, onSave }) {
                         aria-label="Remove library"
                         onClick={() => removeLibrary(lib.rowId)}
                       >
-                        <X size={14} />
+                        <Trash2 size={13} />
                       </button>
                     </div>
                     {err && (
@@ -268,12 +269,22 @@ export default function JellyfinAppSection({ config, onSave }) {
               className={iconBtn}
               title="Add library"
               aria-label="Add library"
-              onClick={addLibrary}
+              onClick={() => setEditor({ open: true, rowId: null })}
             >
               <Plus size={14} />
             </button>
           </div>
         </div>
+
+        <JellyfinLibraryEditorModal
+          open={editor.open}
+          library={editingLibrary}
+          storageMounts={storageMounts}
+          validateLabel={validateModalLabel}
+          validateSubPath={isValidSubPath}
+          onApply={applyLibrary}
+          onClose={() => setEditor({ open: false, rowId: null })}
+        />
 
         <div>
           <label className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-text-muted" htmlFor="jellyfin-published-url">
@@ -289,7 +300,7 @@ export default function JellyfinAppSection({ config, onSave }) {
             placeholder="http://jellyfin.local:8096"
             value={form.publishedUrl}
             onChange={(e) => setForm((f) => ({ ...f, publishedUrl: e.target.value }))}
-            className="w-full rounded-md border border-surface-border bg-surface-input px-2 py-1 text-xs"
+            className="input-field text-xs"
           />
         </div>
 
