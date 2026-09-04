@@ -234,9 +234,9 @@ export default function CaddyAppSection({ config, onSave }) {
           </button>
         </div>
 
-        {/* Hosts table — contained on desktop so the inputs don't sprawl;
-          * tighter cell gutters below sm so the inputs get the width instead. */}
-        <div className="sm:max-w-2xl">
+        {/* Hosts table — full width like every other panel (delete stays at the
+          * right edge); the inputs themselves are capped on desktop so they
+          * don't sprawl. Tighter cell gutters below sm. */}
         <DataTableScroll>
           <DataTable>
             <thead>
@@ -261,7 +261,7 @@ export default function CaddyAppSection({ config, onSave }) {
                   <DataTableTd dense className="w-2/5 sm:w-1/3 max-sm:px-2">
                     <input
                       type="text"
-                      className="input-field w-full min-w-0 text-xs"
+                      className="input-field w-full min-w-0 text-xs sm:max-w-[240px]"
                       placeholder="app"
                       value={host.subdomain}
                       onChange={(e) => updateHost(host.id, 'subdomain', e.target.value)}
@@ -270,7 +270,7 @@ export default function CaddyAppSection({ config, onSave }) {
                   <DataTableTd dense className="max-sm:px-2">
                     <input
                       type="text"
-                      className="input-field w-full min-w-0 text-xs"
+                      className="input-field w-full min-w-0 text-xs sm:max-w-[420px]"
                       placeholder="192.168.1.100 or 192.168.1.100:8080"
                       value={host.target}
                       onChange={(e) => updateHost(host.id, 'target', e.target.value)}
@@ -294,7 +294,6 @@ export default function CaddyAppSection({ config, onSave }) {
             </tbody>
           </DataTable>
         </DataTableScroll>
-        </div>
       </div>
     </SectionCard>
   );
