@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-08-25
+## 2026-09-05 (v2.3.0)
 
 ### New Features
 - **Dark mode — the Dusk theme** — deep spruce surfaces with the teal accent doing the lighting: running workloads glow (Home lanterns, sidebar and detail-header icons), consoles and native controls follow the theme, and every text/status color holds WCAG AA. Follows the OS setting by default with a Light/Dark/System control in the top bar; the choice is remembered per device.
