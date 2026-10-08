@@ -113,7 +113,7 @@ const loggerConfig = {
         transport: {
           target: 'pino-pretty',
           options: {
-            translateTime: 'HH:MM:ss.l',
+            translateTime: 'SYS:HH:MM:ss.l',
             singleLine: true,
             ignore: 'pid,hostname,reqId,req.host,req.remoteAddress,req.remotePort',
           },
