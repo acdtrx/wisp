@@ -374,7 +374,7 @@ export default function TinySambaAppSection({ config, onSave }) {
             <div className="min-w-[180px]">
               <label
                 className="text-xs font-medium text-text-secondary mb-1.5 block"
-                title="Apple SMB extensions: nicer macOS Finder icon and faster browse, but rely on streams_xattr which can fail on some filesystems"
+                title="Apple SMB extensions: nicer macOS Finder icon and faster browse. Shares on exFAT/FAT drives get them turned off automatically."
               >
                 Apple extensions
               </label>
