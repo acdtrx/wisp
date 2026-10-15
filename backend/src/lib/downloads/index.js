@@ -14,7 +14,7 @@ export {
 } from './downloadFromUrl.js';
 
 export {
-  findUniqueFilename,
+  openUniqueFile,
   streamResponseToFile,
   downloadWithProgress,
 } from './downloadUtils.js';

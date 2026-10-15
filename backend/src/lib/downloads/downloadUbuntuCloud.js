@@ -5,7 +5,7 @@
  */
 
 import { ensureImageDir } from '../paths.js';
-import { findUniqueFilename, downloadWithProgress } from './downloadUtils.js';
+import { downloadToUniqueFile } from './downloadUtils.js';
 
 const SIMPLESTREAMS_URL =
   'https://cloud-images.ubuntu.com/releases/streams/v1/com.ubuntu.cloud:released:download.json';
@@ -76,12 +76,5 @@ async function resolveLatestLts() {
 export async function downloadUbuntuCloudImage(onProgress) {
   const { url, filename } = await resolveLatestLts();
   const dir = await ensureImageDir();
-  const { destPath, filename: finalName } = await findUniqueFilename(dir, filename);
-  const result = await downloadWithProgress(url, destPath, onProgress);
-  return {
-    name: finalName,
-    type: result.type,
-    size: result.size,
-    modified: result.modified,
-  };
+  return downloadToUniqueFile(url, dir, filename, onProgress);
 }

@@ -11,7 +11,7 @@
  * Repo defaults to acdtrx/wisp; override with WISP_UPDATE_REPO in runtime.env
  * for forks or testing.
  */
-import { readFileSync, createWriteStream, createReadStream } from 'node:fs';
+import { readFileSync, createReadStream } from 'node:fs';
 import { mkdir, rm, access, writeFile, rename } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,7 @@ import { Agent, fetch as undiciFetch } from 'undici';
 import { createAppError } from './routeErrors.js';
 import { getSettings } from './settings.js';
 import { ssrfSafeFetch } from './downloads/downloadFromUrl.js';
+import { writeResponseToFile } from './downloads/downloadUtils.js';
 
 const execFileAsync = promisify(execFileCb);
 
@@ -293,29 +294,16 @@ async function downloadToFile(url, destPath, onProgress, signal) {
   }
   const totalHeader = res.headers.get('content-length');
   const total = totalHeader ? parseInt(totalHeader, 10) : null;
-  let received = 0;
-  const out = createWriteStream(destPath);
-  const reader = res.body.getReader();
   let lastReport = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.length;
-      out.write(value);
-      const now = Date.now();
-      if (onProgress && now - lastReport > 250) {
-        lastReport = now;
-        onProgress({ received, total });
-      }
+  /* Shared with library downloads: backpressured pipeline, write errors
+   * (ENOSPC) reject instead of crashing, partial file removed on failure. */
+  const received = await writeResponseToFile(res, destPath, (loaded) => {
+    const now = Date.now();
+    if (onProgress && now - lastReport > 250) {
+      lastReport = now;
+      onProgress({ received: loaded, total });
     }
-  } finally {
-    out.end();
-    await new Promise((r, j) => {
-      out.on('finish', r);
-      out.on('error', j);
-    });
-  }
+  });
   if (onProgress) onProgress({ received, total: total || received });
   return { received, total };
 }

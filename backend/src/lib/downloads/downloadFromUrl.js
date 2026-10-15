@@ -20,7 +20,7 @@ import { Agent, fetch as undiciFetch } from 'undici';
 import { ensureImageDir } from '../paths.js';
 import { detectType } from './fileTypes.js';
 import { createAppError } from '../routeErrors.js';
-import { findUniqueFilename, streamResponseToFile } from './downloadUtils.js';
+import { streamResponseToUniqueFile } from './downloadUtils.js';
 
 const MAX_REDIRECTS = 5;
 
@@ -132,11 +132,6 @@ function sanitizeFilename(name) {
   if (!base) return 'download';
   return base.replace(/[^\w.\-]/g, '_');
 }
-
-export { streamResponseToFile as streamDownloadToFile } from './downloadUtils.js';
-
-/** @deprecated Use findUniqueFilename from downloadUtils.js */
-export { findUniqueFilename as uniqueFilename } from './downloadUtils.js';
 
 export function isAllowedUrl(urlStr) {
   try {
@@ -291,9 +286,7 @@ export async function downloadToLibrary(urlStr, onProgress) {
   if (!filename) filename = 'download';
 
   const dir = await ensureImageDir();
-  const { destPath, filename: finalName } = await findUniqueFilename(dir, filename);
-
-  await streamResponseToFile(res, destPath, onProgress);
+  const { destPath, filename: finalName } = await streamResponseToUniqueFile(res, dir, filename, onProgress);
 
   const info = await stat(destPath);
   return {

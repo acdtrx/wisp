@@ -69,6 +69,8 @@ This applies to:
 
 All downloads run as background jobs. Progress is tracked via a job store and streamed to the frontend via SSE.
 
+**Naming and failure.** The destination name is reserved by an exclusive create (`O_EXCL`): when the name is taken — an existing file or a concurrent download of the same image — the next ` (n)` variant is used, so two simultaneous downloads of one preset both succeed under distinct names. A download that fails (network, disk full) removes its partial file and fails the job with `{ step: 'error' }`; the HAOS flow also removes its hidden `.haos_download_*.xz` temp, and succeeds only when the output finished writing **and** `xz` exited 0 (a corrupt archive never lands as a truncated image).
+
 ### URL Check
 
 A HEAD request to verify a URL is reachable before starting a download. Returns the HTTP status and content length (if available).

@@ -220,7 +220,7 @@ App identity persists in `container.json.metadata.app` (string id) + `container.
 | `loadRuntimeEnv.js` | Optional `config/runtime.env` parsing (loaded from `index.js` before server start) |
 | `createJobStore.js` | Preconfigured job store for VM create progress (`routes/vms.js`) |
 | `containerJobStore.js` | Job store wrapper for container create (`routes/containers.js`) |
-| `downloadUtils.js` | Shared helpers for library downloads (`findUniqueFilename`, streaming) |
+| `downloadUtils.js` | Shared download helpers: exclusive unique-name create (`openUniqueFile`), response-body → file pipeline with progress and partial-file cleanup (also used by `wispUpdate.js`) |
 | `fileTypes.js` | `detectType` for image library files |
 | `networking/index.js` | Networking facade — host bridge enumeration (`listHostBridges`, `getDefaultBridge`, `getDefaultContainerParentBridge`), `/proc` IPv4 readout (`ipv4CidrFromProcFibTrie`), netplan-managed VLAN bridges, and the `isVlanLikeBridgeName` heuristic. Linux impl under `networking/linux/{hostBridges,managedBridges}.js`; macOS stubs under `networking/darwin/`. |
 | `paths.js` | `getVMBasePath(name)`, `getImagePath()`, `ensureImageDir()` (container roots: `containerManager` `containerPaths.js` / `getContainersPath()`) |

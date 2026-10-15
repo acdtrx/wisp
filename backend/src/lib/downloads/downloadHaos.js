@@ -4,12 +4,12 @@
  * (haos_ova-*.qcow2.xz), with fallback to haos_generic-x86-64-*.qcow2.xz.
  */
 
-import { createWriteStream } from 'node:fs';
 import { unlink, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { pipeline } from 'node:stream/promises';
 import { ensureImageDir } from '../paths.js';
-import { findUniqueFilename, downloadWithProgress } from './downloadUtils.js';
+import { openUniqueFile, downloadWithProgress } from './downloadUtils.js';
 import { createAppError } from '../routeErrors.js';
 
 const GITHUB_API = 'https://api.github.com/repos/home-assistant/operating-system/releases/latest';
@@ -40,44 +40,65 @@ export async function getLatestHaosAsset() {
 }
 
 /**
+ * Decompress srcPath with `xz -dc` into the open file handle. Success needs
+ * both outcomes: the output stream finished AND xz exited 0 — a corrupt or
+ * truncated input makes xz write partial output then exit non-zero, and that
+ * must fail rather than leave a truncated image. If the write side fails
+ * (ENOSPC), pipeline destroys xz's stdout and xz dies on the broken pipe, so
+ * both always settle; the write error is the root cause and wins.
+ */
+async function decompressXzToFile(srcPath, handle) {
+  const xz = spawn('xz', ['-dc', srcPath], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const exited = new Promise((resolve, reject) => {
+    xz.on('error', reject);
+    xz.on('close', (code, signal) => {
+      if (code === 0) resolve();
+      else reject(new Error(`xz exited with ${code ?? signal}`));
+    });
+  });
+  const [written, exit] = await Promise.allSettled([
+    pipeline(xz.stdout, handle.createWriteStream()),
+    exited,
+  ]);
+  if (written.status === 'rejected') throw written.reason;
+  if (exit.status === 'rejected') throw exit.reason;
+}
+
+/**
  * Download the .xz asset, decompress with xz, write to image dir.
- * onProgress(percent, loaded, total) during download.
+ * onProgress(percent, loaded, total) during download. On any failure the
+ * hidden compressed temp and the partial output are both removed.
  */
 export async function downloadAndDecompressHaos(onProgress) {
   const { url, finalName } = await getLatestHaosAsset();
   const dir = await ensureImageDir();
-  const { destPath, filename: outputName } = await findUniqueFilename(dir, finalName);
   const tmpPath = join(dir, `.haos_download_${Date.now()}.qcow2.xz`);
+  /* downloadWithProgress removes its own partial file on failure */
+  await downloadWithProgress(url, tmpPath, onProgress);
+
   try {
-    await downloadWithProgress(url, tmpPath, onProgress);
-  } catch (err) {
+    const { handle, destPath, filename: outputName } = await openUniqueFile(dir, finalName);
+    try {
+      await decompressXzToFile(tmpPath, handle);
+    } catch (err) {
+      await handle.close().catch(() => {
+        /* the write stream already closed the handle */
+      });
+      await unlink(destPath).catch(() => {
+        /* partial output already gone */
+      });
+      throw err;
+    }
+    const info = await stat(destPath);
+    return {
+      name: outputName,
+      type: 'disk',
+      size: info.size,
+      modified: info.mtime.toISOString(),
+    };
+  } finally {
     await unlink(tmpPath).catch(() => {
-      /* partial download may not exist */
+      /* compressed temp already removed */
     });
-    throw err;
   }
-
-  await new Promise((resolve, reject) => {
-    const xz = spawn('xz', ['-dc', tmpPath], { stdio: ['ignore', 'pipe', 'inherit'] });
-    const out = createWriteStream(destPath);
-    xz.stdout.pipe(out);
-    out.on('finish', () => resolve());
-    out.on('error', reject);
-    xz.on('error', reject);
-    xz.on('exit', (code) => {
-      if (code !== 0) reject(new Error(`xz exited with code ${code}`));
-    });
-  });
-
-  await unlink(tmpPath).catch(() => {
-    /* compressed temp may already be removed */
-  });
-
-  const info = await stat(destPath);
-  return {
-    name: outputName,
-    type: 'disk',
-    size: info.size,
-    modified: info.mtime.toISOString(),
-  };
 }
