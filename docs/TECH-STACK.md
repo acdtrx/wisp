@@ -74,7 +74,7 @@ Password login yielding `node:crypto`-signed session JWTs in cookies (no JWT lib
 | Build tool | Vite | ^8.1 | Dev server with HMR, production bundler (Rolldown-based; vendor chunk via `build.rolldownOptions.output.codeSplitting`). |
 | Vite plugin | @vitejs/plugin-react | ^6.0 | JSX transform and React fast refresh (Oxc-based, no Babel). |
 | Styling | Tailwind CSS | ^4.3 | Utility-first CSS framework. CSS-first config: design tokens live in `src/index.css` `@theme` (no `tailwind.config.js`). Integrated via the first-party `@tailwindcss/vite` plugin — no PostCSS/Autoprefixer (v4 handles prefixing). |
-| Tailwind plugin | @tailwindcss/typography | ^0.5 | `prose` utility classes for rendering arbitrary markdown content (release notes). Loaded via `@plugin` in `src/index.css`. |
+| Tailwind plugin | @tailwindcss/typography | ^0.5 | `prose` utility classes for rendering arbitrary markdown content (release notes). Loaded via `@plugin` in `src/index.css`. Known `npm audit` moderate (2026-10-16): it pins `postcss-selector-parser@6.0.10` exactly (GHSA-rj75-hqrm-r3gf, quadratic selector parsing). Build-time only and it parses our own CSS, so not reachable; no override. Recheck when a typography release moves to `postcss-selector-parser` ≥7.1.6. |
 | State management | Zustand | ^5.0 | Minimal global state with no boilerplate. |
 | Routing | react-router-dom | ^7.18 | Client-side routing (login page vs. app shell). Declarative mode (`BrowserRouter`/`Routes`). |
 | Icons | lucide-react | ^1.23 | Tree-shakeable icon library. No CDN. v1 dropped brand icons (GitHub → `AtSign` in cloud-init section). |
