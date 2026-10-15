@@ -716,9 +716,10 @@ SSE stream of per-VM statistics. Pushes every 5 seconds.
 Attach an existing disk image or create and attach a new empty disk. VM must be stopped.
 
 - **Body (attach existing):** `{ slot: "sda" | "sdb", path: string, bus?: "virtio" | "scsi" | "sata" | "ide" }`
-- **Body (create new):** `{ slot: "sdb", sizeGB: number, bus?: "virtio" | "scsi" | "sata" | "ide" }` — creates a new qcow2 in the VM directory and attaches it. Provide either `path` or `sizeGB`, not both.
+- **Body (create new):** `{ slot: "sda" | "sdb", sizeGB: number, bus?: "virtio" | "scsi" | "sata" | "ide" }` — creates a new qcow2 in the VM directory under the lowest `disk<N>.qcow2` name not already present (never overwrites an existing file) and attaches it. Provide either `path` or `sizeGB`, not both.
 - **200:** `{ ok: true }`
-- **422:** Both or neither of `path` and `sizeGB` provided
+- **409:** `VM_MUST_BE_OFFLINE` (VM not stopped), `DISK_SLOT_IN_USE` (slot already holds a device — detach it first)
+- **422:** Both or neither of `path` and `sizeGB` provided; `INVALID_REQUEST` for a slot other than `sda`/`sdb`; `PATH_NOT_ALLOWED` for a `path` outside the allowed roots
 
 ### DELETE /api/vms/:name/disks/:slot
 

@@ -27,7 +27,10 @@ export async function updateVMConfig(name, changes) {
   let domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
   const isRunning = state.code === 1 || state.code === 2 || state.code === 3;
-  let xml = await getDomainXML(domPath);
+  // Every edit below is persisted with DomainDefineXML, so the baseline is the
+  // inactive (persistent) definition. On a running VM the live XML lacks any
+  // pending-restart edits; defining from it would silently revert them.
+  let xml = await getDomainXML(domPath, { inactive: true });
   let parsed = parseDomainRaw(xml);
   let dom = parsed.domain;
   if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
@@ -55,7 +58,7 @@ export async function updateVMConfig(name, changes) {
       // leave the files at a different path. Read the XML and find the
       // directory the disks/NVRAM actually reference.
       const expectedOldDir = getVMBasePath(currentName);
-      const xmlBeforeRename = await getDomainXML(domPath);
+      const xmlBeforeRename = await getDomainXML(domPath, { inactive: true });
       const parsedBeforeRename = parseDomainRaw(xmlBeforeRename);
       const inferredDir = findActualVmDir(parsedBeforeRename?.domain, getVmsPath());
       // Prefer the expected dir when it both exists and matches inference.
@@ -102,7 +105,7 @@ export async function updateVMConfig(name, changes) {
 
       effectiveName = newName;
       domPath = await resolveDomain(newName);
-      xml = await getDomainXML(domPath);
+      xml = await getDomainXML(domPath, { inactive: true });
       parsed = parseDomainRaw(xml);
       dom = parsed.domain;
       if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
@@ -127,7 +130,7 @@ export async function updateVMConfig(name, changes) {
             } catch { /* best-effort */ }
             throw vmError('LIBVIRT_ERROR', 'Failed to update domain XML after rename', defErr.message);
           }
-          xml = await getDomainXML(domPath);
+          xml = await getDomainXML(domPath, { inactive: true });
           parsed = parseDomainRaw(xml);
           dom = parsed.domain;
         }

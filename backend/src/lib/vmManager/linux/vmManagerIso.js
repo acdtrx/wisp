@@ -54,7 +54,7 @@ export async function attachISO(name, slot, isoPath, opts = {}) {
       }
       return;
     }
-    const parsed = parseDomainRaw(fullXml);
+    const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true }));
     const dom = parsed?.domain;
     if (!dom?.devices) throw vmError('PARSE_ERROR', 'Invalid domain XML');
     const disks = Array.isArray(dom.devices.disk) ? dom.devices.disk : [dom.devices.disk];
@@ -114,7 +114,7 @@ export async function ejectISO(name, slot, opts = {}) {
   }
 
   if (removeSlot && !isRunning) {
-    const parsed = parseDomainRaw(fullXml);
+    const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true }));
     const dom = parsed?.domain;
     if (dom?.devices?.disk) {
       const disks = Array.isArray(dom.devices.disk) ? dom.devices.disk : [dom.devices.disk];

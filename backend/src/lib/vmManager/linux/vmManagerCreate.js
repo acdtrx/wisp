@@ -410,7 +410,8 @@ export async function cloneVM(name, newName, { onProgress } = {}) {
     if (err.code === 'VM_EXISTS') throw err;
   }
 
-  const xml = await getDomainXML(path);
+  // The clone copies the saved (persistent) definition, not a paused source's live one.
+  const xml = await getDomainXML(path, { inactive: true });
   const config = parseVMFromXML(xml);
   if (!config) throw vmError('PARSE_ERROR', `Failed to parse XML for VM "${name}"`);
 

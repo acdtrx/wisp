@@ -4,7 +4,9 @@
  */
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
+import { open, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+
 import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError } from './vmManagerConnection.js';
 import { parseDomainRaw, parseVMFromXML, buildXml } from './vmManagerXml.js';
 import { getVMBasePath } from './vmManagerPaths.js';
@@ -40,19 +42,38 @@ export function extractDiskSnippet(fullXml, slot) {
   return disk || null;
 }
 
-export async function attachDisk(name, slot, imagePath, bus = 'virtio') {
-  /* imagePath is caller-provided absolute (route validated). */
+/** Block-disk slots a VM may carry (sdc/sdd/sde are the CDROM slots). */
+const DISK_SLOT_ENUM = ['sda', 'sdb'];
+
+/**
+ * Validate a block-disk attach target and return the parsed inactive XML to
+ * define from. Throws before any side effect: unknown slot (INVALID_REQUEST),
+ * running VM (VM_MUST_BE_OFFLINE), slot already used by any device (DISK_SLOT_IN_USE).
+ */
+async function loadDiskAttachTarget(name, slot) {
+  if (!DISK_SLOT_ENUM.includes(slot)) {
+    throw vmError('INVALID_REQUEST', `Invalid disk slot: ${slot} (expected ${DISK_SLOT_ENUM.join(' or ')})`);
+  }
+
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
   if (state.code !== 5 && state.code !== 0) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to attach disks`);
   }
 
-  const xml = await getDomainXML(domPath);
-  const parsed = parseDomainRaw(xml);
+  const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true }));
   const dom = parsed?.domain;
   if (!dom?.devices) throw vmError('PARSE_ERROR', 'Invalid domain XML');
 
+  const disks = Array.isArray(dom.devices.disk) ? dom.devices.disk : dom.devices.disk ? [dom.devices.disk] : [];
+  if (disks.some((d) => d.target?.['@_dev'] === slot)) {
+    throw vmError('DISK_SLOT_IN_USE', `Slot ${slot} of VM "${name}" is already in use — detach it first`);
+  }
+  return parsed;
+}
+
+async function defineWithNewDisk(parsed, slot, imagePath, bus) {
+  const dom = parsed.domain;
   if (bus === 'scsi') {
     ensureVirtioScsiController(dom);
   }
@@ -77,14 +98,47 @@ export async function attachDisk(name, slot, imagePath, bus = 'virtio') {
   }
 }
 
-/** Create a new empty qcow2 disk in the VM directory and attach it to the given slot. VM must be stopped. */
+/**
+ * Reserve the lowest-numbered `disk<N>.qcow2` that does not exist yet in the VM
+ * directory. The exclusive create (`wx`) makes the reservation atomic, so an
+ * existing image — attached, detached-but-kept, or racing request — is never
+ * overwritten by the `qemu-img create` that follows.
+ */
+async function reserveNewDiskFile(vmBasePath) {
+  for (let n = 0; ; n++) {
+    const diskPath = join(vmBasePath, `disk${n}.qcow2`);
+    try {
+      const fh = await open(diskPath, 'wx');
+      await fh.close();
+      return diskPath;
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+    }
+  }
+}
+
+export async function attachDisk(name, slot, imagePath, bus = 'virtio') {
+  /* imagePath is caller-provided absolute (route validated). */
+  const parsed = await loadDiskAttachTarget(name, slot);
+  await defineWithNewDisk(parsed, slot, imagePath, bus);
+}
+
+/**
+ * Create a new empty qcow2 disk in the VM directory and attach it to the given slot.
+ * VM must be stopped and the slot free; all checks run before any file is created.
+ */
 export async function createAndAttachDisk(name, slot, sizeGB, bus = 'virtio') {
-  const vmBasePath = getVMBasePath(name);
-  const diskFile = slot === 'sda' ? 'disk0.qcow2' : 'disk1.qcow2';
-  const diskPath = join(vmBasePath, diskFile);
+  const parsed = await loadDiskAttachTarget(name, slot);
   const sizeG = Math.max(1, parseInt(sizeGB, 10) || 32);
-  await execFile('qemu-img', ['create', '-f', 'qcow2', diskPath, `${sizeG}G`]);
-  await attachDisk(name, slot, diskPath, bus);
+  const diskPath = await reserveNewDiskFile(getVMBasePath(name));
+  try {
+    await execFile('qemu-img', ['create', '-f', 'qcow2', diskPath, `${sizeG}G`]);
+    await defineWithNewDisk(parsed, slot, diskPath, bus);
+  } catch (err) {
+    /* The file is ours (reserved above) and not referenced by the domain — remove it. */
+    await unlink(diskPath).catch(() => { /* already gone; nothing else to undo */ });
+    throw err;
+  }
 }
 
 export async function detachDisk(name, slot) {
@@ -94,7 +148,7 @@ export async function detachDisk(name, slot) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to detach disks`);
   }
 
-  const xml = await getDomainXML(domPath);
+  const xml = await getDomainXML(domPath, { inactive: true });
   const parsed = parseDomainRaw(xml);
   const dom = parsed?.domain;
   if (!dom?.devices?.disk) throw vmError('DISK_NOT_FOUND', `No disk found at slot ${slot}`);
@@ -142,7 +196,7 @@ export async function updateDiskBus(name, slot, bus) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to change disk bus`);
   }
 
-  const xml = await getDomainXML(domPath);
+  const xml = await getDomainXML(domPath, { inactive: true });
   const parsed = parseDomainRaw(xml);
   const dom = parsed?.domain;
   if (!dom?.devices?.disk) {

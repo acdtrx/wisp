@@ -50,7 +50,7 @@ export async function attachUSBDevice(name, vendorId, productId) {
       throw vmError('USB_ATTACH_FAILED', `Failed to attach USB device ${vendorId}:${productId}`, err.message);
     }
   } else {
-    const xml = await getDomainXML(domPath);
+    const xml = await getDomainXML(domPath, { inactive: true });
     const parsed = parseDomainRaw(xml);
     const dom = parsed.domain;
     if (!dom?.devices) throw vmError('USB_ATTACH_FAILED', 'Failed to parse domain XML', null);
@@ -90,7 +90,7 @@ export async function detachUSBDevice(name, vendorId, productId) {
       throw vmError('USB_DETACH_FAILED', `Failed to detach USB device ${vendorId}:${productId}`, err.message);
     }
   } else {
-    const xml = await getDomainXML(domPath);
+    const xml = await getDomainXML(domPath, { inactive: true });
     const parsed = parseDomainRaw(xml);
     const dom = parsed.domain;
     if (!dom?.devices) throw vmError('USB_DETACH_FAILED', 'Failed to parse domain XML', null);

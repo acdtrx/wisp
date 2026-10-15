@@ -84,6 +84,7 @@ Progress is reported via callback for each step, streamed to the frontend via SS
 ### Disk provisioning
 
 - **New disk:** Created with `qemu-img create -f qcow2 <path> <size>G`
+- **Adding a disk to an existing VM** (`attachDisk` / `createAndAttachDisk`): the slot must be `sda` or `sdb` (anything else is **422 INVALID_REQUEST**), the VM must be stopped (**409 VM_MUST_BE_OFFLINE**), and the slot must be free in the persistent definition (**409 DISK_SLOT_IN_USE** — detach first). All three checks run before any file is touched. A new disk is created as the lowest-numbered `disk<N>.qcow2` that does not exist yet in the VM directory, reserved with an exclusive create before `qemu-img create` runs, so an existing image (attached, or detached with its file kept) is never overwritten; the file name therefore need not match the slot. If `qemu-img` or the define fails, the reserved file is removed. (settled 2026-10-16)
 - **Existing image:** Copied from the image library to the VM directory using `qemu-img convert -O qcow2 -p <src> <dst>`. Progress is parsed from stdout (`-p` flag). The source image is never modified.
 - **Resize:** After copy, `qemu-img resize <dst> <size>G` if a resize target was specified. Can only grow, not shrink.
 
@@ -138,11 +139,12 @@ Renames performed outside Wisp (`virsh domrename`, hand-edited domain XML, etc.)
 
 `updateVMConfig(name, changes)` applies partial configuration changes. The update logic:
 
-1. Reads the current domain XML
-2. Parses it and applies the requested changes. **Name changes** use `org.libvirt.Domain.Rename` (same as `virDomainRename`) when the VM is **not running**; then XML is read again. Editing `<name>` and calling `Connect.DomainDefineXML` alone is not used for rename (it fails for many libvirt/QEMU cases).
-3. For hot-applicable changes on a running VM: uses `Domain.UpdateDevice(xml, 3)` where flags=3 means LIVE+CONFIG
-4. For config-only changes: redefines the domain with `Connect.DomainDefineXML(xml, 0)`
-5. Returns `{ requiresRestart: true }` when changes to firmware, machine type, or CPU count are applied to a running VM
+1. Reads the **inactive** (persistent) domain XML (`GetXMLDesc(2)`) — never the live XML. Every Overview edit is persisted by redefining the domain, and on a running VM the live XML lacks earlier pending-restart edits, so defining from it would silently revert them (e.g. a pending memory change undone by a later icon edit). Live state is consulted only for the running/stopped decision. (settled 2026-10-16)
+2. Parses it and applies the requested changes. **Name changes** use `org.libvirt.Domain.Rename` (same as `virDomainRename`) when the VM is **not running**; then the inactive XML is read again. Editing `<name>` and calling `Connect.DomainDefineXML` alone is not used for rename (it fails for many libvirt/QEMU cases).
+3. Redefines the domain with `Connect.DomainDefineXML(xml)`; nothing in this path is hot-applied (ISO attach/eject and USB passthrough are the hot-plug paths, via their own endpoints).
+4. Returns `{ requiresRestart: true }` when memory, CPU count or mode, machine type, firmware, OS type, or vTPM changes on a running VM.
+
+The same rule binds every vmManager path that calls `DomainDefineXML` on an existing domain (disk attach/detach/bus, the offline branches of ISO and USB attach/detach, clone): the definition is built from the inactive XML. `UpdateDevice` / `AttachDevice` calls with the LIVE flag may use the live device element.
 
 ### Live vs. offline changes
 
@@ -355,7 +357,8 @@ Purpose-named lifecycle functions: `startVM`, `stopVM`, `forceStopVM`, `rebootVM
 
 ### vmManagerDisk.js
 
-- `attachDisk(name, slot, path, bus)` — attach a disk image to a slot
+- `attachDisk(name, slot, path, bus)` — attach a disk image to a free `sda`/`sdb` slot; VM stopped
+- `createAndAttachDisk(name, slot, sizeGB, bus)` — create a new qcow2 under a not-yet-used `disk<N>.qcow2` name and attach it; same checks as `attachDisk`, run first
 - `detachDisk(name, slot)` — detach a disk from a slot
 - `resizeDiskBySlot(name, slot, sizeGB)` — resize a disk
 - `updateDiskBus(name, slot, bus)` — change block disk bus (VirtIO, VirtIO SCSI, SATA, IDE); VM stopped
