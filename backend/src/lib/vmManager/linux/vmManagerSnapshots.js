@@ -14,8 +14,14 @@ async function getSnapshotIface(snapshotPath) {
   return obj.getInterface('org.libvirt.DomainSnapshot');
 }
 
-function sanitizeSnapshotFilename(name) {
-  return String(name).trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'snapshot';
+/**
+ * Memory-file base name for a (validated, trimmed) snapshot name. Injective, so
+ * two snapshots never share a .mem file: letters, digits and `-` stay as-is;
+ * every other character — the space, `.` and `_` the validator also allows —
+ * becomes `_` plus its two-digit hex code (`a b` → `a_20b`, `a_b` → `a_5fb`).
+ */
+function snapshotMemoryFileBase(name) {
+  return name.replace(/[^a-zA-Z0-9-]/g, (ch) => `_${ch.charCodeAt(0).toString(16).padStart(2, '0')}`);
 }
 
 export async function listSnapshots(name) {
@@ -54,7 +60,7 @@ export async function createSnapshot(name, snapshotName) {
     const vmBase = getVMBasePath(name);
     const snapDir = join(vmBase, 'snapshots');
     await mkdir(snapDir, { recursive: true });
-    const memPath = join(snapDir, `${sanitizeSnapshotFilename(trimmedName)}.mem`);
+    const memPath = join(snapDir, `${snapshotMemoryFileBase(trimmedName)}.mem`);
     xml = buildXml({
       domainsnapshot: {
         name: trimmedName,

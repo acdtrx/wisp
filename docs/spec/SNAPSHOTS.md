@@ -32,7 +32,7 @@ Every snapshot operation (create, revert, delete) validates the name against `^[
 
 Creates a new snapshot with a user-provided name.
 
-- **Running VM (live snapshot):** Uses external memory to capture running state. The snapshot XML includes disk and memory state.
+- **Running VM (live snapshot):** Uses external memory to capture running state. The snapshot XML includes disk and memory state. The memory file is `<vmDir>/snapshots/<name>.mem`, where the name is encoded one-to-one so two snapshots never share a file: letters, digits and `-` stay, every other character (space, `.`, `_`) becomes `_` plus its two-digit hex code (`a b` → `a_20b.mem`, `a_b` → `a_5fb.mem`). The full path is stored in the snapshot XML, so existing snapshots keep whatever file they were created with.
 - **Stopped VM (offline snapshot):** Captures disk state only.
 
 Created via `Domain.SnapshotCreateXML(xml, flags)`.
