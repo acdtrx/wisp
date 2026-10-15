@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-16
+
+### Bug Fixes
+- **Auth can't be skipped with an encoded path** — the auth hook now decides on the matched route, so `/%61pi/...` and `/%77s/...` no longer reach API and console handlers without a session (affected every earlier version).
+- **VM consoles listen on localhost only** — new VMs and Graphics edits bind VNC/SPICE to `127.0.0.1` instead of every interface; Wisp's console proxy is the only way in. Existing VMs keep `0.0.0.0` until changed: `virsh edit <vm>` (graphics `listen` + `<listen address>`), or switch Graphics to SPICE and back in the UI; takes effect on the next full stop/start.
+- **VM names must start with a letter or digit** — `.`, `.foo` and names with surrounding spaces are rejected, and backup deletes refuse anything that resolves to a destination root, so neither can wipe the VM or backup directory.
+- **App-managed container files stay private** — the raw mount-content routes refuse files an app generates (zot keys, tiny-samba passwords); configure the app instead.
+- **Cloud-init files with the password hash are 0600** — on save and restore; existing files: `chmod 600 /var/lib/wisp/vms/*/cloud-init.json`.
+- **Container restore validates the archive** — mounts and devices in a backup's `container.json` go through the normal validation, and GPU devices must be render nodes.
+- **Privileged helpers confine their paths** — `wisp-cni` only runs plugins from `/opt/cni/bin` with a config file owned by the caller; `wisp-mount` only unmounts and removes paths under `/mnt/wisp`.
+
 ## 2026-09-05 (v2.3.0)
 
 ### New Features
