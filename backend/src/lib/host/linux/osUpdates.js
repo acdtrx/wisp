@@ -70,11 +70,17 @@ async function runUpdateScript(scriptPath, action, timeoutMs, signal) {
   const opts = { timeout: timeoutMs };
   if (signal) opts.signal = signal;
 
+  const pending = isRoot
+    ? execFileAsync(scriptPath, [action], opts)
+    : execFileAsync('sudo', ['-n', scriptPath, action], opts);
+  /* execFile has no `stdio` option and leaves stdin an open pipe nobody writes
+   * to; anything in the apt/dpkg/pacman chain that reads a prompt answer would
+   * block until the timeout kills it mid-run. Closing stdin turns that read
+   * into EOF. */
+  pending.child.stdin?.end();
+
   try {
-    if (isRoot) {
-      return await execFileAsync(scriptPath, [action], opts);
-    }
-    return await execFileAsync('sudo', ['-n', scriptPath, action], opts);
+    return await pending;
   } catch (err) {
     if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
       throw err;

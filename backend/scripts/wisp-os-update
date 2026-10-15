@@ -8,6 +8,10 @@
 #             Debian uses dist-upgrade so kept-back packages needing new deps
 #             (kernel-meta jumps etc.) install too; check/list simulate the same
 #             action so the count matches what upgrade will do.
+# Non-interactive by construction: nothing may prompt, because the caller is a
+# backend with no terminal and a prompt is a hang until the timeout kills the
+# package manager mid-run. Locally modified config files are always kept
+# (apt: --force-confold; pacman: writes .pacnew and never prompts).
 # Exit codes:
 #   0   success
 #   75  EX_TEMPFAIL — another apt/dpkg/pacman process is holding the package-manager lock
@@ -57,19 +61,65 @@ fi
 
 CMD="${1:-}"
 
+# --- Arch: check/list against a scratch copy of the sync databases ---------
+# A bare `pacman -Sy` refreshes /var/lib/pacman/sync without upgrading, which
+# is how Arch hosts end up partially upgraded: the next `pacman -S <pkg>`
+# resolves against sync dbs newer than the installed libraries. So check/list
+# sync into a throwaway dbpath instead: the local db is symlinked in (only read
+# by -Qu), the current sync dbs are copied with their mtimes so -Sy downloads
+# only what changed, and the whole directory is removed on exit. The real sync
+# dbs are only refreshed by `upgrade` (-Syu), together with the upgrade itself.
+PACMAN_DB=/var/lib/pacman
+SCRATCH_DB=""
+
+cleanup_scratch_db() {
+  # rm -r removes the `local` symlink itself, never its target.
+  if [[ -n "$SCRATCH_DB" ]]; then rm -rf -- "$SCRATCH_DB"; fi
+}
+
+sync_scratch_db() {
+  # The scratch dbpath has its own lock file, so a running pacman would not
+  # stop this sync; check the real lock to keep the busy (75) contract and to
+  # avoid reading the local db while another pacman rewrites it.
+  if [[ -e "$PACMAN_DB/db.lck" ]]; then
+    echo "unable to lock database: $PACMAN_DB/db.lck exists (another pacman is running)" >&2
+    exit 75
+  fi
+  SCRATCH_DB="$(mktemp -d -t wisp-os-update.XXXXXX)"
+  trap cleanup_scratch_db EXIT
+  # pacman 7+ downloads as an unprivileged DownloadUser, which must be able to
+  # traverse this directory. It holds only public repo metadata.
+  chmod 755 "$SCRATCH_DB"
+  mkdir -m 755 "$SCRATCH_DB/sync"
+  ln -s "$PACMAN_DB/local" "$SCRATCH_DB/local"
+  local f
+  for f in "$PACMAN_DB"/sync/*.db "$PACMAN_DB"/sync/*.db.sig; do
+    if [[ -f "$f" ]]; then cp -p -- "$f" "$SCRATCH_DB/sync/"; fi
+  done
+  run_or_busy pacman -Sy --dbpath "$SCRATCH_DB" --logfile /dev/null
+}
+
+# Emit PKG lines for packages `pacman -Syu` would upgrade. `pacman -Qu` prints
+# "name from -> to" per package (exit 1 when there are none); lines with a
+# trailing "[ignored]" are IgnorePkg entries that -Syu skips, so NF == 4 drops them.
+list_arch_upgradable() {
+  local out
+  out=$(pacman -Qu --dbpath "$SCRATCH_DB" 2>/dev/null || true)
+  echo "$out" | awk '
+    NF == 4 && $3 == "->" { printf "PKG%s%s%s%s%s%s\n", "\t", $1, "\t", $2, "\t", $4 }
+  '
+}
+
 case "$DISTRO" in
   arch)
     case "$CMD" in
       check)
-        run_or_busy pacman -Sy
-        pacman -Qu 2>/dev/null | wc -l
+        sync_scratch_db
+        list_arch_upgradable | wc -l
         ;;
       list)
-        run_or_busy pacman -Sy
-        # pacman -Qu prints "name from -> to" for each upgradable package.
-        pacman -Qu 2>/dev/null | awk -v OFS='\t' '
-          NF >= 4 && $3 == "->" { printf "PKG%s%s%s%s%s%s\n", "\t", $1, "\t", $2, "\t", $4 }
-        '
+        sync_scratch_db
+        list_arch_upgradable
         # No reliable non-interactive way to get total download size on Arch
         # without pulling actual packages; 0 means "unknown" to the caller.
         echo "TOTAL 0"
@@ -92,6 +142,15 @@ case "$DISTRO" in
     esac
     ;;
   debian)
+    # sudo's env_reset drops the caller's environment, so these are set here.
+    # - DEBIAN_FRONTEND=noninteractive: debconf takes defaults instead of asking.
+    # - NEEDRESTART_MODE=a: Ubuntu's needrestart restarts affected services
+    #   itself instead of asking which ones to restart.
+    # - UCF_FORCE_CONFFOLD=1: ucf-managed config files (e.g. sshd_config) keep
+    #   the local version, matching --force-confold for dpkg conffiles below.
+    export DEBIAN_FRONTEND=noninteractive
+    export NEEDRESTART_MODE=a
+    export UCF_FORCE_CONFFOLD=1
     case "$CMD" in
       check)
         run_or_busy apt-get update -qq
@@ -140,7 +199,12 @@ case "$DISTRO" in
       upgrade)
         run_or_busy apt-get update -qq
         # apt-get dist-upgrade prints progress on stdout; capture stderr for lock detection.
-        if ! err=$(apt-get dist-upgrade -y 2>&1 >/dev/null); then
+        # confdef+confold: an untouched conffile takes the package's new version,
+        # a locally modified one is kept (the new one lands as .dpkg-dist).
+        if ! err=$(apt-get -y \
+            -o Dpkg::Options::=--force-confdef \
+            -o Dpkg::Options::=--force-confold \
+            dist-upgrade 2>&1 >/dev/null); then
           if echo "$err" | grep -qE "$LOCK_PATTERN"; then
             echo "$err" >&2
             exit 75

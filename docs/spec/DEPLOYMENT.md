@@ -318,12 +318,15 @@ OS package update helper invoked via `sudo`. Detects the distro at runtime from 
 
 | Distro | `check` | `upgrade` |
 |--------|---------|-----------|
-| Debian/Ubuntu | `apt-get update` + `apt-get -s upgrade` (dry-run count) | `apt-get update && apt-get upgrade -y` |
-| Arch Linux | `pacman -Sy` + `pacman -Qu \| wc -l` | `pacman -Syu --noconfirm` |
+| Debian/Ubuntu | `apt-get update` + `apt-get -s dist-upgrade` (dry-run count) | `apt-get update && apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold dist-upgrade` |
+| Arch Linux | `pacman -Sy --dbpath <scratch>` + `pacman -Qu --dbpath <scratch>` (never touches `/var/lib/pacman/sync`) | `pacman -Syu --noconfirm` |
+
+Non-interactivity and the conffile policy are part of the OS Updates contract in [HOST-MONITORING.md](HOST-MONITORING.md#os-updates). The helper sets its own environment (`DEBIAN_FRONTEND=noninteractive`, `NEEDRESTART_MODE=a`, `UCF_FORCE_CONFFOLD=1`) because sudo's `env_reset` drops the caller's.
 
 | Command | Description |
 |---------|-------------|
 | `wisp-os-update check` | Sync package DB, count upgradable packages (prints one integer) |
+| `wisp-os-update list` | Sync package DB, print `PKG<TAB>name<TAB>from<TAB>to` lines plus `TOTAL <bytes>` (the op the backend uses for check and list) |
 | `wisp-os-update upgrade` | Sync package DB and perform a full non-interactive upgrade |
 
 The backend invokes **`/usr/local/bin/wisp-os-update`** only. `install-helpers.sh` (via `setup-server.sh` or `wispctl helpers`) installs it and configures sudoers. If the file is missing, OS update APIs return 503.
