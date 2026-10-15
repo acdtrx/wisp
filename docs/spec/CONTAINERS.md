@@ -229,6 +229,7 @@ Host device passthrough for containers. Unlike VM PCI passthrough (VFIO), the ho
 - `process.user.additionalGids: [<render-gid>]` — the in-container process is added to the host's `render` group so the `0660 root:render` device node is openable. Render GID is looked up via `getgrnam('render')` (or fallback `video`) at every spec build — distros vary on the numeric GID, so it is never cached.
 
 **Pre-start check** (symmetric to `assertBindSourcesReady` for Storage mounts):
+- A `gpu` entry's `device` must still match `^/dev/dri/renderD\d+$` (`isRenderNodePath`) — re-checked here, not only at PATCH/create, because `container.json` can also arrive from a backup archive. Otherwise start fails with `INVALID_CONTAINER_DEVICES` (422).
 - The configured `device` path must exist and be a character device. If missing (driver glitch, hardware change, hot-removal), start hard-fails with `CONTAINER_DEVICE_MISSING` (503). The container is not auto-cleared of its `gpu` entry — this is a footgun for users who configured an app to use HW acceleration; surfacing the error makes the regression visible.
 
 **Concurrency:** DRM render nodes are designed for concurrent open by multiple processes. Multiple Wisp containers (and the host itself) can hold the same device simultaneously; the kernel driver schedules access. No exclusivity bookkeeping in Wisp.

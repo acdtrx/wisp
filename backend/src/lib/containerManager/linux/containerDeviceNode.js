@@ -10,6 +10,7 @@ import { stat } from 'node:fs/promises';
 import { readFile } from 'node:fs/promises';
 
 import { containerError } from './containerManagerConnection.js';
+import { isRenderNodePath } from './containerManagerDevices.js';
 
 /**
  * @param {string} path absolute path to a host character device
@@ -63,6 +64,12 @@ export async function resolveDeviceSpecs(config) {
   const deviceSpecs = [];
   for (const d of list) {
     if (d?.type === 'gpu' && typeof d.device === 'string') {
+      if (!isRenderNodePath(d.device)) {
+        throw containerError(
+          'INVALID_CONTAINER_DEVICES',
+          `GPU device "${d.device}" is not a DRM render node (/dev/dri/renderD<N>)`,
+        );
+      }
       const { major, minor } = await statDeviceNode(d.device);
       deviceSpecs.push({ type: 'gpu', path: d.device, major, minor });
     }

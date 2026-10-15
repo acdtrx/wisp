@@ -10,7 +10,7 @@ import { TextDecoder, TextEncoder } from 'node:util';
 
 import { containerError } from './containerManagerConnection.js';
 import { getContainerDir, getContainerFilesDir } from './containerPaths.js';
-import { findMount } from './containerManagerMounts.js';
+import { findMount, validateMountSegmentName } from './containerManagerMounts.js';
 
 /** Same contract as `import { execFile } from 'node:child_process/promises'` (avoids subpath builtin issues on some runtimes). */
 function execFile(command, args, options) {
@@ -198,9 +198,17 @@ export async function deleteMountData(containerName, mountName) {
   return { ok: true };
 }
 
-/** Delete on-disk artifact when a mount definition is removed from config. No-op for tmpfs. */
+/**
+ * Delete on-disk artifact when a mount definition is removed from config. No-op for tmpfs.
+ * The entry comes from the persisted config, not fresh input, so its name is re-checked
+ * here: this is a recursive delete joined onto files/, and a name like `..` would
+ * reach the container dir or above.
+ */
 export async function deleteMountBackingStore(containerName, mountEntry) {
   if (mountEntry?.type === 'tmpfs') return;
+  if (validateMountSegmentName(mountEntry?.name) !== mountEntry?.name) {
+    throw containerError('INVALID_CONTAINER_MOUNTS', `Refusing to delete backing store for invalid mount name "${mountEntry?.name}"`);
+  }
   const p = join(getContainerFilesDir(containerName), mountEntry.name);
   await rm(p, { recursive: true, force: true });
 }

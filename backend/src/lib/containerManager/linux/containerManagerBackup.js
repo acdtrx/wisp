@@ -49,6 +49,8 @@ import { buildOCISpec } from './containerManagerSpec.js';
 import { resolveDeviceSpecs } from './containerDeviceNode.js';
 import { resolveMount } from './containerPaths.js';
 import { getImageDigest } from './containerManagerImages.js';
+import { validateAndNormalizeMounts } from './containerManagerMounts.js';
+import { validateAndNormalizeDevices } from './containerManagerDevices.js';
 
 const RUNTIME_NAME = 'io.containerd.runc.v2';
 const SNAPSHOTTER = 'overlayfs';
@@ -441,6 +443,31 @@ async function extractArchiveToStaging(archivePath) {
 }
 
 /**
+ * A backup archive is untrusted input: its `container.json` never went through
+ * create/PATCH validation, yet restore persists it and later starts build an OCI
+ * spec from it (device nodes, bind sources joined from mount names). Run the
+ * fields that reach the host through the same validators as create/PATCH so a
+ * tampered archive can't map `/dev/mem` as a `gpu` device or name a mount `..`.
+ *
+ * Storage `sourceId`s are checked structurally only (no `resolveMount`): a
+ * restore onto a host where the referenced storage mount is gone is legitimate,
+ * and `assertBindSourcesReady` reports it at start time.
+ *
+ * @param {unknown} config parsed `container.json` (mounts/devices replaced in place)
+ */
+function validateRestoredConfig(config) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw containerError('BACKUP_INVALID', 'Backup container.json is not an object');
+  }
+  try {
+    config.mounts = validateAndNormalizeMounts(config.mounts ?? [], null);
+    config.devices = validateAndNormalizeDevices(config.devices);
+  } catch (err) {
+    throw containerError('BACKUP_INVALID', `Backup container.json failed validation: ${err.message}`);
+  }
+}
+
+/**
  * Ensure the image referenced by `config` is present in containerd (pull if
  * missing — throws IMAGE_PULL_FAILED) and best-effort refresh the persisted
  * digest to whatever containerd now holds.
@@ -552,6 +579,12 @@ export async function restoreContainerBackup(backupPath, newName) {
     await rm(finalDir, { recursive: true, force: true }).catch(() => {});
     throw containerError('BACKUP_INVALID', `Backup container.json missing or invalid: ${err.message}`);
   }
+  try {
+    validateRestoredConfig(config);
+  } catch (err) {
+    await rm(finalDir, { recursive: true, force: true }).catch(() => {});
+    throw err;
+  }
   config.name = newNameTrim;
   if (!config.network || typeof config.network !== 'object') config.network = { type: 'bridge' };
   config.network.mac = generateContainerMac();
@@ -643,6 +676,12 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
   } catch (err) {
     await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
     throw containerError('BACKUP_INVALID', `Backup container.json missing or invalid: ${err.message}`);
+  }
+  try {
+    validateRestoredConfig(config);
+  } catch (err) {
+    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    throw err;
   }
   config.name = name;
 

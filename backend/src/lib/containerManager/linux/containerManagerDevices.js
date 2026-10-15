@@ -18,6 +18,17 @@ const MAX_DEVICES = 1;
 const RENDER_NODE_RE = /^\/dev\/dri\/renderD\d+$/;
 
 /**
+ * True if `path` is a DRM render node path — the only host device a `gpu`
+ * entry may expose. Checked at validation time and again when the device is
+ * resolved for a start, so a `container.json` that never went through
+ * validation (e.g. one carried in a backup archive) can't map another chardev.
+ * @param {unknown} path
+ */
+export function isRenderNodePath(path) {
+  return typeof path === 'string' && RENDER_NODE_RE.test(path);
+}
+
+/**
  * @param {unknown} devices
  * @returns {Array<{ type: 'gpu', device: string }>}
  */
@@ -54,7 +65,7 @@ export function validateAndNormalizeDevices(devices) {
       );
     }
     const device = typeof raw.device === 'string' ? raw.device.trim() : '';
-    if (!RENDER_NODE_RE.test(device)) {
+    if (!isRenderNodePath(device)) {
       throw containerError(
         'INVALID_CONTAINER_DEVICES',
         'device must match /dev/dri/renderD<N> (DRM render node)',
