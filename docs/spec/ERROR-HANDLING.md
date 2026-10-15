@@ -65,7 +65,7 @@ On failure, these streams may emit a JSON object that includes an `error` field:
 { "error": "message", "detail": "raw detail", "code": "ERROR_CODE" }
 ```
 
-The frontend distinguishes normal data events from error events by checking for the `error` property.
+The frontend distinguishes normal data events from error events by checking for the `error` property. On the `/api/events` topics an error frame is ignored and the store keeps its last good payload (host stats, VM/container lists, sections, home, backups status) — consumers dereference the payload's fields, so storing the error object in its place would crash the render.
 
 ### Job progress streams (VM create, backup, library download)
 
@@ -116,6 +116,10 @@ The frontend API client (`api()` in `api/client.js`) intercepts all 401 response
 2. Redirect to `/login`
 
 This is automatic and applies to all API calls, handling session expiry and password changes from another device. Because it logs every tab out, the backend sends 401 only for a missing/expired session (see Authentication Errors).
+
+### Render errors
+
+A render throw anywhere in the tree lands in the top-level `AppErrorBoundary` (wraps the router in `main.jsx`), which replaces the page with a recovery card and a **Reload** button instead of unmounting to a blank page. See [UI.md](UI.md) § Render Error Screen. It is a last resort — data errors are still handled where they occur (store guards, inline errors).
 
 ## Validation Errors
 

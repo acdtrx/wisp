@@ -375,6 +375,14 @@ The screen re-probes on its own (backoff 1 s → 15 s, plus immediately on `onli
 
 ---
 
+## Render Error Screen
+
+Shown by `AppErrorBoundary` (wraps the router in `main.jsx`) when any component throws during render — the alternative is React unmounting the whole tree to a blank page, which an iOS home-screen launch can't even reload from. One boundary for the whole app *(settled 2026-10-16)*: it is a last resort, not a substitute for handling bad data where it arrives.
+
+Same centered card as the Server Unreachable screen: the Wisp glyph, a `bg-status-stopped-soft` badge with `AlertTriangle`, title "Something went wrong", body "Wisp hit an unexpected error while drawing this page. Reloading usually fixes it.", the error message in small muted monospace, and a full-width accent **Reload** button (`RefreshCw`) that reloads the page. React logs the error itself; the boundary adds no logging.
+
+---
+
 ## VM Overview Panel
 
 When a VM is selected, the center panel shows two tabs: **Overview** and **Console**.

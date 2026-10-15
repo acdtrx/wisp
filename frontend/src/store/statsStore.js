@@ -13,7 +13,16 @@ export const useStatsStore = create((set, get) => {
 
       unsubscribe = subscribeTopic(
         'stats',
-        (data) => set({ stats: data, connected: true }),
+        (data) => {
+          // Error frame ({ error, detail, code? }): the stream is up but this gather
+          // failed. Keep the last good stats — every consumer dereferences
+          // stats.cpu / stats.memory, so storing the error object crashes the render.
+          if (!data || data.error) {
+            set({ connected: true });
+            return;
+          }
+          set({ stats: data, connected: true });
+        },
         () => set({ connected: false }),
       );
     },

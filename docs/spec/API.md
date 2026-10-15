@@ -432,6 +432,8 @@ Every topic sends a snapshot frame on connect (and after every client reconnect)
 
 No topic uses a polling timer except the sampled `stats` metrics.
 
+Every topic except `discovery` (an in-memory list that can't fail) may carry an error frame instead of its payload — `{ error, detail, code? }` when that topic's gather fails (e.g. `stats` when a host read throws). Clients ignore error frames and keep the last good payload; nothing renders the error object as data.
+
 #### `backups` topic payload
 
 The persisted last-attempt status map (see [BACKUPS.md → Backup attempt status](BACKUPS.md#backup-attempt-status)):
