@@ -104,7 +104,7 @@ After repeated failed reconnect attempts, the UI shows a message with a Retry ac
 
 ## Backend Proxy Implementation
 
-The backend uses Node.js built-in `net.createConnection()` to establish the TCP connection — no third-party TCP proxy library.
+The backend uses Node.js built-in `net.createConnection()` to establish the TCP connection — no third-party TCP proxy library. The TCP leg opens only after the VNC port lookup; if the WebSocket closed during that lookup, no TCP connection to QEMU is made.
 
 Server logs for the console use `scope: 'vnc-console'` and `vmName` on the child logger. Search for `get_vnc_port_failed` to see libvirt/XML failures (includes `code` such as `NO_CONNECTION`), `qemu_tcp_error` for QEMU TCP issues, and lifecycle lines `VNC opening TCP to QEMU` / `VNC TCP connected to QEMU` / `VNC WebSocket closed` to correlate a session.
 

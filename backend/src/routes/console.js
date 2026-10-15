@@ -50,6 +50,13 @@ export default async function consoleRoutes(fastify) {
       return;
     }
 
+    /* The WS 'close' event fires once; if the client left during the await above, a
+     * listener attached now would never run and the TCP leg to QEMU would stay open. */
+    if (socket.readyState !== socket.OPEN) {
+      log.info({ port }, 'VNC WebSocket closed before the TCP leg opened');
+      return;
+    }
+
     log.info({ port }, 'VNC opening TCP to QEMU');
 
     const sock = createConnection(port, '127.0.0.1', () => {

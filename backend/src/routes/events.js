@@ -6,7 +6,7 @@ import { subscribeHomepageChange } from '../lib/homepage.js';
 import { buildHomeEnvelope } from '../lib/homeTiles.js';
 import { getDiscoveredPeers, subscribeDiscoveredPeersChange } from '../lib/wispDiscovery.js';
 import { getBackupStatus, subscribeBackupEvents } from '../lib/backupStatus.js';
-import { setupSSE } from '../lib/sse.js';
+import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { buildSectionsEnvelope } from './sections.js';
 
 const HOST_STATS_INTERVAL_MS = 5000;
@@ -124,7 +124,7 @@ export default async function eventsRoutes(fastify) {
         subscribeBackupEvents(() => { sendBackups(); }),
       ];
 
-      request.raw.on('close', () => {
+      onSSEClose(reply, () => {
         clearInterval(statsTimer);
         for (const unsubscribe of unsubscribes) unsubscribe();
       });

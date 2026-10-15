@@ -83,6 +83,14 @@ export default async function containerConsoleRoutes(fastify) {
       }
     };
 
+    /* The WS 'close' event fires once; if the client left during exec setup, a listener
+     * attached now would never run and the shell would stay alive in the container. */
+    if (socket.readyState !== socket.OPEN) {
+      log.info({ execId }, 'Container console WebSocket closed during exec setup');
+      await safeCleanup();
+      return;
+    }
+
     stdout.on('data', (chunk) => {
       if (socket.readyState === 1) {
         socket.send(chunk);

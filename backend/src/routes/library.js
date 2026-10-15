@@ -22,7 +22,7 @@ import {
 } from '../lib/downloads/index.js';
 import { ensureImageDir, getImagePath } from '../lib/paths.js';
 import { findVMsUsingImage } from '../lib/vmManager/index.js';
-import { setupSSE } from '../lib/sse.js';
+import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { sendError } from '../lib/routeErrors.js';
 
 function validateFilename(name) {
@@ -459,7 +459,7 @@ export default async function libraryRoutes(fastify) {
         reply.raw.end();
         return;
       }
-      request.raw.on('close', () => {
+      onSSEClose(reply, () => {
         downloadJobStore.unregisterStream(jobId, reply.raw);
       });
     },

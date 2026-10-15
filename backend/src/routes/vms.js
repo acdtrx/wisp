@@ -49,7 +49,7 @@ import { getSettings, getRawMounts } from '../lib/settings.js';
 import { resolveBackupDestinations } from '../lib/backupDestinations.js';
 import { recordBackupAttempt } from '../lib/backupStatus.js';
 import { acquireVmOperationLock, withVmOperationLock } from '../lib/vmOperationLock.js';
-import { setupSSE } from '../lib/sse.js';
+import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { resolveLibraryPath, assertPathInsideAllowedRoots, getVMBasePath } from '../lib/paths.js';
 import { createAppError, handleRouteError } from '../lib/routeErrors.js';
 import { validateVMName } from '../lib/validation.js';
@@ -278,7 +278,7 @@ export default async function vmsRoutes(fastify) {
         reply.raw.end();
         return;
       }
-      request.raw.on('close', () => {
+      onSSEClose(reply, () => {
         createJobStore.unregisterStream(jobId, reply.raw);
       });
     },
@@ -402,7 +402,7 @@ export default async function vmsRoutes(fastify) {
         reply.raw.end();
         return;
       }
-      request.raw.on('close', () => {
+      onSSEClose(reply, () => {
         backupJobStore.unregisterStream(jobId, reply.raw);
       });
     },
@@ -582,7 +582,7 @@ export default async function vmsRoutes(fastify) {
         reply.raw.end();
         return;
       }
-      request.raw.on('close', () => {
+      onSSEClose(reply, () => {
         cloneJobStore.unregisterStream(jobId, reply.raw);
       });
     },
@@ -1059,7 +1059,7 @@ export default async function vmsRoutes(fastify) {
       await sendStats();
       const interval = setInterval(sendStats, 5000);
 
-      request.raw.on('close', () => {
+      onSSEClose(reply, () => {
         clearInterval(interval);
       });
     },

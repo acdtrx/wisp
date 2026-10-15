@@ -306,7 +306,7 @@ The **Console** tab on the container overview opens an in-browser terminal (**xt
 1. Requires the container **task** to be **running** (`Tasks.Get` → `RUNNING`).
 2. Creates a per-session directory under **`${containersPath}/.exec-sessions/`** with **named pipes** for stdin/stdout (not `os.tmpdir()` / `/tmp`, so systemd **PrivateTmp** on the Wisp service does not hide FIFOs from containerd). Passes **absolute paths** (not `file://` URIs) as `stdin`/`stdout` on **`Tasks.Exec`** — the shim resolves paths with `os.Stat`/`open` and does not strip URL schemes. Then `terminal: true` and an OCI **Process** spec (`args: ["/bin/sh"]`, env includes `TERM=xterm-256color`). **`Tasks.Start`** for the exec id runs **concurrently** with opening the backend’s FIFO read/write streams; doing Start first and opening FIFOs after deadlocks named pipes until containerd’s console copy times out (`DEADLINE_EXCEEDED`).
 3. Opens the FIFOs and bridges **binary WebSocket frames** to the streams; **text** frames with `{ type: "resize", cols, rows }` call **`Tasks.ResizePty`**.
-4. On WebSocket close, **`Tasks.Kill`** (SIGKILL) + **`Tasks.DeleteProcess`** for the exec id, then removes the temp directory.
+4. On WebSocket close, **`Tasks.Kill`** (SIGKILL) + **`Tasks.DeleteProcess`** for the exec id, then removes the temp directory. A WebSocket that closes while the exec is still being set up gets the same teardown as soon as setup finishes — no shell is left running in the container.
 
 The exec process uses the same **UID/GID** as the main container task (`runAsRoot` in `container.json` vs deploy user). macOS dev builds have no containerd — the console WebSocket is unavailable (same as other container operations).
 

@@ -11,6 +11,24 @@ const activeSseResponses = new Set();
 const SSE_KEEPALIVE_MS = 25_000;
 
 /**
+ * Run `teardown` once the SSE client is gone. The response 'close' event fires
+ * exactly once, so a listener attached after the client already left — during an
+ * `await` in the handler, or before the handler ran (async auth hook) — would never
+ * run and the stream's timers/subscriptions would leak. In that case `teardown`
+ * runs immediately. Every SSE handler registers its teardown through this.
+ * @param {import('fastify').FastifyReply} reply
+ * @param {() => void} teardown
+ */
+export function onSSEClose(reply, teardown) {
+  const raw = reply.raw;
+  if (raw.destroyed) {
+    teardown();
+    return;
+  }
+  raw.once('close', teardown);
+}
+
+/**
  * Hijack the reply and set SSE headers. Call before writing to reply.raw.
  * Also starts a periodic comment-line keepalive on the connection.
  */
@@ -25,7 +43,7 @@ export function setupSSE(reply) {
       /* socket already closed; close handler clears the interval */
     }
   }, SSE_KEEPALIVE_MS);
-  raw.on('close', () => {
+  onSSEClose(reply, () => {
     clearInterval(keepalive);
     activeSseResponses.delete(raw);
   });

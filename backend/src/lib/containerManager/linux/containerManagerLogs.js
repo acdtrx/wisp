@@ -212,7 +212,13 @@ export function streamContainerRunLogs(name, runId, onLine) {
     if (stopped) return;
     try {
       if (!fh) {
-        fh = await open(logPath, 'r');
+        const opened = await open(logPath, 'r');
+        /* stop() ran while the open was in flight and saw no handle to close */
+        if (stopped) {
+          await opened.close().catch(() => {});
+          return;
+        }
+        fh = opened;
         const info = await stat(logPath);
         offset = info.size;
       }

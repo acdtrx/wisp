@@ -33,7 +33,7 @@ import { renameWorkloadAssignment } from '../lib/sections.js';
 import { publishContainer, unpublishContainer } from '../lib/containerMdnsReconciler.js';
 import { resolveBackupDestinations } from '../lib/backupDestinations.js';
 import { recordBackupAttempt } from '../lib/backupStatus.js';
-import { setupSSE } from '../lib/sse.js';
+import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
 import { validateContainerName } from '../lib/validation.js';
 import {
@@ -140,7 +140,7 @@ export default async function containerRoutes(fastify) {
 
     setupSSE(reply);
     containerJobStore.registerStream(jobId, reply.raw);
-    request.raw.on('close', () => containerJobStore.unregisterStream(jobId, reply.raw));
+    onSSEClose(reply, () => containerJobStore.unregisterStream(jobId, reply.raw));
   });
 
   // ── OCI images (containerd) — before /containers/:name ────────────
@@ -242,7 +242,7 @@ export default async function containerRoutes(fastify) {
 
     setupSSE(reply);
     imageUpdateJobStore.registerStream(jobId, reply.raw);
-    request.raw.on('close', () => imageUpdateJobStore.unregisterStream(jobId, reply.raw));
+    onSSEClose(reply, () => imageUpdateJobStore.unregisterStream(jobId, reply.raw));
   });
 
   fastify.get('/containers/images/update-status', async () => {
@@ -526,7 +526,7 @@ export default async function containerRoutes(fastify) {
         reply.raw.end();
         return;
       }
-      request.raw.on('close', () => {
+      onSSEClose(reply, () => {
         backupJobStore.unregisterStream(jobId, reply.raw);
       });
     },
@@ -570,7 +570,7 @@ export default async function containerRoutes(fastify) {
 
     await send();
     const timer = setInterval(send, intervalMs);
-    request.raw.on('close', () => clearInterval(timer));
+    onSSEClose(reply, () => clearInterval(timer));
   });
 
   // ── List runs ────────────────────────────────────────────────────
@@ -606,7 +606,6 @@ export default async function containerRoutes(fastify) {
 
     if (!runId) {
       reply.raw.write(`data: ${JSON.stringify({ type: 'history', lines: [], runId: null })}\n\n`);
-      request.raw.on('close', () => {});
       return;
     }
 
@@ -621,7 +620,7 @@ export default async function containerRoutes(fastify) {
       } catch { /* client disconnected */ }
     });
 
-    request.raw.on('close', () => handle.stop());
+    onSSEClose(reply, () => handle.stop());
   });
 
   // ── Run log download ─────────────────────────────────────────────

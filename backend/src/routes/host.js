@@ -24,7 +24,7 @@ import {
   onChange as onHostUSBChange,
 } from '../lib/host/index.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
-import { setupSSE } from '../lib/sse.js';
+import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/storage/index.js';
 import { getCurrentVersion } from '../lib/wispUpdate.js';
 
@@ -447,7 +447,7 @@ export default async function hostRoutes(fastify) {
       sendList();
       const unsubscribe = onHostDiskChange(sendList);
 
-      request.raw.on('close', () => {
+      onSSEClose(reply, () => {
         unsubscribe();
       });
     },
@@ -473,7 +473,7 @@ export default async function hostRoutes(fastify) {
       sendList();
       const unsubscribe = onHostUSBChange(sendList);
 
-      request.raw.on('close', () => {
+      onSSEClose(reply, () => {
         unsubscribe();
       });
     },
