@@ -8,7 +8,9 @@
 import { vmError } from '../vmManagerShared.js';
 
 const VM_NAME_MAX_LEN = 128;
-const VM_NAME_REGEX = /^[a-zA-Z0-9._-]+$/;
+// Leading alphanumeric: `.`, `..` and `.foo` can never be a VM name, so the
+// per-VM directory is always a child of vmsPath (never vmsPath itself).
+const VM_NAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 
 export function validateVMName(name) {
   if (name == null || typeof name !== 'string') {
@@ -18,16 +20,19 @@ export function validateVMName(name) {
   if (trimmed.length === 0) {
     throw vmError('INVALID_VM_NAME', 'VM name cannot be empty');
   }
-  if (trimmed.length > VM_NAME_MAX_LEN) {
+  if (trimmed !== name) {
+    throw vmError('INVALID_VM_NAME', 'VM name cannot start or end with whitespace');
+  }
+  if (name.length > VM_NAME_MAX_LEN) {
     throw vmError('INVALID_VM_NAME', `VM name must be at most ${VM_NAME_MAX_LEN} characters`);
   }
-  if (trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) {
+  if (name.includes('..') || name.includes('/') || name.includes('\\')) {
     throw vmError('INVALID_VM_NAME', 'VM name cannot contain .. or path separators');
   }
-  if (!VM_NAME_REGEX.test(trimmed)) {
+  if (!VM_NAME_REGEX.test(name)) {
     throw vmError(
       'INVALID_VM_NAME',
-      'VM name may only contain letters, numbers, dots, hyphens and underscores',
+      'VM name must start with a letter or number and may only contain letters, numbers, dots, hyphens and underscores',
     );
   }
 }

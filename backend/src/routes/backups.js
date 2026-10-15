@@ -34,10 +34,11 @@ import { validateVMName, validateContainerName } from '../lib/validation.js';
 
 // Backup directory names produced by createBackup are ISO-derived
 // (YYYY-MM-DDTHH-mm-ss). The accept-set is intentionally a bit looser to
-// keep older folder formats listable/deletable; the strict character class
-// is what blocks `..`, `/`, NUL, etc., so server-side path construction
-// cannot escape the chosen destination root.
-const TIMESTAMP_REGEX = /^[A-Za-z0-9._-]+$/;
+// keep older folder formats listable/deletable. The character class blocks
+// `/`, `\`, NUL, etc.; the leading alphanumeric is what blocks `.` and `..`,
+// so the timestamp is always a single child segment and server-side path
+// construction cannot resolve to (or above) the destination root.
+const TIMESTAMP_REGEX = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const TIMESTAMP_MAX_LEN = 64;
 
 function assertSafeTimestamp(ts) {

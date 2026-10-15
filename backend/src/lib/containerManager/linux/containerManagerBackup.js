@@ -57,6 +57,8 @@ const OCI_SPEC_TYPE_URL = 'types.containerd.io/opencontainers/runtime-spec/1/Spe
 /** Subdirectory under each backup root that holds container backups. Kept
  * separate from VM backups so the two can never collide on name + timestamp. */
 const CONTAINERS_BACKUP_DIRNAME = 'containers';
+/** VM backups' sibling namespace under each backup root (vmManager-owned). */
+const VMS_BACKUP_DIRNAME = 'vms';
 
 function backupTimestamp() {
   return new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
@@ -370,6 +372,17 @@ export async function deleteContainerBackup(backupPath, allowedRoots) {
   const underRoot = resolvedRoots.some((r) => r && (resolvedBackup === r || resolvedBackup.startsWith(`${r}/`)));
   if (!underRoot) {
     throw containerError('BACKUP_INVALID', 'Backup path is not under a configured destination');
+  }
+  // A single backup is always below a destination's sub-roots; never remove a
+  // destination root itself or its containers/ / vms/ namespace (independent
+  // of how well the caller validated the name and timestamp segments).
+  const isDestinationRoot = resolvedRoots.some((r) => r && (
+    resolvedBackup === r
+    || resolvedBackup === join(r, CONTAINERS_BACKUP_DIRNAME)
+    || resolvedBackup === join(r, VMS_BACKUP_DIRNAME)
+  ));
+  if (isDestinationRoot) {
+    throw containerError('BACKUP_INVALID', 'Refusing to delete a backup destination root');
   }
   await rm(resolvedBackup, { recursive: true, force: true });
 }

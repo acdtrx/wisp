@@ -262,8 +262,7 @@ export async function createVM(spec, { onStep } = {}) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
 
   const s = applyTemplateDefaults(spec);
-  const name = (s.name || '').trim();
-  if (!name) throw vmError('PARSE_ERROR', 'VM name is required');
+  const name = s.name;
   validateVMName(name);
 
   emit('validating');

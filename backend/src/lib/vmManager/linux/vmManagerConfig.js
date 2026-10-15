@@ -36,7 +36,7 @@ export async function updateVMConfig(name, changes) {
   let effectiveName = name;
 
   if (patch.name != null) {
-    const newName = typeof patch.name === 'string' ? patch.name.trim() : String(patch.name);
+    const newName = typeof patch.name === 'string' ? patch.name : String(patch.name);
     const currentName = domainNameFromParsed(dom);
     if (newName !== currentName) {
       if (isRunning) {

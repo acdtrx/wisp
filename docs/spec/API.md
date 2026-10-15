@@ -532,7 +532,7 @@ Create a new VM. Returns a job ID; monitor progress via SSE.
 
 ```json
 {
-  "name": "string (required, 1-128 chars; alphanumeric, dot, hyphen, underscore; no .. or path separators)",
+  "name": "string (required, 1-128 chars; starts with a letter or digit, then alphanumeric, dot, hyphen, underscore; no surrounding whitespace, no .. or path separators)",
   "template": "ubuntu-server | ubuntu-desktop | windows-11 | haos | custom",
   "osType": "linux | windows | other",
   "osVariant": "ubuntu24.04 | ubuntu22.04 | debian12 | archlinux | win11 | win10 | generic",
@@ -664,7 +664,7 @@ Immediate force stop (destroy).
 
 Start a clone job (VM must be stopped). Returns a job ID; monitor progress via SSE.
 
-- **Body:** `{ newName: string (1-128 chars; alphanumeric, dot, hyphen, underscore; no .. or path separators) }`. Schema is **`additionalProperties: false`**.
+- **Body:** `{ newName: string (1-128 chars; starts with a letter or digit, then alphanumeric, dot, hyphen, underscore; no surrounding whitespace, no .. or path separators) }`. Schema is **`additionalProperties: false`**.
 - **201:** `{ jobId: string, title: string }` — `title` is `Clone <newName>`.
 - **422:** `INVALID_VM_NAME` if `newName` fails `validateVMName`.
 
@@ -934,7 +934,7 @@ Delete a backup.
 - **Body:** `{ destinationId: string, vmName: string, timestamp: string }`
 - **200:** `{ ok: true }`
 - **404:** backup not found
-- **422:** invalid input
+- **422:** invalid input (`INVALID_VM_NAME`, `BACKUP_INVALID` — including a target that would resolve to a destination root; see [BACKUPS.md → Deleting a Backup](BACKUPS.md#deleting-a-backup))
 
 ### POST /api/containers/:name/backup
 
@@ -1004,6 +1004,7 @@ Delete a container backup.
 
 - **Body:** `{ destinationId: string, name: string, timestamp: string }`
 - **200:** `{ ok: true }`
+- **422:** `INVALID_CONTAINER_NAME`, `BACKUP_INVALID` (unknown destination, invalid timestamp, or a target that would resolve to a destination root)
 
 ---
 
@@ -1471,7 +1472,7 @@ Interactive shell in a **running** container. Uses containerd `Tasks.Exec` with 
 
 ## Containers
 
-All container routes require JWT authentication. Routes with a `:name` path parameter validate it via `validateContainerName` (length 1–63, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..`/`/`/`\`); failures return 422 `INVALID_CONTAINER_NAME`.
+All container routes require JWT authentication. Routes with a `:name` path parameter validate it via `validateContainerName` (length 1–63, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..`/`/`/`\`, no surrounding whitespace); failures return 422 `INVALID_CONTAINER_NAME`.
 
 ### GET /api/containers
 

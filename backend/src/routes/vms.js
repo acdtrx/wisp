@@ -597,6 +597,7 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
+        if (request.body.name !== undefined) validateVMName(request.body.name);
         const result = await updateVMConfig(request.params.name, request.body);
         // mDNS toggle/rename: vmManager doesn't fire DomainEvent for metadata-only
         // changes, so the publisher won't reconcile on its own. Nudge it here.

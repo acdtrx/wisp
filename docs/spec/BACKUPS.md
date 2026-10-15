@@ -138,7 +138,8 @@ The map is pushed on the **`backups` topic of `GET /api/events`**: a snapshot on
 
 `DELETE /api/backups` with `{ destinationId, vmName, timestamp }`:
 
-- The route resolves `destinationId` to a configured destination root (rejecting unknown ids), validates `vmName` and `timestamp` against the same character class as backup creation, then constructs the absolute path server-side. The client never sends a path.
+- The route resolves `destinationId` to a configured destination root (rejecting unknown ids), validates `vmName` (`validateVMName`) and `timestamp` (`^[A-Za-z0-9][A-Za-z0-9._-]*$`, max 64 — the leading alphanumeric makes `.` / `..` impossible), then constructs the absolute path server-side. The client never sends a path. Invalid input is **422 before anything touches disk**.
+- The manager (`deleteBackup` / `deleteContainerBackup`) independently refuses (422 `BACKUP_INVALID`) a resolved target outside every configured destination root, or equal to a destination root itself or its `vms/` / `containers/` sub-root — defense in depth that holds regardless of the route's validation.
 - The entire backup directory is removed.
 
 ## Progress Tracking
@@ -254,7 +255,7 @@ The restored container is **independent** of the source: new MAC, new DHCP lease
 
 ### Deleting
 
-`DELETE /api/container-backups` with `{ destinationId, name, timestamp }` — route resolves the destination root from `destinationId` and constructs the path; manager `rm -rf`s the timestamp directory after defense-in-depth allowed-root validation.
+`DELETE /api/container-backups` with `{ destinationId, name, timestamp }` — route resolves the destination root from `destinationId` and constructs the path; manager `rm -rf`s the timestamp directory after defense-in-depth allowed-root validation. Same timestamp rule and root/sub-root refusal as [VM backup delete](#deleting-a-backup).
 
 ### CLI inspection
 

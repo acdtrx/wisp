@@ -18,19 +18,22 @@ export function validateContainerName(name) {
   if (trimmed.length === 0) {
     throw containerError('INVALID_CONTAINER_NAME', 'Container name cannot be empty');
   }
-  if (trimmed.length > CONTAINER_NAME_MAX_LEN) {
+  if (trimmed !== name) {
+    throw containerError('INVALID_CONTAINER_NAME', 'Container name cannot start or end with whitespace');
+  }
+  if (name.length > CONTAINER_NAME_MAX_LEN) {
     throw containerError(
       'INVALID_CONTAINER_NAME',
       `Container name must be at most ${CONTAINER_NAME_MAX_LEN} characters`,
     );
   }
-  if (trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) {
+  if (name.includes('..') || name.includes('/') || name.includes('\\')) {
     throw containerError(
       'INVALID_CONTAINER_NAME',
       'Container name cannot contain .. or path separators',
     );
   }
-  if (!CONTAINER_NAME_REGEX.test(trimmed)) {
+  if (!CONTAINER_NAME_REGEX.test(name)) {
     throw containerError('INVALID_CONTAINER_NAME', 'Invalid container name format');
   }
 }

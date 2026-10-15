@@ -16,6 +16,7 @@ import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
 import { getVMBasePath } from './vmManagerPaths.js';
 import { VIR_DOMAIN_STATE_SHUTOFF, VIR_DOMAIN_STATE_SHUTDOWN } from './libvirtConstants.js';
 import { copyNvram } from './vmManagerNvram.js';
+import { validateVMName } from './vmManagerValidation.js';
 
 const execFile = promisify(execFileCb);
 
@@ -502,6 +503,17 @@ export async function deleteBackup(backupPath, allowedRoots) {
   if (!underRoot) {
     throw vmError('BACKUP_INVALID', 'Backup path is not under a configured destination');
   }
+  // A single backup is always below a destination's sub-roots; never remove a
+  // destination root itself or its vms/ / containers/ namespace (independent
+  // of how well the caller validated the name and timestamp segments).
+  const isDestinationRoot = resolvedRoots.some((resolvedRoot) => resolvedRoot && (
+    resolvedBackup === resolvedRoot
+    || resolvedBackup === join(resolvedRoot, VMS_BACKUP_DIRNAME)
+    || resolvedBackup === join(resolvedRoot, CONTAINERS_BACKUP_DIRNAME)
+  ));
+  if (isDestinationRoot) {
+    throw vmError('BACKUP_INVALID', 'Refusing to delete a backup destination root');
+  }
   try {
     await access(resolvedBackup, constants.R_OK | constants.W_OK);
   } catch (err) {
@@ -608,6 +620,7 @@ function rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping, newBas
  */
 export async function restoreBackup(backupPath, newVmName) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
+  validateVMName(newVmName);
 
   try {
     await connectionState.connectIface.DomainLookupByName(newVmName);

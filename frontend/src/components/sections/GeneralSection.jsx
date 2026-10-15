@@ -103,7 +103,8 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
     setError(null);
     try {
       const changes = {};
-      if (form.name !== original.name) changes.name = form.name;
+      const name = (form.name ?? '').trim();
+      if (name !== original.name) changes.name = name;
       if (form.osType !== original.osType) changes.osType = form.osType;
       if (form.vcpus !== original.vcpus) changes.vcpus = form.vcpus;
       if (form.memoryMiB !== original.memoryMiB) changes.memoryMiB = form.memoryMiB;

@@ -40,16 +40,19 @@ When a domain stops (event 5) or is undefined (event 1), cached VM stats for tha
 VM names go through `validateVMName(name)` (in `backend/src/lib/validation.js`):
 
 - length 1–128
-- regex `^[a-zA-Z0-9._-]+$`
+- regex `^[a-zA-Z0-9][a-zA-Z0-9._-]*$` — must start with a letter or digit (same shape as container names), so `.`, `..` and `.foo` are impossible and the per-VM directory `<vmsPath>/<name>/` is always a child of `vmsPath`, never `vmsPath` itself (settled 2026-10-16: a VM named `.` made clone rollback / delete-with-disks `rm -rf` every VM's files)
 - rejects `..`, `/`, `\`
+- rejects leading/trailing whitespace instead of trimming it — every caller uses the name verbatim, so a silently-trimmed validation would vouch for a different string than the one used. (UI forms trim their own input before sending.)
 
 It is enforced in three places:
 
 1. The `vmsRoutes` `preHandler` (every `/vms/:name/...` route) — for the path parameter.
-2. `POST /vms` and `POST /vms/:name/clone` route handlers — for `body.name` / `body.newName`, before any background job is created.
-3. `createVM`, `cloneVM`, and `updateVMConfig` (rename branch) — defense in depth so library callers get the same guarantee.
+2. `POST /vms`, `POST /vms/:name/clone` and `PATCH /vms/:name` route handlers — for `body.name` / `body.newName`, before any background job is created or the manager is called.
+3. `createVM`, `cloneVM`, `restoreBackup` (restore as new), and `updateVMConfig` (rename branch) — defense in depth so library callers get the same guarantee.
 
 Failures map to HTTP 422 (`INVALID_VM_NAME`).
+
+A domain whose name predates the leading-alphanumeric rule (e.g. `_test`) fails the `:name` check on every route; it must be renamed outside Wisp (e.g. `virsh domrename`) to be managed again.
 
 ## VM Creation
 
