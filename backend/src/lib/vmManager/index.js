@@ -73,6 +73,7 @@ export const extractDiskSnippet = impl.extractDiskSnippet;
 export const attachISO = impl.attachISO;
 export const ejectISO = impl.ejectISO;
 export const parseVMFromXML = impl.parseVMFromXML;
+export const isOfflineState = impl.isOfflineState;
 
 export const listSnapshots = impl.listSnapshots;
 export const createSnapshot = impl.createSnapshot;

@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError, generateMAC } from './vmManagerConnection.js';
 import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
 import { getVMBasePath } from './vmManagerPaths.js';
-import { VIR_DOMAIN_STATE_SHUTOFF, VIR_DOMAIN_STATE_SHUTDOWN } from './libvirtConstants.js';
+import { isOfflineState } from './libvirtConstants.js';
 import { copyNvram } from './vmManagerNvram.js';
 import { assertVMNameAvailable, createOwnVMDir, removeOwnVMDir } from './vmManagerCreate.js';
 
@@ -218,7 +218,7 @@ export async function createBackup(vmName, destinationPath, { onProgress, origin
 
   const path = await resolveDomain(vmName);
   const state = await getDomainState(path);
-  if (state.code !== VIR_DOMAIN_STATE_SHUTOFF && state.code !== VIR_DOMAIN_STATE_SHUTDOWN) {
+  if (!isOfflineState(state.code)) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${vmName}" must be stopped to create a backup`);
   }
 
@@ -774,7 +774,7 @@ export async function restoreBackupInPlace(backupPath, { onProgress } = {}) {
 
   const path = await resolveDomain(name);
   const state = await getDomainState(path);
-  if (state.code !== VIR_DOMAIN_STATE_SHUTOFF && state.code !== VIR_DOMAIN_STATE_SHUTDOWN) {
+  if (!isOfflineState(state.code)) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to restore in place`);
   }
 

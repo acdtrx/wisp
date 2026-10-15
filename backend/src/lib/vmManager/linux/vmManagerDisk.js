@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError } from './vmManagerConnection.js';
 import { parseDomainRaw, parseVMFromXML, buildXml } from './vmManagerXml.js';
 import { getVMBasePath } from './vmManagerPaths.js';
+import { isOfflineState } from './libvirtConstants.js';
 import { resizeDisk as resizeDiskImage } from '../../storage/index.js';
 
 const execFile = promisify(execFileCb);
@@ -57,7 +58,7 @@ async function loadDiskAttachTarget(name, slot) {
 
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
-  if (state.code !== 5 && state.code !== 0) {
+  if (!isOfflineState(state.code)) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to attach disks`);
   }
 
@@ -144,7 +145,7 @@ export async function createAndAttachDisk(name, slot, sizeGB, bus = 'virtio') {
 export async function detachDisk(name, slot) {
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
-  if (state.code !== 5 && state.code !== 0) {
+  if (!isOfflineState(state.code)) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to detach disks`);
   }
 
@@ -170,7 +171,7 @@ export async function detachDisk(name, slot) {
 export async function resizeDiskBySlot(name, slot, sizeGB) {
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
-  if (state.code !== 5 && state.code !== 0) {
+  if (!isOfflineState(state.code)) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to resize disks`);
   }
 
@@ -192,7 +193,7 @@ export async function updateDiskBus(name, slot, bus) {
 
   const domPath = await resolveDomain(name);
   const state = await getDomainState(domPath);
-  if (state.code !== 5 && state.code !== 0) {
+  if (!isOfflineState(state.code)) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to change disk bus`);
   }
 

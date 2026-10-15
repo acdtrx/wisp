@@ -35,7 +35,9 @@ import { useVmStore } from '../../store/vmStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
 
-const VM_STOPPED_STATES = ['shutoff', 'nostate', 'shutdown'];
+/* Same stopped set as the VM Overview. `shutdown` is a guest shutdown still in
+ * progress (qemu holds the disks) — the backend refuses restore-in-place then. */
+const VM_STOPPED_STATES = ['shutoff', 'nostate'];
 
 /** Backup dir timestamps are ISO with `:` swapped to `-` (2026-05-08T06-30-00). */
 function backupTsToIso(ts) {

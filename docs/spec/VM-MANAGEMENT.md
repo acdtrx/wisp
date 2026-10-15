@@ -8,6 +8,7 @@ This document covers the core VM lifecycle, configuration, creation, and the bac
 
 | State | Code | Description |
 |-------|------|-------------|
+| nostate | 0 | No state reported (libvirt reports `shutoff` for an inactive domain, so this is not "stopped") |
 | running | 1 | VM is actively executing |
 | idle | 2 | VM is idle (libvirt internal) |
 | paused | 3 | VM is suspended/paused |
@@ -15,6 +16,8 @@ This document covers the core VM lifecycle, configuration, creation, and the bac
 | shutoff | 5 | VM is stopped |
 | crashed | 6 | VM has crashed |
 | pmsuspended | 7 | Power-management suspended |
+
+**Stopped means `shutoff` (5) and nothing else.** Every operation that needs the VM's disks closed — disk attach / detach / resize / bus change, backup, restore in place — accepts only that state and answers **409 `VM_MUST_BE_OFFLINE`** otherwise; `shutdown` (4) is a guest shutdown still in progress with qemu holding the disks. One helper owns the rule (`isOfflineState` in `linux/libvirtConstants.js`, on the vmManager facade for routes); Stop and Force stop use the same test for their `VM_NOT_RUNNING` answer. (settled 2026-10-16)
 
 ### Operations
 

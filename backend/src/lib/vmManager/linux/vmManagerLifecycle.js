@@ -2,6 +2,7 @@
  * VM lifecycle: start, stop, force stop, reboot, suspend, resume.
  */
 import { connectionState, resolveDomain, getDomainState, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
+import { isOfflineState } from './libvirtConstants.js';
 
 export async function startVM(name) {
   const path = await resolveDomain(name);
@@ -20,7 +21,7 @@ export async function startVM(name) {
 export async function stopVM(name) {
   const path = await resolveDomain(name);
   const state = await getDomainState(path);
-  if (state.code === 5) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
+  if (isOfflineState(state.code)) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
 
   const { iface } = await getDomainObjAndIface(path);
   try {
@@ -33,7 +34,7 @@ export async function stopVM(name) {
 export async function forceStopVM(name) {
   const path = await resolveDomain(name);
   const state = await getDomainState(path);
-  if (state.code === 5) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
+  if (isOfflineState(state.code)) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
 
   const { iface } = await getDomainObjAndIface(path);
   try {

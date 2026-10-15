@@ -14,8 +14,19 @@ export const STATE_NAMES = {
   7: 'pmsuspended',
 };
 
-export const VIR_DOMAIN_STATE_SHUTDOWN = 0;
 export const VIR_DOMAIN_STATE_SHUTOFF = 5;
+
+/**
+ * True when the domain is stopped — the precondition of every operation that
+ * needs the disks closed (disk attach/detach/resize/bus, backup, restore in
+ * place). Only SHUTOFF qualifies: an inactive domain always reports SHUTOFF,
+ * SHUTDOWN (4) means a guest shutdown is still in progress with qemu holding
+ * the disks, and NOSTATE (0) / CRASHED (6) / PMSUSPENDED (7) are not a
+ * guaranteed-stopped qemu either.
+ */
+export function isOfflineState(stateCode) {
+  return stateCode === VIR_DOMAIN_STATE_SHUTOFF;
+}
 export const VIR_DOMAIN_SNAPSHOT_CREATE_LIVE = 0x100;
 export const VIR_DOMAIN_SNAPSHOT_CREATE_REDEFINE = 0x1;
 

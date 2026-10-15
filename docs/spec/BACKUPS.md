@@ -4,7 +4,7 @@ The backup system creates full VM snapshots to local or network (SMB) storage, a
 
 ## Backup Preconditions
 
-- The VM **must be stopped** before creating a backup
+- The VM **must be stopped** (`shutoff` — see [VM-MANAGEMENT.md → States](VM-MANAGEMENT.md#states)) before creating a backup
 - At least one backup destination must be configured and accessible
 
 ## Backup Contents

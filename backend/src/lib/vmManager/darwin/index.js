@@ -13,6 +13,7 @@ import {
 } from '../vmManagerShared.js';
 
 export { parseVMFromXML };
+export { isOfflineState } from '../linux/libvirtConstants.js';
 export const IS_DARWIN = true;
 
 export function configure(_cfg) {

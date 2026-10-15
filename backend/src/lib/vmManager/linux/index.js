@@ -24,6 +24,7 @@ export {
 } from './vmManagerConnection.js';
 
 export { parseVMFromXML } from './vmManagerXml.js';
+export { isOfflineState } from './libvirtConstants.js';
 
 export {
   getHostInfo,

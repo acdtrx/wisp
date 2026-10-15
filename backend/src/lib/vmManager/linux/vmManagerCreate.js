@@ -19,6 +19,7 @@ import { getDefaultBridge } from '../../networking/index.js';
 import { listSnapshots, deleteSnapshot } from './vmManagerSnapshots.js';
 import { refreshVMListCache } from './vmManagerList.js';
 import { copyNvram } from './vmManagerNvram.js';
+import { isOfflineState } from './libvirtConstants.js';
 
 const execFile = promisify(execFileCb);
 
@@ -596,7 +597,7 @@ export async function deleteVM(name, deleteDisks = false) {
   const state = await getDomainState(path);
   const { iface } = await getDomainObjAndIface(path);
 
-  if (state.code !== 5 && state.code !== 0) {
+  if (!isOfflineState(state.code)) {
     try {
       await iface.Destroy(0);
     } catch {

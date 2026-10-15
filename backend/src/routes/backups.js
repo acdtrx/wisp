@@ -9,6 +9,7 @@ import {
   resolveVmBackupDir,
   createBackup,
   listVMs,
+  isOfflineState,
 } from '../lib/vmManager/index.js';
 import {
   listContainerBackups,
@@ -258,7 +259,7 @@ export default async function backupsRoutes(fastify) {
         if (!vm) {
           throw createAppError('VM_NOT_FOUND', `VM "${vmName}" not found — restore the backup as a new VM instead`);
         }
-        if (vm.stateCode !== 5 && vm.stateCode !== 4) {
+        if (!isOfflineState(vm.stateCode)) {
           throw createAppError('VM_MUST_BE_OFFLINE', `VM "${vmName}" must be stopped to restore in place`);
         }
 
