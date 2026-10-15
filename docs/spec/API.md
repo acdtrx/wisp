@@ -623,7 +623,7 @@ Update VM configuration.
 
 - **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `machineType`, `firmware`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `localDns`, `autostart`. Schema is **`additionalProperties: false`**; with Fastify's default Ajv `removeAdditional: true`, unknown keys are silently stripped before reaching `updateVMConfig`.
 - **200:** `{ ok: true, requiresRestart: boolean }` — indicates whether changes need a VM restart
-- **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running
+- **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running; `VM_BUSY` when renaming while a backup / restore-in-place / clone of this VM (or another locked operation) is running — a rename (`name` differing from `:name`) takes the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock), other edits don't
 - **422:** `{ error, detail }` — `INVALID_VM_NAME` on rename to an invalid name; VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
 
 `localDns` is supported in PATCH and controls VM mDNS registration behavior.
@@ -634,7 +634,7 @@ Delete a VM.
 
 - **Query:** `?deleteDisks=true|false` — whether to also delete disk images and VM directory
 - **200:** `{ ok: true }`
-- **409:** `VM_BUSY` — a backup or restore-in-place of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
+- **409:** `VM_BUSY` — a backup, restore-in-place or clone of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
 
 ### GET /api/vms/:name/xml
 
@@ -645,7 +645,7 @@ Raw libvirt domain XML (for debugging/inspection).
 ### POST /api/vms/:name/start
 
 - **200:** `{ ok: true }`
-- **409:** `VM_ALREADY_RUNNING`; `VM_BUSY` — a backup or restore-in-place of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
+- **409:** `VM_ALREADY_RUNNING`; `VM_BUSY` — a backup, restore-in-place or clone of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
 
 ### POST /api/vms/:name/stop
 
@@ -677,7 +677,7 @@ Start a clone job (VM must be stopped). Returns a job ID; monitor progress via S
 
 - **Body:** `{ newName: string (1-128 chars; starts with a letter or digit, then alphanumeric, dot, hyphen, underscore; no surrounding whitespace, no .. or path separators) }`. Schema is **`additionalProperties: false`**.
 - **201:** `{ jobId: string, title: string }` — `title` is `Clone <newName>`.
-- **409:** `VM_EXISTS` / `VM_DIR_EXISTS` when `newName` is taken in libvirt or on disk (same rule as `POST /api/vms`); checked before the job starts.
+- **409:** `VM_EXISTS` / `VM_DIR_EXISTS` when `newName` is taken in libvirt or on disk (same rule as `POST /api/vms`); `VM_BUSY` when another start / backup / restore-in-place / delete / rename / clone of the source VM is running. Checked before the job starts; the job holds the source VM's [operation lock](BACKUPS.md#per-vm-operation-lock) until it settles.
 - **422:** `INVALID_VM_NAME` if `newName` fails `validateVMName`.
 
 ### GET /api/vms/clone-progress/:jobId
@@ -888,7 +888,7 @@ Start a backup job. Returns a job ID; monitor progress via SSE.
 - **Body:** `{ destinationIds?: ["local", "<mountId>"] }` (defaults to `["local"]`)
 - **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted (resolved by the shared `lib/backupDestinations.js` helper). Any other id returns **422**.
 - **201:** `{ jobId: string, title: string }` — `title` is e.g. `Backup <vmName>`
-- **409:** `VM_BUSY` — another start / backup / restore-in-place / delete of this VM is running
+- **409:** `VM_BUSY` — another start / backup / restore-in-place / delete / rename / clone of this VM is running
 - **422:** `BACKUP_DEST_UNKNOWN` / `BACKUP_DEST_NONE` — unknown destination id, or nothing resolved
 - **503:** `BACKUP_MOUNT_FAILED` — SMB mount failed
 
@@ -941,7 +941,7 @@ Restore a backup **over the live VM it was taken from**. Runs as a background jo
 - **Body:** `{ destinationId: string, vmName: string, timestamp: string, safetyBackup?: boolean }`
 - **201:** `{ jobId: string, title: string }`
 - **404:** `VM_NOT_FOUND` (workload deleted — restore as new instead), `BACKUP_NOT_FOUND`
-- **409:** `VM_MUST_BE_OFFLINE` (VM running), `VM_BUSY` (another start / backup / restore-in-place / delete of this VM is running)
+- **409:** `VM_MUST_BE_OFFLINE` (VM running), `VM_BUSY` (another start / backup / restore-in-place / delete / rename / clone of this VM is running)
 - **422 / 503:** destination errors as for `POST /api/vms/:name/backup`
 
 ### DELETE /api/backups

@@ -1,11 +1,12 @@
 /**
  * Per-VM operation lock (Wisp glue — vmManager stays policy-free, CODING-RULES §7).
  *
- * Start, backup, restore-in-place and delete each read or replace a stopped
- * VM's disks or definition, so at most one of them runs per VM at a time. A
- * second one is refused with 409 `VM_BUSY` instead of queueing: the caller
- * retries once the running operation (visible as a background job for backup
- * and restore) finishes.
+ * Start, backup, restore-in-place, delete, rename and clone (of the source)
+ * each read, move or replace a stopped VM's disks or definition, so at most
+ * one of them runs per VM at a time. A second one is refused with 409
+ * `VM_BUSY` instead of queueing: the caller retries once the running
+ * operation (visible as a background job for backup, restore and clone)
+ * finishes.
  *
  * In-memory only: a backend restart ends every operation that held a lock.
  * Acquire is synchronous, so a route that acquires before its first `await`
@@ -19,7 +20,7 @@ const held = new Map();
 /**
  * Take the lock for `name`, or throw `VM_BUSY` if another operation holds it.
  * @param {string} name - VM name
- * @param {'start' | 'backup' | 'restore' | 'delete'} operation - label for the 409 message
+ * @param {'start' | 'backup' | 'restore' | 'delete' | 'rename' | 'clone'} operation - label for the 409 message
  * @returns {() => void} release — idempotent
  */
 export function acquireVmOperationLock(name, operation) {
@@ -44,7 +45,7 @@ export function acquireVmOperationLock(name, operation) {
  * Run `fn` while holding the lock for `name`; released when `fn` settles.
  * @template T
  * @param {string} name
- * @param {'start' | 'backup' | 'restore' | 'delete'} operation
+ * @param {'start' | 'backup' | 'restore' | 'delete' | 'rename' | 'clone'} operation
  * @param {() => Promise<T>} fn
  * @returns {Promise<T>}
  */

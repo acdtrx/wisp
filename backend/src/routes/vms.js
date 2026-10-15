@@ -492,6 +492,10 @@ export default async function vmsRoutes(fastify) {
         validateVMName(newName);
         await assertVMNameAvailable(newName);
 
+        // The clone reads the source's disks for the whole job: no start,
+        // rename, restore or delete of the source until it finishes. Acquired
+        // with no await before createJob; released when the job settles.
+        const releaseLock = acquireVmOperationLock(srcName, 'clone');
         const jobId = randomBytes(12).toString('hex');
         const title = titleForVmClone(newName);
         cloneJobStore.createJob(jobId, {
@@ -528,8 +532,10 @@ export default async function vmsRoutes(fastify) {
             /* source had no cloud-init.json — nothing to carry over */
           }
 
+          releaseLock();
           cloneJobStore.completeJob(jobId, { name: newName });
         })().catch((err) => {
+          releaseLock();
           cloneJobStore.failJob(jobId, err);
           request.log.error({ err, jobId }, 'Background clone job failed');
         });
@@ -611,7 +617,12 @@ export default async function vmsRoutes(fastify) {
     handler: async (request, reply) => {
       try {
         if (request.body.name !== undefined) validateVMName(request.body.name);
-        const result = await updateVMConfig(request.params.name, request.body);
+        // A rename moves the VM directory and rewrites its paths, so it must
+        // not run under a backup / restore / clone reading that directory.
+        const renaming = request.body.name !== undefined && request.body.name !== request.params.name;
+        const result = renaming
+          ? await withVmOperationLock(request.params.name, 'rename', () => updateVMConfig(request.params.name, request.body))
+          : await updateVMConfig(request.params.name, request.body);
         // mDNS toggle/rename: vmManager doesn't fire DomainEvent for metadata-only
         // changes, so the publisher won't reconcile on its own. Nudge it here.
         if (request.body.localDns === false) {

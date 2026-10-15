@@ -375,7 +375,11 @@ export default function OverviewPanel() {
               }
             }}
             trigger={(onOpen) => (
-              <ActionButton icon={Copy} label="Clone" onClick={onOpen} disabled={isRunning} />
+              <ActionButton
+                icon={Copy} label="Clone" onClick={onOpen}
+                disabled={isRunning || !!vmOperationJob}
+                hint={vmOperationJob ? busyHint : undefined}
+              />
             )}
           />
           <ActionButton
