@@ -14,8 +14,8 @@ The update applier is **a separate systemd unit** (`wisp-updater.service`, `Type
 | GitHub Actions (`.github/workflows/release.yml`) | Triggered on `v*` tag push. Verifies tag matches all three `package.json` files, builds the frontend, packages a release tarball with **prebuilt** `frontend/dist/`, generates a SHA256, extracts the matching CHANGELOG section as release notes, and creates a GitHub Release with the tarball + sha256 attached. Tags shaped `v*-*` (e.g. `v1.0.6-rc.1`) are marked as prereleases. |
 | Backend checker (`backend/src/lib/wispUpdate.js`) | Polls GitHub Releases once per hour starting 30s after backend boot, following the host's configured **update channel** (see below). Caches `{ current, latest, available, notes, publishedAt, asset, sha256Asset, lastChecked }`. The `available` flag drives the Software-tab badge via the host stats SSE. |
 | Backend apply (`applyUpdate` in `wispUpdate.js`) | Downloads tarball + sha256 (via the shared **SSRF-safe fetch** — DNS-pinned, private/loopback IPs blocked, every redirect `Location` re-validated), verifies, extracts to `/var/lib/wisp/updates/staging-<version>/`. Then writes the staging path to `/var/lib/wisp/updates/target` (atomic via `rename(2)`) and runs `sudo -n /usr/bin/systemctl start --no-block wisp-updater.service`. The HTTP request returns 202 with `{ targetVersion }` once the trigger is queued — the backend dies a moment later as the updater runs `systemctl stop wisp`. |
-| Updater unit (`systemd/linux/wisp-updater.service`) | `Type=oneshot`, `User=root`, `Environment=WISP_INSTALL_DIR=<install-dir>` (templated at install time), `ExecStart=/usr/local/bin/wisp-updater`, `StandardOutput=journal`. |
-| Updater script (`backend/scripts/wisp-updater`, installed at `/usr/local/bin/wisp-updater`) | Reads target staging path from `/var/lib/wisp/updates/target` (must start with `/var/lib/wisp/updates/staging-`). Stops `wisp.service` → snapshots install to `<install>.prev/` → rsyncs staging into install (preserving user config, `config/backup-status.json`, `.pids` / `.logs`) → runs `npm ci --omit=dev` in backend → runs **`setup/common-steps.sh`** (the step list shared with the installer — see below) → re-templates `wisp.service` → starts the service. Auto-rolls-back from `<install>.prev` on failure. |
+| Updater unit (`systemd/linux/wisp-updater.service`) | `Type=oneshot`, `User=root`, `Environment=WISP_INSTALL_DIR=<install-dir>` (templated at install time), `ExecStart=/usr/local/bin/wisp-updater`, `StandardOutput=journal`, `TimeoutStartSec=600`, `TimeoutStopSec=300` (see Rollback). |
+| Updater script (`backend/scripts/wisp-updater`, installed at `/usr/local/bin/wisp-updater`) | Reads target staging path from `/var/lib/wisp/updates/target` (its canonical path must be a direct `staging-*` child of `/var/lib/wisp/updates`). Stops `wisp.service` → snapshots install to `<install>.prev/` → rsyncs staging into install (preserving user config, `config/backup-status.json`, `.pids` / `.logs`) and re-owns it to the install dir's owner **user and group** (`stat -c %U:%G`; the group need not be named after the user) → runs `npm ci --omit=dev` in backend → runs **`setup/common-steps.sh`** (the step list shared with the installer — see below) → re-templates `wisp.service` → starts the service. Auto-rolls-back on failure (see Rollback). |
 | Shared setup steps (`scripts/linux/setup/common-steps.sh`) | The steps the installer and the updater both run: `container-dns.sh` then `install-helpers.sh`. Invoked by path from the install tree by **both** `setup-server.sh` and `wisp-updater`, so neither can drift from the other. Exits non-zero if any step fails — `wisp-updater` turns that into a rollback, while `setup-server.sh` wraps it in `run_step` so the install path keeps warning-and-continuing. |
 | Frontend `WispUpdateSection` (under Host → Software) | Reads cached state from the host stats SSE, shows current/latest/last-checked. Renders inside the shared `UpdateCard` (`Check` / `Update` buttons, unified status row, `Checked hourly` footer). When an update is available, a **Release notes** link opens the shared `UpdateDetailsModal` (markdown body + "View on GitHub" footer). After Update: backend POST blocks during download (~10s), then UI **polls `GET /api/host` every 5 s** comparing `wispVersion` to the target. On match → reload page. After 12 failed polls (1 min): show "may be slow" hint. After 60 polls (5 min): give up with a "check journalctl" message. |
 
@@ -37,7 +37,7 @@ The deploy user can do exactly one root-side thing:
 <deploy-user> ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block wisp-updater.service
 ```
 
-Sudoers matches argv exactly — no other systemctl verbs, no other units. The unit file is root-owned at `/etc/systemd/system/wisp-updater.service`, so the deploy user can't redirect what runs. The install dir is hardcoded into the unit (templated at install time as `WISP_INSTALL_DIR=<path>`), so a tampered target file cannot point the updater at an arbitrary install location. The staging path read from the target file is validated to start with `/var/lib/wisp/updates/staging-`.
+Sudoers matches argv exactly — no other systemctl verbs, no other units. The unit file is root-owned at `/etc/systemd/system/wisp-updater.service`, so the deploy user can't redirect what runs. The install dir is hardcoded into the unit (templated at install time as `WISP_INSTALL_DIR=<path>`), so a tampered target file cannot point the updater at an arbitrary install location. The staging path read from the target file is resolved with `realpath -e` and must then be a direct `staging-*` child of the (equally resolved) `/var/lib/wisp/updates` — so `..` segments, a symlinked `staging-*` entry, or a nested path cannot point the swap at another tree. Resolving the updates dir too keeps hosts that symlink `/var/lib/wisp` to another disk working.
 
 ## Service worker interaction
 
@@ -100,7 +100,26 @@ Corollary: an updater change is **dark-shipped**. It cannot affect the update th
 
 ## Rollback
 
-After a successful update, the old install tree is kept at `<install>.prev/` (one-deep). The `wisp-updater` script restores from there automatically if any step after the snapshot fails. There is no UI for explicit user-initiated rollback in v1; if needed, a user can manually `rsync -a --delete <install>.prev/ <install>/ && systemctl restart wisp`.
+After a successful update, the old install tree is kept at `<install>.prev/` (one-deep). The `wisp-updater` script restores from there automatically if any step after the snapshot fails — including the run being stopped by `TimeoutStartSec` (SIGTERM is turned into a non-zero exit so the rollback fires).
+
+What an automatic rollback restores (settled 2026-10-16):
+
+| Failure point | Restored |
+|---------------|----------|
+| Before `step:common-setup` (snapshot, swap, `npm ci`) | The install tree only. Nothing host-level has changed yet. |
+| `step:common-setup` or later | The install tree, then **`step:rollback-host-setup`**: the restored (old) tree's own `common-steps.sh` runs again — re-installing its `wisp-*` helpers, their sudoers rules, `wisp-updater` + `wisp-updater.service` and the container-DNS host config — and `wisp.service` is re-templated from the old tree. |
+
+In every case the rollback ends with `daemon-reload` and `systemctl start wisp`.
+
+Limits, by design:
+
+- **Additive leftovers stay.** The old `common-steps.sh` re-installs what the old release knows about; a helper or sudoers file that only the new release introduced stays in `/usr/local/bin` / `/etc/sudoers.d`, unused by the restored code.
+- **No retry inside the rollback.** The rollback runs from the `EXIT` trap and never aborts: each step that fails logs a `rollback-warning:` line and the rollback carries on to starting the service. The unit's `TimeoutStopSec=300` gives it that long after a start timeout before systemd escalates to SIGKILL.
+- **Finishing a failed rollback by hand** — `journalctl -u wisp-updater` names the step that warned; then, as root: `rsync -a --delete <install>.prev/ <install>/`, `<install>/scripts/linux/setup/common-steps.sh <install> <deploy-user>`, re-template `wisp.service` (`sed -e "s|WISP_USER|<deploy-user>|g" -e "s|WISP_PATH|<install>|g" <install>/systemd/linux/wisp.service > /etc/systemd/system/wisp.service`), `systemctl daemon-reload && systemctl restart wisp`.
+
+The rollback logic lives in `wisp-updater` itself, so a change to it is dark-shipped like any other updater edit: the release that carries it is still rolled back by the previous release's logic.
+
+There is no UI for explicit user-initiated rollback; if needed, run the same "by hand" sequence above.
 
 ## Layout
 

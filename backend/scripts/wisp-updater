@@ -7,17 +7,21 @@
 #     sudo -n systemctl start --no-block wisp-updater.service
 #
 # Steps (echoed to journald):
-#   stop-service → snapshot → swap → install-deps → install-helpers
-#   → container-dns → install-unit → start-service → done
+#   stop-service → snapshot → swap → install-deps → common-setup
+#   → install-unit → start-service → done
 #
 # On any failure after `snapshot`, rolls back from <install>.prev and exits non-zero.
-# User config (config/wisp-config.json, wisp-password, runtime.env) and runtime
-# scratch (.pids, .logs) are never deleted from the install dir.
+# Rollback restores the tree; when the host-level setup steps had already run, it
+# also re-runs the restored (old) tree's common-steps.sh and re-templates
+# wisp.service from it, so helpers, sudoers and units match the code that runs.
+# User config (config/wisp-config.json, wisp-password, runtime.env), the backup
+# status cache (config/backup-status.json) and runtime scratch (.pids, .logs) are
+# never deleted from the install dir.
 
 set -uo pipefail
 
-TARGET_FILE=/var/lib/wisp/updates/target
-STAGING_PREFIX=/var/lib/wisp/updates/staging-
+UPDATES_DIR=/var/lib/wisp/updates
+TARGET_FILE="$UPDATES_DIR/target"
 INSTALL_DIR="${WISP_INSTALL_DIR:-}"
 
 fail() {
@@ -30,16 +34,26 @@ fail() {
 [[ -d "$INSTALL_DIR" ]] || fail "install dir not found: $INSTALL_DIR"
 [[ -f "$TARGET_FILE" ]] || fail "no pending update: $TARGET_FILE missing"
 
-STAGING="$(head -n 1 "$TARGET_FILE" | tr -d '[:space:]')"
-[[ -n "$STAGING" ]] || fail "target file is empty"
-[[ "$STAGING" == "$STAGING_PREFIX"* ]] || fail "staging path outside allowed root: $STAGING"
-[[ -d "$STAGING" ]] || fail "staging dir not found: $STAGING"
+STAGING_RAW="$(head -n 1 "$TARGET_FILE" | tr -d '[:space:]')"
+[[ -n "$STAGING_RAW" ]] || fail "target file is empty"
+[[ -d "$STAGING_RAW" ]] || fail "staging dir not found: $STAGING_RAW"
+# Compare canonical paths: `..` segments or a symlinked staging-* entry must not
+# lead the swap to a tree outside the updates dir. The updates dir itself is
+# canonicalised too, so a host that symlinks /var/lib/wisp elsewhere still works.
+UPDATES_REAL="$(realpath -e -- "$UPDATES_DIR")" || fail "cannot resolve $UPDATES_DIR"
+STAGING="$(realpath -e -- "$STAGING_RAW")" || fail "cannot resolve staging path: $STAGING_RAW"
+STAGING_PREFIX="$UPDATES_REAL/staging-"
+[[ "$STAGING" == "$STAGING_PREFIX"* && "${STAGING#"$STAGING_PREFIX"}" != */* ]] \
+  || fail "staging path outside $UPDATES_DIR/staging-*: $STAGING_RAW"
 [[ "$STAGING" != "$INSTALL_DIR" ]] || fail "staging and install dir must differ"
 [[ -f "$STAGING/backend/package.json" ]] || fail "staging dir does not look like a wisp tree"
 
-# Detect deploy user from owner of the install dir (set by install.sh).
+# Detect deploy user and group from the owner of the install dir (copy.sh sets
+# it to the installing user and their primary group, which need not share the
+# user's name).
 DEPLOY_USER="$(stat -c %U "$INSTALL_DIR")"
 [[ -n "$DEPLOY_USER" && "$DEPLOY_USER" != "root" ]] || fail "could not detect non-root deploy user from $INSTALL_DIR"
+DEPLOY_OWNER="$(stat -c %U:%G "$INSTALL_DIR")"
 
 PREV_DIR="${INSTALL_DIR}.prev"
 SERVICE_UNIT=wisp
@@ -55,18 +69,54 @@ RSYNC_EXCLUDES=(
 )
 
 snapshot_taken=0
+host_setup_touched=0
 
+# Render wisp.service from the given tree's template. Shared by the update path
+# and the rollback so both write the unit the same way.
+template_service_unit() {
+  local tree="$1" src="$1/systemd/linux/${SERVICE_UNIT}.service"
+  [[ -f "$src" ]] || { echo "error: ${SERVICE_UNIT}.service template missing in $tree" >&2; return 1; }
+  sed -e "s|WISP_USER|$DEPLOY_USER|g" \
+      -e "s|WISP_PATH|$INSTALL_DIR|g" \
+    "$src" > "/etc/systemd/system/${SERVICE_UNIT}.service"
+}
+
+# Runs from the EXIT trap, so it never calls fail/exit: every step logs its own
+# failure and the rollback carries on, ending with an attempt to start the
+# service. A rollback that cannot complete leaves its `rollback-warning:` lines
+# in the journal, and the operator finishes by hand (docs/spec/UPDATES.md).
 rollback() {
   echo "step:rollback"
   if [[ "$snapshot_taken" -eq 1 && -d "$PREV_DIR" ]]; then
-    rsync -a --delete "$PREV_DIR/" "$INSTALL_DIR/" || true
-    chown -R "$DEPLOY_USER:$DEPLOY_USER" "$INSTALL_DIR" || true
+    rsync -a --delete "$PREV_DIR/" "$INSTALL_DIR/" \
+      || echo "rollback-warning: restoring the tree from $PREV_DIR failed"
+    chown -R "$DEPLOY_OWNER" "$INSTALL_DIR" \
+      || echo "rollback-warning: chown of $INSTALL_DIR failed"
+    if [[ "$host_setup_touched" -eq 1 ]]; then
+      # The new release's helpers, sudoers and units may already be installed;
+      # put back the restored tree's own. That tree is the release that
+      # installed this updater, so it ships common-steps.sh.
+      echo "step:rollback-host-setup"
+      local old_steps="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
+      if [[ -x "$old_steps" ]]; then
+        "$old_steps" "$INSTALL_DIR" "$DEPLOY_USER" \
+          || echo "rollback-warning: restored tree's common-steps.sh failed"
+      else
+        echo "rollback-warning: $old_steps missing; helpers stay at the new release's"
+      fi
+      template_service_unit "$INSTALL_DIR" \
+        || echo "rollback-warning: re-templating ${SERVICE_UNIT}.service failed"
+    fi
   fi
-  systemctl daemon-reload || true
-  systemctl start "$SERVICE_UNIT" || true
+  systemctl daemon-reload || echo "rollback-warning: daemon-reload failed"
+  systemctl start "$SERVICE_UNIT" || echo "rollback-warning: starting $SERVICE_UNIT failed"
 }
 
 trap 'rc=$?; if [[ $rc -ne 0 ]]; then rollback; fi' EXIT
+# systemd stops the unit with SIGTERM on TimeoutStartSec. Exit non-zero from it
+# explicitly: without this, the EXIT trap would see the status of whatever
+# command last finished and could skip the rollback of a half-applied update.
+trap 'exit 143' TERM INT
 
 echo "step:stop-service"
 systemctl stop "$SERVICE_UNIT" 2>/dev/null || true
@@ -78,7 +128,7 @@ snapshot_taken=1
 
 echo "step:swap"
 rsync -a --delete "${RSYNC_EXCLUDES[@]}" "$STAGING/" "$INSTALL_DIR/" || fail "swap rsync failed"
-chown -R "$DEPLOY_USER:$DEPLOY_USER" "$INSTALL_DIR" || fail "chown failed"
+chown -R "$DEPLOY_OWNER" "$INSTALL_DIR" || fail "chown failed"
 
 echo "step:install-deps"
 # Tarball ships without node_modules — install runtime deps for backend.
@@ -97,17 +147,13 @@ echo "step:common-setup"
 COMMON_STEPS="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
 [[ -x "$COMMON_STEPS" ]] \
   || fail "missing $COMMON_STEPS — releases older than v2.0.2 cannot be installed by this updater"
+host_setup_touched=1
 "$COMMON_STEPS" "$INSTALL_DIR" "$DEPLOY_USER" || fail "common setup steps failed"
 
 echo "step:install-unit"
 # Re-template wisp.service so unit-file changes in the new release apply.
 # wisp-updater.service is handled by install-helpers above.
-src="$INSTALL_DIR/systemd/linux/${SERVICE_UNIT}.service"
-[[ -f "$src" ]] || fail "${SERVICE_UNIT}.service template missing in release"
-sed -e "s|WISP_USER|$DEPLOY_USER|g" \
-    -e "s|WISP_PATH|$INSTALL_DIR|g" \
-  "$src" > "/etc/systemd/system/${SERVICE_UNIT}.service" \
-  || fail "templating ${SERVICE_UNIT}.service failed"
+template_service_unit "$INSTALL_DIR" || fail "templating ${SERVICE_UNIT}.service failed"
 systemctl daemon-reload || fail "daemon-reload failed"
 
 echo "step:start-service"
