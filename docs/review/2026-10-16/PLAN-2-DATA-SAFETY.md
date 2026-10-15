@@ -130,3 +130,26 @@ libvirt-dbus → backend logs retries, doesn't exit.
 ## Phase 2 exit
 
 All bundles merged and verified on the Linux server; results recorded per bundle here.
+
+---
+
+## Results (2026-10-16)
+
+Branch `fix/audit-phase2` (D1–D6; doc conflicts in ERROR-HANDLING/BACKUPS resolved by union; the
+auto-merged overlaps in `vmManagerBackup.js` restore-as-new, `vmManagerCreate.js` clone and
+`routes/vms.js` reviewed by hand). `check-imports`, module load, frontend build OK. Deployed to the
+test server (tini) via the self-updater; backend never restarted during the run.
+
+| Bundle | Linux (tini) — all PASS unless noted |
+|---|---|
+| D1 | kept `vms/d1keep` → create / clone / restore-as-new each 409 with the path, kept file sha256 unchanged; create `gubi` (has cloud-init) → 409, its ISO/json hashes unchanged; bogus machine type → job error, no dir, no domain; happy create → disk + cloud-init 600 + sde |
+| D2 | single-destination backup → exactly one `done`; manifest-less dir not listed; truncated `.gz` restore-in-place → error, live disks/cloud-init/XML byte-identical, no `.restore-*`; during restore-in-place start/backup → 409 VM_BUSY, start OK after. **Skipped:** multi-destination + mid-backup share loss (no reachable SMB, no sudo) |
+| D3 | running VM: memory change (requiresRestart) then icon/balloon edits keep the pending memory in inactive XML; add disk → `disk1`, detach-keep + add → `disk2` (disk1 untouched); occupied sda → 409; `sdz` → 422; running VM → 409, no file |
+| D4 | delete-keep-files → not listed, only `files/` kept; re-create → CONTAINER_EXISTS, files unchanged; bogus image → no dir; tiny-samba share rename stopped and running → data moved with identical hashes, SMB lists the new share. **Skipped:** removal confirm dialog (driven in a UI harness by the implementer) |
+| D5 | parser matches `/proc/self/mounts`; escape decoding + orphan sweep (synthetic); all four readers use the parser; no hard-converge lines. **Skipped:** real SMB/disk mounts (share unreachable, no sudo) |
+| D6 | two concurrent same-name ISO downloads → `x` and `x (1)`, identical; HAOS end-to-end → clean qcow2, no `.haos_download_*` left; no unhandled errors in the journal. **Skipped:** full-disk download, libvirt reconnect (need sudo) |
+
+Found during verification (pre-existing on main, not a regression): creating an *app* container
+logs "Background job failed — Cannot read properties of undefined (reading 'name')" after `done`
+— `createAppContainer` returns nothing and the job store's `formatResult` reads `result.name`.
+Queued in Plan 4 (L5).

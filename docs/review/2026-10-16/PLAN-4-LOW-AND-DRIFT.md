@@ -81,6 +81,7 @@ stops showing the error.
 - C16 publish services after task start, deregister on failure.
 - C18 export `runScheduledBackups`; break `managedBridges.js` → app-glue import.
 - `isKnownApp` → `Object.hasOwn`.
+- `createAppContainer` returns nothing → container job store `formatResult` throws → spurious "Background job failed" after `done` (found on tini 2026-10-16). Also VM/container create managers emit their own `done` before the job completes (R3 note).
 **Verify:** Linux server.
 
 ## L6 — Install / updater / host monitoring low
