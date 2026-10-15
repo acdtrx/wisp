@@ -108,6 +108,12 @@ In-memory job registry (server process only; no persistence across restart). Use
 
 `done` is true after the job completed or failed (until the in-memory TTL removes it). `title` is computed on the server (same rules as the UI: e.g. `Create <name>`, `Backup <name>`, truncated URLs for library downloads).
 
+**Job store contract** (`lib/jobs/jobStore.js`, shared by every job kind):
+
+- **Retention:** a finished (completed or failed) job stays fetchable — listed here, its progress SSE replaying to the terminal event — for **5 minutes after it finished**, however long it ran; then it is removed (404 on its progress SSE). The sweep re-arms for the next expiry while finished jobs remain.
+- **Progress volume:** byte-driven progress (backup gzip / tar streams, library downloads, `qemu-img convert`) is emitted once per integer percent change — at most ~101 events per stream, whatever the size.
+- **Replay to a late or reconnecting stream:** live subscribers get every event, but the store keeps only the latest of consecutive events with the same `step` (progress ticks of one step replace each other). A stream that connects mid-job receives one event per step transition — the latest progress of each, plus milestones such as `destination-done` — then the live tail.
+
 ---
 
 ## Host

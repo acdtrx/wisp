@@ -105,12 +105,17 @@ async function tarGzipDir(parent, baseName, destPath, totalBytes, onProgress) {
   let stderrBuf = '';
   tar.stderr.on('data', (d) => { stderrBuf += d.toString(); });
 
+  let lastPct = -1;
   const counter = new Transform({
     transform(chunk, _enc, cb) {
       counter.bytes = (counter.bytes || 0) + chunk.length;
       if (typeof onProgress === 'function' && totalBytes > 0) {
         const pct = Math.min(100, Math.round((counter.bytes / totalBytes) * 100));
-        onProgress(pct);
+        /* once per integer percent, not per chunk */
+        if (pct !== lastPct) {
+          lastPct = pct;
+          onProgress(pct);
+        }
       }
       cb(null, chunk);
     },

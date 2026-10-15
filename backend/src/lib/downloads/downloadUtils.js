@@ -73,18 +73,25 @@ function assertBody(res) {
   }
 }
 
-/** Adapt per-chunk byte counts to onProgress(percent, loaded, totalBytes) when the length is known. */
+/**
+ * Adapt per-chunk byte counts to onProgress(percent, loaded, totalBytes) when the length is known —
+ * called once per integer percent change (≤ 101 calls), not per chunk. `done` reports 100 unless it already was.
+ */
 function percentReporter(res, onProgress) {
   const total = res.headers.get('content-length');
   const totalBytes = total ? parseInt(total, 10) : null;
+  let lastPercent = -1;
   const onBytes = (loaded) => {
     if (typeof onProgress === 'function' && totalBytes != null && totalBytes > 0) {
       const percent = Math.min(100, Math.round((loaded / totalBytes) * 100));
-      onProgress(percent, loaded, totalBytes);
+      if (percent !== lastPercent) {
+        lastPercent = percent;
+        onProgress(percent, loaded, totalBytes);
+      }
     }
   };
   const done = (loaded) => {
-    if (typeof onProgress === 'function') onProgress(100, loaded, totalBytes);
+    if (typeof onProgress === 'function' && lastPercent !== 100) onProgress(100, loaded, totalBytes);
   };
   return { onBytes, done };
 }

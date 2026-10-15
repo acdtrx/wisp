@@ -41,7 +41,8 @@ async function copyWithProgress(srcPath, dstPath, onProgress) {
 }
 
 /**
- * Stream source file through gzip to destination. Uses pipeline; reports progress if totalBytes and onProgress provided.
+ * Stream source file through gzip to destination. Uses pipeline; reports progress if totalBytes and onProgress provided —
+ * once per integer percent change (≤ 101 calls), not per chunk.
  */
 async function streamWithGzip(sourcePath, destPath, { totalBytes, onProgress } = {}) {
   const readStream = createReadStream(sourcePath);
@@ -50,11 +51,15 @@ async function streamWithGzip(sourcePath, destPath, { totalBytes, onProgress } =
 
   if (typeof onProgress === 'function' && totalBytes != null && totalBytes > 0) {
     let readBytes = 0;
+    let lastPct = -1;
     const progress = new Transform({
       transform(chunk, encoding, callback) {
         readBytes += chunk.length;
         const pct = Math.min(100, Math.round((readBytes / totalBytes) * 100));
-        onProgress(pct);
+        if (pct !== lastPct) {
+          lastPct = pct;
+          onProgress(pct);
+        }
         callback(null, chunk);
       },
     });

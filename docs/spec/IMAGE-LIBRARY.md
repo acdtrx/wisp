@@ -67,7 +67,7 @@ This applies to:
 
 2. **Preset downloads** — Three server-side presets, exposed in the UI as one **preset image** control (cloud icon + chevron) that opens a custom menu (not the browser’s native `<select>`): each row has an icon and label for **Ubuntu Server** (latest LTS cloud image), **Arch Linux** (latest x86_64 cloud qcow2 from pkgbuild mirrors), or **Home Assistant OS** (latest HAOS QEMU image, xz-decompressed to qcow2; progress events can include a `decompressing` phase). Each choice returns a job ID and uses the same background job + SSE flow as the matching `POST /api/library/download-*` routes.
 
-All downloads run as background jobs. Progress is tracked via a job store and streamed to the frontend via SSE.
+All downloads run as background jobs. Progress is tracked via a job store and streamed to the frontend via SSE — one `progress` event per integer percent change, not per received chunk (≤ ~101 per download); without a `Content-Length` only the final 100% is reported. Replay and retention follow the shared [job store contract](API.md#background-jobs).
 
 **Naming and failure.** The destination name is reserved by an exclusive create (`O_EXCL`): when the name is taken — an existing file or a concurrent download of the same image — the next ` (n)` variant is used, so two simultaneous downloads of one preset both succeed under distinct names. A download that fails (network, disk full) removes its partial file and fails the job with `{ step: 'error' }`; the HAOS flow also removes its hidden `.haos_download_*.xz` temp, and succeeds only when the output finished writing **and** `xz` exited 0 (a corrupt archive never lands as a truncated image).
 
