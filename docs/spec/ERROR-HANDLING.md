@@ -47,7 +47,7 @@ The table below lists codes mapped by `handleRouteError` in `backend/src/lib/rou
 | **400** | `BAD_MULTIPART_TOO_MANY_FILES` | Bad request — more than one file part in a container mount upload |
 | **404** | `VM_NOT_FOUND`, `SNAPSHOT_NOT_FOUND`, `BACKUP_NOT_FOUND`, `CONTAINER_NOT_FOUND`, `CONTAINER_MOUNT_NOT_FOUND`, `CONTAINER_IMAGE_NOT_FOUND`, `MOUNT_NOT_FOUND`, `NETWORK_BRIDGE_NOT_FOUND` | Resource does not exist |
 | **409** | `VM_ALREADY_RUNNING`, `VM_NOT_RUNNING`, `VM_NOT_PAUSED`, `VM_RUNNING`, `VM_EXISTS`, `VM_DIR_EXISTS`, `VM_MUST_BE_OFFLINE`, `VM_BUSY`, `DISK_SLOT_IN_USE`, `BACKUP_IN_PROGRESS`, `BACKUP_EXISTS`, `CONTAINER_ALREADY_RUNNING`, `CONTAINER_NOT_RUNNING`, `CONTAINER_EXISTS`, `CONTAINER_MUST_BE_STOPPED`, `CONTAINER_TASK_TRANSIENT`, `CONTAINER_BACKUP_IN_PROGRESS`, `CONTAINER_IMAGE_IN_USE`, `MOUNT_DUPLICATE`, `NETWORK_BRIDGE_EXISTS`, `NETWORK_BRIDGE_IN_USE` | State conflict — the operation is not valid for the current state |
-| **422** | `PARSE_ERROR`, `CLONE_FAILED`, `RESIZE_INVALID`, `DISK_NOT_FOUND`, `RESIZE_FAILED`, `CONVERT_FAILED`, `USB_ATTACH_FAILED`, `USB_DETACH_FAILED`, `SNAPSHOT_CREATE_FAILED`, `SNAPSHOT_REVERT_FAILED`, `SNAPSHOT_DELETE_FAILED`, `CONFIG_ERROR`, `INVALID_VM_NAME`, `INVALID_SNAPSHOT_NAME`, `INVALID_USB_ID`, `BACKUP_INVALID`, `HASH_FAILED`, `INVALID_URL`, `SSRF_BLOCKED`, `DNS_FAILED`, `DOWNLOAD_FAILED`, `NO_BODY`, `INVALID_REQUEST`, `PATH_NOT_ALLOWED`, `PASSWORD_EMPTY`, `INVALID_BACKUP_SCHEDULE`, `BACKUP_DEST_UNKNOWN`, `BACKUP_DEST_NONE`, `IMAGE_PULL_FAILED`, `INVALID_CONTAINER_IMAGE_REF`, `INVALID_CONTAINER_NAME`, `INVALID_CONTAINER_MAC`, `INVALID_CONTAINER_MOUNTS`, `CONTAINER_MOUNT_DUPLICATE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_SOURCE_MISSING`, `CONTAINER_MOUNT_SOURCE_WRONG_TYPE`, `CONTAINER_MOUNT_SOURCE_UNSAFE`, `CONTAINER_MOUNT_FILE_TOO_LARGE`, `CONTAINER_MOUNT_FILE_NOT_UTF8`, `INVALID_APP_CONFIG`, `APP_CONFIG_ONLY`, `MOUNT_INVALID`, `INVALID_NETWORK_BRIDGE_NAME`, `INVALID_NETWORK_BRIDGE_PARENT`, `INVALID_VLAN_ID` | Unprocessable — the request is structurally valid but cannot be carried out |
+| **422** | `PARSE_ERROR`, `CLONE_FAILED`, `RESIZE_INVALID`, `DISK_NOT_FOUND`, `RESIZE_FAILED`, `CONVERT_FAILED`, `USB_ATTACH_FAILED`, `USB_DETACH_FAILED`, `SNAPSHOT_CREATE_FAILED`, `SNAPSHOT_REVERT_FAILED`, `SNAPSHOT_DELETE_FAILED`, `CONFIG_ERROR`, `INVALID_VM_NAME`, `INVALID_SNAPSHOT_NAME`, `INVALID_USB_ID`, `BACKUP_INVALID`, `HASH_FAILED`, `INVALID_URL`, `SSRF_BLOCKED`, `DNS_FAILED`, `DOWNLOAD_FAILED`, `NO_BODY`, `INVALID_REQUEST`, `PATH_NOT_ALLOWED`, `PASSWORD_EMPTY`, `INVALID_PASSWORD`, `INVALID_BACKUP_SCHEDULE`, `BACKUP_DEST_UNKNOWN`, `BACKUP_DEST_NONE`, `IMAGE_PULL_FAILED`, `INVALID_CONTAINER_IMAGE_REF`, `INVALID_CONTAINER_NAME`, `INVALID_CONTAINER_MAC`, `INVALID_CONTAINER_MOUNTS`, `CONTAINER_MOUNT_DUPLICATE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_SOURCE_MISSING`, `CONTAINER_MOUNT_SOURCE_WRONG_TYPE`, `CONTAINER_MOUNT_SOURCE_UNSAFE`, `CONTAINER_MOUNT_FILE_TOO_LARGE`, `CONTAINER_MOUNT_FILE_NOT_UTF8`, `INVALID_APP_CONFIG`, `APP_CONFIG_ONLY`, `MOUNT_INVALID`, `INVALID_NETWORK_BRIDGE_NAME`, `INVALID_NETWORK_BRIDGE_PARENT`, `INVALID_VLAN_ID` | Unprocessable — the request is structurally valid but cannot be carried out |
 | **500** | `LIBVIRT_ERROR`, `DISK_INFO_FAILED`, `BACKUP_RESTORE_FAILED`, `GITHUB_API`, `NO_ASSET`, `CONTAINERD_ERROR` | Internal server error |
 | **503** | `NO_CONNECTION`, `NO_CONTAINERD`, `NO_PASSWORD_CONFIGURED`, `PASSWORD_FILE_UNSUPPORTED_FORMAT`, `BACKUP_DEST_NOT_FOUND`, `BACKUP_DEST_NOT_WRITABLE`, `BACKUP_MOUNT_FAILED`, `UPDATE_CHECK_UNAVAILABLE`, `POWER_UNAVAILABLE`, `SMB_INVALID`, `SMB_MOUNT_UNAVAILABLE`, `CONTAINER_MOUNT_SOURCE_NOT_MOUNTED`, `NETWORK_BRIDGE_UNAVAILABLE`, `NETWORK_BRIDGE_APPLY_FAILED` | Service unavailable — libvirt/containerd not connected, backup destination not accessible, host update/power scripts missing, SMB/mount issues, managed bridge helper/netplan failures, etc. |
 
@@ -84,7 +84,10 @@ The stream closes after that event. **Successful completion** uses `{ "step": "d
 | Missing token | 401 | `{ error: "Authentication required", detail: "Missing or malformed Authorization header" }` |
 | Invalid/expired token | 401 | `{ error: "Authentication failed", detail: "Invalid or expired token" }` |
 | Wrong password (login) | 401 | `{ error: "Invalid password", detail: "The provided password is incorrect" }` |
+| Wrong current password (change-password) | 422 | `INVALID_PASSWORD` — `{ error: "Current password is incorrect", detail: … }` |
 | Rate limited (login) | 429 | `{ error: "Too many login attempts", detail: "Try again after 60 seconds" }` |
+
+**401 means "no or expired session" — nothing else.** The frontend logs every tab out on any 401 from an authenticated route, so a route that rejects a *request* while the session is fine (wrong current password on change-password) answers 422. Login keeps 401 for a wrong password: the login page posts with a bare `fetch`, never through the shared client.
 
 Login rate limiting: 5 failed attempts per IP within a 60-second window. The map is swept every 60 s for expired entries and capped at 10 000 distinct IPs.
 
@@ -108,11 +111,11 @@ For async operations (VM creation, backup, download), errors appear inline in th
 
 ### Global 401 handling
 
-The frontend API client intercepts all 401 responses. On receiving a 401:
-1. Clear the stored JWT from localStorage
+The frontend API client (`api()` in `api/client.js`) intercepts all 401 responses. On receiving a 401:
+1. Write the `wisp_logout` localStorage signal so other tabs bounce too
 2. Redirect to `/login`
 
-This is automatic and applies to all API calls, handling token expiry and password changes.
+This is automatic and applies to all API calls, handling session expiry and password changes from another device. Because it logs every tab out, the backend sends 401 only for a missing/expired session (see Authentication Errors).
 
 ## Validation Errors
 

@@ -57,6 +57,7 @@ function errorCodeToStatus(code) {
     case 'INVALID_REQUEST':
     case 'PATH_NOT_ALLOWED':
     case 'PASSWORD_EMPTY':
+    case 'INVALID_PASSWORD':
     case 'INVALID_OIDC':
     case 'INVALID_BACKUP_SCHEDULE':
     case 'TOKEN_INVALID':

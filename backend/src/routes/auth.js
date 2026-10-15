@@ -8,7 +8,7 @@ import { getRawOidcConfig } from '../lib/settings.js';
 import { beginLogin, completeLogin } from '../lib/oidc.js';
 import { listApiTokens, createApiToken, revokeApiToken, API_TOKEN_SCOPES } from '../lib/apiTokens.js';
 import { isAuthRateLimited, recordFailedAuthAttempt, AUTH_RATE_WINDOW_SECONDS } from '../lib/loginRateLimit.js';
-import { handleRouteError } from '../lib/routeErrors.js';
+import { createAppError, handleRouteError } from '../lib/routeErrors.js';
 
 const SESSION_COOKIE = 'wisp_session';
 const CSRF_COOKIE = 'wisp_csrf';
@@ -127,11 +127,10 @@ export default async function authRoutes(fastify) {
     handler: async (request, reply) => {
       const { currentPassword, newPassword } = request.body;
 
+      // 422, not 401: the session is valid — 401 means "no/expired session" and
+      // makes the frontend log every tab out.
       if (!verifyPassword(currentPassword)) {
-        reply.code(401).send({
-          error: 'Invalid password',
-          detail: 'The current password is incorrect',
-        });
+        handleRouteError(createAppError('INVALID_PASSWORD', 'Current password is incorrect'), reply, request);
         return;
       }
 

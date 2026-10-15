@@ -33,6 +33,7 @@ If the file is missing, JWT signing fails until a password is set (`wispctl pass
 - `POST /api/auth/change-password` with `{ currentPassword, newPassword }`
 - On success, writes a new **scrypt hash** to `config/wisp-password` with mode `0600`
 - Returns 204 (no content). Changing the password invalidates all existing tokens because the signing secret is derived from the password (or the new hash).
+- A wrong `currentPassword` returns **422 `INVALID_PASSWORD`**, shown inline in the form. Not 401: the session is valid, and a 401 would log every tab out (see § Frontend handling).
 
 ## JWT Implementation
 
@@ -102,6 +103,8 @@ The frontend fetch wrapper sends `credentials: 'include'` on every request, read
 
 1. Writes a `wisp_logout` flag to localStorage so other tabs see the logout
 2. Redirects to `/login`
+
+So **401 is reserved for "no or expired session"** on every route the client calls. A route that rejects the request itself while the session is fine answers with another status (change-password's wrong current password → 422). The login route's 401 for a wrong password is the exception that stays: the login page posts with a bare `fetch`, outside the shared client.
 
 `POST /api/auth/logout` clears both cookies and returns 204. The frontend's `useAuthStore.logout` calls it before broadcasting the multi-tab signal.
 

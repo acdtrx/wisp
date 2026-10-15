@@ -32,7 +32,7 @@ Change the application password. On success, re-issues fresh `wisp_session` and 
 
 - **Body:** `{ currentPassword: string, newPassword: string }`
 - **204:** No content + new `Set-Cookie` lines for both cookies
-- **401:** `{ error, detail }` — current password incorrect
+- **422:** `{ error, detail }` — `INVALID_PASSWORD`: current password incorrect. Deliberately not 401 — the caller's session is valid, and 401 is reserved for "no/expired session" (the frontend logs every tab out on it)
 - **500:** `{ error, detail }` — failed to write new password
 
 ### API tokens
