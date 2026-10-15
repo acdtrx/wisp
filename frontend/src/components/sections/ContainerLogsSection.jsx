@@ -62,19 +62,22 @@ export default function ContainerLogsSection({ containerName }) {
 
   const logRef = useRef(null);
   const closeSseRef = useRef(null);
+  /** Only the newest runs request may apply — an older one (previous container, or a
+   *  refetch overtaken by the next state transition) would select a run of the wrong list. */
+  const runsSeqRef = useRef(0);
 
   const refetchRuns = useCallback(async () => {
+    const seq = ++runsSeqRef.current;
     setRunsLoading(true);
+    let next;
     try {
-      const { runs: next } = await listContainerRuns(containerName);
-      setRuns(next || []);
-      return next || [];
+      ({ runs: next } = await listContainerRuns(containerName));
     } catch {
-      setRuns([]);
-      return [];
-    } finally {
-      setRunsLoading(false);
+      next = []; // container gone or runs unreadable — show an empty run list
     }
+    if (seq !== runsSeqRef.current) return;
+    setRuns(next || []);
+    setRunsLoading(false);
   }, [containerName]);
 
   // Initial fetch + refetch whenever the container transitions state.

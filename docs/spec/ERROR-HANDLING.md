@@ -121,6 +121,10 @@ This is automatic and applies to all API calls, handling session expiry and pass
 
 A render throw anywhere in the tree lands in the top-level `AppErrorBoundary` (wraps the router in `main.jsx`), which replaces the page with a recovery card and a **Reload** button instead of unmounting to a blank page. See [UI.md](UI.md) § Render Error Screen. It is a last resort — data errors are still handled where they occur (store guards, inline errors).
 
+### Stale responses for a previous selection
+
+Selecting a VM or container fetches its config asynchronously. The stores (`vmStore`, `containerStore`) bump a selection sequence number on every selection change (select, deselect, rename-follow) and drop any `getVM` / `getContainer` response — success or error — that comes back after the selection changed, so a slow response for the previously-selected workload never overwrites the current one. The same newest-request-wins guard applies to the container Logs run list and to the Image Library's per-filter list fetch.
+
 ## Validation Errors
 
 ### VM name validation

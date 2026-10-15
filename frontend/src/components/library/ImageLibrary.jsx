@@ -329,12 +329,18 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     }
   }, [mode, pickerKind, filter]);
 
+  /** Only the newest list request may apply: switching filter while the previous
+   *  filter's request is still in flight must not let that late response repaint the list. */
+  const fetchSeqRef = useRef(0);
+
   const fetchFiles = useCallback(async () => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     setError(null);
     try {
       if (filter === 'container') {
         const data = await listContainerImages();
+        if (seq !== fetchSeqRef.current) return;
         setContainerImages(data);
         setFiles([]);
       } else if (isPageLike && filter === 'all') {
@@ -342,19 +348,21 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
           listFiles(undefined),
           listContainerImages(),
         ]);
+        if (seq !== fetchSeqRef.current) return;
         setFiles(fileData);
         setContainerImages(ociData);
       } else {
         const apiFilter = filter === 'all' ? undefined : filter;
         const data = await listFiles(apiFilter);
+        if (seq !== fetchSeqRef.current) return;
         setFiles(data);
         setContainerImages([]);
       }
     } catch (err) {
+      if (seq !== fetchSeqRef.current) return;
       setError(err.message);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   }, [filter, isPageLike]);
 
   const mergedAllRows = useMemo(() => {

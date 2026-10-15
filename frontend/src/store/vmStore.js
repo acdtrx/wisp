@@ -9,6 +9,11 @@ export const useVmStore = create((set, get) => {
   // stored here so stopVMListSSE/stopStatsSSE/deselectVM can clean up.
   let listCloseFn = null;
   let statsCloseFn = null;
+  // Bumped on every selection change (select, deselect, rename-follow). A getVM
+  // response is applied only if no selection change happened while it was in
+  // flight — otherwise a slow response for the previous VM would overwrite the
+  // current one and the header actions would target the wrong VM.
+  let selectionSeq = 0;
 
   function startStatsSSE(name) {
     stopStatsSSE();
@@ -46,6 +51,7 @@ export const useVmStore = create((set, get) => {
     const match = vmsList.find((v) => v.uuid === uuid);
     if (!match || match.name === selectedVM) return;
     stopStatsSSE();
+    selectionSeq += 1;
     set({ selectedVM: match.name });
     startStatsSSE(match.name);
     queueMicrotask(() => {
@@ -134,19 +140,24 @@ export const useVmStore = create((set, get) => {
       const seed = listItem
         ? { name: listItem.name, uuid: listItem.uuid, state: listItem.state, stateCode: listItem.stateCode, vcpus: listItem.vcpus, memoryMiB: listItem.memoryMiB, osCategory: listItem.osCategory, iconId: listItem.iconId }
         : null;
+      const seq = ++selectionSeq;
       set({ selectedVM: name, vmConfig: seed, vmStats: null, configLoading: true, error: null });
       startStatsSSE(name);
       try {
         const config = await vmApi.getVM(name);
+        if (seq !== selectionSeq) return;
         set({ vmConfig: config, configLoading: false });
       } catch (err) {
+        if (seq !== selectionSeq) return;
         set({ vmConfig: null, error: err.message, configLoading: false });
       }
     },
 
     deselectVM: () => {
       stopStatsSSE();
-      set({ selectedVM: null, vmConfig: null, vmStats: null });
+      selectionSeq += 1;
+      // configLoading is reset here because the in-flight select's response is now dropped.
+      set({ selectedVM: null, vmConfig: null, vmStats: null, configLoading: false });
     },
 
     clearError: () => set({ error: null }),
@@ -167,11 +178,14 @@ export const useVmStore = create((set, get) => {
       if (!targetName) return;
       if (trimmed !== '' && trimmed !== selectedVM) {
         stopStatsSSE();
+        selectionSeq += 1;
         set({ selectedVM: trimmed });
         startStatsSSE(trimmed);
       }
+      const seq = selectionSeq;
       try {
         const config = await vmApi.getVM(targetName);
+        if (seq !== selectionSeq) return;
         set({ vmConfig: config });
       } catch (err) {
         if (import.meta.env.DEV) {

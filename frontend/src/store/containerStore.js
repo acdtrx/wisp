@@ -7,6 +7,9 @@ import { subscribeJobProgress, JOB_KIND } from '../api/jobProgress.js';
 export const useContainerStore = create((set, get) => {
   let listCloseFn = null;
   let statsCloseFn = null;
+  // Bumped on every selection change; a getContainer response is applied only if
+  // the selection did not change while it was in flight (see vmStore).
+  let selectionSeq = 0;
 
   function startStatsSSE(name, intervalMs = 3000) {
     stopStatsSSE();
@@ -145,19 +148,24 @@ export const useContainerStore = create((set, get) => {
             updateAvailable: listItem.updateAvailable,
           }
         : null;
+      const seq = ++selectionSeq;
       set({ selectedContainer: name, containerConfig: seed, containerStats: null, loading: true, error: null });
       startStatsSSE(name);
       try {
         const config = await containerApi.getContainer(name);
+        if (seq !== selectionSeq) return;
         set({ containerConfig: config, loading: false });
       } catch (err) {
+        if (seq !== selectionSeq) return;
         set({ error: err.message, loading: false });
       }
     },
 
     deselectContainer: () => {
       stopStatsSSE();
-      set({ selectedContainer: null, containerConfig: null, containerStats: null });
+      selectionSeq += 1;
+      // loading is reset here because the in-flight select's response is now dropped.
+      set({ selectedContainer: null, containerConfig: null, containerStats: null, loading: false });
     },
 
     clearError: () => set({ error: null }),
@@ -165,8 +173,10 @@ export const useContainerStore = create((set, get) => {
     refreshSelectedContainer: async () => {
       const { selectedContainer } = get();
       if (!selectedContainer) return;
+      const seq = selectionSeq;
       try {
         const config = await containerApi.getContainer(selectedContainer);
+        if (seq !== selectionSeq) return;
         set({ containerConfig: config });
       } catch { /* Container may have been deleted */ }
     },
