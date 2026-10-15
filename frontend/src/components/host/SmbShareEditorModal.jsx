@@ -73,13 +73,6 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
   const canSave = pathOk && trimmedShare !== '' && dirty && !saving;
   const hasStoredPassword = isEdit && share.hasPassword === true;
 
-  /* Test against the stored credentials only when nothing credential-affecting
-   * was edited; otherwise test exactly what's typed in the form. */
-  const credsDirty = !isEdit
-    || trimmedShare !== (share.share || '').trim()
-    || form.username.trim() !== (share.username || '').trim()
-    || form.password.trim() !== '';
-
   const handleCheck = () => {
     if (!trimmedShare) {
       setCheck({ error: 'Set share first' });
@@ -87,9 +80,13 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
     }
     setChecking(true);
     setCheck(null);
-    const body = credsDirty
-      ? { share: trimmedShare, username: form.username.trim(), password: form.password.trim() }
-      : { id: form.id };
+    /* A saved share tests by id with the form's values as overrides, so an
+     * empty password field means the stored password — same "empty keeps what's
+     * on file" rule as Save. A new share has nothing on file: test what's typed. */
+    const newPw = form.password.trim();
+    const body = isEdit
+      ? { id: form.id, share: trimmedShare, username: form.username.trim(), ...(newPw !== '' && { password: newPw }) }
+      : { share: trimmedShare, username: form.username.trim(), password: newPw };
     checkMountConnection(body)
       .then(() => setCheck({ ok: true }))
       .catch((err) => setCheck({ error: err.detail || err.message || 'Failed' }))

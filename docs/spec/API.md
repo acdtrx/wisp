@@ -1210,7 +1210,7 @@ Mount status for all configured mounts.
 Test an SMB connection for a saved mount or ad hoc credentials.
 
 - **Body:** `{ id?: string, share?: string, username?: string, password?: string }`
-- If `id` is provided, credentials are looked up from config and the referenced mount must be `type: "smb"`. Otherwise, use provided `share`/`username`/`password`.
+- If `id` is provided, the referenced mount (must be `type: "smb"`) supplies `share`/`username`/`password`, and any of those fields present in the body overrides the stored value — the edit form sends its unsaved share/username and omits `password` when the field is empty, so the test uses the stored password. Without `id`, the provided `share`/`username`/`password` are used as-is.
 - **200:** `{ ok: true }`
 - **404:** SMB mount not found (when using `id`)
 

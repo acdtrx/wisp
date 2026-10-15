@@ -225,15 +225,18 @@ export default async function mountsRoutes(fastify) {
         let share = body.share;
         let username = body.username;
         let password = body.password;
+        /* With an id, the saved mount supplies the credentials and any field
+         * the body carries overrides it — an edit form tests its unsaved share
+         * or username against the stored password without ever reading it. */
         if (body.id) {
           const mounts = await getRawMounts();
           const d = mounts.find((x) => x.id === body.id);
           if (!d || d.type !== 'smb') {
             return reply.code(404).send({ error: 'SMB mount not found', detail: body.id });
           }
-          share = d.share;
-          username = d.username;
-          password = d.password;
+          share = body.share ?? d.share;
+          username = body.username ?? d.username;
+          password = body.password ?? d.password;
         }
         if (!share || !share.trim()) {
           return reply.code(400).send({ error: 'Share is required', detail: 'Provide share or id' });
