@@ -5,20 +5,23 @@
  * skips layer downloads when the digest matches). Update availability is never persisted on
  * containers — it's derived at read time from (`container.imageDigest` != current library digest)
  * + (task RUNNING/PAUSED). This module just reports how many containers WOULD now show the flag
- * so the UI can surface counts.
+ * so the UI can surface counts. Every check ends by refreshing the image-meta sidecar (the
+ * library digests `updateAvailable` is derived from) and the container list cache, so the
+ * REST job, the hourly sweep and MCP all surface the result the same way.
  *
  * Mirrors the `osUpdates` background-check pattern.
  */
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 
-import { containerError } from './containerManagerConnection.js';
+import { containerError, containerState } from './containerManagerConnection.js';
 import { getContainerDir } from './containerPaths.js';
 import {
   listContainerImages, findContainersUsingImage, getImageDigest,
 } from './containerManagerImages.js';
 import { pullImage } from './containerManagerCreate.js';
 import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.js';
+import { refreshContainerListCache } from './containerManagerList.js';
 
 export { getImageDigest };
 
@@ -99,6 +102,21 @@ async function checkOneImage(ref, onProgress, position) {
 }
 
 /**
+ * Publish a finished check: re-read containerd's digests into the image-meta
+ * sidecar, then rebuild the container list cache (which fires list-change → SSE)
+ * from it. Awaited so callers that read `listContainers()` next see the result.
+ */
+async function publishCheckResult() {
+  try {
+    await listContainerImages();
+  } catch (err) {
+    /* containerd unreachable after the pulls — the sidecar keeps its previous digests */
+    containerState.logger?.warn?.({ err: err?.message || String(err) }, 'Image-meta refresh after update check failed');
+  }
+  await refreshContainerListCache();
+}
+
+/**
  * Bulk check: iterate every image in the library, pull each, flag affected containers.
  * @param {(ev: object) => void} [onProgress]
  * @param {AbortSignal} [signal]
@@ -117,6 +135,8 @@ export async function checkAllImagesForUpdates(onProgress, signal) {
     if (res.changed) updatedCount += 1;
     flaggedContainers += res.flaggedCount;
   }
+
+  await publishCheckResult();
 
   lastCheckedAt = new Date().toISOString();
   lastImagesChecked = total;
@@ -143,6 +163,7 @@ export async function checkSingleImageForUpdates(ref, onProgress, signal) {
   if (signal?.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
 
   const res = await checkOneImage(ref, onProgress, { index: 1, total: 1 });
+  await publishCheckResult();
 
   lastCheckedAt = new Date().toISOString();
 

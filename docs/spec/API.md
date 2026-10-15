@@ -1541,7 +1541,7 @@ Remove an image from containerd. Query parameter **`ref`** (required): image ref
 
 Start an image update check in the background. **Body:** `{ ref?: string }` — when `ref` is omitted (or empty) a bulk check runs over every image in the library; when `ref` is given, only that image is checked.
 
-For each image, the current top-level digest is recorded, the image is re-pulled via the Transfer service (idempotent), and the new digest is compared. When they differ, every container using that image reference has its `container.json` updated: `updateAvailable: true` is set, and if the container task is running/paused, `pendingRestart: true` is set as well. See CONTAINERS.md → *Image updates*.
+For each image, the current top-level digest is recorded, the image is re-pulled via the Transfer service (idempotent), and the new digest is compared. Nothing is written to `container.json`: `updateAvailable` is derived per running/paused container from its stored `imageDigest` vs. the library digest. The check ends by refreshing the image-meta sidecar and the container list (pushed on the `containers` SSE topic) before the job's `done` event, so the badge is visible when the job completes. The hourly sweep and MCP `check_image_updates` run the same check. See CONTAINERS.md → *Image updates*.
 
 **200:** `{ jobId, title }`. Subscribe to `GET /api/containers/images/check-updates/:jobId` for progress.
 
@@ -1553,7 +1553,7 @@ SSE stream for the check-updates job. Events:
 - `{ step: "unchanged", ref }` — digest did not change.
 - `{ step: "updated", ref, oldDigest, newDigest }` — the registry returned new content; layers were downloaded.
 - `{ step: "skipped", ref, reason }` — pull failed (local-only ref, unreachable registry, auth required, etc.); the sweep continues.
-- `{ step: "flagged-container", name }` — `container.json` was updated with `updateAvailable` (and `pendingRestart` if running).
+- `{ step: "flagged-container", name }` — this running/paused container now reads `updateAvailable: true`.
 - `{ step: "done", checked, updated, flaggedContainers, lastCheckedAt }` — terminal.
 - `{ step: "error", error, detail }` — terminal; unexpected failure (e.g. containerd disconnected mid-sweep). Single-image failures use `skipped` instead.
 

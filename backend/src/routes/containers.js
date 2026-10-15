@@ -16,7 +16,6 @@ import {
   getMountFileTextContent, putMountFileTextContent,
   listContainerImages, deleteContainerImage,
   checkAllImagesForUpdates, checkSingleImageForUpdates, getImageUpdateStatus,
-  notifyContainerConfigWrite,
 } from '../lib/containerManager/index.js';
 import {
   containerJobStore,
@@ -222,14 +221,9 @@ export default async function containerRoutes(fastify) {
       ? checkSingleImageForUpdates(ref, (ev) => imageUpdateJobStore.pushEvent(jobId, ev))
       : checkAllImagesForUpdates((ev) => imageUpdateJobStore.pushEvent(jobId, ev));
 
+    // The check itself refreshes the image-meta sidecar and the list cache.
     runner
-      .then(async (result) => {
-        imageUpdateJobStore.completeJob(jobId, result);
-        // Refresh the image-meta sidecar so deriveUpdateAvailable sees the new
-        // library digests, then notify so the container list cache recomputes.
-        try { await listContainerImages(); } catch { /* best-effort */ }
-        notifyContainerConfigWrite('*');
-      })
+      .then((result) => imageUpdateJobStore.completeJob(jobId, result))
       .catch((err) => imageUpdateJobStore.failJob(jobId, err));
 
     return { jobId, title };

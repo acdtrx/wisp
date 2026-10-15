@@ -48,6 +48,8 @@ function deriveUpdateAvailable(config, state, libraryDigests) {
 let containerListCache = null;
 let refreshPromise = null;
 let refreshQueued = false;
+/** Resolvers waiting for a refresh that starts after they asked. */
+let refreshWaiters = [];
 let eventsStream = null;
 const listChangeHandlers = new Set();
 
@@ -138,19 +140,34 @@ function fireListChange() {
   }
 }
 
-function refreshContainerListCache() {
-  if (refreshPromise) {
-    refreshQueued = true;
-    return;
-  }
+function runListRefresh() {
   refreshQueued = false;
+  const waiters = refreshWaiters;
+  refreshWaiters = [];
   refreshPromise = fetchContainerListFromDisk()
     .then((list) => { containerListCache = list; fireListChange(); })
     .catch((err) => { containerState.logger?.warn?.({ err: err.message }, '[containerManager] container list cache refresh failed'); })
     .finally(() => {
       refreshPromise = null;
-      if (refreshQueued) refreshContainerListCache();
+      for (const resolve of waiters) resolve();
+      if (refreshQueued) runListRefresh();
     });
+}
+
+/**
+ * Refresh the list cache. A call while a refresh is in flight queues exactly
+ * one follow-up. The returned promise resolves once a refresh that started
+ * after this call has finished (never rejects — failures are logged), so a
+ * caller that awaits it reads its own writes through `listContainers()`.
+ */
+export function refreshContainerListCache() {
+  const done = new Promise((resolve) => { refreshWaiters.push(resolve); });
+  if (refreshPromise) {
+    refreshQueued = true;
+  } else {
+    runListRefresh();
+  }
+  return done;
 }
 
 function invalidateContainerListCache() {

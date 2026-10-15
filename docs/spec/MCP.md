@@ -50,7 +50,7 @@ Deliberately a **subset** of the REST API (`lib/mcp/tools/containerAdminTools.js
 | `update_container_image` | `{ name, image? }` | Pull the given ref (or re-pull the current tag), point the container at it, restart if running. Locally-imported images skip the pull when present. |
 | `start_container` / `stop_container` / `restart_container` | `{ name }` | Lifecycle; same facade calls as the routes. |
 | `update_app_config` | `{ name, appConfig }` | Patch an app container's appConfig **restricted to that app's `agentWritableAppConfigFields`** (see below). Blocked fields are rejected with an error naming the writable set; everything else is carried forward verbatim from the stored config. Runs the standard `applyAppConfig` path: validate → regenerate derived config → live reload or `pendingRestart`. |
-| `check_image_updates` | — | Run the digest check now, return which containers have updates. |
+| `check_image_updates` | — | Run the digest check now, return which containers have updates. The check refreshes the image-meta sidecar and the container list before returning, so the answer matches the UI badge (which updates over SSE at the same moment). |
 
 ### Agent-writable app config
 
