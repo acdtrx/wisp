@@ -38,6 +38,19 @@ Before sending, `handleRouteError` runs `detail` through a redactor that scrubs 
 
 For non-vmManager errors (e.g. settings, host), routes use `sendError(reply, status, error, detail)`.
 
+Errors that never reach a route's own handling — raised by Fastify itself, or escaping a handler uncaught — go through the app-wide error handler (`handleUncaughtError`, installed with `setErrorHandler`), so they leave in the same shape:
+
+| Source | Status | Response |
+|--------|--------|----------|
+| Request schema violation (body / params / querystring) | **400** | `{ error: "Invalid request body", detail: "body/updateChannel must be equal to one of the allowed values" }` — `error` names the part that failed |
+| Other framework rejection (malformed JSON, unsupported content type, payload too large, …) | Fastify's status (400, 415, 413, …) | `{ error: <HTTP reason phrase>, detail: <Fastify's message> }` |
+| Uncaught error carrying a known app `code` | Mapped status | Same as `handleRouteError` |
+| Anything else (a bug, a response-serialization failure) | **500** | `{ error: "Internal error", detail: <redacted message> }`, full error logged at `error` |
+
+Framework 4xx messages are built from Wisp's own schemas and limits, so they pass through unredacted (the path redactor would mangle `body/<field>`); the generic 500's detail goes through the same redactor as `handleRouteError`.
+
+Unmatched routes answer `404 { error: "Not Found", detail: "Route <METHOD> <url> not found" }` under `/api` and `/ws`; in production every other unmatched path serves the SPA shell. The `/api` / `/ws` decision uses the same decoded path as the auth hook (see [AUTH.md](AUTH.md) § Route Protection), so `/%61pi/nope` is an API miss, not a client-side route.
+
 ## Error Code to HTTP Status Mapping
 
 The table below lists codes mapped by `handleRouteError` in `backend/src/lib/routeErrors.js` (vmManager, disks, USB routes, and other callers of that helper). Codes not listed default to **500** when passed to `handleRouteError`. **SMB:** `SMB_INVALID` and `SMB_MOUNT_UNAVAILABLE` are returned as **503** from settings/SMB routes via explicit handler logic (not only the `handleRouteError` switch).
@@ -141,7 +154,7 @@ VM names are validated before route handlers execute (via a `preHandler` hook). 
 
 ### Request body validation
 
-Routes use schema validation. Invalid request bodies are rejected by the framework with a 400 status code before the handler is reached.
+Routes use schema validation. Invalid request bodies (and params / querystrings) are rejected by the framework with **400** `{ error, detail }` before the handler is reached — see the error-handler table under HTTP error responses. 400 is deliberate, not 422: it is the framework's verdict on the request's shape, while 422 stays for a well-formed request the handler cannot carry out.
 
 ### Filename validation
 

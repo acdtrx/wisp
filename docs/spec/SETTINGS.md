@@ -12,7 +12,7 @@ Settings are split across the Host panel: **App Config** tab (application-wide c
 | Container storage path | string | Must start with `/` | Absolute root for container bundles (persisted in `wisp-config.json`; not edited in the App Config UI today). |
 | Backup local path | string | Must start with `/` | Absolute path for local backups. |
 | LAN discovery | boolean | — | Announce this server as a `_wisp._tcp` mDNS service and list other Wisp servers in the top bar. Default **on**. |
-| Advertised URL | string or null | Valid `http`/`https` URL, ≤ 251 bytes | Full URL other Wisp servers use to open this one (e.g. behind a reverse proxy). Empty/null → announce `http://<hostname>.local:<port>`. Invalid URLs are rejected with 422. |
+| Advertised URL | string or null | Valid `http`/`https` URL, ≤ 251 bytes | Full URL browsers and other Wisp servers use to open this one (e.g. behind a reverse proxy); its origin is also the OIDC callback origin. Empty/null → announce `http://<hostname>.local:<port>`, and OIDC uses the request origin. Invalid URLs are rejected with 422. |
 | Refresh interval | integer | 1–60 seconds | Interval (in seconds) at which the VM list SSE stream sends updates. |
 
 Settings are persisted in `config/wisp-config.json`. The config file is updated with a mutex to prevent concurrent writes.
@@ -47,7 +47,7 @@ Disk mount fields (adopted removable drive):
 
 ### Password masking
 
-When reading settings, SMB passwords are returned as `***`. When saving, if the password value is `***`, the original password is preserved (not overwritten).
+SMB passwords never leave the server: `GET /api/settings` and `GET /api/host/mounts` return `hasPassword` (boolean) in place of `password`, enforced by the shared mount response schema. When saving, an omitted or empty `password` preserves the stored one.
 
 ### Mount operations
 
@@ -81,6 +81,8 @@ Manual backups are never auto-pruned. The scheduler runs only while the backend 
 ## LAN Discovery (`discoveryEnabled`, `advertisedUrl`)
 
 Configured in **Host → App Config**. When enabled (default), the backend announces this instance on the LAN and lists discovered peer instances in the top bar. Saving settings re-announces immediately (no restart). Full behavior in [DISCOVERY.md](DISCOVERY.md).
+
+`advertisedUrl` is also the origin of the OIDC callback URL when set — see [AUTH.md](AUTH.md) § OIDC.
 
 ## Password Change
 

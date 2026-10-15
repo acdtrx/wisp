@@ -51,7 +51,7 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 | `assignments` | `object` | `{}` | Map of `"<type>:<workload-name>"` → `sectionId`. Missing entries (or entries pointing at a removed section) fall back to `Main`. `<type>` is `vm` or `container`. |
 | `homepage` | `object` | `{ groups: [], overrides: {}, manualTiles: [] }` | Home page overlay (see object shape below). Managed exclusively via `GET/POST/PATCH/PUT/DELETE /api/homepage`, never via `PATCH /api/settings`, and not part of `GET /api/settings` — the client reads it through the derived `home` events topic. |
 | `discoveryEnabled` | `boolean` | `true` | Announce this instance as a `_wisp._tcp` mDNS service and browse for peers (see [DISCOVERY.md](DISCOVERY.md)). |
-| `advertisedUrl` | `string \| null` | `null` | URL other Wisp instances use to open this one; must be `http`/`https`. `null` → announce `http://<hostname>.local:<port>`. |
+| `advertisedUrl` | `string \| null` | `null` | This instance's browser-facing URL; must be `http`/`https`. Other Wisp instances open it from the mDNS announcement, and its origin pins the OIDC callback URL ([AUTH.md](AUTH.md) § OIDC). `null` → announce `http://<hostname>.local:<port>`; OIDC falls back to the request origin. |
 | `updateChannel` | `"stable" \| "beta"` | `"stable"` | Which releases self-update offers this host: `stable` takes GitHub's latest release, `beta` also takes pre-releases. Anything other than `"beta"` normalizes to `"stable"`. Edited from **Host → Software** (the Wisp Update card), not the Settings page. See [UPDATES.md → Update channels](UPDATES.md#update-channels). |
 | `oidc` | `object` | `{ enabled: false, issuer: "", clientId: "", clientSecret: "" }` | Optional OpenID Connect SSO (see [AUTH.md](AUTH.md) § OIDC). `enabled` only holds when `issuer` (valid `http`/`https`), `clientId`, and `clientSecret` are all set. **`clientSecret` is a secret** — masked in the API as `hasClientSecret` (boolean), never returned. |
 | `trustedProxies` | `string[]` | `[]` | Extra reverse-proxy sources whose `X-Forwarded-Proto` / `X-Forwarded-For` Wisp honors (in addition to the always-trusted loopback). See **Reverse proxy / HTTPS** below. Not editable from the UI. |
@@ -109,7 +109,7 @@ SMB-only (`type: "smb"`):
 |-------|------|-------------|
 | `share` | `string` | SMB URL (e.g. `//server/share`) |
 | `username` | `string` | SMB user |
-| `password` | `string` | SMB password (API masks as `***`) |
+| `password` | `string` | SMB password. Never returned by the API — mounts carry `hasPassword` (boolean) instead |
 
 Disk-only (`type: "disk"`):
 
@@ -132,7 +132,7 @@ The file may hold secrets (SMB passwords, the OIDC `clientSecret`, API token has
 Wisp itself serves plain HTTP; TLS is expected to terminate at an optional reverse proxy (Caddy / nginx / Traefik). Wisp derives the request scheme from `X-Forwarded-Proto`, which in turn decides:
 
 - the session cookie's `Secure` flag, and
-- the scheme of generated absolute URLs — notably the **OIDC redirect/callback URI**. If Wisp thinks the request was `http` when the browser used `https`, the callback it sends to the identity provider is `http://…` and the provider rejects it as an invalid callback URL.
+- the scheme of generated absolute URLs — notably the **OIDC redirect/callback URI** when `advertisedUrl` is not set. If Wisp thinks the request was `http` when the browser used `https`, the callback it sends to the identity provider is `http://…` and the provider rejects it as an invalid callback URL. Setting `advertisedUrl` to the proxy's `https://` URL pins the callback regardless of forwarded headers.
 
 **HTTPS also enables the offline shell.** Service workers only run in a secure context (HTTPS, or `localhost`). Reached over plain HTTP at a LAN IP, `navigator.serviceWorker` is undefined, registration is skipped, and Wisp still works — but a launch made while the server is unreachable (VPN down, app installed to a phone's home screen) cannot render a "Can't reach Wisp" page, because the browser never gets the HTML. Put TLS in front of Wisp if you use it as an installed web app. See [ARCHITECTURE.md](../ARCHITECTURE.md#offline-shell-frontendpublicswjs).
 

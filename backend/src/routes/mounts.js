@@ -17,8 +17,9 @@ import { handleRouteError, sendError } from '../lib/routeErrors.js';
  * server. `mountForApi` (settings.js) replaces it with `hasPassword: boolean`
  * so the UI can render a "saved" affordance without holding a secret-shaped
  * placeholder string. Declaring the schema here means Fastify strips any
- * stray `password` even if a future change leaks it back into the model. */
-const mountResponseSchema = {
+ * stray `password` even if a future change leaks it back into the model.
+ * Shared with `GET/PATCH /api/settings`, which return the same mount list. */
+export const mountResponseSchema = {
   type: 'object',
   properties: {
     id: { type: 'string' },

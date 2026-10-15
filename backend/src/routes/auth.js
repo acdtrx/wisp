@@ -4,7 +4,7 @@ import { verifyPassword, signJWT, setPassword } from '../lib/auth.js';
 import { appendSetCookie, buildSetCookie } from '../lib/cookies.js';
 import { closeAllSSE } from '../lib/sse.js';
 import { closeAllWebSockets } from '../lib/wsTracking.js';
-import { getRawOidcConfig } from '../lib/settings.js';
+import { getRawOidcConfig, getSettings } from '../lib/settings.js';
 import { beginLogin, completeLogin } from '../lib/oidc.js';
 import { listApiTokens, createApiToken, revokeApiToken, API_TOKEN_SCOPES } from '../lib/apiTokens.js';
 import { isAuthRateLimited, recordFailedAuthAttempt, AUTH_RATE_WINDOW_SECONDS } from '../lib/loginRateLimit.js';
@@ -13,6 +13,7 @@ import { createAppError, handleRouteError } from '../lib/routeErrors.js';
 const SESSION_COOKIE = 'wisp_session';
 const CSRF_COOKIE = 'wisp_csrf';
 const SESSION_MAX_AGE_SECONDS = 86400;
+const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback';
 
 // `Secure` must reflect the actual request scheme. Browsers silently drop
 // Secure cookies received over plain HTTP for non-localhost origins — so
@@ -40,6 +41,24 @@ function clearSessionCookies(reply, request) {
   };
   appendSetCookie(reply, buildSetCookie(SESSION_COOKIE, '', { ...baseAttrs, httpOnly: true }));
   appendSetCookie(reply, buildSetCookie(CSRF_COOKIE, '', { ...baseAttrs, httpOnly: false }));
+}
+
+/**
+ * The OIDC callback URL — register exactly this as the redirect URI in the
+ * provider. Built from `advertisedUrl` (the configured browser-facing URL) when
+ * set, so no request header can steer it. Without one it falls back to the
+ * request origin: `request.protocol` honors X-Forwarded-Proto only from
+ * trusted proxies, and the Host header is whatever the browser sent. A forged
+ * Host can only come from a non-browser client, and a provider that
+ * exact-matches registered redirect URIs (OIDC Core requires it) rejects the
+ * resulting authorization request.
+ */
+async function oidcRedirectUri(request) {
+  const { advertisedUrl } = await getSettings();
+  if (advertisedUrl) return new URL(OIDC_CALLBACK_PATH, advertisedUrl).href;
+  const host = request.headers.host;
+  if (!host) return null;
+  return `${request.protocol}://${host}${OIDC_CALLBACK_PATH}`;
 }
 
 // Browser-facing 302. Set-Cookie headers (via reply.raw.appendHeader) already
@@ -259,17 +278,12 @@ export default async function authRoutes(fastify) {
         redirect(reply, '/login?sso=disabled');
         return;
       }
-      const host = request.headers.host;
-      if (!host) {
-        request.log.warn('OIDC login: request has no Host header');
+      const redirectUri = await oidcRedirectUri(request);
+      if (!redirectUri) {
+        request.log.warn('OIDC login: no advertisedUrl and the request has no Host header');
         redirect(reply, '/login?sso=error');
         return;
       }
-      // Derive the callback from the request origin. trustProxy (loopback) makes
-      // request.protocol honor X-Forwarded-Proto so this is the browser-facing
-      // URL even behind a TLS-terminating reverse proxy. Register this exact URL
-      // as the redirect URI in the provider.
-      const redirectUri = `${request.protocol}://${host}/api/auth/oidc/callback`;
       try {
         const { authorizationUrl } = await beginLogin({
           issuer: config.issuer,

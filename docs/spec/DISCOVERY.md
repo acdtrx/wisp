@@ -52,7 +52,7 @@ Frontend: `store/discoveryStore.js` subscribes via `createSSE`; `components/layo
 | Key | Default | Effect |
 |-----|---------|--------|
 | `discoveryEnabled` | `true` | Off: withdraw announcement, stop browsing, clear the peer list (peers' dropdowns drop this instance within seconds via the mDNS goodbye). |
-| `advertisedUrl` | `null` | Overrides TXT `url` for reverse-proxied instances. Validated as `http`/`https` URL (422 `INVALID_URL` otherwise). |
+| `advertisedUrl` | `null` | Overrides TXT `url` for reverse-proxied instances. Validated as `http`/`https` URL (422 `INVALID_URL` otherwise). Also pins the OIDC callback origin ([AUTH.md](AUTH.md) § OIDC). |
 
 Both live in `wisp-config.json` ([CONFIGURATION.md](CONFIGURATION.md)) and are edited in **Host → App Config**.
 

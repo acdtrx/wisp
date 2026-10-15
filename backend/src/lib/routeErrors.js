@@ -1,6 +1,7 @@
 /**
  * Centralized error handling for route handlers. All failures return { error: string, detail: string }.
  */
+import { STATUS_CODES } from 'node:http';
 
 /**
  * Create an app error with code, message, and optional raw detail (for route handlers that expect { code, message, raw }).
@@ -13,6 +14,11 @@ export function createAppError(code, message, raw) {
 }
 
 function errorCodeToStatus(code) {
+  return mappedErrorStatus(code) ?? 500;
+}
+
+/** HTTP status for a known app error code; null for codes this module doesn't map. */
+function mappedErrorStatus(code) {
   switch (code) {
     case 'BAD_MULTIPART_TOO_MANY_FILES':
       return 400;
@@ -147,7 +153,7 @@ function errorCodeToStatus(code) {
     case 'NO_ASSET':
       return 500;
     default:
-      return 500;
+      return null;
   }
 }
 
@@ -190,4 +196,41 @@ export function handleRouteError(err, reply, request) {
  */
 export function sendError(reply, status, error, detail) {
   reply.code(status).send({ error, detail: detail ?? error });
+}
+
+/**
+ * Fastify error handler (`app.setErrorHandler`): errors raised by the
+ * framework itself — schema validation, body parsing, payload limits — and
+ * errors that escape a route handler leave in the same `{ error, detail }`
+ * shape as handled ones. The status Fastify chose is kept (validation stays
+ * 400).
+ *
+ * Framework 4xx messages are generated from Wisp's own schemas and limits, so
+ * they pass through unredacted — the redactor would mangle validation paths
+ * like `body/updateChannel`. Anything else is an unexpected failure: known app
+ * codes take the normal `handleRouteError` mapping, unknown errors answer a
+ * generic 500 whose detail is redacted, with the full error in the log.
+ */
+export function handleUncaughtError(err, request, reply) {
+  if (err.validation) {
+    reply.code(400).send({
+      error: `Invalid request ${err.validationContext || 'input'}`,
+      detail: err.message,
+    });
+    return;
+  }
+  const status = err.statusCode;
+  if (Number.isInteger(status) && status >= 400 && status < 500) {
+    reply.code(status).send({ error: STATUS_CODES[status] || 'Bad request', detail: err.message });
+    return;
+  }
+  if (mappedErrorStatus(err.code) !== null) {
+    handleRouteError(err, reply, request);
+    return;
+  }
+  request.log.error({ err }, 'Unhandled route error');
+  reply.code(Number.isInteger(status) && status >= 500 && status < 600 ? status : 500).send({
+    error: 'Internal error',
+    detail: curateDetail(err.message ?? 'Unknown error'),
+  });
 }

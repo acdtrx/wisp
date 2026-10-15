@@ -228,9 +228,11 @@ export async function beginLogin({ issuer, clientId, redirectUri, scope = 'openi
   const codeChallenge = base64url(createHash('sha256').update(codeVerifier).digest());
 
   if (pending.size >= PENDING_MAX_ENTRIES) {
-    // Bounded — a flood of un-completed logins can't grow the map without limit.
-    // The sweep clears expired entries; until then, refuse new starts.
-    throw createAppError('OIDC_BUSY', 'Too many in-flight logins; try again shortly');
+    // Bounded, and a full table never refuses a start: the route is public, so
+    // refusing would let a flood of abandoned starts lock SSO out until the
+    // entries expire. Evict the oldest start instead (Map iterates in insertion
+    // order) — a flood can only fail a round trip that is in progress during it.
+    pending.delete(pending.keys().next().value);
   }
   pending.set(state, { nonce, codeVerifier, redirectUri, createdAt: Date.now() });
 

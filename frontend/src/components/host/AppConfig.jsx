@@ -139,12 +139,11 @@ export default function AppConfig() {
                   value={advertisedUrl}
                   onChange={(e) => setAdvertisedUrl(e.target.value)}
                   placeholder="http://myserver.local:8080"
-                  disabled={!discoveryEnabled}
-                  className="input-field font-mono placeholder:text-text-muted w-full max-w-md disabled:opacity-60"
+                  className="input-field font-mono placeholder:text-text-muted w-full max-w-md"
                 />
                 <p className="mt-1 text-[10px] text-text-muted">
-                  Full URL other Wisp servers use to open this one (e.g. behind a reverse proxy).
-                  Leave empty to announce http://&lt;hostname&gt;.local:&lt;port&gt;.
+                  Full URL browsers and other Wisp servers use to open this one (e.g. behind a reverse proxy).
+                  Also sets the SSO redirect URI. Leave empty to announce http://&lt;hostname&gt;.local:&lt;port&gt;.
                 </p>
               </div>
             </div>

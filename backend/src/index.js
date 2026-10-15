@@ -8,7 +8,8 @@ import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 
 import { loadRuntimeEnv } from './lib/loadRuntimeEnv.js';
-import { createAuthHook } from './lib/auth.js';
+import { createAuthHook, routePath } from './lib/auth.js';
+import { handleUncaughtError } from './lib/routeErrors.js';
 import { getConfigSync } from './lib/config.js';
 import { configure as configureVmManager, connect as connectLibvirt } from './lib/vmManager/index.js';
 import {
@@ -174,7 +175,7 @@ const CSP =
  * so a cached copy can never be wrong and pins for a year.
  */
 function applyShellCachePolicy(request, reply) {
-  const path = request.url.split('?')[0];
+  const path = routePath(request);
   if (path.startsWith('/api') || path.startsWith('/ws')) return;
 
   if (path === '/sw.js') {
@@ -209,13 +210,18 @@ if (!isDev) {
 // works on deep-link refresh. /api and /ws keep the JSON 404. In dev, vite
 // serves the SPA on :5173 and the backend stays a pure JSON API.
 app.setNotFoundHandler((request, reply) => {
-  if (indexHtml && !request.url.startsWith('/api') && !request.url.startsWith('/ws')) {
+  const path = routePath(request);
+  if (indexHtml && !path.startsWith('/api') && !path.startsWith('/ws')) {
     reply.type('text/html').send(indexHtml);
     return;
   }
   request.log.info({ method: request.method, url: redactToken(request.url) }, 'Route not found');
   reply.code(404).send({ error: 'Not Found', detail: `Route ${request.method} ${redactToken(request.url)} not found` });
 });
+
+// Framework errors (schema validation, body parsing) and anything a handler
+// lets escape answer in the same { error, detail } shape as handled errors.
+app.setErrorHandler(handleUncaughtError);
 
 if (isDev) {
   await app.register(cors, { origin: 'http://localhost:5173' });

@@ -5,7 +5,7 @@ All routes are prefixed with `/api/` (REST) or `/ws/` (WebSocket). All endpoints
 - **Session cookie** (the browser/SPA path) — the `wisp_session` cookie set by login. State-changing methods (`POST` / `PUT` / `PATCH` / `DELETE`) additionally require the `X-CSRF-Token` header to match the (non-HttpOnly) `wisp_csrf` cookie. Send `credentials: 'include'` on fetch requests so the browser carries the cookies cross-port in dev.
 - **Bearer API token** (the non-interactive path) — `Authorization: Bearer wisp_…` on `/api` routes only. No CSRF header needed. `read`-scoped tokens may only `GET`/`HEAD` (403 otherwise); `admin` tokens may use all methods. Tokens are rejected on `/ws/*` and on every `/api/auth/*` route. See [AUTH.md](AUTH.md) § API tokens.
 
-All error responses return `{ error: string, detail: string }`. See [ERROR-HANDLING.md](ERROR-HANDLING.md) for details.
+All error responses return `{ error: string, detail: string }` — including request-schema violations, which answer **400** `{ error: "Invalid request body", detail: "body/<field> …" }` (or `… params` / `… querystring`), and other framework rejections such as malformed JSON (400) or an unsupported content type (415). See [ERROR-HANDLING.md](ERROR-HANDLING.md) for details.
 
 ## Authentication
 
@@ -67,7 +67,7 @@ Tells the login page whether to show (and auto-redirect to) SSO. Secret-free.
 
 #### GET /api/auth/oidc/login
 
-Begins the flow: generates state + nonce + PKCE, then **302**-redirects the browser to the provider authorization endpoint. The `redirect_uri` is derived from the request origin (`<scheme>://<host>/api/auth/oidc/callback`; `X-Forwarded-Proto` honored via loopback `trustProxy`). On any failure — SSO disabled, missing `Host`, unreachable/invalid provider — it **302**s to `/login?sso=<disabled|error>` instead of dead-ending.
+Begins the flow: generates state + nonce + PKCE, then **302**-redirects the browser to the provider authorization endpoint. The `redirect_uri` is `<advertisedUrl origin>/api/auth/oidc/callback` when the `advertisedUrl` setting is set; otherwise it falls back to the request origin (`<scheme>://<Host>/api/auth/oidc/callback`; `X-Forwarded-Proto` honored only from trusted proxies). See [AUTH.md](AUTH.md) § OIDC. On any failure — SSO disabled, no `advertisedUrl` and no `Host`, unreachable/invalid provider — it **302**s to `/login?sso=<disabled|error>` instead of dead-ending. A start never fails for being one too many: the in-memory table of pending logins is capped at 1000 and evicts the oldest start.
 
 - **Auth:** Public
 - **302:** `Location: <provider authorize URL>` on success; `Location: /login?sso=error` (or `?sso=disabled`) on failure
@@ -1157,7 +1157,7 @@ Get application settings.
 }
 ```
 
-The shipped `wisp-config.json.example` has empty `mounts`. Mounts are added via **Host → Host Mgmt → Storage** (row-scoped **POST**/**PATCH**/**DELETE** on `/api/host/mounts`). SMB passwords are masked as `***` in the response. The **OIDC client secret is never returned** — GET exposes `oidc.hasClientSecret` (boolean) only.
+The shipped `wisp-config.json.example` has empty `mounts`. Mounts are added via **Host → Host Mgmt → Storage** (row-scoped **POST**/**PATCH**/**DELETE** on `/api/host/mounts`). SMB passwords are never returned — each SMB mount carries `hasPassword` (boolean) instead, same as `GET /api/host/mounts`. The **OIDC client secret is never returned** — GET exposes `oidc.hasClientSecret` (boolean) only.
 
 ### PATCH /api/settings
 
@@ -1175,7 +1175,7 @@ Update settings. Partial update — only include fields to change.
 
 ### GET /api/host/mounts
 
-List configured mounts (SMB + disk). SMB passwords masked as `***`.
+List configured mounts (SMB + disk). SMB passwords are never returned; SMB entries carry `hasPassword` (boolean).
 
 - **200:** Array of mount objects — see [CONFIGURATION.md](CONFIGURATION.md) for field shape.
 
@@ -1189,7 +1189,7 @@ Append one mount. **Body:** `{ type: "smb" | "disk", label?, mountPath, autoMoun
 
 ### PATCH /api/host/mounts/:id
 
-Update one mount by **`id`**. **Body:** partial fields (`label`, `mountPath`, `autoMount`, and type-specific: `share`/`username`/`password` for SMB, `fsType`/`readOnly` for disk). Password **`***`** preserves the stored password. `type` and `uuid` cannot be changed after creation.
+Update one mount by **`id`**. **Body:** partial fields (`label`, `mountPath`, `autoMount`, and type-specific: `share`/`username`/`password` for SMB, `fsType`/`readOnly` for disk). An omitted or empty `password` preserves the stored password. `type` and `uuid` cannot be changed after creation.
 
 - **200:** Array of mounts after the update | **404:** mount not found
 

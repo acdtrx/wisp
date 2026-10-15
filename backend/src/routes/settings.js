@@ -1,23 +1,7 @@
 import { getSettings, updateSettings } from '../lib/settings.js';
 import { sendError, handleRouteError } from '../lib/routeErrors.js';
 import { refreshWispAnnouncement } from '../lib/wispDiscovery.js';
-
-const mountResponseSchema = {
-  type: 'object',
-  properties: {
-    id: { type: 'string' },
-    type: { type: 'string' },
-    label: { type: 'string' },
-    mountPath: { type: 'string' },
-    autoMount: { type: 'boolean' },
-    share: { type: 'string' },
-    username: { type: 'string' },
-    password: { type: 'string' },
-    uuid: { type: 'string' },
-    fsType: { type: 'string' },
-    readOnly: { type: 'boolean' },
-  },
-};
+import { mountResponseSchema } from './mounts.js';
 
 const backupScheduleSchema = {
   type: 'object',

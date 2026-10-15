@@ -154,14 +154,25 @@ const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const READ_ONLY_METHODS = new Set(['GET', 'HEAD']);
 
 /**
- * The path every auth prefix check keys on. The router decodes percent-encoded
- * characters before matching, so the raw URL can disagree with the route that
- * actually runs (`/%61pi/vms` dispatches to `/api/vms`). When a route matched,
- * its registered pattern is authoritative; the raw URL is used only for
- * unmatched requests, which reach the 404 / SPA-shell handler and no route.
+ * The path every prefix check keys on — the auth hook here, and the 404 /
+ * SPA-shell handler and cache policy in index.js. The router decodes
+ * percent-encoded characters before matching, so the raw URL can disagree with
+ * the route that actually runs (`/%61pi/vms` dispatches to `/api/vms`). When a
+ * route matched, its registered pattern is authoritative; an unmatched request
+ * gets its decoded path without the query string, so `/%61pi/nope` is treated
+ * as the `/api` miss it reads as (auth required, JSON 404) rather than as a
+ * client-side route. A malformed escape never reaches here — the router answers
+ * 400 first — but falls back to the raw path regardless.
  */
-function routePath(request) {
-  return request.routeOptions?.url ?? request.url;
+export function routePath(request) {
+  const matched = request.routeOptions?.url;
+  if (matched) return matched;
+  const raw = request.url.split('?')[0];
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 function timingSafeEqualString(a, b) {

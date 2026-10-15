@@ -47,10 +47,13 @@ export default function OidcSettings() {
     );
   }, [oidc, enabled, issuer, clientId, clientSecret]);
 
-  // Full URL to register as the redirect/callback in the provider. Derived from
-  // how the admin is reaching Wisp right now — the same origin the backend sees.
-  const redirectUri =
-    typeof window !== 'undefined' ? `${window.location.origin}/api/auth/oidc/callback` : '';
+  // Full URL to register as the redirect/callback in the provider — the same
+  // one the backend sends: the advertised URL's origin when set, else the
+  // origin the admin is reaching Wisp on right now.
+  const advertisedUrl = settings?.advertisedUrl;
+  const redirectUri = advertisedUrl
+    ? new URL('/api/auth/oidc/callback', advertisedUrl).href
+    : `${window.location.origin}/api/auth/oidc/callback`;
 
   const copyRedirect = async () => {
     try {
@@ -175,6 +178,7 @@ export default function OidcSettings() {
           </div>
           <p className="mt-1 text-[10px] text-text-muted">
             Register this exact URL as the allowed redirect/callback in your provider.
+            {!advertisedUrl && ' Set the Advertised URL above to pin it when Wisp is reached under more than one address.'}
           </p>
         </div>
       </div>

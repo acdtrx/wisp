@@ -630,9 +630,9 @@ Same as the former Backups panel: table of backups with restore/delete; descript
 
 ### Tab: App Config
 
-- **General** — Server display name, VM storage path, image library path, LAN discovery, advertised URL. Save button when dirty.
+- **General** — Server display name, VM storage path, image library path, LAN discovery, advertised URL (editable whether or not discovery is on — it also pins the SSO redirect URI). Save button when dirty.
 - **Password** — Change application password (current + new).
-- **Single sign-on (SSO)** — Its own card (`OidcSettings.jsx`): Enable toggle, Issuer URL, Client ID, Client secret (write-only; placeholder shows "saved — leave blank to keep" once one is stored), and a read-only **Redirect URI** field (derived from the current origin) with a copy button to register in the provider. Save validates the config; enabling requires issuer + client ID + a secret on file (422 `INVALID_OIDC` otherwise). See [AUTH.md](AUTH.md) § OIDC.
+- **Single sign-on (SSO)** — Its own card (`OidcSettings.jsx`): Enable toggle, Issuer URL, Client ID, Client secret (write-only; placeholder shows "saved — leave blank to keep" once one is stored), and a read-only **Redirect URI** field (the advertised URL's origin when set, else the current origin — the same URL the backend sends) with a copy button to register in the provider. Save validates the config; enabling requires issuer + client ID + a secret on file (422 `INVALID_OIDC` otherwise). See [AUTH.md](AUTH.md) § OIDC.
 - **API tokens** — Its own card (`ApiTokensSettings.jsx`, `KeyRound` **`titleIcon`**): table of tokens (Label, Scope badge — `admin` warning-tinted / `read-only` neutral —, Created, Actions) with shared DataTable chrome. Header **`Plus`+`KeyRound`** opens an **inline create row** (label input, scope select, confirm/cancel icons — same pattern as Bridge create). After create, a one-time accent-soft strip shows the plaintext token with a copy button and a dismiss `X` ("copy it now, it won't be shown again"). Row **Revoke** (`Trash2`) opens a `ConfirmDialog`. Row-scoped API (`GET/POST/DELETE /api/auth/tokens`). See [AUTH.md](AUTH.md) § API tokens.
 
 ---
