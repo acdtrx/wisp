@@ -51,7 +51,10 @@ function buildEnvPatch(form, row) {
 
   const delta = {};
   if (form.secret !== row.secret) delta.secret = form.secret;
-  if (form.secret ? form.valueTouched : form.value !== row.value) delta.value = form.value;
+  /* An empty field on a stored secret means "keep what's on file" — also after
+   * typing and clearing it again, so it never sends '' and wipes the secret. */
+  const keepsStoredSecret = row.secret && row.isSet && form.value === '';
+  if (form.secret ? form.valueTouched && !keepsStoredSecret : form.value !== row.value) delta.value = form.value;
   return Object.keys(delta).length > 0 ? { [key]: delta } : {};
 }
 
