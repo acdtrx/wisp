@@ -2,7 +2,7 @@
  * VM backup and restore: createBackup, listBackups, restoreBackup.
  * Disk images and cloud-init ISO are streamed gzip to destination (.gz); config files stay uncompressed.
  */
-import { copyFile, mkdir, writeFile, readdir, readFile, access, constants, stat, rm, realpath } from 'node:fs/promises';
+import { copyFile, mkdir, writeFile, readdir, readFile, access, constants, stat, rm, realpath, chmod } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createGzip, createGunzip } from 'node:zlib';
@@ -570,19 +570,31 @@ async function copyBackupPayload(backupPath, config, destBase, { onProgress } = 
   await copyNvram(join(backupPath, 'VARS.fd'), join(destBase, 'VARS.fd'), { allowMissing: true });
   done += 1;
 
+  // Both cloud-init files carry the password hash and land in the group-readable
+  // per-VM dir, so they get the same 0600 the live write paths apply. The gunzip
+  // path creates the ISO with the default mode, and a JSON copied from an older
+  // backup keeps whatever mode it had — chmod after placing either one.
   emit('cloudinit', 'Restoring cloud-init');
+  const cloudInitIsoDest = join(destBase, 'cloud-init.iso');
+  let cloudInitIsoRestored = false;
   try {
-    await copyOrGunzip(backupPath, 'cloud-init.iso', join(destBase, 'cloud-init.iso'));
+    await copyOrGunzip(backupPath, 'cloud-init.iso', cloudInitIsoDest);
+    cloudInitIsoRestored = true;
   } catch {
     /* optional — cloud-init ISO not in backup */
   }
+  if (cloudInitIsoRestored) await chmod(cloudInitIsoDest, 0o600);
   const cloudInitJsonSrc = join(backupPath, 'cloud-init.json');
+  const cloudInitJsonDest = join(destBase, 'cloud-init.json');
+  let cloudInitJsonRestored = false;
   try {
     await access(cloudInitJsonSrc, constants.R_OK);
-    await copyWithProgress(cloudInitJsonSrc, join(destBase, 'cloud-init.json'), () => {});
+    await copyWithProgress(cloudInitJsonSrc, cloudInitJsonDest, () => {});
+    cloudInitJsonRestored = true;
   } catch {
     /* optional — cloud-init JSON not in backup */
   }
+  if (cloudInitJsonRestored) await chmod(cloudInitJsonDest, 0o600);
   done += 1;
   emit('cloudinit', 'Cloud-init');
 

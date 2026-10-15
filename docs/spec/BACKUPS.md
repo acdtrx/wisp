@@ -90,7 +90,7 @@ A configured network backup path that is not mounted is omitted from the scan (s
 
 1. Read `domain.xml` and, when present, `manifest.json` from the backup
 2. Decompress and copy disk images to the new VM's directory (`<vmsPath>/<newVmName>/`)
-3. Copy NVRAM and cloud-init files
+3. Copy NVRAM and cloud-init files; the restored `cloud-init.iso` and `cloud-init.json` are chmodded `0600` (they carry the password hash — see [CLOUD-INIT.md](CLOUD-INIT.md) § Password hashing). Restore-in-place uses the same copy step.
 4. Rewrite domain XML: new name, new UUID, new MAC addresses, and **path updates** so every file reference under the original VM directory (including block disks, CD-ROM paths such as cloud-init, UEFI NVRAM, and optional loader paths under that directory) points at `<vmsPath>/<newVmName>/`. This uses **`manifest.vmBasePath`** when available (older backups fall back to the backed-up VM name or inferred paths). Disk images that lived outside the VM directory (e.g. image library) are still remapped using the same per-disk logic as before.
 5. Define the new domain with `DomainDefineXML`
 

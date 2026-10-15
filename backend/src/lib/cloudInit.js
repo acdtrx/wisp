@@ -14,10 +14,10 @@
  */
 import { execFile as execFileCb, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { writeFile, readFile, unlink, mkdir, rmdir, access, chmod, constants } from 'node:fs/promises';
+import { writeFile, readFile, unlink, mkdir, mkdtemp, rmdir, access, chmod, constants } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { randomBytes, createHash } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 import { dump as yamlDump } from 'js-yaml';
 
@@ -66,9 +66,10 @@ export async function generateCloudInitISO(vmName, config, opts = {}) {
   const vmBasePath = getVMBasePath(vmName);
   await mkdir(vmBasePath, { recursive: true });
   const isoPath = join(vmBasePath, 'cloud-init.iso');
-  const tmpDir = join(tmpdir(), `wisp-ci-${randomBytes(6).toString('hex')}`);
-
-  await mkdir(tmpDir, { recursive: true });
+  // user-data carries the password hash (and SSH keys) while the ISO is built.
+  // mkdtemp creates the directory 0700 with an unpredictable name, so nothing
+  // else on the host can list or read it, nor pre-create it in shared /tmp.
+  const tmpDir = await mkdtemp(join(tmpdir(), 'wisp-ci-'));
 
   try {
     const hostname = config.hostname || vmName;
@@ -168,7 +169,7 @@ export async function generateCloudInitISO(vmName, config, opts = {}) {
     );
 
     await writeFile(join(tmpDir, 'meta-data'), metaData);
-    await writeFile(join(tmpDir, 'user-data'), userData);
+    await writeFile(join(tmpDir, 'user-data'), userData, { mode: 0o600 });
 
     // Unlink any existing ISO before regenerating. libvirt's dynamic_ownership
     // chowns the file to libvirt-qemu:kvm when the VM starts and only chowns it
@@ -233,7 +234,11 @@ function configPath(vmName) {
 export async function saveCloudInitConfig(vmName, config) {
   const basePath = getVMBasePath(vmName);
   await mkdir(basePath, { recursive: true });
-  await writeFile(configPath(vmName), JSON.stringify(config, null, 2));
+  // Holds `passwordHash` and sits in the group-readable per-VM dir (wisp:libvirt
+  // 0775) — same exposure as the ISO, same 0600. `mode` only applies when the file
+  // is created, so chmod also tightens a file that already exists.
+  await writeFile(configPath(vmName), JSON.stringify(config, null, 2), { mode: 0o600 });
+  await chmod(configPath(vmName), 0o600);
 }
 
 export async function loadCloudInitConfig(vmName) {
