@@ -288,6 +288,10 @@ export async function deleteMountData() {
   throw noContainerd();
 }
 
+export async function deleteRemovedMountData() {
+  throw noContainerd();
+}
+
 export const MOUNT_FILE_CONTENT_MAX_BYTES = 512 * 1024;
 
 export async function getMountFileTextContent() {

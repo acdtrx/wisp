@@ -12,6 +12,7 @@
 import {
   createContainer,
   updateContainerConfig,
+  deleteRemovedMountData,
   deleteContainer,
   getContainerConfig,
   getTaskState,
@@ -225,6 +226,12 @@ export async function createAppContainer(spec, onStep) {
  * so leaving the rejected one on disk would make the next restart/reboot
  * boot the container into a config its own app already refused.
  *
+ * Mount data follows the app's intent, never a name diff: mounts the module
+ * reports as renamed (`getMountRenames`) keep their data under the new name,
+ * and the data of Local mounts the new config drops is deleted only once the
+ * new config stands — after the reload accepted it, or when it will apply on
+ * the next start — so a rejected reload still finds the data it rolls back to.
+ *
  * Returns `{ requiresRestart, reloaded? }`.
  */
 export async function applyAppConfig(name, newAppConfig) {
@@ -247,12 +254,15 @@ export async function applyAppConfig(name, newAppConfig) {
   const nextMounts = Array.isArray(derived.mounts) ? derived.mounts : [];
   const mountLayoutChanged = mountLayoutSig(oldMounts) !== mountLayoutSig(nextMounts);
   const envChanged = envSig(config.env) !== envSig(derived.env);
+  const mountRenames = appModule.getMountRenames?.(newAppConfig, oldAppConfig) ?? {};
+  const hasMountRenames = Object.keys(mountRenames).length > 0;
 
   const updateChanges = {
     env: derived.env || {},
     mounts: nextMounts,
     metadata: { ...config.metadata, appConfig: finalAppConfig },
   };
+  if (hasMountRenames) updateChanges.mountRenames = mountRenames;
   if (Array.isArray(derived.devices)) {
     updateChanges.devices = derived.devices;
   }
@@ -263,11 +273,12 @@ export async function applyAppConfig(name, newAppConfig) {
   const willReload = isRunning && !!reloadCmd && !envChanged;
 
   // Snapshot every local file mount's backing content before persisting: the
-  // update below overwrites files named in mountContents and deletes the
-  // backing file of any file mount whose row disappears from the list. Only
-  // needed when a reload will judge the new state — every other path keeps
-  // the persisted config unconditionally. (Directory mounts have no capture
-  // primitive; no app module derives a local dir mount from appConfig.)
+  // update below overwrites files named in mountContents. Only needed when a
+  // reload will judge the new state — every other path keeps the persisted
+  // config unconditionally. Directory mounts need no snapshot: persisting
+  // never touches their contents (renames move whole directories and are
+  // reversed by the rollback; dropped mounts keep their data until the new
+  // config stands).
   let prevFileContents = null;
   if (willReload) {
     prevFileContents = {};
@@ -281,7 +292,7 @@ export async function applyAppConfig(name, newAppConfig) {
     }
   }
 
-  await updateContainerConfig(name, updateChanges);
+  const { removedMounts } = await updateContainerConfig(name, updateChanges);
 
   if (derived.mountContents && Object.keys(derived.mountContents).length) {
     for (const [mountName, content] of Object.entries(derived.mountContents)) {
@@ -289,8 +300,16 @@ export async function applyAppConfig(name, newAppConfig) {
     }
   }
 
+  /** The new config stands: drop the data of Local mounts it no longer has. */
+  const settle = async (result) => {
+    for (const mountName of removedMounts) {
+      await deleteRemovedMountData(name, mountName);
+    }
+    return result;
+  };
+
   if (!isRunning) {
-    return { requiresRestart: false };
+    return settle({ requiresRestart: false });
   }
   // Skip the reload outright when the env changed. It cannot apply — the OCI process env is
   // fixed at task start — and attempting it is worse than useless: the persist above has
@@ -301,7 +320,7 @@ export async function applyAppConfig(name, newAppConfig) {
   // applies the new env and the new mount contents together — the only order that works.
   if (!reloadCmd || envChanged) {
     await updateContainerConfig(name, { pendingRestart: true });
-    return { requiresRestart: true };
+    return settle({ requiresRestart: true });
   }
 
   const appWantsRestart = !!appModule.requiresRestartForChange?.(oldAppConfig, validated);
@@ -315,23 +334,30 @@ export async function applyAppConfig(name, newAppConfig) {
     if (stillNeedsRestart) {
       await updateContainerConfig(name, { pendingRestart: true });
     }
-    return { requiresRestart: stillNeedsRestart, reloaded: true };
   } catch (err) {
     if (err.code === 'APP_RELOAD_FAILED') {
       // The app rejected the new state and kept serving its previous config
       // (reload commands judge-then-apply). Restore the persisted config and
-      // file contents to match; restoring the old mounts list also deletes
-      // backing files the persist created for rejected-state-only mounts.
+      // file contents to match: renamed mounts move back, and the backing
+      // stores the persist created for rejected-state-only mounts are removed.
       try {
         const rollbackChanges = {
           env: config.env || {},
           mounts: oldMounts,
           metadata: config.metadata,
         };
+        if (hasMountRenames) {
+          rollbackChanges.mountRenames = Object.fromEntries(
+            Object.entries(mountRenames).map(([from, to]) => [to, from]),
+          );
+        }
         if (Array.isArray(derived.devices)) {
           rollbackChanges.devices = Array.isArray(config.devices) ? config.devices : [];
         }
-        await updateContainerConfig(name, rollbackChanges);
+        const rolledBack = await updateContainerConfig(name, rollbackChanges);
+        for (const mountName of rolledBack.removedMounts) {
+          await deleteRemovedMountData(name, mountName);
+        }
         for (const [mountName, content] of Object.entries(prevFileContents)) {
           await putMountFileTextContent(name, mountName, content);
         }
@@ -344,8 +370,9 @@ export async function applyAppConfig(name, newAppConfig) {
     // Reload exec failed for non-app-related reason (e.g. command not found in
     // image). Surface as pendingRestart instead of bubbling the exec error.
     await updateContainerConfig(name, { pendingRestart: true });
-    return { requiresRestart: true };
+    return settle({ requiresRestart: true });
   }
+  return settle({ requiresRestart: stillNeedsRestart, reloaded: true });
 }
 
 /**

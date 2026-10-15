@@ -107,6 +107,7 @@ export {
   uploadMountZipStream,
   initMountContent,
   deleteMountData,
+  deleteRemovedMountData,
   MOUNT_FILE_CONTENT_MAX_BYTES,
   getMountFileTextContent,
   putMountFileTextContent,

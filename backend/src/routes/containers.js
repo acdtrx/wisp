@@ -12,7 +12,7 @@ import {
   getContainerStats,
   listContainerRuns, getContainerRunLogs, streamContainerRunLogs, resolveRunId,
   createRunLogReadStream,
-  uploadMountFileStream, uploadMountZipStream, initMountContent, deleteMountData,
+  uploadMountFileStream, uploadMountZipStream, initMountContent, deleteMountData, deleteRemovedMountData,
   getMountFileTextContent, putMountFileTextContent,
   listContainerImages, deleteContainerImage,
   checkAllImagesForUpdates, checkSingleImageForUpdates, getImageUpdateStatus,
@@ -353,7 +353,13 @@ export default async function containerRoutes(fastify) {
         );
       }
 
-      const result = await updateContainerConfig(workingName, rest);
+      const { removedMounts, ...result } = await updateContainerConfig(workingName, rest);
+      // A generic PATCH that drops a Local mount from `mounts` deletes its data —
+      // the same contract as DELETE /mounts/:name. The manager only reports it;
+      // deleting is this caller's explicit decision (app flows decide their own).
+      for (const mountName of removedMounts) {
+        await deleteRemovedMountData(workingName, mountName);
+      }
       // Metadata-only flips don't fire a network-change event — call the
       // reconciler imperatively when localDns toggles. Same shape as the VM
       // PATCH handler in routes/vms.js.

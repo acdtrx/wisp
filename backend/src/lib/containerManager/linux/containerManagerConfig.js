@@ -9,7 +9,7 @@ import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { registerAllContainerServices } from './containerManagerServices.js';
 import { validateAndNormalizeMounts, ensureMissingMountArtifacts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';
-import { deleteMountBackingStore } from './containerManagerMountsContent.js';
+import { renameMountBackingStore } from './containerManagerMountsContent.js';
 import { resolveMount } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
@@ -106,14 +106,94 @@ function networkMacOrInterfaceChanged(prev, next) {
 }
 
 /**
- * Partially update a container's config. Returns { requiresRestart: boolean }.
+ * Validate `mountRenames` ({ oldName: newName }) against the mount list being
+ * replaced and its replacement. A rename says "this mount is the same one under
+ * a new name": `oldName` must be a current mount, `newName` a mount of the same
+ * type in the new list that isn't a current mount (swaps and chains need two
+ * saves). The old name may reappear in the new list as a fresh mount.
+ * Returns [[prevEntry, nextEntry], …].
+ */
+function resolveMountRenames(mountRenames, prevMounts, nextMounts) {
+  if (mountRenames == null) return [];
+  if (typeof mountRenames !== 'object' || Array.isArray(mountRenames)) {
+    throw containerError('CONFIG_ERROR', 'mountRenames must be an object of { oldName: newName }');
+  }
+  const prevByName = new Map(prevMounts.map((m) => [m.name, m]));
+  const nextByName = new Map(nextMounts.map((m) => [m.name, m]));
+  const targets = new Set();
+  const pairs = [];
+  for (const [from, to] of Object.entries(mountRenames)) {
+    if (typeof to !== 'string' || !to || to === from) {
+      throw containerError('CONFIG_ERROR', `mountRenames["${from}"] must name a different mount`);
+    }
+    const prev = prevByName.get(from);
+    if (!prev) throw containerError('CONFIG_ERROR', `mountRenames: no current mount named "${from}"`);
+    const next = nextByName.get(to);
+    if (!next) throw containerError('CONFIG_ERROR', `mountRenames: "${to}" is not in the new mount list`);
+    if (prevByName.has(to)) {
+      throw containerError(
+        'CONFIG_ERROR',
+        `Cannot rename mount "${from}" to "${to}": a mount named "${to}" already exists — remove or rename it in a separate save first`,
+      );
+    }
+    if (targets.has(to)) throw containerError('CONFIG_ERROR', `mountRenames: "${to}" is the target of more than one rename`);
+    if (prev.type !== next.type) {
+      throw containerError('CONFIG_ERROR', `Cannot rename mount "${from}" to "${to}": type changes from ${prev.type} to ${next.type}`);
+    }
+    targets.add(to);
+    pairs.push([prev, next]);
+  }
+  return pairs;
+}
+
+/**
+ * Move the backing store of every renamed Local mount, then persist the config.
+ * Local data lives at files/<name>; a Storage-sourced or tmpfs mount's name is
+ * only a config key. If a move or the write fails, the moves already done are
+ * reversed so disk and container.json keep agreeing.
+ */
+async function moveRenamedMountsAndWrite(name, renamePairs, config) {
+  const moved = [];
+  try {
+    for (const [prev, next] of renamePairs) {
+      if (prev.sourceId || prev.type === 'tmpfs') continue;
+      if (await renameMountBackingStore(name, prev.name, next.name)) moved.push([prev.name, next.name]);
+    }
+    await writeContainerConfig(name, config);
+  } catch (err) {
+    for (const [from, to] of moved.reverse()) {
+      try {
+        await renameMountBackingStore(name, to, from);
+      } catch {
+        /* best effort — the original error is the one the caller needs */
+      }
+    }
+    throw err;
+  }
+}
+
+/**
+ * Partially update a container's config. Returns { requiresRestart, removedMounts }.
+ *
+ * `mounts` replaces the mount list. It never deletes mount data: a Local mount
+ * that leaves the list keeps files/<name> on disk and is reported in
+ * `removedMounts`; the caller deletes that data explicitly with
+ * `deleteRemovedMountData` when that is what it means. `mountRenames`
+ * ({ oldName: newName }, only alongside `mounts`) marks entries of the new list
+ * as renamed current mounts — their Local data moves to the new name.
  */
 export async function updateContainerConfig(name, changes) {
+  if ('mountRenames' in changes && !('mounts' in changes)) {
+    throw containerError('CONFIG_ERROR', 'mountRenames is only valid together with mounts');
+  }
   let config = await readContainerConfig(name);
 
   let requiresRestart = false;
   /** @type {{ type: string, name: string, containerPath: string, readonly: boolean }[] | null} */
   let mountsPersisted = null;
+  let renamePairs = [];
+  /** Local mounts that left the list; their files/<name> is still on disk. */
+  let removedMounts = [];
   const task = await getTaskState(name);
   const isRunning = task && (task.status === 'RUNNING' || task.status === 'PAUSED');
 
@@ -124,7 +204,7 @@ export async function updateContainerConfig(name, changes) {
 
   for (const [key, value] of Object.entries(changes)) {
     if (key === 'name' || key === 'createdAt' || key === 'state') continue;
-    if (key === 'envPatch') continue;
+    if (key === 'envPatch' || key === 'mountRenames') continue;
     /** Server-managed — never writable via PATCH. */
     if (key === 'imageDigest' || key === 'imagePulledAt'
       || key === 'updateAvailable') continue;
@@ -201,14 +281,14 @@ export async function updateContainerConfig(name, changes) {
     if (key === 'mounts') {
       const prevMounts = Array.isArray(config.mounts) ? [...config.mounts] : [];
       const normalized = validateAndNormalizeMounts(value, resolveMount);
+      renamePairs = resolveMountRenames(changes.mountRenames, prevMounts, normalized);
+      const renamedFrom = new Set(renamePairs.map(([prev]) => prev.name));
       const nextNames = new Set(normalized.map((m) => m.name));
-      for (const m of prevMounts) {
-        if (!nextNames.has(m.name) && !m.sourceId && m.type !== 'tmpfs') {
-          /* Only remove local backing stores; storage-sourced entries point at user data we must not touch.
-           * tmpfs has no on-disk artifact. */
-          await deleteMountBackingStore(name, m);
-        }
-      }
+      /* Storage-sourced entries point at user data outside the container dir and tmpfs has no
+       * on-disk artifact — only Local mounts leave data behind. */
+      removedMounts = prevMounts
+        .filter((m) => !nextNames.has(m.name) && !renamedFrom.has(m.name) && !m.sourceId && m.type !== 'tmpfs')
+        .map((m) => m.name);
       config.mounts = normalized;
       mountsPersisted = normalized;
       if (isRunning && RESTART_FIELDS.has(key)) requiresRestart = true;
@@ -234,9 +314,9 @@ export async function updateContainerConfig(name, changes) {
   }
 
   if (requiresRestart) config.pendingRestart = true;
-  await writeContainerConfig(name, config);
+  await moveRenamedMountsAndWrite(name, renamePairs, config);
   if (mountsPersisted) {
     await ensureMissingMountArtifacts(name, mountsPersisted);
   }
-  return { requiresRestart };
+  return { requiresRestart, removedMounts };
 }

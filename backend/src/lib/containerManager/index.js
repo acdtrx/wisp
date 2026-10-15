@@ -86,6 +86,7 @@ export const uploadMountFileStream = impl.uploadMountFileStream;
 export const uploadMountZipStream = impl.uploadMountZipStream;
 export const initMountContent = impl.initMountContent;
 export const deleteMountData = impl.deleteMountData;
+export const deleteRemovedMountData = impl.deleteRemovedMountData;
 export const MOUNT_FILE_CONTENT_MAX_BYTES = impl.MOUNT_FILE_CONTENT_MAX_BYTES;
 export const getMountFileTextContent = impl.getMountFileTextContent;
 export const putMountFileTextContent = impl.putMountFileTextContent;

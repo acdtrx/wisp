@@ -1,9 +1,9 @@
 /**
- * Backing store for container mounts under files/<mountName>: upload, zip extract, init, delete.
+ * Backing store for container mounts under files/<mountName>: upload, zip extract, init, rename, delete.
  */
 import { join, resolve } from 'node:path';
 import { createWriteStream } from 'node:fs';
-import { mkdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { execFile as execFileCb } from 'node:child_process';
 import { TextDecoder, TextEncoder } from 'node:util';
@@ -211,6 +211,63 @@ export async function deleteMountBackingStore(containerName, mountEntry) {
   }
   const p = join(getContainerFilesDir(containerName), mountEntry.name);
   await rm(p, { recursive: true, force: true });
+}
+
+/**
+ * Delete the backing store of a mount that has already left `config.mounts` —
+ * the explicit second step after `updateContainerConfig` reports it in
+ * `removedMounts`. Replacing the mount list never deletes data by itself, so a
+ * caller that only meant to rearrange mounts can't destroy any by accident.
+ * Refuses while the name is still configured: a live mount's data goes through
+ * `removeContainerMount` / `deleteMountData` instead.
+ */
+export async function deleteRemovedMountData(containerName, mountName) {
+  const config = await loadContainerJson(containerName);
+  if (findMount(config, mountName)) {
+    throw containerError('CONFIG_ERROR', `Mount "${mountName}" is still configured — remove it from the mount list first`);
+  }
+  await deleteMountBackingStore(containerName, { name: mountName });
+}
+
+async function pathExists(p) {
+  try {
+    await lstat(p);
+    return true;
+  } catch (err) {
+    if (err?.code === 'ENOENT') return false;
+    throw err;
+  }
+}
+
+/**
+ * Move a Local mount's backing store files/<fromName> → files/<toName>, so a
+ * renamed mount keeps its data. Refuses when files/<toName> already exists:
+ * rename(2) would silently replace an empty directory or overwrite a file left
+ * there by an earlier mount. Returns false when files/<fromName> doesn't exist
+ * (nothing to move — the caller creates the new artifact).
+ */
+export async function renameMountBackingStore(containerName, fromName, toName) {
+  for (const n of [fromName, toName]) {
+    if (validateMountSegmentName(n) !== n) {
+      throw containerError('INVALID_CONTAINER_MOUNTS', `Invalid mount name "${n}"`);
+    }
+  }
+  const filesDir = getContainerFilesDir(containerName);
+  const to = join(filesDir, toName);
+  if (await pathExists(to)) {
+    throw containerError(
+      'CONTAINER_MOUNT_DUPLICATE',
+      `Cannot rename mount "${fromName}" to "${toName}": files/${toName} already exists on disk`,
+      `${to} is left over from an earlier mount — move or remove it, or pick another name`,
+    );
+  }
+  try {
+    await rename(join(filesDir, fromName), to);
+    return true;
+  } catch (err) {
+    if (err?.code === 'ENOENT') return false;
+    throw err;
+  }
 }
 
 /**

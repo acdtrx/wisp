@@ -58,6 +58,15 @@ function getDefaultAppConfig(context = {}) {
   };
 }
 
+function normalizeShareName(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+/** Convention: each share's backing mount is named `share-<name>`. */
+function shareMountName(shareName) {
+  return `share-${shareName}`;
+}
+
 /**
  * Validate appConfig. Receives the previous appConfig (from container.json) so unchanged
  * passwords can be merged forward — the API masks passwords on output, so the frontend can't
@@ -167,7 +176,7 @@ function validateAppConfig(newConfig, oldConfig = null) {
     if (!s || typeof s !== 'object' || Array.isArray(s)) {
       throw containerError('INVALID_APP_CONFIG', `shares[${i}] must be an object`);
     }
-    const name = typeof s.name === 'string' ? s.name.trim().toLowerCase() : '';
+    const name = normalizeShareName(s.name);
     if (!SHARE_NAME_REGEX.test(name)) {
       throw containerError(
         'INVALID_APP_CONFIG',
@@ -319,7 +328,7 @@ function generateDerivedConfig(appConfig) {
   for (const share of appConfig.shares) {
     const m = {
       type: 'directory',
-      name: `share-${share.name}`,
+      name: shareMountName(share.name),
       containerPath: shareContainerPath(share),
       readonly: false,
       // smbd writes data files inside the container as UID dataUid (default 1000); the size:1 idmap
@@ -343,6 +352,38 @@ function generateDerivedConfig(appConfig) {
       'tiny-samba-passwords': renderPasswordsYaml(appConfig),
     },
   };
+}
+
+/**
+ * Share renames in this save, as mount renames: { 'share-<old>': 'share-<new>' }.
+ *
+ * The mount is keyed by the share name, so without this a rename reads as
+ * "drop share-<old>, add share-<new>" and the share's data would be deleted.
+ * The UI sends `previousName` — the name a row was loaded with — on every
+ * share that already existed; a share without it is new. `previousName` is
+ * intent for this one save and is never persisted (validateAppConfig builds
+ * shares without it). Called after validateAppConfig, so names are well-formed.
+ */
+function getMountRenames(newConfig, oldConfig) {
+  const oldNames = new Set((oldConfig?.shares || []).map((s) => s.name));
+  const rawShares = Array.isArray(newConfig?.shares) ? newConfig.shares : [];
+  const claimed = new Set();
+  const renames = {};
+  rawShares.forEach((s, i) => {
+    const raw = s?.previousName;
+    if (raw === undefined || raw === null || raw === '') return;
+    const previousName = normalizeShareName(raw);
+    if (!oldNames.has(previousName)) {
+      throw containerError('INVALID_APP_CONFIG', `shares[${i}].previousName "${previousName}" is not an existing share`);
+    }
+    if (claimed.has(previousName)) {
+      throw containerError('INVALID_APP_CONFIG', `Share "${previousName}" is claimed by more than one row`);
+    }
+    claimed.add(previousName);
+    const name = normalizeShareName(s.name);
+    if (name !== previousName) renames[shareMountName(previousName)] = shareMountName(name);
+  });
+  return renames;
 }
 
 function maskSecrets(appConfig) {
@@ -379,6 +420,7 @@ export const tinySambaAppModule = {
   getDefaultAppConfig,
   validateAppConfig,
   generateDerivedConfig,
+  getMountRenames,
   maskSecrets,
   getReloadCommand,
   requiresRestartForChange,

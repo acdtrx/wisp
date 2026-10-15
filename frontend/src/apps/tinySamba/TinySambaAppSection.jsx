@@ -6,6 +6,11 @@
  *   - API masks each user's password as `{ isSet: bool }` on read.
  *   - We send a fresh password string only when the row's password input was edited;
  *     unchanged rows omit the field, and the backend merges the prior password forward.
+ *
+ * Share data follows the share: every row loaded from the server remembers the name it was
+ * loaded with and sends it as `previousName`, so a rename moves the share's Local directory
+ * instead of deleting it. A saved Local share removed from the form loses its files on Save,
+ * so Save asks first.
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
@@ -22,6 +27,7 @@ import {
 } from 'lucide-react';
 import SectionCard from '../../components/shared/SectionCard.jsx';
 import Toggle from '../../components/shared/Toggle.jsx';
+import ConfirmDialog from '../../components/shared/ConfirmDialog.jsx';
 import {
   DataTableScroll,
   DataTable,
@@ -64,6 +70,7 @@ function parseAppConfig(config) {
     shares: (ac.shares || []).map((s) => ({
       id: randomId(),
       name: s.name ?? '',
+      originalName: s.name ?? '',
       guest: !!s.guest,
       sourceId: s.source?.sourceId ?? '',
       subPath: s.source?.subPath ?? '',
@@ -71,6 +78,20 @@ function parseAppConfig(config) {
       expanded: false,
     })),
   };
+}
+
+/**
+ * Saved Local shares this form drops: their files/share-<name> directory is deleted on Save.
+ * A row still carrying the original name (renamed or not) keeps the data, and so does a new
+ * row that reuses the name (the backend keeps the directory for it). Storage-backed shares
+ * never lose data — it lives outside the container.
+ */
+function sharesLosingData(original, form) {
+  const claimed = new Set(form.shares.map((s) => s.originalName).filter(Boolean));
+  const finalNames = new Set(form.shares.map((s) => s.name.trim().toLowerCase()));
+  return original.shares
+    .filter((o) => !o.sourceId && !claimed.has(o.name) && !finalNames.has(o.name))
+    .map((o) => o.name);
 }
 
 function isValidUid(value) {
@@ -88,6 +109,8 @@ export default function TinySambaAppSection({ config, onSave }) {
   const [original, setOriginal] = useState(() => parseAppConfig(config));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  /** { appConfig, names } while the delete-share-data confirm is open. */
+  const [pendingDataLoss, setPendingDataLoss] = useState(null);
   const [showPasswords, setShowPasswords] = useState({});
   const [serverOpen, setServerOpen] = useState(true);
   const [usersOpen, setUsersOpen] = useState(true);
@@ -107,6 +130,7 @@ export default function TinySambaAppSection({ config, onSave }) {
     setOriginal(parsed);
     setError(null);
     setShowPasswords({});
+    setPendingDataLoss(null);
   }, [appConfigKey]);
 
   const isDirty = useCallback(() => {
@@ -235,61 +259,88 @@ export default function TinySambaAppSection({ config, onSave }) {
     }));
   };
 
-  const handleSave = async () => {
+  /** Build the PATCH body from the form; throws on a pre-flight problem. */
+  const buildAppConfig = () => {
+    const declaredUsers = form.users
+      .map((u) => u.name.trim())
+      .filter((n) => n.length > 0);
+
+    // Pre-flight guards mirror tiny-samba's validation so users see issues here instead of
+    // a "reload failed" error from smbd.
+    for (const s of form.shares) {
+      if (!s.guest) {
+        const liveAccess = s.access.filter((a) => declaredUsers.includes(a.user));
+        if (liveAccess.length === 0) {
+          const label = s.name.trim() || '(unnamed)';
+          throw new Error(`Share "${label}" needs at least one user with access (or set Guest on).`);
+        }
+      }
+    }
+
+    return {
+      server: {
+        workgroup: form.server.workgroup.trim(),
+        netbiosName: form.server.netbiosName.trim(),
+        dataUid: Number(form.server.dataUid),
+        minProtocol: form.server.minProtocol,
+        iconModel: form.server.iconModel,
+      },
+      users: form.users.map((u) => {
+        const entry = { name: u.name.trim() };
+        if (u.passwordDirty && u.password) {
+          entry.password = u.password;
+        }
+        return entry;
+      }),
+      shares: form.shares.map((s) => {
+        const out = {
+          name: s.name.trim(),
+          guest: !!s.guest,
+          access: s.guest
+            ? []
+            : s.access.filter((a) => declaredUsers.includes(a.user)),
+        };
+        if (s.originalName) out.previousName = s.originalName;
+        if (s.sourceId) {
+          out.source = { sourceId: s.sourceId, subPath: (s.subPath || '').trim() };
+        }
+        return out;
+      }),
+    };
+  };
+
+  const commitSave = async (appConfig) => {
     setSaving(true);
     setError(null);
     try {
-      const declaredUsers = form.users
-        .map((u) => u.name.trim())
-        .filter((n) => n.length > 0);
-
-      // Pre-flight guards mirror tiny-samba's validation so users see issues here instead of
-      // a "reload failed" error from smbd.
-      for (const s of form.shares) {
-        if (!s.guest) {
-          const liveAccess = s.access.filter((a) => declaredUsers.includes(a.user));
-          if (liveAccess.length === 0) {
-            const label = s.name.trim() || '(unnamed)';
-            throw new Error(`Share "${label}" needs at least one user with access (or set Guest on).`);
-          }
-        }
-      }
-
-      const appConfig = {
-        server: {
-          workgroup: form.server.workgroup.trim(),
-          netbiosName: form.server.netbiosName.trim(),
-          dataUid: Number(form.server.dataUid),
-          minProtocol: form.server.minProtocol,
-          iconModel: form.server.iconModel,
-        },
-        users: form.users.map((u) => {
-          const entry = { name: u.name.trim() };
-          if (u.passwordDirty && u.password) {
-            entry.password = u.password;
-          }
-          return entry;
-        }),
-        shares: form.shares.map((s) => {
-          const out = {
-            name: s.name.trim(),
-            guest: !!s.guest,
-            access: s.guest
-              ? []
-              : s.access.filter((a) => declaredUsers.includes(a.user)),
-          };
-          if (s.sourceId) {
-            out.source = { sourceId: s.sourceId, subPath: (s.subPath || '').trim() };
-          }
-          return out;
-        }),
-      };
       await onSave(appConfig);
     } catch (err) {
       setError(err?.detail || err?.message || 'Save failed');
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSave = async () => {
+    let appConfig;
+    try {
+      appConfig = buildAppConfig();
+    } catch (err) {
+      setError(err.message);
+      return;
+    }
+    const names = sharesLosingData(original, form);
+    if (names.length > 0) {
+      setPendingDataLoss({ appConfig, names });
+      return;
+    }
+    await commitSave(appConfig);
+  };
+
+  const confirmDataLoss = async () => {
+    const { appConfig } = pendingDataLoss;
+    setPendingDataLoss(null);
+    await commitSave(appConfig);
   };
 
   const dirty = isDirty();
@@ -517,6 +568,26 @@ export default function TinySambaAppSection({ config, onSave }) {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDataLoss}
+        title={pendingDataLoss?.names.length === 1 ? 'Delete share data?' : 'Delete data of removed shares?'}
+        confirmLabel="Delete and save"
+        onConfirm={confirmDataLoss}
+        onCancel={() => setPendingDataLoss(null)}
+      >
+        <p>
+          Saving removes {pendingDataLoss?.names.length === 1 ? 'this share' : 'these shares'} and
+          permanently deletes {pendingDataLoss?.names.length === 1 ? 'its' : 'their'} files from the
+          container&rsquo;s local storage:
+        </p>
+        <ul className="mt-2 list-disc pl-5 font-mono text-xs text-text-primary">
+          {pendingDataLoss?.names.map((n) => <li key={n}>{n}</li>)}
+        </ul>
+        <p className="mt-2 text-xs text-text-muted">
+          This cannot be undone. Shares on a storage mount keep their data.
+        </p>
+      </ConfirmDialog>
     </SectionCard>
   );
 }

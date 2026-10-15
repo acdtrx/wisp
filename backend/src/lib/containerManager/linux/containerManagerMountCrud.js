@@ -1,11 +1,7 @@
 /**
  * Row-scoped container bind mount CRUD (add / update / remove one mount).
  */
-import { join } from 'node:path';
-import { rename } from 'node:fs/promises';
-
 import { containerError } from './containerManagerConnection.js';
-import { getContainerFilesDir } from './containerPaths.js';
 import { getTaskState } from './containerManagerLifecycle.js';
 import {
   validateAndNormalizeMounts,
@@ -16,7 +12,7 @@ import {
   ensureMissingMountArtifacts,
   TMPFS_MAX_SIZE_MIB,
 } from './containerManagerMounts.js';
-import { deleteMountBackingStore } from './containerManagerMountsContent.js';
+import { deleteMountBackingStore, renameMountBackingStore } from './containerManagerMountsContent.js';
 import { resolveMount } from './containerPaths.js';
 import { readContainerConfig as loadContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
@@ -252,18 +248,8 @@ export async function updateContainerMount(containerName, mountName, changes) {
 
   /* Rename on disk only applies to Local mounts — Storage-backed names are just config keys. */
   if (!updated.sourceId && nextName !== current.name) {
-    const filesDir = getContainerFilesDir(containerName);
-    const oldPath = join(filesDir, current.name);
-    const newPath = join(filesDir, nextName);
-    try {
-      await rename(oldPath, newPath);
-    } catch (err) {
-      if (err?.code === 'ENOENT') {
-        await ensureMissingMountArtifacts(containerName, [updated]);
-      } else {
-        throw err;
-      }
-    }
+    const moved = await renameMountBackingStore(containerName, current.name, nextName);
+    if (!moved) await ensureMissingMountArtifacts(containerName, [updated]);
   }
 
   list[idx] = updated;

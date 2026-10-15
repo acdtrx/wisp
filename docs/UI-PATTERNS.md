@@ -160,6 +160,8 @@ Structure (see **[FormModalChrome.jsx](../frontend/src/components/shared/FormMod
 - **[ConfirmDialog.jsx](../frontend/src/components/shared/ConfirmDialog.jsx)** — Two-button confirm for destructive or impactful actions. Defaults to a red-tinted `Confirm` button (`variant="danger"`); pass `variant="primary"` for non-destructive accept (e.g. install update). Replaces `window.confirm()`.
 - **[AlertDialog.jsx](../frontend/src/components/shared/AlertDialog.jsx)** — Single-button informational/error dialog. Pass `tone="error"` to highlight the title in stopped color. Replaces `window.alert()`.
 
+- **Data-deleting section Save** (settled 2026-10-16): in a form that stages edits behind one section **Save** (e.g. the tiny-samba app config), removing a row only stages the removal — the confirm opens at **Save**, listing exactly what the save will delete (computed against the loaded state, so an unsaved row or one whose data survives needs no prompt), with a `Delete and save` danger button. Confirming at the trash icon would be premature: the user can still undo by not saving. Reference: [TinySambaAppSection.jsx](../frontend/src/apps/tinySamba/TinySambaAppSection.jsx).
+
 Never call native `window.alert()` or `window.confirm()` — async-error reporting and confirmation prompts must use these dialogs so they pick up the same shell, focus, and styling as the rest of the app.
 
 ---

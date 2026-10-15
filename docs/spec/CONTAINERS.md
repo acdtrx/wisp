@@ -135,6 +135,8 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 - Storage: `<settings.mounts[sourceId].mountPath>/<mount.subPath>`
 - tmpfs: no host path (kernel-allocated)
 
+**Replacing the list (`PATCH` `mounts`).** `containerManager.updateContainerConfig` never deletes mount data on its own: a Local mount that leaves the list keeps `files/<name>` and is reported back in `removedMounts`, and the caller deletes it explicitly with `deleteRemovedMountData(name, mountName)` (which refuses a name still in the list). The generic `PATCH /api/containers/:name` route does exactly that, so for API callers dropping a Local mount from `mounts` still deletes its data — the same contract as `DELETE /mounts/:name`. App flows decide per mount (see [CUSTOM-APPS.md](CUSTOM-APPS.md) § Live Reload). An optional **`mountRenames`** object (`{ "<oldName>": "<newName>" }`, only alongside `mounts`) marks entries of the new list as renamed current mounts: a Local mount's `files/<old>` moves to `files/<new>` with its contents, like a row-scoped rename. Rules: `oldName` is a current mount; `newName` is in the new list, has the same type, and is not a current mount (swaps and chains take two saves); `files/<new>` must not already exist on disk (**422** `CONTAINER_MOUNT_DUPLICATE` — `rename(2)` would replace an empty directory or overwrite a file left by an earlier mount). Violations → **422** `CONFIG_ERROR`. If a move or the config write fails, completed moves are reversed (settled 2026-10-16 — data deletion is an explicit second step so no caller can lose data by rearranging a list; the earlier implicit delete-on-diff turned a tiny-samba share rename into data loss).
+
 After **PATCH** persists **`mounts`**, or after **POST** `/api/containers/:name/mounts` adds one mount, the backend creates any **missing** backing artifact automatically (Local: empty file/directory under `files/<name>`; Storage: `mkdir -p` of the sub-path inside the mounted storage root) so new rows are usable without a separate **Init** call.
 
 **Pre-start checks (`assertBindSourcesReady`)** for Storage-sourced entries validate that:
@@ -142,7 +144,7 @@ After **PATCH** persists **`mounts`**, or after **POST** `/api/containers/:name/
 - The storage mount is currently mounted (`/proc/mounts`; otherwise **503** `CONTAINER_MOUNT_SOURCE_NOT_MOUNTED` — user mounts it in Host Mgmt → Storage and retries).
 - `realpath(<mountPath>/<subPath>)` stays within `realpath(<mountPath>)` — symlink escapes are rejected with `CONTAINER_MOUNT_SOURCE_UNSAFE`.
 
-**Delete semantics:** removing a mount row or deleting the container itself leaves Storage-sourced sub-paths untouched (user data outside the container directory). Local backing files/directories are removed as before.
+**Delete semantics:** removing a mount row or deleting the container itself leaves Storage-sourced sub-paths untouched (user data outside the container directory). Local backing files/directories are removed (row delete, generic `PATCH` dropping the row, container delete with files). **Rename** (row `PATCH` with a new `name`, or `mountRenames`) moves the Local backing store and refuses when `files/<newName>` already exists.
 
 ### tmpfs mounts
 
@@ -291,7 +293,7 @@ All under `backend/src/lib/`:
 | `containerManagerMounts.js` | `validateAndNormalizeMounts()` (validates optional `sourceId`/`subPath` against `settings.mounts`), `resolveMountHostPath()` (Local vs Storage resolver), `validateSubPath()`, `findMount()`, `ensureMountArtifactIfMissing()`, `ensureMissingMountArtifacts()`, `assertBindSourcesReady()` (branches on `sourceId`, verifies the storage mount is currently mounted and the resolved path stays within its root) |
 | `containerManagerMountCrud.js` | `addContainerMount()`, `updateContainerMount()`, `removeContainerMount()` — row-scoped bind mount CRUD |
 | `containerManagerUsage.js` | `getContainerMountUsage()` — per-mount host-side disk usage snapshot: resolves each persisted mount's bind source via `resolveMountHostPath()` and sizes it with `storage`'s `measurePathSize()` (stdlib walk, apparent size, symlinks not followed; unreadable entries flagged via `partial`). tmpfs → `sizeBytes: null`; unresolvable `sourceId` → `source: 'missing'`. Served by `GET /api/containers/:name/mounts/usage` and the MCP `get_container_mount_usage` tool |
-| `containerManagerMountsContent.js` | `uploadMountFileStream()`, `uploadMountZipStream()` (system **`unzip`**, paths checked with **`unzip -Z1`** before extract), `initMountContent()`, `getMountFileTextContent()`, `putMountFileTextContent()`, `deleteMountData()`, `deleteMountBackingStore()` |
+| `containerManagerMountsContent.js` | `uploadMountFileStream()`, `uploadMountZipStream()` (system **`unzip`**, paths checked with **`unzip -Z1`** before extract), `initMountContent()`, `getMountFileTextContent()`, `putMountFileTextContent()`, `deleteMountData()`, `deleteMountBackingStore()`, `deleteRemovedMountData()` (explicit data delete for a mount already dropped from the list), `renameMountBackingStore()` (shared by row rename and `mountRenames`) |
 | `containerManagerNetwork.js` | `setupNetwork()`, `teardownNetwork()`, `mergeNetworkLeaseIntoConfig()` (persist DHCP IP / MAC to `container.json`) |
 | `containerManagerSpec.js` | `buildOCISpec()` |
 | `containerPaths.js` | Path helpers for container directories |
