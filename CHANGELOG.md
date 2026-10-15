@@ -30,6 +30,7 @@
 - **Wrong current password doesn't log you out** — Change password shows an inline error (422) instead of ending every tab's session.
 - **Closing a tab or console mid-connect leaks nothing** — streams and consoles that close while still setting up release their timers, subscriptions, VNC connections and container shells.
 - **Hung app reloads are killed** — a reload command that exceeds its timeout is killed and reaped instead of lingering in the container.
+- **Open container consoles don't stall the backend** — console I/O no longer holds a worker thread, so four idle consoles can't freeze file, DNS and crypto work or block service shutdown, and a failed console start leaks nothing.
 - **Progress streams stay small** — backups and downloads report once per percent, reconnecting tabs replay a short history, and finished jobs stay visible for 5 minutes after they finish however long they ran.
 - **Container backups to several destinations finish at the end** — like VM backups: per-destination progress, completion only after the last destination, later errors surfaced.
 - **Rename and clone respect a running backup or restore** — renaming a VM, or cloning it, is refused (409) while a backup, restore or clone of it runs.

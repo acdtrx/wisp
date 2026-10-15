@@ -105,3 +105,16 @@ another event.
 ## Phase 3 exit
 
 All bundles merged; darwin and Linux results recorded.
+
+---
+
+## Added during implementation
+
+**R6 — Container exec FIFO I/O off the libuv threadpool** (found by the R2 implementer). `fs.ReadStream`
+on a FIFO blocks a pool thread for as long as the FIFO is idle: each open container console pinned
+one of the 4 default threads, so 4 idle consoles stalled every fs/dns/crypto/zlib call and blocked
+process exit; the interactive failed-Start path leaked blocked opens. Fix: non-blocking opens
+wrapped in `net.Socket` (epoll), opened before `Tasks.Start` (decision recorded in CONTAINERS.md).
+Linux (tini) harness: EOF delivered on writer close (macOS kqueue does not — darwin couldn't prove
+it); io round-trip + `exit` EOF, execCommand `exitCode 3` in ~76 ms, 10 idle consoles with
+`readFile` in 0 ms, failed-start ×3 leaves nothing, timeout kill path intact, close-mid cleans up.
