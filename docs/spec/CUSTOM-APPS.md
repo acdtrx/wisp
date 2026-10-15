@@ -125,7 +125,7 @@ Components use SectionCard for consistent styling, handle their own dirty tracki
 
 1. New appConfig validated; `generateDerivedConfig` produces new env/mounts/devices/mountContents
 2. If a reload will be attempted (running + reload command + no env change), the backing content of every local file mount is snapshotted first — the rollback state for step 7
-3. `containerManager.updateContainerConfig` persists the metadata + env/mounts/devices changes, with the module's `getMountRenames` as `mountRenames` (renamed Local mounts move their data). It deletes nothing: Local mounts the new config drops keep their data and come back as `removedMounts`
+3. `containerManager.updateContainerConfig` persists the metadata + env/mounts/devices changes in one write — the derived env as an `envPatch` that turns the stored env into exactly the derived set (the manager accepts env changes only as `envPatch`; a flat `env` is rejected for every caller) — with the module's `getMountRenames` as `mountRenames` (renamed Local mounts move their data). It deletes nothing: Local mounts the new config drops keep their data and come back as `removedMounts`
 4. Mount file contents written via `containerManager.putMountFileTextContent`
 5. Container task state checked via `containerManager.getTaskState`; if not running, return immediately
 6. If any env var changed, **skip the reload** and set `pendingRestart: true` (see *Env vars never reload* below). Otherwise, if the app module provides `getReloadCommand()`, run it via `containerManager.execCommandInContainer` (non-interactive containerd exec)

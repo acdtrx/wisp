@@ -184,6 +184,11 @@ async function moveRenamedMountsAndWrite(name, renamePairs, config) {
  * as renamed current mounts — their Local data moves to the new name.
  */
 export async function updateContainerConfig(name, changes) {
+  // A whole-env replacement would also overwrite write-only secrets the caller
+  // has never seen; env changes go through the envPatch delta only.
+  if ('env' in changes) {
+    throw containerError('CONFIG_ERROR', 'Use envPatch to update environment variables');
+  }
   if ('mountRenames' in changes && !('mounts' in changes)) {
     throw containerError('CONFIG_ERROR', 'mountRenames is only valid together with mounts');
   }

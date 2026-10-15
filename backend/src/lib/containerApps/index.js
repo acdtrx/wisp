@@ -213,6 +213,25 @@ export async function createAppContainer(spec, onStep) {
 }
 
 /**
+ * The envPatch that turns `current` into exactly `next`. An app container's
+ * env is wholly derived from its appConfig, so applying a config replaces the
+ * set — through the manager's envPatch delta, the only env write it accepts.
+ */
+function envReplacementPatch(current, next) {
+  const patch = {};
+  for (const key of Object.keys(current || {})) {
+    if (!(key in (next || {}))) patch[key] = null;
+  }
+  for (const [key, entry] of Object.entries(next || {})) {
+    patch[key] = {
+      value: typeof entry?.value === 'string' ? entry.value : '',
+      secret: entry?.secret === true,
+    };
+  }
+  return patch;
+}
+
+/**
  * Apply a new app config to an existing app container. Validates, derives,
  * persists the new metadata + container fields (env/mounts/devices), writes
  * any updated mount file contents, and — if the container is running —
@@ -258,7 +277,7 @@ export async function applyAppConfig(name, newAppConfig) {
   const hasMountRenames = Object.keys(mountRenames).length > 0;
 
   const updateChanges = {
-    env: derived.env || {},
+    envPatch: envReplacementPatch(config.env, derived.env),
     mounts: nextMounts,
     metadata: { ...config.metadata, appConfig: finalAppConfig },
   };
@@ -342,7 +361,7 @@ export async function applyAppConfig(name, newAppConfig) {
       // stores the persist created for rejected-state-only mounts are removed.
       try {
         const rollbackChanges = {
-          env: config.env || {},
+          envPatch: envReplacementPatch(derived.env, config.env),
           mounts: oldMounts,
           metadata: config.metadata,
         };
