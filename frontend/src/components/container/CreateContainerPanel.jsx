@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, ArrowLeft } from 'lucide-react';
 
@@ -38,6 +38,15 @@ export default function CreateContainerPanel() {
   const [createJobId, setCreateJobId] = useState(null);
   const [createError, setCreateError] = useState(null);
   const [createDetail, setCreateDetail] = useState(null);
+
+  /* The create job outlives this panel (it keeps running in the background-jobs
+   * tray), so its completion only opens the new workload while the user is
+   * still here — never yanks them away from wherever they went meanwhile. */
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const appList = getAppList();
 
@@ -82,7 +91,7 @@ export default function CreateContainerPanel() {
             setCreating(false);
             setCreateJobId(null);
             fetchContainers();
-            navigate(`/container/${encodeURIComponent(spec.name)}/overview`);
+            if (mountedRef.current) navigate(`/container/${encodeURIComponent(spec.name)}/overview`);
           }
           if (ev.step === 'error') {
             setCreateError(ev.error || 'Creation failed');

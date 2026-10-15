@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 
@@ -66,6 +66,15 @@ export default function CreateVMPanel() {
   const [createDetail, setCreateDetail] = useState(null);
   const [errorOpen, setErrorOpen] = useState(false);
   const [createJobId, setCreateJobId] = useState(null);
+
+  /* The create job outlives this panel (it keeps running in the background-jobs
+   * tray), so its completion only opens the new workload while the user is
+   * still here — never yanks them away from wherever they went meanwhile. */
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     getHostBridges()
@@ -219,7 +228,7 @@ export default function CreateVMPanel() {
             setCreating(false);
             setCreateJobId(null);
             fetchVMs();
-            navigate(`/vm/${encodeURIComponent(data.name)}/overview`);
+            if (mountedRef.current) navigate(`/vm/${encodeURIComponent(data.name)}/overview`);
           }
           if (data.step === 'error') {
             setCreateError(data.error || 'Create failed');

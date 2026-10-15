@@ -462,6 +462,8 @@ Sticky at the bottom of the center panel, always visible without scrolling. Show
 
 On error: red inline error card above button, with optional expandable raw detail.
 
+On success the panel opens the new VM's overview — only if the user is still on the create panel. The job keeps running in the background-jobs tray after they leave, and its completion never navigates them away from wherever they went.
+
 ---
 
 ## Image Library
@@ -806,6 +808,7 @@ Lazy-loaded (`ContainerConsolePanel`). **xterm.js** terminal + toolbar (Paste, F
 - **App selector**: dropdown in the General section header (right). Options: "Generic Container" (default) plus each registered app (e.g. "Caddy Reverse Proxy"). Selecting an app prefills the image field with the app's default image (editable when `allowCustomImage` is true).
 - **General** section: **Name** and **Image** only (same SectionCard as overview, create mode)
 - Create button with progress (validating → pulling → creating → done); no env/network/app config on this screen — configure on the container overview after creation
+- On success opens the new container's overview — only if the user is still on the create panel (same rule as Create VM)
 
 ### Custom App Container Overview
 
