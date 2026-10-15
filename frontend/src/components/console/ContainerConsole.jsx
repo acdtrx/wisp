@@ -44,6 +44,9 @@ export default function ContainerConsole({
   const containerNameRef = useRef(containerName);
   const isRunningRef = useRef(isRunning);
   const connectedRef = useRef(false);
+  /** Set by the toolbar's Disconnect; auto-resume (visibility / online) leaves
+   *  the console closed until the user reconnects. Any connect() clears it. */
+  const userDisconnectedRef = useRef(false);
   const onConnectRef = useRef(onConnect);
   const onDisconnectRef = useRef(onDisconnect);
   containerNameRef.current = containerName;
@@ -95,6 +98,7 @@ export default function ContainerConsole({
     }
 
     const session = ++sessionRef.current;
+    userDisconnectedRef.current = false;
     cancelPendingFrame();
     reconnectAttemptRef.current = 0;
     clearReconnectTimer();
@@ -250,6 +254,11 @@ export default function ContainerConsole({
     }
   }, [cancelPendingFrame, clearReconnectTimer, teardownWs]);
 
+  const disconnectByUser = useCallback(() => {
+    userDisconnectedRef.current = true;
+    disconnect();
+  }, [disconnect]);
+
   const pasteFromClipboard = useCallback(async () => {
     const term = termRef.current;
     if (!term) return;
@@ -265,14 +274,14 @@ export default function ContainerConsole({
     if (apiRef) {
       apiRef.current = {
         connect: () => connectRef.current(),
-        disconnect,
+        disconnect: disconnectByUser,
         paste: pasteFromClipboard,
       };
     }
     return () => {
       if (apiRef) apiRef.current = null;
     };
-  }, [apiRef, disconnect, pasteFromClipboard]);
+  }, [apiRef, disconnectByUser, pasteFromClipboard]);
 
   /* A live terminal repaints on a theme flip — no reconnect, no lost scrollback. */
   useEffect(() => {
@@ -287,17 +296,19 @@ export default function ContainerConsole({
     };
   }, [containerName, isRunning, disconnect]);
 
+  /* Resume a dropped session when the tab returns or the network comes back —
+     never one the user disconnected on purpose. */
   useEffect(() => {
     const resumeIfNeeded = () => {
       if (!containerNameRef.current || !viewportRef?.current) return;
       if (document.visibilityState !== 'visible') return;
-      if (connectedRef.current) return;
+      if (connectedRef.current || userDisconnectedRef.current) return;
       if (!isRunningRef.current) return;
       connectRef.current();
     };
     const onOnline = () => {
       if (!containerNameRef.current || !viewportRef?.current) return;
-      if (connectedRef.current) return;
+      if (connectedRef.current || userDisconnectedRef.current) return;
       if (!isRunningRef.current) return;
       connectRef.current();
     };

@@ -799,7 +799,7 @@ Full-height log viewer:
 
 #### Console tab
 
-Lazy-loaded (`ContainerConsolePanel`). **xterm.js** terminal + toolbar (Paste, Fullscreen, Disconnect/Reconnect). Connects to **`/ws/container-console/:name`** with JWT; live I/O is WebSocket binary frames (see [API.md](API.md)). When the container is **not** running, shows a short message to start the container first (no shell session).
+Lazy-loaded (`ContainerConsolePanel`). **xterm.js** terminal + toolbar (Paste, Fullscreen, Disconnect/Reconnect). Connects to **`/ws/container-console/:name`** with JWT; live I/O is WebSocket binary frames (see [API.md](API.md)). When the container is **not** running, shows a short message to start the container first (no shell session). Reconnect behavior (backoff, resume on visibility/`online`, a manual Disconnect stays disconnected) matches the VM console — see [CONSOLE.md](CONSOLE.md) § Auto-reconnect.
 
 ### Create Container Panel
 

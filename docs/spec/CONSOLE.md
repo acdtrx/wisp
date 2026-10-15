@@ -88,6 +88,8 @@ When a VM transitions to the running state (detected via the VM list stream), th
 
 If the VNC session drops (network blip, laptop sleep, browser throttling background timers), the client retries with exponential backoff. When the tab becomes visible again or the browser fires the `online` event, the client starts a fresh connection attempt immediately instead of waiting for the next backoff interval. Restoring a page from the back-forward cache (`pageshow` with `persisted`) also triggers a fresh attempt, because WebSockets do not survive that restore.
 
+**A manual Disconnect stays disconnected.** These resume triggers (visibility, `online`, bfcache restore) skip a console the user disconnected from the toolbar; it stays closed until they click Reconnect (or Retry), which clears the flag. The VM-started reconnect above is an explicit state change and still connects. The container console (`ContainerConsole.jsx`) follows the same rules for visibility and `online`.
+
 ### Disconnect
 
 The VNC connection is cleanly disconnected when:

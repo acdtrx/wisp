@@ -97,6 +97,9 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
   const reconnectAttemptRef = useRef(0);
   const pendingFrameRef = useRef(null);
   const lastWsCloseRef = useRef(null);
+  /** Set by the toolbar's Disconnect; auto-resume (visibility / online / bfcache)
+   *  leaves the console closed until the user reconnects. Any connect() clears it. */
+  const userDisconnectedRef = useRef(false);
   const vmNameRef = useRef(vmName);
   vmNameRef.current = vmName;
 
@@ -124,6 +127,7 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
   const connect = useCallback(() => {
     if (!viewportRef?.current || !vmName) return;
     const session = ++sessionRef.current;
+    userDisconnectedRef.current = false;
     cancelPendingFrame();
     reconnectAttemptRef.current = 0;
     clearReconnectTimer();
@@ -234,6 +238,11 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
     }
   }, [onDisconnect, clearReconnectTimer, teardownRfb, cancelPendingFrame]);
 
+  const disconnectByUser = useCallback(() => {
+    userDisconnectedRef.current = true;
+    disconnect();
+  }, [disconnect]);
+
   const isConnected = () => rfbRef.current?._rfbConnectionState === 'connected';
 
   const sendCtrlAltDel = useCallback(() => {
@@ -267,14 +276,14 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
     if (apiRef) {
       apiRef.current = {
         connect,
-        disconnect,
+        disconnect: disconnectByUser,
         sendCtrlAltDel,
         paste,
         screenshot,
       };
     }
     return () => { if (apiRef) apiRef.current = null; };
-  }, [apiRef, connect, disconnect, sendCtrlAltDel, paste, screenshot]);
+  }, [apiRef, connect, disconnectByUser, sendCtrlAltDel, paste, screenshot]);
 
   useEffect(() => {
     if (vmName && viewportRef?.current) connect();
@@ -285,20 +294,22 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
   // Exponential backoff alone can leave a blank console for minutes; force a fresh attempt
   // when the tab is visible again or the browser reports connectivity. bfcache restore
   // leaves JS state "connected" while the socket is invalid — always reconnect.
+  // None of these resume a console the user disconnected on purpose.
   useEffect(() => {
     const resumeIfNeeded = () => {
       if (!vmNameRef.current || !viewportRef?.current) return;
       if (document.visibilityState !== 'visible') return;
-      if (connectedRef.current) return;
+      if (connectedRef.current || userDisconnectedRef.current) return;
       connect();
     };
     const onOnline = () => {
       if (!vmNameRef.current || !viewportRef?.current) return;
-      if (connectedRef.current) return;
+      if (connectedRef.current || userDisconnectedRef.current) return;
       connect();
     };
     const onPageShow = (e) => {
       if (!e.persisted || !vmNameRef.current || !viewportRef?.current) return;
+      if (userDisconnectedRef.current) return;
       connect();
     };
     document.addEventListener('visibilitychange', resumeIfNeeded);
