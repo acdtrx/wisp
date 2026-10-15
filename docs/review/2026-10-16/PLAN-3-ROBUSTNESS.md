@@ -118,3 +118,25 @@ wrapped in `net.Socket` (epoll), opened before `Tasks.Start` (decision recorded 
 Linux (tini) harness: EOF delivered on writer close (macOS kqueue does not — darwin couldn't prove
 it); io round-trip + `exit` EOF, execCommand `exitCode 3` in ~76 ms, 10 idle consoles with
 `readFile` in 0 ms, failed-start ×3 leaves nothing, timeout kill path intact, close-mid cleans up.
+
+## Results (2026-10-16)
+
+Branch `fix/audit-phase3` (R1–R5 cherry-picked without conflicts, R6 on top). `check-imports`,
+module load, frontend build OK; no SSE handler left with a late `close` listener. Deployed to tini
+via the self-updater (twice: without and with R6); backend never restarted during the runs.
+
+| Bundle | Linux (tini) — all PASS unless noted |
+|---|---|
+| R1 | SPA + assets 200; wrong current password → 422, session kept |
+| R2 | 100 aborted `/api/events` → fd count unchanged; 50 console WS closed during setup → no leftover shell or session dir; 50 VNC WS → established :59xx back to 0; app reload OK. **Not tested:** hung reload kill at 15 s (needs a hanging command) |
+| R3 | 3.9 GB gubi backup → **31** SSE lines (Phase 2 build: 63,229); mid-backup reconnect replayed 2; rename / clone / start during backup → 409; jobs expire per job ~5 min after completion; container backup → one `done` |
+| R4 | `wisp-os-update check` → 28, `list` → 28 PKG + TOTAL, env + conffile options present; no upgrade run |
+| R5 | `kill -9` caddo → restart scheduled (137, 1 s) → restarted; Wisp stop respected; `exit 3` crash loop → 1/2/4/8 s; stop during backoff cancels; exit 0 + on-failure not restarted; policy → never skips; delete cancels; console `exit 1` ignored; image-check surfaces `updateAvailable` |
+| R6 | 6 idle consoles open → **0** wisp threads in `pipe_read`; 8,658 API calls during that window, all 200, max 28 ms; stdin echo round-trip OK; `exit` → server closes the WS; Caddy app reload via the new FIFO path 154 ms |
+
+Found during verification (queued as follow-ups, see AUDIT remediation status):
+- During a restart-policy backoff the container shows stopped, so the UI disables Stop; the API's
+  Stop cancels the pending restart but answers 409 `CONTAINER_NOT_RUNNING`.
+- Job SSE streams are not ended server-side after `done`; a stream registered on an already-done job
+  stays in `job.streams` until expiry.
+- App-container create logs a spurious job failure (pre-existing; already queued in Plan 4 L5).
