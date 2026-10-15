@@ -141,4 +141,4 @@ Library file operations validate filenames: no path separators (`/`, `\`), no `.
 - Server errors (status >= 500) are logged with `request.log.error()`
 - Client errors (4xx) are not logged by default
 - Background job failures (create, backup) are logged with `request.log.error()` at the job level
-- DBus connection errors are logged to console and trigger automatic reconnection
+- DBus connection errors are logged and trigger automatic reconnection with backoff (see VM-MANAGEMENT.md); stream write errors (disk full, name collision) fail the job — never the process

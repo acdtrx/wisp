@@ -88,14 +88,85 @@ function fireAgentEvent(vmName, payload) {
   }
 }
 
+/* Reconnect after the system bus connection drops: bounded exponential backoff,
+ * one pending timer at a time (same shape as the containerd events reconnect). */
+const RECONNECT_INITIAL_MS = 2000;
+const RECONNECT_MAX_MS = 30000;
+let reconnectDelayMs = RECONNECT_INITIAL_MS;
+let reconnectTimer = null;
+let reconnectAttempt = 0;
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  const delay = reconnectDelayMs;
+  reconnectDelayMs = Math.min(reconnectDelayMs * 2, RECONNECT_MAX_MS);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    reconnectAttempt += 1;
+    const attempt = reconnectAttempt;
+    connect().then(
+      () => {
+        connectionState.logger?.info?.({ attempt }, '[vmManager] reconnected to libvirt');
+        clearReconnect();
+      },
+      (err) => {
+        connectionState.logger?.warn?.(
+          { err: err?.message || String(err), attempt, retryInMs: reconnectDelayMs },
+          '[vmManager] libvirt reconnect failed, retrying',
+        );
+        scheduleReconnect();
+      },
+    );
+  }, delay);
+}
+
+function clearReconnect() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  reconnectDelayMs = RECONNECT_INITIAL_MS;
+  reconnectAttempt = 0;
+}
+
+/**
+ * A connected bus failed (dbus-next reports a dropped or closed socket as an
+ * 'error', at the latest on the next write). Only the current bus drives a
+ * reconnect: a bus that never finished connecting surfaces its failure as
+ * connect()'s rejection, and a bus closed by disconnect() is no longer current.
+ */
+function handleBusError(bus, err) {
+  if (bus !== connectionState.bus) return;
+  connectionState.logger?.error?.({ err: err?.message || String(err) }, '[vmManager] DBus connection error, reconnecting');
+  connectionState.bus = null;
+  connectionState.connectIface = null;
+  connectionState.connectProps = null;
+  connectionState.domainProxyCache.clear();
+  detachAllAgentSubscriptions();
+  fireDisconnect();
+  scheduleReconnect();
+}
+
 export async function connect(logger = null) {
   if (logger) connectionState.logger = logger;
-  connectionState.bus = dbus.systemBus();
-  const obj = await connectionState.bus.getProxyObject('org.libvirt', '/org/libvirt/QEMU');
+  const bus = dbus.systemBus();
+  /* Attached at creation: an 'error' with no listener would crash the process. */
+  bus.on('error', (err) => handleBusError(bus, err));
+  /* dbus-next never settles calls pending on a dead bus, so each setup call
+   * races the bus failing — a refused socket rejects instead of hanging. */
+  const busFailed = new Promise((_, reject) => bus.once('error', reject));
+  let obj;
+  try {
+    obj = await Promise.race([bus.getProxyObject('org.libvirt', '/org/libvirt/QEMU'), busFailed]);
+    const props = obj.getInterface('org.freedesktop.DBus.Properties');
+    await Promise.race([props.Get('org.libvirt.Connect', 'LibVersion'), busFailed]);
+  } catch (err) {
+    try { bus.disconnect(); } catch { /* bus may already be closed */ }
+    throw err;
+  }
+  connectionState.bus = bus;
   connectionState.connectIface = obj.getInterface('org.libvirt.Connect');
   connectionState.connectProps = obj.getInterface('org.freedesktop.DBus.Properties');
-
-  await connectionState.connectProps.Get('org.libvirt.Connect', 'LibVersion');
 
   connectionState.connectIface.on('DomainEvent', (_domainPath, event, _detail) => {
     if (event === 5 || event === 1) {
@@ -113,44 +184,38 @@ export async function connect(logger = null) {
   }
 
   fireDomainChange();
-
-  connectionState.bus.on('error', (err) => {
-    connectionState.logger?.error?.({ err: err.message }, '[vmManager] DBus connection error, reconnecting');
-    connectionState.connectIface = null;
-    connectionState.connectProps = null;
-    connectionState.domainProxyCache.clear();
-    detachAllAgentSubscriptions();
-    fireDisconnect();
-    setTimeout(connect, 2000);
-  });
 }
 
 /**
  * Close the system DBus connection (e.g. on process shutdown). Does not reconnect.
  */
 export function disconnect() {
-  if (!connectionState.bus) return;
-  detachAllAgentSubscriptions();
-  connectionState.bus.removeAllListeners('error');
-  try {
-    connectionState.bus.disconnect();
-  } catch {
-    // Bus may already be closed
-  }
-  connectionState.bus = null;
-  connectionState.connectIface = null;
-  connectionState.connectProps = null;
-  connectionState.domainProxyCache.clear();
+  clearReconnect();
   if (qemuBinaryWatcherCleanup) {
     qemuBinaryWatcherCleanup();
     qemuBinaryWatcherCleanup = null;
   }
+  /* No current bus: never connected, or a bus error already tore it down. */
+  if (!connectionState.bus) return;
+  detachAllAgentSubscriptions();
+  const bus = connectionState.bus;
+  /* Cleared first so handleBusError ignores anything this bus emits while closing. */
+  connectionState.bus = null;
+  try {
+    bus.disconnect();
+  } catch {
+    // Bus may already be closed
+  }
+  connectionState.connectIface = null;
+  connectionState.connectProps = null;
+  connectionState.domainProxyCache.clear();
   fireDisconnect();
 }
 
 export async function getDomainObjAndIface(path) {
   const cached = connectionState.domainProxyCache.get(path);
   if (cached) return cached;
+  if (!connectionState.bus) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
   const obj = await connectionState.bus.getProxyObject('org.libvirt', path);
   const entry = {
     iface: obj.getInterface('org.libvirt.Domain'),

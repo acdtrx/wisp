@@ -296,7 +296,7 @@ The VM management backend is organized as a **platform facade** plus implementat
 
 - DBus system bus connection to `org.libvirt` at `/org/libvirt/QEMU`
 - Connection state management (bus, connectIface, connectProps)
-- Automatic reconnection on DBus error (2-second delay via `setTimeout`; other timers are used for non-race housekeeping — e.g. job-store TTL in `jobStore.js`, SSE intervals — see the timing rules in `docs/CODING-RULES.md` §6)
+- Automatic reconnection when the system-bus connection fails: exponential backoff from 2 s, doubling to a 30 s cap, one pending retry at a time; each failed attempt is logged and the loop keeps going until libvirt is back (a scheduling timer, not a race mask — see the timing rules in `docs/CODING-RULES.md` §6). A failed connect — refused bus socket or libvirt-dbus unreachable — rejects rather than hanging or crashing; at boot that leaves VM operations unavailable (logged), as before.
 - Domain lookup by name (`DomainLookupByName`)
 - Domain state retrieval (`GetState`)
 - Domain XML retrieval (`GetXMLDesc`)
