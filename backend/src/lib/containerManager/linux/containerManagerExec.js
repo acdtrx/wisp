@@ -3,7 +3,7 @@
  */
 import { join } from 'node:path';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { closeSync, constants as fsConstants, createReadStream, createWriteStream, openSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
@@ -284,8 +284,24 @@ export async function execCommandInContainer(name, args, opts = {}) {
   const stdoutFifo = join(tmpDir, 'stdout');
   const stderrFifo = join(tmpDir, 'stderr');
 
+  /** @type {import('node:fs').ReadStream[]} */
+  const readers = [];
+  let waitPromise = null;
+  let exited = false;
+  let timer = null;
+
   const cleanup = async () => {
-    try { await callUnary(getClient('tasks'), 'deleteProcess', { containerId: name, execId }); } catch { /* may already be deleted */ }
+    clearTimeout(timer);
+    if (waitPromise && !exited) {
+      /* Still running (timed out, or output never drained): DeleteProcess refuses a live
+       * process, so SIGKILL it and let containerd reap it before deleting. */
+      try {
+        await callUnary(getClient('tasks'), 'kill', { containerId: name, execId, signal: SIGKILL, all: false });
+      } catch { /* exited between the timeout and the kill */ }
+      await waitPromise.catch(() => { /* the wait outcome no longer matters; only that it settled */ });
+    }
+    try { await callUnary(getClient('tasks'), 'deleteProcess', { containerId: name, execId }); } catch { /* may already be deleted, or never started */ }
+    for (const reader of readers) releaseFifoReader(reader);
     try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
   };
 
@@ -310,28 +326,37 @@ export async function execCommandInContainer(name, args, opts = {}) {
 
     const collectStream = (path, chunks) => new Promise((resolve, reject) => {
       const s = createReadStream(path, { autoClose: true });
+      readers.push(s);
       s.on('data', (d) => chunks.push(d));
       s.on('end', () => resolve());
       s.on('error', reject);
     });
 
-    const stdoutDone = collectStream(stdoutFifo, stdoutChunks);
-    const stderrDone = collectStream(stderrFifo, stderrChunks);
+    /* Observed from the start so a stream error after a failed Start or a timeout is never an
+     * unhandled rejection; a read error only truncates the captured output. */
+    const outputDone = Promise.all([
+      collectStream(stdoutFifo, stdoutChunks),
+      collectStream(stderrFifo, stderrChunks),
+    ]).catch(() => { /* partial output is still returned */ });
 
     await startPromise;
 
-    // Wait for the exec process to exit
-    const waitPromise = callUnary(getClient('tasks'), 'wait', { containerId: name, execId });
+    waitPromise = callUnary(getClient('tasks'), 'wait', { containerId: name, execId });
+    waitPromise.then(() => { exited = true; }, () => { /* surfaced by the await below */ });
 
-    const timer = timeoutMs > 0
-      ? new Promise((_, reject) => setTimeout(() => reject(new Error('exec timed out')), timeoutMs))
-      : null;
-    const waitResult = timer
-      ? await Promise.race([waitPromise, timer])
-      : await waitPromise;
-
-    // Streams should end once the process exits; give them a moment
-    await Promise.all([stdoutDone, stderrDone]).catch(() => {});
+    // The process has exited and both FIFOs hit EOF — the timeout bounds the whole run.
+    const finished = Promise.all([waitPromise, outputDone]);
+    const [waitResult] = timeoutMs > 0
+      ? await Promise.race([
+        finished,
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(containerError('CONTAINERD_ERROR', `Command in container "${name}" timed out after ${timeoutMs} ms`)),
+            timeoutMs,
+          );
+        }),
+      ])
+      : await finished;
 
     const exitCode = Number(waitResult?.exitStatus ?? waitResult?.exit_status ?? -1);
     const stdout = Buffer.concat(stdoutChunks).toString('utf8');
@@ -343,6 +368,31 @@ export async function execCommandInContainer(name, args, opts = {}) {
     await cleanup();
     throw err;
   }
+}
+
+/**
+ * Close our read end of an exec FIFO. A ReadStream whose open() is still pending is blocked
+ * inside a libuv threadpool thread until a writer appears — destroy() cannot interrupt it, and
+ * it never resolves if the shim never opened its end (failed Start). Holding a writer open
+ * (O_RDWR never blocks on a FIFO) lets that open complete; the stream, already destroyed,
+ * then closes itself and we drop the writer.
+ * @param {import('node:fs').ReadStream} reader
+ */
+function releaseFifoReader(reader) {
+  if (!reader.pending) {
+    reader.destroy();
+    return;
+  }
+  let writerFd;
+  try {
+    writerFd = openSync(reader.path, fsConstants.O_RDWR | fsConstants.O_NONBLOCK);
+  } catch {
+    /* FIFO already gone: the pending open fails with ENOENT on its own */
+  }
+  reader.once('close', () => {
+    if (writerFd !== undefined) closeSync(writerFd);
+  });
+  reader.destroy();
 }
 
 /**

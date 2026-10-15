@@ -297,7 +297,7 @@ All under `backend/src/lib/`:
 | `containerManagerNetwork.js` | `setupNetwork()`, `teardownNetwork()`, `mergeNetworkLeaseIntoConfig()` (persist DHCP IP / MAC to `container.json`) |
 | `containerManagerSpec.js` | `buildOCISpec()` |
 | `containerPaths.js` | Path helpers for container directories |
-| `containerManagerExec.js` | `execInContainer()`, `resizeExec()` — interactive shell via containerd `Tasks.Exec` + PTY (FIFO stdio), used by the container console WebSocket |
+| `containerManagerExec.js` | `execInContainer()`, `resizeExec()` — interactive shell via containerd `Tasks.Exec` + PTY (FIFO stdio), used by the container console WebSocket; `execCommandInContainer()` — non-interactive command with captured stdout/stderr (app reload commands). Its timeout bounds the whole run (process exit **and** both FIFOs drained); on expiry the exec process is SIGKILLed and reaped before `Tasks.DeleteProcess`, and the FIFO readers are released even when the shim never opened its ends (failed Start), so no exec process, threadpool thread, or session dir outlives the call |
 
 ## Interactive console (exec)
 
