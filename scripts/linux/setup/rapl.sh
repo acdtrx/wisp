@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Intel RAPL read access for CPU power in Host Overview (setfacl or udev rule). Run as root.
+# Intel RAPL read access for CPU power in Host Overview (udev rule). Run as root.
+#
+# Always a udev rule, never a one-off setfacl/chmod on the file: sysfs attributes
+# are recreated on every boot, so permissions set on them directly do not survive
+# a reboot (and sysfs typically rejects POSIX ACLs outright). The rule re-applies
+# the group read bit each time the powercap device appears.
 # Usage: rapl.sh <username>
 set -euo pipefail
 
@@ -25,12 +30,6 @@ if [[ ! -e "$RAPL_ENERGY" ]]; then
   exit 0
 fi
 
-if setfacl -m "u:${DEPLOY_USER}:r" "$RAPL_ENERGY" 2>/dev/null; then
-  echo "  setfacl: $DEPLOY_USER can read $RAPL_ENERGY (CPU power will show in Host Overview)"
-  exit 0
-fi
-
-# sysfs is often mounted with noacl; use udev to chgrp/chmod on the file at boot
 getent group "$RAPL_GROUP" &>/dev/null || groupadd "$RAPL_GROUP"
 usermod -aG "$RAPL_GROUP" "$DEPLOY_USER"
 echo "  Added $DEPLOY_USER to group $RAPL_GROUP"
@@ -50,4 +49,4 @@ udevadm trigger --action=add --subsystem-match=powercap
 if [[ -e "$RAPL_ENERGY" ]]; then
   chgrp "$RAPL_GROUP" "$RAPL_ENERGY" 2>/dev/null && chmod g+r "$RAPL_ENERGY" 2>/dev/null && echo "  Applied group to existing $RAPL_ENERGY" || echo "  Reboot or unload/reload powercap module for udev to apply (log out and back in for group)."
 fi
-echo "  CPU power will show in Host Overview after you log out and back in (or run: newgrp $RAPL_GROUP)"
+echo "  CPU power shows in Host Overview once wisp.service restarts (it picks up the $RAPL_GROUP group at start)."

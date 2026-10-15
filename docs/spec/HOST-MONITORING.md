@@ -25,7 +25,7 @@ Host metrics are read directly from the Linux `/proc` and `/sys` filesystems —
 
 Deltas are computed between consecutive reads (every 5 seconds). Temperature and power are `null` when unavailable (e.g. non-Linux, VM, or no sysfs support).
 
-**Checking CPU power support on the server:** Run `test -r /sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj && echo supported`. The file is often root-only (mode 400). `setup-server.sh` (run during install) grants the deploy user read access: it tries `setfacl` first; if sysfs is mounted with `noacl`, it creates group `wisp-power`, adds the deploy user, and installs a udev rule that sets group read on the RAPL file. After the udev fallback, log out and back in (or `newgrp wisp-power`) so the group takes effect. Not available in VMs or on non-Intel CPUs.
+**Checking CPU power support on the server:** Run `test -r /sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj && echo supported`. The file is often root-only (mode 400). `setup-server.sh` (run during install) grants the deploy user read access through `rapl.sh`: it creates group `wisp-power`, adds the deploy user, and installs a udev rule that sets group read on the RAPL file at every boot (a direct `setfacl`/`chmod` on sysfs would not survive a reboot). `wisp.service` picks up the group on its next start. Not available in VMs or on non-Intel CPUs.
 
 ### VM allocation totals
 

@@ -39,7 +39,7 @@ SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "=== Wisp common setup steps ==="
 echo ""
 
-# Host DNS wiring for containers: the systemd-networkd drop-in owning the mDNS
+# Host DNS wiring for containers: the wisp-dns0 dummy interface holding the mDNS
 # stub IP, plus the resolv.conf bind-mounted into every container on br0.
 "$SETUP_DIR/container-dns.sh"
 echo ""

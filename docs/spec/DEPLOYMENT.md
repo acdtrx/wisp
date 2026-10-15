@@ -89,7 +89,7 @@ One-time server preparation script. Run as root with `sudo`. Safe to re-run. It 
 
 10. **Runs `scripts/linux/setup/install-helpers.sh`** — Copies each `backend/scripts/wisp-*` helper to `/usr/local/bin` and refreshes `/etc/sudoers.d/*` (via `helper.sh`). Idempotent and safe to re-run on every upgrade. See [Privileged helpers checklist](#privileged-helpers-checklist) when adding a new helper.
 
-11. **Runs `scripts/linux/setup/rapl.sh`** — Optionally grants deploy user read access to Intel RAPL (`/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj`) so the app can show CPU power in Host Overview when running as the deploy user. Tries `setfacl` first; if sysfs is mounted with `noacl`, creates group `wisp-power`, adds the deploy user to it, and installs a udev rule (`/etc/udev/rules.d/99-wisp-rapl.rules`) that runs `chgrp`/`chmod g+r` on the RAPL `energy_uj` file so the group can read it. Deploy user must log out and back in (or run `newgrp wisp-power`) for the group to take effect. Skipped if the path does not exist (e.g. VM or non-Intel).
+11. **Runs `scripts/linux/setup/rapl.sh`** — Optionally grants deploy user read access to Intel RAPL (`/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj`) so the app can show CPU power in Host Overview when running as the deploy user. Creates group `wisp-power`, adds the deploy user to it, and installs a udev rule (`/etc/udev/rules.d/99-wisp-rapl.rules`) that runs `chgrp`/`chmod g+r` on the RAPL `energy_uj` file each time the powercap device appears, and applies it once immediately. Always the udev rule, never a direct `setfacl`/`chmod`: sysfs attributes are recreated on every boot, so permissions set on the file itself are lost at reboot (settled 2026-10-16). `wisp.service` picks up the group on its next start; an interactive shell needs a fresh login (or `newgrp wisp-power`). Skipped if the path does not exist (e.g. VM or non-Intel).
 
 ### Post-setup
 
@@ -112,7 +112,7 @@ Server setup and install logic is split into standalone scripts under `scripts/l
 | `containerd.sh [user]` | root | Install containerd 2.0+, socket group perms, wisp namespace |
 | `cni.sh` | root | CNI plugins (bridge, dhcp); **overwrites** `10-wisp-bridge.conflist`; DHCP daemon |
 | `bridge.sh` | root | Create br0 on primary NIC (netplan / nmcli / systemd-networkd) |
-| `container-dns.sh` | root | Assign link-local `169.254.53.53/32` to br0 at runtime (the bind address for Wisp's in-process DNS forwarder; runtime-only — re-asserted by `wisp.service` `ExecStartPre` and by `wisp-bridge` after `netplan apply`) and write `/var/lib/wisp/container-resolv.conf` for bind-mounting into containers. |
+| `container-dns.sh` | root | Hold link-local `169.254.53.53/32` (the bind address for Wisp's in-process DNS forwarder) on the dedicated dummy interface `wisp-dns0` — declared to systemd-networkd (`/etc/systemd/network/10-wisp-dns0.{netdev,network}`), brought up for this boot, and re-asserted by `wisp.service` `ExecStartPre` — and write `/var/lib/wisp/container-resolv.conf` for bind-mounting into containers. Never on br0 (see [CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns)); does not need br0 to exist, so a fresh install that adds the bridge last still gets container DNS. Part of `common-steps.sh`, so it re-runs on every self-update. |
 | `copy.sh <source-dir> <install-dir>` | user | Replace `frontend/`, `backend/`, `scripts/`, `systemd/`; refresh `config/*.example` |
 | `config.sh <install-dir> [server-name]` | user | `config/wisp-config.json` from example + serverName |
 | `password.sh <install-dir> [--force]` | user | `config/wisp-password` (scrypt hash) |
@@ -201,7 +201,7 @@ Wants=network-online.target
 User=WISP_USER
 WorkingDirectory=WISP_PATH/backend
 EnvironmentFile=-WISP_PATH/config/runtime.env
-ExecStartPre=+/bin/sh -c '...assigns 169.254.53.53/32 to br0 if needed...'
+ExecStartPre=+/bin/sh -c '...ensures wisp-dns0 exists, is up, and holds 169.254.53.53/32...'
 ExecStart=/usr/bin/node src/index.js
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=on-failure
@@ -407,7 +407,7 @@ Creates or removes a network namespace under `/var/run/netns/<name>` using `mkdi
 | `add <name>` | Ensure netns exists (idempotent if bind mount already present) |
 | `delete <name>` | Best-effort `ip netns delete` |
 | `ipv4 <name> [ifname]` | Print `ip -4 addr show dev <ifname>` inside the netns (default `eth0`). Used to persist DHCP-assigned addresses when the CNI ADD result has no `ips[]`. |
-| `route-add <name> <ifname> <ipv4>` | `ip -n <name> route replace <ipv4>/32 dev <ifname>` — installs an on-link /32 route inside the container's netns so the systemd-resolved mDNS stub IP (`169.254.53.53`) is reachable via the veth instead of being sent to the LAN gateway and black-holed. |
+| `route-add <name> <ifname> <ipv4>` | `ip -n <name> route replace <ipv4>/32 dev <ifname>` — installs an on-link /32 route inside the container's netns so Wisp's DNS forwarder stub IP (`169.254.53.53`) is reachable via the veth instead of being sent to the LAN gateway and black-holed. |
 
 **Troubleshooting:** `EACCES` on `mkdir '/var/run/netns'` in backend logs → helpers not installed or sudoers missing. Run **`sudo ./scripts/linux/setup/install-helpers.sh <project-root> <deploy-user>`** or **`./scripts/wispctl.sh helpers`**. Test: `sudo -n /usr/local/bin/wisp-netns add wisp-netns-test` then `sudo -n /usr/local/bin/wisp-netns delete wisp-netns-test`. After upgrading Wisp, re-run install-helpers so **`wisp-netns ipv4`** and **`wisp-netns route-add`** exist; otherwise container **network IP** may stay blank or `.local` resolution from containers on br0 fails.
 

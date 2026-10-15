@@ -489,12 +489,14 @@ const WISP_CONTAINER_RESOLV_CONF = '/var/lib/wisp/container-resolv.conf';
 
 /**
  * Whether the wisp DNS forwarder (`169.254.53.53`) is reachable from a container
- * on this bridge. The stub IP lives on the primary bridge (br0) — installed by
- * `scripts/linux/setup/container-dns.sh` and re-asserted by `wisp.service`
- * `ExecStartPre=+`. VLAN sub-bridges (`br0-vlan10`, `eth0.100`, …) don't carry
- * it and have no path to it (Linux bridges switch, they don't route), so
+ * on this bridge. The stub IP lives on the host's `wisp-dns0` dummy interface —
+ * declared by `scripts/linux/setup/container-dns.sh` and re-asserted by
+ * `wisp.service` `ExecStartPre=+` — and the host answers ARP for it from the
+ * primary bridge (weak host model). VLAN sub-bridges (`br0-vlan10`, `eth0.100`, …)
+ * carry no host address, so the host has no on-link route back to containers
+ * there and the forwarder's replies would leave via the default route instead:
  * containers attached there fall back to upstream resolvers and don't get
- * `.local` resolution — same as before this feature existed.
+ * `.local` resolution.
  *
  * Decided by name (not by probing the bridge's current addresses): the stub IP
  * is asserted on every wisp start, so probing introduces a timing race
@@ -511,8 +513,8 @@ function bridgeHasMdnsForwarder(bridgeInterface) {
  * Why: the container gets its default route via DHCP (LAN gateway). Without a specific
  * route for 169.254.53.53, the kernel forwards DNS queries to the LAN gateway, which
  * black-holes them (3-second timeout). Adding `169.254.53.53/32 dev eth0` makes the
- * container ARP directly on its veth; the host br0 (which carries that IP) answers
- * and wisp's DNS forwarder handles the query.
+ * container ARP directly on its veth; the host answers from br0 (the IP itself is
+ * on wisp-dns0) and wisp's DNS forwarder handles the query.
  *
  * Best-effort: a failure here logs a warning but does not block the container start.
  */
