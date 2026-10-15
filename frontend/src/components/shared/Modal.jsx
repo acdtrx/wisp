@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { X } from 'lucide-react';
 import { useEscapeKey } from '../../hooks/useEscapeKey.js';
 
@@ -31,7 +31,8 @@ const BODY_PADDING_CLASS = {
  * separates the dialog from the page) and a `bg-surface-card` body.
  *
  * @param {boolean} open
- * @param {() => void} onClose - called on backdrop click, X, and Escape
+ * @param {() => void} onClose - called on backdrop click (press and release both on
+ *   the backdrop), X, and Escape
  * @param {React.ReactNode} [title]
  * @param {React.ReactNode} [subtitle] - small muted text under title
  * @param {React.ReactNode} [headerExtra] - rendered to the left of the close X
@@ -64,9 +65,21 @@ export default function Modal({
 
   useEscapeKey(open, handleEscape);
 
+  /* A click whose press started inside the card (e.g. drag-selecting text in a
+   * field and releasing past the card's edge) is dispatched to the backdrop as
+   * the common ancestor — it must not close the modal and lose the edits. */
+  const pressedOnBackdropRef = useRef(false);
+
   if (!open) return null;
 
-  const handleBackdrop = () => {
+  const handleBackdropMouseDown = (e) => {
+    pressedOnBackdropRef.current = e.target === e.currentTarget;
+  };
+
+  const handleBackdrop = (e) => {
+    const pressedOnBackdrop = pressedOnBackdropRef.current;
+    pressedOnBackdropRef.current = false;
+    if (e.target !== e.currentTarget || !pressedOnBackdrop) return;
     if (closeOnBackdrop) onClose?.();
   };
 
@@ -78,6 +91,7 @@ export default function Modal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 p-4"
+      onMouseDown={handleBackdropMouseDown}
       onClick={handleBackdrop}
     >
       <div

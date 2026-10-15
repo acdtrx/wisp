@@ -138,6 +138,7 @@ All full-screen overlays go through the shared **[Modal.jsx](../frontend/src/com
 - Width via **`size`** (`sm` | `md` | `lg` | `xl` | `2xl` | `3xl` | `4xl`) and height via **`height`** (`auto` | `tall` for `h-[80vh]` | `cap` for `max-h-[85vh]`).
 - Body padding via **`bodyPadding`** (`default` `px-4 py-4` | `compact` `px-4 py-3` | `none` for full-bleed content).
 - Guard flags **`closeOnBackdrop`** and **`closeOnEscape`** for in-flight save/upload states.
+- **Backdrop close needs press and release on the backdrop.** A click whose mousedown started inside the card — drag-selecting a field's text and releasing past the card's edge — lands on the backdrop as the common ancestor; it must not close the modal and drop the edits.
 
 Do **not** open ad-hoc `fixed inset-0` overlays. New modal-style UI must wrap `<Modal>` so backdrop, escape, marker, and styling stay consistent.
 
