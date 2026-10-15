@@ -17,6 +17,7 @@ import {
   normalizePciClassHex,
 } from './pciIds.js';
 import { readAllDiskSmartSummaries } from './smart.js';
+import { readMountTable } from '../../storage/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -213,21 +214,18 @@ function isNetnsBindMount(mount) {
 }
 
 /**
- * Filesystem usage per mount point from /proc/mounts + statfs.
- * Only local mounts with a device that looks like a block device or UUID.
- * Excludes network-namespace bind mounts (containers / CNI).
+ * Filesystem usage per mount point from the mount table + statfs.
+ * One row per mount point: when mounts are stacked on a path, the topmost
+ * (last in mount order) is the one statfs sees, so it alone is reported.
+ * Excludes pseudo/virtual filesystems and network-namespace bind mounts (containers / CNI).
  * @returns {{ mount: string, device: string, totalBytes: number, usedBytes: number, availBytes: number }[] }
  */
 export function getFilesystemUsage() {
-  const content = readFile('/proc/mounts');
-  if (!content) return [];
+  const visibleByMountPoint = new Map();
+  for (const entry of readMountTable()) visibleByMountPoint.set(entry.mountPoint, entry);
 
   const result = [];
-  for (const line of content.split('\n')) {
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 3) continue;
-
-    const [device, mount, fstype] = parts;
+  for (const { source: device, mountPoint: mount, fsType: fstype } of visibleByMountPoint.values()) {
     if (mount.startsWith('/proc') || mount.startsWith('/sys') || mount.startsWith('/dev')) continue;
     if (isNetnsBindMount(mount)) continue;
     if (fstype === 'tmpfs' || fstype === 'devtmpfs' || fstype === 'squashfs') continue;

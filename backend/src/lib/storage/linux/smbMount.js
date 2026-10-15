@@ -3,10 +3,11 @@
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { access, writeFile, unlink, rm, mkdtemp, readFile } from 'node:fs/promises';
+import { access, writeFile, unlink, rm, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAppError } from '../../routeErrors.js';
+import { isMountPoint } from '../mountTable.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -224,25 +225,10 @@ export async function rmdirMountpoint(mountPath) {
 }
 
 /**
- * Check if a path is currently mounted. Reads /proc/mounts (no privilege needed).
+ * Check if something is mounted exactly at `mountPath` (a mount on a parent
+ * directory does not count). Reads the kernel mount table; no privilege needed.
  */
 export async function getMountStatus(mountPath) {
   if (!mountPath || !mountPath.startsWith('/')) return { mounted: false };
-  try {
-    const content = await readFile('/proc/mounts', 'utf8');
-    const normalized = mountPath.replace(/\/+$/, '') || '/';
-    const lines = content.split('\n');
-    for (const line of lines) {
-      const parts = line.split(/\s+/);
-      if (parts.length >= 2) {
-        const mount = parts[1];
-        if (mount === normalized || mount === mountPath || (mountPath.startsWith(mount + '/') && mount !== '/')) {
-          return { mounted: true };
-        }
-      }
-    }
-  } catch {
-    /* /proc/mounts unreadable — assume not mounted */
-  }
-  return { mounted: false };
+  return { mounted: isMountPoint(mountPath) };
 }

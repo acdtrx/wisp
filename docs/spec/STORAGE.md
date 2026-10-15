@@ -47,7 +47,7 @@ See [CONFIGURATION.md](CONFIGURATION.md) for the full schema and validation rule
 1. List `/dev/disk/by-uuid/` — symlinks to underlying `/dev/sdXN` or `/dev/nvmeXnYpZ`.
 2. For each UUID, read `/sys/class/block/<name>/dev` to get `major:minor`, then parse `/run/udev/data/b<maj>:<min>` for `ID_FS_TYPE`, `ID_FS_LABEL`, etc.
 3. Read `/sys/class/block/<parent>/removable`, `/sys/class/block/<name>/size`, `/sys/class/block/<parent>/device/vendor`, `.../model`.
-4. Cross-reference `/proc/mounts` for `mountedAt`.
+4. Cross-reference the [mount table](#mount-table) for `mountedAt` (the device's first mount point).
 5. Filter out ignored filesystem types (`crypto_LUKS`, `linux_raid_member`, `LVM2_member`, `zfs_member`, `swap`).
 
 **Hotplug** is picked up via `fs.watch('/dev/disk/by-uuid/')` with a 300 ms debounce. Insertions, removals, and reformat (UUID change) all trigger re-enumeration.
@@ -112,12 +112,22 @@ Mount options are chosen by filesystem:
 - `ntfs3`: forced `ro` (write support in `ntfs3` is still maturing; explicit opt-in could be added later)
 - SMB: `rw,credentials=<path>[,uid=$uid,gid=$gid]`
 
+## Mount table
+
+Every "what is mounted where" question — `getMountStatus`, the disk monitor's `mountedAt`, the startup orphan sweep, Host → Storage filesystem usage — reads the kernel mount table through one parser, `backend/src/lib/storage/mountTable.js` (`readMountTable` on the storage facade). It lives in `storage/` because mounts are storage's domain and `storage/` is the cross-cutting module both the managers and the host module may import (CODING-RULES §7); `host/` importing it keeps the dependency one-way.
+
+- **Source:** `/proc/self/mounts`, the same table `wisp-mount` checks before unmounting, so the backend and the helper agree on what "mounted" means. `/proc/self/mountinfo` was considered and not used (settled 2026-10-16): its extra fields (mount ids, bind-mount roots, propagation) answer questions no consumer asks.
+- **Escapes:** the kernel octal-escapes space, tab, newline and backslash inside fields (`\040`, `\011`, `\012`, `\134`); the parser decodes them, so a mount path with a space matches its configured `mountPath`.
+- **Mounted means an exact mount point** (settled 2026-10-16). `getMountStatus(p)` is true only when an entry's mount point equals `p` (trailing slashes ignored). A mount on a parent directory does not count — with `/mnt` mounted, `/mnt/wisp/share` reads as unmounted until the share itself is mounted, so auto-mount still mounts it and backups / container binds never write into the parent filesystem's empty directory.
+- **Stacked mounts** (several mounts on one path) stay separate entries in kernel order, which is mount order; the last one for a path is the visible one. Status: mounted if any entry matches. Orphan sweep: one detach per entry. Filesystem usage: one row per mount point, from the visible mount (the one `statfs` sees). Bind mounts are ordinary entries at each path they appear at.
+- **No procfs** (macOS dev): the table is empty — nothing reads as mounted.
+
 ## Startup reconciliation (`ensureMounts`)
 
 `backend/src/lib/mountsAutoMount.js` runs once at backend start, before the HTTP server listens:
 
 1. Load `settings.mounts`.
-2. Read `/proc/mounts`; any mount under `/mnt/wisp/` that is **not** in `settings.mounts` is lazy-unmounted (hard-converge). This cleans up orphans left by a prior run or by user edits while Wisp was down. A mount sitting at `/mnt/wisp` itself is never Wisp's (the helper refuses to mount or unmount there), so the attempt fails with a logged warning and the mount is left alone.
+2. Read the [mount table](#mount-table); any mount point strictly under `/mnt/wisp/` that is **not** a configured `mountPath` is lazy-unmounted (hard-converge), in reverse mount order so nested mounts and overmounts go before what they sit on; stacked mounts on one orphan path are each detached. This cleans up orphans left by a prior run or by user edits while Wisp was down. A mount at `/mnt/wisp` itself is never a candidate — it is the host's (e.g. a data disk mounted there), not Wisp's, and the helper refuses it anyway.
 3. For each configured SMB entry with `autoMount !== false`: mount it if not already mounted.
 4. For each configured **disk** entry with `autoMount !== false`: if the UUID is currently present (from the disk monitor snapshot) and not yet mounted, mount it. Absent UUIDs are skipped — they'll mount on insertion.
 

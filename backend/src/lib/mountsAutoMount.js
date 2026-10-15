@@ -7,34 +7,31 @@
  * Hotplug: on disk insertion, auto-mount adopted disks whose UUID appeared.
  * On disk removal, lazy-unmount the stale mountPath so the kernel cleans up.
  */
-import { readFile } from 'node:fs/promises';
-import { getRawMounts } from './settings.js';
+import { getRawMounts, MOUNT_ROOT } from './settings.js';
 import {
   getMountStatus, mountSMB, unmountSMB,
   mountDisk, unmountDisk,
   getDevices as getDiskDevices,
   onChange as onDiskChange,
   refresh as refreshDiskSnapshot,
+  readMountTable,
 } from './storage/index.js';
 
-const WISP_MOUNT_ROOT = '/mnt/wisp';
-
-async function readCurrentWispMounts() {
-  try {
-    const content = await readFile('/proc/mounts', 'utf8');
-    const out = [];
-    for (const line of content.split('\n')) {
-      const parts = line.split(/\s+/);
-      if (parts.length < 2) continue;
-      const mount = parts[1];
-      if (mount === WISP_MOUNT_ROOT || mount.startsWith(`${WISP_MOUNT_ROOT}/`)) {
-        out.push(mount);
-      }
-    }
-    return out;
-  } catch {
-    return [];
-  }
+/**
+ * Mount points strictly under MOUNT_ROOT that no configured mount owns, in
+ * unmount order (reverse of mount order: overmounts and nested mounts before
+ * what they sit on). MOUNT_ROOT itself is never a candidate — a mount there is
+ * the host's (e.g. a data disk holding /mnt/wisp), not Wisp's. A path with
+ * stacked mounts appears once per mount, so each one gets detached.
+ * @param {import('./storage/mountTable.js').MountEntry[]} mountTable
+ * @param {Set<string>} configuredPaths
+ * @returns {string[]}
+ */
+export function findOrphanMounts(mountTable, configuredPaths) {
+  return mountTable
+    .map((e) => e.mountPoint)
+    .filter((p) => p.startsWith(`${MOUNT_ROOT}/`) && !configuredPaths.has(p))
+    .reverse();
 }
 
 /**
@@ -45,9 +42,7 @@ export async function ensureMounts(log) {
   const mounts = await getRawMounts();
   const configuredPaths = new Set(mounts.map((d) => d.mountPath));
 
-  const currentWisp = await readCurrentWispMounts();
-  for (const mountPath of currentWisp) {
-    if (configuredPaths.has(mountPath)) continue;
+  for (const mountPath of findOrphanMounts(readMountTable(), configuredPaths)) {
     try {
       await unmountSMB(mountPath, { lazy: true });
       log.info({ mountPath }, 'Hard-converge: unmounted orphan mount');

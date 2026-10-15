@@ -1,5 +1,5 @@
 /**
- * Removable/fixed block-device enumeration from sysfs + udev metadata + /proc/mounts.
+ * Removable/fixed block-device enumeration from sysfs + udev metadata + the mount table.
  * Hotplug detection via fs.watch on /dev/disk/by-uuid/.
  *
  * No libudev / UDisks2 dependency — parses /run/udev/data/b<maj>:<min> directly.
@@ -13,14 +13,15 @@ import {
 } from 'node:fs';
 import { dirname, basename, join } from 'node:path';
 
+import { readMountTable } from '../mountTable.js';
+
 const BY_UUID_DIR = '/dev/disk/by-uuid';
 const SYS_CLASS_BLOCK = '/sys/class/block';
 const UDEV_DATA_DIR = '/run/udev/data';
-const PROC_MOUNTS = '/proc/mounts';
 
 const DEBOUNCE_MS = 300;
 /** Catches mount/unmount that happens outside Wisp (shell, udev, hook). fs.watch on /dev/disk/by-uuid
- *  only fires on device add/remove, not on /proc/mounts changes — so poll the mount table. */
+ *  only fires on device add/remove, not on mount table changes — so poll the mount table. */
 const MOUNT_POLL_MS = 3000;
 
 const IGNORED_FSTYPES = new Set([
@@ -91,22 +92,12 @@ function parseUdevData(path) {
   return out;
 }
 
-/** Read `/proc/mounts` once per snapshot and index by device path. */
+/** Read the mount table once per snapshot and index by device path (first mount point wins). */
 function readMountsByDevice() {
   const map = new Map();
-  let text;
-  try {
-    text = readFileSync(PROC_MOUNTS, 'utf8');
-  } catch {
-    return map;
-  }
-  for (const line of text.split('\n')) {
-    const parts = line.split(/\s+/);
-    if (parts.length < 2) continue;
-    const dev = parts[0];
-    const at = parts[1];
-    if (!dev.startsWith('/dev/')) continue;
-    if (!map.has(dev)) map.set(dev, at);
+  for (const { source, mountPoint } of readMountTable()) {
+    if (!source.startsWith('/dev/')) continue;
+    if (!map.has(source)) map.set(source, mountPoint);
   }
   return map;
 }
