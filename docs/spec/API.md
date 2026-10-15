@@ -588,6 +588,7 @@ Create a new VM. Returns a job ID; monitor progress via SSE.
 - **`cloudInit.enabled`:** Optional; default is on. If `false`, cloud-init is skipped during create (no seed ISO, no `sde`, no `cloud-init.json`).
 
 - **201:** `{ jobId: string, title: string }` — `title` is the display label for the background job (e.g. `Create <name>`)
+- **409:** `{ error, detail }` — `VM_EXISTS` when a VM with that name is defined; `VM_DIR_EXISTS` when `<vmsPath>/<name>/` already exists (e.g. left by *Delete VM, keep disks*) — `error` names the path. Checked before the job starts; nothing is created.
 - **422:** `{ error, detail }` — `INVALID_VM_NAME` when name fails `validateVMName`; VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
 
 The body schema is **`additionalProperties: false`**. With Fastify's default Ajv (`removeAdditional: true`), unknown keys are silently stripped before the handler runs — they never reach `createVM`. Only schema-level violations (wrong type, missing required field) return HTTP 400.
@@ -666,6 +667,7 @@ Start a clone job (VM must be stopped). Returns a job ID; monitor progress via S
 
 - **Body:** `{ newName: string (1-128 chars; starts with a letter or digit, then alphanumeric, dot, hyphen, underscore; no surrounding whitespace, no .. or path separators) }`. Schema is **`additionalProperties: false`**.
 - **201:** `{ jobId: string, title: string }` — `title` is `Clone <newName>`.
+- **409:** `VM_EXISTS` / `VM_DIR_EXISTS` when `newName` is taken in libvirt or on disk (same rule as `POST /api/vms`); checked before the job starts.
 - **422:** `INVALID_VM_NAME` if `newName` fails `validateVMName`.
 
 ### GET /api/vms/clone-progress/:jobId
@@ -916,6 +918,7 @@ Restore a backup as a new VM.
 - **Body:** `{ destinationId: string, vmName: string, timestamp: string, newVmName: string }` — `(destinationId, vmName, timestamp)` are typically copied from a `GET /api/backups` row.
 - **200:** `{ name: string }`
 - **404:** backup not found
+- **409:** `VM_EXISTS` / `VM_DIR_EXISTS` when `newVmName` is taken in libvirt or on disk (same rule as `POST /api/vms`)
 - **422:** unknown `destinationId`, invalid `vmName`/`newVmName`, or invalid `timestamp`
 
 ### POST /api/backups/restore-in-place

@@ -70,14 +70,16 @@ Five predefined templates provide default configurations:
 
 ### Creation flow
 
-1. **Validate** — check name uniqueness, validate parameters
-2. **Create VM directory** — `<vmsPath>/<name>/`
-3. **Handle disk(s)** — for each requested block disk (`disk`, then `disk2`, skipping `type: none`), create a new qcow2 or copy/convert an existing image from the library into `disk0.qcow2`, `disk1.qcow2` in order. If both are `none`, no block disk images are created (CD-ROM–only or network-only installs are allowed).
-4. **Optional resize** — resize the copied disk if a target size was specified
-5. **Optional cloud-init** — generate seed ISO and config files
+1. **Validate** — validate parameters; the name must be free **both** in libvirt (`VM_EXISTS`) and on disk: if `<vmsPath>/<name>/` already exists — typically left by *Delete VM, keep disks* — create is refused with **409 `VM_DIR_EXISTS`** naming the path. A new VM never adopts or overwrites files it did not create *(settled 2026-10-16)*; "adopt the kept disks" was rejected as a new feature. The `POST /api/vms` route runs this check (`vmManager.assertVMNameAvailable`) before it starts the job or builds anything, so a conflict is an HTTP 409, not a job error.
+2. **Create VM directory** — `<vmsPath>/<name>/`, exclusively (an existing path is `VM_DIR_EXISTS`, atomically — covers a race with a concurrent create).
+3. **Optional cloud-init** — the route's `populateVMDir` callback builds the seed ISO and `cloud-init.json` into the fresh directory ([CLOUD-INIT.md](CLOUD-INIT.md)); vmManager only wires `sde` to `<dir>/cloud-init.iso`.
+4. **Handle disk(s)** — for each requested block disk (`disk`, then `disk2`, skipping `type: none`), create a new qcow2 or copy/convert an existing image from the library into `disk0.qcow2`, `disk1.qcow2` in order. If both are `none`, no block disk images are created (CD-ROM–only or network-only installs are allowed).
+5. **Optional resize** — resize the copied disk if a target size was specified
 6. **Build domain XML** — build a domain object and serialize with fast-xml-parser (`buildXml`); UEFI loader/nvram paths are set on the object when firmware is available
 7. **Define domain** — `Connect.DomainDefineXML(xml, 0)` registers the VM with libvirt
-8. **Set autostart** — if requested, set autostart via DBus Properties
+8. **Set autostart** — if requested, set autostart via DBus Properties (failure is logged, non-fatal)
+
+Any failure in steps 3–7 removes `<vmsPath>/<name>/` — safe because step 2 proved this request created it — so a failed create leaves nothing behind and a retry starts clean.
 
 Progress is reported via callback for each step, streamed to the frontend via SSE.
 
@@ -92,15 +94,15 @@ Progress is reported via callback for each step, streamed to the frontend via SS
 
 A VM can be cloned when it is stopped.
 
-1. Validate `newName` (`validateVMName`); reject if a VM with that name already exists.
-2. **Create the cloned VM's directory** at `<vmsPath>/<newName>/` (`mkdir -p`).
+1. Validate `newName` (`validateVMName`); reject if a VM with that name already exists (`VM_EXISTS`) or `<vmsPath>/<newName>/` already exists (`VM_DIR_EXISTS`) — both **409** from `POST /api/vms/:name/clone` before the job starts, same rule as create.
+2. **Create the cloned VM's directory** at `<vmsPath>/<newName>/`, exclusively (an existing path is `VM_DIR_EXISTS`).
 3. Copy each disk-or-CDROM whose `<source file>` lives **inside the source VM directory** into the new VM's directory, preserving the basename (`cp --reflink=auto` falling back to `copyFile`). For example, cloning `archy` → `archy2` produces `<vmsPath>/archy2/disk0.qcow2` and, when the source has cloud-init enabled, `<vmsPath>/archy2/cloud-init.iso` — **not** `<vmsPath>/archy/archy2.qcow2`. This keeps the "directory == VM name" invariant so a later rename or delete of the clone behaves predictably. Files that live **outside** the source VM dir (image library ISOs/disks attached as shared assets) are not copied; the cloned XML keeps pointing at the same library path.
 4. Read the original domain XML, parse with `parseDomainRaw`.
 5. Mutate the domain object: new name, drop uuid, point each disk/CDROM `<source file>` that was just copied at its new path (entries that pointed at shared library files are left unchanged), regenerate every NIC MAC, and (UEFI only) **always** point `<nvram>` at the new VM's `<vmsPath>/<newName>/VARS.fd` and copy the source's NVRAM file there via the **`wisp-nvram`** privileged helper (libvirt creates `VARS.fd` as `libvirt-qemu:kvm` mode `600`, so an in-process `copyFile` would `EACCES`). The clone never shares NVRAM with the source — even if the source's NVRAM lives in a legacy location outside its expected directory. If the source NVRAM file is missing on disk, the copy is skipped and libvirt template-fills on first define.
 6. Serialize with `buildXml(parsed)` and define via `Connect.DomainDefineXML`.
 7. **`cloud-init.json` is carried over by the route**, not vmManager — it is Wisp-glue metadata, not part of the libvirt domain. The `POST /vms/:name/clone` handler `cp`s `<srcVmDir>/cloud-init.json` to `<newVmDir>/cloud-init.json` after `cloneVM` returns (silently skipped if the source has no cloud-init). The accompanying `cloud-init.iso` is already cloned by step 3 because it lives inside the source VM dir. A clone whose source had cloud-init carries the same instance-id, so cloud-init's first-boot `runcmd` etc. will not re-run on the clone — the disk has already been through them. Editing cloud-init for the clone in the UI changes the user-data hash → new instance-id → cloud-init re-runs on next boot, if that is desired.
 
-On define failure: the copied disks and the new VM's directory are removed so a retry starts clean.
+On any failure from step 3 on, the new VM's directory (created by step 2, so never a pre-existing one) is removed with everything copied into it, so a retry starts clean.
 
 ## Renaming
 
@@ -127,7 +129,7 @@ Renames performed outside Wisp (`virsh domrename`, hand-edited domain XML, etc.)
    - `deleteDisks=true` and the NVRAM file lives inside this VM's own dir → `VIR_DOMAIN_UNDEFINE_NVRAM` so libvirt removes its managed NVRAM along with everything else.
    - All other cases (`deleteDisks=false`, **or** the NVRAM file lives outside the VM's dir — legacy state from a pre-fix rename, or a clone produced by buggy older code) → `VIR_DOMAIN_UNDEFINE_KEEP_NVRAM`. We never let libvirt delete a file that may belong to another VM.
 4. **`deleteDisks=true`** only: `rm -rf <vmsPath>/<name>/`. Disks, NVRAM, cloud-init artifacts, snapshots — everything goes.
-   **`deleteDisks=false`**: the per-VM directory is left **completely untouched**. The operator chose "keep my data"; that means disks, NVRAM, cloud-init.iso, cloud-init.json all stay. A subsequent re-create with the same name picks them up.
+   **`deleteDisks=false`**: the per-VM directory is left **completely untouched**. The operator chose "keep my data"; that means disks, NVRAM, cloud-init.iso, cloud-init.json all stay. The kept directory **blocks the name**: create, clone and restore-as-new under that name are refused with 409 `VM_DIR_EXISTS` rather than writing into it. To reuse a kept disk, move it into the image library and pick it with the **existing disk** option at create (it is copied into the new VM's directory); to reuse the name, remove `<vmsPath>/<name>/` first.
 
 ## VM Configuration
 

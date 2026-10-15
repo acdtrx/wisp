@@ -1,7 +1,7 @@
 /**
  * VM create, delete, clone; domain XML building and template helpers.
  */
-import { copyFile, unlink, mkdir, rm } from 'node:fs/promises';
+import { copyFile, mkdir, rm, lstat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { execFile as execFileCb } from 'node:child_process';
@@ -12,7 +12,7 @@ import dbus from 'dbus-next';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError, generateMAC } from './vmManagerConnection.js';
 import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
 import { validateVMName } from './vmManagerValidation.js';
-import { getVMBasePath } from './vmManagerPaths.js';
+import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
 import { resizeDisk as resizeDiskImage, copyAndConvert, getDiskInfo } from '../../storage/index.js';
 import { listHostFirmware } from './vmManagerHost.js';
 import { getDefaultBridge } from '../../networking/index.js';
@@ -257,7 +257,81 @@ function buildDomainXML(spec, blockDisks, cdrom1Path, cdrom2Path, sdePath, { loa
   return buildXml({ domain: dom });
 }
 
-export async function createVM(spec, { onStep } = {}) {
+/** Throws VM_EXISTS when libvirt already has a domain with this name. */
+async function assertNoDomainNamed(name) {
+  try {
+    await connectionState.connectIface.DomainLookupByName(name);
+  } catch {
+    /* lookup failed — no domain by that name */
+    return;
+  }
+  throw vmError('VM_EXISTS', `VM "${name}" already exists`);
+}
+
+function vmDirExistsError(name, dir) {
+  return vmError(
+    'VM_DIR_EXISTS',
+    `A directory for VM "${name}" already exists at ${dir} — choose another name or remove the directory`,
+  );
+}
+
+/**
+ * Pre-flight for create / clone / restore-as-new: the name must be free both in
+ * libvirt and on disk. A leftover directory (e.g. from "delete VM, keep disks")
+ * is refused, never written into — a new VM only ever owns files it created.
+ * Callers that build artifacts before the manager runs use this to fail fast;
+ * the operations themselves stay authoritative via createOwnVMDir.
+ */
+export async function assertVMNameAvailable(name) {
+  if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
+  validateVMName(name);
+  await assertNoDomainNamed(name);
+  const dir = getVMBasePath(name);
+  try {
+    await lstat(dir);
+  } catch (err) {
+    if (err.code === 'ENOENT') return;
+    throw err;
+  }
+  throw vmDirExistsError(name, dir);
+}
+
+/**
+ * Create a new VM's own directory, exclusively: an existing path (directory,
+ * file or symlink) is VM_DIR_EXISTS, atomically, so a caller that gets the path
+ * back knows it created the directory and may remove it on failure.
+ */
+export async function createOwnVMDir(name) {
+  await mkdir(getVmsPath(), { recursive: true });
+  const dir = getVMBasePath(name);
+  try {
+    await mkdir(dir);
+  } catch (err) {
+    if (err.code === 'EEXIST') throw vmDirExistsError(name, dir);
+    throw err;
+  }
+  return dir;
+}
+
+/** Remove a directory this operation created (rollback). */
+export async function removeOwnVMDir(dir) {
+  await rm(dir, { recursive: true, force: true }).catch((err) => {
+    /* rollback is best-effort — the original error is what the caller reports */
+    connectionState.logger?.warn?.({ err: err.message, dir }, '[vmManager] Failed to remove VM directory on rollback');
+  });
+}
+
+/**
+ * Create and define a new VM. Refuses (VM_EXISTS / VM_DIR_EXISTS) when the name
+ * is taken in libvirt or `<vmsPath>/<name>/` already exists; on any failure
+ * after creating that directory, removes it.
+ * @param {object} spec
+ * @param {{ onStep?: (step: string, data?: object) => void, populateVMDir?: (vmDir: string) => Promise<void> }} [opts]
+ *   populateVMDir: writes caller-owned files (e.g. the cloud-init seed ISO) into
+ *   the freshly created VM directory before disks are provisioned; they share
+ *   the directory's rollback.
+ */
+export async function createVM(spec, { onStep, populateVMDir } = {}) {
   const emit = (step, data) => { if (onStep) onStep(step, data); };
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
 
@@ -266,12 +340,7 @@ export async function createVM(spec, { onStep } = {}) {
   validateVMName(name);
 
   emit('validating');
-  try {
-    await connectionState.connectIface.DomainLookupByName(name);
-    throw vmError('VM_EXISTS', `VM "${name}" already exists`);
-  } catch (err) {
-    if (err.code === 'VM_EXISTS') throw err;
-  }
+  await assertNoDomainNamed(name);
 
   const disk = s.disk || {};
   const disk2 = s.disk2 || {};
@@ -283,8 +352,43 @@ export async function createVM(spec, { onStep } = {}) {
     if (!disk2.sourcePath) throw vmError('PARSE_ERROR', 'Existing image for second disk requires sourcePath');
   }
 
-  const vmBasePath = getVMBasePath(name);
-  await mkdir(vmBasePath, { recursive: true });
+  const vmBasePath = await createOwnVMDir(name);
+  try {
+    await provisionAndDefineVM(s, vmBasePath, { emit, populateVMDir, primaryType, disk, disk2 });
+  } catch (err) {
+    // Everything under vmBasePath was written by this call (the dir was created
+    // exclusively above), so removing it undoes the whole attempt.
+    await removeOwnVMDir(vmBasePath);
+    throw err;
+  }
+
+  if (s.autostart) {
+    try {
+      const path = await connectionState.connectIface.DomainLookupByName(name);
+      const obj = await connectionState.bus.getProxyObject('org.libvirt', path);
+      const props = obj.getInterface('org.freedesktop.DBus.Properties');
+      await props.Set('org.libvirt.Domain', 'Autostart', new dbus.Variant('b', true));
+    } catch (err) {
+      /* VM defined; autostart failure is non-fatal */
+      connectionState.logger?.warn?.({ err: err.message, vm: name }, '[vmManager] Failed to set autostart');
+    }
+  }
+
+  refreshVMListCache();
+  emit('done', { name });
+  return { name };
+}
+
+/**
+ * createVM body after the VM directory exists: caller files, disks, domain XML,
+ * define. Any throw leaves cleanup to createVM (it removes the whole directory).
+ */
+async function provisionAndDefineVM(s, vmBasePath, { emit, populateVMDir, primaryType, disk, disk2 }) {
+  const name = s.name;
+
+  // Caller-supplied files (e.g. a cloud-init seed ISO) are written into the
+  // fresh directory before anything else, inside the same rollback scope.
+  if (populateVMDir) await populateVMDir(vmBasePath);
 
   /* cdrom1Path / cdrom2Path are caller-provided absolute paths — the route
      resolves library-relative input and runs the security check before
@@ -296,8 +400,6 @@ export async function createVM(spec, { onStep } = {}) {
   const physicalSpecs = [];
   if (primaryType && primaryType !== 'none') physicalSpecs.push(disk);
   if (disk2.type && disk2.type !== 'none') physicalSpecs.push(disk2);
-
-  const createdPaths = [];
 
   for (let i = 0; i < physicalSpecs.length; i++) {
     const dspec = physicalSpecs[i];
@@ -320,7 +422,6 @@ export async function createVM(spec, { onStep } = {}) {
       const sizeGB = Math.max(1, parseInt(dspec.sizeGB, 10) || 32);
       await execFile('qemu-img', ['create', '-f', 'qcow2', destPath, `${sizeGB}G`]);
     }
-    createdPaths.push(destPath);
   }
 
   const blockDisksForXml = physicalSpecs.map((dspec, i) => ({
@@ -328,10 +429,8 @@ export async function createVM(spec, { onStep } = {}) {
     bus: dspec.bus || 'virtio',
   }));
 
-  // Cloud-init ISO/JSON are built by the route layer (Wisp glue) before createVM is
-  // called. We just record the expected path so buildDomainXML can wire up the sde
-  // slot. Caller must ensure the ISO already exists at this path when cloudInit is
-  // requested for non-Windows guests.
+  // The cloud-init ISO is built by the caller (Wisp glue) through populateVMDir.
+  // We just record the expected path so buildDomainXML can wire up the sde slot.
   let sdePath = null;
   const osCategory = s.osType === 'Windows' ? 'windows' : 'linux';
   if (s.cloudInit && osCategory !== 'windows' && s.cloudInit.enabled !== false) {
@@ -355,36 +454,12 @@ export async function createVM(spec, { onStep } = {}) {
   const defaultBridge = await getDefaultBridge();
   const xml = buildDomainXML(s, blockDisksForXml, cdrom1Path, cdrom2Path, sdePath, { loaderPath, nvramPath, defaultBridge });
 
-  if (connectionState.connectIface) {
-    try {
-      await connectionState.connectIface.DomainDefineXML(xml);
-    } catch (err) {
-      for (const p of createdPaths) {
-        await unlink(p).catch(() => {
-          /* rollback — file may not exist */
-        });
-      }
-      // Cloud-init ISO cleanup on rollback is the route's responsibility — see
-      // POST /vms in routes/vms.js, which catches this throw and runs the cleanup.
-      throw vmError('LIBVIRT_ERROR', `Failed to define VM "${name}"`, err.message);
-    }
+  if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
+  try {
+    await connectionState.connectIface.DomainDefineXML(xml);
+  } catch (err) {
+    throw vmError('LIBVIRT_ERROR', `Failed to define VM "${name}"`, err.message);
   }
-
-  if (s.autostart && connectionState.connectIface) {
-    try {
-      const path = await connectionState.connectIface.DomainLookupByName(name);
-      const obj = await connectionState.bus.getProxyObject('org.libvirt', path);
-      const props = obj.getInterface('org.freedesktop.DBus.Properties');
-      await props.Set('org.libvirt.Domain', 'Autostart', new dbus.Variant('b', true));
-    } catch (err) {
-      /* VM defined; autostart failure is non-fatal */
-      connectionState.logger?.warn?.({ err: err.message, vm: name }, '[vmManager] Failed to set autostart');
-    }
-  }
-
-  refreshVMListCache();
-  emit('done', { name });
-  return { name };
 }
 
 /**
@@ -403,12 +478,7 @@ export async function cloneVM(name, newName, { onProgress } = {}) {
   const state = await getDomainState(path);
   if (state.code === 1) throw vmError('VM_RUNNING', `Stop VM "${name}" before cloning`);
 
-  try {
-    await connectionState.connectIface.DomainLookupByName(newName);
-    throw vmError('VM_EXISTS', `VM "${newName}" already exists`);
-  } catch (err) {
-    if (err.code === 'VM_EXISTS') throw err;
-  }
+  await assertNoDomainNamed(newName);
 
   // The clone copies the saved (persistent) definition, not a paused source's live one.
   const xml = await getDomainXML(path, { inactive: true });
@@ -424,8 +494,7 @@ export async function cloneVM(name, newName, { onProgress } = {}) {
   // image library, shared library disks) stay shared by reference: the
   // cloned XML keeps pointing at the same library file.
   const srcVmDir = getVMBasePath(name);
-  const newVmDir = getVMBasePath(newName);
-  await mkdir(newVmDir, { recursive: true });
+  const newVmDir = await createOwnVMDir(newName);
 
   // Pre-scan inputs so progress percent is accurate from the first event.
   // disksToCopy + (UEFI ? 1 NVRAM : 0) + 1 define.
@@ -441,7 +510,6 @@ export async function cloneVM(name, newName, { onProgress } = {}) {
   const pct = () => Math.round((done / totalItems) * 100);
 
   const diskMapping = [];
-  let dirCleanupNeeded = true;
   try {
     for (const disk of disksToCopy) {
       const baseName = disk.source.slice(disk.source.lastIndexOf('/') + 1);
@@ -503,20 +571,10 @@ export async function cloneVM(name, newName, { onProgress } = {}) {
     emit('define', { percent: pct(), currentFile: 'Defining VM' });
     await connectionState.connectIface.DomainDefineXML(newXml);
     done += 1;
-    dirCleanupNeeded = false;
   } catch (err) {
-    if (dirCleanupNeeded) {
-      // Roll back: delete copied disks AND the newly-created dir so a retry
-      // doesn't trip over leftover state.
-      for (const { newPath } of diskMapping) {
-        await unlink(newPath).catch(() => {
-          /* may already be gone */
-        });
-      }
-      await rm(newVmDir, { recursive: true, force: true }).catch(() => {
-        /* best-effort */
-      });
-    }
+    // newVmDir was created exclusively by this call — removing it drops every
+    // copied file so a retry starts clean.
+    await removeOwnVMDir(newVmDir);
     if (err && err.code) throw err;
     throw vmError('CLONE_FAILED', `Failed to define cloned VM "${newName}"`, err.message);
   }

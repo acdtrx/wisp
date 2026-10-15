@@ -49,6 +49,7 @@ export const getVNCPort = impl.getVNCPort;
 
 export const isVMBinaryStale = impl.isVMBinaryStale;
 
+export const assertVMNameAvailable = impl.assertVMNameAvailable;
 export const createVM = impl.createVM;
 export const deleteVM = impl.deleteVM;
 export const cloneVM = impl.cloneVM;

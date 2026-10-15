@@ -7,6 +7,7 @@ import {
   getVMConfig,
   getVMXML,
   updateVMConfig,
+  assertVMNameAvailable,
   createVM,
   startVM,
   stopVM,
@@ -43,7 +44,7 @@ import {
   titleForBackup,
 } from '../lib/jobs/index.js';
 import { publishVm, unpublishVm } from '../lib/vmMdnsReconciler.js';
-import { generateCloudInit, deleteCloudInitISO } from '../lib/cloudInit.js';
+import { generateCloudInit } from '../lib/cloudInit.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { resolveBackupDestinations } from '../lib/backupDestinations.js';
 import { recordBackupAttempt } from '../lib/backupStatus.js';
@@ -208,6 +209,9 @@ export default async function vmsRoutes(fastify) {
             assertPathInsideAllowedRoots(dspec.sourcePath, spec.name);
           }
         }
+        // Name must be free in libvirt and on disk before any artifact is built:
+        // cloud-init would otherwise write into an existing VM's directory.
+        await assertVMNameAvailable(spec.name);
       } catch (err) {
         return handleRouteError(err, reply, request);
       }
@@ -230,23 +234,22 @@ export default async function vmsRoutes(fastify) {
       );
       (async () => {
         try {
-          // Build cloud-init artifacts before vmManager runs — vmManager doesn't
-          // touch cloud-init at all, just wires up the sde slot if the file is there.
-          if (wantsCloudInit) {
-            createJobStore.pushEvent(jobId, { step: 'cloudinit' });
-            await generateCloudInit(vmName, spec.cloudInit);
-          }
+          // The cloud-init seed ISO + cloud-init.json are built into the VM
+          // directory createVM has just created, so they share its rollback:
+          // any create failure removes the directory and everything in it.
           const result = await createVM(spec, {
             onStep(step, data) {
               createJobStore.pushEvent(jobId, { step, ...data });
             },
+            populateVMDir: wantsCloudInit
+              ? async () => {
+                createJobStore.pushEvent(jobId, { step: 'cloudinit' });
+                await generateCloudInit(vmName, spec.cloudInit);
+              }
+              : undefined,
           });
           createJobStore.completeJob(jobId, result);
         } catch (err) {
-          // Cloud-init rollback: vmManager used to do this; the route owns it now.
-          if (wantsCloudInit) {
-            await deleteCloudInitISO(vmName).catch(() => { /* rollback */ });
-          }
           request.log.error({ err, jobId }, 'Background create-VM job failed');
           try {
             createJobStore.failJob(jobId, err);
@@ -478,6 +481,7 @@ export default async function vmsRoutes(fastify) {
         const srcName = request.params.name;
         const newName = request.body.newName;
         validateVMName(newName);
+        await assertVMNameAvailable(newName);
 
         const jobId = randomBytes(12).toString('hex');
         const title = titleForVmClone(newName);

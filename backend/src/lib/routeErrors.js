@@ -25,6 +25,7 @@ function errorCodeToStatus(code) {
     case 'VM_NOT_PAUSED':
     case 'VM_RUNNING':
     case 'VM_EXISTS':
+    case 'VM_DIR_EXISTS':
     case 'VM_MUST_BE_OFFLINE':
     case 'DISK_SLOT_IN_USE':
     case 'BACKUP_IN_PROGRESS':

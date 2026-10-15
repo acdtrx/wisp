@@ -52,6 +52,7 @@ export { getVMStats, getVMXML, getVNCPort } from './vmManagerStats.js';
 export { isVMBinaryStale } from './vmManagerProc.js';
 
 export {
+  assertVMNameAvailable,
   createVM,
   deleteVM,
   cloneVM,

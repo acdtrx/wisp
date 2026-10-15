@@ -203,6 +203,10 @@ export function getLinuxFeatures() {
   return { acpi: {} };
 }
 
+export async function assertVMNameAvailable() {
+  throw noConn();
+}
+
 export async function createVM() {
   throw noConn();
 }

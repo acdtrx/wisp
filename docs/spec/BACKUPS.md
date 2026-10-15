@@ -88,11 +88,14 @@ A configured network backup path that is not mounted is omitted from the scan (s
 
 `POST /api/backups/restore` with `{ destinationId, vmName, timestamp, newVmName }` — `(destinationId, vmName, timestamp)` are typically copied from a list row:
 
+0. Refuse with **409** if `newVmName` is taken — `VM_EXISTS` (a libvirt domain) or `VM_DIR_EXISTS` (`<vmsPath>/<newVmName>/` already exists, e.g. kept by *Delete VM, keep disks*). The restore never writes into a directory it did not create.
 1. Read `domain.xml` and, when present, `manifest.json` from the backup
-2. Decompress and copy disk images to the new VM's directory (`<vmsPath>/<newVmName>/`)
+2. Create the new VM's directory (`<vmsPath>/<newVmName>/`, exclusively) and decompress/copy disk images into it
 3. Copy NVRAM and cloud-init files; the restored `cloud-init.iso` and `cloud-init.json` are chmodded `0600` (they carry the password hash — see [CLOUD-INIT.md](CLOUD-INIT.md) § Password hashing). Restore-in-place uses the same copy step.
 4. Rewrite domain XML: new name, new UUID, new MAC addresses, and **path updates** so every file reference under the original VM directory (including block disks, CD-ROM paths such as cloud-init, UEFI NVRAM, and optional loader paths under that directory) points at `<vmsPath>/<newVmName>/`. This uses **`manifest.vmBasePath`** when available (older backups fall back to the backed-up VM name or inferred paths). Disk images that lived outside the VM directory (e.g. image library) are still remapped using the same per-disk logic as before.
 5. Define the new domain with `DomainDefineXML`
+
+Any failure in steps 2–5 (missing disk in the backup, gunzip error, define failure) removes the new VM's directory, so a failed restore leaves nothing behind.
 
 The restored VM gets a new name, new UUID, and new MAC addresses — it is a fully independent copy.
 

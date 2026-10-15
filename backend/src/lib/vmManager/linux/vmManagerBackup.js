@@ -16,7 +16,7 @@ import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
 import { getVMBasePath } from './vmManagerPaths.js';
 import { VIR_DOMAIN_STATE_SHUTOFF, VIR_DOMAIN_STATE_SHUTDOWN } from './libvirtConstants.js';
 import { copyNvram } from './vmManagerNvram.js';
-import { validateVMName } from './vmManagerValidation.js';
+import { assertVMNameAvailable, createOwnVMDir, removeOwnVMDir } from './vmManagerCreate.js';
 
 const execFile = promisify(execFileCb);
 
@@ -631,23 +631,26 @@ function rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping, newBas
  * @returns { Promise<{ name: string }> }
  */
 export async function restoreBackup(backupPath, newVmName) {
-  if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
-  validateVMName(newVmName);
-
-  try {
-    await connectionState.connectIface.DomainLookupByName(newVmName);
-    throw vmError('VM_EXISTS', `VM "${newVmName}" already exists`);
-  } catch (err) {
-    if (err.code === 'VM_EXISTS') throw err;
-  }
+  await assertVMNameAvailable(newVmName);
 
   const { xml, manifest } = await readBackupDomain(backupPath);
   const config = parseVMFromXML(xml);
   if (!config) throw vmError('PARSE_ERROR', 'Failed to parse backup domain.xml');
 
-  const newBase = normalizeBasePath(getVMBasePath(newVmName));
-  await mkdir(newBase, { recursive: true });
+  const newBase = normalizeBasePath(await createOwnVMDir(newVmName));
+  try {
+    await restorePayloadAndDefine(backupPath, newVmName, newBase, { xml, manifest, config });
+  } catch (err) {
+    // newBase was created exclusively above — removing it undoes the restore.
+    await removeOwnVMDir(newBase);
+    throw err;
+  }
 
+  return { name: newVmName };
+}
+
+/** restoreBackup body after the new VM directory exists; any throw leaves cleanup to the caller. */
+async function restorePayloadAndDefine(backupPath, newVmName, newBase, { xml, manifest, config }) {
   const diskMapping = await copyBackupPayload(backupPath, config, newBase);
 
   const parsed = parseDomainRaw(xml);
@@ -680,8 +683,6 @@ export async function restoreBackup(backupPath, newVmName) {
   } catch (err) {
     throw vmError('BACKUP_RESTORE_FAILED', `Failed to define restored VM "${newVmName}"`, err.message);
   }
-
-  return { name: newVmName };
 }
 
 /**

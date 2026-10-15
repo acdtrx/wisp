@@ -90,6 +90,8 @@ When creating a VM with cloud-init **enabled** (`cloudInit.enabled` not `false`;
 2. Save the config as `cloud-init.json` (with `enabled: true`)
 3. The VM domain XML includes `sde` pointing to the ISO
 
+Both files are written only **after** the name is known to be free in libvirt and on disk, into the VM directory `createVM` has just created: the route passes `generateCloudInit` to `createVM` as its `populateVMDir` callback. A create whose name belongs to an existing VM or a kept directory is refused (409 `VM_EXISTS` / `VM_DIR_EXISTS`, see [VM-MANAGEMENT.md](VM-MANAGEMENT.md#creation-flow)) before anything is generated, so it can never touch that VM's `cloud-init.iso` / `cloud-init.json`; a create that fails later removes the whole new directory, cloud-init files included.
+
 When `cloudInit.enabled` is `false`, creation **skips** cloud-init: no ISO, no `cloud-init.json`, and no `sde` in the domain XML.
 
 ### Read
