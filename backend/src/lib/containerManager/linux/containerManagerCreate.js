@@ -4,7 +4,7 @@
  */
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { mkdir, rm, readFile } from 'node:fs/promises';
+import { mkdir, rm, readFile, readdir } from 'node:fs/promises';
 import { randomBytes, createHash } from 'node:crypto';
 
 import {
@@ -308,10 +308,47 @@ export async function createContainer(spec, onStep) {
     // NOT_FOUND is expected — continue
   }
 
-  // Create container directory
+  // Claim the container directory. A non-recursive mkdir refuses an existing one —
+  // typically files/ kept by a delete without "delete files" — so create never adopts,
+  // overwrites, or (on a later failure) removes a directory it didn't make.
   const containerDir = getContainerDir(name);
   const filesDir = getContainerFilesDir(name);
-  await mkdir(filesDir, { recursive: true });
+  await mkdir(getContainersPath(), { recursive: true });
+  try {
+    await mkdir(containerDir);
+  } catch (err) {
+    if (err?.code === 'EEXIST') {
+      throw containerError(
+        'CONTAINER_EXISTS',
+        `Container directory for "${name}" already exists`,
+        `${containerDir} is left over from a deleted container (kept files?) — move or remove it, or pick another name`,
+      );
+    }
+    throw err;
+  }
+
+  let resolvedDigest;
+  try {
+    resolvedDigest = await defineNewContainer(spec, filesDir, onStep);
+  } catch (err) {
+    // This call created containerDir above, so it is ours to remove.
+    await rm(containerDir, { recursive: true, force: true });
+    throw err;
+  }
+
+  onStep?.({ step: 'done', name, imageDigest: resolvedDigest || null });
+  return { name };
+}
+
+/**
+ * The body of createContainer once its directory is claimed: resolve/pull the image,
+ * write container.json, prepare the snapshot, define the container in containerd.
+ * Throws on any failure; the caller removes the directory it created.
+ * @returns {Promise<string|null>} resolved image digest
+ */
+async function defineNewContainer(spec, filesDir, onStep) {
+  const { name } = spec;
+  await mkdir(filesDir);
 
   // If the literal ref is already in containerd (e.g. from `ctr -n wisp image import`
   // or an exact match picked from the image library), skip normalization + pull and use
@@ -348,7 +385,6 @@ export async function createContainer(spec, onStep) {
         clearInterval(pullProgressTimer);
       }
     } catch (err) {
-      await rm(containerDir, { recursive: true, force: true });
       throw containerError('IMAGE_PULL_FAILED', `Failed to pull image "${imageRef}"`, err.message);
     }
   }
@@ -358,10 +394,7 @@ export async function createContainer(spec, onStep) {
   try {
     imageConfig = await getImageConfig(imageRef);
   } catch (err) {
-    if (err.code === 'IMAGE_PULL_FAILED') {
-      await rm(containerDir, { recursive: true, force: true });
-      throw err;
-    }
+    if (err.code === 'IMAGE_PULL_FAILED') throw err;
     // Use empty config — user must provide command
   }
 
@@ -453,7 +486,6 @@ export async function createContainer(spec, onStep) {
   } catch (err) {
     const existing = await getSnapshotMounts(name);
     if (!existing) {
-      await rm(containerDir, { recursive: true, force: true });
       throw containerError('CONTAINERD_ERROR', `Failed to prepare snapshot for "${name}"`, err.message);
     }
   }
@@ -472,14 +504,10 @@ export async function createContainer(spec, onStep) {
       },
     });
   } catch (err) {
-    if (err.code !== 'CONTAINER_EXISTS') {
-      await rm(containerDir, { recursive: true, force: true });
-      throw err;
-    }
+    if (err.code !== 'CONTAINER_EXISTS') throw err;
   }
 
-  onStep?.({ step: 'done', name, imageDigest: resolvedDigest || null });
-  return { name };
+  return resolvedDigest;
 }
 
 /**
@@ -614,7 +642,39 @@ export async function startExistingContainer(name) {
 }
 
 /**
- * Delete a container: stop task, remove snapshot, remove containerd definition, delete files.
+ * Delete-without-files: remove everything in the container directory except
+ * files/ (mount data). container.json goes first — its presence is what makes a
+ * directory a container (listContainers skips directories without one), so the
+ * container is gone from every list while its data stays on disk. A directory
+ * left holding nothing is removed. The kept directory blocks re-creating a
+ * container with the same name (createContainer refuses an existing directory)
+ * until the user moves or removes it.
+ */
+async function removeContainerKeepingFiles(name) {
+  const containerDir = getContainerDir(name);
+  await rm(join(containerDir, 'container.json'), { force: true });
+  let entries;
+  try {
+    entries = await readdir(containerDir);
+  } catch (err) {
+    if (err?.code === 'ENOENT') return;
+    throw err;
+  }
+  for (const entry of entries) {
+    if (entry !== 'files') await rm(join(containerDir, entry), { recursive: true, force: true });
+  }
+  let kept = [];
+  try {
+    kept = await readdir(getContainerFilesDir(name));
+  } catch (err) {
+    if (err?.code !== 'ENOENT') throw err;
+  }
+  if (kept.length === 0) await rm(containerDir, { recursive: true, force: true });
+}
+
+/**
+ * Delete a container: stop task, remove snapshot, remove containerd definition, delete files
+ * (or, with deleteFiles false, everything but files/).
  */
 export async function deleteContainer(name, deleteFiles = true) {
   // Stop task if running
@@ -663,6 +723,8 @@ export async function deleteContainer(name, deleteFiles = true) {
   if (deleteFiles) {
     const containerDir = getContainerDir(name);
     await rm(containerDir, { recursive: true, force: true });
+  } else {
+    await removeContainerKeepingFiles(name);
   }
 
   // The earlier containerd /containers/delete event already triggered a cache

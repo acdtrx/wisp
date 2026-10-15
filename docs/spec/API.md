@@ -1618,7 +1618,7 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 ### DELETE /api/containers/:name
 
-Delete a container. Query param: `deleteFiles` (default `true`).
+Delete a container. Query param: `deleteFiles` (default `true`). With `deleteFiles=false` the container directory keeps only `files/` (mount data) — `container.json`, run logs and the rest are removed, so the container disappears from the list. Creating a container with the same name then fails with **409** `CONTAINER_EXISTS` until that directory is moved or removed.
 
 **200:** `{ ok: true }`
 

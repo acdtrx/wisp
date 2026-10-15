@@ -353,8 +353,14 @@ export default function ContainerOverviewPanel() {
         <p>Are you sure you want to delete &ldquo;{name}&rdquo;? This cannot be undone.</p>
         <label className="mt-3 flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
           <input type="checkbox" checked={deleteFiles} onChange={(e) => setDeleteFiles(e.target.checked)} className="rounded-sm border-surface-border" />
-          Also delete uploaded files
+          Also delete mount data (Local files)
         </label>
+        {!deleteFiles && (
+          <p className="mt-2 text-xs text-text-muted">
+            The container&rsquo;s <span className="font-mono">files/</span> directory stays on the host. A new
+            container named &ldquo;{name}&rdquo; can&rsquo;t be created until that directory is moved or removed.
+          </p>
+        )}
       </ConfirmDialog>
 
       <IconPickerModal
