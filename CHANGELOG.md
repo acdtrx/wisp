@@ -2,6 +2,9 @@
 
 ## 2026-10-16
 
+### New Features
+- **Container restart policy is enforced** — a container that exits on its own is restarted per its policy (`on-failure`, `unless-stopped`, `always`) with backoff from 1 s up to 5 min; stops from Wisp are never undone. Most containers use the default `unless-stopped`, so any running container that exits by itself (including one-shot commands) now comes back.
+
 ### Bug Fixes
 - **Auth can't be skipped with an encoded path** — the auth hook now decides on the matched route, so `/%61pi/...` and `/%77s/...` no longer reach API and console handlers without a session (affected every earlier version).
 - **VM consoles listen on localhost only** — new VMs and Graphics edits bind VNC/SPICE to `127.0.0.1` instead of every interface; Wisp's console proxy is the only way in. Existing VMs keep `0.0.0.0` until changed: `virsh edit <vm>` (graphics `listen` + `<listen address>`), or switch Graphics to SPICE and back in the UI; takes effect on the next full stop/start.
@@ -22,6 +25,18 @@
 - **Downloads can't crash the backend** — a full disk or two same-name downloads fail the job (or take a ` (n)` name) and leave no partial file; the same for the self-update download.
 - **HAOS downloads fail on a corrupt archive** — instead of saving a truncated image as success, and no hidden `.haos_download_*.xz` temp files are left.
 - **Lost libvirt connection retries** — reconnects back off up to 30 s instead of crashing the backend.
+- **Errors no longer blank the app** — a failed host-stats read keeps the last values on screen, and any render error shows a Reload screen instead of a white page.
+- **Fast switching stays on the right workload** — a late response for the previously selected VM or container (config, log runs, Image Library filter) is dropped instead of replacing the current page.
+- **Wrong current password doesn't log you out** — Change password shows an inline error (422) instead of ending every tab's session.
+- **Closing a tab or console mid-connect leaks nothing** — streams and consoles that close while still setting up release their timers, subscriptions, VNC connections and container shells.
+- **Hung app reloads are killed** — a reload command that exceeds its timeout is killed and reaped instead of lingering in the container.
+- **Progress streams stay small** — backups and downloads report once per percent, reconnecting tabs replay a short history, and finished jobs stay visible for 5 minutes after they finish however long they ran.
+- **Container backups to several destinations finish at the end** — like VM backups: per-destination progress, completion only after the last destination, later errors surfaced.
+- **Rename and clone respect a running backup or restore** — renaming a VM, or cloning it, is refused (409) while a backup, restore or clone of it runs.
+- **OS upgrades never wait for input** — apt runs non-interactively and keeps locally modified config files, instead of hanging until the timeout killed dpkg.
+- **Arch update checks don't touch the system package database** — they sync into a scratch copy, so they can't set up partial upgrades.
+- **Server setup on Debian uses Docker's Debian repo** — Ubuntu derivatives use the Ubuntu repo, and a repo apt can't use is removed again.
+- **Image-update badges from every check** — the hourly and MCP image checks now surface updates, not only the manual check.
 
 ## 2026-09-05 (v2.3.0)
 
