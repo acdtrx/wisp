@@ -178,6 +178,7 @@ function formatRamInventoryDevice(m) {
 
 function formatSmartHealthLabel(smart) {
   const overall = String(smart?.overall || 'unknown');
+  if (overall === 'sleeping') return 'Sleeping';
   if (!smart?.supported) return 'Unavailable';
   if (overall === 'healthy') return 'Healthy';
   if (overall === 'warning') return 'Warning';

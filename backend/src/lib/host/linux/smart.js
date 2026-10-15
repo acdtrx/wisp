@@ -154,6 +154,14 @@ function hasSmartPayload(raw) {
   );
 }
 
+/**
+ * The disk is spun down (STANDBY/SLEEP) and was deliberately not woken to read
+ * SMART. Not an error: no `error` text, so the UI shows the state, not a warning.
+ */
+function sleepingSummary() {
+  return { ...unsupportedSummary(null), overall: 'sleeping' };
+}
+
 function unsupportedSummary(error) {
   return {
     supported: false,
@@ -220,12 +228,14 @@ async function readDiskSmartRaw(deviceName) {
   if (parsed?.error === 'device-not-found') throw createAppError('SMART_DEVICE_NOT_FOUND', 'device-not-found');
   if (parsed?.error === 'smartctl-not-found') throw createAppError('SMART_NOT_INSTALLED', 'smartctl-not-installed');
   if (parsed?.error === 'invalid-device-name') throw createAppError('SMART_INVALID_DISK_NAME', 'invalid-disk-name');
+  if (parsed?.error === 'standby') return { standby: true };
   return parsed;
 }
 
 export async function readDiskSmartSummary(deviceName) {
   try {
     const raw = await readDiskSmartRaw(deviceName);
+    if (raw?.standby === true) return sleepingSummary();
     if (!hasSmartPayload(raw)) return unsupportedSummary('SMART data unavailable for disk');
     return normalizeSmartSummary(raw);
   } catch (err) {

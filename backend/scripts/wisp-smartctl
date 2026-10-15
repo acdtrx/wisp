@@ -27,9 +27,26 @@ if ! command -v "$SMARTCTL_BIN" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Never wake a spun-down disk: `-n standby,STATUS` makes smartctl exit before
+# issuing any SMART command when the drive is in STANDBY or SLEEP, with exit
+# status STATUS. smartctl's normal exit status is a bitmask (smartctl(8) EXIT
+# STATUS); 130 = bit 1 (aborted before reading SMART data) + bit 7 (self-test log
+# has errors, which needs SMART data read) — a combination no real run produces.
+# NVMe is excluded: the option is ATA/SCSI-only and NVMe drives do not spin.
+STANDBY_EXIT=130
+POWER_ARGS=()
+if [[ "$DEV_NAME" != nvme* ]]; then
+  POWER_ARGS=(-n "standby,$STANDBY_EXIT")
+fi
+
 # smartctl frequently exits non-zero for SMART states/warnings while still printing JSON.
 # We intentionally preserve stdout JSON and do not treat non-zero status as transport failure.
-out="$("$SMARTCTL_BIN" --json -a "$DEV_PATH" 2>/dev/null)" || true
+rc=0
+out="$("$SMARTCTL_BIN" --json ${POWER_ARGS[@]+"${POWER_ARGS[@]}"} -a "$DEV_PATH" 2>/dev/null)" || rc=$?
+if [[ ${#POWER_ARGS[@]} -gt 0 && $rc -eq $STANDBY_EXIT ]]; then
+  echo '{"error":"standby"}'
+  exit 0
+fi
 if [[ -z "$out" ]]; then
   echo '{}'
   exit 0
