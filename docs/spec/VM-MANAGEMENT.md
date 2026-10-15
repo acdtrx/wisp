@@ -33,7 +33,7 @@ The backend listens for `DomainEvent` signals on the libvirt Connect interface. 
 
 - 0 = defined, 1 = undefined, 2 = started, 3 = suspended, 4 = resumed, 5 = stopped
 
-When a domain stops (event 5) or is undefined (event 1), cached VM stats for that domain are cleared.
+When a domain stops (event 5) or is undefined (event 1), its per-run stats state — the previous CPU / disk / network sample and the uptime start — is cleared, so the next run's first stats tick starts from a fresh baseline instead of a delta against the last run's counters. Both maps are keyed by the domain object path: it is the only identity a `DomainEvent` carries, and it survives a rename.
 
 ## Name validation
 

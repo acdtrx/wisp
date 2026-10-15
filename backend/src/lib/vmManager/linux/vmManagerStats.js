@@ -128,7 +128,7 @@ export async function getVMStats(name) {
   const cachedVcpus = getCachedVcpus(name);
   const localDns = getCachedLocalDns(name) ?? false;
   const now = Date.now();
-  const prev = connectionState.prevVMStats.get(name);
+  const prev = connectionState.prevVMStats.get(path);
 
   let allStats = {};
   try {
@@ -191,9 +191,9 @@ export async function getVMStats(name) {
     }
   }
 
-  connectionState.prevVMStats.set(name, { cpuTime, timestamp: now, diskRd, diskWr, netRx, netTx });
+  connectionState.prevVMStats.set(path, { cpuTime, timestamp: now, diskRd, diskWr, netRx, netTx });
 
-  if (!connectionState.vmStartTimes.has(name)) connectionState.vmStartTimes.set(name, now);
+  if (!connectionState.vmStartTimes.has(path)) connectionState.vmStartTimes.set(path, now);
 
   let guestIp = null;
   let guestHostname = null;
@@ -232,7 +232,7 @@ export async function getVMStats(name) {
       rxMBs: Math.round(netRxMBs * 100) / 100,
       txMBs: Math.round(netTxMBs * 100) / 100,
     },
-    uptime: now - connectionState.vmStartTimes.get(name),
+    uptime: now - connectionState.vmStartTimes.get(path),
     guestIp: guestIp ?? undefined,
     guestHostname: guestHostname ?? undefined,
     guestAgent: guestAgent ?? undefined,

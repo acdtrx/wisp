@@ -672,7 +672,7 @@ export async function deleteVM(name, deleteDisks = false) {
     });
   }
 
-  connectionState.vmStartTimes.delete(name);
-  connectionState.prevVMStats.delete(name);
+  connectionState.vmStartTimes.delete(path);
+  connectionState.prevVMStats.delete(path);
   refreshVMListCache();
 }

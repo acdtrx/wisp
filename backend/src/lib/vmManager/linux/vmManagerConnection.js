@@ -21,6 +21,9 @@ export const connectionState = {
   bus: null,
   connectIface: null,
   connectProps: null,
+  /** Per-run stats state, keyed by domain object path (stable across rename,
+   *  and the only identity a DomainEvent carries): path -> start time / last sample.
+   *  Dropped when the domain stops or is undefined so the next run starts clean. */
   vmStartTimes: new Map(),
   prevVMStats: new Map(),
   /** Subscribers invoked on every libvirt DomainEvent and after (re)connect. */
@@ -168,13 +171,14 @@ export async function connect(logger = null) {
   connectionState.connectIface = obj.getInterface('org.libvirt.Connect');
   connectionState.connectProps = obj.getInterface('org.freedesktop.DBus.Properties');
 
-  connectionState.connectIface.on('DomainEvent', (_domainPath, event, _detail) => {
+  connectionState.connectIface.on('DomainEvent', (domainPath, event, _detail) => {
     if (event === 5 || event === 1) {
-      connectionState.prevVMStats.delete(_domainPath);
+      connectionState.prevVMStats.delete(domainPath);
+      connectionState.vmStartTimes.delete(domainPath);
     }
     if (event === 1) {
       // VIR_DOMAIN_EVENT_UNDEFINED — drop the cached proxy so a redefine with the same UUID gets a fresh one.
-      connectionState.domainProxyCache.delete(_domainPath);
+      connectionState.domainProxyCache.delete(domainPath);
     }
     fireDomainChange();
   });
