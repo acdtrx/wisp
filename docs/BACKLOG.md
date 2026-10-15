@@ -34,3 +34,11 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   forward-auth model. Wisp wrinkles noted: TINYAUTH_AUTH_TRUSTEDPROXIES wants
   Caddy's (DHCP) IP; `hosts` is agent-writable via MCP so the sso flag needs
   the human-only treatment. Revisit when: the user schedules the auth session.
+- **VM backups include vTPM (swtpm) state** — backups copy disks, NVRAM and
+  cloud-init but not `/var/lib/libvirt/swtpm/<uuid>/` (root-owned, keyed by
+  UUID), so restore-as-new boots with an empty TPM; the gap is documented in
+  `docs/spec/BACKUPS.md` § Not backed up (audit 2026-10-16, V18). Shape: a
+  privileged helper (registered in `install-helpers.sh` + sudoers per
+  DEPLOYMENT.md) that copies the state dir into the backup and back under the
+  restored VM's UUID. Revisit when: a restored Windows VM needed BitLocker
+  recovery.

@@ -23,6 +23,19 @@ A backup directory contains:
 
 Disk images and the cloud-init ISO are gzipped to reduce backup size. NVRAM and config files are stored uncompressed.
 
+### Not backed up
+
+A VM backup holds the files above and nothing else. Outside it:
+
+- **vTPM state.** A VM with a vTPM (the Windows 11 template enables one) keeps its TPM in libvirt's swtpm state directory (`/var/lib/libvirt/swtpm/<uuid>/`, root-owned), keyed by the domain UUID — not in the VM directory, and not copied. Consequences on restore:
+  - **Restore as new** gets a new UUID and therefore a fresh, empty TPM. Anything the guest sealed to its TPM is gone: **BitLocker asks for its recovery key** on first boot, and Windows Hello PINs / biometrics, TPM-backed certificates and similar keys must be set up again. Have the BitLocker recovery key before relying on such a backup.
+  - **Restore in place** keeps the live UUID, so the guest finds the TPM it has *now* — normally the same TPM the backup was taken with, and BitLocker unseals as before. It does not if the TPM changed since the backup (VM deleted and recreated under the same name, TPM cleared in the guest, vTPM toggled off and on): then the same recovery-key prompt applies.
+  - Deleting a VM lets libvirt remove its TPM state, so once the original VM is gone no restore gets its TPM back.
+- **libvirt snapshot metadata.** Snapshots are not part of a backup. Internal (offline) snapshots live inside the qcow2 file and travel with it, but restore defines no snapshot metadata for them, so a restored VM shows no snapshots.
+- **A disk's backing chain.** Each disk is copied from the file its `<source>` names; a qcow2 backing file behind it is not followed. A disk sitting on an overlay (for example after a live snapshot, if libvirt created external disk overlays for it) backs up only the overlay.
+
+vTPM state backup is a backlog item (see `docs/BACKLOG.md`); the gap is documented rather than closed. (settled 2026-10-16)
+
 ## Backup Directory Structure
 
 ```
