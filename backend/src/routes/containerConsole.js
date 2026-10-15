@@ -107,6 +107,11 @@ export default async function containerConsoleRoutes(fastify) {
       if (socket.readyState === 1) socket.close(1011, 'stdout error');
     });
 
+    stdin.on('error', (err) => {
+      log.warn({ err: err.message, execId }, 'Container exec stdin error');
+      if (socket.readyState === 1) socket.close(1011, 'stdin error');
+    });
+
     socket.on('message', (data, isBinary) => {
       const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
       if (!isBinary) {

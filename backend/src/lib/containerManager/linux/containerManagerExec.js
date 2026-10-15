@@ -3,7 +3,8 @@
  */
 import { join } from 'node:path';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { closeSync, constants as fsConstants, createReadStream, createWriteStream, openSync } from 'node:fs';
+import { constants as fsConstants, open as openFd } from 'node:fs';
+import { Socket } from 'node:net';
 import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
@@ -90,43 +91,28 @@ async function readContainerRunAsRoot(name) {
 }
 
 /**
- * Open our side of the exec FIFOs (read stdout, write stdin).
- * Must run **concurrently** with `Tasks.Start`: the shim opens the other ends during Start; if we
- * open only after Start completes, both sides block on FIFO open and console copy hits DEADLINE_EXCEEDED.
- * @param {string} stdinPath
- * @param {string} stdoutPath
- * @returns {Promise<{ stdin: import('node:fs').WriteStream, stdout: import('node:fs').ReadStream }>}
+ * Open our end of an exec FIFO as a non-blocking fd in a net.Socket, polled by the event loop.
+ * Never an fs stream: its open()/read() pin a libuv threadpool thread while the other end is
+ * absent or idle (docs/spec/CONTAINERS.md — Exec FIFO I/O).
+ *
+ * The opens never block, so callers open our ends **before** `Tasks.Start`; the shim's blocking
+ * opens of the other ends (during Start) then find a partner and return at once.
+ * - `read`: O_RDONLY|O_NONBLOCK succeeds with no writer; Linux reports no EOF until a writer has
+ *   been seen, then EOF when the shim's last writer closes.
+ * - `write`: O_WRONLY|O_NONBLOCK would fail with ENXIO until the shim's reader exists, so O_RDWR —
+ *   never blocks, and the shim's reader finds a writer. The read half is never read
+ *   (`readable: false`); closing the socket gives the shim EOF on stdin.
+ * @param {string} path
+ * @param {'read' | 'write'} mode
+ * @returns {Promise<Socket>}
  */
-function openExecFifoStreams(stdinPath, stdoutPath) {
+function openFifoSocket(path, mode) {
+  const flags = (mode === 'read' ? fsConstants.O_RDONLY : fsConstants.O_RDWR) | fsConstants.O_NONBLOCK;
   return new Promise((resolve, reject) => {
-    let stdin = null;
-    let stdout = null;
-    let pending = 2;
-    let settled = false;
-
-    const tryDone = (err) => {
-      if (settled) return;
-      if (err) {
-        settled = true;
-        try { stdin?.destroy(); } catch { /* best effort */ }
-        try { stdout?.destroy(); } catch { /* best effort */ }
-        reject(err);
-        return;
-      }
-      pending -= 1;
-      if (pending === 0 && stdin && stdout) {
-        settled = true;
-        resolve({ stdin, stdout });
-      }
-    };
-
-    stdout = createReadStream(stdoutPath, { autoClose: true });
-    stdin = createWriteStream(stdinPath, { autoClose: true });
-
-    stdout.on('open', () => tryDone(null));
-    stdin.on('open', () => tryDone(null));
-    stdout.on('error', (e) => tryDone(e));
-    stdin.on('error', (e) => tryDone(e));
+    openFd(path, flags, (err, fd) => {
+      if (err) reject(err);
+      else resolve(new Socket({ fd, readable: mode === 'read', writable: mode === 'write' }));
+    });
   });
 }
 
@@ -136,8 +122,8 @@ function openExecFifoStreams(stdinPath, stdoutPath) {
  * @param {{ cols?: number, rows?: number }} [opts]
  * @returns {Promise<{
  *   execId: string,
- *   stdin: import('node:fs').WriteStream,
- *   stdout: import('node:fs').ReadStream,
+ *   stdin: import('node:net').Socket,
+ *   stdout: import('node:net').Socket,
  *   cleanupSession: () => Promise<void>,
  * }>}
  */
@@ -161,11 +147,18 @@ export async function execInContainer(name, opts = {}) {
   const stdinFifo = join(tmpDir, 'stdin');
   const stdoutFifo = join(tmpDir, 'stdout');
 
+  /** @type {Socket | null} */
+  let stdin = null;
+  /** @type {Socket | null} */
+  let stdout = null;
   let cleanupCalled = false;
 
   const cleanupSession = async () => {
     if (cleanupCalled) return;
     cleanupCalled = true;
+
+    stdin?.destroy();
+    stdout?.destroy();
 
     try {
       await callUnary(getClient('tasks'), 'kill', {
@@ -208,13 +201,13 @@ export async function execInContainer(name, opts = {}) {
       spec: packAny(OCI_PROCESS_TYPE_URL, processSpec),
     });
 
-    const startPromise = callUnary(getClient('tasks'), 'start', {
+    stdout = await openFifoSocket(stdoutFifo, 'read');
+    stdin = await openFifoSocket(stdinFifo, 'write');
+
+    await callUnary(getClient('tasks'), 'start', {
       containerId: name,
       execId,
     });
-    const streamsPromise = openExecFifoStreams(stdinFifo, stdoutFifo);
-    const [, streams] = await Promise.all([startPromise, streamsPromise]);
-    const { stdin, stdout } = streams;
 
     await callUnary(getClient('tasks'), 'resizePty', {
       containerId: name,
@@ -223,21 +216,11 @@ export async function execInContainer(name, opts = {}) {
       height: rows,
     });
 
-    const wrappedCleanup = async () => {
-      try {
-        stdin.destroy();
-      } catch { /* best effort */ }
-      try {
-        stdout.destroy();
-      } catch { /* best effort */ }
-      await cleanupSession();
-    };
-
     return {
       execId,
       stdin,
       stdout,
-      cleanupSession: wrappedCleanup,
+      cleanupSession,
     };
   } catch (err) {
     await cleanupSession();
@@ -284,7 +267,7 @@ export async function execCommandInContainer(name, args, opts = {}) {
   const stdoutFifo = join(tmpDir, 'stdout');
   const stderrFifo = join(tmpDir, 'stderr');
 
-  /** @type {import('node:fs').ReadStream[]} */
+  /** @type {Socket[]} */
   const readers = [];
   let waitPromise = null;
   let exited = false;
@@ -301,7 +284,7 @@ export async function execCommandInContainer(name, args, opts = {}) {
       await waitPromise.catch(() => { /* the wait outcome no longer matters; only that it settled */ });
     }
     try { await callUnary(getClient('tasks'), 'deleteProcess', { containerId: name, execId }); } catch { /* may already be deleted, or never started */ }
-    for (const reader of readers) releaseFifoReader(reader);
+    for (const reader of readers) reader.destroy();
     try { await rm(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
   };
 
@@ -319,14 +302,13 @@ export async function execCommandInContainer(name, args, opts = {}) {
       spec: packAny(OCI_PROCESS_TYPE_URL, processSpec),
     });
 
-    // Start the exec and open FIFOs concurrently (shim opens the other end during Start)
-    const startPromise = callUnary(getClient('tasks'), 'start', { containerId: name, execId });
+    // Our read ends first (non-blocking, see openFifoSocket): the shim opens the write ends during Start.
+    readers.push(await openFifoSocket(stdoutFifo, 'read'));
+    readers.push(await openFifoSocket(stderrFifo, 'read'));
     const stdoutChunks = [];
     const stderrChunks = [];
 
-    const collectStream = (path, chunks) => new Promise((resolve, reject) => {
-      const s = createReadStream(path, { autoClose: true });
-      readers.push(s);
+    const collectStream = (s, chunks) => new Promise((resolve, reject) => {
       s.on('data', (d) => chunks.push(d));
       s.on('end', () => resolve());
       s.on('error', reject);
@@ -335,11 +317,11 @@ export async function execCommandInContainer(name, args, opts = {}) {
     /* Observed from the start so a stream error after a failed Start or a timeout is never an
      * unhandled rejection; a read error only truncates the captured output. */
     const outputDone = Promise.all([
-      collectStream(stdoutFifo, stdoutChunks),
-      collectStream(stderrFifo, stderrChunks),
+      collectStream(readers[0], stdoutChunks),
+      collectStream(readers[1], stderrChunks),
     ]).catch(() => { /* partial output is still returned */ });
 
-    await startPromise;
+    await callUnary(getClient('tasks'), 'start', { containerId: name, execId });
 
     waitPromise = callUnary(getClient('tasks'), 'wait', { containerId: name, execId });
     waitPromise.then(() => { exited = true; }, () => { /* surfaced by the await below */ });
@@ -368,31 +350,6 @@ export async function execCommandInContainer(name, args, opts = {}) {
     await cleanup();
     throw err;
   }
-}
-
-/**
- * Close our read end of an exec FIFO. A ReadStream whose open() is still pending is blocked
- * inside a libuv threadpool thread until a writer appears — destroy() cannot interrupt it, and
- * it never resolves if the shim never opened its end (failed Start). Holding a writer open
- * (O_RDWR never blocks on a FIFO) lets that open complete; the stream, already destroyed,
- * then closes itself and we drop the writer.
- * @param {import('node:fs').ReadStream} reader
- */
-function releaseFifoReader(reader) {
-  if (!reader.pending) {
-    reader.destroy();
-    return;
-  }
-  let writerFd;
-  try {
-    writerFd = openSync(reader.path, fsConstants.O_RDWR | fsConstants.O_NONBLOCK);
-  } catch {
-    /* FIFO already gone: the pending open fails with ENOENT on its own */
-  }
-  reader.once('close', () => {
-    if (writerFd !== undefined) closeSync(writerFd);
-  });
-  reader.destroy();
 }
 
 /**
