@@ -2,7 +2,7 @@
  * VM backup and restore: createBackup, listBackups, restoreBackup.
  * Disk images and cloud-init ISO are streamed gzip to destination (.gz); config files stay uncompressed.
  */
-import { copyFile, mkdir, writeFile, readdir, readFile, access, constants, stat, rm, realpath, chmod } from 'node:fs/promises';
+import { copyFile, mkdir, writeFile, readdir, readFile, access, constants, stat, rm, rename, realpath, chmod } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createGzip, createGunzip } from 'node:zlib';
@@ -79,15 +79,32 @@ async function copyOrGunzip(backupPath, logicalName, destPath, onProgress) {
   }
   try {
     await access(gz, constants.R_OK);
+  } catch (err) {
+    throw vmError('BACKUP_INVALID', `Backup missing disk or image file: ${logicalName}`, err.message);
+  }
+  try {
     await pipeline(
       createReadStream(gz),
       createGunzip(),
       createWriteStream(destPath)
     );
-    if (typeof onProgress === 'function') onProgress();
   } catch (err) {
-    throw vmError('BACKUP_INVALID', `Backup missing disk or image file: ${logicalName}`, err.message);
+    throw vmError('BACKUP_INVALID', `Backup file ${logicalName}.gz could not be decompressed`, err.message);
   }
+  if (typeof onProgress === 'function') onProgress();
+}
+
+/** True when at least one of the paths exists and is readable. */
+async function anyReadable(paths) {
+  for (const p of paths) {
+    try {
+      await access(p, constants.R_OK);
+      return true;
+    } catch {
+      /* not present — try the next candidate */
+    }
+  }
+  return false;
 }
 
 /** Strip trailing slashes for stable prefix matching (root stays "/"). */
@@ -227,15 +244,45 @@ export async function createBackup(vmName, destinationPath, { onProgress, origin
   // (<dest>/containers/<name>/<timestamp>/). Older Wisp versions used
   // <dest>/<vmName>/<timestamp>/ — listBackups still walks that path so legacy
   // backups remain restorable/deletable, but new backups always land under vms/.
-  const backupDir = join(destinationPath, VMS_BACKUP_DIRNAME, vmName, timestamp);
-  await mkdir(backupDir, { recursive: true });
+  const vmBackupsDir = join(destinationPath, VMS_BACKUP_DIRNAME, vmName);
+  await mkdir(vmBackupsDir, { recursive: true });
+  const backupDir = join(vmBackupsDir, timestamp);
+  // Non-recursive so this run provably owns the directory: the failure
+  // cleanup below removes it, and must never remove a backup another run wrote.
+  try {
+    await mkdir(backupDir);
+  } catch (err) {
+    if (err.code === 'EEXIST') {
+      throw vmError('BACKUP_EXISTS', `A backup of "${vmName}" named ${timestamp} already exists at this destination — retry in a moment`);
+    }
+    throw err;
+  }
 
+  try {
+    return await writeBackupContents({ vmName, xml, config, nvramPath, backupDir, timestamp, origin, onProgress });
+  } catch (err) {
+    // A partial directory has no manifest.json, so listBackups already skips
+    // it; removing it also frees the space. If removal fails too (destination
+    // gone mid-backup), the original error is what the caller needs.
+    await rm(backupDir, { recursive: true, force: true }).catch((rmErr) => {
+      connectionState.logger?.warn?.({ err: rmErr.message, backupDir }, '[vmManager] Failed to remove partial backup directory');
+    });
+    throw err;
+  }
+}
+
+/**
+ * Write every backup file into the (empty, caller-owned) backupDir;
+ * manifest.json goes last and is what marks the backup complete.
+ * Completion is the resolved promise — no `done` progress event.
+ */
+async function writeBackupContents({ vmName, xml, config, nvramPath, backupDir, timestamp, origin, onProgress }) {
   const emit = (step, data = {}) => {
     if (typeof onProgress === 'function') onProgress({ step, ...data });
   };
 
   const disks = (config.disks || []).filter((d) => d.device === 'disk' && d.source);
-  const totalItems = disks.length + (nvramPath ? 1 : 0) + 2; // +2 for cloud-init.iso and cloud-init.json
+  const totalItems = disks.length + (nvramPath ? 1 : 0) + 3; // +3 for domain.xml, cloud-init.iso and cloud-init.json
   let done = 0;
 
   emit('domain', { percent: 0, currentFile: 'Saving domain.xml' });
@@ -335,7 +382,7 @@ export async function createBackup(vmName, destinationPath, { onProgress, origin
     sizeBytes: totalBytes,
   };
   await writeFile(join(backupDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
-  emit('done', { percent: 100, currentFile: 'Backup complete', path: backupDir });
+  emit('manifest', { percent: 100, currentFile: 'Backup complete' });
   return { path: backupDir, timestamp };
 }
 
@@ -368,24 +415,16 @@ export async function listBackups(destinations, vmName = null) {
       const dedupeKey = `${destId}\0${name}\0${tsEnt.name}`;
       if (seen.has(dedupeKey)) continue;
       const backupPath = join(vmDirPath, tsEnt.name);
-      const manifestPath = join(backupPath, 'manifest.json');
-      const domainPath = join(backupPath, 'domain.xml');
-      let sizeBytes;
-      /* Backups predating the origin field list as manual. */
-      let origin = 'manual';
+      let manifest;
       try {
-        const raw = await readFile(manifestPath, 'utf8');
-        const manifest = JSON.parse(raw);
-        sizeBytes = manifest.sizeBytes;
-        if (manifest.origin === 'scheduled') origin = 'scheduled';
+        manifest = await readBackupManifest(backupPath);
       } catch {
-        try {
-          await access(domainPath, constants.R_OK);
-        } catch {
-          /* not a valid backup dir */
-          continue;
-        }
+        /* no readable manifest.json — incomplete (or foreign) dir, not a backup */
+        continue;
       }
+      const sizeBytes = manifest.sizeBytes;
+      /* Backups predating the origin field list as manual. */
+      const origin = manifest.origin === 'scheduled' ? 'scheduled' : 'manual';
       seen.add(dedupeKey);
       results.push({
         vmName: name,
@@ -523,19 +562,30 @@ export async function deleteBackup(backupPath, allowedRoots) {
   await rm(resolvedBackup, { recursive: true, force: true });
 }
 
-/** Read a backup's domain.xml (required) and manifest.json (optional, legacy backups lack it). */
+/**
+ * Parse a backup's manifest.json. createBackup writes it last, so its presence
+ * is what makes a directory a complete backup — listing and restore both
+ * require it.
+ */
+async function readBackupManifest(backupPath) {
+  const manifest = JSON.parse(await readFile(join(backupPath, 'manifest.json'), 'utf8'));
+  if (!manifest || typeof manifest !== 'object') throw new Error('manifest.json is not an object');
+  return manifest;
+}
+
+/** Read a backup's manifest.json and domain.xml (both required). */
 async function readBackupDomain(backupPath) {
+  let manifest;
+  try {
+    manifest = await readBackupManifest(backupPath);
+  } catch (err) {
+    throw vmError('BACKUP_INVALID', `Backup is incomplete (no valid manifest.json): ${backupPath}`, err.message);
+  }
   let xml;
   try {
     xml = await readFile(join(backupPath, 'domain.xml'), 'utf8');
   } catch (err) {
     throw vmError('BACKUP_INVALID', `Backup missing domain.xml: ${backupPath}`, err.message);
-  }
-  let manifest = null;
-  try {
-    manifest = JSON.parse(await readFile(join(backupPath, 'manifest.json'), 'utf8'));
-  } catch {
-    /* legacy backup without manifest.json */
   }
   return { xml, manifest };
 }
@@ -575,26 +625,19 @@ async function copyBackupPayload(backupPath, config, destBase, { onProgress } = 
   // path creates the ISO with the default mode, and a JSON copied from an older
   // backup keeps whatever mode it had — chmod after placing either one.
   emit('cloudinit', 'Restoring cloud-init');
+  // Both are optional (absent when the VM had no cloud-init), but once present
+  // a failed copy fails the restore — a half-written ISO must never be placed.
   const cloudInitIsoDest = join(destBase, 'cloud-init.iso');
-  let cloudInitIsoRestored = false;
-  try {
+  if (await anyReadable([join(backupPath, 'cloud-init.iso'), join(backupPath, 'cloud-init.iso.gz')])) {
     await copyOrGunzip(backupPath, 'cloud-init.iso', cloudInitIsoDest);
-    cloudInitIsoRestored = true;
-  } catch {
-    /* optional — cloud-init ISO not in backup */
+    await chmod(cloudInitIsoDest, 0o600);
   }
-  if (cloudInitIsoRestored) await chmod(cloudInitIsoDest, 0o600);
   const cloudInitJsonSrc = join(backupPath, 'cloud-init.json');
   const cloudInitJsonDest = join(destBase, 'cloud-init.json');
-  let cloudInitJsonRestored = false;
-  try {
-    await access(cloudInitJsonSrc, constants.R_OK);
+  if (await anyReadable([cloudInitJsonSrc])) {
     await copyWithProgress(cloudInitJsonSrc, cloudInitJsonDest, () => {});
-    cloudInitJsonRestored = true;
-  } catch {
-    /* optional — cloud-init JSON not in backup */
+    await chmod(cloudInitJsonDest, 0o600);
   }
-  if (cloudInitJsonRestored) await chmod(cloudInitJsonDest, 0o600);
   done += 1;
   emit('cloudinit', 'Cloud-init');
 
@@ -705,6 +748,11 @@ async function restorePayloadAndDefine(backupPath, newVmName, newBase, { xml, ma
  * Files in the VM directory that the backup does not reference (e.g. a disk
  * added after the backup was taken) are left in place, orphaned.
  *
+ * The payload is decompressed into a staging dir inside the VM directory and
+ * renamed over the live files only after every file staged, so a corrupt or
+ * truncated backup leaves the live disks byte-identical. The domain is
+ * redefined last.
+ *
  * @param {string} backupPath - Full path to the backup directory
  * @param {{ onProgress?: (event: { step: string, percent?: number, currentFile?: string }) => void }} options
  * @returns { Promise<{ name: string }> }
@@ -740,33 +788,53 @@ export async function restoreBackupInPlace(backupPath, { onProgress } = {}) {
   const newBase = normalizeBasePath(getVMBasePath(name));
   await mkdir(newBase, { recursive: true });
 
-  /* Payload copy owns 0–90% of the progress range; define takes the rest. */
-  const diskMapping = await copyBackupPayload(backupPath, config, newBase, {
-    onProgress: (ev) => emit(ev.step, { percent: Math.round((ev.percent ?? 0) * 0.9), currentFile: ev.currentFile }),
-  });
+  // Stage the whole payload in a sibling dir on the same filesystem, so a
+  // failed or truncated decompress never touches a live disk; the live files
+  // are replaced by rename only once every file staged successfully.
+  const stagingDir = join(newBase, `.restore-${randomUUID()}`);
+  await mkdir(stagingDir);
 
-  const parsed = parseDomainRaw(xml);
-  const dom = parsed.domain;
-  if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse backup domain XML');
-
-  dom.name = name;
-  if (currentUuid) dom.uuid = currentUuid;
-
-  rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping, newBase });
-
-  emit('define', { percent: 90, currentFile: 'Applying domain configuration' });
   let newXml;
   try {
-    newXml = buildXml(parsed);
-  } catch (err) {
-    throw vmError('CONFIG_ERROR', 'Failed to build restored domain XML', err.message);
+    /* Payload copy owns 0–90% of the progress range; swap + define take the rest. */
+    const stagedMapping = await copyBackupPayload(backupPath, config, stagingDir, {
+      onProgress: (ev) => emit(ev.step, { percent: Math.round((ev.percent ?? 0) * 0.9), currentFile: ev.currentFile }),
+    });
+    const diskMapping = stagedMapping.map(({ oldPath, newPath }) => ({ oldPath, newPath: join(newBase, basename(newPath)) }));
+
+    const parsed = parseDomainRaw(xml);
+    const dom = parsed.domain;
+    if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse backup domain XML');
+
+    dom.name = name;
+    if (currentUuid) dom.uuid = currentUuid;
+
+    rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping, newBase });
+
+    try {
+      newXml = buildXml(parsed);
+    } catch (err) {
+      throw vmError('CONFIG_ERROR', 'Failed to build restored domain XML', err.message);
+    }
+
+    emit('swap', { percent: 90, currentFile: 'Replacing disks' });
+    for (const entry of await readdir(stagingDir)) {
+      await rename(join(stagingDir, entry), join(newBase, entry));
+    }
+  } finally {
+    // Empty after a successful swap. On any failure before the swap this
+    // discards the staged files and the live ones were never touched.
+    await rm(stagingDir, { recursive: true, force: true }).catch((rmErr) => {
+      connectionState.logger?.warn?.({ err: rmErr.message, stagingDir }, '[vmManager] Failed to remove restore staging directory');
+    });
   }
+
+  emit('define', { percent: 95, currentFile: 'Applying domain configuration' });
   try {
     await connectionState.connectIface.DomainDefineXML(newXml);
   } catch (err) {
-    throw vmError('BACKUP_RESTORE_FAILED', `Failed to redefine VM "${name}" from backup`, err.message);
+    throw vmError('BACKUP_RESTORE_FAILED', `Failed to redefine VM "${name}" from backup (disks were restored)`, err.message);
   }
 
-  emit('done', { percent: 100, currentFile: 'Restore complete' });
   return { name };
 }

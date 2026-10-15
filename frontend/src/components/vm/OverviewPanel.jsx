@@ -97,19 +97,25 @@ export default function OverviewPanel() {
 
   const vmName = vmConfig?.name ?? '';
   const backupTitleForVm = useMemo(() => (vmName ? `Backup ${vmName}` : ''), [vmName]);
-  const backupRunningJob = useMemo(
+  // Backup and restore-in-place jobs hold the backend's per-VM operation lock
+  // (start / backup / restore / delete → 409 VM_BUSY), so either one blocks
+  // the conflicting actions here.
+  const vmOperationJob = useMemo(
     () =>
-      backupTitleForVm
+      vmName
         ? Object.values(bgJobs).find(
             (j) =>
-              j.kind === JOB_KIND.BACKUP &&
-              j.title === backupTitleForVm &&
-              j.status === 'running',
+              j.status === 'running' &&
+              ((j.kind === JOB_KIND.BACKUP && j.title === `Backup ${vmName}`) ||
+                (j.kind === JOB_KIND.VM_RESTORE && j.title === `Restore ${vmName}`)),
           )
         : undefined,
-    [bgJobs, backupTitleForVm],
+    [bgJobs, vmName],
   );
-  const backupInProgress = !!backupRunningJob;
+  const restoreInProgress = vmOperationJob?.kind === JOB_KIND.VM_RESTORE;
+  const busyHint = vmOperationJob
+    ? `Unavailable while ${restoreInProgress ? 'a restore' : 'a backup'} of this VM is in progress`
+    : undefined;
 
   const { tab } = useParams();
   const navigate = useNavigate();
@@ -292,8 +298,8 @@ export default function OverviewPanel() {
           <ActionButton
             icon={Play} label="Start"
             onClick={() => startVM(name)}
-            disabled={!isStopped || backupInProgress}
-            hint={backupInProgress ? 'Cannot start while a backup is in progress' : undefined}
+            disabled={!isStopped || !!vmOperationJob}
+            hint={busyHint}
             loading={actionLoading === 'start'}
             variant="primary"
           />
@@ -334,7 +340,8 @@ export default function OverviewPanel() {
           <ActionButton
             icon={Archive} label="Backup"
             onClick={handleOpenBackup}
-            disabled={!isStopped}
+            disabled={!isStopped || restoreInProgress}
+            hint={restoreInProgress ? busyHint : undefined}
           />
           <CloneDialog
             open={cloneDialogOpen}
@@ -374,6 +381,8 @@ export default function OverviewPanel() {
           <ActionButton
             icon={Trash2} label="Delete"
             onClick={() => setDeleteDialogOpen(true)}
+            disabled={!!vmOperationJob}
+            hint={busyHint}
             variant="danger"
             loading={actionLoading === 'delete'}
           />

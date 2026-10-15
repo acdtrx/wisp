@@ -391,7 +391,7 @@ A single horizontal bar containing:
 Action buttons are **context-sensitive**: irrelevant ones are disabled with muted style, not hidden.
 
 - **Clone** — opens dialog prompting for new VM name (user types the name; dialog starts with empty field)
-- **Backup** — opens modal to select backup destinations; while a backup is running, **Continue in background** closes the dialog (job progress remains in the top bar). **Start** is disabled while a backup is in progress for this VM (including after the modal is dismissed).
+- **Backup** — opens modal to select backup destinations; while a backup is running, **Continue in background** closes the dialog (job progress remains in the top bar). **Start** and **Delete** are disabled while a backup or restore-in-place job for this VM is running (including after the modal is dismissed), and **Backup** while a restore runs — the backend refuses them with 409 `VM_BUSY` anyway ([BACKUPS.md → Per-VM operation lock](BACKUPS.md#per-vm-operation-lock)). With several destinations the progress line names the destination being written, and the dialog shows *Backup complete* only after the last one.
 - **Delete** — opens confirmation dialog with "Also delete disk images" checkbox
 - **View XML** — opens modal with read-only domain XML and Copy button
 

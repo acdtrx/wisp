@@ -29,6 +29,8 @@ function errorCodeToStatus(code) {
     case 'VM_MUST_BE_OFFLINE':
     case 'DISK_SLOT_IN_USE':
     case 'BACKUP_IN_PROGRESS':
+    case 'BACKUP_EXISTS':
+    case 'VM_BUSY':
       return 409;
     case 'PARSE_ERROR':
     case 'CLONE_FAILED':

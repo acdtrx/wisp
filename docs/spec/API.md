@@ -626,6 +626,7 @@ Delete a VM.
 
 - **Query:** `?deleteDisks=true|false` — whether to also delete disk images and VM directory
 - **200:** `{ ok: true }`
+- **409:** `VM_BUSY` — a backup or restore-in-place of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
 
 ### GET /api/vms/:name/xml
 
@@ -636,6 +637,7 @@ Raw libvirt domain XML (for debugging/inspection).
 ### POST /api/vms/:name/start
 
 - **200:** `{ ok: true }`
+- **409:** `VM_ALREADY_RUNNING`; `VM_BUSY` — a backup or restore-in-place of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
 
 ### POST /api/vms/:name/stop
 
@@ -878,6 +880,7 @@ Start a backup job. Returns a job ID; monitor progress via SSE.
 - **Body:** `{ destinationIds?: ["local", "<mountId>"] }` (defaults to `["local"]`)
 - **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted (resolved by the shared `lib/backupDestinations.js` helper). Any other id returns **422**.
 - **201:** `{ jobId: string, title: string }` — `title` is e.g. `Backup <vmName>`
+- **409:** `VM_BUSY` — another start / backup / restore-in-place / delete of this VM is running
 - **422:** `BACKUP_DEST_UNKNOWN` / `BACKUP_DEST_NONE` — unknown destination id, or nothing resolved
 - **503:** `BACKUP_MOUNT_FAILED` — SMB mount failed
 
@@ -885,8 +888,10 @@ Start a backup job. Returns a job ID; monitor progress via SSE.
 
 SSE stream for backup progress.
 
-- **Progress events:** `{ step, percent?, currentFile? }` — `step` values include `domain`, `disk`, `nvram`, `cloudinit`, `manifest`, and an internal `done` step with progress fields before completion.
-- **Completion (from job store):** `{ step: "done", timestamp: string }` — `timestamp` is the backup's folder name (e.g. `2026-05-08T06-30-00`).
+- **Progress events:** `{ step, percent?, currentFile? }` — `step` values include `domain`, `disk`, `nvram`, `cloudinit`, `manifest`. `percent` spans the whole job: with several destinations each owns an equal slice and `currentFile` is prefixed with the destination label.
+- **Per-destination completion:** `{ step: "destination-done", destinationId: string, percent: number, currentFile: string }` — not terminal; later destinations follow.
+- **Restore-in-place steps** (same stream, kind `vm-restore`): `safety-*` (the safety backup), `disk`, `nvram`, `cloudinit`, `swap`, `define`.
+- **Completion (from job store, the only `done`):** `{ step: "done", timestamp: string }` — `timestamp` is the (last destination's) backup folder name (e.g. `2026-05-08T06-30-00`).
 - **Failure (terminal):** `{ step: "error", error: string, detail: string }`
 
 ### GET /api/backups
@@ -928,7 +933,7 @@ Restore a backup **over the live VM it was taken from**. Runs as a background jo
 - **Body:** `{ destinationId: string, vmName: string, timestamp: string, safetyBackup?: boolean }`
 - **201:** `{ jobId: string, title: string }`
 - **404:** `VM_NOT_FOUND` (workload deleted — restore as new instead), `BACKUP_NOT_FOUND`
-- **409:** `VM_MUST_BE_OFFLINE` (VM running), `BACKUP_IN_PROGRESS` (a backup/restore job for this VM is already running)
+- **409:** `VM_MUST_BE_OFFLINE` (VM running), `VM_BUSY` (another start / backup / restore-in-place / delete of this VM is running)
 - **422 / 503:** destination errors as for `POST /api/vms/:name/backup`
 
 ### DELETE /api/backups

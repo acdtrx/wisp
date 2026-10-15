@@ -65,20 +65,22 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
 
 1. Client sends `POST /api/vms/:name/backup` with `destinationIds` (e.g. `["local"]` or `["local", "<backupMountId>"]`); defaults to `["local"]` when omitted. Only `local` and the single configured `backupMountId` are accepted — any other id returns 422.
 2. Backend resolves paths from `backupLocalPath` and, when requested, the mount referenced by `backupMountId` (with mount check / auto-mount for SMB)
-3. A background job is created (returns `jobId`)
-4. For each destination path:
-   - Create backup directory `<dest>/vms/<vmName>/<timestamp>/`
+3. The VM's [operation lock](#per-vm-operation-lock) is taken (**409** `VM_BUSY` if another start / backup / restore / delete of this VM is running) and a background job is created (returns `jobId`)
+4. For each destination path, in order:
+   - Create backup directory `<dest>/vms/<vmName>/<timestamp>/` — exclusively: if that directory already exists (a second backup within the same second) the destination fails with `BACKUP_EXISTS` rather than writing into another run's backup
    - Save domain XML
    - Gzip and copy each disk image
    - Copy NVRAM file (if present)
    - Gzip and copy cloud-init ISO (if present)
    - Copy cloud-init config (if present)
-   - Write manifest.json
-5. Progress is reported via SSE: `{ step, percent, currentFile }`
+   - Write manifest.json — **last**; its presence is what makes the directory a complete backup
+5. Progress is reported via SSE — see [Progress Tracking](#progress-tracking)
+
+**Failure cleanup:** any error while writing a destination's backup (disk full, SMB share dropped, unreadable source) removes the directory that run created and fails the job; destinations already finished stay complete and listed. If even the removal fails (destination gone), the leftover directory has no `manifest.json` and is never listed or restorable.
 
 ## Listing Backups
 
-`GET /api/backups` scans configured destinations that are currently usable: always the local backup path; the extra destination only if `backupMountId` is set **and** the corresponding mount is currently mounted. For each found backup, returns: VM name, timestamp, total size in bytes, `origin` (`"manual"` / `"scheduled"`, manual when the manifest predates the field), plus `destinationId` (`'local'` or the mount UUID) and `destinationLabel` for display.
+`GET /api/backups` scans configured destinations that are currently usable (a `<vmName>/<timestamp>/` directory is listed only when it holds a parsable `manifest.json` — every backup Wisp has completed has one, so a manifest-less directory is an interrupted backup): always the local backup path; the extra destination only if `backupMountId` is set **and** the corresponding mount is currently mounted. For each found backup, returns: VM name, timestamp, total size in bytes, `origin` (`"manual"` / `"scheduled"`, manual when the manifest predates the field), plus `destinationId` (`'local'` or the mount UUID) and `destinationLabel` for display.
 
 Optional `?vmName=` filter restricts results to a specific VM.
 
@@ -89,9 +91,9 @@ A configured network backup path that is not mounted is omitted from the scan (s
 `POST /api/backups/restore` with `{ destinationId, vmName, timestamp, newVmName }` — `(destinationId, vmName, timestamp)` are typically copied from a list row:
 
 0. Refuse with **409** if `newVmName` is taken — `VM_EXISTS` (a libvirt domain) or `VM_DIR_EXISTS` (`<vmsPath>/<newVmName>/` already exists, e.g. kept by *Delete VM, keep disks*). The restore never writes into a directory it did not create.
-1. Read `domain.xml` and, when present, `manifest.json` from the backup
+1. Read `manifest.json` and `domain.xml` from the backup (both required — a directory without a manifest is incomplete, 422 `BACKUP_INVALID`)
 2. Create the new VM's directory (`<vmsPath>/<newVmName>/`, exclusively) and decompress/copy disk images into it
-3. Copy NVRAM and cloud-init files; the restored `cloud-init.iso` and `cloud-init.json` are chmodded `0600` (they carry the password hash — see [CLOUD-INIT.md](CLOUD-INIT.md) § Password hashing). Restore-in-place uses the same copy step.
+3. Copy NVRAM and cloud-init files; the restored `cloud-init.iso` and `cloud-init.json` are chmodded `0600` (they carry the password hash — see [CLOUD-INIT.md](CLOUD-INIT.md) § Password hashing). Both are optional, but one that is present in the backup and fails to copy or decompress fails the restore. Restore-in-place uses the same copy step.
 4. Rewrite domain XML: new name, new UUID, new MAC addresses, and **path updates** so every file reference under the original VM directory (including block disks, CD-ROM paths such as cloud-init, UEFI NVRAM, and optional loader paths under that directory) points at `<vmsPath>/<newVmName>/`. This uses **`manifest.vmBasePath`** when available (older backups fall back to the backed-up VM name or inferred paths). Disk images that lived outside the VM directory (e.g. image library) are still remapped using the same per-disk logic as before.
 5. Define the new domain with `DomainDefineXML`
 
@@ -107,9 +109,9 @@ Where it can fail: if a backup was produced under one `vmsPath` and you later mo
 
 ## Restoring in place
 
-Both workload kinds can also be restored **over the live workload the backup was taken from** — same name, identity preserved — via `POST /api/backups/restore-in-place` and `POST /api/container-backups/restore-in-place`. Both run as background jobs (kinds `vm-restore` / `container-restore`, title `Restore <name>`) streaming progress over the same per-kind backup-progress SSE endpoints, and both accept `safetyBackup` (default `true`): the job first takes a normal manual-origin backup of the *current* state to the same destination (progress steps prefixed `safety-`, mapped to 0–45% of the job's bar), then restores (45–100%). If the safety backup fails, the job aborts before touching the live workload. A restore-in-place request is rejected with **409** `BACKUP_IN_PROGRESS` while another backup or restore job for the same workload is running.
+Both workload kinds can also be restored **over the live workload the backup was taken from** — same name, identity preserved — via `POST /api/backups/restore-in-place` and `POST /api/container-backups/restore-in-place`. Both run as background jobs (kinds `vm-restore` / `container-restore`, title `Restore <name>`) streaming progress over the same per-kind backup-progress SSE endpoints, and both accept `safetyBackup` (default `true`): the job first takes a normal manual-origin backup of the *current* state to the same destination (progress steps prefixed `safety-`, mapped to 0–45% of the job's bar), then restores (45–100%). If the safety backup fails, the job aborts before touching the live workload. A VM restore-in-place holds the VM's [operation lock](#per-vm-operation-lock) for the whole job (**409** `VM_BUSY` while another start / backup / restore / delete of the VM runs); a container restore-in-place is rejected with **409** `BACKUP_IN_PROGRESS` while another backup or restore job for the same container is running.
 
-**VM** (`restoreBackupInPlace` in vmManager): the target VM is identified by the backup itself (`manifest.vmName`, falling back to the domain XML name), must exist (404 `VM_NOT_FOUND` otherwise — restore-as-new covers deleted VMs), and must be stopped (409 `VM_MUST_BE_OFFLINE`). Disks, NVRAM, and cloud-init files are copied back into the VM's current directory and the backed-up domain XML is re-defined over the live definition:
+**VM** (`restoreBackupInPlace` in vmManager): the target VM is identified by the backup itself (`manifest.vmName`, falling back to the domain XML name), must exist (404 `VM_NOT_FOUND` otherwise — restore-as-new covers deleted VMs), and must be stopped (409 `VM_MUST_BE_OFFLINE`). Disks, NVRAM, and cloud-init files are decompressed into a staging directory inside the VM's directory (`.restore-<uuid>/`, same filesystem), and only once **every** file staged are they renamed over the live files; the backed-up domain XML is re-defined over the live definition last. A missing, truncated, or corrupt file in the backup fails the job with the live disks byte-identical and the staging directory removed. A `DomainDefineXML` failure after the swap leaves the restored disks under the live definition and says so in the error. (A backend crash mid-restore can leave a `.restore-*` directory in the VM's directory; it is safe to delete.)
 
 - **Name and UUID stay those of the live domain.** The UUID only differs when a same-named VM was deleted and recreated since the backup; adopting the live UUID lets `DomainDefineXML` replace the definition without an undefine/define window.
 - **MAC addresses, hardware config, and disk contents revert to the backup's state** (unlike restore-as-new, which regenerates them).
@@ -124,7 +126,7 @@ Both workload kinds can also be restored **over the live workload the backup was
 
 ## Backup attempt status
 
-The on-disk backup tree only records successes (a failed backup removes its partial directory), so "did last night's scheduled backup work?" is unanswerable from disk. Wisp persists the **most recent backup attempt per workload** in `config/backup-status.json` (app-glue `lib/backupStatus.js`, atomic JSON writes, preserved across self-updates via the updater's `RSYNC_EXCLUDES`):
+The on-disk backup tree only records successes (a failed backup removes its partial directory, and listing ignores any directory without a manifest), so "did last night's scheduled backup work?" is unanswerable from disk. Wisp persists the **most recent backup attempt per workload** in `config/backup-status.json` (app-glue `lib/backupStatus.js`, atomic JSON writes, preserved across self-updates via the updater's `RSYNC_EXCLUDES`):
 
 ```json
 {
@@ -147,12 +149,17 @@ The map is pushed on the **`backups` topic of `GET /api/events`**: a snapshot on
 
 ## Progress Tracking
 
-Backup creation and restore operations run as background jobs with SSE-based progress streaming:
+Backup creation and restore-in-place run as background jobs with SSE-based progress streaming (restore-as-new is a synchronous request):
 
 - **Job store** manages job state (pending, running, complete, failed)
 - **SSE stream** at `/api/vms/backup-progress/:jobId` (VMs) or `/api/containers/backup-progress/:jobId` (containers) pushes events
 - Events include: step name, percent complete, current file being processed
-- Completion event indicates success or failure
+- The terminal event is `done` (emitted only by the job store on job completion) or `error`; the frontend closes the stream on either
+- **Multi-destination VM backups:** each destination owns an equal slice of the job's 0–100% bar, `currentFile` is prefixed with the destination label (`Local: Copying disk0.qcow2`), and a finished destination emits `{ step: "destination-done", destinationId, percent, currentFile }` — never `done`. A later destination's failure therefore still reaches the client as the job's `error` (message prefixed with that destination's label).
+
+## Per-VM operation lock
+
+*(settled 2026-10-16)* Start, backup, restore-in-place and delete of a VM are mutually exclusive: each takes an in-memory per-VM lock (`lib/vmOperationLock.js`, Wisp glue — vmManager stays policy-free) and a second one is refused with **409** `VM_BUSY` instead of queueing. Backup and restore hold it for the whole background job (a restore's safety backup included); start and delete for the duration of the call. This closes e.g. a Start landing while a restore is replacing the disks, two backups of one VM interleaving, or a delete under a running backup. The other lifecycle actions (stop, reboot, …) don't take it — they apply to a running VM, and the locked operations require a stopped one. The frontend mirrors it from the background-jobs list: while a `backup` or `vm-restore` job for the VM runs, Start and Delete are disabled (and Backup during a restore). Rejected: deriving busy state from the job store's titles (as the container restore check does) — start and delete are not jobs, so they would have nothing to hold.
 
 ## Container Backups
 

@@ -48,6 +48,7 @@ import { generateCloudInit } from '../lib/cloudInit.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { resolveBackupDestinations } from '../lib/backupDestinations.js';
 import { recordBackupAttempt } from '../lib/backupStatus.js';
+import { acquireVmOperationLock, withVmOperationLock } from '../lib/vmOperationLock.js';
 import { setupSSE } from '../lib/sse.js';
 import { resolveLibraryPath, assertPathInsideAllowedRoots, getVMBasePath } from '../lib/paths.js';
 import { createAppError, handleRouteError } from '../lib/routeErrors.js';
@@ -315,6 +316,9 @@ export default async function vmsRoutes(fastify) {
         const settings = await getSettings();
         const rawMounts = await getRawMounts();
         const destinations = await resolveBackupDestinations(settings, rawMounts, body.destinationIds);
+        // Acquired with no await before createJob, so the lock and the job
+        // appear together; released when the job settles.
+        const releaseLock = acquireVmOperationLock(name, 'backup');
         const jobId = randomBytes(12).toString('hex');
         const title = titleForBackup(name);
         backupJobStore.createJob(jobId, {
@@ -327,26 +331,55 @@ export default async function vmsRoutes(fastify) {
           'Background job started',
         );
         const destinationIds = destinations.map((d) => d.id);
+        const multi = destinations.length > 1;
         (async () => {
           let lastResult;
-          for (const dest of destinations) {
-            lastResult = await createBackup(name, dest.path, {
-              onProgress(ev) {
-                backupJobStore.pushEvent(jobId, { step: ev.step, percent: ev.percent, currentFile: ev.currentFile });
-              },
+          // Each destination owns an equal slice of the job's 0–100% bar. Only
+          // completeJob emits `done`; a finished destination is `destination-done`.
+          for (const [index, dest] of destinations.entries()) {
+            const base = (index / destinations.length) * 100;
+            const span = 100 / destinations.length;
+            try {
+              lastResult = await createBackup(name, dest.path, {
+                onProgress(ev) {
+                  backupJobStore.pushEvent(jobId, {
+                    step: ev.step,
+                    percent: ev.percent != null ? Math.round(base + (ev.percent / 100) * span) : undefined,
+                    currentFile: multi && ev.currentFile ? `${dest.label}: ${ev.currentFile}` : ev.currentFile,
+                  });
+                },
+              });
+            } catch (err) {
+              if (multi) err.message = `${dest.label}: ${err.message}`;
+              throw err;
+            }
+            backupJobStore.pushEvent(jobId, {
+              step: 'destination-done',
+              destinationId: dest.id,
+              percent: Math.round(base + span),
+              currentFile: `${dest.label} backup complete`,
             });
           }
-          backupJobStore.completeJob(jobId, lastResult);
-          await recordBackupAttempt({
-            kind: 'vm', name, ok: true, origin: 'manual', destinationIds, timestamp: lastResult?.timestamp,
-          });
-        })().catch(async (err) => {
-          backupJobStore.failJob(jobId, err);
-          request.log.error({ err, jobId }, 'Background backup job failed');
-          await recordBackupAttempt({
-            kind: 'vm', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
-          });
-        });
+          return lastResult;
+        })().then(
+          async (lastResult) => {
+            // Free the VM before announcing completion, so an action the
+            // client takes on `done` never meets a stale VM_BUSY.
+            releaseLock();
+            backupJobStore.completeJob(jobId, lastResult);
+            await recordBackupAttempt({
+              kind: 'vm', name, ok: true, origin: 'manual', destinationIds, timestamp: lastResult?.timestamp,
+            });
+          },
+          async (err) => {
+            releaseLock();
+            backupJobStore.failJob(jobId, err);
+            request.log.error({ err, jobId }, 'Background backup job failed');
+            await recordBackupAttempt({
+              kind: 'vm', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
+            });
+          },
+        );
         return reply.code(201).send({ jobId, title });
       } catch (err) {
         handleRouteError(err, reply, request);
@@ -411,7 +444,8 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        await deleteVM(request.params.name, request.query.deleteDisks === 'true');
+        const { name } = request.params;
+        await withVmOperationLock(name, 'delete', () => deleteVM(name, request.query.deleteDisks === 'true'));
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);
@@ -420,8 +454,10 @@ export default async function vmsRoutes(fastify) {
   });
 
   // Lifecycle actions — all POST /vms/:name/<action>
+  // Only start takes the per-VM operation lock: backup and restore-in-place
+  // require a stopped VM, and the other actions apply to a running one.
   const lifecycleActions = [
-    { path: 'start', fn: startVM },
+    { path: 'start', fn: (name) => withVmOperationLock(name, 'start', () => startVM(name)) },
     { path: 'stop', fn: stopVM },
     { path: 'force-stop', fn: forceStopVM },
     { path: 'reboot', fn: rebootVM },

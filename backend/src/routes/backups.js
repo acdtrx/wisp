@@ -24,13 +24,13 @@ import { recordBackupAttempt, notifyBackupsChanged } from '../lib/backupStatus.j
 import {
   backupJobStore,
   BACKGROUND_JOB_KIND,
-  titleForBackup,
   titleForContainerBackup,
   titleForVmRestore,
   titleForContainerRestore,
 } from '../lib/jobs/index.js';
 import { createAppError, handleRouteError } from '../lib/routeErrors.js';
 import { validateVMName, validateContainerName } from '../lib/validation.js';
+import { acquireVmOperationLock } from '../lib/vmOperationLock.js';
 
 // Backup directory names produced by createBackup are ISO-derived
 // (YYYY-MM-DDTHH-mm-ss). The accept-set is intentionally a bit looser to
@@ -79,7 +79,8 @@ function stripPath(row) {
  * Run an in-place restore as a background job in the shared backupJobStore:
  * optional safety backup of the current state first (0–45% of the bar), then
  * the restore itself (45–100%). The safety phase's step names are prefixed
- * `safety-` so its terminal `done` event can't end the job stream early.
+ * `safety-` so they read as the safety backup and a manager-level `done`
+ * event (container backups emit one) can't end the job stream early.
  *
  * @param {object} opts
  * @param {string} opts.jobId
@@ -90,6 +91,7 @@ function stripPath(row) {
  * @param {(onProgress: (ev: object) => void) => Promise<object>} opts.runSafetyBackup
  * @param {(onProgress: (ev: object) => void) => Promise<object>} opts.runRestore
  * @param {import('fastify').FastifyBaseLogger} opts.log
+ * @returns {Promise<void>} settles (never rejects) once the job completed or failed
  */
 function startRestoreInPlaceJob({ jobId, kind, name, dest, safetyBackup, runSafetyBackup, runRestore, log }) {
   const scaledProgress = (base, span, stepPrefix = '') => (ev) => {
@@ -100,7 +102,7 @@ function startRestoreInPlaceJob({ jobId, kind, name, dest, safetyBackup, runSafe
     });
   };
 
-  (async () => {
+  return (async () => {
     if (safetyBackup) {
       try {
         const res = await runSafetyBackup(scaledProgress(0, 45, 'safety-'));
@@ -261,12 +263,9 @@ export default async function backupsRoutes(fastify) {
         }
 
         const title = titleForVmRestore(vmName);
-        assertNoActiveBackupJob({
-          backupKind: BACKGROUND_JOB_KIND.BACKUP,
-          backupTitle: titleForBackup(vmName),
-          restoreKind: BACKGROUND_JOB_KIND.VM_RESTORE,
-          restoreTitle: title,
-        });
+        // Held for the whole job (safety backup included): no start, backup or
+        // delete of this VM while its disks are being replaced.
+        const releaseLock = acquireVmOperationLock(vmName, 'restore');
 
         const jobId = randomBytes(12).toString('hex');
         backupJobStore.createJob(jobId, { kind: BACKGROUND_JOB_KIND.VM_RESTORE, title, log: request.log });
@@ -280,7 +279,7 @@ export default async function backupsRoutes(fastify) {
           runSafetyBackup: (onProgress) => createBackup(vmName, dest.path, { onProgress }),
           runRestore: (onProgress) => restoreBackupInPlace(backupPath, { onProgress }),
           log: request.log,
-        });
+        }).finally(releaseLock);
         return reply.code(201).send({ jobId, title });
       } catch (err) {
         handleRouteError(err, reply, request);
