@@ -10,6 +10,18 @@
 - **Cloud-init files with the password hash are 0600** — on save and restore; existing files: `chmod 600 /var/lib/wisp/vms/*/cloud-init.json`.
 - **Container restore validates the archive** — mounts and devices in a backup's `container.json` go through the normal validation, and GPU devices must be render nodes.
 - **Privileged helpers confine their paths** — `wisp-cni` only runs plugins from `/opt/cni/bin` with a config file owned by the caller; `wisp-mount` only unmounts and removes paths under `/mnt/wisp`.
+- **Kept VM directories are never overwritten** — creating, cloning or restoring a VM under a name whose directory still exists (e.g. after *Delete VM, keep disks*) is refused with a 409 naming the path, creating over an existing VM no longer rewrites its cloud-init, and a failed create or restore leaves no half-made directory.
+- **VM backups are all-or-nothing** — a failed backup removes its partial folder (only folders with a manifest are listed), restore-in-place stages every file before swapping it over the live disks, and two backups in the same second no longer share a folder.
+- **One operation per VM at a time** — start, delete, backup and restore-in-place on the same VM are refused (409 `VM_BUSY`) while another runs; the VM page disables the conflicting buttons.
+- **Multi-destination VM backups finish at the end** — completion is reported only after the last destination, a later destination's error stays visible, and progress names the destination being written.
+- **Editing a running VM keeps pending changes** — config edits build on the saved definition, so a second edit no longer reverts an earlier change waiting for a restart (memory, vCPUs, …).
+- **Adding a disk never overwrites one** — invalid or occupied slots and running VMs are refused before anything is created, and new disks take the next free `disk<N>.qcow2`.
+- **Renaming a tiny-samba share keeps its files** — the share's data moves with it, and removing a share asks before deleting its data.
+- **Deleting a container but keeping its files leaves no ghost** — it disappears from the list (only `files/` stays), and creating a container over kept files is refused instead of overwriting or wiping them.
+- **Mounts are detected exactly** — a share under `/mnt/wisp` no longer counts as mounted because a parent such as `/mnt` is a mount point (shares auto-mount again and backups no longer land on local disk), and mount paths with spaces are recognised.
+- **Downloads can't crash the backend** — a full disk or two same-name downloads fail the job (or take a ` (n)` name) and leave no partial file; the same for the self-update download.
+- **HAOS downloads fail on a corrupt archive** — instead of saving a truncated image as success, and no hidden `.haos_download_*.xz` temp files are left.
+- **Lost libvirt connection retries** — reconnects back off up to 30 s instead of crashing the backend.
 
 ## 2026-09-05 (v2.3.0)
 
