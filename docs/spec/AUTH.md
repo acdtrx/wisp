@@ -65,7 +65,7 @@ The signing secret is the stored scrypt-derived key (64 bytes). Changing the pas
 
 ## Route Protection
 
-An `onRequest` hook is registered globally on the backend server. Every incoming request passes through this hook before reaching any route handler. Fastify v5 selects the matching route before `onRequest` runs, so the hook reads `request.routeOptions.url` (the registered route URL) for public-route matching — trailing slashes and percent-encoded variants don't accidentally bypass auth.
+An `onRequest` hook is registered globally on the backend server. Every incoming request passes through this hook before reaching any route handler. Fastify v5 selects the matching route before `onRequest` runs, so every decision the hook makes — whether the request needs auth at all (`/api`, `/ws`, `/mcp`), whether it is a public route, and the bearer refusals for `/ws` and `/api/auth` — keys on `request.routeOptions.url`, the registered pattern of the route that will actually run. The router decodes percent-encoded characters before matching, so the raw URL can't be trusted for this: `/%61pi/vms` dispatches to `/api/vms`, and is gated exactly like it. The raw `request.url` is consulted only when no route matched; such requests reach the JSON 404 (or, in production, the SPA shell) and never a route handler.
 
 ### Public routes
 

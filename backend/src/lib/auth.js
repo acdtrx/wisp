@@ -153,6 +153,17 @@ const CSRF_HEADER = 'x-csrf-token';
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const READ_ONLY_METHODS = new Set(['GET', 'HEAD']);
 
+/**
+ * The path every auth prefix check keys on. The router decodes percent-encoded
+ * characters before matching, so the raw URL can disagree with the route that
+ * actually runs (`/%61pi/vms` dispatches to `/api/vms`). When a route matched,
+ * its registered pattern is authoritative; the raw URL is used only for
+ * unmatched requests, which reach the 404 / SPA-shell handler and no route.
+ */
+function routePath(request) {
+  return request.routeOptions?.url ?? request.url;
+}
+
 function timingSafeEqualString(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const ab = Buffer.from(a);
@@ -169,12 +180,12 @@ function timingSafeEqualString(a, b) {
  * check on purpose: double-submit defends against ambient cookie credentials,
  * which a bearer request doesn't carry.
  */
-async function handleBearerAuth(request, reply, token, routeUrl, isMcpRoute) {
-  if (request.url.startsWith('/ws')) {
+async function handleBearerAuth(request, reply, token, path, isMcpRoute) {
+  if (path.startsWith('/ws')) {
     reply.code(401).send({ error: 'Authentication failed', detail: 'API tokens cannot open console connections' });
     return;
   }
-  if (request.url.startsWith('/api/auth') || (routeUrl && routeUrl.startsWith('/api/auth'))) {
+  if (path.startsWith('/api/auth')) {
     reply.code(403).send({ error: 'Session required', detail: 'API tokens cannot access authentication routes' });
     return;
   }
@@ -210,16 +221,17 @@ export function createAuthHook() {
     // through to the SPA handler like any other non-API URL.
     const routeUrl = request.routeOptions?.url;
     const isMcpRoute = routeUrl === '/mcp';
+    const path = routePath(request);
 
     // Static assets and SPA fallback bypass auth — only /api, /ws, and /mcp require it.
     // The login UI is part of the SPA, so the bundle must load before any session exists.
-    if (!request.url.startsWith('/api') && !request.url.startsWith('/ws') && !isMcpRoute) return;
+    if (!path.startsWith('/api') && !path.startsWith('/ws') && !isMcpRoute) return;
 
     if (routeUrl && PUBLIC_ROUTES.has(routeUrl)) return;
 
     const authHeader = request.headers?.authorization;
     if (typeof authHeader === 'string' && authHeader.slice(0, 7).toLowerCase() === 'bearer ') {
-      await handleBearerAuth(request, reply, authHeader.slice(7).trim(), routeUrl, isMcpRoute);
+      await handleBearerAuth(request, reply, authHeader.slice(7).trim(), path, isMcpRoute);
       return;
     }
 
