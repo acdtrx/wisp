@@ -18,7 +18,7 @@ All mounts live in `settings.mounts` (array). Each entry carries a `type` discri
 | `id` | Unique identifier (UUID) |
 | `type` | `"smb"` or `"disk"` |
 | `label` | Display name |
-| `mountPath` | Absolute mount point. **Must resolve under `/mnt/wisp/`** (no `..`, no symlink escape). Enforced by `validateCommonFields` on add and update; `wisp-mount` re-asserts it via `realpath -m` so a regression can't shadow `/etc`, `/usr`, `/home`, etc. |
+| `mountPath` | Absolute mount point. **Must resolve under `/mnt/wisp/`** (no `..`, no symlink escape). Enforced by `validateCommonFields` on add and update; `wisp-mount` re-asserts it (see [Privileged helper](#privileged-helper)) so a regression can't shadow `/etc`, `/usr`, `/home`, etc. |
 | `autoMount` | When true (default), Wisp mounts on startup (SMB) or on device insertion (disk) |
 
 ### SMB-only fields (`type: "smb"`)
@@ -94,6 +94,12 @@ Re-insertion after unplug auto-mounts silently. Removal triggers a lazy unmount 
 | `disk mount <configPath>` | `mount -t <fsType> /dev/disk/by-uuid/<uuid>` (config supplies uuid, mountPath, fsType, readOnly, uid, gid) |
 | `unmount <path>` | `umount` |
 | `unmount-lazy <path>` | `umount -l` (used on surprise device removal) |
+| `rmdir <path>` | Remove the empty mount-point directory (delete flow only); no-op if missing, non-empty or still mounted |
+
+**Path confinement.** Every path the helper acts on must sit strictly under `/mnt/wisp/` (never `/mnt/wisp` itself); anything else exits `64`. `/mnt/wisp` is writable by the deploy user, so the checks assume a hostile directory tree:
+
+- **mount** (`smb mount|check`, `disk mount`): `realpath -m` must land under `/mnt/wisp/` and no existing path component may be a symlink — checked before `mkdir -p` and again right before `mount`, which then targets the canonical path. (A swap inside that last window can still win the race; closing it fully needs `/mnt/wisp` to stop being deploy-writable.)
+- **unmount / unmount-lazy / rmdir**: the parent goes through `realpath -e` and must be `/mnt/wisp` or below it; the last component is never `stat`-ed, because a `stat` on a dead CIFS share blocks until the server times out — the case `unmount-lazy` exists for. `unmount*` acts only when the path is listed as a mount point in `/proc/self/mounts` (which holds canonical paths, so a symlink can't stand in for one), otherwise it prints `not mounted` and exits `32`, as `umount` does. `rmdir` relies on `rmdir(2)` not following a symlink in the last component.
 
 The config file format is **strict line-oriented `key=value`** (no `source`, no shell evaluation). `wisp-mount` parses it with an allow-listed key set; unknown keys, malformed lines, or values containing `\n` / `\r` exit non-zero. The JS layer rejects `\n` / `\r` / `,` in `share`, `mountPath`, `username`, `password` before writing.
 
@@ -111,7 +117,7 @@ Mount options are chosen by filesystem:
 `backend/src/lib/mountsAutoMount.js` runs once at backend start, before the HTTP server listens:
 
 1. Load `settings.mounts`.
-2. Read `/proc/mounts`; any mount under `/mnt/wisp/` that is **not** in `settings.mounts` is lazy-unmounted (hard-converge). This cleans up orphans left by a prior run or by user edits while Wisp was down.
+2. Read `/proc/mounts`; any mount under `/mnt/wisp/` that is **not** in `settings.mounts` is lazy-unmounted (hard-converge). This cleans up orphans left by a prior run or by user edits while Wisp was down. A mount sitting at `/mnt/wisp` itself is never Wisp's (the helper refuses to mount or unmount there), so the attempt fails with a logged warning and the mount is left alone.
 3. For each configured SMB entry with `autoMount !== false`: mount it if not already mounted.
 4. For each configured **disk** entry with `autoMount !== false`: if the UUID is currently present (from the disk monitor snapshot) and not yet mounted, mount it. Absent UUIDs are skipped — they'll mount on insertion.
 

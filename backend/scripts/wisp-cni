@@ -1,38 +1,61 @@
 #!/usr/bin/env bash
 # Run one CNI plugin with config on stdin (from a temp file). Invoked via sudo -n.
 # Usage: wisp-cni <ADD|DEL> <plugin_basename> <container_id> <netns_path> <config_json_file> [cni_bin_dir]
-# 6th arg is the plugin directory (passed from the backend; sudo resets env so we do not rely on CNI_PATH).
+#
+# The plugin dir is pinned to /opt/cni/bin (where scripts/linux/setup/cni.sh
+# installs the plugins). A caller-chosen dir would let anyone with sudo on this
+# helper run any binary named like a plugin as root, and CNI_PATH (exported to
+# the plugin for its IPAM lookup) would point there too. The optional 6th
+# argument is the backend's view of that dir; any value other than the pin is
+# refused, so a mismatched WISP_CNI_BIN_DIR fails loudly instead of silently
+# running something else.
+#
+# The config file must be a regular file owned by the invoking user (SUDO_UID,
+# or root when run without sudo). It is opened once and the check runs on the
+# open descriptor, so the file can't be swapped between check and use — the
+# helper never feeds the plugin a file the caller couldn't already read.
 set -euo pipefail
+
+CNI_BIN_DIR="/opt/cni/bin"
 
 CMD="${1:?command}"
 PLUGIN_NAME="${2:?plugin}"
 CID="${3:?container_id}"
 NETNS="${4:?netns}"
 CONF="${5:?config_file}"
-CNI_PATH="${6:-/opt/cni/bin}"
+REQ_BIN_DIR="${6:-$CNI_BIN_DIR}"
 
+[[ "$CMD" == "ADD" || "$CMD" == "DEL" ]] || { echo "wisp-cni: command must be ADD or DEL" >&2; exit 1; }
 [[ "$CID" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$ ]] || { echo "wisp-cni: invalid container id" >&2; exit 1; }
 # Plugin name is a bare CNI plugin type (e.g. bridge, dhcp). Reject any path
-# separator or traversal so "$CNI_PATH/$PLUGIN_NAME" can't escape the bin dir.
+# separator or traversal so "$CNI_BIN_DIR/$PLUGIN_NAME" can't escape the bin dir.
 [[ "$PLUGIN_NAME" =~ ^[a-z0-9-]+$ ]] || { echo "wisp-cni: invalid plugin name" >&2; exit 1; }
-[[ "$CNI_PATH" =~ ^/ ]] || { echo "wisp-cni: cni bin dir must be absolute path" >&2; exit 1; }
+[[ "$REQ_BIN_DIR" == "$CNI_BIN_DIR" ]] || { echo "wisp-cni: cni bin dir must be $CNI_BIN_DIR (got $REQ_BIN_DIR)" >&2; exit 1; }
 [[ "$NETNS" =~ ^/ ]] || { echo "wisp-cni: netns must be absolute path" >&2; exit 1; }
+[[ "$CONF" =~ ^/ ]] || { echo "wisp-cni: config file must be absolute path" >&2; exit 1; }
 [[ -f "$CONF" ]] || { echo "wisp-cni: missing config file" >&2; exit 1; }
-# Resolve the bin dir and confine the plugin under it — belt-and-suspenders on
-# top of the plugin-name charset check, matching the confinement wisp-mount /
-# wisp-nvram do for their path arguments.
-BIN_ROOT="$(realpath -e "$CNI_PATH" 2>/dev/null)" || { echo "wisp-cni: cni bin dir not found: $CNI_PATH" >&2; exit 1; }
-PLUGIN="$(realpath -e "$BIN_ROOT/$PLUGIN_NAME" 2>/dev/null)" || { echo "wisp-cni: plugin not found: $CNI_PATH/$PLUGIN_NAME" >&2; exit 1; }
+
+# Resolve the bin dir (it may be a symlink on some distros) and confine the
+# plugin under it — belt-and-suspenders on top of the plugin-name charset check.
+BIN_ROOT="$(realpath -e -- "$CNI_BIN_DIR" 2>/dev/null)" || { echo "wisp-cni: cni bin dir not found: $CNI_BIN_DIR" >&2; exit 1; }
+PLUGIN="$(realpath -e -- "$BIN_ROOT/$PLUGIN_NAME" 2>/dev/null)" || { echo "wisp-cni: plugin not found: $CNI_BIN_DIR/$PLUGIN_NAME" >&2; exit 1; }
 case "$PLUGIN" in
   "$BIN_ROOT"/*) : ;;
   *) echo "wisp-cni: plugin escapes cni bin dir: $PLUGIN" >&2; exit 1 ;;
 esac
 [[ -f "$PLUGIN" && -x "$PLUGIN" ]] || { echo "wisp-cni: plugin not executable: $PLUGIN" >&2; exit 1; }
 
+# fd 3: sudo closes descriptors above 2, so it is free here.
+exec 3< "$CONF" || { echo "wisp-cni: cannot open config file" >&2; exit 1; }
+[[ -f /proc/self/fd/3 ]] || { echo "wisp-cni: config file is not a regular file" >&2; exit 1; }
+EXPECTED_UID="${SUDO_UID:-$EUID}"
+CONF_UID="$(stat -L -c %u /proc/self/fd/3)"
+[[ "$CONF_UID" == "$EXPECTED_UID" ]] || { echo "wisp-cni: config file must be owned by the invoking user (uid $EXPECTED_UID)" >&2; exit 1; }
+
 export CNI_COMMAND="$CMD"
 export CNI_CONTAINERID="$CID"
 export CNI_NETNS="$NETNS"
 export CNI_IFNAME=eth0
-export CNI_PATH
+export CNI_PATH="$CNI_BIN_DIR"
 
-"$PLUGIN" < "$CONF"
+"$PLUGIN" <&3 3<&-

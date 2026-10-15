@@ -347,6 +347,9 @@ Unified mount helper for SMB shares and adopted removable drives. Invoked via `s
 | `wisp-mount disk mount <configPath>` | Mount an adopted removable drive by UUID (config file supplies uuid, mountPath, fsType, readOnly, uid, gid) |
 | `wisp-mount unmount <path>` | Unmount a mount point |
 | `wisp-mount unmount-lazy <path>` | Lazy-unmount (`umount -l`) for surprise-removed devices |
+| `wisp-mount rmdir <path>` | Remove an empty mount-point directory (delete flow only) |
+
+Every path must sit strictly under `/mnt/wisp/`; mount paths may not contain symlinked components, and `unmount*` acts only on paths listed in `/proc/self/mounts` (otherwise `not mounted`, exit `32`). Rules and rationale: [STORAGE.md — Privileged helper](STORAGE.md#privileged-helper).
 
 Requires `cifs-utils`. The backend writes a temp config file (mode `0600`) per operation, invokes `wisp-mount` via `sudo -n`, then removes the config file. The helper also deletes the config file after use. `install-helpers.sh` now installs `wisp-mount` and automatically removes any legacy `/usr/local/bin/wisp-smb` (+ its sudoers entry) from prior installs.
 
@@ -407,9 +410,13 @@ Creates or removes a network namespace under `/var/run/netns/<name>` using `mkdi
 
 ### `wisp-cni` (installed to `/usr/local/bin/`)
 
-Runs a single CNI plugin binary from `CNI_PATH` (default `/opt/cni/bin`) with config JSON read from a temp file, setting `CNI_COMMAND`, `CNI_CONTAINERID`, `CNI_NETNS`, `CNI_IFNAME`, `CNI_PATH`. Used for bridge **ADD** / **DEL** so the deploy user does not need ambient `CAP_NET_ADMIN` on the Node process.
+Runs a single CNI plugin binary from `/opt/cni/bin` with config JSON read from a temp file, setting `CNI_COMMAND`, `CNI_CONTAINERID`, `CNI_NETNS`, `CNI_IFNAME`, `CNI_PATH`. Used for bridge **ADD** / **DEL** so the deploy user does not need ambient `CAP_NET_ADMIN` on the Node process.
 
-**Usage (do not run by hand unless debugging):** `wisp-cni ADD\|DEL <plugin_basename> <container_id> <netns_path> <config.json> [<cni_bin_dir>]`. The backend always passes `WISP_CNI_BIN_DIR` or `/opt/cni/bin` as the 6th argument so `sudo`’s env reset does not drop `CNI_PATH`.
+**Usage (do not run by hand unless debugging):** `wisp-cni ADD\|DEL <plugin_basename> <container_id> <netns_path> <config.json> [<cni_bin_dir>]`.
+
+- **Bin dir is pinned** to `/opt/cni/bin` inside the helper (where `cni.sh` installs the plugins) and exported as `CNI_PATH`. The optional 6th argument is the backend's view of that dir (`WISP_CNI_BIN_DIR`, default `/opt/cni/bin`); any other value is refused, so an override fails loudly rather than letting the caller pick which binaries run as root. (settled 2026-10-16: the arg stays in the contract — a helper refreshed by the updater and the still-running old backend agree on it, and no backend change is needed.)
+- **Plugin** — bare name matching `^[a-z0-9-]+$`, resolved with `realpath` and confined under the (resolved) bin dir.
+- **Config file** — absolute path to a regular file **owned by the invoking user** (`SUDO_UID`, or root without sudo). The helper opens it once and checks the open descriptor, so it can't be swapped between check and use; the plugin never reads a file the caller couldn't already read.
 
 **Troubleshooting:** If container start returns 200 but the task exits or CNI errors appear in logs:
 
