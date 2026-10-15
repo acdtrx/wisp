@@ -42,6 +42,7 @@ import {
   applyAppConfig,
   eject as ejectAppContainer,
   maskContainerConfigSecrets,
+  assertMountNotAppManaged,
 } from '../lib/containerApps/index.js';
 
 /**
@@ -675,6 +676,7 @@ export default async function containerRoutes(fastify) {
     try {
       const containerName = request.params.name;
       const mountName = decodeURIComponent(request.params.mountName);
+      assertMountNotAppManaged(await getContainerConfig(containerName), mountName);
       const filePart = await collectSingleMultipartFile(request);
       if (!filePart) {
         return sendError(reply, 400, 'No file provided', 'Request must include a file upload');
@@ -702,6 +704,7 @@ export default async function containerRoutes(fastify) {
   fastify.get('/containers/:name/mounts/:mountName/content', async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
+      assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
       return await getMountFileTextContent(request.params.name, mountName);
     } catch (err) {
       handleRouteError(err, reply, request);
@@ -723,6 +726,7 @@ export default async function containerRoutes(fastify) {
       if (typeof content !== 'string') {
         return sendError(reply, 400, 'Invalid body', 'Expected JSON object { "content": string }');
       }
+      assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
       return await putMountFileTextContent(request.params.name, mountName, content);
     } catch (err) {
       handleRouteError(err, reply, request);

@@ -1694,7 +1694,7 @@ Multipart **file** upload: a single file part (field name typically **`file`**).
 
 Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an existing file.
 
-**200:** `{ name, size, modified }`
+**200:** `{ name, size, modified }` | **422:** `APP_CONFIG_ONLY` (app-managed mount — see GET content below)
 
 ### POST /api/containers/:name/mounts/:mountName/zip
 
@@ -1706,15 +1706,17 @@ Multipart: one file part. Mount must have **`type: "directory"`**. Clears `files
 
 **File** mounts only. Returns the backing file as UTF-8 text for the in-app editor.
 
+**App-managed mounts are refused for every caller** (session or token): when the container's `metadata.app` names a registered app module, every mount in its `mounts` list belongs to that module, and GET/PUT content plus `POST …/file` return **422** `APP_CONFIG_ONLY`. Those files are regenerated from `appConfig` on each save and routinely hold secrets (tiny-samba passwords, zot `htpasswd` / `session-keys`) that every other surface masks; configure the app through `appConfig`, or eject it to a generic container first. The UI never needs these routes for app containers — the generic Mounts section is replaced by the app's config form. (settled 2026-10-16: refuse for all callers rather than token-only or admin-scope — no special cases, and nothing in the UI breaks.)
+
 **200:** `{ content: string }` — UTF-8 text (max **512 KiB** decoded size on disk).
 
-**404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** `CONTAINER_MOUNT_TYPE_MISMATCH`, `CONTAINER_MOUNT_FILE_TOO_LARGE`, `CONTAINER_MOUNT_FILE_NOT_UTF8`, `CONTAINER_MOUNT_SOURCE_MISSING` (no file on disk yet)
+**404:** `CONTAINER_NOT_FOUND`, `CONTAINER_MOUNT_NOT_FOUND` | **422:** `APP_CONFIG_ONLY`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `CONTAINER_MOUNT_FILE_TOO_LARGE`, `CONTAINER_MOUNT_FILE_NOT_UTF8`, `CONTAINER_MOUNT_SOURCE_MISSING` (no file on disk yet)
 
 ### PUT /api/containers/:name/mounts/:mountName/content
 
 **Body:** JSON `{ "content": string }`. Replaces the backing file with UTF-8 bytes (max **512 KiB** encoded length). The route's `bodyLimit` is set just above the content cap to reject oversized payloads at the parser before reaching the handler; the handler enforces the exact byte cap on the decoded content.
 
-**200:** `{ ok: true }` | **413:** request body too large | **422:** same family as GET for type/size/encoding
+**200:** `{ ok: true }` | **413:** request body too large | **422:** same family as GET for type/size/encoding, plus `APP_CONFIG_ONLY` for app-managed mounts
 
 ### POST /api/containers/:name/mounts/:mountName/init
 

@@ -127,6 +127,36 @@ export function maskContainerConfigSecrets(config) {
 }
 
 /**
+ * Refuse direct content access (read or write) to a mount of an app container.
+ *
+ * An app container's mount list belongs to its app module: create and
+ * `applyAppConfig` write `mounts` wholesale from `generateDerivedConfig`, and the
+ * module regenerates every file mount's content from appConfig on each save. Those
+ * files routinely hold secrets (tiny-samba `passwords.yaml`, zot `htpasswd` and
+ * `session-keys`), so a raw read would bypass the appConfig masking every other
+ * surface applies; a raw write would desync disk from appConfig and be silently
+ * overwritten on the next save. Mount ownership is decided by the module that
+ * owns the container (`metadata.app` resolving to a registry module) — the same
+ * condition under which the UI swaps the generic Mounts section for the app's
+ * config form — not by a list of secret file names that new apps would have to
+ * remember to extend. A `metadata.app` with no registered module owns nothing.
+ *
+ * The mount must exist in `config.mounts`; unknown names fall through so the
+ * manager's own 404 still applies.
+ */
+export function assertMountNotAppManaged(config, mountName) {
+  const appType = config?.metadata?.app;
+  if (!getAppModule(appType)) return;
+  const mounts = Array.isArray(config.mounts) ? config.mounts : [];
+  if (!mounts.some((m) => m?.name === mountName)) return;
+  throw createAppError(
+    'APP_CONFIG_ONLY',
+    `Mount "${mountName}" is managed by the ${appType} app`,
+    'App-managed mount content is generated from appConfig — configure the app, or eject to a generic container first',
+  );
+}
+
+/**
  * Create an app container. Computes the derived config from the app module,
  * builds an expanded spec with all the regular containerManager fields plus
  * `metadata.app`/`metadata.appConfig`, then writes derived file contents into

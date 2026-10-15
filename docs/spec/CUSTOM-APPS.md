@@ -86,10 +86,14 @@ The route reads `config.metadata?.app` and dispatches:
 - `{ eject: true }` on an app container → `containerApps.eject(name)`. Clears `metadata.app`/`metadata.appConfig`. Env, mounts, devices, files all preserved.
 - Anything else → straight through to `containerManager.updateContainerConfig`.
 
+### Mount content routes
+
+An app container's mounts belong to its app module (create and `applyAppConfig` write the whole `mounts` list from `generateDerivedConfig`, and file contents are regenerated from appConfig on every save). `GET`/`PUT /api/containers/:name/mounts/:mountName/content` and `POST …/file` therefore refuse any mount of a container whose `metadata.app` resolves to a registered module with `APP_CONFIG_ONLY` (422) — for every caller. The guard is `containerApps.assertMountNotAppManaged(config, mountName)`, called by the route before the manager. Ownership follows the module, not a list of secret file names, so a new app is covered without extending anything; an unregistered `metadata.app` owns no mounts (the UI shows the generic Mounts section for it too). Internal writes (`createAppContainer` / `applyAppConfig`) call `containerManager.putMountFileTextContent` directly and are unaffected.
+
 ### Error Codes (422)
 
 - `INVALID_APP_CONFIG` — appConfig validation failed
-- `APP_CONFIG_ONLY` — attempted raw env/mount edit on app container
+- `APP_CONFIG_ONLY` — attempted raw env/mount edit on app container, or raw read/write of an app-managed mount's content
 - `UNKNOWN_APP_TYPE` — app ID not in registry
 
 ## Frontend

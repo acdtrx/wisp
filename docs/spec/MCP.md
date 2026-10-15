@@ -38,7 +38,7 @@ JSON-RPC batching is rejected (`-32600`; removed from the MCP spec in 2025-06-18
 | `get_host_stats` | — | One sample of the `stats` topic payload from `/api/events` (shared builder `lib/hostStatsSnapshot.js`) |
 | `get_host_hardware` | — | Static inventory from `getHostHardwareInfo()`: CPU topology, DMI, RAM modules, disks + SMART, PCI, GPUs |
 
-Tool handlers call the same facades and glue as the REST routes (`containerManager`, `vmManager`, `lib/host`, `lib/containerApps`, settings) and go through the same masking (`maskContainerConfigSecrets`) — no tool output ever contains a secret. Container names are validated (`validateContainerName`) before any path-derived read.
+Tool handlers call the same facades and glue as the REST routes (`containerManager`, `vmManager`, `lib/host`, `lib/containerApps`, settings) and go through the same masking (`maskContainerConfigSecrets`) — no tool output ever contains a secret. Container names are validated (`validateContainerName`) before any path-derived read. There is no mount-content tool. The same token also reaches the REST API ([AUTH.md](AUTH.md) § API tokens), whose one raw-content read of app files — `GET /api/containers/:name/mounts/:mountName/content` — refuses app-managed mounts for every caller (`APP_CONFIG_ONLY`, see [API.md](API.md)), so a `read` token cannot recover app secrets that way either.
 
 ## Tools — admin scope (mutating)
 
