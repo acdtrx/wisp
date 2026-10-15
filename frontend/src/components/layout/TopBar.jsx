@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { LogOut, Menu, X } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore.js';
+import { SIGNED_OUT_LOGIN_PATH } from '../../api/client.js';
 import { useUiStore } from '../../store/uiStore.js';
 import HostStatsBar from './HostStatsBar.jsx';
 import BackgroundJobsIndicator from './BackgroundJobsIndicator.jsx';
@@ -16,7 +17,7 @@ export default function TopBar() {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate(SIGNED_OUT_LOGIN_PATH);
   };
 
   return (

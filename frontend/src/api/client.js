@@ -46,10 +46,22 @@ export function isNetworkError(err) {
   return err instanceof TypeError;
 }
 
-export function broadcastLogout() {
+/**
+ * Where a deliberate sign-out lands. The `?sso=signedout` marker stops the
+ * login page from auto-redirecting to the SSO provider — with a live provider
+ * session that redirect would sign the user straight back in.
+ */
+export const SIGNED_OUT_LOGIN_PATH = '/login?sso=signedout';
+
+/**
+ * Tell the other tabs the session is gone. `reason` is `'signedout'` for a
+ * deliberate sign-out (other tabs land on SIGNED_OUT_LOGIN_PATH, no SSO
+ * auto-redirect) or `'expired'` for a 401 (plain /login, which may SSO back in).
+ */
+export function broadcastLogout(reason = 'expired') {
   try {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(LOGOUT_SIGNAL_KEY, String(Date.now()));
+      localStorage.setItem(LOGOUT_SIGNAL_KEY, `${reason}:${Date.now()}`);
     }
   } catch {
     /* ignore — multi-tab logout is best-effort */
@@ -57,13 +69,15 @@ export function broadcastLogout() {
 }
 
 // Multi-tab logout: when one tab calls broadcastLogout the other tabs see
-// the storage event and bounce to /login. Without this, an authed tab would
-// keep using its (already-cleared) session cookie until the next 401.
+// the storage event and bounce to the login page. Without this, an authed tab
+// would keep using its (already-cleared) session cookie until the next 401.
+// A tab already on the login page stays put — re-navigating it could undo a
+// sign-out's no-auto-SSO marker.
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
-    if (e.key === LOGOUT_SIGNAL_KEY && e.newValue) {
-      window.location.href = '/login';
-    }
+    if (e.key !== LOGOUT_SIGNAL_KEY || !e.newValue) return;
+    if (window.location.pathname === '/login') return;
+    window.location.href = e.newValue.startsWith('signedout:') ? SIGNED_OUT_LOGIN_PATH : '/login';
   });
 }
 

@@ -350,7 +350,7 @@ Centered card with:
 
 Redirects to the main app on success. The main app redirects here if no valid session cookie is present.
 
-**SSO (when configured).** On load the page queries `GET /api/auth/oidc/status`. If SSO is enabled **and** the URL has no `?sso=` marker, it auto-redirects to the provider (a spinner shows during the check so the password form doesn't flash). If it returns from a cancelled or failed attempt (`?sso=cancelled` / `?sso=error`), it shows a notice and the password form with a **"Sign in with SSO"** button below the Sign in button (separated by an "or" divider) so the user can retry SSO or fall back to the password. The `?sso=` marker is what prevents an auto-redirect loop. See [AUTH.md](AUTH.md) § OIDC.
+**SSO (when configured).** On load the page queries `GET /api/auth/oidc/status`. If SSO is enabled **and** the URL has no `?sso=` marker, it auto-redirects to the provider (a spinner shows during the check so the password form doesn't flash). If it returns from a cancelled or failed attempt (`?sso=cancelled` / `?sso=error`), from a server where SSO is off (`?sso=disabled`), or from a sign-out (`?sso=signedout`, "You are signed out."), it shows a notice and the password form with a **"Sign in with SSO"** button below the Sign in button (separated by an "or" divider) so the user can retry SSO or fall back to the password. The `?sso=` marker is what prevents an auto-redirect loop. See [AUTH.md](AUTH.md) § OIDC.
 
 A failed sign-in that never reached the server (VPN down, no network) shows **"Can't reach Wisp. Check your VPN or network connection."** rather than the browser's raw `fetch` message.
 

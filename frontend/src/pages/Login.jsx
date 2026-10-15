@@ -6,11 +6,14 @@ import { getOidcStatus, OIDC_LOGIN_URL } from '../api/auth';
 import FullScreenSpinner from '../components/shared/FullScreenSpinner.jsx';
 import WispGlyph from '../components/shared/WispGlyph.jsx';
 
-// Messages shown when the browser returns from an SSO attempt. The presence of
-// the `?sso=` marker is also what stops the auto-redirect from looping.
+// Messages shown when the browser returns from an SSO attempt or a sign-out.
+// The presence of the `?sso=` marker is also what stops the auto-redirect
+// (looping after a failed attempt, or silently signing back in after logout).
 const SSO_NOTICES = {
   cancelled: 'SSO sign-in was cancelled. Sign in with your password, or try SSO again.',
   error: 'SSO is unavailable right now. Sign in with your password.',
+  disabled: 'SSO is not enabled on this server. Sign in with your password.',
+  signedout: 'You are signed out.',
 };
 
 export default function Login() {

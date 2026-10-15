@@ -106,9 +106,9 @@ The frontend fetch wrapper sends `credentials: 'include'` on every request, read
 
 So **401 is reserved for "no or expired session"** on every route the client calls. A route that rejects the request itself while the session is fine answers with another status (change-password's wrong current password → 422). The login route's 401 for a wrong password is the exception that stays: the login page posts with a bare `fetch`, outside the shared client.
 
-`POST /api/auth/logout` clears both cookies and returns 204. The frontend's `useAuthStore.logout` calls it before broadcasting the multi-tab signal.
+`POST /api/auth/logout` clears both cookies and returns 204. The frontend's `useAuthStore.logout` calls it before broadcasting the multi-tab signal, then the tab lands on **`/login?sso=signedout`** — the marker keeps the login page from auto-redirecting to the SSO provider, which with a live provider session would sign the user straight back in.
 
-**Multi-tab logout.** Logout in one tab calls `broadcastLogout()` which writes a `wisp_logout` localStorage entry. Every other open tab subscribes to the `storage` event and bounces to `/login` on that key change. The session cookie itself is shared across tabs (same browser profile, same origin), so any tab that tries an authenticated request after logout also gets 401 and redirects.
+**Multi-tab logout.** Logout in one tab calls `broadcastLogout('signedout')`, which writes a `wisp_logout` localStorage entry carrying the reason (`signedout` for a deliberate sign-out, `expired` for a 401). Every other open tab subscribes to the `storage` event and bounces on that key change — to `/login?sso=signedout` for a sign-out (so no tab SSO-signs back in), to plain `/login` for an expired session. A tab already on the login page stays put. The session cookie itself is shared across tabs (same browser profile, same origin), so any tab that tries an authenticated request after logout also gets 401 and redirects.
 
 **Password change closes live connections.** `POST /api/auth/change-password` writes the new hash, calls `closeAllSSE()` + `closeAllWebSockets('password changed')`, then re-issues a fresh `wisp_session` and `wisp_csrf` against the new secret so the user who just changed their password isn't immediately bounced. Pre-rotation tokens can no longer keep streaming on connections that were authed before the secret changed.
 
@@ -186,6 +186,8 @@ Stored under `settings.oidc` in `wisp-config.json` (`{ enabled, issuer, clientId
 - Provider returns `error=access_denied` (user cancelled) → `/login?sso=cancelled`
 - SSO disabled mid-flow → `/login?sso=disabled`
 - Provider unreachable, discovery/JWKS failure, invalid/expired state, token-exchange or ID-token validation failure → `/login?sso=error`
+
+The frontend adds one marker of its own: a deliberate sign-out lands on `/login?sso=signedout` (see § Frontend handling).
 
 The login page auto-redirects to the provider when SSO is enabled **and** no `?sso=` marker is present; the marker both shows the message and breaks the redirect loop so the password form (with a "Sign in with SSO" button below it) is reachable. See [UI.md](UI.md) § Login Page.
 

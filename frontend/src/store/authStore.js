@@ -39,7 +39,7 @@ export const useAuthStore = create((set) => ({
     } catch {
       /* logout is best-effort — even on failure clear local state */
     }
-    broadcastLogout();
+    broadcastLogout('signedout');
     set({ authenticated: false });
   },
 }));
