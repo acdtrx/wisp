@@ -36,9 +36,10 @@ function getFilesystemUsage() {
     if (!existsSync(mount)) continue;
     try {
       const st = statfsSync(mount);
+      // Same `df` semantics as the Linux implementation.
       const totalBytes = st.blocks * st.bsize;
-      const availBytes = st.bfree * st.bsize;
-      const usedBytes = Math.max(0, totalBytes - availBytes);
+      const usedBytes = Math.max(0, (st.blocks - st.bfree) * st.bsize);
+      const availBytes = st.bavail * st.bsize;
       result.push({
         mount,
         device: '',

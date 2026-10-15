@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 
 const SECTOR_BYTES = 512;
@@ -444,6 +444,23 @@ function getDiskIO() {
   };
 }
 
+/**
+ * Whether a network interface is backed by hardware (PCI/USB/virtio NIC, Wi-Fi):
+ * only those have a `device` link in sysfs. Bridges, bonds, VLANs, veth, tap/vnet,
+ * dummy (wisp-dns0) and loopback live under /sys/devices/virtual and have none.
+ */
+function isPhysicalInterface(iface) {
+  return existsSync(`/sys/class/net/${iface}/device`);
+}
+
+/**
+ * Host network throughput counts physical interfaces only. Every packet that
+ * leaves or enters the host over a wire crosses exactly one of them — including
+ * VM and container LAN traffic, which flows through the NIC enslaved to br0 —
+ * whereas the bridge and each vnet/veth port re-count bytes the NIC already saw.
+ * Traffic that never touches a wire (VM↔VM on one bridge, host↔guest) is
+ * deliberately not counted.
+ */
 function parseNetStats() {
   const content = readFile('/proc/net/dev');
   if (!content) return null;
@@ -456,7 +473,7 @@ function parseNetStats() {
     if (!match) continue;
 
     const iface = match[1];
-    if (iface === 'lo') continue;
+    if (!isPhysicalInterface(iface)) continue;
 
     const parts = match[2].trim().split(/\s+/).map(Number);
     rxBytes += parts[0] || 0;  // receive bytes

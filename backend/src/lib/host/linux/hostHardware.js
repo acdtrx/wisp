@@ -232,9 +232,11 @@ export function getFilesystemUsage() {
 
     try {
       const st = statfsSync(mount);
+      // `df` semantics: used = total − free; available = what an unprivileged
+      // writer (the deploy user) can still use, i.e. excluding the root reserve.
       const totalBytes = st.blocks * st.bsize;
-      const availBytes = st.bfree * st.bsize;
-      const usedBytes = totalBytes - availBytes;
+      const usedBytes = (st.blocks - st.bfree) * st.bsize;
+      const availBytes = st.bavail * st.bsize;
       result.push({
         mount,
         device,
