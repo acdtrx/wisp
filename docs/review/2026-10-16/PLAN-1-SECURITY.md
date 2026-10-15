@@ -154,3 +154,21 @@ path re-installs them — UPDATES.md contract).
 - All five bundles merged; frontend build + `check-imports` pass.
 - darwin probes for S1/S3/S4 recorded in this file; Linux checks for S2/S3/S4/S5 recorded.
 - Optional: the user may choose to cut a patch release here (releases are user-initiated).
+
+---
+
+## Results (2026-10-16)
+
+Branch `fix/audit-phase1` (S1–S5 cherry-picked, no conflicts). `check-imports` OK, frontend build OK.
+Deployed to the test server (tini) through the real self-update path (`wisp-updater`: snapshot →
+swap → install-deps → common-setup (helpers re-installed) → install-unit → start) — clean.
+
+| Bundle | darwin (agent) | Linux (tini) |
+|---|---|---|
+| S1 auth gate | encoded `/api` + `/ws` variants 401/404; session, bearer, `/mcp`, WS controls unchanged; prod SPA shell served | `/%61pi/vms`, `/%61pi/settings`, `/%61pi/auth/tokens`, `/%61%70%69/vms`, POST `/%61pi/containers/caddo/start` → 401; WS `/ws/…`, `/%77s/…` without session → 401; `/` → 200 |
+| S2 VNC localhost | create + edit XML probes emit `listen='127.0.0.1'` | pre-fix `dubi` (`0.0.0.0`): SPICE→VNC edit rewrote both `listen` and `<listen address>` to 127.0.0.1; started → `127.0.0.1:5900` only; console WS → 101 |
+| S3 validation | validators, route 422s, delete guards on a scratch tree | real `gubi` backup; DELETE `{gubi,'..'}`, `{'.','..'}`, `{gubi,'.'}` → 422, backup roots unchanged; real delete removed exactly one backup |
+| S4 secrets | unit guards, tampered-archive restore, file modes | A3: caddy app container `Caddyfile` → 422 for read token, session GET, session PUT; generic `caddo` `Caddyfile` → 200. V13: restore-as-new of `gubi` (0644 source) → `cloud-init.{iso,json}` 600. C9: tampered `/dev/mem` device and `../..` mount → 422, no leftovers; clean restore + start OK |
+| S5 helpers | refusals + function harness | installed copies match repo; `wisp-cni` foreign bin dir / foreign-owned conf refused, own conf reaches plugin; `wisp-mount unmount /home`, `unmount-lazy /`, rmdir traversal to `/tmp/…` → 64; symlink under `/mnt/wisp` → "not mounted"/64; container start/stop via new `wisp-cni` OK |
+
+Test artifacts on tini (gubi backup, `gubi-r`, `capptest`, read token, tampered backups, `caddo-r`) removed.
