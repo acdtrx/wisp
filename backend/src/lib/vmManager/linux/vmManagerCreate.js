@@ -221,7 +221,7 @@ function buildDomainXML(spec, blockDisks, cdrom1Path, cdrom2Path, sdePath, { loa
     ...(controllers.length ? { controller: controllers } : {}),
     disk: disks,
     interface: ifaces,
-    graphics: [{ '@_type': graphicsType, '@_port': '-1', '@_autoport': 'yes', '@_listen': '0.0.0.0' }],
+    graphics: [{ '@_type': graphicsType, '@_port': '-1', '@_autoport': 'yes', '@_listen': '127.0.0.1' }],
     video: [{ model: { '@_type': videoDriver } }],
     input: [{ '@_type': 'tablet', '@_bus': 'usb' }],
   };

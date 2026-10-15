@@ -242,7 +242,7 @@ export async function updateVMConfig(name, changes) {
   }
 
   if (patch.graphicsType != null && dom.devices) {
-    dom.devices.graphics = [{ '@_type': patch.graphicsType, '@_port': '-1', '@_autoport': 'yes', '@_listen': '0.0.0.0' }];
+    dom.devices.graphics = [{ '@_type': patch.graphicsType, '@_port': '-1', '@_autoport': 'yes', '@_listen': '127.0.0.1' }];
   }
 
   if (patch.memBalloon != null && dom.devices) {
