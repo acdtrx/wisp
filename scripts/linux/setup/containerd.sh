@@ -14,6 +14,24 @@ source "$SETUP_DIR/distro.sh"
 
 DEPLOY_USER="${1:-${SUDO_USER:-}}"
 
+# Docker publishes separate apt repos for Debian and Ubuntu, each keyed by that
+# distro's own codename, so the repo is picked from ID/ID_LIKE. Ubuntu
+# derivatives (Mint, Pop!_OS, ...) carry their own VERSION_CODENAME (Mint 22 is
+# "wilma") and the Ubuntu base in UBUNTU_CODENAME; Debian derivatives may carry
+# the Debian base in DEBIAN_CODENAME. Prints "<repo> <codename>", nothing when
+# the distro is neither.
+docker_apt_repo() {
+  local os_release="$1"
+  (
+    # shellcheck disable=SC1090
+    . "$os_release"
+    case " ${ID:-} ${ID_LIKE:-} " in
+      *" ubuntu "*) echo "ubuntu ${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}" ;;
+      *" debian "*) echo "debian ${DEBIAN_CODENAME:-${VERSION_CODENAME:-}}" ;;
+    esac
+  )
+}
+
 echo "--- containerd setup (distro: $WISP_DISTRO) ---"
 
 NEED_INSTALL=true
@@ -35,22 +53,43 @@ if $NEED_INSTALL; then
     pacman -Sy --needed --noconfirm containerd
   else
     # Debian / Ubuntu: install from the official Docker apt repo
+    DOCKER_REPO=""
+    CODENAME=""
+    read -r DOCKER_REPO CODENAME <<<"$(docker_apt_repo /etc/os-release)" || true
+    if [[ -z "$DOCKER_REPO" || -z "$CODENAME" ]]; then
+      echo "ERROR: Could not determine the Docker apt repo from /etc/os-release (need an Ubuntu or Debian base with a release codename)." >&2
+      exit 1
+    fi
+    DOCKER_URL="https://download.docker.com/linux/$DOCKER_REPO"
+    DOCKER_LIST=/etc/apt/sources.list.d/docker.list
+    echo "  Docker apt repo: $DOCKER_URL $CODENAME"
+
+    # The list is rewritten below; an existing one pointing at the wrong repo
+    # would fail this first update before it gets the chance.
+    rm -f "$DOCKER_LIST"
     apt-get update -qq
     apt-get install -y -qq ca-certificates curl gnupg
 
     install -m 0755 -d /etc/apt/keyrings
     if [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
-      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      curl -fsSL "$DOCKER_URL/gpg" | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
       chmod a+r /etc/apt/keyrings/docker.gpg
     fi
 
     ARCH="$(sys_arch)"
-    CODENAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
 
-    echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $CODENAME stable" \
-      > /etc/apt/sources.list.d/docker.list
+    echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] $DOCKER_URL $CODENAME stable" \
+      > "$DOCKER_LIST"
 
-    apt-get update -qq
+    # A list apt cannot fetch fails every later `apt-get update` on the host,
+    # so it does not stay behind when this one fails.
+    if ! apt-get update -qq; then
+      rm -f "$DOCKER_LIST"
+      echo "ERROR: apt-get update failed after adding Docker's repo ($DOCKER_URL $CODENAME)." >&2
+      echo "       Removed $DOCKER_LIST so apt keeps working. Docker may not publish" >&2
+      echo "       containerd.io for this release; install containerd 2.x another way and re-run." >&2
+      exit 1
+    fi
     apt-get install -y -qq containerd.io
   fi
 fi
