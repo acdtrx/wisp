@@ -66,10 +66,12 @@ async function decompressXzToFile(srcPath, handle) {
 
 /**
  * Download the .xz asset, decompress with xz, write to image dir.
- * onProgress(percent, loaded, total) during download. On any failure the
- * hidden compressed temp and the partial output are both removed.
+ * onProgress(percent, loaded, total) during download; onDecompressing() once
+ * when the download is complete and xz starts (xz reports no percentage, so
+ * decompression is a single indeterminate phase). On any failure the hidden
+ * compressed temp and the partial output are both removed.
  */
-export async function downloadAndDecompressHaos(onProgress) {
+export async function downloadAndDecompressHaos({ onProgress, onDecompressing } = {}) {
   const { url, finalName } = await getLatestHaosAsset();
   const dir = await ensureImageDir();
   const tmpPath = join(dir, `.haos_download_${Date.now()}.qcow2.xz`);
@@ -79,6 +81,7 @@ export async function downloadAndDecompressHaos(onProgress) {
   try {
     const { handle, destPath, filename: outputName } = await openUniqueFile(dir, finalName);
     try {
+      if (typeof onDecompressing === 'function') onDecompressing();
       await decompressXzToFile(tmpPath, handle);
     } catch (err) {
       await handle.close().catch(() => {

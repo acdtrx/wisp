@@ -1110,7 +1110,7 @@ Download Home Assistant OS image.
 
 SSE stream for download progress.
 
-- **Progress events:** `{ step: "progress", percent, loaded, total }` (URL download) or `{ step: "decompressing" }` (HAOS flow) between progress updates.
+- **Progress events:** `{ step: "progress", percent, loaded, total }` while downloading; the HAOS flow then sends one `{ step: "decompressing" }` when the download is complete and xz decompression starts (no percent — xz reports none, so the UI shows an indeterminate "Uncompressing…" until `done`).
 - **Completion (from job store):** `{ step: "done", name, type, size, modified }` — same flattened shape as a successful library file row (no nested `result` object).
 - **Failure (terminal):** `{ step: "error", error: string, detail: string }`
 

@@ -422,12 +422,13 @@ export default async function libraryRoutes(fastify) {
       );
       (async () => {
         try {
-          const result = await downloadAndDecompressHaos((percent, phase) => {
-            if (phase === 'decompressing') {
-              downloadJobStore.pushEvent(jobId, { step: 'decompressing' });
-            } else {
+          const result = await downloadAndDecompressHaos({
+            onProgress: (percent) => {
               downloadJobStore.pushEvent(jobId, { step: 'progress', percent, loaded: null, total: null });
-            }
+            },
+            onDecompressing: () => {
+              downloadJobStore.pushEvent(jobId, { step: 'decompressing' });
+            },
           });
           downloadJobStore.completeJob(jobId, result);
         } catch (err) {

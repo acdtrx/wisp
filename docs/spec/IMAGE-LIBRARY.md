@@ -65,7 +65,7 @@ This applies to:
 - `HEAD`-style URL check
 - `downloadWithProgress` used by Ubuntu cloud, Arch cloud, and HAOS preset downloaders (so a hostile mirror cannot redirect to a private IP).
 
-2. **Preset downloads** — Three server-side presets, exposed in the UI as one **preset image** control (cloud icon + chevron) that opens a custom menu (not the browser’s native `<select>`): each row has an icon and label for **Ubuntu Server** (latest LTS cloud image), **Arch Linux** (latest x86_64 cloud qcow2 from pkgbuild mirrors), or **Home Assistant OS** (latest HAOS QEMU image, xz-decompressed to qcow2; progress events can include a `decompressing` phase). Each choice returns a job ID and uses the same background job + SSE flow as the matching `POST /api/library/download-*` routes.
+2. **Preset downloads** — Three server-side presets, exposed in the UI as one **preset image** control (cloud icon + chevron) that opens a custom menu (not the browser’s native `<select>`): each row has an icon and label for **Ubuntu Server** (latest LTS cloud image), **Arch Linux** (latest x86_64 cloud qcow2 from pkgbuild mirrors), or **Home Assistant OS** (latest HAOS QEMU image, xz-decompressed to qcow2; after the download's progress events, one `decompressing` event marks the indeterminate xz phase). Each choice returns a job ID and uses the same background job + SSE flow as the matching `POST /api/library/download-*` routes.
 
 All downloads run as background jobs. Progress is tracked via a job store and streamed to the frontend via SSE — one `progress` event per integer percent change, not per received chunk (≤ ~101 per download); without a `Content-Length` only the final 100% is reported. Replay and retention follow the shared [job store contract](API.md#background-jobs).
 
