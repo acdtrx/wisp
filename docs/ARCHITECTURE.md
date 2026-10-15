@@ -180,6 +180,7 @@ Platform facade: imports **`backend/src/lib/containerManager/linux/`** on Linux 
 | `containerManagerExec.js` | Interactive shell: containerd `Tasks.Exec` + PTY (FIFO I/O) for the container console WebSocket |
 | `containerManagerNetwork.js` | Bridge CNI, netns, DHCP IP discovery |
 | `containerManagerLifecycle.js` | Start, stop, kill, restart, task lifecycle |
+| `containerManagerRestartPolicy.js` | Applies `restartPolicy` on containerd `/tasks/exit` (backoff, intentional-stop matching) |
 | `containerManagerCreate.js` | Create container (pull, snapshot, define) |
 | `containerManagerConfig.js` | Read/update persisted config |
 | `containerManagerList.js` | List containers / summaries |

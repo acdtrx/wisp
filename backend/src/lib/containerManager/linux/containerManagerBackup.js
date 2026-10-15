@@ -41,6 +41,7 @@ import { getContainerDir, getContainerFilesDir, getContainersPath } from './cont
 import {
   getTaskState, normalizeTaskStatus, cleanupTask, pauseContainer, resumeContainer,
 } from './containerManagerLifecycle.js';
+import { noteIntentionalStop } from './containerManagerRestartPolicy.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { generateContainerMac, resolveContainerResolvConf } from './containerManagerNetwork.js';
 import { validateContainerName } from './containerValidation.js';
@@ -651,7 +652,9 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
 
   /* Must be stopped: the directory is about to be swapped out from under
    * any running rootfs mounts, and a paused task would resume onto files
-   * that no longer exist. */
+   * that no longer exist. A restart-policy restart pending from an earlier
+   * crash is cancelled — it would start the container mid-swap. */
+  noteIntentionalStop(name);
   const task = await getTaskState(name);
   if (task) {
     const st = normalizeTaskStatus(task.status);

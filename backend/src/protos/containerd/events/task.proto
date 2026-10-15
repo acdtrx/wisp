@@ -1,0 +1,16 @@
+// Source: github.com/containerd/containerd/api/events/task.proto (TaskExit only).
+// Used to decode the google.protobuf.Any payload of the /tasks/exit event on
+// the containerd events stream (restart policy). Field numbers match upstream.
+syntax = "proto3";
+
+package containerd.events;
+
+import "google/protobuf/timestamp.proto";
+
+message TaskExit {
+  string container_id = 1;
+  string id = 2;
+  uint32 pid = 3;
+  uint32 exit_status = 4;
+  google.protobuf.Timestamp exited_at = 5;
+}

@@ -46,7 +46,7 @@ Deliberately a **subset** of the REST API (`lib/mcp/tools/containerAdminTools.js
 
 | Tool | Input | Behaviour |
 |------|-------|-----------|
-| `deploy_container` | `{ name, image, env?, secretEnv?, restartPolicy?, autostart?, autoBackup?, localDns?, cpuLimit?, memoryLimitMiB? }` | Create a generic container on the default bridge and start it. `secretEnv` values are stored write-only (`secret: true`) so no read token can recover them later. On start failure the container stays defined (stopped) and the error says so. |
+| `deploy_container` | `{ name, image, env?, secretEnv?, restartPolicy?, autostart?, autoBackup?, localDns?, cpuLimit?, memoryLimitMiB? }` | Create a generic container on the default bridge and start it. `secretEnv` values are stored write-only (`secret: true`) so no read token can recover them later. On start failure the container stays defined (stopped) and the error says so. `restartPolicy` (default `unless-stopped`) is enforced as in [CONTAINERS.md → Restart policy](CONTAINERS.md#restart-policy). |
 | `update_container_image` | `{ name, image? }` | Pull the given ref (or re-pull the current tag), point the container at it, restart if running. Locally-imported images skip the pull when present. |
 | `start_container` / `stop_container` / `restart_container` | `{ name }` | Lifecycle; same facade calls as the routes. |
 | `update_app_config` | `{ name, appConfig }` | Patch an app container's appConfig **restricted to that app's `agentWritableAppConfigFields`** (see below). Blocked fields are rejected with an error naming the writable set; everything else is carried forward verbatim from the stored config. Runs the standard `applyAppConfig` path: validate → regenerate derived config → live reload or `pendingRestart`. |

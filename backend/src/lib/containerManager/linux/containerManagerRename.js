@@ -16,6 +16,7 @@ import { promisify } from 'node:util';
 import { containerError, getClient, callUnary } from './containerManagerConnection.js';
 import { getContainerDir, getContainerNetnsPath } from './containerPaths.js';
 import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
+import { noteIntentionalStop } from './containerManagerRestartPolicy.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { validateContainerName } from './containerValidation.js';
@@ -48,6 +49,8 @@ async function ensureNewNameFree(newName) {
 }
 
 async function ensureStopped(name) {
+  // A restart-policy restart pending under the old name must not fire mid-rename.
+  noteIntentionalStop(name);
   const task = await getTaskState(name);
   if (!task) return;
   const st = normalizeTaskStatus(task.status);

@@ -21,6 +21,7 @@ import {
 } from './containerManagerNetwork.js';
 import { getDefaultContainerParentBridge } from '../../networking/index.js';
 import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManagerLifecycle.js';
+import { noteIntentionalStop } from './containerManagerRestartPolicy.js';
 import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { registerAllContainerServices } from './containerManagerServices.js';
 import { assertBindSourcesReady } from './containerManagerMounts.js';
@@ -678,10 +679,12 @@ async function removeContainerKeepingFiles(name) {
  */
 export async function deleteContainer(name, deleteFiles = true) {
   // Stop task if running
+  noteIntentionalStop(name);
   try {
     const task = await callUnary(getClient('tasks'), 'get', { containerId: name });
     const st = normalizeTaskStatus(task.process?.status);
     if (st === 'RUNNING' || st === 'PAUSED') {
+      noteIntentionalStop(name, task.process?.pid);
       await callUnary(getClient('tasks'), 'kill', { containerId: name, signal: 9, all: true });
       await waitUntilTaskStoppedOrGone(name, 15000);
     }

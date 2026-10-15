@@ -12,6 +12,7 @@ import { validateAndNormalizeDevices } from './containerManagerDevices.js';
 import { renameMountBackingStore } from './containerManagerMountsContent.js';
 import { resolveMount } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
+import { RESTART_POLICIES } from './containerManagerRestartPolicy.js';
 
 const RESTART_FIELDS = new Set([
   'image', 'command', 'cpuLimit', 'memoryLimitMiB', 'env', 'mounts', 'devices', 'network', 'runAsRoot',
@@ -270,6 +271,13 @@ export async function updateContainerConfig(name, changes) {
     }
     if (key === 'localDns') {
       config.localDns = value === true;
+      continue;
+    }
+    if (key === 'restartPolicy') {
+      if (!RESTART_POLICIES.includes(value)) {
+        throw containerError('CONFIG_ERROR', `restartPolicy must be one of: ${RESTART_POLICIES.join(', ')}`);
+      }
+      config.restartPolicy = value;
       continue;
     }
     if (key === 'services') {

@@ -11,6 +11,7 @@ import {
 import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { findCurrentRunId, finalizeRun } from './containerManagerLogs.js';
 import { getContainerDir } from './containerPaths.js';
+import { noteIntentionalStop, noteContainerStart } from './containerManagerRestartPolicy.js';
 
 const SIGTERM = 15;
 const SIGKILL = 9;
@@ -85,6 +86,7 @@ export async function getTaskState(name) {
 }
 
 export async function startContainer(name) {
+  noteContainerStart(name);
   const task = await getTaskState(name);
   const st = task ? normalizeTaskStatus(task.status) : null;
 
@@ -197,6 +199,9 @@ export async function resumeStalePausedContainersAtBackendBoot(log) {
 
 export async function stopContainer(name) {
   const task = await getTaskState(name);
+  // Before the not-running check: a Stop on a container waiting out its
+  // restart-policy backoff cancels that restart.
+  noteIntentionalStop(name, task && task.status !== 'STOPPED' ? task.pid : null);
   if (!task || task.status === 'STOPPED') {
     throw containerError('CONTAINER_NOT_RUNNING', `Container "${name}" is not running`);
   }
@@ -238,6 +243,7 @@ export async function stopContainer(name) {
 
 export async function killContainer(name) {
   const task = await getTaskState(name);
+  noteIntentionalStop(name, task && task.status !== 'STOPPED' ? task.pid : null);
   if (!task || task.status === 'STOPPED') {
     throw containerError('CONTAINER_NOT_RUNNING', `Container "${name}" is not running`);
   }

@@ -90,7 +90,13 @@ export const containerAdminTools = [
         image: { type: 'string', description: 'Fully-qualified OCI image ref' },
         env: { type: 'object', additionalProperties: { type: 'string' }, description: 'Plain env vars' },
         secretEnv: { type: 'object', additionalProperties: { type: 'string' }, description: 'Secret env vars (write-only)' },
-        restartPolicy: { type: 'string', enum: RESTART_POLICIES, description: 'Default: unless-stopped' },
+        restartPolicy: {
+          type: 'string',
+          enum: RESTART_POLICIES,
+          description: 'What Wisp does when the container exits on its own: never; on-failure (restart on a non-zero exit); ' +
+            'unless-stopped / always (restart on any exit). Restarts back off from 1s to 5 min; a stop through Wisp is never undone. ' +
+            'Default: unless-stopped',
+        },
         autostart: { type: 'boolean', description: 'Start at host boot (default false)' },
         autoBackup: { type: 'boolean', description: 'Include in the daily scheduled backup (default false)' },
         localDns: { type: 'boolean', description: 'Register <name>.local via mDNS (default true)' },

@@ -256,7 +256,15 @@ export async function connect(opts = {}) {
     'containerd/cgroups/v2/metrics.proto',
   ]);
 
+  // Task event payloads — the restart policy decodes /tasks/exit envelopes.
+  const eventsRoot = new protobuf.Root();
+  eventsRoot.resolvePath = (_origin, target) => resolve(PROTOS_DIR, target);
+  eventsRoot.loadSync(['containerd/events/task.proto']);
+
   containerState.protoTypes = {
+    'containerd.events.TaskExit': {
+      type: eventsRoot.lookupType('containerd.events.TaskExit'),
+    },
     'containerd.types.transfer.OCIRegistry': {
       type: transferRoot.lookupType('containerd.types.transfer.OCIRegistry'),
     },

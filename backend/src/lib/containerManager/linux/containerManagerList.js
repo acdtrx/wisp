@@ -1,7 +1,8 @@
 /**
  * List containers by merging containerd state with on-disk container.json configs.
  * Maintains an in-memory cache refreshed on containerd events, container.json writes,
- * and image-update completion (see Stage 3 of the SSE refactor).
+ * and image-update completion. Owns the containerd events subscription, which
+ * also feeds `/tasks/exit` to the restart policy.
  */
 import { join } from 'node:path';
 import { readFile, readdir } from 'node:fs/promises';
@@ -29,6 +30,7 @@ import {
   writeContainerConfig,
   subscribeContainerConfigWrite,
 } from './containerManagerConfigIo.js';
+import { handleTaskExitEvent } from './containerManagerRestartPolicy.js';
 
 /**
  * Derived `updateAvailable`: true when the container is running/paused AND
@@ -215,6 +217,7 @@ function startEventsStream() {
       if (envelope?.topic && LIST_AFFECTING_TOPICS.has(envelope.topic)) {
         refreshContainerListCache();
       }
+      if (envelope?.topic === '/tasks/exit') handleTaskExitEvent(envelope.event);
     });
     eventsStream.on('error', (err) => {
       containerState.logger?.warn?.({ err: err?.message || String(err) }, 'containerd events stream error — will reconnect');
