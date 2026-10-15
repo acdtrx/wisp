@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { subscribeJobProgress } from '../api/jobProgress.js';
 
-/** Match server job TTL after completion (~5m) — drop finished rows from UI */
+/** Same TTL as the server's job store, measured the same way: from completion.
+ *  A finished row leaves the tray once it has been finished this long. */
 const DONE_UI_TTL_MS = 5 * 60 * 1000;
 
 /**
@@ -45,20 +46,32 @@ export const useBackgroundJobsStore = create((set, get) => ({
   /** @type {ReturnType<typeof setTimeout> | null} */
   pruneTimer: null,
 
+  /**
+   * Arm one timer for the earliest finished row's expiry; when it fires, drop
+   * every expired row and re-arm for the next one, so rows that finished later
+   * than the first still leave on time. Rows only finish later than the armed
+   * one, so an armed timer is never late and a new finish needn't re-arm it.
+   */
   schedulePrune: () => {
-    const state = get();
-    if (state.pruneTimer) return;
+    const { pruneTimer, jobs } = get();
+    if (pruneTimer) return;
+    let earliest = Infinity;
+    for (const row of Object.values(jobs)) {
+      if (row.status === 'running') continue;
+      earliest = Math.min(earliest, row.finishedAt ?? row.startedAt);
+    }
+    if (earliest === Infinity) return;
     const id = setTimeout(() => {
-      set({ pruneTimer: null });
       const now = Date.now();
-      const jobs = { ...get().jobs };
-      for (const [jid, row] of Object.entries(jobs)) {
+      const next = { ...get().jobs };
+      for (const [jid, row] of Object.entries(next)) {
         if (row.status === 'running') continue;
         const t = row.finishedAt ?? row.startedAt;
-        if (now - t > DONE_UI_TTL_MS) delete jobs[jid];
+        if (now - t >= DONE_UI_TTL_MS) delete next[jid];
       }
-      set({ jobs });
-    }, DONE_UI_TTL_MS + 1000);
+      set({ jobs: next, pruneTimer: null });
+      get().schedulePrune();
+    }, Math.max(0, earliest + DONE_UI_TTL_MS - Date.now()));
     set({ pruneTimer: id });
   },
 
