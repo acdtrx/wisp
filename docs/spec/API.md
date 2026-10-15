@@ -967,8 +967,10 @@ Start a container backup job. Mirrors `POST /api/vms/:name/backup` — same body
 
 SSE stream for container backup progress.
 
-- **Progress events:** `{ step, percent?, currentFile? }` — `step` values include `pausing`, `measuring`, `archiving`, `resuming`, `done` (pause/resume steps only when the container was running). Percent is driven by uncompressed bytes through tar against the pre-walked source size (so it tracks real progress through the archive, not output bytes).
-- **Completion (from job store):** `{ step: "done", timestamp: string }`
+- **Progress events:** `{ step, percent?, currentFile? }` — `step` values include `pausing`, `measuring`, `archiving`, `resuming`, `manifest` (pause/resume steps only when the container was running). Percent is driven by uncompressed bytes through tar against the pre-walked source size (so it tracks real progress through the archive, not output bytes); it spans the whole job — with several destinations each owns an equal slice and `currentFile` is prefixed with the destination label.
+- **Per-destination completion:** `{ step: "destination-done", destinationId: string, percent: number, currentFile: string }` — not terminal; later destinations follow.
+- **Restore-in-place steps** (same stream, kind `container-restore`): `safety-*` (the safety backup), `extracting`, `swapping`, `registering`.
+- **Completion (from job store, the only `done`):** `{ step: "done", timestamp: string }` — the last destination's backup folder name
 - **Failure:** `{ step: "error", error: string, detail: string }`
 
 ### GET /api/container-backups

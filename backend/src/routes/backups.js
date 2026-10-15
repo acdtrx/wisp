@@ -79,8 +79,8 @@ function stripPath(row) {
  * Run an in-place restore as a background job in the shared backupJobStore:
  * optional safety backup of the current state first (0–45% of the bar), then
  * the restore itself (45–100%). The safety phase's step names are prefixed
- * `safety-` so they read as the safety backup and a manager-level `done`
- * event (container backups emit one) can't end the job stream early.
+ * `safety-` so they read as the safety backup. Managers emit no `done`
+ * progress event; only the job store's completion does.
  *
  * @param {object} opts
  * @param {string} opts.jobId

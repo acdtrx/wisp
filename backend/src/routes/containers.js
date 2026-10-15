@@ -30,7 +30,7 @@ import {
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { renameWorkloadAssignment } from '../lib/sections.js';
 import { publishContainer, unpublishContainer } from '../lib/containerMdnsReconciler.js';
-import { resolveBackupDestinations } from '../lib/backupDestinations.js';
+import { resolveBackupDestinations, backupToEachDestination } from '../lib/backupDestinations.js';
 import { recordBackupAttempt } from '../lib/backupStatus.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
@@ -479,15 +479,10 @@ export default async function containerRoutes(fastify) {
         );
         const destinationIds = destinations.map((d) => d.id);
         (async () => {
-          let lastResult;
-          for (const dest of destinations) {
-            lastResult = await createContainerBackup(name, dest.path, {
-              origin: 'manual',
-              onProgress(ev) {
-                backupJobStore.pushEvent(jobId, { step: ev.step, percent: ev.percent, currentFile: ev.currentFile });
-              },
-            });
-          }
+          const lastResult = await backupToEachDestination(destinations, {
+            push: (ev) => backupJobStore.pushEvent(jobId, ev),
+            backupOne: (dest, onProgress) => createContainerBackup(name, dest.path, { origin: 'manual', onProgress }),
+          });
           backupJobStore.completeJob(jobId, lastResult);
           await recordBackupAttempt({
             kind: 'container', name, ok: true, origin: 'manual', destinationIds, timestamp: lastResult?.timestamp,

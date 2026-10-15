@@ -46,7 +46,7 @@ import {
 import { publishVm, unpublishVm } from '../lib/vmMdnsReconciler.js';
 import { generateCloudInit } from '../lib/cloudInit.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
-import { resolveBackupDestinations } from '../lib/backupDestinations.js';
+import { resolveBackupDestinations, backupToEachDestination } from '../lib/backupDestinations.js';
 import { recordBackupAttempt } from '../lib/backupStatus.js';
 import { acquireVmOperationLock, withVmOperationLock } from '../lib/vmOperationLock.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
@@ -331,37 +331,10 @@ export default async function vmsRoutes(fastify) {
           'Background job started',
         );
         const destinationIds = destinations.map((d) => d.id);
-        const multi = destinations.length > 1;
-        (async () => {
-          let lastResult;
-          // Each destination owns an equal slice of the job's 0–100% bar. Only
-          // completeJob emits `done`; a finished destination is `destination-done`.
-          for (const [index, dest] of destinations.entries()) {
-            const base = (index / destinations.length) * 100;
-            const span = 100 / destinations.length;
-            try {
-              lastResult = await createBackup(name, dest.path, {
-                onProgress(ev) {
-                  backupJobStore.pushEvent(jobId, {
-                    step: ev.step,
-                    percent: ev.percent != null ? Math.round(base + (ev.percent / 100) * span) : undefined,
-                    currentFile: multi && ev.currentFile ? `${dest.label}: ${ev.currentFile}` : ev.currentFile,
-                  });
-                },
-              });
-            } catch (err) {
-              if (multi) err.message = `${dest.label}: ${err.message}`;
-              throw err;
-            }
-            backupJobStore.pushEvent(jobId, {
-              step: 'destination-done',
-              destinationId: dest.id,
-              percent: Math.round(base + span),
-              currentFile: `${dest.label} backup complete`,
-            });
-          }
-          return lastResult;
-        })().then(
+        backupToEachDestination(destinations, {
+          push: (ev) => backupJobStore.pushEvent(jobId, ev),
+          backupOne: (dest, onProgress) => createBackup(name, dest.path, { onProgress }),
+        }).then(
           async (lastResult) => {
             // Free the VM before announcing completion, so an action the
             // client takes on `done` never meets a stale VM_BUSY.

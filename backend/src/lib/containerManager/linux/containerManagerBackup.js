@@ -282,7 +282,9 @@ export async function createContainerBackup(name, destinationPath, { onProgress,
   };
   await writeFile(join(backupDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
-  emit('done', { percent: 100, currentFile: 'Backup complete', path: backupDir });
+  /* Completion is the resolved promise — no `done` progress event (only the
+   * caller's job completion may emit the terminal `done`). */
+  emit('manifest', { percent: 100, currentFile: 'Backup complete' });
   return { path: backupDir, timestamp };
 }
 
@@ -740,6 +742,6 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
     }
   }
 
-  emit('done', { percent: 100, currentFile: 'Restore complete' });
+  /* Completion is the resolved promise — no `done` progress event. */
   return { name, image: config.image || null };
 }

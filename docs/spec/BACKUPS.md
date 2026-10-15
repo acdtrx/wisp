@@ -155,7 +155,8 @@ Backup creation and restore-in-place run as background jobs with SSE-based progr
 - **SSE stream** at `/api/vms/backup-progress/:jobId` (VMs) or `/api/containers/backup-progress/:jobId` (containers) pushes events
 - Events include: step name, percent complete, current file being processed
 - The terminal event is `done` (emitted only by the job store on job completion) or `error`; the frontend closes the stream on either
-- **Multi-destination VM backups:** each destination owns an equal slice of the job's 0–100% bar, `currentFile` is prefixed with the destination label (`Local: Copying disk0.qcow2`), and a finished destination emits `{ step: "destination-done", destinationId, percent, currentFile }` — never `done`. A later destination's failure therefore still reaches the client as the job's `error` (message prefixed with that destination's label).
+- **Multi-destination backups** (VM and container, manual and scheduled — one shared runner, `backupToEachDestination` in `lib/backupDestinations.js`): each destination owns an equal slice of the job's 0–100% bar, `currentFile` is prefixed with the destination label (`Local: Copying disk0.qcow2`), and a finished destination emits `{ step: "destination-done", destinationId, percent, currentFile }` — never `done`; managers emit no `done` of their own. A later destination's failure therefore still reaches the client as the job's `error` (message prefixed with that destination's label).
+- Byte-driven progress (disk gzip, container tar) is emitted once per integer percent change, and a stream that (re)connects mid-job replays a short history — see [API.md → Job store contract](API.md#background-jobs).
 
 ## Per-VM operation lock
 
@@ -206,7 +207,7 @@ The task state decides how the archive is taken (`freezeForBackup` in `container
 
 The pause happens as late as possible (after destination validation and dir creation) so the frozen window covers only measure + tar. If the archive fails, the partial backup dir is removed. The job spawns `tar -cf - <containerDir>`, pipes its stdout through Node's `createGzip()` and a bytes-counter `Transform` (driving percent against the pre-walked source size), then writes to `data.tar.gz`. After the archive is finalized, the manifest is written.
 
-Progress steps are `pausing → measuring → archiving → resuming → done` (the pause/resume steps are skipped for cold archives). Events are emitted via the shared `backupJobStore` — same SSE consumer (`backgroundJobsStore` on the frontend, top-bar progress + modal mirror) as VM backups, just routed via `/api/containers/backup-progress/:jobId` and `JOB_KIND.CONTAINER_BACKUP`.
+Progress steps are `pausing → measuring → archiving → resuming → manifest` (the pause/resume steps are skipped for cold archives), then `destination-done` per destination; the terminal `done` comes only from job completion (see [Progress Tracking](#progress-tracking)). Events are emitted via the shared `backupJobStore` — same SSE consumer (`backgroundJobsStore` on the frontend, top-bar progress + modal mirror) as VM backups, just routed via `/api/containers/backup-progress/:jobId` and `JOB_KIND.CONTAINER_BACKUP`.
 
 **Crash recovery:** if the backend dies mid-archive, the container stays frozen until the next backend boot, where `resumeStalePausedContainersAtBackendBoot` resumes any paused wisp-managed task (Wisp exposes no user-facing pause, so a paused task at boot can only be an interrupted backup). Runs before the autostart pass.
 

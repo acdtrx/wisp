@@ -75,7 +75,7 @@ Progress uses `step` on every event. **Failures** use the shared job-store termi
 { "step": "error", "error": "message", "detail": "raw detail" }
 ```
 
-The stream closes after that event. **Successful completion** uses `{ "step": "done", ...fields }` where the extra fields depend on the job (see [API.md](API.md) job SSE sections). `done` and `error` are the only terminal steps — clients close on either — so intermediate milestones use their own step names (e.g. a multi-destination VM backup's `destination-done`).
+The stream closes after that event. **Successful completion** uses `{ "step": "done", ...fields }` where the extra fields depend on the job (see [API.md](API.md) job SSE sections). `done` and `error` are the only terminal steps — clients close on either — so intermediate milestones use their own step names (e.g. a multi-destination backup's `destination-done`).
 
 ## Authentication Errors
 

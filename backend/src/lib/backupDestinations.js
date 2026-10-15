@@ -64,3 +64,57 @@ export async function resolveBackupDestinations(settings, rawMounts, destination
   }
   return destinations;
 }
+
+/**
+ * Run one backup per destination, in order, as a single job's progress
+ * stream (VM and container backups, manual and scheduled).
+ *
+ * Each destination owns an equal slice of the job's 0–100% bar. With several
+ * destinations, progress text and a failing destination's error message are
+ * prefixed with its label. A finished destination emits `destination-done` —
+ * never `done`: only the job store's completion emits the terminal `done`, so
+ * a later destination's failure still reaches the client as the job's error.
+ *
+ * @template T
+ * @param {Array<{ id: string, path: string, label: string }>} destinations - from resolveBackupDestinations
+ * @param {object} opts
+ * @param {(event: object) => void} opts.push - job event sink (e.g. `(ev) => backupJobStore.pushEvent(jobId, ev)`)
+ * @param {(dest: { id: string, path: string, label: string },
+ *          onProgress: (ev: { step: string, percent?: number, currentFile?: string }) => void) => Promise<T>} opts.backupOne
+ * @param {(dest: { id: string, path: string, label: string }) => Promise<void>} [opts.afterEach] - runs after a destination finished (e.g. retention pruning)
+ * @returns {Promise<T>} the last destination's result
+ */
+export async function backupToEachDestination(destinations, { push, backupOne, afterEach }) {
+  const multi = destinations.length > 1;
+  let lastResult;
+  let lastKey = null;
+  for (const [index, dest] of destinations.entries()) {
+    const base = (index / destinations.length) * 100;
+    const span = 100 / destinations.length;
+    try {
+      lastResult = await backupOne(dest, (ev) => {
+        const out = {
+          step: ev.step,
+          percent: ev.percent != null ? Math.round(base + (ev.percent / 100) * span) : undefined,
+          currentFile: multi && ev.currentFile ? `${dest.label}: ${ev.currentFile}` : ev.currentFile,
+        };
+        /* Scaling into a slice maps several manager percents onto one job percent — skip repeats. */
+        const key = `${out.step}|${out.percent}|${out.currentFile}`;
+        if (key === lastKey) return;
+        lastKey = key;
+        push(out);
+      });
+    } catch (err) {
+      if (multi) err.message = `${dest.label}: ${err.message}`;
+      throw err;
+    }
+    push({
+      step: 'destination-done',
+      destinationId: dest.id,
+      percent: Math.round(base + span),
+      currentFile: `${dest.label} backup complete`,
+    });
+    if (afterEach) await afterEach(dest);
+  }
+  return lastResult;
+}

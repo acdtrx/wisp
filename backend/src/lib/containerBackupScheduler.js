@@ -21,7 +21,7 @@
 import { randomBytes } from 'node:crypto';
 
 import { getSettings, getRawMounts, listConfiguredBackupRoots } from './settings.js';
-import { resolveBackupDestinations } from './backupDestinations.js';
+import { resolveBackupDestinations, backupToEachDestination } from './backupDestinations.js';
 import { computeScheduledBackupPruneList } from './backupRetention.js';
 import {
   listContainers,
@@ -139,16 +139,11 @@ async function runScheduledBackups(schedule) {
     backupJobStore.createJob(jobId, { kind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP, title, log });
     log?.info({ jobId, container: name }, 'Backup scheduler: container backup started');
     try {
-      let lastResult;
-      for (const dest of destinations) {
-        lastResult = await createContainerBackup(name, dest.path, {
-          origin: 'scheduled',
-          onProgress(ev) {
-            backupJobStore.pushEvent(jobId, { step: ev.step, percent: ev.percent, currentFile: ev.currentFile });
-          },
-        });
-        await pruneScheduledBackups(name, dest, allowedRoots);
-      }
+      const lastResult = await backupToEachDestination(destinations, {
+        push: (ev) => backupJobStore.pushEvent(jobId, ev),
+        backupOne: (dest, onProgress) => createContainerBackup(name, dest.path, { origin: 'scheduled', onProgress }),
+        afterEach: (dest) => pruneScheduledBackups(name, dest, allowedRoots),
+      });
       backupJobStore.completeJob(jobId, lastResult);
       await recordBackupAttempt({
         kind: 'container',
