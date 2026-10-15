@@ -315,6 +315,8 @@ The VM management backend is organized as a **platform facade** plus implementat
 
 XML parsing and building utilities using fast-xml-parser. Handles the conversion between libvirt XML and the structured config objects used by the rest of the application.
 
+The shared parser keeps every text node and attribute as the exact string libvirt wrote (`parseTagValue: false`, `parseAttributeValue: false`). Parsed domains and snapshots are mutated and rebuilt for `DomainDefineXML` / snapshot redefine, so value coercion would rewrite them on the round-trip — a VM or snapshot named `007` or `01` came back as `7` / `1` and could no longer be looked up, a disk `<serial>0x1f</serial>` became `31`, a 16-digit `<wwn>` lost its leading zero. Readers that need a number convert explicitly: memory, vCPU count, CPU topology, VNC port, snapshot `creationTime`. (settled 2026-10-16)
+
 ### `vmManagerHost.js` (under `linux/vmManager/`)
 
 - Host info (hostname, versions, uptime, kernel, primary IP)

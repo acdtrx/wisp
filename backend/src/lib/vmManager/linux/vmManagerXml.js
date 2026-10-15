@@ -3,10 +3,17 @@
  */
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 
+// Every text node and attribute stays the exact string libvirt wrote: domain
+// XML is parsed, mutated and rebuilt for DomainDefineXML, so coercion would
+// rewrite values on the round-trip (`<name>007</name>` → 7, a disk `<serial>`
+// of 0x1f → 31, a 16-digit `<wwn>` losing its leading zero). Readers that need
+// a number (memory, vcpu, topology, VNC port, creationTime) convert explicitly.
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   textNodeName: '#text',
+  parseTagValue: false,
+  parseAttributeValue: false,
   isArray: (name) =>
     ['disk', 'interface', 'controller', 'channel', 'input', 'sound',
      'video', 'hostdev', 'filesystem', 'serial', 'console', 'graphics',
@@ -17,7 +24,7 @@ const xmlBuilder = new XMLBuilder({ ignoreAttributes: false, attributeNamePrefix
 const WISP_NS_URI = 'https://wisp.local/app';
 const WISP_PREFS_KEY = 'wisp:prefs';
 
-/** Read string value from a wisp:prefs child element (handles #text object and boolean coercion from fast-xml-parser). */
+/** Read string value from a wisp:prefs child element (plain text or a `{ '#text' }` object when it carries attributes). */
 function wispPrefText(prefs, key) {
   const v = prefs[key];
   if (v == null) return '';
@@ -248,13 +255,11 @@ export function parseSnapshotFromXML(xmlString) {
   const parsed = xmlParser.parse(xmlString);
   const snap = parsed.domainsnapshot;
   if (!snap) return null;
-  const name = typeof snap.name === 'object' ? snap.name['#text'] : snap.name;
-  const creationTime = typeof snap.creationTime === 'object' ? snap.creationTime['#text'] : snap.creationTime;
-  const state = typeof snap.state === 'object' ? snap.state['#text'] : snap.state;
+  const creationTime = parseInt(xmlLeafText(snap.creationTime), 10);
   return {
-    name: name || '',
-    creationTime: creationTime != null ? parseInt(creationTime, 10) : null,
-    state: state || '',
+    name: xmlLeafText(snap.name),
+    creationTime: Number.isFinite(creationTime) ? creationTime : null,
+    state: xmlLeafText(snap.state),
   };
 }
 
