@@ -21,7 +21,9 @@ import { fileURLToPath } from 'node:url';
 import { writeJsonAtomic } from './atomicJson.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const STATUS_PATH = resolve(__dirname, '../../config/backup-status.json');
+// Repo-root config/ (beside wisp-config.json), the directory the updater's swap
+// preserves — not backend/config/, which the swap's rsync --delete removes.
+const STATUS_PATH = resolve(__dirname, '../../../config/backup-status.json');
 
 let cache = null;
 let writeChain = Promise.resolve();

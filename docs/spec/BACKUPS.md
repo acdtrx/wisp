@@ -126,7 +126,7 @@ Both workload kinds can also be restored **over the live workload the backup was
 
 ## Backup attempt status
 
-The on-disk backup tree only records successes (a failed backup removes its partial directory, and listing ignores any directory without a manifest), so "did last night's scheduled backup work?" is unanswerable from disk. Wisp persists the **most recent backup attempt per workload** in `config/backup-status.json` (app-glue `lib/backupStatus.js`, atomic JSON writes, preserved across self-updates via the updater's `RSYNC_EXCLUDES`):
+The on-disk backup tree only records successes (a failed backup removes its partial directory, and listing ignores any directory without a manifest), so "did last night's scheduled backup work?" is unanswerable from disk. Wisp persists the **most recent backup attempt per workload** in `config/backup-status.json` — the install root's `config/`, beside `wisp-config.json`, not `backend/config/` (app-glue `lib/backupStatus.js`, atomic JSON writes, preserved across self-updates via the updater's `RSYNC_EXCLUDES`, gitignored):
 
 ```json
 {
