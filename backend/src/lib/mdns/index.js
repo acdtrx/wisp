@@ -21,4 +21,5 @@ export const getRegisteredHostname = impl.getRegisteredHostname;
 export const registerService = impl.registerService;
 export const deregisterService = impl.deregisterService;
 export const deregisterServicesForContainer = impl.deregisterServicesForContainer;
+export const republishProbingGroups = impl.republishProbingGroups;
 export const subscribeServiceBrowse = impl.subscribeServiceBrowse;

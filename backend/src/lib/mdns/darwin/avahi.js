@@ -24,6 +24,8 @@ export async function deregisterService() {}
 
 export async function deregisterServicesForContainer() {}
 
+export function republishProbingGroups() {}
+
 export function subscribeServiceBrowse() {
   return () => {};
 }

@@ -20,6 +20,7 @@ import { noteIntentionalStop } from './containerManagerRestartPolicy.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { validateContainerName } from './containerValidation.js';
+import { notifyContainerNetnsRemoved } from './containerManagerNetwork.js';
 
 const execFile = promisify(execFileCb);
 const SNAPSHOTTER = 'overlayfs';
@@ -84,6 +85,7 @@ async function bestEffortRemoveOrphanNetns(name) {
   } catch {
     /* best effort */
   }
+  notifyContainerNetnsRemoved(name);
 }
 
 /**

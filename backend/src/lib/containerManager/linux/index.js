@@ -113,7 +113,9 @@ export {
   putMountFileTextContent,
 } from './containerManagerMountsContent.js';
 
-export { setupNetwork, teardownNetwork, discoverIpv4InNetnsOnce } from './containerManagerNetwork.js';
+export {
+  setupNetwork, teardownNetwork, discoverIpv4InNetnsOnce, subscribeContainerNetnsRemoved,
+} from './containerManagerNetwork.js';
 
 export { subscribeContainerNetworkChange } from './containerManagerNetworkEvents.js';
 

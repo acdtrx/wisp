@@ -30,6 +30,7 @@ export const getRunningContainerCount = impl.getRunningContainerCount;
 export const findContainersUsingStorageMount = impl.findContainersUsingStorageMount;
 export const subscribeContainerListChange = impl.subscribeContainerListChange;
 export const subscribeContainerNetworkChange = impl.subscribeContainerNetworkChange;
+export const subscribeContainerNetnsRemoved = impl.subscribeContainerNetnsRemoved;
 export const notifyContainerConfigWrite = impl.notifyContainerConfigWrite;
 
 export const startContainer = impl.startContainer;

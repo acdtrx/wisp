@@ -9,13 +9,20 @@
  * Routes call `publishVm` / `unpublishVm` directly when the user toggles
  * `localDns`, renames a VM, or deletes one — those are metadata flips, not
  * network-state changes, so they bypass the event path.
+ *
+ * A VM leaving the running state also re-publishes entry groups left probing:
+ * libvirt has removed the VM's tap by the time the stop is reported, and
+ * avahi 0.8 strands any group that was probing on it (see
+ * republishProbingGroups in the mdns module).
  */
 import {
   subscribeVMNetworkChange,
   getCachedLocalDns,
   getGuestNetwork,
 } from './vmManager/index.js';
-import { deregisterAddress, registerAddress, sanitizeHostname } from './mdns/index.js';
+import {
+  deregisterAddress, registerAddress, republishProbingGroups, sanitizeHostname,
+} from './mdns/index.js';
 
 const registered = new Set();
 
@@ -28,6 +35,7 @@ function log() {
 
 async function onNetworkChange(name, snapshot) {
   if (snapshot === null) {
+    republishProbingGroups({ event: 'vm-stopped', vm: name });
     if (registered.has(name)) {
       try { await deregisterAddress(name); }
       catch (err) { log().warn?.({ err: err?.message || err, vm: name }, '[vmMdns] deregister on stop failed'); }

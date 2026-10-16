@@ -20,12 +20,20 @@
  * "running" handler still reading could register after a later "stopped"
  * handler had already found nothing to deregister, leaving a stopped
  * container published.
+ *
+ * Also re-publishes entry groups left probing when Wisp deletes a container's
+ * netns (and with it a veth avahi was probing on) — see republishProbingGroups
+ * in the mdns module for the avahi bug. Not on any container's chain: it acts
+ * on every Wisp group, and must run right after the removal.
  */
 import {
   subscribeContainerNetworkChange,
+  subscribeContainerNetnsRemoved,
   getContainerConfig,
 } from './containerManager/index.js';
-import { deregisterAddress, registerAddress, sanitizeHostname } from './mdns/index.js';
+import {
+  deregisterAddress, registerAddress, republishProbingGroups, sanitizeHostname,
+} from './mdns/index.js';
 
 const registered = new Set();
 /** name → tail of that container's operation chain */
@@ -33,6 +41,7 @@ const chains = new Map();
 
 let logger = null;
 let unsubscribe = null;
+let unsubscribeNetnsRemoved = null;
 
 function log() {
   return logger || console;
@@ -99,12 +108,19 @@ export function startContainerMdnsReconciler(log_) {
       log().warn?.({ err: err?.message || err, container: name }, '[containerMdns] handler threw');
     });
   });
+  unsubscribeNetnsRemoved = subscribeContainerNetnsRemoved((name) => {
+    republishProbingGroups({ event: 'container-netns-removed', container: name });
+  });
 }
 
 export function stopContainerMdnsReconciler() {
   if (unsubscribe) {
     unsubscribe();
     unsubscribe = null;
+  }
+  if (unsubscribeNetnsRemoved) {
+    unsubscribeNetnsRemoved();
+    unsubscribeNetnsRemoved = null;
   }
   registered.clear();
 }

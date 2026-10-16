@@ -309,10 +309,39 @@ async function ensureNetNS(name) {
   }
 }
 
+const netnsRemovedHandlers = new Set();
+
 /**
- * Remove a network namespace.
+ * Subscribe to "Wisp removed a container's network namespace". Handler
+ * signature: (name). Fires after the removal has returned — the netns and the
+ * host-side veth CNI put on the bridge are gone (CNI DEL, run first, deletes
+ * the veth; deleting the netns takes any leftover with it). Covers the stale
+ * netns a start clears, teardown on delete / failed start, and rename's
+ * orphan cleanup. A plain stop keeps the netns, so it does not fire.
+ * Returns an unsubscribe function.
+ */
+export function subscribeContainerNetnsRemoved(handler) {
+  netnsRemovedHandlers.add(handler);
+  return () => netnsRemovedHandlers.delete(handler);
+}
+
+export function notifyContainerNetnsRemoved(name) {
+  for (const h of netnsRemovedHandlers) {
+    try { h(name); }
+    catch (err) { (containerState.logger || console).warn?.({ err: err?.message || err }, '[containerManager] netns-removed handler threw'); }
+  }
+}
+
+/**
+ * Remove a network namespace. Notifies netns-removed subscribers when one
+ * existed.
  */
 async function removeNetNS(name) {
+  try {
+    await access(getContainerNetnsPath(name));
+  } catch {
+    return; // no netns, nothing to remove
+  }
   const netnsScript = await resolveNetnsScript();
   if (netnsScript) {
     try {
@@ -324,10 +353,11 @@ async function removeNetNS(name) {
     } catch {
       /* best effort */
     }
-    return;
+  } else {
+    /* Best-effort netns delete without helper; ignore if namespace already gone */
+    await execFile('ip', ['netns', 'delete', name], { timeout: 15000 }).catch(() => {});
   }
-  /* Best-effort netns delete without helper; ignore if namespace already gone */
-  await execFile('ip', ['netns', 'delete', name], { timeout: 15000 }).catch(() => {});
+  notifyContainerNetnsRemoved(name);
 }
 
 /**

@@ -92,6 +92,10 @@ export function subscribeContainerNetworkChange() {
   return () => {};
 }
 
+export function subscribeContainerNetnsRemoved() {
+  return () => {};
+}
+
 export function notifyContainerConfigWrite() {
   /* no-op on darwin (no containerd) */
 }
