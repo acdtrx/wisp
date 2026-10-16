@@ -14,6 +14,10 @@
  * `systemctl restart avahi-daemon` silently drops every container publication
  * until wisp restarts.
  *
+ * Every committed entry group is watched until avahi reports it settled —
+ * see commitGroup() for the avahi 0.8 probe-counter bug that makes a deadline
+ * necessary.
+ *
  * All avahi calls are best-effort: failures never break VM/container ops.
  */
 import dbus from 'dbus-next';
@@ -32,6 +36,16 @@ const AVAHI_PROTO_UNSPEC = -1;
 const AVAHI_PROTO_INET = 0;
 const AVAHI_PROTO_INET6 = 1;
 const AVAHI_FLAG_DEFAULT = 0;
+// EntryGroup states (avahi-common/defs.h AvahiEntryGroupState)
+const AVAHI_ENTRY_GROUP_ESTABLISHED = 2;
+const AVAHI_ENTRY_GROUP_COLLISION = 3;
+const AVAHI_ENTRY_GROUP_FAILURE = 4;
+/**
+ * How long a committed group may stay in REGISTERING before it is treated as
+ * stuck and re-committed. A healthy probe settles in ~1 s (three probes 250 ms
+ * apart plus jitter); a stuck one never settles. See commitGroup().
+ */
+const GROUP_PROBE_DEADLINE_MS = 10_000;
 // Lookup-result bits on resolved/browsed records. Kept private — the browse
 // surface normalizes them into `svc.isLocal` so callers never see wire flags.
 const AVAHI_LOOKUP_RESULT_LOCAL = 8;
@@ -40,10 +54,18 @@ const AVAHI_LOOKUP_RESULT_OUR_OWN = 16;
 const state = {
   bus: null,
   server: null,
-  /** key -> { group: EntryGroup iface | null, host, ip4, ip6, fqdn } */
+  /**
+   * key -> { group: GroupHandle | null, host, ip4, ip6, fqdn }
+   * GroupHandle = { iface: EntryGroup proxy iface, path: its object path }
+   */
   entries: new Map(),
-  /** serviceKey -> { group: EntryGroup iface | null, instanceName, type, port, txt, host } */
+  /** serviceKey -> { group: GroupHandle | null, instanceName, type, port, txt, host } */
   services: new Map(),
+  /**
+   * group path -> { handle, fill, logCtx, timer } for every committed group
+   * not yet freed. `timer` is the probe deadline, null once the group settled.
+   */
+  groups: new Map(),
   /** type -> { type, path, starting, sightings, resolved, resolvers, subscribers } */
   browses: new Map(),
   /** browser object path -> browse record (signal dispatch index) */
@@ -74,6 +96,14 @@ async function ensureBus() {
     state.logger?.warn?.({ err: err?.message || err }, '[mdns] system bus error');
     state.server = null;
   });
+  // EntryGroup.StateChanged is addressed to the group's owner (avahi sets the
+  // destination), so the bus delivers it without a match rule — routed here
+  // by path rather than through a per-group proxy listener, whose match rule
+  // would have to be removed on every Free.
+  state.bus.on('message', (msg) => {
+    if (msg.interface !== AVAHI_GROUP_IFACE || msg.member !== 'StateChanged') return;
+    onGroupStateChanged(msg.path, Number(msg.body?.[0]), msg.body?.[1]);
+  });
   return state.bus;
 }
 
@@ -92,6 +122,7 @@ async function installAvahiWatch() {
       if (oldOwner && !newOwner) {
         state.logger?.warn?.('[mdns] avahi-daemon went away; entries will be re-registered when it returns');
         state.server = null;
+        forgetAllGroups();
         for (const entry of state.entries.values()) entry.group = null;
         for (const svc of state.services.values()) svc.group = null;
         for (const record of state.browses.values()) resetBrowseRecord(record);
@@ -164,12 +195,110 @@ async function refreshHostFqdn() {
   }
 }
 
+/** @returns {Promise<GroupHandle|null>} null when avahi is unavailable */
 async function createGroup() {
   const server = await ensureServer();
   if (!server) return null;
-  const groupPath = await server.EntryGroupNew();
-  const obj = await state.bus.getProxyObject(AVAHI_BUS_NAME, groupPath);
-  return obj.getInterface(AVAHI_GROUP_IFACE);
+  const path = await server.EntryGroupNew();
+  const obj = await state.bus.getProxyObject(AVAHI_BUS_NAME, path);
+  return { iface: obj.getInterface(AVAHI_GROUP_IFACE), path };
+}
+
+/**
+ * Fill and commit an entry group, then watch it until avahi reports it
+ * settled (StateChanged ESTABLISHED / COLLISION / FAILURE).
+ *
+ * Why the watch has a deadline: avahi 0.8 leaks a group's probe counter when
+ * an interface the group is still probing on goes away (`remove_announcer`
+ * never decrements `n_probing`; fixed upstream in avahi commit cb15988, not
+ * in any release Ubuntu ships). The group then sits in REGISTERING forever:
+ * none of its records are announced or answered — `<name>.local` stops
+ * resolving on the host and the LAN — and avahi emits no further signal. Wisp
+ * triggers this itself: every container start deletes the veth its previous
+ * run left behind, and VM stops remove their tap, so any group committed
+ * within ~1 s of that (e.g. the other container of a back-to-back start)
+ * never establishes. A group still REGISTERING at the deadline is Reset
+ * (which zeroes the counter), refilled and committed again.
+ *
+ * @param {GroupHandle} handle
+ * @param {(iface: object) => Promise<void>} fill adds the group's records
+ * @param {object} logCtx identifies the records in logs
+ */
+async function commitGroup(handle, fill, logCtx) {
+  try {
+    await fill(handle.iface);
+    const record = { handle, fill, logCtx, timer: null };
+    state.groups.set(handle.path, record);
+    armProbeDeadline(record); // before Commit, so no settling signal predates it
+    await handle.iface.Commit();
+  } catch (err) {
+    await freeGroup(handle); // never published; the caller records the failure
+    throw err;
+  }
+}
+
+function armProbeDeadline(record) {
+  clearTimeout(record.timer);
+  record.timer = setTimeout(() => {
+    record.timer = null;
+    recommitStuckGroup(record);
+  }, GROUP_PROBE_DEADLINE_MS);
+  record.timer.unref?.();
+}
+
+async function recommitStuckGroup(record) {
+  const { handle, fill, logCtx } = record;
+  if (state.groups.get(handle.path) !== record) return; // freed meanwhile
+  state.logger?.warn?.(
+    { ...logCtx, deadlineMs: GROUP_PROBE_DEADLINE_MS },
+    '[mdns] entry group still probing past its deadline (avahi lost an interface mid-probe); re-committing',
+  );
+  try {
+    await handle.iface.Reset();
+    await fill(handle.iface);
+    if (state.groups.get(handle.path) !== record) return;
+    armProbeDeadline(record);
+    await handle.iface.Commit();
+  } catch (err) {
+    // A Free racing the re-commit (deregistered, replaced, avahi gone) is
+    // expected and leaves nothing to repair.
+    if (state.groups.get(handle.path) !== record) return;
+    clearTimeout(record.timer);
+    record.timer = null;
+    state.logger?.warn?.({ ...logCtx, err: err?.message || err }, '[mdns] entry group re-commit failed');
+  }
+}
+
+function onGroupStateChanged(path, groupState, error) {
+  const record = state.groups.get(path);
+  if (!record) return;
+  if (groupState === AVAHI_ENTRY_GROUP_ESTABLISHED) {
+    clearTimeout(record.timer);
+    record.timer = null;
+  } else if (groupState === AVAHI_ENTRY_GROUP_COLLISION || groupState === AVAHI_ENTRY_GROUP_FAILURE) {
+    clearTimeout(record.timer);
+    record.timer = null;
+    // Not recovered (no rename on collision) — logged so it is no longer silent.
+    state.logger?.warn?.({ ...record.logCtx, groupState, err: error }, '[mdns] entry group not published');
+  }
+  // UNCOMMITED (after a Reset) and REGISTERING: still on the way, keep waiting.
+}
+
+/** Free a group and stop watching it. Best effort — avahi may already be gone. */
+async function freeGroup(handle) {
+  if (!handle) return;
+  const record = state.groups.get(handle.path);
+  if (record) {
+    clearTimeout(record.timer);
+    state.groups.delete(handle.path);
+  }
+  try { await handle.iface.Free(); } catch { /* best effort */ }
+}
+
+/** Drop every group watch — avahi went away, its groups with it. */
+function forgetAllGroups() {
+  for (const record of state.groups.values()) clearTimeout(record.timer);
+  state.groups.clear();
 }
 
 async function reregisterAll() {
@@ -220,16 +349,11 @@ export async function connect(logger = null, { hostInterface = null } = {}) {
 
 export async function disconnect() {
   await stopForwarder();
-  for (const entry of state.entries.values()) {
-    if (!entry.group) continue;
-    try { await entry.group.Free(); } catch { /* best effort on shutdown */ }
-  }
+  for (const entry of state.entries.values()) await freeGroup(entry.group);
   state.entries.clear();
-  for (const svc of state.services.values()) {
-    if (!svc.group) continue;
-    try { await svc.group.Free(); } catch { /* best effort on shutdown */ }
-  }
+  for (const svc of state.services.values()) await freeGroup(svc.group);
   state.services.clear();
+  forgetAllGroups();
   for (const record of state.browses.values()) {
     for (const name of [...record.resolvers.keys()]) {
       freeResolverForName(record, name);
@@ -267,9 +391,7 @@ export async function registerAddress(key, preferredName, ipOrCidr, ip6OrCidr = 
       && current.ip4 === ip4 && current.ip6 === ip6) {
     return current.fqdn;
   }
-  if (current && current.group) {
-    try { await current.group.Free(); } catch { /* free stale */ }
-  }
+  if (current) await freeGroup(current.group);
   state.entries.delete(key);
 
   const fqdn = `${host}.local`;
@@ -284,17 +406,18 @@ export async function registerAddress(key, preferredName, ipOrCidr, ip6OrCidr = 
     // AAAA together, and an unanswered family stalls them for its full local
     // timeout (~5s on macOS). Avahi has no negative-response support, so the
     // only cure is answering both queries with real records.
-    for (const address of [ip4, ip6]) {
-      if (!address) continue;
-      await group.AddAddress(
-        AVAHI_IF_UNSPEC,
-        AVAHI_PROTO_UNSPEC,
-        AVAHI_FLAG_DEFAULT,
-        fqdn,
-        address,
-      );
-    }
-    await group.Commit();
+    await commitGroup(group, async (iface) => {
+      for (const address of [ip4, ip6]) {
+        if (!address) continue;
+        await iface.AddAddress(
+          AVAHI_IF_UNSPEC,
+          AVAHI_PROTO_UNSPEC,
+          AVAHI_FLAG_DEFAULT,
+          fqdn,
+          address,
+        );
+      }
+    }, { key, fqdn });
     state.entries.set(key, { group, host, ip4, ip6, fqdn });
     return fqdn;
   } catch (err) {
@@ -308,9 +431,7 @@ export async function deregisterAddress(key) {
   const current = state.entries.get(key);
   if (!current) return;
   state.entries.delete(key);
-  if (current.group) {
-    try { await current.group.Free(); } catch { /* best effort */ }
-  }
+  await freeGroup(current.group);
 }
 
 export function getRegisteredHostname(key) {
@@ -344,9 +465,7 @@ export async function registerService(serviceKey, instanceName, type, port, txt,
 
   const txtPairs = txtMapToAvahi(txt);
   const current = state.services.get(serviceKey);
-  if (current && current.group) {
-    try { await current.group.Free(); } catch { /* free stale */ }
-  }
+  if (current) await freeGroup(current.group);
   state.services.delete(serviceKey);
 
   try {
@@ -356,7 +475,7 @@ export async function registerService(serviceKey, instanceName, type, port, txt,
       state.services.set(serviceKey, { group: null, instanceName, type, port, txt, host });
       return false;
     }
-    await group.AddService(
+    await commitGroup(group, (iface) => iface.AddService(
       AVAHI_IF_UNSPEC,
       AVAHI_PROTO_UNSPEC,
       AVAHI_FLAG_DEFAULT,
@@ -366,8 +485,7 @@ export async function registerService(serviceKey, instanceName, type, port, txt,
       host,        // SRV target host (must be a name avahi or another stack publishes)
       port,
       txtPairs,
-    );
-    await group.Commit();
+    ), { serviceKey, instanceName, type });
     state.services.set(serviceKey, { group, instanceName, type, port, txt, host });
     return true;
   } catch (err) {
@@ -381,9 +499,7 @@ export async function deregisterService(serviceKey) {
   const current = state.services.get(serviceKey);
   if (!current) return;
   state.services.delete(serviceKey);
-  if (current.group) {
-    try { await current.group.Free(); } catch { /* best effort */ }
-  }
+  await freeGroup(current.group);
 }
 
 /**
