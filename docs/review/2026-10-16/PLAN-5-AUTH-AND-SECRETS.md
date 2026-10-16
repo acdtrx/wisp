@@ -80,4 +80,3 @@ save or on startup derivation (no migration code — state the manual step if on
 ## Verification
 
 darwin dev stack for both (routes, tokens, UI); tini for container mounts + an app container.
-EOF
