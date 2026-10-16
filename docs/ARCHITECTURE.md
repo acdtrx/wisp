@@ -157,7 +157,7 @@ Shared pure helpers live in **`backend/src/lib/vmManager/vmManagerShared.js`** (
 | `vmManagerList.js` | List all VMs (cached, event-driven refresh), aggregate running VM allocations (vCPU/memory) from the cache, get full VM config (parsed from XML) |
 | `vmManagerLifecycle.js` | Start, stop, force-stop, reboot, suspend, resume |
 | `vmManagerCreate.js` | Create VM (XML generation, disk provisioning), delete, clone |
-| `vmManagerConfig.js` | Update VM configuration (live vs offline, restart detection) |
+| `vmManagerConfig.js` | Update VM configuration (live vs offline, restart detection); graphics listen address get/set |
 | `vmManagerPendingRestart.js` | Restart-required flag (`since` timestamp): `setVMPendingRestart` and the rule that drops a flag older than the QEMU start |
 | `vmManagerDisk.js` | Attach/detach/resize local disks |
 | `vmManagerIso.js` | Attach/eject ISO images to CDROM slots |

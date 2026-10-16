@@ -62,7 +62,7 @@ export {
   getLinuxFeatures,
 } from './vmManagerCreate.js';
 
-export { updateVMConfig } from './vmManagerConfig.js';
+export { updateVMConfig, getGraphicsListen, setGraphicsListen } from './vmManagerConfig.js';
 
 export { setVMPendingRestart } from './vmManagerPendingRestart.js';
 

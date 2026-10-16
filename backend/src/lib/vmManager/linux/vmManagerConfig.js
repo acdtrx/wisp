@@ -328,3 +328,64 @@ export async function updateVMConfig(name, changes) {
 
   return { ok: true, requiresRestart, name: effectiveName };
 }
+
+/**
+ * Every listen address in the parsed domain's `<graphics>` elements, as
+ * `{ graphics, address, set(address) }`: the `listen` attribute and each
+ * `<listen type='address' address='…'/>` child. Other listen types (network,
+ * socket, none) carry no address of their own and are not listed.
+ */
+function graphicsListenRefs(dom) {
+  const refs = [];
+  for (const g of dom?.devices?.graphics || []) {
+    if (!g || typeof g !== 'object') continue;
+    const type = g['@_type'] || null;
+    if (g['@_listen'] != null) {
+      refs.push({ graphics: type, address: g['@_listen'], set: (a) => { g['@_listen'] = a; } });
+    }
+    const children = g.listen == null ? [] : (Array.isArray(g.listen) ? g.listen : [g.listen]);
+    for (const l of children) {
+      if (l && typeof l === 'object' && l['@_type'] === 'address' && l['@_address'] != null) {
+        refs.push({ graphics: type, address: l['@_address'], set: (a) => { l['@_address'] = a; } });
+      }
+    }
+  }
+  return refs;
+}
+
+/**
+ * Listen addresses of a VM's saved (inactive) graphics definition:
+ * `[{ graphics: 'vnc'|'spice'|…, address }]`, one per `listen` attribute and
+ * `<listen type='address'>` child.
+ */
+export async function getGraphicsListen(name) {
+  if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
+  const domPath = await resolveDomain(name);
+  const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true }));
+  if (!parsed.domain) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
+  return graphicsListenRefs(parsed.domain).map(({ graphics, address }) => ({ graphics, address }));
+}
+
+/**
+ * Point every listen address of the VM's saved graphics definition (see
+ * getGraphicsListen) at `address`, leaving the rest of the XML as libvirt
+ * returned it. Defines only when something differs. A running VM keeps its
+ * current listener until its next start — the caller knows whether that needs
+ * flagging. Returns `{ changed, previous }` (the distinct addresses replaced).
+ */
+export async function setGraphicsListen(name, address) {
+  if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
+  if (typeof address !== 'string' || !address) throw vmError('CONFIG_ERROR', 'Listen address must be a non-empty string');
+  const domPath = await resolveDomain(name);
+  const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true }));
+  if (!parsed.domain) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
+  const stale = graphicsListenRefs(parsed.domain).filter((r) => r.address !== address);
+  if (stale.length === 0) return { changed: false, previous: [] };
+  for (const r of stale) r.set(address);
+  try {
+    await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
+  } catch (err) {
+    throw vmError('LIBVIRT_ERROR', `Failed to update the graphics listen address of VM "${name}"`, err.message);
+  }
+  return { changed: true, previous: [...new Set(stale.map((r) => r.address))] };
+}

@@ -228,6 +228,14 @@ export async function setVMPendingRestart() {
   throw noConn();
 }
 
+export async function getGraphicsListen() {
+  throw noConn();
+}
+
+export async function setGraphicsListen() {
+  throw noConn();
+}
+
 export async function getVMUSBDevices() {
   return [];
 }
