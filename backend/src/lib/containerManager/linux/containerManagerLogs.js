@@ -21,6 +21,8 @@ import {
 const RUN_RETENTION = 10;
 const HISTORY_TAIL_LINES = 500;
 const TAIL_READ_CHUNK_BYTES = 64 * 1024;
+/** A line still without its newline past this size is delivered as it stands (bounds the live tail's buffer). */
+const MAX_PARTIAL_LINE_BYTES = 64 * 1024;
 
 /** Build the filesystem-safe runId for a given instant (default now). */
 function makeRunId(date = new Date()) {
@@ -184,6 +186,39 @@ export async function getContainerRunLogs(name, runId, tailLines = HISTORY_TAIL_
 }
 
 /**
+ * History for the live log view: the last `tailLines` complete lines of a
+ * run (blank lines dropped) and the byte `offset` the live tail continues
+ * from — just past the last newline. A trailing line still being written is
+ * not part of the history; the tail delivers it once its newline lands (or
+ * the run ends), so no line is shown twice or split.
+ * @returns {Promise<{ lines: string[], offset: number }>}
+ */
+export async function readRunLogHistory(name, runId, tailLines = HISTORY_TAIL_LINES) {
+  const logPath = getRunLogPath(name, runId);
+  let fh;
+  try {
+    fh = await open(logPath, 'r');
+  } catch (err) {
+    if (err.code === 'ENOENT') return { lines: [], offset: 0 };
+    throw containerError('CONTAINERD_ERROR', `Failed to read run log for "${name}"`, err.message);
+  }
+  try {
+    const { size } = await fh.stat();
+    const buf = await readTailBytes(fh, size, tailLines);
+    const bufStart = size - buf.length;
+    const lastNewline = buf.lastIndexOf(0x0a);
+    if (lastNewline === -1) return { lines: [], offset: bufStart };
+    const complete = buf.subarray(0, lastNewline).toString('utf8').split('\n');
+    const lines = complete.slice(-tailLines).filter((l) => l.length > 0);
+    return { lines, offset: bufStart + lastNewline + 1 };
+  } catch (err) {
+    throw containerError('CONTAINERD_ERROR', `Failed to read run log for "${name}"`, err.message);
+  } finally {
+    await fh.close().catch(() => { /* read result already settled; nothing to report */ });
+  }
+}
+
+/**
  * Allocate a new run: create runs/ if missing, write the initial sidecar (endedAt=null),
  * prune oldest beyond retention, and return { runId, logPath }.
  */
@@ -228,71 +263,132 @@ export async function finalizeRun(name, runId, { exitCode = null } = {}) {
 }
 
 /**
- * Stream new lines appended to a specific run's log.
- * Returns a { stop() } handle. Calls onLine(line) for each new line.
- * Finalized runs (endedAt set) still tail safely — no new lines will arrive.
+ * Stream lines appended to a run's log from byte `fromOffset` on — the
+ * `offset` of the `readRunLogHistory` call the caller showed, so the history
+ * and the tail meet exactly. Calls onLine(line) once per complete line, in
+ * order (blank lines dropped). A trailing line without its newline is held
+ * until the newline arrives, or until the run has ended (then delivered as it
+ * stands); one past MAX_PARTIAL_LINE_BYTES is delivered as it stands.
+ *
+ * Reads are serialized: a change notification (fs.watch, the 2 s interval)
+ * that arrives while a read is in flight marks a rerun instead of starting a
+ * second reader over the same byte range. Returns a { stop() } handle; stop
+ * closes the file handle once no read is in flight.
  */
-export function streamContainerRunLogs(name, runId, onLine) {
+export function streamContainerRunLogs(name, runId, fromOffset, onLine) {
   const logPath = getRunLogPath(name, runId);
-  let offset = 0;
+  let offset = fromOffset;
+  let partial = Buffer.alloc(0);
   let fh = null;
   let watcher = null;
   let stopped = false;
+  let reading = false;
+  let rerun = false;
 
-  async function readNew() {
-    if (stopped) return;
-    try {
-      if (!fh) {
-        const opened = await open(logPath, 'r');
-        /* stop() ran while the open was in flight and saw no handle to close */
-        if (stopped) {
-          await opened.close().catch(() => {});
-          return;
-        }
-        fh = opened;
-        const info = await stat(logPath);
-        offset = info.size;
-      }
+  function emitLines(chunk) {
+    let data = partial.length ? Buffer.concat([partial, chunk]) : chunk;
+    let nl;
+    while ((nl = data.indexOf(0x0a)) !== -1) {
+      const line = data.subarray(0, nl).toString('utf8');
+      data = data.subarray(nl + 1);
+      if (line.length > 0) onLine(line);
+    }
+    partial = Buffer.from(data);
+    if (partial.length > MAX_PARTIAL_LINE_BYTES) flushPartial();
+  }
 
-      const info = await stat(logPath);
-      if (info.size < offset) {
-        offset = info.size;
-        if (fh) {
-          await fh.close().catch(() => {});
-          fh = null;
-        }
+  function flushPartial() {
+    if (partial.length === 0) return;
+    const line = partial.toString('utf8');
+    partial = Buffer.alloc(0);
+    if (line.length > 0) onLine(line);
+  }
+
+  async function readToEnd() {
+    if (!fh) {
+      try {
+        fh = await open(logPath, 'r');
+      } catch {
+        /* log file not created yet (or already pruned) — the next notification retries */
         return;
       }
-      if (info.size <= offset) return;
-
-      const buf = Buffer.alloc(info.size - offset);
-      await fh.read(buf, 0, buf.length, offset);
-      offset = info.size;
-
-      const text = buf.toString('utf8');
-      const lines = text.split('\n');
-      for (const line of lines) {
-        if (line.length > 0) onLine(line);
-      }
-    } catch {
-      // File may not exist yet
+    }
+    const { size } = await fh.stat();
+    if (size < offset) {
+      /* truncated in place: start over from its new beginning */
+      offset = 0;
+      partial = Buffer.alloc(0);
+    }
+    while (!stopped && size > offset) {
+      const buf = Buffer.alloc(size - offset);
+      const { bytesRead } = await fh.read(buf, 0, buf.length, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+      emitLines(buf.subarray(0, bytesRead));
     }
   }
 
-  try {
-    watcher = watch(logPath, () => readNew());
-  } catch {
-    // Log file missing — readNew will catch up when the watcher is polled
+  async function readPass() {
+    await readToEnd();
+    if (stopped || partial.length === 0) return;
+    const meta = await readRunMeta(name, runId);
+    if (meta?.endedAt == null) return;
+    /* The run ended after its last write: read once more now that the end is
+     * known, then the held partial line is the run's last line. */
+    await readToEnd();
+    if (!stopped) flushPartial();
   }
 
-  const interval = setInterval(readNew, 2000);
+  function closeHandle() {
+    if (!fh) return;
+    const handle = fh;
+    fh = null;
+    handle.close().catch(() => { /* closing a read-only handle; nothing to report */ });
+  }
+
+  function scheduleRead() {
+    if (stopped) return;
+    if (reading) {
+      rerun = true;
+      return;
+    }
+    reading = true;
+    (async () => {
+      do {
+        rerun = false;
+        try {
+          await readPass();
+        } catch {
+          /* transient read failure — the next notification retries from the same offset */
+        }
+      } while (rerun && !stopped);
+    })().finally(() => {
+      reading = false;
+      if (stopped) closeHandle();
+    });
+  }
+
+  try {
+    watcher = watch(logPath, scheduleRead);
+    watcher.on('error', () => {
+      /* the file went away (run pruned) — the interval keeps polling a missing file harmlessly */
+      watcher?.close();
+      watcher = null;
+    });
+  } catch {
+    /* log file missing — the interval picks it up once it exists */
+  }
+
+  const interval = setInterval(scheduleRead, 2000);
+  /* bytes appended between the history read and the watch setup */
+  scheduleRead();
 
   return {
     stop() {
       stopped = true;
       clearInterval(interval);
       if (watcher) watcher.close();
-      if (fh) fh.close().catch(() => {});
+      if (!reading) closeHandle();
     },
   };
 }

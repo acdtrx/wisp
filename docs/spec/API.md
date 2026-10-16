@@ -1654,8 +1654,8 @@ List log runs for a container. Each start creates a new run under `runs/<runId>.
 
 SSE stream for a single run's logs. Initial event: `{ type: "history", lines, runId }`. Subsequent: `{ type: "line", line }`.
 
-- **Query:** `?runId=<runId>` — optional. Omit (or pass an empty value) to stream the newest run (the currently-running one if any, else the most recent completed run). Runs that have ended are served from disk and then idle-tailed — the SSE connection stays open with no new lines until the client disconnects. The live tail streams new bytes appended after the connection opens.
-- **Errors:** `CONTAINER_RUN_NOT_FOUND` (404) if a non-existent or malformed `runId` is requested.
+- **Query:** `?runId=<runId>` — optional. Omit (or pass an empty value) to stream the newest run (the currently-running one if any, else the most recent completed run). Runs that have ended are served from disk and then idle-tailed — the SSE connection stays open with no new lines until the client disconnects. The history is the last 500 complete lines; the live tail continues from the exact byte where the history ended, so every line arrives once, in order, never split — a line still being written arrives when its newline lands (or when the run ends). See CONTAINERS.md → *Live log stream*.
+- **Errors:** `CONTAINER_RUN_NOT_FOUND` (404) if a non-existent or malformed `runId` is requested. A history read failure after the stream opened sends one `{ error, detail, code }` event and ends the stream.
 - **Empty state:** containers with no runs yet (never started) return a single history event with `lines: []` and `runId: null`.
 
 ### GET /api/containers/:name/runs/:runId/log · `read`

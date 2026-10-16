@@ -82,6 +82,7 @@ export const getContainerStats = impl.getContainerStats;
 
 export const listContainerRuns = impl.listContainerRuns;
 export const getContainerRunLogs = impl.getContainerRunLogs;
+export const readRunLogHistory = impl.readRunLogHistory;
 export const streamContainerRunLogs = impl.streamContainerRunLogs;
 export const resolveRunId = impl.resolveRunId;
 export const createRunLogReadStream = impl.createRunLogReadStream;

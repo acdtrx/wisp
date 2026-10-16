@@ -15,7 +15,7 @@ import {
   updateContainerConfig, addContainerMount, updateContainerMount, removeContainerMount,
   addContainerService, updateContainerService, removeContainerService,
   getContainerStats,
-  listContainerRuns, getContainerRunLogs, streamContainerRunLogs, resolveRunId,
+  listContainerRuns, readRunLogHistory, streamContainerRunLogs, resolveRunId,
   createRunLogReadStream,
   uploadMountFileStream, uploadMountZipStream, initMountContent, deleteMountData, deleteRemovedMountData,
   getMountFileTextContent, putMountFileTextContent,
@@ -652,7 +652,8 @@ export default async function containerRoutes(fastify) {
   // defaults to the newest run (ongoing one if any). Completed runs are read
   // from disk and tailed with no new output — still useful for filtering and
   // scrolling. Initial event: { type: "history", lines, runId }. Subsequent
-  // events: { type: "line", line }.
+  // events: { type: "line", line }. The tail starts at the byte offset the
+  // history ended at, so every line arrives exactly once.
   fastify.get('/containers/:name/logs', { config: { auth: 'read' } }, async (request, reply) => {
     const { name } = request.params;
     const requestedRunId = typeof request.query.runId === 'string' ? request.query.runId : null;
@@ -672,12 +673,17 @@ export default async function containerRoutes(fastify) {
       return;
     }
 
+    let history;
     try {
-      const { lines } = await getContainerRunLogs(name, runId, 500);
-      reply.raw.write(`data: ${JSON.stringify({ type: 'history', lines, runId })}\n\n`);
-    } catch { /* history unavailable — proceed to tail */ }
+      history = await readRunLogHistory(name, runId, 500);
+    } catch (err) {
+      reply.raw.write(`data: ${JSON.stringify({ error: err.message, detail: err.raw || err.message, code: err.code })}\n\n`);
+      reply.raw.end();
+      return;
+    }
+    reply.raw.write(`data: ${JSON.stringify({ type: 'history', lines: history.lines, runId })}\n\n`);
 
-    const handle = streamContainerRunLogs(name, runId, (line) => {
+    const handle = streamContainerRunLogs(name, runId, history.offset, (line) => {
       try {
         reply.raw.write(`data: ${JSON.stringify({ type: 'line', line })}\n\n`);
       } catch { /* client disconnected */ }

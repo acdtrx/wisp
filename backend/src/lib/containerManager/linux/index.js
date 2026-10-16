@@ -102,6 +102,7 @@ export { getContainerStats } from './containerManagerStats.js';
 export {
   listContainerRuns,
   getContainerRunLogs,
+  readRunLogHistory,
   streamContainerRunLogs,
   resolveRunId,
   createRunLogReadStream,

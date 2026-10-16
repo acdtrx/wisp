@@ -273,6 +273,10 @@ export async function getContainerRunLogs() {
   throw noContainerd();
 }
 
+export async function readRunLogHistory() {
+  throw noContainerd();
+}
+
 export function streamContainerRunLogs() {
   throw noContainerd();
 }
