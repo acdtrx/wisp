@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import { getContainerNetnsPath } from './containerPaths.js';
 import { resolveMountHostPath, TMPFS_DEFAULT_SIZE_MIB } from './containerManagerMounts.js';
+import { defaultSeccompProfile } from './containerManagerSeccomp.js';
 
 const DEFAULT_CAPS = [
   'CAP_CHOWN', 'CAP_DAC_OVERRIDE', 'CAP_FSETID', 'CAP_FOWNER',
@@ -45,6 +46,7 @@ const READONLY_PATHS = [
  * @param {(id: string) => null | { id: string, mountPath: string, label?: string }} [opts.resolveMount] - storage-mount resolver, required when any mount uses sourceId
  * @param {Array<{ type: 'gpu', path: string, major: number, minor: number }>} [opts.deviceSpecs] - Resolved host devices for passthrough (see resolveDeviceSpecs)
  * @param {number | null} [opts.renderGid] - Host GID for the `render` group; pushed onto process.user.additionalGids when devices are exposed
+ * @param {Map<string, string>} [opts.mountSources] - mount name → resolved (realpath'd, root-checked) host source from `resolveBindSources`. The start path always passes it, so the spec a task is created from never carries an unresolved path; define-time callers (create, restore) omit it — their spec is replaced on every start.
  * @returns {object} OCI runtime spec (JSON-serializable)
  */
 export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', opts = {}) {
@@ -91,7 +93,9 @@ export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', o
         continue;
       }
       if (m.type !== 'file' && m.type !== 'directory') continue;
-      const { hostPath, source } = resolveMountHostPath(m, containerFilesDir, resolveMount);
+      const source = m.sourceId ? 'storage' : 'local';
+      const hostPath = opts.mountSources?.get(m.name)
+        ?? resolveMountHostPath(m, containerFilesDir, resolveMount).hostPath;
       const mountOpts = ['rbind'];
       if (m.readonly) mountOpts.push('ro');
       const entry = {
@@ -201,6 +205,9 @@ export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', o
     ],
     maskedPaths: MASKED_PATHS,
     readonlyPaths: READONLY_PATHS,
+    // The one place the seccomp filter enters the spec. Every container gets
+    // Docker's default profile; there is no per-container opt-out (backlog).
+    seccomp: defaultSeccompProfile(DEFAULT_CAPS),
   };
   if (linuxDevices.length) linuxBlock.devices = linuxDevices;
 

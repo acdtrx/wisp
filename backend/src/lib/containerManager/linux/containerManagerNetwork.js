@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import { containerError, containerState } from './containerManagerConnection.js';
 import { CONTAINER_NETNS_DIR, getContainerDir, getContainerNetnsPath } from './containerPaths.js';
-import { writeContainerConfig } from './containerManagerConfigIo.js';
+import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { ipv4CidrFromProcFibTrie, isVlanLikeBridgeName } from '../../networking/index.js';
 
 const execFile = promisify(execFileCb);
@@ -470,13 +470,18 @@ export async function persistContainerIpFromNetnsIfMissing(name, config, taskPid
 
 /**
  * Persist CNI ADD lease (IP, MAC) into `container.json` so the API/UI can show them.
+ * Writes into the latest container.json rather than the caller's copy: the
+ * caller read its copy before a DHCP wait of up to several seconds, and a
+ * config edit saved meanwhile must survive this write. Returns the merged
+ * latest config.
  */
 export async function mergeNetworkLeaseIntoConfig(name, config, lease) {
   if (!lease || config.network?.type !== 'bridge') return config;
   const ip = primaryIPv4FromCni(lease.ips) || lease.discoveredIp || null;
+  const latest = await readContainerConfig(name);
   const next = {
-    ...config,
-    network: { ...config.network },
+    ...latest,
+    network: { ...(latest.network || {}) },
   };
   if (ip) next.network.ip = ip;
   if (lease.mac && !next.network.mac) next.network.mac = lease.mac;

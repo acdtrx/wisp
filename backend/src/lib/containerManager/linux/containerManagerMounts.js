@@ -11,7 +11,7 @@
  * a sizeMiB cap (default 64) and ignore sourceId/subPath/readonly/containerOwnerUid/Gid.
  */
 import { basename, join, resolve } from 'node:path';
-import { mkdir, stat, writeFile, realpath } from 'node:fs/promises';
+import { lstat, mkdir, stat, writeFile, realpath } from 'node:fs/promises';
 
 import { containerError } from './containerManagerConnection.js';
 import { getContainerFilesDir } from './containerPaths.js';
@@ -316,7 +316,23 @@ async function assertBindSourcesReadyLocal(containerName, m, filesDir) {
   }
 }
 
-async function assertBindSourcesReadyStorage(m, resolveMount) {
+function isInsideRoot(path, root) {
+  return path === root || path.startsWith(root + '/');
+}
+
+function unsafeMountError(m, detail) {
+  return containerError(
+    'CONTAINER_MOUNT_SOURCE_UNSAFE',
+    `Mount "${m.name}" resolves outside its storage root — symlink escape rejected`,
+    detail,
+  );
+}
+
+/**
+ * The configured, currently mounted storage root for a Storage-sourced mount,
+ * as both its configured path and its realpath.
+ */
+async function storageRootForMount(m, resolveMount) {
   const storage = typeof resolveMount === 'function' ? resolveMount(m.sourceId) : null;
   if (!storage) {
     throw containerError(
@@ -331,27 +347,71 @@ async function assertBindSourcesReadyStorage(m, resolveMount) {
       `Mount "${m.name}" points at storage "${storage.label || storage.id}" which is not currently mounted at ${storage.mountPath}. Mount it in Host Mgmt → Storage, then retry.`,
     );
   }
-  const sub = m.subPath || '';
-  const hostPath = sub ? join(storage.mountPath, sub) : storage.mountPath;
-  await mkdir(hostPath, { recursive: true });
-  let resolvedHost;
   let resolvedRoot;
   try {
-    resolvedHost = await realpath(hostPath);
     resolvedRoot = await realpath(storage.mountPath);
   } catch (err) {
-    throw containerError(
-      'CONTAINER_MOUNT_SOURCE_UNSAFE',
-      `Could not resolve mount source for "${m.name}"`,
-      err.message,
-    );
+    throw containerError('CONTAINER_MOUNT_SOURCE_UNSAFE', `Could not resolve mount source for "${m.name}"`, err.message);
   }
-  if (!(resolvedHost === resolvedRoot || resolvedHost.startsWith(resolvedRoot + '/'))) {
-    throw containerError(
-      'CONTAINER_MOUNT_SOURCE_UNSAFE',
-      `Mount "${m.name}" resolves outside its storage root (${resolvedRoot}) — symlink escape rejected`,
-    );
+  return { storage, resolvedRoot };
+}
+
+/**
+ * Create a Storage mount's subPath one component at a time from the resolved
+ * root, checking each existing component before anything is created under
+ * it: a symlink is followed only when its target stays inside the root, so no
+ * directory is ever created outside it. Returns the resolved path.
+ */
+async function mkdirSubPathInsideRoot(m, resolvedRoot) {
+  let current = resolvedRoot;
+  for (const seg of (m.subPath || '').split('/').filter(Boolean)) {
+    const next = join(current, seg);
+    let info;
+    try {
+      info = await lstat(next);
+    } catch (err) {
+      if (err?.code !== 'ENOENT') throw err;
+      try {
+        await mkdir(next);
+      } catch (mkErr) {
+        if (mkErr?.code !== 'EEXIST') throw mkErr;
+      }
+      info = await lstat(next);
+    }
+    if (info.isSymbolicLink()) {
+      let target;
+      try {
+        target = await realpath(next);
+      } catch (err) {
+        throw unsafeMountError(m, `${next}: ${err.message}`);
+      }
+      if (!isInsideRoot(target, resolvedRoot)) throw unsafeMountError(m, `${next} → ${target}`);
+      current = target;
+      continue;
+    }
+    if (!info.isDirectory()) {
+      throw containerError(
+        'CONTAINER_MOUNT_SOURCE_WRONG_TYPE',
+        `Mount "${m.name}" storage path ${next} is not a directory`,
+      );
+    }
+    current = next;
   }
+  return current;
+}
+
+/** Realpath a Storage mount's source and require it to be a directory inside its root. */
+async function resolveStorageSource(m, resolveMount) {
+  const { storage, resolvedRoot } = await storageRootForMount(m, resolveMount);
+  const sub = m.subPath || '';
+  const hostPath = sub ? join(storage.mountPath, sub) : storage.mountPath;
+  let resolvedHost;
+  try {
+    resolvedHost = await realpath(hostPath);
+  } catch (err) {
+    throw containerError('CONTAINER_MOUNT_SOURCE_UNSAFE', `Could not resolve mount source for "${m.name}"`, err.message);
+  }
+  if (!isInsideRoot(resolvedHost, resolvedRoot)) throw unsafeMountError(m, `${hostPath} → ${resolvedHost}`);
   const s = await stat(resolvedHost);
   if (!s.isDirectory()) {
     throw containerError(
@@ -359,12 +419,63 @@ async function assertBindSourcesReadyStorage(m, resolveMount) {
       `Mount "${m.name}" storage path ${hostPath} is not a directory`,
     );
   }
+  return resolvedHost;
+}
+
+async function assertBindSourcesReadyStorage(m, resolveMount) {
+  const { resolvedRoot } = await storageRootForMount(m, resolveMount);
+  await mkdirSubPathInsideRoot(m, resolvedRoot);
+  await resolveStorageSource(m, resolveMount);
+}
+
+/** Realpath a Local mount's backing file/dir and require it inside files/ with the right type. */
+async function resolveLocalSource(m, filesDir) {
+  let resolvedRoot;
+  let resolvedHost;
+  try {
+    resolvedRoot = await realpath(filesDir);
+    resolvedHost = await realpath(join(filesDir, m.name));
+  } catch (err) {
+    throw containerError('CONTAINER_MOUNT_SOURCE_MISSING', `Mount "${m.name}" has no backing ${m.type} on the host`, err.message);
+  }
+  if (!isInsideRoot(resolvedHost, resolvedRoot) || resolvedHost === resolvedRoot) {
+    throw containerError('CONTAINER_MOUNT_SOURCE_UNSAFE', `Mount "${m.name}" resolves outside the container's files directory`);
+  }
+  const s = await stat(resolvedHost);
+  if ((m.type === 'file' && !s.isFile()) || (m.type === 'directory' && !s.isDirectory())) {
+    throw containerError(
+      'CONTAINER_MOUNT_SOURCE_WRONG_TYPE',
+      `Mount "${m.name}" must be backed by a ${m.type} on the host`,
+    );
+  }
+  return resolvedHost;
 }
 
 /**
- * Ensure each mount's backing path exists and matches type (before task create).
- * Local mounts auto-create the artifact under files/. Storage mounts verify the referenced
- * storage is currently mounted and mkdir -p the sub-path (within the storage root).
+ * Resolve every bind mount's host source to its real path and re-check it
+ * against its root (files/ for Local, the storage mount for Storage) — the
+ * check-to-use window is what a symlink swap would exploit, so this runs
+ * immediately before task create, and its result is what the OCI spec binds
+ * (`buildOCISpec` opts.mountSources). Creates nothing: `assertBindSourcesReady`
+ * already made the artifacts at the start of the start.
+ * @returns {Promise<Map<string, string>>} mount name → resolved host path
+ */
+export async function resolveBindSources(config, filesDir, resolveMount = null) {
+  const out = new Map();
+  for (const m of Array.isArray(config.mounts) ? config.mounts : []) {
+    if (m?.type !== 'file' && m?.type !== 'directory') continue;
+    out.set(m.name, m.sourceId
+      ? await resolveStorageSource(m, resolveMount)
+      : await resolveLocalSource(m, filesDir));
+  }
+  return out;
+}
+
+/**
+ * Ensure each mount's backing path exists and matches type (early in a start, before the
+ * network wait). Local mounts auto-create the artifact under files/. Storage mounts verify the
+ * referenced storage is currently mounted and create the sub-path inside the storage root,
+ * never following a symlink out of it. `resolveBindSources` re-checks right before task create.
  * @param {string} containerName
  * @param {object} config
  * @param {string} filesDir - absolute path to container files/

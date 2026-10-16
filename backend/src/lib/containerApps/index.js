@@ -165,6 +165,9 @@ export function assertMountNotAppManaged(config, mountName) {
  *
  * On any failure after the container is created, the container is deleted
  * (rollback) so partially-configured containers don't linger.
+ *
+ * @returns {Promise<{ name: string }>} createContainer's result — the create
+ *   job's completion payload.
  */
 export async function createAppContainer(spec, onStep) {
   if (!isKnownApp(spec.app)) {
@@ -197,7 +200,7 @@ export async function createAppContainer(spec, onStep) {
     metadata: { app: spec.app, appConfig: finalAppConfig },
   };
 
-  await createContainer(expandedSpec, onStep);
+  const result = await createContainer(expandedSpec, onStep);
 
   if (derived.mountContents && Object.keys(derived.mountContents).length) {
     try {
@@ -210,6 +213,7 @@ export async function createAppContainer(spec, onStep) {
       throw err;
     }
   }
+  return result;
 }
 
 /**

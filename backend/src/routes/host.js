@@ -23,6 +23,7 @@ import {
   getDevices as getHostUSBDevicesCached,
   onChange as onHostUSBChange,
 } from '../lib/host/index.js';
+import { assertBridgeNotInUse } from '../lib/networkBridgeUsage.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/storage/index.js';
@@ -313,7 +314,7 @@ export default async function hostRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        return await deleteManagedNetworkBridge(request.params.name);
+        return await deleteManagedNetworkBridge(request.params.name, { assertNotInUse: assertBridgeNotInUse });
       } catch (err) {
         handleRouteError(err, reply, request);
       }

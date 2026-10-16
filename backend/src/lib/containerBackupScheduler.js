@@ -17,6 +17,10 @@
  * manual container backups), so scheduled runs surface in
  * GET /api/background-jobs, the per-job SSE progress endpoint, and the
  * frontend's page-load job rehydration.
+ *
+ * The run itself is `runScheduledBackups({ trigger })`, invocable on its own
+ * (CODING-RULES §7); the minute tick is one trigger. Every run logs its
+ * trigger, and at most one runs at a time whatever triggered it.
  */
 import { randomBytes } from 'node:crypto';
 
@@ -72,24 +76,41 @@ async function tick() {
   const target = latestTargetAt(now, schedule.time);
   /* Fire iff the target lies in (prev, now] — at most once per boundary. */
   if (!prev || target <= prev || target > now) return;
-  if (runInFlight) {
-    logger?.warn('Backup scheduler: previous run still in flight, skipping this boundary');
-    return;
-  }
 
-  runInFlight = true;
   try {
-    await runScheduledBackups(schedule);
+    await runScheduledBackups({ trigger: 'schedule' });
   } catch (err) {
     logger?.error({ err }, 'Backup scheduler: run failed');
+  }
+}
+
+/**
+ * Back up every container with Auto Backup on to the schedule's destinations,
+ * then prune scheduled-origin backups per its retention — the scheduled run,
+ * on demand. Uses `settings.backupSchedule` (destinations, retention) whether
+ * or not the schedule is enabled. Returns false when skipped because a run is
+ * already in flight.
+ * @param {{ trigger?: string }} [opts] - what invoked the run, for the log
+ * @returns {Promise<boolean>}
+ */
+export async function runScheduledBackups({ trigger = 'manual' } = {}) {
+  if (runInFlight) {
+    logger?.warn({ trigger }, 'Backup scheduler: previous run still in flight, skipping');
+    return false;
+  }
+  runInFlight = true;
+  try {
+    await backupAutoBackupContainers(trigger);
+    return true;
   } finally {
     runInFlight = false;
   }
 }
 
-async function runScheduledBackups(schedule) {
+async function backupAutoBackupContainers(trigger) {
   const log = logger;
   const settings = await getSettings();
+  const schedule = settings.backupSchedule || {};
   const rawMounts = await getRawMounts();
 
   let destinations;
@@ -98,7 +119,7 @@ async function runScheduledBackups(schedule) {
   } catch (err) {
     /* Destination trouble (unmountable share, nothing configured) aborts the
      * whole run — containers stay untouched; next boundary is tomorrow. */
-    log?.warn({ err: err.message, detail: err.raw }, 'Backup scheduler: no usable destination, skipping run');
+    log?.warn({ trigger, err: err.message, detail: err.raw }, 'Backup scheduler: no usable destination, skipping run');
     return;
   }
 
@@ -106,7 +127,7 @@ async function runScheduledBackups(schedule) {
   try {
     list = await listContainers();
   } catch (err) {
-    log?.warn({ err }, 'Backup scheduler: listContainers failed, skipping run');
+    log?.warn({ trigger, err }, 'Backup scheduler: listContainers failed, skipping run');
     return;
   }
 
@@ -118,12 +139,15 @@ async function runScheduledBackups(schedule) {
     } catch { /* container dir may be mid-delete — skip it this run */ }
   }
   if (names.length === 0) {
-    log?.info('Backup scheduler: fired, no containers with Auto Backup enabled');
+    log?.info({ trigger }, 'Backup scheduler: fired, no containers with Auto Backup enabled');
     return;
   }
-  log?.info({ containers: names, destinations: destinations.map((d) => d.id) }, 'Backup scheduler: run started');
+  log?.info({ trigger, containers: names, destinations: destinations.map((d) => d.id) }, 'Backup scheduler: run started');
 
   const allowedRoots = listConfiguredBackupRoots(settings);
+  let backedUp = 0;
+  let failed = 0;
+  let skipped = 0;
 
   for (const name of names) {
     const title = titleForContainerBackup(name);
@@ -132,6 +156,7 @@ async function runScheduledBackups(schedule) {
     );
     if (alreadyRunning) {
       log?.warn({ container: name }, 'Backup scheduler: manual backup in progress, skipping container');
+      skipped += 1;
       continue;
     }
 
@@ -145,6 +170,7 @@ async function runScheduledBackups(schedule) {
         afterEach: (dest) => pruneScheduledBackups(name, dest, allowedRoots),
       });
       backupJobStore.completeJob(jobId, lastResult);
+      backedUp += 1;
       await recordBackupAttempt({
         kind: 'container',
         name,
@@ -155,6 +181,7 @@ async function runScheduledBackups(schedule) {
       });
     } catch (err) {
       backupJobStore.failJob(jobId, err);
+      failed += 1;
       log?.error({ err, container: name, jobId }, 'Backup scheduler: container backup failed');
       await recordBackupAttempt({
         kind: 'container',
@@ -167,7 +194,7 @@ async function runScheduledBackups(schedule) {
       /* Continue with the remaining containers. */
     }
   }
-  log?.info('Backup scheduler: run finished');
+  log?.info({ trigger, backedUp, failed, skipped }, 'Backup scheduler: run finished');
 }
 
 async function pruneScheduledBackups(name, dest, allowedRoots) {

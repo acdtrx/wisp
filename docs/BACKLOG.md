@@ -42,3 +42,24 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   DEPLOYMENT.md) that copies the state dir into the backup and back under the
   restored VM's UUID. Revisit when: a restored Windows VM needed BitLocker
   recovery.
+- **Per-container seccomp opt-out** — every container runs under Docker's
+  default seccomp profile (CONTAINERS.md § OCI Runtime Spec). An opt-out would
+  be a `container.json` field (e.g. `seccomp: "unconfined"`, no UI, editable
+  via PATCH/MCP) read at the single place `buildOCISpec` sets
+  `linux.seccomp` — omit the block when set. Revisit when: an image the user
+  needs fails with EPERM/ENOSYS on a syscall the default profile blocks (and
+  a capability grant or image setting can't fix it).
+- **VM mDNS reconciler: per-VM operation chain** — `vmMdnsReconciler.js` has
+  the race the container reconciler had (async handlers can register after
+  the following stop's deregister); avahi `registerAddress` also leaks an
+  entry group when two calls for one key overlap. The container side
+  serializes per container. Revisit when: a stopped VM is seen still
+  resolving as `<name>.local`, or avahi shows duplicate groups for a VM.
+- **Rename removes the old netns without CNI DEL** — `renameContainer`
+  deletes the old-name netns directly, so the cni-dhcp daemon is never told
+  to release that lease (same MAC, so the address itself is unaffected).
+  Revisit when: cni-dhcp logs renew errors for a renamed container's old name.
+- **Services stay published after an unexpected task exit** — SRV/TXT
+  services are deregistered on stop/kill/delete only; a crash leaves them
+  advertising until the next start or stop. Revisit when: a crashed
+  container's service is seen being browsed on the LAN.

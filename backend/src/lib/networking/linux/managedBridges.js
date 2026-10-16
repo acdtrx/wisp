@@ -7,12 +7,9 @@ import { access, readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
-import { createAppError } from '../../routeErrors.js';
 import { isVlanLikeBridgeName } from '../bridgeNaming.js';
+import { networkingError } from '../networkingError.js';
 import { listHostBridges } from './hostBridges.js';
-
-// vmManager / containerManager imported dynamically inside assertBridgeNotInUse to
-// avoid a top-level-await cycle: vmManager → networking → managedBridges → vmManager.
 
 const execFileAsync = promisify(execFileCb);
 
@@ -45,14 +42,14 @@ function parseNetplanFilename(file) {
 
 function assertBridgeNameFormat(name, field) {
   if (typeof name !== 'string' || !name.trim()) {
-    throw createAppError('INVALID_NETWORK_BRIDGE_NAME', `${field} is required`);
+    throw networkingError('INVALID_NETWORK_BRIDGE_NAME', `${field} is required`);
   }
   const value = name.trim();
   if (!/^[a-zA-Z0-9._-]+$/.test(value) || value.includes('__')) {
-    throw createAppError('INVALID_NETWORK_BRIDGE_NAME', `${field} contains invalid characters`);
+    throw networkingError('INVALID_NETWORK_BRIDGE_NAME', `${field} contains invalid characters`);
   }
   if (value.length > LINUX_IFACE_MAX) {
-    throw createAppError('INVALID_NETWORK_BRIDGE_NAME', `${field} exceeds ${LINUX_IFACE_MAX} characters`);
+    throw networkingError('INVALID_NETWORK_BRIDGE_NAME', `${field} exceeds ${LINUX_IFACE_MAX} characters`);
   }
   return value;
 }
@@ -60,7 +57,7 @@ function assertBridgeNameFormat(name, field) {
 function normalizeVlanId(vlanId) {
   const n = Number(vlanId);
   if (!Number.isInteger(n) || n < 1 || n > 4094) {
-    throw createAppError('INVALID_VLAN_ID', 'VLAN ID must be an integer between 1 and 4094');
+    throw networkingError('INVALID_VLAN_ID', 'VLAN ID must be an integer between 1 and 4094');
   }
   return n;
 }
@@ -117,7 +114,7 @@ async function getHelperPath() {
       await access(HELPER_FALLBACK_PATH);
       return HELPER_FALLBACK_PATH;
     } catch (err) {
-      throw createAppError('NETWORK_BRIDGE_UNAVAILABLE', 'wisp-bridge helper not found', err.message);
+      throw networkingError('NETWORK_BRIDGE_UNAVAILABLE', 'wisp-bridge helper not found', err.message);
     }
   }
 }
@@ -133,7 +130,7 @@ async function runHelper(args) {
     }
   } catch (err) {
     const detail = (err.stderr || err.stdout || err.message || '').trim() || 'helper failed';
-    throw createAppError('NETWORK_BRIDGE_APPLY_FAILED', 'Failed to apply netplan bridge change', detail);
+    throw networkingError('NETWORK_BRIDGE_APPLY_FAILED', 'Failed to apply netplan bridge change', detail);
   }
 }
 
@@ -199,13 +196,13 @@ function expectedBridgeName(baseBridge, vlanId) {
 
 async function assertParentBridge(baseBridge) {
   if (!(await interfaceExists(baseBridge)) || !(await bridgeExists(baseBridge))) {
-    throw createAppError('INVALID_NETWORK_BRIDGE_PARENT', `Parent bridge "${baseBridge}" does not exist`);
+    throw networkingError('INVALID_NETWORK_BRIDGE_PARENT', `Parent bridge "${baseBridge}" does not exist`);
   }
   if (isVlanLikeBridgeName(baseBridge) || (await isVlanInterface(baseBridge))) {
-    throw createAppError('INVALID_NETWORK_BRIDGE_PARENT', 'Parent bridge cannot be VLAN-tagged');
+    throw networkingError('INVALID_NETWORK_BRIDGE_PARENT', 'Parent bridge cannot be VLAN-tagged');
   }
   if (!(await bridgeHasNonVlanMember(baseBridge))) {
-    throw createAppError(
+    throw networkingError(
       'INVALID_NETWORK_BRIDGE_PARENT',
       `Parent bridge "${baseBridge}" must have at least one non-VLAN member`,
     );
@@ -214,7 +211,7 @@ async function assertParentBridge(baseBridge) {
 
 async function assertCreateInput(baseBridgeRaw, vlanRaw) {
   if (!isLinux()) {
-    throw createAppError('NETWORK_BRIDGE_UNAVAILABLE', 'Network bridge management is only supported on Linux');
+    throw networkingError('NETWORK_BRIDGE_UNAVAILABLE', 'Network bridge management is only supported on Linux');
   }
   const baseBridge = assertBridgeNameFormat(baseBridgeRaw, 'baseBridge');
   const vlanId = normalizeVlanId(vlanRaw);
@@ -223,60 +220,19 @@ async function assertCreateInput(baseBridgeRaw, vlanRaw) {
   assertBridgeNameFormat(bridgeName, 'bridgeName');
   const vlanInterface = `${baseBridge}.${vlanId}`;
   if (vlanInterface.length > LINUX_IFACE_MAX) {
-    throw createAppError('INVALID_NETWORK_BRIDGE_NAME', `VLAN interface "${vlanInterface}" exceeds ${LINUX_IFACE_MAX} characters`);
+    throw networkingError('INVALID_NETWORK_BRIDGE_NAME', `VLAN interface "${vlanInterface}" exceeds ${LINUX_IFACE_MAX} characters`);
   }
   return { baseBridge, vlanId, bridgeName };
-}
-
-async function assertBridgeNotInUse(bridgeName) {
-  const [{ listVMs, getVMConfig }, { listContainers, getContainerConfig }] = await Promise.all([
-    import('../../vmManager/index.js'),
-    import('../../containerManager/index.js'),
-  ]);
-
-  const vmRefs = [];
-  const vms = await listVMs();
-  for (const vm of vms) {
-    try {
-      const config = await getVMConfig(vm.name);
-      const nics = Array.isArray(config.nics) ? config.nics : [];
-      if (nics.some((nic) => nic?.type === 'bridge' && nic?.source === bridgeName)) {
-        vmRefs.push(vm.name);
-      }
-    } catch {
-      /* skip VM if config unavailable */
-    }
-  }
-
-  const containerRefs = [];
-  const containers = await listContainers();
-  for (const container of containers) {
-    try {
-      const config = await getContainerConfig(container.name);
-      if (config?.network?.interface === bridgeName) {
-        containerRefs.push(container.name);
-      }
-    } catch {
-      /* skip container if config unavailable */
-    }
-  }
-
-  if (vmRefs.length === 0 && containerRefs.length === 0) return;
-  const detail = [
-    vmRefs.length ? `VMs: ${vmRefs.slice(0, 5).join(', ')}` : null,
-    containerRefs.length ? `Containers: ${containerRefs.slice(0, 5).join(', ')}` : null,
-  ].filter(Boolean).join(' | ');
-  throw createAppError('NETWORK_BRIDGE_IN_USE', `Bridge "${bridgeName}" is in use and cannot be deleted`, detail);
 }
 
 export async function createManagedNetworkBridge(input) {
   const { baseBridge, vlanId, bridgeName } = await assertCreateInput(input?.baseBridge, input?.vlanId);
   if (await interfaceExists(bridgeName)) {
-    throw createAppError('NETWORK_BRIDGE_EXISTS', `Bridge "${bridgeName}" already exists`);
+    throw networkingError('NETWORK_BRIDGE_EXISTS', `Bridge "${bridgeName}" already exists`);
   }
   const managed = await listManagedBridgeMeta();
   if (managed.some((m) => m.bridgeName === bridgeName)) {
-    throw createAppError('NETWORK_BRIDGE_EXISTS', `Bridge "${bridgeName}" already exists`);
+    throw networkingError('NETWORK_BRIDGE_EXISTS', `Bridge "${bridgeName}" already exists`);
   }
 
   await runHelper([
@@ -300,17 +256,29 @@ export async function createManagedNetworkBridge(input) {
   };
 }
 
-export async function deleteManagedNetworkBridge(nameRaw) {
+/**
+ * Delete a managed VLAN bridge. Whether workloads still use the bridge is the
+ * caller's knowledge, not this module's (the VM and container managers import
+ * networking, not the reverse): `assertNotInUse(name)` is required and runs
+ * once the bridge is known to be managed, before anything changes; it throws
+ * to refuse the delete.
+ * @param {string} nameRaw
+ * @param {{ assertNotInUse: (name: string) => Promise<void> }} opts
+ */
+export async function deleteManagedNetworkBridge(nameRaw, { assertNotInUse } = {}) {
+  if (typeof assertNotInUse !== 'function') {
+    throw new TypeError('deleteManagedNetworkBridge requires an assertNotInUse check');
+  }
   if (!isLinux()) {
-    throw createAppError('NETWORK_BRIDGE_UNAVAILABLE', 'Network bridge management is only supported on Linux');
+    throw networkingError('NETWORK_BRIDGE_UNAVAILABLE', 'Network bridge management is only supported on Linux');
   }
   const name = assertBridgeNameFormat(nameRaw, 'name');
   const managed = await listManagedBridgeMeta();
   const target = managed.find((m) => m.bridgeName === name);
   if (!target) {
-    throw createAppError('NETWORK_BRIDGE_NOT_FOUND', `Managed bridge "${name}" not found`);
+    throw networkingError('NETWORK_BRIDGE_NOT_FOUND', `Managed bridge "${name}" not found`);
   }
-  await assertBridgeNotInUse(name);
+  await assertNotInUse(name);
 
   await runHelper([
     'delete-vlan-bridge',

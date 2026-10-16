@@ -41,7 +41,7 @@ import { handleTaskExitEvent } from './containerManagerRestartPolicy.js';
 function deriveUpdateAvailable(config, state, libraryDigests) {
   if (state !== 'running' && state !== 'paused') return false;
   if (!config.imageDigest || !config.image) return false;
-  const current = libraryDigests.get(normalizeImageRef(config.image));
+  const current = libraryDigests.get(config.image) ?? libraryDigests.get(normalizeImageRef(config.image));
   return !!current && current !== config.imageDigest;
 }
 

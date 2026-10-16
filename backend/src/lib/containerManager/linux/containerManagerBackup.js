@@ -216,8 +216,23 @@ export async function createContainerBackup(name, destinationPath, { onProgress,
   const containersRoot = getContainersPath();
 
   const timestamp = backupTimestamp();
-  const backupDir = join(destinationPath, CONTAINERS_BACKUP_DIRNAME, name, timestamp);
-  await mkdir(backupDir, { recursive: true });
+  const containerBackupsDir = join(destinationPath, CONTAINERS_BACKUP_DIRNAME, name);
+  await mkdir(containerBackupsDir, { recursive: true });
+  const backupDir = join(containerBackupsDir, timestamp);
+  // Non-recursive so this run provably owns the directory: the failure
+  // cleanup below removes it, and must never remove (or write into) a backup
+  // another run made in the same second.
+  try {
+    await mkdir(backupDir);
+  } catch (err) {
+    if (err.code === 'EEXIST') {
+      throw containerError(
+        'BACKUP_EXISTS',
+        `A backup of "${name}" named ${timestamp} already exists at this destination — retry in a moment`,
+      );
+    }
+    throw err;
+  }
 
   const emit = (step, data = {}) => {
     if (typeof onProgress === 'function') onProgress({ step, ...data });
@@ -266,7 +281,7 @@ export async function createContainerBackup(name, destinationPath, { onProgress,
   }
 
   let archiveBytes = 0;
-  try { archiveBytes = (await stat(archivePath)).size; } catch { /* ignore */ }
+  try { archiveBytes = (await stat(archivePath)).size; } catch { /* size is informational; the manifest records 0 */ }
 
   const manifest = {
     type: 'container',
@@ -280,7 +295,13 @@ export async function createContainerBackup(name, destinationPath, { onProgress,
     archiveBytes,
     sizeBytes: archiveBytes,
   };
-  await writeFile(join(backupDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  try {
+    await writeFile(join(backupDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  } catch (err) {
+    /* Without its manifest the directory is no backup (listings skip it) — remove it. */
+    await rm(backupDir, { recursive: true, force: true }).catch(() => {});
+    throw err;
+  }
 
   /* Completion is the resolved promise — no `done` progress event (only the
    * caller's job completion may emit the terminal `done`). */

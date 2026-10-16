@@ -223,7 +223,7 @@ App identity persists in `container.json.metadata.app` (string id) + `container.
 | `containerJobStore.js` | Job store wrapper for container create (`routes/containers.js`) |
 | `downloadUtils.js` | Shared download helpers: exclusive unique-name create (`openUniqueFile`), response-body → file pipeline with progress and partial-file cleanup (also used by `wispUpdate.js`) |
 | `fileTypes.js` | `detectType` for image library files |
-| `networking/index.js` | Networking facade — host bridge enumeration (`listHostBridges`, `getDefaultBridge`, `getDefaultContainerParentBridge`), `/proc` IPv4 readout (`ipv4CidrFromProcFibTrie`), netplan-managed VLAN bridges, and the `isVlanLikeBridgeName` heuristic. Linux impl under `networking/linux/{hostBridges,managedBridges}.js`; macOS stubs under `networking/darwin/`. |
+| `networking/index.js` | Networking facade — host bridge enumeration (`listHostBridges`, `getDefaultBridge`, `getDefaultContainerParentBridge`), `/proc` IPv4 readout (`ipv4CidrFromProcFibTrie`), netplan-managed VLAN bridges, and the `isVlanLikeBridgeName` heuristic. Linux impl under `networking/linux/{hostBridges,managedBridges}.js`; macOS stubs under `networking/darwin/`. Carved module rules apply: errors come from its private `networkingError`, and it never imports the managers (they import it) — whether a bridge is in use is passed in by the route (`deleteManagedNetworkBridge(name, { assertNotInUse })`, glue in `lib/networkBridgeUsage.js`). |
 | `paths.js` | `getVMBasePath(name)`, `getImagePath()`, `ensureImageDir()` (container roots: `containerManager` `containerPaths.js` / `getContainersPath()`) |
 | `routeErrors.js` | `createAppError()`, `handleRouteError()`, `sendError()`, error code-to-HTTP mapping |
 | `validation.js` | VM name validation |

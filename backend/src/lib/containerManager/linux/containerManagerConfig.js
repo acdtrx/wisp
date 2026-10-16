@@ -14,7 +14,8 @@ import { resolveMount } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { RESTART_POLICIES } from './containerManagerRestartPolicy.js';
 
-const RESTART_FIELDS = new Set([
+/** Fields a running task only picks up on its next start. */
+export const RESTART_FIELDS = new Set([
   'image', 'command', 'cpuLimit', 'memoryLimitMiB', 'env', 'mounts', 'devices', 'network', 'runAsRoot',
 ]);
 

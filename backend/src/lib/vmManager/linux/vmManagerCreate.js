@@ -376,7 +376,7 @@ export async function createVM(spec, { onStep, populateVMDir } = {}) {
   }
 
   refreshVMListCache();
-  emit('done', { name });
+  // No `done` step here: the caller's job completion emits the terminal `done`.
   return { name };
 }
 

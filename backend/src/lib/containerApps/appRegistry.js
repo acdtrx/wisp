@@ -52,14 +52,15 @@ export const APP_REGISTRY = {
   },
 };
 
+/** Own registry keys only — `metadata.app: "constructor"` must not resolve through the prototype. */
+export function isKnownApp(appId) {
+  return typeof appId === 'string' && Object.hasOwn(APP_REGISTRY, appId);
+}
+
 export function getAppModule(appId) {
-  return APP_REGISTRY[appId]?.module || null;
+  return isKnownApp(appId) ? APP_REGISTRY[appId].module || null : null;
 }
 
 export function getAppEntry(appId) {
-  return APP_REGISTRY[appId] || null;
-}
-
-export function isKnownApp(appId) {
-  return appId in APP_REGISTRY;
+  return isKnownApp(appId) ? APP_REGISTRY[appId] : null;
 }

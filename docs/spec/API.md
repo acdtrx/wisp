@@ -605,7 +605,7 @@ The body schema is **`additionalProperties: false`**. With Fastify's default Ajv
 
 SSE stream for VM creation progress (see [ERROR-HANDLING.md](ERROR-HANDLING.md) for job SSE shapes).
 
-- **Progress events:** `{ step, ... }` — `step` includes `validating`, `copying` (may include `percent`), `resizing`, `creating-disk`, `cloudinit`, `defining`, and an internal `done` step with `{ name }` before the job completes.
+- **Progress events:** `{ step, ... }` — `step` includes `validating`, `copying` (may include `percent`), `resizing`, `creating-disk`, `cloudinit`, `defining`. The only `done` is the job completion's `{ step: "done", name }`.
 - **Completion (from job store):** `{ step: "done", name: "<vmName>" }`
 - **Failure (terminal):** `{ step: "error", error: string, detail: string }` — then the stream closes.
 
@@ -1519,9 +1519,11 @@ On create, the server writes defaults in `container.json` (empty `mounts`, bridg
 
 ### GET /api/containers/create-progress/:jobId
 
-SSE stream for container creation progress. Events: `{ step: "validating"|"using-local"|"pulling"|"pulled"|"creating"|"done"|"error", ... }`
+SSE stream for container creation progress. Events: `{ step: "validating"|"using-local"|"pulling"|"pulled"|"creating"|"created"|"done"|"error", ... }`
 
-The `using-local` step replaces `pulling`/`pulled` when the exact literal `image` in the request body already exists in containerd's `wisp` namespace (e.g. an operator pre-loaded it with `ctr -n wisp image import`, or the Create Container form's picker selected it verbatim). In that case the backend skips ref normalization and the Transfer pull entirely, so the sequence is `validating` → `using-local` → `creating` → `done`. For registry-named refs (`nginx:latest` etc.) the sequence is unchanged: `validating` → `pulling` → `pulled` → `creating` → `done`.
+The `using-local` step replaces `pulling`/`pulled` when the exact literal `image` in the request body already exists in containerd's `wisp` namespace (e.g. an operator pre-loaded it with `ctr -n wisp image import`, or the Create Container form's picker selected it verbatim). In that case the backend skips ref normalization and the Transfer pull entirely, so the sequence is `validating` → `using-local` → `creating` → `created` → `done`. For registry-named refs (`nginx:latest` etc.) the sequence is unchanged: `validating` → `pulling` → `pulled` → `creating` → `created` → `done`.
+
+`created` (`{ step, name, imageDigest }`) means the containerd definition exists; it is not terminal — an app container still writes its config files after it, and a failure there rolls the container back and ends the job with `error`. The terminal `{ step: "done", name }` comes only from job completion.
 
 ### GET /api/containers/images
 
@@ -1533,13 +1535,13 @@ List OCI images in the containerd `wisp` namespace (same store used when creatin
 
 ### DELETE /api/containers/images
 
-Remove an image from containerd. Query parameter **`ref`** (required): image reference (e.g. `nginx:latest` or `docker.io/library/nginx:latest`); normalized the same way as create/pull.
+Remove an image from containerd. Query parameter **`ref`** (required): the image's name exactly as `GET /api/containers/images` lists it (e.g. `docker.io/library/nginx:latest`, or a local-only `myapp:v1`). It is not normalized — a short ref only deletes an image listed under that literal name.
 
 **200:** `{ ok: true }`
 
 **404:** `CONTAINER_IMAGE_NOT_FOUND`
 
-**409:** `CONTAINER_IMAGE_IN_USE` — at least one Wisp container’s `container.json` still references this image (after reference normalization). Delete or reconfigure those containers first.
+**409:** `CONTAINER_IMAGE_IN_USE` — at least one Wisp container’s `container.json` `image` is this name, verbatim or after reference normalization. Delete or reconfigure those containers first.
 
 **422:** `INVALID_CONTAINER_IMAGE_REF` — empty or missing `ref`.
 

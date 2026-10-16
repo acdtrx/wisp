@@ -20,6 +20,7 @@ import {
 
 const RUN_RETENTION = 10;
 const HISTORY_TAIL_LINES = 500;
+const TAIL_READ_CHUNK_BYTES = 64 * 1024;
 
 /** Build the filesystem-safe runId for a given instant (default now). */
 function makeRunId(date = new Date()) {
@@ -133,23 +134,53 @@ export async function findCurrentRunId(name) {
 }
 
 /**
- * Read the last N lines from a specific run's log.
+ * Read backwards from the end of an open file in fixed chunks until the bytes
+ * read hold more than `tailLines` newlines (or the start is reached) — enough
+ * for the last `tailLines` newline-separated segments to be complete — so a
+ * long-running container's multi-hundred-MB log costs a few chunk reads.
+ * Chunks are joined before decoding, so a UTF-8 sequence split across a
+ * chunk boundary decodes intact.
+ */
+async function readTailBytes(fh, size, tailLines) {
+  const chunks = [];
+  let pos = size;
+  let newlines = 0;
+  while (pos > 0 && newlines <= tailLines) {
+    const len = Math.min(TAIL_READ_CHUNK_BYTES, pos);
+    pos -= len;
+    const chunk = Buffer.alloc(len);
+    const { bytesRead } = await fh.read(chunk, 0, len, pos);
+    const got = chunk.subarray(0, bytesRead);
+    for (const byte of got) if (byte === 0x0a) newlines += 1;
+    chunks.unshift(got);
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
+ * Read the last N lines from a specific run's log (all when `tailLines` is 0),
+ * blank lines dropped. `totalSize` is the log's byte size.
  */
 export async function getContainerRunLogs(name, runId, tailLines = HISTORY_TAIL_LINES) {
   const logPath = getRunLogPath(name, runId);
-  let buf;
+  let fh;
   try {
-    buf = await readFile(logPath);
+    fh = await open(logPath, 'r');
   } catch (err) {
     if (err.code === 'ENOENT') return { lines: [], totalSize: 0 };
     throw containerError('CONTAINERD_ERROR', `Failed to read run log for "${name}"`, err.message);
   }
-  const content = buf.toString('utf8');
-  const all = content.split('\n');
-  const lines = tailLines > 0
-    ? all.slice(-tailLines).filter((l) => l.length > 0)
-    : all.filter((l) => l.length > 0);
-  return { lines, totalSize: buf.length };
+  try {
+    const { size } = await fh.stat();
+    const buf = tailLines > 0 ? await readTailBytes(fh, size, tailLines) : await fh.readFile();
+    const all = buf.toString('utf8').split('\n');
+    const lines = (tailLines > 0 ? all.slice(-tailLines) : all).filter((l) => l.length > 0);
+    return { lines, totalSize: size };
+  } catch (err) {
+    throw containerError('CONTAINERD_ERROR', `Failed to read run log for "${name}"`, err.message);
+  } finally {
+    await fh.close().catch(() => { /* read result already settled; nothing to report */ });
+  }
 }
 
 /**

@@ -13,6 +13,13 @@
  * split, no own polling, no own writes. Routes call `publishContainer` /
  * `unpublishContainer` directly when `localDns` toggles, on rename, and on
  * delete (those are metadata flips, not network changes).
+ *
+ * Every operation for one container — event handling and the route calls —
+ * runs on that container's promise chain, one at a time in arrival order.
+ * Each handler awaits a config read before it acts, so without the chain a
+ * "running" handler still reading could register after a later "stopped"
+ * handler had already found nothing to deregister, leaving a stopped
+ * container published.
  */
 import {
   subscribeContainerNetworkChange,
@@ -21,12 +28,29 @@ import {
 import { deregisterAddress, registerAddress, sanitizeHostname } from './mdns/index.js';
 
 const registered = new Set();
+/** name → tail of that container's operation chain */
+const chains = new Map();
 
 let logger = null;
 let unsubscribe = null;
 
 function log() {
   return logger || console;
+}
+
+/**
+ * Run `op` after every earlier operation for `name` has settled. Resolves or
+ * rejects with `op`'s own outcome; a failure never blocks later operations.
+ */
+function enqueue(name, op) {
+  const prev = chains.get(name) || Promise.resolve();
+  const run = prev.then(op);
+  const tail = run.catch(() => { /* surfaced to this op's caller; the chain continues */ });
+  chains.set(name, tail);
+  tail.then(() => {
+    if (chains.get(name) === tail) chains.delete(name);
+  });
+  return run;
 }
 
 async function readLocalDns(name) {
@@ -71,7 +95,7 @@ export function startContainerMdnsReconciler(log_) {
   if (unsubscribe) return; // already started
   logger = log_ || null;
   unsubscribe = subscribeContainerNetworkChange((name, snapshot) => {
-    onNetworkChange(name, snapshot).catch((err) => {
+    enqueue(name, () => onNetworkChange(name, snapshot)).catch((err) => {
       log().warn?.({ err: err?.message || err, container: name }, '[containerMdns] handler threw');
     });
   });
@@ -87,26 +111,32 @@ export function stopContainerMdnsReconciler() {
 
 /**
  * Force a publish attempt for a single container (called by routes when the
- * user toggles localDns on, or after a rename). Reads the current network
- * config via the public containerManager facade. Safe to call when the
- * container isn't running — there just won't be an IP to register.
+ * user toggles localDns on, or after a rename). Publishes only a running
+ * container with `localDns: true` — container.json keeps the last addresses
+ * after a stop, so they alone don't mean the container is reachable there.
+ * A no-op otherwise; the network-change event publishes it once it runs.
  */
-export async function publishContainer(name) {
-  let config;
-  try { config = await getContainerConfig(name); }
-  catch { return; }
-  const ip = config?.network?.ip;
-  const ip6 = config?.network?.ip6;
-  if (!ip && !ip6) return;
-  await registerAddress(name, sanitizeHostname(name), ip, ip6);
-  registered.add(name);
+export function publishContainer(name) {
+  return enqueue(name, async () => {
+    let config;
+    try { config = await getContainerConfig(name); }
+    catch { return; }
+    if (config?.localDns !== true || config.state !== 'running') return;
+    const ip = config.network?.ip;
+    const ip6 = config.network?.ip6;
+    if (!ip && !ip6) return;
+    await registerAddress(name, sanitizeHostname(name), ip, ip6);
+    registered.add(name);
+  });
 }
 
 /**
  * Drop the container's mDNS entry. Used by routes when the user toggles
  * localDns off, on rename (old name), and before delete.
  */
-export async function unpublishContainer(name) {
-  await deregisterAddress(name);
-  registered.delete(name);
+export function unpublishContainer(name) {
+  return enqueue(name, async () => {
+    await deregisterAddress(name);
+    registered.delete(name);
+  });
 }

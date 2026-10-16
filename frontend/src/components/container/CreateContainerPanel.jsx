@@ -15,6 +15,7 @@ const STEP_LABELS = {
   pulling: 'Pulling image…',
   pulled: 'Image pulled',
   creating: 'Creating container…',
+  created: 'Finishing…',
   done: 'Ready — configure and start when ready',
   error: 'Error',
 };

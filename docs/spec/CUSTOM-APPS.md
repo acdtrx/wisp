@@ -26,7 +26,7 @@ Custom App Containers are containers created from hardcoded app templates that p
 
 ### Backend — `backend/src/lib/containerApps/appRegistry.js`
 
-Maps app IDs to `{ label, description, defaultImage, allowCustomImage, module, requiresRoot? }`. `getAppModule(appId)` returns the module or null; `getAppEntry(appId)` returns the full entry (used by `createAppContainer` to read flags like `requiresRoot`). Re-exported from `containerApps/index.js`.
+Maps app IDs to `{ label, description, defaultImage, allowCustomImage, module, requiresRoot? }`. `getAppModule(appId)` returns the module or null; `getAppEntry(appId)` returns the full entry or null; `isKnownApp(appId)` — all three match own registry keys only (`Object.hasOwn`), so an id like `constructor` is unknown rather than resolving through the object prototype (used by `createAppContainer` to read flags like `requiresRoot`). Re-exported from `containerApps/index.js`.
 
 **`requiresRoot: true`** is included in the expanded spec as `runAsRoot: true` when containerApps creates the container. Use for apps that need UID 0 inside the container — binding privileged ports, calling `setuid` per session, or writing to root-owned dirs in the image (smbd, OpenWebUI, etc.). Without this flag, the user has to toggle General → runAsRoot manually after create.
 
@@ -76,7 +76,7 @@ Implemented by: **caddy-reverse-proxy** (one link per `hosts[]` entry → `https
 
 ### POST /api/containers — Create
 
-Body gains optional fields: `app` (string, validated against registry) and `appConfig` (object). If `app` is provided without `appConfig`, the module's `getDefaultAppConfig()` is used. The route dispatches to `containerApps.createAppContainer(spec)` which expands the spec (validates appConfig, calls `generateDerivedConfig`, builds spec with `metadata.app`/`metadata.appConfig`/`env`/`mounts`/`devices`/`services`/`runAsRoot`) and then calls `containerManager.createContainer`. Mount file contents from `derived.mountContents` are written via `containerManager.putMountFileTextContent` after create. On any failure after create, the container is rolled back.
+Body gains optional fields: `app` (string, validated against registry) and `appConfig` (object). If `app` is provided without `appConfig`, the module's `getDefaultAppConfig()` is used. The route dispatches to `containerApps.createAppContainer(spec)` which expands the spec (validates appConfig, calls `generateDerivedConfig`, builds spec with `metadata.app`/`metadata.appConfig`/`env`/`mounts`/`devices`/`services`/`runAsRoot`) and then calls `containerManager.createContainer`. Mount file contents from `derived.mountContents` are written via `containerManager.putMountFileTextContent` after create. On any failure after create, the container is rolled back. It resolves with `createContainer`'s `{ name }` — the create job's completion payload.
 
 ### PATCH /api/containers/:name — Update
 

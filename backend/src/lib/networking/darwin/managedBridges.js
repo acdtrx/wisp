@@ -1,7 +1,7 @@
 /**
  * Netplan/VLAN bridge stub (macOS dev).
  */
-import { createAppError } from '../../routeErrors.js';
+import { networkingError } from '../networkingError.js';
 
 const UNAVAILABLE = 'NETWORK_BRIDGE_UNAVAILABLE';
 
@@ -14,9 +14,9 @@ export async function listEligibleParentBridges() {
 }
 
 export async function createManagedNetworkBridge() {
-  throw createAppError(UNAVAILABLE, 'Managed network bridges are only supported on Linux', 'Unsupported platform');
+  throw networkingError(UNAVAILABLE, 'Managed network bridges are only supported on Linux', 'Unsupported platform');
 }
 
 export async function deleteManagedNetworkBridge() {
-  throw createAppError(UNAVAILABLE, 'Managed network bridges are only supported on Linux', 'Unsupported platform');
+  throw networkingError(UNAVAILABLE, 'Managed network bridges are only supported on Linux', 'Unsupported platform');
 }

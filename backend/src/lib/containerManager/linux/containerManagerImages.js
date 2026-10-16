@@ -168,7 +168,13 @@ export async function listContainerImages() {
   });
 }
 
-export async function findContainersUsingImage(normalizedRef) {
+/**
+ * Containers whose image is `imageName` — an image name exactly as containerd
+ * lists it. A container.json image matches when it is that name verbatim (how
+ * create stores it, including local-only names like `myapp:v1`) or normalizes
+ * to it (a hand-written short ref).
+ */
+export async function findContainersUsingImage(imageName) {
   const basePath = getContainersPath();
   let dirs;
   try {
@@ -185,7 +191,7 @@ export async function findContainersUsingImage(normalizedRef) {
       const config = JSON.parse(raw);
       const img = config.image;
       if (!img || typeof img !== 'string') continue;
-      if (normalizeImageRef(img) === normalizedRef) {
+      if (img === imageName || normalizeImageRef(img) === imageName) {
         users.push(name);
       }
     } catch {
@@ -196,15 +202,18 @@ export async function findContainersUsingImage(normalizedRef) {
 }
 
 /**
- * Delete an image from containerd by reference. Blocks if any Wisp container still references it.
+ * Delete an image from containerd by its exact listed name (as
+ * `listContainerImages` returns it) — never normalized, so a local-only name
+ * like `myapp:v1` deletes that image rather than a `docker.io/library/` twin.
+ * Blocks if any Wisp container still references it.
  */
 export async function deleteContainerImage(ref) {
   if (!ref || typeof ref !== 'string' || !ref.trim()) {
     throw containerError('INVALID_CONTAINER_IMAGE_REF', 'Image reference is required');
   }
-  const normalized = normalizeImageRef(ref.trim());
+  const imageName = ref.trim();
 
-  const users = await findContainersUsingImage(normalized);
+  const users = await findContainersUsingImage(imageName);
   if (users.length > 0) {
     const list = users.join(', ');
     throw containerError(
@@ -215,12 +224,12 @@ export async function deleteContainerImage(ref) {
   }
 
   try {
-    await callUnary(getClient('images'), 'delete', { name: normalized, sync: true });
+    await callUnary(getClient('images'), 'delete', { name: imageName, sync: true });
   } catch (err) {
     if (err?.code === 'CONTAINER_NOT_FOUND') {
       throw containerError(
         'CONTAINER_IMAGE_NOT_FOUND',
-        `Image not found: ${normalized}`,
+        `Image not found: ${imageName}`,
         err.raw ?? err.message,
       );
     }

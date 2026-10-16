@@ -24,12 +24,13 @@ import { getTaskState, normalizeTaskStatus, cleanupTask } from './containerManag
 import { noteIntentionalStop } from './containerManagerRestartPolicy.js';
 import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { registerAllContainerServices } from './containerManagerServices.js';
-import { assertBindSourcesReady } from './containerManagerMounts.js';
+import { assertBindSourcesReady, resolveBindSources } from './containerManagerMounts.js';
 import { resolveDeviceSpecs } from './containerDeviceNode.js';
 import { resolveMount } from './containerPaths.js';
 import { normalizeImageRef } from './containerImageRef.js';
 import { getImageDigest } from './containerManagerImages.js';
-import { writeContainerConfig, notifyContainerConfigWrite } from './containerManagerConfigIo.js';
+import { readContainerConfig, writeContainerConfig, notifyContainerConfigWrite } from './containerManagerConfigIo.js';
+import { RESTART_FIELDS } from './containerManagerConfig.js';
 import { validateAndNormalizeMounts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';
 
@@ -337,7 +338,9 @@ export async function createContainer(spec, onStep) {
     throw err;
   }
 
-  onStep?.({ step: 'done', name, imageDigest: resolvedDigest || null });
+  // Not `done`: only the caller's job completion emits the terminal step — a
+  // caller may still have work to do (an app container writes its config files).
+  onStep?.({ step: 'created', name, imageDigest: resolvedDigest || null });
   return { name };
 }
 
@@ -511,9 +514,69 @@ async function defineNewContainer(spec, filesDir, onStep) {
   return resolvedDigest;
 }
 
+/** Restart-relevant fields, compared without the addresses a start itself writes. */
+function restartFieldsSignature(config) {
+  const sig = {};
+  for (const key of RESTART_FIELDS) {
+    if (key === 'network') {
+      const { ip, ip6, ...net } = config.network || {};
+      sig.network = net;
+    } else {
+      sig[key] = config[key] ?? null;
+    }
+  }
+  return JSON.stringify(sig);
+}
+
+/**
+ * Persist what this start owns into the latest container.json: the image
+ * digest the task runs, and `pendingRestart` — cleared, unless a
+ * restart-relevant field was edited after the spec was built (an edit saved
+ * during the network wait found no task, so nothing else marks it). Every
+ * other field comes from the latest file, so such an edit is never reverted.
+ * The lease addresses were already merged the same way. Returns the latest
+ * config as written.
+ */
+async function persistStartOwnedFields(name, specConfig) {
+  const latest = await readContainerConfig(name);
+  const next = { ...latest };
+  if (specConfig.imageDigest) {
+    next.imageDigest = specConfig.imageDigest;
+    next.imagePulledAt = specConfig.imagePulledAt;
+  }
+  if (restartFieldsSignature(latest) !== restartFieldsSignature(specConfig)) {
+    next.pendingRestart = true;
+  } else {
+    delete next.pendingRestart;
+  }
+  await writeContainerConfig(name, next);
+  return next;
+}
+
+/**
+ * Undo a start that failed after network setup: drop the task if one was
+ * created, the netns/CNI attachment, the fresh snapshot, and any SRV/TXT
+ * services still registered under the name — a failed start leaves nothing
+ * published.
+ */
+async function rollbackFailedStart(name, networkConfig) {
+  await cleanupTask(name);
+  try { await teardownNetwork(name, networkConfig); } catch { /* best-effort — the next start re-creates the netns */ }
+  try {
+    await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name });
+  } catch { /* best-effort — the next start removes and re-prepares it */ }
+  try { await deregisterServicesForContainer(name); } catch { /* best-effort — nothing may be registered */ }
+}
+
 /**
  * Start an existing (stopped) container by creating a new task.
  * Called from containerManagerLifecycle when no task exists.
+ *
+ * The task runs the config read here (`config`); container.json writes during
+ * the start merge only start-owned fields into the latest file. Mount sources
+ * are prepared before the network wait and re-resolved immediately before
+ * task create, and the spec binds the resolved paths. SRV/TXT services are
+ * registered only once the task has started.
  */
 export async function startExistingContainer(name) {
   const containerDir = getContainerDir(name);
@@ -529,9 +592,6 @@ export async function startExistingContainer(name) {
   }
 
   config = await ensureContainerNetworkConfig(name, config);
-
-  // Clear pending restart flag — the container is (re)starting now
-  if (config.pendingRestart) delete config.pendingRestart;
 
   // Remove any stale task (STOPPED still exists until Delete; Create would fail
   // with "already exists"). cleanupTask also finalizes the prior log run if
@@ -573,31 +633,16 @@ export async function startExistingContainer(name) {
     config.imagePulledAt = new Date().toISOString();
   }
 
-  // Rebuild OCI spec
-  const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
-  const { deviceSpecs, renderGid } = await resolveDeviceSpecs(config);
-  const ociSpec = buildOCISpec(config, imageConfig, filesDir, {
-    resolvConfPath, resolveMount, deviceSpecs, renderGid,
-  });
-
-  // Update the container spec in containerd
-  await callUnary(getClient('containers'), 'update', {
-    container: {
-      id: name,
-      spec: packAny(OCI_SPEC_TYPE_URL, ociSpec),
-    },
-    updateMask: { paths: ['spec'] },
-  });
+  // Create missing mount artifacts and fail fast on a bad source, before the
+  // network wait. Re-checked (and resolved) again right before task create.
+  await assertBindSourcesReady(name, config, filesDir, resolveMount);
 
   const mounts = await prepareSnapshot(name, imageConfig);
 
-  await assertBindSourcesReady(name, config, filesDir, resolveMount);
-
-  // Set up networking. A failure here used to be logged and swallowed, which
-  // let the task come up with no network — logs would flow but the service
-  // was unreachable, looking to the user like a successful start. Surface the
-  // error so the action fails visibly; tear down partial state so the next
-  // start isn't blocked by a half-attached netns or stale snapshot.
+  // Set up networking. A failure fails the start: a task without its network
+  // would log normally yet be unreachable, looking like a successful start.
+  // Tear down partial state so the next start isn't blocked by a
+  // half-attached netns or stale snapshot.
   let lease;
   try {
     lease = await setupNetwork(name, config.network);
@@ -612,34 +657,58 @@ export async function startExistingContainer(name) {
       err.raw || err.message,
     );
   }
-  if (lease) {
-    config = await mergeNetworkLeaseIntoConfig(name, config, lease);
-    // A-record registration is owned by the reconciler — the upcoming
-    // /tasks/start event triggers a list refresh + network-change event,
-    // and the reconciler picks up running + localDns containers there.
-    // Services (SRV/TXT) are registered here because they're tied to the
-    // container's services array, not the mDNS lifecycle.
-    if (config.localDns) {
-      await registerAllContainerServices(name, config);
-    }
+
+  let runConfig;
+  try {
+    if (lease) await mergeNetworkLeaseIntoConfig(name, config, lease);
+
+    const mountSources = await resolveBindSources(config, filesDir, resolveMount);
+    const resolvConfPath = await resolveContainerResolvConf(config.network?.interface);
+    const { deviceSpecs, renderGid } = await resolveDeviceSpecs(config);
+    const ociSpec = buildOCISpec(config, imageConfig, filesDir, {
+      resolvConfPath, resolveMount, deviceSpecs, renderGid, mountSources,
+    });
+    await callUnary(getClient('containers'), 'update', {
+      container: {
+        id: name,
+        spec: packAny(OCI_SPEC_TYPE_URL, ociSpec),
+      },
+      updateMask: { paths: ['spec'] },
+    });
+
+    // Allocate a fresh log run (per-start file under runs/<runId>.log + sidecar).
+    // The shim opens the path via file:// and appends stdout+stderr. Retention
+    // keeps only the newest N runs, pruned inside createNewRun.
+    const { logPath } = await createNewRun(name, { imageDigest: config.imageDigest || null });
+
+    runConfig = await persistStartOwnedFields(name, config);
+
+    const logUri = taskLogStdioUri(logPath);
+    await callUnary(getClient('tasks'), 'create', {
+      containerId: name,
+      rootfs: mounts,
+      stdout: logUri,
+      stderr: logUri,
+    });
+    await callUnary(getClient('tasks'), 'start', { containerId: name });
+  } catch (err) {
+    await rollbackFailedStart(name, config.network);
+    throw err;
   }
 
-  // Allocate a fresh log run (per-start file under runs/<runId>.log + sidecar).
-  // The shim opens the path via file:// and appends stdout+stderr. Retention
-  // keeps only the newest N runs, pruned inside createNewRun.
-  const { logPath } = await createNewRun(name, { imageDigest: config.imageDigest || null });
-
-  await writeContainerConfig(name, config);
-
-  const logUri = taskLogStdioUri(logPath);
-
-  await callUnary(getClient('tasks'), 'create', {
-    containerId: name,
-    rootfs: mounts,
-    stdout: logUri,
-    stderr: logUri,
-  });
-  await callUnary(getClient('tasks'), 'start', { containerId: name });
+  // A-record registration is owned by the reconciler — the /tasks/start event
+  // triggers a list refresh + network-change event, and the reconciler picks
+  // up running + localDns containers there. SRV/TXT services are tied to the
+  // services array, so they are registered here, against the latest config
+  // (localDns may have been switched off during the start). The task is
+  // already running: a registration failure is logged, not a failed start.
+  if (runConfig.localDns) {
+    try {
+      await registerAllContainerServices(name, runConfig);
+    } catch (err) {
+      containerState.logger?.warn?.({ err: err?.message || err, container: name }, '[containerManager] service registration after start failed');
+    }
+  }
 }
 
 /**
