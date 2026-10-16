@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * Verify every relative import specifier under backend/src resolves to a real
- * file. Run with `npm run check-imports` from the repo root.
+ * Verify every relative import specifier under backend/src — plus the backend's
+ * Node entry scripts (backend/scripts/*.mjs) and state migrations
+ * (backend/migrations/) — resolves to a real file. Run with
+ * `npm run check-imports` from the repo root.
  *
  * Why this exists: the backend is plain Node ESM with no build step and no test
  * suite, so nothing validates import paths ahead of runtime. Static imports at
@@ -35,7 +37,8 @@ import { access, readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
-const ROOT = fileURLToPath(new URL('../backend/src/', import.meta.url));
+const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
+const ROOTS = ['backend/src', 'backend/scripts', 'backend/migrations'].map((dir) => path.join(REPO_ROOT, dir));
 const SPECIFIER = /['"](\.\.?\/[^'"\n]*\.m?js)['"]/g;
 const DIRNAME_DEFINITION = /const __dirname = dirname\(fileURLToPath\(import\.meta\.url\)\)/;
 const DIRNAME_PATH = /\b(?:resolve|join)\(\s*__dirname((?:\s*,\s*'[^'\n]*')+)(\s*,[^)\n]*)?\)/g;
@@ -97,7 +100,7 @@ async function collectSourceFiles(dir) {
   return found;
 }
 
-const files = (await collectSourceFiles(ROOT)).sort();
+const files = (await Promise.all(ROOTS.map(collectSourceFiles))).flat().sort();
 const unresolved = [];
 let specifierCount = 0;
 let dataPathCount = 0;
@@ -122,7 +125,7 @@ for (const file of files) {
 }
 
 for (const miss of unresolved) {
-  console.error(`${path.relative(ROOT, miss.file)}:${miss.line}`);
+  console.error(`${path.relative(REPO_ROOT, miss.file)}:${miss.line}`);
   console.error(`  ${miss.specifier}  ->  ${miss.target}`);
 }
 

@@ -47,3 +47,23 @@ echo ""
 # Privileged wisp-* helpers into /usr/local/bin with their sudoers rules. Also
 # refreshes wisp-updater itself and wisp-updater.service.
 "$SETUP_DIR/install-helpers.sh" "$PROJECT_ROOT" "$DEPLOY_USER"
+echo ""
+
+# State migrations (backend/migrations/, docs/spec/UPDATES.md → State
+# migrations) — last, after the host-level steps they may rely on. As the deploy
+# user: it owns the install tree and has libvirt + containerd access.
+# Needs the tree's backend deps: wisp-updater's install-deps step runs before
+# this script, but install.sh calls it (via setup-server.sh) before its build
+# step, so that path skips here and runs the migrations itself after the build.
+# Never against a running backend: the updater has stopped wisp.service by now;
+# a standalone setup-server.sh run on a live host fails this step instead.
+echo "--- State migrations ---"
+if [[ ! -d "$PROJECT_ROOT/backend/node_modules" ]]; then
+  echo "  Skipped: backend dependencies not installed yet ($PROJECT_ROOT/backend/node_modules missing)."
+elif systemctl is-active --quiet wisp; then
+  echo "  ERROR: wisp.service is running — state migrations need the backend stopped." >&2
+  exit 1
+else
+  sudo -u "$DEPLOY_USER" bash -c "cd '$PROJECT_ROOT/backend' && node scripts/migrate.mjs" \
+    || { echo "  ERROR: state migrations failed (ledger: $PROJECT_ROOT/config/migrations.json)" >&2; exit 1; }
+fi

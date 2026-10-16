@@ -100,35 +100,48 @@ fi
 echo ""
 "$SETUP_DIR/permissions.sh" "$INSTALL_DIR"
 
-# --- System service ---
+# --- State migrations + system service ---
+# setup-server.sh's common-steps.sh skipped the state migrations: the backend
+# deps did not exist before the build above. They run here instead, never
+# against a running backend — a (re)start stops the service, migrates, then
+# starts it. Via sudo -u so a first install already has the libvirt and
+# containerd groups granted by setup-server.sh, without a fresh login.
+run_migrations() {
+  echo ""
+  echo "--- State migrations ---"
+  sudo -u "$(whoami)" bash -c "cd '$INSTALL_DIR/backend' && node scripts/migrate.mjs" || {
+    echo "ERROR: state migrations failed (ledger: $INSTALL_DIR/config/migrations.json)."
+    echo "  wisp.service is left stopped. Fix the cause and re-run install.sh."
+    exit 1
+  }
+}
+
 echo ""
 WISP_UNIT="/etc/systemd/system/wisp.service"
+START_SVC=0
 if [[ "$RESTART_SVC" -eq 1 ]]; then
-  if [[ -f "$WISP_UNIT" ]]; then
-    # Re-template the unit so unit-file changes in the repo propagate on every update.
-    "$WISPCTL" svc install
-    "$WISPCTL" svc restart
-    echo "  Service reinstalled and restarted."
-  else
-    "$WISPCTL" svc install
-    "$WISPCTL" svc start
-    echo "  Service installed and started."
-  fi
+  START_SVC=1
 elif [[ -f "$WISP_UNIT" ]]; then
   read -r -p "Wisp systemd service is already installed. Restart it to apply this update? [Y/n] " ans || true
-  if [[ ! "${ans:-Y}" =~ ^[nN] ]]; then
-    # Re-template the unit so unit-file changes in the repo propagate on every update.
-    "$WISPCTL" svc install
-    "$WISPCTL" svc restart
-    echo "  Service reinstalled and restarted."
-  fi
+  if [[ ! "${ans:-Y}" =~ ^[nN] ]]; then START_SVC=1; fi
 else
   read -r -p "Install and start systemd service? [y/N] " ans || true
-  if [[ "${ans:-n}" =~ ^[yY] ]]; then
-    "$WISPCTL" svc install
-    "$WISPCTL" svc start
-    echo "  Service installed and started."
-  fi
+  if [[ "${ans:-n}" =~ ^[yY] ]]; then START_SVC=1; fi
+fi
+
+if [[ "$START_SVC" -eq 1 ]]; then
+  # Re-template the unit so unit-file changes in the repo propagate on every update.
+  "$WISPCTL" svc install
+  "$WISPCTL" svc stop
+  run_migrations
+  "$WISPCTL" svc start
+  echo "  Service installed and started."
+elif systemctl is-active --quiet wisp; then
+  echo ""
+  echo "--- State migrations ---"
+  echo "  Skipped: wisp.service is still running the previous release. Re-run install.sh and accept the restart to apply them."
+else
+  run_migrations
 fi
 
 # --- Optional: Bridged networking (skip in non-interactive mode) ---
