@@ -65,6 +65,7 @@ export const startImageUpdateChecker = impl.startImageUpdateChecker;
 export const stopImageUpdateChecker = impl.stopImageUpdateChecker;
 
 export const updateContainerConfig = impl.updateContainerConfig;
+export const setContainerPendingRestart = impl.setContainerPendingRestart;
 
 export const addContainerMount = impl.addContainerMount;
 export const updateContainerMount = impl.updateContainerMount;

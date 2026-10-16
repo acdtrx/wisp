@@ -228,6 +228,10 @@ export async function updateContainerConfig() {
   throw noContainerd();
 }
 
+export async function setContainerPendingRestart() {
+  throw noContainerd();
+}
+
 export async function addContainerMount() {
   throw noContainerd();
 }

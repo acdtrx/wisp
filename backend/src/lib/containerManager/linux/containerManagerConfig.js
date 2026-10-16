@@ -362,3 +362,20 @@ export async function updateContainerConfig(name, changes) {
   }
   return { requiresRestart, removedMounts };
 }
+
+/**
+ * Set or clear a container's restart-required flag (`pendingRestart` in
+ * container.json). For callers that change a container's state outside
+ * updateContainerConfig (migrations) and know whether the running task needs
+ * a restart to pick it up. Writes only when the value changes. Returns
+ * `{ changed }`.
+ */
+export async function setContainerPendingRestart(name, value) {
+  const config = await readContainerConfig(name);
+  const next = value === true;
+  if ((config.pendingRestart === true) === next) return { changed: false };
+  if (next) config.pendingRestart = true;
+  else delete config.pendingRestart;
+  await writeContainerConfig(name, config);
+  return { changed: true };
+}
