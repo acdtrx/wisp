@@ -33,6 +33,7 @@ import {
   revertSnapshot,
   deleteSnapshot,
   createBackup,
+  isOfflineState,
 } from '../lib/vmManager/index.js';
 import {
   createJobStore,
@@ -51,7 +52,7 @@ import { recordBackupAttempt } from '../lib/backupStatus.js';
 import { acquireVmOperationLock, withVmOperationLock } from '../lib/vmOperationLock.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { resolveLibraryPath, assertPathInsideAllowedRoots, getVMBasePath } from '../lib/paths.js';
-import { createAppError, handleRouteError } from '../lib/routeErrors.js';
+import { createAppError, handleRouteError, isExpectedAppError } from '../lib/routeErrors.js';
 import { validateVMName } from '../lib/validation.js';
 
 export default async function vmsRoutes(fastify) {
@@ -251,7 +252,7 @@ export default async function vmsRoutes(fastify) {
           });
           createJobStore.completeJob(jobId, result);
         } catch (err) {
-          request.log.error({ err, jobId }, 'Background create-VM job failed');
+          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background create-VM job failed');
           try {
             createJobStore.failJob(jobId, err);
           } catch (failErr) {
@@ -313,6 +314,14 @@ export default async function vmsRoutes(fastify) {
       try {
         const { name } = request.params;
         const body = request.body || {};
+
+        /* Fail fast in the request (the manager re-checks inside the job). */
+        const vm = (await listVMs()).find((v) => v.name === name);
+        if (!vm) throw createAppError('VM_NOT_FOUND', `VM "${name}" not found`);
+        if (!isOfflineState(vm.stateCode)) {
+          throw createAppError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to create a backup`);
+        }
+
         const settings = await getSettings();
         const rawMounts = await getRawMounts();
         const destinations = await resolveBackupDestinations(settings, rawMounts, body.destinationIds);
@@ -347,7 +356,7 @@ export default async function vmsRoutes(fastify) {
           async (err) => {
             releaseLock();
             backupJobStore.failJob(jobId, err);
-            request.log.error({ err, jobId }, 'Background backup job failed');
+            if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background backup job failed');
             await recordBackupAttempt({
               kind: 'vm', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
             });
@@ -537,7 +546,7 @@ export default async function vmsRoutes(fastify) {
         })().catch((err) => {
           releaseLock();
           cloneJobStore.failJob(jobId, err);
-          request.log.error({ err, jobId }, 'Background clone job failed');
+          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background clone job failed');
         });
         return reply.code(201).send({ jobId, title });
       } catch (err) {

@@ -164,5 +164,5 @@ Library file operations validate filenames: no path separators (`/`, `\`), no `.
 
 - Server errors (status >= 500) are logged with `request.log.error()`
 - Client errors (4xx) are not logged by default
-- Background job failures (create, backup) are logged with `request.log.error()` at the job level
+- Background job failures are logged by the job store at **warn** (`Background job failed` with `code` and message). The job's own failure path adds a `log.error()` with the full error/stack only for unexpected failures — not for known app codes that map to 4xx (`isExpectedAppError` in `lib/routeErrors.js`, e.g. a `VM_MUST_BE_OFFLINE` or `VM_BUSY` that a race let past the route's pre-check)
 - DBus connection errors are logged and trigger automatic reconnection with backoff (see VM-MANAGEMENT.md); stream write errors (disk full, name collision) fail the job — never the process

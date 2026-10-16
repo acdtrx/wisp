@@ -158,6 +158,17 @@ function mappedErrorStatus(code) {
   }
 }
 
+/**
+ * True for a known app error code that answers 4xx — an ordinary state or
+ * input error (VM_MUST_BE_OFFLINE, VM_BUSY…), not a fault. Background-job
+ * failure paths use it to skip their error-level stack log: the job store's
+ * own warn line already records the failure.
+ */
+export function isExpectedAppError(err) {
+  const status = mappedErrorStatus(err?.code);
+  return status !== null && status < 500;
+}
+
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const ABS_PATH_RE = /\/[^\s'"]+/g;
 

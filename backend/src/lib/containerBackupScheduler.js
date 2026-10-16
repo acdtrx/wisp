@@ -36,6 +36,7 @@ import {
 } from './containerManager/index.js';
 import { backupJobStore, BACKGROUND_JOB_KIND, titleForContainerBackup } from './jobs/index.js';
 import { recordBackupAttempt } from './backupStatus.js';
+import { isExpectedAppError } from './routeErrors.js';
 
 const TICK_MS = 60 * 1000;
 
@@ -182,7 +183,7 @@ async function backupAutoBackupContainers(trigger) {
     } catch (err) {
       backupJobStore.failJob(jobId, err);
       failed += 1;
-      log?.error({ err, container: name, jobId }, 'Backup scheduler: container backup failed');
+      if (!isExpectedAppError(err)) log?.error({ err, container: name, jobId }, 'Backup scheduler: container backup failed');
       await recordBackupAttempt({
         kind: 'container',
         name,

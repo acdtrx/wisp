@@ -33,7 +33,7 @@ import { publishContainer, unpublishContainer } from '../lib/containerMdnsReconc
 import { resolveBackupDestinations, backupToEachDestination } from '../lib/backupDestinations.js';
 import { recordBackupAttempt } from '../lib/backupStatus.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
-import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
+import { createAppError, handleRouteError, isExpectedAppError, sendError } from '../lib/routeErrors.js';
 import { validateContainerName } from '../lib/validation.js';
 import {
   isKnownApp,
@@ -496,7 +496,7 @@ export default async function containerRoutes(fastify) {
           });
         })().catch(async (err) => {
           backupJobStore.failJob(jobId, err);
-          request.log.error({ err, jobId }, 'Background container backup failed');
+          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background container backup failed');
           await recordBackupAttempt({
             kind: 'container', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
           });

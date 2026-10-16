@@ -162,7 +162,7 @@ export function createJobStore(formatResult) {
     const errRaw = err && typeof err === 'object' && 'raw' in err ? err.raw : errMessage;
     if (job.log) {
       job.log.warn(
-        { jobId, kind: job.kind, title: job.title, err: errMessage },
+        { jobId, kind: job.kind, title: job.title, code: err?.code, err: errMessage },
         'Background job failed',
       );
     }

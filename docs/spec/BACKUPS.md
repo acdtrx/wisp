@@ -93,16 +93,17 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
 ## Creating a Backup
 
 1. Client sends `POST /api/vms/:name/backup` with `destinationIds` (e.g. `["local"]` or `["local", "<backupMountId>"]`); defaults to `["local"]` when omitted. Only `local` and the single configured `backupMountId` are accepted — any other id returns 422.
-2. Backend resolves paths from `backupLocalPath` and, when requested, the mount referenced by `backupMountId` (with mount check / auto-mount for SMB)
-3. The VM's [operation lock](#per-vm-operation-lock) is taken (**409** `VM_BUSY` if another start / backup / restore / delete / rename / clone of this VM is running) and a background job is created (returns `jobId`)
-4. For each destination path, in order:
+2. Backend refuses a VM that is not stopped with **409** `VM_MUST_BE_OFFLINE` in the request itself — no job is created and no attempt is recorded (vmManager's `createBackup` re-checks inside the job, covering a VM started in between)
+3. Backend resolves paths from `backupLocalPath` and, when requested, the mount referenced by `backupMountId` (with mount check / auto-mount for SMB)
+4. The VM's [operation lock](#per-vm-operation-lock) is taken (**409** `VM_BUSY` if another start / backup / restore / delete / rename / clone of this VM is running) and a background job is created (returns `jobId`)
+5. For each destination path, in order:
    - Create backup directory `<dest>/vms/<vmName>/<timestamp>/` — exclusively: if that directory already exists (a second backup within the same second) the destination fails with `BACKUP_EXISTS` rather than writing into another run's backup
    - Save domain XML
    - Gzip and copy each disk image — a disk on a backing chain is flattened first ([Disks on a backing chain](#disks-on-a-backing-chain))
    - Copy NVRAM file (if present)
    - Copy cloud-init config (if present — absent means the VM has no cloud-init; any other read failure fails the backup). The seed ISO is not copied ([Cloud-init seed ISO](#cloud-init-seed-iso))
    - Write manifest.json — **last**; its presence is what makes the directory a complete backup
-5. Progress is reported via SSE — see [Progress Tracking](#progress-tracking)
+6. Progress is reported via SSE — see [Progress Tracking](#progress-tracking)
 
 **Failure cleanup:** any error while writing a destination's backup (disk full, SMB share dropped, unreadable source) removes the directory that run created and fails the job; destinations already finished stay complete and listed. If even the removal fails (destination gone), the leftover directory has no `manifest.json` and is never listed or restorable.
 

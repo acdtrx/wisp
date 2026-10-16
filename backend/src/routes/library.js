@@ -23,7 +23,7 @@ import {
 import { ensureImageDir, getImagePath } from '../lib/paths.js';
 import { findVMsUsingImage } from '../lib/vmManager/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
-import { sendError } from '../lib/routeErrors.js';
+import { isExpectedAppError, sendError } from '../lib/routeErrors.js';
 
 function validateFilename(name) {
   if (!name || typeof name !== 'string') return false;
@@ -293,7 +293,7 @@ export default async function libraryRoutes(fastify) {
           });
           downloadJobStore.completeJob(jobId, result);
         } catch (err) {
-          request.log.error({ err, jobId }, 'Background download job failed');
+          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background download job failed');
           try {
             downloadJobStore.failJob(jobId, err);
           } catch (failErr) {
@@ -338,7 +338,7 @@ export default async function libraryRoutes(fastify) {
           });
           downloadJobStore.completeJob(jobId, result);
         } catch (err) {
-          request.log.error({ err, jobId }, 'Background download-ubuntu-cloud job failed');
+          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background download-ubuntu-cloud job failed');
           try {
             downloadJobStore.failJob(jobId, err);
           } catch (failErr) {
@@ -383,7 +383,7 @@ export default async function libraryRoutes(fastify) {
           });
           downloadJobStore.completeJob(jobId, result);
         } catch (err) {
-          request.log.error({ err, jobId }, 'Background download-arch-cloud job failed');
+          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background download-arch-cloud job failed');
           try {
             downloadJobStore.failJob(jobId, err);
           } catch (failErr) {
@@ -432,7 +432,7 @@ export default async function libraryRoutes(fastify) {
           });
           downloadJobStore.completeJob(jobId, result);
         } catch (err) {
-          request.log.error({ err, jobId }, 'Background download-haos job failed');
+          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background download-haos job failed');
           try {
             downloadJobStore.failJob(jobId, err);
           } catch (failErr) {

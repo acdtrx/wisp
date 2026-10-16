@@ -31,7 +31,7 @@ import {
   titleForVmRestore,
   titleForContainerRestore,
 } from '../lib/jobs/index.js';
-import { createAppError, handleRouteError } from '../lib/routeErrors.js';
+import { createAppError, handleRouteError, isExpectedAppError } from '../lib/routeErrors.js';
 import { validateVMName, validateContainerName } from '../lib/validation.js';
 import { acquireVmOperationLock } from '../lib/vmOperationLock.js';
 
@@ -124,7 +124,7 @@ function startRestoreInPlaceJob({ jobId, kind, name, dest, safetyBackup, runSafe
     backupJobStore.completeJob(jobId, result);
   })().catch((err) => {
     backupJobStore.failJob(jobId, err);
-    log.error({ err, jobId }, 'Background restore-in-place job failed');
+    if (!isExpectedAppError(err)) log.error({ err, jobId }, 'Background restore-in-place job failed');
   });
 }
 

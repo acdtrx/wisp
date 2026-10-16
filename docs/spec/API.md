@@ -889,7 +889,8 @@ Start a backup job. Returns a job ID; monitor progress via SSE.
 - **Body:** `{ destinationIds?: ["local", "<mountId>"] }` (defaults to `["local"]`)
 - **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted (resolved by the shared `lib/backupDestinations.js` helper). Any other id returns **422**.
 - **201:** `{ jobId: string, title: string }` — `title` is e.g. `Backup <vmName>`
-- **409:** `VM_BUSY` — another start / backup / restore-in-place / delete / rename / clone of this VM is running
+- **404:** `VM_NOT_FOUND`
+- **409:** `VM_MUST_BE_OFFLINE` — the VM is not stopped (checked before the job is created; the manager re-checks inside the job); `VM_BUSY` — another start / backup / restore-in-place / delete / rename / clone of this VM is running
 - **422:** `BACKUP_DEST_UNKNOWN` / `BACKUP_DEST_NONE` — unknown destination id, or nothing resolved
 - **503:** `BACKUP_MOUNT_FAILED` — SMB mount failed
 
