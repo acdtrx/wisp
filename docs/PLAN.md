@@ -365,7 +365,7 @@ All phases must comply with the architectural rules defined in the spec document
 - SMB mount/unmount/check works
 - Settings save and persist across restarts
 - Password change invalidates existing tokens
-- OS update check/upgrade works (when wisp-apt configured)
+- OS update check/upgrade works (when wisp-os-update is installed)
 
 ---
 

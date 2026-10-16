@@ -214,7 +214,7 @@ WantedBy=multi-user.target
 
 `TimeoutStopSec=15` limits how long systemd waits for a clean exit after SIGTERM (default is 90s). If the process does not exit within 15 seconds, systemd sends SIGKILL.
 
-On SIGTERM/SIGINT, Wisp closes all active SSE streams, stops the background OS update checker (**aborting any in-flight `wisp-os-update check` subprocess**, which can otherwise run up to two minutes and block exit), disconnects from the system DBus (libvirt), calls `server.closeAllConnections()` when available, then runs Fastify `close()` with `forceCloseConnections` so WebSockets and other keep-alive connections are torn down. The process should exit well within this window so `wispctl.sh svc stop` does not sit at the full stop timeout.
+On SIGTERM/SIGINT, Wisp closes all active SSE streams, stops the background OS update checker (**aborting any in-flight `wisp-os-update list` subprocess**, which can otherwise run up to two minutes and block exit), disconnects from the system DBus (libvirt), calls `server.closeAllConnections()` when available, then runs Fastify `close()` with `forceCloseConnections` so WebSockets and other keep-alive connections are torn down. The process should exit well within this window so `wispctl.sh svc stop` does not sit at the full stop timeout.
 
 If `svc stop` still hangs, confirm the installed unit includes `TimeoutStopSec=15` (`systemctl show -p TimeoutStopUSec wisp`); older installs without it use systemd’s default (often 90s), which feels like a "minute-plus" stop.
 
@@ -308,7 +308,7 @@ On the server: unzip, then `./scripts/install.sh` (runs `setup-server.sh` with s
 When you add a new **`backend/scripts/wisp-*`** script that the app runs via **`sudo -n`**:
 
 1. **Register it** in **`scripts/linux/setup/install-helpers.sh`** (one `helper.sh` invocation; add apt packages as extra args if needed).
-2. **Backend** — Prefer **`/usr/local/bin/<name>`** first, then bundled `backend/scripts/`, with an optional env override (match `host/linux/osUpdates.js` / `host/linux/hostPower.js` / `host/linux/hostHardware.js` patterns).
+2. **Backend** — Prefer **`/usr/local/bin/<name>`** first, then bundled `backend/scripts/`, with an optional env override (match `host/linux/osUpdates.js` / `host/linux/hostPower.js` / `host/linux/hostHardware.js` patterns). A bundled fallback is exec'd directly (as root; `sudo -n` only matches the installed path), so commit the script executable (`git update-index --chmod=+x`), and resolve the path from the module's own location to `backend/scripts/` — `npm run check-imports` flags a `resolve(__dirname, …)` target that doesn't exist.
 3. **Docs** — `docs/spec/DEPLOYMENT.md` (this section), `docs/spec/API.md` / `CONFIGURATION.md` / `docs/ARCHITECTURE.md` as appropriate; the **shell-exec allowlist in the root `CLAUDE.md`**.
 4. **Install / upgrade** — Covered automatically if step 1 is done (`setup-server.sh`, **`wispctl.sh helpers`**, **`push.sh`** all invoke `install-helpers.sh`).
 

@@ -4,7 +4,6 @@
  */
 import { execFile as execFileCb } from 'node:child_process';
 import { access, readdir, readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import { isVlanLikeBridgeName } from '../bridgeNaming.js';
@@ -18,7 +17,6 @@ const FILE_PREFIX = '91-wisp-vlan__';
 const FILE_SUFFIX = '.yaml';
 const HELPER_NAME = 'wisp-bridge';
 const HELPER_INSTALLED_PATH = `/usr/local/bin/${HELPER_NAME}`;
-const HELPER_FALLBACK_PATH = fileURLToPath(new URL('../../scripts/wisp-bridge', import.meta.url));
 const LINUX_IFACE_MAX = 15;
 
 function isLinux() {
@@ -109,13 +107,8 @@ async function getHelperPath() {
   try {
     await access(HELPER_INSTALLED_PATH);
     return HELPER_INSTALLED_PATH;
-  } catch {
-    try {
-      await access(HELPER_FALLBACK_PATH);
-      return HELPER_FALLBACK_PATH;
-    } catch (err) {
-      throw networkingError('NETWORK_BRIDGE_UNAVAILABLE', 'wisp-bridge helper not found', err.message);
-    }
+  } catch (err) {
+    throw networkingError('NETWORK_BRIDGE_UNAVAILABLE', 'wisp-bridge helper not found', err.message);
   }
 }
 

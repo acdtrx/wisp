@@ -213,7 +213,7 @@ async function readDiskSmartRaw(deviceName) {
 
   const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
   const args = isRoot
-    ? ['bash', [scriptPath, deviceName]]
+    ? [scriptPath, [deviceName]]
     : ['sudo', ['-n', scriptPath, deviceName]];
   const { stdout } = await execFileAsync(args[0], args[1], { timeout: 10000 });
   if (!stdout || !stdout.trim()) throw createAppError('SMART_EMPTY_OUTPUT', 'empty-smartctl-output');

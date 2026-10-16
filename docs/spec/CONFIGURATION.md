@@ -18,8 +18,8 @@ If this file exists, the backend parses `KEY=value` lines (comments and blank li
 | `WISP_POWER_SCRIPT` | (unset) | Path to `wisp-power` helper. If unset, backend uses first existing path: `/usr/local/bin/wisp-power` (after `setup-server.sh`), then bundled `<install>/backend/scripts/wisp-power`. |
 | `WISP_DMIDECODE_SCRIPT` | (unset) | Path to RAM info helper. If unset, backend uses first existing path: `/usr/local/bin/wisp-dmidecode` (after `setup-server.sh`), then bundled `<install>/backend/scripts/wisp-dmidecode`. |
 | `WISP_SMARTCTL_SCRIPT` | (unset) | Path to `wisp-smartctl` helper for disk SMART. If unset: `/usr/local/bin/wisp-smartctl`, then bundled `backend/scripts/wisp-smartctl`. Same sudoers pattern as `wisp-dmidecode`. |
-| `WISP_NETNS_SCRIPT` | (unset) | Path to `wisp-netns` helper (`add`/`delete` + `ip netns`). If unset: `/usr/local/bin/wisp-netns`, then bundled `backend/scripts/wisp-netns`. Deploy user needs `sudo -n` via install-helpers. |
-| `WISP_CNI_SCRIPT` | (unset) | Path to `wisp-cni` helper (runs a CNI plugin with config file). If unset: `/usr/local/bin/wisp-cni`, then bundled `backend/scripts/wisp-cni`. Same sudoers pattern as `wisp-netns`. |
+| `WISP_NETNS_SCRIPT` | (unset) | Path to `wisp-netns` helper (`add`/`delete` + `ip netns`). If unset: `/usr/local/bin/wisp-netns` (installed by install-helpers, which also grants the deploy user `sudo -n`); with no helper, netns add/delete fall back to plain `ip netns` (works only when the backend runs as root). |
+| `WISP_CNI_SCRIPT` | (unset) | Path to `wisp-cni` helper (runs a CNI plugin with config file). If unset: `/usr/local/bin/wisp-cni`; with no helper the plugin under `/opt/cni/bin` is executed directly. Same sudoers pattern as `wisp-netns`. |
 | `WISP_CONFIG_PATH` | (unset) | Override path for `wisp-config.json`; default `<project>/config/wisp-config.json`. |
 | `NODE_ENV` | (unset) | `development` enables CORS for `localhost:5173`. |
 

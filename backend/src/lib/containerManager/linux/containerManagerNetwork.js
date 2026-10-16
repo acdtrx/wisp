@@ -15,8 +15,7 @@ import {
   access, mkdtemp, readFile, rm, writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import { containerError, containerState } from './containerManagerConnection.js';
 import { CONTAINER_NETNS_DIR, getContainerDir, getContainerNetnsPath } from './containerPaths.js';
@@ -43,48 +42,30 @@ export function normalizeContainerMac(input) {
   return s;
 }
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
 const CNI_BIN_DIR = process.env.WISP_CNI_BIN_DIR || '/opt/cni/bin';
 const CNI_CONF_DIR = process.env.WISP_CNI_CONF_DIR || '/etc/cni/net.d';
 const CNI_CONF_NAME = '10-wisp-bridge.conflist';
 const NETNS_INSTALLED = '/usr/local/bin/wisp-netns';
 const CNI_INSTALLED = '/usr/local/bin/wisp-cni';
 
-function bundledScript(name) {
-  return join(__dirname, '../../scripts', name);
-}
-
-async function resolveNetnsScript() {
-  const override = process.env.WISP_NETNS_SCRIPT;
+/** The installed helper, an explicit override, or null (no helper → unprivileged fallbacks). */
+async function resolveHelper(overrideEnv, installedPath) {
+  const override = process.env[overrideEnv];
   if (override) return override;
   try {
-    await access(NETNS_INSTALLED);
-    return NETNS_INSTALLED;
+    await access(installedPath);
+    return installedPath;
   } catch {
-    try {
-      await access(bundledScript('wisp-netns'));
-      return bundledScript('wisp-netns');
-    } catch {
-      return null;
-    }
+    return null; // not installed: callers take their no-helper path
   }
 }
 
-async function resolveCniScript() {
-  const override = process.env.WISP_CNI_SCRIPT;
-  if (override) return override;
-  try {
-    await access(CNI_INSTALLED);
-    return CNI_INSTALLED;
-  } catch {
-    try {
-      await access(bundledScript('wisp-cni'));
-      return bundledScript('wisp-cni');
-    } catch {
-      return null;
-    }
-  }
+function resolveNetnsScript() {
+  return resolveHelper('WISP_NETNS_SCRIPT', NETNS_INSTALLED);
+}
+
+function resolveCniScript() {
+  return resolveHelper('WISP_CNI_SCRIPT', CNI_INSTALLED);
 }
 
 function isRoot() {

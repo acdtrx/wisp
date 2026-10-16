@@ -89,7 +89,7 @@ not write the implementation itself.
 Wisp has no automated test suite — verification is running the real thing:
 
 - The frontend build must pass.
-- `npm run check-imports` must pass after any backend file move or rename. The backend has no build step, so nothing else validates import paths — and a *dynamic* import only resolves when its code path runs, so a stale one boots fine and 500s a single route later.
+- `npm run check-imports` must pass after any backend file move or rename. The backend has no build step, so nothing else validates import paths — and a *dynamic* import only resolves when its code path runs, so a stale one boots fine and 500s a single route later. It also checks module-relative paths (`resolve(__dirname, '…')`, `new URL('…', import.meta.url)`) land in a directory that exists.
 - Drive the change in the local dev stack where the platform supports it; the Mac dev environment runs stubs (no libvirt/containerd), so host-level pages verify locally while manager paths verify on the Linux server. Component-level UI can be driven through a temporary Vite harness with canned fetch/SSE responses.
 - A change is **done** only after something was actually run and observed — never claim success without running something, and say plainly what could not be verified in the current environment.
 
@@ -147,7 +147,10 @@ No automatic upgrade paths, no dual-read of deprecated keys or shapes, no legacy
 
 Prefer DBus/gRPC APIs over shelling out. Exec is permitted only for: `qemu-img`,
 `cp --reflink=auto` (with `copyFile` fallback), `cloud-localds`/`genisoimage`,
-`openssl passwd`, `xz`, `tar`, the privileged helpers `wisp-os-update`,
+`openssl passwd`, `xz`, `tar`, `unzip` (`-Z1` listing + extract for container
+mount zip uploads), `mkfifo` (container exec stdio FIFOs), `ip netns add|delete`
+(container netns fallback only when the `wisp-netns` helper is absent — works
+only with the backend as root), the privileged helpers `wisp-os-update`,
 `wisp-mount`, `wisp-power`, `wisp-dmidecode`, `wisp-smartctl`, `wisp-nvram`,
 `wisp-netns`, `wisp-cni`, `wisp-bridge`, `systemctl start wisp-updater.service`
 (via `sudo -n`), and CNI plugins under `/opt/cni/bin/`. Build-time only: `git`
