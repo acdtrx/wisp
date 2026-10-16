@@ -438,8 +438,9 @@ export default async function vmsRoutes(fastify) {
   });
 
   // Lifecycle actions — all POST /vms/:name/<action>
-  // Only start takes the per-VM operation lock: backup requires a stopped VM,
-  // and the other actions apply to a running one.
+  // Only start takes the per-VM operation lock: the other actions apply to a
+  // running VM and change no definition or disk file, while every locked
+  // operation that holds the lock for long (backup) requires a stopped one.
   const lifecycleActions = [
     { path: 'start', fn: (name) => withVmOperationLock(name, 'start', () => startVM(name)) },
     { path: 'stop', fn: stopVM },
@@ -522,12 +523,15 @@ export default async function vmsRoutes(fastify) {
     handler: async (request, reply) => {
       try {
         if (request.body.name !== undefined) validateVMName(request.body.name);
-        // A rename moves the VM directory and rewrites its paths, so it must
-        // not run under a backup reading that directory.
+        // Every edit redefines the domain (a rename also moves the VM
+        // directory), so none may run under a backup reading the definition
+        // and disks. Rename reserves the target name inside the manager.
         const renaming = request.body.name !== undefined && request.body.name !== request.params.name;
-        const result = renaming
-          ? await withVmOperationLock(request.params.name, 'rename', () => updateVMConfig(request.params.name, request.body))
-          : await updateVMConfig(request.params.name, request.body);
+        const result = await withVmOperationLock(
+          request.params.name,
+          renaming ? 'rename' : 'config edit',
+          () => updateVMConfig(request.params.name, request.body),
+        );
         // mDNS toggle/rename: vmManager doesn't fire DomainEvent for metadata-only
         // changes, so the publisher won't reconcile on its own. Nudge it here.
         if (request.body.localDns === false) {
@@ -594,12 +598,13 @@ export default async function vmsRoutes(fastify) {
         if (!hasPath && !hasSize) {
           return reply.code(422).send({ error: 'Invalid request', detail: 'Provide path (attach existing) or sizeGB (create new)' });
         }
+        const { name } = request.params;
         if (hasPath) {
           const absPath = resolveLibraryPath(path);
-          assertPathInsideAllowedRoots(absPath, request.params.name);
-          await attachDisk(request.params.name, slot, absPath, bus);
+          assertPathInsideAllowedRoots(absPath, name);
+          await withVmOperationLock(name, 'disk change', () => attachDisk(name, slot, absPath, bus));
         } else {
-          await createAndAttachDisk(request.params.name, slot, sizeGB, bus);
+          await withVmOperationLock(name, 'disk change', () => createAndAttachDisk(name, slot, sizeGB, bus));
         }
         return { ok: true };
       } catch (err) {
@@ -623,7 +628,8 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        await detachDisk(request.params.name, request.params.slot);
+        const { name, slot } = request.params;
+        await withVmOperationLock(name, 'disk change', () => detachDisk(name, slot));
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);
@@ -654,7 +660,8 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        await resizeDiskBySlot(request.params.name, request.params.slot, request.body.sizeGB);
+        const { name, slot } = request.params;
+        await withVmOperationLock(name, 'disk change', () => resizeDiskBySlot(name, slot, request.body.sizeGB));
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);
@@ -685,7 +692,8 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        await updateDiskBus(request.params.name, request.params.slot, request.body.bus);
+        const { name, slot } = request.params;
+        await withVmOperationLock(name, 'disk change', () => updateDiskBus(name, slot, request.body.bus));
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);
@@ -694,6 +702,9 @@ export default async function vmsRoutes(fastify) {
   });
 
   // POST /vms/:name/cdrom/:slot — attach ISO
+  // CD-ROM and USB changes take the lock in every VM state: a hot-plug on a
+  // running VM writes the persistent definition too (LIVE + CONFIG), and the
+  // one long holder (backup) needs a stopped VM, so a running VM never waits.
   fastify.post('/vms/:name/cdrom/:slot', {
     config: { auth: 'admin' },
     schema: {
@@ -716,9 +727,10 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
+        const { name, slot } = request.params;
         const absPath = resolveLibraryPath(request.body.path);
-        assertPathInsideAllowedRoots(absPath, request.params.name);
-        await attachISO(request.params.name, request.params.slot, absPath);
+        assertPathInsideAllowedRoots(absPath, name);
+        await withVmOperationLock(name, 'CD-ROM change', () => attachISO(name, slot, absPath));
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);
@@ -741,7 +753,8 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        await ejectISO(request.params.name, request.params.slot);
+        const { name, slot } = request.params;
+        await withVmOperationLock(name, 'CD-ROM change', () => ejectISO(name, slot));
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);
@@ -801,7 +814,9 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        await attachUSBDevice(request.params.name, request.body.vendorId, request.body.productId);
+        const { name } = request.params;
+        const { vendorId, productId } = request.body;
+        await withVmOperationLock(name, 'USB change', () => attachUSBDevice(name, vendorId, productId));
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);
@@ -831,7 +846,8 @@ export default async function vmsRoutes(fastify) {
         if (!/^[0-9a-fA-F]{4}$/.test(vendorId) || !/^[0-9a-fA-F]{4}$/.test(productId)) {
           throw createAppError('INVALID_USB_ID', 'Invalid USB device ID format');
         }
-        await detachUSBDevice(request.params.name, vendorId, productId);
+        const { name } = request.params;
+        await withVmOperationLock(name, 'USB change', () => detachUSBDevice(name, vendorId, productId));
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);

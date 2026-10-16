@@ -106,7 +106,7 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
 1. Client sends `POST /api/vms/:name/backup` with `destinationIds` (e.g. `["local"]` or `["local", "<backupMountId>"]`); defaults to `["local"]` when omitted. Only `local` and the single configured `backupMountId` are accepted — any other id returns 422.
 2. Backend refuses a VM that is not stopped with **409** `VM_MUST_BE_OFFLINE` in the request itself — no job is created and no attempt is recorded (vmManager's `createBackup` re-checks inside the job, covering a VM started in between)
 3. Backend resolves paths from `backupLocalPath` and, when requested, the mount referenced by `backupMountId` (with mount check / auto-mount for SMB)
-4. The VM's [operation lock](#per-vm-operation-lock) is taken (**409** `VM_BUSY` if another start / backup / delete / rename of this VM is running) and a background job is created (returns `jobId`)
+4. The VM's [operation lock](#per-vm-operation-lock) is taken (**409** `VM_BUSY` if another locked operation on this VM — start, backup, delete, an edit — is running) and a background job is created (returns `jobId`)
 5. For each destination path, in order:
    - Create backup directory `<dest>/vms/<vmName>/<timestamp>/` — exclusively: if that directory already exists (a second backup within the same second) the destination fails with `BACKUP_EXISTS` rather than writing into another run's backup
    - Save domain XML
@@ -207,7 +207,25 @@ Backup creation and container restore-in-place run as background jobs with SSE-b
 
 ## Per-VM operation lock
 
-*(settled 2026-10-16)* Start, backup, delete and rename of a VM are mutually exclusive: each takes an in-memory per-VM lock (`lib/vmOperationLock.js`, Wisp glue — vmManager stays policy-free) and a second one is refused with **409** `VM_BUSY` instead of queueing. Backup holds it for the whole background job; start, delete and rename (`PATCH /api/vms/:name` with a different `name` — other edits don't lock) for the duration of the call. This closes e.g. a Start landing while a backup reads the disks, two backups of one VM interleaving, a delete under a running backup, or a rename moving the VM directory out from under a backup reading it. The other lifecycle actions (stop, reboot, …) don't take it — they apply to a running VM, and the locked operations require a stopped one. The frontend mirrors it from the background-jobs list: while a `backup` job for the VM runs, Start and Delete are disabled; a rename attempted then surfaces the 409 as the save error. Rejected: deriving busy state from the job store's titles — start and delete are not jobs, so they would have nothing to hold. Containers have the same lock with a wider set of operations ([CONTAINERS.md → Per-container operation lock](CONTAINERS.md#per-container-operation-lock)).
+*(settled 2026-10-16)* Every operation that reads, writes, moves or replaces a VM's definition or disk files is mutually exclusive with every other one on the same VM: each takes an in-memory per-VM lock (`lib/vmOperationLock.js`, Wisp glue — vmManager stays policy-free) and a second one is refused with **409** `VM_BUSY` instead of queueing. The guarded operations:
+
+| Operation | Route | Held for |
+|---|---|---|
+| Backup | `POST /api/vms/:name/backup` | the whole background job |
+| Start | `POST /api/vms/:name/start` | the call |
+| Delete | `DELETE /api/vms/:name` | the call |
+| Any config edit, rename included | `PATCH /api/vms/:name` | the call |
+| Disk attach (new or existing image) | `POST /api/vms/:name/disks` | the call |
+| Disk detach | `DELETE /api/vms/:name/disks/:slot` | the call |
+| Disk resize | `POST /api/vms/:name/disks/:slot/resize` | the call |
+| Disk bus change | `POST /api/vms/:name/disks/:slot/bus` | the call |
+| CD-ROM attach / eject | `POST` / `DELETE /api/vms/:name/cdrom/:slot` | the call |
+| USB attach / detach | `POST /api/vms/:name/usb`, `DELETE /api/vms/:name/usb/:id` | the call |
+| Cloud-init save / remove | `PUT` / `DELETE /api/vms/:name/cloudinit` | the call |
+
+This closes e.g. a Start landing while a backup reads the disks, two backups of one VM interleaving, a delete under a running backup, a rename moving the VM directory out from under a backup reading it, or a disk / NIC / cloud-init edit changing the definition or files a backup is copying. **Every PATCH locks**, not only a rename: each one redefines the domain from its XML, and a field-by-field split (icon and Local DNS are metadata-only) would be one more rule to keep right for no gain — the lock is uncontended outside a backup. **CD-ROM and USB changes lock in every VM state**: on a running VM they hot-plug, but with `LIVE + CONFIG` so the persistent definition changes too; and the only long holder, backup, needs a stopped VM, so a running VM never actually waits on it. The other lifecycle actions (stop, force-stop, reboot, suspend, resume) don't take it — they apply to a running VM and change no definition or disk file. Create and restore-as-new take no lock (there is no VM by that name yet); the name is reserved by their exclusive directory creation, and a rename reserves its target the same way ([VM-MANAGEMENT.md → Renaming](VM-MANAGEMENT.md#renaming)). Not covered: the migration runner (`backend/scripts/migrate.mjs`) — a separate process that runs while the backend is stopped during an update.
+
+The frontend mirrors it from the background-jobs list: while a `backup` job for the VM runs, Start, Delete and every editor on the VM page that would hit a guarded route are disabled ([UI.md → VM Overview Panel](UI.md#vm-overview-panel)); a 409 that still gets through (another tab, the API) surfaces as that action's error. Rejected: deriving busy state from the job store's titles — start, delete and the edits are not jobs, so they would have nothing to hold.
 
 ## Container Backups
 

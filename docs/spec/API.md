@@ -641,7 +641,7 @@ Update VM configuration.
 
 - **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `machineType`, `firmware`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `localDns`, `autostart`. Schema is **`additionalProperties: false`**; with Fastify's default Ajv `removeAdditional: true`, unknown keys are silently stripped before reaching `updateVMConfig`.
 - **200:** `{ ok: true, requiresRestart: boolean, name }` — `requiresRestart` is `true` when the VM is running and the patch changed its domain definition (anything but icon, local DNS and autostart); the VM's `pendingRestart` flag is then set too
-- **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running; `VM_BUSY` when renaming while a backup of this VM (or another locked operation) is running — a rename (`name` differing from `:name`) takes the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock), other edits don't
+- **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running; `VM_EXISTS` / `VM_DIR_EXISTS` when the new name belongs to another VM or `<vmsPath>/<name>/` already exists (the rename reserves that directory first, so a concurrent rename or create to the same name gets this, see [VM-MANAGEMENT.md → Renaming](VM-MANAGEMENT.md#renaming)); `VM_BUSY` while another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock) — every PATCH takes it, rename or not
 - **422:** `{ error, detail }` — `INVALID_VM_NAME` on rename to an invalid name; VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
 
 `localDns` is supported in PATCH and controls VM mDNS registration behavior.
@@ -652,7 +652,7 @@ Delete a VM.
 
 - **Query:** `?deleteDisks=true|false` — whether to also delete disk images and VM directory
 - **200:** `{ ok: true }`
-- **409:** `VM_BUSY` — a backup of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
+- **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 
 ### GET /api/vms/:name/xml · `read`
 
@@ -663,7 +663,7 @@ Raw libvirt domain XML (for debugging/inspection).
 ### POST /api/vms/:name/start · `admin`
 
 - **200:** `{ ok: true }`
-- **409:** `VM_ALREADY_RUNNING`; `VM_BUSY` — a backup of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
+- **409:** `VM_ALREADY_RUNNING`; `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 
 ### POST /api/vms/:name/stop · `admin`
 
@@ -731,7 +731,7 @@ Attach an existing disk image or create and attach a new empty disk. VM must be 
 - **Body (attach existing):** `{ slot: "sda" | "sdb", path: string, bus?: "virtio" | "scsi" | "sata" | "ide" }`
 - **Body (create new):** `{ slot: "sda" | "sdb", sizeGB: number, bus?: "virtio" | "scsi" | "sata" | "ide" }` — creates a new qcow2 in the VM directory under the lowest `disk<N>.qcow2` name not already present (never overwrites an existing file) and attaches it. Provide either `path` or `sizeGB`, not both.
 - **200:** `{ ok: true }`
-- **409:** `VM_MUST_BE_OFFLINE` (VM not stopped), `DISK_SLOT_IN_USE` (slot already holds a device — detach it first)
+- **409:** `VM_MUST_BE_OFFLINE` (VM not stopped), `DISK_SLOT_IN_USE` (slot already holds a device — detach it first), `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 - **422:** Both or neither of `path` and `sizeGB` provided; `INVALID_REQUEST` for a slot other than `sda`/`sdb`; `PATH_NOT_ALLOWED` for a `path` outside the allowed roots; `DISK_FORMAT_UNSUPPORTED` for an image that is not a `.qcow2` / `.raw` / `.img` qcow2-or-raw file; `DISK_IMAGE_UNSAFE` for an image with a backing file or external data file ([VM-MANAGEMENT.md § Untrusted images](VM-MANAGEMENT.md#untrusted-images))
 
 ### DELETE /api/vms/:name/disks/:slot · `admin`
@@ -739,6 +739,7 @@ Attach an existing disk image or create and attach a new empty disk. VM must be 
 Detach a disk from a VM slot.
 
 - **200:** `{ ok: true }`
+- **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 
 ### POST /api/vms/:name/disks/:slot/resize · `admin`
 
@@ -746,6 +747,7 @@ Resize a disk.
 
 - **Body:** `{ sizeGB: number }`
 - **200:** `{ ok: true }`
+- **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 - **422:** `RESIZE_INVALID` (not larger than the current size), `DISK_IMAGE_UNSAFE` (the disk has a backing file), `DISK_FORMAT_UNSUPPORTED` (its `<driver type>` is not qcow2/raw)
 
 ### POST /api/vms/:name/disks/:slot/bus · `admin`
@@ -754,6 +756,7 @@ Change the disk controller (bus) for a block disk slot. VM must be stopped.
 
 - **Body:** `{ bus: "virtio" | "scsi" | "sata" | "ide" }`
 - **200:** `{ ok: true }`
+- **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 - **422:** Invalid `bus` or slot (e.g. not a block disk)
 
 ---
@@ -767,12 +770,14 @@ Attach an ISO to a CDROM slot. Supports hot-plug (live + config).
 - **Params:** slot is `sdc` or `sdd`
 - **Body:** `{ path: string }`
 - **200:** `{ ok: true }`
+- **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock) (taken in every VM state, hot-plug included)
 
 ### DELETE /api/vms/:name/cdrom/:slot · `admin`
 
 Eject an ISO from a CDROM slot. Supports hot-unplug.
 
 - **200:** `{ ok: true }`
+- **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 
 ---
 
@@ -790,12 +795,14 @@ Attach a USB device to the VM. Hot-plug when running, persistent config when sto
 
 - **Body:** `{ vendorId: string (4 hex chars), productId: string (4 hex chars) }`
 - **200:** `{ ok: true }`
+- **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock) (taken in every VM state, hot-plug included)
 
 ### DELETE /api/vms/:name/usb/:id · `admin`
 
 Detach a USB device. `id` format: `vendorId:productId` (e.g. `046d:c077`). Both must be 4 hex digits.
 
 - **200:** `{ ok: true }`
+- **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 - **422:** `{ error, detail }` — invalid USB ID format or device not found
 
 ---
@@ -833,12 +840,14 @@ Update cloud-init settings.
 ```
 
 - **200:** `{ ok: true }`
+- **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 
 ### DELETE /api/vms/:name/cloudinit · `admin`
 
 Remove cloud-init completely: detach `sde`, delete `cloud-init.iso` and `cloud-init.json`.
 
 - **200:** `{ ok: true }`
+- **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 
 ### GET /api/github/keys/:username · `admin`
 
@@ -861,7 +870,7 @@ Start a backup job. Returns a job ID; monitor progress via SSE.
 - **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted (resolved by the shared `lib/backupDestinations.js` helper). Any other id returns **422**.
 - **201:** `{ jobId: string, title: string }` — `title` is e.g. `Backup <vmName>`
 - **404:** `VM_NOT_FOUND`
-- **409:** `VM_MUST_BE_OFFLINE` — the VM is not stopped (checked before the job is created; the manager re-checks inside the job); `VM_BUSY` — another start / backup / delete / rename of this VM is running
+- **409:** `VM_MUST_BE_OFFLINE` — the VM is not stopped (checked before the job is created; the manager re-checks inside the job); `VM_BUSY` — another operation on this VM (start, backup, delete, an edit) is running
 - **422:** `BACKUP_DEST_UNKNOWN` / `BACKUP_DEST_NONE` — unknown destination id, or nothing resolved
 - **503:** `BACKUP_MOUNT_FAILED` — SMB mount failed
 

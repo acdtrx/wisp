@@ -5,6 +5,7 @@ import {
 } from '../lib/cloudInit.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
 import { validateVMName } from '../lib/validation.js';
+import { withVmOperationLock } from '../lib/vmOperationLock.js';
 
 export default async function cloudInitRoutes(fastify) {
   fastify.addHook('preHandler', async (request, reply) => {
@@ -69,7 +70,11 @@ export default async function cloudInitRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        await updateCloudInit(request.params.name, request.body, request.log);
+        // Rewrites cloud-init.json + the seed ISO in the VM directory and
+        // redefines the sde slot — the per-VM operation lock keeps it out of
+        // a running backup.
+        const { name } = request.params;
+        await withVmOperationLock(name, 'cloud-init change', () => updateCloudInit(name, request.body, request.log));
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);
@@ -89,7 +94,8 @@ export default async function cloudInitRoutes(fastify) {
     },
     handler: async (request, reply) => {
       try {
-        await detachCloudInitDisk(request.params.name);
+        const { name } = request.params;
+        await withVmOperationLock(name, 'cloud-init change', () => detachCloudInitDisk(name));
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);
