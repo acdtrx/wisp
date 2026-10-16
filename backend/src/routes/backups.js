@@ -10,6 +10,7 @@ import {
   createBackup,
   listVMs,
   isOfflineState,
+  assertNoSnapshots,
 } from '../lib/vmManager/index.js';
 import { rebuildCloudInitISO } from '../lib/cloudInit.js';
 import {
@@ -267,6 +268,8 @@ export default async function backupsRoutes(fastify) {
         if (!isOfflineState(vm.stateCode)) {
           throw createAppError('VM_MUST_BE_OFFLINE', `VM "${vmName}" must be stopped to restore in place`);
         }
+        // VM_HAS_SNAPSHOTS before the lock, the safety backup or the job.
+        await assertNoSnapshots(vmName);
 
         const title = titleForVmRestore(vmName);
         // Held for the whole job (safety backup included): no start, backup or

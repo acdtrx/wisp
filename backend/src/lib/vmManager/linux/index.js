@@ -89,6 +89,7 @@ export {
   listBackups,
   restoreBackup,
   restoreBackupInPlace,
+  assertNoSnapshots,
   deleteBackup,
   resolveVmBackupDir,
 } from './vmManagerBackup.js';

@@ -37,6 +37,7 @@ function mappedErrorStatus(code) {
     case 'BACKUP_IN_PROGRESS':
     case 'BACKUP_EXISTS':
     case 'VM_BUSY':
+    case 'VM_HAS_SNAPSHOTS':
       return 409;
     case 'PARSE_ERROR':
     case 'CLONE_FAILED':

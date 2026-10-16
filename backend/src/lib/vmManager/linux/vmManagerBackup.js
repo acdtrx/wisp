@@ -21,6 +21,7 @@ import { getVMBasePath } from './vmManagerPaths.js';
 import { isOfflineState } from './libvirtConstants.js';
 import { copyNvram } from './vmManagerNvram.js';
 import { assertVMNameAvailable, createOwnVMDir, removeOwnVMDir } from './vmManagerCreate.js';
+import { listSnapshots } from './vmManagerSnapshots.js';
 import { getBackingChain, copyAndConvert } from '../../storage/index.js';
 
 const execFile = promisify(execFileCb);
@@ -814,10 +815,27 @@ async function restorePayloadAndDefine(backupPath, newVmName, newBase, { xml, ma
 }
 
 /**
+ * Restore-in-place precondition: the VM has no snapshots. Exported so the
+ * route can refuse in the request, before a safety backup or job starts.
+ */
+export async function assertNoSnapshots(name) {
+  const snapshots = await listSnapshots(name);
+  if (snapshots.length > 0) {
+    throw vmError(
+      'VM_HAS_SNAPSHOTS',
+      `VM "${name}" has ${snapshots.length} snapshot${snapshots.length === 1 ? '' : 's'} — delete ${snapshots.length === 1 ? 'it' : 'them'} before restoring in place (the restore replaces the disks the snapshots depend on)`,
+    );
+  }
+}
+
+/**
  * Restore a backup over the live VM it was taken from ("restore in place").
  *
  * The target VM is identified by the backup itself (manifest.vmName, falling
- * back to the domain XML name), must exist, and must be stopped. Disks,
+ * back to the domain XML name), must exist, must be stopped, and must have no
+ * snapshots (VM_HAS_SNAPSHOTS): the restore replaces disks those snapshots
+ * depend on (a live snapshot's overlay sits on the very base file restored),
+ * so they would survive pointing at content they weren't taken with. Disks,
  * NVRAM, and cloud-init.json are copied back into the VM's current
  * directory, and the backed-up domain XML is re-defined over the live
  * definition. Identity semantics:
@@ -860,6 +878,7 @@ export async function restoreBackupInPlace(backupPath, { onProgress, populateVMD
   if (!isOfflineState(state.code)) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to restore in place`);
   }
+  await assertNoSnapshots(name);
 
   let currentUuid = null;
   try {

@@ -942,7 +942,7 @@ Restore a backup **over the live VM it was taken from**. Runs as a background jo
 - **Body:** `{ destinationId: string, vmName: string, timestamp: string, safetyBackup?: boolean }`
 - **201:** `{ jobId: string, title: string }`
 - **404:** `VM_NOT_FOUND` (workload deleted — restore as new instead), `BACKUP_NOT_FOUND`
-- **409:** `VM_MUST_BE_OFFLINE` (VM running), `VM_BUSY` (another start / backup / restore-in-place / delete / rename / clone of this VM is running)
+- **409:** `VM_MUST_BE_OFFLINE` (VM running), `VM_HAS_SNAPSHOTS` (the VM has snapshots — delete them first; checked before the safety backup or the job starts), `VM_BUSY` (another start / backup / restore-in-place / delete / rename / clone of this VM is running)
 - **422 / 503:** destination errors as for `POST /api/vms/:name/backup`
 
 ### DELETE /api/backups

@@ -308,6 +308,10 @@ export async function restoreBackupInPlace() {
   throw noConn();
 }
 
+export async function assertNoSnapshots() {
+  throw noConn();
+}
+
 export async function resolveVmBackupDir() {
   throw noConn();
 }
