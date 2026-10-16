@@ -5,6 +5,8 @@
  *     (subscribeServiceBrowse), resolving each hit to host/port/TXT
  *   - exposes resolveLocalName/resolveLocalAddress helpers for forwarder.js,
  *     which answers container DNS queries from 169.254.53.53
+ *   - tracks avahi's own host name (getHostFqdn) so the forwarder can answer
+ *     the host's `.local` name without an avahi round-trip
  *
  * Single shared system-bus connection (opened once, watched for avahi restarts
  * via NameOwnerChanged). When avahi-daemon goes away and comes back, every
@@ -53,6 +55,14 @@ const state = {
   browseCreationsInFlight: 0,
   browseDispatchInstalled: false,
   watchInstalled: false,
+  /**
+   * avahi's current host FQDN (lowercase, e.g. "wisp.local" — or "wisp-2.local"
+   * after a name conflict), null until first read. Kept across an avahi
+   * restart and re-read when it returns.
+   */
+  hostFqdn: null,
+  /** Bumped per refreshHostFqdn call — only the newest call may store its result. */
+  hostFqdnSeq: 0,
   /** Pino-compatible logger plumbed via connect(); falls back to console for boot-time paths. */
   logger: null,
 };
@@ -88,10 +98,30 @@ async function installAvahiWatch() {
         state.pendingBrowseSignals.clear();
       } else if (!oldOwner && newOwner) {
         state.logger?.info?.('[mdns] avahi-daemon appeared; re-registering entries');
+        refreshHostFqdn();
         reregisterAll().catch((err) =>
           state.logger?.warn?.({ err: err?.message || err }, '[mdns] re-register failed'),
         );
       }
+    });
+    // Server.StateChanged is a broadcast signal, so the bus delivers it only
+    // against a match rule. Installed raw (no Server proxy) so it is in place
+    // even when avahi is absent at boot; the sender clause binds to whoever
+    // owns the well-known name, across restarts. Avahi walks REGISTERING →
+    // RUNNING whenever its host name changes — including the automatic
+    // `<host>-2` rename on a LAN name conflict — so every transition re-reads
+    // the name.
+    await bus.call(new dbus.Message({
+      destination: 'org.freedesktop.DBus',
+      path: '/org/freedesktop/DBus',
+      interface: 'org.freedesktop.DBus',
+      member: 'AddMatch',
+      signature: 's',
+      body: [`type='signal',sender='${AVAHI_BUS_NAME}',path='${AVAHI_SERVER_PATH}',interface='${AVAHI_SERVER_IFACE}',member='StateChanged'`],
+    }));
+    bus.on('message', (msg) => {
+      if (msg.interface !== AVAHI_SERVER_IFACE || msg.member !== 'StateChanged') return;
+      refreshHostFqdn();
     });
     state.watchInstalled = true;
   } catch (err) {
@@ -109,6 +139,28 @@ async function ensureServer() {
   } catch {
     state.server = null;
     return null;
+  }
+}
+
+/**
+ * Re-read avahi's host FQDN into state.hostFqdn. Fire-and-forget; never
+ * rejects. On failure (avahi absent or mid-restart) the previous name is
+ * kept — the next StateChanged / NameOwnerChanged triggers another read.
+ */
+async function refreshHostFqdn() {
+  const seq = ++state.hostFqdnSeq;
+  try {
+    const server = await ensureServer();
+    if (!server) return;
+    const raw = await server.GetHostNameFqdn();
+    const fqdn = String(raw || '').toLowerCase().replace(/\.$/, '') || null;
+    if (seq !== state.hostFqdnSeq) return; // a newer read is in flight
+    if (fqdn && fqdn !== state.hostFqdn) {
+      state.logger?.info?.({ hostFqdn: fqdn, previous: state.hostFqdn }, '[mdns] avahi host name');
+      state.hostFqdn = fqdn;
+    }
+  } catch (err) {
+    state.logger?.warn?.({ err: err?.message || err }, '[mdns] GetHostNameFqdn failed; keeping last known host name');
   }
 }
 
@@ -149,12 +201,21 @@ async function reregisterAll() {
   }
 }
 
-export async function connect(logger = null) {
+/**
+ * @param {object|null} logger Pino-compatible logger.
+ * @param {{ hostInterface?: string|null }} [opts] `hostInterface` — the
+ *   interface (the containers' bridge) whose addresses the forwarder answers
+ *   the host's own `.local` name with. See forwarder.js.
+ */
+export async function connect(logger = null, { hostInterface = null } = {}) {
   state.logger = logger;
   await ensureBus();
   await installAvahiWatch();
   await ensureServer();
-  await startForwarder(logger);
+  // Not awaited: a stalled avahi must not hold up boot. Until the first read
+  // lands the host name takes the forwarder's avahi slow path.
+  refreshHostFqdn();
+  await startForwarder(logger, { hostInterface });
 }
 
 export async function disconnect() {
@@ -186,6 +247,7 @@ export async function disconnect() {
   }
   state.bus = null;
   state.server = null;
+  state.hostFqdn = null;
   state.watchInstalled = false;
   state.browseDispatchInstalled = false;
 }
@@ -714,6 +776,15 @@ export function lookupLocalEntry(fqdn) {
     }
   }
   return null;
+}
+
+/**
+ * avahi's current host FQDN (lowercase, no trailing dot — e.g. "wisp.local",
+ * or "wisp-2.local" after a conflict rename), or null when not yet known.
+ * Synchronous: served from the cache refreshHostFqdn keeps current.
+ */
+export function getHostFqdn() {
+  return state.hostFqdn;
 }
 
 /**

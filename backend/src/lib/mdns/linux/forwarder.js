@@ -2,8 +2,14 @@
  * In-process DNS forwarder on 169.254.53.53:53 (UDP + TCP) for Wisp containers.
  *
  * Each container's /etc/resolv.conf points at 169.254.53.53 (the Wisp mDNS stub
- * IP on br0). This forwarder receives those queries and:
- *   - `<name>.local` forward (A/AAAA) → resolved via avahi DBus (avahi.js)
+ * IP, held on the wisp-dns0 dummy interface and answered on the containers'
+ * bridge). This forwarder receives those queries and:
+ *   - `<name>.local` forward (A/AAAA) for a Wisp-published workload → answered
+ *     from avahi.js's in-memory registry (no avahi round-trip)
+ *   - the host's own `.local` name (avahi's current host name) → answered from
+ *     the addresses on the containers' bridge (no avahi round-trip)
+ *   - any other `<name>.local` forward (A/AAAA) → resolved via avahi DBus
+ *     (avahi.js); link-local results are dropped
  *   - `<ip>.in-addr.arpa` / `<ip>.ip6.arpa` (PTR) → tried via avahi first
  *     (so containers in the Wisp registry get nice reverse names); falls
  *     through to upstream on miss so real reverse zones still work
@@ -17,14 +23,15 @@
  *
  * Binding port 53 needs CAP_NET_BIND_SERVICE — granted via AmbientCapabilities
  * in wisp.service. If binding fails (missing capability, stub IP not
- * on br0, etc.) the failure is logged and the backend continues without the
+ * on wisp-dns0, etc.) the failure is logged and the backend continues without the
  * forwarder — container operations work, only `.local` in containers breaks.
  */
 import dgram from 'node:dgram';
 import net from 'node:net';
+import os from 'node:os';
 import { readFileSync } from 'node:fs';
 
-import { resolveLocalName, resolveLocalAddress, lookupLocalEntry } from './avahi.js';
+import { resolveLocalName, resolveLocalAddress, lookupLocalEntry, getHostFqdn } from './avahi.js';
 
 const STUB_IP = '169.254.53.53';
 const PORT = 53;
@@ -52,6 +59,8 @@ const state = {
   tcp: null,
   /** { address, port } — first IPv4 nameserver from /etc/resolv.conf, or null. */
   upstream: null,
+  /** Interface (the containers' bridge) whose addresses answer the host's own name. */
+  hostInterface: null,
   logger: null,
 };
 
@@ -200,19 +209,72 @@ function encodeIPv6(ip) {
 }
 
 /**
- * Build a single-answer response with a name-compression pointer to the
- * question section (offset 12) so we don't re-encode the name.
+ * Build a response with one answer RR per rdata, each owner name a
+ * compression pointer to the question section (offset 12) so we don't
+ * re-encode the name.
  */
+function buildAnswers(query, type, rdatas) {
+  const rrs = rdatas.map((rdata) => {
+    const namePtr = Buffer.from([0xc0, 0x0c]);
+    const fixed = Buffer.alloc(10);
+    fixed.writeUInt16BE(type, 0);
+    fixed.writeUInt16BE(QCLASS_IN, 2);
+    fixed.writeUInt32BE(ANSWER_TTL, 4);
+    fixed.writeUInt16BE(rdata.length, 8);
+    return Buffer.concat([namePtr, fixed, rdata]);
+  });
+  const [header, question] = buildResponseBase(query, RCODE_NOERROR, rrs.length);
+  return Buffer.concat([header, question, ...rrs]);
+}
+
 function buildAnswer(query, type, rdata) {
-  const namePtr = Buffer.from([0xc0, 0x0c]);
-  const fixed = Buffer.alloc(10);
-  fixed.writeUInt16BE(type, 0);
-  fixed.writeUInt16BE(QCLASS_IN, 2);
-  fixed.writeUInt32BE(ANSWER_TTL, 4);
-  fixed.writeUInt16BE(rdata.length, 8);
-  const rr = Buffer.concat([namePtr, fixed, rdata]);
-  const [header, question] = buildResponseBase(query, RCODE_NOERROR, 1);
-  return Buffer.concat([header, question, rr]);
+  return buildAnswers(query, type, [rdata]);
+}
+
+// ---------------------------------------------------------------------------
+// Address classification + the host's own addresses
+// ---------------------------------------------------------------------------
+
+/**
+ * Link-local: 169.254.0.0/16 (IPv4) or fe80::/10 (IPv6). Useless to a
+ * container — an IPv6 link-local needs a zone index a DNS answer can't carry,
+ * and it names an address on whichever link the publisher saw (avahi
+ * publishes the host on every veth/vnet), not the container's own link.
+ */
+function isLinkLocal(address) {
+  const a = String(address).toLowerCase();
+  if (a.includes(':')) return /^fe[89ab][0-9a-f]:/.test(a);
+  return a.startsWith('169.254.');
+}
+
+/** Routable IPv6 for a container: global unicast (2000::/3) or ULA (fc00::/7). */
+function isRoutableIPv6(address) {
+  // node prints the first group without leading zeros, so a 4-digit first
+  // group is what puts the address in 2000::/3 or fc00::/7 ("fc::1" is 00fc::1)
+  return /^(?:[23][0-9a-f]{3}|f[cd][0-9a-f]{2}):/i.test(String(address));
+}
+
+/**
+ * The host's usable addresses of one family on the containers' bridge, read
+ * from the kernel at query time (os.networkInterfaces — one getifaddrs call;
+ * only queries for the host's own name pay it). Containers reach the host
+ * on-link over this bridge, so these are the addresses that work for them;
+ * other uplinks (a second NIC, wg0, virbr0) may not be reachable from the
+ * container's segment. IPv4: everything except link-local (the wisp-dns0
+ * stub lives on its own interface, so it never shows up here). IPv6: global
+ * and ULA only. Kernel order is kept; the client applies RFC 6724.
+ *
+ * @param {'inet'|'inet6'} family
+ * @returns {string[]}
+ */
+function hostBridgeAddresses(family) {
+  if (!state.hostInterface) return [];
+  const addrs = os.networkInterfaces()[state.hostInterface] || [];
+  const wanted = family === 'inet' ? 'IPv4' : 'IPv6';
+  return addrs
+    .filter((a) => a.family === wanted && !a.internal && !isLinkLocal(a.address))
+    .filter((a) => family === 'inet' || isRoutableIPv6(a.address))
+    .map((a) => a.address);
 }
 
 // ---------------------------------------------------------------------------
@@ -243,8 +305,12 @@ function ptrNameToIPv6(qname) {
 /**
  * Produce the raw DNS response bytes for a query, or null to drop (malformed).
  * Never throws — upstream/avahi failures become SERVFAIL/NXDOMAIN responses.
+ * Exported for harness-driven verification: the sockets bind an address that
+ * exists only on the Linux host, and the project has no test suite.
+ *
+ * @param {Buffer} packet
  */
-async function handleQuery(packet) {
+export async function answerQuery(packet) {
   const q = parseQuery(packet);
   if (!q) return null;
 
@@ -271,6 +337,19 @@ async function handleQuery(packet) {
       return buildAnswer(q, q.qtype, rdata);
     }
 
+    // Host fast path: the host's own name (avahi's current one — it follows a
+    // conflict rename to `<host>-2`). Answered from the containers' bridge
+    // addresses: avahi's slow path both stalled in production (bursts of
+    // NODATA past the 1.5 s cap) and answered AAAA with a random veth's
+    // fe80:: address. NODATA for a family the bridge has no usable address in.
+    if (q.qname === getHostFqdn()) {
+      const rdatas = hostBridgeAddresses(wantedFamily)
+        .map((a) => (q.qtype === QTYPE_A ? encodeIPv4(a) : encodeIPv6(a)))
+        .filter(Boolean);
+      if (rdatas.length === 0) return buildNoAnswer(q, RCODE_NOERROR);
+      return buildAnswers(q, q.qtype, rdatas);
+    }
+
     // Slow path: LAN peer (not Wisp-published). Ask avahi for the requested
     // family, bounded by our own short timeout so missing records don't stall
     // the client. If the timeout fires, we return NODATA — cannot reliably
@@ -281,6 +360,10 @@ async function handleQuery(packet) {
       null,
     );
     if (!result || result.family !== wantedFamily) return buildNoAnswer(q, RCODE_NOERROR);
+    // Never hand a container a link-local answer (see isLinkLocal).
+    // ResolveHostName yields a single address; when it is link-local the
+    // answer is NODATA rather than a second lookup for another one.
+    if (isLinkLocal(result.address)) return buildNoAnswer(q, RCODE_NOERROR);
     const rdata = q.qtype === QTYPE_A ? encodeIPv4(result.address) : encodeIPv6(result.address);
     if (!rdata) return buildNoAnswer(q, RCODE_SERVFAIL);
     return buildAnswer(q, q.qtype, rdata);
@@ -358,7 +441,7 @@ function startUdp() {
   return new Promise((resolve, reject) => {
     const sock = dgram.createSocket('udp4');
     sock.on('message', (msg, rinfo) => {
-      handleQuery(msg).then((reply) => {
+      answerQuery(msg).then((reply) => {
         if (!reply) return;
         sock.send(reply, rinfo.port, rinfo.address, () => {});
       }).catch((err) => logWarn(`UDP handler error: ${err?.message || err}`));
@@ -398,7 +481,7 @@ function handleTcpConnection(conn) {
       const msg = buf.slice(0, expected);
       buf = buf.slice(expected);
       expected = -1;
-      handleQuery(msg).then((reply) => {
+      answerQuery(msg).then((reply) => {
         if (!reply) return;
         const len = Buffer.alloc(2);
         len.writeUInt16BE(reply.length, 0);
@@ -413,9 +496,17 @@ function handleTcpConnection(conn) {
 // Public API
 // ---------------------------------------------------------------------------
 
-export async function startForwarder(logger = null) {
+/**
+ * @param {object|null} logger
+ * @param {{ hostInterface?: string|null }} [opts] `hostInterface` — the
+ *   containers' bridge; its addresses answer the host's own `.local` name.
+ *   Chosen once at boot by the caller: a bridge created later is picked up
+ *   on the next wisp restart. Null → the host's name gets NODATA.
+ */
+export async function startForwarder(logger = null, { hostInterface = null } = {}) {
   if (state.udp || state.tcp) return;
   state.logger = logger;
+  state.hostInterface = hostInterface || null;
   state.upstream = readUpstreamFromResolvConf();
   if (!state.upstream) {
     logWarn('no IPv4 nameserver in /etc/resolv.conf; non-.local queries will fail');
@@ -423,7 +514,8 @@ export async function startForwarder(logger = null) {
   try {
     await startUdp();
     await startTcp();
-    logInfo(`listening on ${STUB_IP}:${PORT} (UDP+TCP); upstream=${state.upstream?.address ?? 'none'}`);
+    logInfo(`listening on ${STUB_IP}:${PORT} (UDP+TCP); upstream=${state.upstream?.address ?? 'none'}; ` +
+      `host name answered from ${state.hostInterface ?? 'none'}`);
   } catch (err) {
     const msg = err?.message || String(err);
     if (err?.code === 'EACCES') {
@@ -431,7 +523,7 @@ export async function startForwarder(logger = null) {
         'Check AmbientCapabilities in wisp.service. Container .local resolution will not work.');
     } else if (err?.code === 'EADDRNOTAVAIL') {
       logWarn(`${STUB_IP} is not assigned to any interface. ` +
-        'Run scripts/linux/setup/container-dns.sh or restart wisp after br0 exists.');
+        'Run scripts/linux/setup/container-dns.sh (holds it on wisp-dns0), then restart wisp.');
     } else {
       logWarn(`failed to start: ${msg}`);
     }

@@ -12,7 +12,7 @@ Registered at boot (`startWispDiscovery`, after `connectMdns`, fire-and-forget s
 |----------|-------|
 | Service type | `_wisp._tcp` |
 | Instance name | Short host name (`os.hostname()` up to the first dot) — LAN-unique by mDNS convention. **Not** `serverName`, which defaults to "My Server" everywhere and would collide. |
-| SRV target / port | `<hostname>.local` (A record published by avahi-daemon itself) : `WISP_PORT` |
+| SRV target / port | `<hostname>.local` (A record published by avahi-daemon itself) : `WISP_PORT`. Containers on this host resolve the host's name through the DNS forwarder's host fast path (avahi's current name, answered from the containers' bridge addresses), not via avahi — see [CONTAINERS.md → Host's own name](CONTAINERS.md#resolution-in-process-dns-forwarder-on-16925453535). |
 | TXT `url` | `advertisedUrl` setting if set, else `http://<hostname>.local:<port>`. Authoritative for navigation — behind a reverse proxy the SRV host/port are not reachable by browsers. |
 | TXT `name` | `serverName` (display name shown in peers' dropdowns) |
 | TXT `version` | Wisp version (`getCurrentVersion()` from `wispUpdate.js`) |

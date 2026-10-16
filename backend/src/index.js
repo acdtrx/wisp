@@ -52,6 +52,7 @@ import { closeAllSSE } from './lib/sse.js';
 import { disconnect as disconnectLibvirtBus } from './lib/vmManager/index.js';
 import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/storage/index.js';
 import { connect as connectMdns, disconnect as disconnectMdns } from './lib/mdns/index.js';
+import { getDefaultContainerParentBridge } from './lib/networking/index.js';
 import { startVmMdnsReconciler, stopVmMdnsReconciler } from './lib/vmMdnsReconciler.js';
 import { startContainerMdnsReconciler, stopContainerMdnsReconciler } from './lib/containerMdnsReconciler.js';
 import { startWispDiscovery, stopWispDiscovery } from './lib/wispDiscovery.js';
@@ -288,7 +289,9 @@ async function start() {
   } catch (err) {
     app.log.warn({ err }, 'containerd connection failed — container operations will be unavailable');
   }
-  await connectMdns(app.log);
+  // The forwarder answers the host's own .local name from the bridge new
+  // containers attach to — the segment containers reach the host on.
+  await connectMdns(app.log, { hostInterface: await getDefaultContainerParentBridge() });
 
   // Disk monitor must populate its snapshot before ensureMounts can reconcile disk entries.
   startDiskMonitor();
