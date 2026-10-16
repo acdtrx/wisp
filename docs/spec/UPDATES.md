@@ -15,8 +15,8 @@ The update applier is **a separate systemd unit** (`wisp-updater.service`, `Type
 | Backend checker (`backend/src/lib/wispUpdate.js`) | Polls GitHub Releases once per hour starting 30s after backend boot, following the host's configured **update channel** (see below). Caches `{ current, latest, available, notes, publishedAt, asset, sha256Asset, lastChecked }`. The `available` flag drives the Software-tab badge via the host stats SSE. |
 | Backend apply (`applyUpdate` in `wispUpdate.js`) | Downloads tarball + sha256 (via the shared **SSRF-safe fetch** — DNS-pinned, private/loopback IPs blocked, every redirect `Location` re-validated), verifies, extracts to `/var/lib/wisp/updates/staging-<version>/`. Then writes the staging path to `/var/lib/wisp/updates/target` (atomic via `rename(2)`) and runs `sudo -n /usr/bin/systemctl start --no-block wisp-updater.service`. The HTTP request returns 202 with `{ targetVersion }` once the trigger is queued — the backend dies a moment later as the updater runs `systemctl stop wisp`. |
 | Updater unit (`systemd/linux/wisp-updater.service`) | `Type=oneshot`, `User=root`, `Environment=WISP_INSTALL_DIR=<install-dir>` (templated at install time), `ExecStart=/usr/local/bin/wisp-updater`, `StandardOutput=journal`, `TimeoutStartSec=600`, `TimeoutStopSec=300` (see Rollback). |
-| Updater script (`backend/scripts/wisp-updater`, installed at `/usr/local/bin/wisp-updater`) | Reads target staging path from `/var/lib/wisp/updates/target` (its canonical path must be a direct `staging-*` child of `/var/lib/wisp/updates`). Stops `wisp.service` → snapshots install to `<install>.prev/` → rsyncs staging into install (preserving user config, `config/backup-status.json`, `.pids` / `.logs`) and re-owns it to the install dir's owner **user and group** (`stat -c %U:%G`; the group need not be named after the user) → runs `npm ci --omit=dev` in backend → runs **`setup/common-steps.sh`** (the step list shared with the installer — see below) → re-templates `wisp.service` → starts the service. Auto-rolls-back on failure (see Rollback). |
-| Shared setup steps (`scripts/linux/setup/common-steps.sh`) | The steps the installer and the updater both run: `container-dns.sh` then `install-helpers.sh`. Invoked by path from the install tree by **both** `setup-server.sh` and `wisp-updater`, so neither can drift from the other. Exits non-zero if any step fails — `wisp-updater` turns that into a rollback, while `setup-server.sh` wraps it in `run_step` so the install path keeps warning-and-continuing. |
+| Updater script (`backend/scripts/wisp-updater`, installed at `/usr/local/bin/wisp-updater`) | Reads target staging path from `/var/lib/wisp/updates/target` (its canonical path must be a direct `staging-*` child of `/var/lib/wisp/updates`). Stops `wisp.service` → snapshots install to `<install>.prev/` → rsyncs staging into install (preserving user config, `config/backup-status.json`, the migration ledger `config/migrations.json`, `.pids` / `.logs`) and re-owns it to the install dir's owner **user and group** (`stat -c %U:%G`; the group need not be named after the user) → runs `npm ci --omit=dev` in backend → runs **`setup/common-steps.sh`** (the step list shared with the installer — see below) → re-templates `wisp.service` → starts the service. Auto-rolls-back on failure (see Rollback). |
+| Shared setup steps (`scripts/linux/setup/common-steps.sh`) | The steps the installer and the updater both run: `container-dns.sh`, `install-helpers.sh`, then the **state migrations** (`backend/scripts/migrate.mjs`, see [State migrations](#state-migrations)). Invoked by path from the install tree by **both** `setup-server.sh` and `wisp-updater`, so neither can drift from the other. Exits non-zero if any step fails — `wisp-updater` turns that into a rollback, while `setup-server.sh` wraps it in `run_step` so the install path keeps warning-and-continuing. |
 | Frontend `WispUpdateSection` (under Host → Software) | Reads cached state from the host stats SSE, shows current/latest/last-checked. Renders inside the shared `UpdateCard` (`Check` / `Update` buttons, unified status row, `Checked hourly` footer). When an update is available, a **Release notes** link opens the shared `UpdateDetailsModal` (markdown body + "View on GitHub" footer). After Update: backend POST blocks during download (~10s), then UI **polls `GET /api/host` every 5 s** comparing `wispVersion` to the target. On match → reload page. After 12 failed polls (1 min): show "may be slow" hint. After 60 polls (5 min): give up with a "check journalctl" message. |
 
 ## API
@@ -111,6 +111,8 @@ What an automatic rollback restores (settled 2026-10-16):
 | Before `step:common-setup` (snapshot, swap, `npm ci`) | The install tree only. Nothing host-level has changed yet. |
 | `step:common-setup` or later | The install tree, then **`step:rollback-host-setup`**: the restored (old) tree's own `common-steps.sh` runs again — re-installing its `wisp-*` helpers, their sudoers rules, `wisp-updater` + `wisp-updater.service` and the container-DNS host config — and `wisp.service` is re-templated from the old tree. |
 
+**Never restored: state migrations and their ledger.** The restore rsync excludes `config/migrations.json`, and a migration that ran is not undone — see [State migrations → Failure and rollback](#failure-and-rollback).
+
 In every case the rollback ends with `daemon-reload` and `systemctl start wisp`.
 
 Limits, by design:
@@ -123,6 +125,71 @@ The rollback logic lives in `wisp-updater` itself, so a change to it is dark-shi
 
 There is no UI for explicit user-initiated rollback; if needed, run the same "by hand" sequence above.
 
+## State migrations
+
+State an earlier release wrote — libvirt domain XML, `container.json`, config and data-file modes — is brought up to the schema the current code targets by **state migrations**, run during the update (policy: `CLAUDE.md` → Migrations). Two decisions shape them (settled 2026-10-16):
+
+- **They run as part of the update, not at backend startup.** The backend is stopped while they run, so nothing races them, and a failure fails the update — which rolls back — instead of crash-looping `wisp.service`.
+- **An ID ledger, not version ranges.** Each migration has a stable id; the ledger records which ids ran on this host. Version ranges break on the beta channel, on rollbacks and on re-installs.
+
+### Where they run
+
+- **Update:** the last step of `common-steps.sh`, so inside `step:common-setup` — after `install-deps` (the new tree's `node_modules` exist), before `install-unit` / `start-service`. As the deploy user (`sudo -u <deploy-user>`, from `backend/`): it owns the install tree and has libvirt and containerd access. Not a step of its own in `wisp-updater`: an updater edit takes effect one release late, while `common-steps.sh` always comes from the new tree.
+- **Install / reinstall (`install.sh`, and `push.sh` through it):** `common-steps.sh` runs inside `setup-server.sh`, before `install.sh`'s build step has installed the backend deps, so it prints `Skipped: backend dependencies not installed yet` there. `install.sh` runs `migrate.mjs` itself after the build: when it (re)starts the service it stops it, migrates, then starts it; with no service running it just migrates; when the operator declines restarting a running service it skips them with a message — the next install or update runs them. It runs the script through `sudo -u` itself, so a first install already has the groups `setup-server.sh` just granted.
+- **Never against a running backend:** `common-steps.sh` fails its migration step when `wisp.service` is active (a standalone `setup-server.sh` on a live host).
+- **macOS dev:** the managers are stubs — migrations see no workloads.
+
+### Runner (`backend/scripts/migrate.mjs`)
+
+```
+node backend/scripts/migrate.mjs              # run every pending migration
+node backend/scripts/migrate.mjs --dry-run    # run them with ctx.dryRun = true; record nothing
+node backend/scripts/migrate.mjs --list       # applied / failed / pending; runs nothing
+  --migrations-dir <dir>                      # read migrations from <dir> — for testing the runner only
+```
+
+- Refuses to run as root. Loads config like the backend (`config/runtime.env`, `wisp-config.json` via `WISP_CONFIG_PATH` or the default) and configures + connects vmManager and containerManager through `lib/managerBootstrap.js` — the code `index.js` uses. A failed libvirt / containerd connection is a warning, as in the backend; a migration that then needs that manager fails on its `NO_CONNECTION` error. With nothing pending it connects to neither.
+- **Files:** `backend/migrations/NNNN-short-name.js` (ESM, named exports `id` — equal to the file name without `.js` — `description`, and `async run(ctx)`), run in id order. A `.js` file not named that way, an id mismatch or a missing export is a setup error: nothing runs. The release ships the directory (holding `.gitkeep` when empty); a missing directory is an error, never "no migrations".
+- **Pending** = every shipped migration without an `ok` ledger entry. After each one the ledger is written. The first failure is recorded as `error`, later migrations do not run, and the runner exits **1**. Setup errors (bad flags, bad migration file, unreadable or malformed ledger) exit **2** before anything runs. A clean run exits 0 and creates the ledger if it did not exist.
+- **Logging:** JSON lines on stdout (pino, through Fastify's logger), so they land in `journalctl -u wisp-updater` inside `step:common-setup`; pretty single-line with `NODE_ENV=development`. Each change is a line carrying `migration` and `dryRun`.
+
+**`ctx`** — what `run(ctx)` gets:
+
+| Field | Purpose |
+|-------|---------|
+| `dryRun` | `true` under `--dry-run`: inspect and `recordChange` what would change, change nothing. |
+| `recordChange(text)` | Logs the change and adds it to the ledger entry's `changes`, e.g. `dubi: VNC listen 0.0.0.0 → 127.0.0.1 (restart required)`. |
+| `log` | Logger bound to the migration's id. |
+| `vmManager`, `containerManager` | The manager facades, configured and connected as in the backend. |
+| `getConfig()` | `getConfigSync()` — paths, mounts, … from `wisp-config.json`. |
+| `paths` | `{ installDir, configDir }`. |
+| `setVMPendingRestart`, `setContainerPendingRestart` | The managers' restart-required setters, passed through from the facades (`undefined` on a facade without them). |
+
+### Ledger (`config/migrations.json`)
+
+```json
+{ "applied": [ { "id": "0001-vnc-listen-localhost", "at": "<ISO time>", "result": "ok", "changes": ["…"] },
+               { "id": "0002-…", "at": "…", "result": "error", "changes": [], "error": "<message>" } ] }
+```
+
+Beside `wisp-config.json` (it follows `WISP_CONFIG_PATH`), mode `0600`, atomic writes (`lib/atomicJson.js`; the backend's boot cleanup sweeps leftovers in that directory), gitignored. One entry per id: rerunning a failed id replaces its `error` entry. Entries for ids a release no longer ships are kept (`--list` marks them). The updater preserves it on swap (`RSYNC_EXCLUDES`) **and** on rollback (excluded from the restore rsync). Forcing a migration to run again means deleting its entry by hand.
+
+### Failure and rollback
+
+A failing migration fails `common-steps.sh`, so `step:common-setup` fails and the updater rolls back (tree + `step:rollback-host-setup`). Migrations that ran **stay applied and recorded**; the failing one is recorded as `error` and runs again on the next update. That is why state must stay backward-compatible: the restored release runs on the migrated state. `rollback-host-setup` runs the old tree's `common-steps.sh`, which — for a release that has the runner — runs the old runner; its own migrations are already in the ledger, so it does nothing.
+
+The ledger preservation lives in `wisp-updater`, so it is dark-shipped (see above): the update that first ships the runner is applied by the previous updater. Its swap loses nothing (no ledger exists yet), but its rollback would delete a ledger written during that update — the migrations then run again on the retry, which idempotency makes harmless.
+
+### Authoring a migration
+
+- **Idempotent** — safe to run again; a no-op on a host already in the target state (fresh installs just record it).
+- **Backward-compatible state** — leave state the previous release still accepts; a rollback cannot undo a migration.
+- **Through the managers** — change state via `ctx.vmManager` / `ctx.containerManager` (e.g. XML edits through vmManager's XML handling), never text substitution or direct file writes into a manager's files.
+- **Log every change** via `ctx.recordChange`, and honour `ctx.dryRun`.
+- **Restart flag only on a running workload** whose change needs a restart; a stopped workload picks the change up on its next start.
+- **Deploy-user scope** — root-level host changes do not belong here; they stay in `common-steps.sh` as idempotent convergence.
+- **Never renumber or rename** a shipped id — the ledger keys on it.
+
 ## Layout
 
 ```
@@ -130,6 +197,9 @@ backend/
   src/lib/wispUpdate.js              ← checker + downloader + systemctl trigger
   src/routes/updates.js              ← /api/updates/* routes
   scripts/wisp-updater               ← installed to /usr/local/bin
+  scripts/migrate.mjs                ← state-migration runner (common-steps.sh, install.sh)
+  migrations/NNNN-short-name.js      ← state migrations
+  src/lib/managerBootstrap.js        ← manager configure/connect shared with src/index.js
 systemd/linux/
   wisp-updater.service               ← templated to /etc/systemd/system
 frontend/
@@ -139,6 +209,7 @@ frontend/
   scripts/generate-sw-precache.js    ← bakes precache list + build id into dist/sw.js
 scripts/
   release.sh                         ← local release tagger
+  linux/setup/common-steps.sh        ← steps shared by install + update (ends with migrations)
   linux/setup/install-helpers.sh     ← installs script + unit + sudoers
 .github/workflows/
   release.yml                        ← runs on v* tag push

@@ -139,9 +139,28 @@ Docs update **in the same edit** as the behavior they describe:
 - Wisp is a **deployable application**. Fixes land in the app or its install/setup pipeline (`scripts/install.sh`, `scripts/setup-server.sh`, `scripts/linux/setup/`) so future installs work out of the box — never as manual server steps; manual fixes are for active debugging only.
 - **Self-update is a first-class path** (`wisp-updater`: atomic-swap from GitHub Releases, re-runs helper install, re-templates the systemd unit). Changes touching the install layout, persisted state, privileged helpers, or systemd templates must keep the updater contract — [`docs/spec/UPDATES.md`](docs/spec/UPDATES.md) is the contract doc. The recurring traps: persisted files inside the install tree need the updater's preserve list; new privileged `wisp-*` helpers must be registered in `scripts/linux/setup/install-helpers.sh` or they vanish on the next self-update; the `wisp.service` template is re-applied from the repo on every update; only committed files ship in the release tarball.
 
-## Feature-building mode (no migrations) `[PROJECT]`
+## Migrations `[PROJECT]`
 
-No automatic upgrade paths, no dual-read of deprecated keys or shapes, no legacy-cleanup code — **not even for artifacts produced earlier in the same session**. New behavior targets the current schema only; when replacing an approach leaves stale state on the server, state the manual cleanup clearly (one `rm`, one restart) instead of encoding it. Corrective repair of state the app itself wrote *wrong* is normal engineering, not migration. Replace with a real migration policy when the project graduates.
+Code targets **only the current schema**: no upgrade paths in app code, no
+dual-read of deprecated keys or shapes, no legacy-cleanup code — not even for
+artifacts produced earlier in the same session. When a change leaves state that
+an earlier release wrote out of date (domain XML, `container.json`, file modes),
+a **state migration** brings that state up to the current schema during the
+update (settled 2026-10-16). Corrective repair of state the app itself wrote
+*wrong* is normal engineering, not a migration. Root-level host changes are not
+migrations either: they stay in `common-steps.sh` as idempotent convergence.
+
+- **Where:** `backend/migrations/NNNN-short-name.js`, run in id order by
+  `backend/scripts/migrate.mjs` as the last step of `common-steps.sh` — on every
+  update, as the deploy user, with the backend stopped. The ledger
+  `config/migrations.json` records each id that ran; an id that succeeded never
+  runs again on that host. Contract: [`docs/spec/UPDATES.md`](docs/spec/UPDATES.md) → State migrations.
+- **Authoring rules** (the runner cannot check them):
+  - **Idempotent** — a no-op on a host already in the target state; fresh installs just record it.
+  - **Backward-compatible state** — leave state the previous release still accepts: a failed update rolls the tree back but cannot undo a migration.
+  - **Through the managers** — change state via `ctx.vmManager` / `ctx.containerManager`, the app's own code paths, never by text-editing their files.
+  - **Log every change** with `ctx.recordChange(...)`, and change nothing when `ctx.dryRun` is set.
+  - **Restart flags only on running workloads** — a stopped workload picks the change up on its next start.
 
 ## Shell-exec allowlist `[PROJECT]`
 

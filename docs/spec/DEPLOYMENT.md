@@ -87,7 +87,10 @@ One-time server preparation script. Run as root with `sudo`. Safe to re-run. It 
 
 9. **Runs `scripts/linux/setup/sanity.sh`** — Verifies virsh, /dev/kvm, libvirt socket, org.libvirt DBus service
 
-10. **Runs `scripts/linux/setup/install-helpers.sh`** — Copies each `backend/scripts/wisp-*` helper to `/usr/local/bin` and refreshes `/etc/sudoers.d/*` (via `helper.sh`). Idempotent and safe to re-run on every upgrade. See [Privileged helpers checklist](#privileged-helpers-checklist) when adding a new helper.
+10. **Runs `scripts/linux/setup/common-steps.sh`** — the steps `wisp-updater` also runs on every self-update, in order:
+    - `container-dns.sh` (see the sub-scripts table below);
+    - `install-helpers.sh` — copies each `backend/scripts/wisp-*` helper to `/usr/local/bin` and refreshes `/etc/sudoers.d/*` (via `helper.sh`). Idempotent and safe to re-run on every upgrade. See [Privileged helpers checklist](#privileged-helpers-checklist) when adding a new helper;
+    - **state migrations** — `node backend/scripts/migrate.mjs` as the deploy user ([UPDATES.md → State migrations](UPDATES.md#state-migrations)). Skipped with a message while `backend/node_modules` is missing — always the case under `install.sh`, which runs them itself after its build step — and fails when `wisp.service` is running.
 
 11. **Runs `scripts/linux/setup/rapl.sh`** — Optionally grants deploy user read access to Intel RAPL (`/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj`) so the app can show CPU power in Host Overview when running as the deploy user. Creates group `wisp-power`, adds the deploy user to it, and installs a udev rule (`/etc/udev/rules.d/99-wisp-rapl.rules`) that runs `chgrp`/`chmod g+r` on the RAPL `energy_uj` file each time the powercap device appears, and applies it once immediately. Always the udev rule, never a direct `setfacl`/`chmod`: sysfs attributes are recreated on every boot, so permissions set on the file itself are lost at reboot (settled 2026-10-16). `wisp.service` picks up the group on its next start; an interactive shell needs a fresh login (or `newgrp wisp-power`). Skipped if the path does not exist (e.g. VM or non-Intel).
 
@@ -108,6 +111,7 @@ Server setup and install logic is split into standalone scripts under `scripts/l
 | `sanity.sh` | root or libvirt user | Verify virsh, /dev/kvm, socket, DBus |
 | `helper.sh <src> <basename> <user> [pkg...]` | root | Copy one script to `/usr/local/bin/<basename>` + sudoers (used by `install-helpers.sh`) |
 | `install-helpers.sh <project-root> <user>` | root | Install or **refresh** all `wisp-*` helpers from the install tree → `/usr/local/bin` |
+| `common-steps.sh <project-root> <user>` | root | Steps shared by install and self-update: `container-dns.sh`, `install-helpers.sh`, then state migrations (as `<user>`) |
 | `rapl.sh <user>` | root | Intel RAPL read access for Host Overview |
 | `containerd.sh [user]` | root | Install containerd 2.0+, socket group perms, wisp namespace |
 | `cni.sh` | root | CNI plugins (bridge, dhcp); **overwrites** `10-wisp-bridge.conflist`; DHCP daemon |
@@ -139,7 +143,8 @@ Steps: prompts for install directory (unless provided as arg), runs `scripts/lin
 2. **Config and password:** `config.sh`, `password.sh`
 3. **Build:** `wispctl.sh build`
 4. **Permissions:** `permissions.sh`
-5. **Optional:** systemd install+start or restart (see above), bridged networking (interactive only)
+5. **State migrations + service:** when the service is (re)started: re-template the unit, stop it, run `backend/scripts/migrate.mjs`, start it. Without a (re)start: migrate when no `wisp.service` is running; skip with a message when one still runs the previous release. A failed migration aborts the install with the service stopped. ([UPDATES.md → State migrations](UPDATES.md#state-migrations).)
+6. **Optional:** bridged networking (interactive only)
 
 ## `wispctl.sh helpers` (after upgrade)
 
@@ -454,7 +459,7 @@ Atomic-swap applier for the Wisp self-update pipeline. Not invoked directly — 
 
 | Operation | Description |
 |---------|-------------|
-| `systemctl start --no-block wisp-updater.service` | Stop service → snapshot install to `<install>.prev/` → rsync staging into install (preserving `config/wisp-config.json`, `wisp-password`, `runtime.env`, `.pids`, `.logs`) → `npm ci --omit=dev` in backend → re-run `install-helpers.sh` (refreshes all wisp-* shims + the unit + sudoers) → re-template `wisp.service` → start service. Auto-rolls back from `<install>.prev/` on any failure. |
+| `systemctl start --no-block wisp-updater.service` | Stop service → snapshot install to `<install>.prev/` → rsync staging into install (preserving `config/wisp-config.json`, `wisp-password`, `runtime.env`, `backup-status.json`, `migrations.json`, `.pids`, `.logs`) → `npm ci --omit=dev` in backend → run the new tree's `common-steps.sh` (container DNS, `install-helpers.sh` — refreshes all wisp-* shims + the unit + sudoers — then state migrations) → re-template `wisp.service` → start service. Auto-rolls back from `<install>.prev/` on any failure. |
 
 Steps are echoed to journald (`journalctl -u wisp-updater.service`) — Wisp does not capture them since it dies during `step:stop-service`.
 
@@ -475,3 +480,4 @@ Prebuild script that runs before `vite build`. Ensures noVNC is present; invokes
 | `wisp-config.json.example` | Yes | Application settings template |
 | `wisp-config.json` | No | Settings (UI) |
 | `wisp-password` | No | Scrypt hash for login / JWT secret |
+| `migrations.json` | No | State-migration ledger — which migration ids ran on this host ([UPDATES.md](UPDATES.md#ledger-configmigrationsjson)) |

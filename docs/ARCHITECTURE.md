@@ -376,6 +376,8 @@ wisp/
 │   ├── scripts/
 │   │   ├── wisp-os-update, wisp-mount, wisp-power, wisp-dmidecode, wisp-smartctl, wisp-bridge, wisp-netns, wisp-cni, wisp-nvram   # Privileged helpers → /usr/local/bin via install-helpers.sh
 │   │   ├── wisp-updater          # Self-update applier (root, via wisp-updater.service)
+│   │   └── migrate.mjs           # State-migration runner (end of common-steps.sh; see spec/UPDATES.md)
+│   ├── migrations/               # State migrations NNNN-short-name.js, tracked in config/migrations.json
 │   └── src/
 │       ├── index.js              # Entry point
 │       ├── routes/               # Route modules
@@ -424,6 +426,7 @@ wisp/
 │   │       ├── dirs.sh           # /var/lib/wisp/*, /mnt/wisp/smb
 │   │       ├── libvirt.sh        # libvirtd, virtlogd, disable default NAT
 │   │       ├── sanity.sh         # Verify virsh, /dev/kvm, DBus
+│   │       ├── common-steps.sh   # Shared by install + self-update: container DNS, helpers, state migrations
 │   │       ├── helper.sh         # One helper → /usr/local/bin + sudoers
 │   │       ├── install-helpers.sh
 │   │       ├── rapl.sh           # Intel RAPL read access
