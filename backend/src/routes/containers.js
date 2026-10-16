@@ -2,8 +2,13 @@
  * Container API routes: CRUD, lifecycle, mount content, stats SSE, logs SSE, create progress SSE.
  */
 import { randomUUID, randomBytes } from 'node:crypto';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { unlink } from 'node:fs/promises';
+import { join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 
 import {
+  getContainerDir,
   listContainers, getContainerConfig, getContainerMountUsage, createContainer, deleteContainer, renameContainer,
   createContainerBackup,
   startContainer, stopContainer, killContainer, restartContainer,
@@ -45,24 +50,60 @@ import {
   assertMountContentReadable,
 } from '../lib/containerApps/index.js';
 
+/** Staging file for one mount upload: inside the container dir, so on the same disk as the mount data (not a tmpfs /tmp). */
+function mountUploadStagingPath(containerName) {
+  return join(getContainerDir(containerName), `.wisp-upload-${randomBytes(8).toString('hex')}`);
+}
+
 /**
- * @returns {import('@fastify/multipart').MultipartFile | null}
+ * Stream the request's single file part to `stagingPath` while iterating the
+ * parts; resolves whether a file part was present. The caller owns (and always
+ * removes) the staging file.
+ *
+ * The file must be consumed as it arrives. busboy finishes the multipart body
+ * only after every file stream has been read to its end, and @fastify/multipart
+ * >= 10.1 ends the parts iterator only when busboy finishes — so holding a file
+ * part unread while looking for more parts never completes (10.0 ended the
+ * iterator on the request's 'close', which only came once the whole body fit in
+ * stream buffers, so it worked for small files only).
+ *
+ * Staging, rather than streaming straight into the mount, keeps rejections
+ * deterministic: fields are ignored, a second file part is drained and answers
+ * BAD_MULTIPART_TOO_MANY_FILES once the body is read, and an upload over the
+ * multipart fileSize limit answers UPLOAD_TOO_LARGE — in each case before the
+ * mount is touched.
  */
-async function collectSingleMultipartFile(request) {
-  /** @type {import('@fastify/multipart').MultipartFile | null} */
-  let filePart = null;
-  for await (const part of request.parts()) {
-    if (part.type === 'file') {
-      if (filePart) {
-        throw createAppError(
-          'BAD_MULTIPART_TOO_MANY_FILES',
-          'Only one file upload is allowed per request',
-        );
+async function stageSingleMultipartFile(request, stagingPath) {
+  let staged = false;
+  let extraFiles = false;
+  try {
+    for await (const part of request.parts()) {
+      if (part.type !== 'file') continue;
+      if (staged) {
+        extraFiles = true;
+        part.file.resume();
+        continue;
       }
-      filePart = part;
+      staged = true;
+      await pipeline(part.file, createWriteStream(stagingPath, { mode: 0o600 }));
+      if (part.file.truncated) throw uploadTooLargeError();
     }
+  } catch (err) {
+    // An over-limit extra file part surfaces as the iterator's own error.
+    if (err.code === 'FST_REQ_FILE_TOO_LARGE') throw uploadTooLargeError();
+    throw err;
   }
-  return filePart;
+  if (extraFiles) {
+    throw createAppError(
+      'BAD_MULTIPART_TOO_MANY_FILES',
+      'Only one file upload is allowed per request',
+    );
+  }
+  return staged;
+}
+
+function uploadTooLargeError() {
+  return createAppError('UPLOAD_TOO_LARGE', 'File too large', 'Upload exceeded the configured size limit');
 }
 
 export default async function containerRoutes(fastify) {
@@ -682,31 +723,36 @@ export default async function containerRoutes(fastify) {
 
   // ── Mount backing store (files/<mountName>) ───────────────────────
   fastify.post('/containers/:name/mounts/:mountName/file', { config: { auth: 'admin' } }, async (request, reply) => {
+    const containerName = request.params.name;
+    const stagingPath = mountUploadStagingPath(containerName);
     try {
-      const containerName = request.params.name;
       const mountName = decodeURIComponent(request.params.mountName);
       assertMountNotAppManaged(await getContainerConfig(containerName), mountName);
-      const filePart = await collectSingleMultipartFile(request);
-      if (!filePart) {
+      if (!(await stageSingleMultipartFile(request, stagingPath))) {
         return sendError(reply, 400, 'No file provided', 'Request must include a file upload');
       }
-      return await uploadMountFileStream(containerName, mountName, filePart.file);
+      return await uploadMountFileStream(containerName, mountName, createReadStream(stagingPath));
     } catch (err) {
       handleRouteError(err, reply, request);
+    } finally {
+      await unlink(stagingPath).catch(() => { /* never created, or already gone */ });
     }
   });
 
   fastify.post('/containers/:name/mounts/:mountName/zip', { config: { auth: 'admin' } }, async (request, reply) => {
+    const containerName = request.params.name;
+    const stagingPath = mountUploadStagingPath(containerName);
     try {
-      const containerName = request.params.name;
       const mountName = decodeURIComponent(request.params.mountName);
-      const filePart = await collectSingleMultipartFile(request);
-      if (!filePart) {
+      await getContainerConfig(containerName); // 404 before staging into a container dir that doesn't exist
+      if (!(await stageSingleMultipartFile(request, stagingPath))) {
         return sendError(reply, 400, 'No file provided', 'Request must include a zip upload');
       }
-      return await uploadMountZipStream(containerName, mountName, filePart.file);
+      return await uploadMountZipStream(containerName, mountName, createReadStream(stagingPath));
     } catch (err) {
       handleRouteError(err, reply, request);
+    } finally {
+      await unlink(stagingPath).catch(() => { /* never created, or already gone */ });
     }
   });
 

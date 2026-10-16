@@ -70,6 +70,7 @@ function mappedErrorStatus(code) {
     case 'TOKEN_INVALID':
     case 'BACKUP_DEST_UNKNOWN':
     case 'BACKUP_DEST_NONE':
+    case 'UPLOAD_TOO_LARGE':
       return 422;
     case 'TOKEN_NOT_FOUND':
       return 404;

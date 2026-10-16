@@ -1727,7 +1727,11 @@ Remove one mount and delete its `files/<mountName>` backing store (tmpfs has no 
 
 Multipart **file** upload: a single file part (field name typically **`file`**). The mount must already exist in `container.json`.
 
-**400:** `BAD_MULTIPART_TOO_MANY_FILES` if more than one file part | plain `{ error, detail }` if no file part.
+The file part is streamed to a staging file inside the container directory as it arrives, and handed to the mount only once the whole body has been read — so every rejection below leaves the mount untouched. Field parts are ignored, before or after the file.
+
+**400:** `BAD_MULTIPART_TOO_MANY_FILES` if more than one file part (extra parts are read and discarded first) | plain `{ error, detail }` if no file part. **404:** container not found. **422:** `UPLOAD_TOO_LARGE` (`File too large`) past the multipart `fileSize` limit (50 GiB).
+
+(settled 2026-10-16: the file part is consumed while iterating, never held across later parts. busboy finishes a body only after every file stream has been read to its end, and `@fastify/multipart` ≥ 10.1 ends the parts iterator only when busboy finishes — holding the part to check for a second file hung every upload; on 10.0 it hung only once the body outgrew the stream buffers (observed between 70 and 200 KB). Staging rather than streaming straight into the mount keeps the one-file and size rejections from half-applying.)
 
 ### POST /api/containers/:name/mounts/:mountName/file · `admin`
 
