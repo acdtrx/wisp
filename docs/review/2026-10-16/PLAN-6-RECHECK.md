@@ -1,6 +1,6 @@
 # Fix Plan 6 — Re-review follow-ups (before the next release)
 
-**Source:** [`RECHECK.md`](RECHECK.md). **Created:** 2026-10-16. Conventions as in
+**Source:** [`RECHECK.md`](RECHECK.md). **Created:** 2026-10-16. **Status:** implemented, verified on tini through the self-updater (incl. a health-gated rollback of a broken build) and merged 2026-10-16; not released. Conventions as in
 [`PLAN-1-SECURITY.md`](PLAN-1-SECURITY.md) § Shared conventions (one Opus agent per bundle in a
 worktree; main session integrates and verifies on the test server via the self-updater).
 
