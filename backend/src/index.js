@@ -172,7 +172,10 @@ const CSP =
  * The service worker controls every navigation, so a stale `sw.js` or `index.html`
  * pinned in the HTTP cache would outlive a self-update. Both revalidate. Assets
  * under /assets/ are content-hashed by Vite — a changed file gets a changed name,
- * so a cached copy can never be wrong and pins for a year.
+ * so a cached copy can never be wrong and pins for a year. That holds only for a
+ * file actually served: a miss under /assets/ (a chunk a pre-update page still
+ * asks for) is a 404 that must not be cached, or the URL would stay broken for
+ * a year if the file ever appeared.
  */
 function applyShellCachePolicy(request, reply) {
   const path = routePath(request);
@@ -183,7 +186,7 @@ function applyShellCachePolicy(request, reply) {
     return;
   }
   if (path.startsWith('/assets/')) {
-    reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+    reply.header('Cache-Control', reply.statusCode >= 400 ? 'no-store' : 'public, max-age=31536000, immutable');
     return;
   }
   // The shell is the only HTML Wisp serves, from both fastify-static and the
@@ -206,12 +209,17 @@ if (!isDev) {
   });
 }
 
-// In prod, non-/api / non-/ws 404s serve the SPA shell so client-side routing
-// works on deep-link refresh. /api and /ws keep the JSON 404. In dev, vite
-// serves the SPA on :5173 and the backend stays a pure JSON API.
+// In prod, 404s outside the API and the static-file prefixes serve the SPA shell
+// so client-side routing works on deep-link refresh. /api and /ws keep the JSON
+// 404, and so do misses under /assets/ and /vendor/: those URLs name files, and
+// answering a missing script with the HTML shell hands the browser a page it
+// can't run (and, under /assets/, one it would cache). In dev, vite serves the
+// SPA on :5173 and the backend stays a pure JSON API.
+const NO_SHELL_FALLBACK_PREFIXES = ['/api', '/ws', '/assets/', '/vendor/'];
+
 app.setNotFoundHandler((request, reply) => {
   const path = routePath(request);
-  if (indexHtml && !path.startsWith('/api') && !path.startsWith('/ws')) {
+  if (indexHtml && !NO_SHELL_FALLBACK_PREFIXES.some((p) => path.startsWith(p))) {
     reply.type('text/html').send(indexHtml);
     return;
   }
