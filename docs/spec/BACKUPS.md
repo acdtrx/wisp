@@ -28,6 +28,14 @@ A backup directory contains:
 
 Disk images are gzipped to reduce backup size. NVRAM and config files are stored uncompressed.
 
+### Backup file modes
+
+*(settled 2026-10-16)* Every backup is **owner-only**: the timestamp directory `0700`, every file in it `0600`, for VMs and containers alike. A container backup carries `container.json` (secret env values in plaintext) and the mount data; a VM backup carries the guest's disks — and with them whatever secrets the guest keeps — plus `cloud-init.json`'s password hash. At the umask default (`0755` / `0644`) every local account could read them. The modes are set at creation (`mkdir` / `open` with the mode, never a later `chmod`), so no file sits under a wider mode while it is written; the directory's `0700` also covers the flatten scratch file `qemu-img` creates at its own mode. `VARS.fd` arrives `0600` from `wisp-nvram` (`cp -p` of libvirt's `0600` file) and `cloud-init.json` keeps its source's `0600`. Nothing but the backend (the deploy user, the owner) reads a backup; restore copies `VARS.fd` back through the root helper.
+
+On a destination without Unix modes — an SMB share mounted without Unix extensions, a vfat drive — the mount options decide the modes and the share's own access control is what protects the backup.
+
+Backups written by earlier releases are tightened on update by state migrations `0005-container-config-modes` (container backups) and `0006-vm-backup-file-modes` (VM backups), under the roots the backend lists: the local path, and the backup mount when it is mounted — an unmounted one is skipped with a warning and keeps its modes until `chmod -R go-rwx <root>/containers <root>/vms` is run by hand. An entry whose filesystem keeps its own mode is recorded in the ledger as not applied, not an error. See [UPDATES.md § State migrations](UPDATES.md#state-migrations).
+
 ### Cloud-init seed ISO
 
 *(settled 2026-10-16)* The cloud-init seed ISO is **not backed up** — it is derived data, built entirely from `cloud-init.json` (plus the VM name and first NIC's MAC). Restore rebuilds it from the restored `cloud-init.json` through the same generator a cloud-init edit uses (`lib/cloudInit.js`, Wisp glue — vmManager stays free of it): the routes pass `rebuildCloudInitISO` to vmManager's restore as its `populateVMDir` hook, which runs once the payload is in place and before the domain is defined, so a failed rebuild rolls the restore back like any other step. The rebuilt ISO is `0600`, reuses the stored password hash (never re-hashes), takes the first NIC's MAC from the domain about to be defined, and lands at the path the restored domain's `sde` CD-ROM already names. No `cloud-init.json`, or one with `enabled: false`, builds nothing. **One rule for every backup:** a `cloud-init.iso.gz` in a backup taken before this change is ignored and the ISO is rebuilt from the JSON like any other restore (every Wisp backup that holds an ISO also holds the JSON — both have been written together since the first release).
@@ -203,6 +211,8 @@ Container backups live under a sibling `containers/` subdirectory at each backup
 └── data.tar.gz
 ```
 
+Owner-only like every backup: directory `0700`, both files `0600` ([Backup file modes](#backup-file-modes)).
+
 `data.tar.gz` is a single gzipped tar of the container's directory under `<containersPath>/<name>/`. The archive's top-level entry is the original container name (used by restore to detect a one-directory archive layout). `manifest.json` is uncompressed and carries metadata for listing without extracting:
 
 | Field | Description |
@@ -289,7 +299,7 @@ A backup archive is untrusted input — anyone who can write to a backup destina
 - **Run logs** (`runs/`) — captured in the archive. The newest 10 runs travel with the backup; the run picker on the restored container will show them as historical entries.
 - **Section assignment** — **not** captured. Section assignments are stored in `wisp-config.json` (`assignments`), not in the container directory. A restored container starts unassigned (Main bucket); the user can move it to a section after restore.
 - **Storage-sourced mounts** (`mount.sourceId` referencing an entry in `settings.mounts`) — captured verbatim in `container.json`. Storage mount definitions live in `wisp-config.json` and are not part of the backup. If the destination host doesn't have the same `settings.mounts[X]` configured, the mount config is preserved but `assertBindSourcesReady` will reject the first start with **503** `CONTAINER_MOUNT_SOURCE_MISSING` or `CONTAINER_MOUNT_SOURCE_NOT_MOUNTED`. The user fixes this by editing the mount row to point at a different source (or removing it) on the new host.
-- **Secret env vars and secret file mounts** — `container.json` stores secret env values **in plaintext at rest** (the OCI process needs them at runtime), and a secret file mount's content is a plain file under `files/<name>`; the backup archive carries both as-is (write-only applies to the API, not to the data at rest). Treat the backup file the same as any other copy of a container's directory: it can leak credentials if it lands in untrusted hands. There is no separate encryption step for container backups in v1.
+- **Secret env vars and secret file mounts** — `container.json` stores secret env values **in plaintext at rest** (the OCI process needs them at runtime), and a secret file mount's content is a plain file under `files/<name>`; the backup archive carries both as-is (write-only applies to the API, not to the data at rest). The archive is owner-only on the host ([Backup file modes](#backup-file-modes)); treat a copy of it the same as any other copy of a container's directory: it can leak credentials if it lands in untrusted hands. There is no separate encryption step for container backups in v1.
 - **App-container `appConfig`** — captured as-is. Fields that defaulted from the original container name at create time (e.g. jellyfin's `publishedUrl: http://<oldName>.local:8096`, tinySamba's `server.netbiosName`) will still reference the old name; the user can edit them in the app's config UI after restore if they care.
 - **Containerd container record** is recreated under the new id with `wisp.managed=true`; the old record (if it still exists on the source host) is unaffected.
 

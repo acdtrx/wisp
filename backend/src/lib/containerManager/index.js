@@ -52,6 +52,8 @@ export const listContainerBackups = impl.listContainerBackups;
 export const restoreContainerBackup = impl.restoreContainerBackup;
 export const restoreContainerBackupInPlace = impl.restoreContainerBackupInPlace;
 export const deleteContainerBackup = impl.deleteContainerBackup;
+export const tightenContainerFileModes = impl.tightenContainerFileModes;
+export const tightenContainerBackupFileModes = impl.tightenContainerBackupFileModes;
 
 export const listContainerImages = impl.listContainerImages;
 export const deleteContainerImage = impl.deleteContainerImage;

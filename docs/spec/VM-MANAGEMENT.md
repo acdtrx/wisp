@@ -406,6 +406,7 @@ Every host-supplied disk or ISO path (attach disk/CDROM at runtime, plus `disk.s
 - `resolveVmBackupDir(root, vmName, timestamp)` — the backup's directory, or `BACKUP_NOT_FOUND`
 - `restoreBackup(backupPath, newVmName, { populateVMDir })` — restore as a new VM; rewrites paths under the backed-up VM directory using `manifest.vmBasePath` (see [BACKUPS.md](BACKUPS.md)); `populateVMDir` lets the caller write files the backup doesn't hold (the cloud-init ISO) before define
 - `deleteBackup(backupPath, allowedRoots)` — delete with safety check
+- `tightenVMBackupFileModes(roots, { dryRun })` (`vmManagerBackupModes.js`) — make existing backups owner-only (directory `0700`, files `0600`); pure filesystem work, exported by the macOS stub too; used by state migration `0006-vm-backup-file-modes` (see [BACKUPS.md § Backup file modes](BACKUPS.md#backup-file-modes))
 
 ### vmManagerStats.js
 

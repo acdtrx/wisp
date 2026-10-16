@@ -1,7 +1,8 @@
 /**
  * Storage module facade — qemu-img wrappers (cross-platform), block-device
  * enumeration + hotplug, removable disk and SMB mount via the wisp-mount
- * helper, and the kernel mount table reader. Single public surface for
+ * helper, the kernel mount table reader, and owner-only mode tightening for
+ * secret-holding files. Single public surface for
  * VM/container managers, host routes and inspection (host/), and Wisp
  * app-level glue (mountsAutoMount). SMART summaries live in the host module
  * (sole consumer is hostHardware).
@@ -22,6 +23,7 @@ const smbImpl = await import(
 
 export { getDiskInfo, getBackingChain, copyAndConvert, resizeDisk } from './diskOps.js';
 export { measurePathSize } from './dirSize.js';
+export { restrictToOwner, describeModeChanges } from './fileModes.js';
 
 // Kernel mount table (/proc/self/mounts), decoded — the one reader for mount state
 export { readMountTable } from './mountTable.js';

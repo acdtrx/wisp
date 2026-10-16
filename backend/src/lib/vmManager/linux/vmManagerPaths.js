@@ -13,6 +13,10 @@
  */
 import { join } from 'node:path';
 
+/** Subdirectory under each backup root that holds VM backups
+ * (`<root>/vms/<vmName>/<timestamp>/`), beside container backups under `containers/`. */
+export const VMS_BACKUP_DIRNAME = 'vms';
+
 let vmsPath = null;
 
 export function setVmManagerPaths(cfg) {

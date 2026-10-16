@@ -299,3 +299,6 @@ export async function restoreBackup() {
 export async function resolveVmBackupDir() {
   throw noConn();
 }
+
+/* Pure filesystem work over caller-supplied roots — real on macOS too. */
+export { tightenVMBackupFileModes } from '../linux/vmManagerBackupModes.js';

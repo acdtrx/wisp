@@ -85,3 +85,5 @@ export {
   deleteBackup,
   resolveVmBackupDir,
 } from './vmManagerBackup.js';
+
+export { tightenVMBackupFileModes } from './vmManagerBackupModes.js';

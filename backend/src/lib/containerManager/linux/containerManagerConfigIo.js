@@ -23,9 +23,14 @@ export async function readContainerConfig(name) {
   return JSON.parse(raw);
 }
 
+/* Secret env values (and app secrets such as API tokens) sit in plaintext in
+ * container.json, so it is owner-only. Every write is a fresh file renamed
+ * into place, so every write applies the mode. */
+const CONTAINER_CONFIG_MODE = 0o600;
+
 export async function writeContainerConfig(name, config) {
   const path = join(getContainerDir(name), 'container.json');
-  await writeJsonAtomic(path, config);
+  await writeJsonAtomic(path, config, { mode: CONTAINER_CONFIG_MODE });
   notifyContainerConfigWrite(name);
 }
 

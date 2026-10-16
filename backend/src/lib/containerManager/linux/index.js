@@ -64,6 +64,8 @@ export {
   deleteContainerBackup,
 } from './containerManagerBackup.js';
 
+export { tightenContainerFileModes, tightenContainerBackupFileModes } from './containerManagerFileModes.js';
+
 export {
   listContainerImages, deleteContainerImage, getImageDigest, findContainersUsingImage,
 } from './containerManagerImages.js';

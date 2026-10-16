@@ -318,7 +318,11 @@ export async function createContainer(spec, onStep) {
   const filesDir = getContainerFilesDir(name);
   await mkdir(getContainersPath(), { recursive: true });
   try {
-    await mkdir(containerDir);
+    // Owner-only: container.json holds secret env values in plaintext, and
+    // nothing but the backend reads the directory — containerd/runc (root)
+    // bind-mount files/ and open runs/ themselves, and a container sees only
+    // its mount points, never this directory.
+    await mkdir(containerDir, 0o700);
   } catch (err) {
     if (err?.code === 'EEXIST') {
       throw containerError(

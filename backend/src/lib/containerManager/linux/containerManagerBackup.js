@@ -28,7 +28,7 @@
  */
 import { spawn } from 'node:child_process';
 import {
-  access, constants, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile,
+  access, chmod, constants, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile,
 } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { join } from 'node:path';
@@ -37,7 +37,9 @@ import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 
 import { containerError, containerState, getClient, callUnary, packAny } from './containerManagerConnection.js';
-import { getContainerDir, getContainerFilesDir, getContainersPath } from './containerPaths.js';
+import {
+  CONTAINERS_BACKUP_DIRNAME, getContainerDir, getContainerFilesDir, getContainersPath,
+} from './containerPaths.js';
 import {
   getTaskState, normalizeTaskStatus, cleanupTask, pauseContainer, resumeContainer,
 } from './containerManagerLifecycle.js';
@@ -53,13 +55,19 @@ import { getImageDigest } from './containerManagerImages.js';
 import { validateAndNormalizeMounts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';
 
+/* A backup holds container.json (secret env values in plaintext) and the
+ * mount data, so it is owner-only: the timestamp directory 0700, every file in
+ * it 0600, set at creation. A restored container directory gets the 0700 of a
+ * live one. On a filesystem without Unix modes (CIFS, vfat) the mount options
+ * decide instead. */
+const BACKUP_DIR_MODE = 0o700;
+const BACKUP_FILE_MODE = 0o600;
+const CONTAINER_DIR_MODE = 0o700;
+
 const RUNTIME_NAME = 'io.containerd.runc.v2';
 const SNAPSHOTTER = 'overlayfs';
 const OCI_SPEC_TYPE_URL = 'types.containerd.io/opencontainers/runtime-spec/1/Spec';
 
-/** Subdirectory under each backup root that holds container backups. Kept
- * separate from VM backups so the two can never collide on name + timestamp. */
-const CONTAINERS_BACKUP_DIRNAME = 'containers';
 /** VM backups' sibling namespace under each backup root (vmManager-owned). */
 const VMS_BACKUP_DIRNAME = 'vms';
 
@@ -122,7 +130,7 @@ async function tarGzipDir(parent, baseName, destPath, totalBytes, onProgress) {
   });
 
   const gzip = createGzip();
-  const out = createWriteStream(destPath);
+  const out = createWriteStream(destPath, { mode: BACKUP_FILE_MODE });
 
   const tarExitPromise = new Promise((resolve, reject) => {
     tar.on('error', reject);
@@ -223,7 +231,7 @@ export async function createContainerBackup(name, destinationPath, { onProgress,
   // cleanup below removes it, and must never remove (or write into) a backup
   // another run made in the same second.
   try {
-    await mkdir(backupDir);
+    await mkdir(backupDir, BACKUP_DIR_MODE);
   } catch (err) {
     if (err.code === 'EEXIST') {
       throw containerError(
@@ -296,7 +304,7 @@ export async function createContainerBackup(name, destinationPath, { onProgress,
     sizeBytes: archiveBytes,
   };
   try {
-    await writeFile(join(backupDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+    await writeFile(join(backupDir, 'manifest.json'), JSON.stringify(manifest, null, 2), { mode: BACKUP_FILE_MODE });
   } catch (err) {
     /* Without its manifest the directory is no backup (listings skip it) — remove it. */
     await rm(backupDir, { recursive: true, force: true }).catch(() => {});
@@ -447,7 +455,9 @@ async function extractArchiveToStaging(archivePath) {
 
   const stagingName = `.restore-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const stagingDir = join(containersRoot, stagingName);
-  await mkdir(stagingDir, { recursive: true });
+  // Owner-only from the start: the extracted container.json holds secrets
+  // under whatever mode the archive recorded.
+  await mkdir(stagingDir, { recursive: true, mode: CONTAINER_DIR_MODE });
 
   try {
     await untarGzipTo(archivePath, stagingDir);
@@ -467,6 +477,15 @@ async function extractArchiveToStaging(archivePath) {
   } catch (err) {
     await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
     throw containerError('BACKUP_INVALID', `Unexpected archive layout: ${err.message}`);
+  }
+  // The archive carries the source directory's mode (0755 in backups taken
+  // before container directories were 0700); the restored one is a live
+  // container directory.
+  try {
+    await chmod(join(stagingDir, extractedTop), CONTAINER_DIR_MODE);
+  } catch (err) {
+    await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    throw containerError('BACKUP_RESTORE_FAILED', `Failed to set the restored directory's mode: ${err.message}`);
   }
   return { stagingDir, extractedTop };
 }

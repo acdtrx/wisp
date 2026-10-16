@@ -54,6 +54,10 @@ export function getRunMetaPath(name, runId) {
   return join(getContainerRunsDir(name), `${runId}.json`);
 }
 
+/** Subdirectory under each backup root that holds container backups
+ * (`<root>/containers/<name>/<timestamp>/`), beside VM backups under `vms/`. */
+export const CONTAINERS_BACKUP_DIRNAME = 'containers';
+
 /** Filesystem-safe ISO timestamp: 2026-04-18T12-34-56-789Z (colons replaced with hyphens). */
 export const RUN_ID_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
 

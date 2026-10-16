@@ -18,7 +18,7 @@ import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError, generateMAC } from './vmManagerConnection.js';
 import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
-import { getVMBasePath } from './vmManagerPaths.js';
+import { getVMBasePath, VMS_BACKUP_DIRNAME } from './vmManagerPaths.js';
 import { isOfflineState } from './libvirtConstants.js';
 import { copyNvram } from './vmManagerNvram.js';
 import { assertVMNameAvailable, createOwnVMDir, removeOwnVMDir } from './vmManagerCreate.js';
@@ -26,10 +26,19 @@ import { getBackingChain, copyAndConvert } from '../../storage/index.js';
 
 const execFile = promisify(execFileCb);
 
-// Layout: VM backups under <root>/vms/<vmName>/<timestamp>/, beside container
-// backups under <root>/containers/<name>/<timestamp>/.
-const VMS_BACKUP_DIRNAME = 'vms';
+// Layout: VM backups under <root>/vms/<vmName>/<timestamp>/ (VMS_BACKUP_DIRNAME),
+// beside container backups under <root>/containers/<name>/<timestamp>/.
 const CONTAINERS_BACKUP_DIRNAME = 'containers';
+
+// A backup holds the guest's disks (and with them whatever secrets the guest
+// keeps) plus cloud-init.json's password hash, so it is owner-only: the
+// timestamp directory 0700 — which also covers the flatten scratch file
+// qemu-img creates at its own mode — and every file 0600, set at creation.
+// VARS.fd arrives 0600 from wisp-nvram (cp -p of libvirt's 0600 file) and
+// cloud-init.json keeps its source's 0600. On a filesystem without Unix modes
+// (CIFS, vfat) the mount options decide instead.
+const BACKUP_DIR_MODE = 0o700;
+const BACKUP_FILE_MODE = 0o600;
 
 function backupTimestamp() {
   return new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
@@ -52,7 +61,7 @@ async function copyWithProgress(srcPath, dstPath, onProgress) {
 async function streamWithGzip(sourcePath, destPath, { totalBytes, onProgress } = {}) {
   const readStream = createReadStream(sourcePath);
   const gzip = createGzip();
-  const writeStream = createWriteStream(destPath);
+  const writeStream = createWriteStream(destPath, { mode: BACKUP_FILE_MODE });
 
   if (typeof onProgress === 'function' && totalBytes != null && totalBytes > 0) {
     let readBytes = 0;
@@ -257,7 +266,7 @@ export async function createBackup(vmName, destinationPath, { onProgress, origin
   // Non-recursive so this run provably owns the directory: the failure
   // cleanup below removes it, and must never remove a backup another run wrote.
   try {
-    await mkdir(backupDir);
+    await mkdir(backupDir, BACKUP_DIR_MODE);
   } catch (err) {
     if (err.code === 'EEXIST') {
       throw vmError('BACKUP_EXISTS', `A backup of "${vmName}" named ${timestamp} already exists at this destination — retry in a moment`);
@@ -359,7 +368,7 @@ async function writeBackupContents({ vmName, xml, config, nvramPath, backupDir, 
   // names that file instead of the overlay (restore reads disk names from it).
   const flattened = diskPlans.filter((p) => p.flatten);
   const backupXml = flattened.length > 0 ? domainXmlWithFlattenedDisks(xml, flattened) : xml;
-  await writeFile(join(backupDir, 'domain.xml'), backupXml);
+  await writeFile(join(backupDir, 'domain.xml'), backupXml, { mode: BACKUP_FILE_MODE });
   done += 1;
   emit('domain', { percent: Math.round((done / totalItems) * 100), currentFile: 'Saving domain.xml' });
 
@@ -461,7 +470,7 @@ async function writeBackupContents({ vmName, xml, config, nvramPath, backupDir, 
     disks: diskPlans.map((p) => ({ slot: p.slot, file: p.fileName })),
     sizeBytes: totalBytes,
   };
-  await writeFile(join(backupDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  await writeFile(join(backupDir, 'manifest.json'), JSON.stringify(manifest, null, 2), { mode: BACKUP_FILE_MODE });
   emit('manifest', { percent: 100, currentFile: 'Backup complete' });
   return { path: backupDir, timestamp };
 }
