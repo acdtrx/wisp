@@ -39,7 +39,7 @@ export async function resolveBackupDestinations(settings, rawMounts, destination
         const { mounted } = await getMountStatus(mountPath);
         if (!mounted) {
           try {
-            await mountSMB(dest.share, mountPath, { username: dest.username, password: dest.password });
+            await mountSMB(dest.share, mountPath, { username: dest.username, password: dest.password, ownerOnly: true });
           } catch (mountErr) {
             throw createAppError(
               'BACKUP_MOUNT_FAILED',

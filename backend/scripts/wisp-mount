@@ -171,6 +171,7 @@ read_smb_config() {
   credentialsPath=""
   uid=""
   gid=""
+  ownerOnly=""
   local line k v
   while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in
@@ -179,7 +180,7 @@ read_smb_config() {
         k="${line%%=*}"
         v="${line#*=}"
         case "$k" in
-          share|mountPath|credentialsPath|uid|gid)
+          share|mountPath|credentialsPath|uid|gid|ownerOnly)
             printf -v "$k" '%s' "$v"
             ;;
           *)
@@ -241,6 +242,13 @@ do_smb_mount() {
   local opts="rw,credentials=${credentialsPath}"
   [[ -n "${uid:-}" ]] && opts="${opts},uid=${uid}"
   [[ -n "${gid:-}" ]] && opts="${opts},gid=${gid}"
+  # ownerOnly=1 (the backup destination): CIFS without Unix extensions shows one
+  # mode for the whole mount and ignores chmod, so set it to owner-only here.
+  case "${ownerOnly:-}" in
+    '') ;;
+    1) opts="${opts},file_mode=0600,dir_mode=0700" ;;
+    *) echo "wisp-mount: ownerOnly must be 1" >&2; exit 64 ;;
+  esac
   prepare_mount_point "$mountPath"
   mount -t cifs "$share" "$MOUNT_TARGET" -o "$opts"
 }

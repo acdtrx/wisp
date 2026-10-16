@@ -350,7 +350,7 @@ Unified mount helper for SMB shares and adopted removable drives. Invoked via `s
 
 | Command | Description |
 |---------|-------------|
-| `wisp-mount smb mount <configPath>` | Mount an SMB share (config file supplies share, mountPath, username, password, uid, gid) |
+| `wisp-mount smb mount <configPath>` | Mount an SMB share (config file supplies share, mountPath, username, password, uid, gid, optional `ownerOnly=1` → `file_mode=0600,dir_mode=0700`) |
 | `wisp-mount smb check <configPath>` | Test SMB connectivity by mounting then unmounting |
 | `wisp-mount disk mount <configPath>` | Mount an adopted removable drive by UUID (config file supplies uuid, mountPath, fsType, readOnly, uid, gid) |
 | `wisp-mount unmount <path>` | Unmount a mount point |

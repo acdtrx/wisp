@@ -60,7 +60,7 @@ async function writeCredentialsFile(filePath, { username, password, domain }) {
   await writeFile(filePath, `${lines.join('\n')}\n`, { mode: 0o600 });
 }
 
-function buildSmbConfigContents({ share, mountPath, credentialsPath, uid, gid }) {
+function buildSmbConfigContents({ share, mountPath, credentialsPath, uid, gid, ownerOnly = false }) {
   const lines = [
     `share=${share}`,
     `mountPath=${mountPath}`,
@@ -68,6 +68,7 @@ function buildSmbConfigContents({ share, mountPath, credentialsPath, uid, gid })
   ];
   if (typeof uid === 'number') lines.push(`uid=${uid}`);
   if (typeof gid === 'number') lines.push(`gid=${gid}`);
+  if (ownerOnly) lines.push('ownerOnly=1');
   return `${lines.join('\n')}\n`;
 }
 
@@ -96,16 +97,18 @@ async function runHelper(args, { timeout = 30000 } = {}) {
  * Mount an SMB share.
  * @param {string} share - e.g. //server/share
  * @param {string} mountPath - e.g. /mnt/wisp/smb-nas
- * @param {{ username?: string, password?: string }} options
+ * @param {{ username?: string, password?: string, ownerOnly?: boolean }} options
+ *   ownerOnly: mount with file mode 0600 / dir mode 0700 (the backup destination —
+ *   CIFS without Unix extensions ignores chmod, so the mount sets the modes)
  */
-export async function mountSMB(share, mountPath, { username, password } = {}) {
+export async function mountSMB(share, mountPath, { username, password, ownerOnly = false } = {}) {
   if (!share || typeof share !== 'string' || !mountPath || !mountPath.startsWith('/')) {
     throw createAppError('SMB_INVALID', 'Invalid share or mountPath', 'share and mountPath (absolute) required');
   }
 
   const key = `${share}:${mountPath}`;
   let lock = mountLocks.get(key) ?? Promise.resolve();
-  const next = lock.then(() => _mountSMB(share, mountPath, { username, password }));
+  const next = lock.then(() => _mountSMB(share, mountPath, { username, password, ownerOnly }));
   mountLocks.set(
     key,
     next.catch(() => {
@@ -115,7 +118,7 @@ export async function mountSMB(share, mountPath, { username, password } = {}) {
   return next;
 }
 
-async function _mountSMB(share, mountPath, { username, password } = {}) {
+async function _mountSMB(share, mountPath, { username, password, ownerOnly } = {}) {
   assertNoForbiddenChars('share', share);
   assertNoForbiddenChars('mountPath', mountPath);
   assertNoForbiddenChars('username', username);
@@ -133,7 +136,7 @@ async function _mountSMB(share, mountPath, { username, password } = {}) {
   await writeCredentialsFile(credentialsPath, { username, password });
   await writeFile(
     configPath,
-    buildSmbConfigContents({ share, mountPath, credentialsPath, uid, gid }),
+    buildSmbConfigContents({ share, mountPath, credentialsPath, uid, gid, ownerOnly }),
     { mode: 0o600 },
   );
 

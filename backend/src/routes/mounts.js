@@ -274,7 +274,10 @@ export default async function mountsRoutes(fastify) {
           return reply.code(404).send({ error: 'Mount not found', detail: request.params.id });
         }
         if (d.type === 'smb') {
-          await mountSMB(d.share, d.mountPath, { username: d.username, password: d.password });
+          const { backupMountId } = await getSettings();
+          await mountSMB(d.share, d.mountPath, {
+            username: d.username, password: d.password, ownerOnly: d.id === backupMountId,
+          });
           return { ok: true };
         }
         if (d.type === 'disk') {

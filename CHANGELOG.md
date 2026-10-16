@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-17
+
+### Bug Fixes
+- **SMB backup share is owner-only on the host** — the share set as the backup mount is mounted with file mode `0600` / folder mode `0700`, so local accounts can't read backups through `/mnt/wisp` (the share ignores chmod, so 2.5.0's tightening couldn't apply there). Takes effect the next time the share is mounted: unmount and mount it in Host Mgmt after updating.
+
 ## 2026-10-16 (v2.5.0)
 
 ### Removed

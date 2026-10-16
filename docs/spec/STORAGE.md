@@ -89,7 +89,7 @@ Re-insertion after unplug auto-mounts silently. Removal triggers a lazy unmount 
 
 | Subcommand | Purpose |
 |------------|---------|
-| `smb mount <configPath>` | `mount -t cifs` (config supplies share, mountPath, credentialsPath, uid, gid) |
+| `smb mount <configPath>` | `mount -t cifs` (config supplies share, mountPath, credentialsPath, uid, gid, and `ownerOnly=1` for the backup mount) |
 | `smb check <configPath>` | SMB test — mount then unmount, no persistent state |
 | `disk mount <configPath>` | `mount -t <fsType> /dev/disk/by-uuid/<uuid>` (config supplies uuid, mountPath, fsType, readOnly, uid, gid) |
 | `unmount <path>` | `umount` |
@@ -110,7 +110,7 @@ Mount options are chosen by filesystem:
 - `ext4` / `btrfs`: `defaults[,ro]` (filesystem stores POSIX perms)
 - `vfat` / `exfat` / `ntfs3`: `uid=$uid,gid=$gid,umask=0007[,ro]` (ownership must be passed at mount time)
 - `ntfs3`: forced `ro` (write support in `ntfs3` is still maturing; explicit opt-in could be added later)
-- SMB: `rw,credentials=<path>[,uid=$uid,gid=$gid]`
+- SMB: `rw,credentials=<path>[,uid=$uid,gid=$gid][,file_mode=0600,dir_mode=0700]` — the modes only with `ownerOnly=1`, which the backend sets for the share configured as the backup mount ([BACKUPS.md § Backup file modes](BACKUPS.md#backup-file-modes))
 
 ## Mount table
 

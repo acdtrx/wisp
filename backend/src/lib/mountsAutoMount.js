@@ -7,7 +7,7 @@
  * Hotplug: on disk insertion, auto-mount adopted disks whose UUID appeared.
  * On disk removal, lazy-unmount the stale mountPath so the kernel cleans up.
  */
-import { getRawMounts, MOUNT_ROOT } from './settings.js';
+import { getRawMounts, getSettings, MOUNT_ROOT } from './settings.js';
 import {
   getMountStatus, mountSMB, unmountSMB,
   mountDisk, unmountDisk,
@@ -40,6 +40,7 @@ export function findOrphanMounts(mountTable, configuredPaths) {
  */
 export async function ensureMounts(log) {
   const mounts = await getRawMounts();
+  const { backupMountId } = await getSettings();
   const configuredPaths = new Set(mounts.map((d) => d.mountPath));
 
   for (const mountPath of findOrphanMounts(readMountTable(), configuredPaths)) {
@@ -59,7 +60,9 @@ export async function ensureMounts(log) {
       try {
         const { mounted } = await getMountStatus(d.mountPath);
         if (mounted) continue;
-        await mountSMB(d.share, d.mountPath, { username: d.username, password: d.password });
+        await mountSMB(d.share, d.mountPath, {
+          username: d.username, password: d.password, ownerOnly: d.id === backupMountId,
+        });
         log.info({ id: d.id, mountPath: d.mountPath }, 'SMB mounted at startup');
       } catch (err) {
         log.warn({ err, id: d.id, mountPath: d.mountPath }, 'SMB auto-mount failed');
@@ -97,8 +100,10 @@ const AUTO_MOUNT_RETRY_INTERVAL_MS = 5 * 60 * 1000;
 export function startAutoMountRetry(log) {
   const tick = async () => {
     let mounts;
+    let backupMountId;
     try {
       mounts = await getRawMounts();
+      ({ backupMountId } = await getSettings());
     } catch (err) {
       log.warn({ err }, 'Auto-mount retry: could not read settings');
       return;
@@ -109,7 +114,9 @@ export function startAutoMountRetry(log) {
       try {
         const { mounted } = await getMountStatus(d.mountPath);
         if (mounted) continue;
-        await mountSMB(d.share, d.mountPath, { username: d.username, password: d.password });
+        await mountSMB(d.share, d.mountPath, {
+          username: d.username, password: d.password, ownerOnly: d.id === backupMountId,
+        });
         log.info({ id: d.id, mountPath: d.mountPath }, 'SMB mounted on retry');
       } catch (err) {
         /* swallow — next tick will retry */
