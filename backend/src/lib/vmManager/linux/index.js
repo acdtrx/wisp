@@ -64,6 +64,8 @@ export {
 
 export { updateVMConfig } from './vmManagerConfig.js';
 
+export { setVMPendingRestart } from './vmManagerPendingRestart.js';
+
 export { getVMUSBDevices, attachUSBDevice, detachUSBDevice } from './vmManagerUsb.js';
 
 export {

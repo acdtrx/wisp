@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import dbus from 'dbus-next';
 
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError, generateMAC } from './vmManagerConnection.js';
-import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
+import { parseVMFromXML, parseDomainRaw, buildXml, setWispPendingRestart } from './vmManagerXml.js';
 import { validateVMName } from './vmManagerValidation.js';
 import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
 import { resizeDisk as resizeDiskImage, copyAndConvert, getDiskInfo } from '../../storage/index.js';
@@ -567,6 +567,8 @@ export async function cloneVM(name, newName, { onProgress } = {}) {
     for (const iface of dom.devices?.interface || []) {
       iface.mac = { '@_address': generateMAC() };
     }
+    // A clone has never run, so no running QEMU lags its definition.
+    setWispPendingRestart(dom, false);
     const newXml = buildXml(parsed);
 
     emit('define', { percent: pct(), currentFile: 'Defining VM' });

@@ -87,6 +87,7 @@ export default async function vmsRoutes(fastify) {
               autostart: { type: 'boolean' },
               iconId: { type: ['string', 'null'] },
               localDns: { type: 'boolean' },
+              pendingRestart: { type: 'boolean' },
             },
           },
         },

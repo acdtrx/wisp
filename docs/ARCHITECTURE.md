@@ -158,6 +158,7 @@ Shared pure helpers live in **`backend/src/lib/vmManager/vmManagerShared.js`** (
 | `vmManagerLifecycle.js` | Start, stop, force-stop, reboot, suspend, resume |
 | `vmManagerCreate.js` | Create VM (XML generation, disk provisioning), delete, clone |
 | `vmManagerConfig.js` | Update VM configuration (live vs offline, restart detection) |
+| `vmManagerPendingRestart.js` | Persisted restart-required flag: `setVMPendingRestart`, cleared on DomainEvent *started / booted* |
 | `vmManagerDisk.js` | Attach/detach/resize local disks |
 | `vmManagerIso.js` | Attach/eject ISO images to CDROM slots |
 | `vmManagerUsb.js` | USB device attach/detach |

@@ -224,6 +224,10 @@ export async function updateVMConfig() {
   throw noConn();
 }
 
+export async function setVMPendingRestart() {
+  throw noConn();
+}
+
 export async function getVMUSBDevices() {
   return [];
 }

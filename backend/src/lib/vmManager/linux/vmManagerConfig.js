@@ -7,9 +7,12 @@ import dbus from 'dbus-next';
 import { validateVMName } from './vmManagerValidation.js';
 import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
-import { parseVMFromXML, parseDomainRaw, buildXml, setWispMetadata } from './vmManagerXml.js';
+import {
+  parseVMFromXML, parseDomainRaw, buildXml, setWispMetadata, setWispPendingRestart, domainDefinitionSignature,
+} from './vmManagerXml.js';
 import { getWindowsFeatures, getWindowsClock, getLinuxFeatures } from './vmManagerCreate.js';
 import { moveVmDirectory, rewriteDomainPaths, rewriteSnapshotMemoryPaths, findActualVmDir, pathExists } from './vmManagerRename.js';
+import { refreshVMListCache } from './vmManagerList.js';
 
 /** Parsed `<name>` may be a string or `{ '#text': string }` from fast-xml-parser. */
 function domainNameFromParsed(dom) {
@@ -35,7 +38,6 @@ export async function updateVMConfig(name, changes) {
   let dom = parsed.domain;
   if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
   let current = parseVMFromXML(xml);
-  let requiresRestart = false;
   let effectiveName = name;
 
   if (patch.name != null) {
@@ -148,13 +150,17 @@ export async function updateVMConfig(name, changes) {
     }
   }
 
+  // A running QEMU never sees a DomainDefineXML: a definition that ends up
+  // differing from this baseline (Wisp's metadata aside) applies only on the
+  // VM's next start.
+  const baselineSignature = domainDefinitionSignature(parsed);
+
   if (patch.memoryMiB != null) {
     const kib = patch.memoryMiB * 1024;
     dom.memory = { '@_unit': 'KiB', '#text': String(kib) };
     if (dom.currentMemory) {
       dom.currentMemory = { '@_unit': 'KiB', '#text': String(kib) };
     }
-    if (isRunning) requiresRestart = true;
   }
 
   const newVcpus = patch.vcpus != null ? parseInt(patch.vcpus, 10) : null;
@@ -167,7 +173,6 @@ export async function updateVMConfig(name, changes) {
 
     if (newVcpus != null) {
       dom.vcpu = { '@_placement': 'static', '#text': String(vcpuCount) };
-      if (isRunning) requiresRestart = true;
     }
 
     const existingFeatures = current.cpuFeatures || [];
@@ -187,7 +192,6 @@ export async function updateVMConfig(name, changes) {
       topology,
       feature: featureObjs.length ? featureObjs : undefined,
     };
-    if (newCpuMode != null && isRunning) requiresRestart = true;
   }
 
   if (patch.machineType != null && dom.os?.type) {
@@ -195,7 +199,6 @@ export async function updateVMConfig(name, changes) {
     if (typeof typeNode === 'object') {
       typeNode['@_machine'] = patch.machineType;
     }
-    if (isRunning) requiresRestart = true;
   }
 
   if (patch.firmware != null) {
@@ -206,7 +209,6 @@ export async function updateVMConfig(name, changes) {
     if (patch.firmware === 'uefi' || patch.firmware === 'uefi-secure') {
       dom.os['@_firmware'] = 'efi';
     }
-    if (isRunning) requiresRestart = true;
   }
 
   if (patch.bootOrder != null && dom.os) {
@@ -224,7 +226,6 @@ export async function updateVMConfig(name, changes) {
     } else {
       delete dom.clock;
     }
-    if (isRunning) requiresRestart = true;
   }
 
   if (patch.nics != null && dom.devices) {
@@ -272,7 +273,6 @@ export async function updateVMConfig(name, changes) {
     } else {
       delete dom.devices.tpm;
     }
-    if (isRunning) requiresRestart = true;
   }
 
   if (patch.virtioRng != null && dom.devices) {
@@ -290,6 +290,10 @@ export async function updateVMConfig(name, changes) {
     });
   }
 
+  const requiresRestart = isRunning && domainDefinitionSignature(parsed) !== baselineSignature;
+  const flagRestart = requiresRestart && !current.pendingRestart;
+  if (flagRestart) setWispPendingRestart(dom, true);
+
   let outXml;
   try {
     outXml = buildXml(parsed);
@@ -302,6 +306,7 @@ export async function updateVMConfig(name, changes) {
   } catch (err) {
     throw vmError('LIBVIRT_ERROR', `Failed to update VM "${effectiveName}" configuration`, err.message);
   }
+  if (flagRestart) refreshVMListCache();
 
   if (patch.autostart != null) {
     try {

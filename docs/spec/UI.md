@@ -304,7 +304,7 @@ A single full-width **Organize** button sits at the bottom of the sidebar (above
 Each VM is a full-width flat row (no rounded corners, edge-to-edge in the list area; no gap between rows):
 
 - **VM icon** (small, from icon picker or default by OS type) **colored by state** — green (running), grey (stopped), amber (paused), blue (transitioning). The icon appears before the name; there is no separate status dot.
-- **VM name** (bold) on the same line as the icon
+- **VM name** (bold) on the same line as the icon, followed by a small amber **restart dot** when the VM needs a stop + start: its restart-required flag is set (`pendingRestart`, tooltip *saved changes apply on the next start*) or its qemu binary was replaced since it started (`staleBinary`)
 - **vCPU and RAM** summary on the line below in muted text (e.g. "4 vCPU / 4 GB")
 - **Hover actions:** contextual action icons (Start / Stop / Reboot — only relevant ones shown), revealed on row hover. In organize mode these are replaced by the Move-to-section picker.
 
@@ -394,6 +394,7 @@ A single horizontal bar containing:
 - **VM icon** — clickable, opens the Icon Picker modal. The icon is colored by VM state (green running, grey stopped, amber paused, blue transitioning); there is no separate status badge pill.
 - **VM name** — bold, truncated if long, followed by a small muted **vm** pill (same style as the **container** pill on the container overview header)
 - **Tabs** — Overview | Console (underline style with border-bottom; active tab has accent border + bold label)
+- **Restart required** amber badge (left of the actions, same style as the container header's) while the VM's persisted restart-required flag is set (`pendingRestart` — see [VM-MANAGEMENT.md](VM-MANAGEMENT.md#restart-required-flag)). Its tooltip says a stop + start applies the saved changes and a guest reboot doesn't. It survives reloads and clears when the VM next boots; the selected VM's flag follows the `vms` list feed, so the badge drops without a manual refresh. (settled 2026-10-16)
 - **Action buttons** (right-aligned): Start, Stop, Force Stop, Reboot, Suspend, Resume, (divider), Backup, Clone, Delete, View XML
 
 Action buttons are **context-sensitive**: irrelevant ones are disabled with muted style, not hidden.
@@ -409,7 +410,7 @@ A red bar below the header, visible on both tabs. Appears when an action or save
 
 ### Overview tab content
 
-A single scrollable panel with section cards, in this order:
+A single scrollable panel with section cards, in this order. **General**, **Network interfaces** and **Advanced** — the sections that edit the domain definition — show the `SectionCard` *Restart required* badge from the same persisted flag as the header (the container Mounts / Devices sections do the same with theirs); no section keeps a session-only restart state.
 
 1. **General** — one row on desktop: Name, **DNS** toggle (Local DNS — advertise `<name>.local` via mDNS; help icon), **Auto Start** toggle, then (divider) CPU Cores, RAM (number + GB/MB toggle), then (divider) OS Type (radio pills with OS icons, content-sized). Below `sm` it stacks as three lines: Name + the two toggles, CPU + RAM as equal halves, OS Type. Per-section dirty state and Save button.
 
@@ -768,6 +769,7 @@ Header bar with:
 - **Icon** — clickable, opens the Icon Picker (same set as VMs), colored by state; default matches **Box**
 - Container name + **container** badge (muted pill)
 - Tabs: **Overview** | **Logs** | **Console**
+- **Restart required** amber badge (left of the actions) while `config.pendingRestart` is true
 - **Restarting in N s** amber badge (left of the actions, counting down each second) while the restart policy has a restart scheduled; **Stop** stays enabled then and cancels it (label: *Stop (cancel the scheduled restart)*)
 - Action buttons: Start, Stop, Kill, Restart, (divider), Backup, Delete. **Backup** opens the shared backup modal and works in any settled state — a running container is paused for the duration of the archive and resumed automatically (the sidebar shows `paused` for that window). While a backup is in progress, **Start**, **Stop**, **Kill**, and **Restart** are disabled (labels explain why) — interrupting a frozen task mid-archive would break the resume flow; Backup itself is disabled during transient states (`pausing`/`unknown`) and while a backup runs.
 

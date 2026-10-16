@@ -58,6 +58,7 @@ export const getWindowsClock = impl.getWindowsClock;
 export const getLinuxFeatures = impl.getLinuxFeatures;
 
 export const updateVMConfig = impl.updateVMConfig;
+export const setVMPendingRestart = impl.setVMPendingRestart;
 
 export const getVMUSBDevices = impl.getVMUSBDevices;
 export const attachUSBDevice = impl.attachUSBDevice;

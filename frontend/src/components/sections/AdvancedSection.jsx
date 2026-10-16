@@ -74,14 +74,12 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
   const [original, setOriginal] = useState(defaults);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [requiresRestart, setRequiresRestart] = useState(false);
 
   const init = useCallback(() => {
     const data = advancedFormFromVmConfig(vmConfig);
     setForm(data);
     setOriginal(data);
     setError(null);
-    setRequiresRestart(false);
   }, [
     vmConfig?.firmware, vmConfig?.machineType, vmConfig?.cpuMode, vmConfig?.videoModel,
     vmConfig?.graphics?.type, JSON.stringify(vmConfig?.bootOrder), vmConfig?.bootMenu, vmConfig?.memBalloon,
@@ -138,8 +136,7 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
           changes[key] = form[key];
         }
       }
-      const result = await onSave(changes);
-      if (result?.requiresRestart) setRequiresRestart(true);
+      await onSave(changes);
       if (Object.keys(changes).length > 0) setOriginal(form);
     } catch (err) {
       setError(err.message);
@@ -154,7 +151,7 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
       isDirty={isCreating ? false : isDirty}
       onSave={isCreating ? undefined : handleSave}
       saving={saving}
-      requiresRestart={requiresRestart}
+      requiresRestart={!!vmConfig.pendingRestart}
       collapsible
       collapsed={collapsed}
       onToggleCollapse={() => setCollapsed(!collapsed)}

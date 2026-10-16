@@ -3,6 +3,18 @@ import * as vmApi from '../api/vms.js';
 import { createSSE } from '../api/sse.js';
 import { subscribeTopic } from '../api/events.js';
 
+/**
+ * The list feed refreshes on every libvirt domain event, so it carries the
+ * selected VM's state and restart-required flag ahead of any detail re-fetch
+ * (the flag clears on start after the start action has already returned).
+ * Returns the updated config, or null when nothing changed.
+ */
+function mergeListFields(vmConfig, listItem) {
+  const pendingRestart = !!listItem.pendingRestart;
+  if (listItem.state === vmConfig.state && pendingRestart === !!vmConfig.pendingRestart) return null;
+  return { ...vmConfig, state: listItem.state, pendingRestart };
+}
+
 export const useVmStore = create((set, get) => {
   // Single subscriber per feed: one `vms` topic subscription (shared /api/events
   // stream) and one per-VM stats SSE are active at a time. Close functions are
@@ -83,9 +95,8 @@ export const useVmStore = create((set, get) => {
           get().deselectVM();
         } else if (selectedVM && vmConfig) {
           const vm = vms.find(v => v.name === selectedVM);
-          if (vm && vm.state !== vmConfig.state) {
-            set({ vmConfig: { ...vmConfig, state: vm.state } });
-          }
+          const merged = vm && mergeListFields(vmConfig, vm);
+          if (merged) set({ vmConfig: merged });
         }
       } catch (err) {
         set({ error: err.message });
@@ -118,9 +129,8 @@ export const useVmStore = create((set, get) => {
             const next = { vms: data };
             if (prev.selectedVM && prev.vmConfig) {
               const vm = data.find((v) => v.name === prev.selectedVM);
-              if (vm && vm.state !== prev.vmConfig.state) {
-                next.vmConfig = { ...prev.vmConfig, state: vm.state };
-              }
+              const merged = vm && mergeListFields(prev.vmConfig, vm);
+              if (merged) next.vmConfig = merged;
             }
             return next;
           });
@@ -138,7 +148,7 @@ export const useVmStore = create((set, get) => {
     selectVM: async (name) => {
       const listItem = get().vms.find((v) => v.name === name);
       const seed = listItem
-        ? { name: listItem.name, uuid: listItem.uuid, state: listItem.state, stateCode: listItem.stateCode, vcpus: listItem.vcpus, memoryMiB: listItem.memoryMiB, osCategory: listItem.osCategory, iconId: listItem.iconId }
+        ? { name: listItem.name, uuid: listItem.uuid, state: listItem.state, stateCode: listItem.stateCode, vcpus: listItem.vcpus, memoryMiB: listItem.memoryMiB, osCategory: listItem.osCategory, iconId: listItem.iconId, pendingRestart: listItem.pendingRestart }
         : null;
       const seq = ++selectionSeq;
       set({ selectedVM: name, vmConfig: seed, vmStats: null, configLoading: true, error: null });

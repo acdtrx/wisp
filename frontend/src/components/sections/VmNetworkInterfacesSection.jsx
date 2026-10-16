@@ -56,7 +56,6 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
   const [editor, setEditor] = useState({ open: false, idx: null, nic: null });
   const [removingIdx, setRemovingIdx] = useState(null);
   const [error, setError] = useState(null);
-  const [requiresRestart, setRequiresRestart] = useState(false);
 
   useEffect(() => {
     setNics(initNicsFromConfig(vmConfig.nics));
@@ -116,7 +115,6 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
       : nics.map((n, i) => (i === idx ? { ...n, ...fields } : n));
     setError(null);
     const result = await onSave({ nics: normalizeNicsForApi(next) });
-    if (result?.requiresRestart) setRequiresRestart(true);
     setNics(next);
     return result;
   };
@@ -132,8 +130,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
     }
     setRemovingIdx(idx);
     try {
-      const result = await onSave({ nics: normalizeNicsForApi(next) });
-      if (result?.requiresRestart) setRequiresRestart(true);
+      await onSave({ nics: normalizeNicsForApi(next) });
       setNics(next);
     } catch (err) {
       setError(err.message);
@@ -166,7 +163,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
           ? 'Configure bridges and MACs now — changes apply when you create the VM.'
           : 'Add or edit an interface in a form; every change re-saves the whole NIC list. Editing requires the VM to be stopped.'
       }
-      requiresRestart={requiresRestart}
+      requiresRestart={!!vmConfig.pendingRestart}
       error={error}
       headerAction={headerAdd}
     >

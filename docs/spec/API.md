@@ -536,10 +536,13 @@ List all VMs with summary info.
     "osCategory": "linux",
     "iconId": null,
     "localDns": false,
+    "pendingRestart": false,
     "staleBinary": false
   }
 ]
 ```
+
+- `pendingRestart` is `true` while a saved definition change awaits a restart of the VM — set by a `PATCH` that returned `requiresRestart: true` (or by a state migration), persisted in the domain's `wisp:prefs` metadata, cleared when the VM next boots. A guest reboot does not clear it. See [VM-MANAGEMENT.md → Restart-required flag](VM-MANAGEMENT.md#restart-required-flag).
 
 - `staleBinary` is `true` when the VM's running qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt package upgrade); the VM needs to be restarted to pick up the new binary. Always `false` for non-running VMs. Detected by reading `/var/run/libvirt/qemu/<name>.pid` and checking whether `/proc/<pid>/exe` ends with ` (deleted)`.
 - The list payload does **not** carry section assignment. Section info arrives on its own channel, the `sections` topic of `GET /api/events` (see [Sections](#sections)) — libvirt/containerd events don't fire on assignment changes, so the list feeds aren't a usable carrier for it.
@@ -626,7 +629,7 @@ SSE stream for VM creation progress (see [ERROR-HANDLING.md](ERROR-HANDLING.md) 
 
 Full VM configuration parsed from domain XML.
 
-- **200:** Full VM config object (name, uuid, state, vcpus, memoryMiB, disks, nics, firmware, etc.)
+- **200:** Full VM config object (name, uuid, state, vcpus, memoryMiB, disks, nics, firmware, …, `pendingRestart`) — `pendingRestart` as on the list payload
 
 Each `disks[]` entry may include **`sizeGiB`** (integer, virtual size in GiB, rounded) for **`device: "disk"`** entries with a file `source`, when `qemu-img info` succeeds. Omitted if the image is missing or size read fails.
 
@@ -635,7 +638,7 @@ Each `disks[]` entry may include **`sizeGiB`** (integer, virtual size in GiB, ro
 Update VM configuration.
 
 - **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `machineType`, `firmware`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `localDns`, `autostart`. Schema is **`additionalProperties: false`**; with Fastify's default Ajv `removeAdditional: true`, unknown keys are silently stripped before reaching `updateVMConfig`.
-- **200:** `{ ok: true, requiresRestart: boolean }` — indicates whether changes need a VM restart
+- **200:** `{ ok: true, requiresRestart: boolean, name }` — `requiresRestart` is `true` when the VM is running and the patch changed its domain definition (anything but icon, local DNS and autostart); the VM's `pendingRestart` flag is then set too
 - **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running; `VM_BUSY` when renaming while a backup / restore-in-place / clone of this VM (or another locked operation) is running — a rename (`name` differing from `:name`) takes the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock), other edits don't
 - **422:** `{ error, detail }` — `INVALID_VM_NAME` on rename to an invalid name; VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
 

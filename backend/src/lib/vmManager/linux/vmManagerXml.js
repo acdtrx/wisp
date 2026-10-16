@@ -36,35 +36,81 @@ function wispPrefText(prefs, key) {
 /** Extract Wisp prefs from domain metadata (wisp:prefs). */
 function parseWispPrefs(dom) {
   const metadata = dom?.metadata;
-  if (!metadata || typeof metadata !== 'object') return { iconId: null, localDns: false };
+  const none = { iconId: null, localDns: false, pendingRestart: false };
+  if (!metadata || typeof metadata !== 'object') return none;
   const prefs = metadata[WISP_PREFS_KEY];
-  if (!prefs || typeof prefs !== 'object') return { iconId: null, localDns: false };
+  if (!prefs || typeof prefs !== 'object') return none;
   const iconText = wispPrefText(prefs, 'wisp:icon');
   const localDns = wispPrefText(prefs, 'wisp:localDns').toLowerCase() === 'true';
-  return { iconId: iconText || null, localDns };
+  const pendingRestart = wispPrefText(prefs, 'wisp:pendingRestart').toLowerCase() === 'true';
+  return { iconId: iconText || null, localDns, pendingRestart };
 }
 
 /**
- * Set or clear Wisp app metadata on a parsed domain object (mutates dom).
- * iconId: string to store (optional)
- * localDns: boolean to store (optional)
+ * The existing wisp:prefs element of a parsed domain, created (with its
+ * namespace) when missing. Callers mutate the returned object in place so
+ * prefs they don't own stay as libvirt returned them.
+ */
+function ensureWispPrefs(dom) {
+  if (!dom.metadata || typeof dom.metadata !== 'object') dom.metadata = {};
+  const existing = dom.metadata[WISP_PREFS_KEY];
+  if (existing && typeof existing === 'object') return existing;
+  const prefs = { '@_xmlns:wisp': WISP_NS_URI };
+  dom.metadata[WISP_PREFS_KEY] = prefs;
+  return prefs;
+}
+
+/** Drop wisp:prefs (and an emptied <metadata>) once no pref is left in it. */
+function pruneWispPrefs(dom) {
+  const prefs = dom.metadata?.[WISP_PREFS_KEY];
+  if (prefs && typeof prefs === 'object' && Object.keys(prefs).some((k) => !k.startsWith('@_'))) return;
+  if (dom.metadata) delete dom.metadata[WISP_PREFS_KEY];
+  if (dom.metadata && Object.keys(dom.metadata).length === 0) delete dom.metadata;
+}
+
+/**
+ * Set or clear the icon and local-DNS prefs on a parsed domain object (mutates dom).
+ * iconId: string to store, or null/'' to clear
+ * localDns: boolean to store (any other value clears it)
+ * Other wisp:prefs children (pendingRestart) are left as they are.
  */
 export function setWispMetadata(dom, { iconId, localDns }) {
   if (!dom) return;
-  if (!dom.metadata) dom.metadata = {};
+  const prefs = ensureWispPrefs(dom);
   const nextIcon = iconId == null || iconId === '' ? null : String(iconId).trim();
-  const hasLocalDns = localDns === true || localDns === false;
-  if (!nextIcon && !hasLocalDns) {
-    delete dom.metadata[WISP_PREFS_KEY];
-    if (Object.keys(dom.metadata).length === 0) delete dom.metadata;
-    return;
-  }
-  const prefs = {
-    '@_xmlns:wisp': WISP_NS_URI,
-  };
   if (nextIcon) prefs['wisp:icon'] = nextIcon;
-  if (hasLocalDns) prefs['wisp:localDns'] = localDns ? 'true' : 'false';
-  dom.metadata[WISP_PREFS_KEY] = prefs;
+  else delete prefs['wisp:icon'];
+  if (localDns === true || localDns === false) prefs['wisp:localDns'] = localDns ? 'true' : 'false';
+  else delete prefs['wisp:localDns'];
+  pruneWispPrefs(dom);
+}
+
+/** True when a parsed domain's wisp:prefs carry the restart-required flag. */
+export function hasWispPendingRestart(dom) {
+  return parseWispPrefs(dom).pendingRestart;
+}
+
+/**
+ * Set or clear the restart-required pref on a parsed domain object (mutates dom).
+ * Stored as `<wisp:pendingRestart>true</wisp:pendingRestart>`; absent means false.
+ */
+export function setWispPendingRestart(dom, value) {
+  if (!dom) return;
+  const prefs = ensureWispPrefs(dom);
+  if (value === true) prefs['wisp:pendingRestart'] = 'true';
+  else delete prefs['wisp:pendingRestart'];
+  pruneWispPrefs(dom);
+}
+
+/**
+ * Serialized domain definition without `<metadata>`: two definitions with the
+ * same signature run the same QEMU, so a changed signature on a running VM is
+ * a change that only applies on its next start. Wisp's own prefs live in
+ * `<metadata>` and never count.
+ */
+export function domainDefinitionSignature(parsed) {
+  const { metadata: _metadata, ...rest } = parsed.domain || {};
+  return xmlBuilder.build({ ...parsed, domain: rest });
 }
 
 /** Parse raw XML string; returns full parsed object (e.g. for parsed.domain.os.nvram). */
@@ -241,6 +287,7 @@ export function parseVMFromXML(xmlString) {
     _hostdevs: hostdevs,
     iconId: prefs.iconId,
     localDns: prefs.localDns,
+    pendingRestart: prefs.pendingRestart,
   };
 }
 

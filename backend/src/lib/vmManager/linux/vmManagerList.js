@@ -53,6 +53,7 @@ async function fetchVMListFromLibvirt() {
         osCategory: detectOSCategory(config),
         iconId: config.iconId ?? null,
         localDns: config.localDns ?? false,
+        pendingRestart: config.pendingRestart,
         guestAgent: !!config.guestAgent,
         staleBinary,
       };

@@ -295,6 +295,14 @@ export default function OverviewPanel() {
         {/* Below lg the actions become a full-width horizontally-scrollable row
             (primary actions leftmost); at lg+ they wrap right-aligned as before. */}
         <div className="flex w-full shrink-0 items-center justify-start gap-1 overflow-x-auto lg:w-auto lg:flex-wrap lg:justify-end lg:overflow-visible">
+          {vmConfig.pendingRestart && (
+            <span
+              className="shrink-0 rounded-full bg-status-warning-soft px-2 py-0.5 text-[10px] font-medium text-status-warning mr-1"
+              title="Saved changes apply when the VM is stopped and started again — a guest reboot keeps the running configuration"
+            >
+              Restart required
+            </span>
+          )}
           <ActionButton
             icon={Play} label="Start"
             onClick={() => startVM(name)}

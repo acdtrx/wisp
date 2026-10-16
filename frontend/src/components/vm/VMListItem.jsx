@@ -36,6 +36,7 @@ export default function VMListItem({ vm }) {
   const OsIcon = getVmIcon(iconId).component;
   const iconColorClass = STATE_ICON_COLOR[vm.state] || STATE_ICON_COLOR.nostate;
   const staleBinary = !!vm.staleBinary;
+  const pendingRestart = !!vm.pendingRestart;
 
   const handleDragStart = (e) => {
     if (!organizeMode) return;
@@ -60,10 +61,12 @@ export default function VMListItem({ vm }) {
         <div className="flex items-center gap-1.5">
           <OsIcon size={14} className={`shrink-0 ${iconColorClass} ${isRunning ? 'wisp-lit-glyph' : ''}`} />
           <span className="truncate text-sm font-medium text-text-primary">{vm.name}</span>
-          {staleBinary && (
+          {(staleBinary || pendingRestart) && (
             <span
               className="inline-block h-2 w-2 shrink-0 rounded-full bg-status-warning"
-              title="Restart required: qemu binary was updated after this VM started"
+              title={pendingRestart
+                ? 'Restart required: saved changes apply on the next start'
+                : 'Restart required: qemu binary was updated after this VM started'}
             />
           )}
         </div>

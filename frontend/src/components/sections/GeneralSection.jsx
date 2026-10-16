@@ -32,7 +32,6 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
   const [original, setOriginal] = useState(defaults);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [requiresRestart, setRequiresRestart] = useState(false);
 
   const init = useCallback(() => {
     const data = {
@@ -46,7 +45,6 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
     };
     setForm(data);
     setOriginal(data);
-    setRequiresRestart(false);
     setError(null);
   }, [vmConfig?.name, vmConfig?.vcpus, vmConfig?.memoryMiB, vmConfig?.osCategory, vmConfig?.localDns, vmConfig?.autostart]);
 
@@ -111,8 +109,7 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
       if (form.localDns !== original.localDns) changes.localDns = form.localDns;
       if (form.autostart !== original.autostart) changes.autostart = form.autostart;
 
-      const result = await onSave(changes);
-      if (result?.requiresRestart) setRequiresRestart(true);
+      await onSave(changes);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -126,7 +123,7 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
       isDirty={isCreating ? false : isDirty}
       onSave={isCreating ? undefined : handleSave}
       saving={saving}
-      requiresRestart={requiresRestart}
+      requiresRestart={!!vmConfig.pendingRestart}
       error={error}
     >
       <div className="space-y-0">
