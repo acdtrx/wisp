@@ -478,9 +478,8 @@ async function extractArchiveToStaging(archivePath) {
     await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
     throw containerError('BACKUP_INVALID', `Unexpected archive layout: ${err.message}`);
   }
-  // The archive carries the source directory's mode (0755 in backups taken
-  // before container directories were 0700); the restored one is a live
-  // container directory.
+  // The archive carries the source directory's mode, which may be wider
+  // (0755); the restored one is a live container directory.
   try {
     await chmod(join(stagingDir, extractedTop), CONTAINER_DIR_MODE);
   } catch (err) {

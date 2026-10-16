@@ -3,8 +3,8 @@
  * container directory (0700) and its `container.json` (0600), and every
  * container backup (timestamp directory 0700, its files 0600). New state gets
  * these modes when written (containerManagerCreate / ConfigIo / Backup); these
- * functions tighten state an earlier release left at the umask default, for
- * the state migration that runs on update.
+ * functions tighten existing state left at the umask default, for the state
+ * migration that runs on update.
  *
  * Pure filesystem work — no containerd — so the macOS dev stub exports them
  * too. Each returns one record per entry it changed (or, under `dryRun`, would

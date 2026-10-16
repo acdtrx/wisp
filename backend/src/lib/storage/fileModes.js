@@ -1,7 +1,7 @@
 /**
  * Owner-only modes for existing files and directories that hold secrets
  * (container.json, backup archives). New files get their mode at creation;
- * this tightens what an earlier release left at the umask default.
+ * this tightens existing ones left at the umask default.
  *
  * The path is opened without following a symlink and changed through the
  * handle, so a symlink planted in its place never redirects the chmod.

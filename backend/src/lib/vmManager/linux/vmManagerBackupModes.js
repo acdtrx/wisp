@@ -2,9 +2,8 @@
  * Owner-only modes for existing VM backups: every
  * `<root>/vms/<vmName>/<timestamp>/` directory 0700 and each regular file in
  * it 0600 — the modes createBackup gives a new backup (it holds the guest's
- * disks and cloud-init.json's password hash). Tightens backups an earlier
- * release left at the umask default, for the state migration that runs on
- * update.
+ * disks and cloud-init.json's password hash). Tightens existing backups left
+ * at the umask default, for the state migration that runs on update.
  *
  * Pure filesystem work — no libvirt — so the macOS dev stub exports it too.
  * Returns one record per entry it changed (or, under `dryRun`, would change);
