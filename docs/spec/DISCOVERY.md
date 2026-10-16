@@ -58,6 +58,6 @@ Both live in `wisp-config.json` ([CONFIGURATION.md](CONFIGURATION.md)) and are e
 
 ## Limitations
 
-- **Instance-name collisions are not handled.** Two hosts with the same short hostname → the second announcement never establishes; the mdns module logs the group's `COLLISION` state (`[mdns] entry group not published`) but does not rename. A group avahi leaves stuck probing is re-committed — see [CONTAINERS.md → Stuck-probe recovery](CONTAINERS.md#publishing-avahi-daemon-via-dbus).
+- **Instance-name collisions are not handled.** Two hosts with the same short hostname → the second announcement never establishes; the mdns module logs the group's `COLLISION` state (`[mdns] entry group not published`) but does not rename. A group avahi leaves stuck probing after a Wisp-initiated interface removal is re-published — see [CONTAINERS.md → Stuck-probe recovery](CONTAINERS.md#publishing-avahi-daemon-via-dbus).
 - **macOS dev:** darwin stubs — no announcement, no peers, no chevron.
 - **TXT contents are public to the LAN** (server name, URL, version) — inherent to mDNS.
