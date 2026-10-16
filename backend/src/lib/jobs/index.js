@@ -6,7 +6,6 @@
  * namespaces — same shape that routes used before the carve-out.
  */
 export * as createJobStore from './createJobStore.js';
-export * as cloneJobStore from './cloneJobStore.js';
 export * as backupJobStore from './backupJobStore.js';
 export * as downloadJobStore from './downloadJobStore.js';
 
@@ -19,7 +18,6 @@ export { BACKGROUND_JOB_KIND } from './backgroundJobKinds.js';
 export {
   titleForLibraryDownloadUrl,
   titleForVmCreate,
-  titleForVmClone,
   titleForBackup,
   titleForContainerCreate,
   titleForContainerBackup,

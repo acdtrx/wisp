@@ -52,7 +52,6 @@ export const isVMBinaryStale = impl.isVMBinaryStale;
 export const assertVMNameAvailable = impl.assertVMNameAvailable;
 export const createVM = impl.createVM;
 export const deleteVM = impl.deleteVM;
-export const cloneVM = impl.cloneVM;
 export const getWindowsFeatures = impl.getWindowsFeatures;
 export const getWindowsClock = impl.getWindowsClock;
 export const getLinuxFeatures = impl.getLinuxFeatures;

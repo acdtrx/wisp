@@ -44,10 +44,6 @@ export function resumeVM(name) {
   return api(`/api/vms/${encodeURIComponent(name)}/resume`, { method: 'POST' });
 }
 
-export function cloneVM(name, newName) {
-  return api(`/api/vms/${encodeURIComponent(name)}/clone`, { method: 'POST', body: { newName } });
-}
-
 export function deleteVM(name, deleteDisks = false) {
   return api(`/api/vms/${encodeURIComponent(name)}?deleteDisks=${deleteDisks}`, { method: 'DELETE' });
 }

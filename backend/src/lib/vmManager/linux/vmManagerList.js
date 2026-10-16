@@ -78,7 +78,7 @@ function fireListChange() {
 /**
  * Trigger a VM list cache refresh. Called by the DomainEvent listener (lifecycle
  * events from libvirt-dbus) and explicitly by mutation paths in vmManager
- * (create/clone/delete/rename), since libvirt-dbus DEFINED events have proven
+ * (create/delete/rename), since libvirt-dbus DEFINED events have proven
  * unreliable enough that new VMs would otherwise miss the LeftBar until a manual
  * page refresh. Idempotent: a second call while a refresh is in flight queues
  * exactly one follow-up. Mirrors containerManager's subscribeContainerConfigWrite.

@@ -1,7 +1,7 @@
 /**
- * VM create, delete, clone; domain XML building and template helpers.
+ * VM create, delete; domain XML building and template helpers.
  */
-import { copyFile, mkdir, rm, lstat } from 'node:fs/promises';
+import { mkdir, rm, lstat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { execFile as execFileCb } from 'node:child_process';
@@ -10,14 +10,13 @@ import { promisify } from 'node:util';
 import dbus from 'dbus-next';
 
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError, generateMAC } from './vmManagerConnection.js';
-import { parseVMFromXML, parseDomainRaw, buildXml, setWispPendingRestart } from './vmManagerXml.js';
+import { parseDomainRaw, buildXml } from './vmManagerXml.js';
 import { validateVMName } from './vmManagerValidation.js';
 import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
 import { resizeDisk as resizeDiskImage, copyAndConvert, getDiskInfo } from '../../storage/index.js';
 import { listHostFirmware } from './vmManagerHost.js';
 import { getDefaultBridge } from '../../networking/index.js';
 import { refreshVMListCache } from './vmManagerList.js';
-import { copyNvram } from './vmManagerNvram.js';
 import { isOfflineState } from './libvirtConstants.js';
 
 const execFile = promisify(execFileCb);
@@ -276,7 +275,7 @@ function vmDirExistsError(name, dir) {
 }
 
 /**
- * Pre-flight for create / clone / restore-as-new: the name must be free both in
+ * Pre-flight for create / restore-as-new: the name must be free both in
  * libvirt and on disk. A leftover directory (e.g. from "delete VM, keep disks")
  * is refused, never written into — a new VM only ever owns files it created.
  * Callers that build artifacts before the manager runs use this to fail fast;
@@ -462,128 +461,6 @@ async function provisionAndDefineVM(s, vmBasePath, { emit, populateVMDir, primar
   }
 }
 
-/**
- * Clone a stopped VM under a new name. Copies disk + (UEFI) NVRAM + any CDROM
- * whose <source file> lives in the source VM dir (cloud-init.iso). Optional
- * onProgress callback is invoked with `{ step, percent, currentFile }` events
- * for: 'disk' per file copied, 'nvram' (when UEFI), 'define' for the
- * DomainDefineXML call. Caller is expected to add a 'done' event after
- * follow-up work (e.g. cloud-init.json copy in the route).
- */
-export async function cloneVM(name, newName, { onProgress } = {}) {
-  if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
-  validateVMName(newName);
-
-  const path = await resolveDomain(name);
-  const state = await getDomainState(path);
-  if (state.code === 1) throw vmError('VM_RUNNING', `Stop VM "${name}" before cloning`);
-
-  await assertNoDomainNamed(newName);
-
-  // The clone copies the saved (persistent) definition, not a paused source's live one.
-  const xml = await getDomainXML(path, { inactive: true });
-  const config = parseVMFromXML(xml);
-  if (!config) throw vmError('PARSE_ERROR', `Failed to parse XML for VM "${name}"`);
-
-  // Copy files into the new VM's own directory so a future deleteVM(newName)
-  // / renameVM(newName) doesn't have to chase files that live under the
-  // source VM's path. Keeps the "directory == VM name" invariant. Applies to
-  // every block device or CDROM whose <source file> lives inside the source
-  // VM directory — including disks AND the cloud-init.iso CDROM (sde slot).
-  // Files that live OUTSIDE the source VM dir (e.g. install ISOs in the
-  // image library, shared library disks) stay shared by reference: the
-  // cloned XML keeps pointing at the same library file.
-  const srcVmDir = getVMBasePath(name);
-  const newVmDir = await createOwnVMDir(newName);
-
-  // Pre-scan inputs so progress percent is accurate from the first event.
-  // disksToCopy + (UEFI ? 1 NVRAM : 0) + 1 define.
-  const disksToCopy = (config.disks || []).filter(
-    (d) => d.source && d.source.startsWith(`${srcVmDir}/`),
-  );
-  const isUefi = config.firmware && config.firmware.startsWith('uefi');
-  const totalItems = disksToCopy.length + (isUefi ? 1 : 0) + 1;
-  let done = 0;
-  const emit = (step, data = {}) => {
-    if (typeof onProgress === 'function') onProgress({ step, ...data });
-  };
-  const pct = () => Math.round((done / totalItems) * 100);
-
-  const diskMapping = [];
-  try {
-    for (const disk of disksToCopy) {
-      const baseName = disk.source.slice(disk.source.lastIndexOf('/') + 1);
-      const newDiskPath = join(newVmDir, baseName);
-      emit('disk', { percent: pct(), currentFile: `Copying ${baseName}` });
-      try {
-        await execFile('cp', ['--reflink=auto', disk.source, newDiskPath]);
-      } catch {
-        /* cp --reflink not supported — full copy */
-        await copyFile(disk.source, newDiskPath);
-      }
-      diskMapping.push({ oldPath: disk.source, newPath: newDiskPath });
-      done += 1;
-      emit('disk', { percent: pct(), currentFile: baseName });
-    }
-
-    const parsed = parseDomainRaw(xml);
-    const dom = parsed.domain;
-    dom.name = newName;
-    delete dom.uuid;
-    for (const d of dom.devices?.disk || []) {
-      const file = d.source?.['@_file'];
-      if (file) {
-        const mapping = diskMapping.find(m => m.oldPath === file);
-        if (mapping) d.source['@_file'] = mapping.newPath;
-      }
-    }
-    // NVRAM (UEFI): always relocate the clone's NVRAM into its own dir so
-    // it never shares the file with the source. Two cases:
-    //   - Source NVRAM file exists on disk: copy it (boot vars, secure-boot
-    //     enrolled keys, etc. carry forward).
-    //   - Source NVRAM declared in XML but missing on disk (rare): leave the
-    //     copy out; libvirt will template-fill on first define.
-    // Either way, rewrite the XML to point at <newVmDir>/VARS.fd so a future
-    // deleteVM(newName, deleteDisks=true) only ever touches the clone's files.
-    const os = dom.os;
-    if (os) {
-      const nvramSrc = typeof os.nvram === 'string'
-        ? os.nvram
-        : (os.nvram && typeof os.nvram === 'object' && typeof os.nvram['#text'] === 'string' ? os.nvram['#text'] : null);
-      if (nvramSrc) {
-        const newNvramPath = join(newVmDir, 'VARS.fd');
-        emit('nvram', { percent: pct(), currentFile: 'Copying NVRAM' });
-        await copyNvram(nvramSrc, newNvramPath, { allowMissing: true });
-        done += 1;
-        emit('nvram', { percent: pct(), currentFile: 'NVRAM' });
-        if (typeof os.nvram === 'string') {
-          os.nvram = newNvramPath;
-        } else if (os.nvram && typeof os.nvram === 'object') {
-          os.nvram['#text'] = newNvramPath;
-        }
-      }
-    }
-    for (const iface of dom.devices?.interface || []) {
-      iface.mac = { '@_address': generateMAC() };
-    }
-    // A clone has never run, so no running QEMU lags its definition.
-    setWispPendingRestart(dom, null);
-    const newXml = buildXml(parsed);
-
-    emit('define', { percent: pct(), currentFile: 'Defining VM' });
-    await connectionState.connectIface.DomainDefineXML(newXml);
-    done += 1;
-  } catch (err) {
-    // newVmDir was created exclusively by this call — removing it drops every
-    // copied file so a retry starts clean.
-    await removeOwnVMDir(newVmDir);
-    if (err && err.code) throw err;
-    throw vmError('CLONE_FAILED', `Failed to define cloned VM "${newName}"`, err.message);
-  }
-  refreshVMListCache();
-  return { name: newName };
-}
-
 // libvirt VIR_DOMAIN_UNDEFINE_* flags (virDomainUndefineFlagsValues in
 // libvirt-domain.h), declared inline since this is the only call site.
 const VIR_DOMAIN_UNDEFINE_SNAPSHOTS_METADATA = 0x2;
@@ -606,7 +483,7 @@ export async function deleteVM(name, deleteDisks = false) {
   // Detect UEFI before undefine so we can pass the right flag (otherwise
   // Undefine refuses on a domain with managed NVRAM). Also note where the
   // NVRAM file actually lives — if it's outside this VM's per-VM directory
-  // (legacy state from a pre-fix rename, or a mis-cloned VM), we must NOT
+  // (legacy state from a pre-fix rename, or a domain defined outside Wisp), we must NOT
   // pass VIR_DOMAIN_UNDEFINE_NVRAM since libvirt would delete a file that
   // may belong to another VM.
   let hasNvram = false;
@@ -642,8 +519,8 @@ export async function deleteVM(name, deleteDisks = false) {
   let undefineFlags = VIR_DOMAIN_UNDEFINE_SNAPSHOTS_METADATA;
   if (hasNvram) {
     // Only let libvirt delete the NVRAM file when it lives inside this VM's
-    // own directory. Otherwise (legacy mismatch, shared file from a buggy
-    // pre-fix clone, etc.) keep it — deleting could corrupt another VM.
+    // own directory. Otherwise (legacy mismatch, a file shared with another
+    // domain, etc.) keep it — deleting could corrupt another VM.
     const safeToDeleteNvram = deleteDisks && nvramInOwnDir;
     undefineFlags |= safeToDeleteNvram ? VIR_DOMAIN_UNDEFINE_NVRAM : VIR_DOMAIN_UNDEFINE_KEEP_NVRAM;
   }

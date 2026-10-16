@@ -1,5 +1,4 @@
 import * as createJobStore from './createJobStore.js';
-import * as cloneJobStore from './cloneJobStore.js';
 import * as backupJobStore from './backupJobStore.js';
 import * as downloadJobStore from './downloadJobStore.js';
 import { containerJobStore } from './containerJobStore.js';
@@ -22,7 +21,6 @@ function safeList(fn) {
 export function listBackgroundJobs() {
   return [
     ...safeList(() => createJobStore.listJobs()),
-    ...safeList(() => cloneJobStore.listJobs()),
     ...safeList(() => backupJobStore.listJobs()),
     ...safeList(() => downloadJobStore.listJobs()),
     ...safeList(() => containerJobStore.listJobs()),

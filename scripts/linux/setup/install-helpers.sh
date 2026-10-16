@@ -124,7 +124,7 @@ else
 fi
 echo ""
 
-echo "--- wisp-nvram (UEFI NVRAM file copy for clone/backup/restore) ---"
+echo "--- wisp-nvram (UEFI NVRAM file copy for backup/restore) ---"
 if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-nvram" ]]; then
   run_helper wisp-nvram "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-nvram" wisp-nvram "$DEPLOY_USER"
 else

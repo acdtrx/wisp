@@ -3,7 +3,6 @@
  */
 export const BACKGROUND_JOB_KIND = {
   VM_CREATE: 'vm-create',
-  VM_CLONE: 'vm-clone',
   CONTAINER_CREATE: 'container-create',
   CONTAINER_IMAGE_UPDATE_CHECK: 'container-image-update-check',
   BACKUP: 'backup',

@@ -216,10 +216,6 @@ export async function deleteVM() {
   throw noConn();
 }
 
-export async function cloneVM() {
-  throw noConn();
-}
-
 export async function updateVMConfig() {
   throw noConn();
 }

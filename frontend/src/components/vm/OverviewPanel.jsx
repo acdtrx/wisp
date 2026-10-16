@@ -2,19 +2,18 @@ import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Play, Square, Zap, RotateCcw, Pause, PlayCircle,
-  Copy, Trash2, Loader2, Code2, X, Archive,
+  Trash2, Loader2, Code2, X, Archive,
 } from 'lucide-react';
 
 import { useVmStore } from '../../store/vmStore.js';
 import { getVmIcon, getDefaultIconId } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
-import { updateVM, cloneVM as cloneVmApi } from '../../api/vms.js';
+import { updateVM } from '../../api/vms.js';
 import { getSettings } from '../../api/settings.js';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { startBackup } from '../../api/backups.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
-import CloneDialog from './CloneDialog.jsx';
 import XMLModal from './XMLModal.jsx';
 import BackupModal from '../shared/BackupModal.jsx';
 import GeneralSection from '../sections/GeneralSection.jsx';
@@ -129,11 +128,6 @@ export default function OverviewPanel() {
   const [backupSelectedIds, setBackupSelectedIds] = useState(['local']);
   const [backupJobId, setBackupJobId] = useState(null);
   const [backupError, setBackupError] = useState(null);
-  // Clone runs as a background job (parallels backup). cloneDialogOpen reflects
-  // whether the dialog is mounted; cloneJobId is set after `onConfirm` succeeds.
-  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
-  const [cloneJobId, setCloneJobId] = useState(null);
-  const [cloneError, setCloneError] = useState(null);
 
   // Auto-clear backupJobId once the job ends, but ONLY while the modal is
   // closed. Clearing while it is open would blank `progress` and revert the
@@ -150,23 +144,10 @@ export default function OverviewPanel() {
     }
   }, [backupJobId, bgJobs, backupModalOpen]);
 
-  // Same gated cleanup for clone (mirrors the backup pattern).
-  useEffect(() => {
-    if (cloneDialogOpen) return;
-    if (!cloneJobId) return;
-    const row = bgJobs[cloneJobId];
-    if (row && (row.status === 'done' || row.status === 'error')) {
-      setCloneJobId(null);
-    }
-  }, [cloneJobId, bgJobs, cloneDialogOpen]);
-
   useEffect(() => {
     setBackupJobId(null);
     setBackupError(null);
     setBackupModalOpen(false);
-    setCloneJobId(null);
-    setCloneError(null);
-    setCloneDialogOpen(false);
   }, [vmName]);
 
   if (!vmConfig && error && !configLoading) {
@@ -198,18 +179,6 @@ export default function OverviewPanel() {
   const isPaused = state === 'paused' || state === 'pmsuspended';
   const iconColorClass = STATE_ICON_COLOR[state] || STATE_ICON_COLOR.nostate;
   const name = vmConfig.name;
-
-  const handleClone = async (newName) => {
-    setCloneError(null);
-    try {
-      const { jobId, title } = await cloneVmApi(name, newName);
-      setCloneJobId(jobId);
-      registerJob({ jobId, kind: JOB_KIND.VM_CLONE, title });
-    } catch (err) {
-      setCloneError(err.message || 'Failed to start clone');
-      setCloneJobId(null);
-    }
-  };
 
   const handleDelete = async () => {
     setDeleteDialogOpen(false);
@@ -349,45 +318,6 @@ export default function OverviewPanel() {
             onClick={handleOpenBackup}
             disabled={!isStopped || restoreInProgress}
             hint={restoreInProgress ? busyHint : undefined}
-          />
-          <CloneDialog
-            open={cloneDialogOpen}
-            onOpen={() => {
-              setCloneError(null);
-              setCloneJobId(null);
-              setCloneDialogOpen(true);
-            }}
-            cloneStarted={!!cloneJobId}
-            progress={
-              cloneJobId && bgJobs[cloneJobId]
-                ? {
-                    step: bgJobs[cloneJobId].step || 'starting',
-                    percent: bgJobs[cloneJobId].percent,
-                    currentFile: bgJobs[cloneJobId].detail,
-                  }
-                : null
-            }
-            error={
-              cloneJobId && bgJobs[cloneJobId]?.status === 'error'
-                ? bgJobs[cloneJobId].error
-                : cloneError
-            }
-            onConfirm={handleClone}
-            onClose={() => {
-              setCloneDialogOpen(false);
-              const row = cloneJobId ? bgJobs[cloneJobId] : null;
-              if (!row || row.status !== 'running') {
-                setCloneJobId(null);
-                setCloneError(null);
-              }
-            }}
-            trigger={(onOpen) => (
-              <ActionButton
-                icon={Copy} label="Clone" onClick={onOpen}
-                disabled={isRunning || !!vmOperationJob}
-                hint={vmOperationJob ? busyHint : undefined}
-              />
-            )}
           />
           <ActionButton
             icon={Trash2} label="Delete"

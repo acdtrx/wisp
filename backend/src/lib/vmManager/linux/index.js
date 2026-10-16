@@ -56,7 +56,6 @@ export {
   assertVMNameAvailable,
   createVM,
   deleteVM,
-  cloneVM,
   getWindowsFeatures,
   getWindowsClock,
   getLinuxFeatures,

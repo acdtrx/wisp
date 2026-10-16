@@ -28,7 +28,6 @@ function mappedErrorStatus(code) {
     case 'VM_ALREADY_RUNNING':
     case 'VM_NOT_RUNNING':
     case 'VM_NOT_PAUSED':
-    case 'VM_RUNNING':
     case 'VM_EXISTS':
     case 'VM_DIR_EXISTS':
     case 'VM_MUST_BE_OFFLINE':
@@ -38,7 +37,6 @@ function mappedErrorStatus(code) {
     case 'VM_BUSY':
       return 409;
     case 'PARSE_ERROR':
-    case 'CLONE_FAILED':
     case 'RESIZE_INVALID':
     case 'DISK_NOT_FOUND':
     case 'RESIZE_FAILED':

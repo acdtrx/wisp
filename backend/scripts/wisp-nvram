@@ -7,13 +7,12 @@
 # is in the kvm group but mode 600 only grants the owner read access.
 #
 # Used by:
-#   - VM clone:   src=<srcVm>/VARS.fd       dst=<dstVm>/VARS.fd
 #   - VM backup:  src=<vm>/VARS.fd          dst=<backupDir>/VARS.fd
 #   - VM restore: src=<backupDir>/VARS.fd   dst=<newVm>/VARS.fd
 #
 # After copy the destination is chowned to the invoking user (SUDO_UID/SUDO_GID —
 # the deploy user; the destination dir's owner when run without sudo). libvirt's
-# dynamic_ownership=1 reclaims ownership when the cloned/restored VM is started.
+# dynamic_ownership=1 reclaims ownership when the restored VM is started.
 #
 # Path validation:
 #   - Both src and dst must be absolute paths.

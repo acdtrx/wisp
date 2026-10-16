@@ -14,10 +14,6 @@ export function titleForVmCreate(name) {
   return `Create ${name}`;
 }
 
-export function titleForVmClone(newName) {
-  return `Clone ${newName}`;
-}
-
 export function titleForBackup(vmName) {
   return `Backup ${vmName}`;
 }
