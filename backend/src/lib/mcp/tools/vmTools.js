@@ -1,4 +1,4 @@
-import { getVMConfig, getGuestNetwork, listSnapshots } from '../../vmManager/index.js';
+import { getVMConfig, getGuestNetwork } from '../../vmManager/index.js';
 
 export const vmTools = [
   {
@@ -6,8 +6,7 @@ export const vmTools = [
     title: 'VM detail',
     description:
       'Full configuration and state of one virtual machine: vCPUs, memory, disks, NICs, firmware, ' +
-      'plus the guest network (IP/hostname via qemu-guest-agent, null when the agent is absent) and ' +
-      'the snapshot list.',
+      'plus the guest network (IP/hostname via qemu-guest-agent, null when the agent is absent).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -25,13 +24,7 @@ export const vmTools = [
       } catch {
         /* stopped VM or no guest agent — network unknown */
       }
-      let snapshots = [];
-      try {
-        snapshots = await listSnapshots(name);
-      } catch {
-        /* snapshot listing unavailable (e.g. non-qcow2) — omit */
-      }
-      return { ...config, guestNetwork, snapshots };
+      return { ...config, guestNetwork };
     },
   },
 ];

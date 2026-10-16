@@ -16,7 +16,6 @@ import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
 import { resizeDisk as resizeDiskImage, copyAndConvert, getDiskInfo } from '../../storage/index.js';
 import { listHostFirmware } from './vmManagerHost.js';
 import { getDefaultBridge } from '../../networking/index.js';
-import { listSnapshots, deleteSnapshot } from './vmManagerSnapshots.js';
 import { refreshVMListCache } from './vmManagerList.js';
 import { copyNvram } from './vmManagerNvram.js';
 import { isOfflineState } from './libvirtConstants.js';
@@ -585,12 +584,9 @@ export async function cloneVM(name, newName, { onProgress } = {}) {
   return { name: newName };
 }
 
-// libvirt VIR_DOMAIN_UNDEFINE_* flags — declared inline since this is the
-// only call site that needs them. Bit positions match libvirt-domain.h's
-// virDomainUndefineFlagsValues enum (1 << 2 / 1 << 3). Earlier values of
-// 0x2 / 0x4 happened to be SNAPSHOTS_METADATA / NVRAM respectively, which
-// is why deleteVM on a UEFI domain failed with libvirt error
-// "cannot undefine domain with nvram" — the wrong flag was being set.
+// libvirt VIR_DOMAIN_UNDEFINE_* flags (virDomainUndefineFlagsValues in
+// libvirt-domain.h), declared inline since this is the only call site.
+const VIR_DOMAIN_UNDEFINE_SNAPSHOTS_METADATA = 0x2;
 const VIR_DOMAIN_UNDEFINE_NVRAM = 0x4;
 const VIR_DOMAIN_UNDEFINE_KEEP_NVRAM = 0x8;
 
@@ -633,33 +629,23 @@ export async function deleteVM(name, deleteDisks = false) {
   const ownVmDir = getVMBasePath(name);
   const nvramInOwnDir = nvramFile && (nvramFile === join(ownVmDir, 'VARS.fd') || nvramFile.startsWith(`${ownVmDir}/`));
 
-  // Snapshots block undefine; clear them up front (best-effort).
-  try {
-    const snapshots = await listSnapshots(name);
-    for (const snap of snapshots) {
-      try {
-        await deleteSnapshot(name, snap.name);
-      } catch (err) {
-        connectionState.logger?.warn?.({ err: err.message, vm: name, snapshot: snap.name }, '[vmManager] Failed to delete snapshot before undefine');
-      }
-    }
-  } catch {
-    /* proceed with undefine even if listing snapshots fails */
-  }
-
   // Symmetric on-disk semantics:
   //   deleteDisks=true  → tell libvirt to remove its managed NVRAM, then
   //                       rm -rf the per-VM dir at the end. Everything goes.
   //   deleteDisks=false → KEEP_NVRAM and leave the per-VM dir untouched.
   //                       Operator picked "keep my data" — that means disks,
   //                       NVRAM, cloud-init.iso, cloud-init.json all stay.
-  let undefineFlags = 0;
+  // Wisp has no snapshot feature, but a VM can carry libvirt snapshot
+  // metadata made outside it (e.g. `virsh snapshot-create`), which makes a
+  // plain Undefine refuse; SNAPSHOTS_METADATA drops that metadata with the
+  // domain. Snapshot data inside the disk images goes (or stays) with them.
+  let undefineFlags = VIR_DOMAIN_UNDEFINE_SNAPSHOTS_METADATA;
   if (hasNvram) {
     // Only let libvirt delete the NVRAM file when it lives inside this VM's
     // own directory. Otherwise (legacy mismatch, shared file from a buggy
     // pre-fix clone, etc.) keep it — deleting could corrupt another VM.
     const safeToDeleteNvram = deleteDisks && nvramInOwnDir;
-    undefineFlags = safeToDeleteNvram ? VIR_DOMAIN_UNDEFINE_NVRAM : VIR_DOMAIN_UNDEFINE_KEEP_NVRAM;
+    undefineFlags |= safeToDeleteNvram ? VIR_DOMAIN_UNDEFINE_NVRAM : VIR_DOMAIN_UNDEFINE_KEEP_NVRAM;
   }
 
   try {

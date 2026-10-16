@@ -28,10 +28,6 @@ import {
   getVMUSBDevices,
   attachUSBDevice,
   detachUSBDevice,
-  listSnapshots,
-  createSnapshot,
-  revertSnapshot,
-  deleteSnapshot,
   createBackup,
   isOfflineState,
 } from '../lib/vmManager/index.js';
@@ -951,108 +947,6 @@ export default async function vmsRoutes(fastify) {
           throw createAppError('INVALID_USB_ID', 'Invalid USB device ID format');
         }
         await detachUSBDevice(request.params.name, vendorId, productId);
-        return { ok: true };
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
-    },
-  });
-
-  // GET /vms/:name/snapshots
-  fastify.get('/vms/:name/snapshots', {
-    config: { auth: 'read' },
-    schema: {
-      params: {
-        type: 'object',
-        required: ['name'],
-        properties: { name: { type: 'string' } },
-      },
-      response: {
-        200: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              name: { type: 'string' },
-              creationTime: { type: 'number' },
-              state: { type: 'string' },
-            },
-          },
-        },
-      },
-    },
-    handler: async (request, reply) => {
-      try {
-        return await listSnapshots(request.params.name);
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
-    },
-  });
-
-  // POST /vms/:name/snapshots
-  fastify.post('/vms/:name/snapshots', {
-    config: { auth: 'admin' },
-    schema: {
-      params: {
-        type: 'object',
-        required: ['name'],
-        properties: { name: { type: 'string' } },
-      },
-      body: {
-        type: 'object',
-        required: ['name'],
-        properties: {
-          name: { type: 'string', minLength: 1, maxLength: 64, pattern: '^[a-zA-Z0-9 ._-]+$' },
-        },
-      },
-      response: { 200: { type: 'object', properties: { ok: { type: 'boolean' } } } },
-    },
-    handler: async (request, reply) => {
-      try {
-        await createSnapshot(request.params.name, request.body.name);
-        return { ok: true };
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
-    },
-  });
-
-  // DELETE /vms/:name/snapshots/:id
-  fastify.delete('/vms/:name/snapshots/:id', {
-    config: { auth: 'admin' },
-    schema: {
-      params: {
-        type: 'object',
-        required: ['name', 'id'],
-        properties: { name: { type: 'string' }, id: { type: 'string' } },
-      },
-      response: { 200: { type: 'object', properties: { ok: { type: 'boolean' } } } },
-    },
-    handler: async (request, reply) => {
-      try {
-        await deleteSnapshot(request.params.name, request.params.id);
-        return { ok: true };
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
-    },
-  });
-
-  // POST /vms/:name/snapshots/:id/revert
-  fastify.post('/vms/:name/snapshots/:id/revert', {
-    config: { auth: 'admin' },
-    schema: {
-      params: {
-        type: 'object',
-        required: ['name', 'id'],
-        properties: { name: { type: 'string' }, id: { type: 'string' } },
-      },
-      response: { 200: { type: 'object', properties: { ok: { type: 'boolean' } } } },
-    },
-    handler: async (request, reply) => {
-      try {
-        await revertSnapshot(request.params.name, request.params.id);
         return { ok: true };
       } catch (err) {
         handleRouteError(err, reply, request);

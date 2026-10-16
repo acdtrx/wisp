@@ -11,7 +11,7 @@ import {
   parseVMFromXML, parseDomainRaw, buildXml, setWispMetadata, setWispPendingRestart, domainDefinitionSignature,
 } from './vmManagerXml.js';
 import { getWindowsFeatures, getWindowsClock, getLinuxFeatures } from './vmManagerCreate.js';
-import { moveVmDirectory, rewriteDomainPaths, rewriteSnapshotMemoryPaths, findActualVmDir, pathExists } from './vmManagerRename.js';
+import { moveVmDirectory, rewriteDomainPaths, findActualVmDir, pathExists } from './vmManagerRename.js';
 import { refreshVMListCache } from './vmManagerList.js';
 
 /** Parsed `<name>` may be a string or `{ '#text': string }` from fast-xml-parser. */
@@ -136,10 +136,6 @@ export async function updateVMConfig(name, changes) {
           parsed = parseDomainRaw(xml);
           dom = parsed.domain;
         }
-
-        // 4. Rewrite snapshot memory file paths. Best-effort per snapshot —
-        //    a missing/corrupt snapshot does not unwind the rename.
-        await rewriteSnapshotMemoryPaths(domPath, oldDir, newDir, null);
       }
 
       current = parseVMFromXML(xml);

@@ -80,18 +80,10 @@ export {
 export { attachISO, ejectISO } from './vmManagerIso.js';
 
 export {
-  listSnapshots,
-  createSnapshot,
-  revertSnapshot,
-  deleteSnapshot,
-} from './vmManagerSnapshots.js';
-
-export {
   createBackup,
   listBackups,
   restoreBackup,
   restoreBackupInPlace,
-  assertNoSnapshots,
   deleteBackup,
   resolveVmBackupDir,
 } from './vmManagerBackup.js';

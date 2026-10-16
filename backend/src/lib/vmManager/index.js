@@ -78,15 +78,9 @@ export const ejectISO = impl.ejectISO;
 export const parseVMFromXML = impl.parseVMFromXML;
 export const isOfflineState = impl.isOfflineState;
 
-export const listSnapshots = impl.listSnapshots;
-export const createSnapshot = impl.createSnapshot;
-export const revertSnapshot = impl.revertSnapshot;
-export const deleteSnapshot = impl.deleteSnapshot;
-
 export const createBackup = impl.createBackup;
 export const listBackups = impl.listBackups;
 export const restoreBackup = impl.restoreBackup;
 export const restoreBackupInPlace = impl.restoreBackupInPlace;
-export const assertNoSnapshots = impl.assertNoSnapshots;
 export const deleteBackup = impl.deleteBackup;
 export const resolveVmBackupDir = impl.resolveVmBackupDir;

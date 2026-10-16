@@ -23,7 +23,6 @@ import USBSection from '../sections/USBSection.jsx';
 import AdvancedSection from '../sections/AdvancedSection.jsx';
 import VmNetworkInterfacesSection from '../sections/VmNetworkInterfacesSection.jsx';
 import CloudInitSection from '../sections/CloudInitSection.jsx';
-import SnapshotsSection from '../sections/SnapshotsSection.jsx';
 
 const ConsolePanel = lazy(() => import('../console/ConsolePanel.jsx'));
 
@@ -472,8 +471,6 @@ export default function OverviewPanel() {
                 onRefresh={refreshSelectedVM}
               />
             )}
-
-            <SnapshotsSection vmConfig={vmConfig} />
           </>
         )}
       </div>

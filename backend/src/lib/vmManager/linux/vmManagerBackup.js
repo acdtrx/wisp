@@ -3,8 +3,9 @@
  * Disk images are streamed gzip to destination (.gz); config files stay uncompressed.
  * The cloud-init seed ISO is derived data and is not backed up: the caller
  * rebuilds it from the restored cloud-init.json (restore's populateVMDir hook).
- * A disk on a backing chain (e.g. a live snapshot's external overlay) is first
- * flattened into one standalone qcow2, so every backup is self-contained.
+ * A disk on a backing chain (an overlay on a shared base image, or a snapshot
+ * overlay made outside Wisp, e.g. by `virsh`) is first flattened into one
+ * standalone qcow2, so every backup is self-contained.
  */
 import { copyFile, mkdir, writeFile, readdir, readFile, access, constants, stat, rm, rename, realpath, chmod } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
@@ -21,7 +22,6 @@ import { getVMBasePath } from './vmManagerPaths.js';
 import { isOfflineState } from './libvirtConstants.js';
 import { copyNvram } from './vmManagerNvram.js';
 import { assertVMNameAvailable, createOwnVMDir, removeOwnVMDir } from './vmManagerCreate.js';
-import { listSnapshots } from './vmManagerSnapshots.js';
 import { getBackingChain, copyAndConvert } from '../../storage/index.js';
 
 const execFile = promisify(execFileCb);
@@ -286,7 +286,7 @@ export async function createBackup(vmName, destinationPath, { onProgress, origin
  * What each disk slot backs up as. A disk whose image has a backing chain is
  * flattened (the full chain merged into one standalone qcow2) and saved under
  * the chain base's file name — the slot's own disk, e.g. `disk0.qcow2` rather
- * than a live snapshot's `disk0.<snapshot>` overlay. Every other disk is
+ * than a snapshot's `disk0.<snapshot>` overlay. Every other disk is
  * copied as-is under its own name.
  * @returns {Promise<Array<{ slot: string, source: string, format: string, flatten: boolean, fileName: string, basePath: string }>>}
  */
@@ -815,27 +815,10 @@ async function restorePayloadAndDefine(backupPath, newVmName, newBase, { xml, ma
 }
 
 /**
- * Restore-in-place precondition: the VM has no snapshots. Exported so the
- * route can refuse in the request, before a safety backup or job starts.
- */
-export async function assertNoSnapshots(name) {
-  const snapshots = await listSnapshots(name);
-  if (snapshots.length > 0) {
-    throw vmError(
-      'VM_HAS_SNAPSHOTS',
-      `VM "${name}" has ${snapshots.length} snapshot${snapshots.length === 1 ? '' : 's'} — delete ${snapshots.length === 1 ? 'it' : 'them'} before restoring in place (the restore replaces the disks the snapshots depend on)`,
-    );
-  }
-}
-
-/**
  * Restore a backup over the live VM it was taken from ("restore in place").
  *
  * The target VM is identified by the backup itself (manifest.vmName, falling
- * back to the domain XML name), must exist, must be stopped, and must have no
- * snapshots (VM_HAS_SNAPSHOTS): the restore replaces disks those snapshots
- * depend on (a live snapshot's overlay sits on the very base file restored),
- * so they would survive pointing at content they weren't taken with. Disks,
+ * back to the domain XML name), must exist and must be stopped. Disks,
  * NVRAM, and cloud-init.json are copied back into the VM's current
  * directory, and the backed-up domain XML is re-defined over the live
  * definition. Identity semantics:
@@ -878,7 +861,6 @@ export async function restoreBackupInPlace(backupPath, { onProgress, populateVMD
   if (!isOfflineState(state.code)) {
     throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to restore in place`);
   }
-  await assertNoSnapshots(name);
 
   let currentUuid = null;
   try {

@@ -23,7 +23,6 @@ function mappedErrorStatus(code) {
     case 'BAD_MULTIPART_TOO_MANY_FILES':
       return 400;
     case 'VM_NOT_FOUND':
-    case 'SNAPSHOT_NOT_FOUND':
     case 'BACKUP_NOT_FOUND':
       return 404;
     case 'VM_ALREADY_RUNNING':
@@ -37,7 +36,6 @@ function mappedErrorStatus(code) {
     case 'BACKUP_IN_PROGRESS':
     case 'BACKUP_EXISTS':
     case 'VM_BUSY':
-    case 'VM_HAS_SNAPSHOTS':
       return 409;
     case 'PARSE_ERROR':
     case 'CLONE_FAILED':
@@ -47,12 +45,8 @@ function mappedErrorStatus(code) {
     case 'CONVERT_FAILED':
     case 'USB_ATTACH_FAILED':
     case 'USB_DETACH_FAILED':
-    case 'SNAPSHOT_CREATE_FAILED':
-    case 'SNAPSHOT_REVERT_FAILED':
-    case 'SNAPSHOT_DELETE_FAILED':
     case 'CONFIG_ERROR':
     case 'INVALID_VM_NAME':
-    case 'INVALID_SNAPSHOT_NAME':
     case 'INVALID_USB_ID':
     case 'BACKUP_INVALID':
     case 'HASH_FAILED':

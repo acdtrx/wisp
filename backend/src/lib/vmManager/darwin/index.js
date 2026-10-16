@@ -284,22 +284,6 @@ export async function ejectISO() {
   throw noConn();
 }
 
-export async function listSnapshots() {
-  throw noConn();
-}
-
-export async function createSnapshot() {
-  throw noConn();
-}
-
-export async function revertSnapshot() {
-  throw noConn();
-}
-
-export async function deleteSnapshot() {
-  throw noConn();
-}
-
 export async function createBackup() {
   throw noConn();
 }
@@ -317,10 +301,6 @@ export async function restoreBackup() {
 }
 
 export async function restoreBackupInPlace() {
-  throw noConn();
-}
-
-export async function assertNoSnapshots() {
   throw noConn();
 }
 

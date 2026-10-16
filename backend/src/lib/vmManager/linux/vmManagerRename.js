@@ -9,7 +9,6 @@
  *   - libvirt domain XML: `<disk><source file>`, `<os><nvram>`, `<os><loader>`,
  *     and any other `@_file` attribute under devices that points at the per-VM
  *     directory.
- *   - libvirt domain snapshot XMLs: `<memory @file>` for external memory snapshots.
  *
  * Out of scope:
  *   - Image library / shared images (those live under getImagePath, not the
@@ -22,9 +21,7 @@
 import { rename as fsRename, access } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-import { connectionState, getDomainObjAndIface, vmError, unwrapVariant } from './vmManagerConnection.js';
-import { parseDomainRaw, buildXml } from './vmManagerXml.js';
-import { VIR_DOMAIN_SNAPSHOT_CREATE_REDEFINE } from './libvirtConstants.js';
+import { vmError } from './vmManagerConnection.js';
 
 function startsWithDir(filePath, dir) {
   if (typeof filePath !== 'string') return false;
@@ -138,56 +135,6 @@ export function rewriteDomainPaths(dom, oldDir, newDir) {
   }
 
   return n;
-}
-
-async function getSnapshotIface(snapshotPath) {
-  const obj = await connectionState.bus.getProxyObject('org.libvirt', snapshotPath);
-  return obj.getInterface('org.libvirt.DomainSnapshot');
-}
-
-/**
- * Walks every snapshot of `domPath`, rewrites `<memory @file>` to point at the
- * new directory, and redefines the snapshot via SnapshotCreateXML with
- * VIR_DOMAIN_SNAPSHOT_CREATE_REDEFINE so libvirt updates the metadata in
- * place (no live state change). Best-effort per snapshot; a failure on one
- * snapshot does not abort the others — caller logs.
- */
-export async function rewriteSnapshotMemoryPaths(domPath, oldDir, newDir, log) {
-  const { iface } = await getDomainObjAndIface(domPath);
-  let snapPaths;
-  try {
-    snapPaths = await iface.ListDomainSnapshots(0);
-  } catch (err) {
-    log?.warn?.({ err: err.message }, 'Failed to list snapshots during rename');
-    return { rewritten: 0, failed: 0 };
-  }
-  snapPaths = unwrapVariant(snapPaths);
-  snapPaths = Array.isArray(snapPaths) ? snapPaths : (snapPaths ? [snapPaths] : []);
-  const unwrapped = snapPaths.map((p) => unwrapVariant(p)).filter(Boolean);
-
-  let rewritten = 0;
-  let failed = 0;
-  for (const snapPath of unwrapped) {
-    try {
-      const snapIface = await getSnapshotIface(snapPath);
-      const xml = await snapIface.GetXMLDesc(0);
-      const parsed = parseDomainRaw(xml);
-      const snap = parsed.domainsnapshot;
-      if (!snap) continue;
-      const mem = snap.memory;
-      if (!mem || typeof mem !== 'object' || typeof mem['@_file'] !== 'string') continue;
-      const next = rewriteAbs(mem['@_file'], oldDir, newDir);
-      if (next === mem['@_file']) continue;
-      mem['@_file'] = next;
-      const newXml = buildXml(parsed);
-      await iface.SnapshotCreateXML(newXml, VIR_DOMAIN_SNAPSHOT_CREATE_REDEFINE);
-      rewritten += 1;
-    } catch (err) {
-      failed += 1;
-      log?.warn?.({ snapPath, err: err.message }, 'Failed to rewrite snapshot memory path');
-    }
-  }
-  return { rewritten, failed };
 }
 
 /**

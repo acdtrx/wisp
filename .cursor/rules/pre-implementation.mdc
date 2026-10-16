@@ -26,7 +26,6 @@ Map the requested change to one or more areas below.
 | **Console / VNC** | `ConsolePanel`, `VNCConsole`, `console.js` route | `docs/spec/CONSOLE.md`, `docs/spec/noVNC.md` |
 | **Host stats** | `procStats.js`, `stats.js` route, `HostStatsBar` | `docs/spec/HOST-MONITORING.md` |
 | **Backups** | `vmManagerBackup.js`, `backups.js` route | `docs/spec/BACKUPS.md` |
-| **Snapshots** | `vmManagerSnapshots.js`, `SnapshotsSection` | `docs/spec/SNAPSHOTS.md` |
 | **Cloud-init** | `cloudInit.js`, `vmManagerCloudInit.js`, `CloudInitSection` | `docs/spec/CLOUD-INIT.md` |
 | **USB passthrough** | `vmManagerUsb.js`, `USBSection` | `docs/spec/USB.md` |
 | **Image library** | `library.js` route, `ImageLibrary` component | `docs/spec/IMAGE-LIBRARY.md` |

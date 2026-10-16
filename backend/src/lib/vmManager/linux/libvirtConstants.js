@@ -27,9 +27,6 @@ export const VIR_DOMAIN_STATE_SHUTOFF = 5;
 export function isOfflineState(stateCode) {
   return stateCode === VIR_DOMAIN_STATE_SHUTOFF;
 }
-export const VIR_DOMAIN_SNAPSHOT_CREATE_LIVE = 0x100;
-export const VIR_DOMAIN_SNAPSHOT_CREATE_REDEFINE = 0x1;
-
 export const VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT = 1;
 
 /* virDomainStatsTypes — bitmask passed to org.libvirt.Domain.GetStats. */

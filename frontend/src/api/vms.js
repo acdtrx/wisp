@@ -116,19 +116,3 @@ export function deleteCloudInit(name) {
 export function fetchGithubKeys(username) {
   return api(`/api/github/keys/${encodeURIComponent(username)}`);
 }
-
-export function getVMSnapshots(name) {
-  return api(`/api/vms/${encodeURIComponent(name)}/snapshots`);
-}
-
-export function createVMSnapshot(name, snapshotName) {
-  return api(`/api/vms/${encodeURIComponent(name)}/snapshots`, { method: 'POST', body: { name: snapshotName } });
-}
-
-export function revertVMSnapshot(name, snapshotName) {
-  return api(`/api/vms/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(snapshotName)}/revert`, { method: 'POST' });
-}
-
-export function deleteVMSnapshot(name, snapshotName) {
-  return api(`/api/vms/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(snapshotName)}`, { method: 'DELETE' });
-}

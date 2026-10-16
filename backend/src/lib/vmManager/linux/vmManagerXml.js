@@ -1,5 +1,5 @@
 /**
- * Domain and snapshot XML parsing and building.
+ * Domain XML parsing and building.
  */
 import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 
@@ -7,7 +7,7 @@ import { XMLParser, XMLBuilder } from 'fast-xml-parser';
 // XML is parsed, mutated and rebuilt for DomainDefineXML, so coercion would
 // rewrite values on the round-trip (`<name>007</name>` → 7, a disk `<serial>`
 // of 0x1f → 31, a 16-digit `<wwn>` losing its leading zero). Readers that need
-// a number (memory, vcpu, topology, VNC port, creationTime) convert explicitly.
+// a number (memory, vcpu, topology, VNC port) convert explicitly.
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
@@ -299,18 +299,6 @@ export function detectOSCategory(config) {
   const name = (config.name || '').toLowerCase();
   if (name.includes('win')) return 'windows';
   return 'linux';
-}
-
-export function parseSnapshotFromXML(xmlString) {
-  const parsed = xmlParser.parse(xmlString);
-  const snap = parsed.domainsnapshot;
-  if (!snap) return null;
-  const creationTime = parseInt(xmlLeafText(snap.creationTime), 10);
-  return {
-    name: xmlLeafText(snap.name),
-    creationTime: Number.isFinite(creationTime) ? creationTime : null,
-    state: xmlLeafText(snap.state),
-  };
 }
 
 export function buildXml(obj) {
