@@ -87,6 +87,7 @@ function formFromMount(mount, kind) {
       containerOwnerUid: 0,
       containerOwnerGid: 0,
       sizeMiB: TMPFS_DEFAULT_SIZE_MIB,
+      secret: false,
     };
   }
   return {
@@ -99,6 +100,7 @@ function formFromMount(mount, kind) {
     containerOwnerUid: Number.isInteger(mount.containerOwnerUid) ? mount.containerOwnerUid : 0,
     containerOwnerGid: Number.isInteger(mount.containerOwnerGid) ? mount.containerOwnerGid : 0,
     sizeMiB: Number.isInteger(mount.sizeMiB) && mount.sizeMiB > 0 ? mount.sizeMiB : TMPFS_DEFAULT_SIZE_MIB,
+    secret: mount.type === 'file' && !!mount.secret,
   };
 }
 
@@ -110,6 +112,7 @@ function buildCreatePayload(form) {
     return { type: 'tmpfs', name, containerPath, sizeMiB: normalizeTmpfsSize(form.sizeMiB) };
   }
   const payload = { type: form.type, name, containerPath, readonly: !!form.readonly };
+  if (form.type === 'file' && form.secret) payload.secret = true;
   if (form.sourceId) {
     payload.sourceId = form.sourceId;
     payload.subPath = normalizeSubPath(form.subPath);
@@ -135,6 +138,7 @@ function buildPatch(form, prev) {
     return patch;
   }
   if (!!form.readonly !== !!prev.readonly) patch.readonly = !!form.readonly;
+  if (form.type === 'file' && !!form.secret !== !!prev.secret) patch.secret = !!form.secret;
   const prevSourceId = prev.sourceId || null;
   const nextSourceId = form.sourceId || null;
   if (prevSourceId !== nextSourceId) patch.sourceId = nextSourceId;
@@ -385,6 +389,17 @@ export default function ContainerMountEditorModal({
             hint="Mount without write access inside the container."
             checked={form.readonly}
             onChange={(e) => setField('readonly', e.target.checked)}
+          />
+        )}
+
+        {form.type === 'file' && (
+          <FormCheckbox
+            label="Secret"
+            hint={isEdit && mount.secret
+              ? 'Unchecking empties the stored file — upload or paste the content again afterwards.'
+              : 'Content becomes write-only — it can be replaced or cleared, never read back.'}
+            checked={form.secret}
+            onChange={(e) => setField('secret', e.target.checked)}
           />
         )}
 

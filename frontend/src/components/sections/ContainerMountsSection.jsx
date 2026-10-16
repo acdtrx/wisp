@@ -11,6 +11,7 @@ import {
   SquarePen,
   Pencil,
   AlertCircle,
+  KeyRound,
 } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import {
@@ -26,6 +27,7 @@ import {
   rowActionIconBtn,
 } from '../shared/DataTableChrome.jsx';
 import MountFileEditorModal from './MountFileEditorModal.jsx';
+import SecretMountContentModal from './SecretMountContentModal.jsx';
 import ContainerMountEditorModal, {
   normalizeMountType,
   normalizeOwnerId,
@@ -65,7 +67,23 @@ function rowsFromServerMounts(mounts) {
     containerOwnerUid: normalizeOwnerId(m.containerOwnerUid),
     containerOwnerGid: normalizeOwnerId(m.containerOwnerGid),
     sizeMiB: normalizeTmpfsSize(m.sizeMiB),
+    /* Secret file mounts arrive masked: `isSet` / `sizeBytes`, never content. */
+    secret: m.type === 'file' && !!m.secret,
+    isSet: !!m.isSet,
+    sizeBytes: Number.isFinite(m.sizeBytes) ? m.sizeBytes : null,
   }));
+}
+
+function SecretTag({ isSet }) {
+  const state = isSet ? 'set' : 'not set';
+  return (
+    <span
+      className="ml-2 whitespace-nowrap text-[10px] uppercase tracking-wide text-text-muted"
+      title={`Secret file — content is write-only (${state})`}
+    >
+      secret · {state}
+    </span>
+  );
 }
 
 function MountTypeIcon({ type }) {
@@ -95,6 +113,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
    * `config.mounts` can't reset the open form; `kind` drives the create path. */
   const [editor, setEditor] = useState({ open: false, kind: 'file', mount: null });
   const [fileEditor, setFileEditor] = useState({ open: false, mountName: '' });
+  /* Secret file mounts never open the text editor — only this write-only dialog. */
+  const [secretEditor, setSecretEditor] = useState({ open: false, mount: null });
   const [storageStatus, setStorageStatus] = useState([]);
   const [mountUsage, setMountUsage] = useState(null);
   /* Phones: row actions live in a strip that expands under the row text on tap. */
@@ -269,6 +289,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
 
   const usageText = (row) => {
     if (row.type === 'tmpfs') return null;
+    if (row.secret) return row.sizeBytes != null ? formatSize(row.sizeBytes) : null;
     if (mountUsage === null) return '…';
     const u = usageByName.get(row.name);
     if (!u || u.sizeBytes == null) return null;
@@ -278,7 +299,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
   return (
     <SectionCard
       title="Mounts"
-      helpText="Add or edit a mount in a form. Deletes and uploads apply to one row at a time. On phones, tap a row to reach its actions."
+      helpText="Add or edit a mount in a form. Deletes and uploads apply to one row at a time. A secret file mount is write-only — its content can be replaced or cleared, never read back. On phones, tap a row to reach its actions."
       requiresRestart={!!config.pendingRestart}
       error={error}
       headerAction={headerAdds}
@@ -345,6 +366,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                   phoneBits.push(tmpfsLabel);
                 } else {
                   phoneBits.push(row.sourceId && row.subPath ? `${src.label}/${row.subPath}` : src.label);
+                  if (row.secret) phoneBits.push(row.isSet ? 'secret · set' : 'secret · not set');
                   if (size) phoneBits.push(size);
                   if (row.readonly) phoneBits.push('read-only');
                   if (runAsRoot && !row.sourceId && (row.containerOwnerUid || row.containerOwnerGid)) {
@@ -356,16 +378,29 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                   <>
                     {row.type === 'file' && (
                       <>
-                        <button
-                          type="button"
-                          disabled={rowBusy || rowDeleting}
-                          onClick={() => setFileEditor({ open: true, mountName: row.name })}
-                          className={rowActionIconBtn}
-                          title="Edit file"
-                          aria-label={`Edit file of ${row.name}`}
-                        >
-                          <SquarePen size={14} aria-hidden />
-                        </button>
+                        {row.secret ? (
+                          <button
+                            type="button"
+                            disabled={rowBusy || rowDeleting}
+                            onClick={() => setSecretEditor({ open: true, mount: row })}
+                            className={rowActionIconBtn}
+                            title="Replace secret content"
+                            aria-label={`Replace secret content of ${row.name}`}
+                          >
+                            <KeyRound size={14} aria-hidden />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={rowBusy || rowDeleting}
+                            onClick={() => setFileEditor({ open: true, mountName: row.name })}
+                            className={rowActionIconBtn}
+                            title="Edit file"
+                            aria-label={`Edit file of ${row.name}`}
+                          >
+                            <SquarePen size={14} aria-hidden />
+                          </button>
+                        )}
                         <label
                           className={`${rowActionIconBtn} cursor-pointer text-accent ${rowBusy || rowDeleting ? 'opacity-40 pointer-events-none' : ''}`}
                           title="Upload file"
@@ -458,6 +493,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
                     </DataTableTd>
                     <DataTableTd dense className="hidden w-32 min-w-32 sm:table-cell">
                       <span className="font-mono text-sm text-text-primary">{truncate(row.name, 24)}</span>
+                      {row.secret && <SecretTag isSet={row.isSet} />}
                     </DataTableTd>
                     <DataTableTd dense className="hidden min-w-36 sm:table-cell">
                       {row.type === 'tmpfs' ? (
@@ -538,6 +574,14 @@ export default function ContainerMountsSection({ config, onRefresh }) {
         runAsRoot={runAsRoot}
         onSaved={handleSaved}
         onClose={closeEditor}
+      />
+
+      <SecretMountContentModal
+        open={secretEditor.open}
+        containerName={config.name}
+        mount={secretEditor.mount}
+        onSaved={onRefresh}
+        onClose={() => setSecretEditor({ open: false, mount: null })}
       />
 
       <MountFileEditorModal
