@@ -9,6 +9,7 @@
 - **Container restart policy is enforced** — a container that exits on its own is restarted per its policy (`on-failure`, `unless-stopped`, `always`) with backoff from 1 s up to 5 min; stops from Wisp are never undone. Most containers use the default `unless-stopped`, so any running container that exits by itself (including one-shot commands) now comes back.
 
 ### Bug Fixes
+- **Container mount file and zip uploads no longer hang** — the upload is staged to disk while the request is read (it hung on any file larger than ~70 KB before, and on every file after the multipart dependency update).
 - **Every route declares its own access level** — public, session, read, admin or MCP — and one check enforces only that declaration; a route without one is admin-only, development refuses to start if any route is undeclared, and `npm run route-access` prints the table. Read tokens can no longer fetch raw mount file content, and API tokens on consoles now get 403.
 - **Auth can't be skipped with an encoded path** — the auth hook now decides on the matched route, so `/%61pi/...` and `/%77s/...` no longer reach API and console handlers without a session (affected every earlier version).
 - **VM consoles listen on localhost only** — new VMs and Graphics edits bind VNC/SPICE to `127.0.0.1` instead of every interface; Wisp's console proxy is the only way in. Existing VMs keep `0.0.0.0` until changed: `virsh edit <vm>` (graphics `listen` + `<listen address>`), or switch Graphics to SPICE and back in the UI; takes effect on the next full stop/start.
