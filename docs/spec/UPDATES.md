@@ -15,7 +15,7 @@ The update applier is **a separate systemd unit** (`wisp-updater.service`, `Type
 | Backend checker (`backend/src/lib/wispUpdate.js`) | Polls GitHub Releases once per hour starting 30s after backend boot, following the host's configured **update channel** (see below). Caches `{ current, latest, available, notes, publishedAt, asset, sha256Asset, lastChecked }`. The `available` flag drives the Software-tab badge via the host stats SSE. |
 | Backend apply (`applyUpdate` in `wispUpdate.js`) | Downloads tarball + sha256 (via the shared **SSRF-safe fetch** — DNS-pinned, private/loopback IPs blocked, every redirect `Location` re-validated), verifies, extracts to `/var/lib/wisp/updates/staging-<version>/`. Then writes the staging path to `/var/lib/wisp/updates/target` (atomic via `rename(2)`) and runs `sudo -n /usr/bin/systemctl start --no-block wisp-updater.service`. The HTTP request returns 202 with `{ targetVersion }` once the trigger is queued — the backend dies a moment later as the updater runs `systemctl stop wisp`. |
 | Updater unit (`systemd/linux/wisp-updater.service`) | `Type=oneshot`, `User=root`, `Environment=WISP_INSTALL_DIR=<install-dir>` (templated at install time), `ExecStart=/usr/local/bin/wisp-updater`, `StandardOutput=journal`, `TimeoutStartSec=600`, `TimeoutStopSec=300` (see Rollback). |
-| Updater script (`backend/scripts/wisp-updater`, installed at `/usr/local/bin/wisp-updater`) | Reads target staging path from `/var/lib/wisp/updates/target` (its canonical path must be a direct `staging-*` child of `/var/lib/wisp/updates`). Stops `wisp.service` → snapshots install to `<install>.prev/` → rsyncs staging into install (preserving user config, `config/backup-status.json`, the migration ledger `config/migrations.json`, `.pids` / `.logs`) and re-owns it to the install dir's owner **user and group** (`stat -c %U:%G`; the group need not be named after the user) → runs `npm ci --omit=dev` in backend → runs **`setup/common-steps.sh`** (the step list shared with the installer — see below) → re-templates `wisp.service` → starts the service. Auto-rolls-back on failure (see Rollback). |
+| Updater script (`backend/scripts/wisp-updater`, installed at `/usr/local/bin/wisp-updater`) | Reads target staging path from `/var/lib/wisp/updates/target` (its canonical path must be a direct `staging-*` child of `/var/lib/wisp/updates`). Stops `wisp.service` → snapshots install to `<install>.prev/` → rsyncs staging into install (preserving user config, `config/backup-status.json`, the migration ledger `config/migrations.json`, `.pids` / `.logs`) and re-owns it to the install dir's owner **user and group** (`stat -c %U:%G`; the group need not be named after the user) → runs `npm ci --omit=dev` in backend → runs **`setup/common-steps.sh`** (the step list shared with the installer — see below) → re-templates `wisp.service` → starts the service → **waits for it to be healthy** (see [Health-gated start](#health-gated-start)) → `step:done`. Auto-rolls-back on failure, an unhealthy new backend included (see Rollback). |
 | Shared setup steps (`scripts/linux/setup/common-steps.sh`) | The steps the installer and the updater both run: `container-dns.sh`, `install-helpers.sh`, then the **state migrations** (`backend/scripts/migrate.mjs`, see [State migrations](#state-migrations)). Invoked by path from the install tree by **both** `setup-server.sh` and `wisp-updater`, so neither can drift from the other. Exits non-zero if any step fails — `wisp-updater` turns that into a rollback, while `setup-server.sh` wraps it in `run_step` so the install path keeps warning-and-continuing. |
 | Frontend `WispUpdateSection` (under Host → Software) | Reads cached state from the host stats SSE, shows current/latest/last-checked. Renders inside the shared `UpdateCard` (`Check` / `Update` buttons, unified status row, `Checked hourly` footer). When an update is available, a **Release notes** link opens the shared `UpdateDetailsModal` (markdown body + "View on GitHub" footer). After Update: backend POST blocks during download (~10s), then UI **polls `GET /api/host` every 5 s** comparing `wispVersion` to the target. On match → reload page. After 12 failed polls (1 min): show "may be slow" hint. After 60 polls (5 min): give up with a "check journalctl" message. |
 
@@ -100,6 +100,19 @@ Consequences when editing `wisp-updater`:
 
 Corollary: an updater change is **dark-shipped**. It cannot affect the update that carries it (the old copy is running), and it goes live for the following one. So there is never a reason to delay an updater change to a later release — postponing it only postpones activation by the same amount.
 
+## Health-gated start
+
+`systemctl start wisp` returns as soon as the backend process forks (`Type=simple`), so a release whose backend crashes at boot would otherwise report `step:done` while `Restart=on-failure` cycles it. After `step:start-service` the updater runs **`step:health-check`** (settled 2026-10-16): it polls every 2 s, for up to **90 s**, until both hold at once —
+
+- `systemctl is-active wisp` is `active` (not `activating` between restarts), and
+- `curl -fsS --max-time 5 http://127.0.0.1:<port>/api/auth/oidc/status` succeeds — a public route that needs no session and nothing beyond the backend itself. `<port>` is the last `WISP_PORT=` in `config/runtime.env` (the unit's `EnvironmentFile=`; leading digits, quotes optional), else `8080` — the backend's own rule.
+
+Only then does it drop the staging dir and the target marker and print `step:done`. On the deadline it logs `error: wisp not healthy after 90s (state: …; <url>: <curl error>)` and fails, which rolls back. The 90 s covers the backend's boot work before it listens (container autostart, mount reconcile) and leaves the rollback room inside the unit's `TimeoutStartSec=600`.
+
+Polling, because the unit sends no readiness signal. Rejected: `Type=notify` (Node has no `sd_notify` without a native dependency); `is-active` alone (true from the fork, and between restarts it races the poll).
+
+Dark-shipped like every updater edit (see above): the release that introduces the gate is itself started ungated by the previous updater; the gate protects the updates **after** it.
+
 ## Rollback
 
 After a successful update, the old install tree is kept at `<install>.prev/` (one-deep). The `wisp-updater` script restores from there automatically if any step after the snapshot fails — including the run being stopped by `TimeoutStartSec` (SIGTERM is turned into a non-zero exit so the rollback fires).
@@ -109,11 +122,11 @@ What an automatic rollback restores (settled 2026-10-16):
 | Failure point | Restored |
 |---------------|----------|
 | Before `step:common-setup` (snapshot, swap, `npm ci`) | The install tree only. Nothing host-level has changed yet. |
-| `step:common-setup` or later | The install tree, then **`step:rollback-host-setup`**: the restored (old) tree's own `common-steps.sh` runs again — re-installing its `wisp-*` helpers, their sudoers rules, `wisp-updater` + `wisp-updater.service` and the container-DNS host config — and `wisp.service` is re-templated from the old tree. |
+| `step:common-setup` or later (`step:health-check` included) | The install tree, then **`step:rollback-host-setup`**: the restored (old) tree's own `common-steps.sh` runs again — re-installing its `wisp-*` helpers, their sudoers rules, `wisp-updater` + `wisp-updater.service` and the container-DNS host config — and `wisp.service` is re-templated from the old tree. |
 
 **Never restored: state migrations and their ledger.** The restore rsync excludes `config/migrations.json`, and a migration that ran is not undone — see [State migrations → Failure and rollback](#failure-and-rollback).
 
-In every case the rollback ends with `daemon-reload` and `systemctl start wisp`.
+In every case the rollback **begins** with `systemctl stop wisp` — after a failed health check the new backend is still running or cycling through `Restart=on-failure`, and neither the tree restore nor the restored `common-steps.sh` (whose migrations step refuses a running backend) may run under it — and **ends** with `daemon-reload` and `systemctl start wisp`. That final start is **not** health-gated: the restored release is what ran before, there is nothing further to fall back to, and the rollback must finish.
 
 Limits, by design:
 
@@ -186,6 +199,7 @@ The ledger preservation lives in `wisp-updater`, so it is dark-shipped (see abov
 
 - **Idempotent** — safe to run again; a no-op on a host already in the target state (fresh installs just record it).
 - **Backward-compatible state** — leave state the previous release still accepts; a rollback cannot undo a migration.
+- **No in-tree config** — a rollback restores the install tree's `config/` (`wisp-config.json`, `runtime.env`, …) from the pre-update snapshot but keeps the ledger, so a change a migration made there would be reverted while its id stays `ok` and never runs again. Migrations change state outside the install tree (domain XML, `<containersPath>`, `<vmsPath>`).
 - **Through the managers** — change state via `ctx.vmManager` / `ctx.containerManager` (e.g. XML edits through vmManager's XML handling), never text substitution or direct file writes into a manager's files.
 - **Log every change** via `ctx.recordChange`, and honour `ctx.dryRun`.
 - **Restart flag only on a running workload** whose change needs a restart; a stopped workload picks the change up on its next start.

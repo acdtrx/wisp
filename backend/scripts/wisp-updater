@@ -8,10 +8,12 @@
 #
 # Steps (echoed to journald):
 #   stop-service → snapshot → swap → install-deps → common-setup
-#   → install-unit → start-service → done
+#   → install-unit → start-service → health-check → done
 # (common-setup ends with the state migrations — scripts/linux/setup/common-steps.sh.)
+# health-check: `done` only once wisp.service is active and the local API answers.
 #
-# On any failure after `snapshot`, rolls back from <install>.prev and exits non-zero.
+# On any failure after `snapshot` — an unhealthy new backend included — rolls
+# back from <install>.prev and exits non-zero.
 # Rollback restores the tree; when the host-level setup steps had already run, it
 # also re-runs the restored (old) tree's common-steps.sh and re-templates
 # wisp.service from it, so helpers, sudoers and units match the code that runs.
@@ -76,6 +78,46 @@ RSYNC_EXCLUDES=(
 snapshot_taken=0
 host_setup_touched=0
 
+# How long the new backend gets to come up (boot runs container autostart and
+# the mount reconcile before it listens). Within wisp-updater.service's
+# TimeoutStartSec, with room left for the rollback.
+HEALTH_TIMEOUT_SEC=90
+# A public route that needs no session and nothing but the backend itself.
+HEALTH_PATH=/api/auth/oidc/status
+
+# The port wisp.service listens on: WISP_PORT from config/runtime.env (its
+# EnvironmentFile=, where the last assignment wins), else the backend's default.
+service_port() {
+  local env_file="$INSTALL_DIR/config/runtime.env" value=""
+  if [[ -f "$env_file" ]]; then
+    # Leading digits of the value, quotes optional — as the backend's parseInt.
+    value="$(sed -n -E "s/^[[:space:]]*WISP_PORT=[[:space:]]*[\"']?([0-9]*).*/\1/p" "$env_file" | tail -n 1)"
+  fi
+  [[ "$value" =~ ^[1-9][0-9]*$ ]] || value=8080
+  echo "$value"
+}
+
+# Polls until the unit is active AND the local API answers — `systemctl start`
+# returns as soon as the process forks (Type=simple), and a backend that crashes
+# at boot only shows up as Restart=on-failure cycling. Polling, because the unit
+# sends no readiness signal.
+wait_for_healthy() {
+  local url state http_err deadline=$((SECONDS + HEALTH_TIMEOUT_SEC))
+  url="http://127.0.0.1:$(service_port)$HEALTH_PATH"
+  while :; do
+    http_err=""
+    state="$(systemctl is-active "$SERVICE_UNIT" 2>/dev/null)"
+    if [[ "$state" == active ]] && http_err="$(curl -fsS -o /dev/null --max-time 5 "$url" 2>&1)"; then
+      echo "  $SERVICE_UNIT active, $url answered"
+      return 0
+    fi
+    (( SECONDS < deadline )) || break
+    sleep 2
+  done
+  echo "error: $SERVICE_UNIT not healthy after ${HEALTH_TIMEOUT_SEC}s (state: ${state:-unknown}${http_err:+; $url: $http_err})" >&2
+  return 1
+}
+
 # Render wisp.service from the given tree's template. Shared by the update path
 # and the rollback so both write the unit the same way.
 template_service_unit() {
@@ -92,6 +134,10 @@ template_service_unit() {
 # in the journal, and the operator finishes by hand (docs/spec/UPDATES.md).
 rollback() {
   echo "step:rollback"
+  # After a failed health check the new backend is still running (or cycling
+  # through Restart=on-failure): stop it before the tree is restored under it,
+  # and so the restored common-steps.sh can run its migrations step.
+  systemctl stop "$SERVICE_UNIT" 2>/dev/null || echo "rollback-warning: stopping $SERVICE_UNIT failed"
   if [[ "$snapshot_taken" -eq 1 && -d "$PREV_DIR" ]]; then
     # The snapshot predates this update's migrations; restoring its ledger would
     # forget migrations whose effects stay on the host.
@@ -116,6 +162,8 @@ rollback() {
     fi
   fi
   systemctl daemon-reload || echo "rollback-warning: daemon-reload failed"
+  # Not health-gated: the restored release is what ran before; there is nothing
+  # further to fall back to, and the rollback must end.
   systemctl start "$SERVICE_UNIT" || echo "rollback-warning: starting $SERVICE_UNIT failed"
 }
 
@@ -165,6 +213,9 @@ systemctl daemon-reload || fail "daemon-reload failed"
 
 echo "step:start-service"
 systemctl start "$SERVICE_UNIT" || fail "starting $SERVICE_UNIT failed"
+
+echo "step:health-check"
+wait_for_healthy || fail "new release did not become healthy"
 
 # Drop staging + target marker after a successful swap. <install>.prev is kept
 # until the next successful update for one-deep manual rollback.
