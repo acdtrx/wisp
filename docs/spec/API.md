@@ -1595,6 +1595,8 @@ Full container config including live state.
 
 The **`env`** field uses a structured shape: `{ KEY: { value, secret?, isSet? } }`. Non-secret entries are returned as `{ value: "plaintext" }`. Secret entries are returned as `{ value: null, secret: true, isSet: boolean }` — the value is never sent to the client, and `isSet` is `true` when a value is stored on disk. See CONTAINERS.md → *Secret env vars*.
 
+Secret **file mounts** in **`mounts`** (a stored `secret: true`, or declared secret by the container's app module) carry `secret: true`, `isSet` (the file is non-empty) and `sizeBytes` (`null` when no file is on disk); their content is never part of any response. See CONTAINERS.md → *Secret file mounts*.
+
 **404:** `{ error, detail }` if container not found.
 
 ### GET /api/containers/:name/mounts/usage · `read`
@@ -1626,7 +1628,7 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 **`network`:** Merged with the existing object (not replaced wholesale). **Bridge networking** requires **`network.mac`** after merge (unicast format). While the task is **running or paused**, **`network.ip`** from the body is ignored (server-owned), and changing **`network.mac`** or **`network.interface`** returns **409** `CONTAINER_MUST_BE_STOPPED`. Invalid MAC → **422** `INVALID_CONTAINER_MAC`.
 
-**`mounts`:** Replaces the entire mounts array (bulk update). Prefer row-scoped mount routes below for UI editing. Each element: `{ type: "file"|"directory"|"tmpfs", name, containerPath, ... }`. For `file`/`directory`: `readonly`, optional `sourceId`/`subPath` (directories only), `containerOwnerUid`/`Gid`. For `tmpfs`: `sizeMiB` (1–2048, default 64); `sourceId`/`subPath`/`readonly`/`containerOwnerUid`/`Gid` are rejected. **`name`** is a single path segment (storage key under the container’s `files/` directory; tmpfs entries have no on-disk artifact). Duplicate **`name`** or duplicate **`containerPath`** → **422** `CONTAINER_MOUNT_DUPLICATE`. Invalid shape → **422** `INVALID_CONTAINER_MOUNTS`. Mounts removed from the array have their on-disk artifacts deleted automatically (tmpfs has no artifact).
+**`mounts`:** Replaces the entire mounts array (bulk update). Prefer row-scoped mount routes below for UI editing. Each element: `{ type: "file"|"directory"|"tmpfs", name, containerPath, ... }`. For `file`/`directory`: `readonly`, optional `sourceId`/`subPath` (directories only), `containerOwnerUid`/`Gid`, `secret` (file only, boolean — an entry that drops it from a secret mount, by name or as a `mountRenames` target, empties that file first). For `tmpfs`: `sizeMiB` (1–2048, default 64); `sourceId`/`subPath`/`readonly`/`containerOwnerUid`/`Gid` are rejected. **`name`** is a single path segment (storage key under the container’s `files/` directory; tmpfs entries have no on-disk artifact). Duplicate **`name`** or duplicate **`containerPath`** → **422** `CONTAINER_MOUNT_DUPLICATE`. Invalid shape → **422** `INVALID_CONTAINER_MOUNTS`. Mounts removed from the array have their on-disk artifacts deleted automatically (tmpfs has no artifact).
 
 **`mountRenames`:** Optional, only together with `mounts`: `{ "<oldName>": "<newName>" }` marks entries of the new list as renamed current mounts, so Local data moves from `files/<old>` to `files/<new>` instead of being deleted with the old row. Rules and errors: [CONTAINERS.md § Mount entry](CONTAINERS.md#mount-entry). Local mounts dropped from `mounts` without a rename have their data deleted.
 
@@ -1705,15 +1707,15 @@ Download one run's log file. Responds with `Content-Type: text/plain; charset=ut
 
 ### POST /api/containers/:name/mounts · `admin`
 
-Append one bind mount (row-scoped). **Body:** `{ type: "file"|"directory"|"tmpfs", name, containerPath, ... }` (same shape as one element of **`mounts`** in **PATCH**; `readonly`/`sourceId`/`subPath`/`containerOwnerUid`/`Gid` for file/directory; `sizeMiB` for tmpfs).
+Append one bind mount (row-scoped). **Body:** `{ type: "file"|"directory"|"tmpfs", name, containerPath, ... }` (same shape as one element of **`mounts`** in **PATCH**; `readonly`/`sourceId`/`subPath`/`containerOwnerUid`/`Gid` for file/directory; `secret` for file; `sizeMiB` for tmpfs). A new secret file mount starts empty (`isSet: false`) — write its content with **PUT** content or the file upload.
 
 **200:** `{ requiresRestart: boolean }` | **422:** `INVALID_CONTAINER_MOUNTS`, `CONTAINER_MOUNT_DUPLICATE`
 
 ### PATCH /api/containers/:name/mounts/:mountName · `admin`
 
-Update one mount by its current storage **`name`** (URL segment). **Body:** optional subset of `{ name, containerPath, readonly, sourceId, subPath, containerOwnerUid, containerOwnerGid }` for file/directory mounts, or `{ name, containerPath, sizeMiB }` for tmpfs mounts (other fields rejected on tmpfs). Renaming **`name`** moves `files/<oldName>` to `files/<newName>` on disk; tmpfs renames are config-only.
+Update one mount by its current storage **`name`** (URL segment). **Body:** optional subset of `{ name, containerPath, readonly, sourceId, subPath, containerOwnerUid, containerOwnerGid, secret }` for file/directory mounts (`secret` on file mounts only), or `{ name, containerPath, sizeMiB }` for tmpfs mounts (other fields rejected on tmpfs). Renaming **`name`** moves `files/<oldName>` to `files/<newName>` on disk; tmpfs renames are config-only. **`secret: false`** on a secret mount empties its file first (write-only content can't be revealed by dropping the flag); a change of `secret` alone needs no restart (`requiresRestart: false`).
 
-**200:** `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** duplicate path/name
+**200:** `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** duplicate path/name, `INVALID_CONTAINER_MOUNTS`, `APP_CONFIG_ONLY` (mount of an app container — see CUSTOM-APPS.md § Mount content routes)
 
 ### DELETE /api/containers/:name/mounts/:mountName · `admin`
 
@@ -1731,7 +1733,7 @@ Multipart **file** upload: a single file part (field name typically **`file`**).
 
 Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an existing file.
 
-**200:** `{ name, size, modified }` | **422:** `APP_CONFIG_ONLY` (app-managed mount — see GET content below)
+**200:** `{ name, size, modified }` | **422:** `APP_CONFIG_ONLY` (app-managed mount — see GET content below). Works on secret mounts (write-only).
 
 ### POST /api/containers/:name/mounts/:mountName/zip · `admin`
 
@@ -1743,17 +1745,19 @@ Multipart: one file part. Mount must have **`type: "directory"`**. Clears `files
 
 **File** mounts only. Returns the backing file as UTF-8 text for the in-app editor.
 
-**App-managed mounts are refused for every caller** (session or token): when the container's `metadata.app` names a registered app module, every mount in its `mounts` list belongs to that module, and GET/PUT content plus `POST …/file` return **422** `APP_CONFIG_ONLY`. Those files are regenerated from `appConfig` on each save and routinely hold secrets (tiny-samba passwords, zot `htpasswd` / `session-keys`) that every other surface masks; configure the app through `appConfig`, or eject it to a generic container first. The UI never needs these routes for app containers — the generic Mounts section is replaced by the app's config form. (settled 2026-10-16: refuse for all callers rather than token-only or admin-scope — no special cases, and nothing in the UI breaks.)
+**Secret file mounts are refused for every caller** (session or token, any scope) with **403** `CONTAINER_MOUNT_SECRET` — a stored `secret: true`, or a file the container's app module declares secret (tiny-samba `tiny-samba-passwords`; zot `htpasswd`, `session-keys`, and `config-json` while OIDC is on). Their content is write-only: replace it with **PUT** or the file upload, never read it back. Non-secret files of app containers (Caddy's `Caddyfile`, …) are readable; *writes* to any app-managed mount stay refused with `APP_CONFIG_ONLY` (see PUT below). (settled 2026-10-16: P5.2 replaced the earlier refuse-all-app-mounts read guard with this generic secret rule — refusal for all callers, no token-only special case.)
 
 **200:** `{ content: string }` — UTF-8 text (max **512 KiB** decoded size on disk).
 
-**404:** `CONTAINER_NOT_FOUND`, `CONTAINER_MOUNT_NOT_FOUND` | **422:** `APP_CONFIG_ONLY`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `CONTAINER_MOUNT_FILE_TOO_LARGE`, `CONTAINER_MOUNT_FILE_NOT_UTF8`, `CONTAINER_MOUNT_SOURCE_MISSING` (no file on disk yet)
+**403:** `CONTAINER_MOUNT_SECRET` | **404:** `CONTAINER_NOT_FOUND`, `CONTAINER_MOUNT_NOT_FOUND` | **422:** `CONTAINER_MOUNT_TYPE_MISMATCH`, `CONTAINER_MOUNT_FILE_TOO_LARGE`, `CONTAINER_MOUNT_FILE_NOT_UTF8`, `CONTAINER_MOUNT_SOURCE_MISSING` (no file on disk yet)
 
 ### PUT /api/containers/:name/mounts/:mountName/content · `admin`
 
 **Body:** JSON `{ "content": string }`. Replaces the backing file with UTF-8 bytes (max **512 KiB** encoded length). The route's `bodyLimit` is set just above the content cap to reject oversized payloads at the parser before reaching the handler; the handler enforces the exact byte cap on the decoded content.
 
-**200:** `{ ok: true }` | **413:** request body too large | **422:** same family as GET for type/size/encoding, plus `APP_CONFIG_ONLY` for app-managed mounts
+Works on secret mounts (write-only); `{ "content": "" }` clears one.
+
+**200:** `{ ok: true }` | **413:** request body too large | **422:** same family as GET for type/size/encoding, plus `APP_CONFIG_ONLY` for app-managed mounts (an app container's files are regenerated from `appConfig` on every save — configure the app, or eject it first)
 
 ### POST /api/containers/:name/mounts/:mountName/init · `admin`
 

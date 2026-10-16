@@ -1,7 +1,9 @@
 /**
  * App registry — maps app IDs to their backend modules.
  * Each module exports: getDefaultAppConfig, validateAppConfig, generateDerivedConfig, maskSecrets,
- * getReloadCommand, and optionally requiresRestartForChange and
+ * getReloadCommand, and optionally requiresRestartForChange,
+ * getSecretMountNames(appConfig) (file mounts whose content is a secret — write-only on every
+ * surface; an app that writes a secret into a file mount must list it) and
  * agentWritableAppConfigFields (top-level appConfig keys the MCP update_app_config
  * tool may change; absent/empty = the app is not agent-configurable).
  *

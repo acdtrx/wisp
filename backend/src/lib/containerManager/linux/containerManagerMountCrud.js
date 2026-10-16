@@ -9,10 +9,15 @@ import {
   validateSubPath,
   validateOwnerId,
   validateTmpfsSizeMiB,
+  validateSecretFlag,
   ensureMissingMountArtifacts,
   TMPFS_MAX_SIZE_MIB,
 } from './containerManagerMounts.js';
-import { deleteMountBackingStore, renameMountBackingStore } from './containerManagerMountsContent.js';
+import {
+  clearMountBackingFile,
+  deleteMountBackingStore,
+  renameMountBackingStore,
+} from './containerManagerMountsContent.js';
 import { resolveMount } from './containerPaths.js';
 import { readContainerConfig as loadContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
@@ -58,7 +63,11 @@ export async function addContainerMount(containerName, mountDef) {
  * (Local mounts only — Storage mounts use the name purely as a config key).
  * @param {string} containerName
  * @param {string} mountName - current mount name in config
- * @param {{ name?: string, containerPath?: string, readonly?: boolean, sourceId?: string|null, subPath?: string }} changes
+ * @param {{ name?: string, containerPath?: string, readonly?: boolean, sourceId?: string|null, subPath?: string, secret?: boolean }} changes
+ *
+ * `secret` (file mounts only) is not part of the OCI spec, so flipping it alone needs no
+ * restart. Turning it off empties the file first: the content was write-only, and
+ * dropping the flag must not make it readable.
  */
 export async function updateContainerMount(containerName, mountName, changes) {
   if (!changes || typeof changes !== 'object') {
@@ -75,7 +84,7 @@ export async function updateContainerMount(containerName, mountName, changes) {
   // don't apply (sourceId/subPath/readonly/containerOwnerUid/Gid) explicitly so misuse surfaces.
   if (list[idx].type === 'tmpfs') {
     const cur = list[idx];
-    const forbidden = ['sourceId', 'subPath', 'readonly', 'containerOwnerUid', 'containerOwnerGid'];
+    const forbidden = ['sourceId', 'subPath', 'readonly', 'containerOwnerUid', 'containerOwnerGid', 'secret'];
     for (const k of forbidden) {
       if (Object.prototype.hasOwnProperty.call(changes, k)) {
         const v = changes[k];
@@ -209,6 +218,11 @@ export async function updateContainerMount(containerName, mountName, changes) {
     nextOwnerGid = v;
   }
 
+  const currentSecret = current.secret === true;
+  const nextSecret = changes.secret !== undefined
+    ? validateSecretFlag(changes.secret, current.type)
+    : currentSecret;
+
   const other = list.filter((_, i) => i !== idx);
   if (other.some((m) => m.name === nextName)) {
     throw containerError('CONTAINER_MOUNT_DUPLICATE', `Duplicate mount name "${nextName}"`);
@@ -226,9 +240,10 @@ export async function updateContainerMount(containerName, mountName, changes) {
     subPath: nextSubPath,
     containerOwnerUid: nextOwnerUid,
     containerOwnerGid: nextOwnerGid,
+    ...(nextSecret ? { secret: true } : {}),
   };
 
-  const unchanged =
+  const layoutUnchanged =
     updated.name === current.name
     && updated.containerPath === current.containerPath
     && updated.readonly === current.readonly
@@ -236,8 +251,12 @@ export async function updateContainerMount(containerName, mountName, changes) {
     && updated.subPath === current.subPath
     && updated.containerOwnerUid === current.containerOwnerUid
     && updated.containerOwnerGid === current.containerOwnerGid;
-  if (unchanged) {
+  if (layoutUnchanged && nextSecret === currentSecret) {
     return { requiresRestart: false };
+  }
+
+  if (currentSecret && !nextSecret) {
+    await clearMountBackingFile(containerName, current.name);
   }
 
   /* Switching a Local mount to Storage: drop the now-unused local files/<name> backing store so we
@@ -256,7 +275,7 @@ export async function updateContainerMount(containerName, mountName, changes) {
   config.mounts = list;
   const task = await getTaskState(containerName);
   const isRunning = taskIsRunning(task);
-  const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
+  const requiresRestart = isRunning && RESTART_WHEN_RUNNING && !layoutUnchanged;
   if (requiresRestart) config.pendingRestart = true;
   await writeContainerConfig(containerName, config);
   if (!updated.sourceId && nextName === current.name) {

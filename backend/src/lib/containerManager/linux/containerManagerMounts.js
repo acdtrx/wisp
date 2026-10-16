@@ -4,7 +4,7 @@
  *   - Local  (default) — backing store lives under <containersPath>/<name>/files/<mountName>
  *   - Storage — backing store lives at <storageMount.mountPath>/<subPath>,
  *               where storageMount is an entry in settings.mounts (SMB share / removable drive).
- * File mounts are always Local.
+ * File mounts are always Local, and may be `secret: true` — content write-only (never read back).
  *
  * A third type — `tmpfs` — has no host backing at all: contents live only in kernel memory
  * for the lifetime of the container task and are gone on stop/restart. tmpfs entries carry
@@ -103,12 +103,31 @@ export function validateTmpfsSizeMiB(value) {
 }
 
 /**
+ * Validate a mount's `secret` flag: a boolean (absent/null = false), and only a file mount
+ * may be secret — its content is write-only (see getMountFileTextContent). Persisted only
+ * when true.
+ * @param {unknown} value
+ * @param {string} type - mount type
+ * @returns {boolean}
+ */
+export function validateSecretFlag(value, type) {
+  if (value === undefined || value === null) return false;
+  if (typeof value !== 'boolean') {
+    throw containerError('INVALID_CONTAINER_MOUNTS', 'secret must be a boolean');
+  }
+  if (value && type !== 'file') {
+    throw containerError('INVALID_CONTAINER_MOUNTS', 'secret is only allowed on file mounts');
+  }
+  return value;
+}
+
+/**
  * Validate and normalize mounts for persistence. Rejects duplicate name or containerPath.
  * When `resolveMount` is provided, validates that every `sourceId` resolves to a real mount.
  * @param {unknown} mounts
  * @param {((id: string) => null | { id: string, mountPath: string, label?: string }) | null} [resolveMount]
  * @returns {Array<
- *   | { type: 'file'|'directory', name: string, containerPath: string, readonly: boolean, sourceId: string|null, subPath: string, containerOwnerUid: number, containerOwnerGid: number }
+ *   | { type: 'file'|'directory', name: string, containerPath: string, readonly: boolean, sourceId: string|null, subPath: string, containerOwnerUid: number, containerOwnerGid: number, secret?: true }
  *   | { type: 'tmpfs', name: string, containerPath: string, sizeMiB: number }
  * >}
  */
@@ -156,6 +175,7 @@ export function validateAndNormalizeMounts(mounts, resolveMount = null) {
       if (raw.readonly === true) {
         throw containerError('INVALID_CONTAINER_MOUNTS', 'tmpfs mounts cannot be read-only');
       }
+      validateSecretFlag(raw.secret, type);
       if (raw.containerOwnerUid !== undefined && raw.containerOwnerUid !== null && raw.containerOwnerUid !== '' && raw.containerOwnerUid !== 0) {
         throw containerError('INVALID_CONTAINER_MOUNTS', 'containerOwnerUid is not applicable to tmpfs mounts');
       }
@@ -198,6 +218,8 @@ export function validateAndNormalizeMounts(mounts, resolveMount = null) {
       subPath = normalizedSub;
     }
 
+    const secret = validateSecretFlag(raw.secret, type);
+
     const containerOwnerUid = validateOwnerId(raw.containerOwnerUid);
     if (containerOwnerUid === null) {
       throw containerError('INVALID_CONTAINER_MOUNTS', 'containerOwnerUid must be an integer in [0, 65535]');
@@ -216,6 +238,7 @@ export function validateAndNormalizeMounts(mounts, resolveMount = null) {
       subPath,
       containerOwnerUid,
       containerOwnerGid,
+      ...(secret ? { secret: true } : {}),
     });
   }
   return out;

@@ -129,7 +129,7 @@ export const containerAdminTools = [
           err.raw ?? err.message,
         );
       }
-      return maskContainerConfigSecrets(await getContainerConfig(name));
+      return await maskContainerConfigSecrets(await getContainerConfig(name));
     },
   },
   {
@@ -282,7 +282,7 @@ export const containerAdminTools = [
       // completely untouched by the agent's input.
       const merged = { ...cfg.metadata.appConfig, ...appConfig };
       const result = await applyAppConfig(name, merged);
-      const after = maskContainerConfigSecrets(await getContainerConfig(name));
+      const after = await maskContainerConfigSecrets(await getContainerConfig(name));
       return {
         name,
         app: appType,

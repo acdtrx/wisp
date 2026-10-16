@@ -9,7 +9,7 @@ import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { registerAllContainerServices } from './containerManagerServices.js';
 import { validateAndNormalizeMounts, ensureMissingMountArtifacts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';
-import { renameMountBackingStore } from './containerManagerMountsContent.js';
+import { clearMountBackingFile, renameMountBackingStore } from './containerManagerMountsContent.js';
 import { resolveMount } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { RESTART_POLICIES } from './containerManagerRestartPolicy.js';
@@ -149,6 +149,28 @@ function resolveMountRenames(mountRenames, prevMounts, nextMounts) {
 }
 
 /**
+ * Current secret file mounts whose content the new list would expose: the same mount
+ * (by name, or as a rename's source) arrives without `secret`, or as another type.
+ * Their files are emptied before the write — un-marking a secret never makes its
+ * content readable (same contract as the row update and secret env vars).
+ * Returns the current names to clear.
+ */
+function secretMountsLosingFlag(prevMounts, nextMounts, renamePairs) {
+  const renamedFrom = new Set(renamePairs.map(([prev]) => prev.name));
+  const nextByPrevName = new Map(renamePairs.map(([prev, next]) => [prev.name, next]));
+  for (const next of nextMounts) {
+    if (!renamedFrom.has(next.name) && !nextByPrevName.has(next.name)) nextByPrevName.set(next.name, next);
+  }
+  return prevMounts
+    .filter((prev) => prev.type === 'file' && prev.secret === true)
+    .filter((prev) => {
+      const next = nextByPrevName.get(prev.name);
+      return next && !(next.type === 'file' && next.secret === true);
+    })
+    .map((prev) => prev.name);
+}
+
+/**
  * Move the backing store of every renamed Local mount, then persist the config.
  * Local data lives at files/<name>; a Storage-sourced or tmpfs mount's name is
  * only a config key. If a move or the write fails, the moves already done are
@@ -201,6 +223,8 @@ export async function updateContainerConfig(name, changes) {
   let renamePairs = [];
   /** Local mounts that left the list; their files/<name> is still on disk. */
   let removedMounts = [];
+  /** Secret file mounts the new list un-marks; emptied before the write. */
+  let unflaggedSecretMounts = [];
   const task = await getTaskState(name);
   const isRunning = task && (task.status === 'RUNNING' || task.status === 'PAUSED');
 
@@ -303,6 +327,7 @@ export async function updateContainerConfig(name, changes) {
       removedMounts = prevMounts
         .filter((m) => !nextNames.has(m.name) && !renamedFrom.has(m.name) && !m.sourceId && m.type !== 'tmpfs')
         .map((m) => m.name);
+      unflaggedSecretMounts = secretMountsLosingFlag(prevMounts, normalized, renamePairs);
       config.mounts = normalized;
       mountsPersisted = normalized;
       if (isRunning && RESTART_FIELDS.has(key)) requiresRestart = true;
@@ -328,6 +353,9 @@ export async function updateContainerConfig(name, changes) {
   }
 
   if (requiresRestart) config.pendingRestart = true;
+  for (const mountName of unflaggedSecretMounts) {
+    await clearMountBackingFile(name, mountName);
+  }
   await moveRenamedMountsAndWrite(name, renamePairs, config);
   if (mountsPersisted) {
     await ensureMissingMountArtifacts(name, mountsPersisted);

@@ -130,6 +130,7 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 | `containerOwnerUid` | integer (0–65535) | In-container UID to map to the host deploy UID via a **size:1 idmapped mount**. Default `0` (root). Only consumed when `runAsRoot` is true and the mount is **Local** — ignored on Storage-sourced mounts and rejected on tmpfs. See [Idmapped Local mounts](#idmapped-local-mounts). |
 | `containerOwnerGid` | integer (0–65535) | In-container GID to map to the host deploy GID via a size:1 idmapped mount. Default `0` (root). Same activation conditions as `containerOwnerUid`. |
 | `sizeMiB` | integer (1–2048) | tmpfs only. Cap on the tmpfs mount in MiB. Default `64`. Ignored / rejected on file and directory mounts. |
+| `secret` | `true` \| omitted | File mounts only (`secret: true` on a directory/tmpfs entry, or a non-boolean, → `INVALID_CONTAINER_MOUNTS`). The file's content is **write-only** — see [Secret file mounts](#secret-file-mounts). Persisted only when `true`. |
 
 **Host-path resolution** (`resolveMountHostPath`):
 - Local: `<containersPath>/<name>/files/<mount.name>`
@@ -253,6 +254,17 @@ Individual env vars can be marked `secret: true` to hide their values from the U
 - Creating a brand-new secret key without a `value` is rejected with `CONFIG_ERROR` (`Secret env var "X" requires a value`).
 
 Legacy `container.json` files with a flat `env: { KEY: "value" }` dict are normalized on first **GET** `/api/containers/:name` (written back to disk as `{ KEY: { value: "value" } }`) — existing entries become non-secret.
+
+### Secret file mounts
+
+A file mount can be marked secret — the same model as secret env vars (settled 2026-10-16: a user's secret kept in a generic container's file mount must be as unreadable as one kept in env; the earlier app-only content guard left it open to any read-scoped token). The file is stored in plaintext under `files/<name>` (the container reads it), but:
+
+- **Content is write-only for every caller** — session or token, read or admin scope. `GET /api/containers/:name/mounts/:mountName/content` answers **403** `CONTAINER_MOUNT_SECRET`; `PUT …/content` and `POST …/file` work as for any file mount. `containerManager.getMountFileTextContent` itself refuses a stored `secret: true`, so no internal caller can read one back by accident either.
+- **Metadata only on output.** `GET /api/containers/:name` (and MCP `get_container`) returns secret file mounts with `secret: true`, `isSet` (the file is non-empty) and `sizeBytes` (`null` when no file is on disk). The mount-usage endpoint still reports its size.
+- **Un-marking empties the file.** Turning `secret` off — row `PATCH` `{ secret: false }`, or a whole-list `PATCH` whose entry for that mount (by name, or as a `mountRenames` target) lacks the flag or changes type — truncates the file **before** the config is written, so dropping the flag can never make the content readable. Matches secret env vars (secret → plain clears the value). Marking a mount secret keeps its content.
+- **No restart for the flag.** `secret` is not part of the OCI spec, so a row `PATCH` that changes only `secret` returns `requiresRestart: false` even while running.
+- **App containers** derive secrecy from their app module (`getSecretMountNames`, read at request time from the stored appConfig — no stored flag, so app containers created before the flag existed are covered without a migration); see [CUSTOM-APPS.md § Mount content routes](CUSTOM-APPS.md#mount-content-routes). The effective rule is "stored `secret: true` **or** declared by the app".
+- **Backups** carry secret mount files like any other mount data (and like secret env values) — see [BACKUPS.md](BACKUPS.md).
 
 ## Config changes that need a restart
 
@@ -552,7 +564,8 @@ The HTTP server listens **after** these steps, so hosts with mounts configured m
 | `CONTAINER_MOUNT_SOURCE_UNSAFE` | 422 | Storage-sourced path resolves outside its storage root (symlink escape) |
 | `CONTAINER_MOUNT_FILE_TOO_LARGE` | 422 | Mount file exceeds 512 KiB (editor GET/PUT) |
 | `CONTAINER_MOUNT_FILE_NOT_UTF8` | 422 | Mount file is not valid UTF-8 (editor GET) |
-| `APP_CONFIG_ONLY` | 422 | Content GET/PUT or file upload on a mount owned by the container's app module (see [CUSTOM-APPS.md](CUSTOM-APPS.md) § Mount content routes) |
+| `CONTAINER_MOUNT_SECRET` | 403 | Content GET on a secret file mount — write-only for every caller (see [Secret file mounts](#secret-file-mounts)) |
+| `APP_CONFIG_ONLY` | 422 | Content PUT, file upload, or row `PATCH` on a mount owned by the container's app module (see [CUSTOM-APPS.md](CUSTOM-APPS.md) § Mount content routes) |
 | `BAD_MULTIPART_TOO_MANY_FILES` | 400 | More than one file part in a mount upload request |
 | `CONTAINER_MOUNT_SOURCE_WRONG_TYPE` | 422 | Backing path is not a file/directory as required |
 | `INVALID_CONTAINER_DEVICES` | 422 | `devices` array invalid (shape, unknown type, bad path, > 1 entry) |
@@ -580,8 +593,9 @@ The HTTP server listens **after** these steps, so hosts with mounts configured m
 | `ContainerStatsBar` | `container/` | Bottom stats bar (CPU%, memory, uptime) |
 | `ContainerGeneralSection` | `sections/` | Name, image, command, CPU/memory limits, restart policy |
 | `ContainerEnvSection` | `sections/` | Key-value editor for environment variables |
-| `ContainerMountsSection` | `sections/` | **Mounts**: table (bridges-style); type icon column; container path (wider column) and mount name; read-only; per-row Save (PATCH full list), icon upload (file/zip) with optional multipart **`mounts`** for atomic save+upload, file editor modal |
-| `MountFileEditorModal` | `sections/` | UTF-8 text editor for file-mount backing content (GET/PUT content API) |
+| `ContainerMountsSection` | `sections/` | **Mounts**: table (bridges-style); type icon column; container path (wider column) and mount name; read-only; per-row Save (PATCH full list), icon upload (file/zip) with optional multipart **`mounts`** for atomic save+upload, file editor modal; secret file mounts show `secret · set / not set` and open `SecretMountContentModal` instead of the editor |
+| `MountFileEditorModal` | `sections/` | UTF-8 text editor for non-secret file-mount backing content (GET/PUT content API) |
+| `SecretMountContentModal` | `sections/` | Write-only replace / clear for a secret file mount (PUT content only — never fetches content) |
 | `ContainerNetworkSection` | `sections/` | Network type, interface, IP, MAC (editable when stopped + randomize), status |
 | `ContainerDevicesSection` | `sections/` | Host device passthrough (currently GPU only). Picker populated from `GET /api/host/gpus`; one entry max in v1. PATCHes `devices` on Save. Disabled empty state when host has no supported GPUs. |
 | `ContainerLogsSection` | `sections/` | Live-scrolling log viewer for one **run** at a time. Top bar has a **run picker** (newest first; green dot = running, red = non-zero exit, gray = clean exit), a filter input, and icon-only actions: **Clear** viewer (client-side only — does not touch files), **Mark** (inserts a divider line with an optional label), **Download** (streams the selected run's log file), **Auto-scroll**. SSE via `/logs?runId=…`; run list via `GET /runs` and refetched when the container's state transitions. |

@@ -89,6 +89,8 @@ function mappedErrorStatus(code) {
     case 'NO_PASSWORD_CONFIGURED':
     case 'PASSWORD_FILE_UNSUPPORTED_FORMAT':
       return 503;
+    case 'CONTAINER_MOUNT_SECRET':
+      return 403;
     case 'CONTAINER_NOT_FOUND':
     case 'CONTAINER_MOUNT_NOT_FOUND':
     case 'CONTAINER_SERVICE_NOT_FOUND':

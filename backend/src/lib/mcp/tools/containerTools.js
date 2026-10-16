@@ -18,7 +18,8 @@ export const containerTools = [
     name: 'get_container',
     title: 'Container detail',
     description:
-      'Full configuration and state of one container: image, network (bridge, MAC, LAN IP), mounts, ' +
+      'Full configuration and state of one container: image, network (bridge, MAC, LAN IP), mounts ' +
+      '(secret file mounts show secret: true with isSet/sizeBytes — their content is write-only), ' +
       'env (secret values masked), limits, restart policy, autostart, and — for app containers — ' +
       'metadata.app plus the masked appConfig. The appConfig is how you read any app\'s configuration: ' +
       'e.g. a caddy-reverse-proxy container\'s appConfig.hosts[] lists every exposed {subdomain, target}.',
@@ -33,7 +34,7 @@ export const containerTools = [
     scope: 'read',
     handler: async ({ name }) => {
       validateContainerName(name);
-      return maskContainerConfigSecrets(await getContainerConfig(name));
+      return await maskContainerConfigSecrets(await getContainerConfig(name));
     },
   },
   {

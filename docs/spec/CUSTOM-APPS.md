@@ -47,6 +47,7 @@ Each module (`backend/src/lib/containerApps/<app>.js`) exports:
 | `generateDerivedConfig` | `(appConfig) → { env, mounts, mountContents, appConfig? }` | Generate derived artifacts from appConfig. May return a transformed `appConfig` (e.g. zot stores hashed passwords back into appConfig). |
 | `getMountRenames` | `(newAppConfig, oldAppConfig) → { oldMountName: newMountName }` | Optional. Mounts the app means to **rename** in this save, given the raw incoming appConfig (called after `validateAppConfig`). Needed by any app whose derived mount *names* come from user-editable fields: without it a rename reads as "drop the old mount, add a new one" and the old mount's data is deleted. Passed to `updateContainerConfig` as `mountRenames`, so Local data moves to the new name. Absent = the app never renames mounts (fixed names, or Storage-only like jellyfin libraries). |
 | `maskSecrets` | `(appConfig) → appConfig` | Redact secrets for API responses |
+| `getSecretMountNames` | `(appConfig) → string[]` | Optional. File mounts whose generated content is a secret, for this appConfig — write-only on every surface (see [Mount content routes](#mount-content-routes)). **An app that writes a secret into a file mount must list it**; absent = no secret files. Pure and sync (called on every detail read). |
 | `getReloadCommand` | `() → string[] \| null` | Optional. Command to live-reload config inside the running container (e.g. `['caddy', 'reload', ...]`). Return `null` if the app doesn't support live reload. |
 | `requiresRestartForChange` | `(oldAppConfig, newAppConfig) → boolean` | Optional. Returns `true` when the diff includes fields that the app's reload can't apply live (e.g. tiny-samba's `server.workgroup`). When true, the backend sets `pendingRestart: true` and reports `requiresRestart: true` even after a successful reload. |
 | `agentWritableAppConfigFields` | `string[]` | Optional. Top-level appConfig keys the MCP `update_app_config` tool may change (see [MCP.md](MCP.md)). Absent or empty = the app is not agent-configurable. Never list secrets, certificate identity, or auth settings — the point of the filter is that an agent can't touch them by mistake (caddy lists only `hosts`). The UI/REST surface is unaffected. |
@@ -84,17 +85,22 @@ The route reads `config.metadata?.app` and dispatches:
 
 - `{ appConfig }` on an app container → `containerApps.applyAppConfig(name, appConfig)`. Validates via app module, regenerates derived config, persists new `metadata.appConfig` + `env`/`mounts`/`devices`, writes mount file contents, attempts live reload if running.
 - `{ envPatch }` / `{ env }` / `{ mounts }` on an app container → rejected with `APP_CONFIG_ONLY` (422), as is `{ devices }` sent alongside `appConfig`. Enforced at the route layer. `{ devices }` on its own is accepted — the Devices section is shown on every container — but an app module that derives devices (Jellyfin's GPU toggle) replaces them on its next `appConfig` save.
-- `{ eject: true }` on an app container → `containerApps.eject(name)`. Clears `metadata.app`/`metadata.appConfig`. Env, mounts, devices, files all preserved.
+- `{ eject: true }` on an app container → `containerApps.eject(name)`. Clears `metadata.app`/`metadata.appConfig`. Env, mounts, devices, files all preserved; the mounts the app declared secret get a stored `secret: true` first.
 - Anything else → straight through to `containerManager.updateContainerConfig`.
 
 ### Mount content routes
 
-An app container's mounts belong to its app module (create and `applyAppConfig` write the whole `mounts` list from `generateDerivedConfig`, and file contents are regenerated from appConfig on every save). `GET`/`PUT /api/containers/:name/mounts/:mountName/content` and `POST …/file` therefore refuse any mount of a container whose `metadata.app` resolves to a registered module with `APP_CONFIG_ONLY` (422) — for every caller. The guard is `containerApps.assertMountNotAppManaged(config, mountName)`, called by the route before the manager. Ownership follows the module, not a list of secret file names, so a new app is covered without extending anything; an unregistered `metadata.app` owns no mounts (the UI shows the generic Mounts section for it too). Internal writes (`createAppContainer` / `applyAppConfig`) call `containerManager.putMountFileTextContent` directly and are unaffected.
+An app container's mounts belong to its app module (create and `applyAppConfig` write the whole `mounts` list from `generateDerivedConfig`, and file contents are regenerated from appConfig on every save). Two separate rules, both for every caller (settled 2026-10-16 — P5.2 replaced the earlier refuse-everything guard, whose read half special-cased apps and left secrets in generic containers' file mounts readable):
+
+- **Writes are refused.** `PUT …/content`, `POST …/file`, and row `PATCH /mounts/:mountName` on a mount of a container whose `metadata.app` resolves to a registered module → `APP_CONFIG_ONLY` (422). A raw write would desync disk from appConfig and be overwritten on the next save; a row rename would move a declared secret file out from under its declared name. Guard: `containerApps.assertMountNotAppManaged(config, mountName)`. An unregistered `metadata.app` owns no mounts (the UI shows the generic Mounts section for it too). Internal writes (`createAppContainer` / `applyAppConfig`) call `containerManager.putMountFileTextContent` directly and are unaffected.
+- **Reads follow the secret rule.** `GET …/content` is refused (403 `CONTAINER_MOUNT_SECRET`) for a secret file mount — a stored `secret: true`, **or** a name the app module lists in `getSecretMountNames(appConfig)` — and allowed otherwise, so non-secret app files (Caddy's `Caddyfile`, tiny-samba's `config.yaml`, zot's `config.json` without OIDC) are readable again. Guard: `containerApps.assertMountContentReadable(config, mountName)`. The app's declaration is read from the stored appConfig on every request — app containers carry no stored flag, which is why existing app containers are covered with no migration and no manual step. Container detail and MCP `get_container` mark the same mounts `secret: true` with `isSet` / `sizeBytes` ([CONTAINERS.md § Secret file mounts](CONTAINERS.md#secret-file-mounts)).
+
+The trade-off of declaring secrets (rather than refusing every app file) is that a new app writing a secret into a file mount must list it in `getSecretMountNames`; see [Adding a New App](#adding-a-new-app).
 
 ### Error Codes (422)
 
 - `INVALID_APP_CONFIG` — appConfig validation failed
-- `APP_CONFIG_ONLY` — attempted raw env/mount edit on app container, or raw read/write of an app-managed mount's content
+- `APP_CONFIG_ONLY` — attempted raw env/mount edit on app container, or a raw write (content PUT, file upload, row PATCH) to an app-managed mount (reads of secret app files are 403 `CONTAINER_MOUNT_SECRET` instead — see above)
 - `UNKNOWN_APP_TYPE` — app ID not in registry
 
 ## Frontend
@@ -154,7 +160,7 @@ Caddy keeps serving its previous config (reload is atomic), but the save surface
 
 ## Adding a New App
 
-1. **Backend module** — Create `backend/src/lib/containerApps/<app>.js` exporting `{ getDefaultAppConfig, validateAppConfig, generateDerivedConfig, maskSecrets, getReloadCommand }` as a named module object. Add `getPublishedLinks` too if the app exposes a URL a human would open.
+1. **Backend module** — Create `backend/src/lib/containerApps/<app>.js` exporting `{ getDefaultAppConfig, validateAppConfig, generateDerivedConfig, maskSecrets, getReloadCommand }` as a named module object. Add `getPublishedLinks` too if the app exposes a URL a human would open, and `getSecretMountNames` if any generated file mount holds a secret (passwords, keys, tokens, hashes) — otherwise its content is readable by any read-scoped token.
 2. **Register backend** — Add entry to `APP_REGISTRY` in `containerApps/appRegistry.js`.
 3. **Frontend component** — Create `frontend/src/apps/<app>/<AppName>Section.jsx` using SectionCard.
 4. **Register frontend** — Add entry to `APP_REGISTRY` in `frontend/src/apps/appRegistry.js`.
@@ -162,7 +168,7 @@ Caddy keeps serving its previous config (reload is atomic), but the save surface
 
 ## Eject
 
-Eject converts an app container to a generic container. The `app` and `appConfig` fields are removed; generated env vars and mounts become directly editable. This is a one-way operation.
+Eject converts an app container to a generic container. The `app` and `appConfig` fields are removed; generated env vars and mounts become directly editable. The mounts the app declared secret (`getSecretMountNames`) are first given a stored `secret: true` (row update, no restart), so their content stays write-only once the module no longer speaks for them. This is a one-way operation.
 
 ---
 
@@ -193,7 +199,7 @@ Eject converts an app container to a generic container. The `app` and `appConfig
 ### Derived Config
 
 - **env:** `CLOUDFLARE_API_TOKEN` (secret) when Cloudflare DNS is enabled and a token is set
-- **mounts:** `Caddyfile` (file → `/etc/caddy/Caddyfile`, readonly), `caddy-data` (dir → `/data`), `caddy-config` (dir → `/config`)
+- **mounts:** `Caddyfile` (file → `/etc/caddy/Caddyfile`, readonly), `caddy-data` (dir → `/data`), `caddy-config` (dir → `/config`) — no secret files (the Cloudflare token reaches Caddy as an env var, referenced as `{env.CLOUDFLARE_API_TOKEN}`), so the Caddyfile is readable
 - **Caddyfile:** Generated with wildcard site block, per-host reverse proxy handlers, Cloudflare DNS TLS block (when Cloudflare DNS is enabled and a token is set), and a global log filter that routes `http.handlers.reverse_proxy` logs to a separate logger capped at `ERROR` (suppresses the per-disconnect `aborting with incomplete response` WARN that SSE-heavy apps like Wisp trigger on every client refresh or navigation)
 - **Reload:** `caddy reload --config /etc/caddy/Caddyfile` — live reload without restart
 
@@ -257,6 +263,7 @@ The redirect URI to register with the provider is `<externalUrl>/zot/auth/callba
 
 - **env:** (none)
 - **mounts:** `config-json` (file → `/etc/zot/config.json`, readonly), `registry` (dir → `/var/lib/registry`), optionally `htpasswd` (file → `/etc/zot/htpasswd`, readonly) when users are configured, optionally `session-keys` (file → `/etc/zot/session-keys.json`, readonly) when OIDC is enabled
+- **Secret mounts** (`getSecretMountNames`): `htpasswd` and `session-keys` always; `config-json` while OIDC is enabled (it then carries `clientsecret`). Without OIDC `config.json` is readable.
 - **config.json:** Generated zot config with storage and HTTP settings. `http.auth.htpasswd` when users exist; `http.auth.openid.providers.oidc` + `http.auth.apikey` + `http.auth.sessionKeysFile` when OIDC is enabled; `http.externalUrl` when set. Provider keys are lowercase-concatenated (`clientid`, `clientsecret`, `claimmapping`) because zot reads its config through viper/mapstructure. Whenever any auth is on, `http.accessControl` grants anonymous `read` and every authenticated identity `read,create,update,delete`.
 - **Reload:** Not supported — config changes require container restart
 
@@ -324,6 +331,6 @@ The redirect URI to register with the provider is `<externalUrl>/zot/auth/callba
   - `tiny-samba-state` (tmpfs → `/var/lib/samba`, 64 MiB) — smbd's tdb runtime state, gone on restart
   - `share-<name>` (directory → `/shares/<name>`, owner uid:gid = `server.dataUid`) — one per declared share, optionally backed by a storage mount via `source: { sourceId, subPath }`
 - **config.yaml:** Generated YAML — `server` block with snake_case fields, `users` list, `shares` map (each with `path`, optional `comment`, `guest: true` OR `access` map)
-- **passwords.yaml:** `name: password` map (passwords double-quoted; plaintext or `$NT$` hash passes through)
+- **passwords.yaml:** `name: password` map (passwords double-quoted; plaintext or `$NT$` hash passes through). Declared secret (`getSecretMountNames` → `tiny-samba-passwords`); `config.yaml` holds no secret and is readable.
 - **UI:** removing a saved Local share from the form only stages it; **Save** then opens a `ConfirmDialog` ("Delete share data?") naming every Local share whose files the save deletes, with **Delete and save** / **Cancel**. Renames and Storage-backed removals save without a prompt.
 - **Reload:** `tiny-samba reload` — applies live for users, passwords, shares, access, min protocol. Server-level changes (`workgroup`, `netbiosName`, `dataUid`) flip `requiresRestartForChange` and the badge stays until restart.

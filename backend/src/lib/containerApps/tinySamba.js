@@ -397,6 +397,11 @@ function maskSecrets(appConfig) {
   };
 }
 
+/** passwords.yaml holds every user's SMB password; config.yaml holds none. */
+function getSecretMountNames() {
+  return ['tiny-samba-passwords'];
+}
+
 function getReloadCommand() {
   return ['tiny-samba', 'reload'];
 }
@@ -422,6 +427,7 @@ export const tinySambaAppModule = {
   generateDerivedConfig,
   getMountRenames,
   maskSecrets,
+  getSecretMountNames,
   getReloadCommand,
   requiresRestartForChange,
 };

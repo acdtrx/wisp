@@ -306,6 +306,10 @@ export async function putMountFileTextContent() {
   throw noContainerd();
 }
 
+export async function getMountFileSize() {
+  throw noContainerd();
+}
+
 export async function setupNetwork() {
   throw noContainerd();
 }

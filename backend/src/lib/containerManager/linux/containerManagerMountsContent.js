@@ -1,5 +1,6 @@
 /**
- * Backing store for container mounts under files/<mountName>: upload, zip extract, init, rename, delete.
+ * Backing store for container mounts under files/<mountName>: upload, zip extract, init, rename, delete,
+ * text read/write (refused for secret mounts), clear.
  */
 import { join, resolve } from 'node:path';
 import { createWriteStream } from 'node:fs';
@@ -39,6 +40,15 @@ async function loadContainerJson(containerName) {
 
 function artifactPath(containerName, mountName) {
   return join(getContainerFilesDir(containerName), mountName);
+}
+
+/** The refusal for reading a secret file mount's content — write-only for every caller. */
+export function mountSecretError(mountName) {
+  return containerError(
+    'CONTAINER_MOUNT_SECRET',
+    `Mount "${mountName}" is secret`,
+    'Secret file content is write-only — it can be replaced or cleared, never read back',
+  );
 }
 
 /** Max size for GET/PUT mount file text editor (UTF-8 bytes). */
@@ -272,6 +282,7 @@ export async function renameMountBackingStore(containerName, fromName, toName) {
 
 /**
  * Read mount backing file as UTF-8 text (for in-app editor). Rejects non-UTF-8 and oversize files.
+ * A `secret` mount's content is write-only for every caller: refused with CONTAINER_MOUNT_SECRET.
  */
 export async function getMountFileTextContent(containerName, mountName) {
   const config = await loadContainerJson(containerName);
@@ -281,6 +292,9 @@ export async function getMountFileTextContent(containerName, mountName) {
   }
   if (m.type !== 'file') {
     throw containerError('CONTAINER_MOUNT_TYPE_MISMATCH', `Mount "${mountName}" is not a file mount`);
+  }
+  if (m.secret === true) {
+    throw mountSecretError(mountName);
   }
   const p = artifactPath(containerName, mountName);
   let st;
@@ -343,4 +357,32 @@ export async function putMountFileTextContent(containerName, mountName, content)
   const dest = artifactPath(containerName, mountName);
   await writeFile(dest, bytes);
   return { ok: true };
+}
+
+/**
+ * Empty a file mount's backing file — what un-marking a secret mount does to its content,
+ * so the flag can't be dropped to read a secret back (same contract as secret env vars).
+ * The file is left in place (0 bytes) so the bind source keeps existing.
+ */
+export async function clearMountBackingFile(containerName, mountName) {
+  if (validateMountSegmentName(mountName) !== mountName) {
+    throw containerError('INVALID_CONTAINER_MOUNTS', `Invalid mount name "${mountName}"`);
+  }
+  await mkdir(getContainerFilesDir(containerName), { recursive: true });
+  await writeFile(artifactPath(containerName, mountName), Buffer.alloc(0));
+}
+
+/**
+ * Size in bytes of a file mount's backing file, or null when there is none on disk.
+ * Metadata only — lets callers report whether a secret file is set without reading it.
+ */
+export async function getMountFileSize(containerName, mountName) {
+  if (validateMountSegmentName(mountName) !== mountName) return null;
+  try {
+    const st = await stat(artifactPath(containerName, mountName));
+    return st.isFile() ? st.size : null;
+  } catch (err) {
+    if (err?.code === 'ENOENT') return null;
+    throw err;
+  }
 }

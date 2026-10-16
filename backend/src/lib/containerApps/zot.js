@@ -398,6 +398,17 @@ function maskSecrets(appConfig) {
   };
 }
 
+/**
+ * File mounts whose content is a secret: `htpasswd` (password hashes), `session-keys`
+ * (the session signing/encryption keys), and `config-json` while OIDC is on — it then
+ * carries the provider's `clientsecret`. Without OIDC config.json holds no secret.
+ */
+function getSecretMountNames(appConfig) {
+  const names = ['htpasswd', 'session-keys'];
+  if (appConfig?.oidc?.enabled) names.push('config-json');
+  return names;
+}
+
 function getReloadCommand() {
   return null;
 }
@@ -417,6 +428,7 @@ export const zotAppModule = {
   validateAppConfig,
   generateDerivedConfig,
   maskSecrets,
+  getSecretMountNames,
   getReloadCommand,
   getPublishedLinks,
 };

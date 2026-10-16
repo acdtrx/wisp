@@ -42,6 +42,7 @@ import {
   eject as ejectAppContainer,
   maskContainerConfigSecrets,
   assertMountNotAppManaged,
+  assertMountContentReadable,
 } from '../lib/containerApps/index.js';
 
 /**
@@ -256,7 +257,7 @@ export default async function containerRoutes(fastify) {
   // ── Get single ────────────────────────────────────────────────────
   fastify.get('/containers/:name', { config: { auth: 'read' } }, async (request, reply) => {
     try {
-      return maskContainerConfigSecrets(await getContainerConfig(request.params.name));
+      return await maskContainerConfigSecrets(await getContainerConfig(request.params.name));
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -663,6 +664,7 @@ export default async function containerRoutes(fastify) {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       const body = request.body && typeof request.body === 'object' ? request.body : {};
+      assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
       return await updateContainerMount(request.params.name, mountName, body);
     } catch (err) {
       handleRouteError(err, reply, request);
@@ -711,7 +713,7 @@ export default async function containerRoutes(fastify) {
   fastify.get('/containers/:name/mounts/:mountName/content', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
-      assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
+      assertMountContentReadable(await getContainerConfig(request.params.name), mountName);
       return await getMountFileTextContent(request.params.name, mountName);
     } catch (err) {
       handleRouteError(err, reply, request);

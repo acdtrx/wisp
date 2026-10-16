@@ -24,7 +24,7 @@ Fix plan: [`PLAN-1-SECURITY.md`](PLAN-1-SECURITY.md) → [`PLAN-2-DATA-SAFETY.md
 > | V3, V4, V14 | fixed | D1 `31d0a9d`. **Decided:** refuse (409 `VM_DIR_EXISTS`); adopting kept disks → backlog |
 > | V19 | fixed in V19 bundle (pending integration) | **Decided:** flatten each disk's backing chain into the backup (refusing rejected); `cloud-init.iso` no longer backed up, regenerated from `cloud-init.json` on restore; restore-in-place onto a VM with snapshots → 409 (also closes the stranded-snapshot-metadata item) |
 > | C1 | fixed | D4 `6278b4f` |
-> | A3 | fixed | S4 `954ad95`. **Decided:** refuse app-managed mount content for every caller (also `POST …/file`) |
+> | A3 | fixed | S4 `954ad95`. **Decided:** refuse app-managed mount content for every caller (also `POST …/file`). **Superseded by P5.2** (PLAN-5): the read half of that app-only guard is replaced by generic secret file mounts — content GET refuses any secret file (user-flagged, or declared by the app module) with 403 `CONTAINER_MOUNT_SECRET`; non-secret app files are readable again; app-mount writes stay `APP_CONFIG_ONLY` |
 > | A4 | fixed | R2 `fed52df` |
 > | V5, V6, V7 | fixed | D2 `783c132`; rename/clone take the lock `4311219` |
 > | V8, V10 | fixed | D3 `ee913b1` |

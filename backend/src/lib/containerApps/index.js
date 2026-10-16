@@ -12,12 +12,14 @@
 import {
   createContainer,
   updateContainerConfig,
+  updateContainerMount,
   deleteRemovedMountData,
   deleteContainer,
   getContainerConfig,
   getTaskState,
   getMountFileTextContent,
   putMountFileTextContent,
+  getMountFileSize,
   execCommandInContainer,
 } from '../containerManager/index.js';
 import { createAppError } from '../routeErrors.js';
@@ -105,42 +107,102 @@ export function maskAppSecrets(config) {
 }
 
 /**
- * Full outbound masking for a container config: env secrets become
- * `{ value: null, secret: true, isSet }` and the app's appConfig is masked via
- * the app module. Every surface that returns container details (REST routes,
- * MCP tools) must pass the config through here.
+ * Names of the file mounts the container's app module declares secret for its
+ * current appConfig (`getSecretMountNames`). Derived at read time from the stored
+ * appConfig, so app containers need no stored flag — and none created before the
+ * flag existed needs a migration.
  */
-export function maskContainerConfigSecrets(config) {
-  if (!config || !config.env || typeof config.env !== 'object') return maskAppSecrets(config);
-  const env = {};
-  for (const [k, v] of Object.entries(config.env)) {
-    if (v?.secret) {
-      env[k] = {
-        value: null,
-        secret: true,
-        isSet: typeof v.value === 'string' && v.value.length > 0,
-      };
-    } else {
-      env[k] = { value: v?.value ?? '' };
-    }
-  }
-  return maskAppSecrets({ ...config, env });
+function appSecretMountNames(config) {
+  const appModule = getAppModule(config?.metadata?.app);
+  const names = appModule?.getSecretMountNames?.(config.metadata.appConfig);
+  return new Set(Array.isArray(names) ? names : []);
 }
 
 /**
- * Refuse direct content access (read or write) to a mount of an app container.
+ * Whether a mount's content is write-only: a file mount stored with `secret: true`
+ * (generic containers — the user's flag) or declared secret by the container's app
+ * module. Same rule on every surface: the content route refuses it, payloads show
+ * `secret: true` with set/size metadata only.
+ */
+function isMountContentSecret(mount, appSecrets) {
+  return mount?.type === 'file' && (mount.secret === true || appSecrets.has(mount.name));
+}
+
+/**
+ * Outbound mount list: secret file mounts carry `secret: true`, `isSet` (content
+ * on disk is non-empty) and `sizeBytes` — never content (there is none in the
+ * config; this just says what the content route will refuse).
+ */
+async function describeMounts(config) {
+  if (!Array.isArray(config.mounts)) return config.mounts;
+  const appSecrets = appSecretMountNames(config);
+  return Promise.all(config.mounts.map(async (m) => {
+    if (!isMountContentSecret(m, appSecrets)) return m;
+    const sizeBytes = await getMountFileSize(config.name, m.name);
+    return { ...m, secret: true, isSet: (sizeBytes ?? 0) > 0, sizeBytes };
+  }));
+}
+
+/**
+ * Full outbound masking for a container config: env secrets become
+ * `{ value: null, secret: true, isSet }`, secret file mounts are marked
+ * (`describeMounts`), and the app's appConfig is masked via the app module.
+ * Every surface that returns container details (REST routes, MCP tools) must
+ * pass the config through here.
+ */
+export async function maskContainerConfigSecrets(config) {
+  if (!config) return config;
+  const masked = { ...config, mounts: await describeMounts(config) };
+  if (config.env && typeof config.env === 'object') {
+    const env = {};
+    for (const [k, v] of Object.entries(config.env)) {
+      if (v?.secret) {
+        env[k] = {
+          value: null,
+          secret: true,
+          isSet: typeof v.value === 'string' && v.value.length > 0,
+        };
+      } else {
+        env[k] = { value: v?.value ?? '' };
+      }
+    }
+    masked.env = env;
+  }
+  return maskAppSecrets(masked);
+}
+
+/**
+ * Refuse reading a secret mount's content (`isMountContentSecret`) — for every
+ * caller, session or token, admin or read. The manager refuses a stored
+ * `secret: true` itself; this adds the mounts an app module declares secret,
+ * which the manager knows nothing about. Unknown mount names fall through so
+ * the manager's own 404 still applies.
+ */
+export function assertMountContentReadable(config, mountName) {
+  const mount = (Array.isArray(config?.mounts) ? config.mounts : []).find((m) => m?.name === mountName);
+  if (!mount || !isMountContentSecret(mount, appSecretMountNames(config))) return;
+  throw createAppError(
+    'CONTAINER_MOUNT_SECRET',
+    `Mount "${mountName}" is secret`,
+    'Secret file content is write-only — it can be replaced or cleared, never read back',
+  );
+}
+
+/**
+ * Refuse direct writes to a mount of an app container — its content (PUT content,
+ * file upload) and its row definition (row PATCH: a rename would move a declared
+ * secret file out from under its declared name).
  *
  * An app container's mount list belongs to its app module: create and
  * `applyAppConfig` write `mounts` wholesale from `generateDerivedConfig`, and the
- * module regenerates every file mount's content from appConfig on each save. Those
- * files routinely hold secrets (tiny-samba `passwords.yaml`, zot `htpasswd` and
- * `session-keys`), so a raw read would bypass the appConfig masking every other
- * surface applies; a raw write would desync disk from appConfig and be silently
- * overwritten on the next save. Mount ownership is decided by the module that
- * owns the container (`metadata.app` resolving to a registry module) — the same
- * condition under which the UI swaps the generic Mounts section for the app's
- * config form — not by a list of secret file names that new apps would have to
- * remember to extend. A `metadata.app` with no registered module owns nothing.
+ * module regenerates every file mount's content from appConfig on each save, so a
+ * raw write would desync disk from appConfig and be silently overwritten on the
+ * next save. Mount ownership is decided by the module that owns the container
+ * (`metadata.app` resolving to a registry module) — the same condition under which
+ * the UI swaps the generic Mounts section for the app's config form. A
+ * `metadata.app` with no registered module owns nothing. Reads are not refused
+ * here: a non-secret app file (a Caddyfile) is readable; secret ones are refused
+ * by `assertMountContentReadable`.
  *
  * The mount must exist in `config.mounts`; unknown names fall through so the
  * manager's own 404 still applies.
@@ -400,13 +462,22 @@ export async function applyAppConfig(name, newAppConfig) {
 
 /**
  * Eject an app container into a generic container. Clears `metadata.app`/
- * `metadata.appConfig` only — env, mounts, devices, services, and any files
+ * `metadata.appConfig` — env, mounts, devices, services, and any files
  * previously written by the app are preserved. The user can keep using the
  * container as a regular configurable container from this point on.
+ *
+ * The mounts the app declared secret get a stored `secret: true` first, so
+ * their content stays write-only once the module no longer speaks for them.
  */
 export async function eject(name) {
   const config = await getContainerConfig(name);
   if (!config?.metadata?.app) return;
+  const appSecrets = appSecretMountNames(config);
+  for (const m of Array.isArray(config.mounts) ? config.mounts : []) {
+    if (m.type === 'file' && appSecrets.has(m.name) && m.secret !== true) {
+      await updateContainerMount(name, m.name, { secret: true });
+    }
+  }
   const nextMeta = { ...config.metadata };
   delete nextMeta.app;
   delete nextMeta.appConfig;

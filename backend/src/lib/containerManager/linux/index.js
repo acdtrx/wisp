@@ -111,6 +111,7 @@ export {
   MOUNT_FILE_CONTENT_MAX_BYTES,
   getMountFileTextContent,
   putMountFileTextContent,
+  getMountFileSize,
 } from './containerManagerMountsContent.js';
 
 export {
