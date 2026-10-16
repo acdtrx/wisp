@@ -56,16 +56,17 @@ export function getHostHardware() {
   };
 }
 
-export async function listHostFirmware() {
-  const searchPaths = [
-    '/usr/share/OVMF',
-    '/usr/share/edk2/ovmf',
-    '/usr/share/edk2/x64',
-    '/usr/share/qemu/firmware',
-  ];
+/** Where distros install UEFI firmware (OVMF/edk2 code and vars templates). */
+export const FIRMWARE_SEARCH_PATHS = [
+  '/usr/share/OVMF',
+  '/usr/share/edk2/ovmf',
+  '/usr/share/edk2/x64',
+  '/usr/share/qemu/firmware',
+];
 
+export async function listHostFirmware() {
   const firmware = [];
-  for (const dir of searchPaths) {
+  for (const dir of FIRMWARE_SEARCH_PATHS) {
     try {
       const entries = await readdir(dir);
       for (const entry of entries) {

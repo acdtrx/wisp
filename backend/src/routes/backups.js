@@ -8,6 +8,7 @@ import {
   resolveVmBackupDir,
 } from '../lib/vmManager/index.js';
 import { rebuildCloudInitISO } from '../lib/cloudInit.js';
+import { isPathInsideAllowedRoots } from '../lib/paths.js';
 import {
   listContainerBackups,
   restoreContainerBackup,
@@ -207,9 +208,12 @@ export default async function backupsRoutes(fastify) {
         const root = resolveBackupRoot(settings, destinationId);
         const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
         // Backups don't hold the cloud-init seed ISO; rebuild it from the
-        // restored cloud-init.json before the domain is defined.
+        // restored cloud-init.json before the domain is defined. A CD-ROM may
+        // keep a source outside the new VM directory only under the paths an
+        // attach would accept (the image library).
         return await restoreBackup(backupPath, newVmName, {
           populateVMDir: (vmDir, { xml }) => rebuildCloudInitISO(newVmName, vmDir, xml),
+          isExternalSourceAllowed: (absPath) => isPathInsideAllowedRoots(absPath, newVmName),
         });
       } catch (err) {
         handleRouteError(err, reply, request);

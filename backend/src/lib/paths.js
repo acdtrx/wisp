@@ -47,6 +47,19 @@ export function resolveLibraryPath(p) {
 }
 
 /**
+ * The test behind assertPathInsideAllowedRoots, as a predicate: absPath is
+ * absolute and resolves under the image library or this VM's own directory.
+ * Restore passes it to vmManager as the policy for CD-ROM sources a backup's
+ * domain XML may keep.
+ */
+export function isPathInsideAllowedRoots(absPath, vmName) {
+  if (typeof absPath !== 'string' || !absPath.startsWith('/')) return false;
+  const resolved = resolve(absPath);
+  const allowedRoots = [resolve(getImagePath()), resolve(getVMBasePath(vmName))];
+  return allowedRoots.some((root) => resolved === root || resolved.startsWith(root + sep));
+}
+
+/**
  * Defense-in-depth check for VM attach/create paths supplied by API callers
  * (libvirt happily opens any host file QEMU has access to as a block/CDROM
  * device, so "/etc/shadow" would be a host-file-read primitive). Resolves
@@ -61,12 +74,7 @@ export function assertPathInsideAllowedRoots(absPath, vmName) {
   if (typeof absPath !== 'string' || !absPath.startsWith('/')) {
     throw createAppError('PATH_NOT_ALLOWED', 'Path must be an absolute path');
   }
-  const resolved = resolve(absPath);
-  const allowedRoots = [resolve(getImagePath()), resolve(getVMBasePath(vmName))];
-  const allowed = allowedRoots.some(
-    (root) => resolved === root || resolved.startsWith(root + sep),
-  );
-  if (!allowed) {
+  if (!isPathInsideAllowedRoots(absPath, vmName)) {
     throw createAppError(
       'PATH_NOT_ALLOWED',
       `Path must be under the image library or this VM's directory: ${absPath}`,

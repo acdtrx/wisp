@@ -904,7 +904,7 @@ Restore a backup as a new VM — the only VM restore; there is no VM restore-in-
 - **200:** `{ name: string }`
 - **404:** backup not found
 - **409:** `VM_EXISTS` / `VM_DIR_EXISTS` when `newVmName` is taken in libvirt or on disk (same rule as `POST /api/vms`)
-- **422:** unknown `destinationId`, invalid `vmName`/`newVmName`, or invalid `timestamp`
+- **422:** unknown `destinationId`, invalid `vmName`/`newVmName`, or invalid `timestamp`; `BACKUP_INVALID` when the backup's `domain.xml` or payload fails [validation](BACKUPS.md#archive-validation-vm-backups) (the message names the rule) or a restored disk has a backing file
 
 ### DELETE /api/backups · `admin`
 
