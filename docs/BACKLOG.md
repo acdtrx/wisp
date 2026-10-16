@@ -172,3 +172,19 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   one fixed sudo rule (like `wisp-updater`), or at least refuse a self-update while an upgrade runs
   and drop the timeout. Revisit when: an upgrade is ever interrupted, or OS upgrades become
   unattended/scheduled. (re-review 2026-10-16, P2)
+- **VNC console doesn't retry after a mid-session network drop** — noVNC reports a dropped
+  connection as a clean close, so the console shows "disconnected" instead of reconnecting like
+  the container console does. Revisit when: a VNC console stays blank after a mid-session network
+  drop and needs a manual reopen. (Plan 6, B3)
+- **Dev backend loads runtime.env after config** — `backend/src/index.js` has the import-order
+  issue the migration runner had (P5): `WISP_CONFIG_PATH` from `runtime.env` is read after config
+  resolution. Production sets it through the unit's environment, so only a dev setup relying on
+  `runtime.env` is affected. Revisit when: a dev or test setup points `WISP_CONFIG_PATH` through
+  `runtime.env` and gets the default config. (Plan 6, B4)
+- **Cloud-init PUT for a VM that doesn't exist creates its directory** — the route doesn't check
+  the VM first. Harmless leftover directory, but it blocks a later create under that name
+  (`VM_DIR_EXISTS`). Revisit when: a stray VM directory from it shows up. (re-review 2026-10-16, V8)
+- **Allowed-roots check follows symlinks** — `assertPathInsideAllowedRoots` uses `path.resolve`,
+  not `realpath`, so a symlink placed inside the image library can point outside it. Only the
+  admin can place files there. Revisit when: anything other than the admin can write into the
+  image library or another allowed root. (Plan 6, B1)

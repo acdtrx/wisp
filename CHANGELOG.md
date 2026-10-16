@@ -9,6 +9,17 @@
 - **Old VM backup folder layout** — backups under `<destination>/<vm>/<timestamp>` (before the `vms/` folder) are no longer listed, restored or deleted; every backup since then lives under `<destination>/vms/`.
 
 ### Bug Fixes
+- **Container secrets and backups are owner-only** — `container.json` (which holds secret env values), container directories and every VM and container backup are now `0700`/`0600`; existing ones are tightened on update (migrations 0005, 0006). A backup mount that isn't mounted during the update is skipped: run `chmod -R go-rwx <root>/containers <root>/vms` on it by hand.
+- **VM restore validates the backup** — a backup whose `domain.xml` points devices at host files or devices (CD-ROM, NVRAM or firmware outside the VM folder or image library; block, lun or network disks; PCI host devices; folder shares; QEMU command-line extensions, …), or whose payload files are symlinks, is refused (422 `BACKUP_INVALID`). USB passthrough by vendor/product id is kept.
+- **Disk images are read with a fixed format** — creating a VM from, attaching or resizing an image with a backing file, an external data file, or a format other than qcow2/raw (e.g. vmdk) is refused; an attached raw image is now defined as raw.
+- **One operation per container at a time** — start, stop, restart, delete, rename, backup, restore and app saves on the same container are refused (409 `CONTAINER_BUSY`, naming the running operation) while another runs; restart-policy and autostart starts wait their turn.
+- **VM operation lock covers every edit** — config edits, disk attach/detach/resize/bus, CD-ROM, USB and cloud-init changes are refused (409 `VM_BUSY`, naming the running operation) during a backup, and the VM page disables them; a rename reserves the new name so two renames can't race for it.
+- **Live container logs** — every line is delivered exactly once (lines were duplicated and dropped).
+- **Short image refs** (`nginx:1.27`) set through edit or MCP no longer break every start; they are stored normalized, like on create.
+- **Container console** — reconnects are bounded, `exit` ends the session instead of opening a new shell, and an expired session sends you to sign-in. The VNC console now sees how its connection closed, so an expired session goes to sign-in there too.
+- **Container command with quoted arguments** — the command override is edited with shell-style quoting and shown the way it is parsed, so a command set through the API is no longer changed by the next save.
+- **Updates roll back a release that doesn't come up** — the updater waits up to 90 s for the new release to answer before reporting success, and rolls back otherwise (takes effect from the update after this one, since the previous updater runs it).
+- **Migrations can't succeed without seeing state** — if libvirt or containerd is unreachable during an update, the migration fails and the update rolls back instead of recording an empty run as done; the runner reads `runtime.env` first, and `--dry-run` changes nothing.
 - **SSO settings need a browser session** — API tokens can no longer change the OIDC configuration (an admin token could repoint SSO to its own provider and sign in as a full browser session), and changing the issuer or client ID requires re-entering the client secret, so the saved one is never sent to a different provider.
 
 ## 2026-10-16 (v2.4.0)
