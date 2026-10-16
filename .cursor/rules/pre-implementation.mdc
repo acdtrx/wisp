@@ -72,6 +72,6 @@ After implementing, update the relevant spec docs **in the same edit**. Use the 
 
 If the change only affects internal implementation (no behavior, API, or UI change), no doc update is needed.
 
-## Feature building and migrations
+## Migrations
 
-While the project is in feature-building mode, **do not** plan or implement **schema/version migrations** (dual-read of old keys, automatic upgrade conversion of persisted config shapes, etc.) unless the user lifts that policy. **Bug fixes** that produced wrong on-disk state, and **corrective repair** of that state, are in scope — see `.cursor/rules/feature-building.mdc` for the distinction.
+A change that leaves persisted state from an earlier release out of date ships a state migration rather than dual-read or legacy code — policy in `CLAUDE.md` → Migrations, contract in `docs/spec/UPDATES.md` → State migrations (see `.cursor/rules/migrations.mdc`).
