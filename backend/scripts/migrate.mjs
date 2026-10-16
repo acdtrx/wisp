@@ -22,16 +22,25 @@ import { parseArgs } from 'node:util';
 
 import Fastify from 'fastify';
 
-import { writeJsonAtomic } from '../src/lib/atomicJson.js';
-import { CONFIG_PATH, getConfigSync } from '../src/lib/config.js';
 import { loadRuntimeEnv } from '../src/lib/loadRuntimeEnv.js';
-import { DEV_LOG_TRANSPORT } from '../src/lib/logFormat.js';
-import { configureManagers, connectManagers, disconnectManagers } from '../src/lib/managerBootstrap.js';
-import * as vmManager from '../src/lib/vmManager/index.js';
-import * as containerManager from '../src/lib/containerManager/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..', '..');
+
+// runtime.env before any module that reads the environment as it loads:
+// config.js resolves WISP_CONFIG_PATH (and with it the ledger path) at import,
+// containerManager its socket path. Static imports would evaluate them first.
+// Under systemd the backend gets runtime.env from EnvironmentFile=; this script
+// runs from common-steps.sh / install.sh, which pass no environment.
+loadRuntimeEnv(PROJECT_ROOT);
+
+const { writeJsonAtomic } = await import('../src/lib/atomicJson.js');
+const { CONFIG_PATH, getConfigSync } = await import('../src/lib/config.js');
+const { DEV_LOG_TRANSPORT } = await import('../src/lib/logFormat.js');
+const { configureManagers, connectManagers, disconnectManagers } = await import('../src/lib/managerBootstrap.js');
+const vmManager = await import('../src/lib/vmManager/index.js');
+const containerManager = await import('../src/lib/containerManager/index.js');
+
 const DEFAULT_MIGRATIONS_DIR = resolve(__dirname, '..', 'migrations');
 const CONFIG_DIR = dirname(CONFIG_PATH);
 const LEDGER_PATH = join(CONFIG_DIR, 'migrations.json');
@@ -229,7 +238,6 @@ async function main() {
   if (process.getuid?.() === 0) {
     throw new SetupError('run as the deploy user, not root (common-steps.sh uses sudo -u)');
   }
-  loadRuntimeEnv(PROJECT_ROOT);
 
   const migrations = await loadMigrations(args.migrationsDir);
   const { exists, ledger } = await readLedger();
