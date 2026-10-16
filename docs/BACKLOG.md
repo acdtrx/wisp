@@ -166,3 +166,9 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   stopping them at the source means rewriting `avahi-daemon.conf` in place (no
   drop-ins). Revisit when: a non-container consumer is hurt by the per-veth
   records.
+- **OS upgrade runs inside wisp.service** — `wisp-os-update upgrade` (apt/dpkg) is a child of the
+  backend, so a Wisp self-update (its first step stops the service), a backend crash or the 600 s
+  execFile timeout can kill dpkg mid-upgrade. Fix shape: run it in its own oneshot unit started via
+  one fixed sudo rule (like `wisp-updater`), or at least refuse a self-update while an upgrade runs
+  and drop the timeout. Revisit when: an upgrade is ever interrupted, or OS upgrades become
+  unattended/scheduled. (re-review 2026-10-16, P2)
