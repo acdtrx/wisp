@@ -13,6 +13,7 @@ import { trackWebSocket } from '../lib/wsTracking.js';
 const WS_CLOSE = {
   INVALID_NAME: 'invalid name',
   EXEC_FAILED: 'exec failed',
+  SESSION_ENDED: 'session ended',
 };
 
 /**
@@ -99,7 +100,8 @@ export default async function containerConsoleRoutes(fastify) {
 
     stdout.on('end', () => {
       log.info({ execId }, 'Container exec stdout ended');
-      if (socket.readyState === 1) socket.close();
+      /* 1000 = the shell exited; the client shows "Session ended" instead of reconnecting. */
+      if (socket.readyState === 1) socket.close(1000, WS_CLOSE.SESSION_ENDED);
     });
 
     stdout.on('error', (err) => {

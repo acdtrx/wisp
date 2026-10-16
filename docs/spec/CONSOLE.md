@@ -90,6 +90,19 @@ If the VNC session drops (network blip, laptop sleep, browser throttling backgro
 
 **A manual Disconnect stays disconnected.** These resume triggers (visibility, `online`, bfcache restore) skip a console the user disconnected from the toolbar; it stays closed until they click Reconnect (or Retry), which clears the flag. The VM-started reconnect above is an explicit state change and still connects. The container console (`ContainerConsole.jsx`) follows the same rules for visibility and `online`.
 
+### Container console sessions
+
+The container console (`ContainerConsole.jsx`) spawns a new `/bin/sh` for every WebSocket, so its client reads the close code before deciding to reconnect *(settled 2026-10-16)*:
+
+| Close | Meaning | Client |
+|-------|---------|--------|
+| `1000` `session ended` | The shell exited (`exit`, Ctrl-D, process killed) — the backend closes when exec stdout ends | **Session ended** with a Reconnect button. No new shell until the user asks for one |
+| `4000` | Invalid name, container not running, or exec failed (e.g. the image has no `/bin/sh`) | Final error with Retry — no retry loop |
+| `1006` | Abnormal close: a dropped network, the server restarting, **or** a refused upgrade. The session is checked before the upgrade, so an expired session never gets a close code of its own — the browser only sees `1006` | One authenticated `GET /api/host` first: a `401` takes the app's normal expired-session path (`api()` redirects to `/login` and signals the other tabs); otherwise retry with backoff |
+| anything else (`1005` server shutdown, `1008`, `1011`) | Transient | Retry with backoff |
+
+The retry budget (`MAX_RECONNECT_ATTEMPTS`, 12 attempts, 1 s doubling to a 30 s cap) belongs to one connect: retries keep the count, and only a fresh connect (toolbar Reconnect/Retry, the container starting, a visibility/`online` resume) or the session's **first output frame** resets it. The socket opening is not proof — the server accepts the upgrade before it tries the exec. When the budget runs out the console shows *"Console connection was lost after several attempts"* with Retry. A session that ended or failed its exec is held closed like a manual Disconnect: the visibility/`online` resume skips it. A dedicated `4001` auth close was rejected — sending it would mean accepting the upgrade of an unauthenticated request just to close it.
+
 ### Disconnect
 
 The VNC connection is cleanly disconnected when:

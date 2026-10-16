@@ -1453,8 +1453,10 @@ Interactive shell in a **running** container. Uses containerd `Tasks.Exec` with 
   3. Ensure the container task is running; create a unique exec session with named pipes + `Tasks.Exec` / `Tasks.Start`
   4. Bridge WebSocket ↔ FIFO streams; forward `resize` to `Tasks.ResizePty`
   5. On close, kill the exec process and remove temp FIFO directory
+- **Rejected before the upgrade:** HTTP `401` (no/invalid session — browsers report it as close `1006`), `403` (bearer token)
 - **Close codes:**
-  - `4001` — Authentication required/failed
+  - `1000` — the shell exited (exec stdout ended); reason `session ended`
+  - `1008` — Origin not allowed, or all consoles closed after a password change
   - `4000` — Invalid container name, container not running, or exec failed
   - `1011` — Stream/proxy error
 
