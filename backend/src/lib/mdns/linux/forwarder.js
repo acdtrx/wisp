@@ -14,7 +14,8 @@
  *     (so containers in the Wisp registry get nice reverse names); falls
  *     through to upstream on miss so real reverse zones still work
  *   - everything else → relayed raw to the host's upstream DNS, parsed
- *     once from /etc/resolv.conf's first `nameserver` line
+ *     once from /etc/resolv.conf's first `nameserver` line, over the same
+ *     transport (UDP or TCP) the query arrived on
  *
  * Replaces the previous design (systemd-resolved with MulticastDNS=resolve +
  * bind-mounted /etc/hosts per container) which conflicted with avahi on
@@ -305,12 +306,17 @@ function ptrNameToIPv6(qname) {
 /**
  * Produce the raw DNS response bytes for a query, or null to drop (malformed).
  * Never throws — upstream/avahi failures become SERVFAIL/NXDOMAIN responses.
+ * `transport` is the one the query arrived on; relayed queries go upstream
+ * over the same one (a TCP query is usually a retry after a truncated UDP
+ * answer — relaying it over UDP would just truncate again).
+ *
  * Exported for harness-driven verification: the sockets bind an address that
  * exists only on the Linux host, and the project has no test suite.
  *
  * @param {Buffer} packet
+ * @param {'udp'|'tcp'} transport
  */
-export async function answerQuery(packet) {
+export async function answerQuery(packet, transport) {
   const q = parseQuery(packet);
   if (!q) return null;
 
@@ -390,8 +396,12 @@ export async function answerQuery(packet) {
 
   if (!state.upstream) return buildNoAnswer(q, RCODE_SERVFAIL);
   try {
-    return await forwardUpstreamUdp(packet);
+    return transport === 'tcp'
+      ? await forwardUpstreamTcp(packet)
+      : await forwardUpstreamUdp(packet);
   } catch {
+    // timeout, refused, reset — the client gets a definite failure instead of
+    // waiting out its own timer
     return buildNoAnswer(q, RCODE_SERVFAIL);
   }
 }
@@ -413,6 +423,11 @@ function withTimeout(promise, ms, fallback) {
   ]);
 }
 
+/**
+ * Relay one query over UDP. The socket is connect()ed to the upstream, so the
+ * kernel delivers only datagrams from upstream's address and port — anything
+ * else sent to the ephemeral port is dropped, not taken as the answer.
+ */
 function forwardUpstreamUdp(packet) {
   return new Promise((resolve, reject) => {
     const sock = dgram.createSocket('udp4');
@@ -421,14 +436,50 @@ function forwardUpstreamUdp(packet) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      try { sock.close(); } catch { /* ignore */ }
+      try { sock.close(); } catch { /* already closed by an error path */ }
       fn(arg);
     };
     const timer = setTimeout(() => finish(reject, new Error('upstream timeout')), UPSTREAM_TIMEOUT_MS);
     sock.on('message', (msg) => finish(resolve, msg));
     sock.on('error', (err) => finish(reject, err));
-    sock.send(packet, state.upstream.port, state.upstream.address, (err) => {
-      if (err) finish(reject, err);
+    sock.connect(state.upstream.port, state.upstream.address, (connectErr) => {
+      if (connectErr) {
+        finish(reject, connectErr);
+        return;
+      }
+      sock.send(packet, (err) => {
+        if (err) finish(reject, err);
+      });
+    });
+  });
+}
+
+/** Relay one query over TCP (2-byte length framing both ways), one connection per query. */
+function forwardUpstreamTcp(packet) {
+  return new Promise((resolve, reject) => {
+    const sock = net.connect({ host: state.upstream.address, port: state.upstream.port });
+    let buf = Buffer.alloc(0);
+    let settled = false;
+    const finish = (fn, arg) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      sock.destroy();
+      fn(arg);
+    };
+    const timer = setTimeout(() => finish(reject, new Error('upstream timeout')), UPSTREAM_TIMEOUT_MS);
+    sock.on('error', (err) => finish(reject, err));
+    sock.on('close', () => finish(reject, new Error('upstream closed before a full reply')));
+    sock.on('data', (chunk) => {
+      buf = Buffer.concat([buf, chunk]);
+      if (buf.length < 2) return;
+      const len = buf.readUInt16BE(0);
+      if (buf.length >= 2 + len) finish(resolve, buf.subarray(2, 2 + len));
+    });
+    sock.on('connect', () => {
+      const prefix = Buffer.alloc(2);
+      prefix.writeUInt16BE(packet.length, 0);
+      sock.write(Buffer.concat([prefix, packet]));
     });
   });
 }
@@ -441,7 +492,7 @@ function startUdp() {
   return new Promise((resolve, reject) => {
     const sock = dgram.createSocket('udp4');
     sock.on('message', (msg, rinfo) => {
-      answerQuery(msg).then((reply) => {
+      answerQuery(msg, 'udp').then((reply) => {
         if (!reply) return;
         sock.send(reply, rinfo.port, rinfo.address, () => {});
       }).catch((err) => logWarn(`UDP handler error: ${err?.message || err}`));
@@ -481,7 +532,7 @@ function handleTcpConnection(conn) {
       const msg = buf.slice(0, expected);
       buf = buf.slice(expected);
       expected = -1;
-      answerQuery(msg).then((reply) => {
+      answerQuery(msg, 'tcp').then((reply) => {
         if (!reply) return;
         const len = Buffer.alloc(2);
         len.writeUInt16BE(reply.length, 0);
