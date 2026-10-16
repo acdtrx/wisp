@@ -286,6 +286,8 @@ VMs can be registered on the local network via mDNS (`.local`) using avahi-daemo
 
 `lib/mdns/linux/avahi.js` listens for `NameOwnerChanged` on the system DBus to detect avahi-daemon restarts. When the owner of `org.freedesktop.Avahi` changes, every cached `EntryGroup` reference is invalidated and `reregisterAll()` re-publishes every entry/service.
 
+VM address records share the container commit path, including the stuck-probe recovery for avahi 0.8's lost probe counter when an interface (here: a stopping VM's tap) disappears mid-probe — see [CONTAINERS.md → Stuck-probe recovery](CONTAINERS.md#publishing-avahi-daemon-via-dbus).
+
 dbus-next 0.10.x auto-installs the match rule when you attach a listener on the `org.freedesktop.DBus` proxy iface (`iface.on('NameOwnerChanged', ...)`), so no explicit `AddMatch` call is needed. The previously-used `bus.addMatch` is not a public API in this version and broke watch installation entirely (see CHANGELOG 2026-04-27).
 
 ### Guest agent state surfacing
