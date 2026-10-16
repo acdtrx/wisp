@@ -397,7 +397,7 @@ Every host-supplied disk or ISO path (attach disk/CDROM at runtime, plus `disk.s
 
 - `createBackup(name, destPath, callbacks)` — full VM backup; a disk on a backing chain (live-snapshot overlay) is flattened into a standalone qcow2 (see [BACKUPS.md](BACKUPS.md#disks-on-a-backing-chain))
 - `listBackups(destinations, vmNameFilter)` — scan destinations for backups
-- `restoreBackup(backupPath, newVmName)` — restore as a new VM; rewrites paths under the backed-up VM directory using `manifest.vmBasePath` (see [BACKUPS.md](BACKUPS.md))
+- `restoreBackup(backupPath, newVmName, { populateVMDir })` — restore as a new VM; rewrites paths under the backed-up VM directory using `manifest.vmBasePath` (see [BACKUPS.md](BACKUPS.md)); `populateVMDir` lets the caller write files the backup doesn't hold (the cloud-init ISO) before define
 - `deleteBackup(backupPath, allowedRoots)` — delete with safety check
 
 ### vmManagerStats.js

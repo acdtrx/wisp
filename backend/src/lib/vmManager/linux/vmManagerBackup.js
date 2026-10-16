@@ -1,6 +1,8 @@
 /**
  * VM backup and restore: createBackup, listBackups, restoreBackup.
- * Disk images and cloud-init ISO are streamed gzip to destination (.gz); config files stay uncompressed.
+ * Disk images are streamed gzip to destination (.gz); config files stay uncompressed.
+ * The cloud-init seed ISO is derived data and is not backed up: the caller
+ * rebuilds it from the restored cloud-init.json (restore's populateVMDir hook).
  * A disk on a backing chain (e.g. a live snapshot's external overlay) is first
  * flattened into one standalone qcow2, so every backup is self-contained.
  */
@@ -352,7 +354,7 @@ async function writeBackupContents({ vmName, xml, config, nvramPath, backupDir, 
 
   const disks = (config.disks || []).filter((d) => d.device === 'disk' && d.source);
   const diskPlans = await planDiskBackups(disks);
-  const totalItems = disks.length + (nvramPath ? 1 : 0) + 3; // +3 for domain.xml, cloud-init.iso and cloud-init.json
+  const totalItems = disks.length + (nvramPath ? 1 : 0) + 2; // +2 for domain.xml and cloud-init.json
   let done = 0;
 
   emit('domain', { percent: 0, currentFile: 'Saving domain.xml' });
@@ -419,30 +421,16 @@ async function writeBackupContents({ vmName, xml, config, nvramPath, backupDir, 
     emit('nvram', { percent: Math.round((done / totalItems) * 100), currentFile: 'NVRAM' });
   }
 
-  const cloudInitIso = join(vmBase, 'cloud-init.iso');
-  const cloudInitJson = join(vmBase, 'cloud-init.json');
+  // cloud-init.json only: the seed ISO is rebuilt from it on restore. (The ISO
+  // also can't be read reliably — libvirt chowns the read-only CD-ROM image to
+  // its qemu user on VM start and never restores read-only images on stop, and
+  // the ISO is 0600.) Absent means the VM never had cloud-init; any other
+  // failure fails the backup. Both copy paths keep the source's 0600 mode.
   emit('cloudinit', { percent: Math.round((done / totalItems) * 100), currentFile: 'Copying cloud-init' });
   try {
-    await access(cloudInitIso, constants.R_OK);
-    let isoTotalBytes;
-    try {
-      isoTotalBytes = (await stat(cloudInitIso)).size;
-    } catch {
-      isoTotalBytes = null; /* stat optional for progress */
-    }
-    await streamWithGzip(cloudInitIso, join(backupDir, 'cloud-init.iso.gz'), {
-      totalBytes: isoTotalBytes,
-      onProgress: (pct) => emit('cloudinit', { percent: Math.round((done / totalItems) * 100 + (pct / 100) * (1 / totalItems) * 100), currentFile: 'Copying cloud-init.iso' }),
-    });
-  } catch {
-    /* optional — cloud-init ISO not present for this VM */
-  }
-  done += 1;
-  try {
-    await access(cloudInitJson, constants.R_OK);
-    await copyWithProgress(cloudInitJson, join(backupDir, 'cloud-init.json'), () => {});
-  } catch {
-    /* optional — cloud-init JSON not present for this VM */
+    await copyWithProgress(join(vmBase, 'cloud-init.json'), join(backupDir, 'cloud-init.json'), () => {});
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
   }
   done += 1;
   emit('cloudinit', { percent: Math.round((done / totalItems) * 100), currentFile: 'Cloud-init' });
@@ -686,7 +674,7 @@ async function readBackupDomain(backupPath) {
 }
 
 /**
- * Copy a backup's payload (disks, NVRAM, cloud-init) into destBase.
+ * Copy a backup's payload (disks, NVRAM, cloud-init.json) into destBase.
  * @returns {Promise<Array<{ oldPath: string, newPath: string }>>} disk mapping for XML path rewrites
  */
 async function copyBackupPayload(backupPath, config, destBase, { onProgress } = {}) {
@@ -715,18 +703,13 @@ async function copyBackupPayload(backupPath, config, destBase, { onProgress } = 
   await copyNvram(join(backupPath, 'VARS.fd'), join(destBase, 'VARS.fd'), { allowMissing: true });
   done += 1;
 
-  // Both cloud-init files carry the password hash and land in the group-readable
-  // per-VM dir, so they get the same 0600 the live write paths apply. The gunzip
-  // path creates the ISO with the default mode, and a JSON copied from an older
-  // backup keeps whatever mode it had — chmod after placing either one.
+  // cloud-init.json carries the password hash and lands in the group-readable
+  // per-VM dir, so it gets the 0600 the live write path applies (a JSON from an
+  // older backup keeps whatever mode it had). Optional — absent when the VM had
+  // no cloud-init — but once present a failed copy fails the restore. A
+  // cloud-init.iso(.gz) in an older backup is ignored: the seed ISO is rebuilt
+  // from this JSON by the caller's populateVMDir.
   emit('cloudinit', 'Restoring cloud-init');
-  // Both are optional (absent when the VM had no cloud-init), but once present
-  // a failed copy fails the restore — a half-written ISO must never be placed.
-  const cloudInitIsoDest = join(destBase, 'cloud-init.iso');
-  if (await anyReadable([join(backupPath, 'cloud-init.iso'), join(backupPath, 'cloud-init.iso.gz')])) {
-    await copyOrGunzip(backupPath, 'cloud-init.iso', cloudInitIsoDest);
-    await chmod(cloudInitIsoDest, 0o600);
-  }
   const cloudInitJsonSrc = join(backupPath, 'cloud-init.json');
   const cloudInitJsonDest = join(destBase, 'cloud-init.json');
   if (await anyReadable([cloudInitJsonSrc])) {
@@ -766,9 +749,14 @@ function rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping, newBas
  * Restore a backup as a new VM.
  * @param {string} backupPath - Full path to the backup directory (e.g. .../vmName/timestamp)
  * @param {string} newVmName
+ * @param {{ populateVMDir?: (vmDir: string, ctx: { xml: string }) => Promise<void> }} [opts]
+ *   populateVMDir: writes caller-owned files a backup does not hold (e.g. the
+ *   cloud-init seed ISO) into the new VM directory once the payload is in
+ *   place, before the domain is defined; `xml` is the domain XML about to be
+ *   defined. A throw rolls the restore back like any other failure.
  * @returns { Promise<{ name: string }> }
  */
-export async function restoreBackup(backupPath, newVmName) {
+export async function restoreBackup(backupPath, newVmName, { populateVMDir } = {}) {
   await assertVMNameAvailable(newVmName);
 
   const { xml, manifest } = await readBackupDomain(backupPath);
@@ -777,7 +765,7 @@ export async function restoreBackup(backupPath, newVmName) {
 
   const newBase = normalizeBasePath(await createOwnVMDir(newVmName));
   try {
-    await restorePayloadAndDefine(backupPath, newVmName, newBase, { xml, manifest, config });
+    await restorePayloadAndDefine(backupPath, newVmName, newBase, { xml, manifest, config, populateVMDir });
   } catch (err) {
     // newBase was created exclusively above — removing it undoes the restore.
     await removeOwnVMDir(newBase);
@@ -788,7 +776,7 @@ export async function restoreBackup(backupPath, newVmName) {
 }
 
 /** restoreBackup body after the new VM directory exists; any throw leaves cleanup to the caller. */
-async function restorePayloadAndDefine(backupPath, newVmName, newBase, { xml, manifest, config }) {
+async function restorePayloadAndDefine(backupPath, newVmName, newBase, { xml, manifest, config, populateVMDir }) {
   const diskMapping = await copyBackupPayload(backupPath, config, newBase);
 
   const parsed = parseDomainRaw(xml);
@@ -816,6 +804,8 @@ async function restorePayloadAndDefine(backupPath, newVmName, newBase, { xml, ma
     throw vmError('CONFIG_ERROR', 'Failed to build restored domain XML', err.message);
   }
 
+  if (populateVMDir) await populateVMDir(newBase, { xml: newXml });
+
   try {
     await connectionState.connectIface.DomainDefineXML(newXml);
   } catch (err) {
@@ -828,7 +818,7 @@ async function restorePayloadAndDefine(backupPath, newVmName, newBase, { xml, ma
  *
  * The target VM is identified by the backup itself (manifest.vmName, falling
  * back to the domain XML name), must exist, and must be stopped. Disks,
- * NVRAM, and cloud-init files are copied back into the VM's current
+ * NVRAM, and cloud-init.json are copied back into the VM's current
  * directory, and the backed-up domain XML is re-defined over the live
  * definition. Identity semantics:
  *   - name and UUID stay those of the live domain (the UUID only differs
@@ -849,10 +839,13 @@ async function restorePayloadAndDefine(backupPath, newVmName, newBase, { xml, ma
  * redefined last.
  *
  * @param {string} backupPath - Full path to the backup directory
- * @param {{ onProgress?: (event: { step: string, percent?: number, currentFile?: string }) => void }} options
+ * @param {{ onProgress?: (event: { step: string, percent?: number, currentFile?: string }) => void,
+ *           populateVMDir?: (vmDir: string, ctx: { xml: string }) => Promise<void> }} options
+ *   populateVMDir: as restoreBackup's, but `vmDir` is the staging directory —
+ *   what it writes there is swapped in with the rest of the payload.
  * @returns { Promise<{ name: string }> }
  */
-export async function restoreBackupInPlace(backupPath, { onProgress } = {}) {
+export async function restoreBackupInPlace(backupPath, { onProgress, populateVMDir } = {}) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
 
   const { xml, manifest } = await readBackupDomain(backupPath);
@@ -911,6 +904,8 @@ export async function restoreBackupInPlace(backupPath, { onProgress } = {}) {
     } catch (err) {
       throw vmError('CONFIG_ERROR', 'Failed to build restored domain XML', err.message);
     }
+
+    if (populateVMDir) await populateVMDir(stagingDir, { xml: newXml });
 
     emit('swap', { percent: 90, currentFile: 'Replacing disks' });
     for (const entry of await readdir(stagingDir)) {

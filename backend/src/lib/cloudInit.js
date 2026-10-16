@@ -57,13 +57,15 @@ async function hashPassword(password) {
 /**
  * @param {string} vmName
  * @param {object} config - cloud-init config (hostname, username, password, etc.)
- * @param {{ firstNicMac?: string, priorPasswordHash?: string }} [opts]
+ * @param {{ firstNicMac?: string, priorPasswordHash?: string, vmDir?: string }} [opts]
  *   firstNicMac: when set, emit network config matching that MAC so netplan applies to the VM's real NIC.
+ *   vmDir: directory the ISO is written to (default: the VM's directory) — a
+ *     restore-in-place builds it in its staging directory.
  *   priorPasswordHash: hashed password from a previous save. Used when the caller passes the `***` placeholder back in (the UI sends `'set'` / `'***'` to mean "leave password unchanged"); we re-emit the prior hash instead of re-hashing the placeholder string.
  */
 export async function generateCloudInitISO(vmName, config, opts = {}) {
   const { firstNicMac, priorPasswordHash } = opts;
-  const vmBasePath = getVMBasePath(vmName);
+  const vmBasePath = opts.vmDir || getVMBasePath(vmName);
   await mkdir(vmBasePath, { recursive: true });
   const isoPath = join(vmBasePath, 'cloud-init.iso');
   // user-data carries the password hash (and SSH keys) while the ISO is built.
@@ -290,6 +292,33 @@ export async function generateCloudInit(vmName, config) {
   };
   await saveCloudInitConfig(vmName, stored);
   return isoPath;
+}
+
+/**
+ * Rebuild the seed ISO of a VM being restored from a backup, from the
+ * cloud-init.json the restore placed in `vmDir` (backups don't hold the ISO —
+ * it is derived from the JSON). Passed to vmManager's restore as its
+ * populateVMDir hook, so it runs before the domain is defined and a failure
+ * rolls the restore back. `xml` is the domain about to be defined: its first
+ * NIC's MAC feeds the netplan match, as on a cloud-init edit. The stored
+ * password hash is reused, never re-hashed; the JSON itself is not rewritten.
+ * No JSON (the VM never had cloud-init) or `enabled: false` builds nothing.
+ */
+export async function rebuildCloudInitISO(vmName, vmDir, xml) {
+  let config;
+  try {
+    config = JSON.parse(await readFile(join(vmDir, 'cloud-init.json'), 'utf-8'));
+  } catch (err) {
+    if (err.code === 'ENOENT') return;
+    throw createAppError('CONFIG_ERROR', `Restored cloud-init.json for "${vmName}" is unreadable`, err.message);
+  }
+  if (!config || typeof config !== 'object' || config.enabled === false) return;
+  const priorPasswordHash = typeof config.passwordHash === 'string' ? config.passwordHash : '';
+  await generateCloudInitISO(vmName, { ...config, password: priorPasswordHash ? '***' : '' }, {
+    firstNicMac: parseVMFromXML(xml)?.nics?.[0]?.mac ?? undefined,
+    priorPasswordHash,
+    vmDir,
+  });
 }
 
 function mergeCloudInitDisablePayload(existing, incoming) {

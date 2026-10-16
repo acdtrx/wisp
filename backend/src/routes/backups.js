@@ -11,6 +11,7 @@ import {
   listVMs,
   isOfflineState,
 } from '../lib/vmManager/index.js';
+import { rebuildCloudInitISO } from '../lib/cloudInit.js';
 import {
   listContainerBackups,
   restoreContainerBackup,
@@ -210,7 +211,11 @@ export default async function backupsRoutes(fastify) {
         const settings = await getSettings();
         const root = resolveBackupRoot(settings, destinationId);
         const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
-        return await restoreBackup(backupPath, newVmName);
+        // Backups don't hold the cloud-init seed ISO; rebuild it from the
+        // restored cloud-init.json before the domain is defined.
+        return await restoreBackup(backupPath, newVmName, {
+          populateVMDir: (vmDir, { xml }) => rebuildCloudInitISO(newVmName, vmDir, xml),
+        });
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -278,7 +283,10 @@ export default async function backupsRoutes(fastify) {
           dest,
           safetyBackup,
           runSafetyBackup: (onProgress) => createBackup(vmName, dest.path, { onProgress }),
-          runRestore: (onProgress) => restoreBackupInPlace(backupPath, { onProgress }),
+          runRestore: (onProgress) => restoreBackupInPlace(backupPath, {
+            onProgress,
+            populateVMDir: (vmDir, { xml }) => rebuildCloudInitISO(vmName, vmDir, xml),
+          }),
           log: request.log,
         }).finally(releaseLock);
         return reply.code(201).send({ jobId, title });

@@ -18,10 +18,17 @@ A backup directory contains:
 | `disk0.qcow2.gz` | Gzipped primary disk image — always standalone, see [Disks on a backing chain](#disks-on-a-backing-chain) |
 | `disk1.qcow2.gz` | Gzipped secondary disk image (if present) |
 | `VARS.fd` | UEFI NVRAM file (if UEFI firmware). Copied via the **`wisp-nvram`** privileged helper because libvirt creates the source as `libvirt-qemu:kvm` mode `600`. |
-| `cloud-init.iso.gz` | Gzipped cloud-init seed ISO (if cloud-init was enabled) |
-| `cloud-init.json` | Cloud-init configuration (if cloud-init was enabled) |
+| `cloud-init.json` | Cloud-init configuration (if the VM has cloud-init), `0600` like the source — it holds the password hash |
 
-Disk images and the cloud-init ISO are gzipped to reduce backup size. NVRAM and config files are stored uncompressed.
+Disk images are gzipped to reduce backup size. NVRAM and config files are stored uncompressed.
+
+### Cloud-init seed ISO
+
+*(settled 2026-10-16)* The cloud-init seed ISO is **not backed up** — it is derived data, built entirely from `cloud-init.json` (plus the VM name and first NIC's MAC). Restore rebuilds it from the restored `cloud-init.json` through the same generator a cloud-init edit uses (`lib/cloudInit.js`, Wisp glue — vmManager stays free of it): the routes pass `rebuildCloudInitISO` to vmManager's restore as its `populateVMDir` hook, which runs once the payload is in place and before the domain is defined, so a failed rebuild rolls the restore back like any other step. The rebuilt ISO is `0600`, reuses the stored password hash (never re-hashes), takes the first NIC's MAC from the domain about to be defined, and lands at the path the restored domain's `sde` CD-ROM already names. No `cloud-init.json`, or one with `enabled: false`, builds nothing. **One rule for every backup:** a `cloud-init.iso.gz` in a backup taken before this change is ignored and the ISO is rebuilt from the JSON like any other restore (every Wisp backup that holds an ISO also holds the JSON — both have been written together since the first release).
+
+Why not back it up: libvirt chowns the read-only CD-ROM image to its qemu user when the VM starts and never restores read-only images on stop, and the ISO is `0600` (it carries the password hash) — so after a VM's first boot the wisp user can no longer read its own ISO. The backup used to swallow that error and silently finish without the ISO (V19 follow-up). Rejected: copying it through the privileged `wisp-nvram` helper (widens a privileged path to carry data the JSON already holds) and relaxing the ISO to group-readable `0640` (weakens the password-hash hardening).
+
+Consequence: the rebuilt ISO's cloud-init `instance-id` (`<vmName>-<hash of user-data>`) can differ from the old one — always on restore-as-new (new name, new MAC), and on restore-in-place when the original ISO was built without the MAC hint (created and never edited: create builds the ISO before the domain, so it has no MAC). A new instance-id makes cloud-init re-run its once-per-instance modules on the next boot: user and password, SSH keys, packages, and **regenerated SSH host keys**.
 
 ### Disks on a backing chain
 
@@ -32,7 +39,7 @@ Disk images and the cloud-init ISO are gzipped to reduce backup size. NVRAM and 
 
 The VM is stopped, so the chain is stable while it is read. Flattening needs the disk's allocated size free at the destination, briefly, on top of the compressed copy, and costs a second pass over the data (convert, then gzip). A failed flatten (disk full, unreadable or missing backing file) fails the destination like any other error — the backup directory, scratch file included, is removed, and nothing is ever written to the VM directory. Two disks that would land under the same file name (two overlays on one base image, or two same-named images in different directories — before this check the second silently overwrote the first) fail the backup (`CONFIG_ERROR`) rather than overwrite each other.
 
-Rejected: refusing to back up while any disk has a backing chain — a VM with a live snapshot could then not be backed up at all until the snapshot was deleted, and a restore-in-place's safety backup would block on it.
+Rejected: refusing to back up while any disk has a backing chain — a VM with a live snapshot could then not be backed up at all until the snapshot was deleted.
 
 ### Not backed up
 
@@ -54,7 +61,6 @@ vTPM state backup is a backlog item (see `docs/BACKLOG.md`); the gap is document
 ├── domain.xml
 ├── disk0.qcow2.gz
 ├── VARS.fd
-├── cloud-init.iso.gz
 └── cloud-init.json
 ```
 
@@ -94,8 +100,7 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
    - Save domain XML
    - Gzip and copy each disk image — a disk on a backing chain is flattened first ([Disks on a backing chain](#disks-on-a-backing-chain))
    - Copy NVRAM file (if present)
-   - Gzip and copy cloud-init ISO (if present)
-   - Copy cloud-init config (if present)
+   - Copy cloud-init config (if present — absent means the VM has no cloud-init; any other read failure fails the backup). The seed ISO is not copied ([Cloud-init seed ISO](#cloud-init-seed-iso))
    - Write manifest.json — **last**; its presence is what makes the directory a complete backup
 5. Progress is reported via SSE — see [Progress Tracking](#progress-tracking)
 
@@ -116,11 +121,11 @@ A configured network backup path that is not mounted is omitted from the scan (s
 0. Refuse with **409** if `newVmName` is taken — `VM_EXISTS` (a libvirt domain) or `VM_DIR_EXISTS` (`<vmsPath>/<newVmName>/` already exists, e.g. kept by *Delete VM, keep disks*). The restore never writes into a directory it did not create.
 1. Read `manifest.json` and `domain.xml` from the backup (both required — a directory without a manifest is incomplete, 422 `BACKUP_INVALID`)
 2. Create the new VM's directory (`<vmsPath>/<newVmName>/`, exclusively) and decompress/copy disk images into it
-3. Copy NVRAM and cloud-init files; the restored `cloud-init.iso` and `cloud-init.json` are chmodded `0600` (they carry the password hash — see [CLOUD-INIT.md](CLOUD-INIT.md) § Password hashing). Both are optional, but one that is present in the backup and fails to copy or decompress fails the restore. Restore-in-place uses the same copy step.
+3. Copy NVRAM and `cloud-init.json`; the restored `cloud-init.json` is chmodded `0600` (it carries the password hash — see [CLOUD-INIT.md](CLOUD-INIT.md) § Password hashing). It is optional, but present in the backup and failing to copy fails the restore. Then the cloud-init seed ISO is **rebuilt** from it ([Cloud-init seed ISO](#cloud-init-seed-iso)); a `cloud-init.iso.gz` in an older backup is ignored. Restore-in-place uses the same steps.
 4. Rewrite domain XML: new name, new UUID, new MAC addresses, and **path updates** so every file reference under the original VM directory (including block disks, CD-ROM paths such as cloud-init, UEFI NVRAM, and optional loader paths under that directory) points at `<vmsPath>/<newVmName>/`. This uses **`manifest.vmBasePath`** when available (older backups fall back to the backed-up VM name or inferred paths). Disk images that lived outside the VM directory (e.g. image library) are still remapped using the same per-disk logic as before.
 5. Define the new domain with `DomainDefineXML`
 
-Any failure in steps 2–5 (missing disk in the backup, gunzip error, define failure) removes the new VM's directory, so a failed restore leaves nothing behind.
+Any failure in steps 2–5 (missing disk in the backup, gunzip error, ISO rebuild failure, define failure) removes the new VM's directory, so a failed restore leaves nothing behind.
 
 The restored VM gets a new name, new UUID, and new MAC addresses — it is a fully independent copy.
 
@@ -134,7 +139,7 @@ Where it can fail: if a backup was produced under one `vmsPath` and you later mo
 
 Both workload kinds can also be restored **over the live workload the backup was taken from** — same name, identity preserved — via `POST /api/backups/restore-in-place` and `POST /api/container-backups/restore-in-place`. Both run as background jobs (kinds `vm-restore` / `container-restore`, title `Restore <name>`) streaming progress over the same per-kind backup-progress SSE endpoints, and both accept `safetyBackup` (default `true`): the job first takes a normal manual-origin backup of the *current* state to the same destination (progress steps prefixed `safety-`, mapped to 0–45% of the job's bar), then restores (45–100%). If the safety backup fails, the job aborts before touching the live workload. A VM restore-in-place holds the VM's [operation lock](#per-vm-operation-lock) for the whole job (**409** `VM_BUSY` while another start / backup / restore / delete / rename / clone of the VM runs); a container restore-in-place is rejected with **409** `BACKUP_IN_PROGRESS` while another backup or restore job for the same container is running.
 
-**VM** (`restoreBackupInPlace` in vmManager): the target VM is identified by the backup itself (`manifest.vmName`, falling back to the domain XML name), must exist (404 `VM_NOT_FOUND` otherwise — restore-as-new covers deleted VMs), and must be stopped (409 `VM_MUST_BE_OFFLINE`). Disks, NVRAM, and cloud-init files are decompressed into a staging directory inside the VM's directory (`.restore-<uuid>/`, same filesystem), and only once **every** file staged are they renamed over the live files; the backed-up domain XML is re-defined over the live definition last. A missing, truncated, or corrupt file in the backup fails the job with the live disks byte-identical and the staging directory removed. A `DomainDefineXML` failure after the swap leaves the restored disks under the live definition and says so in the error. (A backend crash mid-restore can leave a `.restore-*` directory in the VM's directory; it is safe to delete.)
+**VM** (`restoreBackupInPlace` in vmManager): the target VM is identified by the backup itself (`manifest.vmName`, falling back to the domain XML name), must exist (404 `VM_NOT_FOUND` otherwise — restore-as-new covers deleted VMs), and must be stopped (409 `VM_MUST_BE_OFFLINE`). Disks, NVRAM, and `cloud-init.json` are decompressed into a staging directory, the cloud-init seed ISO is rebuilt there from that JSON inside the VM's directory (`.restore-<uuid>/`, same filesystem), and only once **every** file staged are they renamed over the live files; the backed-up domain XML is re-defined over the live definition last. A missing, truncated, or corrupt file in the backup fails the job with the live disks byte-identical and the staging directory removed. A `DomainDefineXML` failure after the swap leaves the restored disks under the live definition and says so in the error. (A backend crash mid-restore can leave a `.restore-*` directory in the VM's directory; it is safe to delete.)
 
 - **Name and UUID stay those of the live domain.** The UUID only differs when a same-named VM was deleted and recreated since the backup; adopting the live UUID lets `DomainDefineXML` replace the definition without an undefine/define window.
 - **MAC addresses, hardware config, and disk contents revert to the backup's state** (unlike restore-as-new, which regenerates them).

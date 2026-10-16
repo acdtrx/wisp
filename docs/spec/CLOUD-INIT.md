@@ -29,7 +29,7 @@ Passwords are hashed using `openssl passwd -6` (SHA-512 crypt) before being writ
 
 The generated `cloud-init.iso` is `chmod 0600` after creation. It bakes in user-data containing the crypt hash, and the per-VM directory is group-readable (`wisp:libvirt 0775`), so `0600` keeps the credential out of group/other reach. libvirt re-chowns the ISO to its qemu user when the VM starts, so the running guest can still read it.
 
-Every file holding the hash gets the same treatment: `cloud-init.json` is written `0600` (and chmodded on every save, so an older file is tightened the next time it is saved); the ISO's build inputs live in a `mkdtemp` directory (`0700`, unpredictable name) with `user-data` written `0600`, removed after the build; a backup restore chmods the restored `cloud-init.iso` and `cloud-init.json` to `0600` (see [BACKUPS.md](BACKUPS.md)). Clone copies both files with the source's mode.
+Every file holding the hash gets the same treatment: `cloud-init.json` is written `0600` (and chmodded on every save, so an older file is tightened the next time it is saved); the ISO's build inputs live in a `mkdtemp` directory (`0700`, unpredictable name) with `user-data` written `0600`, removed after the build; backups hold `cloud-init.json` (`0600`) but never the ISO — a backup restore chmods the restored JSON to `0600` and rebuilds the ISO from it (see [BACKUPS.md → Cloud-init seed ISO](BACKUPS.md#cloud-init-seed-iso)). Clone copies both files with the source's mode.
 
 **Placeholder semantics.** The API never returns the plaintext or hash; `password` is exposed to clients as `"set"` (or empty). When the UI sends `password` back as `"***"` (or legacy `"set"`), the backend treats it as **"leave password unchanged"** and re-uses the stored `passwordHash`. Re-hashing the literal placeholder string would silently downgrade the VM password — explicitly avoided.
 
@@ -124,6 +124,8 @@ The Cloud-Init section in the UI then shows a way to configure again from scratc
 ### Regenerate
 
 Rebuild the seed ISO from the current stored configuration without opening the edit form. Useful after making manual changes to `cloud-init.json`.
+
+A backup restore (as new or in place) rebuilds the ISO the same way, from the restored `cloud-init.json` (`rebuildCloudInitISO`, the stored password hash reused); backups don't carry the ISO. See [BACKUPS.md → Cloud-init seed ISO](BACKUPS.md#cloud-init-seed-iso).
 
 The generator unlinks any existing `cloud-init.iso` before invoking `cloud-localds` / `genisoimage`. libvirt's `dynamic_ownership` chowns the file to `libvirt-qemu:kvm` on VM start and only chowns it back on a clean stop, so without the unlink a regenerate after the VM has run (especially after a force-stop or crash) hits `EACCES` trying to truncate a file the wisp user no longer owns. Per-VM directories are `wisp:libvirt 0775`, which grants unlink regardless of file ownership; the freshly created ISO is owned by the wisp user and libvirt re-chowns it on the next start.
 
