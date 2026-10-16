@@ -1,6 +1,6 @@
 # Plan — Remove unused VM features
 
-**Created:** 2026-10-16. **Status:** implemented on `chore/remove-unused-features` (one commit per step + docs); Linux verification pending.
+**Created:** 2026-10-16. **Status:** implemented and merged to main; verified on the test server (tini) 2026-10-16 — removed routes 404, VM create/delete (BIOS + UEFI), delete with `virsh` snapshots, backup + restore-as-new incl. a backing chain, container restore-in-place, rename, operation lock.
 
 ## Goal
 
