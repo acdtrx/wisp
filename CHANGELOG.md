@@ -3,11 +3,13 @@
 ## 2026-10-16
 
 ### New Features
+- **Secret file mounts** — mark a container file mount secret to make its content write-only (replace or clear, never read back, like secret env vars). App secret files — tiny-samba passwords, zot `htpasswd`/session keys and its OIDC config — are covered automatically; non-secret app files like the Caddyfile are readable again but still only change through the app's settings.
 - **Containers run under Docker's default seccomp profile** — the standard syscall filter (blocks e.g. `mount`, `unshare`, kernel keyring) on top of the existing capability set.
 - **Restart-policy countdown** — a container waiting out a restart backoff shows "Restarting in N s", and Stop cancels the pending restart.
 - **Container restart policy is enforced** — a container that exits on its own is restarted per its policy (`on-failure`, `unless-stopped`, `always`) with backoff from 1 s up to 5 min; stops from Wisp are never undone. Most containers use the default `unless-stopped`, so any running container that exits by itself (including one-shot commands) now comes back.
 
 ### Bug Fixes
+- **Every route declares its own access level** — public, session, read, admin or MCP — and one check enforces only that declaration; a route without one is admin-only, development refuses to start if any route is undeclared, and `npm run route-access` prints the table. Read tokens can no longer fetch raw mount file content, and API tokens on consoles now get 403.
 - **Auth can't be skipped with an encoded path** — the auth hook now decides on the matched route, so `/%61pi/...` and `/%77s/...` no longer reach API and console handlers without a session (affected every earlier version).
 - **VM consoles listen on localhost only** — new VMs and Graphics edits bind VNC/SPICE to `127.0.0.1` instead of every interface; Wisp's console proxy is the only way in. Existing VMs keep `0.0.0.0` until changed: `virsh edit <vm>` (graphics `listen` + `<listen address>`), or switch Graphics to SPICE and back in the UI; takes effect on the next full stop/start.
 - **VM names must start with a letter or digit** — `.`, `.foo` and names with surrounding spaces are rejected, and backup deletes refuse anything that resolves to a destination root, so neither can wipe the VM or backup directory.
