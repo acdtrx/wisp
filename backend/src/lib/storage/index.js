@@ -21,7 +21,9 @@ const smbImpl = await import(
   isLinux ? './linux/smbMount.js' : './darwin/smbMount.js',
 );
 
-export { getDiskInfo, getBackingChain, copyAndConvert, resizeDisk } from './diskOps.js';
+export {
+  getDiskInfo, inspectDiskImage, imageFormatForFile, getBackingChain, copyAndConvert, resizeDisk,
+} from './diskOps.js';
 export { measurePathSize } from './dirSize.js';
 export { restrictToOwner, describeModeChanges } from './fileModes.js';
 

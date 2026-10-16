@@ -55,6 +55,8 @@ function mappedErrorStatus(code) {
     case 'NO_BODY':
     case 'INVALID_REQUEST':
     case 'PATH_NOT_ALLOWED':
+    case 'DISK_FORMAT_UNSUPPORTED':
+    case 'DISK_IMAGE_UNSAFE':
     case 'PASSWORD_EMPTY':
     case 'INVALID_PASSWORD':
     case 'INVALID_OIDC':

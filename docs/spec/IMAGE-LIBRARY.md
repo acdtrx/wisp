@@ -22,6 +22,8 @@ Files are categorized by extension:
 
 Type detection is automatic and based solely on the file extension.
 
+**Using a disk image for a VM** (create with an existing disk, attach an existing disk) accepts only qcow2 and raw images without a backing file or external data file: `.qcow2`, `.raw`, and `.img` (qcow2 or raw, told apart by the qcow2 header). A `.vmdk` is listed as a disk image but refused there (**422 `DISK_FORMAT_UNSUPPORTED`**) — convert it on the host with `qemu-img convert -O qcow2`. Why, and how the format is pinned: [VM-MANAGEMENT.md § Untrusted images](VM-MANAGEMENT.md#untrusted-images).
+
 ## Operations
 
 ### Listing

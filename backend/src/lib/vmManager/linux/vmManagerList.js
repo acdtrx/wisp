@@ -227,7 +227,8 @@ async function enrichDisksWithSizeGiB(disks) {
     disks.map(async (d) => {
       if (d.device !== 'disk' || !d.source || typeof d.source !== 'string') return d;
       try {
-        const info = await getDiskInfo(d.source);
+        // No <driver type> means raw to libvirt; read it the same way.
+        const info = await getDiskInfo(d.source, { format: d.driverType || 'raw' });
         const sizeGiB = Math.round(info.virtualSize / (1024 ** 3));
         return { ...d, sizeGiB };
       } catch {

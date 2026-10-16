@@ -11,7 +11,7 @@ import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError }
 import { parseDomainRaw, parseVMFromXML, buildXml } from './vmManagerXml.js';
 import { getVMBasePath } from './vmManagerPaths.js';
 import { isOfflineState } from './libvirtConstants.js';
-import { resizeDisk as resizeDiskImage } from '../../storage/index.js';
+import { resizeDisk as resizeDiskImage, imageFormatForFile, inspectDiskImage } from '../../storage/index.js';
 
 const execFile = promisify(execFileCb);
 
@@ -73,7 +73,7 @@ async function loadDiskAttachTarget(name, slot) {
   return parsed;
 }
 
-async function defineWithNewDisk(parsed, slot, imagePath, bus) {
+async function defineWithNewDisk(parsed, slot, imagePath, bus, format) {
   const dom = parsed.domain;
   if (bus === 'scsi') {
     ensureVirtioScsiController(dom);
@@ -82,7 +82,7 @@ async function defineWithNewDisk(parsed, slot, imagePath, bus) {
   const newDisk = {
     '@_type': 'file',
     '@_device': 'disk',
-    driver: { '@_name': 'qemu', '@_type': 'qcow2' },
+    driver: { '@_name': 'qemu', '@_type': format },
     source: { '@_file': imagePath },
     target: { '@_dev': slot, '@_bus': bus },
   };
@@ -119,9 +119,13 @@ async function reserveNewDiskFile(vmBasePath) {
 }
 
 export async function attachDisk(name, slot, imagePath, bus = 'virtio') {
-  /* imagePath is caller-provided absolute (route validated). */
+  /* imagePath is caller-provided absolute (route validated); its content is
+     not. The domain opens it as the format its name gives (`<driver type>`),
+     and an image that would pull other host files into the VM is refused. */
   const parsed = await loadDiskAttachTarget(name, slot);
-  await defineWithNewDisk(parsed, slot, imagePath, bus);
+  const format = await imageFormatForFile(imagePath);
+  await inspectDiskImage(imagePath, { format });
+  await defineWithNewDisk(parsed, slot, imagePath, bus, format);
 }
 
 /**
@@ -134,7 +138,7 @@ export async function createAndAttachDisk(name, slot, sizeGB, bus = 'virtio') {
   const diskPath = await reserveNewDiskFile(getVMBasePath(name));
   try {
     await execFile('qemu-img', ['create', '-f', 'qcow2', diskPath, `${sizeG}G`]);
-    await defineWithNewDisk(parsed, slot, diskPath, bus);
+    await defineWithNewDisk(parsed, slot, diskPath, bus, 'qcow2');
   } catch (err) {
     /* The file is ours (reserved above) and not referenced by the domain — remove it. */
     await unlink(diskPath).catch(() => { /* already gone; nothing else to undo */ });
@@ -182,7 +186,8 @@ export async function resizeDiskBySlot(name, slot, sizeGB) {
     throw vmError('DISK_NOT_FOUND', `No disk found at slot ${slot}`);
   }
 
-  return resizeDiskImage(disk.source, sizeGB);
+  // No <driver type> means raw to libvirt; resize it as that.
+  return resizeDiskImage(disk.source, sizeGB, { format: disk.driverType || 'raw' });
 }
 
 /** Update target bus for an existing block disk (VM must be stopped). */

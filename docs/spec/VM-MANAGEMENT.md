@@ -99,8 +99,19 @@ Progress is reported via callback for each step, streamed to the frontend via SS
 
 - **New disk:** Created with `qemu-img create -f qcow2 <path> <size>G`
 - **Adding a disk to an existing VM** (`attachDisk` / `createAndAttachDisk`): the slot must be `sda` or `sdb` (anything else is **422 INVALID_REQUEST**), the VM must be stopped (**409 VM_MUST_BE_OFFLINE**), and the slot must be free in the persistent definition (**409 DISK_SLOT_IN_USE** — detach first). All three checks run before any file is touched. A new disk is created as the lowest-numbered `disk<N>.qcow2` that does not exist yet in the VM directory, reserved with an exclusive create before `qemu-img create` runs, so an existing image (attached, or detached with its file kept) is never overwritten; the file name therefore need not match the slot. If `qemu-img` or the define fails, the reserved file is removed. (settled 2026-10-16)
-- **Existing image:** Copied from the image library to the VM directory using `qemu-img convert -O qcow2 -p <src> <dst>`. Progress is parsed from stdout (`-p` flag). The source image is never modified.
-- **Resize:** After copy, `qemu-img resize <dst> <size>G` if a resize target was specified. Can only grow, not shrink.
+- **Existing image:** Checked ([Untrusted images](#untrusted-images)), then copied from the image library to the VM directory using `qemu-img convert -f <format> -O qcow2 -p <src> <dst>`. Progress is parsed from stdout (`-p` flag). The source image is never modified.
+- **Resize:** After copy, `qemu-img resize -f qcow2 <dst> <size>G` if a resize target was specified. Can only grow, not shrink.
+
+### Untrusted images
+
+*(settled 2026-10-16)* An image's content is not trusted: a qcow2 can name a **backing file** or an **external data file** — any host file (`/etc/shadow`, `/dev/sda`) — and a vmdk descriptor names arbitrary host files as its extents. `qemu-img convert` would merge such a file into the new disk, and libvirt would open it for the guest on attach. So:
+
+- **Every `qemu-img` call names the format** (`-f`) — none lets qemu-img probe it, since probing decides by content (a raw guest disk whose guest wrote a qcow2 header would read as an overlay of a host file of the guest's choosing). A VM's own disk is read as its domain `<driver type>` (none = `raw`, as libvirt reads it): disk sizes in the VM detail (`getDiskInfo`), resize, and the backup's backing-chain read and flatten.
+- **A library or user-supplied image** (create with an existing disk, attach an existing disk) is read as the format its name gives (`imageFormatForFile`, `lib/storage/diskOps.js`): `.qcow2` → qcow2 (the file must start with the qcow2 magic), `.raw` → raw, `.img` → qcow2 when it starts with the qcow2 magic, raw otherwise (`.img` is used for both — Ubuntu cloud images are qcow2 `.img` files; only qcow2 is ever decided by content). Any other extension — `.vmdk`, `.iso`, … — is **422 `DISK_FORMAT_UNSUPPORTED`**: convert it to qcow2 on the host (`qemu-img convert -O qcow2`).
+- **Before converting, attaching or resizing**, `inspectDiskImage` runs `qemu-img info -f <format> --output=json` and refuses (**422 `DISK_IMAGE_UNSAFE`**) a backing file or a qcow2 external data file, and (**422 `DISK_FORMAT_UNSUPPORTED`**) a format other than qcow2/raw. That covers create-from-library (before the copy; the create job fails and leaves no VM directory), attach existing, and resize — a VM disk that is an overlay (a snapshot made outside Wisp) can no longer be resized through Wisp; flatten it first.
+- **Attach existing** defines the disk with the format it was checked as (`<driver type='raw'>` for a raw image — it used to be `qcow2` whatever the file was).
+
+Rejected: probing with `qemu-img info` and accepting whatever qcow2/raw it reports — a vmdk descriptor's extents are opened by the probe itself; and mapping `.img` to raw — every Ubuntu cloud image is a qcow2 `.img`.
 
 ## Renaming
 
@@ -377,10 +388,10 @@ Purpose-named lifecycle functions: `startVM`, `stopVM`, `forceStopVM`, `rebootVM
 
 ### vmManagerDisk.js
 
-- `attachDisk(name, slot, path, bus)` — attach a disk image to a free `sda`/`sdb` slot; VM stopped
+- `attachDisk(name, slot, path, bus)` — attach a disk image to a free `sda`/`sdb` slot; VM stopped; the image is checked and defined with its format ([Untrusted images](#untrusted-images))
 - `createAndAttachDisk(name, slot, sizeGB, bus)` — create a new qcow2 under a not-yet-used `disk<N>.qcow2` name and attach it; same checks as `attachDisk`, run first
 - `detachDisk(name, slot)` — detach a disk from a slot
-- `resizeDiskBySlot(name, slot, sizeGB)` — resize a disk
+- `resizeDiskBySlot(name, slot, sizeGB)` — resize a disk (read as its `<driver type>`; refused with a backing file — [Untrusted images](#untrusted-images))
 - `updateDiskBus(name, slot, bus)` — change block disk bus (VirtIO, VirtIO SCSI, SATA, IDE); VM stopped
 - `extractDiskSnippet(name, slot)` — extract disk XML for UpdateDevice calls
 

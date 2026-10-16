@@ -609,6 +609,8 @@ Create a new VM. Returns a job ID; monitor progress via SSE.
 
 - **`disk.type`:** `none` means no primary block disk (e.g. ISO-only install). Omitted or unset `type` is treated as `new` for backward compatibility. Up to two non-`none` disks are provisioned in order: `disk` then `disk2`, mapped to `sda` / `sdb` in domain XML (`disk0.qcow2` / `disk1.qcow2`). If only `disk2` is set while `disk` is `none`, the first provisioned image is still attached as `sda`.
 
+- **`disk.type: existing`:** `sourcePath` must be a `.qcow2`, `.raw` or `.img` image with no backing file or external data file. That is checked inside the job (before the copy): an unusable image ends the job with an `error` event carrying `DISK_FORMAT_UNSUPPORTED` / `DISK_IMAGE_UNSAFE`'s message, and no VM directory is left behind ([VM-MANAGEMENT.md § Untrusted images](VM-MANAGEMENT.md#untrusted-images)).
+
 - **`cloudInit.enabled`:** Optional; default is on. If `false`, cloud-init is skipped during create (no seed ISO, no `sde`, no `cloud-init.json`).
 
 - **201:** `{ jobId: string, title: string }` — `title` is the display label for the background job (e.g. `Create <name>`)
@@ -730,7 +732,7 @@ Attach an existing disk image or create and attach a new empty disk. VM must be 
 - **Body (create new):** `{ slot: "sda" | "sdb", sizeGB: number, bus?: "virtio" | "scsi" | "sata" | "ide" }` — creates a new qcow2 in the VM directory under the lowest `disk<N>.qcow2` name not already present (never overwrites an existing file) and attaches it. Provide either `path` or `sizeGB`, not both.
 - **200:** `{ ok: true }`
 - **409:** `VM_MUST_BE_OFFLINE` (VM not stopped), `DISK_SLOT_IN_USE` (slot already holds a device — detach it first)
-- **422:** Both or neither of `path` and `sizeGB` provided; `INVALID_REQUEST` for a slot other than `sda`/`sdb`; `PATH_NOT_ALLOWED` for a `path` outside the allowed roots
+- **422:** Both or neither of `path` and `sizeGB` provided; `INVALID_REQUEST` for a slot other than `sda`/`sdb`; `PATH_NOT_ALLOWED` for a `path` outside the allowed roots; `DISK_FORMAT_UNSUPPORTED` for an image that is not a `.qcow2` / `.raw` / `.img` qcow2-or-raw file; `DISK_IMAGE_UNSAFE` for an image with a backing file or external data file ([VM-MANAGEMENT.md § Untrusted images](VM-MANAGEMENT.md#untrusted-images))
 
 ### DELETE /api/vms/:name/disks/:slot · `admin`
 
@@ -744,6 +746,7 @@ Resize a disk.
 
 - **Body:** `{ sizeGB: number }`
 - **200:** `{ ok: true }`
+- **422:** `RESIZE_INVALID` (not larger than the current size), `DISK_IMAGE_UNSAFE` (the disk has a backing file), `DISK_FORMAT_UNSUPPORTED` (its `<driver type>` is not qcow2/raw)
 
 ### POST /api/vms/:name/disks/:slot/bus · `admin`
 

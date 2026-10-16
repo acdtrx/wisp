@@ -13,7 +13,9 @@ import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomain
 import { parseDomainRaw, buildXml } from './vmManagerXml.js';
 import { validateVMName } from './vmManagerValidation.js';
 import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
-import { resizeDisk as resizeDiskImage, copyAndConvert, getDiskInfo } from '../../storage/index.js';
+import {
+  resizeDisk as resizeDiskImage, copyAndConvert, getDiskInfo, imageFormatForFile, inspectDiskImage,
+} from '../../storage/index.js';
 import { listHostFirmware } from './vmManagerHost.js';
 import { getDefaultBridge } from '../../networking/index.js';
 import { refreshVMListCache } from './vmManagerList.js';
@@ -404,16 +406,20 @@ async function provisionAndDefineVM(s, vmBasePath, { emit, populateVMDir, primar
     const dspec = physicalSpecs[i];
     const destPath = join(vmBasePath, `disk${i}.qcow2`);
     if (dspec.type === 'existing') {
-      /* sourcePath is caller-provided absolute (route resolved + validated). */
+      /* sourcePath is caller-provided absolute (route resolved + validated).
+         Its content is not: read it only as the format its name gives, and
+         refuse an image that would pull other host files into the copy. */
       const src = dspec.sourcePath;
+      const srcFormat = await imageFormatForFile(src);
+      await inspectDiskImage(src, { format: srcFormat });
       emit('copying', { percent: 0 });
-      await copyAndConvert(src, destPath, (pct) => emit('copying', { percent: pct }));
+      await copyAndConvert(src, destPath, (pct) => emit('copying', { percent: pct }), { srcFormat });
       if (dspec.resizeGB != null && dspec.resizeGB > 0) {
         emit('resizing');
-        const info = await getDiskInfo(destPath);
+        const info = await getDiskInfo(destPath, { format: 'qcow2' });
         const currentGB = info.virtualSize / (1024 ** 3);
         if (dspec.resizeGB > currentGB) {
-          await resizeDiskImage(destPath, dspec.resizeGB);
+          await resizeDiskImage(destPath, dspec.resizeGB, { format: 'qcow2' });
         }
       }
     } else {
