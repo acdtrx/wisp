@@ -59,8 +59,7 @@ async function hashPassword(password) {
  * @param {object} config - cloud-init config (hostname, username, password, etc.)
  * @param {{ firstNicMac?: string, priorPasswordHash?: string, vmDir?: string }} [opts]
  *   firstNicMac: when set, emit network config matching that MAC so netplan applies to the VM's real NIC.
- *   vmDir: directory the ISO is written to (default: the VM's directory) — a
- *     restore-in-place builds it in its staging directory.
+ *   vmDir: directory the ISO is written to (default: the VM's directory).
  *   priorPasswordHash: hashed password from a previous save. Used when the caller passes the `***` placeholder back in (the UI sends `'set'` / `'***'` to mean "leave password unchanged"); we re-emit the prior hash instead of re-hashing the placeholder string.
  */
 export async function generateCloudInitISO(vmName, config, opts = {}) {

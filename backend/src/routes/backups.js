@@ -4,12 +4,8 @@ import { join } from 'node:path';
 import {
   listBackups,
   restoreBackup,
-  restoreBackupInPlace,
   deleteBackup,
   resolveVmBackupDir,
-  createBackup,
-  listVMs,
-  isOfflineState,
 } from '../lib/vmManager/index.js';
 import { rebuildCloudInitISO } from '../lib/cloudInit.js';
 import {
@@ -27,12 +23,10 @@ import {
   backupJobStore,
   BACKGROUND_JOB_KIND,
   titleForContainerBackup,
-  titleForVmRestore,
   titleForContainerRestore,
 } from '../lib/jobs/index.js';
 import { createAppError, handleRouteError, isExpectedAppError } from '../lib/routeErrors.js';
 import { validateVMName, validateContainerName } from '../lib/validation.js';
-import { acquireVmOperationLock } from '../lib/vmOperationLock.js';
 
 // Backup directory names produced by createBackup are ISO-derived
 // (YYYY-MM-DDTHH-mm-ss). The accept-set is intentionally a bit looser to
@@ -78,16 +72,15 @@ function stripPath(row) {
 }
 
 /**
- * Run an in-place restore as a background job in the shared backupJobStore:
- * optional safety backup of the current state first (0–45% of the bar), then
- * the restore itself (45–100%). The safety phase's step names are prefixed
- * `safety-` so they read as the safety backup. Managers emit no `done`
- * progress event; only the job store's completion does.
+ * Run a container in-place restore as a background job in the shared
+ * backupJobStore: optional safety backup of the current state first (0–45% of
+ * the bar), then the restore itself (45–100%). The safety phase's step names
+ * are prefixed `safety-` so they read as the safety backup. The manager emits
+ * no `done` progress event; only the job store's completion does.
  *
  * @param {object} opts
  * @param {string} opts.jobId
- * @param {'vm' | 'container'} opts.kind - workload kind for the attempt record
- * @param {string} opts.name - workload name
+ * @param {string} opts.name - container name
  * @param {{ id: string, path: string }} opts.dest - resolved destination (safety backup target)
  * @param {boolean} opts.safetyBackup
  * @param {(onProgress: (ev: object) => void) => Promise<object>} opts.runSafetyBackup
@@ -95,7 +88,7 @@ function stripPath(row) {
  * @param {import('fastify').FastifyBaseLogger} opts.log
  * @returns {Promise<void>} settles (never rejects) once the job completed or failed
  */
-function startRestoreInPlaceJob({ jobId, kind, name, dest, safetyBackup, runSafetyBackup, runRestore, log }) {
+function startContainerRestoreInPlaceJob({ jobId, name, dest, safetyBackup, runSafetyBackup, runRestore, log }) {
   const scaledProgress = (base, span, stepPrefix = '') => (ev) => {
     backupJobStore.pushEvent(jobId, {
       step: `${stepPrefix}${ev.step}`,
@@ -109,11 +102,11 @@ function startRestoreInPlaceJob({ jobId, kind, name, dest, safetyBackup, runSafe
       try {
         const res = await runSafetyBackup(scaledProgress(0, 45, 'safety-'));
         await recordBackupAttempt({
-          kind, name, ok: true, origin: 'manual', destinationIds: [dest.id], timestamp: res?.timestamp,
+          kind: 'container', name, ok: true, origin: 'manual', destinationIds: [dest.id], timestamp: res?.timestamp,
         });
       } catch (err) {
         await recordBackupAttempt({
-          kind, name, ok: false, origin: 'manual', destinationIds: [dest.id], error: err?.message,
+          kind: 'container', name, ok: false, origin: 'manual', destinationIds: [dest.id], error: err?.message,
         });
         /* Safety backup failed — abort before touching the live workload. */
         throw err;
@@ -218,80 +211,6 @@ export default async function backupsRoutes(fastify) {
         return await restoreBackup(backupPath, newVmName, {
           populateVMDir: (vmDir, { xml }) => rebuildCloudInitISO(newVmName, vmDir, xml),
         });
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
-    },
-  });
-
-  // POST /backups/restore-in-place — restore a backup over the live VM it was
-  // taken from. Runs as a background job (progress via /vms/backup-progress/:jobId)
-  // with an optional safety backup of the current state first (default on).
-  fastify.post('/backups/restore-in-place', {
-    config: { auth: 'admin' },
-    schema: {
-      body: {
-        type: 'object',
-        required: ['destinationId', 'vmName', 'timestamp'],
-        properties: {
-          destinationId: { type: 'string' },
-          vmName: { type: 'string' },
-          timestamp: { type: 'string' },
-          safetyBackup: { type: 'boolean', default: true },
-        },
-        additionalProperties: false,
-      },
-      response: {
-        201: {
-          type: 'object',
-          properties: {
-            jobId: { type: 'string' },
-            title: { type: 'string' },
-          },
-        },
-      },
-    },
-    handler: async (request, reply) => {
-      try {
-        const { destinationId, vmName, timestamp, safetyBackup = true } = request.body;
-        validateVMName(vmName);
-        assertSafeTimestamp(timestamp);
-
-        const settings = await getSettings();
-        const rawMounts = await getRawMounts();
-        const [dest] = await resolveBackupDestinations(settings, rawMounts, [destinationId]);
-        const backupPath = await resolveVmBackupDir(dest.path, vmName, timestamp);
-
-        /* Fail fast in the request (the manager re-checks inside the job). */
-        const vm = (await listVMs()).find((v) => v.name === vmName);
-        if (!vm) {
-          throw createAppError('VM_NOT_FOUND', `VM "${vmName}" not found — restore the backup as a new VM instead`);
-        }
-        if (!isOfflineState(vm.stateCode)) {
-          throw createAppError('VM_MUST_BE_OFFLINE', `VM "${vmName}" must be stopped to restore in place`);
-        }
-        const title = titleForVmRestore(vmName);
-        // Held for the whole job (safety backup included): no start, backup or
-        // delete of this VM while its disks are being replaced.
-        const releaseLock = acquireVmOperationLock(vmName, 'restore');
-
-        const jobId = randomBytes(12).toString('hex');
-        backupJobStore.createJob(jobId, { kind: BACKGROUND_JOB_KIND.VM_RESTORE, title, log: request.log });
-        request.log.info({ jobId, kind: BACKGROUND_JOB_KIND.VM_RESTORE, title }, 'Background job started');
-        startRestoreInPlaceJob({
-          jobId,
-          kind: 'vm',
-          name: vmName,
-          dest,
-          safetyBackup,
-          runSafetyBackup: (onProgress) => createBackup(vmName, dest.path, { onProgress }),
-          runRestore: (onProgress) => restoreBackupInPlace(backupPath, {
-            onProgress,
-            populateVMDir: (vmDir, { xml }) => rebuildCloudInitISO(vmName, vmDir, xml),
-          }),
-          log: request.log,
-        }).finally(releaseLock);
-        return reply.code(201).send({ jobId, title });
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -483,9 +402,8 @@ export default async function backupsRoutes(fastify) {
         const jobId = randomBytes(12).toString('hex');
         backupJobStore.createJob(jobId, { kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE, title, log: request.log });
         request.log.info({ jobId, kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE, title }, 'Background job started');
-        startRestoreInPlaceJob({
+        startContainerRestoreInPlaceJob({
           jobId,
-          kind: 'container',
           name,
           dest,
           safetyBackup,

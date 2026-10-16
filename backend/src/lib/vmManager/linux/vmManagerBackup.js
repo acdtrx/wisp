@@ -7,7 +7,7 @@
  * overlay made outside Wisp, e.g. by `virsh`) is first flattened into one
  * standalone qcow2, so every backup is self-contained.
  */
-import { copyFile, mkdir, writeFile, readdir, readFile, access, constants, stat, rm, rename, realpath, chmod } from 'node:fs/promises';
+import { copyFile, mkdir, writeFile, readdir, readFile, access, constants, stat, rm, realpath, chmod } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createGzip, createGunzip } from 'node:zlib';
@@ -678,31 +678,19 @@ async function readBackupDomain(backupPath) {
  * Copy a backup's payload (disks, NVRAM, cloud-init.json) into destBase.
  * @returns {Promise<Array<{ oldPath: string, newPath: string }>>} disk mapping for XML path rewrites
  */
-async function copyBackupPayload(backupPath, config, destBase, { onProgress } = {}) {
+async function copyBackupPayload(backupPath, config, destBase) {
   const disks = (config.disks || []).filter((d) => d.device === 'disk' && d.source);
-  const totalItems = disks.length + 2; // +1 NVRAM, +1 cloud-init pair
-  let done = 0;
-  const emit = (step, currentFile) => {
-    if (typeof onProgress === 'function') {
-      onProgress({ step, percent: Math.round((done / totalItems) * 100), currentFile });
-    }
-  };
 
   const diskMapping = [];
   for (const disk of disks) {
     const logicalName = basename(disk.source);
-    emit('disk', `Restoring ${logicalName}`);
     const newDiskPath = join(destBase, logicalName);
     await copyOrGunzip(backupPath, logicalName, newDiskPath);
     diskMapping.push({ oldPath: disk.source, newPath: newDiskPath });
-    done += 1;
-    emit('disk', logicalName);
   }
 
-  emit('nvram', 'Restoring NVRAM');
   // allowMissing skips BIOS-only and older silent-skip backups; permission/IO failures surface.
   await copyNvram(join(backupPath, 'VARS.fd'), join(destBase, 'VARS.fd'), { allowMissing: true });
-  done += 1;
 
   // cloud-init.json carries the password hash and lands in the group-readable
   // per-VM dir, so it gets the 0600 the live write path applies (a JSON from an
@@ -710,15 +698,12 @@ async function copyBackupPayload(backupPath, config, destBase, { onProgress } = 
   // no cloud-init — but once present a failed copy fails the restore. A
   // cloud-init.iso(.gz) in an older backup is ignored: the seed ISO is rebuilt
   // from this JSON by the caller's populateVMDir.
-  emit('cloudinit', 'Restoring cloud-init');
   const cloudInitJsonSrc = join(backupPath, 'cloud-init.json');
   const cloudInitJsonDest = join(destBase, 'cloud-init.json');
   if (await anyReadable([cloudInitJsonSrc])) {
     await copyWithProgress(cloudInitJsonSrc, cloudInitJsonDest, () => {});
     await chmod(cloudInitJsonDest, 0o600);
   }
-  done += 1;
-  emit('cloudinit', 'Cloud-init');
 
   return diskMapping;
 }
@@ -812,120 +797,4 @@ async function restorePayloadAndDefine(backupPath, newVmName, newBase, { xml, ma
   } catch (err) {
     throw vmError('BACKUP_RESTORE_FAILED', `Failed to define restored VM "${newVmName}"`, err.message);
   }
-}
-
-/**
- * Restore a backup over the live VM it was taken from ("restore in place").
- *
- * The target VM is identified by the backup itself (manifest.vmName, falling
- * back to the domain XML name), must exist and must be stopped. Disks,
- * NVRAM, and cloud-init.json are copied back into the VM's current
- * directory, and the backed-up domain XML is re-defined over the live
- * definition. Identity semantics:
- *   - name and UUID stay those of the live domain (the UUID only differs
- *     when a same-named VM was deleted and recreated since the backup —
- *     adopting the live UUID keeps DomainDefineXML from rejecting the
- *     name/uuid mismatch);
- *   - MAC addresses, hardware config, and disk contents revert to the
- *     backup's state;
- *   - disks that lived outside the VM directory at backup time (e.g. image
- *     library) are restored into the VM directory and remapped, same as
- *     restore-as-new — the outside file is never overwritten.
- * Files in the VM directory that the backup does not reference (e.g. a disk
- * added after the backup was taken) are left in place, orphaned.
- *
- * The payload is decompressed into a staging dir inside the VM directory and
- * renamed over the live files only after every file staged, so a corrupt or
- * truncated backup leaves the live disks byte-identical. The domain is
- * redefined last.
- *
- * @param {string} backupPath - Full path to the backup directory
- * @param {{ onProgress?: (event: { step: string, percent?: number, currentFile?: string }) => void,
- *           populateVMDir?: (vmDir: string, ctx: { xml: string }) => Promise<void> }} options
- *   populateVMDir: as restoreBackup's, but `vmDir` is the staging directory —
- *   what it writes there is swapped in with the rest of the payload.
- * @returns { Promise<{ name: string }> }
- */
-export async function restoreBackupInPlace(backupPath, { onProgress, populateVMDir } = {}) {
-  if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
-
-  const { xml, manifest } = await readBackupDomain(backupPath);
-  const config = parseVMFromXML(xml);
-  if (!config) throw vmError('PARSE_ERROR', 'Failed to parse backup domain.xml');
-
-  const name = typeof manifest?.vmName === 'string' && manifest.vmName ? manifest.vmName : config.name;
-  if (!name) throw vmError('BACKUP_INVALID', 'Backup does not identify its VM');
-
-  const path = await resolveDomain(name);
-  const state = await getDomainState(path);
-  if (!isOfflineState(state.code)) {
-    throw vmError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to restore in place`);
-  }
-
-  let currentUuid = null;
-  try {
-    const current = parseDomainRaw(await getDomainXML(path));
-    currentUuid = typeof current?.domain?.uuid === 'string' ? current.domain.uuid : null;
-  } catch {
-    /* current XML unreadable — keep the backup's UUID (same-VM case works) */
-  }
-
-  const emit = (step, data = {}) => {
-    if (typeof onProgress === 'function') onProgress({ step, ...data });
-  };
-
-  const newBase = normalizeBasePath(getVMBasePath(name));
-  await mkdir(newBase, { recursive: true });
-
-  // Stage the whole payload in a sibling dir on the same filesystem, so a
-  // failed or truncated decompress never touches a live disk; the live files
-  // are replaced by rename only once every file staged successfully.
-  const stagingDir = join(newBase, `.restore-${randomUUID()}`);
-  await mkdir(stagingDir);
-
-  let newXml;
-  try {
-    /* Payload copy owns 0–90% of the progress range; swap + define take the rest. */
-    const stagedMapping = await copyBackupPayload(backupPath, config, stagingDir, {
-      onProgress: (ev) => emit(ev.step, { percent: Math.round((ev.percent ?? 0) * 0.9), currentFile: ev.currentFile }),
-    });
-    const diskMapping = stagedMapping.map(({ oldPath, newPath }) => ({ oldPath, newPath: join(newBase, basename(newPath)) }));
-
-    const parsed = parseDomainRaw(xml);
-    const dom = parsed.domain;
-    if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse backup domain XML');
-
-    dom.name = name;
-    if (currentUuid) dom.uuid = currentUuid;
-
-    rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping, newBase });
-
-    try {
-      newXml = buildXml(parsed);
-    } catch (err) {
-      throw vmError('CONFIG_ERROR', 'Failed to build restored domain XML', err.message);
-    }
-
-    if (populateVMDir) await populateVMDir(stagingDir, { xml: newXml });
-
-    emit('swap', { percent: 90, currentFile: 'Replacing disks' });
-    for (const entry of await readdir(stagingDir)) {
-      await rename(join(stagingDir, entry), join(newBase, entry));
-    }
-  } finally {
-    // Empty after a successful swap. On any failure before the swap this
-    // discards the staged files and the live ones were never touched.
-    await rm(stagingDir, { recursive: true, force: true }).catch((rmErr) => {
-      connectionState.logger?.warn?.({ err: rmErr.message, stagingDir }, '[vmManager] Failed to remove restore staging directory');
-    });
-  }
-
-  emit('define', { percent: 95, currentFile: 'Applying domain configuration' });
-  try {
-    await connectionState.connectIface.DomainDefineXML(newXml);
-  } catch (err) {
-    throw vmError('BACKUP_RESTORE_FAILED', `Failed to redefine VM "${name}" from backup (disks were restored)`, err.message);
-  }
-
-  return { name };
 }

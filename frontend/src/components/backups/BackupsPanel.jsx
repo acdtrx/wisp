@@ -19,7 +19,6 @@ import {
   startBackup,
   listBackups,
   restoreBackup,
-  restoreBackupInPlace,
   deleteBackup,
   startContainerBackup,
   listContainerBackups,
@@ -36,7 +35,7 @@ import { useContainerStore } from '../../store/containerStore.js';
 import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
 
 /* Same stopped set as the VM Overview. `shutdown` is a guest shutdown still in
- * progress (qemu holds the disks) — the backend refuses restore-in-place then. */
+ * progress (qemu holds the disks) — the backend refuses a backup then. */
 const VM_STOPPED_STATES = ['shutoff', 'nostate'];
 
 /** Backup dir timestamps are ISO with `:` swapped to `-` (2026-05-08T06-30-00). */
@@ -333,7 +332,7 @@ export default function BackupsPanel() {
     }
   };
 
-  /* ── Restore in place ── */
+  /* ── Restore in place (containers only) ── */
 
   const handleOpenInPlace = (group, backup) => {
     setInPlaceTarget({ group, backup });
@@ -352,13 +351,9 @@ export default function BackupsPanel() {
     setInPlaceError(null);
     setInPlaceSaving(true);
     try {
-      const isVm = group.kind === 'vm';
-      const call = isVm ? restoreBackupInPlace : restoreContainerBackupInPlace;
-      const target = isVm
-        ? { destinationId: backup.destinationId, vmName: group.name, timestamp: backup.timestamp }
-        : { destinationId: backup.destinationId, name: group.name, timestamp: backup.timestamp };
-      const { jobId, title } = await call(target, { safetyBackup: inPlaceSafety });
-      registerJob({ jobId, kind: isVm ? JOB_KIND.VM_RESTORE : JOB_KIND.CONTAINER_RESTORE, title });
+      const target = { destinationId: backup.destinationId, name: group.name, timestamp: backup.timestamp };
+      const { jobId, title } = await restoreContainerBackupInPlace(target, { safetyBackup: inPlaceSafety });
+      registerJob({ jobId, kind: JOB_KIND.CONTAINER_RESTORE, title });
       setInPlaceTarget(null);
     } catch (err) {
       setInPlaceError(err.message || 'Restore failed to start');
@@ -496,7 +491,7 @@ export default function BackupsPanel() {
                       const inPlaceTitle = !group.live
                         ? 'Workload no longer exists — restore as new instead'
                         : !stopped
-                          ? `Stop the ${group.kind === 'vm' ? 'VM' : 'container'} first`
+                          ? 'Stop the container first'
                           : activeJob
                             ? 'A backup or restore is already running'
                             : 'Restore in place (overwrite current state)';
@@ -511,16 +506,18 @@ export default function BackupsPanel() {
                           <DataTableTd className="text-sm text-text-secondary">{b.sizeBytes != null ? formatSize(b.sizeBytes) : '—'}</DataTableTd>
                           <DataTableTd align="right">
                             <DataTableRowActions>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenInPlace(group, b)}
-                                disabled={inPlaceDisabled}
-                                className={`${rowActionIconBtn} disabled:cursor-not-allowed disabled:opacity-40`}
-                                title={inPlaceTitle}
-                                aria-label={`Restore ${group.name} in place from ${b.timestamp}`}
-                              >
-                                <ArchiveRestore size={14} aria-hidden />
-                              </button>
+                              {group.kind === 'container' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenInPlace(group, b)}
+                                  disabled={inPlaceDisabled}
+                                  className={`${rowActionIconBtn} disabled:cursor-not-allowed disabled:opacity-40`}
+                                  title={inPlaceTitle}
+                                  aria-label={`Restore ${group.name} in place from ${b.timestamp}`}
+                                >
+                                  <ArchiveRestore size={14} aria-hidden />
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => { setRestoreTarget({ group, backup: b }); setRestoreName(''); setRestoreError(null); }}
@@ -592,7 +589,7 @@ export default function BackupsPanel() {
       <div className="border-b border-surface-border px-6 py-4">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-text-muted">Backups</h2>
         <p className="mt-0.5 text-sm text-text-secondary">
-          Every VM and container that carries a backup: back up again, restore in place or as a new copy, and delete old backups.
+          Every VM and container that carries a backup: back up again, restore as a new copy (containers also in place), and delete old backups.
           Containers with Auto Backup follow the scheduler in Host Mgmt.
         </p>
       </div>
@@ -663,7 +660,7 @@ export default function BackupsPanel() {
             </label>
             <div>
               <label className="mb-1 block text-xs text-text-muted">
-                Type the {inPlaceTarget.group.kind === 'vm' ? 'VM' : 'container'} name to confirm
+                Type the container name to confirm
               </label>
               <input
                 type="text"

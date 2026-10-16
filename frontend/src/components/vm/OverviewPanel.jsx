@@ -95,25 +95,18 @@ export default function OverviewPanel() {
 
   const vmName = vmConfig?.name ?? '';
   const backupTitleForVm = useMemo(() => (vmName ? `Backup ${vmName}` : ''), [vmName]);
-  // Backup and restore-in-place jobs hold the backend's per-VM operation lock
-  // (start / backup / restore / delete → 409 VM_BUSY), so either one blocks
-  // the conflicting actions here.
+  // A backup job holds the backend's per-VM operation lock (start / backup /
+  // delete → 409 VM_BUSY), so it blocks the conflicting actions here.
   const vmOperationJob = useMemo(
     () =>
       vmName
         ? Object.values(bgJobs).find(
-            (j) =>
-              j.status === 'running' &&
-              ((j.kind === JOB_KIND.BACKUP && j.title === `Backup ${vmName}`) ||
-                (j.kind === JOB_KIND.VM_RESTORE && j.title === `Restore ${vmName}`)),
+            (j) => j.status === 'running' && j.kind === JOB_KIND.BACKUP && j.title === `Backup ${vmName}`,
           )
         : undefined,
     [bgJobs, vmName],
   );
-  const restoreInProgress = vmOperationJob?.kind === JOB_KIND.VM_RESTORE;
-  const busyHint = vmOperationJob
-    ? `Unavailable while ${restoreInProgress ? 'a restore' : 'a backup'} of this VM is in progress`
-    : undefined;
+  const busyHint = vmOperationJob ? 'Unavailable while a backup of this VM is in progress' : undefined;
 
   const { tab } = useParams();
   const navigate = useNavigate();
@@ -316,8 +309,7 @@ export default function OverviewPanel() {
           <ActionButton
             icon={Archive} label="Backup"
             onClick={handleOpenBackup}
-            disabled={!isStopped || restoreInProgress}
-            hint={restoreInProgress ? busyHint : undefined}
+            disabled={!isStopped}
           />
           <ActionButton
             icon={Trash2} label="Delete"

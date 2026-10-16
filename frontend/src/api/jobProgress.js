@@ -7,7 +7,6 @@ export const JOB_KIND = {
   CONTAINER_IMAGE_UPDATE_CHECK: 'container-image-update-check',
   BACKUP: 'backup',
   CONTAINER_BACKUP: 'container-backup',
-  VM_RESTORE: 'vm-restore',
   CONTAINER_RESTORE: 'container-restore',
   LIBRARY_DOWNLOAD: 'library-download',
 };
@@ -18,7 +17,6 @@ const PATHS = {
   [JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK]: (jobId) => `/api/containers/images/check-updates/${encodeURIComponent(jobId)}`,
   [JOB_KIND.BACKUP]: (jobId) => `/api/vms/backup-progress/${encodeURIComponent(jobId)}`,
   [JOB_KIND.CONTAINER_BACKUP]: (jobId) => `/api/containers/backup-progress/${encodeURIComponent(jobId)}`,
-  [JOB_KIND.VM_RESTORE]: (jobId) => `/api/vms/backup-progress/${encodeURIComponent(jobId)}`,
   [JOB_KIND.CONTAINER_RESTORE]: (jobId) => `/api/containers/backup-progress/${encodeURIComponent(jobId)}`,
   [JOB_KIND.LIBRARY_DOWNLOAD]: (jobId) => `/api/library/download-progress/${encodeURIComponent(jobId)}`,
 };

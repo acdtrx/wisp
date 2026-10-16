@@ -438,8 +438,8 @@ export default async function vmsRoutes(fastify) {
   });
 
   // Lifecycle actions — all POST /vms/:name/<action>
-  // Only start takes the per-VM operation lock: backup and restore-in-place
-  // require a stopped VM, and the other actions apply to a running one.
+  // Only start takes the per-VM operation lock: backup requires a stopped VM,
+  // and the other actions apply to a running one.
   const lifecycleActions = [
     { path: 'start', fn: (name) => withVmOperationLock(name, 'start', () => startVM(name)) },
     { path: 'stop', fn: stopVM },
@@ -523,7 +523,7 @@ export default async function vmsRoutes(fastify) {
       try {
         if (request.body.name !== undefined) validateVMName(request.body.name);
         // A rename moves the VM directory and rewrites its paths, so it must
-        // not run under a backup or restore reading that directory.
+        // not run under a backup reading that directory.
         const renaming = request.body.name !== undefined && request.body.name !== request.params.name;
         const result = renaming
           ? await withVmOperationLock(request.params.name, 'rename', () => updateVMConfig(request.params.name, request.body))

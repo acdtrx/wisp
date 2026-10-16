@@ -26,10 +26,6 @@ export function titleForContainerBackup(name) {
   return `Backup ${name}`;
 }
 
-export function titleForVmRestore(name) {
-  return `Restore ${name}`;
-}
-
 export function titleForContainerRestore(name) {
   return `Restore ${name}`;
 }

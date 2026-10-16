@@ -80,6 +80,5 @@ export const isOfflineState = impl.isOfflineState;
 export const createBackup = impl.createBackup;
 export const listBackups = impl.listBackups;
 export const restoreBackup = impl.restoreBackup;
-export const restoreBackupInPlace = impl.restoreBackupInPlace;
 export const deleteBackup = impl.deleteBackup;
 export const resolveVmBackupDir = impl.resolveVmBackupDir;
