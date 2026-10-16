@@ -41,6 +41,11 @@ export const connectionState = {
   domainProxyCache: new Map(),
   /** Pino-compatible logger plumbed via connect(); null until connected. */
   logger: null,
+  /** false (connect option): no DomainEvent listener, no QEMU-binary watcher,
+   *  inert network reconciler, uncached VM list — for a short-lived process
+   *  (the migration runner) that must not act alongside the backend. Kept
+   *  across bus reconnects. */
+  watchEvents: true,
 };
 
 export { vmError, unwrapVariant, unwrapDict, formatVersion, generateMAC };
@@ -150,8 +155,15 @@ function handleBusError(bus, err) {
   scheduleReconnect();
 }
 
-export async function connect(logger = null) {
+/**
+ * @param {object} [logger]
+ * @param {{ watchEvents?: boolean }} [opts] watchEvents false: connection and
+ *   calls only — see connectionState.watchEvents. Omitted (as on a reconnect)
+ *   keeps the current setting.
+ */
+export async function connect(logger = null, opts = {}) {
   if (logger) connectionState.logger = logger;
+  if (typeof opts.watchEvents === 'boolean') connectionState.watchEvents = opts.watchEvents;
   const bus = dbus.systemBus();
   /* Attached at creation: an 'error' with no listener would crash the process. */
   bus.on('error', (err) => handleBusError(bus, err));
@@ -170,6 +182,8 @@ export async function connect(logger = null) {
   connectionState.bus = bus;
   connectionState.connectIface = obj.getInterface('org.libvirt.Connect');
   connectionState.connectProps = obj.getInterface('org.freedesktop.DBus.Properties');
+
+  if (!connectionState.watchEvents) return;
 
   connectionState.connectIface.on('DomainEvent', (domainPath, event, _detail) => {
     if (event === 5 || event === 1) {

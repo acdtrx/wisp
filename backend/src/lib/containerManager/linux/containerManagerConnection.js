@@ -22,6 +22,11 @@ export const containerState = {
   containerStartTimes: new Map(),
   /** @type {import('fastify').FastifyBaseLogger | null} */
   logger: null,
+  /** false (connect option): no containerd events stream — so no restart
+   *  policy on task exits — inert network reconciler, uncached container
+   *  list. For a short-lived process (the migration runner) that must not act
+   *  alongside the backend. */
+  watchEvents: true,
 };
 
 const connectHandlers = new Set();
@@ -220,10 +225,12 @@ export function collectStream(stream) {
 }
 
 /**
- * @param {{ logger?: import('fastify').FastifyBaseLogger }} [opts]
+ * @param {{ logger?: import('fastify').FastifyBaseLogger, watchEvents?: boolean }} [opts]
+ *   watchEvents false: connection and calls only — see containerState.watchEvents.
  */
 export async function connect(opts = {}) {
   if (opts.logger) containerState.logger = opts.logger;
+  if (typeof opts.watchEvents === 'boolean') containerState.watchEvents = opts.watchEvents;
 
   if (containerState.connected) return;
 

@@ -176,6 +176,8 @@ export function getCachedDomainPath(name) {
 /* ── Public API ─────────────────────────────────────────────────────── */
 
 export async function listVMs() {
+  // Without DomainEvents nothing keeps the cache coherent — read libvirt each time.
+  if (!connectionState.watchEvents) return fetchVMListFromLibvirt();
   if (vmListCache === null) {
     vmListCache = await fetchVMListFromLibvirt();
   }

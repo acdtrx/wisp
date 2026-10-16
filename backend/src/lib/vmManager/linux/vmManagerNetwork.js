@@ -99,6 +99,7 @@ async function reconcile(list) {
 }
 
 function scheduleReconcile(list) {
+  if (!connectionState.watchEvents) return;
   if (reconcileInFlight) {
     reconcileQueued = true;
     return;

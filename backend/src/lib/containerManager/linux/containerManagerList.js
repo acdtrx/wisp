@@ -213,7 +213,7 @@ function clearEventsReconnect() {
 }
 
 function startEventsStream() {
-  if (eventsStream || !containerState.connected) return;
+  if (eventsStream || !containerState.connected || !containerState.watchEvents) return;
   try {
     eventsStream = callStream(getClient('events'), 'subscribe', { filters: [] });
     eventsStream.on('data', (envelope) => {
@@ -275,6 +275,8 @@ export function subscribeContainerListChange(handler) {
  * stats SSE — fetching them per-tick here is wasted work.
  */
 export async function listContainers() {
+  // Without the events stream nothing keeps the cache coherent — read disk each time.
+  if (!containerState.watchEvents) return fetchContainerListFromDisk();
   if (containerListCache === null) {
     containerListCache = await fetchContainerListFromDisk();
   }

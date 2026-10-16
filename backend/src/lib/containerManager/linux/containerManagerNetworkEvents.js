@@ -140,6 +140,7 @@ async function reconcile(list) {
 }
 
 function scheduleReconcile(list) {
+  if (!containerState.watchEvents) return;
   if (reconcileInFlight) {
     reconcileQueued = true;
     return;

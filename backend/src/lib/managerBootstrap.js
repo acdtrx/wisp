@@ -41,16 +41,21 @@ export function configureManagers() {
  * down rather than thrown: each manager's operations then report the missing
  * connection themselves, and one unreachable daemon doesn't take the other
  * manager's operations down with it.
+ *
+ * `watchEvents: false` connects without the managers' event-driven machinery —
+ * no libvirt DomainEvent / containerd events subscription, so no container
+ * restart policy, no network reconcilers, no list caches. For a process other
+ * than the backend (the migration runner): one actor per concern.
  */
-export async function connectManagers(log) {
+export async function connectManagers(log, { watchEvents = true } = {}) {
   try {
-    await connectLibvirt(log);
+    await connectLibvirt(log, { watchEvents });
   } catch (err) {
     log.warn({ err }, 'libvirt connection failed — VM operations will be unavailable');
   }
 
   try {
-    await connectContainerd({ logger: log });
+    await connectContainerd({ logger: log, watchEvents });
   } catch (err) {
     log.warn({ err }, 'containerd connection failed — container operations will be unavailable');
   }

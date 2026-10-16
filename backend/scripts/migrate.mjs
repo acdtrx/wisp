@@ -157,7 +157,9 @@ function createLogger() {
 /**
  * What a migration gets. Changes go through the managers (the app's own code
  * paths), never by editing their files directly; every change is reported via
- * recordChange, which logs it and lands it in the ledger entry.
+ * recordChange, which logs it and lands it in the ledger entry. The managers
+ * run without event watching (connectManagers watchEvents: false): list calls
+ * read live state, and nothing reacts to the migration's changes in this process.
  */
 function buildContext(migration, { log, dryRun, changes }) {
   const migrationLog = log.child({ migration: migration.id });
@@ -183,7 +185,9 @@ function buildContext(migration, { log, dryRun, changes }) {
 /** Returns the process exit code. */
 async function runPending(pending, { ledger, dryRun, log }) {
   configureManagers();
-  await connectManagers(log);
+  // Connections and calls only: the backend owns the reconcilers and restart
+  // policy, and it comes back once the update finishes.
+  await connectManagers(log, { watchEvents: false });
   try {
     for (const migration of pending) {
       const changes = [];
