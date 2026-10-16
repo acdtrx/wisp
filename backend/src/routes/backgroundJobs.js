@@ -2,6 +2,7 @@ import { listBackgroundJobs } from '../lib/jobs/index.js';
 
 export default async function backgroundJobsRoutes(fastify) {
   fastify.get('/background-jobs', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: {

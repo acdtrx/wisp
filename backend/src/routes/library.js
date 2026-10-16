@@ -36,6 +36,7 @@ function validateFilename(name) {
 export default async function libraryRoutes(fastify) {
 
   fastify.get('/library', {
+    config: { auth: 'read' },
     schema: {
       querystring: {
         type: 'object',
@@ -98,6 +99,7 @@ export default async function libraryRoutes(fastify) {
   });
 
   fastify.post('/library/upload', {
+    config: { auth: 'admin' },
     schema: {
       response: {
         200: {
@@ -165,6 +167,7 @@ export default async function libraryRoutes(fastify) {
   });
 
   fastify.delete('/library/:filename', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -219,6 +222,7 @@ export default async function libraryRoutes(fastify) {
 
   // GET /library/check-url — HEAD request to verify URL is reachable
   fastify.get('/library/check-url', {
+    config: { auth: 'admin' },
     schema: {
       querystring: {
         type: 'object',
@@ -250,6 +254,7 @@ export default async function libraryRoutes(fastify) {
 
   // POST /library/download — start URL download (returns jobId), progress via SSE
   fastify.post('/library/download', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -308,6 +313,7 @@ export default async function libraryRoutes(fastify) {
 
   // POST /library/download-ubuntu-cloud — start Ubuntu Server LTS cloud image download (returns jobId)
   fastify.post('/library/download-ubuntu-cloud', {
+    config: { auth: 'admin' },
     schema: {
       response: {
         201: {
@@ -353,6 +359,7 @@ export default async function libraryRoutes(fastify) {
 
   // POST /library/download-arch-cloud — start Arch Linux cloud image download (returns jobId)
   fastify.post('/library/download-arch-cloud', {
+    config: { auth: 'admin' },
     schema: {
       response: {
         201: {
@@ -397,6 +404,7 @@ export default async function libraryRoutes(fastify) {
 
   // POST /library/download-haos — start Home Assistant OS download (returns jobId)
   fastify.post('/library/download-haos', {
+    config: { auth: 'admin' },
     schema: {
       response: {
         201: {
@@ -447,6 +455,7 @@ export default async function libraryRoutes(fastify) {
 
   // GET /library/download-progress/:jobId — SSE stream for download progress
   fastify.get('/library/download-progress/:jobId', {
+    config: { auth: 'read' },
     schema: { hide: true },
     handler: async (request, reply) => {
       const { jobId } = request.params;
@@ -467,6 +476,7 @@ export default async function libraryRoutes(fastify) {
   });
 
   fastify.patch('/library/:filename', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',

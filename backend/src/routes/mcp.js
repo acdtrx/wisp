@@ -1,13 +1,13 @@
 /**
- * MCP endpoint (streamable HTTP, stateless, POST-only). Auth is enforced by
- * the global auth hook: /mcp accepts ONLY bearer API tokens — cookies are
+ * MCP endpoint (streamable HTTP, stateless, POST-only). The `mcp` access level
+ * makes the global auth hook accept ONLY bearer API tokens here — cookies are
  * ignored entirely, which also makes the endpoint CSRF-irrelevant. The token's
  * scope rides on request.user and gates which tools are listed/callable.
  */
 import { handleMcpMessage } from '../lib/mcp/mcpServer.js';
 
 export default async function mcpRoutes(fastify) {
-  fastify.post('/mcp', { schema: { hide: true } }, async (request, reply) => {
+  fastify.post('/mcp', { schema: { hide: true }, config: { auth: 'mcp' } }, async (request, reply) => {
     const { status, body } = await handleMcpMessage(request.body, {
       scope: request.user?.scope,
       log: request.log,
@@ -26,6 +26,6 @@ export default async function mcpRoutes(fastify) {
       .header('Allow', 'POST')
       .send({ error: 'Method not allowed', detail: 'The Wisp MCP endpoint is stateless: POST JSON-RPC messages to /mcp' });
   };
-  fastify.get('/mcp', { schema: { hide: true } }, methodNotAllowed);
-  fastify.delete('/mcp', { schema: { hide: true } }, methodNotAllowed);
+  fastify.get('/mcp', { schema: { hide: true }, config: { auth: 'mcp' } }, methodNotAllowed);
+  fastify.delete('/mcp', { schema: { hide: true }, config: { auth: 'mcp' } }, methodNotAllowed);
 }

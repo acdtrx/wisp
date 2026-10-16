@@ -1,15 +1,27 @@
 # API Reference
 
-All routes are prefixed with `/api/` (REST) or `/ws/` (WebSocket). All endpoints except `POST /api/auth/login` require authentication, by one of two means:
+All routes are prefixed with `/api/` (REST) or `/ws/` (WebSocket), plus `/mcp`. Every endpoint heading below carries its **access level** — declared on the route itself (`config: { auth }`) and enforced by one hook; see [AUTH.md](AUTH.md) § Route access levels:
+
+| Level | Who may call |
+|-------|--------------|
+| `public` | anyone — login, the OIDC routes, static assets + SPA shell |
+| `session` | browser session only; API tokens get **403 Session required** |
+| `read` | session, or an API token of either scope |
+| `admin` | session, or an `admin`-scoped token (a `read` token gets **403 Insufficient scope**) |
+| `mcp` | API token only (either scope); cookies are ignored |
+
+Credentials:
 
 - **Session cookie** (the browser/SPA path) — the `wisp_session` cookie set by login. State-changing methods (`POST` / `PUT` / `PATCH` / `DELETE`) additionally require the `X-CSRF-Token` header to match the (non-HttpOnly) `wisp_csrf` cookie. Send `credentials: 'include'` on fetch requests so the browser carries the cookies cross-port in dev.
-- **Bearer API token** (the non-interactive path) — `Authorization: Bearer wisp_…` on `/api` routes only. No CSRF header needed. `read`-scoped tokens may only `GET`/`HEAD` (403 otherwise); `admin` tokens may use all methods. Tokens are rejected on `/ws/*` and on every `/api/auth/*` route. See [AUTH.md](AUTH.md) § API tokens.
+- **Bearer API token** (the non-interactive path) — `Authorization: Bearer wisp_…`. No CSRF header needed. See [AUTH.md](AUTH.md) § API tokens.
+
+`npm run route-access` prints the level of every registered route. A path that matches no route answers 404 (JSON for API-looking paths, the SPA shell otherwise in production) without an auth check — no handler runs.
 
 All error responses return `{ error: string, detail: string }` — including request-schema violations, which answer **400** `{ error: "Invalid request body", detail: "body/<field> …" }` (or `… params` / `… querystring`), and other framework rejections such as malformed JSON (400) or an unsupported content type (415). See [ERROR-HANDLING.md](ERROR-HANDLING.md) for details.
 
 ## Authentication
 
-### POST /api/auth/login
+### POST /api/auth/login · `public`
 
 Authenticate with password. On success, sets two cookies (`wisp_session` HttpOnly + `wisp_csrf` non-HttpOnly, `SameSite=Lax`, 24h Max-Age) and returns `{ ok: true }`.
 
@@ -20,13 +32,13 @@ Authenticate with password. On success, sets two cookies (`wisp_session` HttpOnl
 - **401:** `{ error, detail }` — invalid password
 - **429:** `{ error, detail }` — rate limited
 
-### POST /api/auth/logout
+### POST /api/auth/logout · `session`
 
 Clear the session cookies. Idempotent.
 
 - **204:** No content + `Set-Cookie: wisp_session=; Max-Age=0`, `Set-Cookie: wisp_csrf=; Max-Age=0`
 
-### POST /api/auth/change-password
+### POST /api/auth/change-password · `session`
 
 Change the application password. On success, re-issues fresh `wisp_session` and `wisp_csrf` cookies against the new secret so the caller stays logged in. Existing SSE / WebSocket connections are server-closed because their pre-rotation tokens no longer verify.
 
@@ -37,19 +49,19 @@ Change the application password. On success, re-issues fresh `wisp_session` and 
 
 ### API tokens
 
-Scoped bearer tokens for non-interactive clients (coding agents, scripts). All three routes are **session-only** — the auth hook rejects bearer authentication on `/api/auth/*`, so a token can never list, mint, or revoke tokens. Tokens are stored as SHA-256 hashes in `wisp-config.json` (`apiTokens[]`, see [CONFIGURATION.md](CONFIGURATION.md)); the plaintext is returned exactly once at creation. Changing the application password does **not** revoke API tokens — revoke them explicitly.
+Scoped bearer tokens for non-interactive clients (coding agents, scripts). All three routes are `session` — the auth hook refuses bearer tokens on them, so a token can never list, mint, or revoke tokens. Tokens are stored as SHA-256 hashes in `wisp-config.json` (`apiTokens[]`, see [CONFIGURATION.md](CONFIGURATION.md)); the plaintext is returned exactly once at creation. Changing the application password does **not** revoke API tokens — revoke them explicitly.
 
-#### GET /api/auth/tokens
+#### GET /api/auth/tokens · `session`
 
 - **200:** `[{ id, label, scope: "read" | "admin", createdAt }]` (never includes the hash or plaintext)
 
-#### POST /api/auth/tokens
+#### POST /api/auth/tokens · `session`
 
 - **Body:** `{ label: string (1–64), scope: "read" | "admin" }`
 - **201:** `{ id, label, scope, createdAt, token }` — `token` (`wisp_<scope>_<random>`) is shown only in this response
 - **422:** `{ error, detail }` — `TOKEN_INVALID` (bad label/scope)
 
-#### DELETE /api/auth/tokens/:id
+#### DELETE /api/auth/tokens/:id · `session`
 
 - **204:** No content — clients using the token get 401 immediately
 - **404:** `{ error, detail }` — `TOKEN_NOT_FOUND`
@@ -58,21 +70,21 @@ Scoped bearer tokens for non-interactive clients (coding agents, scripts). All t
 
 Optional single sign-on via OpenID Connect (authorization-code flow with PKCE + confidential client secret). Configured under `settings.oidc` (see `GET/PATCH /api/settings` and [CONFIGURATION.md](CONFIGURATION.md)). All three routes are **public** (they run before a session exists). Access control is delegated to the provider — any subject that authenticates for the Wisp client becomes the single Wisp user; the ID token is still fully validated (issuer, audience, expiry, nonce, JWKS signature). A successful callback issues the **same** `wisp_session` / `wisp_csrf` cookies as password login (the session JWT is still signed with the password-derived secret, so a password must be configured). See [AUTH.md](AUTH.md) § OIDC.
 
-#### GET /api/auth/oidc/status
+#### GET /api/auth/oidc/status · `public`
 
 Tells the login page whether to show (and auto-redirect to) SSO. Secret-free.
 
 - **Auth:** Public
 - **200:** `{ enabled: boolean }`
 
-#### GET /api/auth/oidc/login
+#### GET /api/auth/oidc/login · `public`
 
 Begins the flow: generates state + nonce + PKCE, then **302**-redirects the browser to the provider authorization endpoint. The `redirect_uri` is `<advertisedUrl origin>/api/auth/oidc/callback` when the `advertisedUrl` setting is set; otherwise it falls back to the request origin (`<scheme>://<Host>/api/auth/oidc/callback`; `X-Forwarded-Proto` honored only from trusted proxies). See [AUTH.md](AUTH.md) § OIDC. On any failure — SSO disabled, no `advertisedUrl` and no `Host`, unreachable/invalid provider — it **302**s to `/login?sso=<disabled|error>` instead of dead-ending. A start never fails for being one too many: the in-memory table of pending logins is capped at 1000 and evicts the oldest start.
 
 - **Auth:** Public
 - **302:** `Location: <provider authorize URL>` on success; `Location: /login?sso=error` (or `?sso=disabled`) on failure
 
-#### GET /api/auth/oidc/callback
+#### GET /api/auth/oidc/callback · `public`
 
 Provider redirect target. Validates the one-time `state`, exchanges `code` for tokens (client auth per the provider's advertised method), verifies the ID token, and issues the session.
 
@@ -88,7 +100,7 @@ Provider redirect target. Validates the one-time `state`, exchanges `code` for t
 
 In-memory job registry (server process only; no persistence across restart). Used to restore the jobs tray after a full page reload and for server logging. Progress for each job still uses the existing per-job SSE endpoints (`/vms/create-progress`, `/vms/backup-progress`, `/library/download-progress`, `/containers/create-progress`).
 
-### GET /api/background-jobs
+### GET /api/background-jobs · `read`
 
 - **200:**
 
@@ -119,7 +131,7 @@ In-memory job registry (server process only; no persistence across restart). Use
 
 ## Host
 
-### GET /api/host
+### GET /api/host · `read`
 
 Host system information.
 
@@ -145,13 +157,13 @@ Host system information.
 
 On macOS, `GET /api/host` also runs `system_profiler -json SPSoftwareDataType` and, when it succeeds, fills `osRelease` (`prettyName` from `os_version` with the last trailing parenthetical removed — typically the build number; `id` `macos`, `versionId` from the semver in the raw string), and may refresh `kernel` (`kernel_version`) and `hostname` (`local_host_name`). If profiler fails, `osRelease` stays `null` (no `/etc/os-release`). `libvirtVersion` and `qemuVersion` are typically `null` when libvirt is not connected.
 
-### GET /api/host/bridges
+### GET /api/host/bridges · `read`
 
 List network bridge interfaces available on the host. The list is ordered so that non-`virbr*` bridges (e.g. `br0`) appear first when `WISP_DEFAULT_BRIDGE` is unset; when set, that bridge is first.
 
 - **200:** `["br0", "virbr0"]`
 
-### GET /api/host/network-bridges
+### GET /api/host/network-bridges · `read`
 
 List Wisp-managed VLAN bridge definitions and eligible parent bridges.
 
@@ -175,7 +187,7 @@ List Wisp-managed VLAN bridge definitions and eligible parent bridges.
 
 `eligibleParents` contains only non-VLAN parent bridges with at least one non-VLAN member interface. VLAN-tagged bridges (for example `br0.10`, `br0-vlan10`) are excluded to prevent VLAN-on-VLAN chaining.
 
-### POST /api/host/network-bridges
+### POST /api/host/network-bridges · `admin`
 
 Create a managed VLAN bridge using netplan through the privileged `wisp-bridge` helper.
 
@@ -185,7 +197,7 @@ Create a managed VLAN bridge using netplan through the privileged `wisp-bridge` 
 - **422:** `{ error, detail }` — invalid parent bridge or VLAN ID
 - **503:** `{ error, detail }` — helper missing, privilege failure, or `netplan apply` failed
 
-### DELETE /api/host/network-bridges/:name
+### DELETE /api/host/network-bridges/:name · `admin`
 
 Delete a managed VLAN bridge by name (removes Wisp netplan file, tears down live bridge/vlan interfaces, and reapplies netplan).
 
@@ -194,13 +206,13 @@ Delete a managed VLAN bridge by name (removes Wisp netplan file, tears down live
 - **409:** `{ error, detail }` — bridge is referenced by VM/container config
 - **503:** `{ error, detail }` — helper missing, privilege failure, or `netplan apply` failed
 
-### GET /api/host/firmware
+### GET /api/host/firmware · `read`
 
 List available UEFI firmware paths.
 
 - **200:** `["/usr/share/OVMF/OVMF_CODE_4M.fd", ...]`
 
-### GET /api/host/gpus
+### GET /api/host/gpus · `read`
 
 List GPUs available for container passthrough (Intel/AMD render nodes). One-shot snapshot — the list rarely changes, no SSE.
 
@@ -222,7 +234,7 @@ List GPUs available for container passthrough (Intel/AMD render nodes). One-shot
 
 NVIDIA GPUs (vendor `0x10de`) are filtered out of the response — exposing them via container passthrough requires CDI / nvidia-container-toolkit, which is not implemented in v1. Hosts with no `/dev/dri/renderD*` (no GPU, or only NVIDIA) return `{ "gpus": [] }`. The UI uses the empty result to disable the GPU picker with an explanation.
 
-### GET /api/host/usb
+### GET /api/host/usb · `read`
 
 List all USB devices on the host (snapshot from sysfs; same data as the initial SSE message on `/api/host/usb/stream`).
 
@@ -240,15 +252,15 @@ List all USB devices on the host (snapshot from sysfs; same data as the initial 
 ]
 ```
 
-### GET /api/host/usb/stream
+### GET /api/host/usb/stream · `read`
 
-Server-Sent Events stream of the host USB device list. Requires authentication (session cookie, or a bearer API token).
+Server-Sent Events stream of the host USB device list.
 
 - Sends an immediate `data:` line with a JSON array of devices (same shape as `GET /api/host/usb`).
 - Sends another `data:` line whenever the set of devices changes (hotplug), after debouncing.
 - **200:** `text/event-stream` (persistent connection)
 
-### GET /api/host/disks
+### GET /api/host/disks · `read`
 
 List host block devices (removable + fixed) with mount state. Snapshot from `lsblk` cache; same data as the initial SSE message on `/api/host/disks/stream`.
 
@@ -270,49 +282,49 @@ List host block devices (removable + fixed) with mount state. Snapshot from `lsb
 ]
 ```
 
-### GET /api/host/disks/stream
+### GET /api/host/disks/stream · `read`
 
-Server-Sent Events stream of the host block-device list. Requires authentication (session cookie, or a bearer API token).
+Server-Sent Events stream of the host block-device list.
 
 - Sends an immediate `data:` line with a JSON array of devices (same shape as `GET /api/host/disks`).
 - Sends another `data:` line whenever the diskMonitor detects a change (insertion / removal / partition rescan).
 - **200:** `text/event-stream` (persistent connection)
 
-### POST /api/host/updates/check
+### POST /api/host/updates/check · `admin`
 
 Check for OS package updates. On Debian/Ubuntu uses `apt-get -s upgrade` dry-run (excludes phased-only packages); on Arch uses `pacman -Qu`. Requires `/usr/local/bin/wisp-os-update` (installed by server setup).
 
 - **200:** `{ count: number }`
 - **503:** `{ error, detail }` — update script not configured
 
-### GET /api/host/updates/packages
+### GET /api/host/updates/packages · `read`
 
 Return the structured list of upgradable packages plus an estimated total download size. On Debian/Ubuntu uses `apt-get -s upgrade` to harvest `Inst …` lines and the `Need to get …` summary; on Arch uses `pacman -Qu` (download size cannot be computed non-interactively, so `downloadBytes` is `0`). Refreshes the cached `pendingUpdates` count and `updatesLastChecked` timestamp as a side-effect.
 
 - **200:** `{ packages: [{ name: string, from: string|null, to: string }], downloadBytes: number }`
 - **503:** `{ error, detail }` — update script not configured
 
-### POST /api/host/updates/upgrade
+### POST /api/host/updates/upgrade · `admin`
 
 Install OS package updates.
 
 - **200:** `{ ok: true }`
 - **503:** `{ error, detail }` — update script not configured
 
-### GET /api/updates/status
+### GET /api/updates/status · `read`
 
 Cached state of the Wisp self-update checker (hourly poll of GitHub Releases). See [UPDATES.md](UPDATES.md). The configured channel is not echoed here — the client reads `updateChannel` from `GET /api/settings`.
 
 - **200:** `{ current, latest, available, notes, publishedAt, lastChecked, lastError, repo }`
 
-### POST /api/updates/check
+### POST /api/updates/check · `admin`
 
 Force an immediate self-update check; returns the same shape as `/status`. Which release is considered follows `updateChannel` from `wisp-config.json`, read at check time — see [UPDATES.md → Update channels](UPDATES.md#update-channels).
 
 - **200:** `{ current, latest, available, notes, publishedAt, lastChecked, lastError, repo }`
 - **503:** `{ error, detail }` — GitHub unreachable, rate-limited, or response malformed
 
-### POST /api/updates/install
+### POST /api/updates/install · `admin`
 
 Synchronously downloads + verifies + extracts the new release tarball, writes the staging path to `/var/lib/wisp/updates/target`, triggers `wisp-updater.service` via `sudo -n systemctl start --no-block` and returns 202. The updater is a separate `Type=oneshot` systemd unit — it stops the backend as part of its first real step; the UI detects completion by polling `GET /api/host` for `wispVersion === targetVersion`. Updater progress is in journald (`journalctl -u wisp-updater.service`). `?force=1` overrides the active-jobs guard.
 
@@ -320,7 +332,7 @@ Synchronously downloads + verifies + extracts the new release tarball, writes th
 - **409:** `{ error, detail }` — no update available, or other background jobs are running and `force=1` was not supplied
 - **503/422/500:** `{ error, detail }` — download / verify / extract / unit-trigger failure
 
-### GET /api/host/hardware
+### GET /api/host/hardware · `read`
 
 Static/semi-static hardware details for the Host Overview tab. On Linux: `/proc`, `/sys`, system `pci.ids` (when installed), and optional privileged helpers `wisp-dmidecode` (RAM) and `wisp-smartctl` (disk SMART summary). On macOS (dev): `/usr/sbin/system_profiler -json` (several `SP*` data types) plus `fs.statfsSync` and `os.networkInterfaces`; synthetic PCI addresses for sorting; if profiler fails, OS-only fallback. See [HOST-MONITORING.md](HOST-MONITORING.md).
 
@@ -399,14 +411,14 @@ Each `disks[]` entry includes `rotational` (`true` = HDD, `false` = SSD-style, `
 
 **Implementation:** `GET /api/host/hardware` uses a Fastify response schema (`backend/src/routes/host.js`). New fields must be listed in that schema (for example `cpu.coreTypes` or fields in `memory.items.properties`) or response serialization strips them.
 
-### POST /api/host/power/shutdown
+### POST /api/host/power/shutdown · `admin`
 
 Shut down the host. Requires `wisp-power` at `/usr/local/bin` (after `setup-server.sh`) or `WISP_POWER_SCRIPT`, plus matching sudoers.
 
 - **200:** `{ ok: true }`
 - **503:** `{ error, detail }` — power script not configured or privilege error
 
-### POST /api/host/power/restart
+### POST /api/host/power/restart · `admin`
 
 Reboot the host. Same requirements as shutdown (`wisp-power reboot`).
 
@@ -417,7 +429,7 @@ Reboot the host. Same requirements as shutdown (`wisp-power reboot`).
 
 ## Events stream (SSE)
 
-### GET /api/events
+### GET /api/events · `read`
 
 The single always-on Server-Sent Events stream. Multiplexes every feed the UI needs continuously as `{ "topic": <name>, "data": <payload> }` frames over one connection — browsers cap plain-HTTP/1.1 connections at 6 per origin and each open SSE stream holds one, so dedicated per-topic streams exhausted the pool on direct `http://host:8080` access and queued all further requests indefinitely (behind an HTTP/2 proxy the cap never applies). Scoped streams (per-entity stats, container logs, host disks/usb, job progress) remain separate endpoints: they are transient and bounded well below the cap.
 
@@ -506,7 +518,7 @@ The persisted last-attempt status map (see [BACKUPS.md → Backup attempt status
 
 ## Virtual Machines
 
-### GET /api/vms
+### GET /api/vms · `read`
 
 List all VMs with summary info.
 
@@ -533,7 +545,7 @@ List all VMs with summary info.
 - The list payload does **not** carry section assignment. Section info arrives on its own channel, the `sections` topic of `GET /api/events` (see [Sections](#sections)) — libvirt/containerd events don't fire on assignment changes, so the list feeds aren't a usable carrier for it.
 - Live updates arrive on the `vms` topic of `GET /api/events` (see [Events stream](#events-stream-sse)): the same array, pushed when libvirt emits a `DomainEvent` (define/undefine/start/stop/etc.) or when a `qemu-system-*` binary is replaced on disk (apt/dnf upgrade). No polling timer.
 
-### POST /api/vms
+### POST /api/vms · `admin`
 
 Create a new VM. Returns a job ID; monitor progress via SSE.
 
@@ -602,7 +614,7 @@ Create a new VM. Returns a job ID; monitor progress via SSE.
 
 The body schema is **`additionalProperties: false`**. With Fastify's default Ajv (`removeAdditional: true`), unknown keys are silently stripped before the handler runs — they never reach `createVM`. Only schema-level violations (wrong type, missing required field) return HTTP 400.
 
-### GET /api/vms/create-progress/:jobId
+### GET /api/vms/create-progress/:jobId · `read`
 
 SSE stream for VM creation progress (see [ERROR-HANDLING.md](ERROR-HANDLING.md) for job SSE shapes).
 
@@ -610,7 +622,7 @@ SSE stream for VM creation progress (see [ERROR-HANDLING.md](ERROR-HANDLING.md) 
 - **Completion (from job store):** `{ step: "done", name: "<vmName>" }`
 - **Failure (terminal):** `{ step: "error", error: string, detail: string }` — then the stream closes.
 
-### GET /api/vms/:name
+### GET /api/vms/:name · `read`
 
 Full VM configuration parsed from domain XML.
 
@@ -618,7 +630,7 @@ Full VM configuration parsed from domain XML.
 
 Each `disks[]` entry may include **`sizeGiB`** (integer, virtual size in GiB, rounded) for **`device: "disk"`** entries with a file `source`, when `qemu-img info` succeeds. Omitted if the image is missing or size read fails.
 
-### PATCH /api/vms/:name
+### PATCH /api/vms/:name · `admin`
 
 Update VM configuration.
 
@@ -629,7 +641,7 @@ Update VM configuration.
 
 `localDns` is supported in PATCH and controls VM mDNS registration behavior.
 
-### DELETE /api/vms/:name
+### DELETE /api/vms/:name · `admin`
 
 Delete a VM.
 
@@ -637,42 +649,42 @@ Delete a VM.
 - **200:** `{ ok: true }`
 - **409:** `VM_BUSY` — a backup, restore-in-place or clone of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
 
-### GET /api/vms/:name/xml
+### GET /api/vms/:name/xml · `read`
 
 Raw libvirt domain XML (for debugging/inspection).
 
 - **200:** `{ xml: string }`
 
-### POST /api/vms/:name/start
+### POST /api/vms/:name/start · `admin`
 
 - **200:** `{ ok: true }`
 - **409:** `VM_ALREADY_RUNNING`; `VM_BUSY` — a backup, restore-in-place or clone of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
 
-### POST /api/vms/:name/stop
+### POST /api/vms/:name/stop · `admin`
 
 Graceful shutdown (ACPI).
 
 - **200:** `{ ok: true }`
 
-### POST /api/vms/:name/force-stop
+### POST /api/vms/:name/force-stop · `admin`
 
 Immediate force stop (destroy).
 
 - **200:** `{ ok: true }`
 
-### POST /api/vms/:name/reboot
+### POST /api/vms/:name/reboot · `admin`
 
 - **200:** `{ ok: true }`
 
-### POST /api/vms/:name/suspend
+### POST /api/vms/:name/suspend · `admin`
 
 - **200:** `{ ok: true }`
 
-### POST /api/vms/:name/resume
+### POST /api/vms/:name/resume · `admin`
 
 - **200:** `{ ok: true }`
 
-### POST /api/vms/:name/clone
+### POST /api/vms/:name/clone · `admin`
 
 Start a clone job (VM must be stopped). Returns a job ID; monitor progress via SSE.
 
@@ -681,7 +693,7 @@ Start a clone job (VM must be stopped). Returns a job ID; monitor progress via S
 - **409:** `VM_EXISTS` / `VM_DIR_EXISTS` when `newName` is taken in libvirt or on disk (same rule as `POST /api/vms`); `VM_BUSY` when another start / backup / restore-in-place / delete / rename / clone of the source VM is running. Checked before the job starts; the job holds the source VM's [operation lock](BACKUPS.md#per-vm-operation-lock) until it settles.
 - **422:** `INVALID_VM_NAME` if `newName` fails `validateVMName`.
 
-### GET /api/vms/clone-progress/:jobId
+### GET /api/vms/clone-progress/:jobId · `read`
 
 SSE stream for clone progress.
 
@@ -693,7 +705,7 @@ SSE stream for clone progress.
 
 ## VM Stats (SSE)
 
-### GET /api/vms/:name/stats
+### GET /api/vms/:name/stats · `read`
 
 SSE stream of per-VM statistics. Pushes every 5 seconds.
 
@@ -724,7 +736,7 @@ SSE stream of per-VM statistics. Pushes every 5 seconds.
 
 ## Disks
 
-### POST /api/vms/:name/disks
+### POST /api/vms/:name/disks · `admin`
 
 Attach an existing disk image or create and attach a new empty disk. VM must be stopped.
 
@@ -734,20 +746,20 @@ Attach an existing disk image or create and attach a new empty disk. VM must be 
 - **409:** `VM_MUST_BE_OFFLINE` (VM not stopped), `DISK_SLOT_IN_USE` (slot already holds a device — detach it first)
 - **422:** Both or neither of `path` and `sizeGB` provided; `INVALID_REQUEST` for a slot other than `sda`/`sdb`; `PATH_NOT_ALLOWED` for a `path` outside the allowed roots
 
-### DELETE /api/vms/:name/disks/:slot
+### DELETE /api/vms/:name/disks/:slot · `admin`
 
 Detach a disk from a VM slot.
 
 - **200:** `{ ok: true }`
 
-### POST /api/vms/:name/disks/:slot/resize
+### POST /api/vms/:name/disks/:slot/resize · `admin`
 
 Resize a disk.
 
 - **Body:** `{ sizeGB: number }`
 - **200:** `{ ok: true }`
 
-### POST /api/vms/:name/disks/:slot/bus
+### POST /api/vms/:name/disks/:slot/bus · `admin`
 
 Change the disk controller (bus) for a block disk slot. VM must be stopped.
 
@@ -759,7 +771,7 @@ Change the disk controller (bus) for a block disk slot. VM must be stopped.
 
 ## CDROM (ISO)
 
-### POST /api/vms/:name/cdrom/:slot
+### POST /api/vms/:name/cdrom/:slot · `admin`
 
 Attach an ISO to a CDROM slot. Supports hot-plug (live + config).
 
@@ -767,7 +779,7 @@ Attach an ISO to a CDROM slot. Supports hot-plug (live + config).
 - **Body:** `{ path: string }`
 - **200:** `{ ok: true }`
 
-### DELETE /api/vms/:name/cdrom/:slot
+### DELETE /api/vms/:name/cdrom/:slot · `admin`
 
 Eject an ISO from a CDROM slot. Supports hot-unplug.
 
@@ -777,20 +789,20 @@ Eject an ISO from a CDROM slot. Supports hot-unplug.
 
 ## USB
 
-### GET /api/vms/:name/usb
+### GET /api/vms/:name/usb · `read`
 
 List USB devices attached to this VM.
 
 - **200:** `[{ vendorId: "046d", productId: "c077" }]`
 
-### POST /api/vms/:name/usb
+### POST /api/vms/:name/usb · `admin`
 
 Attach a USB device to the VM. Hot-plug when running, persistent config when stopped.
 
 - **Body:** `{ vendorId: string (4 hex chars), productId: string (4 hex chars) }`
 - **200:** `{ ok: true }`
 
-### DELETE /api/vms/:name/usb/:id
+### DELETE /api/vms/:name/usb/:id · `admin`
 
 Detach a USB device. `id` format: `vendorId:productId` (e.g. `046d:c077`). Both must be 4 hex digits.
 
@@ -801,13 +813,13 @@ Detach a USB device. `id` format: `vendorId:productId` (e.g. `046d:c077`). Both 
 
 ## Snapshots
 
-### GET /api/vms/:name/snapshots
+### GET /api/vms/:name/snapshots · `read`
 
 List snapshots for a VM.
 
 - **200:** `[{ name: string, creationTime: number, state: string }]`
 
-### POST /api/vms/:name/snapshots
+### POST /api/vms/:name/snapshots · `admin`
 
 Create a snapshot.
 
@@ -815,13 +827,13 @@ Create a snapshot.
 - **200:** `{ ok: true }`
 - **422:** `{ error, detail }` — invalid name (length or pattern)
 
-### DELETE /api/vms/:name/snapshots/:id
+### DELETE /api/vms/:name/snapshots/:id · `admin`
 
 Delete a snapshot by name.
 
 - **200:** `{ ok: true }`
 
-### POST /api/vms/:name/snapshots/:id/revert
+### POST /api/vms/:name/snapshots/:id/revert · `admin`
 
 Revert to a snapshot.
 
@@ -831,13 +843,13 @@ Revert to a snapshot.
 
 ## Cloud-Init
 
-### GET /api/vms/:name/cloudinit
+### GET /api/vms/:name/cloudinit · `read`
 
 Get the cloud-init configuration for a VM.
 
 - **200:** Full stored object when `cloud-init.json` exists: `{ enabled: boolean, hostname?, username?, password?: "set" | "", sshKey?, sshKeySource?, growPartition?, packageUpgrade?, installQemuGuestAgent?, installAvahiDaemon? }` (including `enabled: false` after a soft-disable). If there is no config file, `{ enabled: false }` only.
 
-### PUT /api/vms/:name/cloudinit
+### PUT /api/vms/:name/cloudinit · `admin`
 
 Update cloud-init settings.
 
@@ -863,13 +875,13 @@ Update cloud-init settings.
 
 - **200:** `{ ok: true }`
 
-### DELETE /api/vms/:name/cloudinit
+### DELETE /api/vms/:name/cloudinit · `admin`
 
 Remove cloud-init completely: detach `sde`, delete `cloud-init.iso` and `cloud-init.json`.
 
 - **200:** `{ ok: true }`
 
-### GET /api/github/keys/:username
+### GET /api/github/keys/:username · `admin`
 
 Fetch SSH public keys for a GitHub user (server-side proxy to avoid CORS).
 
@@ -882,7 +894,7 @@ Fetch SSH public keys for a GitHub user (server-side proxy to avoid CORS).
 
 ## Backups
 
-### POST /api/vms/:name/backup
+### POST /api/vms/:name/backup · `admin`
 
 Start a backup job. Returns a job ID; monitor progress via SSE.
 
@@ -894,7 +906,7 @@ Start a backup job. Returns a job ID; monitor progress via SSE.
 - **422:** `BACKUP_DEST_UNKNOWN` / `BACKUP_DEST_NONE` — unknown destination id, or nothing resolved
 - **503:** `BACKUP_MOUNT_FAILED` — SMB mount failed
 
-### GET /api/vms/backup-progress/:jobId
+### GET /api/vms/backup-progress/:jobId · `read`
 
 SSE stream for backup progress.
 
@@ -904,7 +916,7 @@ SSE stream for backup progress.
 - **Completion (from job store, the only `done`):** `{ step: "done", timestamp: string }` — `timestamp` is the (last destination's) backup folder name (e.g. `2026-05-08T06-30-00`).
 - **Failure (terminal):** `{ step: "error", error: string, detail: string }`
 
-### GET /api/backups
+### GET /api/backups · `read`
 
 List all backups across configured destinations. The backup is identified by the tuple `(destinationId, vmName, timestamp)`; the on-disk path is a server-side detail and not exposed.
 
@@ -926,7 +938,7 @@ List all backups across configured destinations. The backup is identified by the
 
 `destinationId` is `'local'` or the configured `backupMountId`. Pass it back unchanged on restore/delete. `origin` is `"manual"` or `"scheduled"`; VM backups predating the manifest field (and all backups today — there is no VM scheduler) list as `"manual"`.
 
-### POST /api/backups/restore
+### POST /api/backups/restore · `admin`
 
 Restore a backup as a new VM.
 
@@ -936,7 +948,7 @@ Restore a backup as a new VM.
 - **409:** `VM_EXISTS` / `VM_DIR_EXISTS` when `newVmName` is taken in libvirt or on disk (same rule as `POST /api/vms`)
 - **422:** unknown `destinationId`, invalid `vmName`/`newVmName`, or invalid `timestamp`
 
-### POST /api/backups/restore-in-place
+### POST /api/backups/restore-in-place · `admin`
 
 Restore a backup **over the live VM it was taken from**. Runs as a background job (kind `vm-restore`, title `Restore <vmName>`); progress streams via `GET /api/vms/backup-progress/:jobId`. With `safetyBackup` (default `true`), the job first takes a normal backup of the current state to the same destination (its progress steps are prefixed `safety-` and mapped to 0–45% of the bar), then restores. Semantics (identity preserved, disks/config revert) in [BACKUPS.md → Restoring in place](BACKUPS.md#restoring-in-place).
 
@@ -946,7 +958,7 @@ Restore a backup **over the live VM it was taken from**. Runs as a background jo
 - **409:** `VM_MUST_BE_OFFLINE` (VM running), `VM_HAS_SNAPSHOTS` (the VM has snapshots — delete them first; checked before the safety backup or the job starts), `VM_BUSY` (another start / backup / restore-in-place / delete / rename / clone of this VM is running)
 - **422 / 503:** destination errors as for `POST /api/vms/:name/backup`
 
-### DELETE /api/backups
+### DELETE /api/backups · `admin`
 
 Delete a backup.
 
@@ -955,7 +967,7 @@ Delete a backup.
 - **404:** backup not found
 - **422:** invalid input (`INVALID_VM_NAME`, `BACKUP_INVALID` — including a target that would resolve to a destination root; see [BACKUPS.md → Deleting a Backup](BACKUPS.md#deleting-a-backup))
 
-### POST /api/containers/:name/backup
+### POST /api/containers/:name/backup · `admin`
 
 Start a container backup job. Mirrors `POST /api/vms/:name/backup` — same body shape, same destination resolution (shared `lib/backupDestinations.js` helper), same SMB auto-mount behavior. The container does **not** need to be stopped: a running container is paused (cgroup freezer) for the duration of the archive and resumed automatically; stopped/created containers are archived cold. Manual backups record `origin: "manual"` in the manifest. Details in [BACKUPS.md → Container Backups](BACKUPS.md#container-backups).
 
@@ -965,7 +977,7 @@ Start a container backup job. Mirrors `POST /api/vms/:name/backup` — same body
 - **422:** `BACKUP_DEST_UNKNOWN` / `BACKUP_DEST_NONE` — unknown destination id, or nothing resolved
 - **503:** `BACKUP_MOUNT_FAILED` — SMB mount failed
 
-### GET /api/containers/backup-progress/:jobId
+### GET /api/containers/backup-progress/:jobId · `read`
 
 SSE stream for container backup progress.
 
@@ -975,7 +987,7 @@ SSE stream for container backup progress.
 - **Completion (from job store, the only `done`):** `{ step: "done", timestamp: string }` — the last destination's backup folder name
 - **Failure:** `{ step: "error", error: string, detail: string }`
 
-### GET /api/container-backups
+### GET /api/container-backups · `read`
 
 List all container backups across currently-usable destinations. Container backups have their own namespace; VM and container backups can never collide on identical names.
 
@@ -998,7 +1010,7 @@ List all container backups across currently-usable destinations. Container backu
 
 `origin` is `"manual"` or `"scheduled"`; backups predating the field list as `"manual"`.
 
-### POST /api/container-backups/restore
+### POST /api/container-backups/restore · `admin`
 
 Restore a container backup under a new name. The new name must be free both on disk and in containerd. Image is re-pulled if missing locally; MAC address is regenerated; section assignment is **not** carried over (storage assignments live in `wisp-config.json`, not in the backup).
 
@@ -1009,7 +1021,7 @@ Restore a container backup under a new name. The new name must be free both on d
 - **422:** `INVALID_CONTAINER_NAME`, `BACKUP_INVALID` (unknown destination or invalid timestamp), or archive missing/malformed
 - **500:** `BACKUP_RESTORE_FAILED` if extraction or containerd record creation fails
 
-### POST /api/container-backups/restore-in-place
+### POST /api/container-backups/restore-in-place · `admin`
 
 Restore a backup **over the live container it was taken from** (same name, same MAC and DHCP lease; the containerd record is kept, or recreated if missing). The container must be stopped. Runs as a background job (kind `container-restore`, title `Restore <name>`); progress via `GET /api/containers/backup-progress/:jobId`. `safetyBackup` (default `true`) archives the current state first, same phase mapping as the VM route. Semantics in [BACKUPS.md → Restoring in place](BACKUPS.md#restoring-in-place).
 
@@ -1019,7 +1031,7 @@ Restore a backup **over the live container it was taken from** (same name, same 
 - **409:** `CONTAINER_MUST_BE_STOPPED`, `BACKUP_IN_PROGRESS` (a backup/restore job for this container is already running)
 - **422 / 503:** destination errors as for `POST /api/containers/:name/backup`
 
-### DELETE /api/container-backups
+### DELETE /api/container-backups · `admin`
 
 Delete a container backup.
 
@@ -1031,7 +1043,7 @@ Delete a container backup.
 
 ## Image Library
 
-### GET /api/library
+### GET /api/library · `read`
 
 List image files in the library.
 
@@ -1049,7 +1061,7 @@ List image files in the library.
 ]
 ```
 
-### POST /api/library/upload
+### POST /api/library/upload · `admin`
 
 Upload a file to the image library. Streaming multipart — not buffered in memory.
 
@@ -1058,7 +1070,7 @@ Upload a file to the image library. Streaming multipart — not buffered in memo
 - **409:** File already exists
 - **422:** Invalid filename
 
-### DELETE /api/library/:filename
+### DELETE /api/library/:filename · `admin`
 
 Delete a file from the library.
 
@@ -1066,7 +1078,7 @@ Delete a file from the library.
 - **404:** File not found
 - **409:** File in use — referenced by one or more VMs (detail lists names)
 
-### PATCH /api/library/:filename
+### PATCH /api/library/:filename · `admin`
 
 Rename a file.
 
@@ -1075,14 +1087,14 @@ Rename a file.
 - **404:** File not found
 - **409:** New name already taken, or source file is referenced by one or more VMs
 
-### GET /api/library/check-url
+### GET /api/library/check-url · `admin`
 
 Check if a URL is reachable (HEAD request).
 
 - **Query:** `?url=https://...`
 - **200:** `{ ok: boolean, contentLength: number | null, error?: string, status?: number }`
 
-### POST /api/library/download
+### POST /api/library/download · `admin`
 
 Start downloading a file from a URL. Returns job ID.
 
@@ -1090,25 +1102,25 @@ Start downloading a file from a URL. Returns job ID.
 - **201:** `{ jobId: string, title: string }` — `title` matches the truncated URL display rule used in the UI
 - **422:** Invalid URL (only HTTP/HTTPS allowed)
 
-### POST /api/library/download-ubuntu-cloud
+### POST /api/library/download-ubuntu-cloud · `admin`
 
 Download Ubuntu Server LTS cloud image.
 
 - **201:** `{ jobId: string, title: string }`
 
-### POST /api/library/download-arch-cloud
+### POST /api/library/download-arch-cloud · `admin`
 
 Download latest Arch Linux x86_64 cloud image (qcow2) from the pkgbuild mirror.
 
 - **201:** `{ jobId: string, title: string }`
 
-### POST /api/library/download-haos
+### POST /api/library/download-haos · `admin`
 
 Download Home Assistant OS image.
 
 - **201:** `{ jobId: string, title: string }`
 
-### GET /api/library/download-progress/:jobId
+### GET /api/library/download-progress/:jobId · `read`
 
 SSE stream for download progress.
 
@@ -1136,7 +1148,7 @@ The instance's own announcement is filtered out server-side. On macOS dev (no Av
 
 ## Settings
 
-### GET /api/settings
+### GET /api/settings · `read`
 
 Get application settings.
 
@@ -1161,7 +1173,7 @@ Get application settings.
 
 The shipped `wisp-config.json.example` has empty `mounts`. Mounts are added via **Host → Host Mgmt → Storage** (row-scoped **POST**/**PATCH**/**DELETE** on `/api/host/mounts`). SMB passwords are never returned — each SMB mount carries `hasPassword` (boolean) instead, same as `GET /api/host/mounts`. The **OIDC client secret is never returned** — GET exposes `oidc.hasClientSecret` (boolean) only.
 
-### PATCH /api/settings
+### PATCH /api/settings · `admin`
 
 Update settings. Partial update — only include fields to change.
 
@@ -1175,13 +1187,13 @@ Update settings. Partial update — only include fields to change.
 - **`containersPath`:** Optional; container storage root (same default as `config.js`; exposed for scripts — App Config UI does not edit it yet).
 - **Mount CRUD:** Not available via PATCH /api/settings. Use `/api/host/mounts` endpoints below.
 
-### GET /api/host/mounts
+### GET /api/host/mounts · `read`
 
 List configured mounts (SMB + disk). SMB passwords are never returned; SMB entries carry `hasPassword` (boolean).
 
 - **200:** Array of mount objects — see [CONFIGURATION.md](CONFIGURATION.md) for field shape.
 
-### POST /api/host/mounts
+### POST /api/host/mounts · `admin`
 
 Append one mount. **Body:** `{ type: "smb" | "disk", label?, mountPath, autoMount?, ...type-specific }`. **`id`** optional (server generates a UUID if omitted). Paths must be absolute. For `type: "smb"`, `share` is required. For `type: "disk"`, `uuid` is required; `fsType` must be one of `ext4`, `btrfs`, `vfat`, `exfat`, `ntfs3`.
 
@@ -1189,25 +1201,25 @@ Append one mount. **Body:** `{ type: "smb" | "disk", label?, mountPath, autoMoun
 - **409:** `MOUNT_DUPLICATE` — id already exists
 - **422:** `MOUNT_INVALID` — missing/invalid fields
 
-### PATCH /api/host/mounts/:id
+### PATCH /api/host/mounts/:id · `admin`
 
 Update one mount by **`id`**. **Body:** partial fields (`label`, `mountPath`, `autoMount`, and type-specific: `share`/`username`/`password` for SMB, `fsType`/`readOnly` for disk). An omitted or empty `password` preserves the stored password. `type` and `uuid` cannot be changed after creation.
 
 - **200:** Array of mounts after the update | **404:** mount not found
 
-### DELETE /api/host/mounts/:id
+### DELETE /api/host/mounts/:id · `admin`
 
 Remove one mount from settings. If it was **`backupMountId`**, that field is cleared.
 
 - **200:** Array of mounts after removal | **404:** mount not found
 
-### GET /api/host/mounts/status
+### GET /api/host/mounts/status · `read`
 
 Mount status for all configured mounts.
 
 - **200:** `[{ id, label, mountPath, mounted: boolean }]`
 
-### POST /api/host/mounts/check
+### POST /api/host/mounts/check · `admin`
 
 Test an SMB connection for a saved mount or ad hoc credentials.
 
@@ -1216,14 +1228,14 @@ Test an SMB connection for a saved mount or ad hoc credentials.
 - **200:** `{ ok: true }`
 - **404:** SMB mount not found (when using `id`)
 
-### POST /api/host/mounts/:id/mount
+### POST /api/host/mounts/:id/mount · `admin`
 
 Mount an SMB share by settings id. Disk mounts are mounted automatically on device insertion and this endpoint currently returns **422** for `type: "disk"` — dedicated support lands with the disk monitor work.
 
 - **200:** `{ ok: true }`
 - **503:** Mount unavailable (platform/helper error)
 
-### POST /api/host/mounts/:id/unmount
+### POST /api/host/mounts/:id/unmount · `admin`
 
 Unmount a mount by settings id.
 
@@ -1254,7 +1266,7 @@ All section endpoints (GET, POST, PATCH, DELETE, PUT assign) return the same `{ 
 
 `assignments` keys are `"<type>:<workload-name>"` (`<type>` is `vm` or `container`); values are section ids. Missing keys mean Main.
 
-### GET /api/sections
+### GET /api/sections · `read`
 
 Return the current sections + assignments envelope.
 
@@ -1269,7 +1281,7 @@ This is the sidebar's live channel for grouping. It exists because sections are 
 - **Topic `data`:** The envelope above, or `{ error, detail, code? }` if the settings read fails. Clients keep their last good envelope on an error frame.
 - `Main`'s `order` is `-Infinity`, which serialises to `null` in both the topic frames and `GET /api/sections`. Clients must take array order as authoritative, not the `order` field.
 
-### POST /api/sections
+### POST /api/sections · `admin`
 
 Create a section. Returns the updated envelope.
 
@@ -1278,7 +1290,7 @@ Create a section. Returns the updated envelope.
 - **422 (`SECTION_INVALID`):** Empty / too-long name.
 - **409 (`SECTION_DUPLICATE`):** Case-insensitive name collision.
 
-### PATCH /api/sections/:id
+### PATCH /api/sections/:id · `admin`
 
 Rename a section. The `main` section cannot be renamed.
 
@@ -1288,14 +1300,14 @@ Rename a section. The `main` section cannot be renamed.
 - **422 (`SECTION_INVALID`):** Empty name or attempted Main rename.
 - **409 (`SECTION_DUPLICATE`):** Case-insensitive name collision.
 
-### DELETE /api/sections/:id
+### DELETE /api/sections/:id · `admin`
 
 Delete a section. Workloads previously assigned to it return to Main on next read. The `main` section cannot be deleted.
 
 - **200:** Envelope (after removal — the assignments map will no longer reference the deleted id).
 - **404 (`SECTION_NOT_FOUND`):** No section with that id.
 
-### POST /api/sections/reorder
+### POST /api/sections/reorder · `admin`
 
 Replace the persisted ordering of user-defined sections. The body must list every existing section id exactly once (Main is implicit and never appears in the array).
 
@@ -1304,7 +1316,7 @@ Replace the persisted ordering of user-defined sections. The body must list ever
 - **422 (`SECTION_INVALID`):** `ids` is not an array, or doesn't list every section exactly once.
 - **404 (`SECTION_NOT_FOUND`):** An id in `ids` doesn't match any section.
 
-### PUT /api/sections/assign
+### PUT /api/sections/assign · `admin`
 
 Move a workload to a section.
 
@@ -1370,37 +1382,37 @@ Every endpoint below returns the same `{ tiles, groups }` envelope the `home` to
 - **`conflicts`** lists losers of a same-URL collision. `manualTileId` is non-null when the loser was a manual link, so the UI can offer to remove it.
 - **`groups`** is in render order. The synthetic **`ungrouped`** group (`builtin: true`) is always present and always last; it holds every tile no group claims, which is where newly derived links appear. It is never persisted.
 
-### GET /api/homepage
+### GET /api/homepage · `read`
 
 Return the current envelope.
 
 - **200:** Envelope above.
 
-### POST /api/homepage/groups
+### POST /api/homepage/groups · `admin`
 
 Create a group.
 
 - **Body:** `{ "name": "string (1–64)" }`
 - **200:** Envelope. **422 (`HOME_INVALID`):** empty/too-long name. **409 (`HOME_DUPLICATE`):** case-insensitive name collision.
 
-### PATCH /api/homepage/groups/:id
+### PATCH /api/homepage/groups/:id · `admin`
 
 Rename a group. Same body and errors as create, plus **404 (`HOME_NOT_FOUND`)**.
 
-### DELETE /api/homepage/groups/:id
+### DELETE /api/homepage/groups/:id · `admin`
 
 Delete a group. Its tiles fall back to Ungrouped on the next derivation.
 
 - **200:** Envelope. **404 (`HOME_NOT_FOUND`).**
 
-### POST /api/homepage/groups/reorder
+### POST /api/homepage/groups/reorder · `admin`
 
 Replace the group ordering. The body must list every existing group id exactly once (Ungrouped is implicit and never appears).
 
 - **Body:** `{ "ids": ["<group-id>", …] }`
 - **200:** Envelope. **422 (`HOME_INVALID`)** / **404 (`HOME_NOT_FOUND`).**
 
-### PUT /api/homepage/tiles/assign
+### PUT /api/homepage/tiles/assign · `admin`
 
 Place a tile in a group, optionally at an index. Moving a tile within its current group at a new index is how **reordering** works — there is no separate endpoint. Tile ids travel in the body because a derived id is a URL.
 
@@ -1409,14 +1421,14 @@ Place a tile in a group, optionally at an index. Moving a tile within its curren
 - **200:** Envelope. **404 (`HOME_NOT_FOUND`):** unknown `groupId`. **422 (`HOME_INVALID`):** missing `tileId` or negative `index`.
 - The tile itself is not validated — placements are pure metadata, and an id that no longer derives is ignored on the next read.
 
-### PUT /api/homepage/tiles/override
+### PUT /api/homepage/tiles/override · `admin`
 
 Set or clear a tile's overrides. An omitted field is left untouched; `null` clears one. An override left empty is deleted outright, so the config never accumulates husks.
 
 - **Body:** `{ "tileId": "string", "hidden": "boolean | null", "name": "string | null", "iconId": "string | null" }`
 - **200:** Envelope. **422 (`HOME_INVALID`).**
 
-### POST /api/homepage/manual-tiles
+### POST /api/homepage/manual-tiles · `admin`
 
 Add a manual link.
 
@@ -1424,13 +1436,13 @@ Add a manual link.
 - `url` must be an absolute `http`/`https` URL — anything else (a bare hostname, `javascript:`, `data:`) is rejected at the boundary, since tiles render as links the user clicks.
 - **200:** Envelope. **422 (`HOME_INVALID`).**
 
-### PATCH /api/homepage/manual-tiles/:id
+### PATCH /api/homepage/manual-tiles/:id · `admin`
 
 Update a manual link (any subset of `name` / `url` / `iconId`).
 
 - **200:** Envelope. **404 (`HOME_NOT_FOUND`)** / **422 (`HOME_INVALID`).**
 
-### DELETE /api/homepage/manual-tiles/:id
+### DELETE /api/homepage/manual-tiles/:id · `admin`
 
 Remove a manual link along with its group placement and overrides.
 
@@ -1444,19 +1456,19 @@ The envelope is pushed on the `home` topic of `GET /api/events`: a snapshot on c
 
 ## MCP
 
-### POST /mcp
+### POST /mcp · `mcp`
 
-Model Context Protocol endpoint (streamable HTTP, stateless, JSON-RPC 2.0) exposing read-only inspection tools to coding agents. **Bearer API tokens only** — cookies are ignored, so the endpoint is CSRF-irrelevant; missing/invalid tokens get 401 with `WWW-Authenticate: Bearer`. The REST method gate for `read` tokens does not apply here; scope is enforced per tool. `GET /mcp` and `DELETE /mcp` return 405. Full protocol subset, tool catalogue, and client registration in [MCP.md](MCP.md).
+Model Context Protocol endpoint (streamable HTTP, stateless, JSON-RPC 2.0) exposing read-only inspection tools to coding agents. **Bearer API tokens only** — cookies are ignored, so the endpoint is CSRF-irrelevant; missing/invalid tokens get 401 with `WWW-Authenticate: Bearer`. Either token scope passes the route; scope is enforced per tool. `GET /mcp` and `DELETE /mcp` return 405. Full protocol subset, tool catalogue, and client registration in [MCP.md](MCP.md).
 
 ---
 
 ## WebSocket
 
-### WS /ws/console/:name/vnc
+### WS /ws/console/:name/vnc · `session`
 
 VNC console WebSocket proxy. Bridges the browser's noVNC client to QEMU's VNC server on localhost.
 
-- **Auth:** `wisp_session` cookie on the upgrade handshake (sent automatically same-origin); bearer API tokens are rejected on `/ws/*`. `Origin` allow-list enforced.
+- **Auth:** `session` — `wisp_session` cookie on the upgrade handshake (sent automatically same-origin); bearer API tokens get 403. `Origin` allow-list enforced.
 - **Protocol:** Binary frames — bidirectional TCP-to-WebSocket bridge
 - **Connection flow:**
   1. Global auth hook validates the session cookie before the upgrade completes
@@ -1469,11 +1481,11 @@ VNC console WebSocket proxy. Bridges the browser's noVNC client to QEMU's VNC se
   - `4000` — Invalid VM name or VNC not available
   - `1011` — TCP connection error
 
-### WS /ws/container-console/:name
+### WS /ws/container-console/:name · `session`
 
 Interactive shell in a **running** container. Uses containerd `Tasks.Exec` with a PTY (`/bin/sh`); I/O is bridged over WebSocket.
 
-- **Auth:** `wisp_session` cookie on the upgrade handshake (same as VNC console); bearer API tokens are rejected on `/ws/*`
+- **Auth:** `session` — `wisp_session` cookie on the upgrade handshake (same as VNC console); bearer API tokens get 403
 - **Query:** `cols` and `rows` (optional, defaults 80×24) — initial PTY size; client may send further resize messages after connect
 - **Protocol:**
   - **Binary frames** — terminal input (client → server) and output (server → client)
@@ -1493,9 +1505,9 @@ Interactive shell in a **running** container. Uses containerd `Tasks.Exec` with 
 
 ## Containers
 
-All container routes require JWT authentication. Routes with a `:name` path parameter validate it via `validateContainerName` (length 1–63, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..`/`/`/`\`, no surrounding whitespace); failures return 422 `INVALID_CONTAINER_NAME`.
+Routes with a `:name` path parameter validate it via `validateContainerName` (length 1–63, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..`/`/`/`\`, no surrounding whitespace); failures return 422 `INVALID_CONTAINER_NAME`.
 
-### GET /api/containers
+### GET /api/containers · `read`
 
 List all containers (summary).
 
@@ -1505,7 +1517,7 @@ List all containers (summary).
 
 Live updates arrive on the `containers` topic of `GET /api/events` (see [Events stream](#events-stream-sse)): the same array, pushed when containerd emits a relevant event (`tasks/start`, `tasks/exit`, `tasks/delete`, `containers/create`, `containers/update`, `containers/delete`, etc.), when a `container.json` is written by wisp, or when an image-update check completes. No polling timer.
 
-### POST /api/containers
+### POST /api/containers · `admin`
 
 Create a new container (async job with image pull). The container is **defined in containerd but not started** (no task, no CNI setup yet) so mounts and settings can be configured before **Start**.
 
@@ -1519,7 +1531,7 @@ On create, the server writes defaults in `container.json` (empty `mounts`, bridg
 
 **200:** `{ jobId: "uuid", title: string }` — `title` is e.g. `Create <name>`
 
-### GET /api/containers/create-progress/:jobId
+### GET /api/containers/create-progress/:jobId · `read`
 
 SSE stream for container creation progress. Events: `{ step: "validating"|"using-local"|"pulling"|"pulled"|"creating"|"created"|"done"|"error", ... }`
 
@@ -1527,7 +1539,7 @@ The `using-local` step replaces `pulling`/`pulled` when the exact literal `image
 
 `created` (`{ step, name, imageDigest }`) means the containerd definition exists; it is not terminal — an app container still writes its config files after it, and a failure there rolls the container back and ends the job with `error`. The terminal `{ step: "done", name }` comes only from job completion.
 
-### GET /api/containers/images
+### GET /api/containers/images · `read`
 
 List OCI images in the containerd `wisp` namespace (same store used when creating containers).
 
@@ -1535,7 +1547,7 @@ List OCI images in the containerd `wisp` namespace (same store used when creatin
 
 **503:** `NO_CONTAINERD` when containerd is unavailable.
 
-### DELETE /api/containers/images
+### DELETE /api/containers/images · `admin`
 
 Remove an image from containerd. Query parameter **`ref`** (required): the image's name exactly as `GET /api/containers/images` lists it (e.g. `docker.io/library/nginx:latest`, or a local-only `myapp:v1`). It is not normalized — a short ref only deletes an image listed under that literal name.
 
@@ -1549,7 +1561,7 @@ Remove an image from containerd. Query parameter **`ref`** (required): the image
 
 **503:** `NO_CONTAINERD`
 
-### POST /api/containers/images/check-updates
+### POST /api/containers/images/check-updates · `admin`
 
 Start an image update check in the background. **Body:** `{ ref?: string }` — when `ref` is omitted (or empty) a bulk check runs over every image in the library; when `ref` is given, only that image is checked.
 
@@ -1557,7 +1569,7 @@ For each image, the current top-level digest is recorded, the image is re-pulled
 
 **200:** `{ jobId, title }`. Subscribe to `GET /api/containers/images/check-updates/:jobId` for progress.
 
-### GET /api/containers/images/check-updates/:jobId
+### GET /api/containers/images/check-updates/:jobId · `read`
 
 SSE stream for the check-updates job. Events:
 
@@ -1571,11 +1583,11 @@ SSE stream for the check-updates job. Events:
 
 **404:** job not found / expired (TTL 5 min after terminal).
 
-### GET /api/containers/images/update-status
+### GET /api/containers/images/update-status · `read`
 
 Cached summary of the last check. **200:** `{ lastCheckedAt: ISO8601 | null, imagesChecked: number, imagesUpdated: number }`. In-memory; resets on backend restart.
 
-### GET /api/containers/:name
+### GET /api/containers/:name · `read`
 
 Full container config including live state.
 
@@ -1585,7 +1597,7 @@ The **`env`** field uses a structured shape: `{ KEY: { value, secret?, isSet? } 
 
 **404:** `{ error, detail }` if container not found.
 
-### GET /api/containers/:name/mounts/usage
+### GET /api/containers/:name/mounts/usage · `read`
 
 Host-side disk usage of each bind mount. On-demand snapshot (not a live feed): each mount's bind source — Local `files/<name>` dir or storage `mountPath/subPath` — is sized as the sum of file byte lengths (stdlib walk, symlinks not followed). Can take seconds for large data directories.
 
@@ -1597,7 +1609,7 @@ Host-side disk usage of each bind mount. On-demand snapshot (not a live feed): e
 
 **404:** `{ error, detail }` if container not found.
 
-### PATCH /api/containers/:name
+### PATCH /api/containers/:name · `admin`
 
 Partially update container config.
 
@@ -1630,37 +1642,37 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 **422:** `APP_RELOAD_FAILED` — the app's reload command exited non-zero. The persisted config and mount file contents are rolled back to the previous (accepted) state, matching what the running app kept serving; check `detail` for stderr.
 
-### DELETE /api/containers/:name
+### DELETE /api/containers/:name · `admin`
 
 Delete a container. Query param: `deleteFiles` (default `true`). With `deleteFiles=false` the container directory keeps only `files/` (mount data) — `container.json`, run logs and the rest are removed, so the container disappears from the list. Creating a container with the same name then fails with **409** `CONTAINER_EXISTS` until that directory is moved or removed.
 
 **200:** `{ ok: true }`
 
-### POST /api/containers/:name/start
+### POST /api/containers/:name/start · `admin`
 
 Start a stopped container.
 
 **200:** `{ ok: true }` | **409:** already running
 
-### POST /api/containers/:name/stop
+### POST /api/containers/:name/stop · `admin`
 
 Stop a running container (SIGTERM + grace period). On a stopped container with a restart-policy restart scheduled, cancels that restart.
 
 **200:** `{ ok: true, restartCancelled: boolean }` — `restartCancelled: true` when a scheduled restart was cancelled | **409:** not running and nothing scheduled
 
-### POST /api/containers/:name/restart
+### POST /api/containers/:name/restart · `admin`
 
 Restart a container (stop + start).
 
 **200:** `{ ok: true }`
 
-### POST /api/containers/:name/kill
+### POST /api/containers/:name/kill · `admin`
 
 Kill a container (SIGKILL). Same scheduled-restart handling as Stop.
 
 **200:** `{ ok: true, restartCancelled: boolean }` | **409:** not running and nothing scheduled
 
-### GET /api/containers/:name/stats
+### GET /api/containers/:name/stats · `read`
 
 SSE stream for per-container stats.
 
@@ -1671,13 +1683,13 @@ SSE stream for per-container stats.
 
 Default interval is **3s** when `intervalMs` is omitted.
 
-### GET /api/containers/:name/runs
+### GET /api/containers/:name/runs · `read`
 
 List log runs for a container. Each start creates a new run under `runs/<runId>.log` with a sidecar `runs/<runId>.json` holding timing + exit status. The newest 10 runs are kept (older pairs pruned on new-run allocation).
 
 **200:** `{ runs: [{ runId, startedAt, endedAt, exitCode, imageDigest, logSizeBytes }, ...] }` — newest first. `endedAt` / `exitCode` are null for the currently-running run.
 
-### GET /api/containers/:name/logs
+### GET /api/containers/:name/logs · `read`
 
 SSE stream for a single run's logs. Initial event: `{ type: "history", lines, runId }`. Subsequent: `{ type: "line", line }`.
 
@@ -1685,25 +1697,25 @@ SSE stream for a single run's logs. Initial event: `{ type: "history", lines, ru
 - **Errors:** `CONTAINER_RUN_NOT_FOUND` (404) if a non-existent or malformed `runId` is requested.
 - **Empty state:** containers with no runs yet (never started) return a single history event with `lines: []` and `runId: null`.
 
-### GET /api/containers/:name/runs/:runId/log
+### GET /api/containers/:name/runs/:runId/log · `read`
 
 Download one run's log file. Responds with `Content-Type: text/plain; charset=utf-8` and an RFC 5987 `Content-Disposition: attachment; filename*=UTF-8''<percent-encoded(name-runId.log)>` header. Streams the file directly from disk. `runId` must match `^[a-zA-Z0-9._-]+$`.
 
 **404:** `CONTAINER_RUN_NOT_FOUND` if the run does not exist. **422:** invalid `runId` format.
 
-### POST /api/containers/:name/mounts
+### POST /api/containers/:name/mounts · `admin`
 
 Append one bind mount (row-scoped). **Body:** `{ type: "file"|"directory"|"tmpfs", name, containerPath, ... }` (same shape as one element of **`mounts`** in **PATCH**; `readonly`/`sourceId`/`subPath`/`containerOwnerUid`/`Gid` for file/directory; `sizeMiB` for tmpfs).
 
 **200:** `{ requiresRestart: boolean }` | **422:** `INVALID_CONTAINER_MOUNTS`, `CONTAINER_MOUNT_DUPLICATE`
 
-### PATCH /api/containers/:name/mounts/:mountName
+### PATCH /api/containers/:name/mounts/:mountName · `admin`
 
 Update one mount by its current storage **`name`** (URL segment). **Body:** optional subset of `{ name, containerPath, readonly, sourceId, subPath, containerOwnerUid, containerOwnerGid }` for file/directory mounts, or `{ name, containerPath, sizeMiB }` for tmpfs mounts (other fields rejected on tmpfs). Renaming **`name`** moves `files/<oldName>` to `files/<newName>` on disk; tmpfs renames are config-only.
 
 **200:** `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** duplicate path/name
 
-### DELETE /api/containers/:name/mounts/:mountName
+### DELETE /api/containers/:name/mounts/:mountName · `admin`
 
 Remove one mount and delete its `files/<mountName>` backing store (tmpfs has no backing store; its row is removed config-only).
 
@@ -1715,19 +1727,19 @@ Multipart **file** upload: a single file part (field name typically **`file`**).
 
 **400:** `BAD_MULTIPART_TOO_MANY_FILES` if more than one file part | plain `{ error, detail }` if no file part.
 
-### POST /api/containers/:name/mounts/:mountName/file
+### POST /api/containers/:name/mounts/:mountName/file · `admin`
 
 Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an existing file.
 
 **200:** `{ name, size, modified }` | **422:** `APP_CONFIG_ONLY` (app-managed mount — see GET content below)
 
-### POST /api/containers/:name/mounts/:mountName/zip
+### POST /api/containers/:name/mounts/:mountName/zip · `admin`
 
 Multipart: one file part. Mount must have **`type: "directory"`**. Clears `files/<mountName>/` and extracts the zip using the system **`unzip`** binary (entry paths validated with **`unzip -Z1`** before extraction for zip-slip safety).
 
 **200:** `{ ok: true }` | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`
 
-### GET /api/containers/:name/mounts/:mountName/content
+### GET /api/containers/:name/mounts/:mountName/content · `admin`
 
 **File** mounts only. Returns the backing file as UTF-8 text for the in-app editor.
 
@@ -1737,35 +1749,35 @@ Multipart: one file part. Mount must have **`type: "directory"`**. Clears `files
 
 **404:** `CONTAINER_NOT_FOUND`, `CONTAINER_MOUNT_NOT_FOUND` | **422:** `APP_CONFIG_ONLY`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `CONTAINER_MOUNT_FILE_TOO_LARGE`, `CONTAINER_MOUNT_FILE_NOT_UTF8`, `CONTAINER_MOUNT_SOURCE_MISSING` (no file on disk yet)
 
-### PUT /api/containers/:name/mounts/:mountName/content
+### PUT /api/containers/:name/mounts/:mountName/content · `admin`
 
 **Body:** JSON `{ "content": string }`. Replaces the backing file with UTF-8 bytes (max **512 KiB** encoded length). The route's `bodyLimit` is set just above the content cap to reject oversized payloads at the parser before reaching the handler; the handler enforces the exact byte cap on the decoded content.
 
 **200:** `{ ok: true }` | **413:** request body too large | **422:** same family as GET for type/size/encoding, plus `APP_CONFIG_ONLY` for app-managed mounts
 
-### POST /api/containers/:name/mounts/:mountName/init
+### POST /api/containers/:name/mounts/:mountName/init · `admin`
 
 Create an empty file (0 bytes) or empty directory according to the mount **`type`** (still supported for API clients; the UI relies on automatic creation when saving mounts or starting).
 
 **200:** `{ ok: true }`
 
-### DELETE /api/containers/:name/mounts/:mountName/data
+### DELETE /api/containers/:name/mounts/:mountName/data · `admin`
 
 Remove the backing file or directory tree for that mount. The mount row remains in `container.json` until **DELETE** `/mounts/:mountName` or **PATCH** replaces **`mounts`**.
 
-### POST /api/containers/:name/services
+### POST /api/containers/:name/services · `admin`
 
 Append one mDNS service advertisement (row-scoped, keyed by port). **Body:** `{ port: integer, type: string, txt?: object }` — `type` matches `^_[a-z0-9-]+\._(tcp|udp)$`; `txt` is a flat key/value map (values stringified). Requires `localDns: true` on the container. Live registration happens immediately if the container is running.
 
 **200:** `{ requiresRestart: false }` | **409:** `CONTAINER_LOCAL_DNS_DISABLED`, `CONTAINER_SERVICE_DUPLICATE` | **422:** `INVALID_CONTAINER_SERVICE`
 
-### PATCH /api/containers/:name/services/:port
+### PATCH /api/containers/:name/services/:port · `admin`
 
 Update one service identified by its current **`port`** (URL segment). **Body:** optional subset of `{ type, txt }`. Port is not editable — delete + create to move to a different port.
 
 **200:** `{ requiresRestart: false }` | **404:** `CONTAINER_SERVICE_NOT_FOUND` | **409:** `CONTAINER_LOCAL_DNS_DISABLED` | **422:** `INVALID_CONTAINER_SERVICE`
 
-### DELETE /api/containers/:name/services/:port
+### DELETE /api/containers/:name/services/:port · `admin`
 
 Remove an mDNS service by its port. Live deregistration happens immediately if the container is running.
 

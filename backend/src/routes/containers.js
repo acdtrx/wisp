@@ -77,6 +77,7 @@ export default async function containerRoutes(fastify) {
 
   // ── List ──────────────────────────────────────────────────────────
   fastify.get('/containers', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: {
@@ -107,7 +108,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Create ────────────────────────────────────────────────────────
-  fastify.post('/containers', async (request, reply) => {
+  fastify.post('/containers', { config: { auth: 'admin' } }, async (request, reply) => {
     const spec = request.body;
     if (!spec?.name || !spec?.image) {
       return sendError(reply, 422, 'Missing required fields', 'name and image are required');
@@ -139,7 +140,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Create progress SSE ───────────────────────────────────────────
-  fastify.get('/containers/create-progress/:jobId', async (request, reply) => {
+  fastify.get('/containers/create-progress/:jobId', { config: { auth: 'read' } }, async (request, reply) => {
     const { jobId } = request.params;
     const job = containerJobStore.getJob(jobId);
     if (!job) return sendError(reply, 404, 'Job not found', `No job with id "${jobId}"`);
@@ -151,6 +152,7 @@ export default async function containerRoutes(fastify) {
 
   // ── OCI images (containerd) — before /containers/:name ────────────
   fastify.get('/containers/images', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: {
@@ -177,6 +179,7 @@ export default async function containerRoutes(fastify) {
   });
 
   fastify.delete('/containers/images', {
+    config: { auth: 'admin' },
     schema: {
       querystring: {
         type: 'object',
@@ -207,7 +210,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── OCI image update check ────────────────────────────────────────
-  fastify.post('/containers/images/check-updates', async (request, reply) => {
+  fastify.post('/containers/images/check-updates', { config: { auth: 'admin' } }, async (request, reply) => {
     const ref = typeof request.body?.ref === 'string' && request.body.ref.trim()
       ? request.body.ref.trim()
       : null;
@@ -236,7 +239,7 @@ export default async function containerRoutes(fastify) {
     return { jobId, title };
   });
 
-  fastify.get('/containers/images/check-updates/:jobId', async (request, reply) => {
+  fastify.get('/containers/images/check-updates/:jobId', { config: { auth: 'read' } }, async (request, reply) => {
     const { jobId } = request.params;
     const job = imageUpdateJobStore.getJob(jobId);
     if (!job) return sendError(reply, 404, 'Job not found', `No job with id "${jobId}"`);
@@ -246,12 +249,12 @@ export default async function containerRoutes(fastify) {
     onSSEClose(reply, () => imageUpdateJobStore.unregisterStream(jobId, reply.raw));
   });
 
-  fastify.get('/containers/images/update-status', async () => {
+  fastify.get('/containers/images/update-status', { config: { auth: 'read' } }, async () => {
     return getImageUpdateStatus();
   });
 
   // ── Get single ────────────────────────────────────────────────────
-  fastify.get('/containers/:name', async (request, reply) => {
+  fastify.get('/containers/:name', { config: { auth: 'read' } }, async (request, reply) => {
     try {
       return maskContainerConfigSecrets(await getContainerConfig(request.params.name));
     } catch (err) {
@@ -263,6 +266,7 @@ export default async function containerRoutes(fastify) {
   // On-demand snapshot: sizes each mount's host-side bind source (sum of
   // file sizes). Can take seconds for large data directories.
   fastify.get('/containers/:name/mounts/usage', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: {
@@ -301,7 +305,7 @@ export default async function containerRoutes(fastify) {
   // In that case the rename runs first, and remaining fields are applied under
   // the new name. The response carries the name actually in effect so clients
   // can follow up with the new URL.
-  fastify.patch('/containers/:name', async (request, reply) => {
+  fastify.patch('/containers/:name', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const body = request.body && typeof request.body === 'object' ? request.body : {};
       const { name: requestedName, ...rest } = body;
@@ -377,7 +381,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Delete ────────────────────────────────────────────────────────
-  fastify.delete('/containers/:name', async (request, reply) => {
+  fastify.delete('/containers/:name', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const deleteFiles = request.query.deleteFiles !== 'false';
       // Drop the mDNS A-record before tearing down the container so the
@@ -392,7 +396,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Lifecycle ─────────────────────────────────────────────────────
-  fastify.post('/containers/:name/start', async (request, reply) => {
+  fastify.post('/containers/:name/start', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       await startContainer(request.params.name);
       return { ok: true };
@@ -401,7 +405,7 @@ export default async function containerRoutes(fastify) {
     }
   });
 
-  fastify.post('/containers/:name/stop', async (request, reply) => {
+  fastify.post('/containers/:name/stop', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const { restartCancelled } = await stopContainer(request.params.name);
       return { ok: true, restartCancelled };
@@ -410,7 +414,7 @@ export default async function containerRoutes(fastify) {
     }
   });
 
-  fastify.post('/containers/:name/restart', async (request, reply) => {
+  fastify.post('/containers/:name/restart', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       await restartContainer(request.params.name);
       return { ok: true };
@@ -419,7 +423,7 @@ export default async function containerRoutes(fastify) {
     }
   });
 
-  fastify.post('/containers/:name/kill', async (request, reply) => {
+  fastify.post('/containers/:name/kill', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const { restartCancelled } = await killContainer(request.params.name);
       return { ok: true, restartCancelled };
@@ -434,6 +438,7 @@ export default async function containerRoutes(fastify) {
   // inside createContainerBackup → freezeForBackup). Body shape:
   // { destinationIds: ["local"] | ["local", "<backupMountId>"] }.
   fastify.post('/containers/:name/backup', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -509,6 +514,7 @@ export default async function containerRoutes(fastify) {
   });
 
   fastify.get('/containers/backup-progress/:jobId', {
+    config: { auth: 'read' },
     schema: { hide: true },
     handler: async (request, reply) => {
       const { jobId } = request.params;
@@ -529,7 +535,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Stats SSE ─────────────────────────────────────────────────────
-  fastify.get('/containers/:name/stats', async (request, reply) => {
+  fastify.get('/containers/:name/stats', { config: { auth: 'read' } }, async (request, reply) => {
     const { name } = request.params;
     setupSSE(reply);
     const intervalMs = Math.max(2000, Math.min(60000, parseInt(request.query.intervalMs, 10) || 3000));
@@ -570,7 +576,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── List runs ────────────────────────────────────────────────────
-  fastify.get('/containers/:name/runs', async (request, reply) => {
+  fastify.get('/containers/:name/runs', { config: { auth: 'read' } }, async (request, reply) => {
     try {
       const runs = await listContainerRuns(request.params.name);
       return { runs };
@@ -586,7 +592,7 @@ export default async function containerRoutes(fastify) {
   // from disk and tailed with no new output — still useful for filtering and
   // scrolling. Initial event: { type: "history", lines, runId }. Subsequent
   // events: { type: "line", line }.
-  fastify.get('/containers/:name/logs', async (request, reply) => {
+  fastify.get('/containers/:name/logs', { config: { auth: 'read' } }, async (request, reply) => {
     const { name } = request.params;
     const requestedRunId = typeof request.query.runId === 'string' ? request.query.runId : null;
 
@@ -620,7 +626,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Run log download ─────────────────────────────────────────────
-  fastify.get('/containers/:name/runs/:runId/log', async (request, reply) => {
+  fastify.get('/containers/:name/runs/:runId/log', { config: { auth: 'read' } }, async (request, reply) => {
     const { name, runId: reqRunId } = request.params;
     if (!/^[a-zA-Z0-9._-]+$/.test(reqRunId)) {
       return sendError(reply, 422, 'Invalid run id', 'runId must be alphanumeric (._- allowed)');
@@ -641,7 +647,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Mount definitions (row-scoped) ──────────────────────────────
-  fastify.post('/containers/:name/mounts', async (request, reply) => {
+  fastify.post('/containers/:name/mounts', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const body = request.body;
       if (!body || typeof body !== 'object') {
@@ -653,7 +659,7 @@ export default async function containerRoutes(fastify) {
     }
   });
 
-  fastify.patch('/containers/:name/mounts/:mountName', async (request, reply) => {
+  fastify.patch('/containers/:name/mounts/:mountName', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       const body = request.body && typeof request.body === 'object' ? request.body : {};
@@ -663,7 +669,7 @@ export default async function containerRoutes(fastify) {
     }
   });
 
-  fastify.delete('/containers/:name/mounts/:mountName', async (request, reply) => {
+  fastify.delete('/containers/:name/mounts/:mountName', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       return await removeContainerMount(request.params.name, mountName);
@@ -673,7 +679,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Mount backing store (files/<mountName>) ───────────────────────
-  fastify.post('/containers/:name/mounts/:mountName/file', async (request, reply) => {
+  fastify.post('/containers/:name/mounts/:mountName/file', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const containerName = request.params.name;
       const mountName = decodeURIComponent(request.params.mountName);
@@ -688,7 +694,7 @@ export default async function containerRoutes(fastify) {
     }
   });
 
-  fastify.post('/containers/:name/mounts/:mountName/zip', async (request, reply) => {
+  fastify.post('/containers/:name/mounts/:mountName/zip', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const containerName = request.params.name;
       const mountName = decodeURIComponent(request.params.mountName);
@@ -702,7 +708,7 @@ export default async function containerRoutes(fastify) {
     }
   });
 
-  fastify.get('/containers/:name/mounts/:mountName/content', async (request, reply) => {
+  fastify.get('/containers/:name/mounts/:mountName/content', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
@@ -717,7 +723,7 @@ export default async function containerRoutes(fastify) {
   // byte-length check at MOUNT_FILE_CONTENT_MAX_BYTES (512 KiB); the route
   // limit allows a small headroom for the JSON wrapper around `content`.
   const MOUNT_FILE_PUT_BODY_LIMIT = 600 * 1024;
-  fastify.put('/containers/:name/mounts/:mountName/content', { bodyLimit: MOUNT_FILE_PUT_BODY_LIMIT }, async (request, reply) => {
+  fastify.put('/containers/:name/mounts/:mountName/content', { bodyLimit: MOUNT_FILE_PUT_BODY_LIMIT, config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       const body = request.body;
@@ -734,7 +740,7 @@ export default async function containerRoutes(fastify) {
     }
   });
 
-  fastify.post('/containers/:name/mounts/:mountName/init', async (request, reply) => {
+  fastify.post('/containers/:name/mounts/:mountName/init', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       return await initMountContent(request.params.name, mountName);
@@ -743,7 +749,7 @@ export default async function containerRoutes(fastify) {
     }
   });
 
-  fastify.delete('/containers/:name/mounts/:mountName/data', async (request, reply) => {
+  fastify.delete('/containers/:name/mounts/:mountName/data', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       await deleteMountData(request.params.name, mountName);
@@ -754,7 +760,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── mDNS service advertisements (row-scoped, keyed by port) ─────
-  fastify.post('/containers/:name/services', async (request, reply) => {
+  fastify.post('/containers/:name/services', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const body = request.body;
       if (!body || typeof body !== 'object') {
@@ -766,7 +772,7 @@ export default async function containerRoutes(fastify) {
     }
   });
 
-  fastify.patch('/containers/:name/services/:port', async (request, reply) => {
+  fastify.patch('/containers/:name/services/:port', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const body = request.body && typeof request.body === 'object' ? request.body : {};
       return await updateContainerService(request.params.name, request.params.port, body);
@@ -775,7 +781,7 @@ export default async function containerRoutes(fastify) {
     }
   });
 
-  fastify.delete('/containers/:name/services/:port', async (request, reply) => {
+  fastify.delete('/containers/:name/services/:port', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       return await removeContainerService(request.params.name, request.params.port);
     } catch (err) {

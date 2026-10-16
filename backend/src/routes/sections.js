@@ -39,11 +39,13 @@ export async function buildSectionsEnvelope() {
 
 export default async function sectionsRoutes(fastify) {
   fastify.get('/sections', {
+    config: { auth: 'read' },
     schema: { response: { 200: responseSchema } },
     handler: async () => buildSectionsEnvelope(),
   });
 
   fastify.post('/sections', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -64,6 +66,7 @@ export default async function sectionsRoutes(fastify) {
   });
 
   fastify.patch('/sections/:id', {
+    config: { auth: 'admin' },
     schema: {
       params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
       body: {
@@ -85,6 +88,7 @@ export default async function sectionsRoutes(fastify) {
   });
 
   fastify.delete('/sections/:id', {
+    config: { auth: 'admin' },
     schema: {
       params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
       response: { 200: responseSchema },
@@ -100,6 +104,7 @@ export default async function sectionsRoutes(fastify) {
   });
 
   fastify.post('/sections/reorder', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -122,6 +127,7 @@ export default async function sectionsRoutes(fastify) {
   });
 
   fastify.put('/sections/assign', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',

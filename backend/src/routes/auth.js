@@ -69,6 +69,7 @@ function redirect(reply, location) {
 
 export default async function authRoutes(fastify) {
   fastify.post('/login', {
+    config: { auth: 'public' },
     schema: {
       body: {
         type: 'object',
@@ -119,6 +120,7 @@ export default async function authRoutes(fastify) {
   });
 
   fastify.post('/logout', {
+    config: { auth: 'session' },
     schema: {
       response: { 204: { type: 'null' } },
     },
@@ -129,6 +131,7 @@ export default async function authRoutes(fastify) {
   });
 
   fastify.post('/change-password', {
+    config: { auth: 'session' },
     schema: {
       body: {
         type: 'object',
@@ -177,8 +180,8 @@ export default async function authRoutes(fastify) {
   });
 
   // --- API tokens ------------------------------------------------------------
-  // Session-only by construction: the auth hook rejects bearer auth on every
-  // /api/auth route, so a token can never list, mint, or revoke tokens.
+  // `session` routes: the auth hook refuses bearer tokens on them, so a token
+  // can never list, mint, or revoke tokens.
 
   const tokenResponseProps = {
     id: { type: 'string' },
@@ -188,6 +191,7 @@ export default async function authRoutes(fastify) {
   };
 
   fastify.get('/tokens', {
+    config: { auth: 'session' },
     schema: {
       response: {
         200: {
@@ -200,6 +204,7 @@ export default async function authRoutes(fastify) {
   });
 
   fastify.post('/tokens', {
+    config: { auth: 'session' },
     schema: {
       body: {
         type: 'object',
@@ -233,6 +238,7 @@ export default async function authRoutes(fastify) {
   });
 
   fastify.delete('/tokens/:id', {
+    config: { auth: 'session' },
     schema: {
       params: {
         type: 'object',
@@ -251,11 +257,15 @@ export default async function authRoutes(fastify) {
     },
   });
 
-  // --- OIDC / SSO (public routes; see PUBLIC_ROUTES in lib/auth.js) ---------
+  // --- OIDC / SSO -------------------------------------------------------------
+  // `public`: these run before a session exists — `status` tells the login page
+  // whether to show the SSO button, `login` redirects the browser to the
+  // provider, and `callback` receives the provider redirect and mints the session.
 
   // Tells the login page whether to show (and auto-redirect to) SSO. Public and
   // secret-free — only the enabled boolean, never issuer/client details.
   fastify.get('/oidc/status', {
+    config: { auth: 'public' },
     schema: {
       response: {
         200: { type: 'object', properties: { enabled: { type: 'boolean' } } },
@@ -272,6 +282,7 @@ export default async function authRoutes(fastify) {
   // an unreachable provider — bounce back to /login?sso=error so the password
   // form (and its "try SSO again" button) is shown instead of a dead end.
   fastify.get('/oidc/login', {
+    config: { auth: 'public' },
     handler: async (request, reply) => {
       const config = await getRawOidcConfig();
       if (!config.enabled) {
@@ -303,6 +314,7 @@ export default async function authRoutes(fastify) {
   // control is delegated to the provider (restrict the client to your user
   // there); any subject that authenticates is the single Wisp user.
   fastify.get('/oidc/callback', {
+    config: { auth: 'public' },
     schema: {
       querystring: {
         type: 'object',

@@ -9,7 +9,7 @@ export default async function consoleRoutes(fastify) {
   // onRequest hook (cookie-based JWT) — by the time we run, request.user is
   // set. The Origin check below stops cross-origin pages from opening this WS
   // even with a stolen cookie (CORS does not apply to WebSocket).
-  fastify.get('/console/:name/vnc', { websocket: true }, async (socket, request) => {
+  fastify.get('/console/:name/vnc', { websocket: true, config: { auth: 'session' } }, async (socket, request) => {
     const { name } = request.params;
     const log = request.log.child({ scope: 'vnc-console', vmName: name });
 

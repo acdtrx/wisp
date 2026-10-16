@@ -66,16 +66,30 @@ The signing secret is the stored scrypt-derived key (64 bytes). Changing the pas
 
 ## Route Protection
 
-An `onRequest` hook is registered globally on the backend server. Every incoming request passes through this hook before reaching any route handler. Fastify v5 selects the matching route before `onRequest` runs, so every decision the hook makes — whether the request needs auth at all (`/api`, `/ws`, `/mcp`), whether it is a public route, and the bearer refusals for `/ws` and `/api/auth` — keys on `request.routeOptions.url`, the registered pattern of the route that will actually run. The router decodes percent-encoded characters before matching, so the raw URL can't be trusted for this: `/%61pi/vms` dispatches to `/api/vms`, and is gated exactly like it. When no route matched, the hook uses the request's percent-decoded path instead (query string dropped), so `/%61pi/nope` needs a session exactly like `/api/nope`; such requests reach the JSON 404 and never a route handler. The 404 / SPA-shell handler and the production cache-policy hook key on the same path (`routePath` in `lib/auth.js`), so an encoded API miss gets the JSON 404 rather than the SPA shell.
+### Route access levels
 
-### Public routes
+**Rule (settled 2026-10-16):** authorization is a property of each route, not of its URL. Every route declares its level in its own options — `config: { auth: '<level>' }` — and one global `onRequest` hook (`createAuthHook` in `backend/src/lib/auth.js`) enforces only that declaration. The hook never tests the URL, a prefix, or the HTTP method. A route that declares nothing, or an unknown level, is enforced as **`admin`** (fail closed).
 
-These routes are public (no authentication required) — they all run before a session exists:
+| Level | Who may call | Used for |
+|-------|--------------|----------|
+| `public` | anyone | `POST /api/auth/login`, the three OIDC routes, static assets + SPA shell |
+| `session` | browser session only — API tokens get **403 Session required** | the rest of `/api/auth/*` (logout, change-password, token management), the `/ws` consoles |
+| `read` | session, or an API token of either scope | GETs whose response carries no secret material (lists, masked details, stats/progress/log streams) |
+| `admin` | session, or an `admin`-scoped API token; a `read` token gets **403 Insufficient scope** | every mutation, plus GETs that return raw file content or make outbound requests |
+| `mcp` | API token only (either scope) — cookies ignored; per-tool scope in the MCP layer | `/mcp` |
 
-- `POST /api/auth/login`
-- `GET /api/auth/oidc/status` — whether SSO is configured (login page reads it)
-- `GET /api/auth/oidc/login` — start the SSO flow (redirects to the provider)
-- `GET /api/auth/oidc/callback` — provider redirect target (mints the session)
+CSRF double-submit is a property of cookie auth on state-changing methods, independent of the level (see § CSRF protection).
+
+`read` is a deliberate per-route choice, governed by the read-token contract in [MCP.md](MCP.md) § Authentication: a read token must not recover a secret. GETs stay `admin` when their response could carry one — `GET /api/containers/:name/mounts/:mountName/content` (raw file content) — or when they are actions rather than reads: `GET /api/library/check-url` and `GET /api/github/keys/:username` make outbound requests on demand. [API.md](API.md) tags every endpoint with its level; `npm run route-access` prints the live table (method, URL, level), exiting non-zero if any route is undeclared.
+
+**Startup check.** An `onRoute` hook records every route; once the app is ready, **development refuses to boot** while any route lacks a valid declaration, listing them. Production enforces such a route as `admin` and logs a warning per route. Third-party plugins that register their own routes — the dev CORS preflight and `@fastify/static` — are registered through `registerPluginWithPublicRoutes` in `index.js`, which marks the routes the plugin adds while it loads as `public` (pending plugins are flushed first, so nothing else falls in that window).
+
+**Unmatched requests.** A request that matches no route runs no handler, so the hook has nothing to authorize and the not-found handler answers: a JSON 404 for API-looking paths, the SPA shell otherwise (production). Because the decision is the matched route's declaration, percent-encoding cannot change it — `/%61pi/vms` dispatches to `/api/vms` and gets exactly its level.
+
+**Rejected alternatives:**
+- An explicit `requireAuth()` call in each handler — a forgotten call leaves the route open.
+- Protection by plugin registration scope (auth hooks on an encapsulated group of routes) — moving a route between plugins in a refactor silently changes its protection.
+- Any URL or prefix test (the previous `/api` / `/ws` / `/mcp` gate plus a public-route list) — protection then depended on where a route sat in the URL tree, and every encoding or routing subtlety became an auth question.
 
 ### Token extraction
 
@@ -126,17 +140,19 @@ Scoped bearer tokens let non-interactive clients (coding agents, scripts, future
 
 | Scope | Allowed |
 |-------|---------|
-| `read` | `GET` / `HEAD` on `/api` routes only (includes SSE streams). Anything else → **403 Insufficient scope**. |
-| `admin` | All methods on `/api` routes. |
+| `read` | `read` and `mcp` routes. `admin` routes → **403 Insufficient scope**. |
+| `admin` | `read`, `admin`, and `mcp` routes. |
 
-On **`/mcp`** the method gate does not apply (MCP is JSON-RPC over POST); scope is enforced **per tool** in the MCP layer instead — see [MCP.md](MCP.md).
+On **`/mcp`** both scopes pass the route (MCP is JSON-RPC over POST, so the method says nothing about mutation); scope is enforced **per tool** in the MCP layer instead — see [MCP.md](MCP.md).
 
 ### Denied surfaces (both scopes)
 
-- **`/ws/*`** — consoles stay session-only; bearer requests get 401. A leaked token can never open a VM VNC session or a container shell.
-- **`/api/auth/*`** — login, logout, change-password, and token management are interactive concerns; bearer requests get **403 Session required**. A token can never mint or revoke tokens.
+`session` routes refuse every token with **403 Session required**, before the token is even verified:
 
-Conversely, **`/mcp` is bearer-only**: session cookies are ignored there entirely (which also makes it CSRF-irrelevant); a request without a valid token gets **401** with `WWW-Authenticate: Bearer`.
+- **Consoles** (`/ws/console/:name/vnc`, `/ws/container-console/:name`) — a leaked token can never open a VM VNC session or a container shell.
+- **`/api/auth/*`** (except the `public` login/OIDC routes) — logout, change-password, and token management are interactive concerns. A token can never mint or revoke tokens.
+
+Conversely, **`mcp` is bearer-only**: session cookies are ignored there entirely (which also makes it CSRF-irrelevant); a request without a valid token gets **401** with `WWW-Authenticate: Bearer`.
 
 ### Semantics
 
@@ -149,7 +165,7 @@ Conversely, **`/mcp` is bearer-only**: session cookies are ignored there entirel
 
 WebSocket connections (VNC + container console) carry the same `wisp_session` cookie that authenticates HTTP requests. The browser sends cookies on the upgrade handshake automatically for same-origin URLs (Wisp's prod deployment serves the frontend and backend from the same origin; dev uses Vite's WS proxy so it's still same-origin from the browser's view).
 
-The global `onRequest` auth hook validates the cookie before the WebSocket upgrade completes — by the time the route handler runs, `request.user` is set and no per-route token check is needed. The WS routes still enforce an `Origin` header allow-list (`isAllowedWsOrigin`) since CORS does not apply to WebSocket; cross-origin pages are rejected with close code `1008` even if they have a stolen cookie.
+Both console routes are `session`: the global `onRequest` auth hook validates the cookie before the WebSocket upgrade completes — by the time the route handler runs, `request.user` is set and no per-route token check is needed. The WS routes still enforce an `Origin` header allow-list (`isAllowedWsOrigin`) since CORS does not apply to WebSocket; cross-origin pages are rejected with close code `1008` even if they have a stolen cookie.
 
 ## Login Rate Limiting
 
@@ -202,5 +218,5 @@ The login page auto-redirects to the provider when SSO is enabled **and** no `?s
 - **`HttpOnly + Secure + SameSite=Lax`** session cookie + double-submit `X-CSRF-Token` — both layers must be defeated for cross-site abuse to succeed.
 - **WS Origin allow-list** since CORS does not apply to WebSocket — cross-origin pages with a stolen cookie still get `close 1008`.
 - **Single password change invalidates all sessions** since the signing secret changes; live SSE/WS are explicitly closed and the user's session is re-issued. API tokens survive by design and must be revoked explicitly.
-- **API tokens** are hashed at rest (SHA-256 in a `0600` file), shown once, scoped (`read` is method-gated before any handler runs), revocable, barred from consoles and auth routes, and rate-limited alongside logins.
+- **API tokens** are hashed at rest (SHA-256 in a `0600` file), shown once, scoped (each route's declared level is checked before any handler runs), revocable, barred from consoles and auth routes, and rate-limited alongside logins.
 - **OIDC** uses authorization-code flow with **PKCE** and a confidential client secret; `state` (one-time, CSRF/replay defence) and `nonce` (binds the ID token to the login) are enforced, and the ID token's **signature is verified against the provider JWKS** — a token from another client or a tampered token is rejected. The client secret is stored `0600` and never leaves the server.

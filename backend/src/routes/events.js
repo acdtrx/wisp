@@ -32,6 +32,7 @@ const HOST_STATS_INTERVAL_MS = 5000;
  */
 export default async function eventsRoutes(fastify) {
   fastify.get('/events', {
+    config: { auth: 'read' },
     schema: { hide: true },
     handler: async (request, reply) => {
       setupSSE(reply);

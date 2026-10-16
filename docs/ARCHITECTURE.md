@@ -209,7 +209,7 @@ App identity persists in `container.json.metadata.app` (string id) + `container.
 
 | Module | Purpose |
 |--------|---------|
-| `auth.js` | JWT sign/verify, password verification, auth hook factory (session cookies + bearer API tokens + the bearer-only `/mcp` gate) |
+| `auth.js` | JWT sign/verify, password verification, route access levels + the one auth hook enforcing each route's declared `config: { auth }` (session cookies, bearer API tokens, the bearer-only `mcp` level), startup declaration check |
 | `apiTokens.js` | Scoped bearer API tokens: mint (`wisp_<scope>_…`, plaintext returned once), verify (SHA-256 + `timingSafeEqual`), revoke, list. Persisted in `wisp-config.json` `apiTokens[]` via the settings mutex. |
 | `loginRateLimit.js` | Shared per-IP rate limiting for failed logins **and** invalid bearer tokens (one 60 s / 5-attempt window). |
 | `hostStatsSnapshot.js` | `buildHostStatsPayload()` — the `stats` topic payload builder for `/api/events`, shared with the MCP `get_host_stats` tool. |

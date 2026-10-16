@@ -8,7 +8,7 @@ import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 
 import { loadRuntimeEnv } from './lib/loadRuntimeEnv.js';
-import { createAuthHook, routePath } from './lib/auth.js';
+import { createAuthHook, createRouteAccessRegistry, checkRouteAccess, AUTH_LEVELS } from './lib/auth.js';
 import { handleUncaughtError } from './lib/routeErrors.js';
 import { getConfigSync } from './lib/config.js';
 import { configure as configureVmManager, connect as connectLibvirt } from './lib/vmManager/index.js';
@@ -165,6 +165,28 @@ const CSP =
   "form-action 'self'";
 
 /**
+ * The path the 404 / SPA-shell handler and the cache policy key on — neither is
+ * an auth decision (routes declare their own access level, see lib/auth.js).
+ * The router decodes percent-encoded characters before matching, so the raw URL
+ * can disagree with the route that actually runs (`/%61pi/vms` dispatches to
+ * `/api/vms`). When a route matched, its registered pattern is authoritative;
+ * an unmatched request gets its decoded path without the query string, so
+ * `/%61pi/nope` is treated as the `/api` miss it reads as (JSON 404) rather
+ * than as a client-side route. A malformed escape never reaches here — the
+ * router answers 400 first — but falls back to the raw path regardless.
+ */
+function routePath(request) {
+  const matched = request.routeOptions?.url;
+  if (matched) return matched;
+  const raw = request.url.split('?')[0];
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/**
  * Cache policy for the SPA shell and its assets. Set here rather than through
  * `@fastify/static`'s `setHeaders` for two reasons: that hook writes to
  * `reply.raw` and is immediately overwritten by the plugin's own `reply.headers()`
@@ -232,8 +254,33 @@ app.setNotFoundHandler((request, reply) => {
 // lets escape answer in the same { error, detail } shape as handled errors.
 app.setErrorHandler(handleUncaughtError);
 
+// Every route declares its access level (`config: { auth }`, lib/auth.js). The
+// registry sees each route as it is added; start() checks the declarations
+// once routing is final.
+const routeAccess = createRouteAccessRegistry();
+app.addHook('onRoute', routeAccess.onRoute);
+
+// Third-party plugins that add routes of their own (the CORS preflight, static
+// assets) can't carry a per-route declaration, so the routes such a plugin
+// registers while it loads are marked public. Pending plugins are flushed first
+// so the window holds only that plugin's routes; a route it added later would
+// stay undeclared and fail closed.
+let markingPluginRoutesPublic = false;
+app.addHook('onRoute', (routeOptions) => {
+  if (markingPluginRoutesPublic) routeOptions.config = { ...routeOptions.config, auth: 'public' };
+});
+async function registerPluginWithPublicRoutes(plugin, opts) {
+  await app.after();
+  markingPluginRoutesPublic = true;
+  try {
+    await app.register(plugin, opts);
+  } finally {
+    markingPluginRoutesPublic = false;
+  }
+}
+
 if (isDev) {
-  await app.register(cors, { origin: 'http://localhost:5173' });
+  await registerPluginWithPublicRoutes(cors, { origin: 'http://localhost:5173' });
 }
 
 await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 * 1024 } });
@@ -264,18 +311,56 @@ app.register(containerConsoleRoutes, { prefix: '/ws' });
 // noVNC. The dist root has wildcard:false so unmatched paths fall through to
 // setNotFoundHandler (which returns index.html for client-side routing).
 if (!isDev && existsSync(distPath)) {
-  await app.register(fastifyStatic, {
+  await registerPluginWithPublicRoutes(fastifyStatic, {
     root: publicVendorPath,
     prefix: '/vendor/',
     decorateReply: false,
   });
-  await app.register(fastifyStatic, {
+  await registerPluginWithPublicRoutes(fastifyStatic, {
     root: distPath,
     wildcard: false,
   });
 }
 
+/**
+ * `npm run route-access`: print every route with the level the auth hook
+ * enforces for it, then exit without listening. Exits 1 when a route lacks a
+ * valid declaration.
+ */
+function printRouteAccessReport(routes) {
+  const rows = new Map();
+  for (const route of routes) {
+    const key = `${route.url}\0${route.auth}\0${route.declared}`;
+    if (!rows.has(key)) rows.set(key, { ...route, methods: [] });
+    rows.get(key).methods.push(...route.method.split(','));
+  }
+  const sorted = [...rows.values()].sort((a, b) => a.url.localeCompare(b.url));
+  const counts = Object.fromEntries(AUTH_LEVELS.map((level) => [level, 0]));
+  let undeclared = 0;
+  for (const row of sorted) {
+    const methods = [...new Set(row.methods)].join(',');
+    const level = row.declared ? row.auth : `${row.auth} (UNDECLARED)`;
+    console.log(`${level.padEnd(18)} ${methods.padEnd(20)} ${row.url}`);
+    const endpoints = new Set(row.methods.filter((m) => m !== 'HEAD')).size || 1;
+    if (row.declared) counts[row.auth] += endpoints;
+    else undeclared += endpoints;
+  }
+  const summary = AUTH_LEVELS.map((level) => `${level} ${counts[level]}`).join(', ');
+  console.log(`\nEndpoints (HEAD mirrors of GET not counted): ${summary}, undeclared ${undeclared}`);
+  return undeclared > 0 ? 1 : 0;
+}
+
+if (process.env.WISP_ROUTE_ACCESS_REPORT === '1') {
+  await app.ready();
+  process.exit(printRouteAccessReport(routeAccess.list()));
+}
+
 async function start() {
+  // Routing is final once the app is ready: development refuses to boot on a
+  // route without an access declaration; production enforces it as admin.
+  await app.ready();
+  checkRouteAccess(routeAccess.list(), { strict: isDev, log: app.log });
+
   await cleanPartialJsonArtifacts(app.log);
 
   try {

@@ -49,7 +49,7 @@ Errors that never reach a route's own handling — raised by Fastify itself, or 
 
 Framework 4xx messages are built from Wisp's own schemas and limits, so they pass through unredacted (the path redactor would mangle `body/<field>`); the generic 500's detail goes through the same redactor as `handleRouteError`.
 
-Unmatched routes answer `404 { error: "Not Found", detail: "Route <METHOD> <url> not found" }` under `/api` and `/ws`; in production every other unmatched path serves the SPA shell. The `/api` / `/ws` decision uses the same decoded path as the auth hook (see [AUTH.md](AUTH.md) § Route Protection), so `/%61pi/nope` is an API miss, not a client-side route.
+Unmatched routes answer `404 { error: "Not Found", detail: "Route <METHOD> <url> not found" }` under `/api` and `/ws`; in production every other unmatched path serves the SPA shell. Unmatched requests run no handler and so get no auth check (see [AUTH.md](AUTH.md) § Route access levels). The `/api` / `/ws` decision uses the request's percent-decoded path (`routePath` in `index.js`), so `/%61pi/nope` is an API miss, not a client-side route.
 
 ## Error Code to HTTP Status Mapping
 

@@ -35,7 +35,7 @@ function parseResizeControl(buf) {
 }
 
 export default async function containerConsoleRoutes(fastify) {
-  fastify.get('/container-console/:name', { websocket: true }, async (socket, request) => {
+  fastify.get('/container-console/:name', { websocket: true, config: { auth: 'session' } }, async (socket, request) => {
     const { name } = request.params;
     const log = request.log.child({ scope: 'container-console', containerName: name });
 

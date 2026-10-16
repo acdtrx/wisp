@@ -69,6 +69,7 @@ export default async function vmsRoutes(fastify) {
 
   // GET /vms — list all VMs
   fastify.get('/vms', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: {
@@ -102,6 +103,7 @@ export default async function vmsRoutes(fastify) {
 
   // POST /vms — create VM (async job, returns jobId)
   fastify.post('/vms', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -266,6 +268,7 @@ export default async function vmsRoutes(fastify) {
 
   // GET /vms/create-progress/:jobId — SSE stream for create progress
   fastify.get('/vms/create-progress/:jobId', {
+    config: { auth: 'read' },
     schema: { hide: true },
     handler: async (request, reply) => {
       const { jobId } = request.params;
@@ -287,6 +290,7 @@ export default async function vmsRoutes(fastify) {
 
   // POST /vms/:name/backup — start backup job; returns jobId; progress via GET /vms/backup-progress/:jobId
   fastify.post('/vms/:name/backup', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -371,6 +375,7 @@ export default async function vmsRoutes(fastify) {
 
   // GET /vms/backup-progress/:jobId — SSE stream for backup progress
   fastify.get('/vms/backup-progress/:jobId', {
+    config: { auth: 'read' },
     schema: { hide: true },
     handler: async (request, reply) => {
       const { jobId } = request.params;
@@ -392,6 +397,7 @@ export default async function vmsRoutes(fastify) {
 
   // GET /vms/:name — full VM config
   fastify.get('/vms/:name', {
+    config: { auth: 'read' },
     schema: {
       params: {
         type: 'object',
@@ -410,6 +416,7 @@ export default async function vmsRoutes(fastify) {
 
   // DELETE /vms/:name — delete VM
   fastify.delete('/vms/:name', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -449,6 +456,7 @@ export default async function vmsRoutes(fastify) {
 
   for (const { path, fn } of lifecycleActions) {
     fastify.post(`/vms/:name/${path}`, {
+      config: { auth: 'admin' },
       schema: {
         params: {
           type: 'object',
@@ -470,6 +478,7 @@ export default async function vmsRoutes(fastify) {
 
   // POST /vms/:name/clone — start clone job; returns jobId; progress via GET /vms/clone-progress/:jobId
   fastify.post('/vms/:name/clone', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -557,6 +566,7 @@ export default async function vmsRoutes(fastify) {
 
   // GET /vms/clone-progress/:jobId — SSE stream for clone progress
   fastify.get('/vms/clone-progress/:jobId', {
+    config: { auth: 'read' },
     schema: { hide: true },
     handler: async (request, reply) => {
       const { jobId } = request.params;
@@ -578,6 +588,7 @@ export default async function vmsRoutes(fastify) {
 
   // PATCH /vms/:name — update VM config
   fastify.patch('/vms/:name', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -648,6 +659,7 @@ export default async function vmsRoutes(fastify) {
 
   // GET /vms/:name/xml — raw domain XML
   fastify.get('/vms/:name/xml', {
+    config: { auth: 'read' },
     schema: {
       params: {
         type: 'object',
@@ -667,6 +679,7 @@ export default async function vmsRoutes(fastify) {
 
   // POST /vms/:name/disks — attach existing disk (path) or create and attach new disk (sizeGB)
   fastify.post('/vms/:name/disks', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -712,6 +725,7 @@ export default async function vmsRoutes(fastify) {
 
   // DELETE /vms/:name/disks/:slot — detach disk
   fastify.delete('/vms/:name/disks/:slot', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -734,6 +748,7 @@ export default async function vmsRoutes(fastify) {
 
   // POST /vms/:name/disks/:slot/resize — resize disk
   fastify.post('/vms/:name/disks/:slot/resize', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -764,6 +779,7 @@ export default async function vmsRoutes(fastify) {
 
   // POST /vms/:name/disks/:slot/bus — change block disk target bus (VM stopped)
   fastify.post('/vms/:name/disks/:slot/bus', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -794,6 +810,7 @@ export default async function vmsRoutes(fastify) {
 
   // POST /vms/:name/cdrom/:slot — attach ISO
   fastify.post('/vms/:name/cdrom/:slot', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -826,6 +843,7 @@ export default async function vmsRoutes(fastify) {
 
   // DELETE /vms/:name/cdrom/:slot — eject ISO
   fastify.delete('/vms/:name/cdrom/:slot', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -848,6 +866,7 @@ export default async function vmsRoutes(fastify) {
 
   // GET /vms/:name/usb — USB devices attached to this VM
   fastify.get('/vms/:name/usb', {
+    config: { auth: 'read' },
     schema: {
       params: {
         type: 'object',
@@ -878,6 +897,7 @@ export default async function vmsRoutes(fastify) {
 
   // POST /vms/:name/usb — attach USB device
   fastify.post('/vms/:name/usb', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -906,6 +926,7 @@ export default async function vmsRoutes(fastify) {
 
   // DELETE /vms/:name/usb/:id — detach USB device (id = vendorId:productId)
   fastify.delete('/vms/:name/usb/:id', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -935,6 +956,7 @@ export default async function vmsRoutes(fastify) {
 
   // GET /vms/:name/snapshots
   fastify.get('/vms/:name/snapshots', {
+    config: { auth: 'read' },
     schema: {
       params: {
         type: 'object',
@@ -966,6 +988,7 @@ export default async function vmsRoutes(fastify) {
 
   // POST /vms/:name/snapshots
   fastify.post('/vms/:name/snapshots', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -993,6 +1016,7 @@ export default async function vmsRoutes(fastify) {
 
   // DELETE /vms/:name/snapshots/:id
   fastify.delete('/vms/:name/snapshots/:id', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -1013,6 +1037,7 @@ export default async function vmsRoutes(fastify) {
 
   // POST /vms/:name/snapshots/:id/revert
   fastify.post('/vms/:name/snapshots/:id/revert', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -1033,6 +1058,7 @@ export default async function vmsRoutes(fastify) {
 
   // GET /vms/:name/stats — SSE endpoint
   fastify.get('/vms/:name/stats', {
+    config: { auth: 'read' },
     schema: { hide: true },
     handler: async (request, reply) => {
       const { name } = request.params;

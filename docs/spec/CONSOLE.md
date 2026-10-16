@@ -26,12 +26,12 @@ The backend extracts the `port` attribute from the `<graphics type='vnc'>` eleme
 
 ## Authentication
 
-The browser sends the same-origin `wisp_session` cookie with the WebSocket upgrade request, so consoles authenticate exactly like the REST API: the global `onRequest` hook ([AUTH.md](AUTH.md)) verifies the session JWT before the upgrade completes and answers `401` (no WebSocket) when it is missing or invalid. No token travels in the URL (CODING-RULES §9). Consoles are session-only — an `Authorization: Bearer` API token is refused with `401` for any `/ws` path, so a leaked token can never open a shell or a VNC session. The container console (`/ws/container-console/:name`) follows the same rules.
+The browser sends the same-origin `wisp_session` cookie with the WebSocket upgrade request, so consoles authenticate exactly like the REST API: the global `onRequest` hook ([AUTH.md](AUTH.md)) verifies the session JWT before the upgrade completes and answers `401` (no WebSocket) when it is missing or invalid. No token travels in the URL (CODING-RULES §9). Both console routes declare the `session` access level — an `Authorization: Bearer` API token is refused with `403`, so a leaked token can never open a shell or a VNC session. The container console (`/ws/container-console/:name`) follows the same rules.
 
 The route also enforces a same-origin policy on the upgrade request. CORS does not apply to WebSocket, and `SameSite=Lax` still sends the cookie on an upgrade from another origin of the same site (e.g. a sibling subdomain), so without this such a page could open a WS to `/ws/console/...` and drive the VM with the user's session. In dev, only `http://localhost:5173` is allowed; in production, `Origin`'s host must equal the request `Host` header. Extra origins can be allow-listed via the comma-separated `WISP_ALLOWED_WS_ORIGINS` environment variable (rare — reverse-proxy deployments where the frontend is served from a different origin than the backend).
 
 Rejection responses:
-- HTTP `401` before the upgrade — missing or invalid session, or a bearer token
+- HTTP `401` before the upgrade — missing or invalid session; `403` for a bearer token
 - Close code `1008` — Origin not allowed (or Origin header missing)
 - Close code `4000` — invalid VM name or VNC port not available
 

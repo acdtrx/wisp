@@ -20,6 +20,7 @@ export default async function cloudInitRoutes(fastify) {
 
   // GET /vms/:name/cloudinit — returns sanitized cloud-init config
   fastify.get('/vms/:name/cloudinit', {
+    config: { auth: 'read' },
     schema: {
       params: {
         type: 'object',
@@ -39,6 +40,7 @@ export default async function cloudInitRoutes(fastify) {
 
   // PUT /vms/:name/cloudinit — save config, generate ISO, attach sde
   fastify.put('/vms/:name/cloudinit', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -77,6 +79,7 @@ export default async function cloudInitRoutes(fastify) {
 
   // DELETE /vms/:name/cloudinit — detach sde, delete ISO + config
   fastify.delete('/vms/:name/cloudinit', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -126,6 +129,7 @@ export default async function cloudInitRoutes(fastify) {
   }
 
   fastify.get('/github/keys/:username', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',

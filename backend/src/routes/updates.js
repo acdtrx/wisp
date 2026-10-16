@@ -27,11 +27,13 @@ const STATUS_RESPONSE = {
 
 export default async function updatesRoutes(fastify) {
   fastify.get('/updates/status', {
+    config: { auth: 'read' },
     schema: { response: { 200: STATUS_RESPONSE } },
     handler: async () => getCachedStatus(),
   });
 
   fastify.post('/updates/check', {
+    config: { auth: 'admin' },
     schema: { response: { 200: STATUS_RESPONSE } },
     handler: async (request, reply) => {
       try {
@@ -53,6 +55,7 @@ export default async function updatesRoutes(fastify) {
    * Pass ?force=1 to bypass the active-jobs guard (UI confirms first).
    */
   fastify.post('/updates/install', {
+    config: { auth: 'admin' },
     schema: {
       querystring: {
         type: 'object',

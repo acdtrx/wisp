@@ -5,6 +5,7 @@
   "description": "Wisp — VM and container management",
   "scripts": {
     "release": "bash scripts/release.sh",
-    "check-imports": "node scripts/check-imports.mjs"
+    "check-imports": "node scripts/check-imports.mjs",
+    "route-access": "WISP_ROUTE_ACCESS_REPORT=1 node backend/src/index.js"
   }
 }

@@ -146,6 +146,7 @@ function assertNoActiveBackupJob({ backupKind, backupTitle, restoreKind, restore
 export default async function backupsRoutes(fastify) {
   // GET /backups — list backups from configured destinations; optional ?vmName= filter
   fastify.get('/backups', {
+    config: { auth: 'read' },
     schema: {
       querystring: {
         type: 'object',
@@ -184,6 +185,7 @@ export default async function backupsRoutes(fastify) {
 
   // POST /backups/restore — restore backup as new VM
   fastify.post('/backups/restore', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -227,6 +229,7 @@ export default async function backupsRoutes(fastify) {
   // taken from. Runs as a background job (progress via /vms/backup-progress/:jobId)
   // with an optional safety backup of the current state first (default on).
   fastify.post('/backups/restore-in-place', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -301,6 +304,7 @@ export default async function backupsRoutes(fastify) {
 
   // DELETE /backups — delete a VM backup
   fastify.delete('/backups', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -343,6 +347,7 @@ export default async function backupsRoutes(fastify) {
   // never collide on identical names.
 
   fastify.get('/container-backups', {
+    config: { auth: 'read' },
     schema: {
       querystring: {
         type: 'object',
@@ -381,6 +386,7 @@ export default async function backupsRoutes(fastify) {
   });
 
   fastify.post('/container-backups/restore', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -427,6 +433,7 @@ export default async function backupsRoutes(fastify) {
   // container it was taken from (same name/MAC/lease). Background job with an
   // optional safety backup first; progress via /containers/backup-progress/:jobId.
   fastify.post('/container-backups/restore-in-place', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -498,6 +505,7 @@ export default async function backupsRoutes(fastify) {
   });
 
   fastify.delete('/container-backups', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',

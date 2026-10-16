@@ -50,6 +50,7 @@ function getOsRelease() {
 
 export default async function hostRoutes(fastify) {
   fastify.get('/host', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: {
@@ -116,6 +117,7 @@ export default async function hostRoutes(fastify) {
   }
 
   fastify.post('/host/updates/check', {
+    config: { auth: 'admin' },
     schema: {
       response: {
         200: {
@@ -139,6 +141,7 @@ export default async function hostRoutes(fastify) {
   });
 
   fastify.get('/host/updates/packages', {
+    config: { auth: 'read' },
     schema: {
       querystring: {
         type: 'object',
@@ -185,6 +188,7 @@ export default async function hostRoutes(fastify) {
   });
 
   fastify.post('/host/updates/upgrade', {
+    config: { auth: 'admin' },
     schema: {
       response: {
         200: {
@@ -208,6 +212,7 @@ export default async function hostRoutes(fastify) {
   });
 
   fastify.get('/host/bridges', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: { type: 'array', items: { type: 'string' } },
@@ -224,6 +229,7 @@ export default async function hostRoutes(fastify) {
   });
 
   fastify.get('/host/network-bridges', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: {
@@ -265,6 +271,7 @@ export default async function hostRoutes(fastify) {
   });
 
   fastify.post('/host/network-bridges', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -297,6 +304,7 @@ export default async function hostRoutes(fastify) {
   });
 
   fastify.delete('/host/network-bridges/:name', {
+    config: { auth: 'admin' },
     schema: {
       params: {
         type: 'object',
@@ -322,6 +330,7 @@ export default async function hostRoutes(fastify) {
   });
 
   fastify.get('/host/firmware', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: { type: 'array', items: { type: 'string' } },
@@ -338,6 +347,7 @@ export default async function hostRoutes(fastify) {
   });
 
   fastify.get('/host/gpus', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: {
@@ -372,6 +382,7 @@ export default async function hostRoutes(fastify) {
   });
 
   fastify.get('/host/usb', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: {
@@ -415,6 +426,7 @@ export default async function hostRoutes(fastify) {
   };
 
   fastify.get('/host/disks', {
+    config: { auth: 'read' },
     schema: {
       response: { 200: { type: 'array', items: diskResponseItem } },
     },
@@ -430,6 +442,7 @@ export default async function hostRoutes(fastify) {
 
   // GET /host/disks/stream — SSE: removable/fixed block-device list with mount state.
   fastify.get('/host/disks/stream', {
+    config: { auth: 'read' },
     schema: { hide: true },
     handler: async (request, reply) => {
       setupSSE(reply);
@@ -456,6 +469,7 @@ export default async function hostRoutes(fastify) {
 
   // GET /host/usb/stream — SSE: host USB device list (push on hotplug; initial snapshot immediately)
   fastify.get('/host/usb/stream', {
+    config: { auth: 'read' },
     schema: { hide: true },
     handler: async (request, reply) => {
       setupSSE(reply);
@@ -481,6 +495,7 @@ export default async function hostRoutes(fastify) {
   });
 
   fastify.get('/host/hardware', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: {
@@ -624,6 +639,7 @@ export default async function hostRoutes(fastify) {
   });
 
   fastify.post('/host/power/shutdown', {
+    config: { auth: 'admin' },
     schema: {
       response: {
         200: { type: 'object', properties: { ok: { type: 'boolean' } } },
@@ -644,6 +660,7 @@ export default async function hostRoutes(fastify) {
   });
 
   fastify.post('/host/power/restart', {
+    config: { auth: 'admin' },
     schema: {
       response: {
         200: { type: 'object', properties: { ok: { type: 'boolean' } } },

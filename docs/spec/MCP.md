@@ -23,7 +23,9 @@ JSON-RPC batching is rejected (`-32600`; removed from the MCP spec in 2025-06-18
 
 `/mcp` accepts **only bearer API tokens** ([AUTH.md](AUTH.md) § API tokens). Cookies are ignored entirely, which also makes the endpoint CSRF-irrelevant. A missing or invalid token gets **401** with `WWW-Authenticate: Bearer`; invalid tokens feed the shared per-IP auth rate limit.
 
-**Scope model:** the REST hook's method gate (read = GET/HEAD) does not apply on `/mcp` — MCP is JSON-RPC over POST, so the HTTP method says nothing about mutation. Instead each tool declares a required scope; `tools/list` hides tools above the token's scope and `tools/call` double-checks. All phase-1 tools are `read`-scoped, so a read-only token is the right default for agents.
+**Scope model:** `/mcp` is an `mcp`-level route ([AUTH.md](AUTH.md) § Route access levels) — either token scope passes the HTTP layer, because MCP is JSON-RPC over POST and the HTTP method says nothing about mutation. Instead each tool declares a required scope; `tools/list` hides tools above the token's scope and `tools/call` double-checks. All phase-1 tools are `read`-scoped, so a read-only token is the right default for agents.
+
+**Read-token contract:** a `read` token can never recover a secret, on either surface it reaches. MCP tool output is masked (below); on the REST API a route is `read` only when its response carries no secret material — anything that could (raw mount file content) is `admin`, and token management is `session`.
 
 ## Tools — read scope
 
@@ -38,7 +40,7 @@ JSON-RPC batching is rejected (`-32600`; removed from the MCP spec in 2025-06-18
 | `get_host_stats` | — | One sample of the `stats` topic payload from `/api/events` (shared builder `lib/hostStatsSnapshot.js`) |
 | `get_host_hardware` | — | Static inventory from `getHostHardwareInfo()`: CPU topology, DMI, RAM modules, disks + SMART, PCI, GPUs |
 
-Tool handlers call the same facades and glue as the REST routes (`containerManager`, `vmManager`, `lib/host`, `lib/containerApps`, settings) and go through the same masking (`maskContainerConfigSecrets`) — no tool output ever contains a secret. Container names are validated (`validateContainerName`) before any path-derived read. There is no mount-content tool. The same token also reaches the REST API ([AUTH.md](AUTH.md) § API tokens), whose one raw-content read of app files — `GET /api/containers/:name/mounts/:mountName/content` — refuses app-managed mounts for every caller (`APP_CONFIG_ONLY`, see [API.md](API.md)), so a `read` token cannot recover app secrets that way either.
+Tool handlers call the same facades and glue as the REST routes (`containerManager`, `vmManager`, `lib/host`, `lib/containerApps`, settings) and go through the same masking (`maskContainerConfigSecrets`) — no tool output ever contains a secret. Container names are validated (`validateContainerName`) before any path-derived read. There is no mount-content tool. The same token also reaches the REST API ([AUTH.md](AUTH.md) § API tokens), whose one raw-content read of mount files — `GET /api/containers/:name/mounts/:mountName/content` — is `admin`, so a `read` token cannot reach it at all; it also refuses app-managed mounts for every caller (`APP_CONFIG_ONLY`, see [API.md](API.md)).
 
 ## Tools — admin scope (mutating)
 

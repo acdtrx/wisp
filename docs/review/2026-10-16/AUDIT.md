@@ -18,7 +18,7 @@ Fix plan: [`PLAN-1-SECURITY.md`](PLAN-1-SECURITY.md) → [`PLAN-2-DATA-SAFETY.md
 >
 > | ID | Status | Where / note |
 > |---|---|---|
-> | A1 | fixed | S1 `c514909`; 404/SPA-shell path follow-up `c5ba165` |
+> | A1 | fixed | S1 `c514909`; 404/SPA-shell path follow-up `c5ba165`. Follow-up [P5.1](PLAN-5-AUTH-AND-SECRETS.md) replaced the URL-based gate: each route declares its access level, undeclared = admin |
 > | V1 | fixed | S2 `cba43ae`. **Decided:** clone/restore copy the stored `<graphics>` as-is (pre-fix VMs keep `0.0.0.0` until re-saved — VM-MANAGEMENT.md; manual fix in CHANGELOG) |
 > | V2, A2 | fixed | S3 `265d0b9` |
 > | V3, V4, V14 | fixed | D1 `31d0a9d`. **Decided:** refuse (409 `VM_DIR_EXISTS`); adopting kept disks → backlog |
@@ -109,6 +109,8 @@ decodes `%61` → `a` before routing. `GET /%61pi/vms`, `/%61pi/settings`, `/%61
 with `user=null`; body-less POSTs are CORS-simple so a LAN web page can fire them blind. Bearer
 branch's `/ws` refusal (`auth.js:173`) has the same flaw. Present at `fcee00d`; ships in v2.3.0.
 `docs/spec/AUTH.md:68` overstates the percent-encoding protection.
+*Remediation:* S1 keyed the gate on the matched route pattern; follow-up P5.1 removed URL-based
+auth entirely — every route declares `config: { auth }`, one hook enforces it, undeclared = admin.
 
 **V1 — VM VNC listens on `0.0.0.0` with no password** — High — main
 `vmManagerCreate.js:224`, `vmManagerConfig.js:245` emit `listen='0.0.0.0'`, overriding libvirt's

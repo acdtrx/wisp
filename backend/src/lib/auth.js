@@ -134,46 +134,94 @@ export function setPassword(newPassword) {
   writeFileSync(PASSWORD_FILE, line, { mode: 0o600, encoding: 'utf8' });
 }
 
-// Routes whose canonical (post-routing) URL bypasses auth. Matched against
-// `request.routeOptions.url` so trailing-slash / percent-encoded variants
-// don't accidentally get marked public. The OIDC routes are public because
-// they run *before* a session exists: `status` tells the login page whether to
-// show the SSO button, `login` redirects the browser to the provider, and
-// `callback` receives the provider redirect and mints the session.
-const PUBLIC_ROUTES = new Set([
-  '/api/auth/login',
-  '/api/auth/oidc/status',
-  '/api/auth/oidc/login',
-  '/api/auth/oidc/callback',
-]);
+/**
+ * Route access levels. Every route declares one in its own options as
+ * `config: { auth: <level> }`; the auth hook enforces only that declaration and
+ * never looks at the URL (docs/spec/AUTH.md § Route access levels):
+ *
+ *   public  — anyone (login, OIDC start/callback/status, static assets + SPA shell)
+ *   session — browser session only; API tokens refused (/api/auth/*, consoles)
+ *   read    — session, or an API token of any scope (GETs exposing no secrets)
+ *   admin   — session, or an admin-scoped API token
+ *   mcp     — API token only (any scope); per-tool scope is the MCP layer's job
+ *
+ * A route that declares nothing, or an unknown level, is treated as `admin`:
+ * fail closed. Development refuses to boot with such a route
+ * (`checkRouteAccess`), so the default only ever applies in production.
+ */
+export const AUTH_LEVELS = Object.freeze(['public', 'session', 'read', 'admin', 'mcp']);
+const AUTH_LEVEL_SET = new Set(AUTH_LEVELS);
+const UNDECLARED_AUTH_LEVEL = 'admin';
+
+function isDeclaredAuthLevel(value) {
+  return AUTH_LEVEL_SET.has(value);
+}
+
+/** The level the hook enforces for a route's config. */
+export function routeAuthLevel(routeConfig) {
+  const declared = routeConfig?.auth;
+  return isDeclaredAuthLevel(declared) ? declared : UNDECLARED_AUTH_LEVEL;
+}
+
+/**
+ * Collects every registered route through an `onRoute` hook so the declared
+ * levels can be checked once routing is final (`app.ready()`). The route
+ * options object is kept by reference and its config read at listing time:
+ * hooks that run after this one may still set it.
+ */
+export function createRouteAccessRegistry() {
+  const routes = [];
+  return {
+    onRoute(routeOptions) {
+      const method = [].concat(routeOptions.method).join(',');
+      routes.push({ method, url: routeOptions.url, routeOptions });
+    },
+    list() {
+      return routes.map(({ method, url, routeOptions }) => {
+        const declared = routeOptions.config?.auth;
+        return {
+          method,
+          url,
+          auth: routeAuthLevel(routeOptions.config),
+          declared: isDeclaredAuthLevel(declared),
+          declaredValue: declared,
+        };
+      });
+    },
+  };
+}
+
+function describeUndeclared(route) {
+  const what = route.declaredValue === undefined
+    ? 'no auth level'
+    : `unknown auth level ${JSON.stringify(route.declaredValue)}`;
+  return `${route.method} ${route.url} (${what})`;
+}
+
+/**
+ * Startup check over the collected routes. `strict` (development) throws,
+ * listing every route without a valid declaration; otherwise each one is
+ * logged as a warning and enforced as `admin`.
+ */
+export function checkRouteAccess(routes, { strict, log }) {
+  const undeclared = routes.filter((r) => !r.declared);
+  if (undeclared.length === 0) return;
+  const lines = undeclared.map(describeUndeclared);
+  if (strict) {
+    throw new Error(
+      `Refusing to start: ${undeclared.length} route(s) lack an explicit access level `
+      + `(add config: { auth: '${AUTH_LEVELS.join("' | '")}' }):\n  ${lines.join('\n  ')}`,
+    );
+  }
+  for (const line of lines) {
+    log.warn(`Route without an access declaration, enforced as ${UNDECLARED_AUTH_LEVEL}: ${line}`);
+  }
+}
 
 const SESSION_COOKIE = 'wisp_session';
 const CSRF_COOKIE = 'wisp_csrf';
 const CSRF_HEADER = 'x-csrf-token';
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const READ_ONLY_METHODS = new Set(['GET', 'HEAD']);
-
-/**
- * The path every prefix check keys on — the auth hook here, and the 404 /
- * SPA-shell handler and cache policy in index.js. The router decodes
- * percent-encoded characters before matching, so the raw URL can disagree with
- * the route that actually runs (`/%61pi/vms` dispatches to `/api/vms`). When a
- * route matched, its registered pattern is authoritative; an unmatched request
- * gets its decoded path without the query string, so `/%61pi/nope` is treated
- * as the `/api` miss it reads as (auth required, JSON 404) rather than as a
- * client-side route. A malformed escape never reaches here — the router answers
- * 400 first — but falls back to the raw path regardless.
- */
-export function routePath(request) {
-  const matched = request.routeOptions?.url;
-  if (matched) return matched;
-  const raw = request.url.split('?')[0];
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
-}
 
 function timingSafeEqualString(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
@@ -185,19 +233,15 @@ function timingSafeEqualString(a, b) {
 
 /**
  * Bearer API tokens authenticate non-interactive clients (agents, scripts) on
- * the REST API and the MCP endpoint. Consoles (/ws) and everything under
- * /api/auth stay session-only, so a leaked token can never open a shell,
- * change the password, or mint more tokens. Bearer requests skip the CSRF
- * check on purpose: double-submit defends against ambient cookie credentials,
- * which a bearer request doesn't carry.
+ * `read`, `admin`, and `mcp` routes. `session` routes (consoles, everything
+ * under /api/auth) refuse them before the token is even checked, so a leaked
+ * token can never open a shell, change the password, or mint more tokens.
+ * Bearer requests skip the CSRF check on purpose: double-submit defends
+ * against ambient cookie credentials, which a bearer request doesn't carry.
  */
-async function handleBearerAuth(request, reply, token, path, isMcpRoute) {
-  if (path.startsWith('/ws')) {
-    reply.code(401).send({ error: 'Authentication failed', detail: 'API tokens cannot open console connections' });
-    return;
-  }
-  if (path.startsWith('/api/auth')) {
-    reply.code(403).send({ error: 'Session required', detail: 'API tokens cannot access authentication routes' });
+async function handleBearerAuth(request, reply, token, level) {
+  if (level === 'session') {
+    reply.code(403).send({ error: 'Session required', detail: 'API tokens cannot access this route; it requires a browser session' });
     return;
   }
   const ip = request.ip || 'unknown';
@@ -214,12 +258,12 @@ async function handleBearerAuth(request, reply, token, path, isMcpRoute) {
     reply.code(401).send({ error: 'Authentication failed', detail: 'Invalid API token' });
     return;
   }
-  // MCP is JSON-RPC over POST, so the HTTP method says nothing about whether
-  // the call mutates — per-tool scope is enforced in the MCP layer instead.
-  if (!isMcpRoute && info.scope === 'read' && !READ_ONLY_METHODS.has(request.method)) {
+  // `read` and `mcp` routes accept either scope — on /mcp the MCP layer gates
+  // each tool by scope, since JSON-RPC over POST says nothing about mutation.
+  if (level === 'admin' && info.scope !== 'admin') {
     reply.code(403).send({
       error: 'Insufficient scope',
-      detail: 'This token is read-only; state-changing requests require an admin-scoped token',
+      detail: 'This route requires an admin-scoped token',
     });
     return;
   }
@@ -228,27 +272,22 @@ async function handleBearerAuth(request, reply, token, path, isMcpRoute) {
 
 export function createAuthHook() {
   return async (request, reply) => {
-    // Matched via routeOptions so an unregistered /mcp* path still falls
-    // through to the SPA handler like any other non-API URL.
-    const routeUrl = request.routeOptions?.url;
-    const isMcpRoute = routeUrl === '/mcp';
-    const path = routePath(request);
+    // No route matched: no handler runs and the not-found handler answers, so
+    // there is nothing to authorize.
+    if (request.is404) return;
 
-    // Static assets and SPA fallback bypass auth — only /api, /ws, and /mcp require it.
-    // The login UI is part of the SPA, so the bundle must load before any session exists.
-    if (!path.startsWith('/api') && !path.startsWith('/ws') && !isMcpRoute) return;
-
-    if (routeUrl && PUBLIC_ROUTES.has(routeUrl)) return;
+    const level = routeAuthLevel(request.routeOptions.config);
+    if (level === 'public') return;
 
     const authHeader = request.headers?.authorization;
     if (typeof authHeader === 'string' && authHeader.slice(0, 7).toLowerCase() === 'bearer ') {
-      await handleBearerAuth(request, reply, authHeader.slice(7).trim(), path, isMcpRoute);
+      await handleBearerAuth(request, reply, authHeader.slice(7).trim(), level);
       return;
     }
 
-    // /mcp is bearer-only: cookies are ignored entirely (no ambient-credential
+    // `mcp` is bearer-only: cookies are ignored entirely (no ambient-credential
     // surface, no CSRF concern), so a missing bearer header ends here.
-    if (isMcpRoute) {
+    if (level === 'mcp') {
       reply
         .code(401)
         .header('WWW-Authenticate', 'Bearer realm="wisp"')

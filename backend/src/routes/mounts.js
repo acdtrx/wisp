@@ -38,6 +38,7 @@ export const mountResponseSchema = {
 
 export default async function mountsRoutes(fastify) {
   fastify.get('/host/mounts', {
+    config: { auth: 'read' },
     schema: {
       response: { 200: { type: 'array', items: mountResponseSchema } },
     },
@@ -48,6 +49,7 @@ export default async function mountsRoutes(fastify) {
   });
 
   fastify.post('/host/mounts', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -97,6 +99,7 @@ export default async function mountsRoutes(fastify) {
   });
 
   fastify.patch('/host/mounts/:id', {
+    config: { auth: 'admin' },
     schema: {
       params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
       body: {
@@ -125,6 +128,7 @@ export default async function mountsRoutes(fastify) {
   });
 
   fastify.delete('/host/mounts/:id', {
+    config: { auth: 'admin' },
     schema: {
       params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     },
@@ -173,6 +177,7 @@ export default async function mountsRoutes(fastify) {
   });
 
   fastify.get('/host/mounts/status', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: {
@@ -206,6 +211,7 @@ export default async function mountsRoutes(fastify) {
   });
 
   fastify.post('/host/mounts/check', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -255,6 +261,7 @@ export default async function mountsRoutes(fastify) {
   });
 
   fastify.post('/host/mounts/:id/mount', {
+    config: { auth: 'admin' },
     schema: {
       params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
       response: { 200: { type: 'object', properties: { ok: { type: 'boolean' } } } },
@@ -294,6 +301,7 @@ export default async function mountsRoutes(fastify) {
   });
 
   fastify.post('/host/mounts/:id/unmount', {
+    config: { auth: 'admin' },
     schema: {
       params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
       response: { 200: { type: 'object', properties: { ok: { type: 'boolean' } } } },

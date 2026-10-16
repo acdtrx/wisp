@@ -40,6 +40,7 @@ const settingsResponseProps = {
 
 export default async function settingsRoutes(fastify) {
   fastify.get('/settings', {
+    config: { auth: 'read' },
     schema: {
       response: {
         200: {
@@ -54,6 +55,7 @@ export default async function settingsRoutes(fastify) {
   });
 
   fastify.patch('/settings', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',

@@ -77,11 +77,13 @@ const idParams = { type: 'object', properties: { id: { type: 'string' } }, requi
  */
 export default async function homepageRoutes(fastify) {
   fastify.get('/homepage', {
+    config: { auth: 'read' },
     schema: { response: { 200: responseSchema } },
     handler: async () => buildHomeEnvelope(),
   });
 
   fastify.post('/homepage/groups', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -102,6 +104,7 @@ export default async function homepageRoutes(fastify) {
   });
 
   fastify.patch('/homepage/groups/:id', {
+    config: { auth: 'admin' },
     schema: {
       params: idParams,
       body: {
@@ -123,6 +126,7 @@ export default async function homepageRoutes(fastify) {
   });
 
   fastify.delete('/homepage/groups/:id', {
+    config: { auth: 'admin' },
     schema: { params: idParams, response: { 200: responseSchema } },
     handler: async (request, reply) => {
       try {
@@ -135,6 +139,7 @@ export default async function homepageRoutes(fastify) {
   });
 
   fastify.post('/homepage/groups/reorder', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -155,6 +160,7 @@ export default async function homepageRoutes(fastify) {
   });
 
   fastify.put('/homepage/tiles/assign', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -180,6 +186,7 @@ export default async function homepageRoutes(fastify) {
   });
 
   fastify.put('/homepage/tiles/override', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -205,6 +212,7 @@ export default async function homepageRoutes(fastify) {
   });
 
   fastify.post('/homepage/manual-tiles', {
+    config: { auth: 'admin' },
     schema: {
       body: {
         type: 'object',
@@ -229,6 +237,7 @@ export default async function homepageRoutes(fastify) {
   });
 
   fastify.patch('/homepage/manual-tiles/:id', {
+    config: { auth: 'admin' },
     schema: {
       params: idParams,
       body: {
@@ -253,6 +262,7 @@ export default async function homepageRoutes(fastify) {
   });
 
   fastify.delete('/homepage/manual-tiles/:id', {
+    config: { auth: 'admin' },
     schema: { params: idParams, response: { 200: responseSchema } },
     handler: async (request, reply) => {
       try {
