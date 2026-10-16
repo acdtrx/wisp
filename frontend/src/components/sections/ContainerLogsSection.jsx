@@ -4,6 +4,7 @@ import { createSSE } from '../../api/sse.js';
 import { listContainerRuns } from '../../api/containers.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { randomId } from '../../utils/randomId.js';
+import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 
 const CLIENT_BUFFER_HARD_LIMIT = 5000;
 const CLIENT_BUFFER_TRIM_TO = 4000;
@@ -171,13 +172,16 @@ export default function ContainerLogsSection({ containerName }) {
     setEntries([{ id: randomId(), kind: 'divider', text: `— cleared ${nowClock()} —` }]);
   }, []);
 
-  const onMark = useCallback(() => {
-    const label = window.prompt('Mark label (optional):', '');
-    if (label === null) return;
-    const trimmed = label.trim();
+  /** Mark-label dialog: null when closed, the label being typed when open. */
+  const [markLabel, setMarkLabel] = useState(null);
+  const onMark = useCallback(() => setMarkLabel(''), []);
+  const onMarkCancel = useCallback(() => setMarkLabel(null), []);
+  const onMarkConfirm = useCallback(() => {
+    const trimmed = (markLabel ?? '').trim();
     const text = trimmed ? `— mark: ${trimmed} @ ${nowClock()} —` : `— mark @ ${nowClock()} —`;
     setEntries((prev) => [...prev, { id: randomId(), kind: 'divider', text }]);
-  }, []);
+    setMarkLabel(null);
+  }, [markLabel]);
 
   // Plain link — the wisp_session cookie is sent natively on same-origin
   // navigation, so the backend's auth hook accepts it just like an API call.
@@ -307,6 +311,30 @@ export default function ContainerLogsSection({ containerName }) {
           ))
         )}
       </div>
+      <ConfirmDialog
+        open={markLabel !== null}
+        title="Insert marker line"
+        confirmLabel="Insert"
+        variant="primary"
+        onConfirm={onMarkConfirm}
+        onCancel={onMarkCancel}
+      >
+        <form
+          onSubmit={(e) => { e.preventDefault(); onMarkConfirm(); }}
+        >
+          <label htmlFor="log-mark-label" className="mb-1 block text-xs text-text-muted">
+            Label (optional)
+          </label>
+          <input
+            id="log-mark-label"
+            type="text"
+            value={markLabel ?? ''}
+            onChange={(e) => setMarkLabel(e.target.value)}
+            className="input-field w-full"
+            autoFocus
+          />
+        </form>
+      </ConfirmDialog>
     </div>
   );
 }
