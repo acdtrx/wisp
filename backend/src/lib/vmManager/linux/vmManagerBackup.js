@@ -26,9 +26,8 @@ import { getBackingChain, copyAndConvert } from '../../storage/index.js';
 
 const execFile = promisify(execFileCb);
 
-// New layout: VM backups under <root>/vms/. Mirrors container backups under
-// <root>/containers/. listBackups still walks the legacy <root>/<vmName>/
-// layout so backups taken before this change remain visible and restorable.
+// Layout: VM backups under <root>/vms/<vmName>/<timestamp>/, beside container
+// backups under <root>/containers/<name>/<timestamp>/.
 const VMS_BACKUP_DIRNAME = 'vms';
 const CONTAINERS_BACKUP_DIRNAME = 'containers';
 
@@ -251,10 +250,7 @@ export async function createBackup(vmName, destinationPath, { onProgress, origin
   }
 
   const timestamp = backupTimestamp();
-  // Layout: <dest>/vms/<vmName>/<timestamp>/. Symmetric with container backups
-  // (<dest>/containers/<name>/<timestamp>/). Older Wisp versions used
-  // <dest>/<vmName>/<timestamp>/ — listBackups still walks that path so legacy
-  // backups remain restorable/deletable, but new backups always land under vms/.
+  // Layout: <dest>/vms/<vmName>/<timestamp>/ (see VMS_BACKUP_DIRNAME).
   const vmBackupsDir = join(destinationPath, VMS_BACKUP_DIRNAME, vmName);
   await mkdir(vmBackupsDir, { recursive: true });
   const backupDir = join(vmBackupsDir, timestamp);
@@ -471,11 +467,8 @@ async function writeBackupContents({ vmName, xml, config, nvramPath, backupDir, 
 }
 
 /**
- * List backups from one or more destination roots. Optionally filter by vmName.
- * Walks both layouts:
- *   - new: <root>/vms/<vmName>/<timestamp>/
- *   - legacy: <root>/<vmName>/<timestamp>/   (skipping `vms/` and `containers/`)
- * Dedupes by (destinationId, vmName, timestamp), preferring the new layout.
+ * List backups from one or more destination roots (`<root>/vms/<vmName>/<timestamp>/`).
+ * Optionally filter by vmName.
  *
  * @param {Array<{ id: string, path: string, label: string }>} destinations - Caller-supplied roots; `id` is opaque (the route layer maps it to/from the API's `destinationId`).
  * @param {string} [vmName] - If set, only return backups for this VM
@@ -483,10 +476,9 @@ async function writeBackupContents({ vmName, xml, config, nvramPath, backupDir, 
  */
 export async function listBackups(destinations, vmName = null) {
   const results = [];
-  const seen = new Set();
   const list = Array.isArray(destinations) ? destinations : [];
 
-  /** Read one VM's directory under either layout, push valid backup entries. */
+  /** Read one VM's backup directory, push valid backup entries. */
   async function scanVmDir({ vmDirPath, name, destId, label }) {
     let timestamps;
     try {
@@ -496,8 +488,6 @@ export async function listBackups(destinations, vmName = null) {
     }
     for (const tsEnt of timestamps) {
       if (!tsEnt.isDirectory()) continue;
-      const dedupeKey = `${destId}\0${name}\0${tsEnt.name}`;
-      if (seen.has(dedupeKey)) continue;
       const backupPath = join(vmDirPath, tsEnt.name);
       let manifest;
       try {
@@ -509,7 +499,6 @@ export async function listBackups(destinations, vmName = null) {
       const sizeBytes = manifest.sizeBytes;
       /* Backups predating the origin field list as manual. */
       const origin = manifest.origin === 'scheduled' ? 'scheduled' : 'manual';
-      seen.add(dedupeKey);
       results.push({
         vmName: name,
         timestamp: tsEnt.name,
@@ -528,36 +517,18 @@ export async function listBackups(destinations, vmName = null) {
     const destId = dest && typeof dest.id === 'string' ? dest.id : null;
     if (!basePath || !basePath.startsWith('/') || !destId) continue;
 
-    // 1. New layout: <root>/vms/<name>/<ts>/. Scanned first so dedupe prefers it.
     const vmsRoot = join(basePath, VMS_BACKUP_DIRNAME);
-    let newDirs;
+    let vmDirs;
     try {
-      newDirs = await readdir(vmsRoot, { withFileTypes: true });
+      vmDirs = await readdir(vmsRoot, { withFileTypes: true });
     } catch {
-      newDirs = null; /* vms/ subdir absent — fine, nothing here yet */
+      continue; /* vms/ subdir absent (nothing backed up yet) or destination unreadable */
     }
-    if (newDirs) {
-      for (const dirent of newDirs) {
-        if (!dirent.isDirectory()) continue;
-        const name = dirent.name;
-        if (vmName != null && vmName !== '' && name !== vmName) continue;
-        await scanVmDir({ vmDirPath: join(vmsRoot, name), name, destId, label });
-      }
-    }
-
-    // 2. Legacy layout: <root>/<name>/<ts>/, skipping vms/ and containers/.
-    let legacyDirs;
-    try {
-      legacyDirs = await readdir(basePath, { withFileTypes: true });
-    } catch {
-      continue; /* destination unreadable */
-    }
-    for (const dirent of legacyDirs) {
+    for (const dirent of vmDirs) {
       if (!dirent.isDirectory()) continue;
       const name = dirent.name;
-      if (name === VMS_BACKUP_DIRNAME || name === CONTAINERS_BACKUP_DIRNAME) continue;
       if (vmName != null && vmName !== '' && name !== vmName) continue;
-      await scanVmDir({ vmDirPath: join(basePath, name), name, destId, label });
+      await scanVmDir({ vmDirPath: join(vmsRoot, name), name, destId, label });
     }
   }
   return results.sort((a, b) => {
@@ -567,11 +538,10 @@ export async function listBackups(destinations, vmName = null) {
 }
 
 /**
- * Resolve `(rootPath, vmName, timestamp)` to the absolute backup directory,
- * checking the new layout (`<root>/vms/<name>/<ts>/`) first and falling back
- * to the legacy layout (`<root>/<name>/<ts>/`). Throws BACKUP_NOT_FOUND if
- * neither exists. Routes use this before calling restoreBackup / deleteBackup
- * so the layout choice stays inside vmManager.
+ * Resolve `(rootPath, vmName, timestamp)` to the absolute backup directory
+ * `<root>/vms/<name>/<ts>/`. Throws BACKUP_NOT_FOUND if it does not exist.
+ * Routes use this before calling restoreBackup / deleteBackup so the layout
+ * stays inside vmManager.
  *
  * @param {string} rootPath - Configured backup destination root
  * @param {string} vmName
@@ -579,24 +549,18 @@ export async function listBackups(destinations, vmName = null) {
  * @returns {Promise<string>} absolute backup directory
  */
 export async function resolveVmBackupDir(rootPath, vmName, timestamp) {
-  const candidates = [
-    join(rootPath, VMS_BACKUP_DIRNAME, vmName, timestamp),
-    join(rootPath, vmName, timestamp),
-  ];
-  for (const candidate of candidates) {
-    try {
-      await access(candidate, constants.R_OK);
-      return candidate;
-    } catch {
-      /* try next candidate */
-    }
+  const dir = join(rootPath, VMS_BACKUP_DIRNAME, vmName, timestamp);
+  try {
+    await access(dir, constants.R_OK);
+  } catch {
+    throw vmError('BACKUP_NOT_FOUND', `Backup not found for ${vmName} @ ${timestamp}`);
   }
-  throw vmError('BACKUP_NOT_FOUND', `Backup not found for ${vmName} @ ${timestamp}`);
+  return dir;
 }
 
 /**
  * Delete a backup directory. Path must be under one of the allowed roots.
- * @param {string} backupPath - Full path to the backup directory (e.g. .../vmName/timestamp)
+ * @param {string} backupPath - Full path to the backup directory (<root>/vms/<vmName>/<timestamp>)
  * @param {string[]} allowedRoots - Allowed destination roots (same as used for listing)
  */
 export async function deleteBackup(backupPath, allowedRoots) {
@@ -733,7 +697,7 @@ function rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping, newBas
 
 /**
  * Restore a backup as a new VM.
- * @param {string} backupPath - Full path to the backup directory (e.g. .../vmName/timestamp)
+ * @param {string} backupPath - Full path to the backup directory (<root>/vms/<vmName>/<timestamp>)
  * @param {string} newVmName
  * @param {{ populateVMDir?: (vmDir: string, ctx: { xml: string }) => Promise<void> }} [opts]
  *   populateVMDir: writes caller-owned files a backup does not hold (e.g. the
