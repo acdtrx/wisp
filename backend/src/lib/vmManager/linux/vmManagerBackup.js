@@ -1,6 +1,8 @@
 /**
  * VM backup and restore: createBackup, listBackups, restoreBackup.
  * Disk images and cloud-init ISO are streamed gzip to destination (.gz); config files stay uncompressed.
+ * A disk on a backing chain (e.g. a live snapshot's external overlay) is first
+ * flattened into one standalone qcow2, so every backup is self-contained.
  */
 import { copyFile, mkdir, writeFile, readdir, readFile, access, constants, stat, rm, rename, realpath, chmod } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
@@ -17,6 +19,7 @@ import { getVMBasePath } from './vmManagerPaths.js';
 import { isOfflineState } from './libvirtConstants.js';
 import { copyNvram } from './vmManagerNvram.js';
 import { assertVMNameAvailable, createOwnVMDir, removeOwnVMDir } from './vmManagerCreate.js';
+import { getBackingChain, copyAndConvert } from '../../storage/index.js';
 
 const execFile = promisify(execFileCb);
 
@@ -277,6 +280,67 @@ export async function createBackup(vmName, destinationPath, { onProgress, origin
 }
 
 /**
+ * What each disk slot backs up as. A disk whose image has a backing chain is
+ * flattened (the full chain merged into one standalone qcow2) and saved under
+ * the chain base's file name — the slot's own disk, e.g. `disk0.qcow2` rather
+ * than a live snapshot's `disk0.<snapshot>` overlay. Every other disk is
+ * copied as-is under its own name.
+ * @returns {Promise<Array<{ slot: string, source: string, format: string, flatten: boolean, fileName: string, basePath: string }>>}
+ */
+async function planDiskBackups(disks) {
+  const plans = [];
+  for (const disk of disks) {
+    // The domain's <driver type> is the image format libvirt opens it as (no
+    // driver type means raw to libvirt too); never let qemu-img probe it.
+    const format = disk.driverType || 'raw';
+    const chain = await getBackingChain(disk.source, { format });
+    const flatten = chain.length > 1;
+    const basePath = flatten ? chain[chain.length - 1].filename : disk.source;
+    plans.push({ slot: disk.slot, source: disk.source, format, flatten, fileName: basename(basePath), basePath });
+  }
+  // Each disk lands at <backupDir>/<fileName>.gz; two slots resolving to one
+  // name (two overlays on one base image) would overwrite each other.
+  const seen = new Set();
+  for (const p of plans) {
+    if (seen.has(p.fileName)) {
+      throw vmError('CONFIG_ERROR', `Two disks would be backed up as the same file "${p.fileName}" — the backup can't hold both`);
+    }
+    seen.add(p.fileName);
+  }
+  return plans;
+}
+
+/**
+ * The domain XML as it must be restored when some disks were flattened: each
+ * such disk points at its standalone file (the chain base's path, so restore's
+ * VM-directory path rewrite applies as for any disk) as a qcow2 file, with no
+ * `<backingStore>` — the backed-up image has none.
+ */
+function domainXmlWithFlattenedDisks(xml, flattenedPlans) {
+  const parsed = parseDomainRaw(xml);
+  const bySlot = new Map(flattenedPlans.map((p) => [p.slot, p]));
+  for (const d of parsed?.domain?.devices?.disk || []) {
+    if ((d['@_device'] || 'disk') !== 'disk') continue;
+    const plan = bySlot.get(d.target?.['@_dev']);
+    if (!plan) continue;
+    const source = d.source && typeof d.source === 'object' ? d.source : {};
+    delete source['@_dev'];
+    delete source['@_volume'];
+    delete source['@_pool'];
+    source['@_file'] = plan.basePath;
+    d.source = source;
+    d['@_type'] = 'file';
+    d.driver = { ...(d.driver && typeof d.driver === 'object' ? d.driver : { '@_name': 'qemu' }), '@_type': 'qcow2' };
+    delete d.backingStore;
+  }
+  try {
+    return buildXml(parsed);
+  } catch (err) {
+    throw vmError('CONFIG_ERROR', 'Failed to build the backup domain XML', err.message);
+  }
+}
+
+/**
  * Write every backup file into the (empty, caller-owned) backupDir;
  * manifest.json goes last and is what marks the backup complete.
  * Completion is the resolved promise — no `done` progress event.
@@ -287,35 +351,61 @@ async function writeBackupContents({ vmName, xml, config, nvramPath, backupDir, 
   };
 
   const disks = (config.disks || []).filter((d) => d.device === 'disk' && d.source);
+  const diskPlans = await planDiskBackups(disks);
   const totalItems = disks.length + (nvramPath ? 1 : 0) + 3; // +3 for domain.xml, cloud-init.iso and cloud-init.json
   let done = 0;
 
   emit('domain', { percent: 0, currentFile: 'Saving domain.xml' });
-  await writeFile(join(backupDir, 'domain.xml'), xml);
+  // A flattened disk is restored as its standalone file, so the saved XML
+  // names that file instead of the overlay (restore reads disk names from it).
+  const flattened = diskPlans.filter((p) => p.flatten);
+  const backupXml = flattened.length > 0 ? domainXmlWithFlattenedDisks(xml, flattened) : xml;
+  await writeFile(join(backupDir, 'domain.xml'), backupXml);
   done += 1;
   emit('domain', { percent: Math.round((done / totalItems) * 100), currentFile: 'Saving domain.xml' });
 
-  for (const disk of disks) {
-    const fileName = basename(disk.source);
+  for (const plan of diskPlans) {
+    const { fileName } = plan;
     const basePercent = (done / totalItems) * 100;
     const rangePercent = (1 / totalItems) * 100;
-    emit('disk', { percent: Math.round(basePercent), currentFile: `Copying ${fileName}` });
+    // Once per integer change of the job's percent, whatever the source's tick rate.
+    let lastOverall = -1;
+    const report = (subPercent, currentFile) => {
+      const overall = Math.round(basePercent + (subPercent / 100) * rangePercent);
+      if (overall === lastOverall) return;
+      lastOverall = overall;
+      emit('disk', { percent: overall, currentFile });
+    };
     const destGz = join(backupDir, fileName + '.gz');
-    let totalBytes;
-    try {
-      const st = await stat(disk.source);
-      totalBytes = st.size;
-    } catch {
-      /* stat failed — progress bar works without total */
-      totalBytes = null;
+
+    if (plan.flatten) {
+      // qemu-img can't write qcow2 to a pipe: flatten into a scratch file inside
+      // this run's backupDir (removed below; createBackup's failure cleanup
+      // removes it with the directory), then gzip that. Flatten owns the first
+      // half of this disk's progress range, compression the second.
+      const flatPath = join(backupDir, `${fileName}.flatten`);
+      report(0, `Flattening ${fileName}`);
+      await copyAndConvert(plan.source, flatPath, (pct) => report(pct / 2, `Flattening ${fileName}`), { srcFormat: plan.format });
+      await streamWithGzip(flatPath, destGz, {
+        totalBytes: (await stat(flatPath)).size,
+        onProgress: (pct) => report(50 + pct / 2, `Copying ${fileName}`),
+      });
+      await rm(flatPath);
+    } else {
+      report(0, `Copying ${fileName}`);
+      let totalBytes;
+      try {
+        const st = await stat(plan.source);
+        totalBytes = st.size;
+      } catch {
+        /* stat failed — progress bar works without total */
+        totalBytes = null;
+      }
+      await streamWithGzip(plan.source, destGz, {
+        totalBytes,
+        onProgress: (pct) => report(pct, `Copying ${fileName}`),
+      });
     }
-    await streamWithGzip(disk.source, destGz, {
-      totalBytes,
-      onProgress: (pct) => {
-        const overall = Math.round(basePercent + (pct / 100) * rangePercent);
-        emit('disk', { percent: overall, currentFile: `Copying ${fileName}` });
-      },
-    });
     done += 1;
     emit('disk', { percent: Math.round((done / totalItems) * 100), currentFile: fileName });
   }
@@ -383,7 +473,7 @@ async function writeBackupContents({ vmName, xml, config, nvramPath, backupDir, 
     timestamp,
     origin: origin === 'scheduled' ? 'scheduled' : 'manual',
     vmBasePath: vmBasePathForManifest,
-    disks: disks.map((d) => ({ slot: d.slot, file: basename(d.source) })),
+    disks: diskPlans.map((p) => ({ slot: p.slot, file: p.fileName })),
     sizeBytes: totalBytes,
   };
   await writeFile(join(backupDir, 'manifest.json'), JSON.stringify(manifest, null, 2));

@@ -14,14 +14,25 @@ A backup directory contains:
 | File | Description |
 |------|-------------|
 | `manifest.json` | Backup metadata: VM name, timestamp, **`origin`** (`"manual"` / `"scheduled"` — all VM backups are manual today; the field exists for API symmetry with containers and backups predating it list as manual), **`vmBasePath`** (absolute path to the VM’s directory at backup time, used when restoring under a new name or after `vmsPath` changes), disk file list, total size |
-| `domain.xml` | The original libvirt domain XML at time of backup |
-| `disk0.qcow2.gz` | Gzipped primary disk image |
+| `domain.xml` | The libvirt domain XML at time of backup (a [flattened](#disks-on-a-backing-chain) disk's entry names its standalone file) |
+| `disk0.qcow2.gz` | Gzipped primary disk image — always standalone, see [Disks on a backing chain](#disks-on-a-backing-chain) |
 | `disk1.qcow2.gz` | Gzipped secondary disk image (if present) |
 | `VARS.fd` | UEFI NVRAM file (if UEFI firmware). Copied via the **`wisp-nvram`** privileged helper because libvirt creates the source as `libvirt-qemu:kvm` mode `600`. |
 | `cloud-init.iso.gz` | Gzipped cloud-init seed ISO (if cloud-init was enabled) |
 | `cloud-init.json` | Cloud-init configuration (if cloud-init was enabled) |
 
 Disk images and the cloud-init ISO are gzipped to reduce backup size. NVRAM and config files are stored uncompressed.
+
+### Disks on a backing chain
+
+*(settled 2026-10-16)* Every VM backup is complete and self-contained, whatever snapshots the VM has. A live snapshot leaves each disk on an external overlay (`disk0.<snapshot>`, backing file the original `disk0.qcow2` — see [SNAPSHOTS.md](SNAPSHOTS.md#create)), and the domain points at the overlay until the snapshot is deleted. For each disk the backup reads the image's chain (`qemu-img info --backing-chain --output=json`, with the format pinned to the domain's `<driver type>` so a guest-written raw image is never probed as qcow2):
+
+- **No backing file** (the usual case): the image file is gzip-streamed as-is (fast path).
+- **A backing chain:** the whole chain is **flattened** — `qemu-img convert -O qcow2` of the top image into a scratch file `<file>.flatten` inside the backup's own directory, which is then gzipped and removed. The result is a standalone qcow2 with the content the VM currently sees (base plus every overlay). It is saved under the **chain base's** file name (`disk0.qcow2.gz`, not `disk0.<snapshot>.gz`); `manifest.json` lists that name, and the saved `domain.xml` points that disk at the base path as a qcow2 file with no `<backingStore>`, so a restore produces a normal standalone disk and needs nothing chain-aware.
+
+The VM is stopped, so the chain is stable while it is read. Flattening needs the disk's allocated size free at the destination, briefly, on top of the compressed copy, and costs a second pass over the data (convert, then gzip). A failed flatten (disk full, unreadable or missing backing file) fails the destination like any other error — the backup directory, scratch file included, is removed, and nothing is ever written to the VM directory. Two disks that would land under the same file name (two overlays on one base image, or two same-named images in different directories — before this check the second silently overwrote the first) fail the backup (`CONFIG_ERROR`) rather than overwrite each other.
+
+Rejected: refusing to back up while any disk has a backing chain — a VM with a live snapshot could then not be backed up at all until the snapshot was deleted, and a restore-in-place's safety backup would block on it.
 
 ### Not backed up
 
@@ -31,8 +42,7 @@ A VM backup holds the files above and nothing else. Outside it:
   - **Restore as new** gets a new UUID and therefore a fresh, empty TPM. Anything the guest sealed to its TPM is gone: **BitLocker asks for its recovery key** on first boot, and Windows Hello PINs / biometrics, TPM-backed certificates and similar keys must be set up again. Have the BitLocker recovery key before relying on such a backup.
   - **Restore in place** keeps the live UUID, so the guest finds the TPM it has *now* — normally the same TPM the backup was taken with, and BitLocker unseals as before. It does not if the TPM changed since the backup (VM deleted and recreated under the same name, TPM cleared in the guest, vTPM toggled off and on): then the same recovery-key prompt applies.
   - Deleting a VM lets libvirt remove its TPM state, so once the original VM is gone no restore gets its TPM back.
-- **libvirt snapshot metadata.** Snapshots are not part of a backup. Internal (offline) snapshots live inside the qcow2 file and travel with it, but restore defines no snapshot metadata for them, so a restored VM shows no snapshots.
-- **A disk's backing chain.** Each disk is copied from the file its `<source>` names; a qcow2 backing file behind it is not followed. A disk sitting on an overlay (for example after a live snapshot, if libvirt created external disk overlays for it) backs up only the overlay.
+- **Snapshots.** Snapshots are not part of a backup: a backup holds the disks' *current* state only, and restore defines no snapshot metadata, so a restored VM shows no snapshots. Internal (offline) snapshots live inside a qcow2 file and travel with it when the disk is copied as-is, but a flattened disk (above) carries only the active layer; a live snapshot's memory file (`snapshots/*.mem`) is never copied.
 
 vTPM state backup is a backlog item (see `docs/BACKLOG.md`); the gap is documented rather than closed. (settled 2026-10-16)
 
@@ -82,7 +92,7 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
 4. For each destination path, in order:
    - Create backup directory `<dest>/vms/<vmName>/<timestamp>/` — exclusively: if that directory already exists (a second backup within the same second) the destination fails with `BACKUP_EXISTS` rather than writing into another run's backup
    - Save domain XML
-   - Gzip and copy each disk image
+   - Gzip and copy each disk image — a disk on a backing chain is flattened first ([Disks on a backing chain](#disks-on-a-backing-chain))
    - Copy NVRAM file (if present)
    - Gzip and copy cloud-init ISO (if present)
    - Copy cloud-init config (if present)
@@ -130,6 +140,7 @@ Both workload kinds can also be restored **over the live workload the backup was
 - **MAC addresses, hardware config, and disk contents revert to the backup's state** (unlike restore-as-new, which regenerates them).
 - **Disks that lived outside the VM directory at backup time** (e.g. image library) are restored into the VM directory and remapped — identical to restore-as-new; the outside file is never overwritten.
 - Files in the VM directory the backup does not reference (e.g. a disk added later) are left in place, orphaned.
+- **Snapshots on the target are not touched, and go stale.** Restore-in-place does not delete the live VM's snapshots or overlays: the disks named by the backup (e.g. `disk0.qcow2` — which, if the VM has a live snapshot now, is the base *under* its current overlay) are replaced, the domain is redefined onto them, and any `disk0.<snapshot>` overlay is left orphaned in the VM directory. The libvirt snapshot metadata stays listed but no longer matches the disks; reverting to such a snapshot pairs its memory state with disk content it was not taken with. Delete the VM's snapshots before (or right after) a restore-in-place. Backups taken with snapshots present are flattened, so this applies equally whichever backup is restored.
 
 **Container** (`restoreContainerBackupInPlace` in containerManager): the target is the backup's manifest name, must still exist on disk (404 `CONTAINER_NOT_FOUND`), and must be stopped (409 `CONTAINER_MUST_BE_STOPPED` — the directory is swapped out from under any rootfs mounts, so pausing is not enough; a lingering STOPPED task record is cleaned up like backup does). The archive is extracted to a staging dir and validated (single top-level dir matching the name, parsable `container.json`, mounts/devices per *Archive validation* below) *before* the live directory is moved aside and the staged one renamed in; a failed swap rolls the old directory back. Then:
 

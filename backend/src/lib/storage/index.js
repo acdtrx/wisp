@@ -20,7 +20,7 @@ const smbImpl = await import(
   isLinux ? './linux/smbMount.js' : './darwin/smbMount.js',
 );
 
-export { getDiskInfo, copyAndConvert, resizeDisk } from './diskOps.js';
+export { getDiskInfo, getBackingChain, copyAndConvert, resizeDisk } from './diskOps.js';
 export { measurePathSize } from './dirSize.js';
 
 // Kernel mount table (/proc/self/mounts), decoded — the one reader for mount state
