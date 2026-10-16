@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-10-16
+## 2026-10-16 (v2.4.0)
 
 ### New Features
 - **State migrations on update** — the updater brings state earlier releases wrote up to date (VM console listen address, cloud-init file modes, app secret files — tiny-samba passwords and zot keys, now written `0600` — …), records each in `config/migrations.json` and logs every change; a running workload that needs a restart for it shows Restart required. The restart-required flag is now a timestamp checked against the real process start: it survives Wisp restarts, VMs show it too (VM uptime fixed alongside), and existing container flags are converted (migration 0001).
