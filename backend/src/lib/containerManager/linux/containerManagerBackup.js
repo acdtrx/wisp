@@ -51,7 +51,7 @@ import { pullImage } from './containerManagerCreate.js';
 import { buildOCISpec } from './containerManagerSpec.js';
 import { resolveDeviceSpecs } from './containerDeviceNode.js';
 import { resolveMount } from './containerPaths.js';
-import { getImageDigest } from './containerManagerImages.js';
+import { getImageDigest, resolveContainerImageRef } from './containerManagerImages.js';
 import { validateAndNormalizeMounts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';
 
@@ -520,13 +520,11 @@ function validateRestoredConfig(config) {
  * digest to whatever containerd now holds.
  */
 async function ensureImageAndDigest(name, config) {
-  const imageRef = config.image;
-  if (!imageRef) return;
-  let imagePresent = false;
-  try {
-    await callUnary(getClient('images'), 'get', { name: imageRef });
-    imagePresent = true;
-  } catch { /* not local — pull below */ }
+  if (!config.image) return;
+  /* A backup can hold a short ref (`nginx:1.27`); containerd stores the pull
+   * under the normalized name, so look up and record that one. */
+  const { ref: imageRef, local: imagePresent } = await resolveContainerImageRef(config.image);
+  config.image = imageRef;
   if (!imagePresent) {
     try {
       await pullImage(imageRef);
