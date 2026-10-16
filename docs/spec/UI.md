@@ -395,12 +395,11 @@ A single horizontal bar containing:
 - **VM name** — bold, truncated if long, followed by a small muted **vm** pill (same style as the **container** pill on the container overview header)
 - **Tabs** — Overview | Console (underline style with border-bottom; active tab has accent border + bold label)
 - **Restart required** amber badge (left of the actions, same style as the container header's) while the VM's persisted restart-required flag is set (`pendingRestart` — see [VM-MANAGEMENT.md](VM-MANAGEMENT.md#restart-required-flag)). Its tooltip says a stop + start applies the saved changes and a guest reboot doesn't. It survives reloads and Wisp restarts and drops once the VM's QEMU process is seen to have started after the change (the next list refresh after a stop + start); the selected VM's flag follows the `vms` list feed, so the badge drops without a manual refresh. (settled 2026-10-16)
-- **Action buttons** (right-aligned): Start, Stop, Force Stop, Reboot, Suspend, Resume, (divider), Backup, Clone, Delete, View XML
+- **Action buttons** (right-aligned): Start, Stop, Force Stop, Reboot, Suspend, Resume, (divider), Backup, Delete, View XML (no Clone or snapshot actions — [VM-MANAGEMENT.md → Not supported](VM-MANAGEMENT.md#not-supported-snapshots-cloning-restore-in-place))
 
 Action buttons are **context-sensitive**: irrelevant ones are disabled with muted style, not hidden.
 
-- **Clone** — opens dialog prompting for new VM name (user types the name; dialog starts with empty field)
-- **Backup** — opens modal to select backup destinations; while a backup is running, **Continue in background** closes the dialog (job progress remains in the top bar). **Start**, **Clone** and **Delete** are disabled while a backup or restore-in-place job for this VM is running (including after the modal is dismissed), and **Backup** while a restore runs — the backend refuses them with 409 `VM_BUSY` anyway ([BACKUPS.md → Per-VM operation lock](BACKUPS.md#per-vm-operation-lock)). With several destinations the progress line names the destination being written, and the dialog shows *Backup complete* only after the last one.
+- **Backup** — opens modal to select backup destinations; while a backup is running, **Continue in background** closes the dialog (job progress remains in the top bar). **Start** and **Delete** are disabled while a backup job for this VM is running (including after the modal is dismissed) — the backend refuses them with 409 `VM_BUSY` anyway ([BACKUPS.md → Per-VM operation lock](BACKUPS.md#per-vm-operation-lock)). With several destinations the progress line names the destination being written, and the dialog shows *Backup complete* only after the last one.
 - **Delete** — opens confirmation dialog with "Also delete disk images" checkbox
 - **View XML** — opens modal with read-only domain XML and Copy button
 
@@ -426,8 +425,6 @@ A single scrollable panel with section cards, in this order. **General**, **Netw
 5. **Advanced** (collapsed by default) — Compact grid only (no NIC block): Firmware (BIOS/UEFI/UEFI+SecureBoot), Machine type (Q35/i440fx), CPU model, Video driver, Graphics, Boot order, Boot menu toggle, Memory balloon toggle, Guest agent toggle, vTPM toggle, VirtIO RNG toggle, Nested virt toggle, Windows optimizations (read-only indicator). Auto Start and Local DNS live in **General**. **Section Save** for these fields. Offline-only fields show a lock icon when VM is running.
 
 6. **Cloud-Init** (hidden for Windows) — Read-only summary: Cloud Init on/off, hostname, username, masked password, SSH key status, option toggles. Edit opens the form; save with Cloud Init off soft-disables (ISO removed, json kept). **Remove** deletes cloud-init entirely. Regenerate rebuilds the ISO when enabled.
-
-7. **Snapshots** — Compact table: Name, Created, State. **Create snapshot** via section header (`Plus`+camera) when the disk is qcow2; empty state points to that control. Row actions: Revert, Delete (icon-only, **hover-reveal**). Note about qcow2 requirement if applicable.
 
 ### Console tab
 
@@ -503,9 +500,9 @@ Expanding a card shows the backup table (shared DataTable chrome, actions on row
 | Origin | `scheduled` (accent badge) / `manual` (outline badge) |
 | Location | Destination label (Local, NAS, …) |
 | Size | Formatted size |
-| Actions | **Restore in place** (`ArchiveRestore`), **Restore as new** (`CopyPlus`), **Delete** (`Trash2`) |
+| Actions | **Restore in place** (`ArchiveRestore`, container cards only), **Restore as new** (`CopyPlus`), **Delete** (`Trash2`) |
 
-- **Restore in place** — enabled only when the workload exists and is stopped (disabled title explains why). Opens a `ConfirmDialog` with a summary, a **safety backup** checkbox (default on), and a **type-the-name-to-confirm** input; on confirm the restore job registers in the background-jobs tray and the card header mirrors its progress.
+- **Restore in place** (containers only — VMs restore as new, [BACKUPS.md → Scope](BACKUPS.md#scope-settled-2026-10-16)) — enabled only when the container exists and is stopped (disabled title explains why). Opens a `ConfirmDialog` with a summary, a **safety backup** checkbox (default on), and a **type-the-name-to-confirm** input; on confirm the restore job registers in the background-jobs tray and the card header mirrors its progress.
 - **Restore as new** — inline strip inside the card prompting for the new name (as before).
 - **Delete** — shared `ConfirmDialog`.
 
@@ -698,7 +695,7 @@ All buttons: disabled state at 40% opacity, not-allowed cursor.
 
 ### Tables
 
-Used in Image Library, Backups, Snapshots, and other DataTable-based lists. On **Host** tabs, table views are normally wrapped in **`SectionCard`** (see [UI-PATTERNS.md](../../UI-PATTERNS.md) §Section shell) so the list sits in the same bordered card as Overview sections.
+Used in Image Library, Backups, and other DataTable-based lists. On **Host** tabs, table views are normally wrapped in **`SectionCard`** (see [UI-PATTERNS.md](../../UI-PATTERNS.md) §Section shell) so the list sits in the same bordered card as Overview sections.
 
 - Shared chrome from [DataTableChrome.jsx](../../frontend/src/components/shared/DataTableChrome.jsx): **`dataTableInteractiveRowClass`** on body rows that have hover-reveal actions, and **`DataTableRowActions`** for the actions cell (`opacity-0 group-hover:opacity-100`; **`forceVisible`** when editing or loading)
 - `border-b border-surface-border` between rows (via head/body row classes)
@@ -725,7 +722,6 @@ Used in Image Library, Backups, Snapshots, and other DataTable-based lists. On *
 - **No VMs in list:** Left panel shows "No virtual machines" and "Click \"+ New VM\" to create one". Center panel shows "Select a VM or create a new one".
 - **Search with no matches:** Left panel shows "No matches for \"…\"" with the search term.
 - **Empty library (VM files):** Message pointing to the **upload** control in the **section** header. **All** (Host Library page): empty when there are neither VM files nor OCI images. **OCI** filter: empty state explains containerd images and that images in use by a container cannot be deleted until those containers are removed or reconfigured.
-- **No snapshots:** "No snapshots" message
 - **No backups:** Empty table with message pointing to **Host → Host Mgmt → Backup** for destinations and **VM Overview → Backup** to create backups.
 
 ---

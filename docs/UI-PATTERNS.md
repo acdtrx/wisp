@@ -9,7 +9,7 @@ Conventions for repeating rows in Host, VM, Container, and Library panels. Use t
 Apply these rules when building or refactoring:
 
 - Multi-row editors (mounts, env vars, network storage, NIC lists, and similar).
-- Dense read-only or action tables (hardware inventory, snapshots, backups, image library).
+- Dense read-only or action tables (hardware inventory, backups, image library).
 - Any UI where the user adds, edits, saves, or deletes **items in a collection** shown as a list or table.
 
 ---
@@ -27,7 +27,7 @@ Each **save**, **delete**, and other mutating action should apply to **one row**
 
 Place **add** actions in `SectionCard` **`headerAction`**, aligned to the **far right** of the section header (after restart badge and Save when dirty). Header clicks must not toggle collapse: the right-hand control cluster uses `stopPropagation` when the card is collapsible.
 
-- **Add buttons:** accent background; **icon-only** or **`Plus` + a second icon** that names the kind of thing being added (e.g. `Plus`+`File`, `Plus`+`Folder`, `Plus`+`Server` for network mount, `Plus`+`Network` for bridge or NIC, `Plus`+`Camera` for snapshot, `Plus`+`Braces` for env).
+- **Add buttons:** accent background; **icon-only** or **`Plus` + a second icon** that names the kind of thing being added (e.g. `Plus`+`File`, `Plus`+`Folder`, `Plus`+`Server` for network mount, `Plus`+`Network` for bridge or NIC, `Plus`+`Braces` for env).
 - Do **not** use a full-width dashed “add row” at the bottom of the table for the primary add path when a header add is appropriate.
 - **Empty state** copy should point users to the header control rather than duplicating a second add button.
 
@@ -99,7 +99,7 @@ Single-section views (e.g. **Image Library**) use one **`SectionCard`** with the
 | Variant | Behaviour | Examples |
 |---------|-----------|----------|
 | **Editable rows** | Inline fields after **Edit** where applicable; per-row save; row-scoped API when the backend supports it. For 3+ fields or mobile-required flows prefer the **Modal form editor** variant below. | Create-flow draft rows only ([VmNetworkInterfacesSection.jsx](../frontend/src/components/sections/VmNetworkInterfacesSection.jsx) and [DisksSection.jsx](../frontend/src/components/sections/DisksSection.jsx) under `isCreating`) — the detail-page editors have moved to the **Modal form editor** variant |
-| **Action table** | Read-only cells; row actions **on row hover** (shared interactive row + `DataTableRowActions`) | Snapshots, backups |
+| **Action table** | Read-only cells; row actions **on row hover** (shared interactive row + `DataTableRowActions`) | Backups |
 | **Library / assets** | Per-entity API; **upload/download in page header** (icon-only); optional confirm for destructive ops; rename/delete **on row hover** | Image Library |
 | **Read-only inventory** | No mutations; optional grouping rows | Host Overview → Hardware table |
 | **VM — Network interfaces** | Own **SectionCard** before **Advanced**; **table** of NICs. **Documented exception:** every add / edit / remove **PATCH**es the full **`nics`** array (same contract as before). Detail page: rows are **read-only** — **Add NIC** in the header (**`Plus`+`Network`**) and row **`Pencil`** open the **modal form editor**, row **`Trash2`** removes without a confirm (hidden at the last NIC). While the VM runs all three are **disabled** with a lock note under the table. The **create flow** (`isCreating`) keeps all-inputs draft rows. | [VmNetworkInterfacesSection.jsx](../frontend/src/components/sections/VmNetworkInterfacesSection.jsx), [NicEditorModal.jsx](../frontend/src/components/sections/NicEditorModal.jsx) |
@@ -122,7 +122,7 @@ Single-section views (e.g. **Image Library**) use one **`SectionCard`** with the
 - **[DisksSection.jsx](../frontend/src/components/sections/DisksSection.jsx)** — Fixed slot model (`sda`/`sdb` block disks, `sdc`/`sdd` CD-ROMs, `sde` cloud-init seed), so rows are hand-written rather than mapped. Detail page: read-only rows at every breakpoint; header **`Plus`+`HardDrive`** and row `Pencil` open **[DiskEditorModal.jsx](../frontend/src/components/sections/DiskEditorModal.jsx)** — one modal with two entry points (edit the disk's size + bus, or add the second disk as a new volume or an attached library image). Mutations stay the row-scoped disk APIs, in the order the inline editors used (`updateDiskBus` then `resizeDisk`; `attachDiskToVM` then the optional `resizeDisk`). **No nested picker** (settled 2026-08-25): attach-existing uses a plain `select` fed by `listFiles('disk')`, while ISO attach/change keeps opening `ImageLibraryModal` directly from the row — the picker *is* that flow's form, so nesting it inside an editor modal would stack two dialogs for no gain. Two row actions fit on phones, so the Actions column stays visible and Size / Image / Image type / Bus collapse under the slot label instead. The `isCreating` branch keeps its inline draft rows (create stays desktop-oriented).
 - **[ContainerNetworkSection.jsx](../frontend/src/components/sections/ContainerNetworkSection.jsx)** — Pill row of exposed ports; a pill (or the trailing dashed `+` pill for non-EXPOSE ports) opens a **`Modal`** for per-port mDNS service editing (`Radio` icon inside pill when configured, no color encoding).
 - **[HostStorage.jsx](../frontend/src/components/host/HostStorage.jsx)** — Row-scoped mount API (`/api/host/mounts`) for SMB + adopted removable drives; `DataTable` chrome with **read-only rows** — create/edit/adopt go through `SmbShareEditorModal` / `RemovableDriveEditorModal`; mount state as a **status dot before the label** (no Status column); on phones the Actions column is hidden and actions **expand under the row text on tap**; combined mount/unmount with mounted-state background; SMB **Check** uses green/red on the shield button (errors on hover); separate "Detected drives" table rendered only when non-empty, visible at all breakpoints.
-- **[BackupsPanel.jsx](../frontend/src/components/backups/BackupsPanel.jsx)** — Collapsible per-workload cards (custom rich headers on the SectionCard visual tokens); per-backup icon actions on row hover; typed-name `ConfirmDialog` for restore-in-place.
+- **[BackupsPanel.jsx](../frontend/src/components/backups/BackupsPanel.jsx)** — Collapsible per-workload cards (custom rich headers on the SectionCard visual tokens); per-backup icon actions on row hover; typed-name `ConfirmDialog` for container restore-in-place.
 - **[HostOverview.jsx](../frontend/src/components/host/HostOverview.jsx)** (hardware inventory) — Read-only; **`SectionCard`** + **`titleIcon`** per section; shared table chrome.
 - **[HostMgmt.jsx](../frontend/src/components/host/HostMgmt.jsx)** — Stacked **`SectionCard`**s (**OS Update**, **Network Bridges**, **Network Storage**, **Backup**) with **`titleIcon`** on each; same page gutters as Overview.
 

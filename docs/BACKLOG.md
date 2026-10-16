@@ -64,7 +64,7 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   advertising until the next start or stop. Revisit when: a crashed
   container's service is seen being browsed on the LAN.
 - **Adopt kept VM disks at create** — *Delete VM, keep disks* leaves
-  `vms/<name>/`, and create/clone/restore refuse that name (409
+  `vms/<name>/`, and create/restore refuse that name (409
   `VM_DIR_EXISTS`, settled 2026-10-16); reusing a kept disk means moving it
   into the image library by hand and picking it as an existing disk. Shape: the
   create form offers the kept `disk*.qcow2` of a blocked name. Revisit when:
@@ -75,13 +75,11 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   and vTPM flag it); `graphicsType` / `videoDriver` accept any string; ISO
   attach/eject on a *paused* VM is config-only. Revisit when: a running-VM edit
   is reported as "didn't apply", or a bad graphics/video type breaks a define.
-- **VM rename / clone edges** — rename's existing-target-dir guard answers 422
-  `CONFIG_ERROR`, not 409 `VM_DIR_EXISTS` like create/clone/restore; clone
-  copies `cloud-init.json` after the clone is defined, so a failed copy leaves
-  a defined clone under a failed job. The UI also can't add an `sda` disk to a
-  VM created without disks. Revisit when: a client needs to tell the rename
-  conflict apart, a clone job fails at its cloud-init step, or a disk-less VM
-  needs a primary disk.
+- **VM rename / disk edges** — rename's existing-target-dir guard answers 422
+  `CONFIG_ERROR`, not 409 `VM_DIR_EXISTS` like create/restore. The UI also
+  can't add an `sda` disk to a VM created without disks. Revisit when: a client
+  needs to tell the rename conflict apart, or a disk-less VM needs a primary
+  disk.
 - **App config saves on a running container always flag Restart required** —
   `applyAppConfig`'s first write includes `mounts`, and any `mounts` write on a
   running container sets `pendingRestart` even when the list is unchanged, so a

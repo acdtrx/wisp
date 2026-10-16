@@ -13,7 +13,7 @@ The philosophy: direct flows and clear choices instead of exhaustive configurati
 - **Spin up a VM from a cloud image without touching the CLI.** Pick an image, size the disk, click create — Wisp copies the image, resizes it, generates cloud-init, and starts the VM.
 - **Built-in downloader** for the latest **Ubuntu**, **Arch Linux**, and **Home Assistant OS** images.
 - **Cloud-init provisioning** with a simple UI: username, password (hashed server-side), SSH keys imported by **GitHub username**, hostname, package upgrades, optional qemu-guest-agent and avahi install. Soft-disable keeps the config around for re-enable; full delete is also available.
-- **Snapshots** (create, list, revert) and **full backups** to local disk or **SMB network shares**. Backups are gzipped with a manifest so you can **restore as a new VM** with a fresh UUID and MAC.
+- **Full backups** to local disk or **SMB network shares**. Backups are gzipped with a manifest so you can **restore as a new VM** with a fresh UUID and MAC.
 - **USB passthrough** — hot-plug devices into running VMs or persist them for stopped VMs, with live discovery as devices connect and disconnect.
 - **noVNC console** in the browser for control and install flows.
 
@@ -104,7 +104,7 @@ Technical docs live under [`docs/`](./docs/):
 
 - [Architecture](./docs/ARCHITECTURE.md) · [Tech stack](./docs/TECH-STACK.md) · [UI patterns](./docs/UI-PATTERNS.md) · [Coding rules](./docs/CODING-RULES.md)
 - API ([`docs/spec/API.md`](./docs/spec/API.md)), Deployment ([`docs/spec/DEPLOYMENT.md`](./docs/spec/DEPLOYMENT.md))
-- Feature specs in [`docs/spec/`](./docs/spec/) — VMs, containers, cloud-init, backups, snapshots, USB, console, host monitoring, and more.
+- Feature specs in [`docs/spec/`](./docs/spec/) — VMs, containers, cloud-init, backups, USB, console, host monitoring, and more.
 
 ## Bugs and feedback
 

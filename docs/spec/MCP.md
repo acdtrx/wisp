@@ -36,7 +36,7 @@ JSON-RPC batching is rejected (`-32600`; removed from the MCP spec in 2025-06-18
 | `get_container_mount_usage` | `{ name }` | Host-side disk usage of each bind mount (Local data dirs and storage-backed mounts): `{ name, containerPath, type, source, hostPath, sizeBytes, partial }` per mount. Sized on demand as the sum of file sizes (can take seconds on large data dirs); tmpfs has no host backing (`sizeBytes` null); `partial: true` flags an undercount from unreadable entries |
 | `get_container_logs` | `{ name, lines?, runId? }` | Tail of a run log (newest run by default; `lines` 1–1000, default 100) |
 | `list_images` | — | Images in the `wisp` containerd namespace, containers with a newer digest available, last update-check info |
-| `get_vm` | `{ name }` | Full VM config plus `guestNetwork` (qemu-guest-agent; nulls without it) and `snapshots` |
+| `get_vm` | `{ name }` | Full VM config plus `guestNetwork` (qemu-guest-agent; nulls without it) |
 | `get_host_stats` | — | One sample of the `stats` topic payload from `/api/events` (shared builder `lib/hostStatsSnapshot.js`) |
 | `get_host_hardware` | — | Static inventory from `getHostHardwareInfo()`: CPU topology, DMI, RAM modules, disks + SMART, PCI, GPUs |
 

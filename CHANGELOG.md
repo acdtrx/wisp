@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-16
+
+### Removed
+- **VM snapshots** — create, list, revert and delete are gone (Snapshots section, API routes, MCP `get_vm` snapshot list). To keep a point to return to, take a backup; deleting a VM that has snapshots made outside Wisp (`virsh`) still works.
+- **VM cloning** — to copy a VM, back it up and restore the backup as a new VM.
+- **VM restore-in-place** — VM backups restore as a new VM only; to roll a VM back, restore as new, then delete the old VM. Container restore-in-place is unchanged.
+- **Old VM backup folder layout** — backups under `<destination>/<vm>/<timestamp>` (before the `vms/` folder) are no longer listed, restored or deleted; every backup since then lives under `<destination>/vms/`.
+
 ## 2026-10-16 (v2.4.0)
 
 ### New Features

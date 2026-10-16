@@ -109,7 +109,7 @@ In-memory job registry (server process only; no persistence across restart). Use
   "jobs": [
     {
       "jobId": "string",
-      "kind": "vm-create | container-create | backup | container-backup | vm-restore | container-restore | library-download",
+      "kind": "vm-create | container-create | backup | container-backup | container-restore | library-download",
       "title": "string",
       "done": false,
       "createdAt": 1730000000000
@@ -639,7 +639,7 @@ Update VM configuration.
 
 - **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `machineType`, `firmware`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `localDns`, `autostart`. Schema is **`additionalProperties: false`**; with Fastify's default Ajv `removeAdditional: true`, unknown keys are silently stripped before reaching `updateVMConfig`.
 - **200:** `{ ok: true, requiresRestart: boolean, name }` — `requiresRestart` is `true` when the VM is running and the patch changed its domain definition (anything but icon, local DNS and autostart); the VM's `pendingRestart` flag is then set too
-- **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running; `VM_BUSY` when renaming while a backup / restore-in-place / clone of this VM (or another locked operation) is running — a rename (`name` differing from `:name`) takes the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock), other edits don't
+- **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running; `VM_BUSY` when renaming while a backup of this VM (or another locked operation) is running — a rename (`name` differing from `:name`) takes the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock), other edits don't
 - **422:** `{ error, detail }` — `INVALID_VM_NAME` on rename to an invalid name; VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
 
 `localDns` is supported in PATCH and controls VM mDNS registration behavior.
@@ -650,7 +650,7 @@ Delete a VM.
 
 - **Query:** `?deleteDisks=true|false` — whether to also delete disk images and VM directory
 - **200:** `{ ok: true }`
-- **409:** `VM_BUSY` — a backup, restore-in-place or clone of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
+- **409:** `VM_BUSY` — a backup of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
 
 ### GET /api/vms/:name/xml · `read`
 
@@ -661,7 +661,7 @@ Raw libvirt domain XML (for debugging/inspection).
 ### POST /api/vms/:name/start · `admin`
 
 - **200:** `{ ok: true }`
-- **409:** `VM_ALREADY_RUNNING`; `VM_BUSY` — a backup, restore-in-place or clone of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
+- **409:** `VM_ALREADY_RUNNING`; `VM_BUSY` — a backup of this VM is running ([per-VM operation lock](BACKUPS.md#per-vm-operation-lock))
 
 ### POST /api/vms/:name/stop · `admin`
 
@@ -686,23 +686,6 @@ Immediate force stop (destroy).
 ### POST /api/vms/:name/resume · `admin`
 
 - **200:** `{ ok: true }`
-
-### POST /api/vms/:name/clone · `admin`
-
-Start a clone job (VM must be stopped). Returns a job ID; monitor progress via SSE.
-
-- **Body:** `{ newName: string (1-128 chars; starts with a letter or digit, then alphanumeric, dot, hyphen, underscore; no surrounding whitespace, no .. or path separators) }`. Schema is **`additionalProperties: false`**.
-- **201:** `{ jobId: string, title: string }` — `title` is `Clone <newName>`.
-- **409:** `VM_EXISTS` / `VM_DIR_EXISTS` when `newName` is taken in libvirt or on disk (same rule as `POST /api/vms`); `VM_BUSY` when another start / backup / restore-in-place / delete / rename / clone of the source VM is running. Checked before the job starts; the job holds the source VM's [operation lock](BACKUPS.md#per-vm-operation-lock) until it settles.
-- **422:** `INVALID_VM_NAME` if `newName` fails `validateVMName`.
-
-### GET /api/vms/clone-progress/:jobId · `read`
-
-SSE stream for clone progress.
-
-- **Progress events:** `{ step, percent?, currentFile? }` — `step` values include `disk` (per file copied), `nvram` (UEFI VMs), `define` (DomainDefineXML), `cloudinit` (cloud-init.json carry-over), `done`.
-- **Completion (from job store):** `{ step: "done", name: string }` — `name` is the new VM name.
-- **Failure (terminal):** `{ step: "error", error: string, detail: string }`
 
 ---
 
@@ -814,36 +797,6 @@ Detach a USB device. `id` format: `vendorId:productId` (e.g. `046d:c077`). Both 
 
 ---
 
-## Snapshots
-
-### GET /api/vms/:name/snapshots · `read`
-
-List snapshots for a VM.
-
-- **200:** `[{ name: string, creationTime: number, state: string }]`
-
-### POST /api/vms/:name/snapshots · `admin`
-
-Create a snapshot.
-
-- **Body:** `{ name: string }` — name: 1–64 chars, `[a-zA-Z0-9 ._-]`
-- **200:** `{ ok: true }`
-- **422:** `{ error, detail }` — invalid name (length or pattern)
-
-### DELETE /api/vms/:name/snapshots/:id · `admin`
-
-Delete a snapshot by name.
-
-- **200:** `{ ok: true }`
-
-### POST /api/vms/:name/snapshots/:id/revert · `admin`
-
-Revert to a snapshot.
-
-- **200:** `{ ok: true }`
-
----
-
 ## Cloud-Init
 
 ### GET /api/vms/:name/cloudinit · `read`
@@ -905,7 +858,7 @@ Start a backup job. Returns a job ID; monitor progress via SSE.
 - **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted (resolved by the shared `lib/backupDestinations.js` helper). Any other id returns **422**.
 - **201:** `{ jobId: string, title: string }` — `title` is e.g. `Backup <vmName>`
 - **404:** `VM_NOT_FOUND`
-- **409:** `VM_MUST_BE_OFFLINE` — the VM is not stopped (checked before the job is created; the manager re-checks inside the job); `VM_BUSY` — another start / backup / restore-in-place / delete / rename / clone of this VM is running
+- **409:** `VM_MUST_BE_OFFLINE` — the VM is not stopped (checked before the job is created; the manager re-checks inside the job); `VM_BUSY` — another start / backup / delete / rename of this VM is running
 - **422:** `BACKUP_DEST_UNKNOWN` / `BACKUP_DEST_NONE` — unknown destination id, or nothing resolved
 - **503:** `BACKUP_MOUNT_FAILED` — SMB mount failed
 
@@ -915,7 +868,6 @@ SSE stream for backup progress.
 
 - **Progress events:** `{ step, percent?, currentFile? }` — `step` values include `domain`, `disk`, `nvram`, `cloudinit`, `manifest`. `percent` spans the whole job: with several destinations each owns an equal slice and `currentFile` is prefixed with the destination label.
 - **Per-destination completion:** `{ step: "destination-done", destinationId: string, percent: number, currentFile: string }` — not terminal; later destinations follow.
-- **Restore-in-place steps** (same stream, kind `vm-restore`): `safety-*` (the safety backup), `disk`, `nvram`, `cloudinit`, `swap`, `define`.
 - **Completion (from job store, the only `done`):** `{ step: "done", timestamp: string }` — `timestamp` is the (last destination's) backup folder name (e.g. `2026-05-08T06-30-00`).
 - **Failure (terminal):** `{ step: "error", error: string, detail: string }`
 
@@ -943,23 +895,13 @@ List all backups across configured destinations. The backup is identified by the
 
 ### POST /api/backups/restore · `admin`
 
-Restore a backup as a new VM.
+Restore a backup as a new VM — the only VM restore; there is no VM restore-in-place ([BACKUPS.md → Scope](BACKUPS.md#scope-settled-2026-10-16)).
 
 - **Body:** `{ destinationId: string, vmName: string, timestamp: string, newVmName: string }` — `(destinationId, vmName, timestamp)` are typically copied from a `GET /api/backups` row.
 - **200:** `{ name: string }`
 - **404:** backup not found
 - **409:** `VM_EXISTS` / `VM_DIR_EXISTS` when `newVmName` is taken in libvirt or on disk (same rule as `POST /api/vms`)
 - **422:** unknown `destinationId`, invalid `vmName`/`newVmName`, or invalid `timestamp`
-
-### POST /api/backups/restore-in-place · `admin`
-
-Restore a backup **over the live VM it was taken from**. Runs as a background job (kind `vm-restore`, title `Restore <vmName>`); progress streams via `GET /api/vms/backup-progress/:jobId`. With `safetyBackup` (default `true`), the job first takes a normal backup of the current state to the same destination (its progress steps are prefixed `safety-` and mapped to 0–45% of the bar), then restores. Semantics (identity preserved, disks/config revert) in [BACKUPS.md → Restoring in place](BACKUPS.md#restoring-in-place).
-
-- **Body:** `{ destinationId: string, vmName: string, timestamp: string, safetyBackup?: boolean }`
-- **201:** `{ jobId: string, title: string }`
-- **404:** `VM_NOT_FOUND` (workload deleted — restore as new instead), `BACKUP_NOT_FOUND`
-- **409:** `VM_MUST_BE_OFFLINE` (VM running), `VM_HAS_SNAPSHOTS` (the VM has snapshots — delete them first; checked before the safety backup or the job starts), `VM_BUSY` (another start / backup / restore-in-place / delete / rename / clone of this VM is running)
-- **422 / 503:** destination errors as for `POST /api/vms/:name/backup`
 
 ### DELETE /api/backups · `admin`
 
@@ -1026,7 +968,7 @@ Restore a container backup under a new name. The new name must be free both on d
 
 ### POST /api/container-backups/restore-in-place · `admin`
 
-Restore a backup **over the live container it was taken from** (same name, same MAC and DHCP lease; the containerd record is kept, or recreated if missing). The container must be stopped. Runs as a background job (kind `container-restore`, title `Restore <name>`); progress via `GET /api/containers/backup-progress/:jobId`. `safetyBackup` (default `true`) archives the current state first, same phase mapping as the VM route. Semantics in [BACKUPS.md → Restoring in place](BACKUPS.md#restoring-in-place).
+Restore a backup **over the live container it was taken from** (same name, same MAC and DHCP lease; the containerd record is kept, or recreated if missing). The container must be stopped. Runs as a background job (kind `container-restore`, title `Restore <name>`); progress via `GET /api/containers/backup-progress/:jobId`. `safetyBackup` (default `true`) archives the current state to the same destination first (its progress steps are prefixed `safety-` and mapped to 0–45% of the bar), then restores. Semantics in [BACKUPS.md → Restoring a container in place](BACKUPS.md#restoring-a-container-in-place).
 
 - **Body:** `{ destinationId: string, name: string, timestamp: string, safetyBackup?: boolean }`
 - **201:** `{ jobId: string, title: string }`

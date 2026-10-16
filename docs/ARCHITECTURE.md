@@ -134,7 +134,7 @@ Each file registers routes under a common prefix. Routes handle HTTP concerns (v
 | `stats.js` | `/api` | Host stats SSE stream |
 | `backgroundJobs.js` | `/api` | In-memory background job listing (`GET /background-jobs`) |
 | `library.js` | `/api` | Image library CRUD, uploads, downloads |
-| `vms.js` | `/api` | VM CRUD, lifecycle, disks, CDROM, USB, snapshots, stats, backups |
+| `vms.js` | `/api` | VM CRUD, lifecycle, disks, CDROM, USB, stats, backups |
 | `containers.js` | `/api` | Container CRUD, lifecycle, mounts, logs, stats, create job + SSE |
 | `cloudinit.js` | `/api` | Cloud-init config, GitHub SSH keys |
 | `settings.js` | `/api` | App settings, network mount status/mount |
@@ -156,14 +156,13 @@ Shared pure helpers live in **`backend/src/lib/vmManager/vmManagerShared.js`** (
 | `vmManagerHost.js` | Host info (versions, hardware), bridge/firmware/USB enumeration |
 | `vmManagerList.js` | List all VMs (cached, event-driven refresh), aggregate running VM allocations (vCPU/memory) from the cache, get full VM config (parsed from XML) |
 | `vmManagerLifecycle.js` | Start, stop, force-stop, reboot, suspend, resume |
-| `vmManagerCreate.js` | Create VM (XML generation, disk provisioning), delete, clone |
+| `vmManagerCreate.js` | Create VM (XML generation, disk provisioning), delete |
 | `vmManagerConfig.js` | Update VM configuration (live vs offline, restart detection); graphics listen address get/set |
 | `vmManagerPendingRestart.js` | Restart-required flag (`since` timestamp): `setVMPendingRestart` and the rule that drops a flag older than the QEMU start |
 | `vmManagerDisk.js` | Attach/detach/resize local disks |
 | `vmManagerIso.js` | Attach/eject ISO images to CDROM slots |
 | `vmManagerUsb.js` | USB device attach/detach |
-| `vmManagerSnapshots.js` | Snapshot CRUD and revert |
-| `vmManagerBackup.js` | Backup creation, listing across destinations, restore, delete |
+| `vmManagerBackup.js` | Backup creation, listing across destinations, restore as new, delete |
 | `vmManagerStats.js` | Per-VM stats, raw XML, VNC port extraction |
 | `vmManagerCloudInit.js` | Cloud-init config management, ISO generation/attach/detach |
 | `vmManagerXml.js` | XML parsing and building utilities (fast-xml-parser) |
@@ -236,7 +235,7 @@ App identity persists in `container.json.metadata.app` (string id) + `container.
 | `backgroundJobTitles.js` | Display titles for background jobs (parity with UI) |
 | `listBackgroundJobs.js` | Merges job rows from create/backup/download/container stores for `GET /api/background-jobs` |
 | `backupJobStore.js` | Backup-specific job store |
-| `vmOperationLock.js` | Per-VM in-memory operation lock (`acquireVmOperationLock`, `withVmOperationLock`) taken by VM start, backup, restore-in-place, delete, rename (PATCH with a new name) and clone (source VM) routes; a second operation gets 409 `VM_BUSY` (see [BACKUPS.md](spec/BACKUPS.md#per-vm-operation-lock)) |
+| `vmOperationLock.js` | Per-VM in-memory operation lock (`acquireVmOperationLock`, `withVmOperationLock`) taken by VM start, backup, delete and rename (PATCH with a new name) routes; a second operation gets 409 `VM_BUSY` (see [BACKUPS.md](spec/BACKUPS.md#per-vm-operation-lock)) |
 | `backupDestinations.js` | `resolveBackupDestinations(settings, rawMounts, ids)` — shared destination-id → root resolution (SMB auto-mount included) for the VM/container backup routes and the backup scheduler; `backupToEachDestination(destinations, { push, backupOne, afterEach })` — the shared per-destination loop (percent slices, label prefixes, `destination-done`, never `done`) |
 | `backupRetention.js` | `computeScheduledBackupPruneList()` — pure GFS-lite keep-set over scheduled container backups (newest per day for N days + newest per ISO week for S weeks); manual/legacy backups never returned |
 | `containerBackupScheduler.js` | App-level glue. 60 s tick fires daily at `settings.backupSchedule.time`; sequentially backs up every container with `autoBackup: true` (pause→tar→resume via `createContainerBackup`), registers jobs in `backupJobStore`, prunes retention per destination. No persisted state (no catch-up); started/stopped from `index.js`. |
@@ -321,7 +320,7 @@ The URL is the source of truth for which view and tab are active. `AppLayout` is
 | Module | Purpose |
 |--------|---------|
 | `client.js` | Base fetch wrapper with auth token injection, 401 redirect to login |
-| `vms.js` | VM CRUD, power actions, disks, CDROM, USB, snapshots, cloud-init, host bridges |
+| `vms.js` | VM CRUD, power actions, disks, CDROM, USB, cloud-init, host bridges |
 | `host.js` | Host info, OS update check/upgrade |
 | `settings.js` | Settings CRUD, network mount status/mount |
 | `auth.js` | Password change |
@@ -338,11 +337,11 @@ The URL is the source of truth for which view and tab are active. `AppLayout` is
 components/
 ├── layout/           App shell: TopBar, BackgroundJobsIndicator, LeftPanel, AppLayout, HostStatsBar
 ├── vm/               VM views: OverviewPanel, CreateVMPanel, VMListItem, VMStatsBar,
-│                     CloneDialog, BackupModal, XMLModal
+│                     BackupModal, XMLModal
 ├── container/        CreateContainerPanel, ContainerOverviewPanel, ContainerListItem, ContainerStatsBar
 ├── sections/         Shared form sections (Overview + Create VM where noted):
 │                     GeneralSection, DisksSection, USBSection, VmNetworkInterfacesSection,
-│                     AdvancedSection, CloudInitSection, SnapshotsSection,
+│                     AdvancedSection, CloudInitSection,
 │                     ContainerMountsSection, ContainerEnvSection,
 │                     ContainerGeneralSection, ContainerNetworkSection, ContainerLogsSection,
 │                     MountFileEditorModal
@@ -365,7 +364,7 @@ App settings, backup paths, storage (SMB shares + adopted removable drives), and
 
 ### Key architectural pattern: shared sections
 
-The Overview panel and Create VM panel share the same section components (`GeneralSection`, `DisksSection`, `USBSection`, `VmNetworkInterfacesSection`, `AdvancedSection`, `CloudInitSection`, `SnapshotsSection`). Each section accepts an `isCreating` boolean prop that controls which fields are visible. No field logic is duplicated between the two views. `DisksSection` uses `DataTableChrome` (disk / size / image / image type / bus / actions) with header **+ New disk**, **+ Select image**, and **+ CD-ROM** on the overview path.
+The Overview panel and Create VM panel share the same section components (`GeneralSection`, `DisksSection`, `USBSection`, `VmNetworkInterfacesSection`, `AdvancedSection`, `CloudInitSection`). Each section accepts an `isCreating` boolean prop that controls which fields are visible. No field logic is duplicated between the two views. `DisksSection` uses `DataTableChrome` (disk / size / image / image type / bus / actions) with header **+ New disk**, **+ Select image**, and **+ CD-ROM** on the overview path.
 
 ## Directory Layout
 

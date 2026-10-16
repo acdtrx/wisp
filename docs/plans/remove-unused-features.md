@@ -1,6 +1,6 @@
 # Plan — Remove unused VM features
 
-**Created:** 2026-10-16. **Status:** approved by the user, implementation pending.
+**Created:** 2026-10-16. **Status:** implemented on `chore/remove-unused-features` (one commit per step + docs); Linux verification pending.
 
 ## Goal
 

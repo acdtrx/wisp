@@ -1,5 +1,7 @@
 # Wisp Re-review — 2026-10-16 (after v2.4.0)
 
+> **Moot after [remove-unused-features](../../plans/remove-unused-features.md) (2026-10-16):** VM snapshots, cloning, VM restore-in-place and the legacy backup layout were removed, so V1, V2, V7, the snapshot / restore-in-place parts of V5, and the clone / snapshot spec-drift items no longer apply.
+
 Second full review the same day, run on `main` at v2.4.0 (`72b2e44`) after the audit fixes,
 Plan 5 and state migrations shipped. Same five areas, briefed as a fresh review (no skip lists).
 One reviewer (VM/storage) read the earlier audit and backlog anyway and left out items already

@@ -17,7 +17,7 @@ When you change behavior, APIs, UI, or configuration, update the corresponding d
 - **Config / env / paths**: `docs/spec/CONFIGURATION.md`
 - **Console / VNC**: `docs/spec/CONSOLE.md`, `docs/spec/noVNC.md`
 - **Host stats / monitoring**: `docs/spec/HOST-MONITORING.md`
-- **Backups, snapshots, cloud-init, USB, image library, deployment, etc.**: same-name spec in `docs/spec/`
+- **Backups, cloud-init, USB, image library, deployment, etc.**: same-name spec in `docs/spec/`
 - **Project rules / coding standards**: `CLAUDE.md`, `docs/CODING-RULES.md`
 
 Update the relevant section(s); keep wording consistent with the existing spec style.

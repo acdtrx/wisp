@@ -397,11 +397,11 @@ Privileged copy of a UEFI NVRAM file (`VARS.fd`). libvirt creates `<vmDir>/VARS.
 
 | Command | Description |
 |---------|-------------|
-| `wisp-nvram copy <src> <dst>` | `cp -p` then chown destination to the invoking user (`SUDO_UID`/`SUDO_GID`). libvirt's `dynamic_ownership=1` reclaims ownership when the cloned/restored VM is started. |
+| `wisp-nvram copy <src> <dst>` | `cp -p` then chown destination to the invoking user (`SUDO_UID`/`SUDO_GID`). libvirt's `dynamic_ownership=1` reclaims ownership when the restored VM is started. |
 
 **Path validation:** Both paths must be absolute, basename must be `VARS.fd`, and after `realpath -m` both must sit under `/var/lib/wisp/` or `/mnt/wisp/`. Custom `vmsPath` / `backupLocalPath` outside these roots are not supported by the helper — keep backup destinations under `/var/lib/wisp/backups/` or use a Wisp-managed mount under `/mnt/wisp/`.
 
-The backend invokes `sudo -n /usr/local/bin/wisp-nvram copy ...` from `vmManager` (clone, backup, restore). `install-helpers.sh` installs the helper and `/etc/sudoers.d/wisp-nvram`.
+The backend invokes `sudo -n /usr/local/bin/wisp-nvram copy ...` from `vmManager` (backup, restore). `install-helpers.sh` installs the helper and `/etc/sudoers.d/wisp-nvram`.
 
 ### `wisp-netns` (installed to `/usr/local/bin/`)
 

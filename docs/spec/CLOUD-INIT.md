@@ -125,7 +125,7 @@ The Cloud-Init section in the UI then shows a way to configure again from scratc
 
 Rebuild the seed ISO from the current stored configuration without opening the edit form. Useful after making manual changes to `cloud-init.json`.
 
-A backup restore (as new or in place) rebuilds the ISO the same way, from the restored `cloud-init.json` (`rebuildCloudInitISO`, the stored password hash reused); backups don't carry the ISO. See [BACKUPS.md → Cloud-init seed ISO](BACKUPS.md#cloud-init-seed-iso).
+A backup restore (always as a new VM) rebuilds the ISO the same way, from the restored `cloud-init.json` (`rebuildCloudInitISO`, the stored password hash reused); backups don't carry the ISO. See [BACKUPS.md → Cloud-init seed ISO](BACKUPS.md#cloud-init-seed-iso).
 
 The generator unlinks any existing `cloud-init.iso` before invoking `cloud-localds` / `genisoimage`. libvirt's `dynamic_ownership` chowns the file to `libvirt-qemu:kvm` on VM start and only chowns it back on a clean stop, so without the unlink a regenerate after the VM has run (especially after a force-stop or crash) hits `EACCES` trying to truncate a file the wisp user no longer owns. Per-VM directories are `wisp:libvirt 0775`, which grants unlink regardless of file ownership; the freshly created ISO is owned by the wisp user and libvirt re-chowns it on the next start.
 

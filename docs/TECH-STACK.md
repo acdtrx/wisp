@@ -134,7 +134,7 @@ These are invoked via `child_process` where no native Node.js alternative exists
 | `cloud-localds` | Cloud-init seed ISO generation (preferred) |
 | `genisoimage` | Cloud-init seed ISO generation (fallback) |
 | `openssl` | Password hashing for cloud-init (`openssl passwd -6`) |
-| `cp` | Fast disk copy with `--reflink=auto` when available; falls back to Node `copyFile` (clone/backup) |
+| `cp` | Fast disk copy with `--reflink=auto` when available; falls back to Node `copyFile` (backup, restore) |
 | `xz` | Decompress HAOS `.qcow2.xz` downloads (`xz -dc`) |
 | `wisp-power` | Host shutdown/reboot (privileged helper; see CONFIGURATION) |
 | `wisp-dmidecode` | RAM module info via `dmidecode` (privileged helper; see HOST-MONITORING) |

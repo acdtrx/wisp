@@ -1,6 +1,12 @@
 # Backups
 
-The backup system creates full VM snapshots to local or network (SMB) storage, and supports restoring backups as new VMs.
+The backup system creates full point-in-time copies of stopped VMs (and of containers, [below](#container-backups)) on local or network (SMB) storage, and restores VM backups as new VMs.
+
+## Scope (settled 2026-10-16)
+
+- **VM backups restore as a new VM only.** VM restore-in-place was removed together with VM snapshots and cloning ([VM-MANAGEMENT.md → Not supported](VM-MANAGEMENT.md#not-supported-snapshots-cloning-restore-in-place)): unused, and its staging swap, snapshot refusal and lock interplay kept producing bugs. To roll a VM back, restore the backup as a new VM, then delete the old one. Container restore-in-place stays ([Restoring a container in place](#restoring-a-container-in-place)).
+- **One layout per workload kind:** `<dest>/vms/<vm>/<ts>/` and `<dest>/containers/<name>/<ts>/`. The older `<dest>/<vm>/<ts>/` VM layout is no longer listed, restored or deleted — no host held such a backup, and its delete fallback could wipe a VM's whole backup set (re-review V7).
+- Considered for removal in the same pass and **kept**: multiple backup destinations (local plus one mount) and container rename.
 
 ## Backup Preconditions
 
@@ -28,28 +34,27 @@ Disk images are gzipped to reduce backup size. NVRAM and config files are stored
 
 Why not back it up: libvirt chowns the read-only CD-ROM image to its qemu user when the VM starts and never restores read-only images on stop, and the ISO is `0600` (it carries the password hash) — so after a VM's first boot the wisp user can no longer read its own ISO. The backup used to swallow that error and silently finish without the ISO (V19 follow-up). Rejected: copying it through the privileged `wisp-nvram` helper (widens a privileged path to carry data the JSON already holds) and relaxing the ISO to group-readable `0640` (weakens the password-hash hardening).
 
-Consequence: the rebuilt ISO's cloud-init `instance-id` (`<vmName>-<hash of user-data>`) can differ from the old one — always on restore-as-new (new name, new MAC), and on restore-in-place when the original ISO was built without the MAC hint (created and never edited: create builds the ISO before the domain, so it has no MAC). A new instance-id makes cloud-init re-run its once-per-instance modules on the next boot: user and password, SSH keys, packages, and **regenerated SSH host keys**.
+Consequence: the rebuilt ISO's cloud-init `instance-id` (`<vmName>-<hash of user-data>`) differs from the old one on every restore (a restore is always a new VM: new name, new MAC). A new instance-id makes cloud-init re-run its once-per-instance modules on the next boot: user and password, SSH keys, packages, and **regenerated SSH host keys**.
 
 ### Disks on a backing chain
 
-*(settled 2026-10-16)* Every VM backup is complete and self-contained, whatever snapshots the VM has. A live snapshot leaves each disk on an external overlay (`disk0.<snapshot>`, backing file the original `disk0.qcow2`), and the domain points at the overlay until the snapshot is deleted. For each disk the backup reads the image's chain (`qemu-img info --backing-chain --output=json`, with the format pinned to the domain's `<driver type>` so a guest-written raw image is never probed as qcow2):
+*(settled 2026-10-16)* Every VM backup is complete and self-contained, even when a disk sits on a backing chain. Wisp itself makes no snapshots, but a disk can still be an overlay: a snapshot made outside Wisp (`virsh snapshot-create-as` on a running VM leaves `disk0.<snapshot>`, backing file the original `disk0.qcow2`, with the domain pointing at the overlay), or an image layered on a shared base. For each disk the backup reads the image's chain (`qemu-img info --backing-chain --output=json`, with the format pinned to the domain's `<driver type>` so a guest-written raw image is never probed as qcow2):
 
 - **No backing file** (the usual case): the image file is gzip-streamed as-is (fast path).
 - **A backing chain:** the whole chain is **flattened** — `qemu-img convert -O qcow2` of the top image into a scratch file `<file>.flatten` inside the backup's own directory, which is then gzipped and removed. The result is a standalone qcow2 with the content the VM currently sees (base plus every overlay). It is saved under the **chain base's** file name (`disk0.qcow2.gz`, not `disk0.<snapshot>.gz`); `manifest.json` lists that name, and the saved `domain.xml` points that disk at the base path as a qcow2 file with no `<backingStore>`, so a restore produces a normal standalone disk and needs nothing chain-aware.
 
 The VM is stopped, so the chain is stable while it is read. Flattening needs the disk's allocated size free at the destination, briefly, on top of the compressed copy, and costs a second pass over the data (convert, then gzip). A failed flatten (disk full, unreadable or missing backing file) fails the destination like any other error — the backup directory, scratch file included, is removed, and nothing is ever written to the VM directory. Two disks that would land under the same file name (two overlays on one base image, or two same-named images in different directories — before this check the second silently overwrote the first) fail the backup (`CONFIG_ERROR`) rather than overwrite each other.
 
-Rejected: refusing to back up while any disk has a backing chain — a VM with a live snapshot could then not be backed up at all until the snapshot was deleted.
+Rejected: refusing to back up while any disk has a backing chain — a VM on an overlay could then not be backed up at all until the chain was committed.
 
 ### Not backed up
 
 A VM backup holds the files above and nothing else. Outside it:
 
 - **vTPM state.** A VM with a vTPM (the Windows 11 template enables one) keeps its TPM in libvirt's swtpm state directory (`/var/lib/libvirt/swtpm/<uuid>/`, root-owned), keyed by the domain UUID — not in the VM directory, and not copied. Consequences on restore:
-  - **Restore as new** gets a new UUID and therefore a fresh, empty TPM. Anything the guest sealed to its TPM is gone: **BitLocker asks for its recovery key** on first boot, and Windows Hello PINs / biometrics, TPM-backed certificates and similar keys must be set up again. Have the BitLocker recovery key before relying on such a backup.
-  - **Restore in place** keeps the live UUID, so the guest finds the TPM it has *now* — normally the same TPM the backup was taken with, and BitLocker unseals as before. It does not if the TPM changed since the backup (VM deleted and recreated under the same name, TPM cleared in the guest, vTPM toggled off and on): then the same recovery-key prompt applies.
+  - **Restore** (always as a new VM) gets a new UUID and therefore a fresh, empty TPM. Anything the guest sealed to its TPM is gone: **BitLocker asks for its recovery key** on first boot, and Windows Hello PINs / biometrics, TPM-backed certificates and similar keys must be set up again. Have the BitLocker recovery key before relying on such a backup.
   - Deleting a VM lets libvirt remove its TPM state, so once the original VM is gone no restore gets its TPM back.
-- **Snapshots.** Snapshots are not part of a backup: a backup holds the disks' *current* state only, and restore defines no snapshot metadata, so a restored VM shows no snapshots. Internal (offline) snapshots live inside a qcow2 file and travel with it when the disk is copied as-is, but a flattened disk (above) carries only the active layer; a live snapshot's memory file (`snapshots/*.mem`) is never copied.
+- **Snapshots made outside Wisp.** libvirt snapshot metadata is not part of a backup: a backup holds the disks' *current* state only, and a restored VM has no snapshot metadata. Internal qcow2 snapshots travel inside a disk copied as-is, but a flattened disk (above) carries only the active content; a snapshot's memory file is never copied.
 
 vTPM state backup is a backlog item (see `docs/BACKLOG.md`); the gap is documented rather than closed. (settled 2026-10-16)
 
@@ -64,11 +69,9 @@ vTPM state backup is a backlog item (see `docs/BACKLOG.md`); the gap is document
 └── cloud-init.json
 ```
 
-VM backups land under a `vms/` subdirectory of each destination root. This mirrors container backups, which already live at `<destination>/containers/<name>/<timestamp>/` — VM and container namespaces are now symmetric and never collide.
+VM backups land under a `vms/` subdirectory of each destination root, beside container backups at `<destination>/containers/<name>/<timestamp>/` — the two namespaces never collide. This is the only layout ([Scope](#scope-settled-2026-10-16)); `resolveVmBackupDir(root, name, ts)` maps an API identity to it.
 
 The timestamp folder name is `YYYY-MM-DDTHH-mm-ss` (ISO with `:` swapped to `-`, e.g. `2026-05-08T06-30-00`).
-
-**Legacy layout:** Backups taken before this layout flip live at `<destination>/<vm-name>/<timestamp>/` (no `vms/` prefix). `listBackups` walks both paths and dedupes by `(vmName, timestamp)` preferring the new layout. Restore/delete still work on legacy backups — `resolveVmBackupDir(root, name, ts)` checks the new path first, then falls back. New backups always use the new layout; nothing is moved on disk.
 
 **The on-disk layout is a server-side detail, not part of the API.** Backups are identified across the API as `(destinationId, vmName, timestamp)`; clients never receive or send the absolute backup path. See [API.md → Backups](API.md#backups).
 
@@ -95,7 +98,7 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
 1. Client sends `POST /api/vms/:name/backup` with `destinationIds` (e.g. `["local"]` or `["local", "<backupMountId>"]`); defaults to `["local"]` when omitted. Only `local` and the single configured `backupMountId` are accepted — any other id returns 422.
 2. Backend refuses a VM that is not stopped with **409** `VM_MUST_BE_OFFLINE` in the request itself — no job is created and no attempt is recorded (vmManager's `createBackup` re-checks inside the job, covering a VM started in between)
 3. Backend resolves paths from `backupLocalPath` and, when requested, the mount referenced by `backupMountId` (with mount check / auto-mount for SMB)
-4. The VM's [operation lock](#per-vm-operation-lock) is taken (**409** `VM_BUSY` if another start / backup / restore / delete / rename / clone of this VM is running) and a background job is created (returns `jobId`)
+4. The VM's [operation lock](#per-vm-operation-lock) is taken (**409** `VM_BUSY` if another start / backup / delete / rename of this VM is running) and a background job is created (returns `jobId`)
 5. For each destination path, in order:
    - Create backup directory `<dest>/vms/<vmName>/<timestamp>/` — exclusively: if that directory already exists (a second backup within the same second) the destination fails with `BACKUP_EXISTS` rather than writing into another run's backup
    - Save domain XML
@@ -109,7 +112,7 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
 
 ## Listing Backups
 
-`GET /api/backups` scans configured destinations that are currently usable (a `<vmName>/<timestamp>/` directory is listed only when it holds a parsable `manifest.json` — every backup Wisp has completed has one, so a manifest-less directory is an interrupted backup): always the local backup path; the extra destination only if `backupMountId` is set **and** the corresponding mount is currently mounted. For each found backup, returns: VM name, timestamp, total size in bytes, `origin` (`"manual"` / `"scheduled"`, manual when the manifest predates the field), plus `destinationId` (`'local'` or the mount UUID) and `destinationLabel` for display.
+`GET /api/backups` scans configured destinations that are currently usable (a `vms/<vmName>/<timestamp>/` directory is listed only when it holds a parsable `manifest.json` — every backup Wisp has completed has one, so a manifest-less directory is an interrupted backup): always the local backup path; the extra destination only if `backupMountId` is set **and** the corresponding mount is currently mounted. For each found backup, returns: VM name, timestamp, total size in bytes, `origin` (`"manual"` / `"scheduled"`, manual when the manifest predates the field), plus `destinationId` (`'local'` or the mount UUID) and `destinationLabel` for display.
 
 Optional `?vmName=` filter restricts results to a specific VM.
 
@@ -122,7 +125,7 @@ A configured network backup path that is not mounted is omitted from the scan (s
 0. Refuse with **409** if `newVmName` is taken — `VM_EXISTS` (a libvirt domain) or `VM_DIR_EXISTS` (`<vmsPath>/<newVmName>/` already exists, e.g. kept by *Delete VM, keep disks*). The restore never writes into a directory it did not create.
 1. Read `manifest.json` and `domain.xml` from the backup (both required — a directory without a manifest is incomplete, 422 `BACKUP_INVALID`)
 2. Create the new VM's directory (`<vmsPath>/<newVmName>/`, exclusively) and decompress/copy disk images into it
-3. Copy NVRAM and `cloud-init.json`; the restored `cloud-init.json` is chmodded `0600` (it carries the password hash — see [CLOUD-INIT.md](CLOUD-INIT.md) § Password hashing). It is optional, but present in the backup and failing to copy fails the restore. Then the cloud-init seed ISO is **rebuilt** from it ([Cloud-init seed ISO](#cloud-init-seed-iso)); a `cloud-init.iso.gz` in an older backup is ignored. Restore-in-place uses the same steps.
+3. Copy NVRAM and `cloud-init.json`; the restored `cloud-init.json` is chmodded `0600` (it carries the password hash — see [CLOUD-INIT.md](CLOUD-INIT.md) § Password hashing). It is optional, but present in the backup and failing to copy fails the restore. Then the cloud-init seed ISO is **rebuilt** from it ([Cloud-init seed ISO](#cloud-init-seed-iso)); a `cloud-init.iso.gz` in an older backup is ignored.
 4. Rewrite domain XML: new name, new UUID, new MAC addresses, and **path updates** so every file reference under the original VM directory (including block disks, CD-ROM paths such as cloud-init, UEFI NVRAM, and optional loader paths under that directory) points at `<vmsPath>/<newVmName>/`. This uses **`manifest.vmBasePath`** when available (older backups fall back to the backed-up VM name or inferred paths). Disk images that lived outside the VM directory (e.g. image library) are still remapped using the same per-disk logic as before.
 5. Define the new domain with `DomainDefineXML`
 
@@ -136,19 +139,11 @@ The restored VM gets a new name, new UUID, and new MAC addresses — it is a ful
 
 Where it can fail: if a backup was produced under one `vmsPath` and you later move the entire `vms/` tree to a different absolute path **and** edit `wisp-config.json` accordingly, the manifest's recorded `vmBasePath` no longer matches anything Wisp recognises. In that uncommon case the restore falls back to inferring from the original VM name — and if that also doesn't match, the operator must edit `manifest.vmBasePath` to the path that was current when the backup was taken before retrying. We accept this rare manual step rather than carrying historical `vmsPath` history in the manifest.
 
-## Restoring in place
+## Restoring a container in place
 
-Both workload kinds can also be restored **over the live workload the backup was taken from** — same name, identity preserved — via `POST /api/backups/restore-in-place` and `POST /api/container-backups/restore-in-place`. Both run as background jobs (kinds `vm-restore` / `container-restore`, title `Restore <name>`) streaming progress over the same per-kind backup-progress SSE endpoints, and both accept `safetyBackup` (default `true`): the job first takes a normal manual-origin backup of the *current* state to the same destination (progress steps prefixed `safety-`, mapped to 0–45% of the job's bar), then restores (45–100%). If the safety backup fails, the job aborts before touching the live workload. A VM restore-in-place holds the VM's [operation lock](#per-vm-operation-lock) for the whole job (**409** `VM_BUSY` while another start / backup / restore / delete / rename / clone of the VM runs); a container restore-in-place is rejected with **409** `BACKUP_IN_PROGRESS` while another backup or restore job for the same container is running.
+A container backup can also be restored **over the live container it was taken from** — same name, identity preserved — via `POST /api/container-backups/restore-in-place`. VMs have no restore-in-place ([Scope](#scope-settled-2026-10-16)). It runs as a background job (kind `container-restore`, title `Restore <name>`) streaming progress over `/api/containers/backup-progress/:jobId`, and accepts `safetyBackup` (default `true`): the job first takes a normal manual-origin backup of the *current* state to the same destination (progress steps prefixed `safety-`, mapped to 0–45% of the job's bar), then restores (45–100%). If the safety backup fails, the job aborts before touching the live container. It is rejected with **409** `BACKUP_IN_PROGRESS` while another backup or restore job for the same container is running.
 
-**VM** (`restoreBackupInPlace` in vmManager): the target VM is identified by the backup itself (`manifest.vmName`, falling back to the domain XML name), must exist (404 `VM_NOT_FOUND` otherwise — restore-as-new covers deleted VMs), must be stopped (409 `VM_MUST_BE_OFFLINE`), and must have **no snapshots** (409 `VM_HAS_SNAPSHOTS` — see below). Disks, NVRAM, and `cloud-init.json` are decompressed into a staging directory, the cloud-init seed ISO is rebuilt there from that JSON inside the VM's directory (`.restore-<uuid>/`, same filesystem), and only once **every** file staged are they renamed over the live files; the backed-up domain XML is re-defined over the live definition last. A missing, truncated, or corrupt file in the backup fails the job with the live disks byte-identical and the staging directory removed. A `DomainDefineXML` failure after the swap leaves the restored disks under the live definition and says so in the error. (A backend crash mid-restore can leave a `.restore-*` directory in the VM's directory; it is safe to delete.)
-
-- **Name and UUID stay those of the live domain.** The UUID only differs when a same-named VM was deleted and recreated since the backup; adopting the live UUID lets `DomainDefineXML` replace the definition without an undefine/define window.
-- **MAC addresses, hardware config, and disk contents revert to the backup's state** (unlike restore-as-new, which regenerates them).
-- **Disks that lived outside the VM directory at backup time** (e.g. image library) are restored into the VM directory and remapped — identical to restore-as-new; the outside file is never overwritten.
-- Files in the VM directory the backup does not reference (e.g. a disk added later) are left in place, orphaned.
-- **A VM with snapshots is refused** *(settled 2026-10-16)*: 409 `VM_HAS_SNAPSHOTS`, checked in the request — before the operation lock, the safety backup or the job — and again by vmManager before anything is staged. A restore replaces the very disks the snapshots depend on (a live snapshot's overlay sits on the base file the restore writes; an internal snapshot lives inside the qcow2 being replaced), so the libvirt snapshot metadata would survive pointing at disk content it wasn't taken with — reverting would pair a snapshot's memory state with the wrong disks. Delete the snapshots first. Rejected: restoring anyway and documenting the stale metadata. Restore-as-new is unaffected — the new VM has no snapshots.
-
-**Container** (`restoreContainerBackupInPlace` in containerManager): the target is the backup's manifest name, must still exist on disk (404 `CONTAINER_NOT_FOUND`), and must be stopped (409 `CONTAINER_MUST_BE_STOPPED` — the directory is swapped out from under any rootfs mounts, so pausing is not enough; a lingering STOPPED task record is cleaned up like backup does). The archive is extracted to a staging dir and validated (single top-level dir matching the name, parsable `container.json`, mounts/devices per *Archive validation* below) *before* the live directory is moved aside and the staged one renamed in; a failed swap rolls the old directory back. Then:
+`restoreContainerBackupInPlace` (containerManager): the target is the backup's manifest name, must still exist on disk (404 `CONTAINER_NOT_FOUND`), and must be stopped (409 `CONTAINER_MUST_BE_STOPPED` — the directory is swapped out from under any rootfs mounts, so pausing is not enough; a lingering STOPPED task record is cleaned up like backup does). The archive is extracted to a staging dir and validated (single top-level dir matching the name, parsable `container.json`, mounts/devices per *Archive validation* below) *before* the live directory is moved aside and the staged one renamed in; a failed swap rolls the old directory back. Then:
 
 - **Identity is preserved**: same name, same MAC (and therefore the same DHCP lease), same containerd record (kept if present, recreated if missing). The rootfs snapshot is re-prepared from the image on next start either way.
 - The archived `container.json` replaces the live one wholesale — config edits made after the backup revert with it. The write goes through `writeContainerConfig` so list caches and the UI refresh.
@@ -165,7 +160,7 @@ The on-disk backup tree only records successes (a failed backup removes its part
 }
 ```
 
-Recorded on every completion of a manual backup (both route handlers), a scheduled backup (the scheduler), and the safety backup inside a restore-in-place job. It is a last-outcome cache, not history — safe to delete, self-healing.
+Recorded on every completion of a manual backup (both route handlers), a scheduled backup (the scheduler), and the safety backup inside a container restore-in-place job. It is a last-outcome cache, not history — safe to delete, self-healing.
 
 The map is pushed on the **`backups` topic of `GET /api/events`**: a snapshot on connect, then a frame after every attempt record and every backup delete/prune (`notifyBackupsChanged`). The frontend's Backups panel uses each frame both for the status badges and as its cue to refetch the backup lists — there is no polling.
 
@@ -179,7 +174,7 @@ The map is pushed on the **`backups` topic of `GET /api/events`**: a snapshot on
 
 ## Progress Tracking
 
-Backup creation and restore-in-place run as background jobs with SSE-based progress streaming (restore-as-new is a synchronous request):
+Backup creation and container restore-in-place run as background jobs with SSE-based progress streaming (restore-as-new is a synchronous request):
 
 - **Job store** manages job state (pending, running, complete, failed)
 - **SSE stream** at `/api/vms/backup-progress/:jobId` (VMs) or `/api/containers/backup-progress/:jobId` (containers) pushes events
@@ -190,7 +185,7 @@ Backup creation and restore-in-place run as background jobs with SSE-based progr
 
 ## Per-VM operation lock
 
-*(settled 2026-10-16)* Start, backup, restore-in-place, delete, rename and clone of a VM are mutually exclusive: each takes an in-memory per-VM lock (`lib/vmOperationLock.js`, Wisp glue — vmManager stays policy-free) and a second one is refused with **409** `VM_BUSY` instead of queueing. Backup, restore and clone hold it for the whole background job (a restore's safety backup included; a clone locks its **source** VM); start, delete and rename (`PATCH /api/vms/:name` with a different `name` — other edits don't lock) for the duration of the call. This closes e.g. a Start landing while a restore is replacing the disks, two backups of one VM interleaving, a delete under a running backup, or a rename moving the VM directory out from under a backup, restore or clone reading it. The other lifecycle actions (stop, reboot, …) don't take it — they apply to a running VM, and the locked operations require a stopped one. The frontend mirrors it from the background-jobs list: while a `backup` or `vm-restore` job for the VM runs, Start, Clone and Delete are disabled (and Backup during a restore); a rename attempted then surfaces the 409 as the save error. A running clone is not mirrored (its job is titled by the new name), so actions on the source during a clone get the backend's 409. Rejected: deriving busy state from the job store's titles (as the container restore check does) — start and delete are not jobs, so they would have nothing to hold.
+*(settled 2026-10-16)* Start, backup, delete and rename of a VM are mutually exclusive: each takes an in-memory per-VM lock (`lib/vmOperationLock.js`, Wisp glue — vmManager stays policy-free) and a second one is refused with **409** `VM_BUSY` instead of queueing. Backup holds it for the whole background job; start, delete and rename (`PATCH /api/vms/:name` with a different `name` — other edits don't lock) for the duration of the call. This closes e.g. a Start landing while a backup reads the disks, two backups of one VM interleaving, a delete under a running backup, or a rename moving the VM directory out from under a backup reading it. The other lifecycle actions (stop, reboot, …) don't take it — they apply to a running VM, and the locked operations require a stopped one. The frontend mirrors it from the background-jobs list: while a `backup` job for the VM runs, Start and Delete are disabled; a rename attempted then surfaces the 409 as the save error. Rejected: deriving busy state from the job store's titles (as the container restore check does) — start and delete are not jobs, so they would have nothing to hold.
 
 ## Container Backups
 
@@ -271,7 +266,7 @@ A daily scheduler (`lib/containerBackupScheduler.js`, app-glue — started/stopp
 
 ### Restoring
 
-Container backups can also be restored **in place** over the still-existing container — see [Restoring in place](#restoring-in-place) above. Restore-as-new:
+Container backups can also be restored **in place** over the still-existing container — see [Restoring a container in place](#restoring-a-container-in-place) above. Restore-as-new:
 
 `POST /api/container-backups/restore` with `{ destinationId, name, timestamp, newName }`:
 

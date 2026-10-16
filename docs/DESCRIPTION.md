@@ -15,7 +15,7 @@ Wisp targets homelab users, prosumers, and small-team administrators who need a 
 ## Primary Goals
 
 - **Minimal, uncluttered UI** — every screen earns its elements; no visual clutter. Light is the current default look; theming direction (e.g. dark mode) is a backlog matter, not a goal statement (settled 2026-08-11).
-- **Full VM lifecycle management** — create, start, stop, reboot, suspend, resume, clone, delete, snapshot, backup, and restore virtual machines.
+- **Full VM lifecycle management** — create, start, stop, reboot, suspend, resume, delete, back up, and restore (as a new VM) virtual machines.
 - **Container lifecycle** — create, configure, start, stop, and manage containers on containerd (bridge networking, mounts, logs), including app containers with dedicated configuration UIs.
 - **In-browser consoles** — VNC graphical console for VMs and an interactive shell for containers, with no client software required.
 - **Self-contained** — no CDN-linked assets at runtime. All JavaScript, CSS, and libraries are bundled or vendored and served locally. The application is fully functional with zero internet access on the server after installation.
@@ -33,7 +33,7 @@ integration boundaries, async patterns, shared components — is
 
 ## Capabilities
 
-At the intent level: full VM lifecycle with snapshots, backups and restore, cloud-init provisioning, and USB passthrough; containers on containerd, including app containers created from templates with dedicated configuration UIs; an image library; in-browser VNC and shell consoles; host monitoring and hardware inventory; host management (SMB mounts, removable drives, VLAN bridges, power, OS updates); LAN discovery of peer Wisp instances; an MCP endpoint for coding agents; self-update from GitHub Releases. The authority on what exists and how it behaves is [`docs/spec/`](spec/) — one contract doc per area.
+At the intent level: full VM lifecycle with backups and restore, cloud-init provisioning, and USB passthrough; containers on containerd, including app containers created from templates with dedicated configuration UIs; an image library; in-browser VNC and shell consoles; host monitoring and hardware inventory; host management (SMB mounts, removable drives, VLAN bridges, power, OS updates); LAN discovery of peer Wisp instances; an MCP endpoint for coding agents; self-update from GitHub Releases. The authority on what exists and how it behaves is [`docs/spec/`](spec/) — one contract doc per area.
 
 ## Out of Scope
 
