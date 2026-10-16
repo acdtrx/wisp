@@ -197,12 +197,20 @@ export async function resumeStalePausedContainersAtBackendBoot(log) {
   }
 }
 
+/**
+ * Stop the container (SIGTERM, then SIGKILL after 10 s). On a stopped
+ * container waiting out its restart-policy backoff, Stop cancels that restart
+ * and succeeds with `restartCancelled: true`; on a stopped container with
+ * nothing scheduled it throws CONTAINER_NOT_RUNNING.
+ * @returns {Promise<{ restartCancelled: boolean }>}
+ */
 export async function stopContainer(name) {
   const task = await getTaskState(name);
   // Before the not-running check: a Stop on a container waiting out its
   // restart-policy backoff cancels that restart.
-  noteIntentionalStop(name, task && task.status !== 'STOPPED' ? task.pid : null);
+  const restartCancelled = noteIntentionalStop(name, task && task.status !== 'STOPPED' ? task.pid : null);
   if (!task || task.status === 'STOPPED') {
+    if (restartCancelled) return { restartCancelled };
     throw containerError('CONTAINER_NOT_RUNNING', `Container "${name}" is not running`);
   }
 
@@ -239,12 +247,18 @@ export async function stopContainer(name) {
   // event fires the network-change event with a null snapshot. Services stay
   // here because they're tied to the container's services array, not the IP.
   await deregisterServicesForContainer(name);
+  return { restartCancelled };
 }
 
+/**
+ * SIGKILL the container. Same scheduled-restart semantics as stopContainer.
+ * @returns {Promise<{ restartCancelled: boolean }>}
+ */
 export async function killContainer(name) {
   const task = await getTaskState(name);
-  noteIntentionalStop(name, task && task.status !== 'STOPPED' ? task.pid : null);
+  const restartCancelled = noteIntentionalStop(name, task && task.status !== 'STOPPED' ? task.pid : null);
   if (!task || task.status === 'STOPPED') {
+    if (restartCancelled) return { restartCancelled };
     throw containerError('CONTAINER_NOT_RUNNING', `Container "${name}" is not running`);
   }
 
@@ -264,6 +278,7 @@ export async function killContainer(name) {
   // A-record deregistration: handled by the reconciler via the network-change
   // event. Services stay here, tied to the container's services array.
   await deregisterServicesForContainer(name);
+  return { restartCancelled };
 }
 
 export async function restartContainer(name) {

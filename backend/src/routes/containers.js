@@ -91,6 +91,13 @@ export default async function containerRoutes(fastify) {
               iconId: { type: ['string', 'null'] },
               autoBackup: { type: 'boolean' },
               updateAvailable: { type: 'boolean' },
+              scheduledRestart: {
+                type: ['object', 'null'],
+                properties: {
+                  attempt: { type: 'integer' },
+                  at: { type: 'number' },
+                },
+              },
             },
           },
         },
@@ -396,8 +403,8 @@ export default async function containerRoutes(fastify) {
 
   fastify.post('/containers/:name/stop', async (request, reply) => {
     try {
-      await stopContainer(request.params.name);
-      return { ok: true };
+      const { restartCancelled } = await stopContainer(request.params.name);
+      return { ok: true, restartCancelled };
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -414,8 +421,8 @@ export default async function containerRoutes(fastify) {
 
   fastify.post('/containers/:name/kill', async (request, reply) => {
     try {
-      await killContainer(request.params.name);
-      return { ok: true };
+      const { restartCancelled } = await killContainer(request.params.name);
+      return { ok: true, restartCancelled };
     } catch (err) {
       handleRouteError(err, reply, request);
     }

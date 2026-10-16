@@ -1498,7 +1498,7 @@ All container routes require JWT authentication. Routes with a `:name` path para
 
 List all containers (summary).
 
-**200:** `[{ name, type: "container", image, state, iconId, autoBackup, updateAvailable }]`. List payload is intentionally minimal — only what the sidebar and the Backups panel render. `updateAvailable` is set by the image update checker (see CONTAINERS.md → *Image updates*) and defaults to `false` when the field is not set on disk. `autoBackup` mirrors the `container.json` flag (drives the auto-backup badge in Host → Backups). Section assignment is not part of this payload — read it from `GET /api/sections` (see [Sections](#sections)). Detail fields (`pid`, `cpuLimit`, `memoryLimitMiB`, `restartPolicy`, `autostart`, `pendingRestart`, etc.) are returned by `GET /api/containers/:name`; runtime samples (`uptime`, live CPU/IO) come from the per-container stats SSE.
+**200:** `[{ name, type: "container", image, state, iconId, autoBackup, updateAvailable, scheduledRestart }]`. `scheduledRestart` is `{ attempt, at }` (epoch ms) while the restart policy waits out a backoff for this stopped container, else `null` (see CONTAINERS.md → *Restart policy*). List payload is intentionally minimal — only what the sidebar and the Backups panel render. `updateAvailable` is set by the image update checker (see CONTAINERS.md → *Image updates*) and defaults to `false` when the field is not set on disk. `autoBackup` mirrors the `container.json` flag (drives the auto-backup badge in Host → Backups). Section assignment is not part of this payload — read it from `GET /api/sections` (see [Sections](#sections)). Detail fields (`pid`, `cpuLimit`, `memoryLimitMiB`, `restartPolicy`, `autostart`, `pendingRestart`, etc.) are returned by `GET /api/containers/:name`; runtime samples (`uptime`, live CPU/IO) come from the per-container stats SSE.
 
 `iconId` is the optional UI icon key (same registry as VM icons); omit or `null` means the client uses the default container icon.
 
@@ -1643,9 +1643,9 @@ Start a stopped container.
 
 ### POST /api/containers/:name/stop
 
-Stop a running container (SIGTERM + grace period).
+Stop a running container (SIGTERM + grace period). On a stopped container with a restart-policy restart scheduled, cancels that restart.
 
-**200:** `{ ok: true }` | **409:** not running
+**200:** `{ ok: true, restartCancelled: boolean }` — `restartCancelled: true` when a scheduled restart was cancelled | **409:** not running and nothing scheduled
 
 ### POST /api/containers/:name/restart
 
@@ -1655,9 +1655,9 @@ Restart a container (stop + start).
 
 ### POST /api/containers/:name/kill
 
-Kill a container (SIGKILL).
+Kill a container (SIGKILL). Same scheduled-restart handling as Stop.
 
-**200:** `{ ok: true }` | **409:** not running
+**200:** `{ ok: true, restartCancelled: boolean }` | **409:** not running and nothing scheduled
 
 ### GET /api/containers/:name/stats
 

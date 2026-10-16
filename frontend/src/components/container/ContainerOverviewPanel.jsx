@@ -24,6 +24,7 @@ import ContainerNetworkSection from '../sections/ContainerNetworkSection.jsx';
 import ContainerDevicesSection from '../sections/ContainerDevicesSection.jsx';
 import ContainerLogsSection from '../sections/ContainerLogsSection.jsx';
 import { CONTAINER_STATE_ICON_COLOR } from '../../utils/containerConstants.js';
+import ScheduledRestartBadge from './ScheduledRestartBadge.jsx';
 import { getAppEntry } from '../../apps/appRegistry.js';
 import AppConfigWrapper from '../../apps/AppConfigWrapper.jsx';
 
@@ -143,6 +144,8 @@ export default function ContainerOverviewPanel() {
   const state = config.state;
   const isRunning = state === 'running';
   const isStopped = state === 'stopped' || state === 'unknown';
+  /* Stopped but waiting out a restart-policy backoff: Stop cancels the restart. */
+  const restartScheduled = isStopped && !!config.scheduledRestart;
   const name = config.name;
   const iconColorClass = CONTAINER_STATE_ICON_COLOR[state] || CONTAINER_STATE_ICON_COLOR.unknown;
   const iconId = config.iconId || getDefaultContainerIconId();
@@ -252,6 +255,9 @@ export default function ContainerOverviewPanel() {
               Restart required
             </span>
           )}
+          {restartScheduled && (
+            <ScheduledRestartBadge scheduledRestart={config.scheduledRestart} className="mr-1" />
+          )}
           <ActionButton
             icon={Play} label={backupInProgress ? 'Cannot start while a backup is in progress' : 'Start'}
             onClick={() => startContainer(name)}
@@ -261,9 +267,11 @@ export default function ContainerOverviewPanel() {
           />
           <ActionButton
             icon={Square}
-            label={backupInProgress ? 'Unavailable while a backup is in progress' : 'Stop'}
+            label={backupInProgress
+              ? 'Unavailable while a backup is in progress'
+              : restartScheduled ? 'Stop (cancel the scheduled restart)' : 'Stop'}
             onClick={() => stopContainer(name)}
-            disabled={isStopped || backupInProgress}
+            disabled={(isStopped && !restartScheduled) || backupInProgress}
             loading={actionLoading === 'stop'}
           />
           <ActionButton

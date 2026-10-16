@@ -758,9 +758,9 @@ Containers share the same unified list in the left panel as VMs. They use the **
 ### Container List Item
 
 - **Icon**: user-selected workload icon or default **Box**, colored by state (green=running, gray=stopped)
-- **Name**: container name, with a small orange **Update** pill when the image update checker has flagged this container (`updateAvailable`)
+- **Name**: container name, with a small orange **Update** pill when the image update checker has flagged this container (`updateAvailable`), and an amber **Restarting in N s** pill (`ScheduledRestartBadge`) while the restart policy has a restart scheduled (`scheduledRestart`)
 - **Subtitle**: shortened OCI image reference
-- **Hover actions**: Start (if stopped), Stop (if running), Restart (if running)
+- **Hover actions**: Start (if stopped), Stop (if running, or stopped with a scheduled restart — cancels it), Restart (if running)
 
 ### Container Overview Panel
 
@@ -768,6 +768,7 @@ Header bar with:
 - **Icon** — clickable, opens the Icon Picker (same set as VMs), colored by state; default matches **Box**
 - Container name + **container** badge (muted pill)
 - Tabs: **Overview** | **Logs** | **Console**
+- **Restarting in N s** amber badge (left of the actions, counting down each second) while the restart policy has a restart scheduled; **Stop** stays enabled then and cancels it (label: *Stop (cancel the scheduled restart)*)
 - Action buttons: Start, Stop, Kill, Restart, (divider), Backup, Delete. **Backup** opens the shared backup modal and works in any settled state — a running container is paused for the duration of the archive and resumed automatically (the sidebar shows `paused` for that window). While a backup is in progress, **Start**, **Stop**, **Kill**, and **Restart** are disabled (labels explain why) — interrupting a frozen task mid-archive would break the resume flow; Backup itself is disabled during transient states (`pausing`/`unknown`) and while a backup runs.
 
 When `config.updateAvailable` is `true`, an orange banner sits above the tab content: "New image version available. Restart to apply." The message has no button of its own — the user restarts via the primary **Restart** action button in the header row just above. `startExistingContainer` detects the digest drift and re-prepares the snapshot from the new image layers (see CONTAINERS.md → *Image updates*). `updateAvailable` is a derived backend field — it's only ever `true` when the container is running (or paused) with a digest older than the library's current one; stopped containers always read as `false`.

@@ -28,6 +28,11 @@
  * Only exits observed while the backend is subscribed are acted on: an exit
  * during a backend restart or an events-stream gap is not replayed, and host
  * boot is `autostart`'s job.
+ *
+ * A scheduled restart is visible: `getScheduledRestart(name)` feeds the list
+ * and detail payloads (`scheduledRestart`), and every schedule / cancel / fire
+ * notifies `subscribeScheduledRestartChange` handlers so the list cache
+ * refreshes.
  */
 import { containerState } from './containerManagerConnection.js';
 import { readContainerConfig } from './containerManagerConfigIo.js';
@@ -41,10 +46,11 @@ const RESET_AFTER_MS = 60 * 1000;
 
 /** name → Set<pid> of main processes Wisp is stopping on purpose. */
 const intentionalStopPids = new Map();
-/** name → { timer, exitStatus } — at most one scheduled restart per container. */
+/** name → { timer, exitStatus, attempt, at } — at most one scheduled restart per container. */
 const pendingRestarts = new Map();
 /** name → { nextDelayMs, attempt, lastStartAt } — kept while a crash loop is in progress. */
 const backoffState = new Map();
+const scheduledRestartChangeHandlers = new Set();
 
 function log() {
   return containerState.logger;
@@ -56,11 +62,42 @@ function policyRestarts(policy, exitStatus) {
   return false;
 }
 
+function fireScheduledRestartChange(name) {
+  for (const handler of scheduledRestartChangeHandlers) {
+    try {
+      handler(name);
+    } catch (err) {
+      log()?.warn?.({ err: err?.message || String(err), container: name }, 'Scheduled-restart change handler threw');
+    }
+  }
+}
+
+/**
+ * Subscribe to scheduled-restart changes (scheduled, cancelled, fired). The
+ * handler gets the container name. Returns an unsubscribe.
+ */
+export function subscribeScheduledRestartChange(handler) {
+  scheduledRestartChangeHandlers.add(handler);
+  return () => scheduledRestartChangeHandlers.delete(handler);
+}
+
+/**
+ * The restart the policy has scheduled for this container, or null.
+ * `at` is the epoch-ms time the timer fires; `attempt` counts restarts in the
+ * current crash loop (1 for the first).
+ * @returns {{ attempt: number, at: number } | null}
+ */
+export function getScheduledRestart(name) {
+  const pending = pendingRestarts.get(name);
+  return pending ? { attempt: pending.attempt, at: pending.at } : null;
+}
+
 function cancelPendingRestart(name) {
   const pending = pendingRestarts.get(name);
   if (!pending) return false;
   clearTimeout(pending.timer);
   pendingRestarts.delete(name);
+  fireScheduledRestartChange(name);
   return true;
 }
 
@@ -68,20 +105,23 @@ function cancelPendingRestart(name) {
  * Wisp is stopping this container, or keeping it stopped, on purpose. The exit
  * of `pid` (the current main process, when there is one) will not be treated
  * as a failure, and any pending policy restart is cancelled.
+ * @returns {boolean} true when a scheduled restart was cancelled
  */
 export function noteIntentionalStop(name, pid = null) {
-  if (cancelPendingRestart(name)) {
+  const cancelled = cancelPendingRestart(name);
+  if (cancelled) {
     log()?.info?.({ container: name }, 'Pending restart-policy restart cancelled by a Wisp stop');
   }
   backoffState.delete(name);
   const n = Number(pid);
-  if (!Number.isInteger(n) || n <= 0) return;
+  if (!Number.isInteger(n) || n <= 0) return cancelled;
   let pids = intentionalStopPids.get(name);
   if (!pids) {
     pids = new Set();
     intentionalStopPids.set(name, pids);
   }
   pids.add(n);
+  return cancelled;
 }
 
 /**
@@ -111,12 +151,14 @@ function scheduleRestart(name, exitStatus, policy, reason) {
 
   const timer = setTimeout(() => {
     pendingRestarts.delete(name);
+    fireScheduledRestartChange(name);
     runRestart(name, exitStatus, attempt).catch((err) => {
       log()?.warn?.({ err: err?.message || String(err), container: name }, 'Restart-policy restart threw');
     });
   }, delayMs);
   timer.unref?.();
-  pendingRestarts.set(name, { timer, exitStatus });
+  pendingRestarts.set(name, { timer, exitStatus, attempt, at: Date.now() + delayMs });
+  fireScheduledRestartChange(name);
 
   log()?.info?.(
     { container: name, exitCode: exitStatus, policy, attempt, delayMs, trigger: reason },

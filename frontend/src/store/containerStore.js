@@ -4,6 +4,24 @@ import { createSSE } from '../api/sse.js';
 import { subscribeTopic } from '../api/events.js';
 import { subscribeJobProgress, JOB_KIND } from '../api/jobProgress.js';
 
+/** Same scheduled restart (or both none)? Compared by value — list pushes carry fresh objects. */
+function sameScheduledRestart(a, b) {
+  if (!a || !b) return !a && !b;
+  return a.attempt === b.attempt && a.at === b.at;
+}
+
+/**
+ * The list topic is the live source for a workload's run state; carry its
+ * `state` and `scheduledRestart` into the selected container's config.
+ * Returns the updated config, or null when nothing changed.
+ */
+function configSyncedFromListItem(config, item) {
+  if (!item) return null;
+  const scheduledRestart = item.scheduledRestart ?? null;
+  if (item.state === config.state && sameScheduledRestart(scheduledRestart, config.scheduledRestart)) return null;
+  return { ...config, state: item.state, scheduledRestart };
+}
+
 export const useContainerStore = create((set, get) => {
   let listCloseFn = null;
   let statsCloseFn = null;
@@ -81,10 +99,11 @@ export const useContainerStore = create((set, get) => {
         ) {
           get().deselectContainer();
         } else if (selectedContainer && containerConfig) {
-          const ct = containers.find((c) => c.name === selectedContainer);
-          if (ct && ct.state !== containerConfig.state) {
-            set({ containerConfig: { ...containerConfig, state: ct.state } });
-          }
+          const synced = configSyncedFromListItem(
+            containerConfig,
+            containers.find((c) => c.name === selectedContainer),
+          );
+          if (synced) set({ containerConfig: synced });
         }
       } catch (err) {
         set({ error: err.message });
@@ -113,10 +132,11 @@ export const useContainerStore = create((set, get) => {
           set((prev) => {
             const next = { containers: data };
             if (prev.selectedContainer && prev.containerConfig) {
-              const ct = data.find((c) => c.name === prev.selectedContainer);
-              if (ct && ct.state !== prev.containerConfig.state) {
-                next.containerConfig = { ...prev.containerConfig, state: ct.state };
-              }
+              const synced = configSyncedFromListItem(
+                prev.containerConfig,
+                data.find((c) => c.name === prev.selectedContainer),
+              );
+              if (synced) next.containerConfig = synced;
             }
             return next;
           });
@@ -146,6 +166,7 @@ export const useContainerStore = create((set, get) => {
             iconId: listItem.iconId,
             autoBackup: listItem.autoBackup,
             updateAvailable: listItem.updateAvailable,
+            scheduledRestart: listItem.scheduledRestart ?? null,
           }
         : null;
       const seq = ++selectionSeq;

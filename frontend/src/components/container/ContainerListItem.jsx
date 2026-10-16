@@ -3,6 +3,7 @@ import { Play, Square, RotateCcw } from 'lucide-react';
 import { useContainerStore } from '../../store/containerStore.js';
 import { useUiStore } from '../../store/uiStore.js';
 import { CONTAINER_STATE_ICON_COLOR } from '../../utils/containerConstants.js';
+import ScheduledRestartBadge from './ScheduledRestartBadge.jsx';
 import { getVmIcon, getDefaultContainerIconId } from '../shared/vmIcons.jsx';
 import SectionPickerButton from '../sidebar/SectionPickerButton.jsx';
 
@@ -25,6 +26,7 @@ export default function ContainerListItem({ container }) {
   const isSelected = selectedContainer === container.name;
   const isRunning = container.state === 'running';
   const isStopped = container.state === 'stopped' || container.state === 'unknown';
+  const restartScheduled = isStopped && !!container.scheduledRestart;
   const iconColorClass = CONTAINER_STATE_ICON_COLOR[container.state] || CONTAINER_STATE_ICON_COLOR.unknown;
   const iconId = container.iconId || getDefaultContainerIconId();
   const WorkloadIcon = getVmIcon(iconId).component;
@@ -65,6 +67,7 @@ export default function ContainerListItem({ container }) {
               Update
             </span>
           )}
+          {restartScheduled && <ScheduledRestartBadge scheduledRestart={container.scheduledRestart} />}
         </div>
         <p className="mt-0.5 text-[11px] text-text-muted truncate">
           {shortImage(container.image)}
@@ -87,12 +90,12 @@ export default function ContainerListItem({ container }) {
               <Play size={14} />
             </button>
           )}
-          {isRunning && (
+          {(isRunning || restartScheduled) && (
             <button
               onClick={(e) => { e.stopPropagation(); stopContainer(container.name); }}
               disabled={!!actionLoading}
               className="rounded-sm p-2 lg:p-1 text-text-secondary hover:bg-status-stopped-soft hover:text-status-stopped disabled:opacity-40"
-              title="Stop"
+              title={restartScheduled ? 'Stop (cancel the scheduled restart)' : 'Stop'}
             >
               <Square size={14} />
             </button>

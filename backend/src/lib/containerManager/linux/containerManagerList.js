@@ -1,7 +1,7 @@
 /**
  * List containers by merging containerd state with on-disk container.json configs.
  * Maintains an in-memory cache refreshed on containerd events, container.json writes,
- * and image-update completion. Owns the containerd events subscription, which
+ * restart-policy schedule changes, and image-update completion. Owns the containerd events subscription, which
  * also feeds `/tasks/exit` to the restart policy.
  */
 import { join } from 'node:path';
@@ -30,7 +30,11 @@ import {
   writeContainerConfig,
   subscribeContainerConfigWrite,
 } from './containerManagerConfigIo.js';
-import { handleTaskExitEvent } from './containerManagerRestartPolicy.js';
+import {
+  handleTaskExitEvent,
+  getScheduledRestart,
+  subscribeScheduledRestartChange,
+} from './containerManagerRestartPolicy.js';
 
 /**
  * Derived `updateAvailable`: true when the container is running/paused AND
@@ -130,6 +134,7 @@ async function fetchContainerListFromDisk() {
       iconId: config.iconId ?? null,
       autoBackup: config.autoBackup === true,
       updateAvailable: deriveUpdateAvailable(config, state, libraryDigests),
+      scheduledRestart: getScheduledRestart(name),
     });
   }
 
@@ -252,6 +257,7 @@ subscribeContainerdDisconnect(() => {
   invalidateContainerListCache();
 });
 subscribeContainerConfigWrite(refreshContainerListCache);
+subscribeScheduledRestartChange(refreshContainerListCache);
 
 /**
  * Subscribe to container list cache changes. Handler fires after each successful
@@ -399,5 +405,6 @@ export async function getContainerConfig(name) {
     uptime,
     type: 'container',
     updateAvailable: deriveUpdateAvailable(merged, state, libraryDigests),
+    scheduledRestart: getScheduledRestart(name),
   };
 }
