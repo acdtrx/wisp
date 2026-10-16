@@ -18,6 +18,13 @@ import { getContainerFilesDir } from './containerPaths.js';
 import { getMountStatus } from '../../storage/index.js';
 
 /**
+ * Host mode of a secret file mount's backing file: owner-only. The container still
+ * reads it — its process runs as the deploy user that owns the file, or with
+ * runAsRoot as root through the mount's idmap.
+ */
+export const SECRET_MOUNT_FILE_MODE = 0o600;
+
+/**
  * @param {string} name
  * @returns {string|null} normalized segment or null if invalid
  */
@@ -256,11 +263,12 @@ export function findMount(config, mountName) {
 }
 
 /**
- * Create an empty file or directory for a Local mount if the artifact path is missing.
+ * Create an empty file or directory for a Local mount if the artifact path is missing
+ * (a secret file mount's file is created SECRET_MOUNT_FILE_MODE).
  * Storage-sourced and tmpfs mounts are skipped — Storage artifacts are managed at start time
  * (mkdir -p of subPath); tmpfs has no host backing at all.
  * @param {string} containerName
- * @param {{ type: string, name: string, sourceId?: string|null }} mountEntry
+ * @param {{ type: string, name: string, sourceId?: string|null, secret?: boolean }} mountEntry
  */
 export async function ensureMountArtifactIfMissing(containerName, mountEntry) {
   if (mountEntry.type === 'tmpfs') return;
@@ -279,7 +287,7 @@ export async function ensureMountArtifactIfMissing(containerName, mountEntry) {
     if (err?.code !== 'ENOENT') throw err;
   }
   if (mountEntry.type === 'file') {
-    await writeFile(hostPath, Buffer.alloc(0));
+    await writeFile(hostPath, Buffer.alloc(0), mountEntry.secret === true ? { mode: SECRET_MOUNT_FILE_MODE } : undefined);
   } else {
     await mkdir(hostPath, { recursive: true });
   }

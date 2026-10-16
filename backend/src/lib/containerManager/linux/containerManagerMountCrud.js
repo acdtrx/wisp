@@ -17,6 +17,7 @@ import {
   clearMountBackingFile,
   deleteMountBackingStore,
   renameMountBackingStore,
+  tightenSecretMountFiles,
 } from './containerManagerMountsContent.js';
 import { resolveMount } from './containerPaths.js';
 import { readContainerConfig as loadContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
@@ -56,6 +57,7 @@ export async function addContainerMount(containerName, mountDef) {
   if (requiresRestart) markPendingRestart(config);
   await writeContainerConfig(containerName, config);
   await ensureMissingMountArtifacts(containerName, [normalized]);
+  await tightenSecretMountFiles(containerName, [normalized]);
   return { requiresRestart };
 }
 
@@ -67,8 +69,9 @@ export async function addContainerMount(containerName, mountDef) {
  * @param {{ name?: string, containerPath?: string, readonly?: boolean, sourceId?: string|null, subPath?: string, secret?: boolean }} changes
  *
  * `secret` (file mounts only) is not part of the OCI spec, so flipping it alone needs no
- * restart. Turning it off empties the file first: the content was write-only, and
- * dropping the flag must not make it readable.
+ * restart. Turning it on tightens the existing file to 0600; turning it off empties the
+ * file first (the content was write-only, and dropping the flag must not make it
+ * readable) and restores the plain-file mode.
  */
 export async function updateContainerMount(containerName, mountName, changes) {
   if (!changes || typeof changes !== 'object') {
@@ -282,6 +285,7 @@ export async function updateContainerMount(containerName, mountName, changes) {
   if (!updated.sourceId && nextName === current.name) {
     await ensureMissingMountArtifacts(containerName, [updated]);
   }
+  await tightenSecretMountFiles(containerName, [updated]);
   return { requiresRestart };
 }
 

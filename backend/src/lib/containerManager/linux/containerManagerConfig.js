@@ -9,7 +9,7 @@ import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { registerAllContainerServices } from './containerManagerServices.js';
 import { validateAndNormalizeMounts, ensureMissingMountArtifacts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';
-import { clearMountBackingFile, renameMountBackingStore } from './containerManagerMountsContent.js';
+import { clearMountBackingFile, renameMountBackingStore, tightenSecretMountFiles } from './containerManagerMountsContent.js';
 import { resolveMount } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { RESTART_POLICIES } from './containerManagerRestartPolicy.js';
@@ -355,6 +355,8 @@ export async function updateContainerConfig(name, changes) {
   await moveRenamedMountsAndWrite(name, renamePairs, config);
   if (mountsPersisted) {
     await ensureMissingMountArtifacts(name, mountsPersisted);
+    /* A mount the new list marks secret (or a leftover files/<name> it reuses) still has its plain mode. */
+    await tightenSecretMountFiles(name, mountsPersisted);
   }
   return { requiresRestart, removedMounts };
 }

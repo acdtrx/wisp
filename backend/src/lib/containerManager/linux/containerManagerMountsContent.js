@@ -1,6 +1,11 @@
 /**
  * Backing store for container mounts under files/<mountName>: upload, zip extract, init, rename, delete,
  * text read/write (refused for secret mounts), clear.
+ *
+ * A stored `secret: true` file mount's backing file is always SECRET_MOUNT_FILE_MODE (0600):
+ * every write path tightens an existing file before writing to it and creates a new one at
+ * that mode, marking a mount secret tightens its file (`tightenSecretMountFiles`), and
+ * un-marking empties it and puts it back to the plain-file mode (`clearMountBackingFile`).
  */
 import { join, resolve } from 'node:path';
 import { createWriteStream } from 'node:fs';
@@ -11,7 +16,7 @@ import { TextDecoder, TextEncoder } from 'node:util';
 
 import { containerError } from './containerManagerConnection.js';
 import { getContainerDir, getContainerFilesDir } from './containerPaths.js';
-import { findMount, validateMountSegmentName } from './containerManagerMounts.js';
+import { findMount, validateMountSegmentName, SECRET_MOUNT_FILE_MODE } from './containerManagerMounts.js';
 
 /** Same contract as `import { execFile } from 'node:child_process/promises'` (avoids subpath builtin issues on some runtimes). */
 function execFile(command, args, options) {
@@ -42,6 +47,35 @@ function artifactPath(containerName, mountName) {
   return join(getContainerFilesDir(containerName), mountName);
 }
 
+/**
+ * Mode a plain mount file gets when Wisp creates it: 0666 under the process umask —
+ * 0644 under the service's default umask 022. What un-marking a secret restores.
+ */
+function plainMountFileMode() {
+  return 0o666 & ~process.umask();
+}
+
+/**
+ * The mode a write must leave a file mount's backing file at: SECRET_MOUNT_FILE_MODE for
+ * a stored secret, else the caller's `mode` (undefined = keep an existing file's mode).
+ */
+function mountFileWriteMode(mount, mode) {
+  return mount.secret === true ? SECRET_MOUNT_FILE_MODE : mode;
+}
+
+/**
+ * chmod a file if it exists. Write paths call it before replacing the content, so new
+ * content never sits under a wider mode; a missing file is fine — the write that follows
+ * creates it with `mode`.
+ */
+async function chmodIfExists(p, mode) {
+  try {
+    await chmod(p, mode);
+  } catch (err) {
+    if (err?.code !== 'ENOENT') throw err;
+  }
+}
+
 /** The refusal for reading a secret file mount's content — write-only for every caller. */
 export function mountSecretError(mountName) {
   return containerError(
@@ -59,7 +93,8 @@ function isUnzipMissingError(err) {
 }
 
 /**
- * Stream upload to files/<mountName> (file mount). Overwrites existing file.
+ * Stream upload to files/<mountName> (file mount). Overwrites existing file; a secret
+ * mount's file is tightened to SECRET_MOUNT_FILE_MODE first (or created at it).
  */
 export async function uploadMountFileStream(containerName, mountName, fileStream) {
   const config = await loadContainerJson(containerName);
@@ -73,7 +108,9 @@ export async function uploadMountFileStream(containerName, mountName, fileStream
   const filesDir = getContainerFilesDir(containerName);
   await mkdir(filesDir, { recursive: true });
   const dest = artifactPath(containerName, mountName);
-  await pipeline(fileStream, createWriteStream(dest));
+  const mode = mountFileWriteMode(m, undefined);
+  if (mode != null) await chmodIfExists(dest, mode);
+  await pipeline(fileStream, createWriteStream(dest, mode != null ? { mode } : undefined));
   const s = await stat(dest);
   return { name: mountName, size: s.size, modified: s.mtime.toISOString() };
 }
@@ -185,7 +222,9 @@ export async function initMountContent(containerName, mountName) {
   await mkdir(filesDir, { recursive: true });
   const p = artifactPath(containerName, mountName);
   if (m.type === 'file') {
-    await writeFile(p, Buffer.alloc(0));
+    const mode = mountFileWriteMode(m, undefined);
+    if (mode != null) await chmodIfExists(p, mode);
+    await writeFile(p, Buffer.alloc(0), mode != null ? { mode } : undefined);
   } else {
     await rm(p, { recursive: true, force: true });
     await mkdir(p, { recursive: true });
@@ -332,10 +371,11 @@ export async function getMountFileTextContent(containerName, mountName) {
 
 /**
  * Replace mount backing file with UTF-8 text from the editor.
- * `options.mode` (e.g. 0o600 for a secret) is applied before the new content is
- * written — to an existing file by chmod, to a new one at creation — so the
- * content never sits on disk under a wider mode. Without it an existing file
- * keeps its mode and a new one gets the umask default.
+ * `options.mode` (e.g. 0o600 for an app-declared secret) is applied before the new
+ * content is written — to an existing file by chmod, to a new one at creation — so
+ * the content never sits on disk under a wider mode. A stored `secret: true` mount
+ * always gets SECRET_MOUNT_FILE_MODE that way. Otherwise an existing file keeps its
+ * mode and a new one gets the umask default.
  */
 export async function putMountFileTextContent(containerName, mountName, content, { mode } = {}) {
   if (typeof content !== 'string') {
@@ -359,27 +399,40 @@ export async function putMountFileTextContent(containerName, mountName, content,
   const filesDir = getContainerFilesDir(containerName);
   await mkdir(filesDir, { recursive: true });
   const dest = artifactPath(containerName, mountName);
-  if (mode != null) {
-    await chmod(dest, mode).catch((err) => {
-      if (err?.code !== 'ENOENT') throw err;
-      /* no file yet — writeFile creates it with `mode` */
-    });
-  }
-  await writeFile(dest, bytes, mode != null ? { mode } : undefined);
+  const fileMode = mountFileWriteMode(m, mode);
+  if (fileMode != null) await chmodIfExists(dest, fileMode);
+  await writeFile(dest, bytes, fileMode != null ? { mode: fileMode } : undefined);
   return { ok: true };
 }
 
 /**
  * Empty a file mount's backing file — what un-marking a secret mount does to its content,
  * so the flag can't be dropped to read a secret back (same contract as secret env vars).
- * The file is left in place (0 bytes) so the bind source keeps existing.
+ * The file is left in place (0 bytes, same inode) so the bind source keeps existing, and
+ * goes back to the plain-file mode only once it is empty.
  */
 export async function clearMountBackingFile(containerName, mountName) {
   if (validateMountSegmentName(mountName) !== mountName) {
     throw containerError('INVALID_CONTAINER_MOUNTS', `Invalid mount name "${mountName}"`);
   }
   await mkdir(getContainerFilesDir(containerName), { recursive: true });
-  await writeFile(artifactPath(containerName, mountName), Buffer.alloc(0));
+  const p = artifactPath(containerName, mountName);
+  await writeFile(p, Buffer.alloc(0));
+  await chmod(p, plainMountFileMode());
+}
+
+/**
+ * Tighten the backing file of every Local secret file mount in `mounts` to
+ * SECRET_MOUNT_FILE_MODE — run after a config write that may have marked a mount
+ * secret (its existing content was written under the plain mode). Missing files
+ * are skipped; ensureMountArtifactIfMissing creates them at the secret mode.
+ */
+export async function tightenSecretMountFiles(containerName, mounts) {
+  for (const m of mounts || []) {
+    if (m?.type !== 'file' || m.secret !== true || m.sourceId) continue;
+    if (validateMountSegmentName(m.name) !== m.name) continue;
+    await chmodIfExists(artifactPath(containerName, m.name), SECRET_MOUNT_FILE_MODE);
+  }
 }
 
 /**
