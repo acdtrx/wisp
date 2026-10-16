@@ -17,6 +17,11 @@
  * Expiry: a finished job stays fetchable for JOB_TTL_MS measured from its
  * completion (`finishedAt`), then the sweep removes it.
  *
+ * Stream end: the terminal event (`done` / `error`) is the last thing a
+ * stream receives — the store ends every connected stream right after it, and
+ * a stream registering on a finished job gets the replay and is ended without
+ * joining the fan-out list.
+ *
  * @param {(result: unknown) => object} formatResult - Called on completeJob(result); return value is sent as { step: 'done', ...payload }
  * @returns Store with getJob, createJob, pushEvent, completeJob, failJob, registerStream, unregisterStream, listJobs, sweepExpired
  */
@@ -55,6 +60,15 @@ export function createJobStore(formatResult) {
       }
     }, KEEPALIVE_MS);
     keepaliveByJob.set(jobId, id);
+  }
+
+  /** End a job stream after its last event; the route's close teardown unregisters it. */
+  function endStream(stream) {
+    try {
+      stream.end();
+    } catch {
+      /* client already gone */
+    }
   }
 
   function getJob(jobId) {
@@ -130,7 +144,9 @@ export function createJobStore(formatResult) {
       );
     }
     pushEvent(jobId, { step: 'done', ...formatResult(result) });
+    const streams = job.streams;
     job.streams = [];
+    for (const stream of streams) endStream(stream);
     scheduleSweep();
   }
 
@@ -155,7 +171,9 @@ export function createJobStore(formatResult) {
       error: errMessage,
       detail: errRaw || errMessage,
     });
+    const streams = job.streams;
     job.streams = [];
+    for (const stream of streams) endStream(stream);
     scheduleSweep();
   }
 
@@ -206,20 +224,29 @@ export function createJobStore(formatResult) {
     }, delay);
   }
 
+  /**
+   * Replay the job's history to `stream`. A running job adds it to the live
+   * fan-out; a finished job's replay ends with the terminal event, so the
+   * stream is ended instead of registered.
+   * @returns {boolean} false when the job does not exist
+   */
   function registerStream(jobId, stream) {
     const job = jobs.get(jobId);
     if (!job) return false;
-    job.streams.push(stream);
-    if (!job.done) startKeepaliveIfNeeded(jobId);
     for (const event of job.events) {
       try {
         stream.write(`data: ${JSON.stringify(event)}\n\n`);
-      } catch (err) {
-        /* broken stream — drop from fan-out list */
-        job.streams = job.streams.filter(s => s !== stream);
+      } catch {
+        /* broken stream — never joins the fan-out list */
         return true;
       }
     }
+    if (job.done) {
+      endStream(stream);
+      return true;
+    }
+    job.streams.push(stream);
+    startKeepaliveIfNeeded(jobId);
     return true;
   }
 
