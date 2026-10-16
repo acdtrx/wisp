@@ -14,7 +14,7 @@ Fix plan: [`PLAN-1-SECURITY.md`](PLAN-1-SECURITY.md) → [`PLAN-2-DATA-SAFETY.md
 | Severity | Count | Headline |
 |---|---|---|
 | Critical | 1 | Auth bypass via percent-encoded path prefix (A1) |
-| High | 4 | VNC on 0.0.0.0 without auth (V1); VM name `.` → `rm -rf vmsPath` (V2); re-create/clone/restore over kept VM dir (V3); tiny-samba share rename deletes data (C1) |
+| High | 5 | VNC on 0.0.0.0 without auth (V1); VM name `.` → `rm -rf vmsPath` (V2); re-create/clone/restore over kept VM dir (V3); tiny-samba share rename deletes data (C1); backup after a live snapshot misses the disk (V19, found during fixing) |
 | Medium | 21 | Backup-root delete via `..`, secret read via read token, SSE/WS leaks, VM backup/restore integrity, stream-error crashes, mount detection, apt hang, frontend white-screen + stale state |
 | Low | 40 | Hardening, UI annoyances, parsing edge cases, updater rollback scope, doc drift |
 | Ops | 1 | Recurring `wisp.local` resolution failures inside containers (O1) |
@@ -74,6 +74,17 @@ up". Actually: createVM `mkdir -p` + `qemu-img create disk0.qcow2` overwrites th
 (`vmManagerCreate.js:287-325`); cloud-init overwritten; clone copies over and on failure
 `rm -rf`s the pre-existing dir (`:426-519`); restore overwrites (`vmManagerBackup.js:623-626`).
 Rename already guards this (`vmManagerConfig.js:77-81`).
+
+**V19 — VM backup after a live snapshot captures only the overlay, not the disk** — High — main (live, tini 2026-10-16)
+A live snapshot (`<memory snapshot='external'>`, no `<disks>`) makes libvirt switch every disk to an
+external overlay (`disk0.<snap>`), and the domain keeps pointing at it until the snapshot is
+deleted. `createBackup` copies each disk's `<source>` only and never follows the backing chain.
+Reproduced on tini: live snapshot of gubi → stop → backup reported success with
+`disk0.ovtest.gz` = **463 bytes**; the 4 GB `disk0.qcow2` base was not in the backup (manifest lists
+only `disk0.ovtest`). Restoring it yields an overlay whose backing file is an absolute path into the
+original VM dir. `cloud-init.iso.gz` was also missing from that backup (not yet explained). Affects
+v2.3.0. Fix options (decision): flatten each disk into the backup (`qemu-img convert` of the full
+chain → gz, allowlisted tool), or refuse backup while any disk has a backing chain.
 
 **C1 — Renaming or removing a tiny-samba share deletes its data** — High — main
 Mount name is `share-<shareName>` (`containerApps/tinySamba.js:322`); `updateContainerConfig`
