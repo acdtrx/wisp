@@ -190,7 +190,7 @@ function checkHostdev(hd) {
   const usbById = attr(hd, 'mode') === 'subsystem' && attr(hd, 'type') === 'usb'
     && vendor && product && childNames(hd.source).every((n) => n === 'vendor' || n === 'product');
   if (!usbById) {
-    throw invalid(`host device passthrough <hostdev type="${attr(hd, 'type') ?? '?'}"> is not supported (only USB by vendor/product id)`);
+    throw invalid(`host device passthrough <hostdev type="${attr(hd, 'type') ?? '?'}"> is not supported (only USB by vendor and product id)`);
   }
   assertNoHostFileRom(hd, 'a host device');
 }
