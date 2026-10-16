@@ -115,15 +115,16 @@ Rejected: probing with `qemu-img info` and accepting whatever qcow2/raw it repor
 
 ## Renaming
 
-A VM can be renamed when it is stopped (rename is the `name` field in `PATCH /api/vms/:name`).
+A VM can be renamed when it is stopped (rename is the `name` field in `PATCH /api/vms/:name`). The route holds the VM's [operation lock](BACKUPS.md#per-vm-operation-lock) for the whole rename.
 
-1. Pre-check: VM offline; the new name passes `validateVMName`; no other VM already uses it; the target directory `<vmsPath>/<newName>/` does not already exist.
+1. Pre-check: VM offline; the new name passes `validateVMName`; no other VM already uses it.
 2. **Infer the source dir.** `findActualVmDir` walks every absolute path in the parsed domain XML (disk `<source file>`, NVRAM, loader) and picks the deepest directory under `<vmsPath>/`. This may not equal `<vmsPath>/<oldName>/` — legacy state from a pre-fix rename can leave files in a directory whose name no longer matches the libvirt domain name. The rename converges that state by moving from the *actual* dir, not the *expected* one.
-3. **`iface.Rename(newName, 0)`** — libvirt updates the domain's `<name>` element.
-4. **`fs.rename(actualOldDir, <vmsPath>/<newName>)`** — atomic move on the same filesystem; brings disks, NVRAM and cloud-init artefacts along. On failure, the libvirt rename is rolled back.
-5. **Rewrite domain XML paths** (`vmManagerRename.rewriteDomainPaths`): every `<disk><source file>`, `<os><nvram>`, and `<os><loader>` value that started with `actualOldDir/` is rewritten to `<vmsPath>/<newName>/…`, then the domain is redefined via `DomainDefineXML`. On failure here, both the directory move and the libvirt rename are rolled back.
+3. **Reserve the target name** — create `<vmsPath>/<newName>/` exclusively (`createOwnVMDir`, the same call create and restore-as-new use); an existing path is **409 `VM_DIR_EXISTS`**, atomically. *(settled 2026-10-16)* The old "target dir doesn't exist" check raced: two renames to one name, or a create / restore-as-new of that name, could both pass it, and `rename(2)` onto the other side's still-empty directory replaces it — the create then wrote into, and on failure rolled back (`rm -rf`), the renamed VM's files. With the reservation each contender's own exclusive mkdir decides, so exactly one wins. Rejected: also taking the operation lock on the target name — create and restore don't hold a lock under the name they create, so it would not cover them, while the directory covers every path.
+4. **`iface.Rename(newName, 0)`** — libvirt updates the domain's `<name>` element.
+5. **`fs.rename(actualOldDir, <vmsPath>/<newName>)`** — atomic move on the same filesystem, replacing the empty reserved directory; brings disks, NVRAM and cloud-init artefacts along. On failure, the libvirt rename is rolled back. Whenever nothing moved into the reservation (libvirt refused the rename, the move failed, or the VM has no directory of its own — CD-ROM-only), it is removed with `rmdir`, which never deletes files someone else put there.
+6. **Rewrite domain XML paths** (`vmManagerRename.rewriteDomainPaths`): every `<disk><source file>`, `<os><nvram>`, and `<os><loader>` value that started with `actualOldDir/` is rewritten to `<vmsPath>/<newName>/…`, then the domain is redefined via `DomainDefineXML`. On failure here, both the directory move and the libvirt rename are rolled back.
 
-After step 5, the on-disk layout, libvirt's name, and the domain XML's absolute paths are all consistent under the new name. Backups taken before the rename keep references to the old path in their manifest — this is intentional; restore re-creates the per-VM dir under the **current** name.
+After step 6, the on-disk layout, libvirt's name, and the domain XML's absolute paths are all consistent under the new name. Backups taken before the rename keep references to the old path in their manifest — this is intentional; restore re-creates the per-VM dir under the **current** name.
 
 ### Out-of-band renames
 

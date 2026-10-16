@@ -2,6 +2,8 @@
  * VM config update (Overview tab edits).
  * Uses fast-xml-parser parse/mutate/build instead of regex to avoid fragile XML handling.
  */
+import { rmdir } from 'node:fs/promises';
+
 import dbus from 'dbus-next';
 
 import { validateVMName } from './vmManagerValidation.js';
@@ -10,7 +12,7 @@ import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomain
 import {
   parseVMFromXML, parseDomainRaw, buildXml, setWispMetadata, setWispPendingRestart, domainDefinitionSignature,
 } from './vmManagerXml.js';
-import { getWindowsFeatures, getWindowsClock, getLinuxFeatures } from './vmManagerCreate.js';
+import { getWindowsFeatures, getWindowsClock, getLinuxFeatures, createOwnVMDir } from './vmManagerCreate.js';
 import { moveVmDirectory, rewriteDomainPaths, findActualVmDir, pathExists } from './vmManagerRename.js';
 import { refreshVMListCache } from './vmManagerList.js';
 
@@ -77,19 +79,23 @@ export async function updateVMConfig(name, changes) {
       } else {
         oldDir = expectedOldDir;
       }
-      const newDir = getVMBasePath(newName);
-
-      // The new dir must not already exist — collisions would mean we'd
-      // overwrite or merge into an unrelated VM's files.
-      if (await pathExists(newDir)) {
-        throw vmError('CONFIG_ERROR', `Refusing to rename: target directory ${newDir} already exists`);
-      }
+      // Reserve the target name on disk: create its directory exclusively
+      // (an existing path → 409 VM_DIR_EXISTS, atomically). A second rename
+      // to the same name, or a create / restore-as-new racing this one, now
+      // fails its own exclusive mkdir instead of merging into — or, with
+      // rename(2) onto an empty directory, replacing — this VM's files.
+      // The move below replaces the reserved empty directory.
+      const newDir = await createOwnVMDir(newName);
+      // Drop the reservation when nothing moved into it (rmdir: never removes
+      // files someone else put there).
+      const releaseReservation = () => rmdir(newDir).catch(() => { /* best-effort */ });
 
       // 1. libvirt-level rename. Updates only the domain `<name>` element.
       const { iface } = await getDomainObjAndIface(domPath);
       try {
         await iface.Rename(newName, 0);
       } catch (err) {
+        await releaseReservation();
         throw vmError('LIBVIRT_ERROR', `Failed to rename VM "${effectiveName}"`, err.message);
       }
 
@@ -102,8 +108,12 @@ export async function updateVMConfig(name, changes) {
           const { iface: backIface } = await getDomainObjAndIface(await resolveDomain(newName));
           await backIface.Rename(currentName, 0);
         } catch { /* rollback best-effort; leave inconsistent state for the operator to inspect */ }
+        await releaseReservation();
         throw moveErr;
       }
+      // No directory to move (CD-ROM-only VM without one): keep the old
+      // layout — no directory under the new name either.
+      if (!dirMoved) await releaseReservation();
 
       effectiveName = newName;
       domPath = await resolveDomain(newName);
