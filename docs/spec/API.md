@@ -1433,9 +1433,10 @@ VNC console WebSocket proxy. Bridges the browser's noVNC client to QEMU's VNC se
   3. Read VNC port from domain XML
   4. Open TCP connection to `127.0.0.1:<port>`
   5. Pipe data bidirectionally between WebSocket and TCP socket
+- **Rejected before the upgrade:** HTTP `401` (no/invalid session — browsers report it as close `1006`), `403` (bearer token)
 - **Close codes:**
-  - `4001` — Authentication required/failed
-  - `4000` — Invalid VM name or VNC not available
+  - `1008` — Origin not allowed, or all consoles closed after a password change
+  - `4000` — `invalid name` (VM name) or `vnc unavailable` (no VNC port yet / libvirt error)
   - `1011` — TCP connection error
 
 ### WS /ws/container-console/:name · `session`

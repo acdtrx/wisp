@@ -798,7 +798,7 @@ Full-height log viewer:
 
 #### Console tab
 
-Lazy-loaded (`ContainerConsolePanel`). **xterm.js** terminal + toolbar (Paste, Fullscreen, Disconnect/Reconnect). Connects to **`/ws/container-console/:name`** with JWT; live I/O is WebSocket binary frames (see [API.md](API.md)). When the container is **not** running, shows a short message to start the container first (no shell session). Reconnect behavior (backoff, resume on visibility/`online`, a manual Disconnect stays disconnected) matches the VM console; the shell exiting shows **Session ended** with Reconnect instead of spawning a new shell, and a failed exec is a final error — see [CONSOLE.md](CONSOLE.md) § Container console sessions.
+Lazy-loaded (`ContainerConsolePanel`). **xterm.js** terminal + toolbar (Paste, Fullscreen, Disconnect/Reconnect). Connects to **`/ws/container-console/:name`**, authenticated by the `wisp_session` cookie on the upgrade; live I/O is WebSocket binary frames (see [API.md](API.md)). When the container is **not** running, shows a short message to start the container first (no shell session). Reconnect behavior (backoff, resume on visibility/`online`, a manual Disconnect stays disconnected) matches the VM console; the shell exiting shows **Session ended** with Reconnect instead of spawning a new shell, and a failed exec is a final error — see [CONSOLE.md](CONSOLE.md) § Container console sessions.
 
 ### Create Container Panel
 

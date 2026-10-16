@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { consoleWsUrl } from '../../api/console.js';
+import { getHostInfo } from '../../api/host.js';
 
 let RFBClass = null;
 const rfbUrl = `${(import.meta.env.BASE_URL || '/').replace(/\/?$/, '')}/vendor/novnc/core/rfb.js`;
@@ -63,21 +64,19 @@ function typeText(rfb, text) {
   }
 }
 
+/* Close codes from `routes/console.js`. The upgrade is authenticated before it
+ * completes, so an expired session has no close code of its own — the browser
+ * reports the refused upgrade as 1006. */
+const WS_CLOSE_REJECTED = 4000;
+const WS_CLOSE_ABNORMAL = 1006;
+
 /**
- * Return false only for 4000/4001 closes that are known-permanent (bad VM name, auth).
- * Everything else — VNC port not available, VM not found, libvirt errors — is transient
- * (port briefly shows -1 after resume/start) and should still retry.
- * 4001 = auth failure; never retry.
+ * Only a 4000 `invalid name` is permanent. A 4000 `vnc unavailable` (the port
+ * briefly reads -1 after start/resume, libvirt not connected) and everything
+ * else is transient and retries.
  */
 function shouldRetryAfterWsClose(code, reason) {
-  if (code === 4001) return false;
-  if (code === 4000) {
-    const r = String(reason || '');
-    if (/invalid vm name/i.test(r)) return false;
-    if (/authentication required/i.test(r)) return false;
-    return true;
-  }
-  return true;
+  return !(code === WS_CLOSE_REJECTED && reason === 'invalid name');
 }
 
 export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onDisconnect }) {
@@ -136,6 +135,38 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
     setError(null);
     while (viewportRef.current.firstChild) viewportRef.current.removeChild(viewportRef.current.firstChild);
 
+    function scheduleRetry() {
+      if (session !== sessionRef.current) return;
+      const n = reconnectAttemptRef.current;
+      if (n >= VNC_MAX_RECONNECT_ATTEMPTS) {
+        setError(
+          'Console connection was lost after several attempts. Ensure the VM is running, then click Retry.',
+        );
+        return;
+      }
+      const base = Math.min(VNC_INITIAL_BACKOFF_MS * (2 ** n), VNC_MAX_BACKOFF_MS);
+      const jitter = base * 0.15 * Math.random();
+      const delay = Math.round(base * 0.85 + jitter);
+      reconnectAttemptRef.current += 1;
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null;
+        attachRfb();
+      }, delay);
+    }
+
+    /** A refused upgrade (expired session) and a dropped network both close as 1006.
+     *  An authenticated GET tells them apart: on 401 `api()` sends the user to the
+     *  sign-in page; anything else retries. */
+    function retryAfterAuthCheck() {
+      getHostInfo().then(
+        () => scheduleRetry(),
+        (err) => {
+          if (err?.message === 'Session expired') return;
+          scheduleRetry();
+        },
+      );
+    }
+
     function attachRfb() {
       if (session !== sessionRef.current) return;
       const name = vmNameRef.current;
@@ -143,15 +174,17 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
       while (viewportRef.current.firstChild) viewportRef.current.removeChild(viewportRef.current.firstChild);
       const wsUrl = consoleWsUrl(`/ws/console/${encodeURIComponent(name)}/vnc`);
       try {
-        const rfb = new RFBClass(viewportRef.current, wsUrl, { shared: true });
-        rfbRef.current = rfb;
+        /* The socket is opened here, not by noVNC, so this close listener is
+         * registered before noVNC's `onclose`: noVNC dispatches `disconnect`
+         * synchronously from its handler, and the close code must already be
+         * recorded by then. */
         lastWsCloseRef.current = null;
-        const rawWs = rfb._sock?._websocket;
-        if (rawWs) {
-          rawWs.addEventListener('close', (e) => {
-            lastWsCloseRef.current = { code: e.code, reason: String(e.reason || '') };
-          });
-        }
+        const ws = new WebSocket(wsUrl);
+        ws.addEventListener('close', (e) => {
+          lastWsCloseRef.current = { code: e.code, reason: String(e.reason || '') };
+        });
+        const rfb = new RFBClass(viewportRef.current, ws, { shared: true });
+        rfbRef.current = rfb;
         rfb.addEventListener('connect', () => {
           if (session !== sessionRef.current) return;
           reconnectAttemptRef.current = 0;
@@ -175,28 +208,14 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
           const closeMeta = lastWsCloseRef.current;
           lastWsCloseRef.current = null;
           if (closeMeta && !shouldRetryAfterWsClose(closeMeta.code, closeMeta.reason)) {
-            if (closeMeta.code === 4001) {
-              setError('Session expired. Refresh the page and sign in again.');
-            }
-            // 4000 etc.: no auto-retry (avoids devtools spam); keep blank viewport + Reconnect in toolbar
+            // Invalid name: no auto-retry; keep blank viewport + Reconnect in toolbar
             return;
           }
-
-          const n = reconnectAttemptRef.current;
-          if (n >= VNC_MAX_RECONNECT_ATTEMPTS) {
-            setError(
-              'Console connection was lost after several attempts. Ensure the VM is running, then click Retry.',
-            );
+          if (closeMeta?.code === WS_CLOSE_ABNORMAL) {
+            retryAfterAuthCheck();
             return;
           }
-          const base = Math.min(VNC_INITIAL_BACKOFF_MS * (2 ** n), VNC_MAX_BACKOFF_MS);
-          const jitter = base * 0.15 * Math.random();
-          const delay = Math.round(base * 0.85 + jitter);
-          reconnectAttemptRef.current += 1;
-          reconnectTimerRef.current = setTimeout(() => {
-            reconnectTimerRef.current = null;
-            attachRfb();
-          }, delay);
+          scheduleRetry();
         });
         rfb.addEventListener('securityfailure', (e) => {
           if (session !== sessionRef.current) return;
