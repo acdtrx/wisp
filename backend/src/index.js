@@ -11,14 +11,9 @@ import { loadRuntimeEnv } from './lib/loadRuntimeEnv.js';
 import { createAuthHook, createRouteAccessRegistry, checkRouteAccess, AUTH_LEVELS } from './lib/auth.js';
 import { handleUncaughtError } from './lib/routeErrors.js';
 import { getConfigSync } from './lib/config.js';
-import { configure as configureVmManager, connect as connectLibvirt } from './lib/vmManager/index.js';
-import {
-  configure as configureContainerManager,
-  connect as connectContainerd,
-  disconnect as disconnectContainerd,
-  startImageUpdateChecker,
-  stopImageUpdateChecker,
-} from './lib/containerManager/index.js';
+import { configureManagers, connectManagers, disconnectManagers } from './lib/managerBootstrap.js';
+import { DEV_LOG_TRANSPORT } from './lib/logFormat.js';
+import { startImageUpdateChecker, stopImageUpdateChecker } from './lib/containerManager/index.js';
 import {
   startAutostartContainersAtBackendBoot,
   resumeStalePausedContainersAtBackendBoot,
@@ -49,7 +44,6 @@ import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
 import { startUpdateChecker, stopUpdateChecker, start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
 import { startUpdateChecker as startWispUpdateChecker, stopUpdateChecker as stopWispUpdateChecker } from './lib/wispUpdate.js';
 import { closeAllSSE } from './lib/sse.js';
-import { disconnect as disconnectLibvirtBus } from './lib/vmManager/index.js';
 import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/storage/index.js';
 import { connect as connectMdns, disconnect as disconnectMdns } from './lib/mdns/index.js';
 import { getDefaultContainerParentBridge } from './lib/networking/index.js';
@@ -61,25 +55,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, '..', '..');
 loadRuntimeEnv(projectRoot);
 
-/* Push Wisp paths + storage-mount resolver into the managers before any route
-   registers or any manager-internal code runs. After this point, vmManager and
-   containerManager have no Wisp-glue dependencies — they read everything from
-   the configure() slots. The resolver is sync (matches the pre-refactor
-   getConfigSync pattern in paths.js); wisp-config.json is small and the OS
-   caches the read. */
-{
-  const cfg = getConfigSync();
-  configureVmManager({ vmsPath: cfg.vmsPath });
-  configureContainerManager({
-    containersPath: cfg.containersPath,
-    resolveMount: (id) => {
-      if (typeof id !== 'string' || !id) return null;
-      const mounts = getConfigSync().mounts || [];
-      const m = mounts.find((x) => x && x.id === id);
-      return m ? { id: m.id, mountPath: m.mountPath, label: m.label } : null;
-    },
-  });
-}
+/* Configure the managers before any route registers or any manager-internal
+   code runs (lib/managerBootstrap.js — shared with scripts/migrate.mjs). */
+configureManagers();
 
 const PORT = parseInt(process.env.WISP_PORT, 10) || 8080;
 
@@ -112,14 +90,7 @@ const loggerConfig = {
   },
   ...(isDev
     ? {
-        transport: {
-          target: 'pino-pretty',
-          options: {
-            translateTime: 'SYS:HH:MM:ss.l',
-            singleLine: true,
-            ignore: 'pid,hostname,reqId,req.host,req.remoteAddress,req.remotePort',
-          },
-        },
+        transport: DEV_LOG_TRANSPORT,
       }
     : {}),
 };
@@ -363,17 +334,7 @@ async function start() {
 
   await cleanPartialJsonArtifacts(app.log);
 
-  try {
-    await connectLibvirt(app.log);
-  } catch (err) {
-    app.log.warn({ err }, 'libvirt connection failed — VM operations will be unavailable');
-  }
-
-  try {
-    await connectContainerd({ logger: app.log });
-  } catch (err) {
-    app.log.warn({ err }, 'containerd connection failed — container operations will be unavailable');
-  }
+  await connectManagers(app.log);
   // The forwarder answers the host's own .local name from the bridge new
   // containers attach to — the segment containers reach the host on.
   await connectMdns(app.log, { hostInterface: await getDefaultContainerParentBridge() });
@@ -442,8 +403,7 @@ async function shutdown(signal) {
   stopVmMdnsReconciler();
   stopContainerMdnsReconciler();
   await stopWispDiscovery(); // needs the live bus — before disconnectMdns
-  disconnectLibvirtBus();
-  disconnectContainerd();
+  disconnectManagers();
   await disconnectMdns();
   if (typeof app.server.closeAllConnections === 'function') {
     app.server.closeAllConnections();
