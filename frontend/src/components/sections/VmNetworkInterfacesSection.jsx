@@ -43,9 +43,12 @@ function normalizeNicsForApi(nics) {
   }));
 }
 
-export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSave, onFormChange }) {
+export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSave, onFormChange, busyReason }) {
   const isStopped = vmConfig.state === 'shutoff' || vmConfig.state === 'nostate';
-  const networkLocked = !isStopped && !isCreating;
+  /* busyReason: another operation (a backup) holds the VM's backend lock —
+   * a NIC save (PATCH) would be refused with 409 VM_BUSY. */
+  const vmBusy = !!busyReason && !isCreating;
+  const networkLocked = (!isStopped && !isCreating) || vmBusy;
 
   const [nics, setNics] = useState(() => initNicsFromConfig(vmConfig.nics));
   const [bridges, setBridges] = useState([]);
@@ -147,7 +150,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
       onClick={() => (isCreating ? addDraftNic() : openEditor(null))}
       disabled={networkLocked}
       className={`${isCreating ? 'hidden sm:inline-flex' : 'inline-flex'} items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed`}
-      title={networkLocked ? 'Stop the VM to add a NIC' : 'Add NIC'}
+      title={vmBusy ? busyReason : networkLocked ? 'Stop the VM to add a NIC' : 'Add NIC'}
       aria-label="Add NIC"
     >
       <Plus size={14} aria-hidden />
@@ -276,7 +279,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                           onClick={() => openEditor(idx)}
                           disabled={networkLocked}
                           className={rowActionIconBtn}
-                          title={networkLocked ? 'Stop the VM to edit NICs' : 'Edit'}
+                          title={vmBusy ? busyReason : networkLocked ? 'Stop the VM to edit NICs' : 'Edit'}
                           aria-label={`Edit NIC net${idx}`}
                         >
                           <Pencil size={14} aria-hidden />
@@ -288,7 +291,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
                           onClick={() => removeNicAt(idx)}
                           disabled={networkLocked || removing}
                           className={`${isCreating ? draftIconBtn : rowActionIconBtn} text-text-muted hover:text-status-stopped hover:bg-status-stopped-soft`}
-                          title={networkLocked ? 'Stop the VM to remove NICs' : 'Remove NIC'}
+                          title={vmBusy ? busyReason : networkLocked ? 'Stop the VM to remove NICs' : 'Remove NIC'}
                           aria-label={`Remove NIC net${idx}`}
                         >
                           {removing ? (
@@ -310,7 +313,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
       {networkLocked && (
         <p className="mt-2 flex items-center gap-1 text-[11px] text-text-muted">
           <Lock size={11} aria-hidden />
-          Stop the VM to change bridges, models, or MACs.
+          {vmBusy ? busyReason : 'Stop the VM to change bridges, models, or MACs.'}
         </p>
       )}
 

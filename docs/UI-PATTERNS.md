@@ -90,6 +90,7 @@ Single-section views (e.g. **Image Library**) use one **`SectionCard`** with the
 ## Row state and errors
 
 - **Per-row loading:** Disable or show a spinner on the row (or action) that triggered the request; avoid blocking unrelated rows unless the backend requires it.
+- **Workload busy** (another operation — e.g. a backup job — holds the workload's backend lock, so every mutation would 409): disable the mutating controls rather than letting them fail, with the reason as their `title`; tables reuse their lock note for the same text, and section **Save** buttons take it via `SectionCard`'s `saveDisabledReason`. The VM page derives it from the background-jobs list and passes it down as `busyReason`.
 - **Errors:** Prefer row-scoped or action-scoped messages when a single row fails; use section-level error (e.g. `SectionCard` `error`) for load failures or cross-row validation that is not tied to one line.
 
 ---

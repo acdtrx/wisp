@@ -95,8 +95,9 @@ export default function OverviewPanel() {
 
   const vmName = vmConfig?.name ?? '';
   const backupTitleForVm = useMemo(() => (vmName ? `Backup ${vmName}` : ''), [vmName]);
-  // A backup job holds the backend's per-VM operation lock (start / backup /
-  // delete → 409 VM_BUSY), so it blocks the conflicting actions here.
+  // A backup job holds the backend's per-VM operation lock (start, delete and
+  // every edit of the definition or disks → 409 VM_BUSY), so it blocks the
+  // conflicting actions here and in every section editor below.
   const vmOperationJob = useMemo(
     () =>
       vmName
@@ -223,8 +224,9 @@ export default function OverviewPanel() {
         <div className="flex min-w-0 items-center gap-3">
           <button
             onClick={() => setIconPickerOpen(true)}
-            className={`shrink-0 rounded-lg p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 ${iconColorClass}`}
-            title="Change icon"
+            disabled={!!vmOperationJob}
+            className={`shrink-0 rounded-lg p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 disabled:cursor-not-allowed disabled:hover:bg-transparent ${iconColorClass}`}
+            title={busyHint ?? 'Change icon'}
           >
             <IconComp size={18} className={isRunning ? 'wisp-lit-glyph' : undefined} />
           </button>
@@ -356,11 +358,19 @@ export default function OverviewPanel() {
       ) : (
       /* Overview content */
       <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
+        {vmOperationJob && (
+          <p className="flex items-center gap-1.5 rounded-md border border-status-warning/30 bg-status-warning-soft px-3 py-2 text-xs text-status-warning">
+            <Archive size={13} aria-hidden className="shrink-0" />
+            A backup of this VM is running — changes to its configuration, disks and cloud-init are unavailable until it finishes.
+          </p>
+        )}
+
         {/* Sections */}
         <GeneralSection
           vmConfig={vmConfig}
           isCreating={false}
           onSave={handleSectionSave}
+          busyReason={busyHint}
         />
 
         {configLoading ? (
@@ -370,20 +380,23 @@ export default function OverviewPanel() {
             <DisksSection
               vmConfig={vmConfig}
               onRefresh={refreshSelectedVM}
+              busyReason={busyHint}
             />
 
-            <USBSection vmConfig={vmConfig} />
+            <USBSection vmConfig={vmConfig} busyReason={busyHint} />
 
             <VmNetworkInterfacesSection
               vmConfig={vmConfig}
               isCreating={false}
               onSave={handleSectionSave}
+              busyReason={busyHint}
             />
 
             <AdvancedSection
               vmConfig={vmConfig}
               isCreating={false}
               onSave={handleSectionSave}
+              busyReason={busyHint}
             />
 
             {vmConfig.osCategory !== 'windows' && (
@@ -391,6 +404,7 @@ export default function OverviewPanel() {
                 vmConfig={vmConfig}
                 isCreating={false}
                 onRefresh={refreshSelectedVM}
+                busyReason={busyHint}
               />
             )}
           </>

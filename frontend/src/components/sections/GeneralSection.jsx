@@ -18,7 +18,7 @@ function detectOSType(config) {
   return 'Linux';
 }
 
-export default function GeneralSection({ vmConfig, isCreating, onSave, onFormChange }) {
+export default function GeneralSection({ vmConfig, isCreating, onSave, onFormChange, busyReason }) {
   const isRunning = vmConfig.state === 'running' || vmConfig.state === 'blocked';
 
   const defaults = {
@@ -122,6 +122,7 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
       title="General"
       isDirty={isCreating ? false : isDirty}
       onSave={isCreating ? undefined : handleSave}
+      saveDisabledReason={isCreating ? undefined : busyReason}
       saving={saving}
       requiresRestart={!!vmConfig.pendingRestart}
       error={error}

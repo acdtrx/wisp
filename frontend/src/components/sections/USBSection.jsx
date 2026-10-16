@@ -20,7 +20,7 @@ import {
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-2 lg:p-1.5 text-text-secondary hover:bg-surface hover:text-status-stopped transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
-export default function USBSection({ vmConfig }) {
+export default function USBSection({ vmConfig, busyReason }) {
   const hostDevices = useUsbStore((s) => s.devices);
   const connectUsb = useUsbStore((s) => s.connect);
   const disconnectUsb = useUsbStore((s) => s.disconnect);
@@ -111,13 +111,16 @@ export default function USBSection({ vmConfig }) {
 
   const showSpinner = loading || hostLoading;
 
+  // busyReason: another operation (a backup) holds the VM's backend lock, so
+  // attach / detach would be refused with 409 VM_BUSY.
   const headerAttach =
     hostList.length > 0 ? (
       <button
         type="button"
         onClick={() => setAttachModalOpen(true)}
-        className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150"
-        title="Attach USB device"
+        disabled={!!busyReason}
+        className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
+        title={busyReason || 'Attach USB device'}
         aria-label="Attach USB device"
       >
         <Plus size={14} aria-hidden />
@@ -214,9 +217,9 @@ export default function USBSection({ vmConfig }) {
                         <button
                           type="button"
                           onClick={() => handleDetach(dev.vendorId, dev.productId)}
-                          disabled={actionLoading != null}
+                          disabled={actionLoading != null || !!busyReason}
                           className={iconBtn}
-                          title="Detach"
+                          title={busyReason || 'Detach'}
                           aria-label="Detach"
                         >
                           {rowBusy ? <Loader2 size={14} className="animate-spin text-text-secondary" aria-hidden /> : <Unplug size={14} aria-hidden />}

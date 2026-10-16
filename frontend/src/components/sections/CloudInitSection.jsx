@@ -37,7 +37,7 @@ const DEFAULTS = {
   installAvahiDaemon: true,
 };
 
-export default function CloudInitSection({ vmConfig, isCreating, onRefresh, initialCloudInit, onCloudInitChange }) {
+export default function CloudInitSection({ vmConfig, isCreating, onRefresh, initialCloudInit, onCloudInitChange, busyReason }) {
   const vmName = vmConfig.name;
   const osCategory = vmConfig.osCategory || 'linux';
 
@@ -256,13 +256,16 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
               <div className="hidden items-center gap-2 pt-2 sm:flex">
                 <button
                   onClick={startEditing}
-                  className="flex items-center gap-1.5 rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface transition-colors duration-150"
+                  disabled={!!busyReason}
+                  title={busyReason}
+                  className="flex items-center gap-1.5 rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface disabled:opacity-50 transition-colors duration-150"
                 >
                   <RefreshCw size={12} /> Regenerate
                 </button>
                 <button
                   onClick={handleDelete}
-                  disabled={saving}
+                  disabled={saving || !!busyReason}
+                  title={busyReason}
                   className="flex items-center gap-1.5 rounded-md border border-status-stopped/30 px-3 py-1.5 text-xs font-medium text-status-stopped hover:bg-status-stopped-soft disabled:opacity-50 transition-colors duration-150"
                 >
                   {saving ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
@@ -277,7 +280,9 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
               {/* Configuring cloud-init isn't a phone task — hidden below sm */}
               <button
                 onClick={startEditing}
-                className="hidden items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover transition-colors duration-150 sm:flex"
+                disabled={!!busyReason}
+                title={busyReason}
+                className="hidden items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50 transition-colors duration-150 sm:flex"
               >
                 <Cloud size={12} /> Configure Cloud-Init
               </button>
@@ -302,7 +307,8 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
           <div className="flex items-center gap-2 pt-1">
             <button
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || !!busyReason}
+              title={busyReason}
               className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50 transition-colors duration-150"
             >
               {saving ? <Loader2 size={12} className="animate-spin" /> : <Cloud size={12} />}

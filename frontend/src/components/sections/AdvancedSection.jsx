@@ -58,7 +58,7 @@ function advancedFormFromVmConfig(vmConfig) {
   };
 }
 
-export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormChange }) {
+export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormChange, busyReason }) {
   const isRunning = vmConfig.state === 'running' || vmConfig.state === 'blocked';
   const offlineOnly = isRunning && !isCreating;
 
@@ -150,6 +150,7 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
       title="Advanced"
       isDirty={isCreating ? false : isDirty}
       onSave={isCreating ? undefined : handleSave}
+      saveDisabledReason={isCreating ? undefined : busyReason}
       saving={saving}
       requiresRestart={!!vmConfig.pendingRestart}
       collapsible

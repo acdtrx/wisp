@@ -9,6 +9,7 @@ export default function SectionCard({
   onSave,
   saving,
   isDirty,
+  saveDisabledReason,
   requiresRestart,
   collapsible,
   collapsed,
@@ -60,7 +61,8 @@ export default function SectionCard({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onSave(); }}
-              disabled={saving}
+              disabled={saving || !!saveDisabledReason}
+              title={saveDisabledReason}
               className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-[11px] font-medium text-white hover:bg-accent-hover disabled:opacity-50 transition-colors duration-150"
             >
               {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
