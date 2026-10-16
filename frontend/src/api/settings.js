@@ -8,6 +8,10 @@ export function updateSettings(body) {
   return api('/api/settings', { method: 'PATCH', body });
 }
 
+export function updateOidcSettings(body) {
+  return api('/api/settings/oidc', { method: 'PATCH', body });
+}
+
 export function getMounts() {
   return api('/api/host/mounts');
 }

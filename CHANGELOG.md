@@ -8,6 +8,9 @@
 - **VM restore-in-place** — VM backups restore as a new VM only; to roll a VM back, restore as new, then delete the old VM. Container restore-in-place is unchanged.
 - **Old VM backup folder layout** — backups under `<destination>/<vm>/<timestamp>` (before the `vms/` folder) are no longer listed, restored or deleted; every backup since then lives under `<destination>/vms/`.
 
+### Bug Fixes
+- **SSO settings need a browser session** — API tokens can no longer change the OIDC configuration (an admin token could repoint SSO to its own provider and sign in as a full browser session), and changing the issuer or client ID requires re-entering the client secret, so the saved one is never sent to a different provider.
+
 ## 2026-10-16 (v2.4.0)
 
 ### New Features

@@ -3,7 +3,7 @@ import { ShieldCheck, Copy, Check } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import { useSettingsStore } from '../../store/settingsStore.js';
-import { updateSettings } from '../../api/settings.js';
+import { updateOidcSettings } from '../../api/settings.js';
 
 const HELP =
   'Single sign-on via OpenID Connect (e.g. Pocket ID). Wisp stays single-user — a ' +
@@ -51,6 +51,14 @@ export default function OidcSettings() {
   // one the backend sends: the advertised URL's origin when set, else the
   // origin the admin is reaching Wisp on right now.
   const advertisedUrl = settings?.advertisedUrl;
+  // The saved secret belongs to the saved issuer + client; the backend refuses
+  // to reuse it for a different one, so a changed identity needs it re-entered.
+  const secretRequired =
+    hasSecret &&
+    !!issuer.trim() &&
+    !!clientId.trim() &&
+    (issuer.trim() !== (oidc?.issuer || '') || clientId.trim() !== (oidc?.clientId || ''));
+
   const redirectUri = advertisedUrl
     ? new URL('/api/auth/oidc/callback', advertisedUrl).href
     : `${window.location.origin}/api/auth/oidc/callback`;
@@ -67,6 +75,10 @@ export default function OidcSettings() {
 
   const handleSave = async () => {
     setError(null);
+    if (secretRequired && !clientSecret) {
+      setError('Re-enter the client secret when changing the issuer or client ID');
+      return;
+    }
     setSaving(true);
     try {
       const oidcUpdate = {
@@ -75,10 +87,11 @@ export default function OidcSettings() {
         clientId: clientId.trim(),
       };
       // Only send the secret when the admin typed a new one — an empty field
-      // keeps the saved secret (the API never returns it to echo back).
+      // keeps the saved secret (the API never returns it to echo back), as
+      // long as issuer and client ID are unchanged.
       if (clientSecret) oidcUpdate.clientSecret = clientSecret;
 
-      const updated = await updateSettings({ oidc: oidcUpdate });
+      const updated = await updateOidcSettings(oidcUpdate);
       setSettings(updated);
       await loadSettings();
       setClientSecret('');
@@ -150,10 +163,21 @@ export default function OidcSettings() {
             type="password"
             value={clientSecret}
             onChange={(e) => setClientSecret(e.target.value)}
-            placeholder={hasSecret ? '•••••••• (saved — leave blank to keep)' : 'Client secret'}
+            placeholder={
+              secretRequired
+                ? 'Required — re-enter for the new issuer / client ID'
+                : hasSecret ? '•••••••• (saved — leave blank to keep)' : 'Client secret'
+            }
             autoComplete="new-password"
+            required={secretRequired}
+            aria-invalid={secretRequired && !clientSecret}
             className="input-field font-mono placeholder:text-text-muted"
           />
+          {secretRequired && (
+            <p className="mt-1 text-[10px] text-text-muted">
+              The saved secret is only kept for the same issuer and client ID.
+            </p>
+          )}
         </div>
 
         <div>

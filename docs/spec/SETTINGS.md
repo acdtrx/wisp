@@ -17,6 +17,10 @@ Settings are split across the Host panel: **App Config** tab (application-wide c
 
 Settings are persisted in `config/wisp-config.json`. The config file is updated with a mutex to prevent concurrent writes.
 
+## Single sign-on (`oidc`)
+
+Configured in **Host → App Config → Single sign-on** (issuer URL, client ID, client secret, enable toggle). Saved through `PATCH /api/settings/oidc`, which requires a browser session — API tokens cannot change SSO (settled 2026-10-16, see [AUTH.md](AUTH.md) § Denied surfaces). The client secret is write-only: the field stays blank with a "saved" placeholder, and leaving it blank keeps the saved secret. Changing the issuer or client ID marks the secret required — the saved one is never reused for a different provider. Behavior and validation: [AUTH.md](AUTH.md) § OIDC.
+
 ## Storage (`mounts`)
 
 Configured in **Host → Host Mgmt → Storage**. Each entry has a `type` discriminator (`smb` or `disk`) and common fields (id, label, mount path, autoMount).

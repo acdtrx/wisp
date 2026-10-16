@@ -73,7 +73,7 @@ The signing secret is the stored scrypt-derived key (64 bytes). Changing the pas
 | Level | Who may call | Used for |
 |-------|--------------|----------|
 | `public` | anyone | `POST /api/auth/login`, the three OIDC routes, static assets + SPA shell |
-| `session` | browser session only — API tokens get **403 Session required** | the rest of `/api/auth/*` (logout, change-password, token management), the `/ws` consoles |
+| `session` | browser session only — API tokens get **403 Session required** | the rest of `/api/auth/*` (logout, change-password, token management), `PATCH /api/settings/oidc`, the `/ws` consoles |
 | `read` | session, or an API token of either scope | GETs whose response carries no secret material (lists, masked details, stats/progress/log streams) |
 | `admin` | session, or an `admin`-scoped API token; a `read` token gets **403 Insufficient scope** | every mutation, plus GETs that return raw file content or make outbound requests |
 | `mcp` | API token only (either scope) — cookies ignored; per-tool scope in the MCP layer | `/mcp` |
@@ -151,6 +151,7 @@ On **`/mcp`** both scopes pass the route (MCP is JSON-RPC over POST, so the meth
 
 - **Consoles** (`/ws/console/:name/vnc`, `/ws/container-console/:name`) — a leaked token can never open a VM VNC session or a container shell.
 - **`/api/auth/*`** (except the `public` login/OIDC routes) — logout, change-password, and token management are interactive concerns. A token can never mint or revoke tokens.
+- **OIDC configuration** (`PATCH /api/settings/oidc`) **(settled 2026-10-16)** — whoever sets the issuer decides who can complete an SSO login, so a token that could repoint it to a provider it controls would mint itself a full browser session (consoles, tokens, password) that outlives the token's revocation. `PATCH /api/settings` refuses an `oidc` key from every caller with **403** `OIDC_SESSION_ONLY`, so the session route is the only write path. Rejected: a token check inside the shared settings handler — access would then depend on the body rather than being a property of the route.
 
 Conversely, **`mcp` is bearer-only**: session cookies are ignored there entirely (which also makes it CSRF-irrelevant); a request without a valid token gets **401** with `WWW-Authenticate: Bearer`.
 
@@ -185,7 +186,9 @@ Delegated to the identity provider. Restrict the Wisp OIDC client to your own us
 
 ### Configuration
 
-Stored under `settings.oidc` in `wisp-config.json` (`{ enabled, issuer, clientId, clientSecret }`) and edited in **Host → App Config → Single sign-on**. The client secret is masked on read (`hasClientSecret` boolean, like SMB passwords) and the file is written `0600`. `enabled` only sticks when `issuer` (valid `http`/`https`), `clientId`, and `clientSecret` are all present.
+Stored under `settings.oidc` in `wisp-config.json` (`{ enabled, issuer, clientId, clientSecret }`) and edited in **Host → App Config → Single sign-on** through `PATCH /api/settings/oidc` — a `session` route, never reachable with an API token (see § Denied surfaces). The client secret is masked on read (`hasClientSecret` boolean, like SMB passwords) and the file is written `0600`. `enabled` only sticks when `issuer` (valid `http`/`https`), `clientId`, and `clientSecret` are all present.
+
+**The saved secret is bound to its issuer and client (settled 2026-10-16).** An empty or omitted `clientSecret` keeps the saved one only while `issuer` and `clientId` stay the same; changing either without a new secret is refused with **422** `INVALID_OIDC` (clearing either field drops the saved secret instead). Otherwise the secret issued by one provider would be sent to another provider's token endpoint.
 
 ### Flow (authorization code + PKCE, confidential client)
 
@@ -218,5 +221,5 @@ The login page auto-redirects to the provider when SSO is enabled **and** no `?s
 - **`HttpOnly + Secure + SameSite=Lax`** session cookie + double-submit `X-CSRF-Token` — both layers must be defeated for cross-site abuse to succeed.
 - **WS Origin allow-list** since CORS does not apply to WebSocket — cross-origin pages with a stolen cookie still get `close 1008`.
 - **Single password change invalidates all sessions** since the signing secret changes; live SSE/WS are explicitly closed and the user's session is re-issued. API tokens survive by design and must be revoked explicitly.
-- **API tokens** are hashed at rest (SHA-256 in a `0600` file), shown once, scoped (each route's declared level is checked before any handler runs), revocable, barred from consoles and auth routes, and rate-limited alongside logins.
+- **API tokens** are hashed at rest (SHA-256 in a `0600` file), shown once, scoped (each route's declared level is checked before any handler runs), revocable, barred from consoles, auth routes and OIDC configuration, and rate-limited alongside logins.
 - **OIDC** uses authorization-code flow with **PKCE** and a confidential client secret; `state` (one-time, CSRF/replay defence) and `nonce` (binds the ID token to the login) are enforced, and the ID token's **signature is verified against the provider JWKS** — a token from another client or a tampered token is rejected. The client secret is stored `0600` and never leaves the server.

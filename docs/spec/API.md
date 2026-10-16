@@ -68,7 +68,7 @@ Scoped bearer tokens for non-interactive clients (coding agents, scripts). All t
 
 ### OIDC / SSO login
 
-Optional single sign-on via OpenID Connect (authorization-code flow with PKCE + confidential client secret). Configured under `settings.oidc` (see `GET/PATCH /api/settings` and [CONFIGURATION.md](CONFIGURATION.md)). All three routes are **public** (they run before a session exists). Access control is delegated to the provider — any subject that authenticates for the Wisp client becomes the single Wisp user; the ID token is still fully validated (issuer, audience, expiry, nonce, JWKS signature). A successful callback issues the **same** `wisp_session` / `wisp_csrf` cookies as password login (the session JWT is still signed with the password-derived secret, so a password must be configured). See [AUTH.md](AUTH.md) § OIDC.
+Optional single sign-on via OpenID Connect (authorization-code flow with PKCE + confidential client secret). Configured under `settings.oidc` (see `GET /api/settings`, `PATCH /api/settings/oidc` and [CONFIGURATION.md](CONFIGURATION.md)). All three routes are **public** (they run before a session exists). Access control is delegated to the provider — any subject that authenticates for the Wisp client becomes the single Wisp user; the ID token is still fully validated (issuer, audience, expiry, nonce, JWKS signature). A successful callback issues the **same** `wisp_session` / `wisp_csrf` cookies as password login (the session JWT is still signed with the password-derived secret, so a password must be configured). See [AUTH.md](AUTH.md) § OIDC.
 
 #### GET /api/auth/oidc/status · `public`
 
@@ -1122,15 +1122,24 @@ The shipped `wisp-config.json.example` has empty `mounts`. Mounts are added via 
 
 Update settings. Partial update — only include fields to change.
 
-- **Body:** Partial settings object (`serverName`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`, `backupSchedule`, `discoveryEnabled`, `advertisedUrl`, `updateChannel`, `oidc`)
+- **Body:** Partial settings object (`serverName`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`, `backupSchedule`, `discoveryEnabled`, `advertisedUrl`, `updateChannel`)
 - **200:** Updated settings object
 - **Validation:** Paths must be absolute (start with `/`). `advertisedUrl` must be a valid `http`/`https` URL of at most 251 bytes (mDNS TXT record limit), or `null`/empty to clear — invalid values return **422** `{ error, detail }` with code `INVALID_URL`.
 - **`backupSchedule`:** Object `{ enabled?, time?, destinationIds?, retainDays?, retainWeeks? }`, merged per-field. Any field the client actually sends must be valid — `time` matching `HH:MM` (24-hour), `retainDays` 1–365, `retainWeeks` 0–52, `destinationIds` a non-empty subset of `'local'` + the configured `backupMountId` (validated against the merged result, so swapping the mount and updating the schedule in one PATCH works) — else **422** with code `INVALID_BACKUP_SCHEDULE`. On read, invalid persisted values fall back leniently to defaults and stale mount ids self-heal out of `destinationIds`. See [BACKUPS.md → Scheduled backups](BACKUPS.md#scheduled-backups).
-- **`oidc`:** Object `{ enabled?, issuer?, clientId?, clientSecret? }`. `clientSecret` is write-only — omit or send empty to keep the saved secret (the masked GET never returns it to echo back). When `enabled: true`, the merged config must have a valid `http`/`https` `issuer`, a `clientId`, and a `clientSecret` on file, else **422** `{ error, detail }` with code `INVALID_OIDC`. Persisted to `wisp-config.json` (written `0600`).
+- **`oidc`:** Refused for every caller with **403** `{ error: "OIDC settings require a browser session", detail }` (code `OIDC_SESSION_ONLY`) — use `PATCH /api/settings/oidc`, which API tokens cannot reach.
 - **Side effect:** A successful PATCH that changes `serverName`, `discoveryEnabled`, or `advertisedUrl` re-announces the instance's `_wisp._tcp` mDNS service (see [DISCOVERY.md](DISCOVERY.md)).
 - **`updateChannel`:** `"stable"` | `"beta"` — which releases self-update offers this host. No side effect: the next update check (hourly, or `POST /api/updates/check`) reads it. See [UPDATES.md → Update channels](UPDATES.md#update-channels).
 - **`containersPath`:** Optional; container storage root (same default as `config.js`; exposed for scripts — App Config UI does not edit it yet).
 - **Mount CRUD:** Not available via PATCH /api/settings. Use `/api/host/mounts` endpoints below.
+
+### PATCH /api/settings/oidc · `session`
+
+Update the OIDC / SSO configuration. Session-only: an API token of either scope gets **403 Session required** — a token able to repoint the issuer could log itself in as a browser session (see [AUTH.md](AUTH.md) § Denied surfaces).
+
+- **Body:** `{ enabled?, issuer?, clientId?, clientSecret? }`, merged per field.
+- **200:** Updated settings object (same shape as `GET /api/settings`).
+- **`clientSecret`:** Write-only. Omit or send empty to keep the saved secret — only while `issuer` and `clientId` are unchanged. Changing either without a new `clientSecret` returns **422** `INVALID_OIDC` (the saved secret is never sent to a different provider); clearing either drops the saved secret.
+- **Validation:** When `enabled: true`, the merged config must have a valid `http`/`https` `issuer`, a `clientId`, and a `clientSecret` on file, else **422** `{ error, detail }` with code `INVALID_OIDC`. Persisted to `wisp-config.json` (written `0600`).
 
 ### GET /api/host/mounts · `read`
 

@@ -19,7 +19,7 @@ import { listApiTokens, createApiToken, deleteApiToken } from '../../api/authTok
 const HELP =
   'Bearer tokens for non-interactive clients (coding agents, scripts). Read-only tokens can ' +
   'only GET; admin tokens can change state. Tokens cannot open consoles, change the password, ' +
-  'or manage other tokens. The token value is shown once at creation — only a hash is stored.';
+  'change SSO settings, or manage other tokens. The token value is shown once at creation — only a hash is stored.';
 
 function formatCreated(iso) {
   if (!iso) return '—';

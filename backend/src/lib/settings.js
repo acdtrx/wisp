@@ -469,19 +469,57 @@ export async function getRawOidcConfig() {
 let writeLock = Promise.resolve();
 
 /**
- * Update only the allowed top-level keys. Mount CRUD goes via dedicated mounts lib.
+ * Update only the allowed top-level keys. Mount CRUD goes via dedicated mounts lib;
+ * OIDC via `updateOidcSettings`.
  * Returns the full merged settings after write. Serialised via a mutex; reads
  * happen inside the lock to avoid lost-update races.
  */
 export async function updateSettings(updates) {
   if (updates?.advertisedUrl !== undefined) assertValidAdvertisedUrl(updates.advertisedUrl);
+  return withSettingsWriteLock((fromFile) => buildUpdatedSettings(fromFile, updates));
+}
+
+/**
+ * Update the OIDC block only. Separate from `updateSettings` because its route
+ * is session-only (a token that could repoint SSO would mint itself a browser
+ * session — docs/spec/AUTH.md § Denied surfaces). Returns the full merged
+ * settings, like `updateSettings`.
+ */
+export async function updateOidcSettings(updates) {
   return withSettingsWriteLock((fromFile) => {
-    const next = buildUpdatedSettings(fromFile, updates);
+    const next = { ...fromFile, oidc: mergeOidc(fromFile.oidc, updates || {}) };
     // Validate the *merged* result: the secret may already be on file even when
     // this PATCH doesn't include it, so completeness can only be judged post-merge.
-    if (updates.oidc !== undefined) assertValidOidc(next.oidc);
+    assertValidOidc(next.oidc);
     return next;
   });
+}
+
+function mergeOidc(stored, u) {
+  const cur = normalizeOidc(stored);
+  const merged = { ...cur };
+  if (u.issuer !== undefined) merged.issuer = typeof u.issuer === 'string' ? u.issuer.trim() : '';
+  if (u.clientId !== undefined) merged.clientId = typeof u.clientId === 'string' ? u.clientId.trim() : '';
+  // Empty / omitted secret means "keep the saved one" — the masked GET never
+  // returns it, so the client can't echo it back. Same pattern as SMB passwords.
+  const newSecret = typeof u.clientSecret === 'string' && u.clientSecret !== '' ? u.clientSecret : null;
+  if (newSecret) merged.clientSecret = newSecret;
+  // The saved secret belongs to the saved issuer + client: never carry it to
+  // another one, where it would be sent to that provider's token endpoint.
+  const identityChanged = merged.issuer !== cur.issuer || merged.clientId !== cur.clientId;
+  if (identityChanged && !newSecret && cur.clientSecret) {
+    if (merged.issuer && merged.clientId) {
+      throw createAppError(
+        'INVALID_OIDC',
+        'Re-enter the client secret when changing the issuer or client ID',
+        'The saved client secret is never reused for a different issuer or client',
+      );
+    }
+    // Clearing the provider: drop the secret with it.
+    merged.clientSecret = '';
+  }
+  if (u.enabled !== undefined) merged.enabled = u.enabled === true;
+  return normalizeOidc(merged);
 }
 
 function assertValidAdvertisedUrl(value) {
@@ -585,19 +623,6 @@ function buildUpdatedSettings(fromFile, updates) {
   if (updates.updateChannel !== undefined) {
     next.updateChannel = updates.updateChannel === 'beta' ? 'beta' : 'stable';
   }
-  if (updates.oidc !== undefined && updates.oidc && typeof updates.oidc === 'object') {
-    const cur = normalizeOidc(next.oidc);
-    const u = updates.oidc;
-    const merged = { ...cur };
-    if (u.issuer !== undefined) merged.issuer = typeof u.issuer === 'string' ? u.issuer.trim() : '';
-    if (u.clientId !== undefined) merged.clientId = typeof u.clientId === 'string' ? u.clientId.trim() : '';
-    // Empty / omitted secret means "keep the saved one" — the masked GET never
-    // returns it, so the client can't echo it back. Same pattern as SMB passwords.
-    if (typeof u.clientSecret === 'string' && u.clientSecret !== '') merged.clientSecret = u.clientSecret;
-    if (u.enabled !== undefined) merged.enabled = u.enabled === true;
-    next.oidc = normalizeOidc(merged);
-  }
-
   return next;
 }
 

@@ -83,6 +83,7 @@ function mappedErrorStatus(code) {
     case 'PASSWORD_FILE_UNSUPPORTED_FORMAT':
       return 503;
     case 'CONTAINER_MOUNT_SECRET':
+    case 'OIDC_SESSION_ONLY':
       return 403;
     case 'CONTAINER_NOT_FOUND':
     case 'CONTAINER_MOUNT_NOT_FOUND':

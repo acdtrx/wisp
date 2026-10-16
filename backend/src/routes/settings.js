@@ -1,5 +1,5 @@
-import { getSettings, updateSettings } from '../lib/settings.js';
-import { sendError, handleRouteError } from '../lib/routeErrors.js';
+import { getSettings, updateSettings, updateOidcSettings } from '../lib/settings.js';
+import { sendError, handleRouteError, createAppError } from '../lib/routeErrors.js';
 import { refreshWispAnnouncement } from '../lib/wispDiscovery.js';
 import { mountResponseSchema } from './mounts.js';
 
@@ -70,17 +70,10 @@ export default async function settingsRoutes(fastify) {
           discoveryEnabled: { type: 'boolean' },
           advertisedUrl: { type: ['string', 'null'] },
           updateChannel: { type: 'string', enum: ['stable', 'beta'] },
-          oidc: {
-            type: 'object',
-            properties: {
-              enabled: { type: 'boolean' },
-              issuer: { type: 'string' },
-              clientId: { type: 'string' },
-              // Write-only: empty/omitted keeps the saved secret. Never returned by GET.
-              clientSecret: { type: 'string' },
-            },
-            additionalProperties: false,
-          },
+          // Declared only so the handler sees it and refuses it: Fastify's ajv
+          // strips undeclared keys silently, which would answer 200 to a token
+          // that tried to repoint SSO. OIDC goes through PATCH /settings/oidc.
+          oidc: {},
         },
         additionalProperties: false,
       },
@@ -93,6 +86,19 @@ export default async function settingsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       const body = request.body || {};
+      if (body.oidc !== undefined) {
+        handleRouteError(
+          createAppError(
+            'OIDC_SESSION_ONLY',
+            'OIDC settings require a browser session',
+            // No paths here: handleRouteError redacts anything path-shaped.
+            'The oidc key is not accepted here; configure single sign-on from a browser session (Host → App Config → Single sign-on)',
+          ),
+          reply,
+          request,
+        );
+        return;
+      }
       try {
         const result = await updateSettings(body);
         // Re-announce on the LAN when a discovery-relevant field changed —
@@ -110,12 +116,51 @@ export default async function settingsRoutes(fastify) {
       } catch (err) {
         // Only the validation codes take the 422 path — Node fs errors also
         // carry a truthy `code` (EACCES, ENOSPC) and must keep the generic 500.
-        if (err?.code === 'INVALID_URL' || err?.code === 'INVALID_OIDC' || err?.code === 'INVALID_BACKUP_SCHEDULE') {
+        if (err?.code === 'INVALID_URL' || err?.code === 'INVALID_BACKUP_SCHEDULE') {
           handleRouteError(err, reply, request);
           return;
         }
         fastify.log.error({ err }, 'Failed to update settings');
         sendError(reply, 500, 'Failed to save settings', err.message);
+      }
+    },
+  });
+
+  // Session-only (settled 2026-10-16): whoever controls the issuer controls a
+  // full browser login, so an API token must never be able to repoint it —
+  // docs/spec/AUTH.md § Denied surfaces.
+  fastify.patch('/settings/oidc', {
+    config: { auth: 'session' },
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          enabled: { type: 'boolean' },
+          issuer: { type: 'string' },
+          clientId: { type: 'string' },
+          // Write-only: empty/omitted keeps the saved secret (only while issuer
+          // and clientId stay the same). Never returned by GET.
+          clientSecret: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: settingsResponseProps,
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      try {
+        return await updateOidcSettings(request.body || {});
+      } catch (err) {
+        if (err?.code === 'INVALID_OIDC') {
+          handleRouteError(err, reply, request);
+          return;
+        }
+        fastify.log.error({ err }, 'Failed to update OIDC settings');
+        sendError(reply, 500, 'Failed to save OIDC settings', err.message);
       }
     },
   });
