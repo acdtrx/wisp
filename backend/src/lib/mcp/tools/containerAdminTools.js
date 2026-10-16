@@ -24,11 +24,14 @@ import {
 } from '../../containerApps/index.js';
 import { validateContainerName } from '../../validation.js';
 import { createAppError } from '../../routeErrors.js';
+import { withContainerOperationLock } from '../../containerOperationLock.js';
 
 const RESTART_POLICIES = ['never', 'on-failure', 'unless-stopped', 'always'];
 
 /* tools/call arguments arrive unvalidated (inputSchema is advisory to the
-   client), so every handler re-validates what it uses. */
+   client), so every handler re-validates what it uses. Operations on an
+   existing container hold its operation lock like the REST routes do — a
+   busy container answers CONTAINER_BUSY. */
 
 function buildEnv(env, secretEnv) {
   const out = {};
@@ -117,18 +120,20 @@ export const containerAdminTools = [
       const changes = buildSettingsChanges(args); // validate before creating anything
 
       await createContainer({ name, image: image.trim(), env });
-      if (Object.keys(changes).length) {
-        await updateContainerConfig(name, changes);
-      }
-      try {
-        await startContainer(name);
-      } catch (err) {
-        throw createAppError(
-          err.code || 'CONTAINERD_ERROR',
-          `Container "${name}" was created but failed to start: ${err.message}. It exists in stopped state — check get_container_logs, or fix and start_container.`,
-          err.raw ?? err.message,
-        );
-      }
+      await withContainerOperationLock(name, 'deploy', async () => {
+        if (Object.keys(changes).length) {
+          await updateContainerConfig(name, changes);
+        }
+        try {
+          await startContainer(name);
+        } catch (err) {
+          throw createAppError(
+            err.code || 'CONTAINERD_ERROR',
+            `Container "${name}" was created but failed to start: ${err.message}. It exists in stopped state — check get_container_logs, or fix and start_container.`,
+            err.raw ?? err.message,
+          );
+        }
+      });
       return await maskContainerConfigSecrets(await getContainerConfig(name));
     },
   },
@@ -161,14 +166,16 @@ export const containerAdminTools = [
           throw createAppError('IMAGE_PULL_FAILED', `Cannot pull "${ref}" and it is not present locally`, err.message);
         }
       }
-      if (ref !== cfg.image) {
-        await updateContainerConfig(name, { image: ref });
-      }
       let restarted = false;
-      if (cfg.state === 'running') {
-        await restartContainer(name);
-        restarted = true;
-      }
+      await withContainerOperationLock(name, 'image update', async () => {
+        if (ref !== cfg.image) {
+          await updateContainerConfig(name, { image: ref });
+        }
+        if (cfg.state === 'running') {
+          await restartContainer(name);
+          restarted = true;
+        }
+      });
       return {
         name,
         image: ref,
@@ -191,7 +198,7 @@ export const containerAdminTools = [
     scope: 'admin',
     handler: async ({ name }) => {
       validateContainerName(name);
-      await startContainer(name);
+      await withContainerOperationLock(name, 'start', () => startContainer(name));
       return { name, state: (await getContainerConfig(name)).state };
     },
   },
@@ -210,7 +217,7 @@ export const containerAdminTools = [
     scope: 'admin',
     handler: async ({ name }) => {
       validateContainerName(name);
-      await stopContainer(name);
+      await withContainerOperationLock(name, 'stop', () => stopContainer(name));
       return { name, state: (await getContainerConfig(name)).state };
     },
   },
@@ -227,7 +234,7 @@ export const containerAdminTools = [
     scope: 'admin',
     handler: async ({ name }) => {
       validateContainerName(name);
-      await restartContainer(name);
+      await withContainerOperationLock(name, 'restart', () => restartContainer(name));
       return { name, state: (await getContainerConfig(name)).state };
     },
   },
@@ -260,36 +267,40 @@ export const containerAdminTools = [
       if (!appConfig || typeof appConfig !== 'object' || Array.isArray(appConfig)) {
         throw createAppError('INVALID_REQUEST', 'appConfig must be an object');
       }
-      const cfg = await getContainerConfig(name);
-      const appType = cfg?.metadata?.app;
-      if (!appType) {
-        throw createAppError('CONFIG_ERROR', `Container "${name}" is not an app container`);
-      }
-      const appModule = getAppModule(appType);
-      const writable = appModule?.agentWritableAppConfigFields ?? [];
-      if (!writable.length) {
-        throw createAppError('APP_CONFIG_ONLY', `The "${appType}" app is not agent-configurable — use the Wisp UI`);
-      }
-      const blocked = Object.keys(appConfig).filter((k) => !writable.includes(k));
-      if (blocked.length) {
-        throw createAppError(
-          'APP_CONFIG_ONLY',
-          `Field(s) not agent-writable for "${appType}": ${blocked.join(', ')}. Writable: ${writable.join(', ')}. Everything else is configured in the Wisp UI.`,
-        );
-      }
-      // Merge onto the RAW stored config (unmasked, server-side) so protected
-      // fields — secrets included — pass through the standard validate path
-      // completely untouched by the agent's input.
-      const merged = { ...cfg.metadata.appConfig, ...appConfig };
-      const result = await applyAppConfig(name, merged);
-      const after = await maskContainerConfigSecrets(await getContainerConfig(name));
-      return {
-        name,
-        app: appType,
-        appliedFields: Object.keys(appConfig),
-        ...result,
-        appConfig: after.metadata?.appConfig ?? null,
-      };
+      // The read the merge builds on is inside the lock, so a concurrent save
+      // can't slip between it and the write.
+      return withContainerOperationLock(name, 'configuration change', async () => {
+        const cfg = await getContainerConfig(name);
+        const appType = cfg?.metadata?.app;
+        if (!appType) {
+          throw createAppError('CONFIG_ERROR', `Container "${name}" is not an app container`);
+        }
+        const appModule = getAppModule(appType);
+        const writable = appModule?.agentWritableAppConfigFields ?? [];
+        if (!writable.length) {
+          throw createAppError('APP_CONFIG_ONLY', `The "${appType}" app is not agent-configurable — use the Wisp UI`);
+        }
+        const blocked = Object.keys(appConfig).filter((k) => !writable.includes(k));
+        if (blocked.length) {
+          throw createAppError(
+            'APP_CONFIG_ONLY',
+            `Field(s) not agent-writable for "${appType}": ${blocked.join(', ')}. Writable: ${writable.join(', ')}. Everything else is configured in the Wisp UI.`,
+          );
+        }
+        // Merge onto the RAW stored config (unmasked, server-side) so protected
+        // fields — secrets included — pass through the standard validate path
+        // completely untouched by the agent's input.
+        const merged = { ...cfg.metadata.appConfig, ...appConfig };
+        const result = await applyAppConfig(name, merged);
+        const after = await maskContainerConfigSecrets(await getContainerConfig(name));
+        return {
+          name,
+          app: appType,
+          appliedFields: Object.keys(appConfig),
+          ...result,
+          appConfig: after.metadata?.appConfig ?? null,
+        };
+      });
     },
   },
   {

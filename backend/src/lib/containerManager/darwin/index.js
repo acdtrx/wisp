@@ -2,9 +2,11 @@
  * macOS dev stub: no containerd.
  */
 import { setContainerManagerConfig } from '../linux/containerPaths.js';
+import { setOperationLockAcquirer } from '../linux/containerOperationGuard.js';
 
 export function configure(cfg) {
   setContainerManagerConfig(cfg);
+  setOperationLockAcquirer(cfg.tryAcquireOperationLock);
 }
 
 export {

@@ -23,11 +23,14 @@ import { recordBackupAttempt, notifyBackupsChanged } from '../lib/backupStatus.j
 import {
   backupJobStore,
   BACKGROUND_JOB_KIND,
-  titleForContainerBackup,
   titleForContainerRestore,
 } from '../lib/jobs/index.js';
 import { createAppError, handleRouteError, isExpectedAppError } from '../lib/routeErrors.js';
 import { validateVMName, validateContainerName } from '../lib/validation.js';
+import {
+  acquireContainerOperationLock,
+  withContainerOperationLock,
+} from '../lib/containerOperationLock.js';
 
 // Backup directory names produced by createBackup are ISO-derived
 // (YYYY-MM-DDTHH-mm-ss). The accept-set is intentionally a bit looser to
@@ -86,10 +89,11 @@ function stripPath(row) {
  * @param {boolean} opts.safetyBackup
  * @param {(onProgress: (ev: object) => void) => Promise<object>} opts.runSafetyBackup
  * @param {(onProgress: (ev: object) => void) => Promise<object>} opts.runRestore
+ * @param {() => void} opts.releaseLock - the container's operation lock, held for the job; released before the job settles
  * @param {import('fastify').FastifyBaseLogger} opts.log
  * @returns {Promise<void>} settles (never rejects) once the job completed or failed
  */
-function startContainerRestoreInPlaceJob({ jobId, name, dest, safetyBackup, runSafetyBackup, runRestore, log }) {
+function startContainerRestoreInPlaceJob({ jobId, name, dest, safetyBackup, runSafetyBackup, runRestore, releaseLock, log }) {
   const scaledProgress = (base, span, stepPrefix = '') => (ev) => {
     backupJobStore.pushEvent(jobId, {
       step: `${stepPrefix}${ev.step}`,
@@ -114,26 +118,15 @@ function startContainerRestoreInPlaceJob({ jobId, name, dest, safetyBackup, runS
       }
     }
     const result = await runRestore(scaledProgress(safetyBackup ? 45 : 0, safetyBackup ? 55 : 100));
+    // Free the container before announcing completion, so a Start the client
+    // sends on `done` never meets a stale CONTAINER_BUSY.
+    releaseLock();
     backupJobStore.completeJob(jobId, result);
   })().catch((err) => {
+    releaseLock();
     backupJobStore.failJob(jobId, err);
     if (!isExpectedAppError(err)) log.error({ err, jobId }, 'Background restore-in-place job failed');
   });
-}
-
-/** 409 when a backup or restore job for the same workload is already running. */
-function assertNoActiveBackupJob({ backupKind, backupTitle, restoreKind, restoreTitle }) {
-  const active = backupJobStore.listJobs().some((j) => !j.done && (
-    (j.kind === backupKind && j.title === backupTitle) ||
-    (j.kind === restoreKind && j.title === restoreTitle)
-  ));
-  if (active) {
-    throw createAppError(
-      'BACKUP_IN_PROGRESS',
-      'A backup or restore is already running',
-      `A backup or restore job for this workload is already in progress`,
-    );
-  }
 }
 
 export default async function backupsRoutes(fastify) {
@@ -341,7 +334,9 @@ export default async function backupsRoutes(fastify) {
         // route knows the layout because it owns the API contract; the
         // container manager keeps generic "absolute path in" semantics.
         const backupPath = join(root, 'containers', name, timestamp);
-        return await restoreContainerBackup(backupPath, newName);
+        // The new container's name is held for the restore, so nothing starts
+        // or edits it while its directory is being populated.
+        return await withContainerOperationLock(newName, 'restore', () => restoreContainerBackup(backupPath, newName));
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -396,12 +391,11 @@ export default async function backupsRoutes(fastify) {
         }
 
         const title = titleForContainerRestore(name);
-        assertNoActiveBackupJob({
-          backupKind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP,
-          backupTitle: titleForContainerBackup(name),
-          restoreKind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE,
-          restoreTitle: title,
-        });
+        // Held for the whole job (safety backup included): no start, backup,
+        // edit or second restore of the container while its files are replaced.
+        // Acquired with no await before createJob, so the lock and the job
+        // appear together.
+        const releaseLock = acquireContainerOperationLock(name, 'restore');
 
         const jobId = randomBytes(12).toString('hex');
         backupJobStore.createJob(jobId, { kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE, title, log: request.log });
@@ -413,6 +407,7 @@ export default async function backupsRoutes(fastify) {
           safetyBackup,
           runSafetyBackup: (onProgress) => createContainerBackup(name, dest.path, { origin: 'manual', onProgress }),
           runRestore: (onProgress) => restoreContainerBackupInPlace(backupPath, { onProgress }),
+          releaseLock,
           log: request.log,
         });
         return reply.code(201).send({ jobId, title });

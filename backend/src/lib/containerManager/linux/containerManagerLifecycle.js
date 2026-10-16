@@ -12,6 +12,7 @@ import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { findCurrentRunId, finalizeRun } from './containerManagerLogs.js';
 import { getContainerDir } from './containerPaths.js';
 import { noteIntentionalStop, noteContainerStart } from './containerManagerRestartPolicy.js';
+import { tryAcquireOperationLock } from './containerOperationGuard.js';
 
 const SIGTERM = 15;
 const SIGKILL = 9;
@@ -121,6 +122,7 @@ export async function startContainer(name) {
 /**
  * Start every container with autostart enabled that is not already running.
  * Best-effort: logs and continues on per-container failure (host boot / backend restart).
+ * Each start holds the embedder's operation lock; a busy container is skipped.
  */
 export async function startAutostartContainersAtBackendBoot(log) {
   if (!containerState.connected) return;
@@ -146,10 +148,17 @@ export async function startAutostartContainersAtBackendBoot(log) {
     }
     if (!autostart) continue;
 
+    const release = tryAcquireOperationLock(c.name, 'autostart');
+    if (!release) {
+      log.info({ container: c.name }, 'Container autostart skipped: another operation on the container is in progress');
+      continue;
+    }
     try {
       await startContainer(c.name);
     } catch (err) {
       log.warn({ err, container: c.name }, 'Container autostart failed');
+    } finally {
+      release();
     }
   }
 }

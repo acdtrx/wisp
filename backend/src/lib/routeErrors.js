@@ -32,7 +32,6 @@ function mappedErrorStatus(code) {
     case 'VM_DIR_EXISTS':
     case 'VM_MUST_BE_OFFLINE':
     case 'DISK_SLOT_IN_USE':
-    case 'BACKUP_IN_PROGRESS':
     case 'BACKUP_EXISTS':
     case 'VM_BUSY':
       return 409;
@@ -98,7 +97,7 @@ function mappedErrorStatus(code) {
     case 'CONTAINER_EXISTS':
     case 'CONTAINER_MUST_BE_STOPPED':
     case 'CONTAINER_TASK_TRANSIENT':
-    case 'CONTAINER_BACKUP_IN_PROGRESS':
+    case 'CONTAINER_BUSY':
     case 'CONTAINER_IMAGE_IN_USE':
     case 'CONTAINER_SERVICE_DUPLICATE':
     case 'CONTAINER_LOCAL_DNS_DISABLED':

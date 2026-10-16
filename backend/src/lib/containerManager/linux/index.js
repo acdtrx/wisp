@@ -2,9 +2,11 @@
  * Linux containerManager implementation (containerd over gRPC).
  */
 import { setContainerManagerConfig } from './containerPaths.js';
+import { setOperationLockAcquirer } from './containerOperationGuard.js';
 
 export function configure(cfg) {
   setContainerManagerConfig(cfg);
+  setOperationLockAcquirer(cfg.tryAcquireOperationLock);
 }
 
 export {

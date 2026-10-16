@@ -96,6 +96,20 @@ export default function ContainerOverviewPanel() {
     [bgJobs, backupTitleForContainer],
   );
   const backupInProgress = !!backupRunningJob;
+  const restoreInProgress = useMemo(
+    () => !!containerName && Object.values(bgJobs).some(
+      (j) => j.kind === JOB_KIND.CONTAINER_RESTORE
+        && j.title === `Restore ${containerName}`
+        && j.status === 'running',
+    ),
+    [bgJobs, containerName],
+  );
+  // A backup or restore job holds the backend's per-container operation lock
+  // (every lifecycle action, delete and edit → 409 CONTAINER_BUSY), so it
+  // blocks the conflicting actions here.
+  const busyHint = backupInProgress
+    ? 'Unavailable while a backup is in progress'
+    : restoreInProgress ? 'Unavailable while a restore is in progress' : null;
 
   // Auto-clear backupJobId once the job ends, but ONLY while the modal is
   // closed. Clearing while it is open would blank `progress` and revert the
@@ -259,45 +273,50 @@ export default function ContainerOverviewPanel() {
             <ScheduledRestartBadge scheduledRestart={config.scheduledRestart} className="mr-1" />
           )}
           <ActionButton
-            icon={Play} label={backupInProgress ? 'Cannot start while a backup is in progress' : 'Start'}
+            icon={Play} label={busyHint || 'Start'}
             onClick={() => startContainer(name)}
-            disabled={!isStopped || backupInProgress}
+            disabled={!isStopped || !!busyHint}
             loading={actionLoading === 'start'}
             variant="primary"
           />
           <ActionButton
             icon={Square}
-            label={backupInProgress
-              ? 'Unavailable while a backup is in progress'
-              : restartScheduled ? 'Stop (cancel the scheduled restart)' : 'Stop'}
+            label={busyHint || (restartScheduled ? 'Stop (cancel the scheduled restart)' : 'Stop')}
             onClick={() => stopContainer(name)}
-            disabled={(isStopped && !restartScheduled) || backupInProgress}
+            disabled={(isStopped && !restartScheduled) || !!busyHint}
             loading={actionLoading === 'stop'}
           />
           <ActionButton
             icon={Zap}
-            label={backupInProgress ? 'Unavailable while a backup is in progress' : 'Kill'}
+            label={busyHint || 'Kill'}
             onClick={() => killContainer(name)}
-            disabled={isStopped || backupInProgress}
+            disabled={isStopped || !!busyHint}
             loading={actionLoading === 'kill'}
             variant="danger"
           />
           <ActionButton
             icon={RotateCcw}
-            label={backupInProgress ? 'Unavailable while a backup is in progress' : 'Restart'}
+            label={busyHint || 'Restart'}
             onClick={() => restartContainer(name)}
-            disabled={!isRunning || backupInProgress}
+            disabled={!isRunning || !!busyHint}
             loading={actionLoading === 'restart'}
           />
           <div className="mx-0.5 h-4 w-px shrink-0 bg-surface-border" />
           <ActionButton
             icon={Archive}
-            label={backupInProgress ? 'Backup in progress' : 'Backup'}
+            label={backupInProgress ? 'Backup in progress' : busyHint || 'Backup'}
             onClick={handleOpenBackup}
-            disabled={backupInProgress || state === 'pausing' || state === 'unknown'}
+            disabled={!!busyHint || state === 'pausing' || state === 'unknown'}
             loading={backupInProgress}
           />
-          <ActionButton icon={Trash2} label="Delete" onClick={() => setDeleteDialogOpen(true)} variant="danger" loading={actionLoading === 'delete'} />
+          <ActionButton
+            icon={Trash2}
+            label={busyHint || 'Delete'}
+            onClick={() => setDeleteDialogOpen(true)}
+            disabled={!!busyHint}
+            variant="danger"
+            loading={actionLoading === 'delete'}
+          />
         </div>
       </div>
 

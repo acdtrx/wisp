@@ -15,9 +15,12 @@ import {
   connect as connectContainerd,
   disconnect as disconnectContainerd,
 } from './containerManager/index.js';
+import { tryAcquireContainerOperationLock } from './containerOperationLock.js';
 
 /**
- * Push Wisp paths + storage-mount resolver into the managers. Call before any
+ * Push Wisp paths, the storage-mount resolver and the per-container operation
+ * lock (taken by the manager's own restart-policy and autostart starts) into
+ * the managers. Call before any
  * manager-internal code runs; after it, vmManager and containerManager have no
  * Wisp-glue dependencies — they read everything from the configure() slots. The
  * resolver is sync: wisp-config.json is small and the OS caches the read.
@@ -33,6 +36,7 @@ export function configureManagers() {
       const m = mounts.find((x) => x && x.id === id);
       return m ? { id: m.id, mountPath: m.mountPath, label: m.label } : null;
     },
+    tryAcquireOperationLock: tryAcquireContainerOperationLock,
   });
 }
 

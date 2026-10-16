@@ -16,7 +16,10 @@
  * Jobs are registered in the shared backupJobStore (same kind/title as
  * manual container backups), so scheduled runs surface in
  * GET /api/background-jobs, the per-job SSE progress endpoint, and the
- * frontend's page-load job rehydration.
+ * frontend's page-load job rehydration. Each container's backup holds its
+ * operation lock (lib/containerOperationLock.js); a container busy with
+ * another operation (a manual backup, a start, a restore, …) is skipped for
+ * this run.
  *
  * The run itself is `runScheduledBackups({ trigger })`, invocable on its own
  * (CODING-RULES §7); the minute tick is one trigger. Every run logs its
@@ -37,6 +40,7 @@ import {
 import { backupJobStore, BACKGROUND_JOB_KIND, titleForContainerBackup } from './jobs/index.js';
 import { recordBackupAttempt } from './backupStatus.js';
 import { isExpectedAppError } from './routeErrors.js';
+import { tryAcquireContainerOperationLock } from './containerOperationLock.js';
 
 const TICK_MS = 60 * 1000;
 
@@ -152,11 +156,9 @@ async function backupAutoBackupContainers(trigger) {
 
   for (const name of names) {
     const title = titleForContainerBackup(name);
-    const alreadyRunning = backupJobStore.listJobs().some(
-      (j) => !j.done && j.kind === BACKGROUND_JOB_KIND.CONTAINER_BACKUP && j.title === title,
-    );
-    if (alreadyRunning) {
-      log?.warn({ container: name }, 'Backup scheduler: manual backup in progress, skipping container');
+    const releaseLock = tryAcquireContainerOperationLock(name, 'backup');
+    if (!releaseLock) {
+      log?.warn({ container: name }, 'Backup scheduler: another operation on the container is in progress, skipping container');
       skipped += 1;
       continue;
     }
@@ -170,6 +172,7 @@ async function backupAutoBackupContainers(trigger) {
         backupOne: (dest, onProgress) => createContainerBackup(name, dest.path, { origin: 'scheduled', onProgress }),
         afterEach: (dest) => pruneScheduledBackups(name, dest, allowedRoots),
       });
+      releaseLock();
       backupJobStore.completeJob(jobId, lastResult);
       backedUp += 1;
       await recordBackupAttempt({
@@ -181,6 +184,7 @@ async function backupAutoBackupContainers(trigger) {
         timestamp: lastResult?.timestamp,
       });
     } catch (err) {
+      releaseLock();
       backupJobStore.failJob(jobId, err);
       failed += 1;
       if (!isExpectedAppError(err)) log?.error({ err, container: name, jobId }, 'Backup scheduler: container backup failed');

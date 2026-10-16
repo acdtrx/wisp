@@ -921,7 +921,7 @@ Start a container backup job. Mirrors `POST /api/vms/:name/backup` — same body
 
 - **Body:** `{ destinationIds?: ["local", "<mountId>"] }` (defaults to `["local"]`)
 - **201:** `{ jobId: string, title: string }` — `title` is `Backup <name>`
-- **409:** `CONTAINER_TASK_TRANSIENT` (task is `pausing`/`unknown` — retry shortly), `CONTAINER_BACKUP_IN_PROGRESS` (a backup of this container is already running)
+- **409:** `CONTAINER_TASK_TRANSIENT` (task is `pausing`/`unknown` — retry shortly), `CONTAINER_BUSY` (a backup or another locked operation on this container is running — the job holds the [operation lock](CONTAINERS.md#per-container-operation-lock) until it settles)
 - **422:** `BACKUP_DEST_UNKNOWN` / `BACKUP_DEST_NONE` — unknown destination id, or nothing resolved
 - **503:** `BACKUP_MOUNT_FAILED` — SMB mount failed
 
@@ -965,7 +965,7 @@ Restore a container backup under a new name. The new name must be free both on d
 - **Body:** `{ destinationId: string, name: string, timestamp: string, newName: string }`
 - **200:** `{ name: string, sourceName: string, image: string | null }` — `sourceName` is the original container name from the manifest, useful when the user picked a backup whose folder name no longer matches.
 - **404:** backup not found
-- **409:** `CONTAINER_EXISTS` if the new name is already in use
+- **409:** `CONTAINER_EXISTS` if the new name is already in use; `CONTAINER_BUSY` while another operation holds the new name's [operation lock](CONTAINERS.md#per-container-operation-lock)
 - **422:** `INVALID_CONTAINER_NAME`, `BACKUP_INVALID` (unknown destination or invalid timestamp), or archive missing/malformed
 - **500:** `BACKUP_RESTORE_FAILED` if extraction or containerd record creation fails
 
@@ -976,7 +976,7 @@ Restore a backup **over the live container it was taken from** (same name, same 
 - **Body:** `{ destinationId: string, name: string, timestamp: string, safetyBackup?: boolean }`
 - **201:** `{ jobId: string, title: string }`
 - **404:** `CONTAINER_NOT_FOUND` (workload deleted — restore as new instead)
-- **409:** `CONTAINER_MUST_BE_STOPPED`, `BACKUP_IN_PROGRESS` (a backup/restore job for this container is already running)
+- **409:** `CONTAINER_MUST_BE_STOPPED`, `CONTAINER_BUSY` (a backup, restore or other locked operation on this container is running; the job holds the [operation lock](CONTAINERS.md#per-container-operation-lock) until it settles)
 - **422 / 503:** destination errors as for `POST /api/containers/:name/backup`
 
 ### DELETE /api/container-backups · `admin`
@@ -1463,6 +1463,8 @@ Interactive shell in a **running** container. Uses containerd `Tasks.Exec` with 
 ## Containers
 
 Routes with a `:name` path parameter validate it via `validateContainerName` (length 1–63, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..`/`/`/`\`, no surrounding whitespace); failures return 422 `INVALID_CONTAINER_NAME`.
+
+Start, stop, restart, kill, delete, `PATCH`, the mount and service row routes, backup and restore take the container's [operation lock](CONTAINERS.md#per-container-operation-lock): while another of them (or the restart policy's start) runs on the same container they answer **409** `CONTAINER_BUSY`, the message naming the running operation.
 
 ### GET /api/containers · `read`
 

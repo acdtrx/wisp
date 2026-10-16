@@ -41,6 +41,10 @@ import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, isExpectedAppError, sendError } from '../lib/routeErrors.js';
 import { validateContainerName } from '../lib/validation.js';
 import {
+  acquireContainerOperationLock,
+  withContainerOperationLock,
+} from '../lib/containerOperationLock.js';
+import {
   isKnownApp,
   createAppContainer,
   applyAppConfig,
@@ -346,17 +350,26 @@ export default async function containerRoutes(fastify) {
   // PATCH may rename the container (when `name` differs from the URL segment).
   // In that case the rename runs first, and remaining fields are applied under
   // the new name. The response carries the name actually in effect so clients
-  // can follow up with the new URL.
+  // can follow up with the new URL. The whole request holds the container's
+  // operation lock — every branch writes container.json — and a rename also
+  // holds the target name's, so nothing starts on it mid-move.
   fastify.patch('/containers/:name', { config: { auth: 'admin' } }, async (request, reply) => {
+    const releaseLocks = [];
     try {
       const body = request.body && typeof request.body === 'object' ? request.body : {};
       const { name: requestedName, ...rest } = body;
       let workingName = request.params.name;
+      const renameTo = typeof requestedName === 'string' && requestedName.trim()
+        && requestedName.trim() !== workingName
+        ? requestedName.trim()
+        : null;
 
-      if (typeof requestedName === 'string' && requestedName.trim()
-        && requestedName.trim() !== workingName) {
+      releaseLocks.push(acquireContainerOperationLock(workingName, renameTo ? 'rename' : 'configuration change'));
+      if (renameTo) releaseLocks.push(acquireContainerOperationLock(renameTo, 'rename'));
+
+      if (renameTo) {
         const oldName = workingName;
-        const renamed = await renameContainer(workingName, requestedName.trim());
+        const renamed = await renameContainer(workingName, renameTo);
         workingName = renamed.name;
         // Carry any custom-section assignment over to the new name so the
         // container keeps its sidebar section. Best-effort: assignments are
@@ -419,6 +432,8 @@ export default async function containerRoutes(fastify) {
       return { ...result, name: workingName };
     } catch (err) {
       handleRouteError(err, reply, request);
+    } finally {
+      for (const release of releaseLocks) release();
     }
   });
 
@@ -429,8 +444,10 @@ export default async function containerRoutes(fastify) {
       // Drop the mDNS A-record before tearing down the container so the
       // name doesn't keep resolving to a vanishing IP. Services are
       // deregistered inside deleteContainer.
-      try { await unpublishContainer(request.params.name); } catch { /* best effort */ }
-      await deleteContainer(request.params.name, deleteFiles);
+      await withContainerOperationLock(request.params.name, 'delete', async () => {
+        try { await unpublishContainer(request.params.name); } catch { /* best effort */ }
+        await deleteContainer(request.params.name, deleteFiles);
+      });
       return { ok: true };
     } catch (err) {
       handleRouteError(err, reply, request);
@@ -438,9 +455,11 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Lifecycle ─────────────────────────────────────────────────────
+  // Each action holds the per-container operation lock for its duration.
   fastify.post('/containers/:name/start', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
-      await startContainer(request.params.name);
+      const { name } = request.params;
+      await withContainerOperationLock(name, 'start', () => startContainer(name));
       return { ok: true };
     } catch (err) {
       handleRouteError(err, reply, request);
@@ -449,7 +468,8 @@ export default async function containerRoutes(fastify) {
 
   fastify.post('/containers/:name/stop', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
-      const { restartCancelled } = await stopContainer(request.params.name);
+      const { name } = request.params;
+      const { restartCancelled } = await withContainerOperationLock(name, 'stop', () => stopContainer(name));
       return { ok: true, restartCancelled };
     } catch (err) {
       handleRouteError(err, reply, request);
@@ -458,7 +478,8 @@ export default async function containerRoutes(fastify) {
 
   fastify.post('/containers/:name/restart', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
-      await restartContainer(request.params.name);
+      const { name } = request.params;
+      await withContainerOperationLock(name, 'restart', () => restartContainer(name));
       return { ok: true };
     } catch (err) {
       handleRouteError(err, reply, request);
@@ -467,7 +488,8 @@ export default async function containerRoutes(fastify) {
 
   fastify.post('/containers/:name/kill', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
-      const { restartCancelled } = await killContainer(request.params.name);
+      const { name } = request.params;
+      const { restartCancelled } = await withContainerOperationLock(name, 'kill', () => killContainer(name));
       return { ok: true, restartCancelled };
     } catch (err) {
       handleRouteError(err, reply, request);
@@ -508,18 +530,11 @@ export default async function containerRoutes(fastify) {
         const destinations = await resolveBackupDestinations(settings, rawMounts, body.destinationIds);
 
         const title = titleForContainerBackup(name);
-        /* One backup at a time per container — the pause/resume dance around
-         * the archive must not interleave with a second job's. */
-        const running = backupJobStore.listJobs().some(
-          (j) => !j.done && j.kind === BACKGROUND_JOB_KIND.CONTAINER_BACKUP && j.title === title,
-        );
-        if (running) {
-          throw createAppError(
-            'CONTAINER_BACKUP_IN_PROGRESS',
-            'Backup already in progress',
-            `A backup of "${name}" is already running`,
-          );
-        }
+        // The operation lock keeps a second backup (its pause/resume around the
+        // archive) and every other operation off the container for the whole
+        // job. Acquired with no await before createJob, so the lock and the job
+        // appear together; released when the job settles.
+        const releaseLock = acquireContainerOperationLock(name, 'backup');
 
         const jobId = randomBytes(12).toString('hex');
         backupJobStore.createJob(jobId, {
@@ -537,11 +552,15 @@ export default async function containerRoutes(fastify) {
             push: (ev) => backupJobStore.pushEvent(jobId, ev),
             backupOne: (dest, onProgress) => createContainerBackup(name, dest.path, { origin: 'manual', onProgress }),
           });
+          // Free the container before announcing completion, so an action the
+          // client takes on `done` never meets a stale CONTAINER_BUSY.
+          releaseLock();
           backupJobStore.completeJob(jobId, lastResult);
           await recordBackupAttempt({
             kind: 'container', name, ok: true, origin: 'manual', destinationIds, timestamp: lastResult?.timestamp,
           });
         })().catch(async (err) => {
+          releaseLock();
           backupJobStore.failJob(jobId, err);
           if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background container backup failed');
           await recordBackupAttempt({
@@ -695,7 +714,8 @@ export default async function containerRoutes(fastify) {
       if (!body || typeof body !== 'object') {
         return sendError(reply, 422, 'Invalid body', 'Expected JSON object with type, name, containerPath, readonly');
       }
-      return await addContainerMount(request.params.name, body);
+      const { name } = request.params;
+      return await withContainerOperationLock(name, 'configuration change', () => addContainerMount(name, body));
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -705,8 +725,11 @@ export default async function containerRoutes(fastify) {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       const body = request.body && typeof request.body === 'object' ? request.body : {};
-      assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
-      return await updateContainerMount(request.params.name, mountName, body);
+      const { name } = request.params;
+      return await withContainerOperationLock(name, 'configuration change', async () => {
+        assertMountNotAppManaged(await getContainerConfig(name), mountName);
+        return updateContainerMount(name, mountName, body);
+      });
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -715,7 +738,8 @@ export default async function containerRoutes(fastify) {
   fastify.delete('/containers/:name/mounts/:mountName', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
-      return await removeContainerMount(request.params.name, mountName);
+      const { name } = request.params;
+      return await withContainerOperationLock(name, 'configuration change', () => removeContainerMount(name, mountName));
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -814,7 +838,8 @@ export default async function containerRoutes(fastify) {
       if (!body || typeof body !== 'object') {
         return sendError(reply, 422, 'Invalid body', 'Expected JSON object with port, type, txt?');
       }
-      return await addContainerService(request.params.name, body);
+      const { name } = request.params;
+      return await withContainerOperationLock(name, 'configuration change', () => addContainerService(name, body));
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -823,7 +848,8 @@ export default async function containerRoutes(fastify) {
   fastify.patch('/containers/:name/services/:port', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const body = request.body && typeof request.body === 'object' ? request.body : {};
-      return await updateContainerService(request.params.name, request.params.port, body);
+      const { name, port } = request.params;
+      return await withContainerOperationLock(name, 'configuration change', () => updateContainerService(name, port, body));
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -831,7 +857,8 @@ export default async function containerRoutes(fastify) {
 
   fastify.delete('/containers/:name/services/:port', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
-      return await removeContainerService(request.params.name, request.params.port);
+      const { name, port } = request.params;
+      return await withContainerOperationLock(name, 'configuration change', () => removeContainerService(name, port));
     } catch (err) {
       handleRouteError(err, reply, request);
     }

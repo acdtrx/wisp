@@ -19,7 +19,11 @@
  *
  * Restarts back off per container: 1s, doubling to a 5 min cap; a run that
  * stayed up for RESET_AFTER_MS starts over at 1s. One pending restart per
- * container. When the timer fires the current state is re-read — a container
+ * container. When the timer fires it takes the embedder's per-container
+ * operation lock (containerOperationGuard.js) for the whole attempt; when
+ * another operation holds it (a backup, an app-config save, …) the attempt is
+ * deferred to the next backoff step, logged, never raised. With the lock
+ * held the current state is re-read — a container
  * deleted (no container.json, including delete-keep-files), switched to
  * `never`, or already started by someone else is left alone. Starts go through
  * the regular `startContainer`, so a failed attempt is logged and retried on
@@ -36,6 +40,7 @@
  */
 import { containerState } from './containerManagerConnection.js';
 import { readContainerConfig } from './containerManagerConfigIo.js';
+import { tryAcquireOperationLock } from './containerOperationGuard.js';
 
 export const RESTART_POLICIES = ['never', 'on-failure', 'unless-stopped', 'always'];
 const DEFAULT_RESTART_POLICY = 'unless-stopped';
@@ -137,7 +142,9 @@ export function noteContainerStart(name) {
 function scheduleRestart(name, exitStatus, policy, reason) {
   if (pendingRestarts.has(name)) return;
   let state = backoffState.get(name);
-  if (state && state.lastStartAt != null && Date.now() - state.lastStartAt >= RESET_AFTER_MS) {
+  // Judged at an exit only: a deferred or failed attempt is no run at all, and
+  // lastStartAt still dates from the run before it.
+  if (reason === 'exit' && state && state.lastStartAt != null && Date.now() - state.lastStartAt >= RESET_AFTER_MS) {
     state = null;
   }
   if (!state) {
@@ -152,9 +159,20 @@ function scheduleRestart(name, exitStatus, policy, reason) {
   const timer = setTimeout(() => {
     pendingRestarts.delete(name);
     fireScheduledRestartChange(name);
-    runRestart(name, exitStatus, attempt).catch((err) => {
-      log()?.warn?.({ err: err?.message || String(err), container: name }, 'Restart-policy restart threw');
-    });
+    // Taken synchronously as the timer fires: an operation that cancels the
+    // pending restart (Stop, Kill, Start, Delete, Rename, restore) either
+    // already did so or now finds the lock held.
+    const release = tryAcquireOperationLock(name, 'restart-policy start');
+    if (!release) {
+      log()?.info?.({ container: name, attempt }, 'Restart-policy restart deferred: another operation on the container is in progress');
+      scheduleRestart(name, exitStatus, policy, 'busy');
+      return;
+    }
+    runRestart(name, exitStatus, attempt)
+      .catch((err) => {
+        log()?.warn?.({ err: err?.message || String(err), container: name }, 'Restart-policy restart threw');
+      })
+      .finally(release);
   }, delayMs);
   timer.unref?.();
   pendingRestarts.set(name, { timer, exitStatus, attempt, at: Date.now() + delayMs });
