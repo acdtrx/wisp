@@ -29,6 +29,8 @@ const DEFAULT_CAPS = [
 ];
 
 const SIGKILL = 9;
+/** Bound on reaping a SIGKILLed console exec before DeleteProcess (the shim reaps within ms). */
+const CONSOLE_EXEC_REAP_TIMEOUT_MS = 5000;
 
 /**
  * FIFO paths for Tasks.Exec must live on a filesystem both this process and containerd can see.
@@ -152,6 +154,9 @@ export async function execInContainer(name, opts = {}) {
   /** @type {Socket | null} */
   let stdout = null;
   let cleanupCalled = false;
+  /** Tasks.Wait for the exec, armed once Start succeeded; settles when the shell exits. */
+  let waitPromise = null;
+  let exited = false;
 
   const cleanupSession = async () => {
     if (cleanupCalled) return;
@@ -160,15 +165,26 @@ export async function execInContainer(name, opts = {}) {
     stdin?.destroy();
     stdout?.destroy();
 
-    try {
-      await callUnary(getClient('tasks'), 'kill', {
-        containerId: name,
-        execId,
-        signal: SIGKILL,
-        all: false,
-      });
-    } catch {
-      /* process may already have exited */
+    if (waitPromise && !exited) {
+      /* Still running: DeleteProcess refuses a live exec (it would stay in the shim as a stopped
+       * process), so SIGKILL it and let containerd reap it first — bounded, so a wedged shim
+       * can't hold the teardown. */
+      try {
+        await callUnary(getClient('tasks'), 'kill', {
+          containerId: name,
+          execId,
+          signal: SIGKILL,
+          all: false,
+        });
+      } catch {
+        /* exited between the check and the kill */
+      }
+      let reapTimer = null;
+      await Promise.race([
+        waitPromise.catch(() => { /* the wait outcome no longer matters; only that it settled */ }),
+        new Promise((resolve) => { reapTimer = setTimeout(resolve, CONSOLE_EXEC_REAP_TIMEOUT_MS); }),
+      ]);
+      clearTimeout(reapTimer);
     }
 
     try {
@@ -177,7 +193,7 @@ export async function execInContainer(name, opts = {}) {
         execId,
       });
     } catch {
-      /* may already be deleted */
+      /* already deleted, or Tasks.Exec never registered it */
     }
 
     try {
@@ -208,6 +224,8 @@ export async function execInContainer(name, opts = {}) {
       containerId: name,
       execId,
     });
+    waitPromise = callUnary(getClient('tasks'), 'wait', { containerId: name, execId });
+    waitPromise.then(() => { exited = true; }, () => { /* cleanupSession only needs it settled */ });
 
     await callUnary(getClient('tasks'), 'resizePty', {
       containerId: name,
