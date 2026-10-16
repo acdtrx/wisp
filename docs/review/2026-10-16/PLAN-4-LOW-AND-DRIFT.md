@@ -121,3 +121,31 @@ stops showing the error.
 All bundles merged and verified; AUDIT.md gets a remediation-status block (as in 2026-07-05)
 listing every ID as fixed / backlogged (with trigger) / dropped (with reason). Then the user
 cuts the release via `scripts/release.sh`.
+
+---
+
+## Results (2026-10-16)
+
+Integrated on `fix/audit-final`: L2–L6 (Phase 4), the Phase 3 verification follow-ups, L1 (mDNS
+host name, options 1+2 per the user), V19 (flatten backing chains; cloud-init ISO rebuilt on restore;
+restore-in-place refused while snapshots exist — all user decisions), L7. Conflicts: BACKLOG.md
+(union) and `index.js` not-found fallback (route path + no-shell prefixes combined). Production-mode
+boot on darwin: shell/sw.js `no-cache`, assets immutable, missing asset/vendor 404 `no-store`,
+encoded API paths 401.
+
+Phase 4 build (`ab6df31`) on tini — all PASS unless noted: seccomp active (`Seccomp: 2`), root
+container `apt-get`/DNS/ping/chown fine, `unshare`/`mount` blocked; caddy HTTP 200; app create one
+`done`, "Background job completed"; same-second container backups → 409; stopped rename not
+published; local-only image tag deleted alone; VM `007` + snapshot `01` work end to end; first CPU
+sample after guest shutdown + start = 0; live snapshots `a b`/`a_b` → `a_20b.mem`/`a_5fb.mem`;
+HAOS `decompressing` step; `backup-status.json` in `config/`; wisp-dns0 stub; ownership; updater
+path traversal + symlinked staging rejected; host-setup rollback restored the identical tree;
+net throughput = physical NIC only; `availBytes` = `df` avail (±4 KB); SMART via `-n standby,130`.
+
+Found: (1) backup of a running VM returns 201 then fails in the job (should be a synchronous 409) —
+fix in progress; (2) two containers started back-to-back → the first one's `.local` name stops
+resolving on the LAN while Wisp believes it's published — investigation in progress.
+
+Also confirmed on tini (main session): a live snapshot moves `sda` to an overlay; a backup taken
+then held only the 463-byte overlay (V19). The production host had no VM with snapshots and its
+only NAS VM backup was complete.

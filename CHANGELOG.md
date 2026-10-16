@@ -3,6 +3,8 @@
 ## 2026-10-16
 
 ### New Features
+- **Containers run under Docker's default seccomp profile** — the standard syscall filter (blocks e.g. `mount`, `unshare`, kernel keyring) on top of the existing capability set.
+- **Restart-policy countdown** — a container waiting out a restart backoff shows "Restarting in N s", and Stop cancels the pending restart.
 - **Container restart policy is enforced** — a container that exits on its own is restarted per its policy (`on-failure`, `unless-stopped`, `always`) with backoff from 1 s up to 5 min; stops from Wisp are never undone. Most containers use the default `unless-stopped`, so any running container that exits by itself (including one-shot commands) now comes back.
 
 ### Bug Fixes
@@ -38,6 +40,41 @@
 - **Arch update checks don't touch the system package database** — they sync into a scratch copy, so they can't set up partial upgrades.
 - **Server setup on Debian uses Docker's Debian repo** — Ubuntu derivatives use the Ubuntu repo, and a repo apt can't use is removed again.
 - **Image-update badges from every check** — the hourly and MCP image checks now surface updates, not only the manual check.
+- **Backups after a live snapshot hold the whole disk** — a disk running on a snapshot overlay is flattened into a standalone image in the backup; before, the backup held only the small overlay file and couldn't be restored on its own (affected every earlier version).
+- **Cloud-init seed rebuilt on restore** — backups no longer silently drop `cloud-init.iso` (libvirt owns it after first boot); they keep `cloud-init.json` and restore rebuilds the ISO from it. Restored VMs may regenerate SSH host keys once (new cloud-init instance id).
+- **Restore in place refuses a VM with snapshots** — instead of leaving snapshots that no longer match its disks; delete them first.
+- **Containers resolve the host's own `.local` name reliably** — the container DNS forwarder answers it from the bridge addresses instead of asking avahi (fixes intermittent `no such host` bursts, e.g. Caddy → `wisp.local`), never hands out link-local addresses, and relays TCP queries over TCP.
+- **VM and snapshot names like `007` work** — numeric-looking names and values (disk serials, WWNs) are kept verbatim instead of being parsed as numbers.
+- **VM CPU % never goes negative** after a VM shut down from inside the guest is started again.
+- **Disk changes, backups and restore-in-place require a fully shut-off VM** — consistently, across every path.
+- **Live snapshots never share a memory file** — names differing only by space, dot or underscore get distinct `.mem` files.
+- **HAOS download shows its decompression phase** instead of sitting at 100%.
+- **Container `.local` names follow reality** — not published for stopped containers or with Local DNS off, not left published after a crash, and a failed start no longer leaves mDNS services advertised.
+- **Config edits during a container start are kept** — saving while a container waits for DHCP is no longer reverted when the start finishes.
+- **Storage mount sources are re-checked at start** — a symlink can no longer make Wisp create directories or bind paths outside the share.
+- **Image refs with a registry port or `localhost` work** (`nas:5000/app`, `localhost/app`), and local-only images can be deleted from the image library.
+- **Container log history opens instantly** on very large logs (tail read instead of the whole file).
+- **Creating an app container no longer logs a spurious failure**, and two container backups in the same second no longer collide.
+- **SMB saved-password indicator shows again** in Settings.
+- **SSO hardening** — a flood of SSO login starts no longer blocks SSO for 10 minutes, and the redirect URI comes from the Advertised URL when set, not from the request's Host header.
+- **Invalid requests say what was wrong** — `{error, detail}` instead of a bare "Bad Request".
+- **Container PATCH rejects a flat `env` map** again, so it can't wipe secret environment variables (use `envPatch`).
+- **Encoded unknown API paths return a JSON 404**, and a missing `/assets/*` file returns an uncached 404 instead of the app page cached for a year.
+- **Signing out with SSO enabled stays signed out**, in this tab and others.
+- **Dialogs survive drag-selecting** text that ends outside them.
+- **Clearing a stored secret's field keeps the secret.**
+- **Finishing a create doesn't pull you away** from the page you moved to.
+- **A disconnected console stays disconnected** when the tab becomes visible or the network returns.
+- **SMB Test connection uses the stored password** after editing the share path.
+- **Finished jobs leave the tray 5 minutes after they finish**, and job progress streams connect at once and close after the final event.
+- **Log marker label uses an in-app dialog** instead of the browser prompt.
+- **Closing a container console removes its shell from containerd.**
+- **Backup status survives self-updates** — stored in the install's `config/`.
+- **Fresh installs get container DNS immediately**, and container DNS setup no longer fails (and rolls an update back) when networkd creates the stub interface at the same moment.
+- **Updater rollback restores host setup too** (helpers, sudoers, units), rolls back on timeout, accepts a deploy group not named after the user, and rejects staging paths that resolve outside the updates directory. These take effect from the update *after* this one; a host whose deploy group isn't named after the user must re-run `install.sh` once.
+- **Host network throughput counts physical NICs only** (no double counting through bridges and VM/container ports), and filesystem "available" excludes root-reserved space (matches `df`).
+- **SMART reads don't wake sleeping disks** — they show as "Sleeping".
+- **CPU power (RAPL) access survives reboots** — existing installs: re-run `scripts/linux/setup/rapl.sh` once.
 
 ## 2026-09-05 (v2.3.0)
 
