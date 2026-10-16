@@ -9,6 +9,60 @@ re-verified by the main session; the verification column says how each finding w
 Fix plan: [`PLAN-1-SECURITY.md`](PLAN-1-SECURITY.md) → [`PLAN-2-DATA-SAFETY.md`](PLAN-2-DATA-SAFETY.md)
 → [`PLAN-3-ROBUSTNESS.md`](PLAN-3-ROBUSTNESS.md) → [`PLAN-4-LOW-AND-DRIFT.md`](PLAN-4-LOW-AND-DRIFT.md).
 
+> **Remediation status (2026-10-16).** Every finding is fixed, documented, backlogged or dropped
+> below. Bundle names are the plan bundles (S/D/R/L); commits are on the `fix/audit-*` lineage
+> (short hashes may change at integration). Linux verification per bundle: the PLAN files'
+> Results sections. Backlog items live in [`docs/BACKLOG.md`](../../BACKLOG.md), each with its
+> revisit trigger. User decisions taken while fixing are marked **decided**; the settled ones are
+> recorded in the owning spec.
+>
+> | ID | Status | Where / note |
+> |---|---|---|
+> | A1 | fixed | S1 `c514909`; 404/SPA-shell path follow-up `c5ba165` |
+> | V1 | fixed | S2 `cba43ae`. **Decided:** clone/restore copy the stored `<graphics>` as-is (pre-fix VMs keep `0.0.0.0` until re-saved — VM-MANAGEMENT.md; manual fix in CHANGELOG) |
+> | V2, A2 | fixed | S3 `265d0b9` |
+> | V3, V4, V14 | fixed | D1 `31d0a9d`. **Decided:** refuse (409 `VM_DIR_EXISTS`); adopting kept disks → backlog |
+> | V19 | fixed in V19 bundle (pending integration) | **Decided:** flatten each disk's backing chain into the backup (refusing rejected); `cloud-init.iso` no longer backed up, regenerated from `cloud-init.json` on restore; restore-in-place onto a VM with snapshots → 409 (also closes the stranded-snapshot-metadata item) |
+> | C1 | fixed | D4 `6278b4f` |
+> | A3 | fixed | S4 `954ad95`. **Decided:** refuse app-managed mount content for every caller (also `POST …/file`) |
+> | A4 | fixed | R2 `fed52df` |
+> | V5, V6, V7 | fixed | D2 `783c132`; rename/clone take the lock `4311219` |
+> | V8, V10 | fixed | D3 `ee913b1` |
+> | V9, P11 | fixed | D6 `fa11b46` |
+> | V11, V15 | fixed | R3 `c0d3abd` |
+> | C2 | fixed | R5 `c7afed0`; scheduled restart visible + stoppable `63a2147`. **Decided:** enforce (not remove); `always` and `unless-stopped` both stay (CONTAINERS.md) |
+> | C3 | fixed | D4 `1142e01` |
+> | C4 | fixed | R5 `d4977aa` |
+> | P1, P12 | fixed | D5 `447b639` |
+> | P2 | fixed | R4 `684a0a9` |
+> | P3, P4 | fixed | R4 `056aa8c`. **Decided:** `NEEDRESTART_MODE=a` (auto-restart; HOST-MONITORING.md); Arch checks via a scratch dbpath |
+> | F1, F2, F3 | fixed | R1 `b92222e`, `8a0013f`, `22f6a27`. **Decided:** top-level error boundary added |
+> | A5–A8 | fixed | L2 `c5ba165`. **Decided:** A6 evicts the oldest pending start (AUTH.md) |
+> | C17 | fixed | `7575782` |
+> | V12, V16 | fixed | L4 `c9939ac`, `9e27f8e` |
+> | V13 | fixed | S4 `f141b9a` (existing files: manual `chmod`, CHANGELOG) |
+> | V17 | fixed | D6 `673cb29` (live reconnect not exercised on Linux — needs a dbus restart); boot-time connect failure → backlog |
+> | V18 | documented + backlogged | `893d3b3` (BACKUPS.md § Not backed up); swtpm backup helper → backlog |
+> | `VIR_DOMAIN_STATE_SHUTDOWN` | fixed | L4 `6410d35` (offline = shutoff only) |
+> | Unconfirmed (VM) | resolved | live-snapshot overlays → V19; snapshot metadata after restore → V19 (409); `.mem` collisions fixed `3a43653`; HAOS xz race fixed `fa11b46` (+ `decompressing` phase `8ee125c`) |
+> | C5–C8, C13, C15, C16, C18, `isKnownApp` | fixed | L5 `ab6df31` |
+> | C11 | fixed | L5 `ab6df31`. **Decided:** ship Docker's default seccomp profile; per-container opt-out → backlog |
+> | C9 | fixed | S4 `855bab7` |
+> | C12 | fixed | R2 `59917bf`; FIFO I/O off the threadpool (R6, found while fixing) `f2af879`; console exec reaped before delete `aae4585` |
+> | C14, O1 | fixed | L1 `fbe73b0`, `9e962b9`. **Decided:** forwarder answers the host's own name from the bridge and never returns link-local answers; avahi stall cause unexplained; avahi `deny-interfaces` → backlog |
+> | Unconfirmed (containers) | resolved | entry-group leak (VM side) and rename DHCP lease → backlog; lifecycle lock → covered by C7's start-owned field merge; secrets in `APP_RELOAD_FAILED` detail → backlog |
+> | P5, P6 | fixed | L6 `e30201b`, `67f9538` |
+> | P7, P8 | fixed | S5 `72e0fa8` (2026-07-05 M3 now complete; `wisp-cni` conf constrained by owner check on the open fd). Residual `/mnt/wisp` race + netns arg → backlog |
+> | P9, P10 | fixed | L6 `5184978` (updater fixes apply one update late; hosts whose group ≠ user re-run `install.sh` once) |
+> | P13, P14, P15 | fixed | L6 `f30b00c`, `58824c1` |
+> | Unconfirmed (install) | resolved | `container-dns.sh` EEXIST and RAPL fixed `67f9538`; staging realpath and `TimeoutStartSec` (TERM now rolls back) fixed `5184978`; Arch `[ignored]` fixed `056aa8c` |
+> | F4–F10 | fixed | L3 `ebc0cd3`, `61c4234`, `f45bb52`, `358f2db`, `89fb439`, `5fa8bc3`, `f30d765` |
+> | Unconfirmed (frontend) | resolved | Image Library ordering fixed `8a0013f`; `createSSE` retrying a 404 confirmed → backlog |
+> | Found while fixing | fixed | app-container create's spurious job failure `ab6df31`; job SSE ended after the terminal event `7fb29da`; missing `/assets` 404 instead of the SPA shell `2295644`; SSE headers flushed at stream open (L7) |
+> | Part 5 drift | fixed | L7 (`fix/l7-docs-drift`) where earlier bundles hadn't: CONSOLE.md cookie auth, UPDATES.md privilege boundary, UI-PATTERNS pill-row modal, CONTAINERS.md module table, SETTINGS/DEPLOYMENT `list`, stale comments, `window.prompt`, allowlist (`unzip`, `mkfifo`, `ip netns`; `bash` wrapper removed), dead fallbacks + `wisp-apt` + `migrate-app-containers.sh` removed, `check-imports` checks module-relative paths |
+> | Leftovers noted while fixing | backlogged | VM restart flags, rename/clone edges, app-config Restart badge, app-container devices/mount routes, secret file modes, store action slot, change-password rate limit, update-install guard, upload race, and others — see BACKLOG.md |
+> | Dropped | — | frontend reading `nostate` as stopped (harmless); clone of a paused VM (by design); `containerd.sh` apt prompts (setup is interactive); `wisp.service` `ExecStartPre` pipeline (fine); `docs/review/2026-07-05/` being gitignored (intentional: drafts stay private until triaged) |
+
 ## Summary
 
 | Severity | Count | Headline |
