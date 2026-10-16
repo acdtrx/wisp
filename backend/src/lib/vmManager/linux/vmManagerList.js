@@ -103,6 +103,8 @@ function fireListChange() {
  * exactly one follow-up. Mirrors containerManager's subscribeContainerConfigWrite.
  */
 export function refreshVMListCache() {
+  // No cache without DomainEvents (listVMs reads libvirt on every call).
+  if (!connectionState.watchEvents) return;
   if (refreshPromise) {
     refreshQueued = true;
     return;

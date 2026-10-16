@@ -27,6 +27,13 @@ export const containerState = {
    *  list. For a short-lived process (the migration runner) that must not act
    *  alongside the backend. */
   watchEvents: true,
+  /** false (connect option): reads write nothing back to container.json — a
+   *  restart-required flag the task has outgrown, the env shape, a missing
+   *  network type / MAC, a netns-discovered IP are left as stored (the result
+   *  reflects the flag rule; no IP discovery runs). For the migration runner,
+   *  whose only writes are a migration's own recorded changes (and none under
+   *  --dry-run); the backend repairs on its next read. */
+  repairOnRead: true,
 };
 
 const connectHandlers = new Set();
@@ -225,12 +232,14 @@ export function collectStream(stream) {
 }
 
 /**
- * @param {{ logger?: import('fastify').FastifyBaseLogger, watchEvents?: boolean }} [opts]
+ * @param {{ logger?: import('fastify').FastifyBaseLogger, watchEvents?: boolean, repairOnRead?: boolean }} [opts]
  *   watchEvents false: connection and calls only — see containerState.watchEvents.
+ *   repairOnRead false: reads never write — see containerState.repairOnRead.
  */
 export async function connect(opts = {}) {
   if (opts.logger) containerState.logger = opts.logger;
   if (typeof opts.watchEvents === 'boolean') containerState.watchEvents = opts.watchEvents;
+  if (typeof opts.repairOnRead === 'boolean') containerState.repairOnRead = opts.repairOnRead;
 
   if (containerState.connected) return;
 

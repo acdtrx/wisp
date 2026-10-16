@@ -53,12 +53,14 @@ export async function setVMPendingRestart(name, value) {
  * refresh — including the first build at Wisp startup — and detail).
  * `startedAt` is the QEMU process's start time (epoch ms), null when not
  * running or unreadable. Returns the flag still in force — `{ since }` or
- * null — and drops it from the definition when QEMU started after `since`.
+ * null — and drops it from the definition when QEMU started after `since`
+ * (unless the connection doesn't repair on read).
  * A stopped VM, or one whose start time can't be read, keeps its flag.
  */
 export async function resolveVMPendingRestart(domPath, name, pendingRestart, startedAt) {
   if (!pendingRestart) return null;
   if (startedAt == null || !(startedAt > Date.parse(pendingRestart.since))) return pendingRestart;
+  if (!connectionState.repairOnRead) return null;
   try {
     const cleared = await writePendingRestart(domPath, null, { expectSince: pendingRestart.since });
     if (cleared) {

@@ -36,7 +36,8 @@ export async function setContainerPendingRestart(name, value) {
  * The restart-required rule, applied wherever a container's state is read
  * (list refresh, detail). `pid` is the task's init process (0 when there is
  * no task). Returns the flag still in force — `{ since }` or null — and drops
- * it from container.json when the task started after `since`. A stopped
+ * it from container.json when the task started after `since` (unless the
+ * connection doesn't repair on read). A stopped
  * container, or one whose start time /proc can't tell, keeps its flag.
  * Only the `{ since }` shape is a flag; anything else is returned as null and
  * left on disk untouched.
@@ -46,6 +47,7 @@ export async function resolvePendingRestart(name, config, pid) {
   if (typeof since !== 'string') return null;
   const startedAt = pid ? await processStartTimeMsFromProc(pid) : null;
   if (startedAt == null || !(startedAt > Date.parse(since))) return config.pendingRestart;
+  if (!containerState.repairOnRead) return null;
   try {
     const latest = await readContainerConfig(name);
     // A newer flag (set after this read) belongs to a later change — keep it.

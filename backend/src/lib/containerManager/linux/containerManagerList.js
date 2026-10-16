@@ -190,6 +190,8 @@ function runListRefresh() {
  * caller that awaits it reads its own writes through `listContainers()`.
  */
 export function refreshContainerListCache() {
+  // No cache without the events stream (listContainers reads disk on every call).
+  if (!containerState.watchEvents) return Promise.resolve();
   const done = new Promise((resolve) => { refreshWaiters.push(resolve); });
   if (refreshPromise) {
     refreshQueued = true;
@@ -370,8 +372,9 @@ function ensureContainerEnvShape(config) {
  */
 export async function getContainerConfig(name) {
   let config = await readContainerConfig(name);
+  const repair = containerState.repairOnRead;
 
-  if (ensureContainerEnvShape(config)) {
+  if (ensureContainerEnvShape(config) && repair) {
     try {
       await writeContainerConfig(name, config);
     } catch {
@@ -379,7 +382,7 @@ export async function getContainerConfig(name) {
     }
   }
 
-  if (config.network?.type !== 'bridge' || !normalizeContainerMac(config.network?.mac)) {
+  if (repair && (config.network?.type !== 'bridge' || !normalizeContainerMac(config.network?.mac))) {
     try {
       config = await ensureContainerNetworkConfig(name, config);
     } catch {
@@ -414,7 +417,7 @@ export async function getContainerConfig(name) {
   }
 
   let merged = config;
-  if (state === 'running') {
+  if (state === 'running' && repair) {
     try {
       merged = await persistContainerIpFromNetnsIfMissing(name, merged, pid);
     } catch {

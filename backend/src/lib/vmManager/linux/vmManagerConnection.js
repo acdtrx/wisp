@@ -46,6 +46,12 @@ export const connectionState = {
    *  (the migration runner) that must not act alongside the backend. Kept
    *  across bus reconnects. */
   watchEvents: true,
+  /** false (connect option): reads write nothing back — a restart-required
+   *  flag the running QEMU has outgrown is reported cleared but stays in the
+   *  definition. For the migration runner, whose only writes are a
+   *  migration's own recorded changes (and none under --dry-run); the backend
+   *  repairs on its next read. Kept across bus reconnects. */
+  repairOnRead: true,
 };
 
 export { vmError, unwrapVariant, unwrapDict, formatVersion, generateMAC };
@@ -157,13 +163,15 @@ function handleBusError(bus, err) {
 
 /**
  * @param {object} [logger]
- * @param {{ watchEvents?: boolean }} [opts] watchEvents false: connection and
- *   calls only — see connectionState.watchEvents. Omitted (as on a reconnect)
- *   keeps the current setting.
+ * @param {{ watchEvents?: boolean, repairOnRead?: boolean }} [opts]
+ *   watchEvents false: connection and calls only — see connectionState.watchEvents.
+ *   repairOnRead false: reads never write — see connectionState.repairOnRead.
+ *   Omitted (as on a reconnect) keeps the current setting.
  */
 export async function connect(logger = null, opts = {}) {
   if (logger) connectionState.logger = logger;
   if (typeof opts.watchEvents === 'boolean') connectionState.watchEvents = opts.watchEvents;
+  if (typeof opts.repairOnRead === 'boolean') connectionState.repairOnRead = opts.repairOnRead;
   const bus = dbus.systemBus();
   /* Attached at creation: an 'error' with no listener would crash the process. */
   bus.on('error', (err) => handleBusError(bus, err));

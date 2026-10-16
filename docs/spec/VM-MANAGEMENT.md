@@ -384,7 +384,7 @@ Purpose-named lifecycle functions: `startVM`, `stopVM`, `forceStopVM`, `rebootVM
 ### vmManagerPendingRestart.js
 
 - `setVMPendingRestart(name, value)` — set (`since = now`) or clear the restart-required flag in the inactive XML; returns `{ changed }`
-- `resolveVMPendingRestart(domPath, name, pendingRestart, startedAt)` — the restart-required rule; called by the list refresh and `getVMConfig`, drops a flag older than the QEMU start
+- `resolveVMPendingRestart(domPath, name, pendingRestart, startedAt)` — the restart-required rule; called by the list refresh and `getVMConfig`, drops a flag older than the QEMU start (reports it cleared without redefining on a `repairOnRead: false` connection — the migration runner)
 
 ### vmManagerDisk.js
 
