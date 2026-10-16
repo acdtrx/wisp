@@ -52,6 +52,11 @@ export function setupSSE(reply) {
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive',
   });
+  // writeHead only stores the headers; Node sends them with the first body write.
+  // A stream with nothing to say yet (a job before its first event) would leave
+  // the client waiting for the response — and unable to tell 200 from a hang —
+  // until the first event or keepalive.
+  raw.flushHeaders();
 }
 
 /**
