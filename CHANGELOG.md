@@ -43,6 +43,8 @@
 - **Backups after a live snapshot hold the whole disk** — a disk running on a snapshot overlay is flattened into a standalone image in the backup; before, the backup held only the small overlay file and couldn't be restored on its own (affected every earlier version).
 - **Cloud-init seed rebuilt on restore** — backups no longer silently drop `cloud-init.iso` (libvirt owns it after first boot); they keep `cloud-init.json` and restore rebuilds the ISO from it. Restored VMs may regenerate SSH host keys once (new cloud-init instance id).
 - **Restore in place refuses a VM with snapshots** — instead of leaving snapshots that no longer match its disks; delete them first.
+- **`.local` names don't silently stop resolving after back-to-back starts** — avahi 0.8 leaves a name stuck mid-probe when an interface disappears (an upstream bug Ubuntu still ships); Wisp now re-publishes stuck names whenever it removes a container network or a VM stops. Interface removals Wisp doesn't cause aren't covered.
+- **Backing up a running or paused VM is refused up front** (409) instead of starting a job that fails and logs an error with a stack trace.
 - **Containers resolve the host's own `.local` name reliably** — the container DNS forwarder answers it from the bridge addresses instead of asking avahi (fixes intermittent `no such host` bursts, e.g. Caddy → `wisp.local`), never hands out link-local addresses, and relays TCP queries over TCP.
 - **VM and snapshot names like `007` work** — numeric-looking names and values (disk serials, WWNs) are kept verbatim instead of being parsed as numbers.
 - **VM CPU % never goes negative** after a VM shut down from inside the guest is started again.
