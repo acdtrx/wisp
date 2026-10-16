@@ -113,6 +113,8 @@ export {
   getMountFileTextContent,
   putMountFileTextContent,
   getMountFileSize,
+  getMountFileMode,
+  setMountFileMode,
 } from './containerManagerMountsContent.js';
 
 export {

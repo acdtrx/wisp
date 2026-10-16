@@ -93,6 +93,8 @@ export const MOUNT_FILE_CONTENT_MAX_BYTES = impl.MOUNT_FILE_CONTENT_MAX_BYTES;
 export const getMountFileTextContent = impl.getMountFileTextContent;
 export const putMountFileTextContent = impl.putMountFileTextContent;
 export const getMountFileSize = impl.getMountFileSize;
+export const getMountFileMode = impl.getMountFileMode;
+export const setMountFileMode = impl.setMountFileMode;
 
 export const setupNetwork = impl.setupNetwork;
 export const teardownNetwork = impl.teardownNetwork;

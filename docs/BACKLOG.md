@@ -97,11 +97,6 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   `DELETE …/data`) aren't guarded for app containers while a `mounts` PATCH is
   `APP_CONFIG_ONLY`. Revisit when: a manual device pick on an app container is
   lost on a config save, or an app breaks after a raw mount edit.
-- **App-generated secret files keep the default mode** — mount files written
-  by `putMountFileTextContent` (zot session keys, tiny-samba passwords) are
-  created under the process umask (typically 0644) in `files/`; the content
-  routes refuse them (A3), but other local users can read them. Revisit when:
-  the host gets local users who shouldn't read app secrets.
 - **Container mount edge cases** — `updateContainerMount` returns
   `requiresRestart: null` when the container has no task; switching a
   tiny-samba share from Local to a Storage source leaves `files/share-<name>`

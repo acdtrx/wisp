@@ -113,10 +113,22 @@ export function maskAppSecrets(config) {
  * appConfig, so app containers need no stored flag — and none created before the
  * flag existed needs a migration.
  */
-function appSecretMountNames(config) {
+export function appSecretMountNames(config) {
   const appModule = getAppModule(config?.metadata?.app);
   const names = appModule?.getSecretMountNames?.(config.metadata.appConfig);
   return new Set(Array.isArray(names) ? names : []);
+}
+
+/**
+ * Host mode of an app-declared secret file: owner-only. The container still
+ * reads it — its process runs as the deploy user that owns the file, or, with
+ * runAsRoot, as root (CAP_DAC_OVERRIDE) through the mount's idmap.
+ */
+const SECRET_FILE_MODE = 0o600;
+
+/** putMountFileTextContent options for one of an app's generated files. */
+function mountFileWriteOptions(appSecrets, mountName) {
+  return appSecrets.has(mountName) ? { mode: SECRET_FILE_MODE } : {};
 }
 
 /**
@@ -266,9 +278,10 @@ export async function createAppContainer(spec, onStep) {
   const result = await createContainer(expandedSpec, onStep);
 
   if (derived.mountContents && Object.keys(derived.mountContents).length) {
+    const appSecrets = appSecretMountNames(expandedSpec);
     try {
       for (const [mountName, content] of Object.entries(derived.mountContents)) {
-        await putMountFileTextContent(spec.name, mountName, content);
+        await putMountFileTextContent(spec.name, mountName, content, mountFileWriteOptions(appSecrets, mountName));
       }
     } catch (err) {
       // Roll back partially-configured container so the user can retry cleanly.
@@ -381,8 +394,9 @@ export async function applyAppConfig(name, newAppConfig) {
   const { removedMounts } = await updateContainerConfig(name, updateChanges);
 
   if (derived.mountContents && Object.keys(derived.mountContents).length) {
+    const appSecrets = appSecretMountNames(updateChanges);
     for (const [mountName, content] of Object.entries(derived.mountContents)) {
-      await putMountFileTextContent(name, mountName, content);
+      await putMountFileTextContent(name, mountName, content, mountFileWriteOptions(appSecrets, mountName));
     }
   }
 
@@ -444,8 +458,9 @@ export async function applyAppConfig(name, newAppConfig) {
         for (const mountName of rolledBack.removedMounts) {
           await deleteRemovedMountData(name, mountName);
         }
+        const prevSecrets = appSecretMountNames(config);
         for (const [mountName, content] of Object.entries(prevFileContents)) {
-          await putMountFileTextContent(name, mountName, content);
+          await putMountFileTextContent(name, mountName, content, mountFileWriteOptions(prevSecrets, mountName));
         }
       } catch (rollbackErr) {
         err.raw = `${err.raw}\nRollback to the previous config also failed (${rollbackErr.message}); `

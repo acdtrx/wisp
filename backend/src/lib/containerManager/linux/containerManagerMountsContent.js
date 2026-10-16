@@ -4,7 +4,7 @@
  */
 import { join, resolve } from 'node:path';
 import { createWriteStream } from 'node:fs';
-import { lstat, mkdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { execFile as execFileCb } from 'node:child_process';
 import { TextDecoder, TextEncoder } from 'node:util';
@@ -332,8 +332,12 @@ export async function getMountFileTextContent(containerName, mountName) {
 
 /**
  * Replace mount backing file with UTF-8 text from the editor.
+ * `options.mode` (e.g. 0o600 for a secret) is applied before the new content is
+ * written — to an existing file by chmod, to a new one at creation — so the
+ * content never sits on disk under a wider mode. Without it an existing file
+ * keeps its mode and a new one gets the umask default.
  */
-export async function putMountFileTextContent(containerName, mountName, content) {
+export async function putMountFileTextContent(containerName, mountName, content, { mode } = {}) {
   if (typeof content !== 'string') {
     throw containerError('INVALID_CONTAINER_MOUNTS', 'content must be a string');
   }
@@ -355,7 +359,13 @@ export async function putMountFileTextContent(containerName, mountName, content)
   const filesDir = getContainerFilesDir(containerName);
   await mkdir(filesDir, { recursive: true });
   const dest = artifactPath(containerName, mountName);
-  await writeFile(dest, bytes);
+  if (mode != null) {
+    await chmod(dest, mode).catch((err) => {
+      if (err?.code !== 'ENOENT') throw err;
+      /* no file yet — writeFile creates it with `mode` */
+    });
+  }
+  await writeFile(dest, bytes, mode != null ? { mode } : undefined);
   return { ok: true };
 }
 
@@ -370,6 +380,55 @@ export async function clearMountBackingFile(containerName, mountName) {
   }
   await mkdir(getContainerFilesDir(containerName), { recursive: true });
   await writeFile(artifactPath(containerName, mountName), Buffer.alloc(0));
+}
+
+/**
+ * Permission bits (`st.mode & 0o7777`) of a file mount's backing file, or null
+ * when there is none on disk. Metadata only, like getMountFileSize.
+ */
+export async function getMountFileMode(containerName, mountName) {
+  if (validateMountSegmentName(mountName) !== mountName) return null;
+  try {
+    const st = await lstat(artifactPath(containerName, mountName));
+    return st.isFile() ? st.mode & 0o7777 : null;
+  } catch (err) {
+    if (err?.code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+/**
+ * Set the permission bits of a file mount's backing file (e.g. tighten a secret
+ * to 0o600). The container sees the change at once — its bind mount is the
+ * same inode — so no restart is involved.
+ */
+export async function setMountFileMode(containerName, mountName, mode) {
+  if (!Number.isInteger(mode) || mode < 0 || mode > 0o7777) {
+    throw containerError('INVALID_CONTAINER_MOUNTS', 'mode must be a permission-bits integer');
+  }
+  const config = await loadContainerJson(containerName);
+  const m = findMount(config, mountName);
+  if (!m) {
+    throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
+  }
+  if (m.type !== 'file') {
+    throw containerError('CONTAINER_MOUNT_TYPE_MISMATCH', `Mount "${mountName}" is not a file mount`);
+  }
+  const p = artifactPath(containerName, mountName);
+  let st;
+  try {
+    st = await lstat(p);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      throw containerError('CONTAINER_MOUNT_SOURCE_MISSING', `No file on disk for mount "${mountName}"`);
+    }
+    throw err;
+  }
+  if (!st.isFile()) {
+    throw containerError('CONTAINER_MOUNT_SOURCE_WRONG_TYPE', `Mount "${mountName}" must be backed by a file on the host`);
+  }
+  await chmod(p, mode);
+  return { ok: true };
 }
 
 /**

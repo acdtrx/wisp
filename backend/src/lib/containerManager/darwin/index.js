@@ -314,6 +314,14 @@ export async function getMountFileSize() {
   throw noContainerd();
 }
 
+export async function getMountFileMode() {
+  throw noContainerd();
+}
+
+export async function setMountFileMode() {
+  throw noContainerd();
+}
+
 export async function setupNetwork() {
   throw noContainerd();
 }
