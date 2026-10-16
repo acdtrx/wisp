@@ -150,7 +150,7 @@ Platform facade: at load time it imports **`backend/src/lib/vmManager/linux/`** 
 
 Shared pure helpers live in **`backend/src/lib/vmManager/vmManagerShared.js`** (private to vmManager, used by both linux and darwin platform impls).
 
-| Module (under `linux/vmManager/`) | Responsibility |
+| Module (under `vmManager/linux/`) | Responsibility |
 |--------|---------------|
 | `vmManagerConnection.js` | DBus connection lifecycle (`connect`, `disconnect` on shutdown), domain lookup, state queries, XML retrieval, error helpers (MAC/format helpers from `vmManagerShared`) |
 | `vmManagerHost.js` | Host info (versions, hardware), bridge/firmware/USB enumeration |
@@ -172,7 +172,7 @@ Shared pure helpers live in **`backend/src/lib/vmManager/vmManagerShared.js`** (
 
 Platform facade: imports **`backend/src/lib/containerManager/linux/`** on Linux (gRPC to containerd) or **`backend/src/lib/containerManager/darwin/`** on macOS (dev stub). Path helpers and `buildOCISpec` are re-used from the Linux tree where they have no gRPC dependency. Routes import only the facade; only `containerManager/linux/*` imports `@grpc/grpc-js`.
 
-| Module (under `linux/containerManager/`) | Responsibility |
+| Module (under `containerManager/linux/`) | Responsibility |
 |--------|---------------|
 | `index.js` | Re-exports the Linux implementation for the facade |
 | `containerManagerConnection.js` | gRPC client, containerd connection lifecycle |
@@ -245,8 +245,8 @@ App identity persists in `container.json.metadata.app` (string id) + `container.
 | `downloadHaos.js` | Home Assistant OS image download |
 | `mountsAutoMount.js` | Startup mount reconciliation + hard-converge for `/mnt/wisp/` + disk hotplug handlers (auto-mount on insertion, lazy-unmount on removal) |
 | `mdns/index.js` | mDNS module facade — Avahi-backed Linux backend (`mdns/linux/avahi.js`) plus an in-process DNS forwarder for container `.local` queries (`mdns/linux/forwarder.js`); macOS stubs (`mdns/darwin/avahi.js`). Public surface: `connect`/`disconnect`, address + service registration, `subscribeServiceBrowse` (generic LAN service browsing — per-(interface,protocol) dedup, persistent per-service resolvers that push live record updates, survives avahi restarts); `connect(logger, { hostInterface })` names the containers' bridge, whose addresses the forwarder answers the host's own `.local` name with; `lookupLocalEntry`/`resolveLocalName`/`getHostFqdn` are private to the linux pair. Also exports the platform-agnostic helpers (`mdns/hostname.js` — `stripCidr`, `sanitizeHostname`) and service-type catalog (`mdns/serviceTypes.js`). |
-| `vmMdnsReconciler.js` | App-level glue (Wisp wiring, not part of vmManager). Single flat platform-agnostic file. Subscribes to `vmManager.subscribeVMNetworkChange` and (de)registers Avahi A records based on each VM's `localDns` flag. Libvirt `DomainEvent` + `AgentEvent` + 60s safety probe live inside vmManager (`linux/vmManager/vmManagerNetwork.js`). |
-| `containerMdnsReconciler.js` | App-level glue. Subscribes to `containerManager.subscribeContainerNetworkChange` and (de)registers Avahi A records based on each container's `localDns` flag. The 60 s netns probe + `container.json` IP persistence live inside containerManager (`linux/containerManager/containerManagerNetworkEvents.js`). |
+| `vmMdnsReconciler.js` | App-level glue (Wisp wiring, not part of vmManager). Single flat platform-agnostic file. Subscribes to `vmManager.subscribeVMNetworkChange` and (de)registers Avahi A records based on each VM's `localDns` flag. Libvirt `DomainEvent` + `AgentEvent` + 60s safety probe live inside vmManager (`vmManager/linux/vmManagerNetwork.js`). |
+| `containerMdnsReconciler.js` | App-level glue. Subscribes to `containerManager.subscribeContainerNetworkChange` and (de)registers Avahi A records based on each container's `localDns` flag. The 60 s netns probe + `container.json` IP persistence live inside containerManager (`containerManager/linux/containerManagerNetworkEvents.js`). |
 | `wispDiscovery.js` | App-level glue. Announces this instance as a `_wisp._tcp` mDNS service (TXT: url/name/version from settings) and browses for peer instances via `subscribeServiceBrowse`, self-filtering via avahi lookup-result flags. Feeds the `discovery` topic on `/api/events`. See `docs/spec/DISCOVERY.md`. |
 
 ### Backend helper scripts (`backend/scripts/`)
@@ -374,7 +374,8 @@ wisp/
 │   ├── package.json
 │   ├── .npmrc                    # omit[]=optional
 │   ├── scripts/
-│   │   ├── wisp-os-update, wisp-mount, wisp-power, wisp-dmidecode, wisp-smartctl, wisp-bridge, wisp-netns, wisp-cni   # Privileged helpers → /usr/local/bin via install-helpers.sh
+│   │   ├── wisp-os-update, wisp-mount, wisp-power, wisp-dmidecode, wisp-smartctl, wisp-bridge, wisp-netns, wisp-cni, wisp-nvram   # Privileged helpers → /usr/local/bin via install-helpers.sh
+│   │   ├── wisp-updater          # Self-update applier (root, via wisp-updater.service)
 │   └── src/
 │       ├── index.js              # Entry point
 │       ├── routes/               # Route modules

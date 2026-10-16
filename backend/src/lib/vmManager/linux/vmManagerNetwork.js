@@ -58,7 +58,7 @@ async function probeAndEmit(name, stateCode) {
     ip = r.ip ?? null;
     hostname = r.hostname ?? null;
   } catch {
-    /* agent not responding — treat as unknown; don't emit on this tick */
+    /* agent not responding — the address reads as unknown (null) in this snapshot */
   }
   const next = { stateCode, ip, hostname };
   const prev = emittedSnapshots.get(name);
@@ -126,7 +126,7 @@ function onAgentEvent(name, { state }) {
   // remains valid until lifecycle says otherwise).
   if (state !== 1) return;
   if (!trackedAgents.has(name)) return;
-  probeAndEmit(name, 1).catch(() => { /* logged inside */ });
+  probeAndEmit(name, 1).catch(() => { /* cannot reject: the agent call and the handlers are guarded inside */ });
 }
 
 function onLibvirtDisconnect() {

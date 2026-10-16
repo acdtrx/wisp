@@ -46,9 +46,9 @@ async function onNetworkChange(name, snapshot) {
     return;
   }
 
-  // Running, localDns=true. Publish if we have an IP. If not, leave any prior
-  // entry alone — it stays valid until lifecycle says otherwise (matches the
-  // pre-event publisher behavior).
+  // Running, localDns=true. Publish if we have an IP. If not (agent briefly
+  // unreachable), leave any prior entry alone — it stays valid until the VM
+  // stops or localDns is turned off.
   if (!snapshot.ip) return;
   try {
     await registerAddress(name, snapshot.hostname || sanitizeHostname(name), snapshot.ip);

@@ -8,8 +8,8 @@ The console provides in-browser graphical access to running VMs via VNC. It uses
 Browser (noVNC) ──WebSocket──> Backend WS Proxy ──TCP──> QEMU VNC (127.0.0.1:port)
 ```
 
-1. The browser establishes a WebSocket connection to `/ws/console/:name/vnc?token=<jwt>`
-2. The backend verifies the JWT token from the query parameter
+1. The browser establishes a WebSocket connection to `/ws/console/:name/vnc`; the upgrade request carries the `wisp_session` cookie
+2. The global auth hook verifies the session before the upgrade completes
 3. The backend reads the VM's domain XML to extract the VNC port from the `<graphics>` element
 4. The backend opens a TCP connection to `127.0.0.1:<port>`
 5. Data flows bidirectionally: WebSocket frames are written to the TCP socket and TCP data is sent as WebSocket frames
@@ -26,13 +26,13 @@ The backend extracts the `port` attribute from the `<graphics type='vnc'>` eleme
 
 ## Authentication
 
-WebSocket connections cannot carry `Authorization` headers during the handshake. Instead, the JWT is passed as a query parameter (`?token=`). The console route verifies the token before establishing the proxy connection.
+The browser sends the same-origin `wisp_session` cookie with the WebSocket upgrade request, so consoles authenticate exactly like the REST API: the global `onRequest` hook ([AUTH.md](AUTH.md)) verifies the session JWT before the upgrade completes and answers `401` (no WebSocket) when it is missing or invalid. No token travels in the URL (CODING-RULES §9). Consoles are session-only — an `Authorization: Bearer` API token is refused with `401` for any `/ws` path, so a leaked token can never open a shell or a VNC session. The container console (`/ws/container-console/:name`) follows the same rules.
 
-The route also enforces a same-origin policy on the upgrade request before the JWT check. CORS does not apply to WebSocket, so without this an attacker page on any origin could open a WS to `/ws/console/...` and (with a stolen JWT) drive the VM. In dev, only `http://localhost:5173` is allowed; in production, `Origin`'s host must equal the request `Host` header. Extra origins can be allow-listed via the comma-separated `WISP_ALLOWED_WS_ORIGINS` environment variable (rare — reverse-proxy deployments where the frontend is served from a different origin than the backend).
+The route also enforces a same-origin policy on the upgrade request. CORS does not apply to WebSocket, and `SameSite=Lax` still sends the cookie on an upgrade from another origin of the same site (e.g. a sibling subdomain), so without this such a page could open a WS to `/ws/console/...` and drive the VM with the user's session. In dev, only `http://localhost:5173` is allowed; in production, `Origin`'s host must equal the request `Host` header. Extra origins can be allow-listed via the comma-separated `WISP_ALLOWED_WS_ORIGINS` environment variable (rare — reverse-proxy deployments where the frontend is served from a different origin than the backend).
 
 Rejection responses:
+- HTTP `401` before the upgrade — missing or invalid session, or a bearer token
 - Close code `1008` — Origin not allowed (or Origin header missing)
-- Close code `4001` — missing or invalid token
 - Close code `4000` — invalid VM name or VNC port not available
 
 ## Console UI
@@ -78,7 +78,7 @@ If the server closes the proxy before the VNC session is up (e.g. WebSocket code
 
 When the console tab is activated for a running VM:
 1. The VNC client module is loaded (dynamic ESM import of noVNC — see [noVNC.md](noVNC.md))
-2. A WebSocket URL is constructed with the current auth token
+2. A same-origin WebSocket URL is constructed (`consoleWsUrl`; the session cookie authenticates it)
 3. A new `RFB` instance is created with the viewport element and WebSocket URL
 4. The `shared: true` option allows multiple VNC connections to the same VM
 

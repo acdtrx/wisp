@@ -11,8 +11,8 @@
 #   - VM backup:  src=<vm>/VARS.fd          dst=<backupDir>/VARS.fd
 #   - VM restore: src=<backupDir>/VARS.fd   dst=<newVm>/VARS.fd
 #
-# After copy the destination is chowned to the deploy user (passed via WISP_USER
-# environment in sudoers, with default fallback to the invoking user). libvirt's
+# After copy the destination is chowned to the invoking user (SUDO_UID/SUDO_GID —
+# the deploy user; the destination dir's owner when run without sudo). libvirt's
 # dynamic_ownership=1 reclaims ownership when the cloned/restored VM is started.
 #
 # Path validation:

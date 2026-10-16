@@ -112,7 +112,7 @@ The Host → Overview tab displays system info retrieved from `GET /api/host` (S
 
 OS update check and upgrade are in **Host → Host Mgmt** tab. When `/usr/local/bin/wisp-os-update` is installed (via `setup-server.sh`), the app can:
 
-1. **Check for updates** — runs `wisp-os-update check`, returns the count of upgradable packages; result is also cached for the SSE `pendingUpdates` badge
+1. **Check for updates** — runs `wisp-os-update list` (the one read op: it syncs the package database and prints the upgradable packages), returns their count; the count and package list are cached for the SSE `pendingUpdates` badge and the package-list modal
 2. **Install updates** — runs `wisp-os-update upgrade`, performs a full non-interactive upgrade
 
 Supports Debian/Ubuntu (apt) and Arch Linux (pacman); distro is detected at runtime inside the helper script.

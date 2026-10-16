@@ -275,7 +275,7 @@ export function startUpdateChecker(log) {
 }
 
 /**
- * Clear background timers and abort any running wisp-os-update check so the process can exit on SIGTERM.
+ * Clear background timers and abort any running wisp-os-update list so the process can exit on SIGTERM.
  */
 export function stopUpdateChecker() {
   if (initialTimeoutId != null) {

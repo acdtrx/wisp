@@ -83,7 +83,7 @@ Body gains optional fields: `app` (string, validated against registry) and `appC
 The route reads `config.metadata?.app` and dispatches:
 
 - `{ appConfig }` on an app container → `containerApps.applyAppConfig(name, appConfig)`. Validates via app module, regenerates derived config, persists new `metadata.appConfig` + `env`/`mounts`/`devices`, writes mount file contents, attempts live reload if running.
-- `{ envPatch }` / `{ env }` / `{ mounts }` / `{ devices }` on an app container → rejected with `APP_CONFIG_ONLY` (422). Enforced at the route layer.
+- `{ envPatch }` / `{ env }` / `{ mounts }` on an app container → rejected with `APP_CONFIG_ONLY` (422), as is `{ devices }` sent alongside `appConfig`. Enforced at the route layer. `{ devices }` on its own is accepted — the Devices section is shown on every container — but an app module that derives devices (Jellyfin's GPU toggle) replaces them on its next `appConfig` save.
 - `{ eject: true }` on an app container → `containerApps.eject(name)`. Clears `metadata.app`/`metadata.appConfig`. Env, mounts, devices, files all preserved.
 - Anything else → straight through to `containerManager.updateContainerConfig`.
 

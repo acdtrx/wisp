@@ -252,7 +252,7 @@ VM NIC VLAN tagging via `<vlan>` is not used. The Advanced Network VLAN field is
 ### Additional devices
 
 - **USB tablet input:** Included by default for better mouse tracking in VNC
-- **Graphics:** one `<graphics type='vnc|spice' port='-1' autoport='yes' listen='127.0.0.1'/>`, written by create and by a Graphics edit (which replaces the element). Localhost only *(settled 2026-10-16)*: QEMU's VNC has no password, so the only way in is Wisp's authenticated console proxy, which connects to `127.0.0.1` ([CONSOLE.md](CONSOLE.md)); `0.0.0.0` exposed every VM's keyboard and screen to the LAN. Clone and restore copy the source/backup `<graphics>` verbatim — a domain or backup written before this change keeps `0.0.0.0` until its graphics is re-applied.
+- **Graphics:** one `<graphics type='vnc|spice' port='-1' autoport='yes' listen='127.0.0.1'/>`, written by create and by a Graphics edit (which replaces the element). Localhost only *(settled 2026-10-16)*: QEMU's VNC has no password, so the only way in is Wisp's authenticated console proxy, which connects to `127.0.0.1` ([CONSOLE.md](CONSOLE.md)); `0.0.0.0` exposed every VM's keyboard and screen to the LAN. Clone and restore copy the source/backup `<graphics>` verbatim — a domain or backup written before this change keeps `0.0.0.0` until its graphics is re-applied. Rejected: rewriting `listen` at clone/restore — that is legacy-cleanup code (feature-building mode), and it would also override a deliberate `virsh edit`.
 - **Memory balloon:** Optional, enabled by default
 - **Guest agent channel:** virtio-serial channel for qemu-guest-agent
 - **VirtIO RNG:** `/dev/urandom` entropy source
