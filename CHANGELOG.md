@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-10-16
+## 2026-10-16 (v2.5.0)
 
 ### Removed
 - **VM snapshots** — create, list, revert and delete are gone (Snapshots section, API routes, MCP `get_vm` snapshot list). To keep a point to return to, take a backup; deleting a VM that has snapshots made outside Wisp (`virsh`) still works.
