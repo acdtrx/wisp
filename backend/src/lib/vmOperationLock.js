@@ -35,7 +35,8 @@ export function acquireVmOperationLock(name, operation) {
   if (current) {
     throw createAppError(
       'VM_BUSY',
-      `VM "${name}" is busy`,
+      // The UI shows only the message, so it names the running operation.
+      `VM "${name}" is busy (${current} in progress)`,
       `Another operation on this VM (${current}) is in progress — retry when it finishes`,
     );
   }
