@@ -86,14 +86,17 @@ The backend is stopped at that point, so migrations don't race the running app.
    per-section transient state; container setter exposed for migrations.
 2. **Runner + ledger + hook** — `migrate.mjs`, `backend/migrations/`, ledger, preserve list,
    `common-steps.sh` hook, `install.sh`/`push.sh` paths covered via common-steps.
-3. **First migrations:**
-   - `0001-vnc-listen-localhost` — every VM whose inactive `<graphics>` listens on anything other
+3. **First migrations** (`0001-pending-restart-timestamp` shipped with step 1):
+   - `0002-vnc-listen-localhost` — every VM whose inactive `<graphics>` listens on anything other
      than `127.0.0.1` (attribute and `<listen address>` child) → `127.0.0.1`; restart flag if
      running.
-   - `0002-cloud-init-json-mode` — `chmod 0600` every `cloud-init.json`.
-   - `0003-app-secret-file-modes` — app-declared secret files (tiny-samba passwords, zot
+   - `0003-cloud-init-json-mode` — `chmod 0600` every `cloud-init.json`.
+   - `0004-app-secret-file-modes` — app-declared secret files (tiny-samba passwords, zot
      `htpasswd`/`session-keys`) to the strictest mode the container can still read through its
      idmap — confirm on the test server first; drop the migration if the container can't read it.
+     Confirmed 2026-10-16 on tini: tiny-samba (runAsRoot, idmapped mount) starts, reloads and
+     authenticates SMB logins with `tiny-samba-passwords` at `0600`; so `0600`, and containerApps
+     now writes declared secret files `0600`.
 4. **Docs** — CLAUDE.md policy section rewritten ("Migrations"); `docs/spec/UPDATES.md` contract
    (ledger, preserve list, step order, rollback semantics, authoring rules); VM-MANAGEMENT.md /
    CONTAINERS.md / UI.md for the restart flag; CHANGELOG manual-cleanup lines for V1/V13 replaced

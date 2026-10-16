@@ -168,8 +168,8 @@ node backend/scripts/migrate.mjs --list       # applied / failed / pending; runs
 ### Ledger (`config/migrations.json`)
 
 ```json
-{ "applied": [ { "id": "0001-vnc-listen-localhost", "at": "<ISO time>", "result": "ok", "changes": ["…"] },
-               { "id": "0002-…", "at": "…", "result": "error", "changes": [], "error": "<message>" } ] }
+{ "applied": [ { "id": "0002-vnc-listen-localhost", "at": "<ISO time>", "result": "ok", "changes": ["…"] },
+               { "id": "0003-…", "at": "…", "result": "error", "changes": [], "error": "<message>" } ] }
 ```
 
 Beside `wisp-config.json` (it follows `WISP_CONFIG_PATH`), mode `0600`, atomic writes (`lib/atomicJson.js`; the backend's boot cleanup sweeps leftovers in that directory), gitignored. One entry per id: rerunning a failed id replaces its `error` entry. Entries for ids a release no longer ships are kept (`--list` marks them). The updater preserves it on swap (`RSYNC_EXCLUDES`) **and** on rollback (excluded from the restore rsync). Forcing a migration to run again means deleting its entry by hand.
@@ -189,6 +189,15 @@ The ledger preservation lives in `wisp-updater`, so it is dark-shipped (see abov
 - **Restart flag only on a running workload** whose change needs a restart; a stopped workload picks the change up on its next start.
 - **Deploy-user scope** — root-level host changes do not belong here; they stay in `common-steps.sh` as idempotent convergence.
 - **Never renumber or rename** a shipped id — the ledger keys on it.
+
+### Shipped migrations
+
+| Id | Brings up to date | Restart flag |
+|----|-------------------|--------------|
+| `0001-pending-restart-timestamp` | Container `pendingRestart: true` → `{ since: now }` (the timestamp flag judged against the task's real start). | — (converts the existing flag) |
+| `0002-vnc-listen-localhost` | Every VM's saved `<graphics>` (VNC/SPICE): the `listen` attribute and each `<listen type='address'>` child → `127.0.0.1`, through `vmManager.setGraphicsListen` ([VM-MANAGEMENT.md](VM-MANAGEMENT.md) → Graphics). | Running VMs (the live listener changes on the next full stop/start). |
+| `0003-cloud-init-json-mode` | Every `<vmsPath>/*/cloud-init.json` with group/other bits → `0600` (it holds the password hash; [CLOUD-INIT.md](CLOUD-INIT.md)). Includes kept directories of deleted VMs. | — |
+| `0004-app-secret-file-modes` | App-declared secret files (`getSecretMountNames`: tiny-samba passwords, zot `htpasswd` / `session-keys` / OIDC `config-json`) with group/other bits → `0600`, through `containerManager.setMountFileMode` ([CONTAINERS.md](CONTAINERS.md) → Secret file mounts). | — (same inode, the container sees it at once and still reads it) |
 
 ## Layout
 
