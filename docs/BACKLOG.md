@@ -188,3 +188,13 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   not `realpath`, so a symlink placed inside the image library can point outside it. Only the
   admin can place files there. Revisit when: anything other than the admin can write into the
   image library or another allowed root. (Plan 6, B1)
+- **A container that exits on its own never finalizes its run** — `finalizeRun` is only called
+  from `cleanupTask` (stop / kill / start / delete), so the run keeps `endedAt: null` in `GET
+  /runs` and a last line without a trailing newline is never shown. Fix shape: finalize on the
+  task-exit event. Revisit when: a self-exited container's last output is missing or its run shows
+  as still open. (Plan 6 verification on tini)
+- **Small container API/UI inconsistencies** — `POST /api/containers/:name/mounts` returns
+  `requiresRestart: null` on a stopped container (spec: boolean); the container page keeps
+  "Restart required" up after a restart done outside the page (stale frontend flag);
+  `backup-status.json` keeps entries for deleted containers. Revisit when: any of them confuses a
+  real session. (Plan 6 verification on tini)
