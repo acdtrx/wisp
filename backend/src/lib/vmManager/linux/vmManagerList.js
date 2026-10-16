@@ -24,8 +24,18 @@ let refreshPromise = null;
 let refreshQueued = false;
 const listChangeHandlers = new Set();
 
-async function fetchVMListFromLibvirt() {
-  if (!connectionState.connectIface) return [];
+/**
+ * Read every domain's summary from libvirt. Lenient (the cached list behind the
+ * UI): no connection is an empty list, and a domain whose reads fail is left
+ * out. `complete` (the uncached list — callers that act on every VM) returns
+ * the whole list or throws: NO_CONNECTION, or LIBVIRT_ERROR naming the domains
+ * it could not read.
+ */
+async function fetchVMListFromLibvirt({ complete = false } = {}) {
+  if (!connectionState.connectIface) {
+    if (complete) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
+    return [];
+  }
 
   const paths = await connectionState.connectIface.ListDomains(3);
 
@@ -63,6 +73,15 @@ async function fetchVMListFromLibvirt() {
       };
     }),
   );
+
+  if (complete) {
+    const failures = results
+      .map((r, i) => (r.status === 'rejected' ? `${paths[i]}: ${r.reason?.message || r.reason}` : null))
+      .filter(Boolean);
+    if (failures.length > 0) {
+      throw vmError('LIBVIRT_ERROR', `Could not read ${failures.length} of ${paths.length} VMs`, failures.join('; '));
+    }
+  }
 
   return results
     .filter((r) => r.status === 'fulfilled' && r.value != null)
@@ -192,8 +211,10 @@ export function getCachedDomainPath(name) {
 /* ── Public API ─────────────────────────────────────────────────────── */
 
 export async function listVMs() {
-  // Without DomainEvents nothing keeps the cache coherent — read libvirt each time.
-  if (!connectionState.watchEvents) return fetchVMListFromLibvirt();
+  // Without DomainEvents nothing keeps the cache coherent — read libvirt each
+  // time. That caller (the migration runner) acts on every VM, so it gets the
+  // whole list or an error, never a silently shorter one.
+  if (!connectionState.watchEvents) return fetchVMListFromLibvirt({ complete: true });
   if (vmListCache === null) {
     vmListCache = await fetchVMListFromLibvirt();
   }

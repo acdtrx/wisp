@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { readFile, readdir } from 'node:fs/promises';
 
 import {
+  containerError,
   containerState,
   getClient,
   callStream,
@@ -73,13 +74,26 @@ const LIST_AFFECTING_TOPICS = new Set([
   '/containers/delete',
 ]);
 
-async function fetchContainerListFromDisk() {
+/**
+ * Build the list from the container directories plus each task's state.
+ * Lenient (the cached list behind the UI): an unreadable containers root is an
+ * empty list, and a failed task lookup keeps the last known state. `complete`
+ * (the uncached list — callers that act on every container) returns real state
+ * or throws: NO_CONTAINERD when not connected, CONFIG_ERROR for an unreadable
+ * root, the task lookup's own error. A missing root is no containers in both.
+ */
+async function fetchContainerListFromDisk({ complete = false } = {}) {
+  if (complete && !containerState.connected) {
+    throw containerError('NO_CONTAINERD', 'Not connected to containerd');
+  }
   const basePath = getContainersPath();
   let dirs;
   try {
     dirs = await readdir(basePath, { withFileTypes: true });
-  } catch {
-    /* containers root missing or unreadable — treat as empty list */
+  } catch (err) {
+    if (err.code === 'ENOENT') return [];
+    if (complete) throw containerError('CONFIG_ERROR', `Cannot read containers directory ${basePath}`, err.message);
+    /* containers root unreadable — the UI shows an empty list rather than failing */
     return [];
   }
 
@@ -118,6 +132,7 @@ async function fetchContainerListFromDisk() {
       state = task ? containerTaskStatusToUi(task) : 'stopped';
       pid = task ? Number(task.pid) || 0 : 0;
     } catch (err) {
+      if (complete) throw err;
       // getTaskState already returns null when the task genuinely doesn't
       // exist; an exception here means the gRPC call faulted. Keep the last
       // cached state so a flake doesn't poison the sidebar, and log so we
@@ -282,8 +297,10 @@ export function subscribeContainerListChange(handler) {
  * stats SSE — fetching them per-tick here is wasted work.
  */
 export async function listContainers() {
-  // Without the events stream nothing keeps the cache coherent — read disk each time.
-  if (!containerState.watchEvents) return fetchContainerListFromDisk();
+  // Without the events stream nothing keeps the cache coherent — read disk each
+  // time. That caller (the migration runner) acts on every container, so it
+  // gets real state or an error, never a guessed one.
+  if (!containerState.watchEvents) return fetchContainerListFromDisk({ complete: true });
   if (containerListCache === null) {
     containerListCache = await fetchContainerListFromDisk();
   }

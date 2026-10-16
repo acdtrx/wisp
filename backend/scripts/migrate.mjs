@@ -159,7 +159,9 @@ function createLogger() {
  * paths), never by editing their files directly; every change is reported via
  * recordChange, which logs it and lands it in the ledger entry. The managers
  * run without event watching (connectManagers watchEvents: false): list calls
- * read live state, and nothing reacts to the migration's changes in this process.
+ * read live state — the whole list or an error, so a migration never passes over
+ * workloads it could not see — and nothing reacts to the migration's changes in
+ * this process.
  */
 function buildContext(migration, { log, dryRun, changes }) {
   const migrationLog = log.child({ migration: migration.id });
