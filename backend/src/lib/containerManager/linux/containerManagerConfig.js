@@ -12,6 +12,7 @@ import { validateAndNormalizeDevices } from './containerManagerDevices.js';
 import { clearMountBackingFile, renameMountBackingStore, tightenSecretMountFiles } from './containerManagerMountsContent.js';
 import { resolveMount } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
+import { resolveContainerImageRef } from './containerManagerImages.js';
 import { RESTART_POLICIES } from './containerManagerRestartPolicy.js';
 import { markPendingRestart } from './containerManagerPendingRestart.js';
 
@@ -327,6 +328,18 @@ export async function updateContainerConfig(name, changes) {
       config.mounts = normalized;
       mountsPersisted = normalized;
       if (isRunning && RESTART_FIELDS.has(key)) requiresRestart = true;
+      continue;
+    }
+    if (key === 'image') {
+      if (typeof value !== 'string' || !value.trim()) {
+        throw containerError('INVALID_CONTAINER_IMAGE_REF', 'Image reference is required');
+      }
+      // Stored exactly as create stores it, so start finds the image under it.
+      const { ref } = await resolveContainerImageRef(value.trim());
+      if (ref !== config.image) {
+        config.image = ref;
+        if (isRunning) requiresRestart = true;
+      }
       continue;
     }
     if (key === 'devices') {

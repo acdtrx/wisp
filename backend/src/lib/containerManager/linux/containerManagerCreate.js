@@ -28,7 +28,7 @@ import { assertBindSourcesReady, resolveBindSources } from './containerManagerMo
 import { resolveDeviceSpecs } from './containerDeviceNode.js';
 import { resolveMount } from './containerPaths.js';
 import { normalizeImageRef } from './containerImageRef.js';
-import { getImageDigest } from './containerManagerImages.js';
+import { getImageDigest, resolveContainerImageRef } from './containerManagerImages.js';
 import { readContainerConfig, writeContainerConfig, notifyContainerConfigWrite } from './containerManagerConfigIo.js';
 import { RESTART_FIELDS } from './containerManagerConfig.js';
 import { markPendingRestart } from './containerManagerPendingRestart.js';
@@ -360,22 +360,13 @@ async function defineNewContainer(spec, filesDir, onStep) {
   await mkdir(filesDir);
 
   // If the literal ref is already in containerd (e.g. from `ctr -n wisp image import`
-  // or an exact match picked from the image library), skip normalization + pull and use
-  // it verbatim. This is the only way to handle local-only refs like `myapp:v1` — the
-  // normalize step would otherwise rewrite them to `docker.io/library/…` and the
-  // registry pull would fail.
-  let imageRef = null;
-  try {
-    await callUnary(getClient('images'), 'get', { name: spec.image });
-    imageRef = spec.image;
+  // or an exact match picked from the image library), skip the pull and use it
+  // verbatim. This is the only way to handle local-only refs like `myapp:v1` — the
+  // normalized `docker.io/library/…` name would fail the registry pull.
+  const { ref: imageRef, local } = await resolveContainerImageRef(spec.image);
+  if (local) {
     onStep?.({ step: 'using-local', detail: `Using local image ${imageRef}` });
-  } catch {
-    /* not local by literal name — fall through to normalized registry pull */
-  }
-
-  if (!imageRef) {
-    imageRef = normalizeImageRef(spec.image);
-
+  } else {
     // Pull image (periodic progress — containerd transfer has no %; elapsed time helps long pulls)
     try {
       const pullStarted = Date.now();
@@ -617,9 +608,12 @@ export async function startExistingContainer(name) {
   // exactly what was there before. Anything else is treated as a transient
   // read failure and we continue with an empty imageConfig (existing
   // behavior — prepareSnapshot below will still throw if rootfs is missing).
+  // The lookups below use the name the pull stored the image under — the
+  // normalized ref, which a stored short ref (`nginx:1.27`) is not.
+  let imageRef = config.image;
   let imageConfig = {};
   try {
-    imageConfig = await getImageConfig(config.image);
+    imageConfig = await getImageConfig(imageRef);
   } catch (err) {
     if (err.code === 'IMAGE_PULL_FAILED') throw err;
     if (err.code === 'CONTAINER_NOT_FOUND' || err.code === 'CONTAINER_IMAGE_NOT_FOUND') {
@@ -627,8 +621,8 @@ export async function startExistingContainer(name) {
         { image: config.image, container: name },
         'Image missing on start; auto-pulling',
       );
-      await pullImage(config.image);
-      imageConfig = await getImageConfig(config.image);
+      imageRef = await pullImage(config.image);
+      imageConfig = await getImageConfig(imageRef);
     }
     /* other read failures fall through with empty imageConfig */
   }
@@ -639,7 +633,7 @@ export async function startExistingContainer(name) {
     await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name });
   } catch { /* no snapshot yet (first-ever start) — prepareSnapshot below creates it */ }
 
-  const currentDigest = await getImageDigest(config.image);
+  const currentDigest = await getImageDigest(imageRef);
   if (currentDigest && config.imageDigest !== currentDigest) {
     config.imageDigest = currentDigest;
     config.imagePulledAt = new Date().toISOString();

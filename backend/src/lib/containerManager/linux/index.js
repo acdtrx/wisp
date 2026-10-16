@@ -70,6 +70,7 @@ export { tightenContainerFileModes, tightenContainerBackupFileModes } from './co
 
 export {
   listContainerImages, deleteContainerImage, getImageDigest, findContainersUsingImage,
+  resolveContainerImageRef,
 } from './containerManagerImages.js';
 
 export {

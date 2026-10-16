@@ -205,6 +205,10 @@ export async function getImageDigest() {
   return null;
 }
 
+export async function resolveContainerImageRef() {
+  throw noContainerd();
+}
+
 export async function findContainersUsingImage() {
   return [];
 }

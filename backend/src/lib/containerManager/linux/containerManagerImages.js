@@ -95,6 +95,22 @@ function protoTimestampToIso(ts) {
 }
 
 /**
+ * The image ref a container stores for a user-given image: the literal name
+ * when containerd holds an image by exactly that name (a `ctr image import`
+ * like `myapp:v1`, or a name picked from the image library), else the
+ * Docker-normalized ref (`nginx:1.27` → `docker.io/library/nginx:1.27`) —
+ * the name a pull stores the image under. Create, PATCH and the MCP image
+ * update all store refs through this, so a start always finds the image by
+ * the stored name.
+ * @param {string} imageRef - trimmed, non-empty
+ * @returns {Promise<{ ref: string, local: boolean }>} `local` when the literal name is present
+ */
+export async function resolveContainerImageRef(imageRef) {
+  if (await getImageDigest(imageRef)) return { ref: imageRef, local: true };
+  return { ref: normalizeImageRef(imageRef), local: false };
+}
+
+/**
  * Top-level manifest/index digest containerd currently holds for this reference.
  * @returns {Promise<string | null>} null when the image is not locally present.
  */

@@ -58,6 +58,7 @@ export const tightenContainerBackupFileModes = impl.tightenContainerBackupFileMo
 export const listContainerImages = impl.listContainerImages;
 export const deleteContainerImage = impl.deleteContainerImage;
 export const getImageDigest = impl.getImageDigest;
+export const resolveContainerImageRef = impl.resolveContainerImageRef;
 export const findContainersUsingImage = impl.findContainersUsingImage;
 
 export const checkAllImagesForUpdates = impl.checkAllImagesForUpdates;

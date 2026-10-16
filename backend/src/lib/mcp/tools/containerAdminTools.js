@@ -13,6 +13,7 @@ import {
   restartContainer,
   pullImage,
   getImageDigest,
+  resolveContainerImageRef,
   listContainers,
   checkAllImagesForUpdates,
   getImageUpdateStatus,
@@ -143,7 +144,8 @@ export const containerAdminTools = [
     description:
       'Point a container at a new image ref, or re-pull its current tag to pick up a newer digest ' +
       '(rootfs is rebuilt from the image on every start). Running containers are restarted to apply; ' +
-      'stopped ones apply at next start. Use fully-qualified refs as shown by list_images.',
+      'stopped ones apply at next start. Use fully-qualified refs as shown by list_images; a short ' +
+      'Docker Hub ref (nginx:1.27) is stored normalized (docker.io/library/nginx:1.27).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -157,7 +159,10 @@ export const containerAdminTools = [
     handler: async ({ name, image }) => {
       validateContainerName(name);
       const cfg = await getContainerConfig(name);
-      const ref = typeof image === 'string' && image.trim() ? image.trim() : cfg.image;
+      const requested = typeof image === 'string' && image.trim() ? image.trim() : cfg.image;
+      // The ref create and PATCH store: an exact local name when containerd has
+      // one, else the normalized ref the pull stores the image under.
+      const { ref } = await resolveContainerImageRef(requested);
       try {
         await pullImage(ref);
       } catch (err) {
@@ -166,12 +171,15 @@ export const containerAdminTools = [
           throw createAppError('IMAGE_PULL_FAILED', `Cannot pull "${ref}" and it is not present locally`, err.message);
         }
       }
+      // The pull ran outside the lock; the decision to write and restart reads
+      // the state under it.
       let restarted = false;
       await withContainerOperationLock(name, 'image update', async () => {
-        if (ref !== cfg.image) {
+        const current = await getContainerConfig(name);
+        if (ref !== current.image) {
           await updateContainerConfig(name, { image: ref });
         }
-        if (cfg.state === 'running') {
+        if (current.state === 'running') {
           await restartContainer(name);
           restarted = true;
         }
