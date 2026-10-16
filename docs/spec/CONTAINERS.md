@@ -87,7 +87,7 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 |-------|------|---------|-------------|
 | `name` | string | (required) | Container name (alphanumeric, 1-63 chars) |
 | `image` | string | (required) | OCI image reference (e.g. `nginx:latest`) |
-| `command` | string[] \| null | null | Command override (default: image entrypoint+cmd) |
+| `command` | string[] \| null | null | Command override (default: image entrypoint+cmd). See [Command override](#command-override) |
 | `cpuLimit` | number \| null | null | CPU limit in cores (e.g. 2.0) |
 | `memoryLimitMiB` | number \| null | null | Memory limit in MiB |
 | `restartPolicy` | string | `"unless-stopped"` | One of: `never`, `on-failure`, `unless-stopped`, `always` (anything else is rejected with `CONFIG_ERROR`; a missing field reads as `unless-stopped`). What happens when the main process exits on its own — see [Restart policy](#restart-policy). Applies immediately, no restart needed. |
@@ -110,6 +110,10 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 | `imagePulledAt` | string \| omitted | omitted | Server-managed: ISO 8601 timestamp of the last `imageDigest` change (i.e. when the container last adopted a new image). Not writable via PATCH. |
 | `scheduledRestart` | object \| null (derived) | null | Not stored on disk — on list and detail responses. `{ attempt, at }` while the restart policy has a restart scheduled for this stopped container (`attempt` counts restarts in the current crash loop, `at` is the epoch-ms time the backoff timer fires), else `null`. See [Restart policy](#restart-policy). |
 | `updateAvailable` | boolean (derived) | omitted | Not stored on disk — derived at read time when the list/detail endpoints build their response. `true` when the container's task is RUNNING or PAUSED **and** its stored `imageDigest` no longer matches the library's current digest for `image` (looked up from `oci-image-meta.json`). Stopped containers always read as `false`; they adopt the new digest automatically on next start. Not writable via PATCH. |
+
+### Command override
+
+`command` is the process argv, stored exactly as sent; `null` (or an empty array) runs the image's entrypoint + cmd. The General section edits it as **one line of shell-style quoting** *(settled 2026-10-16)*: the stored argv is shown with each argument quoted only when needed (`sh -c 'sleep 5 && echo hi'`), and the typed line is split back with the same rules — whitespace separates arguments, `'…'` is literal, `"…"` honours `\"` `\\` `\$` `` \` `` only, `$'…'` takes ANSI-C escapes (`\n`, `\t`, `\xHH`, …; the formatter uses it for arguments holding newlines or control characters), and `\` escapes one character outside quotes. Formatting then parsing returns every argv unchanged, so a command set through the API survives a UI edit, and a re-quoted line with the same argv is not re-sent. Only the quoting is shell-like — no shell runs, so `$VAR`, globs, `|`, `&&` are literal characters (use `sh -c '…'`). An unterminated quote or a trailing backslash fails the save with an error; blank saves `null`. Rejected: one argument per line (cannot show an argument containing a newline, which multi-line `sh -c` scripts have) and whitespace splitting (breaks quoted arguments). Code: `frontend/src/utils/commandLine.js`.
 
 ### `network` object
 

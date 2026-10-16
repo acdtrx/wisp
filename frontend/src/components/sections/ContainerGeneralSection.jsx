@@ -5,6 +5,7 @@ import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import HelpIcon from '../shared/HelpIcon.jsx';
 import ImageLibraryModal from '../shared/ImageLibraryModal.jsx';
+import { formatCommandLine, parseCommandLine } from '../../utils/commandLine.js';
 
 /** Same control pattern as AdvancedSection (machine type, CPU model). */
 const RESTART_OPTIONS = [
@@ -22,7 +23,7 @@ export function buildGeneralFormDefaults(config) {
   return {
     name: config.name || '',
     image: config.image || '',
-    command: config.command ? config.command.join(' ') : '',
+    command: formatCommandLine(config.command),
     cpuLimit: config.cpuLimit ?? '',
     memoryLimitMiB: config.memoryLimitMiB ?? '',
     restartPolicy: config.restartPolicy || 'unless-stopped',
@@ -53,11 +54,11 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
     setOriginal(d);
     setRequiresRestart(false);
     setError(null);
-    /* command joined to a stable string so re-renders with same-contents arrays don't trigger re-init */
+    /* command serialised so re-renders with same-contents arrays don't trigger re-init */
   }, [
     config?.name,
     config?.image,
-    Array.isArray(config?.command) ? config.command.join(' ') : '',
+    JSON.stringify(config?.command ?? null),
     config?.cpuLimit,
     config?.memoryLimitMiB,
     config?.restartPolicy,
@@ -93,8 +94,15 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
       const trimmedName = form.name.trim();
       if (trimmedName !== original.name) changes.name = trimmedName;
       if (form.image !== original.image) changes.image = form.image;
+      /* `original.command` is always formatter output, so parsing it gives the stored argv;
+       * a re-quoted but identical command is not sent. */
+      let commandText = form.command;
       if (form.command !== original.command) {
-        changes.command = form.command.trim() ? form.command.trim().split(/\s+/) : null;
+        const argv = parseCommandLine(form.command);
+        const command = argv.length ? argv : null;
+        const stored = parseCommandLine(original.command);
+        if (JSON.stringify(argv) !== JSON.stringify(stored)) changes.command = command;
+        commandText = formatCommandLine(command);
       }
       if (String(form.cpuLimit) !== String(original.cpuLimit)) {
         changes.cpuLimit = form.cpuLimit ? parseFloat(form.cpuLimit) : null;
@@ -114,10 +122,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
        * diffs (trailing whitespace in command, "2" vs "2.0" in cpuLimit, etc.) keep
        * isDirty=true when the server stores the normalized value and the parent's
        * config prop doesn't change (so the init useEffect doesn't re-fire). */
-      const canonical = { ...form };
-      if ('command' in changes) {
-        canonical.command = Array.isArray(changes.command) ? changes.command.join(' ') : '';
-      }
+      const canonical = { ...form, command: commandText };
       setForm(canonical);
       setOriginal(canonical);
     } catch (err) {
@@ -221,7 +226,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
         <div className="flex items-end gap-4 flex-wrap">
           <Field
             label="Command Override"
-            helpText="Space-separated argv — no shell parsing. For shell syntax, prefix with sh -c."
+            helpText={'Arguments separated by spaces, quoted like a shell: \'a b\' or "a b" is one argument. No shell runs — for pipes, && or $VARS use sh -c \'…\'. Empty = image default.'}
             className="flex-1 min-w-[240px]"
           >
             <input
