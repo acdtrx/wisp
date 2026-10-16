@@ -13,6 +13,7 @@ import { clearMountBackingFile, renameMountBackingStore } from './containerManag
 import { resolveMount } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { RESTART_POLICIES } from './containerManagerRestartPolicy.js';
+import { markPendingRestart } from './containerManagerPendingRestart.js';
 
 /** Fields a running task only picks up on its next start. */
 export const RESTART_FIELDS = new Set([
@@ -238,7 +239,7 @@ export async function updateContainerConfig(name, changes) {
     if (key === 'envPatch' || key === 'mountRenames') continue;
     /** Server-managed — never writable via PATCH. */
     if (key === 'imageDigest' || key === 'imagePulledAt'
-      || key === 'updateAvailable') continue;
+      || key === 'updateAvailable' || key === 'pendingRestart') continue;
     if (key === 'metadata') {
       if (value == null) {
         delete config.metadata;
@@ -247,11 +248,6 @@ export async function updateContainerConfig(name, changes) {
       } else {
         throw containerError('CONFIG_ERROR', 'metadata must be an object or null');
       }
-      continue;
-    }
-    if (key === 'pendingRestart') {
-      if (value === true) config.pendingRestart = true;
-      else delete config.pendingRestart;
       continue;
     }
     if (key === 'iconId') {
@@ -352,7 +348,7 @@ export async function updateContainerConfig(name, changes) {
     await registerAllContainerServices(name, config);
   }
 
-  if (requiresRestart) config.pendingRestart = true;
+  if (requiresRestart) markPendingRestart(config);
   for (const mountName of unflaggedSecretMounts) {
     await clearMountBackingFile(name, mountName);
   }
@@ -363,19 +359,3 @@ export async function updateContainerConfig(name, changes) {
   return { requiresRestart, removedMounts };
 }
 
-/**
- * Set or clear a container's restart-required flag (`pendingRestart` in
- * container.json). For callers that change a container's state outside
- * updateContainerConfig (migrations) and know whether the running task needs
- * a restart to pick it up. Writes only when the value changes. Returns
- * `{ changed }`.
- */
-export async function setContainerPendingRestart(name, value) {
-  const config = await readContainerConfig(name);
-  const next = value === true;
-  if ((config.pendingRestart === true) === next) return { changed: false };
-  if (next) config.pendingRestart = true;
-  else delete config.pendingRestart;
-  await writeContainerConfig(name, config);
-  return { changed: true };
-}

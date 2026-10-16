@@ -76,7 +76,8 @@ export {
   stopImageUpdateChecker,
 } from './containerManagerImageUpdates.js';
 
-export { updateContainerConfig, setContainerPendingRestart } from './containerManagerConfig.js';
+export { updateContainerConfig } from './containerManagerConfig.js';
+export { setContainerPendingRestart } from './containerManagerPendingRestart.js';
 
 export {
   addContainerMount,

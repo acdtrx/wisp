@@ -36,13 +36,14 @@ function wispPrefText(prefs, key) {
 /** Extract Wisp prefs from domain metadata (wisp:prefs). */
 function parseWispPrefs(dom) {
   const metadata = dom?.metadata;
-  const none = { iconId: null, localDns: false, pendingRestart: false };
+  const none = { iconId: null, localDns: false, pendingRestart: null };
   if (!metadata || typeof metadata !== 'object') return none;
   const prefs = metadata[WISP_PREFS_KEY];
   if (!prefs || typeof prefs !== 'object') return none;
   const iconText = wispPrefText(prefs, 'wisp:icon');
   const localDns = wispPrefText(prefs, 'wisp:localDns').toLowerCase() === 'true';
-  const pendingRestart = wispPrefText(prefs, 'wisp:pendingRestart').toLowerCase() === 'true';
+  const since = wispPrefText(prefs, 'wisp:pendingRestart');
+  const pendingRestart = since && Number.isFinite(Date.parse(since)) ? { since } : null;
   return { iconId: iconText || null, localDns, pendingRestart };
 }
 
@@ -85,19 +86,21 @@ export function setWispMetadata(dom, { iconId, localDns }) {
   pruneWispPrefs(dom);
 }
 
-/** True when a parsed domain's wisp:prefs carry the restart-required flag. */
-export function hasWispPendingRestart(dom) {
+/** The restart-required flag of a parsed domain: `{ since }` (ISO time) or null. */
+export function getWispPendingRestart(dom) {
   return parseWispPrefs(dom).pendingRestart;
 }
 
 /**
  * Set or clear the restart-required pref on a parsed domain object (mutates dom).
- * Stored as `<wisp:pendingRestart>true</wisp:pendingRestart>`; absent means false.
+ * Stored as `<wisp:pendingRestart>ISO time</wisp:pendingRestart>` — when the
+ * change that needs the restart was saved; absent means no flag. `since`
+ * null clears it.
  */
-export function setWispPendingRestart(dom, value) {
+export function setWispPendingRestart(dom, since) {
   if (!dom) return;
   const prefs = ensureWispPrefs(dom);
-  if (value === true) prefs['wisp:pendingRestart'] = 'true';
+  if (since) prefs['wisp:pendingRestart'] = since;
   else delete prefs['wisp:pendingRestart'];
   pruneWispPrefs(dom);
 }

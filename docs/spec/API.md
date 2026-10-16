@@ -536,13 +536,13 @@ List all VMs with summary info.
     "osCategory": "linux",
     "iconId": null,
     "localDns": false,
-    "pendingRestart": false,
+    "pendingRestart": null,
     "staleBinary": false
   }
 ]
 ```
 
-- `pendingRestart` is `true` while a saved definition change awaits a restart of the VM — set by a `PATCH` that returned `requiresRestart: true` (or by a state migration), persisted in the domain's `wisp:prefs` metadata, cleared when the VM next boots. A guest reboot does not clear it. See [VM-MANAGEMENT.md → Restart-required flag](VM-MANAGEMENT.md#restart-required-flag).
+- `pendingRestart` is `{ since }` (ISO time the change was saved) while a saved definition change awaits a restart of the VM, else `null` — set by a `PATCH` that returned `requiresRestart: true` (or by a state migration), persisted in the domain's `wisp:prefs` metadata, and dropped once the VM's QEMU process is seen to have started after `since`. A guest reboot keeps the process, so it doesn't clear it. See [VM-MANAGEMENT.md → Restart-required flag](VM-MANAGEMENT.md#restart-required-flag).
 
 - `staleBinary` is `true` when the VM's running qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt package upgrade); the VM needs to be restarted to pick up the new binary. Always `false` for non-running VMs. Detected by reading `/var/run/libvirt/qemu/<name>.pid` and checking whether `/proc/<pid>/exe` ends with ` (deleted)`.
 - The list payload does **not** carry section assignment. Section info arrives on its own channel, the `sections` topic of `GET /api/events` (see [Sections](#sections)) — libvirt/containerd events don't fire on assignment changes, so the list feeds aren't a usable carrier for it.
@@ -1594,7 +1594,7 @@ Cached summary of the last check. **200:** `{ lastCheckedAt: ISO8601 | null, ima
 
 Full container config including live state.
 
-**200:** Full `container.json` fields plus `state`, `pid`, `uptime`, `type`, and `mdnsHostname` when Local DNS is enabled and registration is active. For bridge networking, `network.ip` / `network.mac` may be set after CNI DHCP; if the task is running and `network.ip` is still empty, the handler may probe the netns once and persist the address (see CONTAINERS.md).
+**200:** Full `container.json` fields plus `state`, `pid`, `uptime`, `type`, and `mdnsHostname` when Local DNS is enabled and registration is active. For bridge networking, `network.ip` / `network.mac` may be set after CNI DHCP; if the task is running and `network.ip` is still empty, the handler may probe the netns once and persist the address (see CONTAINERS.md). `pendingRestart` (`{ since }`) is present only while the restart-required rule still holds — a flag older than the running task's start is dropped by this read (CONTAINERS.md → *Config changes that need a restart*).
 
 The **`env`** field uses a structured shape: `{ KEY: { value, secret?, isSet? } }`. Non-secret entries are returned as `{ value: "plaintext" }`. Secret entries are returned as `{ value: null, secret: true, isSet: boolean }` — the value is never sent to the client, and `isSet` is `true` when a value is stored on disk. See CONTAINERS.md → *Secret env vars*.
 
@@ -1639,7 +1639,7 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 **`services`:** Not editable via PATCH — returns **422** `CONFIG_ERROR`. Use the row-scoped service endpoints (`POST` / `PATCH` / `DELETE` `/api/containers/:name/services[/:port]`) below.
 
-**`appConfig`:** (app containers only) Structured config for the app. Validated by the app module; on success, regenerates derived env, mounts, and mount files. Sets `pendingRestart: true` if the container is running. Sending `envPatch` or `mounts` on an app container → **422** `APP_CONFIG_ONLY`.
+**`appConfig`:** (app containers only) Structured config for the app. Validated by the app module; on success, regenerates derived env, mounts, and mount files. Sets `pendingRestart` (`{ since }`) if the container is running and the change can't be live-reloaded. Sending `envPatch` or `mounts` on an app container → **422** `APP_CONFIG_ONLY`.
 
 **`eject: true`:** (app containers only) Removes `app`, `appConfig`, and `pendingRestart` from the config. Generated env vars and mounts are preserved as-is and become directly editable. One-way operation.
 

@@ -12,6 +12,7 @@
 import {
   createContainer,
   updateContainerConfig,
+  setContainerPendingRestart,
   updateContainerMount,
   deleteRemovedMountData,
   deleteContainer,
@@ -404,7 +405,7 @@ export async function applyAppConfig(name, newAppConfig) {
   // and a hard APP_RELOAD_FAILED for a save that only ever needed a restart. Restarting
   // applies the new env and the new mount contents together — the only order that works.
   if (!reloadCmd || envChanged) {
-    await updateContainerConfig(name, { pendingRestart: true });
+    await setContainerPendingRestart(name, true);
     return settle({ requiresRestart: true });
   }
 
@@ -417,7 +418,7 @@ export async function applyAppConfig(name, newAppConfig) {
       throw createAppError('APP_RELOAD_FAILED', `Reload failed (exit ${result.exitCode})`, reloadFailureDetail(result));
     }
     if (stillNeedsRestart) {
-      await updateContainerConfig(name, { pendingRestart: true });
+      await setContainerPendingRestart(name, true);
     }
   } catch (err) {
     if (err.code === 'APP_RELOAD_FAILED') {
@@ -454,7 +455,7 @@ export async function applyAppConfig(name, newAppConfig) {
     }
     // Reload exec failed for non-app-related reason (e.g. command not found in
     // image). Surface as pendingRestart instead of bubbling the exec error.
-    await updateContainerConfig(name, { pendingRestart: true });
+    await setContainerPendingRestart(name, true);
     return settle({ requiresRestart: true });
   }
   return settle({ requiresRestart: stillNeedsRestart, reloaded: true });

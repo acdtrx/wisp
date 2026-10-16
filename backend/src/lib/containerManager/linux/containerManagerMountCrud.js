@@ -20,6 +20,7 @@ import {
 } from './containerManagerMountsContent.js';
 import { resolveMount } from './containerPaths.js';
 import { readContainerConfig as loadContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
+import { markPendingRestart } from './containerManagerPendingRestart.js';
 
 const RESTART_WHEN_RUNNING = true;
 
@@ -52,7 +53,7 @@ export async function addContainerMount(containerName, mountDef) {
   const task = await getTaskState(containerName);
   const isRunning = taskIsRunning(task);
   const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
-  if (requiresRestart) config.pendingRestart = true;
+  if (requiresRestart) markPendingRestart(config);
   await writeContainerConfig(containerName, config);
   await ensureMissingMountArtifacts(containerName, [normalized]);
   return { requiresRestart };
@@ -140,7 +141,7 @@ export async function updateContainerMount(containerName, mountName, changes) {
     const task = await getTaskState(containerName);
     const isRunning = taskIsRunning(task);
     const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
-    if (requiresRestart) config.pendingRestart = true;
+    if (requiresRestart) markPendingRestart(config);
     await writeContainerConfig(containerName, config);
     return { requiresRestart };
   }
@@ -276,7 +277,7 @@ export async function updateContainerMount(containerName, mountName, changes) {
   const task = await getTaskState(containerName);
   const isRunning = taskIsRunning(task);
   const requiresRestart = isRunning && RESTART_WHEN_RUNNING && !layoutUnchanged;
-  if (requiresRestart) config.pendingRestart = true;
+  if (requiresRestart) markPendingRestart(config);
   await writeContainerConfig(containerName, config);
   if (!updated.sourceId && nextName === current.name) {
     await ensureMissingMountArtifacts(containerName, [updated]);
@@ -307,7 +308,7 @@ export async function removeContainerMount(containerName, mountName) {
   const task = await getTaskState(containerName);
   const isRunning = taskIsRunning(task);
   const requiresRestart = isRunning && RESTART_WHEN_RUNNING;
-  if (requiresRestart) config.pendingRestart = true;
+  if (requiresRestart) markPendingRestart(config);
   await writeContainerConfig(containerName, config);
   return { requiresRestart };
 }

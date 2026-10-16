@@ -6,12 +6,14 @@ import { subscribeTopic } from '../api/events.js';
 /**
  * The list feed refreshes on every libvirt domain event, so it carries the
  * selected VM's state and restart-required flag ahead of any detail re-fetch
- * (the flag clears on start after the start action has already returned).
+ * (the flag is dropped by the list refresh that observes the new QEMU).
  * Returns the updated config, or null when nothing changed.
  */
 function mergeListFields(vmConfig, listItem) {
-  const pendingRestart = !!listItem.pendingRestart;
-  if (listItem.state === vmConfig.state && pendingRestart === !!vmConfig.pendingRestart) return null;
+  const pendingRestart = listItem.pendingRestart ?? null;
+  const unchanged = listItem.state === vmConfig.state
+    && (pendingRestart?.since ?? null) === (vmConfig.pendingRestart?.since ?? null);
+  if (unchanged) return null;
   return { ...vmConfig, state: listItem.state, pendingRestart };
 }
 

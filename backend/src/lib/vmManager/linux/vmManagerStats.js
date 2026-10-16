@@ -8,7 +8,7 @@
 import { connectionState, resolveDomain, getDomainXML, getDomainObjAndIface, unwrapVariant, unwrapDict, vmError, subscribeAgentEvent } from './vmManagerConnection.js';
 import { parseVMFromXML } from './vmManagerXml.js';
 import { STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, VM_STATS_MASK } from './libvirtConstants.js';
-import { getCachedLocalDns, getCachedStaleBinary, getCachedVcpus, getCachedGuestAgent, getCachedStateCode, getCachedDomainPath } from './vmManagerList.js';
+import { getCachedLocalDns, getCachedStaleBinary, getCachedVcpus, getCachedGuestAgent, getCachedStateCode, getCachedDomainPath, getCachedStartedAt } from './vmManagerList.js';
 import { getRegisteredHostname } from '../../mdns/index.js';
 
 function parseInterfaceAddresses(raw, unwrapVariantFn) {
@@ -232,7 +232,7 @@ export async function getVMStats(name) {
       rxMBs: Math.round(netRxMBs * 100) / 100,
       txMBs: Math.round(netTxMBs * 100) / 100,
     },
-    uptime: now - connectionState.vmStartTimes.get(path),
+    uptime: now - (getCachedStartedAt(name) ?? connectionState.vmStartTimes.get(path)),
     guestIp: guestIp ?? undefined,
     guestHostname: guestHostname ?? undefined,
     guestAgent: guestAgent ?? undefined,

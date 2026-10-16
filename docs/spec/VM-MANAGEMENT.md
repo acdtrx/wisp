@@ -36,8 +36,6 @@ The backend listens for `DomainEvent` signals on the libvirt Connect interface. 
 
 - 0 = defined, 1 = undefined, 2 = started, 3 = suspended, 4 = resumed, 5 = stopped
 
-When a domain starts fresh (event 2 with detail 0, *booted*), its restart-required flag is cleared — see [Restart-required flag](#restart-required-flag).
-
 When a domain stops (event 5) or is undefined (event 1), its per-run stats state — the previous CPU / disk / network sample and the uptime start — is cleared, so the next run's first stats tick starts from a fresh baseline instead of a delta against the last run's counters. Both maps are keyed by the domain object path: it is the only identity a `DomainEvent` carries, and it survives a rename.
 
 ## Name validation
@@ -153,10 +151,13 @@ Renames performed outside Wisp (`virsh domrename`, hand-edited domain XML, etc.)
 
 ### Restart-required flag
 
-`<wisp:pendingRestart>true</wisp:pendingRestart>` in the VM's `wisp:prefs` (inactive XML) marks a saved definition the running QEMU doesn't reflect yet; absent means false. It is the VM counterpart of a container's `pendingRestart` and surfaces as `pendingRestart` on the list and detail payloads (and MCP `get_vm`). (settled 2026-10-16)
+`<wisp:pendingRestart>2026-10-16T10:00:00.000Z</wisp:pendingRestart>` in the VM's `wisp:prefs` (inactive XML) records **when** a change the running QEMU doesn't reflect was saved; absent means no flag. It surfaces as `pendingRestart: { since } | null` on the list and detail payloads (and MCP `get_vm`). Containers carry the same flag (`pendingRestart: { since }` in `container.json`, [CONTAINERS.md](CONTAINERS.md#config-changes-that-need-a-restart)).
 
-- **Set** by `updateVMConfig` (step 4 above), and by `setVMPendingRestart(name, true)` — the vmManager export for code that changes a definition outside `updateVMConfig` (state migrations). The setter redefines only the flag: the inactive XML is parsed, the one child set or removed, the rest rebuilt verbatim, and nothing is defined when the value is already right. Setting the flag is a `<metadata>` change, so it never counts as a restart-needing change itself.
-- **Cleared** when libvirt reports the domain *started / booted* (`DomainEvent` 2, detail 0): a new QEMU process launched from the persistent definition, so everything saved before it is applied. A guest-side reboot keeps the same QEMU and fires no such event, so the flag correctly stays — the user must stop and start the VM. Restores, migrations and snapshot reverts (the other *started* details) don't run from the persistent definition and leave the flag alone. A start libvirt performs while Wisp isn't connected (host-boot autostart) is not seen, so the flag stays set until the next start Wisp observes or an explicit `setVMPendingRestart(name, false)`.
+**The rule** (settled 2026-10-16): a workload needs a restart iff the flag exists **and** its process has not started since `since`. The start time is the real process's — for a VM the QEMU process: PID from libvirt's pidfile (`/var/run/libvirt/qemu/<name>.pid`), `starttime` from `/proc/<pid>/stat` plus the boot time (`btime`) from `/proc/stat` (`getQemuStartTimeMs` in `vmManagerProc.js`; `btime` is whole seconds, so the result is up to 1 s early — it errs toward keeping the flag). Rejected: clearing on libvirt's *started* `DomainEvent` (misses every start Wisp isn't connected for, e.g. host-boot autostart), and diffing the live against the inactive definition at connect (the live XML keeps the flag copied in at start, so a later re-flag looks stale).
+
+- **Set** by `updateVMConfig` (step 4 above) with `since = now`, and by `setVMPendingRestart(name, value)` — `true` writes `since = now` (a later change moves it forward), `false` removes it; returns `{ changed }`. It is the vmManager export for code that changes a definition outside `updateVMConfig` (state migrations), and redefines only the flag: the inactive XML is parsed, the one child set or removed, the rest rebuilt verbatim. Setting the flag is a `<metadata>` change, so it never counts as a restart-needing change itself.
+- **Cleared lazily**, wherever the VM's state is read: every VM list cache refresh (each `DomainEvent`, and the first build when Wisp connects — so a VM started while Wisp was down is caught at startup) and `getVMConfig`. When the QEMU start time is later than `since`, the flag is removed from the definition (conditional on it still holding that `since`) and the payload reports `null`. No other path clears it.
+- **Kept** while the VM is stopped, while the same QEMU keeps running (a guest-side reboot keeps the process, so the flag correctly stays — stop and start applies it), and when the start time can't be read (pidfile missing or unreadable): never cleared on a guess.
 - **Never copied** to a clone: `cloneVM` drops it, since a definition that has never run has no QEMU lagging behind it.
 
 The same rule binds every vmManager path that calls `DomainDefineXML` on an existing domain (disk attach/detach/bus, the offline branches of ISO and USB attach/detach, clone): the definition is built from the inactive XML. `UpdateDevice` / `AttachDevice` calls with the LIVE flag may use the live device element.
@@ -276,7 +277,7 @@ Wisp app-level VM metadata is stored in domain XML metadata under the `https://w
 
 - `icon` — workload icon id for the UI
 - `localDns` — `"true"`/`"false"` toggle controlling mDNS registration
-- `pendingRestart` — `"true"` while a saved change awaits a restart; omitted otherwise (see [Restart-required flag](#restart-required-flag))
+- `pendingRestart` — ISO time the change awaiting a restart was saved; omitted otherwise (see [Restart-required flag](#restart-required-flag))
 
 Each writer sets or removes only its own children of the existing `wisp:prefs` element, so one pref never drops another. The backend writes and reads children with the `wisp:` prefix (`wisp:icon`, `wisp:localDns`, `wisp:pendingRestart`) to match what libvirt returns after its own XML round-trip. `DomainDefineXML` writes to the **inactive** (persistent) config, while `GetXMLDesc(0)` returns the **active** (live) XML for running VMs — which does not reflect changes (metadata or otherwise) until restart. Both the VM list and the detail view (`getVMConfig`) read inactive XML so saved edits show immediately; runtime fields like the live VNC port have their own dedicated active-XML readers (`getVNCPort`).
 
@@ -345,7 +346,7 @@ The shared parser keeps every text node and attribute as the exact string libvir
 
 ### vmManagerList.js
 
-- **VM list cache** — in-memory cache of the VM list, populated on connect and refreshed automatically on any `DomainEvent` signal (defined, undefined, started, stopped, suspended, resumed) and on any qemu binary replacement detected by `watchQemuBinaries` (apt/dnf upgrade of `qemu-system-*`). `createVM`, `cloneVM`, and `deleteVM` also call `refreshVMListCache()` directly after the libvirt mutation succeeds — libvirt-dbus DEFINED events have proven unreliable enough that new VMs would otherwise miss the LeftBar until a manual page refresh; the explicit refresh is a deterministic local trigger (mirrors `containerManager`'s `subscribeContainerConfigWrite`), idempotent against the event-driven path. `listVMs()` returns the cache when populated, avoiding per-call libvirt queries. The cache is invalidated on disconnect or bus error. Each cached entry holds: `name`, `uuid`, `domainPath`, `state`, `stateCode`, `vcpus`, `memoryMiB`, `osCategory`, `iconId`, `localDns`, `pendingRestart`, `guestAgent`, `staleBinary`. Setting or clearing the restart-required flag also calls `refreshVMListCache()`, so the `vms` topic carries the flag change without waiting on a DEFINED event.
+- **VM list cache** — in-memory cache of the VM list, populated on connect and refreshed automatically on any `DomainEvent` signal (defined, undefined, started, stopped, suspended, resumed) and on any qemu binary replacement detected by `watchQemuBinaries` (apt/dnf upgrade of `qemu-system-*`). `createVM`, `cloneVM`, and `deleteVM` also call `refreshVMListCache()` directly after the libvirt mutation succeeds — libvirt-dbus DEFINED events have proven unreliable enough that new VMs would otherwise miss the LeftBar until a manual page refresh; the explicit refresh is a deterministic local trigger (mirrors `containerManager`'s `subscribeContainerConfigWrite`), idempotent against the event-driven path. `listVMs()` returns the cache when populated, avoiding per-call libvirt queries. The cache is invalidated on disconnect or bus error. Each cached entry holds: `name`, `uuid`, `domainPath`, `state`, `stateCode`, `vcpus`, `memoryMiB`, `osCategory`, `iconId`, `localDns`, `pendingRestart`, `startedAt`, `guestAgent`, `staleBinary`. `startedAt` is the QEMU process start time (epoch ms, null when stopped or unreadable), read from `/proc` on every refresh: it drives the restart-required rule and the stats `uptime`, both correct across Wisp restarts (the in-memory first-tick time is only the fallback when `/proc` can't tell). Setting the restart-required flag also calls `refreshVMListCache()`, so the `vms` topic carries the change without waiting on a DEFINED event.
 - `listVMs()` — returns cached VM list (sub-millisecond); falls back to a live libvirt query on first call before cache populates.
 - `getRunningVMAllocations()` — sums `vcpus` and `memoryMiB` across cached entries with `stateCode === 1` (running). Powers the host stats SSE allocation totals without per-tick libvirt traffic; updates piggyback on the same DomainEvent-driven cache refresh used by `listVMs()`.
 - `getVMConfig(name)` — full VM configuration parsed from XML
@@ -363,6 +364,7 @@ Purpose-named lifecycle functions: `startVM`, `stopVM`, `forceStopVM`, `rebootVM
 
 ### vmManagerProc.js
 
+- `getQemuStartTimeMs(name)` — wall-clock start time (epoch ms) of the VM's qemu process: pidfile → `/proc/<pid>/stat` `starttime` + `/proc/stat` `btime` (both world-readable). `null` on any error. Read once per list cache refresh (`startedAt`).
 - `isVMBinaryStale(name)` — returns `true` when the VM's qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt upgrade). Reads the libvirt pidfile at `/var/run/libvirt/qemu/<name>.pid`, then checks whether `/proc/<pid>/exe` ends with ` (deleted)`. Returns `false` on any error (missing pidfile, dead pid, EACCES). Computed once per VM list cache refresh and read via `getCachedStaleBinary` from both list and stats payloads.
 - `watchQemuBinaries(onChange)` — sets up `fs.watch` on directories where `qemu-system-*` binaries can live (`/usr/bin`, `/usr/local/bin`, `/usr/libexec`) and calls `onChange` whenever any matching basename changes. Used at vmManager connect to wire qemu upgrades into `fireDomainChange`, so `staleBinary` updates are event-driven (no polling). Returns a cleanup function called on disconnect.
 
@@ -379,8 +381,8 @@ Purpose-named lifecycle functions: `startVM`, `stopVM`, `forceStopVM`, `rebootVM
 
 ### vmManagerPendingRestart.js
 
-- `setVMPendingRestart(name, value)` — set or clear the restart-required flag in the inactive XML; returns `{ changed }`
-- Subscribes to `DomainEvent` (via `subscribeDomainEvent` in `vmManagerConnection.js`, which hands handlers `(domainPath, event, detail)`) and clears the flag on *started / booted*
+- `setVMPendingRestart(name, value)` — set (`since = now`) or clear the restart-required flag in the inactive XML; returns `{ changed }`
+- `resolveVMPendingRestart(domPath, name, pendingRestart, startedAt)` — the restart-required rule; called by the list refresh and `getVMConfig`, drops a flag older than the QEMU start
 
 ### vmManagerDisk.js
 
@@ -422,7 +424,7 @@ Every host-supplied disk or ISO path (attach disk/CDROM at runtime, plus `disk.s
 
 ### vmManagerStats.js
 
-- `getVMStats(name)` — per-VM CPU, memory, disk I/O, net I/O, uptime
+- `getVMStats(name)` — per-VM CPU, memory, disk I/O, net I/O, uptime (from the cached QEMU `startedAt`)
 - `getVMXML(name)` — raw domain XML string
 - `getVNCPort(name)` — parse VNC port from domain XML graphics element
 

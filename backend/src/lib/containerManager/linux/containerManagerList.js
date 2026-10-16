@@ -22,6 +22,7 @@ import {
   normalizeContainerMac,
 } from './containerManagerNetwork.js';
 import { processUptimeMsFromProc } from './procUptime.js';
+import { resolvePendingRestart } from './containerManagerPendingRestart.js';
 import { getRegisteredHostname } from '../../mdns/index.js';
 import { readLibraryDigestMap } from './containerManagerImages.js';
 import { normalizeImageRef } from './containerImageRef.js';
@@ -111,9 +112,11 @@ async function fetchContainerListFromDisk() {
     }
 
     let state;
+    let pid = 0;
     try {
       const task = await getTaskState(name);
       state = task ? containerTaskStatusToUi(task) : 'stopped';
+      pid = task ? Number(task.pid) || 0 : 0;
     } catch (err) {
       // getTaskState already returns null when the task genuinely doesn't
       // exist; an exception here means the gRPC call faulted. Keep the last
@@ -125,6 +128,10 @@ async function fetchContainerListFromDisk() {
         '[containerManager] task lookup failed during list refresh — kept previous state',
       );
     }
+
+    // Observing the task is where a stale restart-required flag is dropped.
+    // A write here fires config-write, which queues one more refresh.
+    await resolvePendingRestart(name, config, pid);
 
     results.push({
       name,
@@ -383,6 +390,10 @@ export async function getContainerConfig(name) {
     } else if (containerState.containerStartTimes.has(name)) {
       uptime = Date.now() - containerState.containerStartTimes.get(name);
     }
+  }
+
+  if (config.pendingRestart?.since && !(await resolvePendingRestart(name, config, pid))) {
+    delete config.pendingRestart;
   }
 
   let merged = config;

@@ -1,6 +1,7 @@
 /**
- * Process age from Linux /proc (host PID). Used for container uptime when in-memory
- * start times were lost on backend restart.
+ * Process age and start time from Linux /proc (host PID). Used for container
+ * uptime when in-memory start times were lost on backend restart, and for the
+ * restart-required rule (has the task started since the flag was set?).
  */
 import { readFile } from 'node:fs/promises';
 
@@ -24,6 +25,30 @@ export async function processUptimeMsFromProc(pid) {
     const ageSec = uptimeSec - starttimeTicks / LINUX_USER_HZ;
     if (ageSec < 0 || ageSec > 10 * 365 * 24 * 3600) return null;
     return Math.round(ageSec * 1000);
+  } catch {
+    /* /proc unavailable, pid exited, or parse failed */
+    return null;
+  }
+}
+
+/**
+ * Wall-clock start time (epoch ms) of a host process, or null if unavailable.
+ * `btime` (boot time, whole seconds) + `starttime` ticks: the btime rounding
+ * makes the result up to 1 s early, never late.
+ * @param {number} pid - Host PID
+ */
+export async function processStartTimeMsFromProc(pid) {
+  if (pid == null || pid <= 0 || !Number.isFinite(pid)) return null;
+  try {
+    const [procStat, statStr] = await Promise.all([
+      readFile('/proc/stat', 'utf8'),
+      readFile(`/proc/${pid}/stat`, 'utf8'),
+    ]);
+    const btimeLine = procStat.split('\n').find((l) => l.startsWith('btime '));
+    const btimeSec = btimeLine ? parseInt(btimeLine.slice(6), 10) : NaN;
+    const starttimeTicks = parseLinuxProcStatStarttime(statStr);
+    if (starttimeTicks == null || !Number.isFinite(btimeSec)) return null;
+    return btimeSec * 1000 + Math.floor((starttimeTicks * 1000) / LINUX_USER_HZ);
   } catch {
     /* /proc unavailable, pid exited, or parse failed */
     return null;

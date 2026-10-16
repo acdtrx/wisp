@@ -31,6 +31,7 @@ import { normalizeImageRef } from './containerImageRef.js';
 import { getImageDigest } from './containerManagerImages.js';
 import { readContainerConfig, writeContainerConfig, notifyContainerConfigWrite } from './containerManagerConfigIo.js';
 import { RESTART_FIELDS } from './containerManagerConfig.js';
+import { markPendingRestart } from './containerManagerPendingRestart.js';
 import { validateAndNormalizeMounts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';
 
@@ -530,12 +531,9 @@ function restartFieldsSignature(config) {
 
 /**
  * Persist what this start owns into the latest container.json: the image
- * digest the task runs, and `pendingRestart` — cleared, unless a
- * restart-relevant field was edited after the spec was built (an edit saved
- * during the network wait found no task, so nothing else marks it). Every
- * other field comes from the latest file, so such an edit is never reverted.
- * The lease addresses were already merged the same way. Returns the latest
- * config as written.
+ * digest the task runs. Every other field comes from the latest file, so an
+ * edit saved during the start is never reverted. The lease addresses were
+ * already merged the same way. Returns the latest config as written.
  */
 async function persistStartOwnedFields(name, specConfig) {
   const latest = await readContainerConfig(name);
@@ -544,13 +542,23 @@ async function persistStartOwnedFields(name, specConfig) {
     next.imageDigest = specConfig.imageDigest;
     next.imagePulledAt = specConfig.imagePulledAt;
   }
-  if (restartFieldsSignature(latest) !== restartFieldsSignature(specConfig)) {
-    next.pendingRestart = true;
-  } else {
-    delete next.pendingRestart;
-  }
   await writeContainerConfig(name, next);
   return next;
+}
+
+/**
+ * Flag a restart when a restart-relevant field was saved after the spec was
+ * built: such an edit found no running task, so nothing else marked it.
+ * Runs once the task has started, so `since` lies after the task's start and
+ * the flag holds until the next start. An older flag needs no handling here —
+ * the restart-required rule drops it on the next read, the task having
+ * started after it.
+ */
+async function flagEditsMissedByStart(name, specConfig) {
+  const latest = await readContainerConfig(name);
+  if (restartFieldsSignature(latest) === restartFieldsSignature(specConfig)) return;
+  markPendingRestart(latest);
+  await writeContainerConfig(name, latest);
 }
 
 /**
@@ -694,6 +702,13 @@ export async function startExistingContainer(name) {
   } catch (err) {
     await rollbackFailedStart(name, config.network);
     throw err;
+  }
+
+  // The task is running: a failed flag write is logged, not a failed start.
+  try {
+    await flagEditsMissedByStart(name, config);
+  } catch (err) {
+    containerState.logger?.warn?.({ err: err?.message || err, container: name }, '[containerManager] restart-required check after start failed');
   }
 
   // A-record registration is owned by the reconciler — the /tasks/start event

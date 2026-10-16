@@ -27,12 +27,6 @@ export const VIR_DOMAIN_STATE_SHUTOFF = 5;
 export function isOfflineState(stateCode) {
   return stateCode === VIR_DOMAIN_STATE_SHUTOFF;
 }
-/* virDomainEventType STARTED and its BOOTED detail: a fresh QEMU process
- * launched from the persistent definition (not a restore, migration or
- * snapshot revert). */
-export const VIR_DOMAIN_EVENT_STARTED = 2;
-export const VIR_DOMAIN_EVENT_STARTED_BOOTED = 0;
-
 export const VIR_DOMAIN_SNAPSHOT_CREATE_LIVE = 0x100;
 export const VIR_DOMAIN_SNAPSHOT_CREATE_REDEFINE = 0x1;
 

@@ -291,8 +291,7 @@ export async function updateVMConfig(name, changes) {
   }
 
   const requiresRestart = isRunning && domainDefinitionSignature(parsed) !== baselineSignature;
-  const flagRestart = requiresRestart && !current.pendingRestart;
-  if (flagRestart) setWispPendingRestart(dom, true);
+  if (requiresRestart) setWispPendingRestart(dom, new Date().toISOString());
 
   let outXml;
   try {
@@ -306,7 +305,7 @@ export async function updateVMConfig(name, changes) {
   } catch (err) {
     throw vmError('LIBVIRT_ERROR', `Failed to update VM "${effectiveName}" configuration`, err.message);
   }
-  if (flagRestart) refreshVMListCache();
+  if (requiresRestart) refreshVMListCache();
 
   if (patch.autostart != null) {
     try {

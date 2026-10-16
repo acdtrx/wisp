@@ -568,7 +568,7 @@ export async function cloneVM(name, newName, { onProgress } = {}) {
       iface.mac = { '@_address': generateMAC() };
     }
     // A clone has never run, so no running QEMU lags its definition.
-    setWispPendingRestart(dom, false);
+    setWispPendingRestart(dom, null);
     const newXml = buildXml(parsed);
 
     emit('define', { percent: pct(), currentFile: 'Defining VM' });

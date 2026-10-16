@@ -28,8 +28,6 @@ export const connectionState = {
   prevVMStats: new Map(),
   /** Subscribers invoked on every libvirt DomainEvent and after (re)connect. */
   domainChangeHandlers: new Set(),
-  /** Subscribers invoked with (domainPath, event, detail) on every libvirt DomainEvent. */
-  domainEventHandlers: new Set(),
   /** Subscribers invoked on bus disconnect / error. */
   disconnectHandlers: new Set(),
   /** Subscribers invoked on every libvirt AgentEvent (per-domain qemu-ga lifecycle). */
@@ -64,17 +62,6 @@ export function subscribeDomainChange(handler) {
   return () => connectionState.domainChangeHandlers.delete(handler);
 }
 
-/**
- * Subscribe to individual libvirt DomainEvent signals. The handler gets
- * `(domainPath, event, detail)` — virDomainEventType and its detail code —
- * for reacting to one kind of transition; `subscribeDomainChange` is for
- * "something changed, re-read". Returns an unsubscribe function.
- */
-export function subscribeDomainEvent(handler) {
-  connectionState.domainEventHandlers.add(handler);
-  return () => connectionState.domainEventHandlers.delete(handler);
-}
-
 export function subscribeDisconnect(handler) {
   connectionState.disconnectHandlers.add(handler);
   return () => connectionState.disconnectHandlers.delete(handler);
@@ -94,12 +81,6 @@ export function subscribeAgentEvent(handler) {
 function fireDomainChange() {
   for (const h of connectionState.domainChangeHandlers) {
     try { h(); } catch (err) { connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] domain-change handler threw'); }
-  }
-}
-
-function fireDomainEvent(domainPath, event, detail) {
-  for (const h of connectionState.domainEventHandlers) {
-    try { h(domainPath, event, detail); } catch (err) { connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] domain-event handler threw'); }
   }
 }
 
@@ -204,7 +185,7 @@ export async function connect(logger = null, opts = {}) {
 
   if (!connectionState.watchEvents) return;
 
-  connectionState.connectIface.on('DomainEvent', (domainPath, event, detail) => {
+  connectionState.connectIface.on('DomainEvent', (domainPath, event, _detail) => {
     if (event === 5 || event === 1) {
       connectionState.prevVMStats.delete(domainPath);
       connectionState.vmStartTimes.delete(domainPath);
@@ -213,7 +194,6 @@ export async function connect(logger = null, opts = {}) {
       // VIR_DOMAIN_EVENT_UNDEFINED — drop the cached proxy so a redefine with the same UUID gets a fresh one.
       connectionState.domainProxyCache.delete(domainPath);
     }
-    fireDomainEvent(domainPath, event, detail);
     fireDomainChange();
   });
 
