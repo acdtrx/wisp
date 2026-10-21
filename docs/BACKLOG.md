@@ -55,6 +55,27 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   entry group when two calls for one key overlap. The container side
   serializes per container. Revisit when: a stopped VM is seen still
   resolving as `<name>.local`, or avahi shows duplicate groups for a VM.
+- **Stuck-probe recovery misses removals outside Wisp** — the avahi 0.8
+  probe-counter leak (CONTAINERS.md § Stuck-probe recovery) is recovered only
+  after Wisp's own interface removals. Observed 2026-10-21: unattended-upgrades
+  (liblzma5) had needrestart restart avahi-daemon and systemd-networkd in the
+  same second; `reregisterAll` committed every group, networkd re-applied
+  `br0`'s addresses (avahi: "br0.IPv4 no longer relevant", then re-added)
+  while they probed, and every Wisp name stopped resolving on the LAN for
+  ~14 h — `git` to `cala.local` failed — until a cala restart's netns removal
+  re-published them. Caddy and container lookups were unaffected (the
+  forwarder answers from Wisp's own table). An avahi restart alone does not
+  reproduce it. Candidate fixes: (1) reinstate the per-Commit deadline (a
+  group still `REGISTERING` ~10 s after Commit is re-committed) and drop the
+  per-removal triggers it makes redundant — reverses the 2026-10-16
+  rejection, but a stuck group emits no signal to wait on; (2) re-publish on
+  systemd-networkd link/address change signals — event-driven, covers only
+  networkd flaps, races avahi's own netlink handling; (3) defer
+  `reregisterAll` until avahi's Server reaches RUNNING — avoids this exact
+  ordering only by luck. Confirm first with
+  `systemctl restart avahi-daemon systemd-networkd`. Revisit when: Wisp
+  `.local` names go dead on the LAN again, especially after an
+  unattended-upgrades run.
 - **Rename removes the old netns without CNI DEL** — `renameContainer`
   deletes the old-name netns directly, so the cni-dhcp daemon is never told
   to release that lease (same MAC, so the address itself is unaffected).
