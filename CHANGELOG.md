@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-23
+
+### Bug Fixes
+- **Host no longer renamed to `<host>-2.local` after OS updates** — install and update set avahi's `publish-aaaa-on-ipv4=no`, avoiding an avahi bug where an address change while it announces the host name (an unattended upgrade restarting avahi and networkd together, or a reboot) makes it conflict with itself. A host already renamed needs `systemctl restart avahi-daemon` once.
+
 ## 2026-10-17 (v2.5.1)
 
 ### Bug Fixes

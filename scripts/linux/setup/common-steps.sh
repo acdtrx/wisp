@@ -44,6 +44,11 @@ echo ""
 "$SETUP_DIR/container-dns.sh"
 echo ""
 
+# avahi-daemon config: keep AAAA records off IPv4 so address churn cannot
+# rename the host to `<host>-2`.
+"$SETUP_DIR/avahi.sh"
+echo ""
+
 # Privileged wisp-* helpers into /usr/local/bin with their sudoers rules. Also
 # refreshes wisp-updater itself and wisp-updater.service.
 "$SETUP_DIR/install-helpers.sh" "$PROJECT_ROOT" "$DEPLOY_USER"

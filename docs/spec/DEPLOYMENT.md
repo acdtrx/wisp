@@ -89,6 +89,7 @@ One-time server preparation script. Run as root with `sudo`. Safe to re-run. It 
 
 10. **Runs `scripts/linux/setup/common-steps.sh`** — the steps `wisp-updater` also runs on every self-update, in order:
     - `container-dns.sh` (see the sub-scripts table below);
+    - `avahi.sh` (see the sub-scripts table below);
     - `install-helpers.sh` — copies each `backend/scripts/wisp-*` helper to `/usr/local/bin` and refreshes `/etc/sudoers.d/*` (via `helper.sh`). Idempotent and safe to re-run on every upgrade. See [Privileged helpers checklist](#privileged-helpers-checklist) when adding a new helper;
     - **state migrations** — `node backend/scripts/migrate.mjs` as the deploy user ([UPDATES.md → State migrations](UPDATES.md#state-migrations)). Skipped with a message while `backend/node_modules` is missing — always the case under `install.sh`, which runs them itself after its build step — and fails when `wisp.service` is running.
 
@@ -111,12 +112,13 @@ Server setup and install logic is split into standalone scripts under `scripts/l
 | `sanity.sh` | root or libvirt user | Verify virsh, /dev/kvm, socket, DBus |
 | `helper.sh <src> <basename> <user> [pkg...]` | root | Copy one script to `/usr/local/bin/<basename>` + sudoers (used by `install-helpers.sh`) |
 | `install-helpers.sh <project-root> <user>` | root | Install or **refresh** all `wisp-*` helpers from the install tree → `/usr/local/bin` |
-| `common-steps.sh <project-root> <user>` | root | Steps shared by install and self-update: `container-dns.sh`, `install-helpers.sh`, then state migrations (as `<user>`) |
+| `common-steps.sh <project-root> <user>` | root | Steps shared by install and self-update: `container-dns.sh`, `avahi.sh`, `install-helpers.sh`, then state migrations (as `<user>`) |
 | `rapl.sh <user>` | root | Intel RAPL read access for Host Overview |
 | `containerd.sh [user]` | root | Install containerd 2.0+, socket group perms, wisp namespace |
 | `cni.sh` | root | CNI plugins (bridge, dhcp); **overwrites** `10-wisp-bridge.conflist`; DHCP daemon |
 | `bridge.sh` | root | Create br0 on primary NIC (netplan / nmcli / systemd-networkd) |
 | `container-dns.sh` | root | Hold link-local `169.254.53.53/32` (the bind address for Wisp's in-process DNS forwarder) on the dedicated dummy interface `wisp-dns0` — declared to systemd-networkd (`/etc/systemd/network/10-wisp-dns0.{netdev,network}`), brought up for this boot, and re-asserted by `wisp.service` `ExecStartPre` — and write `/var/lib/wisp/container-resolv.conf` for bind-mounting into containers. Never on br0 (see [CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns)); does not need br0 to exist, so a fresh install that adds the bridge last still gets container DNS. Part of `common-steps.sh`, so it re-runs on every self-update. |
+| `avahi.sh` | root | Set `publish-aaaa-on-ipv4=no` in `/etc/avahi/avahi-daemon.conf` (in place, the rest of the distro file untouched) and restart avahi-daemon only when that changed the file — see [CONTAINERS.md → Host name conflicts on address churn](CONTAINERS.md#publishing-avahi-daemon-via-dbus). Skipped when avahi is not installed. Part of `common-steps.sh`, so it re-runs on every self-update. |
 | `copy.sh <source-dir> <install-dir>` | user | Replace `frontend/`, `backend/`, `scripts/`, `systemd/`; refresh `config/*.example` |
 | `config.sh <install-dir> [server-name]` | user | `config/wisp-config.json` from example + serverName |
 | `password.sh <install-dir> [--force]` | user | `config/wisp-password` (scrypt hash) |
