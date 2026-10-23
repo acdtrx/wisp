@@ -187,6 +187,16 @@ to a plan in `docs/plans/` (see `CLAUDE.md` § Plans).
   stopping them at the source means rewriting `avahi-daemon.conf` in place (no
   drop-ins). Revisit when: a non-container consumer is hurt by the per-veth
   records.
+- **`br0` floods tagged VLAN frames to every workload** — `bridge.sh` creates
+  `br0` with `vlan_filtering 0`, so when the uplink is a trunk the switch's
+  802.1Q-tagged frames reach every VM tap and container veth. Observed
+  2026-10-22: the dev VM received the router's mDNS reflections for VLANs 2, 3,
+  4 and 22 (its kernel drops them as `otherhost`, ~59% of its RX frames). Any
+  workload can add a VLAN sub-interface and join those networks — the
+  isolation a VLAN implies doesn't hold behind Wisp. Fix shape:
+  `vlan_filtering 1` with the uplink and ports on PVID 1 untagged, plus explicit
+  memberships for VLAN bridges. Revisit when: a VLAN must be isolated from Wisp
+  workloads, or untrusted workloads land on `br0`.
 - **OS upgrade runs inside wisp.service** — `wisp-os-update upgrade` (apt/dpkg) is a child of the
   backend, so a Wisp self-update (its first step stops the service), a backend crash or the 600 s
   execFile timeout can kill dpkg mid-upgrade. Fix shape: run it in its own oneshot unit started via
