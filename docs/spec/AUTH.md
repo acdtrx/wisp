@@ -9,7 +9,7 @@ Wisp uses single-user JWT authentication carried in **HttpOnly cookies**. There 
 3. Frontend sends `POST /api/auth/login` with `{ password }` and `credentials: 'include'`.
 4. Backend verifies the password using timing-safe comparison.
 5. On success, backend sets two cookies and returns `{ ok: true }`:
-   - **`wisp_session`** — the JWT itself. `HttpOnly` (JS cannot read it), `SameSite=Lax`, `Path=/`, `Max-Age=86400`. `Secure` is set when the request scheme is HTTPS (derived from `request.protocol`, which honors `X-Forwarded-Proto` from loopback proxies via `trustProxy`). On plain-HTTP LAN deployments the flag is omitted — browsers silently discard `Secure` cookies received over HTTP for non-`localhost` origins, which would otherwise leave the user stuck on the login page.
+   - **`wisp_session`** — the JWT itself. `HttpOnly` (JS cannot read it), `SameSite=Lax`, `Path=/`, `Max-Age=604800` (7 days, refreshed while in use — see § Token lifetime). `Secure` is set when the request scheme is HTTPS (derived from `request.protocol`, which honors `X-Forwarded-Proto` from loopback proxies via `trustProxy`). On plain-HTTP LAN deployments the flag is omitted — browsers silently discard `Secure` cookies received over HTTP for non-`localhost` origins, which would otherwise leave the user stuck on the login page.
    - **`wisp_csrf`** — a per-session random 32-byte token used for double-submit CSRF defence. Same attributes as the session cookie except **not** `HttpOnly` (JS reads it to echo on state-changing requests).
 6. Frontend has nothing to store; subsequent requests automatically carry both cookies.
 7. On failure, backend returns 401 with `{ error, detail }`.
@@ -53,7 +53,9 @@ The signing secret is the stored scrypt-derived key (64 bytes). Changing the pas
 
 ### Token lifetime
 
-24 hours (86400 seconds). No refresh token mechanism — the user must re-authenticate after expiry.
+**Sliding 7-day session (settled 2026-10-30).** Tokens and both cookies carry a 7-day lifetime (604800 seconds). The auth hook re-issues them on any cookie-authenticated request once the token is more than an hour old: a fresh JWT plus both cookies with a new `Max-Age`, keeping the existing CSRF value so other tabs' in-flight requests still match. The session therefore lapses only after 7 days with no authenticated request (give or take the hour), and the re-signing cost is paid at most hourly.
+
+There is no separate refresh token — the session cookie is its own refresh credential. A fixed 24-hour lifetime was rejected: it logged the single user out daily while actively using the app. When a route handler sets the cookies itself (change-password, logout), its `Set-Cookie` headers come after the hook's, and browsers apply the last one.
 
 ### Verification
 
@@ -216,7 +218,7 @@ The login page auto-redirects to the provider when SSO is enabled **and** no `?s
 - **Password file permissions** restricted to `0600` (owner read/write only)
 - **No password in JWT payload** — the token only contains `iat` and `exp`
 - **HMAC-SHA256** signing prevents token forgery
-- **24-hour expiry** limits the window of exposure for leaked tokens
+- **7-day idle expiry** bounds the window of exposure for a leaked session cookie that is not in use; an actively used leaked cookie stays valid until the password changes
 - **No token on the URL** — the JWT lives in an `HttpOnly` cookie, so it never appears in `Authorization`, `?token=`, image tags, link previews, or browser history.
 - **`HttpOnly + Secure + SameSite=Lax`** session cookie + double-submit `X-CSRF-Token` — both layers must be defeated for cross-site abuse to succeed.
 - **WS Origin allow-list** since CORS does not apply to WebSocket — cross-origin pages with a stolen cookie still get `close 1008`.

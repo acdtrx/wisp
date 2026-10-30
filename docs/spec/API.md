@@ -23,7 +23,7 @@ All error responses return `{ error: string, detail: string }` — including req
 
 ### POST /api/auth/login · `public`
 
-Authenticate with password. On success, sets two cookies (`wisp_session` HttpOnly + `wisp_csrf` non-HttpOnly, `SameSite=Lax`, 24h Max-Age) and returns `{ ok: true }`.
+Authenticate with password. On success, sets two cookies (`wisp_session` HttpOnly + `wisp_csrf` non-HttpOnly, `SameSite=Lax`, 7-day Max-Age, slid forward while in use — see [AUTH.md](AUTH.md) § Token lifetime) and returns `{ ok: true }`.
 
 - **Auth:** Public (no token required)
 - **Rate limit:** 5 attempts per IP per 60 seconds (sweep 60 s, max 10 000 entries)

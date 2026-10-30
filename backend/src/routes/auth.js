@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto';
 
-import { verifyPassword, signJWT, setPassword } from '../lib/auth.js';
+import {
+  verifyPassword, signJWT, setPassword, setSessionCookies, SESSION_COOKIE, CSRF_COOKIE,
+} from '../lib/auth.js';
 import { appendSetCookie, buildSetCookie } from '../lib/cookies.js';
 import { closeAllSSE } from '../lib/sse.js';
 import { closeAllWebSockets } from '../lib/wsTracking.js';
@@ -10,27 +12,7 @@ import { listApiTokens, createApiToken, revokeApiToken, API_TOKEN_SCOPES } from 
 import { isAuthRateLimited, recordFailedAuthAttempt, AUTH_RATE_WINDOW_SECONDS } from '../lib/loginRateLimit.js';
 import { createAppError, handleRouteError } from '../lib/routeErrors.js';
 
-const SESSION_COOKIE = 'wisp_session';
-const CSRF_COOKIE = 'wisp_csrf';
-const SESSION_MAX_AGE_SECONDS = 86400;
 const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback';
-
-// `Secure` must reflect the actual request scheme. Browsers silently drop
-// Secure cookies received over plain HTTP for non-localhost origins — so
-// hardcoding `secure: true` in production breaks LAN-HTTP installs (login
-// returns 200, browser discards the cookie, next API call 401s, frontend
-// bounces to /login). With trustProxy enabled and the frontend proxy passing
-// X-Forwarded-Proto, request.protocol is the original browser-side scheme.
-function setSessionCookies(reply, request, jwt, csrfToken) {
-  const baseAttrs = {
-    secure: request.protocol === 'https',
-    sameSite: 'Lax',
-    path: '/',
-    maxAge: SESSION_MAX_AGE_SECONDS,
-  };
-  appendSetCookie(reply, buildSetCookie(SESSION_COOKIE, jwt, { ...baseAttrs, httpOnly: true }));
-  appendSetCookie(reply, buildSetCookie(CSRF_COOKIE, csrfToken, { ...baseAttrs, httpOnly: false }));
-}
 
 function clearSessionCookies(reply, request) {
   const baseAttrs = {

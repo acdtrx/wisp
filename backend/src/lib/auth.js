@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAppError } from './routeErrors.js';
-import { parseCookieHeader } from './cookies.js';
+import { parseCookieHeader, appendSetCookie, buildSetCookie } from './cookies.js';
 import { verifyApiToken } from './apiTokens.js';
 import { isAuthRateLimited, recordFailedAuthAttempt, AUTH_RATE_WINDOW_SECONDS } from './loginRateLimit.js';
 
@@ -11,6 +11,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PASSWORD_FILE = resolve(__dirname, '../../../config/wisp-password');
 const SCRYPT_KEYLEN = 64;
 const SCRYPT_SALT_LEN = 16;
+
+// Sliding browser session: it lapses after SESSION_MAX_AGE_SECONDS without an
+// authenticated request. The auth hook re-issues the cookies once the token is
+// older than SESSION_REFRESH_AFTER_SECONDS, so a session in use never expires
+// and the re-signing cost is paid at most hourly, not on every request.
+export const SESSION_MAX_AGE_SECONDS = 7 * 86400;
+const SESSION_REFRESH_AFTER_SECONDS = 3600;
 
 /**
  * Read config/wisp-password content. Returns { salt, key } for hashed
@@ -61,7 +68,7 @@ function base64UrlDecode(str) {
   return JSON.parse(Buffer.from(str, 'base64url').toString());
 }
 
-export function signJWT(payload, expiresInSeconds = 86400) {
+export function signJWT(payload, expiresInSeconds = SESSION_MAX_AGE_SECONDS) {
   const secret = getSecret();
   const header = { alg: 'HS256', typ: 'JWT' };
   const now = Math.floor(Date.now() / 1000);
@@ -218,10 +225,27 @@ export function checkRouteAccess(routes, { strict, log }) {
   }
 }
 
-const SESSION_COOKIE = 'wisp_session';
-const CSRF_COOKIE = 'wisp_csrf';
+export const SESSION_COOKIE = 'wisp_session';
+export const CSRF_COOKIE = 'wisp_csrf';
 const CSRF_HEADER = 'x-csrf-token';
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+// `Secure` must reflect the actual request scheme. Browsers silently drop
+// Secure cookies received over plain HTTP for non-localhost origins — so
+// hardcoding `secure: true` in production breaks LAN-HTTP installs (login
+// returns 200, browser discards the cookie, next API call 401s, frontend
+// bounces to /login). With trustProxy enabled and the frontend proxy passing
+// X-Forwarded-Proto, request.protocol is the original browser-side scheme.
+export function setSessionCookies(reply, request, jwt, csrfToken) {
+  const baseAttrs = {
+    secure: request.protocol === 'https',
+    sameSite: 'Lax',
+    path: '/',
+    maxAge: SESSION_MAX_AGE_SECONDS,
+  };
+  appendSetCookie(reply, buildSetCookie(SESSION_COOKIE, jwt, { ...baseAttrs, httpOnly: true }));
+  appendSetCookie(reply, buildSetCookie(CSRF_COOKIE, csrfToken, { ...baseAttrs, httpOnly: false }));
+}
 
 function timingSafeEqualString(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
@@ -324,6 +348,16 @@ export function createAuthHook() {
         reply.code(403).send({ error: 'CSRF check failed', detail: 'Missing or mismatched CSRF token' });
         return;
       }
+    }
+
+    // Slide the session: re-issue both cookies with a fresh expiry, keeping
+    // the CSRF value so requests already in flight in other tabs still match.
+    // A handler that sets the cookies itself (change-password, logout) appends
+    // its Set-Cookie after these, and the browser applies the last one.
+    const cookieCsrf = cookies[CSRF_COOKIE];
+    const ageSeconds = Math.floor(Date.now() / 1000) - (payload.iat || 0);
+    if (ageSeconds > SESSION_REFRESH_AFTER_SECONDS && typeof cookieCsrf === 'string' && cookieCsrf) {
+      setSessionCookies(reply, request, signJWT({ role: 'admin' }), cookieCsrf);
     }
 
     request.user = payload;

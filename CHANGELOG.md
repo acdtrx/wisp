@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-30
+
+### New Features
+- **Stay signed in while you use Wisp** — the browser session now lasts 7 days and is extended on use, so you are signed out only after 7 days of inactivity instead of every 24 hours.
+
 ## 2026-10-23 (v2.5.2)
 
 ### Bug Fixes
