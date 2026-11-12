@@ -130,6 +130,10 @@ failing with "already exists".
 module's hook (found 2026-11-12). **Revisit trigger:** the response and the badge are
 seen disagreeing again, or the next change to any of the three.
 
+**Deleting a VM leaves its `backup-status.json` entry.** Container deletes prune theirs
+(`forgetBackupStatus`, 2026-11-12); VM deletes don't. **Revisit trigger:** a stale VM
+entry confuses the backups view, or the next work on VM delete.
+
 **A timed-out avahi registration is never retried.** With the 5 s bound on avahi calls
 (settled 2026-11-12), a registration that times out leaves its entry unpublished;
 `reregisterAll` runs only when the daemon restarts, not when a hung one recovers, so a
