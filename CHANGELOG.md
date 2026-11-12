@@ -26,6 +26,17 @@
 - **No orphan folder when a tiny-samba share moves to a storage mount** — its local `files/share-<name>` is deleted on save (also when renamed in the same save), and the save asks first in "Delete share data?".
 - **"Restart required" follows a restart done elsewhere** — an open container page drops the badge.
 - **Deleting a container clears its backup status.**
+- **A drive mounted twice shows as Wisp's** — a removable disk also automounted elsewhere reads as mounted at its `/mnt/wisp` path.
+- **One self-update at a time** — a second install while one is running answers 409.
+- **Same-name library uploads no longer overwrite each other** — the second one is refused (409).
+- **Actions on one workload don't block another** — a slow start on one VM or container leaves the others' buttons enabled, and its error shows only on that workload.
+- **Change-password is rate-limited** — wrong current passwords count against the login attempt limit.
+- **The dev backend listens on localhost only.**
+- **`runtime.env` is honoured by a backend started by hand** — including a `WISP_CONFIG_PATH` set there.
+- **Malformed URLs get the usual error shape** — `{ error, detail }` instead of Fastify's own.
+- **A deleted container's log stream stops retrying.**
+- **Backup completion no longer reveals the host path.**
+- **Library symlinks can't point a VM outside the allowed folders** — disk and ISO paths are checked after following symlinks.
 
 ## 2026-10-30 (v2.6.0)
 
