@@ -1,4 +1,5 @@
-import { join, resolve, sep } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { basename, dirname, join, sep } from 'node:path';
 import { access, mkdir } from 'node:fs/promises';
 import { getConfigSync } from './config.js';
 import { createAppError } from './routeErrors.js';
@@ -47,16 +48,43 @@ export function resolveLibraryPath(p) {
 }
 
 /**
+ * Where an absolute path really points, following symlinks the way the kernel
+ * will when QEMU opens it: the realpath of its deepest existing ancestor, with
+ * the not-yet-created rest appended (a restored VM's directory, a disk about to
+ * be created). The missing rest holds no symlink, and a `..` in it can't climb
+ * back out — the kernel would fail on the missing component first. Null when
+ * an existing ancestor can't be read.
+ */
+function realLocation(absPath) {
+  const rest = [];
+  let head = absPath;
+  for (;;) {
+    try {
+      // .native: libc realpath, which resolves `..` after a symlink as the kernel does
+      // (the JS realpathSync normalizes the path lexically first).
+      return join(realpathSync.native(head), ...rest);
+    } catch (err) {
+      if (err.code !== 'ENOENT' && err.code !== 'ENOTDIR') return null;
+    }
+    const parent = dirname(head);
+    if (parent === head) return null;
+    rest.unshift(basename(head));
+    head = parent;
+  }
+}
+
+/**
  * The test behind assertPathInsideAllowedRoots, as a predicate: absPath is
- * absolute and resolves under the image library or this VM's own directory.
- * Restore passes it to vmManager as the policy for CD-ROM sources a backup's
- * domain XML may keep.
+ * absolute and really lives — symlinks followed, on the path and on the roots —
+ * under the image library or this VM's own directory. Restore passes it to
+ * vmManager as the policy for CD-ROM sources a backup's domain XML may keep.
  */
 export function isPathInsideAllowedRoots(absPath, vmName) {
   if (typeof absPath !== 'string' || !absPath.startsWith('/')) return false;
-  const resolved = resolve(absPath);
-  const allowedRoots = [resolve(getImagePath()), resolve(getVMBasePath(vmName))];
-  return allowedRoots.some((root) => resolved === root || resolved.startsWith(root + sep));
+  const real = realLocation(absPath);
+  if (!real) return false;
+  const allowedRoots = [realLocation(getImagePath()), realLocation(getVMBasePath(vmName))].filter(Boolean);
+  return allowedRoots.some((root) => real === root || real.startsWith(root + sep));
 }
 
 /**

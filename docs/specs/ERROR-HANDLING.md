@@ -148,7 +148,7 @@ VM names are validated before route handlers execute (via a `preHandler` hook). 
 
 ### Path policy for VM disks / ISOs
 
-`assertPathInsideAllowedRoots(absPath, vmName)` is invoked by attach/create paths (CDROM, ISO, sourcePath). Any path that resolves outside the image library or the VM's per-VM directory returns **422 PATH_NOT_ALLOWED**.
+`assertPathInsideAllowedRoots(absPath, vmName)` is invoked by attach/create paths (CDROM, ISO, sourcePath). Any path that resolves — symlinks followed, as `realpath` does — outside the image library or the VM's per-VM directory returns **422 PATH_NOT_ALLOWED**.
 
 ### Request body validation
 

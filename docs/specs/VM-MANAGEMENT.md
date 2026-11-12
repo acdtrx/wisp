@@ -408,7 +408,7 @@ Purpose-named lifecycle functions: `startVM`, `stopVM`, `forceStopVM`, `rebootVM
 
 ### Allowed paths for attach / create
 
-Every host-supplied disk or ISO path (attach disk/CDROM at runtime, plus `disk.sourcePath` and `cdrom1Path`/`cdrom2Path` at create time) is asserted to resolve under either the image library (`imagePath`) or this VM's own per-VM directory (`getVMBasePath(name)`). Paths outside those roots return **422 PATH_NOT_ALLOWED**. The check uses `path.resolve` to canonicalize before comparing — `..` traversal is rejected. libvirt would otherwise happily open arbitrary host files (e.g. `/etc/shadow`) as block / CDROM devices for QEMU.
+Every host-supplied disk or ISO path (attach disk/CDROM at runtime, plus `disk.sourcePath` and `cdrom1Path`/`cdrom2Path` at create time) is asserted to resolve under either the image library (`imagePath`) or this VM's own per-VM directory (`getVMBasePath(name)`). Paths outside those roots return **422 PATH_NOT_ALLOWED**. The check follows symlinks as QEMU's open will *(settled 2026-11-12)*: the path is resolved with the kernel's `realpath` (its deepest existing ancestor, plus the not-yet-created rest), and so are the two roots (`vmsPath` may itself be a symlink) — a symlink in the image library that points outside it, and `..` traversal, are rejected. libvirt would otherwise happily open arbitrary host files (e.g. `/etc/shadow`) as block / CDROM devices for QEMU.
 
 ### vmManagerUsb.js
 

@@ -173,11 +173,6 @@ unit started via one fixed sudo rule (like `wisp-updater`), or at least refuse a
 self-update while an upgrade runs and drop the timeout. **Revisit trigger:** an upgrade is
 ever interrupted, or OS upgrades become unattended/scheduled. (re-review 2026-10-16, P2)
 
-**Allowed-roots check follows symlinks.** `assertPathInsideAllowedRoots` uses
-`path.resolve`, not `realpath`, so a symlink placed inside the image library can point
-outside it. Only the admin can place files there. **Revisit trigger:** anything other than
-the admin can write into the image library or another allowed root. (Plan 6, B1)
-
 **`PATCH /api/containers/:name` has no body schema.** CODING-RULES §9 wants request
 validation at the boundary; the manager validates fields piecemeal instead (found in the
 2026-11-12 repairs inventory). **Revisit trigger:** a malformed PATCH body is stored, or
