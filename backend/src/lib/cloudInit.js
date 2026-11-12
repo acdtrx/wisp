@@ -320,26 +320,16 @@ export async function rebuildCloudInitISO(vmName, vmDir, xml) {
   });
 }
 
+/**
+ * The stored config for a soft-disable: the submitted settings merged in,
+ * except the password. A disabled config takes no new password — there is no
+ * ISO to hash it into, and a placeholder kept for later would claim a
+ * password no hash backs. The stored password and its hash stay as they were.
+ */
 function mergeCloudInitDisablePayload(existing, incoming) {
   const base = existing && typeof existing === 'object' ? { ...existing } : {};
-  const { enabled: _en, password: incomingPassword, ...rest } = incoming;
-  const merged = { ...base, ...rest, enabled: false };
-  // `passwordHash` is internal — preserve from prior state, never accept from client.
-  merged.passwordHash = base.passwordHash || '';
-  const isPlaceholder = incomingPassword === '***' || incomingPassword === 'set';
-  if (incomingPassword && !isPlaceholder && String(incomingPassword).trim() !== '') {
-    // A new plaintext password came in even though we're disabling — store
-    // the placeholder; the hash will be regenerated when cloud-init is
-    // re-enabled.
-    merged.password = '***';
-  } else if (base.password !== undefined && base.password !== '') {
-    merged.password = base.password;
-  } else if (merged.passwordHash) {
-    merged.password = '***';
-  } else {
-    merged.password = '';
-  }
-  return merged;
+  const { enabled: _en, password: _ignored, passwordHash: _internal, ...rest } = incoming;
+  return { ...base, ...rest, enabled: false, passwordHash: base.passwordHash || '' };
 }
 
 /** Attach (or update) the cloud-init ISO at sde via the generic vmManager primitive. */
@@ -360,7 +350,7 @@ export async function getCloudInitConfig(vmName) {
   if (!config) return null;
   // Internal-only fields (passwordHash) must not flow back to the client.
   const { passwordHash: _hash, ...safe } = config;
-  const hasPassword = Boolean(safe.password) || Boolean(_hash);
+  const hasPassword = Boolean(_hash);
   return {
     ...safe,
     enabled: safe.enabled !== false,

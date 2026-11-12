@@ -96,7 +96,7 @@ When `cloudInit.enabled` is `false`, creation **skips** cloud-init: no ISO, no `
 
 ### Read
 
-`GET /api/vms/:name/cloudinit` returns the stored configuration when `cloud-init.json` exists (including when `enabled` is `false` after a soft-disable). The password field is returned as `"set"` when a password is on file, or empty when not set (never the plaintext or hash). When there is **no** `cloud-init.json`, the response is the placeholder `{ enabled: false }` only.
+`GET /api/vms/:name/cloudinit` returns the stored configuration when `cloud-init.json` exists (including when `enabled` is `false` after a soft-disable). The password field is returned as `"set"` when a password hash is on file, or empty when not (never the plaintext or hash). When there is **no** `cloud-init.json`, the response is the placeholder `{ enabled: false }` only.
 
 ### Update
 
@@ -108,7 +108,7 @@ When `cloudInit.enabled` is `false`, creation **skips** cloud-init: no ISO, no `
 
 `PUT` with **`enabled: false`** (soft-disable):
 1. Detach/eject `sde` and delete `cloud-init.iso`
-2. Save `cloud-init.json` with `enabled: false` and the submitted fields merged into the stored config (so settings are kept for re-enabling)
+2. Save `cloud-init.json` with `enabled: false` and the submitted fields merged into the stored config (so settings are kept for re-enabling) — except `password`: a disabled config takes no new password, and the stored hash stays as it was (settled 2026-11-12)
 
 A notice is displayed in the UI: changes take effect on next boot if cloud-init has already run inside the guest.
 
