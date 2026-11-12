@@ -63,7 +63,7 @@ that already says so):
 1. **VM mDNS reconciler:** serialize per VM, the same way the container reconciler
    does (entry "VM mDNS reconciler: per-VM operation chain").
 2. **Running-VM edits:** graphics, NIC and video-driver changes on a running VM return
-   `requiresRestart: true`; unknown `graphicsType` / `videoDriver` → 422. The paused-VM
+   `requiresRestart: true`; unknown `graphicsType` / `videoDriver` → 400. The paused-VM
    ISO part stays in the backlog.
 3. **VM rename:** an existing target directory → 409 `VM_DIR_EXISTS`.
 4. **Disk-less VM:** the UI can add an `sda` primary disk.
@@ -78,7 +78,7 @@ that already says so):
   - Start and stop a VM 10× quickly. `avahi-browse -art` then shows no record for it
     and no duplicate groups.
   - PATCH graphics on a running VM → `requiresRestart: true`.
-  - PATCH `graphicsType: "bogus"` → 422.
+  - PATCH `graphicsType: "bogus"` → 400.
   - Rename onto a kept directory → 409 `VM_DIR_EXISTS`.
   - In the UI, add `sda` to a VM created without disks, then boot it.
   - PUT cloud-init for `nosuchvm` → 404, and no `vms/nosuchvm/`.
