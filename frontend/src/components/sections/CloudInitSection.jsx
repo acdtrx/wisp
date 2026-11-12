@@ -148,7 +148,10 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
     setSaving(true);
     setError(null);
     try {
-      await updateCloudInit(vmName, form);
+      // A blank password keeps the one on file ("Leave blank to keep
+      // unchanged"): the API reads '' as no password and 'set' as keep.
+      const password = form.password || (config?.password === 'set' ? 'set' : '');
+      await updateCloudInit(vmName, { ...form, password });
       setEditing(false);
       if (onRefresh) await onRefresh();
       await loadConfig();
