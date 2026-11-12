@@ -46,6 +46,10 @@ import { resolveLibraryPath, assertPathInsideAllowedRoots } from '../lib/paths.j
 import { createAppError, handleRouteError, isExpectedAppError } from '../lib/routeErrors.js';
 import { validateVMName } from '../lib/validation.js';
 
+/** The values Wisp writes into `<video><model type>` and `<graphics type>` (API.md). */
+const VIDEO_DRIVERS = ['virtio', 'qxl', 'vga'];
+const GRAPHICS_TYPES = ['vnc', 'spice'];
+
 export default async function vmsRoutes(fastify) {
   fastify.addHook('preHandler', async (request, reply) => {
     const name = request.params?.name;
@@ -114,8 +118,8 @@ export default async function vmsRoutes(fastify) {
           firmware: { type: 'string' },
           machineType: { type: 'string' },
           cpuMode: { type: 'string' },
-          videoDriver: { type: 'string' },
-          graphicsType: { type: 'string' },
+          videoDriver: { type: 'string', enum: VIDEO_DRIVERS },
+          graphicsType: { type: 'string', enum: GRAPHICS_TYPES },
           bootOrder: { type: 'array', items: { type: 'string' } },
           bootMenu: { type: 'boolean' },
           memBalloon: { type: 'boolean' },
@@ -507,8 +511,8 @@ export default async function vmsRoutes(fastify) {
               additionalProperties: false,
             },
           },
-          videoDriver: { type: 'string' },
-          graphicsType: { type: 'string' },
+          videoDriver: { type: 'string', enum: VIDEO_DRIVERS },
+          graphicsType: { type: 'string', enum: GRAPHICS_TYPES },
           memBalloon: { type: 'boolean' },
           guestAgent: { type: 'boolean' },
           vtpm: { type: 'boolean' },

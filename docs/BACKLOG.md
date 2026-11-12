@@ -86,12 +86,9 @@ disk means moving it into the image library by hand and picking it as an existin
 Shape: the create form offers the kept `disk*.qcow2` of a blocked name.
 **Revisit trigger:** reusing kept disks through the shell becomes a recurring chore.
 
-**Running-VM edits that need a restart don't all say so.** Graphics, NIC and video-driver
-changes on a running VM land in the inactive definition but return `requiresRestart:
-false` (only memory, CPU, machine, firmware, OS type and vTPM flag it); `graphicsType` /
-`videoDriver` accept any string; ISO attach/eject on a *paused* VM is config-only.
-**Revisit trigger:** a running-VM edit is reported as "didn't apply", or a bad
-graphics/video type breaks a define.
+**ISO attach/eject on a paused VM is config-only.** It lands in the inactive definition
+without touching the paused QEMU. **Revisit trigger:** a CD-ROM change on a paused VM is
+reported as "didn't apply".
 
 **VM rename / disk edges.** Rename's existing-target-dir guard answers 422 `CONFIG_ERROR`,
 not 409 `VM_DIR_EXISTS` like create/restore. The UI also can't add an `sda` disk to a VM

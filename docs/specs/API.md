@@ -611,6 +611,8 @@ Create a new VM. Returns a job ID; monitor progress via SSE.
 
 - **`disk.type: existing`:** `sourcePath` must be a `.qcow2`, `.raw` or `.img` image with no backing file or external data file. That is checked inside the job (before the copy): an unusable image ends the job with an `error` event carrying `DISK_FORMAT_UNSUPPORTED` / `DISK_IMAGE_UNSAFE`'s message, and no VM directory is left behind ([VM-MANAGEMENT.md § Untrusted images](VM-MANAGEMENT.md#untrusted-images)).
 
+- **`videoDriver` / `graphicsType`:** one of `virtio`, `qxl`, `vga` / `vnc`, `spice` (schema enums, on create and `PATCH`); any other value → **400** `Invalid request body` (settled 2026-11-12).
+
 - **`cloudInit.enabled`:** Optional; default is on. If `false`, cloud-init is skipped during create (no seed ISO, no `sde`, no `cloud-init.json`).
 
 - **201:** `{ jobId: string, title: string }` — `title` is the display label for the background job (e.g. `Create <name>`)
@@ -639,7 +641,7 @@ Each `disks[]` entry may include **`sizeGiB`** (integer, virtual size in GiB, ro
 
 Update VM configuration.
 
-- **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `machineType`, `firmware`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `localDns`, `autostart`. Schema is **`additionalProperties: false`**; with Fastify's default Ajv `removeAdditional: true`, unknown keys are silently stripped before reaching `updateVMConfig`.
+- **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `machineType`, `firmware`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `localDns`, `autostart`. Schema is **`additionalProperties: false`**; with Fastify's default Ajv `removeAdditional: true`, unknown keys are silently stripped before reaching `updateVMConfig`. `videoDriver` and `graphicsType` take the values listed under create; any other → **400**.
 - **200:** `{ ok: true, requiresRestart: boolean, name }` — `requiresRestart` is `true` when the VM is running and the patch changed its domain definition (anything but icon, local DNS and autostart); the VM's `pendingRestart` flag is then set too
 - **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running; `VM_EXISTS` / `VM_DIR_EXISTS` when the new name belongs to another VM or `<vmsPath>/<name>/` already exists (the rename reserves that directory first, so a concurrent rename or create to the same name gets this, see [VM-MANAGEMENT.md → Renaming](VM-MANAGEMENT.md#renaming)); `VM_BUSY` while another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock) — every PATCH takes it, rename or not
 - **422:** `{ error, detail }` — `INVALID_VM_NAME` on rename to an invalid name; VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
