@@ -93,7 +93,7 @@ jobs:
           for d in scripts systemd config docs; do
             rsync -a "$d/" "$STAGE/$d/"
           done
-          for f in package.json CHANGELOG.md LICENSE README.md CLAUDE.md; do
+          for f in package.json CHANGELOG.md LICENSE README.md AGENTS.md CLAUDE.md; do
             [[ -f "$f" ]] && cp "$f" "$STAGE/$f"
           done
 

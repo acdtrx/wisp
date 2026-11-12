@@ -37,7 +37,7 @@ fi
 # bundles into the GitHub release tarball — keep these in sync so push.sh and
 # self-update install the same files.
 TOP_FILES=()
-for f in package.json CHANGELOG.md LICENSE README.md CLAUDE.md; do
+for f in package.json CHANGELOG.md LICENSE README.md AGENTS.md CLAUDE.md; do
   [[ -f "$PROJECT_DIR/$f" ]] && TOP_FILES+=( "$f" )
 done
 

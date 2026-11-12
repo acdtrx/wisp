@@ -64,7 +64,7 @@ fi
 
 # Top-level files. Mirrors the release tarball; package.json is required, the
 # rest are bundled for parity (self-update overwrites them on every release).
-for f in package.json CHANGELOG.md LICENSE README.md CLAUDE.md; do
+for f in package.json CHANGELOG.md LICENSE README.md AGENTS.md CLAUDE.md; do
   if [[ -f "$SOURCE_DIR/$f" ]]; then
     cp -a "$SOURCE_DIR/$f" "$INSTALL_DIR/$f"
   fi
