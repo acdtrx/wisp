@@ -26,6 +26,39 @@ Once nothing is left behind it, remove the `repairOnRead` option.
   (restart-required flag): where the flag is cleared, if that moves.
 - `ARCHITECTURE.md`: the migration runner's `connectManagers` options.
 
+**Settled after the inventory (2026-11-12):**
+- **VM restart flag:** cleared by one vmManager mechanism on libvirt connect and on the
+  STARTED DomainEvent, wired only with `watchEvents`. Reads apply the rule but never
+  write. `VM-MANAGEMENT.md`'s "cleared lazily" wording and its rejected alternative
+  change to match.
+- **Container restart flag:** cleared in `startExistingContainer` after `Tasks.Start`,
+  in the same latest-config read `flagEditsMissedByStart` does. This reverses
+  `CONTAINERS.md`'s "starting a container never clears the flag directly".
+- **Netns IP persisted on GET:** dropped with no replacement; the network probe saves a
+  missing IP. The `API.md` sentence about it goes.
+- **Migration `0007-container-config-shape`:**
+  - over every container: env to `{value}`, a missing env becomes `{}`, a missing or
+    non-bridge network becomes bridge, a missing or invalid MAC is generated,
+    `network.vlan` is removed;
+  - it flags a restart only on a running container whose network changed;
+  - the old-shape knowledge lives only in the migration, which writes through generic
+    facade exports (`readContainerConfig`, `generateContainerMac`,
+    `writeContainerConfig`).
+- **PATCH `network.type`:** anything but `'bridge'` → 422 `CONFIG_ERROR` (an `API.md`
+  line).
+- **Old container backups** restore the shape they hold; no restore code changes.
+- **Spec edits that follow:** `CONTAINERS.md` (the MAC and env lines point at 0007),
+  `API.md` (the two lines above), and `UPDATES.md` Shipped migrations (rows for 0005,
+  0006 and 0007).
+- **Also in scope:**
+  - remove the manager facade exports nothing uses (`ensureContainersDir`,
+    `notifyContainerConfigWrite`, and any others found);
+  - remove the old-shape tolerances in reads: a backup manifest without `origin`,
+    restart flags not in the `{since}` shape, and the cloud-init `'set'` sentinel. Send
+    back any one that is still reachable through stored data or API input;
+  - simplify the remaining `network.type === 'bridge'` guards once 0007 and the PATCH
+    check land.
+
 ## Milestone 1 — inventory
 
 The builder lists every normal-path repair found, with its file and line, its kind, and

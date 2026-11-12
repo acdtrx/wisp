@@ -244,6 +244,11 @@ in `GET /runs` and a last line without a trailing newline is never shown. Fix sh
 finalize on the task-exit event. **Revisit trigger:** a self-exited container's last
 output is missing or its run shows as still open. (Plan 6 verification on tini)
 
+**`PATCH /api/containers/:name` has no body schema.** CODING-RULES §9 wants request
+validation at the boundary; the manager validates fields piecemeal instead (found in the
+2026-11-12 repairs inventory). **Revisit trigger:** a malformed PATCH body is stored, or
+the next work on that route.
+
 **Small container API/UI inconsistencies.** `POST /api/containers/:name/mounts` returns
 `requiresRestart: null` on a stopped container (spec: boolean); the container page keeps
 "Restart required" up after a restart done outside the page (stale frontend flag);
