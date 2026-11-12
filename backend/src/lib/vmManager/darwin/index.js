@@ -212,7 +212,7 @@ export async function setVMBackupOrigin() {
 }
 
 export async function listBackups() {
-  throw noConn();
+  return [];
 }
 
 export async function deleteBackup() {
