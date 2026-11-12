@@ -23,6 +23,41 @@ that already says so):
 - `specs/CONFIGURATION.md` or `DEPLOYMENT.md`, whichever owns it: the dev backend binds
   `127.0.0.1` (#21).
 
+**Settled after the open points (2026-11-12):**
+- Already fixed in the code: #3, and the `requiresRestart` half of #2. Drop #3's
+  backlog line and keep its check as a regression check.
+- #24's fix stays general, in `createSSE`. #25 only drops `path`; `API.md` already
+  omits it.
+- #2: a bad `graphicsType` / `videoDriver` fails the schema enum with **400**
+  (ERROR-HANDLING), not 422.
+- #6: the boot retry runs only with `watchEvents`; `VM-MANAGEMENT.md` changes to match.
+- #7: a close the client didn't make is retried only while the VM shows as running.
+- #11: finalize in the unexpected-exit path; a late event never finalizes a newer run.
+- #12:
+  - flag only when normalized mounts/devices differ;
+  - an `APP_RELOAD_FAILED` rollback restores the flag exactly;
+  - the mount signature includes `readonly`.
+- #13: every mount POST on an app container → `APP_CONFIG_ONLY`.
+- #14: a tiny-samba share switched from Local to Storage has `files/share-<name>`
+  deleted once the save settles; `CONTAINERS.md` changes to match.
+- #15:
+  - the container list carries the in-force restart flag (`API.md`);
+  - the app sections drop their local badge state;
+  - deleting a container prunes its `backup-status.json` entry.
+- #16: `mountedAt` prefers a mount point under `/mnt/wisp`, else the first
+  (`STORAGE.md`).
+- #17: the in-flight flag is taken before the first `await` and released on failure;
+  `force` doesn't bypass it.
+- #19: action state is kept per workload; the store's `error` is for list/select only.
+- #21: the dev backend binds `127.0.0.1`. Dev is local only: `DEPLOYMENT.md` §
+  Local development drops the remote-backend workflow.
+- #26: realpath the roots too, and the deepest existing parent for a path not created
+  yet.
+- **Test notes:**
+  - #1 may use the test VMs `dubi` / `gubi`; leave them as found.
+  - #17 may self-update tini, then redeploy the branch.
+  - #16 is skipped if a loop-device disk doesn't show up.
+
 ## Milestone 1 — VMs
 
 1. **VM mDNS reconciler:** serialize per VM, the same way the container reconciler
