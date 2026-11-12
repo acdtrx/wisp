@@ -321,13 +321,16 @@ async function republishGroup(record) {
   }
   record.republishing = true;
   const { handle, fill, logCtx } = record;
+  let committing = false;
   try {
     do {
       record.republishAgain = false;
+      committing = false;
       await bounded(handle.iface.Reset(), 'Reset');
       await fill(handle.iface);
       if (state.groups.get(handle.path) !== record) return;
       record.groupState = AVAHI_ENTRY_GROUP_REGISTERING;
+      committing = true;
       await bounded(handle.iface.Commit(), 'Commit');
     } while (record.republishAgain && state.groups.get(handle.path) === record);
   } catch (err) {
@@ -335,8 +338,11 @@ async function republishGroup(record) {
     // expected and leaves nothing to repair.
     if (state.groups.get(handle.path) !== record) return;
     state.logger?.warn?.({ ...logCtx, err: err?.message || err }, '[mdns] entry group re-publish failed');
-    // A failed Reset or fill left the group empty and uncommitted: drop it, and
-    // mark its owner unpublished (group: null) so the next register recreates it.
+    // A timed-out Commit leaves a filled group whose Commit is still queued at
+    // the daemon: it publishes once avahi resumes, so keep it. A failed Reset or
+    // fill left the group empty and uncommitted: drop it, and mark its owner
+    // unpublished (group: null) so the next register recreates it.
+    if (committing) return;
     for (const owner of [...state.entries.values(), ...state.services.values()]) {
       if (owner.group === handle) owner.group = null;
     }
