@@ -92,11 +92,6 @@ work on app containers, but Jellyfin's next `appConfig` save replaces them with 
 devices. **Revisit trigger:** a manual device pick on an app container is lost on a config
 save.
 
-**Library upload name check races.** An upload checks `access()` and then writes, so two
-concurrent uploads of one name both pass and the later overwrites (no crash); downloads
-already reserve names with an exclusive create. **Revisit trigger:** two same-name uploads
-are seen colliding.
-
 **VM/container stores share one action slot.** `withAction` keeps one `actionLoading` /
 `error` per store, so an action still running on A disables B's buttons and can show A's
 error on B after a switch. **Revisit trigger:** a wrong-workload error or stuck-disabled

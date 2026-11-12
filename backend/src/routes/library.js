@@ -1,5 +1,4 @@
-import { readdir, stat, unlink, rename, access } from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
+import { readdir, stat, unlink, rename, access, open } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { randomBytes } from 'node:crypto';
@@ -130,20 +129,27 @@ export default async function libraryRoutes(fastify) {
 
       const destPath = join(dir, filename);
 
+      // Reserve the name with an exclusive create, as downloads do: a check
+      // then a write lets two same-name uploads both pass and clobber each
+      // other, and would follow a symlink planted at the name.
+      let handle;
       try {
-        await access(destPath);
-        reply.code(409).send({ error: 'File already exists', detail: `A file named "${filename}" already exists in the library` });
+        handle = await open(destPath, 'wx');
+      } catch (err) {
+        if (err.code === 'EEXIST') {
+          reply.code(409).send({ error: 'File already exists', detail: `A file named "${filename}" already exists in the library` });
+          return;
+        }
+        reply.code(500).send({ error: 'Upload failed', detail: err.message });
         return;
-      } catch {
-        /* destination free — proceed with upload */
       }
 
       // Stream to disk. fastify-multipart sets `data.file.truncated` when the
       // configured fileSize limit is exceeded; the pipeline still resolves
       // successfully, so we must check explicitly. On any failure path,
-      // unlink the partial file to avoid disk-fill DoS.
+      // unlink the partial file — this request created it — to avoid disk-fill DoS.
       try {
-        await pipeline(data.file, createWriteStream(destPath));
+        await pipeline(data.file, handle.createWriteStream());
       } catch (err) {
         await unlink(destPath).catch(() => { /* best-effort cleanup */ });
         reply.code(500).send({ error: 'Upload failed', detail: err.message });
