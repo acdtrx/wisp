@@ -129,10 +129,13 @@ const RECONNECT_MAX_MS = 30000;
 let reconnectDelayMs = RECONNECT_INITIAL_MS;
 let reconnectTimer = null;
 let reconnectAttempt = 0;
+/** Delay of the retry currently pending, for the failure log. */
+let scheduledDelayMs = null;
 
 function scheduleReconnect() {
   if (reconnectTimer) return;
   const delay = reconnectDelayMs;
+  scheduledDelayMs = delay;
   reconnectDelayMs = Math.min(reconnectDelayMs * 2, RECONNECT_MAX_MS);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
@@ -144,11 +147,11 @@ function scheduleReconnect() {
         clearReconnect();
       },
       (err) => {
+        // connect()'s own failure path has scheduled the next attempt.
         connectionState.logger?.warn?.(
-          { err: err?.message || String(err), attempt, retryInMs: reconnectDelayMs },
-          '[vmManager] libvirt reconnect failed, retrying',
+          { err: err?.message || String(err), attempt, retryInMs: reconnectTimer ? scheduledDelayMs : null },
+          reconnectTimer ? '[vmManager] libvirt reconnect failed, retrying' : '[vmManager] libvirt reconnect failed',
         );
-        scheduleReconnect();
       },
     );
   }, delay);
