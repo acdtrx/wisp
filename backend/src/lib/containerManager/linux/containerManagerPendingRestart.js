@@ -35,8 +35,8 @@ export async function setContainerPendingRestart(name, value) {
  * The restart-required rule: the flag still in force — `{ since }` or null.
  * `pid` is the task's init process (0 when there is no task). A flag the
  * task started after is no longer in force; a stopped container, or one whose
- * start time /proc can't tell, keeps its flag. Pure: reads apply it, and the
- * start drops the stored flag (`startExistingContainer`).
+ * start time /proc can't tell, keeps its flag. Writes nothing: reads apply it,
+ * and the start drops the stored flag (`startExistingContainer`).
  */
 export async function pendingRestartInForce(config, pid) {
   const flag = config.pendingRestart;

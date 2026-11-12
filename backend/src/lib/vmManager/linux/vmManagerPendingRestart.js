@@ -79,26 +79,29 @@ export function pendingRestartInForce(pendingRestart, startedAt) {
 
 /**
  * Drop the domain's stored flag when its QEMU started after `since`
- * (conditional on the flag still holding that `since`). Returns the VM name
- * when it cleared one, else null.
+ * (conditional on the flag still holding that `since`). Returns
+ * `{ vm, result }`, result one of `no flag`, `kept` (still in force) or
+ * `cleared`.
  */
 async function clearOutgrownRestartFlag(domPath) {
   const dom = parseDomainRaw(await getDomainXML(domPath, { inactive: true })).domain;
   if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
+  const vm = domainNameFromParsed(dom);
   const flag = getWispPendingRestart(dom);
-  if (!flag) return null;
-  const name = domainNameFromParsed(dom);
+  if (!flag) return { vm, result: 'no flag' };
   const { code } = await getDomainState(domPath);
-  const startedAt = isOfflineState(code) ? null : await getQemuStartTimeMs(name);
-  if (pendingRestartInForce(flag, startedAt)) return null;
+  const startedAt = isOfflineState(code) ? null : await getQemuStartTimeMs(vm);
+  if (pendingRestartInForce(flag, startedAt)) return { vm, result: 'kept', since: flag.since };
   const cleared = await writePendingRestart(domPath, null, { expectSince: flag.since });
-  return cleared ? name : null;
+  return { vm, result: cleared ? 'cleared' : 'kept', since: flag.since };
 }
 
 /**
  * Clear outgrown restart flags: of one domain (`domPath`), or of every domain.
  * Triggered by a STARTED DomainEvent and by each (re)connect — the connect
  * pass catches VMs started while Wisp was not connected (host-boot autostart).
+ * Logs every pass: one line per started VM, one summary per connect pass
+ * (plus a line per flag it clears).
  */
 async function clearOutgrownRestartFlags(trigger, domPath = null) {
   const log = connectionState.logger;
@@ -107,10 +110,11 @@ async function clearOutgrownRestartFlags(trigger, domPath = null) {
     let clearedCount = 0;
     for (const p of paths) {
       try {
-        const name = await clearOutgrownRestartFlag(p);
-        if (!name) continue;
-        clearedCount += 1;
-        log?.info?.({ vm: name, trigger }, '[vmManager] restart-required flag cleared: qemu started after it was set');
+        const outcome = await clearOutgrownRestartFlag(p);
+        if (outcome.result === 'cleared') clearedCount += 1;
+        if (domPath || outcome.result === 'cleared') {
+          log?.info?.({ ...outcome, trigger }, `[vmManager] restart-required flag check: ${outcome.result}`);
+        }
       } catch (err) {
         log?.warn?.({ domainPath: p, trigger, err: err?.message || err }, '[vmManager] failed to clear restart-required flag');
       }

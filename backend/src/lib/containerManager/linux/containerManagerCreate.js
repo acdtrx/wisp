@@ -543,16 +543,22 @@ async function persistStartOwnedFields(name, specConfig) {
  */
 async function settleRestartFlagAfterStart(name, specConfig, pid) {
   const latest = await readContainerConfig(name);
+  const since = latest.pendingRestart?.since;
+  let result;
   if (restartFieldsSignature(latest) !== restartFieldsSignature(specConfig)) {
     markPendingRestart(latest);
     await writeContainerConfig(name, latest);
-    return;
+    result = 'flagged: edit saved during the start';
+  } else if (!latest.pendingRestart) {
+    result = 'no flag';
+  } else if (await pendingRestartInForce(latest, pid)) {
+    result = 'kept';
+  } else {
+    delete latest.pendingRestart;
+    await writeContainerConfig(name, latest);
+    result = 'cleared';
   }
-  if (!latest.pendingRestart || await pendingRestartInForce(latest, pid)) return;
-  const { since } = latest.pendingRestart;
-  delete latest.pendingRestart;
-  await writeContainerConfig(name, latest);
-  containerState.logger?.info?.({ container: name, since }, '[containerManager] restart-required flag cleared: task started after it was set');
+  containerState.logger?.info?.({ container: name, trigger: 'start', since, result }, `[containerManager] restart-required flag check: ${result}`);
 }
 
 /**

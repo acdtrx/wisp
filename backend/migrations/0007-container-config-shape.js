@@ -85,7 +85,8 @@ export async function run(ctx) {
     const flag = running && needsRestart;
     ctx.recordChange(`${name}: ${changes.join('; ')}${flag ? ' (restart required)' : ''}`);
     if (ctx.dryRun) continue;
+    // The flag rides the same write as the change it is for.
+    if (flag) config.pendingRestart = { since: new Date().toISOString() };
     await cm.writeContainerConfig(name, config);
-    if (flag) await ctx.setContainerPendingRestart(name, true);
   }
 }
