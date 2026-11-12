@@ -391,7 +391,7 @@ export async function downloadAndStage(onProgress, signal) {
  */
 const INSTALL_CLAIM_MAX_MS = 600_000;
 
-/** When the current install was claimed (epoch ms), or null when none is in flight. */
+/** When the current install was claimed (monotonic ms, `performance.now()` — a wall-clock step can't skew the expiry), or null when none is in flight. */
 let installClaimedAt = null;
 
 /**
@@ -403,8 +403,8 @@ let installClaimedAt = null;
  * refused. A claim older than INSTALL_CLAIM_MAX_MS has expired.
  */
 export function claimUpdateInstall() {
-  if (installClaimedAt !== null && Date.now() - installClaimedAt < INSTALL_CLAIM_MAX_MS) return null;
-  const claimedAt = Date.now();
+  if (installClaimedAt !== null && performance.now() - installClaimedAt < INSTALL_CLAIM_MAX_MS) return null;
+  const claimedAt = performance.now();
   installClaimedAt = claimedAt;
   return () => {
     if (installClaimedAt === claimedAt) installClaimedAt = null;
