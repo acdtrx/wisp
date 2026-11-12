@@ -92,11 +92,6 @@ work on app containers, but Jellyfin's next `appConfig` save replaces them with 
 devices. **Revisit trigger:** a manual device pick on an app container is lost on a config
 save.
 
-**Removable disk mount state uses the first mount point.** `mountedAt` is the first
-`/proc/self/mounts` entry for the device, so a drive a desktop also automounted elsewhere
-can read as not mounted by Wisp. **Revisit trigger:** a drive shows unmounted while Wisp
-has it mounted.
-
 **Self-update install has no in-flight guard.** Two concurrent `POST /api/updates/install`
 (two tabs) both download, stage and trigger the updater. **Revisit trigger:** a doubled
 install request causes a failed or repeated update.

@@ -92,12 +92,26 @@ function parseUdevData(path) {
   return out;
 }
 
-/** Read the mount table once per snapshot and index by device path (first mount point wins). */
+/** Where Wisp mounts drives (settings' MOUNT_ROOT, the install's /mnt/wisp). */
+const WISP_MOUNT_ROOT = '/mnt/wisp';
+
+function isUnderWispMountRoot(mountPoint) {
+  return mountPoint.startsWith(`${WISP_MOUNT_ROOT}/`);
+}
+
+/**
+ * Read the mount table once per snapshot and index by device path. A device
+ * mounted at several points (Wisp's mount plus a desktop automount, a bind)
+ * reports the one under /mnt/wisp, else the first.
+ */
 function readMountsByDevice() {
   const map = new Map();
   for (const { source, mountPoint } of readMountTable()) {
     if (!source.startsWith('/dev/')) continue;
-    if (!map.has(source)) map.set(source, mountPoint);
+    const current = map.get(source);
+    if (current === undefined || (!isUnderWispMountRoot(current) && isUnderWispMountRoot(mountPoint))) {
+      map.set(source, mountPoint);
+    }
   }
   return map;
 }

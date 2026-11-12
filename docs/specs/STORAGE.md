@@ -47,7 +47,7 @@ See [CONFIGURATION.md](CONFIGURATION.md) for the full schema and validation rule
 1. List `/dev/disk/by-uuid/` — symlinks to underlying `/dev/sdXN` or `/dev/nvmeXnYpZ`.
 2. For each UUID, read `/sys/class/block/<name>/dev` to get `major:minor`, then parse `/run/udev/data/b<maj>:<min>` for `ID_FS_TYPE`, `ID_FS_LABEL`, etc.
 3. Read `/sys/class/block/<parent>/removable`, `/sys/class/block/<name>/size`, `/sys/class/block/<parent>/device/vendor`, `.../model`.
-4. Cross-reference the [mount table](#mount-table) for `mountedAt` (the device's first mount point).
+4. Cross-reference the [mount table](#mount-table) for `mountedAt`: the device's mount point under `/mnt/wisp` when it has one, else its first (settled 2026-11-12 — a drive Wisp mounted and a desktop also automounted elsewhere still reads as Wisp's).
 5. Filter out ignored filesystem types (`crypto_LUKS`, `linux_raid_member`, `LVM2_member`, `zfs_member`, `swap`).
 
 **Hotplug** is picked up via `fs.watch('/dev/disk/by-uuid/')` with a 300 ms debounce. Insertions, removals, and reformat (UUID change) all trigger re-enumeration.
