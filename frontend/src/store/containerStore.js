@@ -3,6 +3,7 @@ import * as containerApi from '../api/containers.js';
 import { createSSE } from '../api/sse.js';
 import { subscribeTopic } from '../api/events.js';
 import { subscribeJobProgress, JOB_KIND } from '../api/jobProgress.js';
+import { withWorkloadAction, anyActionInFlight } from './workloadActions.js';
 
 /** Same scheduled restart (or both none)? Compared by value — list pushes carry fresh objects. */
 function sameScheduledRestart(a, b) {
@@ -75,7 +76,8 @@ export const useContainerStore = create((set, get) => {
     containerConfig: null,
     containerStats: null,
     loading: false,
-    actionLoading: null,
+    /** Per-container action state (workloadActions.js); `error` is for list and select failures only. */
+    actions: {},
     error: null,
 
     imageUpdateCheck: {
@@ -95,7 +97,7 @@ export const useContainerStore = create((set, get) => {
         const containers = await containerApi.listContainers();
         set({ containers });
 
-        const { selectedContainer, containerConfig, loading, actionLoading } = get();
+        const { selectedContainer, containerConfig, loading, actions } = get();
         // Skip auto-deselect while a select or action is in flight — the
         // container may legitimately not be in the list yet (post-create
         // race). See vmStore for the symmetric fix and full reasoning.
@@ -103,7 +105,7 @@ export const useContainerStore = create((set, get) => {
           selectedContainer
           && !containers.find((c) => c.name === selectedContainer)
           && !loading
-          && !actionLoading
+          && !anyActionInFlight(actions)
         ) {
           get().deselectContainer();
         } else if (selectedContainer && containerConfig) {
@@ -133,7 +135,7 @@ export const useContainerStore = create((set, get) => {
             && data.length > 0
             && !data.find((c) => c.name === state.selectedContainer)
             && !state.loading
-            && !state.actionLoading
+            && !anyActionInFlight(state.actions)
           ) {
             get().deselectContainer();
           }
@@ -198,6 +200,7 @@ export const useContainerStore = create((set, get) => {
     },
 
     clearError: () => set({ error: null }),
+    clearActionError: (name) => set((s) => ({ actions: withWorkloadAction(s.actions, name, { action: null, error: null }) })),
 
     refreshSelectedContainer: async () => {
       const { selectedContainer } = get();
@@ -210,36 +213,39 @@ export const useContainerStore = create((set, get) => {
       } catch { /* Container may have been deleted */ }
     },
 
-    async withAction(actionName, fn) {
-      set({ actionLoading: actionName, error: null });
+    /** Run one action on container `name`, tracked in `actions[name]`. Only touches the selection when it is `name`. */
+    async withAction(name, actionName, fn) {
+      const track = (entry) => set((s) => ({ actions: withWorkloadAction(s.actions, name, entry) }));
+      track({ action: actionName, error: null });
       try {
         await fn();
-        set({ actionLoading: null });
+        track({ action: null, error: null });
         await get().fetchContainers();
+        if (get().selectedContainer !== name) return;
         if (actionName === 'delete') {
           get().deselectContainer();
         } else {
           await get().refreshSelectedContainer();
         }
       } catch (err) {
-        set({ actionLoading: null, error: err.message });
+        track({ action: null, error: err.message });
       }
     },
 
     startContainer: async (name) => {
-      await get().withAction('start', () => containerApi.startContainerApi(name));
+      await get().withAction(name, 'start', () => containerApi.startContainerApi(name));
     },
     stopContainer: async (name) => {
-      await get().withAction('stop', () => containerApi.stopContainerApi(name));
+      await get().withAction(name, 'stop', () => containerApi.stopContainerApi(name));
     },
     restartContainer: async (name) => {
-      await get().withAction('restart', () => containerApi.restartContainerApi(name));
+      await get().withAction(name, 'restart', () => containerApi.restartContainerApi(name));
     },
     killContainer: async (name) => {
-      await get().withAction('kill', () => containerApi.killContainerApi(name));
+      await get().withAction(name, 'kill', () => containerApi.killContainerApi(name));
     },
     deleteContainer: async (name, deleteFiles) => {
-      await get().withAction('delete', () => containerApi.deleteContainerApi(name, deleteFiles));
+      await get().withAction(name, 'delete', () => containerApi.deleteContainerApi(name, deleteFiles));
     },
 
     refreshImageUpdateStatus: async () => {

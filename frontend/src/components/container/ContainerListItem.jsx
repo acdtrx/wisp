@@ -19,7 +19,7 @@ export default function ContainerListItem({ container }) {
   const startContainer = useContainerStore((s) => s.startContainer);
   const stopContainer = useContainerStore((s) => s.stopContainer);
   const restartContainer = useContainerStore((s) => s.restartContainer);
-  const actionLoading = useContainerStore((s) => s.actionLoading);
+  const actionLoading = useContainerStore((s) => s.actions[container.name]?.action ?? null);
   const organizeMode = useUiStore((s) => s.organizeMode);
   const navigate = useNavigate();
 

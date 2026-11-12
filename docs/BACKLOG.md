@@ -92,11 +92,6 @@ work on app containers, but Jellyfin's next `appConfig` save replaces them with 
 devices. **Revisit trigger:** a manual device pick on an app container is lost on a config
 save.
 
-**VM/container stores share one action slot.** `withAction` keeps one `actionLoading` /
-`error` per store, so an action still running on A disables B's buttons and can show A's
-error on B after a switch. **Revisit trigger:** a wrong-workload error or stuck-disabled
-button is reported.
-
 **Change-password attempts are not rate-limited.** The route needs a session, so only a
 stolen session can brute-force the current password. **Revisit trigger:** login hardening
 is scheduled (pairs with the 2026-07-05 audit's M1/M2).

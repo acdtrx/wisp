@@ -23,7 +23,7 @@ export default function VMListItem({ vm }) {
   const startVM = useVmStore((s) => s.startVM);
   const stopVM = useVmStore((s) => s.stopVM);
   const rebootVM = useVmStore((s) => s.rebootVM);
-  const actionLoading = useVmStore((s) => s.actionLoading);
+  const actionLoading = useVmStore((s) => s.actions[vm.name]?.action ?? null);
   const organizeMode = useUiStore((s) => s.organizeMode);
   const navigate = useNavigate();
 

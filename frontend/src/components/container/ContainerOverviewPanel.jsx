@@ -54,9 +54,11 @@ function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default
 export default function ContainerOverviewPanel() {
   const config = useContainerStore((s) => s.containerConfig);
   const loading = useContainerStore((s) => s.loading);
-  const actionLoading = useContainerStore((s) => s.actionLoading);
+  const actionLoading = useContainerStore((s) => s.actions[s.selectedContainer]?.action ?? null);
+  const actionError = useContainerStore((s) => s.actions[s.selectedContainer]?.error ?? null);
   const error = useContainerStore((s) => s.error);
   const clearError = useContainerStore((s) => s.clearError);
+  const clearActionError = useContainerStore((s) => s.clearActionError);
   const startContainer = useContainerStore((s) => s.startContainer);
   const stopContainer = useContainerStore((s) => s.stopContainer);
   const killContainer = useContainerStore((s) => s.killContainer);
@@ -168,7 +170,7 @@ export default function ContainerOverviewPanel() {
   const handleDelete = async () => {
     setDeleteDialogOpen(false);
     await deleteContainer(name, deleteFiles);
-    if (!useContainerStore.getState().error) navigate('/host/overview');
+    if (!useContainerStore.getState().actions[name]?.error) navigate('/host/overview');
   };
 
   const handleOpenBackup = () => {
@@ -320,10 +322,10 @@ export default function ContainerOverviewPanel() {
         </div>
       </div>
 
-      {error && (
+      {(actionError || error) && (
         <div className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-status-stopped/30 bg-status-stopped-soft px-4 py-2 text-xs text-status-stopped">
-          <span className="min-w-0 flex-1">{error}</span>
-          <button type="button" onClick={clearError} className="shrink-0 rounded-sm p-1 hover:bg-status-stopped/20 transition-colors duration-150" title="Dismiss">
+          <span className="min-w-0 flex-1">{actionError || error}</span>
+          <button type="button" onClick={() => { clearActionError(name); clearError(); }} className="shrink-0 rounded-sm p-1 hover:bg-status-stopped/20 transition-colors duration-150" title="Dismiss">
             <X size={14} />
           </button>
         </div>

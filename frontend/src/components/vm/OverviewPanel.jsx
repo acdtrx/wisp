@@ -79,9 +79,11 @@ export default function OverviewPanel() {
   const vmConfig = useVmStore((s) => s.vmConfig);
   const vmStats = useVmStore((s) => s.vmStats);
   const configLoading = useVmStore((s) => s.configLoading);
-  const actionLoading = useVmStore((s) => s.actionLoading);
+  const actionLoading = useVmStore((s) => s.actions[s.selectedVM]?.action ?? null);
+  const actionError = useVmStore((s) => s.actions[s.selectedVM]?.error ?? null);
   const error = useVmStore((s) => s.error);
   const clearError = useVmStore((s) => s.clearError);
+  const clearActionError = useVmStore((s) => s.clearActionError);
   const startVM = useVmStore((s) => s.startVM);
   const stopVM = useVmStore((s) => s.stopVM);
   const forceStopVM = useVmStore((s) => s.forceStopVM);
@@ -177,7 +179,7 @@ export default function OverviewPanel() {
   const handleDelete = async () => {
     setDeleteDialogOpen(false);
     await deleteVM(name, deleteDisks);
-    if (!useVmStore.getState().error) navigate('/host/overview');
+    if (!useVmStore.getState().actions[name]?.error) navigate('/host/overview');
     // Do not reset deleteDisks here so the checkbox stays selected if delete fails and user retries
   };
 
@@ -332,12 +334,12 @@ export default function OverviewPanel() {
       </div>
 
       {/* Error display - visible in both tabs */}
-      {error && (
+      {(actionError || error) && (
         <div className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-status-stopped/30 bg-status-stopped-soft px-4 py-2 text-xs text-status-stopped">
-          <span className="min-w-0 flex-1">{error}</span>
+          <span className="min-w-0 flex-1">{actionError || error}</span>
           <button
             type="button"
-            onClick={clearError}
+            onClick={() => { clearActionError(name); clearError(); }}
             className="shrink-0 rounded-sm p-1 hover:bg-status-stopped/20 transition-colors duration-150"
             title="Dismiss"
             aria-label="Dismiss error"

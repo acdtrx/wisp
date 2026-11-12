@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import * as vmApi from '../api/vms.js';
 import { createSSE } from '../api/sse.js';
 import { subscribeTopic } from '../api/events.js';
+import { withWorkloadAction, anyActionInFlight } from './workloadActions.js';
 
 /**
  * The list feed refreshes on every libvirt domain event, so it carries the
@@ -79,7 +80,8 @@ export const useVmStore = create((set, get) => {
     vmConfig: null,
     vmStats: null,
     configLoading: false,
-    actionLoading: null,
+    /** Per-VM action state (workloadActions.js); `error` is for list and select failures only. */
+    actions: {},
     error: null,
 
     fetchVMs: async () => {
@@ -88,12 +90,12 @@ export const useVmStore = create((set, get) => {
         migrateSelectionIfRenamed(vms);
         set({ vms });
 
-        const { selectedVM, vmConfig, configLoading, actionLoading } = get();
+        const { selectedVM, vmConfig, configLoading, actions } = get();
         // Skip auto-deselect while a select or action is in flight — the VM may
         // legitimately not be in the list yet (post-create race) or be there
         // under its prior name (post-rename race). Subsequent SSE frames will
-        // deselect once configLoading/actionLoading clear if it's truly gone.
-        if (selectedVM && !vms.find(v => v.name === selectedVM) && !configLoading && !actionLoading) {
+        // deselect once configLoading and the actions clear if it is truly gone.
+        if (selectedVM && !vms.find(v => v.name === selectedVM) && !configLoading && !anyActionInFlight(actions)) {
           get().deselectVM();
         } else if (selectedVM && vmConfig) {
           const vm = vms.find(v => v.name === selectedVM);
@@ -123,7 +125,7 @@ export const useVmStore = create((set, get) => {
             state.selectedVM &&
             !data.find((v) => v.name === state.selectedVM) &&
             !state.configLoading &&
-            !state.actionLoading
+            !anyActionInFlight(state.actions)
           ) {
             get().deselectVM();
           }
@@ -173,6 +175,7 @@ export const useVmStore = create((set, get) => {
     },
 
     clearError: () => set({ error: null }),
+    clearActionError: (name) => set((s) => ({ actions: withWorkloadAction(s.actions, name, { action: null, error: null }) })),
 
     /**
      * Reload config for the current selection. Pass `newSelectedName` after a rename so the
@@ -206,42 +209,45 @@ export const useVmStore = create((set, get) => {
       }
     },
 
-    async withAction(actionName, fn) {
-      set({ actionLoading: actionName, error: null });
+    /** Run one action on VM `name`, tracked in `actions[name]`. Only touches the selection when it is `name`. */
+    async withAction(name, actionName, fn) {
+      const track = (entry) => set((s) => ({ actions: withWorkloadAction(s.actions, name, entry) }));
+      track({ action: actionName, error: null });
       try {
         await fn();
-        set({ actionLoading: null });
+        track({ action: null, error: null });
         await get().fetchVMs();
+        if (get().selectedVM !== name) return;
         if (actionName === 'delete') {
           get().deselectVM();
         } else {
           await get().refreshSelectedVM();
         }
       } catch (err) {
-        set({ actionLoading: null, error: err.message });
+        track({ action: null, error: err.message });
       }
     },
 
     startVM: async (name) => {
-      await get().withAction('start', () => vmApi.startVM(name));
+      await get().withAction(name, 'start', () => vmApi.startVM(name));
     },
     stopVM: async (name) => {
-      await get().withAction('stop', () => vmApi.stopVM(name));
+      await get().withAction(name, 'stop', () => vmApi.stopVM(name));
     },
     forceStopVM: async (name) => {
-      await get().withAction('force-stop', () => vmApi.forceStopVM(name));
+      await get().withAction(name, 'force-stop', () => vmApi.forceStopVM(name));
     },
     rebootVM: async (name) => {
-      await get().withAction('reboot', () => vmApi.rebootVM(name));
+      await get().withAction(name, 'reboot', () => vmApi.rebootVM(name));
     },
     suspendVM: async (name) => {
-      await get().withAction('suspend', () => vmApi.suspendVM(name));
+      await get().withAction(name, 'suspend', () => vmApi.suspendVM(name));
     },
     resumeVM: async (name) => {
-      await get().withAction('resume', () => vmApi.resumeVM(name));
+      await get().withAction(name, 'resume', () => vmApi.resumeVM(name));
     },
     deleteVM: async (name, deleteDisks) => {
-      await get().withAction('delete', () => vmApi.deleteVM(name, deleteDisks));
+      await get().withAction(name, 'delete', () => vmApi.deleteVM(name, deleteDisks));
     },
   };
 });
