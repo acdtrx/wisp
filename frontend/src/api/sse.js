@@ -202,6 +202,11 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
   };
 }
 
+/**
+ * Live-data SSE: reconnects with backoff until closed. A 401 sends the user to
+ * sign in; a 404 — the stream's subject is gone — stops it for good and calls
+ * `onError('not_found')`. Every other failure calls `onError()` and retries.
+ */
 export function createSSE(url, onMessage, onError) {
   let retryDelay = SSE_INITIAL_RETRY_MS;
   let retryTimer = null;
@@ -242,6 +247,16 @@ export function createSSE(url, onMessage, onError) {
       if (res.status === 401) {
         broadcastLogout();
         window.location.href = '/login';
+        return;
+      }
+
+      // The stream's subject is gone (a deleted workload's logs): retrying can't
+      // bring it back. Stop, as job streams do, and say why.
+      if (res.status === 404) {
+        closed = true;
+        clearRetry();
+        detachResync();
+        onError?.('not_found');
         return;
       }
 

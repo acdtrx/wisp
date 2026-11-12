@@ -140,7 +140,8 @@ stream to the client (Transport) subscribes like any other consumer.
   every 25 s; the client re-arms a 60 s read watchdog on every chunk and reconnects with
   backoff when it fires. A frozen page can't run its watchdog, so every stream also
   resyncs on `visibilitychange → visible` and on `online` when it has had no bytes for
-  longer than the keepalive. A 401 sends the user to sign in.
+  longer than the keepalive. A 401 sends the user to sign in; a 404 (the stream's subject
+  is gone, e.g. a deleted container's logs) stops the stream instead of retrying.
 - **Commands are REST calls under `/api`**; the state they change also reaches every
   client through the stream.
 - **Consoles are WebSockets under `/ws`**: VNC bridges the browser to QEMU's VNC port over

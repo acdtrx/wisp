@@ -146,10 +146,6 @@ until the next start. **Revisit trigger:** a run is seen open for a stopped cont
 check now rejects them (422 `PATH_NOT_ALLOWED`), but the picker still offers them.
 **Revisit trigger:** a symlinked library entry is picked and refused.
 
-**Live-data SSE retries a 404 forever.** `createSSE` treats a 404 like a dropped
-connection and backs off indefinitely (job streams stop on 404). **Revisit trigger:** a
-stream for a deleted workload is seen retrying.
-
 **Reload failure detail may echo secrets.** `APP_RELOAD_FAILED` carries the app's error
 lines verbatim to the UI and MCP; an app that prints a token in its error would surface it
 (unconfirmed). **Revisit trigger:** a reload error is seen carrying a secret value.
