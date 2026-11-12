@@ -60,6 +60,7 @@ function mappedErrorStatus(code) {
     case 'INVALID_PASSWORD':
     case 'INVALID_OIDC':
     case 'INVALID_BACKUP_SCHEDULE':
+    case 'INVALID_SETTINGS':
     case 'TOKEN_INVALID':
     case 'BACKUP_DEST_UNKNOWN':
     case 'BACKUP_DEST_NONE':
@@ -82,6 +83,7 @@ function mappedErrorStatus(code) {
     case 'NO_CONTAINERD':
     case 'NO_PASSWORD_CONFIGURED':
     case 'PASSWORD_FILE_UNSUPPORTED_FORMAT':
+    case 'PASSWORD_FILE_UNREADABLE':
       return 503;
     case 'CONTAINER_MOUNT_SECRET':
     case 'OIDC_SESSION_ONLY':

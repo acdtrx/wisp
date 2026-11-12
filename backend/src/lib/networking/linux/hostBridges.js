@@ -48,6 +48,20 @@ export async function getDefaultContainerParentBridge() {
 }
 
 /**
+ * Startup check of WISP_DEFAULT_BRIDGE (CODING-RULES §4): the problem when it
+ * names no host bridge, else null — so getDefaultBridge never hands out a
+ * bridge that isn't there.
+ */
+export async function checkDefaultBridgeOverride() {
+  const envBridge = process.env.WISP_DEFAULT_BRIDGE?.trim();
+  if (!envBridge) return null;
+  const bridges = await listHostBridges();
+  return bridges.includes(envBridge)
+    ? null
+    : `WISP_DEFAULT_BRIDGE: no host bridge named "${envBridge}" (bridges: ${bridges.join(', ') || 'none'})`;
+}
+
+/**
  * Default bridge for new VMs: WISP_DEFAULT_BRIDGE env, or first non-virbr bridge, or virbr0.
  */
 export async function getDefaultBridge() {

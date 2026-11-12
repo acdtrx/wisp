@@ -18,6 +18,7 @@ export { isVlanLikeBridgeName } from './bridgeNaming.js';
 
 export const listHostBridges = hostImpl.listHostBridges;
 export const getDefaultBridge = hostImpl.getDefaultBridge;
+export const checkDefaultBridgeOverride = hostImpl.checkDefaultBridgeOverride;
 export const getDefaultContainerParentBridge = hostImpl.getDefaultContainerParentBridge;
 export const ipv4CidrFromProcFibTrie = hostImpl.ipv4CidrFromProcFibTrie;
 export const ipv6GlobalCidrFromProcIfInet6 = hostImpl.ipv6GlobalCidrFromProcIfInet6;

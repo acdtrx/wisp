@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { createAppError } from './routeErrors.js';
+import { validName } from './configSchema.js';
 import { withSettingsWriteLock, MAIN_SECTION_ID, getSettings } from './settings.js';
 
-const MAX_NAME = 64;
 const VALID_TYPES = new Set(['vm', 'container']);
 
 /** Notified after every successful sections/assignments write. Sections are the one
@@ -29,13 +29,6 @@ async function commitSections(mutate) {
 
 function assignmentKey(type, name) {
   return `${type}:${name}`;
-}
-
-function validName(raw) {
-  if (typeof raw !== 'string') return null;
-  const name = raw.trim();
-  if (!name || name.length > MAX_NAME) return null;
-  return name;
 }
 
 /**

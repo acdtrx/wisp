@@ -9,7 +9,9 @@ import fastifyWebsocket from '@fastify/websocket';
 
 // First project import: runtime.env must be in process.env before config.js loads.
 import './lib/bootRuntimeEnv.js';
-import { createAuthHook, createRouteAccessRegistry, checkRouteAccess, AUTH_LEVELS } from './lib/auth.js';
+import {
+  createAuthHook, createRouteAccessRegistry, checkRouteAccess, AUTH_LEVELS, checkPasswordFile,
+} from './lib/auth.js';
 import { handleUncaughtError } from './lib/routeErrors.js';
 import { getConfigSync } from './lib/config.js';
 import { configureManagers, connectManagers, disconnectManagers } from './lib/managerBootstrap.js';
@@ -47,7 +49,7 @@ import { startUpdateChecker as startWispUpdateChecker, stopUpdateChecker as stop
 import { closeAllSSE } from './lib/sse.js';
 import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/storage/index.js';
 import { connect as connectMdns, disconnect as disconnectMdns } from './lib/mdns/index.js';
-import { getDefaultContainerParentBridge } from './lib/networking/index.js';
+import { checkDefaultBridgeOverride, getDefaultContainerParentBridge } from './lib/networking/index.js';
 import { startVmMdnsReconciler, stopVmMdnsReconciler } from './lib/vmMdnsReconciler.js';
 import { startContainerMdnsReconciler, stopContainerMdnsReconciler } from './lib/containerMdnsReconciler.js';
 import { startWispDiscovery, stopWispDiscovery } from './lib/wispDiscovery.js';
@@ -55,11 +57,22 @@ import { startWispDiscovery, stopWispDiscovery } from './lib/wispDiscovery.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, '..', '..');
 
+/* Config is read strictly (CODING-RULES §4): an invalid wisp-config.json or an
+   unusable wisp-password stops the boot here, naming the problem, before any
+   module reads them. runtime.env was checked as it loaded (bootRuntimeEnv.js). */
+try {
+  getConfigSync();
+  checkPasswordFile();
+} catch (err) {
+  console.error(`Failed to start: ${err.message}`);
+  process.exit(1);
+}
+
 /* Configure the managers before any route registers or any manager-internal
    code runs (lib/managerBootstrap.js — shared with scripts/migrate.mjs). */
 configureManagers();
 
-const PORT = parseInt(process.env.WISP_PORT, 10) || 8080;
+const PORT = process.env.WISP_PORT ? Number(process.env.WISP_PORT) : 8080;
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -335,6 +348,9 @@ async function start() {
   // route without an access declaration; production enforces it as admin.
   await app.ready();
   checkRouteAccess(routeAccess.list(), { strict: isDev, log: app.log });
+
+  const bridgeProblem = await checkDefaultBridgeOverride();
+  if (bridgeProblem) throw new Error(bridgeProblem);
 
   await cleanPartialJsonArtifacts(app.log);
 

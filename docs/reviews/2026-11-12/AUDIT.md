@@ -40,12 +40,17 @@ is never validated at startup.
   `CONFIG_INVALID` naming the key on an unknown key, a wrong type or invalid JSON; run it once
   in `index.js` before `configureManagers()` and exit on failure. A missing file still means
   defaults. — **clear**
+  **Fixed:** `lib/configSchema.js` is the one schema; `getConfigSync` and
+  `readSettingsFile` parse through it, and `index.js` reads it before anything else,
+  exiting with the message (e.g. `wisp-config.json → backupSchedule.time: …`). The
+  migration runner refuses to run on an invalid file.
 - **CFG-2** — `be/lib/config.js:44-62` (`parseTrustedProxies`) skips an invalid entry with a
   warning, deliberately ("a typo must not crash-loop the systemd service";
   `docs/specs/CONFIGURATION.md:147`). A dropped entry silently changes cookie `Secure` and the
   rate-limit key. — **decision.** *Recommendation:* fail at startup like every other key: the
   field is hand-edited, read at startup, and a crash-loop is visible (`systemctl status`; on
   update the health check fails and the updater rolls back, `backend/scripts/wisp-updater:84-105`).
+  **Fixed:** an invalid entry fails startup, naming it; CONFIGURATION.md reworded.
 - **CFG-3** — `be/lib/settings.js:322-387` (`readSettingsFile`, uncached: every
   `getSettings`, bearer-token check `be/lib/apiTokens.js:70`, OIDC routes, scheduler ticks,
   auto-mount retries) normalizes instead of rejecting: `backupSchedule`
@@ -59,44 +64,66 @@ is never validated at startup.
   next UI save** (`persistSettings :649-699` writes only known keys).
   *Fix:* validate with the CFG-1 schema at startup (fail to boot); on later reads, parse the
   same schema and throw rather than normalize. — **clear**
+  **Fixed:** every key is checked strictly on every read; unknown keys at any level are
+  rejected, so none survives to be dropped by a save.
 - **CFG-4** — same reader: dangling references left by a legitimate UI delete (a
   `backupMountId` / `backupSchedule.destinationIds` naming a removed mount, an assignment to a
   deleted section) are dropped silently. — **decision.** *Recommendation:* these aren't typos:
   keep them self-healing, and make the deletes cascade so they don't arise (`removeMount`
   `:862-875` already clears `backupMountId`; also prune `destinationIds`).
+  **Fixed:** those three still heal on read; every write goes through the read's parse, so
+  deleting a mount drops it from `backupSchedule.destinationIds` in the file.
 - **CFG-5** — values the UI itself wrote that a stricter read would reject. —
   **decision.** *Recommendation:* they block boot like a hand edit: make the write-side
   validators (`backupSchedule :225-264`, `oidc :546-565`, `advertisedUrl :525-544`) the single
   schema the read uses, so the two sides can't drift and a UI write can't produce a
   boot-blocking file.
+  **Fixed:** the write paths use the schema's field checks (`checkBackupScheduleField`,
+  `checkOidc`, `checkAdvertisedUrl`, `checkMountPath`, the name/URL checks), and
+  `persistSettings` writes only what `parseWispConfig` accepts.
 - **CFG-6** — `be/lib/settings.js:576-625` (`buildUpdatedSettings`) coerces on write: a bad
   path or `updateChannel` → default, a bad `backupMountId` → `null` (`:588`). *Fix:* reject with
   422 through the same schema. — **clear**
+  **Fixed:** `buildUpdatedSettings` answers 422 `INVALID_SETTINGS` for a relative path, an
+  unknown `backupMountId`, a bad `updateChannel`; `mergeOidc` no longer silently disables
+  an incomplete enabled config (422 `INVALID_OIDC`).
 - **CFG-7** — `config/wisp-config.json.example:2` ships a `_comment` key, which
   `scripts/linux/setup/config.sh:46` deletes on install and `persistSettings` drops; a strict
   reader would reject a hand-copied example. *Fix:* allow `_comment` in the schema (or drop it
   from the example). — **clear**
+  **Fixed:** `_comment` (a string) is allowed and never written back.
 - **CFG-8** — `be/lib/loadRuntimeEnv.js:31-43`: a malformed line (no `=`, `export X=1`) is
   skipped silently (`:35`); unknown keys are loaded with no word. systemd's `EnvironmentFile=`
   reads the same file, so non-Wisp variables may legitimately be there. — **decision.**
   *Recommendation:* throw on a line that doesn't parse; reject an unknown `WISP_*` key (against
   the list the code reads); leave other keys alone.
+  **Fixed:** malformed lines, a key set twice and unknown `WISP_*` keys throw, naming the
+  line; other keys are left alone.
 - **CFG-9** — `be/index.js:62`: `parseInt(WISP_PORT) || 8080` turns `abc` into 8080 and `80x`
   into 80; `backend/scripts/wisp-updater:94-96`, `scripts/linux/wispctl.sh:11-19,31` and
   `scripts/linux/install.sh:174-175` repeat the coercion. *Fix:* `/^\d+$/`, 1–65535, else exit;
   the scripts share the same check. — **clear**
+  **Fixed:** digits, 1–65535, else startup fails; `wisp-updater`, `wispctl.sh` and
+  `install.sh` apply the same check.
 - **CFG-10** — other environment read without validation: `WISP_DEFAULT_BRIDGE`
   (`be/lib/networking/linux/hostBridges.js:20-21,54-55`, a nonexistent bridge ignored in one
   place and used blindly in the other), the `*_SCRIPT` overrides and `WISP_CNI_*_DIR` (fail at
   use). *Fix:* validate in the CFG-8 env schema at startup. — **clear**
+  **Fixed:** `checkRuntimeEnv` checks every `WISP_*` value at startup (paths absolute,
+  scripts executable, origins, repo, flag); `WISP_DEFAULT_BRIDGE` must name a host bridge
+  (networking `checkDefaultBridgeOverride`, Linux).
 - **CFG-11** — `be/lib/auth.js:28-54`: `config/wisp-password` is format-strict but read lazily
   on every sign/verify/login, never at startup, though its comment (`:26`) says the backend
   refuses to start; an unreadable file means "not configured" (`:31-35`). *Fix:* read it once
   in startup; EACCES is fatal. — **clear**
+  **Fixed, with one difference:** checked at startup (EACCES or a bad format is fatal) and
+  an unreadable file is an error, not "not configured" — but still read on each use rather
+  than once, so `wispctl password` (which restarts nothing) applies live.
 - **CFG-12** — doc drift: `docs/specs/CONFIGURATION.md:13-25` lists env vars but not
   `WISP_ALLOWED_WS_ORIGINS`, `WISP_CONTAINERD_SOCK`, `WISP_CNI_BIN_DIR`, `WISP_CNI_CONF_DIR`,
   `WISP_UPDATE_REPO`, `WISP_ROUTE_ACCESS_REPORT`. *Fix:* add them with the CFG-8 list. —
   **clear**
+  **Fixed:** the six variables are in the table.
 
 Fine as is: `config/migrations.json` (`backend/scripts/migrate.mjs:105-125` already exits 2 on
 a malformed ledger; machine-written). `config/backup-status.json` (`be/lib/backupStatus.js:31-45`)
@@ -217,6 +244,8 @@ connect 10 s, headers 300 s, body 300 s *between chunks* — "implicit" below.
   and killing dpkg midway leaves it interrupted. — **decision.** *Recommendation:* replace the
   cap with an apt-output stall watchdog (e.g. 15 min without output), or run the upgrade as
   its own systemd unit as the self-update does.
+  **Backlogged:** stays as it is, under the backlog entry "OS upgrade runs inside
+  wisp.service" (settled 2026-11-12).
 - **TMO-5** — small HTTP calls on implicit defaults: `downloadHaos.js:29`,
   `routes/cloudinit.js:152` (holds a request handler up to 300 s), checkUrl
   `downloadFromUrl.js:257`. *Fix:* `AbortSignal.timeout(10–15 s)`. — **clear**

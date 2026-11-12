@@ -29,6 +29,13 @@ SERVICE_UNIT="wisp"
 set_env_vars() {
   normalize_runtime_env
   WISP_PORT="$(read_env WISP_PORT 8080)"
+  WISP_PORT="${WISP_PORT#[\"\']}"
+  WISP_PORT="${WISP_PORT%[\"\']}"
+  # As the backend checks it (loadRuntimeEnv.js): digits, 1-65535.
+  if ! [[ "$WISP_PORT" =~ ^[0-9]+$ ]] || (( 10#$WISP_PORT < 1 || 10#$WISP_PORT > 65535 )); then
+    echo "error: WISP_PORT in $RUNTIME_ENV is not a port number (1-65535): $WISP_PORT" >&2
+    exit 1
+  fi
 }
 
 PID_DIR="$PROJECT_DIR/.pids"

@@ -10,10 +10,8 @@
  */
 import { randomUUID } from 'node:crypto';
 import { createAppError } from './routeErrors.js';
+import { MAX_NAME, validName, validTileId, validTileUrl as validUrl } from './configSchema.js';
 import { withSettingsWriteLock, getRawHomepage, UNGROUPED_GROUP_ID } from './settings.js';
-
-const MAX_NAME = 64;
-const MAX_URL = 2048;
 
 export { UNGROUPED_GROUP_ID };
 
@@ -38,39 +36,6 @@ async function commitHomepage(mutate) {
     return { ...fromFile, homepage: mutate(homepage) };
   });
   for (const handler of homepageChangeHandlers) handler();
-}
-
-function validName(raw) {
-  if (typeof raw !== 'string') return null;
-  const name = raw.trim();
-  if (!name || name.length > MAX_NAME) return null;
-  return name;
-}
-
-/**
- * Accept only absolute http/https URLs. Tiles are rendered as links the user
- * clicks, so anything else (javascript:, data:, a bare hostname) is refused at
- * the API boundary rather than sanitized later (CODING-RULES §9).
- */
-function validUrl(raw) {
-  if (typeof raw !== 'string') return null;
-  const trimmed = raw.trim();
-  if (!trimmed || trimmed.length > MAX_URL) return null;
-  let parsed;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-  return trimmed;
-}
-
-function validTileId(raw) {
-  if (typeof raw !== 'string') return null;
-  const id = raw.trim();
-  if (!id || id.length > MAX_URL) return null;
-  return id;
 }
 
 /** The persisted overlay: `{ groups, overrides, manualTiles }`. */

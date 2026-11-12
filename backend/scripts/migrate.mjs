@@ -22,7 +22,7 @@ import { parseArgs } from 'node:util';
 
 import Fastify from 'fastify';
 
-import { loadRuntimeEnv } from '../src/lib/loadRuntimeEnv.js';
+import { checkRuntimeEnv, loadRuntimeEnv } from '../src/lib/loadRuntimeEnv.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..', '..');
@@ -32,7 +32,13 @@ const PROJECT_ROOT = resolve(__dirname, '..', '..');
 // containerManager its socket path. Static imports would evaluate them first.
 // Under systemd the backend gets runtime.env from EnvironmentFile=; this script
 // runs from common-steps.sh / install.sh, which pass no environment.
-loadRuntimeEnv(PROJECT_ROOT);
+try {
+  loadRuntimeEnv(PROJECT_ROOT);
+  checkRuntimeEnv();
+} catch (err) {
+  console.error(`migrate: ${err.message}`);
+  process.exit(2);
+}
 
 const { writeJsonAtomic } = await import('../src/lib/atomicJson.js');
 const { CONFIG_PATH, getConfigSync } = await import('../src/lib/config.js');
@@ -247,6 +253,13 @@ async function main() {
   if (args.list) {
     printList(migrations, ledger);
     return 0;
+  }
+
+  // The config the migrations read must parse, as it must for the backend to boot.
+  try {
+    getConfigSync();
+  } catch (err) {
+    throw new SetupError(err.message);
   }
 
   const log = createLogger();

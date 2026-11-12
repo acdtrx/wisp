@@ -86,15 +86,23 @@ HEALTH_TIMEOUT_SEC=90
 HEALTH_PATH=/api/auth/oidc/status
 
 # The port wisp.service listens on: WISP_PORT from config/runtime.env (its
-# EnvironmentFile=, where the last assignment wins), else the backend's default.
+# EnvironmentFile=), else the backend's default. Checked as the backend checks
+# it (loadRuntimeEnv.js): digits, 1–65535, quotes optional; anything else fails.
 service_port() {
   local env_file="$INSTALL_DIR/config/runtime.env" value=""
   if [[ -f "$env_file" ]]; then
-    # Leading digits of the value, quotes optional — as the backend's parseInt.
-    value="$(sed -n -E "s/^[[:space:]]*WISP_PORT=[[:space:]]*[\"']?([0-9]*).*/\1/p" "$env_file" | tail -n 1)"
+    value="$(sed -n -E 's/^[[:space:]]*WISP_PORT=(.*)$/\1/p' "$env_file" | tail -n 1 | tr -d '\r')"
+    value="${value#[\"\']}"
+    value="${value%[\"\']}"
   fi
-  [[ "$value" =~ ^[1-9][0-9]*$ ]] || value=8080
-  echo "$value"
+  if [[ -z "$value" ]]; then
+    echo 8080
+  elif [[ "$value" =~ ^[0-9]+$ ]] && (( 10#$value >= 1 && 10#$value <= 65535 )); then
+    echo "$((10#$value))"
+  else
+    echo "error: WISP_PORT in $env_file is not a port number (1-65535): $value" >&2
+    return 1
+  fi
 }
 
 # Polls until the unit is active AND the local API answers — `systemctl start`
@@ -102,8 +110,9 @@ service_port() {
 # at boot only shows up as Restart=on-failure cycling. Polling, because the unit
 # sends no readiness signal.
 wait_for_healthy() {
-  local url state http_err deadline=$((SECONDS + HEALTH_TIMEOUT_SEC))
-  url="http://127.0.0.1:$(service_port)$HEALTH_PATH"
+  local url port state http_err deadline=$((SECONDS + HEALTH_TIMEOUT_SEC))
+  port="$(service_port)" || return 1
+  url="http://127.0.0.1:${port}$HEALTH_PATH"
   while :; do
     http_err=""
     state="$(systemctl is-active "$SERVICE_UNIT" 2>/dev/null)"

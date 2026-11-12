@@ -21,18 +21,20 @@ const SESSION_REFRESH_AFTER_SECONDS = 3600;
 
 /**
  * Read config/wisp-password content. Returns { salt, key } for hashed
- * (scrypt:salt_hex:key_hex). Returns null when the file is missing or empty.
- * Throws when the file exists but is not in the expected scrypt form — the
- * backend refuses to start in that case (run `wispctl password` to repair).
+ * (scrypt:salt_hex:key_hex). Returns null when the file is missing or empty
+ * (not configured yet: login reports it). Throws when the file can't be read or
+ * is not in the expected scrypt form — `checkPasswordFile` runs this at startup,
+ * so the backend refuses to start in that case (run `wispctl password` to repair).
+ * Read on every use rather than cached, so `wispctl password` applies without a
+ * restart.
  */
 function readPasswordFile() {
   if (!existsSync(PASSWORD_FILE)) return null;
   let raw;
   try {
     raw = readFileSync(PASSWORD_FILE, 'utf8').trim();
-  } catch {
-    /* unreadable password file — treat as not configured */
-    return null;
+  } catch (err) {
+    throw createAppError('PASSWORD_FILE_UNREADABLE', `wisp-password can't be read: ${err.message}`);
   }
   if (!raw) return null;
   if (!raw.startsWith('scrypt:')) {
@@ -51,6 +53,11 @@ function readPasswordFile() {
     throw createAppError('PASSWORD_FILE_UNSUPPORTED_FORMAT', 'wisp-password file has the wrong scrypt parameters');
   }
   return { salt, key };
+}
+
+/** Startup check of config/wisp-password: throws when it exists but can't be used. */
+export function checkPasswordFile() {
+  readPasswordFile();
 }
 
 function getSecret() {

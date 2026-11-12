@@ -116,7 +116,7 @@ export default async function settingsRoutes(fastify) {
       } catch (err) {
         // Only the validation codes take the 422 path — Node fs errors also
         // carry a truthy `code` (EACCES, ENOSPC) and must keep the generic 500.
-        if (err?.code === 'INVALID_URL' || err?.code === 'INVALID_BACKUP_SCHEDULE') {
+        if (['INVALID_URL', 'INVALID_BACKUP_SCHEDULE', 'INVALID_SETTINGS'].includes(err?.code)) {
           handleRouteError(err, reply, request);
           return;
         }

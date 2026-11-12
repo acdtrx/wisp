@@ -38,6 +38,9 @@
 - **A hung avahi no longer stalls mDNS or the restart policy** — avahi calls give up after 5 s, and a crashed container restarts on time.
 - **Backup completion no longer reveals the host path.**
 - **Library symlinks can't point a VM outside the allowed folders** — disk and ISO paths are checked after following symlinks.
+- **A config typo stops the start instead of becoming a default** — an unknown key, a wrong type, an invalid value or invalid JSON in `wisp-config.json`, a bad `runtime.env` line or `WISP_*` value, an unreadable `wisp-password`, or a `WISP_DEFAULT_BRIDGE` naming no bridge fails startup with a message naming it; invalid `trustedProxies` entries are no longer skipped.
+- **Settings refuse invalid values** — a relative path, an unknown backup mount or an incomplete enabled single sign-on answers 422 instead of being saved as a default or silently disabled.
+- **Deleting the backup mount clears it from the backup schedule.**
 
 ## 2026-10-30 (v2.6.0)
 

@@ -10,17 +10,25 @@ On a new server, run `./scripts/install.sh` from the unpacked release (slim zip 
 
 If this file exists, the backend parses `KEY=value` lines (comments and blank lines ignored) **only for keys not already set** in the process environment. Systemd uses `EnvironmentFile=-<install>/config/runtime.env` (leading `-` means the file may be absent).
 
+**Read strictly** (settled 2026-11-12, CODING-RULES §4): startup fails, naming the line or key, on a line that isn't `KEY=value` (an `export` prefix included), a key set twice, a `WISP_*` key not in the table below, or a `WISP_*` value that fails its check. Keys outside `WISP_*` are left alone — systemd shares the file. An empty value means unset. The migration runner applies the same checks. `wispctl`, `install.sh` and `wisp-updater` check `WISP_PORT` the same way.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WISP_PORT` | `8080` | Port the Wisp server listens on (serves both API and SPA). |
-| `WISP_DEFAULT_BRIDGE` | (unset) | Override default bridge for new VM NICs; backend auto-detects if unset. |
+| `WISP_PORT` | `8080` | Port the Wisp server listens on (serves both API and SPA). Digits, 1–65535. |
+| `WISP_DEFAULT_BRIDGE` | (unset) | Override default bridge for new VM NICs; backend auto-detects if unset. Must name an existing host bridge, checked at startup (Linux). |
 | `GITHUB_TOKEN` | (unset) | Optional; some download flows in the backend. |
-| `WISP_POWER_SCRIPT` | (unset) | Path to `wisp-power` helper. If unset, backend uses first existing path: `/usr/local/bin/wisp-power` (after `setup-server.sh`), then bundled `<install>/backend/scripts/wisp-power`. |
+| `WISP_POWER_SCRIPT` | (unset) | Path to `wisp-power` helper (each `*_SCRIPT` override must be an absolute path to an executable file). If unset, backend uses first existing path: `/usr/local/bin/wisp-power` (after `setup-server.sh`), then bundled `<install>/backend/scripts/wisp-power`. |
 | `WISP_DMIDECODE_SCRIPT` | (unset) | Path to RAM info helper. If unset, backend uses first existing path: `/usr/local/bin/wisp-dmidecode` (after `setup-server.sh`), then bundled `<install>/backend/scripts/wisp-dmidecode`. |
 | `WISP_SMARTCTL_SCRIPT` | (unset) | Path to `wisp-smartctl` helper for disk SMART. If unset: `/usr/local/bin/wisp-smartctl`, then bundled `backend/scripts/wisp-smartctl`. Same sudoers pattern as `wisp-dmidecode`. |
 | `WISP_NETNS_SCRIPT` | (unset) | Path to `wisp-netns` helper (`add`/`delete` + `ip netns`). If unset: `/usr/local/bin/wisp-netns` (installed by install-helpers, which also grants the deploy user `sudo -n`); with no helper, netns add/delete fall back to plain `ip netns` (works only when the backend runs as root). |
 | `WISP_CNI_SCRIPT` | (unset) | Path to `wisp-cni` helper (runs a CNI plugin with config file). If unset: `/usr/local/bin/wisp-cni`; with no helper the plugin under `/opt/cni/bin` is executed directly. Same sudoers pattern as `wisp-netns`. |
-| `WISP_CONFIG_PATH` | (unset) | Override path for `wisp-config.json`; default `<project>/config/wisp-config.json`. |
+| `WISP_CONFIG_PATH` | (unset) | Override path for `wisp-config.json`; default `<project>/config/wisp-config.json`. Absolute. |
+| `WISP_CONTAINERD_SOCK` | `/run/containerd/containerd.sock` | containerd's gRPC socket. Absolute. |
+| `WISP_CNI_BIN_DIR` | `/opt/cni/bin` | CNI plugin directory. Absolute. |
+| `WISP_CNI_CONF_DIR` | `/etc/cni/net.d` | CNI network config directory. Absolute. |
+| `WISP_ALLOWED_WS_ORIGINS` | (unset) | Comma-separated origins (`scheme://host[:port]`) allowed to open console WebSockets besides the same origin. |
+| `WISP_UPDATE_REPO` | `acdtrx/wisp` | GitHub `<owner>/<repo>` that self-update checks for releases. |
+| `WISP_ROUTE_ACCESS_REPORT` | (unset) | `1` prints the route access table and exits (`npm run route-access`); `0` or unset boots normally. |
 | `NODE_ENV` | (unset) | `development` enables CORS for `localhost:5173`. |
 
 Shipped template: `config/runtime.env.example` (copy to `runtime.env` if you need overrides).
@@ -46,14 +54,14 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 | `containersPath` | `string` | `/var/lib/wisp/containers` | Container storage root (absolute). |
 | `mounts` | `array` | `[]` | Configured mounts (see object shape below). Includes SMB shares and adopted removable drives. |
 | `backupMountId` | `string \| null` | `null` | Optional `id` of a `mounts` entry to expose as a backup destination in the UI. |
-| `backupSchedule` | `object` | `{ enabled: false, time: "03:00", destinationIds: ["local"], retainDays: 7, retainWeeks: 4 }` | Daily scheduled container backups. `time` is `HH:MM` (24h, host-local); `destinationIds` is a non-empty subset of `'local'` + `backupMountId`; `retainDays` 1–365; `retainWeeks` 0–52. Invalid persisted values fall back to defaults on read; stale mount ids are dropped from `destinationIds`. See [BACKUPS.md → Scheduled backups](BACKUPS.md#scheduled-backups). |
+| `backupSchedule` | `object` | `{ enabled: false, time: "03:00", destinationIds: ["local"], retainDays: 7, retainWeeks: 4 }` | Daily scheduled container backups. `time` is `HH:MM` (24h, host-local); `destinationIds` is a non-empty subset of `'local'` + `backupMountId`; `retainDays` 1–365; `retainWeeks` 0–52. A missing field takes its default; an invalid one fails startup. A destination id naming a mount that is no longer `backupMountId` is dropped from `destinationIds` (deleting the mount leaves `["local"]` when nothing else remains). See [BACKUPS.md → Scheduled backups](BACKUPS.md#scheduled-backups). |
 | `sections` | `array` | `[]` | User-defined sidebar sections (see object shape below). The synthetic `Main` section is implicit and never persisted. |
 | `assignments` | `object` | `{}` | Map of `"<type>:<workload-name>"` → `sectionId`. Missing entries (or entries pointing at a removed section) fall back to `Main`. `<type>` is `vm` or `container`. |
 | `homepage` | `object` | `{ groups: [], overrides: {}, manualTiles: [] }` | Home page overlay (see object shape below). Managed exclusively via `GET/POST/PATCH/PUT/DELETE /api/homepage`, never via `PATCH /api/settings`, and not part of `GET /api/settings` — the client reads it through the derived `home` events topic. |
 | `discoveryEnabled` | `boolean` | `true` | Announce this instance as a `_wisp._tcp` mDNS service and browse for peers (see [DISCOVERY.md](DISCOVERY.md)). |
 | `advertisedUrl` | `string \| null` | `null` | This instance's browser-facing URL; must be `http`/`https`. Other Wisp instances open it from the mDNS announcement, and its origin pins the OIDC callback URL ([AUTH.md](AUTH.md) § OIDC). `null` → announce `http://<hostname>.local:<port>`; OIDC falls back to the request origin. |
-| `updateChannel` | `"stable" \| "beta"` | `"stable"` | Which releases self-update offers this host: `stable` takes GitHub's latest release, `beta` also takes pre-releases. Anything other than `"beta"` normalizes to `"stable"`. Edited from **Host → Software** (the Wisp Update card), not the Settings page. See [UPDATES.md → Update channels](UPDATES.md#update-channels). |
-| `oidc` | `object` | `{ enabled: false, issuer: "", clientId: "", clientSecret: "" }` | Optional OpenID Connect SSO (see [AUTH.md](AUTH.md) § OIDC). `enabled` only holds when `issuer` (valid `http`/`https`), `clientId`, and `clientSecret` are all set. **`clientSecret` is a secret** — masked in the API as `hasClientSecret` (boolean), never returned. Written only via the session-only `PATCH /api/settings/oidc`. |
+| `updateChannel` | `"stable" \| "beta"` | `"stable"` | Which releases self-update offers this host: `stable` takes GitHub's latest release, `beta` also takes pre-releases. Any other value fails startup. Edited from **Host → Software** (the Wisp Update card), not the Settings page. See [UPDATES.md → Update channels](UPDATES.md#update-channels). |
+| `oidc` | `object` | `{ enabled: false, issuer: "", clientId: "", clientSecret: "" }` | Optional OpenID Connect SSO (see [AUTH.md](AUTH.md) § OIDC). `enabled: true` requires `issuer` (valid `http`/`https`), `clientId`, and `clientSecret` — the API refuses to save it otherwise, and startup fails on a file that has it. **`clientSecret` is a secret** — masked in the API as `hasClientSecret` (boolean), never returned. Written only via the session-only `PATCH /api/settings/oidc`. |
 | `trustedProxies` | `string[]` | `[]` | Extra reverse-proxy sources whose `X-Forwarded-Proto` / `X-Forwarded-For` Wisp honors (in addition to the always-trusted loopback). See **Reverse proxy / HTTPS** below. Not editable from the UI. |
 | `apiTokens` | `array` | `[]` | Bearer API tokens for non-interactive clients: `{ id, label, scope: "read" \| "admin", tokenHash, createdAt }`. **SHA-256 hashes only — the plaintext is never stored.** Managed exclusively via `GET/POST/DELETE /api/auth/tokens` (Host → App Config → API tokens), never via `PATCH /api/settings`, and never returned by `GET /api/settings`. See [AUTH.md](AUTH.md) § API tokens. |
 
@@ -89,7 +97,7 @@ Only the human half of the Home page is persisted — every tile is re-derived f
 | `overrides` | `object` | `tileId` → `{ hidden?: true, name?: string, iconId?: string }`. Only the keys the user actually set are stored; an override that would be empty is dropped. |
 | `manualTiles[]` | `array` | User-added links: `{ id: UUID, name, url, iconId: string \| null }`. |
 
-Keys are `tileId`s — a derived tile's id is its canonical URL, a manual tile's is its UUID. Normalization on read is lenient and self-healing: malformed groups/tiles/overrides are dropped, and a tile id claimed by more than one group is kept only by the first, so a hand-edited file can't render one tile twice.
+Keys are `tileId`s — a derived tile's id is its canonical URL, a manual tile's is its UUID. Read strictly like the rest of the file: a malformed group, tile or override, or a tile id listed by more than one group, fails startup. A group may list a tile that no longer derives; it is simply not rendered.
 
 ### Mount object (`mounts[]`)
 
@@ -100,7 +108,7 @@ Common fields:
 | `id` | `string` | Unique id |
 | `type` | `string` | `"smb"` or `"disk"`. Discriminates the remaining fields. |
 | `label` | `string` | Display name |
-| `mountPath` | `string` | Absolute mount point (must start with `/`) |
+| `mountPath` | `string` | Absolute mount point under `/mnt/wisp/` (not `/mnt/wisp` itself) |
 | `autoMount` | `boolean` | When `true` (default), Wisp mounts on startup (SMB) or on device insertion (disk). |
 
 SMB-only (`type: "smb"`):
@@ -119,9 +127,11 @@ Disk-only (`type: "disk"`):
 | `fsType` | `string` | One of `ext4`, `btrfs`, `vfat`, `exfat`, `ntfs3` |
 | `readOnly` | `boolean` | Force read-only mount (mandatory for `ntfs3`) |
 
-### Config priority
+### Strict reading
 
-Config file fields override hard-coded defaults when valid. If the file is missing or invalid, defaults apply.
+(settled 2026-11-12, CODING-RULES §4.) A missing file, or a missing key, takes the defaults above. Anything else wrong fails startup with a message naming the key: invalid JSON, an unknown key at any level (`_comment`, the shipped example's note, is allowed), a wrong type, or an out-of-range value. A typo then shows in `systemctl status wisp` instead of silently becoming a default; on an update, the updater's health check fails and it rolls back. The migration runner refuses to run on such a file too.
+
+The read and the Settings writes share one schema (`backend/src/lib/configSchema.js`): the API refuses (422) what the read would reject, and every write goes through the read's parse before it lands, so a file the UI wrote always boots. What the parse still heals, because a legitimate delete leaves it behind: a `backupMountId` or schedule destination naming a removed mount, and an assignment to a removed section. A file edited by hand while Wisp runs is parsed on the next read, so a broken edit makes settings reads and writes fail until it is fixed.
 
 ### Config file permissions
 
@@ -144,11 +154,11 @@ For safety, forwarded headers are honored **only from trusted sources**. Loopbac
 "trustedProxies": ["192.168.1.0/24"]      // … or its subnet (CIDR)
 ```
 
-Entries may be IPv4/IPv6 addresses, CIDR subnets, or the named ranges `loopback` / `linklocal` / `uniquelocal`. Invalid entries are ignored (logged) rather than crashing the service. This field is read at process start, so **restart Wisp after changing it** (`systemctl restart wisp`); it is not editable from the UI. Also ensure the proxy actually sends the headers (Caddy/Traefik do by default; nginx needs `proxy_set_header X-Forwarded-Proto $scheme;` and `proxy_set_header Host $host;`). **Never** widen this to trust the whole world — an attacker who can reach Wisp directly could otherwise forge `X-Forwarded-For` to defeat the login rate limit.
+Entries may be IPv4/IPv6 addresses, CIDR subnets, or the named ranges `loopback` / `linklocal` / `uniquelocal`. An invalid entry fails startup, naming it (settled 2026-11-12: this reverses "a typo must not crash-loop the service" — a dropped entry silently changed the cookie `Secure` flag and the rate-limit key, while a crash-loop is visible in `systemctl status`). This field is read at process start, so **restart Wisp after changing it** (`systemctl restart wisp`); it is not editable from the UI. Also ensure the proxy actually sends the headers (Caddy/Traefik do by default; nginx needs `proxy_set_header X-Forwarded-Proto $scheme;` and `proxy_set_header Host $host;`). **Never** widen this to trust the whole world — an attacker who can reach Wisp directly could otherwise forge `X-Forwarded-For` to defeat the login rate limit.
 
 ## Password Storage
 
-Login uses **`config/wisp-password`** (mode `0600`): scrypt hash written by `install.sh` / `wispctl password` / change-password in the UI. JWT signing requires this file; run `wispctl password` if the backend reports no password configured.
+Login uses **`config/wisp-password`** (mode `0600`): scrypt hash written by `install.sh` / `wispctl password` / change-password in the UI. JWT signing requires this file; run `wispctl password` if the backend reports no password configured. A file that exists but can't be read, or isn't in the `scrypt:salt:hash` form, fails startup. It is read on each use, so `wispctl password` applies without a restart.
 
 ## Filesystem Paths
 

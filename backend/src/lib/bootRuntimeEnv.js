@@ -9,6 +9,13 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadRuntimeEnv } from './loadRuntimeEnv.js';
+import { checkRuntimeEnv, loadRuntimeEnv } from './loadRuntimeEnv.js';
 
-loadRuntimeEnv(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'));
+/* Strict (CODING-RULES §4): a bad line or value stops the boot, naming it. */
+try {
+  loadRuntimeEnv(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'));
+  checkRuntimeEnv();
+} catch (err) {
+  console.error(`Failed to start: ${err.message}`);
+  process.exit(1);
+}

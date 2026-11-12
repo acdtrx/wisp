@@ -1,260 +1,43 @@
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { CONFIG_PATH, parseTrustedProxies } from './config.js';
+import { CONFIG_PATH } from './config.js';
+import {
+  checkAbsolutePath,
+  checkAdvertisedUrl,
+  checkBackupScheduleField,
+  checkDestinationIds,
+  checkFsType,
+  checkMountPath,
+  checkOidc,
+  checkUpdateChannel,
+  defaultConfig,
+  parseWispConfig,
+  parseWispConfigText,
+} from './configSchema.js';
 import { getMountStatus } from './storage/index.js';
 import { createAppError } from './routeErrors.js';
 import { writeJsonAtomic } from './atomicJson.js';
 
-// Storage mounts must live under this prefix. Constraining the mountPath stops
-// an authenticated admin from mounting a hostile share over /etc, /usr, /home,
-// etc. Setup scripts ensure /mnt/wisp/ exists at install time.
-export const MOUNT_ROOT = '/mnt/wisp';
-
-function assertMountPathUnderRoot(mountPath) {
-  const resolved = path.resolve(mountPath);
-  if (resolved !== MOUNT_ROOT && !resolved.startsWith(`${MOUNT_ROOT}/`)) {
-    throw createAppError('MOUNT_INVALID', `mountPath must be under ${MOUNT_ROOT}/`);
-  }
-  if (resolved === MOUNT_ROOT) {
-    throw createAppError('MOUNT_INVALID', `mountPath cannot be ${MOUNT_ROOT} itself; pick a sub-directory`);
-  }
-}
-
-const DEFAULTS = {
-  serverName: null,
-  vmsPath: '/var/lib/wisp/vms',
-  imagePath: '/var/lib/wisp/images',
-  backupLocalPath: '/var/lib/wisp/backups',
-  containersPath: '/var/lib/wisp/containers',
-  mounts: [],
-  backupMountId: null,
-  backupSchedule: {
-    enabled: false,
-    time: '03:00',
-    destinationIds: ['local'],
-    retainDays: 7,
-    retainWeeks: 4,
-  },
-  sections: [],
-  assignments: {},
-  homepage: { groups: [], overrides: {}, manualTiles: [] },
-  discoveryEnabled: true,
-  advertisedUrl: null,
-  updateChannel: 'stable',
-  oidc: { enabled: false, issuer: '', clientId: '', clientSecret: '' },
-  trustedProxies: [],
-  apiTokens: [],
-};
-
-/* "main" is the implicit fallback bucket — never persisted as a section, but
- * the id every workload reports when it has no explicit assignment (or its
- * assignment points at a section that no longer exists). */
-export const MAIN_SECTION_ID = 'main';
-
-function normalizeSections(arr) {
-  if (!Array.isArray(arr)) return [];
-  const out = [];
-  const seenIds = new Set();
-  for (const s of arr) {
-    if (!s || typeof s.id !== 'string' || !s.id.trim()) continue;
-    const id = s.id.trim();
-    if (id === MAIN_SECTION_ID || seenIds.has(id)) continue;
-    const name = typeof s.name === 'string' ? s.name.trim() : '';
-    if (!name) continue;
-    const order = Number.isFinite(s.order) ? s.order : out.length;
-    seenIds.add(id);
-    out.push({ id, name, order });
-  }
-  out.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
-  return out;
-}
-
-function normalizeAssignments(map, sectionIds) {
-  if (!map || typeof map !== 'object') return {};
-  const valid = new Set(sectionIds);
-  const out = {};
-  for (const [key, value] of Object.entries(map)) {
-    if (typeof key !== 'string' || !key.includes(':')) continue;
-    if (typeof value !== 'string' || !valid.has(value)) continue;
-    out[key] = value;
-  }
-  return out;
-}
-
-/* "ungrouped" is the Home page's implicit bucket — never persisted as a group,
- * but the id every tile reports when no group claims it (a freshly derived
- * link, or one whose group was deleted). Mirrors MAIN_SECTION_ID. */
-export const UNGROUPED_GROUP_ID = 'ungrouped';
-
-const MAX_HOME_NAME = 64;
-
-function normalizeHomeGroups(arr) {
-  if (!Array.isArray(arr)) return [];
-  const out = [];
-  const seenIds = new Set();
-  /* A tile belongs to at most one group; the first group listing it wins, so a
-   * hand-edited config that repeats an id can't render the same tile twice. */
-  const claimedTiles = new Set();
-  for (const g of arr) {
-    if (!g || typeof g.id !== 'string' || !g.id.trim()) continue;
-    const id = g.id.trim();
-    if (id === UNGROUPED_GROUP_ID || seenIds.has(id)) continue;
-    const name = typeof g.name === 'string' ? g.name.trim() : '';
-    if (!name) continue;
-    seenIds.add(id);
-    const tiles = [];
-    for (const t of Array.isArray(g.tiles) ? g.tiles : []) {
-      if (typeof t !== 'string' || !t || claimedTiles.has(t)) continue;
-      claimedTiles.add(t);
-      tiles.push(t);
-    }
-    out.push({ id, name: name.slice(0, MAX_HOME_NAME), tiles });
-  }
-  return out;
-}
-
-function normalizeHomeOverrides(map) {
-  if (!map || typeof map !== 'object' || Array.isArray(map)) return {};
-  const out = {};
-  for (const [key, value] of Object.entries(map)) {
-    if (typeof key !== 'string' || !key) continue;
-    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-    const entry = {};
-    if (value.hidden === true) entry.hidden = true;
-    if (typeof value.name === 'string' && value.name.trim()) {
-      entry.name = value.name.trim().slice(0, MAX_HOME_NAME);
-    }
-    if (typeof value.iconId === 'string' && value.iconId.trim()) {
-      entry.iconId = value.iconId.trim();
-    }
-    /* An override that says nothing is dropped — the write path removes empty
-     * entries too, so the file never accumulates `{}` husks. */
-    if (Object.keys(entry).length) out[key] = entry;
-  }
-  return out;
-}
-
-function normalizeManualTiles(arr) {
-  if (!Array.isArray(arr)) return [];
-  const out = [];
-  const seenIds = new Set();
-  for (const t of arr) {
-    if (!t || typeof t.id !== 'string' || !t.id.trim() || seenIds.has(t.id.trim())) continue;
-    const url = typeof t.url === 'string' ? t.url.trim() : '';
-    if (!url) continue;
-    const id = t.id.trim();
-    seenIds.add(id);
-    out.push({
-      id,
-      name: typeof t.name === 'string' ? t.name.trim().slice(0, MAX_HOME_NAME) : '',
-      url,
-      iconId: typeof t.iconId === 'string' && t.iconId.trim() ? t.iconId.trim() : null,
-    });
-  }
-  return out;
-}
-
-/**
- * Home page overlay: user-defined groups, per-tile overrides, manual links.
- * Everything derived (the tiles themselves) is recomputed from live workload
- * state on every read — only the human touches are persisted here.
- */
-function normalizeHomepage(obj) {
-  const src = obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : {};
-  return {
-    groups: normalizeHomeGroups(src.groups),
-    overrides: normalizeHomeOverrides(src.overrides),
-    manualTiles: normalizeManualTiles(src.manualTiles),
-  };
-}
-
-function normalizeOidc(obj) {
-  const src = obj && typeof obj === 'object' ? obj : {};
-  const issuer = typeof src.issuer === 'string' ? src.issuer.trim() : '';
-  const clientId = typeof src.clientId === 'string' ? src.clientId.trim() : '';
-  const clientSecret = typeof src.clientSecret === 'string' ? src.clientSecret : '';
-  return {
-    // Enabled only ever sticks when the config is actually complete — a
-    // half-configured `enabled: true` would auto-redirect logins into a broken
-    // provider flow.
-    enabled: src.enabled === true && !!issuer && !!clientId && !!clientSecret,
-    issuer,
-    clientId,
-    clientSecret,
-  };
-}
-
-const BACKUP_SCHEDULE_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-
-/**
- * Lenient read-side normalization for the scheduled-backup config: invalid
- * fields fall back to defaults, out-of-range retains are replaced, and
- * destination ids not currently valid ('local' or the configured
- * backupMountId) are dropped — so removing/renaming the backup mount
- * self-heals the schedule on the next read.
- */
-function normalizeBackupSchedule(obj, validMountIds) {
-  const src = obj && typeof obj === 'object' ? obj : {};
-  const d = DEFAULTS.backupSchedule;
-  const time =
-    typeof src.time === 'string' && BACKUP_SCHEDULE_TIME_RE.test(src.time.trim())
-      ? src.time.trim()
-      : d.time;
-  const retainDays =
-    Number.isInteger(src.retainDays) && src.retainDays >= 1 && src.retainDays <= 365
-      ? src.retainDays
-      : d.retainDays;
-  const retainWeeks =
-    Number.isInteger(src.retainWeeks) && src.retainWeeks >= 0 && src.retainWeeks <= 52
-      ? src.retainWeeks
-      : d.retainWeeks;
-  const allowed = new Set(['local', ...(validMountIds || [])]);
-  let destinationIds = Array.isArray(src.destinationIds)
-    ? [...new Set(src.destinationIds.filter((id) => typeof id === 'string' && allowed.has(id)))]
-    : [...d.destinationIds];
-  if (destinationIds.length === 0) destinationIds = ['local'];
-  return { enabled: src.enabled === true, time, destinationIds, retainDays, retainWeeks };
-}
+export { MOUNT_ROOT, MAIN_SECTION_ID, UNGROUPED_GROUP_ID } from './configSchema.js';
 
 /**
  * Strict PATCH-side merge: any field the client actually sends must be valid,
  * otherwise the whole update is rejected with INVALID_BACKUP_SCHEDULE (422).
- * Mirrors the lenient-read / strict-write dual the oidc key uses.
+ * The field checks are the ones the read applies (configSchema.js).
  */
 function mergeBackupSchedule(current, updates, backupMountId) {
   if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
     throw createAppError('INVALID_BACKUP_SCHEDULE', 'backupSchedule must be an object');
   }
-  const validMountIds = backupMountId ? [backupMountId] : [];
-  const merged = normalizeBackupSchedule(current, validMountIds);
-  if (updates.enabled !== undefined) merged.enabled = updates.enabled === true;
-  if (updates.time !== undefined) {
-    if (typeof updates.time !== 'string' || !BACKUP_SCHEDULE_TIME_RE.test(updates.time.trim())) {
-      throw createAppError('INVALID_BACKUP_SCHEDULE', 'Schedule time must be HH:MM (24-hour)');
-    }
-    merged.time = updates.time.trim();
-  }
-  if (updates.retainDays !== undefined) {
-    if (!Number.isInteger(updates.retainDays) || updates.retainDays < 1 || updates.retainDays > 365) {
-      throw createAppError('INVALID_BACKUP_SCHEDULE', 'retainDays must be an integer between 1 and 365');
-    }
-    merged.retainDays = updates.retainDays;
-  }
-  if (updates.retainWeeks !== undefined) {
-    if (!Number.isInteger(updates.retainWeeks) || updates.retainWeeks < 0 || updates.retainWeeks > 52) {
-      throw createAppError('INVALID_BACKUP_SCHEDULE', 'retainWeeks must be an integer between 0 and 52');
-    }
-    merged.retainWeeks = updates.retainWeeks;
+  const merged = { ...current };
+  for (const key of ['enabled', 'time', 'retainDays', 'retainWeeks']) {
+    if (updates[key] !== undefined) merged[key] = checkBackupScheduleField(key, updates[key]);
   }
   if (updates.destinationIds !== undefined) {
-    if (!Array.isArray(updates.destinationIds) || updates.destinationIds.length === 0) {
-      throw createAppError('INVALID_BACKUP_SCHEDULE', 'destinationIds must be a non-empty array');
-    }
-    const allowed = new Set(['local', ...validMountIds]);
-    const ids = [...new Set(updates.destinationIds)];
+    const ids = checkDestinationIds(updates.destinationIds);
+    const allowed = new Set(['local', ...(backupMountId ? [backupMountId] : [])]);
     for (const id of ids) {
-      if (typeof id !== 'string' || !allowed.has(id)) {
+      if (!allowed.has(id)) {
         throw createAppError('INVALID_BACKUP_SCHEDULE', `Unknown backup destination id: ${id}`);
       }
     }
@@ -263,127 +46,16 @@ function mergeBackupSchedule(current, updates, backupMountId) {
   return merged;
 }
 
-const API_TOKEN_SCOPES = new Set(['read', 'admin']);
-const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
-
-function normalizeApiTokens(arr) {
-  if (!Array.isArray(arr)) return [];
-  const out = [];
-  const seenIds = new Set();
-  for (const t of arr) {
-    if (!t || typeof t.id !== 'string' || !t.id.trim() || seenIds.has(t.id)) continue;
-    if (!API_TOKEN_SCOPES.has(t.scope)) continue;
-    if (typeof t.tokenHash !== 'string' || !SHA256_HEX_RE.test(t.tokenHash)) continue;
-    seenIds.add(t.id);
-    out.push({
-      id: t.id,
-      label: typeof t.label === 'string' ? t.label.trim() : '',
-      scope: t.scope,
-      tokenHash: t.tokenHash,
-      createdAt: typeof t.createdAt === 'string' ? t.createdAt : '',
-    });
-  }
-  return out;
-}
-
-const VALID_DISK_FSTYPES = new Set(['ext4', 'btrfs', 'vfat', 'exfat', 'ntfs3']);
-
-function normalizeMounts(arr) {
-  if (!Array.isArray(arr)) return [];
-  const out = [];
-  for (const d of arr) {
-    if (!d || typeof d.id !== 'string' || !d.id.trim()) continue;
-    const type = d.type === 'smb' || d.type === 'disk' ? d.type : null;
-    if (!type) continue;
-    const mountPath = typeof d.mountPath === 'string' ? d.mountPath.trim() : '';
-    if (!mountPath.startsWith('/')) continue;
-    const id = d.id.trim();
-    const label = typeof d.label === 'string' ? d.label.trim() : '';
-    const autoMount = d.autoMount !== false;
-    const entry = { id, type, label, mountPath, autoMount };
-    if (type === 'smb') {
-      const share = typeof d.share === 'string' ? d.share.trim() : '';
-      if (!share) continue;
-      entry.share = share;
-      entry.username = typeof d.username === 'string' ? d.username.trim() : '';
-      entry.password = typeof d.password === 'string' ? d.password : '';
-    } else {
-      const uuid = typeof d.uuid === 'string' ? d.uuid.trim() : '';
-      if (!uuid) continue;
-      entry.uuid = uuid;
-      entry.fsType = VALID_DISK_FSTYPES.has(d.fsType) ? d.fsType : '';
-      entry.readOnly = d.readOnly === true;
-    }
-    out.push(entry);
-  }
-  return out;
-}
-
+/** The parsed file: every key present, defaults for missing ones. Throws CONFIG_INVALID. */
 async function readSettingsFile() {
-  let data;
+  let raw;
   try {
-    const raw = await readFile(CONFIG_PATH, 'utf8');
-    data = JSON.parse(raw);
+    raw = await readFile(CONFIG_PATH, 'utf8');
   } catch (err) {
-    if (err.code === 'ENOENT') return { ...DEFAULTS };
+    if (err.code === 'ENOENT') return defaultConfig();
     throw err;
   }
-  if (!data) return { ...DEFAULTS };
-
-  const mounts = normalizeMounts(data.mounts);
-  const mountIds = mounts.map((m) => m.id);
-  let backupMountId = null;
-  if (typeof data.backupMountId === 'string' && data.backupMountId.trim()) {
-    const cand = data.backupMountId.trim();
-    if (mountIds.includes(cand)) backupMountId = cand;
-  }
-
-  const sections = normalizeSections(data.sections);
-  const assignments = normalizeAssignments(
-    data.assignments,
-    sections.map((s) => s.id),
-  );
-
-  return {
-    serverName: typeof data.serverName === 'string' ? data.serverName : DEFAULTS.serverName,
-    vmsPath:
-      typeof data.vmsPath === 'string' && data.vmsPath.trim().startsWith('/')
-        ? data.vmsPath.trim()
-        : DEFAULTS.vmsPath,
-    imagePath:
-      typeof data.imagePath === 'string' && data.imagePath.trim().startsWith('/')
-        ? data.imagePath.trim()
-        : DEFAULTS.imagePath,
-    backupLocalPath:
-      typeof data.backupLocalPath === 'string' && data.backupLocalPath.trim().startsWith('/')
-        ? data.backupLocalPath.trim()
-        : DEFAULTS.backupLocalPath,
-    containersPath:
-      typeof data.containersPath === 'string' && data.containersPath.trim().startsWith('/')
-        ? data.containersPath.trim()
-        : DEFAULTS.containersPath,
-    mounts,
-    backupMountId,
-    backupSchedule: normalizeBackupSchedule(data.backupSchedule, backupMountId ? [backupMountId] : []),
-    sections,
-    assignments,
-    homepage: normalizeHomepage(data.homepage),
-    discoveryEnabled:
-      typeof data.discoveryEnabled === 'boolean' ? data.discoveryEnabled : DEFAULTS.discoveryEnabled,
-    advertisedUrl:
-      typeof data.advertisedUrl === 'string' && data.advertisedUrl.trim() !== ''
-        ? data.advertisedUrl.trim()
-        : DEFAULTS.advertisedUrl,
-    updateChannel: data.updateChannel === 'beta' ? 'beta' : DEFAULTS.updateChannel,
-    oidc: normalizeOidc(data.oidc),
-    // Not editable from the UI — an operator sets it directly in wisp-config.json
-    // for a non-loopback reverse proxy. Preserved here so a Settings save from the
-    // UI (which rewrites the whole file) can't silently drop it.
-    trustedProxies: parseTrustedProxies(data.trustedProxies),
-    // Managed via /api/auth/tokens, never via PATCH /api/settings — carried
-    // through here so any settings save preserves them.
-    apiTokens: normalizeApiTokens(data.apiTokens),
-  };
+  return parseWispConfigText(raw);
 }
 
 function mountForApi(d) {
@@ -410,7 +82,7 @@ function mountForApi(d) {
 }
 
 /**
- * Return merged settings from `wisp-config.json` with defaults for missing/invalid fields.
+ * Return merged settings from `wisp-config.json`, with defaults for missing fields.
  */
 export async function getSettings() {
   const fromFile = await readSettingsFile();
@@ -418,12 +90,6 @@ export async function getSettings() {
     fromFile.serverName != null && fromFile.serverName !== ''
       ? fromFile.serverName
       : 'My Server';
-  const mountsStored = fromFile.mounts?.length ? fromFile.mounts : [];
-  let backupMountId = fromFile.backupMountId ?? null;
-  const mountIds = mountsStored.map((m) => m.id);
-  if (backupMountId && !mountIds.includes(backupMountId)) {
-    backupMountId = null;
-  }
 
   return {
     serverName,
@@ -431,11 +97,11 @@ export async function getSettings() {
     imagePath: fromFile.imagePath,
     backupLocalPath: fromFile.backupLocalPath,
     containersPath: fromFile.containersPath,
-    mounts: mountsStored.map(mountForApi),
-    backupMountId,
+    mounts: fromFile.mounts.map(mountForApi),
+    backupMountId: fromFile.backupMountId,
     backupSchedule: fromFile.backupSchedule,
-    sections: fromFile.sections || [],
-    assignments: fromFile.assignments || {},
+    sections: fromFile.sections,
+    assignments: fromFile.assignments,
     discoveryEnabled: fromFile.discoveryEnabled,
     advertisedUrl: fromFile.advertisedUrl,
     updateChannel: fromFile.updateChannel,
@@ -446,8 +112,7 @@ export async function getSettings() {
 /* Never return the client secret to the client — expose a boolean so the UI can
  * render an empty input with a "saved" affordance, mirroring how SMB mount
  * passwords are masked (`hasPassword`). */
-function oidcForApi(oidc) {
-  const o = oidc || DEFAULTS.oidc;
+function oidcForApi(o) {
   return {
     enabled: o.enabled === true,
     issuer: o.issuer || '',
@@ -463,7 +128,7 @@ function oidcForApi(oidc) {
  */
 export async function getRawOidcConfig() {
   const fromFile = await readSettingsFile();
-  return normalizeOidc(fromFile.oidc);
+  return fromFile.oidc;
 }
 
 let writeLock = Promise.resolve();
@@ -475,7 +140,6 @@ let writeLock = Promise.resolve();
  * happen inside the lock to avoid lost-update races.
  */
 export async function updateSettings(updates) {
-  if (updates?.advertisedUrl !== undefined) assertValidAdvertisedUrl(updates.advertisedUrl);
   return withSettingsWriteLock((fromFile) => buildUpdatedSettings(fromFile, updates));
 }
 
@@ -490,16 +154,18 @@ export async function updateOidcSettings(updates) {
     const next = { ...fromFile, oidc: mergeOidc(fromFile.oidc, updates || {}) };
     // Validate the *merged* result: the secret may already be on file even when
     // this PATCH doesn't include it, so completeness can only be judged post-merge.
-    assertValidOidc(next.oidc);
+    checkOidc(next.oidc);
     return next;
   });
 }
 
-function mergeOidc(stored, u) {
-  const cur = normalizeOidc(stored);
+function mergeOidc(cur, u) {
   const merged = { ...cur };
-  if (u.issuer !== undefined) merged.issuer = typeof u.issuer === 'string' ? u.issuer.trim() : '';
-  if (u.clientId !== undefined) merged.clientId = typeof u.clientId === 'string' ? u.clientId.trim() : '';
+  for (const key of ['issuer', 'clientId']) {
+    if (u[key] === undefined) continue;
+    if (typeof u[key] !== 'string') throw createAppError('INVALID_OIDC', `${key} must be a string`);
+    merged[key] = u[key].trim();
+  }
   // Empty / omitted secret means "keep the saved one" — the masked GET never
   // returns it, so the client can't echo it back. Same pattern as SMB passwords.
   const newSecret = typeof u.clientSecret === 'string' && u.clientSecret !== '' ? u.clientSecret : null;
@@ -518,74 +184,40 @@ function mergeOidc(stored, u) {
     // Clearing the provider: drop the secret with it.
     merged.clientSecret = '';
   }
-  if (u.enabled !== undefined) merged.enabled = u.enabled === true;
-  return normalizeOidc(merged);
+  if (u.enabled !== undefined) {
+    if (typeof u.enabled !== 'boolean') throw createAppError('INVALID_OIDC', 'enabled must be true or false');
+    merged.enabled = u.enabled;
+  }
+  return merged;
 }
 
-function assertValidAdvertisedUrl(value) {
-  if (value === null || value === '') return; // clears back to the default announcement
-  if (typeof value !== 'string') {
-    throw createAppError('INVALID_URL', 'advertisedUrl must be a string or null');
-  }
-  const trimmed = value.trim();
-  let parsed;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    throw createAppError('INVALID_URL', 'advertisedUrl must be a valid URL');
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw createAppError('INVALID_URL', 'advertisedUrl must use http or https');
-  }
-  // The URL travels in a single mDNS TXT entry ("url=<value>", 255 bytes max).
-  if (Buffer.byteLength(trimmed, 'utf8') > 251) {
-    throw createAppError('INVALID_URL', 'advertisedUrl must be at most 251 bytes (mDNS TXT record limit)');
-  }
-}
-
-function assertValidOidc(oidc) {
-  // Only fully-configured OIDC may be enabled. A disabled/blank config is fine.
-  if (!oidc || oidc.enabled !== true) return;
-  const issuer = oidc.issuer || '';
-  let parsed;
-  try {
-    parsed = new URL(issuer);
-  } catch {
-    throw createAppError('INVALID_OIDC', 'OIDC issuer must be a valid URL');
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw createAppError('INVALID_OIDC', 'OIDC issuer must use http or https');
-  }
-  if (!oidc.clientId) {
-    throw createAppError('INVALID_OIDC', 'OIDC client ID is required');
-  }
-  if (!oidc.clientSecret) {
-    throw createAppError('INVALID_OIDC', 'OIDC client secret is required');
-  }
-}
-
+/**
+ * Apply a PATCH /api/settings body. Every sent field must be valid — the same
+ * checks the read applies — or the update is refused (422); nothing is coerced
+ * to a default.
+ */
 function buildUpdatedSettings(fromFile, updates) {
   const next = { ...fromFile };
 
   if (updates.serverName !== undefined) {
-    next.serverName =
-      typeof updates.serverName === 'string' && updates.serverName.trim() !== ''
-        ? updates.serverName.trim()
-        : null;
+    if (updates.serverName !== null && typeof updates.serverName !== 'string') {
+      throw createAppError('INVALID_SETTINGS', 'serverName must be a string or null');
+    }
+    // An empty name clears back to the default display name.
+    next.serverName = updates.serverName?.trim() || null;
   }
-  if (updates.backupLocalPath !== undefined) {
-    next.backupLocalPath =
-      typeof updates.backupLocalPath === 'string' && updates.backupLocalPath.trim().startsWith('/')
-        ? updates.backupLocalPath.trim()
-        : DEFAULTS.backupLocalPath;
+  for (const key of ['vmsPath', 'imagePath', 'backupLocalPath', 'containersPath']) {
+    if (updates[key] !== undefined) next[key] = checkAbsolutePath(updates[key], key);
   }
   if (updates.backupMountId !== undefined) {
-    const ids = (next.mounts || []).map((m) => m.id);
     if (updates.backupMountId === null || updates.backupMountId === '') {
       next.backupMountId = null;
-    } else if (typeof updates.backupMountId === 'string') {
-      const id = updates.backupMountId.trim();
-      next.backupMountId = ids.includes(id) ? id : null;
+    } else {
+      const id = typeof updates.backupMountId === 'string' ? updates.backupMountId.trim() : '';
+      if (!next.mounts.some((m) => m.id === id)) {
+        throw createAppError('INVALID_SETTINGS', `No mount with id "${updates.backupMountId}"`);
+      }
+      next.backupMountId = id;
     }
   }
   /* After the backupMountId branch on purpose — a PATCH that swaps the backup
@@ -593,36 +225,14 @@ function buildUpdatedSettings(fromFile, updates) {
   if (updates.backupSchedule !== undefined) {
     next.backupSchedule = mergeBackupSchedule(next.backupSchedule, updates.backupSchedule, next.backupMountId);
   }
-  if (updates.vmsPath !== undefined) {
-    next.vmsPath =
-      typeof updates.vmsPath === 'string' && updates.vmsPath.trim().startsWith('/')
-        ? updates.vmsPath.trim()
-        : DEFAULTS.vmsPath;
-  }
-  if (updates.imagePath !== undefined) {
-    next.imagePath =
-      typeof updates.imagePath === 'string' && updates.imagePath.trim().startsWith('/')
-        ? updates.imagePath.trim()
-        : DEFAULTS.imagePath;
-  }
-  if (updates.containersPath !== undefined) {
-    next.containersPath =
-      typeof updates.containersPath === 'string' && updates.containersPath.trim().startsWith('/')
-        ? updates.containersPath.trim()
-        : DEFAULTS.containersPath;
-  }
   if (updates.discoveryEnabled !== undefined) {
-    next.discoveryEnabled = updates.discoveryEnabled === true;
+    if (typeof updates.discoveryEnabled !== 'boolean') {
+      throw createAppError('INVALID_SETTINGS', 'discoveryEnabled must be true or false');
+    }
+    next.discoveryEnabled = updates.discoveryEnabled;
   }
-  if (updates.advertisedUrl !== undefined) {
-    next.advertisedUrl =
-      typeof updates.advertisedUrl === 'string' && updates.advertisedUrl.trim() !== ''
-        ? updates.advertisedUrl.trim()
-        : null;
-  }
-  if (updates.updateChannel !== undefined) {
-    next.updateChannel = updates.updateChannel === 'beta' ? 'beta' : 'stable';
-  }
+  if (updates.advertisedUrl !== undefined) next.advertisedUrl = checkAdvertisedUrl(updates.advertisedUrl);
+  if (updates.updateChannel !== undefined) next.updateChannel = checkUpdateChannel(updates.updateChannel);
   return next;
 }
 
@@ -646,56 +256,58 @@ export async function withSettingsWriteLock(mutate) {
   return getSettings();
 }
 
+/**
+ * Write the state through the same parse the read applies, so the file on disk
+ * always passes the next read (and the startup read that gates boot). A state
+ * that fails it throws here and nothing is written. The parse also drops the
+ * references a delete left behind (a removed backup mount from the schedule's
+ * destinations, assignments to a removed section).
+ */
 async function persistSettings(state) {
-  const sections = normalizeSections(state.sections);
-  const assignments = normalizeAssignments(
-    state.assignments,
-    sections.map((s) => s.id),
-  );
-  const toWrite = {
+  const toWrite = parseWispConfig({
     serverName: state.serverName,
     vmsPath: state.vmsPath,
     imagePath: state.imagePath,
     backupLocalPath: state.backupLocalPath,
     containersPath: state.containersPath,
-    sections,
-    assignments,
-    homepage: normalizeHomepage(state.homepage),
-    mounts: (state.mounts || []).map((d) => {
-      const out = {
-        id: d.id,
-        type: d.type,
-        label: d.label,
-        mountPath: d.mountPath,
-        autoMount: d.autoMount !== false,
-      };
-      if (d.type === 'smb') {
-        out.share = d.share;
-        if (d.username !== undefined) out.username = d.username;
-        if (d.password !== undefined && d.password !== '') out.password = d.password;
-      } else if (d.type === 'disk') {
-        out.uuid = d.uuid;
-        if (d.fsType) out.fsType = d.fsType;
-        out.readOnly = d.readOnly === true;
-      }
-      return out;
-    }),
+    sections: state.sections,
+    assignments: state.assignments,
+    homepage: state.homepage,
+    mounts: state.mounts.map(mountForFile),
     backupMountId: state.backupMountId,
-    backupSchedule: normalizeBackupSchedule(
-      state.backupSchedule,
-      state.backupMountId ? [state.backupMountId] : [],
-    ),
-    discoveryEnabled: state.discoveryEnabled !== false,
-    advertisedUrl: state.advertisedUrl ?? null,
-    updateChannel: state.updateChannel === 'beta' ? 'beta' : 'stable',
-    oidc: normalizeOidc(state.oidc),
-    trustedProxies: parseTrustedProxies(state.trustedProxies),
-    apiTokens: normalizeApiTokens(state.apiTokens),
-  };
+    backupSchedule: state.backupSchedule,
+    discoveryEnabled: state.discoveryEnabled,
+    advertisedUrl: state.advertisedUrl,
+    updateChannel: state.updateChannel,
+    oidc: state.oidc,
+    trustedProxies: state.trustedProxies,
+    apiTokens: state.apiTokens,
+  });
   // 0600: the file holds secrets (SMB passwords, OIDC client secret). Without an
   // explicit mode the atomic temp file lands at the umask default (usually 0644),
   // silently widening the config back to world-readable on every save.
   await writeJsonAtomic(CONFIG_PATH, toWrite, { mode: 0o600 });
+}
+
+/** A mount entry as stored: only its type's fields; an empty SMB password is omitted. */
+function mountForFile(d) {
+  const out = {
+    id: d.id,
+    type: d.type,
+    label: d.label,
+    mountPath: d.mountPath,
+    autoMount: d.autoMount !== false,
+  };
+  if (d.type === 'smb') {
+    out.share = d.share;
+    if (d.username !== undefined) out.username = d.username;
+    if (d.password) out.password = d.password;
+  } else if (d.type === 'disk') {
+    out.uuid = d.uuid;
+    if (d.fsType) out.fsType = d.fsType;
+    out.readOnly = d.readOnly === true;
+  }
+  return out;
 }
 
 /**
@@ -705,7 +317,7 @@ async function persistSettings(state) {
  */
 export async function getRawApiTokens() {
   const fromFile = await readSettingsFile();
-  return fromFile.apiTokens || [];
+  return fromFile.apiTokens;
 }
 
 /**
@@ -716,7 +328,7 @@ export async function getRawApiTokens() {
  */
 export async function getRawHomepage() {
   const fromFile = await readSettingsFile();
-  return fromFile.homepage || { groups: [], overrides: {}, manualTiles: [] };
+  return fromFile.homepage;
 }
 
 /**
@@ -724,16 +336,7 @@ export async function getRawHomepage() {
  */
 export async function getRawMounts() {
   const fromFile = await readSettingsFile();
-  return fromFile.mounts || [];
-}
-
-function validateCommonFields(body) {
-  const mountPath = typeof body.mountPath === 'string' ? body.mountPath.trim() : '';
-  if (!mountPath.startsWith('/')) {
-    throw createAppError('MOUNT_INVALID', 'mountPath must be an absolute path (start with /)');
-  }
-  assertMountPathUnderRoot(mountPath);
-  return mountPath;
+  return fromFile.mounts;
 }
 
 function mountEntryFromBody(body, id) {
@@ -741,7 +344,7 @@ function mountEntryFromBody(body, id) {
   if (!type) {
     throw createAppError('MOUNT_INVALID', 'type must be "smb" or "disk"');
   }
-  const mountPath = validateCommonFields(body);
+  const mountPath = checkMountPath(body.mountPath);
   const label = typeof body.label === 'string' ? body.label.trim() : '';
   const autoMount = body.autoMount !== false;
   const entry = { id, type, label: label || id.slice(0, 8), mountPath, autoMount };
@@ -759,14 +362,7 @@ function mountEntryFromBody(body, id) {
       throw createAppError('MOUNT_INVALID', 'uuid is required for disk mounts');
     }
     entry.uuid = uuid;
-    if (body.fsType !== undefined) {
-      if (!VALID_DISK_FSTYPES.has(body.fsType)) {
-        throw createAppError('MOUNT_INVALID', `fsType "${body.fsType}" is not supported`);
-      }
-      entry.fsType = body.fsType;
-    } else {
-      entry.fsType = '';
-    }
+    if (body.fsType !== undefined) entry.fsType = checkFsType(body.fsType);
     entry.readOnly = body.readOnly === true;
   }
   return entry;
@@ -809,14 +405,7 @@ export async function updateMount(mountId, body) {
     if (body.label !== undefined) {
       cur.label = typeof body.label === 'string' ? body.label.trim() : '';
     }
-    if (body.mountPath !== undefined) {
-      const p = typeof body.mountPath === 'string' ? body.mountPath.trim() : '';
-      if (!p.startsWith('/')) {
-        throw createAppError('MOUNT_INVALID', 'mountPath must be an absolute path (start with /)');
-      }
-      assertMountPathUnderRoot(p);
-      cur.mountPath = p;
-    }
+    if (body.mountPath !== undefined) cur.mountPath = checkMountPath(body.mountPath);
     if (body.autoMount !== undefined) {
       cur.autoMount = body.autoMount !== false;
     }
@@ -841,12 +430,7 @@ export async function updateMount(mountId, body) {
         }
       }
     } else if (cur.type === 'disk') {
-      if (body.fsType !== undefined) {
-        if (!VALID_DISK_FSTYPES.has(body.fsType)) {
-          throw createAppError('MOUNT_INVALID', `fsType "${body.fsType}" is not supported`);
-        }
-        cur.fsType = body.fsType;
-      }
+      if (body.fsType !== undefined) cur.fsType = checkFsType(body.fsType);
       if (body.readOnly !== undefined) {
         cur.readOnly = body.readOnly === true;
       }
@@ -857,7 +441,8 @@ export async function updateMount(mountId, body) {
 }
 
 /**
- * Remove one mount. Clears backupMountId when it pointed at this id.
+ * Remove one mount. Clears backupMountId when it pointed at this id; the
+ * persist parse then drops the mount from the schedule's destinations.
  */
 export async function removeMount(mountId) {
   return withSettingsWriteLock((fromFile) => {
