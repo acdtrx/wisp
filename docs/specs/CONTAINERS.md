@@ -513,9 +513,13 @@ A container's name is its containerd container ID, the directory key under `cont
 4. `Snapshots.Remove(old)` — best-effort. Ephemeral rootfs means a missing snapshot is fine.
 5. `Containers.Create(new)` reusing the captured runtime / spec / labels / snapshotter, with `id` and `snapshotKey` set to the new name.
 6. `fs.rename(<containersPath>/<old>, <containersPath>/<new>)` — atomic on the same filesystem.
-7. `renameWorkloadAssignment('container', oldName, newName)` — moves the entry in `settings.assignments` from `container:<old>` to `container:<new>` so a workload in a custom section keeps that section after rename. The frontend reads sections from `GET /api/sections` (mirrored into `sectionsStore`), not from the container list SSE, so the renamed container picks up its section the next time the client refetches that endpoint.
-8. Rewrite `container.json` under the new dir with `name: <new>` (also fans out a config-write notification → SSE list refresh).
-9. Best-effort cleanup under the old name: `deregisterAddress`, `deregisterServicesForContainer`, `wisp-netns delete <old>` for any orphan netns left behind by a previous run (stop does not tear down the netns; setupNetwork on next start would otherwise leak it).
+7. Rewrite `container.json` under the new dir with `name: <new>` (also fans out a config-write notification → SSE list refresh).
+8. Best-effort cleanup under the old name: `deregisterServicesForContainer` (SRV/TXT services are containerManager's), and `wisp-netns delete <old>` for any orphan netns left behind by a previous run (stop does not tear down the netns; setupNetwork on next start would otherwise leak it), which fires `subscribeContainerNetnsRemoved`.
+
+**Then the route** (`PATCH /api/containers/:name`), best-effort, because sections and A-records are Wisp glue and the manager makes no A-record calls:
+
+- `renameWorkloadAssignment('container', oldName, newName)` — moves the entry in `settings.assignments` from `container:<old>` to `container:<new>` so a workload in a custom section keeps that section after rename. The frontend reads sections from `GET /api/sections` (mirrored into `sectionsStore`), not from the container list SSE, so the renamed container picks up its section the next time the client refetches that endpoint.
+- `unpublishContainer(oldName)`, then `publishContainer(newName)` — the A-record follows the rename.
 
 **Rollback:** if step 5 fails, the old containerd container record is recreated from the captured spec. If step 6 fails after step 5 succeeded, the new container record is deleted and the old one is recreated. The on-disk directory and `container.json` are only touched after containerd has accepted the new id.
 

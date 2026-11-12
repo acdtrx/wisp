@@ -137,6 +137,7 @@ Scoped bearer tokens let non-interactive clients (coding agents, scripts, future
 - Token string: `wisp_<scope>_<base64url(32 random bytes)>`. The scope in the prefix is cosmetic; the stored record is authoritative.
 - Stored in `wisp-config.json` under `apiTokens[]` as `{ id, label, scope, tokenHash, createdAt }` — **SHA-256 hash only**, file mode `0600`, atomic writes under the settings mutex. The plaintext is returned exactly once by `POST /api/auth/tokens` and never again.
 - Verification hashes the presented token and compares against each stored hash with `timingSafeEqual`, scanning the full list regardless of match position.
+- No `lastUsedAt`: recording each use would rewrite `wisp-config.json` on every authenticated request.
 
 ### Scopes
 

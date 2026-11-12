@@ -260,6 +260,10 @@ repair in the normal path — and move each repair of a past bug's data into a m
 script under `backend/migrations/`. **Revisit trigger:** the next work on the managers or
 their startup.
 
+**Migration history in the UI.** The journal (`journalctl -u wisp-updater`) and the ledger
+(`config/migrations.json`) are the only record of what an update's state migrations
+changed. **Revisit trigger:** the user asks "what did the last update change?"
+
 **Setup strategy: one update-safe path.** The installer (`push.sh` → `install.sh` →
 `setup-server.sh`) and the self-update (`wisp-updater`) run different setup steps, so a
 step added to setup reaches new installs but not updated ones. `common-steps.sh` is the
@@ -278,7 +282,11 @@ Containers tab works on a Mac: containers sit behind vmnet with no LAN IP of the
 LAN reach is host port publishing and `.local` names come from Bonjour (`dns-sd`) instead
 of avahi; state is polled, since the CLI has no event stream; logs come from a tailer
 subprocess into the existing run files. Out of scope: VMs on Darwin, device passthrough,
-VLAN sub-bridges. The CLI would be the Darwin manager's one exec caller, which needs the
+VLAN sub-bridges. Rejected workarounds for the LAN limit: bridged vmnet (needs Apple to
+grant the `com.apple.vm.networking` entitlement, not realistic for a self-distributed
+app), `pf` rules NATing vmnet onto the LAN (fragile, breaks Private Relay), and Bonjour
+proxy A-records (`dns-sd -P`) pointing at the vmnet IP (registers, but other machines
+can't reach it). The CLI would be the Darwin manager's one exec caller, which needs the
 user's validation (CODING-RULES §7). **Revisit trigger:** the user wants Wisp to run
 containers on a Mac.
 

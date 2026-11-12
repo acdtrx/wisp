@@ -53,6 +53,8 @@ Unmatched routes answer `404 { error: "Not Found", detail: "Route <METHOD> <url>
 
 ## Error Code to HTTP Status Mapping
 
+**One mapping for the whole backend.** Every code maps to its status in the one `errorCodeToStatus` switch in `lib/routeErrors.js`, which only routes use. Don't split it into per-module `errors.js` factories with their own subsets of codes.
+
 The table below lists codes mapped by `handleRouteError` in `backend/src/lib/routeErrors.js` (vmManager, disks, USB routes, and other callers of that helper). Codes not listed default to **500** when passed to `handleRouteError`. **SMB:** `SMB_INVALID` and `SMB_MOUNT_UNAVAILABLE` are returned as **503** from settings/SMB routes via explicit handler logic (not only the `handleRouteError` switch).
 
 | HTTP Status | Error Codes | Meaning |

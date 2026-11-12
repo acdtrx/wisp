@@ -1302,6 +1302,8 @@ The workload itself isn't validated — assignments are pure metadata, so refere
 
 The Home tab's launcher tiles. Everything a tile *is* — its URL, the workload behind it, its live state — is **derived on every read** from workload data (see [UI.md § Tab: Home](UI.md#tab-home) for the derivation rules); only the human overlay (groups, per-tile overrides, manual links) is persisted, under the `homepage` key in `wisp-config.json` (see [CONFIGURATION.md](CONFIGURATION.md)).
 
+Tiles and the MCP `get_deployment_overview` tool read workloads through one aggregate join, `lib/deploymentOverview.js` (`gatherDeployment`), so the two cannot drift. Keep that join the only one.
+
 Every endpoint below returns the same `{ tiles, groups }` envelope the `home` topic pushes, so one response keeps a client in sync after a mutation — no follow-up fetch. Writes go through these routes only, never `PATCH /api/settings`.
 
 ### Response envelope

@@ -103,6 +103,7 @@ Rules: `CODING-RULES.md` §3. Each line: what it is for, and what it saves.
 - **No JWT library** — JWT signing/verification implemented with Node.js `crypto` built-ins.
 - **No UUID library** — `crypto.randomUUID()` or libvirt-generated UUIDs.
 - **No date library** — built-in `Date` and `Intl` APIs.
+- **No semver library** — `compareSemver` in `wispUpdate.js` handles prerelease precedence per the semver spec (settled 2026-08-25).
 
 #### Frontend
 

@@ -148,6 +148,8 @@ Steps: prompts for install directory (unless provided as arg), runs `scripts/lin
 5. **State migrations + service:** when the service is (re)started: re-template the unit, stop it, run `backend/scripts/migrate.mjs`, start it. Without a (re)start: migrate when no `wisp.service` is running; skip with a message when one still runs the previous release. A failed migration aborts the install with the service stopped. ([UPDATES.md → State migrations](UPDATES.md#state-migrations).)
 6. **Optional:** bridged networking (interactive only)
 
+**Prompts live in `install.sh`.** Ask the operator (install directory, server name, password, bridge, service restart) only from `install.sh` and the setup scripts it calls itself; keep `setup-server.sh --skip-bridge`, which `install.sh` runs, free of prompts, so the interactive boundary stays in one script.
+
 ## `wispctl.sh helpers` (after upgrade)
 
 On Linux, from the install directory:

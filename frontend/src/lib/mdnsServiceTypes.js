@@ -1,6 +1,6 @@
 /**
  * Built-in mDNS service type catalog used for the per-port service editor.
- * Mirrored at backend/src/lib/linux/mdnsServiceTypes.js — keep both in sync.
+ * Mirrored at backend/src/lib/mdns/serviceTypes.js — keep both in sync.
  */
 
 export const KNOWN_SERVICE_TYPES = [

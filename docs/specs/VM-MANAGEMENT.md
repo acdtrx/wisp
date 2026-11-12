@@ -295,9 +295,10 @@ VMs can be registered on the local network via mDNS (`.local`) using avahi-daemo
 - Name source: guest hostname from QEMU guest agent (`GetHostname`) when available; fallback to sanitized VM name
 - Address source: guest primary IP from guest agent interface addresses
 - Publishing is owned by **`backend/src/lib/vmMdnsReconciler.js`** — a single flat platform-agnostic file that subscribes to `vmManager.subscribeVMNetworkChange`. It is **not** triggered by the SSE stats stream or any UI activity, so hostnames keep resolving even when no one is viewing the VM in the UI.
-- Network-change events are fired by **`linux/vmManager/vmManagerNetwork.js`** internally — driven by libvirt lifecycle (`DomainEvent`), qemu-ga lifecycle (`AgentEvent` `state=1`), and a 60 s periodic IP probe as a safety net for DHCP drift / missed signals. The reconciler reads each VM's `localDns` flag via `vmManager.getCachedLocalDns(name)` and registers/deregisters accordingly. Routes call `publishVm(name)` / `unpublishVm(name)` directly when the user toggles `localDns`, renames, or deletes a VM.
+- Network-change events are fired by **`vmManager/linux/vmManagerNetwork.js`** internally — driven by libvirt lifecycle (`DomainEvent`), qemu-ga lifecycle (`AgentEvent` `state=1`), and a 60 s periodic IP probe as a safety net for DHCP drift / missed signals. The reconciler reads each VM's `localDns` flag via `vmManager.getCachedLocalDns(name)` and registers/deregisters accordingly. Routes call `publishVm(name)` / `unpublishVm(name)` directly when the user toggles `localDns`, renames, or deletes a VM.
 - vmManager auto-attaches `AgentEvent` listeners for every running VM and detaches when a VM leaves the running set; the reconciler doesn't track per-domain subscriptions.
 - Registration is removed when the VM stops, is undefined, or `localDns` is toggled off.
+- **A `localDns` toggle is orchestrated by the route.** Flipping the flag changes only Wisp metadata, so libvirt fires no `DomainEvent`: the `PATCH` route calls `updateVMConfig`, then `publishVm` / `unpublishVm` as `body.localDns` says. Don't add a manager event for metadata changes, or a synthetic `DomainEvent` — the managers do their part, the glue does its part, and the route stitches them.
 - UI: General section has a **DNS** toggle (Local DNS); VM stats bar shows the registered `.local` hostname when active, plus a guest-agent `connected/disconnected` pill.
 
 ### Avahi restart recovery
@@ -335,13 +336,13 @@ The VM management backend is organized as a **platform facade** plus implementat
 
 - No DBus; `connect()` logs a dev-mode warning; VM APIs throw `NO_CONNECTION` or return empty lists where appropriate (same behavior as the former `IS_DARWIN` branches).
 
-### `vmManagerXml.js` (under `linux/vmManager/`)
+### `vmManagerXml.js` (under `vmManager/linux/`)
 
 XML parsing and building utilities using fast-xml-parser. Handles the conversion between libvirt XML and the structured config objects used by the rest of the application.
 
 The shared parser keeps every text node and attribute as the exact string libvirt wrote (`parseTagValue: false`, `parseAttributeValue: false`). Parsed domains are mutated and rebuilt for `DomainDefineXML`, so value coercion would rewrite them on the round-trip — a VM named `007` or `01` came back as `7` / `1` and could no longer be looked up, a disk `<serial>0x1f</serial>` became `31`, a 16-digit `<wwn>` lost its leading zero. Readers that need a number convert explicitly: memory, vCPU count, CPU topology, VNC port. (settled 2026-10-16)
 
-### `vmManagerHost.js` (under `linux/vmManager/`)
+### `vmManagerHost.js` (under `vmManager/linux/`)
 
 - Host info (hostname, versions, uptime, kernel, primary IP)
 - Host hardware (CPU cores, total memory)

@@ -81,4 +81,5 @@ Any streamable-HTTP MCP client works the same way: point it at `https://<wisp-ho
 
 - **No app-specific tools.** Multiple instances of an app can exist (several Caddy containers); every tool takes a container name and nothing assumes a singleton. App config is read via `get_container`'s masked `appConfig` and written only through the `agentWritableAppConfigFields` filter.
 - **Subset by construction.** MCP exposes less than the REST API on purpose: no deletes, no consoles, no secrets readable or writable, no mounts/devices/root, no VM or host mutations. Anything an agent could break by accident stays in the UI.
+- **No webhooks, no OpenAPI generation.** The MCP tool schemas are the machine-readable surface.
 - **Stateless on purpose.** Nothing to resume, no session table, restarts are invisible to clients.

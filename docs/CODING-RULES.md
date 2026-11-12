@@ -132,6 +132,8 @@ source refer to them.
     primitive options rather than a Wisp-specific twin (`attachISO` / `ejectISO` carry
     `{ createIfMissing }` / `{ removeSlot }`, so cloud-init's slot rides the public
     primitive while its orchestration stays in `lib/cloudInit.js`).
+  - Applied: the other carved modules (`host/`, `networking/`, `mdns/`, `storage/`) may
+    import `createAppError` from `lib/routeErrors.js`; only the managers are strict.
 - Prefer native/API access over shelling out to CLI tools. Exec a binary only when there
   is no practical programmatic alternative, and confirm first.
   - Applied — the exec allowlist: `qemu-img`, `cp --reflink=auto` (with a `copyFile`

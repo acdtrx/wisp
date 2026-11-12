@@ -36,6 +36,7 @@ The palette, both themes, typography and the shared list, table and modal patter
 
 The desktop shell above applies at `lg` and up. Below 1024px (phones, portrait tablets):
 
+- **Tailwind classes only** *(settled 2026-08-25)*: express every breakpoint as a class; no JavaScript reads the viewport size (the container console's `ResizeObserver` fits the terminal to its element, which is not viewport detection).
 - **Left panel becomes an off-canvas drawer** below the top bar's first row (`fixed top-[calc(3rem+env(safe-area-inset-top))] bottom-0` — the `h-12` row plus whatever the top bar's `pt-safe` added — full-width on phones, 280px from `sm`) over a `bg-black/40` backdrop, toggled by a hamburger (`Menu` ↔ `X`) button that appears leftmost in the top bar. It closes on backdrop tap, Escape, and any route change. Drawer state lives in `uiStore.sidebarOpen`.
 - **Top bar splits into two rows** — first row: hamburger + brand + server name on the left, jobs + sign-out on the right; second row: the host stats pills full-width (left-aligned, horizontally scrollable). At `lg`+ it's the single centered-stats row.
 - **Row actions are always visible** — the desktop hover-reveal (`lg:opacity-0 lg:group-hover:opacity-100`) only applies at `lg`+; touch devices see the lifecycle/table actions directly, with larger hit targets (`p-2` below lg).
