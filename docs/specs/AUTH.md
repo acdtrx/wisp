@@ -33,7 +33,7 @@ If the file is missing, JWT signing fails until a password is set (`wispctl pass
 - `POST /api/auth/change-password` with `{ currentPassword, newPassword }`
 - On success, writes a new **scrypt hash** to `config/wisp-password` with mode `0600`
 - Returns 204 (no content). Changing the password invalidates all existing tokens because the signing secret is derived from the password (or the new hash).
-- A wrong `currentPassword` returns **422 `INVALID_PASSWORD`**, shown inline in the form. Not 401: the session is valid, and a 401 would log every tab out (see § Frontend handling).
+- A wrong `currentPassword` returns **422 `INVALID_PASSWORD`**, shown inline in the form, and counts against the per-IP failed-attempt window (§ Login Rate Limiting); once it is exhausted the route answers **429** before checking. Not 401: the session is valid, and a 401 would log every tab out (see § Frontend handling).
 
 ## JWT Implementation
 
@@ -173,7 +173,7 @@ Both console routes are `session`: the global `onRequest` auth hook validates th
 
 ## Login Rate Limiting
 
-Failed authentication attempts — wrong passwords on `POST /api/auth/login` **and** invalid bearer API tokens — are tracked per source IP in a shared in-memory `Map` (`backend/src/lib/loginRateLimit.js`). The window is **60 s** with a maximum of **5 failed attempts per IP**; further attempts in the same window return **429**. The map is swept every 60 s for expired entries and capped at 10 000 distinct IPs to bound memory under flood conditions.
+Failed authentication attempts — wrong passwords on `POST /api/auth/login`, wrong current passwords on `POST /api/auth/change-password` *(settled 2026-11-12: a stolen session gets no unlimited guesses)* **and** invalid bearer API tokens — are tracked per source IP in a shared in-memory `Map` (`backend/src/lib/loginRateLimit.js`). The window is **60 s** with a maximum of **5 failed attempts per IP**; further attempts in the same window return **429**. The map is swept every 60 s for expired entries and capped at 10 000 distinct IPs to bound memory under flood conditions.
 
 The IP used as the map key is **`request.ip`**. Backend Fastify is configured with `trustProxy: ['127.0.0.1', '::1', ...trustedProxies]` — loopback is always trusted, plus any entries from the `trustedProxies` config field. In production the backend serves the SPA itself and browsers connect to it directly, so with no proxy `request.ip` is the real peer address; the loopback allow-list covers an *optional* TLS-terminating reverse proxy (Caddy/nginx) running on the **same host** that can pass `X-Forwarded-For` / `X-Forwarded-Proto` so cookies pick the right `Secure` flag. When the proxy runs on a **different host/container**, add its IP or subnet to `trustedProxies` in `wisp-config.json` (read at boot; see [CONFIGURATION.md](CONFIGURATION.md) § Reverse proxy / HTTPS). Trust is intentionally narrow: only headers from trusted sources are honored, so an attacker connecting directly to the backend port over the LAN cannot forge `X-Forwarded-For` to bypass the rate limit — never set `trustProxy: true`.
 

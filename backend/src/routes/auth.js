@@ -131,9 +131,21 @@ export default async function authRoutes(fastify) {
     handler: async (request, reply) => {
       const { currentPassword, newPassword } = request.body;
 
+      // A stolen session must not get unlimited guesses at the password: a
+      // wrong current password counts against the same per-IP window as login.
+      const ip = request.ip || 'unknown';
+      if (isAuthRateLimited(ip)) {
+        reply.code(429).send({
+          error: 'Too many password attempts',
+          detail: `Try again after ${AUTH_RATE_WINDOW_SECONDS} seconds`,
+        });
+        return;
+      }
+
       // 422, not 401: the session is valid — 401 means "no/expired session" and
       // makes the frontend log every tab out.
       if (!verifyPassword(currentPassword)) {
+        recordFailedAuthAttempt(ip);
         handleRouteError(createAppError('INVALID_PASSWORD', 'Current password is incorrect'), reply, request);
         return;
       }

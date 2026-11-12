@@ -92,10 +92,6 @@ work on app containers, but Jellyfin's next `appConfig` save replaces them with 
 devices. **Revisit trigger:** a manual device pick on an app container is lost on a config
 save.
 
-**Change-password attempts are not rate-limited.** The route needs a session, so only a
-stolen session can brute-force the current password. **Revisit trigger:** login hardening
-is scheduled (pairs with the 2026-07-05 audit's M1/M2).
-
 **Dev backend listens on every interface.** `app.listen` binds `0.0.0.0` in development
 too, exposing the dev stack (stub managers, dev CORS) to the LAN. **Revisit trigger:**
 developing on a network that isn't trusted.
