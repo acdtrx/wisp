@@ -182,7 +182,9 @@ async function moveRenamedMountsAndWrite(name, renamePairs, config) {
   const moved = [];
   try {
     for (const [prev, next] of renamePairs) {
-      if (prev.sourceId || prev.type === 'tmpfs') continue;
+      // Only Local → Local carries data; a Local mount renamed onto a Storage
+      // source leaves files/<old> to removedMounts instead.
+      if (prev.sourceId || prev.type === 'tmpfs' || next.sourceId) continue;
       if (await renameMountBackingStore(name, prev.name, next.name)) moved.push([prev.name, next.name]);
     }
     await writeContainerConfig(name, config);
@@ -329,11 +331,13 @@ export async function updateContainerConfig(name, changes) {
       const prevMounts = Array.isArray(config.mounts) ? [...config.mounts] : [];
       const normalized = validateAndNormalizeMounts(value, resolveMount);
       renamePairs = resolveMountRenames(changes.mountRenames, prevMounts, normalized);
-      const renamedFrom = new Set(renamePairs.map(([prev]) => prev.name));
+      // A rename keeps the data only when the renamed mount stays Local.
+      const renamedFrom = new Set(renamePairs.filter(([, next]) => !next.sourceId).map(([prev]) => prev.name));
       const nextNames = new Set(normalized.map((m) => m.name));
       /* Storage-sourced entries point at user data outside the container dir and tmpfs has no
-       * on-disk artifact — only Local mounts leave data behind: one that leaves the list, and
-       * one that stays under its name but now points at Storage (its files/<name> is unused). */
+       * on-disk artifact — only Local mounts leave data behind: one that leaves the list (or is
+       * renamed onto a Storage source), and one that stays under its name but now points at
+       * Storage (its files/<name> is unused). */
       const nextByName = new Map(normalized.map((m) => [m.name, m]));
       removedMounts = prevMounts
         .filter((m) => !renamedFrom.has(m.name) && !m.sourceId && m.type !== 'tmpfs')
