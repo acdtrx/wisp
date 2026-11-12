@@ -117,7 +117,15 @@ export async function discoverIpv4InNetnsOnce() {
   return null;
 }
 
+export async function readContainerConfig(name) {
+  throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
+}
+
 export async function writeContainerConfig() {
+  throw containerError('NO_CONTAINERD', 'Containerd is not available on darwin');
+}
+
+export function generateContainerMac() {
   throw containerError('NO_CONTAINERD', 'Containerd is not available on darwin');
 }
 

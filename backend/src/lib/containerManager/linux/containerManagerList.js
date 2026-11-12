@@ -17,17 +17,12 @@ import {
 } from './containerManagerConnection.js';
 import { getContainersPath } from './containerPaths.js';
 import { getTaskState, containerTaskStatusToUi } from './containerManagerLifecycle.js';
-import { ensureContainerNetworkConfig, normalizeContainerMac } from './containerManagerNetwork.js';
 import { processUptimeMsFromProc } from './procUptime.js';
 import { pendingRestartInForce } from './containerManagerPendingRestart.js';
 import { getRegisteredHostname } from '../../mdns/index.js';
 import { readLibraryDigestMap } from './containerManagerImages.js';
 import { normalizeImageRef } from './containerImageRef.js';
-import {
-  readContainerConfig,
-  writeContainerConfig,
-  subscribeContainerConfigWrite,
-} from './containerManagerConfigIo.js';
+import { readContainerConfig, subscribeContainerConfigWrite } from './containerManagerConfigIo.js';
 import {
   handleTaskExitEvent,
   getScheduledRestart,
@@ -334,51 +329,11 @@ export async function findContainersUsingStorageMount(mountId) {
 }
 
 /**
- * Normalize the on-disk env shape. Legacy container.json stored env as a flat
- * { KEY: "value" } dict; the target shape is { KEY: { value, secret? } }. If any
- * entry is still a bare string, convert it in place and report `changed: true`
- * so the caller can write the file back once.
- */
-function ensureContainerEnvShape(config) {
-  if (!config.env || typeof config.env !== 'object') {
-    config.env = {};
-    return false;
-  }
-  let changed = false;
-  for (const [k, v] of Object.entries(config.env)) {
-    if (typeof v === 'string') {
-      config.env[k] = { value: v };
-      changed = true;
-    } else if (!v || typeof v !== 'object') {
-      config.env[k] = { value: String(v ?? '') };
-      changed = true;
-    }
-  }
-  return changed;
-}
-
-/**
- * Get the full config for a single container (for detail view).
+ * Get the full config for a single container (for detail view). Writes nothing:
+ * the stored config plus runtime state.
  */
 export async function getContainerConfig(name) {
-  let config = await readContainerConfig(name);
-  const repair = containerState.repairOnRead;
-
-  if (ensureContainerEnvShape(config) && repair) {
-    try {
-      await writeContainerConfig(name, config);
-    } catch {
-      /* keep in-memory normalization if rewrite failed */
-    }
-  }
-
-  if (repair && (config.network?.type !== 'bridge' || !normalizeContainerMac(config.network?.mac))) {
-    try {
-      config = await ensureContainerNetworkConfig(name, config);
-    } catch {
-      /* keep config as-is if rewrite failed */
-    }
-  }
+  const config = await readContainerConfig(name);
 
   let state = 'stopped';
   let pid = 0;

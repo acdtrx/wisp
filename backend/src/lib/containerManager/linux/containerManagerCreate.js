@@ -16,7 +16,7 @@ import { getContainersPath, getContainerDir, getContainerFilesDir } from './cont
 import { createNewRun } from './containerManagerLogs.js';
 import {
   setupNetwork, teardownNetwork, mergeNetworkLeaseIntoConfig,
-  generateContainerMac, normalizeContainerMac, ensureContainerNetworkConfig,
+  generateContainerMac,
   resolveContainerResolvConf,
 } from './containerManagerNetwork.js';
 import { getDefaultContainerParentBridge } from '../../networking/index.js';
@@ -402,21 +402,13 @@ async function defineNewContainer(spec, filesDir, onStep) {
   const exposedPorts = imgCfg.ExposedPorts ? Object.keys(imgCfg.ExposedPorts).sort() : [];
 
   // Build container.json (create accepts name + image only; network defaults here)
-  let network = { type: 'bridge' };
-  if (network.mac != null && String(network.mac).trim() !== '') {
-    const n = normalizeContainerMac(network.mac);
-    if (!n) throw containerError('INVALID_CONTAINER_MAC', 'Invalid MAC address format');
-    network.mac = n;
-  } else {
-    network.mac = generateContainerMac();
-  }
+  const network = { type: 'bridge', mac: generateContainerMac() };
   try {
     const parent = await getDefaultContainerParentBridge();
     if (parent) network.interface = parent;
   } catch {
     /* no default bridge — omit interface (setupNetwork will reject on start) */
   }
-  delete network.vlan;
 
   let config = {
     name,
@@ -600,8 +592,6 @@ export async function startExistingContainer(name) {
   } catch {
     throw containerError('CONTAINER_NOT_FOUND', `Container config not found for "${name}"`);
   }
-
-  config = await ensureContainerNetworkConfig(name, config);
 
   // Remove any stale task (STOPPED still exists until Delete; Create would fail
   // with "already exists"). cleanupTask also finalizes the prior log run if

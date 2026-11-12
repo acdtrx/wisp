@@ -37,7 +37,7 @@ export {
   subscribeContainerListChange,
 } from './containerManagerList.js';
 
-export { notifyContainerConfigWrite, writeContainerConfig } from './containerManagerConfigIo.js';
+export { notifyContainerConfigWrite, readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
 export {
   startContainer,
@@ -125,6 +125,7 @@ export {
 
 export {
   setupNetwork, teardownNetwork, discoverIpv4InNetnsOnce, subscribeContainerNetnsRemoved,
+  generateContainerMac,
 } from './containerManagerNetwork.js';
 
 export { subscribeContainerNetworkChange } from './containerManagerNetworkEvents.js';

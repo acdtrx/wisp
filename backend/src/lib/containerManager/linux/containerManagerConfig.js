@@ -270,20 +270,15 @@ export async function updateContainerConfig(name, changes) {
       }
       const merged = { ...(config.network || {}), ...toMerge };
 
-      if (merged.type === 'bridge') {
-        if (merged.mac == null || String(merged.mac).trim() === '') {
-          throw containerError('INVALID_CONTAINER_MAC', 'MAC address is required for bridge networking');
-        }
-        const norm = normalizeContainerMac(merged.mac);
-        if (!norm) throw containerError('INVALID_CONTAINER_MAC', 'Invalid MAC address format');
-        merged.mac = norm;
-      } else if (merged.mac != null && String(merged.mac).trim() !== '') {
-        const norm = normalizeContainerMac(merged.mac);
-        if (!norm) throw containerError('INVALID_CONTAINER_MAC', 'Invalid MAC address format');
-        merged.mac = norm;
+      if (merged.type !== 'bridge') {
+        throw containerError('CONFIG_ERROR', 'network.type must be "bridge"');
       }
-      // Container network selection is interface-based; ignore legacy vlan fields.
-      delete merged.vlan;
+      if (merged.mac == null || String(merged.mac).trim() === '') {
+        throw containerError('INVALID_CONTAINER_MAC', 'MAC address is required for bridge networking');
+      }
+      const norm = normalizeContainerMac(merged.mac);
+      if (!norm) throw containerError('INVALID_CONTAINER_MAC', 'Invalid MAC address format');
+      merged.mac = norm;
 
       if (isRunning && networkMacOrInterfaceChanged(prevNet, merged)) {
         throw containerError(

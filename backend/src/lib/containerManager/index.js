@@ -103,7 +103,9 @@ export const setMountFileMode = impl.setMountFileMode;
 export const setupNetwork = impl.setupNetwork;
 export const teardownNetwork = impl.teardownNetwork;
 export const discoverIpv4InNetnsOnce = impl.discoverIpv4InNetnsOnce;
+export const readContainerConfig = impl.readContainerConfig;
 export const writeContainerConfig = impl.writeContainerConfig;
+export const generateContainerMac = impl.generateContainerMac;
 
 export const buildOCISpec = impl.buildOCISpec;
 

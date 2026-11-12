@@ -567,27 +567,6 @@ export async function resolveContainerResolvConf(bridgeInterface = null) {
 }
 
 /**
- * Normalize the container's network config so it is ready for a start.
- * Forces `network.type` to `"bridge"` (the only supported value) and assigns a
- * stable MAC if one is missing. `setupNetwork` guards on `type === 'bridge'`, so
- * any other value — legacy, empty, typo — would silently skip CNI and leave the
- * task in an empty netns.
- */
-export async function ensureContainerNetworkConfig(name, config) {
-  const needsTypeFix = config.network?.type !== 'bridge';
-  const needsMac = !normalizeContainerMac(config.network?.mac);
-  if (!needsTypeFix && !needsMac) return config;
-
-  const next = {
-    ...config,
-    network: { ...(config.network || {}), type: 'bridge' },
-  };
-  if (needsMac) next.network.mac = generateContainerMac();
-  await writeContainerConfig(name, next);
-  return next;
-}
-
-/**
  * Set up bridge networking for a container.
  * Creates a network namespace and invokes the bridge CNI plugin to attach a veth
  * pair into the chosen host bridge (br0 or a VLAN sub-bridge).
