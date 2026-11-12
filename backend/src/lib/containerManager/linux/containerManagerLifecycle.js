@@ -101,15 +101,12 @@ export async function startContainer(name) {
     return;
   }
 
-  if (task && st === 'CREATED') {
-    await callUnary(getClient('tasks'), 'start', { containerId: name });
-    containerState.containerStartTimes.set(name, Date.now());
-    return;
-  }
-
   // STOPPED (and similar) tasks still exist in containerd until Tasks.Delete.
   // Without deleting first, startExistingContainer → Tasks.Create returns "already exists".
-  if (task && (st === 'STOPPED' || st === 'PAUSING' || st === 'UNKNOWN')) {
+  // A CREATED task (a start interrupted between Tasks.Create and Tasks.Start)
+  // is dropped too: its spec may be stale, and only a full start settles the
+  // restart-required flag.
+  if (task && (st === 'STOPPED' || st === 'CREATED' || st === 'PAUSING' || st === 'UNKNOWN')) {
     await cleanupTask(name);
   }
 
