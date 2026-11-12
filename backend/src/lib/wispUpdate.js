@@ -383,24 +383,31 @@ export async function downloadAndStage(onProgress, signal) {
   return stagingDir;
 }
 
-/** True from an install's claim until it fails; a successful hand-off never releases it. */
-let installInFlight = false;
+/**
+ * How long a claimed install may stay in flight: the updater unit's start
+ * limit (`TimeoutStartSec=600` in systemd/linux/wisp-updater.service). An
+ * updater that fails before it stops this process never comes back to release
+ * the claim; past this, systemd has failed the unit, so a new install is safe.
+ */
+const INSTALL_CLAIM_MAX_MS = 600_000;
+
+/** When the current install was claimed (epoch ms), or null when none is in flight. */
+let installClaimedAt = null;
 
 /**
  * Claim the one install slot: returns a release function, or null when an
  * install is already in flight. Synchronous, so a caller that claims before
  * its first await can't race another request between check and claim. The
  * caller releases on failure only — after a successful hand-off the updater
- * stops this process, and a second install in that window must still be refused.
+ * stops this process, and a second install in that window must still be
+ * refused. A claim older than INSTALL_CLAIM_MAX_MS has expired.
  */
 export function claimUpdateInstall() {
-  if (installInFlight) return null;
-  installInFlight = true;
-  let released = false;
+  if (installClaimedAt !== null && Date.now() - installClaimedAt < INSTALL_CLAIM_MAX_MS) return null;
+  const claimedAt = Date.now();
+  installClaimedAt = claimedAt;
   return () => {
-    if (released) return;
-    released = true;
-    installInFlight = false;
+    if (installClaimedAt === claimedAt) installClaimedAt = null;
   };
 }
 
