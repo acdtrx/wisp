@@ -27,6 +27,7 @@ import { subscribeContainerListChange, listContainers } from './containerManager
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { discoverIpv4InNetnsOnce } from './containerManagerNetwork.js';
 import { getTaskState } from './containerManagerLifecycle.js';
+import { tryAcquireOperationLock } from './containerOperationGuard.js';
 import { ipv6GlobalCidrFromProcIfInet6 } from '../../networking/index.js';
 
 const PERIODIC_INTERVAL_MS = 60_000;
@@ -87,21 +88,27 @@ async function probeAndEmit(name, state) {
   // Persist live addresses to container.json if they diverge. This keeps other
   // consumers of getContainerConfig consistent after a DHCP renewal or SLAAC
   // change — they'd otherwise see the addresses from the last setupNetwork.
-  // Merged into the latest file, not `config`: the probes above take long
-  // enough for a start or an edit to write in between (e.g. the start
-  // clearing the restart-required flag), and writing the older copy would
-  // revert it.
+  // The write takes the container's operation lock and merges into the latest
+  // file: every other container.json writer runs under that lock (a start, an
+  // edit), and writing back `config` — read before the probes above — would
+  // revert what one of them wrote meanwhile, e.g. the start clearing the
+  // restart-required flag. A busy container is retried on the next probe.
   const ipDiverged = liveIp && config.network?.ip !== liveIp;
   const ip6Diverged = liveIp6 && config.network?.ip6 !== liveIp6;
   if (ipDiverged || ip6Diverged) {
-    try {
-      const latest = await readContainerConfig(name);
-      latest.network = { ...(latest.network || {}) };
-      if (ipDiverged) latest.network.ip = liveIp;
-      if (ip6Diverged) latest.network.ip6 = liveIp6;
-      await writeContainerConfig(name, latest);
-    } catch (err) {
-      log().warn?.({ err: err?.message || err, container: name, ip: liveIp, ip6: liveIp6 }, '[containerManager] persist new IP failed');
+    const release = tryAcquireOperationLock(name, 'network address update');
+    if (release) {
+      try {
+        const latest = await readContainerConfig(name);
+        latest.network = { ...(latest.network || {}) };
+        if (ipDiverged) latest.network.ip = liveIp;
+        if (ip6Diverged) latest.network.ip6 = liveIp6;
+        await writeContainerConfig(name, latest);
+      } catch (err) {
+        log().warn?.({ err: err?.message || err, container: name, ip: liveIp, ip6: liveIp6 }, '[containerManager] persist new IP failed');
+      } finally {
+        release();
+      }
     }
   }
 
