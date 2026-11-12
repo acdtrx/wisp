@@ -204,6 +204,12 @@ wiping cloud-init.
 exists" and rolls back, with no clearer cause. **Revisit trigger:** a start is seen
 failing with "already exists".
 
+**One rule for a container's "restart required".** Three places decide it differently:
+`updateContainerConfig` flags a mounts/devices change, the row mount `PATCH` has its own
+`layoutUnchanged` test, and the app save path ORs its mount signature with the app
+module's hook (found 2026-11-12). **Revisit trigger:** the response and the badge are
+seen disagreeing again, or the next change to any of the three.
+
 **Live-data SSE retries a 404 forever.** `createSSE` treats a 404 like a dropped
 connection and backs off indefinitely (job streams stop on 404). **Revisit trigger:** a
 stream for a deleted workload is seen retrying.

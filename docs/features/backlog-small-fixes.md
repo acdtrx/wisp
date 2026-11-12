@@ -58,6 +58,17 @@ that already says so):
   - #17 may self-update tini, then redeploy the branch.
   - #16 is skipped if a loop-device disk doesn't show up.
 
+**Settled after the milestone 1 and 2 reviews (2026-11-12):**
+- `VM-MANAGEMENT.md` gains the per-VM mDNS rule: one operation at a time per VM, as
+  `CONTAINERS.md` has for containers.
+- Avahi DBus calls in the mdns module get a bounded timeout, so one hung call can't
+  stall a workload's mDNS chain or the restart policy.
+- A tiny-samba share switched from Local to Storage is listed in the save's "Delete
+  share data?" confirm, as is the old name of a share renamed and switched in one save.
+  `CUSTOM-APPS.md` (what a removal is; the confirm) changes to match.
+- An app save's `requiresRestart` also reports the flag the manager persisted
+  (`CUSTOM-APPS.md` step 7).
+
 ## Milestone 1 — VMs
 
 1. **VM mDNS reconciler:** serialize per VM, the same way the container reconciler
