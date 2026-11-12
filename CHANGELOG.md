@@ -12,6 +12,12 @@
 - **Container create takes only its own fields** — extra fields sent to `POST /api/containers` (such as a flat `env`) are ignored instead of stored.
 - **An interrupted container start is redone in full** — a task left created but not started is discarded and the container starts normally.
 - **Old backups are marked manual** — VM and container backups from before backup origins existed record `manual` (migration 0008).
+- **A stopped VM stops resolving as `<name>.local`** — a VM's mDNS register and deregister run one at a time, so a quick start/stop no longer leaves a stopped VM published.
+- **Bad graphics or video types are refused** — `graphicsType` / `videoDriver` other than the values Wisp writes answer 400 instead of reaching the VM definition.
+- **A VM without disks can get a primary disk** — **+ Add disk** offers `sda` when the VM has none.
+- **Cloud-init for a missing VM answers 404** — and no longer leaves a stray VM directory behind.
+- **VMs appear once libvirt is up** — a backend that started before libvirt-dbus retries the connection instead of showing no VMs until a restart.
+- **The VM console reconnects after a network drop** — a session dropped mid-way retries while the VM is running.
 
 ## 2026-10-30 (v2.6.0)
 
