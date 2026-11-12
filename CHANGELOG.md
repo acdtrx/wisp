@@ -20,10 +20,10 @@
 - **The VM console reconnects after a network drop** — a session dropped mid-way retries while the VM is running.
 - **Renaming a container releases its old DHCP lease** — the old name's network is torn down with CNI before its netns goes.
 - **A crashed container stops advertising its services** — and its log run is closed with the exit code, showing its last line.
-- **App saves that change nothing don't ask for a restart** — "Restart required" appears only when mounts or devices really change, and a rejected reload leaves the badge as it was.
+- **Re-saving an unchanged app config no longer asks for a restart** — a save that sends the same mounts and devices leaves "Restart required" off (app-specific settings, env changes and a failed reload still flag it), and a rejected reload leaves the badge as it was.
 - **App containers refuse raw mount edits** — adding or deleting a mount, zip upload, init and data delete on an app's mounts answer `APP_CONFIG_ONLY`.
 - **Mount changes report `requiresRestart` as true/false** — never `null` on a stopped container.
-- **Moving a tiny-samba share to a Storage source deletes its old local data.**
+- **No orphan folder when a tiny-samba share moves to a storage mount** — its local `files/share-<name>` is deleted on save (also when renamed in the same save), and the save asks first in "Delete share data?".
 - **"Restart required" follows a restart done elsewhere** — an open container page drops the badge.
 - **Deleting a container clears its backup status.**
 
