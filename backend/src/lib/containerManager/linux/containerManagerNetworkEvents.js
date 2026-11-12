@@ -5,8 +5,8 @@
  * subscription on the containerManager facade: `subscribeContainerNetworkChange`.
  *
  * Handler signature: (name, snapshot) where
- *   snapshot = { state, ip, ip6 }   when running on a bridge network
- *   snapshot = null                 when stopped, deleted, or not on a bridge
+ *   snapshot = { state, ip, ip6 }   when running
+ *   snapshot = null                 when stopped or deleted
  *
  * `ip` is the DHCP IPv4; `ip6` is the kernel-SLAAC global IPv6 read from
  * /proc/<taskPid>/net/if_inet6 (null when the LAN advertises no prefix).
@@ -18,7 +18,7 @@
  * fast-path emission; the 60s timer is the safety net for in-netns DHCP
  * renewals and SLAAC changes where neither containerd nor Wisp gets a signal.
  *
- * On address diff for a running bridge container, the new addresses are
+ * On address diff for a running container, the new addresses are
  * persisted to container.json before the event fires — containerManager owns
  * the durable record, glue (containerMdnsReconciler) reacts only to the event.
  */
@@ -60,17 +60,6 @@ async function probeAndEmit(name, state) {
     config = await readContainerConfig(name);
   } catch {
     /* container.json missing (mid-create / mid-delete) — skip this tick */
-    return;
-  }
-
-  // Non-bridge networks (host, none) have no netns IP we can probe — emit a
-  // null-ip snapshot so subscribers know there's nothing to publish.
-  if (config.network?.type !== 'bridge') {
-    const next = { state, ip: null, ip6: null };
-    const prev = emittedSnapshots.get(name);
-    if (snapshotEqual(prev, next)) return;
-    emittedSnapshots.set(name, next);
-    fireNetworkChange(name, next);
     return;
   }
 
@@ -169,8 +158,8 @@ function scheduleReconcile(list) {
 
 /**
  * Subscribe to container network-state changes. Handler signature:
- * (name, snapshot) where snapshot = { state, ip } when running on a bridge,
- * or null when stopped/removed/not-on-bridge. Returns an unsubscribe function.
+ * (name, snapshot) where snapshot = { state, ip, ip6 } when running,
+ * or null when stopped/removed. Returns an unsubscribe function.
  *
  * Replay-on-subscribe: the handler is invoked once per known snapshot before
  * this function returns, so a late subscriber catches up on running containers

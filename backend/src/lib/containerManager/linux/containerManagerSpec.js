@@ -133,9 +133,7 @@ export function buildOCISpec(config, imageConfig = {}, containerFilesDir = '', o
   });
 
   // CNI bridge configures `/var/run/netns/<name>`; runc must join that netns, not create a new one.
-  const networkNamespace = config.network?.type === 'bridge' && config.name
-    ? { type: 'network', path: getContainerNetnsPath(config.name) }
-    : { type: 'network' };
+  const networkNamespace = { type: 'network', path: getContainerNetnsPath(config.name) };
 
   const resources = {};
   if (config.cpuLimit) {

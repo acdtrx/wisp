@@ -471,7 +471,7 @@ export async function discoverIpv4InNetnsOnce(name, ifname = 'eth0', taskPid = n
  * latest config.
  */
 export async function mergeNetworkLeaseIntoConfig(name, config, lease) {
-  if (!lease || config.network?.type !== 'bridge') return config;
+  if (!lease) return config;
   const ip = primaryIPv4FromCni(lease.ips) || lease.discoveredIp || null;
   const latest = await readContainerConfig(name);
   const next = {
@@ -572,8 +572,6 @@ export async function resolveContainerResolvConf(bridgeInterface = null) {
  * pair into the chosen host bridge (br0 or a VLAN sub-bridge).
  */
 export async function setupNetwork(name, networkConfig = {}) {
-  if (networkConfig.type !== 'bridge') return null;
-
   await assertIsLinuxBridge(networkConfig.interface);
 
   const cniConfig = await getCNIConfig();
@@ -643,8 +641,6 @@ export async function setupNetwork(name, networkConfig = {}) {
  * Tear down networking for a container.
  */
 export async function teardownNetwork(name, networkConfig = {}) {
-  if (networkConfig.type !== 'bridge') return;
-
   const nsPath = getContainerNetnsPath(name);
   const cniConfig = await getCNIConfig();
   const pluginConfig = buildPluginConfig(cniConfig, networkConfig);

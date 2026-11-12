@@ -339,7 +339,7 @@ export default function ContainerNetworkSection({
         {!isCreating ? (
           <>
         <Field label="Type">
-          <span className="text-sm text-text-primary font-medium">{net.type || 'bridge'}</span>
+          <span className="text-sm text-text-primary font-medium">{net.type}</span>
         </Field>
         {net.ip ? (
           <Field label="IP Address">
