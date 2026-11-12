@@ -126,8 +126,13 @@ source refer to them.
   around the fence.
   - Applied: import `dbus-next` for libvirt only in `lib/vmManager/linux/` (behind the
     `vmManager` facade), `@grpc/grpc-js` only in `lib/containerManager/linux/` (behind
-    its facade), and Avahi's `dbus-next` only in `lib/mdns/linux/`. Add a new operation
-    as a new purpose-named facade export.
+    its facade), Avahi's `dbus-next` only in `lib/mdns/linux/`, and `undici` only in
+    `lib/downloads/` (settled 2026-11-12: one home for outbound HTTP's SSRF guard and
+    its timeouts). Add a new operation as a new purpose-named facade export.
+  - Applied — the lint is `npm run check-fences` (`scripts/check-fences.mjs`): the
+    package fences, the facades (a module with an `index.js` is imported only through
+    it), strict managers and carved modules. A reviewed allowance is one line in its
+    `EXCEPTIONS`.
   - Applied — **strict managers**: give vmManager and containerManager **zero Wisp-glue
     imports**: stdlib, their own internals, and the carved cross-cutting modules
     (`mdns/`, `networking/`, `storage/`) only. Change them only for **generic
@@ -240,6 +245,7 @@ tool descriptions ([`specs/MCP.md`](specs/MCP.md)).
 Wisp has no automated test suite — verification is running the real thing:
 
 - Run the frontend build: it must pass.
+- Run `npm run check-fences` after any backend import change: it must pass (§7).
 - Run `npm run check-imports` after any backend file move or rename: it must pass. The
   backend has no build step, so nothing else validates import paths — and a *dynamic*
   import only resolves when its code path runs, so a stale one boots fine and 500s a

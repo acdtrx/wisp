@@ -283,35 +283,48 @@ are imported only inside their fences (`vmManager/linux/vmManagerConnection.js:4
   `index.js`; darwin stubs count as manager internals), an `EXCEPTIONS` list for reviewed
   one-line allowances, output `file:line specifier — violates … (CODING-RULES §7)`, exit 1. —
   **clear**
+  **Fixed:** `scripts/check-fences.mjs` checks package fences, facades, strict managers
+  and carved modules.
 - **FEN-2** — fold the fence check into `check-imports` or add a command. — **decision.**
   *Recommendation:* a sibling `scripts/check-fences.mjs` as `npm run check-fences` (it answers
   a different question and should name §7); add it to AGENTS.md Project Facts, CODING-RULES §14
   and TECH-STACK "Testing & lint".
+  **Fixed:** `npm run check-fences`, listed in AGENTS.md Project Facts, CODING-RULES §7
+  and §14, and TECH-STACK.
 - **FEN-3** — `be/routes/host.js:88` imports `../lib/host/darwin/systemProfilerSoftware.js`
   directly. *Fix:* expose it through `lib/host/index.js` (or fold it into the darwin
   `getHostInfo`). — **clear**
+  **Fixed:** `lib/host/index.js` exports `getProfilerSoftwareOverview()` (null on Linux).
 - **FEN-4** — glue bypassing a non-manager facade: `be/lib/wispUpdate.js:24-25` imports
   `downloads/downloadFromUrl.js` and `downloads/downloadUtils.js`; `be/lib/homeTiles.js:22`
   imports `containerApps/appRegistry.js` though `containerApps/index.js:35` exports
   `getAppModule`. §7 names only the managers' facades. — **decision.** *Recommendation:* the
   lint enforces every module that has an `index.js` facade (`containerApps/`, `downloads/`,
   `jobs/` as well); fix both imports.
+  **Fixed:** the lint enforces every module with an `index.js`; wispUpdate.js and
+  homeTiles.js import the facades.
 - **FEN-5** — `undici` is imported by `lib/downloads/downloadFromUrl.js:18` and
   `lib/wispUpdate.js:21` (which builds its own `Agent` at `:168-171`); plain `fetch` is used in
   `oidc.js:42`, `downloadHaos.js:29`, `downloadUbuntuCloud.js:54`, `routes/cloudinit.js:152`.
   TECH-STACK frames undici as the SSRF-hardened fetch. — **decision.** *Recommendation:* fence
   `undici` to `lib/downloads/`; route the GitHub API call through a downloads export.
+  **Fixed:** undici is fenced to `lib/downloads/`; the GitHub API call goes through
+  `ssrfSafeFetch` with a 30 s deadline, so wispUpdate no longer builds its own Agent.
 - **FEN-6** — `node:net` / `node:dgram` (`routes/console.js:1`, `mdns/linux/forwarder.js:30-31`,
   `containerManagerExec.js:7`) and `node:child_process` (23 importers) are unfenced. —
   **decision.** *Recommendation:* don't fence them: `child_process` is governed by the §7 exec
   allowlist, and the VNC TCP leg in `routes/console.js` is the console design ARCHITECTURE
   draws.
+  **Fixed:** as recommended — the lint fences no Node builtins.
 - **FEN-7** — `be/lib/mountsAutoMount.js:26` has a JSDoc type import of
   `./storage/mountTable.js`. — **decision.** *Recommendation:* the lint skips specifiers inside
   comments (type-only imports load nothing).
+  **Fixed:** the lint blanks comments before scanning, so JSDoc type imports are skipped.
 - **FEN-8** — doc drift: `docs/TECH-STACK.md:15-17` says dbus-next's sole caller is
   `lib/vmManager/` (it is also `mdns/linux/`), and both fences name `lib/<mgr>/` where §7 says
   `lib/<mgr>/linux/`. *Fix:* align with §7. — **clear**
+  **Fixed:** TECH-STACK names both dbus-next callers and the `linux/` fences, and
+  undici's.
 
 ---
 

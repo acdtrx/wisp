@@ -6,6 +6,7 @@
   "scripts": {
     "release": "bash scripts/release.sh",
     "check-imports": "node scripts/check-imports.mjs",
+    "check-fences": "node scripts/check-fences.mjs",
     "route-access": "WISP_ROUTE_ACCESS_REPORT=1 node backend/src/index.js"
   }
 }

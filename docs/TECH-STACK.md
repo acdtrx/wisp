@@ -13,9 +13,10 @@
 - The **zero-native-deps goal holds** — it is why `dbus-next` (pure JS) was chosen over
   native libvirt bindings.
 - **Domain integrations**, outside any conventional web stack: **`dbus-next`** (libvirt's
-  DBus API — sole caller `lib/vmManager/`), **`@grpc/grpc-js`** + proto-loader + protobufjs
-  (containerd's gRPC API — sole caller `lib/containerManager/`), **`fast-xml-parser`**
-  (libvirt domain XML, never regex).
+  DBus API in `lib/vmManager/linux/`, Avahi's in `lib/mdns/linux/` — its only two
+  callers), **`@grpc/grpc-js`** + proto-loader + protobufjs (containerd's gRPC API — sole
+  caller `lib/containerManager/linux/`), **`fast-xml-parser`** (libvirt domain XML, never
+  regex).
 - **Fastify 5** — JSON-schema validation at the boundary. Route **response schemas are
   authoritative** for serialized output: add a new response field to the route schema in
   the same edit, or Fastify strips it. Plugins: cors, multipart (streamed uploads),
@@ -23,8 +24,8 @@
   allows `localhost:5173` in development only; in production the backend serves its own
   client, same origin.
 - **Logging: pino** — pino-pretty single-line in dev, plain JSON in production.
-- **`undici`** used directly for SSRF-hardened fetches; **`js-yaml`** for cloud-init YAML
-  emission.
+- **`undici`** used directly for SSRF-hardened fetches — only in `lib/downloads/`;
+  **`js-yaml`** for cloud-init YAML emission.
 - **Auth:** password login yielding `node:crypto`-signed session JWTs in cookies (no JWT
   library), optional library-less OIDC SSO layered on top (the password stays as backup —
   the session secret derives from it), scoped bearer API tokens (read/admin) and the
@@ -51,6 +52,8 @@
   (`CODING-RULES.md` §14); macOS dev runs stub managers.
 - `npm run check-imports` checks that every relative import and module-relative path in
   the backend resolves; the frontend build checks the client's.
+- `npm run check-fences` enforces the backend's import fences (`CODING-RULES.md` §7): a
+  dependency-free scan, like `check-imports`, rather than ESLint.
 
 ## Deployment
 
