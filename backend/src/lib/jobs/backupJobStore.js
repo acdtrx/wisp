@@ -3,7 +3,9 @@
  */
 import { createJobStore as createJobStoreFactory } from './jobStore.js';
 
-const store = createJobStoreFactory((result) => ({ path: result?.path, timestamp: result?.timestamp }));
+/* Only the backup folder name leaves the server: the absolute host path is
+ * internal (API.md documents `{ step: 'done', timestamp }`). */
+const store = createJobStoreFactory((result) => ({ timestamp: result?.timestamp }));
 
 export const getJob = store.getJob;
 export const createJob = store.createJob;

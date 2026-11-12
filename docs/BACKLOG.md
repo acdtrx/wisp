@@ -150,11 +150,6 @@ check now rejects them (422 `PATH_NOT_ALLOWED`), but the picker still offers the
 lines verbatim to the UI and MCP; an app that prints a token in its error would surface it
 (unconfirmed). **Revisit trigger:** a reload error is seen carrying a secret value.
 
-**Backup completion carries an absolute server path.** The backup job's `done` result
-includes the backup's path on the host; undocumented and unused by the UI.
-**Revisit trigger:** the job-result contract is next touched, or a client starts reading
-it.
-
 **avahi `deny-interfaces` for `veth*` / `vnet*`.** Avahi publishes the host name on every
 container veth and VM tap; the forwarder already ignores those link-local answers
 (CONTAINERS.md § Local DNS, settled 2026-10-16), and stopping them at the source means
