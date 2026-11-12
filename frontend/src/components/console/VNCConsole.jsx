@@ -79,7 +79,7 @@ function shouldRetryAfterWsClose(code, reason) {
   return !(code === WS_CLOSE_REJECTED && reason === 'invalid name');
 }
 
-export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onDisconnect }) {
+export default function VNCConsole({ vmName, vmRunning, viewportRef, apiRef, onConnect, onDisconnect }) {
   const rfbRef = useRef(null);
   /**
    * Monotonic session counter. Every connect() and disconnect() bumps this.
@@ -101,6 +101,11 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
   const userDisconnectedRef = useRef(false);
   const vmNameRef = useRef(vmName);
   vmNameRef.current = vmName;
+  /** Whether the VM list shows the VM running. A close the client didn't make
+   *  is retried only while it does: a VM stop closes the session cleanly too,
+   *  and its restart is reconnected by the parent's running transition. */
+  const vmRunningRef = useRef(vmRunning);
+  vmRunningRef.current = vmRunning;
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -137,6 +142,7 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
 
     function scheduleRetry() {
       if (session !== sessionRef.current) return;
+      if (!vmRunningRef.current) return;
       const n = reconnectAttemptRef.current;
       if (n >= VNC_MAX_RECONNECT_ATTEMPTS) {
         setError(
@@ -150,6 +156,8 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
       reconnectAttemptRef.current += 1;
       reconnectTimerRef.current = setTimeout(() => {
         reconnectTimerRef.current = null;
+        // The stop may reach the VM list only after the close did.
+        if (!vmRunningRef.current) return;
         attachRfb();
       }, delay);
     }
@@ -194,15 +202,16 @@ export default function VNCConsole({ vmName, viewportRef, apiRef, onConnect, onD
           setError(null);
           onConnect?.();
         });
-        rfb.addEventListener('disconnect', (ev) => {
+        rfb.addEventListener('disconnect', () => {
           if (session !== sessionRef.current) return;
           connectedRef.current = false;
           setConnected(false);
           rfbRef.current = null;
           onDisconnect?.();
-          if (ev.detail?.clean) {
-            return;
-          }
+          // A close this client made bumps the session, so it never gets here:
+          // clean or not, this close came from the other side. noVNC reports a
+          // drop after connecting as clean, so `clean` can't tell a network
+          // drop from a VM stop — the VM's state does (scheduleRetry).
           if (!vmNameRef.current) return;
 
           const closeMeta = lastWsCloseRef.current;

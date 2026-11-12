@@ -53,6 +53,7 @@ export default function ConsolePanel({ vmName }) {
       />
       <VNCConsole
         vmName={vmName}
+        vmRunning={vmState != null && RUNNING_STATES.includes(vmState)}
         viewportRef={consoleViewportRef}
         apiRef={consoleApiRef}
         onConnect={handleConnect}

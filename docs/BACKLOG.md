@@ -243,11 +243,6 @@ unit started via one fixed sudo rule (like `wisp-updater`), or at least refuse a
 self-update while an upgrade runs and drop the timeout. **Revisit trigger:** an upgrade is
 ever interrupted, or OS upgrades become unattended/scheduled. (re-review 2026-10-16, P2)
 
-**VNC console doesn't retry after a mid-session network drop.** NoVNC reports a dropped
-connection as a clean close, so the console shows "disconnected" instead of reconnecting
-like the container console does. **Revisit trigger:** a VNC console stays blank after a
-mid-session network drop and needs a manual reopen. (Plan 6, B3)
-
 **Dev backend loads runtime.env after config.** `backend/src/index.js` has the
 import-order issue the migration runner had (P5): `WISP_CONFIG_PATH` from `runtime.env` is
 read after config resolution. Production sets it through the unit's environment, so only a
