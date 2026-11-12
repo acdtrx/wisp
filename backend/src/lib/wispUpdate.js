@@ -18,11 +18,9 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
-import { Agent, fetch as undiciFetch } from 'undici';
 import { createAppError } from './routeErrors.js';
 import { getSettings } from './settings.js';
-import { ssrfSafeFetch } from './downloads/downloadFromUrl.js';
-import { writeResponseToFile } from './downloads/downloadUtils.js';
+import { ssrfSafeFetch, writeResponseToFile } from './downloads/index.js';
 
 const execFileAsync = promisify(execFileCb);
 
@@ -165,18 +163,19 @@ function malformedResponse() {
 
 /** GET a GitHub API endpoint. Returns null on 404 — the repo has no releases. */
 async function fetchGithubJson(url, signal) {
-  const dispatcher = new Agent({ headersTimeout: HTTP_TIMEOUT_MS, bodyTimeout: HTTP_TIMEOUT_MS });
+  /* One deadline over the request and its (small) JSON body. */
+  const deadline = AbortSignal.timeout(HTTP_TIMEOUT_MS);
+  const requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
   let res;
   try {
-    res = await undiciFetch(url, {
+    res = await ssrfSafeFetch(url, {
       method: 'GET',
       headers: {
         'Accept': 'application/vnd.github+json',
         'User-Agent': `wisp-updater/${cache.current}`,
         'X-GitHub-Api-Version': '2022-11-28',
       },
-      dispatcher,
-      signal,
+      signal: requestSignal,
     });
   } catch (err) {
     throw checkFailure(`Network error: ${err.message}`, 'Failed to reach GitHub Releases', err.message);

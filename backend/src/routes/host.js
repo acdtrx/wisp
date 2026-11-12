@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { platform } from 'node:os';
 
 import {
   getHostInfo,
@@ -22,6 +21,7 @@ import {
   listHostGpus,
   getDevices as getHostUSBDevicesCached,
   onChange as onHostUSBChange,
+  getProfilerSoftwareOverview,
 } from '../lib/host/index.js';
 import { assertBridgeNotInUse } from '../lib/networkBridgeUsage.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
@@ -83,19 +83,16 @@ export default async function hostRoutes(fastify) {
         info.wispVersion = getCurrentVersion();
         info.osRelease = getOsRelease();
 
-        if (platform() === 'darwin') {
-          try {
-            const { getDarwinSoftwareFromProfiler } = await import('../lib/host/darwin/systemProfilerSoftware.js');
-            const extra = await getDarwinSoftwareFromProfiler();
-            if (extra) {
-              if (extra.osRelease) info.osRelease = extra.osRelease;
-              if (extra.kernel) info.kernel = extra.kernel;
-              if (extra.hostname) info.hostname = extra.hostname;
-            }
-          } catch (err) {
-            /* system_profiler missing, timeout, or JSON error — keep getHostInfo / os-release fields */
-            request.log.debug({ err }, 'Darwin SPSoftwareDataType not applied');
+        try {
+          const extra = await getProfilerSoftwareOverview();
+          if (extra) {
+            if (extra.osRelease) info.osRelease = extra.osRelease;
+            if (extra.kernel) info.kernel = extra.kernel;
+            if (extra.hostname) info.hostname = extra.hostname;
           }
+        } catch (err) {
+          /* system_profiler missing, timeout, or JSON error — keep getHostInfo / os-release fields */
+          request.log.debug({ err }, 'Darwin SPSoftwareDataType not applied');
         }
 
         return info;

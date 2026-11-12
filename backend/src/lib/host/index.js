@@ -34,6 +34,7 @@ const updatesImpl = await import(
 const smartImpl = await import(
   isLinux ? './linux/smart.js' : './darwin/smart.js',
 );
+const softwareImpl = isLinux ? null : await import('./darwin/systemProfilerSoftware.js');
 
 // Hardware inventory
 export const getHostHardwareInfo = hardwareImpl.getHostHardwareInfo;
@@ -71,3 +72,9 @@ export const stopUpdateChecker = updatesImpl.stopUpdateChecker;
 // Disk SMART summaries
 export const readDiskSmartSummary = smartImpl.readDiskSmartSummary;
 export const readAllDiskSmartSummaries = smartImpl.readAllDiskSmartSummaries;
+
+// Software overview from the platform's own profiler, where one exists (macOS dev:
+// system_profiler); null on Linux, whose OS release and kernel come from getHostInfo.
+export async function getProfilerSoftwareOverview() {
+  return softwareImpl ? softwareImpl.getDarwinSoftwareFromProfiler() : null;
+}

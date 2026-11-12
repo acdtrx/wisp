@@ -19,7 +19,7 @@
  * what gives the tile its live state. A link with no matching workload (a Caddy
  * host fronting another machine) renders as a stateless external tile.
  */
-import { getAppModule } from './containerApps/appRegistry.js';
+import { getAppModule } from './containerApps/index.js';
 import { gatherDeployment } from './deploymentOverview.js';
 import { getHomepage, UNGROUPED_GROUP_ID } from './homepage.js';
 
