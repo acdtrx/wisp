@@ -10,17 +10,7 @@ export function configure(cfg) {
 export {
   connect,
   disconnect,
-  connectionState,
   IS_DARWIN,
-  vmError,
-  unwrapVariant,
-  unwrapDict,
-  formatVersion,
-  generateMAC,
-  resolveDomain,
-  getDomainState,
-  getDomainXML,
-  getDomainObjAndIface,
 } from './vmManagerConnection.js';
 
 export { parseVMFromXML } from './vmManagerXml.js';
@@ -38,7 +28,6 @@ export {
   getVMConfig,
   findVMsUsingImage,
   getCachedLocalDns,
-  getCachedStaleBinary,
   subscribeVMListChange,
 } from './vmManagerList.js';
 
@@ -50,15 +39,10 @@ export { startVM, stopVM, forceStopVM, rebootVM, suspendVM, resumeVM } from './v
 
 export { getVMStats, getVMXML, getVNCPort } from './vmManagerStats.js';
 
-export { isVMBinaryStale } from './vmManagerProc.js';
-
 export {
   assertVMNameAvailable,
   createVM,
   deleteVM,
-  getWindowsFeatures,
-  getWindowsClock,
-  getLinuxFeatures,
 } from './vmManagerCreate.js';
 
 export { updateVMConfig, getGraphicsListen, setGraphicsListen } from './vmManagerConfig.js';
@@ -73,7 +57,6 @@ export {
   detachDisk,
   resizeDiskBySlot,
   updateDiskBus,
-  extractDiskSnippet,
 } from './vmManagerDisk.js';
 
 export { attachISO, ejectISO } from './vmManagerIso.js';

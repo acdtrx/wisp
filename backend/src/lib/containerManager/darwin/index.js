@@ -10,13 +10,8 @@ export function configure(cfg) {
 }
 
 export {
-  getContainersPath,
   getContainerDir,
-  getContainerFilesDir,
-  ensureContainersDir,
 } from '../linux/containerPaths.js';
-
-export { buildOCISpec } from '../linux/containerManagerSpec.js';
 
 /* Pure filesystem work over the configured containers path — real on macOS too. */
 export { tightenContainerFileModes, tightenContainerBackupFileModes } from '../linux/containerManagerFileModes.js';
@@ -30,7 +25,7 @@ export function containerError(code, message, raw) {
   return err;
 }
 
-export const containerState = {
+const containerState = {
   clients: null,
   connected: false,
   containerStartTimes: new Map(),
@@ -53,38 +48,6 @@ function noContainerd() {
   return containerError('NO_CONTAINERD', 'Not connected to containerd');
 }
 
-export function getClient() {
-  throw noContainerd();
-}
-
-export function callUnary() {
-  return Promise.reject(noContainerd());
-}
-
-export function callStream() {
-  throw noContainerd();
-}
-
-export function packAny(typeUrl, obj) {
-  return {
-    typeUrl,
-    type_url: typeUrl,
-    value: Buffer.from(JSON.stringify(obj)),
-  };
-}
-
-export function unpackAny(any) {
-  if (!any || !any.value) return null;
-  const buf = any.value;
-  if (!buf || buf.length === 0) return null;
-  try {
-    return JSON.parse(Buffer.isBuffer(buf) ? buf.toString('utf8') : buf);
-  } catch {
-    /* value is not JSON — expected for some Any payloads */
-    return null;
-  }
-}
-
 export async function listContainers() {
   return [];
 }
@@ -101,20 +64,12 @@ export function subscribeContainerNetnsRemoved() {
   return () => {};
 }
 
-export function notifyContainerConfigWrite() {
-  /* no-op on darwin (no containerd) */
-}
-
 export async function getRunningContainerCount() {
   return 0;
 }
 
 export async function findContainersUsingStorageMount() {
   return [];
-}
-
-export async function discoverIpv4InNetnsOnce() {
-  return null;
 }
 
 export async function readContainerConfig(name) {
@@ -217,10 +172,6 @@ export async function resolveContainerImageRef() {
   throw noContainerd();
 }
 
-export async function findContainersUsingImage() {
-  return [];
-}
-
 export async function checkAllImagesForUpdates() {
   return { checked: 0, updated: 0, flaggedContainers: 0, lastCheckedAt: new Date().toISOString() };
 }
@@ -236,10 +187,6 @@ export function getImageUpdateStatus() {
 export function startImageUpdateChecker() {}
 
 export function stopImageUpdateChecker() {}
-
-export async function startExistingContainer() {
-  throw noContainerd();
-}
 
 export async function updateContainerConfig() {
   throw noContainerd();
@@ -340,14 +287,6 @@ export async function getMountFileMode() {
 }
 
 export async function setMountFileMode() {
-  throw noContainerd();
-}
-
-export async function setupNetwork() {
-  throw noContainerd();
-}
-
-export async function teardownNetwork() {
   throw noContainerd();
 }
 

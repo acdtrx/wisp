@@ -10,17 +10,7 @@ const impl = await import(
 export const configure = impl.configure;
 export const connect = impl.connect;
 export const disconnect = impl.disconnect;
-export const connectionState = impl.connectionState;
 export const IS_DARWIN = impl.IS_DARWIN;
-export const vmError = impl.vmError;
-export const unwrapVariant = impl.unwrapVariant;
-export const unwrapDict = impl.unwrapDict;
-export const formatVersion = impl.formatVersion;
-export const generateMAC = impl.generateMAC;
-export const resolveDomain = impl.resolveDomain;
-export const getDomainState = impl.getDomainState;
-export const getDomainXML = impl.getDomainXML;
-export const getDomainObjAndIface = impl.getDomainObjAndIface;
 
 export const getHostInfo = impl.getHostInfo;
 export const getHostHardware = impl.getHostHardware;
@@ -31,7 +21,6 @@ export const listVMs = impl.listVMs;
 export const getVMConfig = impl.getVMConfig;
 export const findVMsUsingImage = impl.findVMsUsingImage;
 export const getCachedLocalDns = impl.getCachedLocalDns;
-export const getCachedStaleBinary = impl.getCachedStaleBinary;
 export const subscribeVMListChange = impl.subscribeVMListChange;
 export const subscribeVMNetworkChange = impl.subscribeVMNetworkChange;
 export const getGuestNetwork = impl.getGuestNetwork;
@@ -47,14 +36,10 @@ export const getVMStats = impl.getVMStats;
 export const getVMXML = impl.getVMXML;
 export const getVNCPort = impl.getVNCPort;
 
-export const isVMBinaryStale = impl.isVMBinaryStale;
 
 export const assertVMNameAvailable = impl.assertVMNameAvailable;
 export const createVM = impl.createVM;
 export const deleteVM = impl.deleteVM;
-export const getWindowsFeatures = impl.getWindowsFeatures;
-export const getWindowsClock = impl.getWindowsClock;
-export const getLinuxFeatures = impl.getLinuxFeatures;
 
 export const updateVMConfig = impl.updateVMConfig;
 export const setVMPendingRestart = impl.setVMPendingRestart;
@@ -70,7 +55,6 @@ export const createAndAttachDisk = impl.createAndAttachDisk;
 export const detachDisk = impl.detachDisk;
 export const resizeDiskBySlot = impl.resizeDiskBySlot;
 export const updateDiskBus = impl.updateDiskBus;
-export const extractDiskSnippet = impl.extractDiskSnippet;
 
 export const attachISO = impl.attachISO;
 export const ejectISO = impl.ejectISO;

@@ -10,19 +10,10 @@ const impl = await import(
 export const configure = impl.configure;
 export const connect = impl.connect;
 export const disconnect = impl.disconnect;
-export const containerState = impl.containerState;
 export const containerError = impl.containerError;
 export const IS_DARWIN = impl.IS_DARWIN;
-export const getClient = impl.getClient;
-export const callUnary = impl.callUnary;
-export const callStream = impl.callStream;
-export const packAny = impl.packAny;
-export const unpackAny = impl.unpackAny;
 
-export const getContainersPath = impl.getContainersPath;
 export const getContainerDir = impl.getContainerDir;
-export const getContainerFilesDir = impl.getContainerFilesDir;
-export const ensureContainersDir = impl.ensureContainersDir;
 
 export const listContainers = impl.listContainers;
 export const getContainerConfig = impl.getContainerConfig;
@@ -31,7 +22,6 @@ export const findContainersUsingStorageMount = impl.findContainersUsingStorageMo
 export const subscribeContainerListChange = impl.subscribeContainerListChange;
 export const subscribeContainerNetworkChange = impl.subscribeContainerNetworkChange;
 export const subscribeContainerNetnsRemoved = impl.subscribeContainerNetnsRemoved;
-export const notifyContainerConfigWrite = impl.notifyContainerConfigWrite;
 
 export const startContainer = impl.startContainer;
 export const startAutostartContainersAtBackendBoot = impl.startAutostartContainersAtBackendBoot;
@@ -44,7 +34,6 @@ export const getTaskState = impl.getTaskState;
 export const createContainer = impl.createContainer;
 export const deleteContainer = impl.deleteContainer;
 export const pullImage = impl.pullImage;
-export const startExistingContainer = impl.startExistingContainer;
 export const renameContainer = impl.renameContainer;
 
 export const createContainerBackup = impl.createContainerBackup;
@@ -59,7 +48,6 @@ export const listContainerImages = impl.listContainerImages;
 export const deleteContainerImage = impl.deleteContainerImage;
 export const getImageDigest = impl.getImageDigest;
 export const resolveContainerImageRef = impl.resolveContainerImageRef;
-export const findContainersUsingImage = impl.findContainersUsingImage;
 
 export const checkAllImagesForUpdates = impl.checkAllImagesForUpdates;
 export const checkSingleImageForUpdates = impl.checkSingleImageForUpdates;
@@ -100,14 +88,10 @@ export const getMountFileSize = impl.getMountFileSize;
 export const getMountFileMode = impl.getMountFileMode;
 export const setMountFileMode = impl.setMountFileMode;
 
-export const setupNetwork = impl.setupNetwork;
-export const teardownNetwork = impl.teardownNetwork;
-export const discoverIpv4InNetnsOnce = impl.discoverIpv4InNetnsOnce;
 export const readContainerConfig = impl.readContainerConfig;
 export const writeContainerConfig = impl.writeContainerConfig;
 export const generateContainerMac = impl.generateContainerMac;
 
-export const buildOCISpec = impl.buildOCISpec;
 
 export const execInContainer = impl.execInContainer;
 export const execCommandInContainer = impl.execCommandInContainer;

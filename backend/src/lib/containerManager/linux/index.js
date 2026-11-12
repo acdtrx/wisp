@@ -12,21 +12,12 @@ export function configure(cfg) {
 export {
   connect,
   disconnect,
-  containerState,
   containerError,
   IS_DARWIN,
-  getClient,
-  callUnary,
-  callStream,
-  packAny,
-  unpackAny,
 } from './containerManagerConnection.js';
 
 export {
-  getContainersPath,
   getContainerDir,
-  getContainerFilesDir,
-  ensureContainersDir,
 } from './containerPaths.js';
 
 export {
@@ -37,7 +28,7 @@ export {
   subscribeContainerListChange,
 } from './containerManagerList.js';
 
-export { notifyContainerConfigWrite, readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
+export { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
 export {
   startContainer,
@@ -53,7 +44,6 @@ export {
   createContainer,
   deleteContainer,
   pullImage,
-  startExistingContainer,
 } from './containerManagerCreate.js';
 
 export { renameContainer } from './containerManagerRename.js';
@@ -69,7 +59,9 @@ export {
 export { tightenContainerFileModes, tightenContainerBackupFileModes } from './containerManagerFileModes.js';
 
 export {
-  listContainerImages, deleteContainerImage, getImageDigest, findContainersUsingImage,
+  listContainerImages,
+  deleteContainerImage,
+  getImageDigest,
   resolveContainerImageRef,
 } from './containerManagerImages.js';
 
@@ -124,12 +116,10 @@ export {
 } from './containerManagerMountsContent.js';
 
 export {
-  setupNetwork, teardownNetwork, discoverIpv4InNetnsOnce, subscribeContainerNetnsRemoved,
+  subscribeContainerNetnsRemoved,
   generateContainerMac,
 } from './containerManagerNetwork.js';
 
 export { subscribeContainerNetworkChange } from './containerManagerNetworkEvents.js';
-
-export { buildOCISpec } from './containerManagerSpec.js';
 
 export { execInContainer, execCommandInContainer, resizeExec } from './containerManagerExec.js';

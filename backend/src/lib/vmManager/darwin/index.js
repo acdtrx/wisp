@@ -3,14 +3,8 @@
  */
 import { hostname, release, uptime, networkInterfaces, cpus, totalmem } from 'node:os';
 
-import { parseDomainRaw, parseVMFromXML } from '../linux/vmManagerXml.js';
-import {
-  vmError,
-  unwrapVariant,
-  unwrapDict,
-  formatVersion,
-  generateMAC,
-} from '../vmManagerShared.js';
+import { parseVMFromXML } from '../linux/vmManagerXml.js';
+import { vmError } from '../vmManagerShared.js';
 
 export { parseVMFromXML };
 export { isOfflineState } from '../linux/libvirtConstants.js';
@@ -20,18 +14,6 @@ export function configure(_cfg) {
   /* macOS dev stub: no on-disk VM directories. configure() kept symmetric with
      Linux so backend/src/index.js can call it unconditionally. */
 }
-
-export const connectionState = {
-  bus: null,
-  connectIface: null,
-  connectProps: null,
-  vmStartTimes: new Map(),
-  prevVMStats: new Map(),
-  onDomainChange: null,
-  onDisconnect: null,
-};
-
-export { unwrapVariant, unwrapDict, formatVersion, generateMAC, vmError };
 
 function noConn() {
   return vmError('NO_CONNECTION', 'Not connected to libvirt');
@@ -45,22 +27,6 @@ export async function connect() {
 }
 
 export function disconnect() {}
-
-export async function getDomainObjAndIface() {
-  throw noConn();
-}
-
-export async function resolveDomain() {
-  throw noConn();
-}
-
-export async function getDomainState() {
-  throw noConn();
-}
-
-export async function getDomainXML() {
-  throw noConn();
-}
 
 function getPrimaryAddress() {
   const ifaces = networkInterfaces();
@@ -107,10 +73,6 @@ export async function listHostFirmware() {
 
 export function getCachedLocalDns() {
   return undefined;
-}
-
-export function getCachedStaleBinary() {
-  return false;
 }
 
 export function subscribeVMListChange() {
@@ -173,37 +135,6 @@ export async function getVNCPort() {
   throw noConn();
 }
 
-export async function isVMBinaryStale() {
-  return false;
-}
-
-export function getWindowsFeatures() {
-  return {
-    acpi: {},
-    hyperv: {
-      '@_mode': 'custom',
-      relaxed: { '@_state': 'on' },
-      vapic: { '@_state': 'on' },
-      spinlocks: { '@_state': 'on', '@_retries': '8191' },
-      vpindex: { '@_state': 'on' },
-      synic: { '@_state': 'on' },
-      stimer: { '@_state': 'on' },
-      reset: { '@_state': 'on' },
-    },
-  };
-}
-
-export function getWindowsClock() {
-  return {
-    '@_offset': 'localtime',
-    timer: { '@_name': 'hypervclock', '@_present': 'yes' },
-  };
-}
-
-export function getLinuxFeatures() {
-  return { acpi: {} };
-}
-
 export async function assertVMNameAvailable() {
   throw noConn();
 }
@@ -242,14 +173,6 @@ export async function attachUSBDevice() {
 
 export async function detachUSBDevice() {
   throw noConn();
-}
-
-export function extractDiskSnippet(fullXml, slot) {
-  const parsed = parseDomainRaw(fullXml);
-  const disks = parsed?.domain?.devices?.disk;
-  if (!Array.isArray(disks)) return null;
-  const disk = disks.find((d) => d.target && d.target['@_dev'] === slot);
-  return disk || null;
 }
 
 export async function attachDisk() {
