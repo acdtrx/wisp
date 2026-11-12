@@ -11,18 +11,11 @@ import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
 import {
   parseVMFromXML, parseDomainRaw, buildXml, setWispMetadata, setWispPendingRestart, domainDefinitionSignature,
+  domainNameFromParsed,
 } from './vmManagerXml.js';
 import { getWindowsFeatures, getWindowsClock, getLinuxFeatures, createOwnVMDir } from './vmManagerCreate.js';
 import { moveVmDirectory, rewriteDomainPaths, findActualVmDir, pathExists } from './vmManagerRename.js';
 import { refreshVMListCache } from './vmManagerList.js';
-
-/** Parsed `<name>` may be a string or `{ '#text': string }` from fast-xml-parser. */
-function domainNameFromParsed(dom) {
-  const n = dom?.name;
-  if (n == null) return '';
-  if (typeof n === 'object' && n['#text'] != null) return String(n['#text']).trim();
-  return String(n).trim();
-}
 
 export async function updateVMConfig(name, changes) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');

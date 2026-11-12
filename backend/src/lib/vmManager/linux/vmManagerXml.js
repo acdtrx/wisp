@@ -33,6 +33,14 @@ function wispPrefText(prefs, key) {
   return typeof text === 'string' ? text.trim() : String(text);
 }
 
+/** Parsed `<name>` may be a string or `{ '#text': string }` from fast-xml-parser. */
+export function domainNameFromParsed(dom) {
+  const n = dom?.name;
+  if (n == null) return '';
+  if (typeof n === 'object' && n['#text'] != null) return String(n['#text']).trim();
+  return String(n).trim();
+}
+
 /** Extract Wisp prefs from domain metadata (wisp:prefs). */
 function parseWispPrefs(dom) {
   const metadata = dom?.metadata;

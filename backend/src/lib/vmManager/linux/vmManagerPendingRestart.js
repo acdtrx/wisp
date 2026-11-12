@@ -2,13 +2,29 @@
  * Restart-required flag: `<wisp:pendingRestart>since</wisp:pendingRestart>`
  * in a domain's persistent metadata marks a saved definition the running QEMU
  * doesn't reflect yet. A VM needs a restart while the flag exists and its
- * QEMU process has not started since `since`; the flag is dropped when a read
- * observes a QEMU that started later. A guest-side reboot keeps the same QEMU
- * process, so the flag correctly stays.
+ * QEMU process has not started since `since`; the stored flag is dropped when
+ * a QEMU start is observed (STARTED event, or at connect). A guest-side reboot
+ * keeps the same QEMU process, so the flag correctly stays.
  */
-import { connectionState, resolveDomain, getDomainXML, vmError } from './vmManagerConnection.js';
-import { parseDomainRaw, buildXml, getWispPendingRestart, setWispPendingRestart } from './vmManagerXml.js';
+import {
+  connectionState,
+  resolveDomain,
+  getDomainXML,
+  getDomainState,
+  vmError,
+  subscribeDomainStarted,
+  subscribeConnected,
+} from './vmManagerConnection.js';
+import {
+  parseDomainRaw,
+  buildXml,
+  getWispPendingRestart,
+  setWispPendingRestart,
+  domainNameFromParsed,
+} from './vmManagerXml.js';
 import { refreshVMListCache } from './vmManagerList.js';
+import { getQemuStartTimeMs } from './vmManagerProc.js';
+import { isOfflineState } from './libvirtConstants.js';
 
 /**
  * Write the flag into the inactive definition, leaving every other part of
@@ -49,25 +65,61 @@ export async function setVMPendingRestart(name, value) {
 }
 
 /**
- * The restart-required rule, applied wherever a VM's state is read (list
- * refresh — including the first build at Wisp startup — and detail).
+ * The restart-required rule: the flag still in force — `{ since }` or null.
  * `startedAt` is the QEMU process's start time (epoch ms), null when not
- * running or unreadable. Returns the flag still in force — `{ since }` or
- * null — and drops it from the definition when QEMU started after `since`
- * (unless the connection doesn't repair on read).
- * A stopped VM, or one whose start time can't be read, keeps its flag.
+ * running or unreadable. A flag QEMU started after is no longer in force; a
+ * stopped VM, or one whose start time can't be read, keeps its flag. Pure:
+ * reads apply it, and `clearOutgrownRestartFlag` drops the stored flag.
  */
-export async function resolveVMPendingRestart(domPath, name, pendingRestart, startedAt) {
+export function pendingRestartInForce(pendingRestart, startedAt) {
   if (!pendingRestart) return null;
   if (startedAt == null || !(startedAt > Date.parse(pendingRestart.since))) return pendingRestart;
-  if (!connectionState.repairOnRead) return null;
-  try {
-    const cleared = await writePendingRestart(domPath, null, { expectSince: pendingRestart.since });
-    if (cleared) {
-      connectionState.logger?.info?.({ vm: name, since: pendingRestart.since }, '[vmManager] restart-required flag cleared: qemu started after it was set');
-    }
-  } catch (err) {
-    connectionState.logger?.warn?.({ vm: name, err: err?.message || err }, '[vmManager] failed to clear restart-required flag');
-  }
   return null;
 }
+
+/**
+ * Drop the domain's stored flag when its QEMU started after `since`
+ * (conditional on the flag still holding that `since`). Returns the VM name
+ * when it cleared one, else null.
+ */
+async function clearOutgrownRestartFlag(domPath) {
+  const dom = parseDomainRaw(await getDomainXML(domPath, { inactive: true })).domain;
+  if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
+  const flag = getWispPendingRestart(dom);
+  if (!flag) return null;
+  const name = domainNameFromParsed(dom);
+  const { code } = await getDomainState(domPath);
+  const startedAt = isOfflineState(code) ? null : await getQemuStartTimeMs(name);
+  if (pendingRestartInForce(flag, startedAt)) return null;
+  const cleared = await writePendingRestart(domPath, null, { expectSince: flag.since });
+  return cleared ? name : null;
+}
+
+/**
+ * Clear outgrown restart flags: of one domain (`domPath`), or of every domain.
+ * Triggered by a STARTED DomainEvent and by each (re)connect — the connect
+ * pass catches VMs started while Wisp was not connected (host-boot autostart).
+ */
+async function clearOutgrownRestartFlags(trigger, domPath = null) {
+  const log = connectionState.logger;
+  try {
+    const paths = domPath ? [domPath] : await connectionState.connectIface.ListDomains(3);
+    let clearedCount = 0;
+    for (const p of paths) {
+      try {
+        const name = await clearOutgrownRestartFlag(p);
+        if (!name) continue;
+        clearedCount += 1;
+        log?.info?.({ vm: name, trigger }, '[vmManager] restart-required flag cleared: qemu started after it was set');
+      } catch (err) {
+        log?.warn?.({ domainPath: p, trigger, err: err?.message || err }, '[vmManager] failed to clear restart-required flag');
+      }
+    }
+    if (!domPath) log?.info?.({ trigger, domains: paths.length, cleared: clearedCount }, '[vmManager] restart-required flags checked');
+  } catch (err) {
+    log?.warn?.({ trigger, err: err?.message || err }, '[vmManager] restart-required flag check failed');
+  }
+}
+
+subscribeDomainStarted((domPath) => { clearOutgrownRestartFlags('domain started', domPath); });
+subscribeConnected(() => { clearOutgrownRestartFlags('connect'); });

@@ -14,7 +14,7 @@ import {
 } from './vmManagerConnection.js';
 import { parseVMFromXML, detectOSCategory } from './vmManagerXml.js';
 import { isVMBinaryStale, getQemuStartTimeMs } from './vmManagerProc.js';
-import { resolveVMPendingRestart } from './vmManagerPendingRestart.js';
+import { pendingRestartInForce } from './vmManagerPendingRestart.js';
 import { STATE_NAMES, isOfflineState } from './libvirtConstants.js';
 
 /* ── VM list cache (event-driven) ──────────────────────────────────── */
@@ -53,7 +53,7 @@ async function fetchVMListFromLibvirt({ complete = false } = {}) {
 
       const staleBinary = stateCode === 1 ? await isVMBinaryStale(config.name) : false;
       const startedAt = isOfflineState(stateCode) ? null : await getQemuStartTimeMs(config.name);
-      const pendingRestart = await resolveVMPendingRestart(p, config.name, config.pendingRestart, startedAt);
+      const pendingRestart = pendingRestartInForce(config.pendingRestart, startedAt);
 
       return {
         name: config.name,
@@ -310,7 +310,7 @@ export async function getVMConfig(name) {
   if (!config) throw vmError('PARSE_ERROR', `Failed to parse XML for VM "${name}"`);
 
   const startedAt = isOfflineState(stateCode) ? null : await getQemuStartTimeMs(config.name);
-  const pendingRestart = await resolveVMPendingRestart(path, config.name, config.pendingRestart, startedAt);
+  const pendingRestart = pendingRestartInForce(config.pendingRestart, startedAt);
   const disks = await enrichDisksWithSizeGiB(config.disks);
 
   return {

@@ -30,6 +30,10 @@ export const connectionState = {
   domainChangeHandlers: new Set(),
   /** Subscribers invoked on bus disconnect / error. */
   disconnectHandlers: new Set(),
+  /** Subscribers invoked with the domain path on a STARTED DomainEvent. */
+  domainStartedHandlers: new Set(),
+  /** Subscribers invoked after each successful (re)connect that watches events. */
+  connectedHandlers: new Set(),
   /** Subscribers invoked on every libvirt AgentEvent (per-domain qemu-ga lifecycle). */
   agentEventHandlers: new Set(),
   /** Per-domain AgentEvent subscriptions: domainPath -> { iface, listener }. */
@@ -46,12 +50,6 @@ export const connectionState = {
    *  (the migration runner) that must not act alongside the backend. Kept
    *  across bus reconnects. */
   watchEvents: true,
-  /** false (connect option): reads write nothing back — a restart-required
-   *  flag the running QEMU has outgrown is reported cleared but stays in the
-   *  definition. For the migration runner, whose only writes are a
-   *  migration's own recorded changes (and none under --dry-run); the backend
-   *  repairs on its next read. Kept across bus reconnects. */
-  repairOnRead: true,
 };
 
 export { vmError, unwrapVariant, unwrapDict, formatVersion, generateMAC };
@@ -66,6 +64,26 @@ export { vmError, unwrapVariant, unwrapDict, formatVersion, generateMAC };
 export function subscribeDomainChange(handler) {
   connectionState.domainChangeHandlers.add(handler);
   return () => connectionState.domainChangeHandlers.delete(handler);
+}
+
+/**
+ * Subscribe to domain starts (a new QEMU process): `handler(domainPath)` on
+ * every STARTED DomainEvent. Only fires with `watchEvents`. Returns an
+ * unsubscribe function.
+ */
+export function subscribeDomainStarted(handler) {
+  connectionState.domainStartedHandlers.add(handler);
+  return () => connectionState.domainStartedHandlers.delete(handler);
+}
+
+/**
+ * Subscribe to (re)connects: `handler()` after each successful connect that
+ * watches events — the point to catch up on whatever happened while Wisp was
+ * not connected. Returns an unsubscribe function.
+ */
+export function subscribeConnected(handler) {
+  connectionState.connectedHandlers.add(handler);
+  return () => connectionState.connectedHandlers.delete(handler);
 }
 
 export function subscribeDisconnect(handler) {
@@ -84,16 +102,18 @@ export function subscribeAgentEvent(handler) {
   return () => connectionState.agentEventHandlers.delete(handler);
 }
 
-function fireDomainChange() {
-  for (const h of connectionState.domainChangeHandlers) {
-    try { h(); } catch (err) { connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] domain-change handler threw'); }
+function fireHandlers(handlers, label, ...args) {
+  for (const h of handlers) {
+    try { h(...args); } catch (err) { connectionState.logger?.warn?.({ err: err?.message || err }, `[vmManager] ${label} handler threw`); }
   }
 }
 
+function fireDomainChange() {
+  fireHandlers(connectionState.domainChangeHandlers, 'domain-change');
+}
+
 function fireDisconnect() {
-  for (const h of connectionState.disconnectHandlers) {
-    try { h(); } catch (err) { connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] disconnect handler threw'); }
-  }
+  fireHandlers(connectionState.disconnectHandlers, 'disconnect');
 }
 
 function fireAgentEvent(vmName, payload) {
@@ -163,15 +183,13 @@ function handleBusError(bus, err) {
 
 /**
  * @param {object} [logger]
- * @param {{ watchEvents?: boolean, repairOnRead?: boolean }} [opts]
+ * @param {{ watchEvents?: boolean }} [opts]
  *   watchEvents false: connection and calls only — see connectionState.watchEvents.
- *   repairOnRead false: reads never write — see connectionState.repairOnRead.
  *   Omitted (as on a reconnect) keeps the current setting.
  */
 export async function connect(logger = null, opts = {}) {
   if (logger) connectionState.logger = logger;
   if (typeof opts.watchEvents === 'boolean') connectionState.watchEvents = opts.watchEvents;
-  if (typeof opts.repairOnRead === 'boolean') connectionState.repairOnRead = opts.repairOnRead;
   const bus = dbus.systemBus();
   /* Attached at creation: an 'error' with no listener would crash the process. */
   bus.on('error', (err) => handleBusError(bus, err));
@@ -202,6 +220,8 @@ export async function connect(logger = null, opts = {}) {
       // VIR_DOMAIN_EVENT_UNDEFINED — drop the cached proxy so a redefine with the same UUID gets a fresh one.
       connectionState.domainProxyCache.delete(domainPath);
     }
+    // VIR_DOMAIN_EVENT_STARTED — a new QEMU process.
+    if (event === 2) fireHandlers(connectionState.domainStartedHandlers, 'domain-started', domainPath);
     fireDomainChange();
   });
 
@@ -209,6 +229,7 @@ export async function connect(logger = null, opts = {}) {
     qemuBinaryWatcherCleanup = watchQemuBinaries(fireDomainChange);
   }
 
+  fireHandlers(connectionState.connectedHandlers, 'connected');
   fireDomainChange();
 }
 
