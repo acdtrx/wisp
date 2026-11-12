@@ -555,12 +555,13 @@ export async function deregisterService(serviceKey) {
 export async function deregisterServicesForContainer(containerName) {
   if (!containerName) return;
   const prefix = `${containerName}#`;
-  const matched = [];
-  for (const key of state.services.keys()) {
-    if (key.startsWith(prefix)) matched.push(key);
-  }
-  for (const key of matched) {
-    await deregisterService(key);
+  // Snapshot the records, not just the keys: frees are awaited one by one, and a
+  // registerService landing meanwhile (a restart re-registering) puts a new
+  // record under the same key — that one is not ours to free.
+  const matched = [...state.services.entries()].filter(([key]) => key.startsWith(prefix));
+  for (const [key, record] of matched) {
+    if (state.services.get(key) === record) state.services.delete(key);
+    await freeGroup(record.group);
   }
 }
 

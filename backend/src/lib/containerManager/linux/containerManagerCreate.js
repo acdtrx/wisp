@@ -722,6 +722,15 @@ export async function startExistingContainer(name) {
   if (runConfig.localDns) {
     try {
       await registerAllContainerServices(name, runConfig);
+      // A task that died while its services were being registered (a crash
+      // loop) found this start holding the lock, so the exit handler left the
+      // services to it: drop them now rather than advertise a dead task.
+      const task = await getTaskState(name);
+      const st = task ? normalizeTaskStatus(task.status) : null;
+      if (Number(task?.pid) !== Number(taskPid) || (st !== 'RUNNING' && st !== 'PAUSED')) {
+        containerState.logger?.info?.({ container: name, pid: taskPid }, '[containerManager] task exited during start — services deregistered');
+        await deregisterServicesForContainer(name);
+      }
     } catch (err) {
       containerState.logger?.warn?.({ err: err?.message || err, container: name }, '[containerManager] service registration after start failed');
     }
