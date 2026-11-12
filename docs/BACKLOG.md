@@ -186,12 +186,6 @@ unit started via one fixed sudo rule (like `wisp-updater`), or at least refuse a
 self-update while an upgrade runs and drop the timeout. **Revisit trigger:** an upgrade is
 ever interrupted, or OS upgrades become unattended/scheduled. (re-review 2026-10-16, P2)
 
-**Dev backend loads runtime.env after config.** `backend/src/index.js` has the
-import-order issue the migration runner had (P5): `WISP_CONFIG_PATH` from `runtime.env` is
-read after config resolution. Production sets it through the unit's environment, so only a
-dev setup relying on `runtime.env` is affected. **Revisit trigger:** a dev or test setup
-points `WISP_CONFIG_PATH` through `runtime.env` and gets the default config. (Plan 6, B4)
-
 **Allowed-roots check follows symlinks.** `assertPathInsideAllowedRoots` uses
 `path.resolve`, not `realpath`, so a symlink placed inside the image library can point
 outside it. Only the admin can place files there. **Revisit trigger:** anything other than

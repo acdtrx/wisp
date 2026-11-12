@@ -7,7 +7,8 @@ import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 
-import { loadRuntimeEnv } from './lib/loadRuntimeEnv.js';
+// First project import: runtime.env must be in process.env before config.js loads.
+import './lib/bootRuntimeEnv.js';
 import { createAuthHook, createRouteAccessRegistry, checkRouteAccess, AUTH_LEVELS } from './lib/auth.js';
 import { handleUncaughtError } from './lib/routeErrors.js';
 import { getConfigSync } from './lib/config.js';
@@ -53,7 +54,6 @@ import { startWispDiscovery, stopWispDiscovery } from './lib/wispDiscovery.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, '..', '..');
-loadRuntimeEnv(projectRoot);
 
 /* Configure the managers before any route registers or any manager-internal
    code runs (lib/managerBootstrap.js — shared with scripts/migrate.mjs). */
