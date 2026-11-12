@@ -31,7 +31,7 @@ import { normalizeImageRef } from './containerImageRef.js';
 import { getImageDigest, resolveContainerImageRef } from './containerManagerImages.js';
 import { readContainerConfig, writeContainerConfig, notifyContainerConfigWrite } from './containerManagerConfigIo.js';
 import { RESTART_FIELDS } from './containerManagerConfig.js';
-import { markPendingRestart } from './containerManagerPendingRestart.js';
+import { markPendingRestart, pendingRestartInForce } from './containerManagerPendingRestart.js';
 import { validateAndNormalizeMounts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';
 
@@ -542,18 +542,25 @@ async function persistStartOwnedFields(name, specConfig) {
 }
 
 /**
- * Flag a restart when a restart-relevant field was saved after the spec was
- * built: such an edit found no running task, so nothing else marked it.
- * Runs once the task has started, so `since` lies after the task's start and
- * the flag holds until the next start. An older flag needs no handling here —
- * the restart-required rule drops it on the next read, the task having
- * started after it.
+ * Settle the restart-required flag once the task has started, in the latest
+ * container.json. A restart-relevant field saved after the spec was built
+ * found no running task, so nothing else marked it: flag it (`since` lies
+ * after the task's start, so the flag holds until the next start). Otherwise
+ * drop a flag the task started after — this start applied that change. A
+ * flag set while the task was starting is newer than its start and stays.
  */
-async function flagEditsMissedByStart(name, specConfig) {
+async function settleRestartFlagAfterStart(name, specConfig, pid) {
   const latest = await readContainerConfig(name);
-  if (restartFieldsSignature(latest) === restartFieldsSignature(specConfig)) return;
-  markPendingRestart(latest);
+  if (restartFieldsSignature(latest) !== restartFieldsSignature(specConfig)) {
+    markPendingRestart(latest);
+    await writeContainerConfig(name, latest);
+    return;
+  }
+  if (!latest.pendingRestart || await pendingRestartInForce(latest, pid)) return;
+  const { since } = latest.pendingRestart;
+  delete latest.pendingRestart;
   await writeContainerConfig(name, latest);
+  containerState.logger?.info?.({ container: name, since }, '[containerManager] restart-required flag cleared: task started after it was set');
 }
 
 /**
@@ -665,6 +672,7 @@ export async function startExistingContainer(name) {
   }
 
   let runConfig;
+  let taskPid;
   try {
     if (lease) await mergeNetworkLeaseIntoConfig(name, config, lease);
 
@@ -696,7 +704,7 @@ export async function startExistingContainer(name) {
       stdout: logUri,
       stderr: logUri,
     });
-    await callUnary(getClient('tasks'), 'start', { containerId: name });
+    ({ pid: taskPid } = await callUnary(getClient('tasks'), 'start', { containerId: name }));
   } catch (err) {
     await rollbackFailedStart(name, config.network);
     throw err;
@@ -704,7 +712,7 @@ export async function startExistingContainer(name) {
 
   // The task is running: a failed flag write is logged, not a failed start.
   try {
-    await flagEditsMissedByStart(name, config);
+    await settleRestartFlagAfterStart(name, config, Number(taskPid) || 0);
   } catch (err) {
     containerState.logger?.warn?.({ err: err?.message || err, container: name }, '[containerManager] restart-required check after start failed');
   }
