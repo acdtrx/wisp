@@ -8,7 +8,7 @@
  * Unlike VM PCI passthrough (VFIO), exposing a device to a container does not
  * detach it from the host kernel. The host driver still owns the device; we
  * just make the existing chardev visible inside the container's mount + cgroup
- * namespaces. See docs/spec/CONTAINERS.md → Devices entry.
+ * namespaces. See docs/specs/CONTAINERS.md → Devices entry.
  */
 import { containerError } from './containerManagerConnection.js';
 

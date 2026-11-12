@@ -8,7 +8,7 @@
  * per VM at a time. A second one is refused with 409 `VM_BUSY` instead of
  * queueing: the caller retries once the running operation (visible as a
  * background job for backup) finishes. The list lives in
- * docs/spec/BACKUPS.md → Per-VM operation lock.
+ * docs/specs/BACKUPS.md → Per-VM operation lock.
  *
  * In-memory only: a backend restart ends every operation that held a lock.
  * Acquire is synchronous, so a route that acquires before its first `await`

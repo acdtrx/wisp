@@ -157,7 +157,7 @@ function buildPatch(form, prev) {
 }
 
 /**
- * Modal form editor for one container mount (see docs/UI-PATTERNS.md § Modal
+ * Modal form editor for one container mount (see docs/FRONTEND-RULES.md § Modal
  * form editor). Two entry points like RemovableDriveEditorModal: create — the
  * header Add that was tapped passes its `kind` (`file` | `directory` | `tmpfs`)
  * — or edit, with the saved `mount` row. Saves through the row-scoped mount

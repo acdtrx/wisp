@@ -15,7 +15,7 @@
 
 @theme {
   /* "Will-o'-the-Wisp" palette — luminous teal accent on cool neutrals that
-     carry a faint teal cast. Mirrored in docs/spec/UI.md § Design Language. */
+     carry a faint teal cast. Mirrored in docs/FRONTEND-RULES.md § Wisp's design. */
   --color-surface: #f6faf9;
   --color-surface-sidebar: #edf4f2;
   --color-surface-card: #ffffff;
@@ -110,7 +110,7 @@
 
    Every text and status value below was contrast-checked against all three
    surfaces plus the input well; ratios are recorded in
-   docs/spec/UI.md § Design Language. Muted is the floor at 5.2:1 on a card.
+   docs/FRONTEND-RULES.md § Wisp's design. Muted is the floor at 5.2:1 on a card.
    Check before lightening a surface or darkening a text token. */
 :root[data-theme='dark'] {
   color-scheme: dark;
@@ -287,7 +287,7 @@
    Every colour below is derived from the palette tokens above — the glow, the
    motes, and the canvas wash are the accent at varying strengths, nothing new.
    Motion is applied from the components as `animate-[…]` so Tailwind's
-   `motion-reduce:animate-none` can switch it off (docs/spec/UI.md § Home).
+   `motion-reduce:animate-none` can switch it off (docs/specs/UI.md § Home).
 
    Light and dark are two settings of one system, not two designs: the theme
    only changes which way each mix goes. Light *lifts toward white* — the wash

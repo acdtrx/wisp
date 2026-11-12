@@ -1,122 +1,275 @@
 # Coding Rules
 
-Coding principles for any contributor — human or coding agent — working on the
-wisp codebase. Companion to [`CLAUDE.md`](../CLAUDE.md), which carries the
-working method (triage, plans, verification, git) plus the authoritative
-shell-exec allowlist. Each section states the general principle with its wisp
-application.
+Generic principles for how code is written, tested and debugged, for any contributor
+(human or coding agent) working on this codebase. They are project-independent, except §12
+(`[PROJECT]`), the project's language rules.
 
-Section numbers are stable: `CODING-RULES §N` comments in the source refer to
-them. Two things deliberately live elsewhere: [`UI-PATTERNS.md`](UI-PATTERNS.md)
-is the authority for list/table/row-editor UI, and file-level backend mechanics
-(domain-XML conventions, DBus proxy caching, manager event wiring) live in
-[`backend/src/lib/CLAUDE.md`](../backend/src/lib/CLAUDE.md) and `docs/spec/`.
+Projects specialize these rules by weaving their concrete instances inline
+("Applied: …") under the matching principle — the principle stays general, the
+application names the project's case. A project rule that no principle covers is a bullet
+of its own in the section it belongs to. Section numbers are stable: `CODING-RULES §N`
+comments in the source refer to them.
 
 ---
 
 ## 1. Naming and Semantics
 
-- Functions, files, and modules are named for their **purpose and domain**, not for the underlying mechanism or API they call: `startVM(name)`, `attachISO(vmName, slot, isoPath)` — never `callDomainMethod('UpdateDevice', ...)`.
-- No generic action dispatchers (`performAction(name, action)`). Each operation gets its own purpose-named function.
-- Avoid vague names like `doAction`, `update`, `handle`. Be specific: `executeDiskOperation`, `updateField`, `validateInput`.
-- UI component and file names track the user-visible tab/section names. Renaming a tab or section renames the corresponding file and default export in the same change.
+- Functions, files, and modules are named for their **purpose and domain**, not for the underlying
+  mechanism or API they call.
+  - Applied: `startVM(name)`, `attachISO(vmName, slot, isoPath)` — never
+    `callDomainMethod('UpdateDevice', ...)`.
+  - Applied: UI component and file names track the user-visible tab and section names;
+    renaming a tab or section renames the corresponding file and default export in the
+    same change.
+- No generic action dispatchers (e.g. `performAction(name, action)`). Each operation gets its own
+  purpose-named function.
+- Avoid vague names like `doAction`, `update`, `handle`. Be specific: `executeDiskOperation`,
+  `updateField`, `validateInput`.
 
 ## 2. Code Sharing — by Purpose, Not by Shape
 
-- Extract shared code only when the call sites serve the **same purpose**. Deduplicate by what the code *means* in the domain, not by what it happens to look like today.
-- Two things that look similar but serve different purposes stay separate; a premature merge becomes a mega-component held together by flags. If a parameter list is accumulating behavior-changing booleans, split — don't add another flag.
-- Wisp applied: Overview and Create VM share the section components via a single `isCreating` prop (one genuine shared purpose, one flag); vmManager and containerManager are the **single implementation** of every VM/container operation — no operation logic duplicated in routes.
-- Shared utilities live in dedicated modules; never copy-paste the same helper into multiple files.
+- Share code only between call sites with the same purpose; similar-looking code with different
+  purposes stays separate.
+  - Applied: vmManager and containerManager are the **single implementation** of every
+    VM and container operation — no operation logic is duplicated in routes.
+- A parameter list collecting behaviour-changing booleans is the signal to split, not to add a
+  flag.
+  - Applied: Overview and Create VM share their section components through a single
+    `isCreating` prop — one genuine shared purpose, one flag.
+- Shared helpers live in one module, never copied between files.
 
 ## 3. Minimal External Dependencies
 
-- Do not add a library for functionality that can be implemented as a small function or that the platform already provides. Wisp applied: no `dotenv` — `config/runtime.env` is parsed directly; noVNC is vendored by script, not a package; no JWT/UUID/date libraries — Node built-ins.
-- **Latest versions, verified.** Before adding a dependency, check the registry: the version being added must be the current latest release, and the package actively maintained — not deprecated, and not a legacy name whose successor moved on (wisp applied: `@xterm/xterm`, not the deprecated `xterm`). Keep existing dependencies at latest as routine maintenance; a genuinely blocked upgrade gets its block and recheck condition recorded instead of a silent pin.
-- **No CDN-loaded assets.** All JS, CSS, and fonts bundled or system defaults. Body/UI text stays `system-ui, -apple-system, sans-serif`; custom faces are self-hosted woff2 with the license alongside, and the bundled display face (`--font-display`) is for brand moments only.
-- Code-split heavy features with dynamic imports.
-- `npm ci` for reproducible installs; lockfile ships with deploys.
+- Prefer the platform and the framework: don't add a library for what they provide or a small
+  function does, and don't rebuild what they already offer.
+  - Applied: no `dotenv` — `config/runtime.env` is parsed directly; noVNC is vendored by
+    script, not a package; no JWT, UUID or date libraries — Node built-ins.
+- Adding a dependency is the user's call: propose it with what it saves. It enters at its latest
+  stable version, actively maintained, and gets a line in `TECH-STACK.md`'s inventory.
+  - Applied: never a legacy name whose successor moved on — `@xterm/xterm`, not the
+    deprecated `xterm`.
+- Keep dependencies current; a blocked upgrade records why and when to recheck.
 
-## 4. Structured Data Parsing and Interpretation
+## 4. Structured Data Parsing
 
-- **Never parse or mutate XML (or any structured format) with regex.** Wisp uses `fast-xml-parser` exclusively, through the existing helpers (`parseDomainRaw`, `parseVMFromXML`, `buildXml`, `buildDiskXml`).
-- When modifying domain XML, extract the existing element and mutate it (e.g. a CDROM's `<source>`) — do not construct a replacement from scratch.
-- Parsing yields a tree, not meaning: read values from where each contract puts them, never by scanning for records that merely *look like* the target. Prefer designs whose failure mode is visible-and-absent over silent-and-plausible.
+- Never parse structured formats (XML, JSON, YAML, HTML, etc.) with regular expressions. Use a
+  dedicated parser.
+  - Applied: domain XML goes through `fast-xml-parser` only, by way of the existing
+    helpers (`parseDomainRaw`, `parseVMFromXML`, `buildXml`, `buildDiskXml`).
+- When modifying a parsed document, extract the existing element and mutate it rather than
+  constructing a replacement from scratch.
+  - Applied: changing a CD-ROM's medium mutates its `<source>`; it never rebuilds the disk
+    element.
+- Read each value from where its format puts it, without using generic discovery. When it isn't
+  there, fail visibly rather than guess a plausible value.
+- Config is read strictly: unknown keys and wrong types are rejected at startup — a typo
+  fails, never silently defaults.
 
 ## 5. Error Handling
 
-- Every async function returns a Promise. Managers throw **structured errors** `{ code, message, raw? }` via their private factories (`vmError` / `containerError`).
-- Route handlers map codes to HTTP status (404, 409, 422, 500, 503 when libvirt/backend is unreachable) and return `{ error, detail }` — `detail` is `err.raw || err.message`. SSE errors ride the same shape (`{ error, detail, code? }`; job streams use `{ step: 'error', error, detail }`). See [`spec/ERROR-HANDLING.md`](spec/ERROR-HANDLING.md).
-- Errors shown to the user are **sticky** — visible until dismissed, no auto-dismiss on later success.
-- Prefer inspecting state up front and choosing the right path once over try/catch/retry as control flow.
-- Every silent `catch {}` needs a comment explaining why the error is swallowed.
+- Errors are **structured**: at minimum a stable `code` and a human-readable `message`. The
+  language idiom that carries them (thrown objects, returned error values) is in §12.
+  - Applied: managers throw `{ code, message, raw? }` through their private factories
+    (`vmError` / `containerError`).
+- API responses on failure use a consistent shape across the entire application, unless an
+  external API contract dictates another: `{ error, detail? }` — `error` the stable code,
+  always present; `detail` the human-readable message, where it adds value. The same shape
+  applies on HTTP and streaming channels.
+  - Applied: route handlers map codes to HTTP status (404, 409, 422, 500, and 503 when
+    libvirt or the backend is unreachable) and return `{ error, detail }`, `detail` being
+    `err.raw || err.message`. SSE errors ride the same shape (`{ error, detail, code? }`;
+    job streams use `{ step: 'error', error, detail }`). See
+    [`specs/ERROR-HANDLING.md`](specs/ERROR-HANDLING.md).
+- Prefer inspecting state up front and choosing the right path once, rather than try/catch/retry as
+  control flow.
+- Every silent `catch {}` block must have a comment explaining why the error is intentionally
+  swallowed.
 
 ## 6. Async Patterns and Timing
 
-- **Never `sleep` or timer delays to paper over race conditions.** State-transition waits use libvirt `DomainEvent` DBus signals, or retry with exponential backoff via `setImmediate`.
-- Timers for **scheduling** are fine (libvirt reconnect delay, SSE push intervals, job-TTL cleanup, periodic apt checks) — they must never substitute for the correct readiness signal.
-- `AbortController` for cancellable operations, not boolean flags.
-- Streaming over buffering: file uploads pipe multipart to a write stream (never buffer whole files); backups run source → gzip → destination in one pipeline (never copy-then-compress).
+- Never use `sleep` or timer delays to work around race conditions. Use event signals, or retry
+  with exponential backoff.
+  - Applied: state-transition waits use libvirt `DomainEvent` DBus signals, or retry with
+    exponential backoff via `setImmediate`.
+- Timers used for **scheduling** (periodic push updates, reconnect backoff, TTL cleanup, cron-like
+  checks) are allowed.
+  - Applied: the libvirt reconnect delay, SSE push intervals, job-TTL cleanup and the
+    periodic apt checks — never a substitute for the correct readiness signal.
+- Use `AbortController` (or the platform's cancellation primitive) for cancellable operations
+  instead of boolean flags.
+- Every outbound request and subprocess has a timeout; nothing waits forever.
+- Prefer streaming over buffering: pipe data through transform streams instead of reading an
+  entire payload into memory and then writing it out.
+  - Applied: file uploads pipe multipart to a write stream, never buffering whole files;
+    backups run source → gzip → destination in one pipeline, never copy-then-compress.
+- A response's or WebSocket's `'close'` event fires once, so a listener attached after an
+  `await` never runs.
+  - Applied: SSE handlers register every teardown (timers, subscriptions, job-stream
+    registrations, log tails) through `onSSEClose(reply, fn)`, which runs `fn` at once
+    when the response is already destroyed — never `request.raw.on('close')`. WebSocket
+    handlers re-check `socket.readyState !== socket.OPEN` after their setup `await` and tear
+    down what that await produced (TCP leg, exec session) before returning.
 
 ## 7. Architecture Boundaries
 
-- **Single external-system callers.** Only `backend/src/lib/vmManager/linux/` (plus the `vmManager.js` facade) imports `dbus-next` for libvirt; only `backend/src/lib/containerManager/linux/` (plus facade) imports `@grpc/grpc-js`. Avahi's `dbus-next` use lives in `lib/mdns/linux/` only. New operations = new purpose-named facade exports.
-- **Strict managers.** vmManager and containerManager carry **zero Wisp-glue imports** — stdlib, their own internals, and the carved cross-cutting modules (`mdns/`, `networking/`, `storage/`) only. Changes to them are appropriate only for **generic libvirt/containerd functionality**; Wisp-specific orchestration (cloud-init flow, mDNS hooks, section assignments, cleanup rollbacks) lives in routes or app-glue files, which stay flat at `lib/` top-level so each manager remains independently extractable.
-- **Manager events are push, not pull**: subscribe-and-replay surfaces on the facade — fire only on change, replay current state to new subscribers, keep platform plumbing private. New event surfaces follow the same pattern.
-- **Decouple mechanism from trigger.** Any background or maintenance mechanism (update poll, apt checks, job-TTL cleanup, reconcilers) is an invocable unit; its triggers — boot, schedule, events, a manual run — are wired separately, and any trigger can invoke any mechanism. A manual invocation must always work, for testing or because it is needed now. Every execution logs what triggered it and the result.
-- `paths.js` is the **API-input security gate**: routes resolve and validate user-supplied paths there before passing absolute paths to the policy-agnostic managers.
-- Prefer DBus/gRPC over shelling out. Every exec'd binary must be on the approved allowlist in [`CLAUDE.md`](../CLAUDE.md); new binaries — and especially new privileged `wisp-*` helpers — are a team decision, registered per the checklist in [`spec/DEPLOYMENT.md`](spec/DEPLOYMENT.md).
-- **Live data is pushed.** Always-on feeds are topics on the single multiplexed `/api/events` SSE stream — never new dedicated always-on endpoints (browsers cap plain HTTP/1.1 at 6 connections per origin). View-scoped streams (per-entity stats, logs, job progress) stay dedicated. No repeated-GET polling for live data. The stream stays on the custom fetch-based `createSSE`: native EventSource was evaluated and rejected — it can't observe keepalive comments (no dead-TCP watchdog) nor distinguish 401s.
-- The server is the source of truth: VM metadata lives in domain XML, container config in `container.json` — never authoritative state in localStorage.
-- Fastify route **response schemas are authoritative** for serialized output — new response fields need the schema updated in the same edit or Fastify strips them.
-- CORS allows `localhost:5173` in development only; production fronts everything through the frontend proxy.
+- An external system (a database, an API, a daemon) is reached only through the subsystem
+  that owns it: no other module imports its client library or opens a connection. A lint
+  enforces it; a new need is one added line, flagged for review, never a way around the
+  fence.
+  - Applied: only `lib/vmManager/linux/` (behind the `vmManager` facade) imports
+    `dbus-next` for libvirt; only `lib/containerManager/linux/` (behind its facade) imports
+    `@grpc/grpc-js`; Avahi's `dbus-next` use lives in `lib/mdns/linux/` only. A new
+    operation is a new purpose-named facade export.
+  - Applied — **strict managers**: vmManager and containerManager carry **zero Wisp-glue
+    imports** — stdlib, their own internals, and the carved cross-cutting modules
+    (`mdns/`, `networking/`, `storage/`) only. A change to them is appropriate only for
+    **generic libvirt/containerd functionality**; Wisp-specific orchestration (cloud-init
+    flow, mDNS hooks, section assignments, cleanup rollbacks) lives in routes or in app-glue
+    files, which stay flat at `lib/` top level so each manager remains independently
+    extractable. Each manager owns its private error factory, validators and path helpers;
+    a generic primitive takes options rather than a Wisp-specific twin (`attachISO` /
+    `ejectISO` carry `{ createIfMissing }` / `{ removeSlot }`, so cloud-init's slot rides
+    the public primitive while its orchestration stays in `lib/cloudInit.js`).
+- Prefer native/API access over shelling out to CLI tools. Only exec a binary when there is no
+  practical programmatic alternative, and confirm first.
+  - Applied — the exec allowlist: `qemu-img`, `cp --reflink=auto` (with a `copyFile`
+    fallback), `cloud-localds`/`genisoimage`, `openssl passwd`, `xz`, `tar`, `unzip`
+    (`-Z1` listing + extract for container mount zip uploads), `mkfifo` (container exec
+    stdio FIFOs), `ip netns add|delete` (container netns fallback only when the
+    `wisp-netns` helper is absent — works only with the backend as root), the privileged
+    helpers `wisp-os-update`, `wisp-mount`, `wisp-power`, `wisp-dmidecode`,
+    `wisp-smartctl`, `wisp-nvram`, `wisp-netns`, `wisp-cni`, `wisp-bridge`,
+    `systemctl start wisp-updater.service` (via `sudo -n`), and CNI plugins under
+    `/opt/cni/bin/`. Build-time only: `git` (noVNC vendoring). macOS dev stubs only:
+    `system_profiler`, `vm_stat`, `sysctl`. Anything else needs the user's validation
+    first. A new privileged `wisp-*` helper is registered in
+    `scripts/linux/setup/install-helpers.sh` and documented per the checklist in
+    [`specs/DEPLOYMENT.md`](specs/DEPLOYMENT.md).
 
-## 8. Frontend Patterns
+## 8. Frontend
 
-- One Zustand store per subsystem, mirroring the established `vmStore` patterns; SSE via `createSSE` / `createJobSSE` and the `/api/events` topic singleton.
-- Initialise form state from the config's defaults — never `useState({})` and hope.
-- Effect dependencies are **stable**: primitives or serialised representations, never object references that change identity every render; `useCallback` for handlers passed to effects or children.
-- Lazy-load heavy features (Console tab) with `React.lazy` / dynamic import.
-- Lists, tables, and row editors follow [`UI-PATTERNS.md`](UI-PATTERNS.md) — row-scoped saves, header add actions, shared table chrome.
-- **Action buttons are icon-only by default**, with `title` / `aria-label`. Visible text labels only for primary form actions (Create/Save/Cancel at form bottoms) or on explicit request.
-- Dialogs go through `ConfirmDialog` / `AlertDialog` — never `window.confirm()` / `window.alert()`.
+In projects with a web UI: `FRONTEND-RULES.md`.
 
 ## 9. Security
 
-- Validate and sanitise all user input at the **API boundary**; internal functions may assume valid input. Workload names: alphanumeric, hyphens, underscores, dots; reject traversal, empty, over-length.
-- Secrets to subprocesses via **stdin or env, never argv** (cloud-init password → `openssl passwd -6` on stdin).
-- Sanitise subprocess error output before exposing it to clients (SMB passwords masked).
-- Rate-limit auth endpoints; keying uses `request.ip` only — no `x-forwarded-for` fallback.
-- SSRF: block private/loopback addresses in user-supplied download URLs.
-- The WebSocket console route requires JWT verification.
-- Never put auth tokens in URLs (`?token=...`) — they get logged. Use cookies or `Authorization` headers.
+- Validate and sanitise all user input at the **API boundary** using the one schema-validation
+  mechanism named in `TECH-STACK.md`, not ad-hoc checks. Internal library functions may assume
+  valid input.
+  - Applied: workload names are alphanumeric, hyphens, underscores and dots; traversal,
+    empty and over-length names are rejected.
+  - Applied: `lib/paths.js` is the **API-input security gate** for host paths — routes
+    resolve and validate user-supplied paths there (`resolveLibraryPath`,
+    `assertPathInsideAllowedRoots`) before passing absolute paths to the managers, which
+    stay policy-agnostic about which host paths a deployment allows.
+- Pass secrets to subprocesses via stdin or environment variables, never as command-line arguments
+  (visible in process lists).
+  - Applied: the cloud-init password reaches `openssl passwd -6` on stdin.
+- Sanitise subprocess error output before exposing it to clients (e.g. mask credentials).
+  - Applied: SMB passwords are masked.
+- Block requests to private/loopback addresses when the URL originates from user input (SSRF).
+  - Applied: user-supplied download URLs.
+- Never put auth tokens in URLs (`?token=...`) — they get logged. Use cookies or `Authorization`
+  headers.
+- Logs never carry secrets, tokens, credentials or whole request bodies.
+- The WebSocket console routes require a verified session, like every other route.
 - Temp directories holding credentials are created with a restrictive umask.
 
 ## 10. Code Quality
 
 - Remove all debug logging before committing.
-- Fix root causes, not symptoms; no workaround scripts patching over bugs.
-- Split large modules by **domain of functionality**, not arbitrarily; small single-use helpers stay inline.
-- No commented-out code — version control history holds the past.
-- **Comments hold current agreements only.** A comment states the constraint, invariant, or reasoning that is true *now* — never the code's own history: no "since <date>", no "used to be", no narration of previous iterations. Git is the archive. Naming a rejected alternative is allowed only when it documents a live constraint (why the obvious approach fails), not what this code did before. When touching code, bring any history-narrating comment you meet up to this rule.
-- New subsystems mirror existing patterns: facade module, domain split, dedicated store, dedicated routes (containers deliberately mirrored VMs).
+- If a helper is small and used in only one file, keep it inline.
+- Large modules are split by **domain of functionality**, not arbitrarily.
+- No commented-out code in the repository. Use version control history to recover old code.
+- Match existing patterns over personal preference: the file's when editing, existing
+  subsystems' when adding one.
+  - Applied: a new subsystem mirrors the existing ones — facade module, domain split,
+    dedicated store, dedicated routes (containers deliberately mirrored VMs).
+- **Comment only what the code can't say:** why, a non-obvious constraint or invariant, or a
+  contract callers rely on, in a sentence or two. Don't restate the code or document a name that
+  already says it. No history, dates, who decided or plan steps: design reasoning lives in
+  `docs/`, cited by name. A rejected alternative only when the obvious approach fails.
+  - Applied: when touching code, bring any history-narrating comment you meet up to this
+    rule.
 
 ## 11. Code Style
 
-- Early returns; guard clauses at the top reduce nesting.
-- Import order: (1) platform/stdlib, (2) third-party, (3) project modules — blank line between groups.
-- One exported UI component per file; unexported local sub-components may share it.
-- Colocate related files per feature.
-- `const` by default; `let` only for genuine reassignment; never `var`.
+- Prefer early returns. Use guard clauses at the top of functions to handle error/edge cases and
+  return early, reducing nesting depth.
+- Consistent import ordering: (1) platform/standard library, (2) third-party packages,
+  (3) project modules. Separate groups with a blank line.
 
-## 12. Container App Modules
+## 12. Language Rules `[PROJECT]`
 
-- New app registry entries default to **non-root** — omit `requiresRoot` unless there is a concrete identified need: a privileged port bound without capability tricks, startup writes to root-owned paths *inside the image rootfs* (not mount points), or capabilities effectively tied to UID 0.
-- "The upstream image's `USER` defaults to 0" is not a reason. Wisp's mount pre-owning and GID model already solve the pain points that push raw-Docker setups to root. Try non-root, watch the first-boot logs, and flip only on a real `EACCES` that a tmpfs or pre-owned Local mount can't fix.
-- Unnecessary root costs real things: storage-sourced writes landing as overflowuid on SMB shares, delete-time idmap gymnastics, and a worse blast radius.
+### JavaScript
+
+- Plain JavaScript, ESM only — no TypeScript (`TECH-STACK.md`).
+- Every async function returns a Promise. Errors are thrown as structured objects (§5).
+- Prefer `const` over `let`; `let` only when reassignment is genuinely needed; never `var`.
 
 ## 13. Prompts and Model-Facing Text
 
-Wisp does not call LLMs; its model-facing text is the MCP server instructions
-and tool descriptions.
+Applied: Wisp's model-facing text is the MCP server's `initialize` instructions and its
+tool descriptions ([`specs/MCP.md`](specs/MCP.md)).
 
-- **Prompt fixes generalize.** When model-facing text produces a wrong outcome in a tested case, improve the general definition or accept the variance — never add an exception targeting exactly the observed case. A rule per failure is overfit teaching; if the general wording cannot be made better, the miss is recorded in the backlog and watched, not patched.
+- **Prompt fixes generalize.** When a prompt, skill or fragment produces a wrong output in
+  a tested case, improve the general definition or accept the variance — never add an
+  exception targeting exactly the observed case. A rule per failure is overfit teaching;
+  if the general wording cannot be made better, the miss is recorded in the backlog and
+  watched, not patched.
+- **Rule out only what the model would otherwise do.** A "no X" where nothing suggests X
+  costs words and puts X in mind.
+- **A rejection says what to do instead**: a message a model reads when its call fails
+  names the step that works.
+
+## 14. Verification `[PROJECT]`
+
+Wisp has no automated test suite — verification is running the real thing:
+
+- The frontend build must pass.
+- `npm run check-imports` must pass after any backend file move or rename. The backend has
+  no build step, so nothing else validates import paths — and a *dynamic* import only
+  resolves when its code path runs, so a stale one boots fine and 500s a single route
+  later. It also checks module-relative paths (`resolve(__dirname, '…')`,
+  `new URL('…', import.meta.url)`) land in a directory that exists.
+- Drive the change in the local dev stack where the platform supports it. The macOS dev
+  environment runs stub managers (no libvirt/containerd): host-level pages verify locally,
+  while manager paths and workload detail verify on the Linux server. Component-level UI
+  can be driven through a temporary Vite harness with canned fetch/SSE responses.
+- A change is **done** only after something was actually run and observed — never claim
+  success without running something, and say plainly what could not be verified in the
+  current environment.
+
+## 15. Debugging
+
+Find the root cause before fixing, never fix the symptoms. No speculative try/catch
+wrapping.
+
+- **Prove the failure mechanism before designing the fix.** Name the specific failure
+  mode, then find the one-line check that proves it (a log tail while reproducing, a
+  CLI probe, runtime state). If you can't articulate the check, you don't understand
+  the bug yet — keep investigating.
+  - Applied: the check is often a `journalctl` tail of `wisp.service` while reproducing.
+    "Designing for both cases" usually means this step was skipped. When the user asks for
+    manual validation, treat it as a real request — it usually catches a leap.
+- **No second fallback for the same concern.**
+  - Applied: fix the mechanism and trust events. One reconciler per legitimate concern is
+    fine; a second polling or probing fallback for the same concern is clutter. Fall back
+    to polling only when a real failure mode demands it — and ask first.
+
+## 16. Stored Data
+
+- Code handles only the current shape of the stored data: no dual reads, no code for older
+  shapes. A shape change ships with the migration that brings the stored data to it.
+  - Applied: the stored data is libvirt domain XML, `container.json`, `wisp-config.json`
+    and file modes — not even an artifact produced earlier in the same session gets
+    legacy code. A **state migration** brings what an earlier release wrote to the current
+    shape during the update, with the backend stopped (settled 2026-10-16):
+    `backend/migrations/NNNN-short-name.js`, run once per host by
+    `backend/scripts/migrate.mjs`. The contract, and the authoring rules the runner cannot
+    check: [`specs/UPDATES.md`](specs/UPDATES.md) → State migrations.
+- Repairing data left by a past bug is a migration too, never code in the normal path.
+- A change that touches more than one record runs in one transaction.
+  - Applied: with no database, one record is one file, written atomically
+    (`writeJsonAtomic`: stage, fsync, rename).
+- Timestamps are stored in UTC as ISO-8601 strings, and converted to local time only for
+  display.

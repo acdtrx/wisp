@@ -14,7 +14,7 @@ import { useHomeStore } from '../../store/homeStore.js';
 const DEFAULT_ICON_ID = 'globe';
 
 /**
- * Modal form editor for a manual Home link (docs/UI-PATTERNS.md § Modal form
+ * Modal form editor for a manual Home link (docs/FRONTEND-RULES.md § Modal form
  * editor). Create vs edit is the presence of `tile`; the parent only opens and
  * closes it — the store owns persistence.
  */

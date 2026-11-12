@@ -1,7 +1,7 @@
 # Wisp — Project Description
 
 The product philosophy: what Wisp is, for whom, and the boundaries that bind
-design decisions. What exists and how it behaves lives in [`docs/spec/`](spec/)
+design decisions. What exists and how it behaves lives in [`docs/specs/`](specs/)
 — this file deliberately tracks intent, not the feature list.
 
 ## What is Wisp?
@@ -33,7 +33,7 @@ integration boundaries, async patterns, shared components — is
 
 ## Capabilities
 
-At the intent level: full VM lifecycle with backups and restore, cloud-init provisioning, and USB passthrough; containers on containerd, including app containers created from templates with dedicated configuration UIs; an image library; in-browser VNC and shell consoles; host monitoring and hardware inventory; host management (SMB mounts, removable drives, VLAN bridges, power, OS updates); LAN discovery of peer Wisp instances; an MCP endpoint for coding agents; self-update from GitHub Releases. The authority on what exists and how it behaves is [`docs/spec/`](spec/) — one contract doc per area.
+At the intent level: full VM lifecycle with backups and restore, cloud-init provisioning, and USB passthrough; containers on containerd, including app containers created from templates with dedicated configuration UIs; an image library; in-browser VNC and shell consoles; host monitoring and hardware inventory; host management (SMB mounts, removable drives, VLAN bridges, power, OS updates); LAN discovery of peer Wisp instances; an MCP endpoint for coding agents; self-update from GitHub Releases. The authority on what exists and how it behaves is [`docs/specs/`](specs/) — one contract doc per area.
 
 ## Out of Scope
 
@@ -44,5 +44,5 @@ The following are deliberately not supported:
 - **Network-backed VM disk storage** (NFS, iSCSI) — VM disks live on local storage. SMB/CIFS mounts exist for backups, container mounts, and file shares; they are not VM disk backends (settled 2026-08-11).
 - **PCI passthrough** (GPU, etc.) — USB passthrough only.
 - **Multi-user accounts and role-based access control** — Wisp is single-user: one operator identity, one password; OIDC SSO is an optional login method for that same identity, not a user system. No LDAP (settled 2026-08-11).
-- **A native or mobile-first app** — the web UI is responsive down to phones (see [`docs/spec/UI.md`](spec/UI.md) § Responsive behavior) but desktop-first: consoles, create flows, and drag-to-organize stay desktop-oriented (settled 2026-08-11).
+- **A native or mobile-first app** — the web UI is responsive down to phones (see [`docs/specs/UI.md`](specs/UI.md) § Responsive behavior) but desktop-first: consoles, create flows, and drag-to-organize stay desktop-oriented (settled 2026-08-11).
 - **Docker-based deployment** — Wisp is the platform such pipelines deploy onto; it runs bare-metal under systemd.

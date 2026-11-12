@@ -30,6 +30,8 @@ Maps app IDs to `{ label, description, defaultImage, allowCustomImage, module, r
 
 **`requiresRoot: true`** is included in the expanded spec as `runAsRoot: true` when containerApps creates the container. Use for apps that need UID 0 inside the container — binding privileged ports, calling `setuid` per session, or writing to root-owned dirs in the image (smbd, OpenWebUI, etc.). Without this flag, the user has to toggle General → runAsRoot manually after create.
 
+**A new registry entry defaults to non-root**: `requiresRoot` is set only for a concrete, identified need — a privileged port bound without capability tricks, startup writes to root-owned paths *inside the image rootfs* (not mount points), or capabilities effectively tied to UID 0. "The upstream image's `USER` defaults to 0" is not a reason: Wisp's mount pre-owning and GID model already solve the pain points that push raw-Docker setups to root. Try non-root, watch the first-boot logs, and flip only on a real `EACCES` that a tmpfs or pre-owned Local mount can't fix. Unnecessary root costs real things: storage-sourced writes landing as overflowuid on SMB shares, delete-time idmap gymnastics, and a worse blast radius.
+
 **`defaultServices: [{ port, type, txt }]`** is passed through containerApps into the create spec so containerManager seeds `container.services[]` at create time and the app's mDNS records publish out of the box (e.g. `_smb._tcp` for tiny-samba, `_https._tcp` for Caddy). After create the user owns the services list — PATCH does not re-seed, and the Services section can edit/remove any of these entries.
 
 ### Frontend — `frontend/src/apps/appRegistry.js`

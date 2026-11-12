@@ -68,7 +68,7 @@ A host picks which releases it is offered with `updateChannel` in `wisp-config.j
 
 Everything past that release object is shared between the channels: notes, `publishedAt`, tarball + sha256 asset discovery, and the `available` computation.
 
-**The channel is read at check time** (settled 2026-08-25) — `checkForUpdate` calls `getSettings()` on every run. Nothing pushes the channel into the checker: the UI PATCHes the setting and then POSTs `/api/updates/check`, so the trigger stays separate from the mechanism (CODING-RULES §7). Flipping the channel installs nothing by itself.
+**The channel is read at check time** (settled 2026-08-25) — `checkForUpdate` calls `getSettings()` on every run. Nothing pushes the channel into the checker: the UI PATCHes the setting and then POSTs `/api/updates/check`, so the trigger stays separate from the mechanism (ARCHITECTURE.md, Backend: events). Flipping the channel installs nothing by itself.
 
 **Convergence.** `available` requires `compareSemver(latest, current) > 0`, and the comparator implements full semver precedence — a prerelease sorts *below* the release it leads to. So a beta host running `2.2.0-beta.3` is offered `2.2.0` the moment it is cut, and beta and stable hosts land on the same version at every stable release. Between releases the beta host is simply ahead.
 
@@ -140,7 +140,7 @@ There is no UI for explicit user-initiated rollback; if needed, run the same "by
 
 ## State migrations
 
-State an earlier release wrote — libvirt domain XML, `container.json`, config and data-file modes — is brought up to the schema the current code targets by **state migrations**, run during the update (policy: `CLAUDE.md` → Migrations). Two decisions shape them (settled 2026-10-16):
+State an earlier release wrote — libvirt domain XML, `container.json`, config and data-file modes — is brought up to the schema the current code targets by **state migrations**, run during the update (policy: `CODING-RULES.md` §16). Two decisions shape them (settled 2026-10-16):
 
 - **They run as part of the update, not at backend startup.** The backend is stopped while they run, so nothing races them, and a failure fails the update — which rolls back — instead of crash-looping `wisp.service`.
 - **An ID ledger, not version ranges.** Each migration has a stable id; the ledger records which ids ran on this host. Version ranges break on the beta channel, on rollbacks and on re-installs.

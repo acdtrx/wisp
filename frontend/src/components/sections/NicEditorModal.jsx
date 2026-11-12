@@ -25,7 +25,7 @@ function formFromNic(nic, bridges) {
 
 /**
  * Modal form editor for one VM network interface — create when `nic` is null,
- * edit otherwise (see docs/UI-PATTERNS.md § Modal form editor). `index` is the
+ * edit otherwise (see docs/FRONTEND-RULES.md § Modal form editor). `index` is the
  * NIC's position (`net0`, `net1`, …). The section owns the `nics` array and its
  * full-array PATCH, so this hands the edited fields to `onSubmit` and stays
  * open on failure.

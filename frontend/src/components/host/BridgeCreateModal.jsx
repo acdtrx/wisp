@@ -14,7 +14,7 @@ const FORM_ID = 'bridge-create-form';
 
 /**
  * Modal form editor for creating one managed VLAN bridge (see
- * docs/UI-PATTERNS.md § Modal form editor). The bridge name is derived
+ * docs/FRONTEND-RULES.md § Modal form editor). The bridge name is derived
  * (`<parent>-vlan<id>`) and shown as a preview. Calls `onCreated` after a
  * successful create so the parent can refresh its list.
  */

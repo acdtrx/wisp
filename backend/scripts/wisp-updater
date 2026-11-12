@@ -131,7 +131,7 @@ template_service_unit() {
 # Runs from the EXIT trap, so it never calls fail/exit: every step logs its own
 # failure and the rollback carries on, ending with an attempt to start the
 # service. A rollback that cannot complete leaves its `rollback-warning:` lines
-# in the journal, and the operator finishes by hand (docs/spec/UPDATES.md).
+# in the journal, and the operator finishes by hand (docs/specs/UPDATES.md).
 rollback() {
   echo "step:rollback"
   # After a failed health check the new backend is still running (or cycling
@@ -198,7 +198,7 @@ echo "step:common-setup"
 # Invoked by path from the freshly swapped tree, so the step list is whatever THIS
 # release ships: adding a step to common-steps.sh takes effect on the very next
 # update, with no change here. Editing THIS file, by contrast, only takes effect
-# one release later — see docs/spec/UPDATES.md.
+# one release later — see docs/specs/UPDATES.md.
 COMMON_STEPS="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
 [[ -x "$COMMON_STEPS" ]] \
   || fail "missing $COMMON_STEPS — releases older than v2.0.2 cannot be installed by this updater"

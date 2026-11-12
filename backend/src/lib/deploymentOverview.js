@@ -82,7 +82,7 @@ export async function gatherDeployment() {
 /**
  * Project the aggregate into the MCP `get_deployment_overview` payload. The
  * field set and ordering here are the tool's public contract — change them
- * only alongside docs/spec/MCP.md.
+ * only alongside docs/specs/MCP.md.
  */
 export async function buildDeploymentOverview() {
   const deployment = await gatherDeployment();

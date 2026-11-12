@@ -3,7 +3,7 @@
  * State-migration runner: brings state an earlier Wisp release wrote (domain
  * XML, container.json, file modes) up to the schema the current code targets.
  * Runs on every update from scripts/linux/setup/common-steps.sh, as the deploy
- * user, with wisp.service stopped. Contract: docs/spec/UPDATES.md → State
+ * user, with wisp.service stopped. Contract: docs/specs/UPDATES.md → State
  * migrations.
  *
  *   node backend/scripts/migrate.mjs              run every pending migration

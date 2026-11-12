@@ -38,7 +38,7 @@ function formFromRow(row) {
 
 /**
  * One entry of the `envPatch` map the container PATCH takes (see
- * docs/UI-PATTERNS.md — **Container environment**, the documented whole-`env`
+ * docs/FRONTEND-RULES.md — **Container environment**, the documented whole-`env`
  * exception). Same shapes the inline row editor produced: a delta for an
  * unchanged key, remove-plus-upsert for a rename, a full entry for a new var.
  */
@@ -60,7 +60,7 @@ function buildEnvPatch(form, row) {
 
 /**
  * Modal form editor for one container environment variable — create when `row`
- * is null, edit otherwise (see docs/UI-PATTERNS.md § Modal form editor). Builds
+ * is null, edit otherwise (see docs/FRONTEND-RULES.md § Modal form editor). Builds
  * the `envPatch` and hands it to `onSubmit`, which owns the API call and the
  * parent refresh; the modal stays open on failure.
  */

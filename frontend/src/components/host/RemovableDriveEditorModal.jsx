@@ -54,7 +54,7 @@ function formFromDrive(drive) {
 }
 
 /**
- * Modal form editor for one removable drive (see docs/UI-PATTERNS.md § Modal
+ * Modal form editor for one removable drive (see docs/FRONTEND-RULES.md § Modal
  * form editor). Two entry points: edit an adopted drive (`drive` set) or
  * adopt a detected one (`adoptDisk` set — form prefilled from the device).
  * UUID and filesystem are identity, shown read-only. Calls `onSaved` after a

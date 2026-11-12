@@ -1,205 +1,11 @@
 # UI Specification
 
-Layout, visual system, navigation, and user-visible behavior for Wisp. **API request/response contracts** belong in [API.md](API.md). **Row-level save rules, table chrome, and documented exceptions** (e.g. VM NIC full-array save, container env full-map save) are in [UI-PATTERNS.md](../UI-PATTERNS.md).
+Layout, visual system, navigation, and user-visible behavior for Wisp. **API request/response contracts** belong in [API.md](API.md). **Row-level save rules, table chrome, and documented exceptions** (e.g. VM NIC full-array save, container env full-map save) are in [FRONTEND-RULES.md](../FRONTEND-RULES.md), UI patterns.
 
 ## Design Language
 
-**Inspiration:** Linear, Vercel — clean, professional, light theme with subtle depth. Identity: the **"Will-o'-the-Wisp"** palette — a luminous teal accent on cool neutrals that carry a faint teal cast, so surfaces read as one material rather than gray-with-a-color-on-top.
-
-### Color Scheme
-
-| Token | Value | Usage |
-|-------|-------|-------|
-| `surface` | `#f6faf9` | Main background |
-| `surface-sidebar` | `#edf4f2` | Left panel background |
-| `surface-card` | `#ffffff` | Card backgrounds |
-| `surface-border` | `#dce8e5` | All borders and dividers |
-| `accent` | `#0fa396` | Primary actions, active states |
-| `accent-hover` | `#0b8578` | Hover state for accent elements |
-| `accent-soft` | `#dff3f0` | Accent background wash (selected rows, active tabs, hover tints) |
-| `accent-text` | `#0a7568` | Accent as small text — links, active tab labels, badge text, XML tag highlight. AA (≥4.5:1) on all surfaces incl. `accent-soft`; the brand `accent` (3.1:1) stays on icons and filled buttons |
-| `status-running` | `#21813f` | Running VMs, success states |
-| `status-warning` | `#9c6203` | Paused VMs, warnings, restart-required |
-| `status-stopped` | `#c93a3a` | Stopped VMs, errors, danger actions |
-| `status-transition` | `#0fa396` | Transitioning states (starting, shutting down) |
-| `status-running-soft` | `#e2f4e6` | Success background wash |
-| `status-warning-soft` | `#faf0d7` | Warning background wash (badges, notices) |
-| `status-stopped-soft` | `#fbe5e5` | Error background wash (error banners, danger hovers) |
-| `text-primary` | `#0e1f1c` | Primary text |
-| `text-secondary` | `#3a524d` | Secondary text, descriptions |
-| `text-muted` | `#56716b` | Muted text, labels, placeholders |
-
-Text and solid status tokens hold WCAG AA contrast (≥4.5:1) on `surface`, `surface-sidebar`, and white cards — check contrast before lightening any of them. When accent colors **text glyphs** use `text-accent-text`, not `text-accent`; plain `accent` on text is reserved for icons and icon buttons (graphics only need 3:1).
-
-The `*-soft` tokens are the standard for status/accent **background washes** — do not hand-roll raw Tailwind palette classes (`bg-red-50`, `bg-green-50`, …) for tinted surfaces.
-
-### Dark theme — "Dusk"
-
-The dark counterpart of the palette above, in `frontend/src/index.css` under
-`:root[data-theme='dark']`. Surfaces are **deep spruce** — a very dark,
-desaturated green-teal (hue ~171°, the same family as the light neutrals' teal
-cast), deliberately not slate and not black. The light theme's depth order is
-**kept, not mirrored** — sidebar deepest, canvas above it, cards lightest — so
-"raised" still means lighter and every component's existing surface choice stays
-meaningful without edits. Every token in the light table has a dark value; the
-only tokens the dark theme introduced are `surface-input`, the console pair, and
-`--shadow-popover`.
-
-| Token | Light | Dark | Notes |
-|-------|-------|------|-------|
-| `surface` | `#f6faf9` | `#0e1c1a` | Canvas |
-| `surface-sidebar` | `#edf4f2` | `#0a1715` | Deepest surface |
-| `surface-card` | `#ffffff` | `#142523` | Lightest surface |
-| `surface-border` | `#dce8e5` | `#28453f` | 1.5–1.8:1 against the surfaces, slightly *more* present than the light theme's 1.2–1.3:1 |
-| `surface-input` | `#ffffff` | `#0b1a18` | Text-input fill. New token — `input-field` was hardcoded `bg-white`, which cannot flip |
-| `accent` | `#0fa396` | `#0fa396` | **Unchanged.** It already reads luminous against spruce, and lifting it would drop white-on-accent-fill below the 3:1 it currently holds |
-| `accent-hover` | `#0b8578` | `#14b5a7` | Lifts instead of darkening — on a dark surface a darker fill recedes rather than responding |
-| `accent-soft` | `#dff3f0` | `#0f342f` | |
-| `accent-text` | `#0a7568` | `#4fd1c0` | |
-| `status-running` | `#21813f` | `#45c97a` | |
-| `status-warning` | `#9c6203` | `#e0a63a` | |
-| `status-stopped` | `#c93a3a` | `#f2706b` | |
-| `status-transition` | `#0fa396` | `#0fa396` | Tracks `accent` |
-| `status-running-soft` | `#e2f4e6` | `#183b2b` | |
-| `status-warning-soft` | `#faf0d7` | `#343520` | |
-| `status-stopped-soft` | `#fbe5e5` | `#372b29` | |
-| `text-primary` | `#0e1f1c` | `#e8f2ef` | Warm white with the same faint teal cast |
-| `text-secondary` | `#3a524d` | `#b3c6c2` | |
-| `text-muted` | `#56716b` | `#7e9994` | The floor |
-| `console` | `#1e293b` | `#0b1a18` | The terminal/framebuffer well. Dark in **both** themes — see [CONSOLE.md](CONSOLE.md) § Viewport |
-| `console-text` | `#e2e8f0` | `#e8f2ef` | |
-| `--shadow-card` | `0 1px 3px rgba(0,0,0,.08)` | `0 1px 3px rgba(0,0,0,.6)` | A drop shadow is invisible on dark; depth comes from the border edge plus a much darker shadow |
-| `--shadow-popover` | `0 10px 15px -3px rgb(0 0 0/.1), 0 4px 6px -4px rgb(0 0 0/.1)` | `0 12px 28px -6px rgb(0 0 0/.7), 0 4px 10px -4px rgb(0 0 0/.55)` | Floating chrome — dropdowns, popovers, modals. Light value is exactly Tailwind's `shadow-lg`, which those elements used before it became a token |
-
-The dark `*-soft` washes are the status hue mixed **~18% into the canvas surface,
-never toward white** — a tinted shadow of the surface, so they read as
-translucent rather than as pale chips.
-
-**The two shadows live outside `@theme`** *(settled 2026-08-25)*. Tailwind v4
-resolves a `--shadow-*` theme key into the generated utility at build time, so
-`.shadow-card` would carry the light value literally and redefining the variable
-under `[data-theme='dark']` would silently do nothing. They are declared on plain
-`:root` and read back through `@utility shadow-card` / `@utility shadow-popover`,
-which is what makes the dark override land. Colour tokens are unaffected — those
-utilities do emit `var(--color-…)`.
-
-**`color-scheme`** is set on `:root` (`light`) and flipped to `dark` under the
-attribute, so native widget chrome — `<select>` popups, scrollbars, the time
-picker, autofill — follows the app's theme rather than the OS's. Light states its
-value explicitly (it matches the UA default, so nothing changes there) to keep an
-OS-dark machine from painting dark widgets into the light theme.
-
-**White-on-fill labels.** `text-white` stays on `accent`-filled buttons in both
-themes: `accent` does not shift, so the ratio is the same 3.13:1 it has always
-been. The one exception is the **danger** confirm button: `status-stopped` lifts
-to a bright coral in dark, where white falls to 2.9:1 — it takes `dark:text-surface`
-instead (canvas-dark ink on the coral, 6.1:1). The `Toggle` knob stays `bg-white`
-in both themes; it sits on a solid track and holds 3.13:1 on the accent (on) and
-10.4:1 on `surface-border` (off).
-
-**Computed contrast (WCAG 2.1 relative luminance), dark theme.** Same discipline
-as the light side: every text and status token clears AA (≥4.5:1) on all three
-surfaces *and* on the input well. `text-muted` is the floor at 5.21:1 on a card
-(light's floor is 4.74:1 on the sidebar). Check before lightening a surface or
-darkening a text token.
-
-| Token | on `sidebar` | on `surface` | on `surface-card` | on `surface-input` |
-|-------|-------------|--------------|-------------------|--------------------|
-| `text-primary` | 16.03 | 15.32 | 13.94 | 15.64 |
-| `text-secondary` | 10.27 | 9.81 | 8.93 | 10.02 |
-| `text-muted` | 5.99 | 5.73 | **5.21** | 5.85 |
-| `accent-text` | 9.78 | 9.35 | 8.50 | 9.54 |
-| `status-running` | 8.63 | 8.24 | 7.50 | 8.41 |
-| `status-warning` | 8.45 | 8.07 | 7.34 | 8.24 |
-| `status-stopped` | 6.37 | 6.09 | 5.54 | 6.22 |
-| `status-transition` | 5.84 | 5.58 | 5.08 | 5.70 |
-
-Text on its own soft wash: `accent-text` 7.22, `status-running` 5.82,
-`status-warning` 5.78, `status-stopped` 4.74. Brand `accent` as a graphic clears
-the 3:1 floor on every surface (5.08–5.84).
-
-The dark theme adds three derived backgrounds that are not tokens — Home's
-asleep tile, Home's canvas wash, and the lit lantern well. Text on them clears
-AA too:
-
-| Derived background | Value | `text-primary` | `text-secondary` | `text-muted` | `accent-text` |
-|---|---|---|---|---|---|
-| Asleep tile (`--wisp-tile-asleep`) | `#11211f` | 14.64 | 9.38 | **5.47** | 8.93 |
-| Canvas wash **at its brightest** | `#0e302d` | 12.39 | 7.94 | **4.63** | 7.56 |
-| Lit lantern well, centre | `#125a53` | — | — | — | 4.29 *(icon — graphic, 3:1 floor)* |
-
-The wash figure is a worst case that no text actually sits on: the gradient's
-centre is at `18% -10%`, i.e. *above* the canvas, and at the counts line's real
-position the wash has fallen to ~1% (≈5.7:1). Recorded so a future strengthening
-of the wash is checked against the number, not the impression.
-
-### Glow — the Dusk light system *(settled 2026-08-25)*
-
-Dark is where the Will-o'-the-Wisp identity does real work: **a running workload
-glows**. Three utilities carry it, all in `index.css`, all `color-mix` of the
-tokens, all no-ops in light:
-
-- **Home's lanterns** — the full canvas treatment; see § Home → Home in the dark theme.
-- **`wisp-lit-glyph`** — the running workload's icon in the sidebar list rows
-  (`VMListItem`, `ContainerListItem`) and in the VM/container **detail header**.
-  A `drop-shadow(0 0 4px status-running/55%)`, so the halo follows the glyph's
-  strokes rather than its bounding box. **Static, not breathing**: this is
-  chrome, not the Home canvas, and a list of animated rows is a distraction.
-  Applied only while the workload runs, so a glow always means the same thing.
-- **`wisp-brand-glow`** — the `WispGlyph` at the two moments it stands for the
-  app itself: the top-bar wordmark and the login card. Accent instead of the
-  running green, `drop-shadow(0 0 6px accent/45%)`. Deliberately *not* inside
-  `WispGlyph`, which is also an icon-picker choice — a permanent glow there
-  would say "running" about a stopped workload.
-
-`login-dusk` is the one atmospheric extra: the login page is the only full-page
-canvas outside Home, and in dusk a flat near-black field with one card on it is
-exactly the generic dark mode this theme exists to avoid. It borrows Home's wash
-— the same light, from the same direction — so the two canvases read as one
-place. Dark only; the light login keeps its plain `bg-surface`.
-
-Rejected: a glow on the light theme's running rows (the green already carries
-the state, and a halo around a 14px icon reads as a rendering artefact), and
-`box-shadow` for the glyph halos (it outlines the icon's box, and on the header
-icon it would light up the whole hover-tinted button).
-
-### Theme activation and persistence *(settled 2026-08-25)*
-
-- **Three states**: `light`, `dark`, `system` — **`system` is the default**, following the OS `prefers-color-scheme` and tracking it **live** (the media query is subscribed while the tab is open, so a phone flipping to dark at sunset recolors without a reload). An explicit `light` or `dark` overrides the OS.
-- **Mechanism**: `data-theme="dark"` on `<html>`. `system` and `light` carry no attribute; only `dark` sets one. Redefining the `@theme` variables under that attribute is the whole implementation — no per-component theming. A `@custom-variant dark` keyed to `[data-theme='dark'] &` exists for the rare utility that needs more than a token swap; Tailwind v4's built-in `dark:` is repointed at the attribute, because its default `prefers-color-scheme` behavior would ignore a manual choice.
-- **Persistence is per-device**, `localStorage` key **`wisp_theme`** (matching the existing `wisp_logout` key style), *not* `wisp-config.json`. `system` is only meaningful per device, and the phone wants dark at night while the desktop stays light. CODING-RULES §7's "server is source of truth" governs workload and config data, not per-viewer presentation. Rejected: server-side persistence — revisit only if multi-device sync is actually missed. Every access is wrapped in `try`/`catch`; a private window falls back to `system` and still themes correctly for the page's lifetime.
-- **Owner**: `frontend/src/theme.js` — framework-free, because the same state must be resolved before React exists. `store/themeStore.js` is a thin Zustand mirror for React; it never writes the attribute itself.
-- **No flash on load**: a small inline script in `index.html`'s `<head>` resolves the theme and sets the attribute before the parser reaches `<body>` or any stylesheet. It cannot move into the bundle — a deferred module script paints light first and snaps to dark. Because it is inline, the prod CSP (`script-src 'self'`) would block it, so its **sha256 is pinned in `backend/src/index.js` as `THEME_INIT_SCRIPT_HASH`** rather than opening `unsafe-inline`. Editing that script means refreshing that constant (the file carries the regeneration one-liner); a stale hash blocks the script and dark devices flash light on load.
-- **`<meta name="theme-color">`** is updated on every effective-theme change: light keeps the brand teal `#0fa396` it has always used, dark takes `surface-card` `#142523` — the top bar the phone's status strip sits above. A luminous teal band over a dark app is precisely the flash worth avoiding; the light value is deliberately left alone.
-- **The control** lives in the top bar's right cluster, between background jobs and sign out: icon-only per CODING-RULES §8 (`Sun` / `Moon` / `Monitor`), cycling light → dark → system on tap, with `title`/`aria-label` announcing the current mode ("Theme: system (following OS)"). It sits in the cluster that is row 1 in both top-bar layouts, so it works unchanged on the phone's two-row bar.
-
-### Typography
-
-Body/UI text uses the system stack — no runtime font loading from external hosts:
-
-```
-font-family: system-ui, -apple-system, sans-serif
-```
-
-Custom fonts are allowed only when **bundled** with the app (self-hosted woff2 + license file in `frontend/src/assets/fonts/`). One display face is bundled: **Bricolage Grotesque 600** (`--font-display`, class `font-display`), used **only** for brand moments — the top-bar wordmark, the login title, and empty-state headings. Tables, labels, and body copy stay on the system stack.
-
-### Favicon
-
-`frontend/public/favicon.png` (32×32, alpha) and `favicon.svg`. `index.html` declares the PNG first, then the SVG (`sizes="any"`), so browsers that composite SVG favicons poorly still get a bitmap with reliable transparency; others can use the SVG for sharp scaling.
-
-### Spacing and Shape
-
-- **Card border radius:** 8px
-- **Card shadow:** `0 1px 3px rgba(0,0,0,0.08)` — subtle, not dramatic
-- **Transitions:** 150ms on all interactive state changes
-
-### Section headings
-
-Small all-caps muted label style: `11px, font-semibold, uppercase, tracking-wider, text-muted`. Not large headers.
-
-### Repeating lists and tables
-
-For row-based persistence, **header add** controls (`Plus` or `Plus`+kind icon), icon-only row actions, shared table layout, and exceptions (bulk NIC/env saves), see [UI patterns](../UI-PATTERNS.md) (`docs/UI-PATTERNS.md`). Implement table shells with [DataTableChrome.jsx](../../frontend/src/components/shared/DataTableChrome.jsx) (`DataTableScroll`, `DataTable`, head/body class exports, **`DataTableTh`** / **`DataTableTd`** for consistent **`px-4`** cell inset).
+The palette, both themes, typography and the shared list, table and modal patterns are
+[`FRONTEND-RULES.md`](../FRONTEND-RULES.md), Design and UI patterns.
 
 ---
 
@@ -237,15 +43,15 @@ The desktop shell above applies at `lg` and up. Below 1024px (phones, portrait t
 - **Consoles are desktop-only** — the VM Console and container Console tab buttons are hidden below `lg` (container Logs stays). Create flows and drag-to-organize remain desktop-oriented (the tap-based section picker still works).
 - **Content gutters** shrink to `px-4 py-4`; modal overlays carry `p-4` so dialogs never sit edge-to-edge; wide tables keep their horizontal scroll.
 - **Wide data tables collapse to the essential columns** — Host Overview (network, hardware), Image Library, and Host Mgmt (SMB, removable drives, bridges) hide secondary columns below `sm` and stack their values on a muted second line inside the first cell, so each fits without horizontal scroll.
-- **Host Mgmt is fully manageable on phones** — SMB shares, removable drives, and bridges create/edit through modal form editors (`SmbShareEditorModal`, `RemovableDriveEditorModal`, `BridgeCreateModal` — see `docs/UI-PATTERNS.md` § Modal form editor); row actions expand under the row on tap below `sm`. The Backup form (path + network-mount select) reflows inline.
+- **Host Mgmt is fully manageable on phones** — SMB shares, removable drives, and bridges create/edit through modal form editors (`SmbShareEditorModal`, `RemovableDriveEditorModal`, `BridgeCreateModal` — see `docs/FRONTEND-RULES.md` § Modal form editor); row actions expand under the row on tap below `sm`. The Backup form (path + network-mount select) reflows inline.
 - **Cloud-init is view-only on phones** — the VM detail Cloud-Init section shows its summary below `sm` but hides the Regenerate / Remove / Configure buttons, so the edit form (a desktop-oriented multi-field layout) is never reached on mobile.
 - **Touch devices render form controls at ≥16px** *(settled 2026-08-25)* — iOS Safari auto-zooms the page whenever a focused `input` / `select` / `textarea` computes below 16px, and never zooms back out, so a `(hover: none) and (pointer: coarse)` block in `index.css` floors every text-entry control at `max(16px, 1em)` and floors `input-field`'s height at 34px (the dense `h-7` / `h-8` row variants otherwise clip the taller text). Pointer devices keep the designed `text-sm` / `text-xs` sizes exactly. Deliberately a pointer query, not a `max-sm:` variant — an iPad in landscape is wider than `sm` and still touch. The `maximum-scale=1` viewport meta was rejected: it stops the zoom by disabling pinch-zoom for everyone. The block is unlayered because Tailwind's size utilities live in the utilities layer and would win over `@layer base`; components must not try to opt out with a smaller `text-*` class.
 - **Safe-area insets keep chrome off the iOS home indicator.** `index.html` sets `viewport-fit=cover`, which is what makes `env(safe-area-inset-*)` report real values; the `pt-safe` / `pb-safe` / `px-safe` utilities (`index.css`) then apply them. This matters most for the VM/container stats bars: launched from the home screen the app renders edge-to-edge, and a horizontally-scrollable strip sitting in the bottom gesture band gets its swipes taken by the iOS app switcher instead of scrolling. Each bar wraps its `h-11` scroll row in a `pb-safe` element that carries the border and card background, so the pills sit above the band and the card colour still paints the indicator strip. Same treatment on the drawer's Organize footer. `px-safe` on the app shell and the drawer keeps them out of the landscape notch; `pt-safe` on the top bar means the shell never slides under the status bar, and the drawer's top offset is written against it. All inert where the insets are `0` (desktop, Android, notch-less phones, and iOS's default opaque status bar).
 - **VM/container detail sections are fully manageable on phones** — all four collection editors (Env, NICs, Disks, Mounts) create/edit through modal form editors, with rows read-only at every breakpoint:
-  - **Container Env** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `EnvVarEditorModal` (see `docs/UI-PATTERNS.md` § Modal form editor). Below `sm` the value stacks under the key and the Value column is hidden; header **Add** and the two row actions (Edit, Remove) stay visible — the set fits without the tap-to-expand strip.
-  - **VM Network interfaces** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `NicEditorModal` (see `docs/UI-PATTERNS.md` § Modal form editor). Below `sm` the Model and MAC columns are hidden and stack as `model · mac` under the bridge; header **Add** and the two row actions (Edit, Remove) stay visible. While the VM runs those three controls render **disabled** (their `title` says to stop the VM) and the lock note below the table is visible at every width. The create flow keeps its desktop-oriented draft rows.
-  - **VM Disks** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `DiskEditorModal` (see `docs/UI-PATTERNS.md` § Modal form editor). Below `sm` the Size, Image, Image type, and Bus columns are hidden and stack under the slot label (image filename, then `size · bus · image type`); the header **Add disk** / **Attach ISO** buttons and the two row actions per row (Edit, Unmount for block disks; Change ISO, Eject for CD-ROMs) stay visible — the set fits without the tap-to-expand strip. While the VM runs, add / edit / unmount render **disabled** (their `title` says to stop the VM) and the lock note below the table is visible at every width; ISO actions stay live. The create flow keeps its desktop-oriented draft rows.
-  - **Container Mounts** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `ContainerMountEditorModal` (see `docs/UI-PATTERNS.md` § Modal form editor); all three header **Add** buttons (file / folder / tmpfs) stay visible. Below `sm` every column except the type icon and container path is hidden and stacks under the path (mount name on one line, then source / size / read-only / owner uid:gid), so the widest table loses its horizontal scroll; the five row actions (Edit file, Upload, Zip upload, Edit, Remove) move into the tap-to-expand strip.
+  - **Container Env** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `EnvVarEditorModal` (see `docs/FRONTEND-RULES.md` § Modal form editor). Below `sm` the value stacks under the key and the Value column is hidden; header **Add** and the two row actions (Edit, Remove) stay visible — the set fits without the tap-to-expand strip.
+  - **VM Network interfaces** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `NicEditorModal` (see `docs/FRONTEND-RULES.md` § Modal form editor). Below `sm` the Model and MAC columns are hidden and stack as `model · mac` under the bridge; header **Add** and the two row actions (Edit, Remove) stay visible. While the VM runs those three controls render **disabled** (their `title` says to stop the VM) and the lock note below the table is visible at every width. The create flow keeps its desktop-oriented draft rows.
+  - **VM Disks** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `DiskEditorModal` (see `docs/FRONTEND-RULES.md` § Modal form editor). Below `sm` the Size, Image, Image type, and Bus columns are hidden and stack under the slot label (image filename, then `size · bus · image type`); the header **Add disk** / **Attach ISO** buttons and the two row actions per row (Edit, Unmount for block disks; Change ISO, Eject for CD-ROMs) stay visible — the set fits without the tap-to-expand strip. While the VM runs, add / edit / unmount render **disabled** (their `title` says to stop the VM) and the lock note below the table is visible at every width; ISO actions stay live. The create flow keeps its desktop-oriented draft rows.
+  - **Container Mounts** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `ContainerMountEditorModal` (see `docs/FRONTEND-RULES.md` § Modal form editor); all three header **Add** buttons (file / folder / tmpfs) stay visible. Below `sm` every column except the type icon and container path is hidden and stacks under the path (mount name on one line, then source / size / read-only / owner uid:gid), so the widest table loses its horizontal scroll; the five row actions (Edit file, Upload, Zip upload, Edit, Remove) move into the tap-to-expand strip.
 - **USB devices** — the ID column is hidden below `sm` (Name gets the room), and the bus/device cell shows bare numbers (`<bus> · <device>`) under the "Bus / device" header on all screen sizes instead of repeating the `Bus …`/`Device …` labels.
 - **PWA-lite:** `manifest.webmanifest` (standalone display, teal theme color) + apple-touch-icon, so Wisp can be pinned to a phone home screen. No service worker/offline support.
 
@@ -420,7 +226,7 @@ A single scrollable panel with section cards, in this order. While a backup job 
 
 3. **USB Devices** — **Table** (DataTable chrome) of devices **attached to this VM** only; columns **Name**, **ID**, **Bus / device**, **Actions** (Detach, icon-only **hover-reveal** via `DataTableRowActions`). **Attach** in the section header (`Plus`+`Usb`) opens a modal (same shell as the image library picker) listing **available** host USB devices in a second table with **Attach** per row; a successful attach **closes** the modal (also dismiss via backdrop, close, or Escape — Escape does not deselect the VM). When the host reports no USB devices, the header control is disabled. Immediate actions, no Save button. Host list is driven by SSE (`/api/host/usb/stream`); VM-attached devices are fetched on load and after attach/detach.
 
-4. **Network interfaces** — **Table** (DataTable chrome) of **read-only** rows: one row per NIC (bridge, model, MAC). VLAN tagging is done via a VLAN-specific host bridge (Host Mgmt → Network Bridges), not a per-NIC field. **Add NIC** in the section header (`Plus`+network) and row **`Pencil`** open **[NicEditorModal.jsx](../../frontend/src/components/sections/NicEditorModal.jsx)** (modal form editor: Bridge select, Model radio pills, MAC + randomize; changing the first NIC's MAC hints to re-save cloud-init). Row **`Trash2`** removes without a confirm, and disappears at the last NIC. While the VM runs, Add / Edit / Remove are **disabled** and a lock note under the table says to stop the VM. The **create flow** keeps all-inputs draft rows (desktop-oriented, no modal). Persistence rules: [UI-PATTERNS.md](../UI-PATTERNS.md) § Variants (**VM — Network interfaces**). Row actions follow **hover-reveal** unless the row is busy.
+4. **Network interfaces** — **Table** (DataTable chrome) of **read-only** rows: one row per NIC (bridge, model, MAC). VLAN tagging is done via a VLAN-specific host bridge (Host Mgmt → Network Bridges), not a per-NIC field. **Add NIC** in the section header (`Plus`+network) and row **`Pencil`** open **[NicEditorModal.jsx](../../frontend/src/components/sections/NicEditorModal.jsx)** (modal form editor: Bridge select, Model radio pills, MAC + randomize; changing the first NIC's MAC hints to re-save cloud-init). Row **`Trash2`** removes without a confirm, and disappears at the last NIC. While the VM runs, Add / Edit / Remove are **disabled** and a lock note under the table says to stop the VM. The **create flow** keeps all-inputs draft rows (desktop-oriented, no modal). Persistence rules: [FRONTEND-RULES.md](../FRONTEND-RULES.md) § Variants (**VM — Network interfaces**). Row actions follow **hover-reveal** unless the row is busy.
 
 5. **Advanced** (collapsed by default) — Compact grid only (no NIC block): Firmware (BIOS/UEFI/UEFI+SecureBoot), Machine type (Q35/i440fx), CPU model, Video driver, Graphics, Boot order, Boot menu toggle, Memory balloon toggle, Guest agent toggle, vTPM toggle, VirtIO RNG toggle, Nested virt toggle, Windows optimizations (read-only indicator). Auto Start and Local DNS live in **General**. **Section Save** for these fields. Offline-only fields show a lock icon when VM is running.
 
@@ -610,7 +416,7 @@ Scrollable content with section cards:
 Scrollable page with **`px-6 py-5 space-y-5`**, same as Overview. Each block is a **`SectionCard`** with a **`titleIcon`** (same pattern as Overview):
 
 - **Network Bridges** — **`Network`** icon. Table with columns **Name**, **Parent**, **VLAN Id**, **Status**, **Actions**. Header **`Plus`+network** opens **`BridgeCreateModal`** (modal form editor: parent select, VLAN id, derived-name preview). Delete is icon-only on existing rows and available on phones.
-- **Storage** — **`Server`** icon. Unified section for SMB shares (and, with disk support enabled, adopted removable drives). Read-only table rows; all create/edit flows use **modal form editors** (see [UI-PATTERNS.md](../UI-PATTERNS.md) § Modal form editor), so add/edit/adopt/delete work at every breakpoint: header **`Plus`+server** and row **Edit** open **`SmbShareEditorModal`** (label, share, mount path, username, password with keep-on-empty semantics; footer-left **Test connection** with inline OK/error text); drive row **Edit** and detected-drive **Adopt** open **`RemovableDriveEditorModal`** (read-only UUID/FS identity box, label, mount path, read-only + auto-mount checkboxes; NTFS forces read-only). Mount state is a **status dot before the label** (green mounted / gray unmounted-or-present / red disconnected, `title` tooltip) — there is no Status column. On phones the Actions column is hidden and **tapping a row expands its action strip** (mount, check, edit, delete) under the stacked text; on desktop actions stay in the hover-reveal Actions column. Mount state also tints the **mount/unmount** button background; row **Check** uses green/red on the shield button after an SMB test (error detail on hover). The **Detected drives** table is visible on phones (device cell stacks FS/size/mounted-at below `sm`).
+- **Storage** — **`Server`** icon. Unified section for SMB shares (and, with disk support enabled, adopted removable drives). Read-only table rows; all create/edit flows use **modal form editors** (see [FRONTEND-RULES.md](../FRONTEND-RULES.md) § Modal form editor), so add/edit/adopt/delete work at every breakpoint: header **`Plus`+server** and row **Edit** open **`SmbShareEditorModal`** (label, share, mount path, username, password with keep-on-empty semantics; footer-left **Test connection** with inline OK/error text); drive row **Edit** and detected-drive **Adopt** open **`RemovableDriveEditorModal`** (read-only UUID/FS identity box, label, mount path, read-only + auto-mount checkboxes; NTFS forces read-only). Mount state is a **status dot before the label** (green mounted / gray unmounted-or-present / red disconnected, `title` tooltip) — there is no Status column. On phones the Actions column is hidden and **tapping a row expands its action strip** (mount, check, edit, delete) under the stacked text; on desktop actions stay in the hover-reveal Actions column. Mount state also tints the **mount/unmount** button background; row **Check** uses green/red on the shield button after an SMB test (error detail on hover). The **Detected drives** table is visible on phones (device cell stacks FS/size/mounted-at below `sm`).
 - **Backup** — **`Archive`** icon. Local backup path and extra-mount-for-backup select on one row (equal-height controls); optional `(none)` or a mount from Storage.
 - **Backup Scheduler** — **`CalendarClock`** icon (`HostBackupScheduler.jsx`). One row of equal-height controls: **Enabled** `Toggle`, **Time** (`<input type="time">`), **Destinations** (checkboxes: Local, plus the configured backup mount when set; at least one stays selected), **Keep days** / **Keep weeks** numeric inputs. Saves `settings.backupSchedule` via PATCH; card `helpText` explains the daily run, pause-while-archiving, retention, and the no-catch-up rule.
 
@@ -695,7 +501,7 @@ All buttons: disabled state at 40% opacity, not-allowed cursor.
 
 ### Tables
 
-Used in Image Library, Backups, and other DataTable-based lists. On **Host** tabs, table views are normally wrapped in **`SectionCard`** (see [UI-PATTERNS.md](../../UI-PATTERNS.md) §Section shell) so the list sits in the same bordered card as Overview sections.
+Used in Image Library, Backups, and other DataTable-based lists. On **Host** tabs, table views are normally wrapped in **`SectionCard`** (see [FRONTEND-RULES.md](../FRONTEND-RULES.md) §Section shell) so the list sits in the same bordered card as Overview sections.
 
 - Shared chrome from [DataTableChrome.jsx](../../frontend/src/components/shared/DataTableChrome.jsx): **`dataTableInteractiveRowClass`** on body rows that have hover-reveal actions, and **`DataTableRowActions`** for the actions cell (`opacity-0 group-hover:opacity-100`; **`forceVisible`** when editing or loading)
 - `border-b border-surface-border` between rows (via head/body row classes)
@@ -776,8 +582,8 @@ When `config.updateAvailable` is `true`, an orange banner sits above the tab con
 Sections (each in a SectionCard):
 
 1. **General** — mirrors the VM General layout. First row: Name (editable when stopped), **DNS** toggle (Local DNS — advertise `<name>.local` via mDNS; help icon), then (divider) **CPU**, **RAM (MiB)** (compact VM-style number fields, no unit switch — empty = unlimited `∞`), then (divider) Image (flexes to fill, with library picker button). Second row: **Command Override** (flexes to fill; the stored argv shown as one shell-quoted line — see [CONTAINERS.md](CONTAINERS.md) § Command override), **Run as Root**, **Restart Policy** (radio pills), then (divider) **Auto Start**, **Auto Backup** (`Toggle` + help icon — opts the container into the daily scheduled backup, see Host Mgmt → Backup Scheduler) at the right end. In create mode only Name and Image render.
-2. **Environment Variables** — **Table** (DataTable chrome) of **read-only** rows; header **`Plus`+braces** and row **`Pencil`** open **[EnvVarEditorModal.jsx](../../frontend/src/components/sections/EnvVarEditorModal.jsx)** (modal form editor: Key, Value, **Secret** checkbox); row **`Trash2`** removes without a confirm; **no section Save**. The key is editable on edit — a rename removes the old key and writes the new one. Secrets are write-only: the field starts empty and "leave empty to keep the stored secret"; unchecking **Secret** clears the stored value. With **Secret** checked a **`Dices`** button beside the value field opens a confirm dialog with a client-generated random value (32-byte hex) shown once in a copyable "New secret" field; **Apply** fills the field and the modal **Save** commits — old value unrecoverable after save. While that dialog is open the editor sets `closeOnEscape={false}`, so Escape closes only the top layer. Persistence: [UI-PATTERNS.md](../UI-PATTERNS.md) (**Container environment** — `envPatch` against the full **`env`** map, documented exception).
-3. **Mounts** — Section header: **Plus + File** / **Plus + Folder** / **Plus + MemoryStick** (add a file, folder, or tmpfs mount). **Table:** **read-only** rows — type icon, container path, mount name, **Source**, **Sub-path**, **Size**, read-only flag, owner uid:gid (only when **Run as Root**), actions. Add and row **`Pencil`** open **[ContainerMountEditorModal.jsx](../../frontend/src/components/sections/ContainerMountEditorModal.jsx)** (modal form editor, one component with two entry points: create with the tapped kind, or edit the row). Its fields follow the kind: container path + mount name always; **Size** for tmpfs; **Source** (and **Sub-path** once a Storage source is picked) for folder mounts; **Read-only** for file/folder; **Owner uid:gid** for Local file/folder mounts when the container runs as root. **Secret** checkbox for file mounts (content becomes write-only; unchecking on edit empties the stored file — same model as secret env vars). Row **`Trash2`** removes without a confirm; **Edit file** (`SquarePen`, file mounts), **Upload**, and **Zip upload** stay row actions. A **secret** file mount shows `secret · set` / `secret · not set` after its name and never fetches its content: **Edit file** becomes **`KeyRound`** (*Replace secret content*), opening [SecretMountContentModal.jsx](../../frontend/src/components/sections/SecretMountContentModal.jsx) (paste new content and Save, or **Clear** after a confirm); see [CONTAINERS.md](CONTAINERS.md) § Secret file mounts. **Size** shows the host-side disk usage of each mount's data (one on-demand `GET /api/containers/:name/mounts/usage` per mounts change — not polled; `…` while sizing, `—` for tmpfs, a trailing `+` with tooltip when the size is an undercount from unreadable entries; hover shows the host path). Source is `Local` by default; for **directory** mounts the dropdown also lists configured **Storage** mounts (from Host Mgmt → Storage). Sub-path is relative (empty = mount root; leading `/` and `..` rejected). File mounts are always Local (Source column shows a static "Local" label). Rows whose Source references a missing or not-currently-mounted Storage entry surface an **`AlertCircle`** icon with hover tooltip. Zip upload is disabled for Storage-sourced rows with tooltip "Zip upload is available on Local mounts only". Mutations use **row-scoped** container mount APIs (add / update / delete / upload); see [UI-PATTERNS.md](../UI-PATTERNS.md) and [CONTAINERS.md](CONTAINERS.md). **Hover-reveal** actions at `lg`+; below `sm` the Actions column is hidden and the buttons expand under the row on tap.
+2. **Environment Variables** — **Table** (DataTable chrome) of **read-only** rows; header **`Plus`+braces** and row **`Pencil`** open **[EnvVarEditorModal.jsx](../../frontend/src/components/sections/EnvVarEditorModal.jsx)** (modal form editor: Key, Value, **Secret** checkbox); row **`Trash2`** removes without a confirm; **no section Save**. The key is editable on edit — a rename removes the old key and writes the new one. Secrets are write-only: the field starts empty and "leave empty to keep the stored secret"; unchecking **Secret** clears the stored value. With **Secret** checked a **`Dices`** button beside the value field opens a confirm dialog with a client-generated random value (32-byte hex) shown once in a copyable "New secret" field; **Apply** fills the field and the modal **Save** commits — old value unrecoverable after save. While that dialog is open the editor sets `closeOnEscape={false}`, so Escape closes only the top layer. Persistence: [FRONTEND-RULES.md](../FRONTEND-RULES.md) (**Container environment** — `envPatch` against the full **`env`** map, documented exception).
+3. **Mounts** — Section header: **Plus + File** / **Plus + Folder** / **Plus + MemoryStick** (add a file, folder, or tmpfs mount). **Table:** **read-only** rows — type icon, container path, mount name, **Source**, **Sub-path**, **Size**, read-only flag, owner uid:gid (only when **Run as Root**), actions. Add and row **`Pencil`** open **[ContainerMountEditorModal.jsx](../../frontend/src/components/sections/ContainerMountEditorModal.jsx)** (modal form editor, one component with two entry points: create with the tapped kind, or edit the row). Its fields follow the kind: container path + mount name always; **Size** for tmpfs; **Source** (and **Sub-path** once a Storage source is picked) for folder mounts; **Read-only** for file/folder; **Owner uid:gid** for Local file/folder mounts when the container runs as root. **Secret** checkbox for file mounts (content becomes write-only; unchecking on edit empties the stored file — same model as secret env vars). Row **`Trash2`** removes without a confirm; **Edit file** (`SquarePen`, file mounts), **Upload**, and **Zip upload** stay row actions. A **secret** file mount shows `secret · set` / `secret · not set` after its name and never fetches its content: **Edit file** becomes **`KeyRound`** (*Replace secret content*), opening [SecretMountContentModal.jsx](../../frontend/src/components/sections/SecretMountContentModal.jsx) (paste new content and Save, or **Clear** after a confirm); see [CONTAINERS.md](CONTAINERS.md) § Secret file mounts. **Size** shows the host-side disk usage of each mount's data (one on-demand `GET /api/containers/:name/mounts/usage` per mounts change — not polled; `…` while sizing, `—` for tmpfs, a trailing `+` with tooltip when the size is an undercount from unreadable entries; hover shows the host path). Source is `Local` by default; for **directory** mounts the dropdown also lists configured **Storage** mounts (from Host Mgmt → Storage). Sub-path is relative (empty = mount root; leading `/` and `..` rejected). File mounts are always Local (Source column shows a static "Local" label). Rows whose Source references a missing or not-currently-mounted Storage entry surface an **`AlertCircle`** icon with hover tooltip. Zip upload is disabled for Storage-sourced rows with tooltip "Zip upload is available on Local mounts only". Mutations use **row-scoped** container mount APIs (add / update / delete / upload); see [FRONTEND-RULES.md](../FRONTEND-RULES.md) and [CONTAINERS.md](CONTAINERS.md). **Hover-reveal** actions at `lg`+; below `sm` the Actions column is hidden and the buttons expand under the row on tap.
 4. **Network** — **interface selector** (host bridge list), Type, **IP** (from CNI/DHCP; shows "—" until known), **MAC** (persisted; **Stop** required to edit — input + **Save**, shuffle button to randomize like VM Advanced NICs), **Status** (**Up** / **Down**). The Local DNS toggle lives in **General**. Section header shows offline-only lock while the task is running, paused, or pausing.
 
    **Exposed Ports** subsection (rendered below the network fields when the container has exposed ports or any configured services): pill-row of ports; a pill opens a modal for per-port mDNS service editing.

@@ -120,7 +120,7 @@ apply_netplan() {
   # No stub-IP re-assert here. `netplan apply` re-renders bridges and drops
   # foreign addresses, but 169.254.53.53/32 is not on a bridge at all: it lives
   # on the dedicated wisp-dns0 dummy interface, which netplan does not manage
-  # and this re-render cannot touch. See docs/spec/CONTAINERS.md
+  # and this re-render cannot touch. See docs/specs/CONTAINERS.md
   # § Local DNS (Persistence).
   netplan apply
 }

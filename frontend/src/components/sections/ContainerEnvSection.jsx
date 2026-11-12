@@ -55,7 +55,7 @@ export default function ContainerEnvSection({ config, onSave }) {
   }, [config.env]);
 
   /* Save path for the editor modal: it builds the `envPatch` (whole-`env`-map
-   * exception, see docs/UI-PATTERNS.md), this owns the API call and the
+   * exception, see docs/FRONTEND-RULES.md), this owns the API call and the
    * restart badge. Failures propagate so the modal can show them and stay open. */
   const submitEnvPatch = async ({ envPatch }) => {
     setError(null);

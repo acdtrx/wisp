@@ -54,7 +54,7 @@ Wisp is single-user, single-host, and deliberately scoped.
 
 ## Built with AI tools
 
-This project was initially built with [Cursor](https://cursor.com) and more recently with [Claude](https://claude.com/claude-code). The codebase has detailed rules (`CLAUDE.md`, `.cursor/rules/`, `docs/`) that work well with AI-assisted editors. If you want a feature that isn't here, **fork it** and point your AI tool of choice at it — the rules file will keep it on-pattern.
+This project was initially built with [Cursor](https://cursor.com) and more recently with [Claude](https://claude.com/claude-code). The codebase has detailed rules (`AGENTS.md`, `docs/`) that work well with AI-assisted editors. If you want a feature that isn't here, **fork it** and point your AI tool of choice at it — the rules file will keep it on-pattern.
 
 ## Requirements
 
@@ -69,7 +69,7 @@ macOS is supported for backend development (no hypervisor features); production 
 
 ## Installation
 
-Full details in [`docs/spec/DEPLOYMENT.md`](./docs/spec/DEPLOYMENT.md). The recommended path is to grab a published release — no git clone, no Node build on the install host.
+Full details in [`docs/specs/DEPLOYMENT.md`](./docs/specs/DEPLOYMENT.md). The recommended path is to grab a published release — no git clone, no Node build on the install host.
 
 1. **Download the latest release tarball** from the [Releases page](https://github.com/acdtrx/wisp/releases/latest). Look for `wisp-X.Y.Z.tar.gz` under *Assets*.
 
@@ -102,9 +102,9 @@ Authentication: one password per host (scrypt-hashed in `config/wisp-password`),
 
 Technical docs live under [`docs/`](./docs/):
 
-- [Architecture](./docs/ARCHITECTURE.md) · [Tech stack](./docs/TECH-STACK.md) · [UI patterns](./docs/UI-PATTERNS.md) · [Coding rules](./docs/CODING-RULES.md)
-- API ([`docs/spec/API.md`](./docs/spec/API.md)), Deployment ([`docs/spec/DEPLOYMENT.md`](./docs/spec/DEPLOYMENT.md))
-- Feature specs in [`docs/spec/`](./docs/spec/) — VMs, containers, cloud-init, backups, USB, console, host monitoring, and more.
+- [Architecture](./docs/ARCHITECTURE.md) · [Tech stack](./docs/TECH-STACK.md) · [Frontend rules](./docs/FRONTEND-RULES.md) · [Coding rules](./docs/CODING-RULES.md)
+- API ([`docs/specs/API.md`](./docs/specs/API.md)), Deployment ([`docs/specs/DEPLOYMENT.md`](./docs/specs/DEPLOYMENT.md))
+- Feature specs in [`docs/specs/`](./docs/specs/) — VMs, containers, cloud-init, backups, USB, console, host monitoring, and more.
 
 ## Bugs and feedback
 

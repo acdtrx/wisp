@@ -107,7 +107,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
 
   /**
    * Save path for the editor modal: every NIC change re-PATCHes the whole
-   * `nics` array (the documented exception, see docs/UI-PATTERNS.md § Variants
+   * `nics` array (the documented exception, see docs/FRONTEND-RULES.md § Variants
    * — **VM — Network interfaces**). Failures propagate so the modal can show
    * them and stay open.
    */

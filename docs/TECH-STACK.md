@@ -1,44 +1,82 @@
 # Tech Stack
 
-What wisp runs on. **At a glance** is the map — the stack in one screen, with the deliberate deviations from a conventional Node web app called out with their reasons. Everything after it is the territory: the full inventory of what each dependency, system package, CLI tool, and vendored asset is for, and why it was chosen.
+> What Wisp is built with, and why. When the project deviates, edit the section in place
+> (`AGENTS.md`, Documentation): this file describes the project's actual stack, not a menu.
 
-No other spec file should name specific libraries or frameworks unless the technology is inherent to the domain (e.g. libvirt, QEMU, DBus).
+## Server
 
-## At a glance
+- **Node.js 24+ LTS**, ESM only, **plain JavaScript — no TypeScript** (deviation: the
+  codebase predates the TypeScript default; a migration would be its own spec-sized
+  decision, not a routine upgrade).
+- npm; `npm ci` for reproducible installs, and the lockfile ships with deploys. No
+  `dotenv` — the optional `config/runtime.env` is parsed in-process.
+- The **zero-native-deps goal holds** — it is why `dbus-next` (pure JS) was chosen over
+  native libvirt bindings.
+- **Domain integrations**, outside any conventional web stack: **`dbus-next`** (libvirt's
+  DBus API — sole caller `lib/vmManager/`), **`@grpc/grpc-js`** + proto-loader + protobufjs
+  (containerd's gRPC API — sole caller `lib/containerManager/`), **`fast-xml-parser`**
+  (libvirt domain XML, never regex).
+- **Fastify 5** — JSON-schema validation at the boundary. Route **response schemas are
+  authoritative** for serialized output: a new response field is added to the route
+  schema in the same edit, or Fastify strips it. Plugins: cors, multipart (streamed
+  uploads), static (serves the SPA + vendored noVNC), websocket (VNC proxy, container
+  shell). CORS allows `localhost:5173` in development only; in production the backend
+  serves its own client, same origin.
+- **Logging: pino** — pino-pretty single-line in dev, plain JSON in production.
+- **`undici`** used directly for SSRF-hardened fetches; **`js-yaml`** for cloud-init YAML
+  emission.
+- **Auth:** password login yielding `node:crypto`-signed session JWTs in cookies (no JWT
+  library), optional library-less OIDC SSO layered on top (the password stays as backup —
+  the session secret derives from it), scoped bearer API tokens (read/admin) and the
+  `/mcp` endpoint for agents. Contract: [specs/AUTH.md](specs/AUTH.md).
+- **No database**: state is libvirt domain XML and JSON files (`ARCHITECTURE.md`, State).
+- **SSE** for server→client updates. The client reads it through the custom fetch-based
+  `createSSE`: native `EventSource` was evaluated and rejected — it can't observe
+  keepalive comments (no dead-TCP watchdog) nor distinguish 401s.
 
-### Runtime
+## Client
 
-- **Node.js 24+ LTS**, ESM only, **plain JavaScript — no TypeScript** (deviation: the codebase predates the TS default; a migration would be its own spec-sized decision, not a routine upgrade).
-- npm; no `dotenv` — optional `config/runtime.env` parsed in-process.
-- Zero-native-deps goal **holds** — it is why `dbus-next` (pure JS) was chosen over native libvirt bindings.
+- **React 19** SPA, **Vite 8** (Rolldown-based), **Tailwind 4** CSS-first (`@theme` in
+  `index.css`) + typography plugin, **Zustand** stores, `lucide-react`, `marked` +
+  `dompurify`, native `fetch`.
+- **`react-router-dom` v7 declarative mode** — the successor package is `react-router`
+  v8; the upgrade is a recorded block per `CODING-RULES.md` §3, rechecked on the next
+  routing-touching work.
+- Hand-written service worker (no PWA plugin); **noVNC vendored** as ESM source (its npm
+  package can't be bundled); `@xterm/xterm` for container shells.
 
-### Domain integrations
+## Testing & lint
 
-Domain-inherent dependencies outside any conventional web stack: **`dbus-next`** (libvirt's DBus API — sole caller `lib/vmManager/`), **`@grpc/grpc-js`** + proto-loader + protobufjs (containerd's gRPC API — sole caller `lib/containerManager/`), **`fast-xml-parser`** (libvirt domain XML, never regex).
+- **No automated test suite** (deviation) — verification is running the real app
+  (`CODING-RULES.md` §14); macOS dev runs stub managers.
+- `npm run check-imports` checks that every relative import and module-relative path in
+  the backend resolves; the frontend build checks the client's.
 
-### Server
+## Deployment
 
-- **Fastify 5** — JSON-schema validation at the boundary; response schemas authoritative for serialized output. Plugins: cors (dev only), multipart (streamed uploads), static (serves the SPA + vendored noVNC), websocket (VNC proxy, container shell).
-- Logging: pino-pretty single-line in dev, plain JSON in production.
-- **`undici`** used directly for SSRF-hardened fetches; **`js-yaml`** for cloud-init YAML emission.
+- **Bare-metal systemd** (`wisp.service`, one process for API + SPA) — deliberate
+  deviation from a container pipeline: Wisp **is** the platform that pipeline deploys
+  onto, so it runs on the host, not in a container. Self-update from GitHub Releases via
+  `wisp-updater` atomic swap. No Docker anywhere in the project. The flow:
+  `PRODUCTION.md`, Deploys.
 
-### Auth
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| Process manager | systemd | Single service unit (`wisp.service`) — one Node process serves both API and SPA. |
+| Deployment | scp + SSH (`scripts/push.sh`) | Packages a zip (`package.sh`), uploads to `/tmp` on the server, runs `install.sh` over SSH |
+| Privileged helpers | `install-helpers.sh` | Refreshes `/usr/local/bin/wisp-*` from `backend/scripts/` on install/upgrade (`setup-server.sh`, `wispctl helpers`, `push.sh`) |
+| Packaging | zip | Deployment archive for manual server setup |
+| Releases | GitHub Releases + GitHub Actions (`.github/workflows/release.yml`) | Tag `v*` triggers a workflow that builds the frontend and publishes a tarball + SHA256 as a GitHub Release |
+| Self-update | `backend/src/lib/wispUpdate.js` + `wisp-updater.service` (Type=oneshot, runs `/usr/local/bin/wisp-updater`) | Hourly poll of GitHub Releases; in-app Install button downloads, verifies, atomic-swaps via the dedicated systemd unit. See [specs/UPDATES.md](specs/UPDATES.md) |
+| Containerization | None | No Docker. Services run directly on the Linux host. |
 
-Password login yielding `node:crypto`-signed session JWTs in cookies (no JWT library), optional library-less OIDC SSO layered on top (password stays as backup — the session secret derives from it), scoped bearer API tokens (read/admin) and the `/mcp` endpoint for agents. Contract: [spec/AUTH.md](spec/AUTH.md).
+## Dependencies
 
-### Frontend
+Rules: `CODING-RULES.md` §3. Each line: what it is for, and what it saves.
 
-- **React 19** SPA, **Vite 8** (Rolldown-based), **Tailwind 4** CSS-first (`@theme` in `index.css`) + typography plugin, **Zustand** stores, `lucide-react`, `marked` + `dompurify`, native `fetch`.
-- **`react-router-dom` v7 declarative mode** — the successor package is `react-router` v8; the upgrade is a recorded block per [CODING-RULES.md](CODING-RULES.md) §3, rechecked on the next routing-touching work.
-- Hand-written service worker (no PWA plugin); **noVNC vendored** as ESM source (its npm package can't be bundled); `@xterm/xterm` for container shells.
-- **Live data pushed**: always-on feeds as topics on the multiplexed `/api/events` SSE stream; scoped per-entity streams and WebSocket consoles beside it.
+### Inventory
 
-### Testing & deployment
-
-- **No automated test suite** (deviation) — verification is running the real app per [CLAUDE.md](../CLAUDE.md) § Verification; macOS dev runs stub managers.
-- **Bare-metal systemd** (`wisp.service`, one process for API + SPA) — deliberate deviation from a container pipeline: wisp **is** the platform that pipeline deploys onto, so it runs on the host, not in a container. Self-update from GitHub Releases via `wisp-updater` atomic swap. No Docker anywhere in the project.
-
-## Backend
+#### Backend
 
 | Component | Technology | Version | Purpose |
 |-----------|-----------|---------|---------|
@@ -57,7 +95,7 @@ Password login yielding `node:crypto`-signed session JWTs in cookies (no JWT lib
 | HTTP client | undici | ^8.7 | Used directly for SSRF-hardened fetches: single-DNS-resolve + IP-pinned `Agent` + manual redirect re-validation. Node ships undici as the global `fetch`; we depend on it explicitly to import `Agent` / `fetch`. v8 negotiates HTTP/2 by default. |
 | YAML emitter | js-yaml | ^5.2 | `dump()` (named export; v5 has no default export) for cloud-init `user-data` / `meta-data`. Replaces hand-rolled template-literal YAML which was vulnerable to scalar-break injection from user-controlled fields. |
 
-### Backend dependencies NOT used
+#### Backend: not used
 
 - **No Express** — Fastify chosen for performance and built-in validation.
 - **No native libvirt bindings** — unmaintained, require native compilation.
@@ -66,7 +104,7 @@ Password login yielding `node:crypto`-signed session JWTs in cookies (no JWT lib
 - **No UUID library** — `crypto.randomUUID()` or libvirt-generated UUIDs.
 - **No date library** — built-in `Date` and `Intl` APIs.
 
-## Frontend
+#### Frontend
 
 | Component | Technology | Version | Purpose |
 |-----------|-----------|---------|---------|
@@ -81,11 +119,11 @@ Password login yielding `node:crypto`-signed session JWTs in cookies (no JWT lib
 | Markdown | marked + dompurify | ^18 / ^3 | Parses GitHub-flavored release notes (marked) and sanitizes the HTML (dompurify) before injection in the Wisp Update section. |
 | HTTP client | Native `fetch` | — | No Axios or similar; plain browser fetch API. |
 | Offline shell | Native Service Worker | — | Hand-written `public/sw.js` (~140 lines); no Workbox / `vite-plugin-pwa`. Precache list baked into `dist/sw.js` at build time by `scripts/generate-sw-precache.js` from Vite's build manifest (`build.manifest: true`). Requires a secure context (HTTPS or localhost). |
-| VNC console | noVNC | vendored | ESM source files served from `public/vendor/novnc/`. Not installed via npm. See [noVNC.md](spec/noVNC.md). |
+| VNC console | noVNC | vendored | ESM source files served from `public/vendor/novnc/`. Not installed via npm. See [noVNC.md](specs/noVNC.md). |
 | Container console | @xterm/xterm | ^6.0 | In-browser terminal emulator for container shell sessions. |
 | Terminal layout | @xterm/addon-fit | ^0.11 | Fits the terminal to its container element; paired with resize WebSocket control messages. |
 
-### Frontend dependencies NOT used
+#### Frontend: not used
 
 - **No component library** (Material UI, Chakra, etc.) — all components built from scratch with Tailwind.
 - **No CSS-in-JS** — Tailwind utility classes only.
@@ -94,14 +132,14 @@ Password login yielding `node:crypto`-signed session JWTs in cookies (no JWT lib
 - **No CDN assets** — no external font loading, no script tags from CDNs.
 - **No PWA plugin** (`vite-plugin-pwa`, Workbox) — the service worker needs exactly two caching strategies and a build-time precache list; both are a few lines against the platform API.
 
-## Vendored Dependencies
+#### Vendored Dependencies
 
 | Dependency | Source | Location | Reason |
 |-----------|--------|----------|--------|
 | noVNC core | GitHub (novnc/noVNC) | `frontend/public/vendor/novnc/core/` | npm package has top-level `await` in CJS that Rollup cannot process. Vendored as raw ESM source, loaded via dynamic `import()` at runtime. |
 | pako | Bundled with noVNC | `frontend/public/vendor/novnc/vendor/pako/` | Compression library used by noVNC. Copied from noVNC's vendor directory. |
 
-## System Dependencies (Linux host)
+#### System Dependencies (Linux host)
 
 Installed by the server setup script:
 
@@ -123,9 +161,9 @@ Installed by the server setup script:
 | unzip | Info-ZIP `unzip` — extracts `.zip` uploads for container directory mounts (`unzip -Z1` + `unzip -d`) |
 | CNI plugins | bridge, dhcp, loopback — container networking (installed to `/opt/cni/bin/`) |
 
-## CLI Tools Used by Backend
+#### CLI Tools Used by Backend
 
-These are invoked via `child_process` where no native Node.js alternative exists:
+These are invoked via `child_process` where no native Node.js alternative exists; the allowlist itself is `CODING-RULES.md` §7:
 
 | Tool | Used for |
 |------|----------|
@@ -145,16 +183,3 @@ These are invoked via `child_process` where no native Node.js alternative exists
 | `/opt/cni/bin/bridge` | CNI bridge plugin exec for container networking (standard CNI interface) |
 | `/opt/cni/bin/dhcp` | CNI DHCP daemon for container IP assignment |
 | `ip` | Network namespace management (`ip netns add/delete`) for containers |
-
-## Deployment
-
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| Process manager | systemd | Single service unit (`wisp.service`) — one Node process serves both API and SPA. |
-| Deployment | scp + SSH (`scripts/push.sh`) | Packages a zip (`package.sh`), uploads to `/tmp` on the server, runs `install.sh` over SSH |
-| Privileged helpers | `install-helpers.sh` | Refreshes `/usr/local/bin/wisp-*` from `backend/scripts/` on install/upgrade (`setup-server.sh`, `wispctl helpers`, `push.sh`) |
-| Packaging | zip | Deployment archive for manual server setup |
-| Releases | GitHub Releases + GitHub Actions (`.github/workflows/release.yml`) | Tag `v*` triggers a workflow that builds the frontend and publishes a tarball + SHA256 as a GitHub Release |
-| Self-update | `backend/src/lib/wispUpdate.js` + `wisp-updater.service` (Type=oneshot, runs `/usr/local/bin/wisp-updater`) | Hourly poll of GitHub Releases; in-app Install button downloads, verifies, atomic-swaps via the dedicated systemd unit. See [spec/UPDATES.md](spec/UPDATES.md) |
-| Containerization | None | No Docker. Services run directly on the Linux host. |
-

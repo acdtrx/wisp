@@ -95,7 +95,7 @@ async function readContainerRunAsRoot(name) {
 /**
  * Open our end of an exec FIFO as a non-blocking fd in a net.Socket, polled by the event loop.
  * Never an fs stream: its open()/read() pin a libuv threadpool thread while the other end is
- * absent or idle (docs/spec/CONTAINERS.md — Exec FIFO I/O).
+ * absent or idle (docs/specs/CONTAINERS.md — Exec FIFO I/O).
  *
  * The opens never block, so callers open our ends **before** `Tasks.Start`; the shim's blocking
  * opens of the other ends (during Start) then find a partner and return at once.

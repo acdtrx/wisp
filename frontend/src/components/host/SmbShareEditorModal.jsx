@@ -39,7 +39,7 @@ function formFromShare(share) {
 
 /**
  * Modal form editor for one SMB share — create when `share` is null, edit
- * otherwise (see docs/UI-PATTERNS.md § Modal form editor). Owns validation
+ * otherwise (see docs/FRONTEND-RULES.md § Modal form editor). Owns validation
  * and the add/patch/check API calls; calls `onSaved` after a successful save
  * so the parent can refresh settings and mount status.
  */

@@ -15,7 +15,7 @@ import { formatSize } from '../../utils/formatters.js';
 const FORM_ID = 'secret-mount-content-form';
 
 /**
- * Write-only editor for a secret file mount (see docs/UI-PATTERNS.md — the
+ * Write-only editor for a secret file mount (see docs/FRONTEND-RULES.md — the
  * secret env var model): the stored content is never fetched, only replaced
  * with pasted text or cleared (emptied). `mount` carries the masked metadata
  * from the container detail (`isSet`, `sizeBytes`). Writes go through the same

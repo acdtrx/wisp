@@ -1,5 +1,5 @@
 /**
- * Shared list/table layout tokens — see docs/UI-PATTERNS.md.
+ * Shared list/table layout tokens — see docs/FRONTEND-RULES.md.
  */
 
 /**

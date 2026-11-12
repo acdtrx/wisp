@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Create or remove a network namespace under /var/run/netns (for Wisp container + CNI).
-# Invoked via sudo -n as the deploy user. See install-helpers.sh / docs/spec/DEPLOYMENT.md.
+# Invoked via sudo -n as the deploy user. See install-helpers.sh / docs/specs/DEPLOYMENT.md.
 set -euo pipefail
 
 valid_name() {

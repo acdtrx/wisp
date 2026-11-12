@@ -60,7 +60,7 @@ function positiveNumber(value) {
 }
 
 /**
- * Modal form editor for one VM block disk (see docs/UI-PATTERNS.md § Modal form
+ * Modal form editor for one VM block disk (see docs/FRONTEND-RULES.md § Modal form
  * editor). Two entry points: edit — the `disk` row (`sda` / `sdb`) with its size
  * and bus — or add, with `disk` null, where the mode picker chooses between a
  * new empty volume and attaching a library image (plain select; the full

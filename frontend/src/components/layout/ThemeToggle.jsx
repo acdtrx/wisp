@@ -8,7 +8,7 @@ const MODES = {
   system: { Icon: Monitor, label: 'Theme: system (following OS)' },
 };
 
-/** Icon-only three-state theme control (CODING-RULES §8), cycling on tap. */
+/** Icon-only three-state theme control (FRONTEND-RULES.md, Design), cycling on tap. */
 export default function ThemeToggle() {
   const preference = useThemeStore((s) => s.preference);
   const cyclePreference = useThemeStore((s) => s.cyclePreference);

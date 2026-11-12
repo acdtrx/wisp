@@ -144,7 +144,7 @@ export function setPassword(newPassword) {
 /**
  * Route access levels. Every route declares one in its own options as
  * `config: { auth: <level> }`; the auth hook enforces only that declaration and
- * never looks at the URL (docs/spec/AUTH.md § Route access levels):
+ * never looks at the URL (docs/specs/AUTH.md § Route access levels):
  *
  *   public  — anyone (login, OIDC start/callback/status, static assets + SPA shell)
  *   session — browser session only; API tokens refused (/api/auth/*, consoles)

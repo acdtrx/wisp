@@ -9,7 +9,7 @@
 #
 # Maintainer: when adding a new backend/scripts/wisp-* privileged helper, add a block
 # below, wire the backend to prefer /usr/local/bin (see existing patterns), and update
-# docs/spec/DEPLOYMENT.md — "Privileged helpers checklist".
+# docs/specs/DEPLOYMENT.md — "Privileged helpers checklist".
 #
 # Why no `set -e`: a single helper's failure (commonly: dpkg lock contention
 # from unattended-upgrades) must not abort the rest. Each block tracks its

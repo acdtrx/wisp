@@ -17,7 +17,7 @@
 # What belongs here: steps that are fast, idempotent, and safe to re-run against
 # a live system — nothing that can disrupt a running VM or container. Steps with
 # a real disruption profile (packages, containerd, libvirt, bridge) stay in
-# setup-server.sh until they are audited; see docs/plans/setup-refactor.md.
+# setup-server.sh until they are audited (docs/BACKLOG.md, setup strategy).
 #
 # Exit code is meaningful: non-zero if any step failed. wisp-updater relies on
 # that to roll back, while setup-server.sh wraps the call in run_step so the
@@ -54,7 +54,7 @@ echo ""
 "$SETUP_DIR/install-helpers.sh" "$PROJECT_ROOT" "$DEPLOY_USER"
 echo ""
 
-# State migrations (backend/migrations/, docs/spec/UPDATES.md → State
+# State migrations (backend/migrations/, docs/specs/UPDATES.md → State
 # migrations) — last, after the host-level steps they may rely on. As the deploy
 # user: it owns the install tree and has libvirt + containerd access.
 # Needs the tree's backend deps: wisp-updater's install-deps step runs before

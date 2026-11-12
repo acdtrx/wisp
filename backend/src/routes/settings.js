@@ -128,7 +128,7 @@ export default async function settingsRoutes(fastify) {
 
   // Session-only (settled 2026-10-16): whoever controls the issuer controls a
   // full browser login, so an API token must never be able to repoint it —
-  // docs/spec/AUTH.md § Denied surfaces.
+  // docs/specs/AUTH.md § Denied surfaces.
   fastify.patch('/settings/oidc', {
     config: { auth: 'session' },
     schema: {

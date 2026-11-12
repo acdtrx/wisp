@@ -1,5 +1,5 @@
 /**
- * Shared layout tokens for modal form editors — see docs/UI-PATTERNS.md
+ * Shared layout tokens for modal form editors — see docs/FRONTEND-RULES.md
  * § Modal form editor. Mirrors DataTableChrome.jsx: one file owning the
  * classes and small building blocks so every editor modal looks the same.
  */

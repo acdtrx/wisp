@@ -1,467 +1,70 @@
 # Architecture
 
-## System Overview
+> The system's shape: processes, subsystems and their boundaries, data flow, where state
+> lives, how it runs. It names a technology only to describe the shape.
 
-Wisp consists of two Node.js processes and the system's libvirt daemon:
+## Run shape
 
-```mermaid
-flowchart LR
-    Browser["Browser"]
-    FrontendServer["Frontend Server\n:8080"]
-    BackendServer["Backend Server\n:3001"]
-    Libvirt["libvirt\n(DBus)"]
-    QEMU["QEMU/KVM"]
-    Filesystem["Filesystem\n/var/lib/wisp"]
+- A **single Node process** (`wisp.service`) on the host it manages, beside the libvirt
+  daemon and containerd: it serves the API, the consoles, background work, the built
+  frontend from `frontend/dist/` and the vendored noVNC under `/vendor/`.
+- API and stream routes live under `/api`, console WebSockets under `/ws`, the MCP
+  endpoint at `/mcp`; every other path serves the client. In development the Vite dev
+  server serves the client and proxies `/api` and `/ws` to the backend; on macOS the
+  backend runs stub managers (no libvirt, no containerd).
+- At startup the backend connects to libvirt and avahi over DBus and to containerd over
+  gRPC, and mounts the configured SMB mounts. On shutdown it closes the open streams and
+  disconnects the managers.
 
-    Browser -->|"HTTP / WS"| FrontendServer
-    FrontendServer -->|"proxy /api"| BackendServer
-    FrontendServer -->|"proxy /ws"| BackendServer
-    FrontendServer -->|"static files"| Browser
-    BackendServer -->|"dbus-next"| Libvirt
-    Libvirt --> QEMU
-    BackendServer -->|"read/write"| Filesystem
-```
+### The client
 
-### Frontend server (production)
-
-A lightweight static file server that:
-- Serves the built frontend files from `dist/`
-- Serves vendored noVNC from `public/vendor/`
-- Proxies `/api/*` requests to the backend
-- Proxies `/ws/*` WebSocket connections to the backend
-- Returns `index.html` for all unmatched routes (SPA fallback)
-- Returns 503 when the backend is unreachable
-
-### Backend server
-
-The application backend that:
-- Connects to libvirt via DBus at startup
-- Connects to avahi-daemon via DBus at startup for workload mDNS registration
-- Exposes REST API endpoints under `/api/`
-- Exposes WebSocket endpoints under `/ws/`
-- Manages VM lifecycle, configuration, storage, and monitoring
-- Reads host metrics from `/proc`
-- Auto-mounts configured network (SMB) mounts at startup
-
-### Development mode
-
-In development, the frontend build tool's dev server serves the frontend with hot module replacement and proxies `/api` and `/ws` to the backend at `127.0.0.1:3001`. CORS is enabled on the backend for `localhost:5173`. The backend can run on macOS without libvirt (dev mode skips hypervisor connection).
-
-## Data Flow Patterns
-
-### REST API
-
-```mermaid
-sequenceDiagram
-    participant B as Browser
-    participant F as Frontend Server
-    participant A as Backend API
-    participant L as libvirt (DBus)
-
-    B->>F: GET /api/vms
-    F->>A: proxy GET /api/vms
-    A->>L: ListDomains + GetXMLDesc per domain
-    L-->>A: domain data
-    A-->>F: JSON response
-    F-->>B: JSON response
-```
-
-### Server-Sent Events (SSE)
-
-Used for real-time streaming of stats and long-running job progress:
-
-```mermaid
-sequenceDiagram
-    participant B as Browser
-    participant A as Backend API
-    participant P as /proc filesystem
-    participant L as libvirt
-
-    B->>A: GET /api/events (Accept: text/event-stream)
-    loop Every 5 seconds
-        A->>P: Read /proc/stat, meminfo, diskstats, net/dev
-        A->>L: GetRunningVMAllocations
-        A-->>B: SSE frame: { topic: "stats", data: { cpu, ram, disk, net, vms } }
-    end
-```
-
-Three SSE patterns:
-
-| Pattern | Endpoints | Behavior |
-|---------|-----------|----------|
-| Multiplexed events stream | `/api/events` | The single always-on connection. Carries `{ topic, data }` frames for `stats` (5 s sampled metrics), `vms`, `containers`, `sections`, `discovery` (all event-driven: libvirt `DomainEvent` + qemu binary changes; containerd events + container.json writes + image-update completion; persisted sections/assignments writes; mDNS browse events). One connection instead of five because browsers cap plain-HTTP/1.1 at 6 connections per origin — see [API.md](spec/API.md) § Events stream. |
-| Scoped stream | `/api/vms/:name/stats`, `/api/containers/:name/stats`, `/api/containers/:name/logs`, `/api/host/disks/stream`, `/api/host/usb/stream` | Open only while the matching view is on screen; sampled or event-driven per endpoint |
-| Job progress | `/api/vms/create-progress/:jobId`, `/api/vms/backup-progress/:jobId`, `/api/library/download-progress/:jobId`, `/api/containers/create-progress/:jobId` | Emits progress events until completion/failure, then closes |
-| One-shot | URL check responses | Single response, no streaming |
-
-All SSE responses go through `setupSSE` (`backend/src/lib/sse.js`), which writes a `: keepalive` comment line every 25 s so idle event-driven streams (e.g. `/api/events` on a quiet host) don't get torn down by NAT/proxy idle timers. The client (`frontend/src/api/sse.js`) arms a 60 s read-watchdog after the first byte and re-arms it on every chunk; missing bytes for that long aborts and reconnects, catching silently-dropped TCP that `reader.read()` would otherwise wait on forever.
-
-The watchdog can't fire while the page is frozen, though — iOS suspends a backgrounded home-screen app's JS context, and the socket dies with it. So every stream also resyncs on `visibilitychange → visible` and on `online`: if it has produced no bytes for longer than the 25 s keepalive it aborts and reconnects at once, and if it was already waiting out reconnect backoff it connects immediately instead. A stream still receiving keepalives is left alone, so an ordinary desktop tab switch costs nothing. Since every event-driven stream opens with a full snapshot, one reconnect is all it takes to replace a stale list.
-
-### WebSocket (VNC Console)
-
-```mermaid
-sequenceDiagram
-    participant N as noVNC (Browser)
-    participant W as Backend WS
-    participant Q as QEMU VNC
-
-    N->>W: WebSocket /ws/console/:name/vnc?token=JWT
-    W->>W: Verify JWT, resolve VNC port from XML
-    W->>Q: TCP connect 127.0.0.1:port
-    loop Bidirectional
-        N->>W: WS binary frame
-        W->>Q: TCP write
-        Q->>W: TCP data
-        W->>N: WS binary frame
-    end
-```
-
-## Backend Module Structure
-
-### Entry point
-
-`backend/src/index.js` — Creates the Fastify server, registers plugins (CORS, multipart, WebSocket), applies the auth hook, registers all route modules, connects to libvirt, and starts listening.
-
-### Routes (`backend/src/routes/`)
-
-Each file registers routes under a common prefix. Routes handle HTTP concerns (validation, status codes, response shaping) and delegate business logic to vmManager or other library modules.
-
-| File | Prefix | Domain |
-|------|--------|--------|
-| `auth.js` | `/api/auth` | Login, password change, API token CRUD |
-| `host.js` | `/api` | Host info, bridges, firmware, USB, USB SSE stream, OS updates |
-| `stats.js` | `/api` | Host stats SSE stream |
-| `backgroundJobs.js` | `/api` | In-memory background job listing (`GET /background-jobs`) |
-| `library.js` | `/api` | Image library CRUD, uploads, downloads |
-| `vms.js` | `/api` | VM CRUD, lifecycle, disks, CDROM, USB, stats, backups |
-| `containers.js` | `/api` | Container CRUD, lifecycle, mounts, logs, stats, create job + SSE |
-| `cloudinit.js` | `/api` | Cloud-init config, GitHub SSH keys |
-| `settings.js` | `/api` | App settings, network mount status/mount |
-| `sections.js` | `/api` | Sidebar sections + workload assignments, SSE stream |
-| `homepage.js` | `/api` | Home page groups, tile overrides, manual links (derived tiles ride the `home` events topic) |
-| `backups.js` | `/api` | Backup listing, restore, delete |
-| `mcp.js` | `/mcp` | MCP endpoint (JSON-RPC over POST, bearer-token-only; see `docs/spec/MCP.md`) |
-| `console.js` | `/ws` | VNC WebSocket proxy |
-
-### vmManager (`backend/src/lib/vmManager/index.js`)
-
-Platform facade: at load time it imports **`backend/src/lib/vmManager/linux/`** on Linux (libvirt over DBus) or **`backend/src/lib/vmManager/darwin/`** on macOS (dev stub). This is the single integration boundary with libvirt — no route or other module imports `dbus-next` for libvirt or calls libvirt except through this facade; only code under `vmManager/linux/` does. Avahi (mDNS) uses `dbus-next` in **`lib/mdns/linux/avahi.js`** only (separate DBus service).
-
-Shared pure helpers live in **`backend/src/lib/vmManager/vmManagerShared.js`** (private to vmManager, used by both linux and darwin platform impls).
-
-| Module (under `vmManager/linux/`) | Responsibility |
-|--------|---------------|
-| `vmManagerConnection.js` | DBus connection lifecycle (`connect`, `disconnect` on shutdown), domain lookup, state queries, XML retrieval, error helpers (MAC/format helpers from `vmManagerShared`) |
-| `vmManagerHost.js` | Host info (versions, hardware), bridge/firmware/USB enumeration |
-| `vmManagerList.js` | List all VMs (cached, event-driven refresh), aggregate running VM allocations (vCPU/memory) from the cache, get full VM config (parsed from XML) |
-| `vmManagerLifecycle.js` | Start, stop, force-stop, reboot, suspend, resume |
-| `vmManagerCreate.js` | Create VM (XML generation, disk provisioning), delete |
-| `vmManagerConfig.js` | Update VM configuration (live vs offline, restart detection); graphics listen address get/set |
-| `vmManagerPendingRestart.js` | Restart-required flag (`since` timestamp): `setVMPendingRestart` and the rule that drops a flag older than the QEMU start |
-| `vmManagerDisk.js` | Attach/detach/resize local disks |
-| `vmManagerIso.js` | Attach/eject ISO images to CDROM slots |
-| `vmManagerUsb.js` | USB device attach/detach |
-| `vmManagerBackup.js` | Backup creation, listing across destinations, restore as new, delete |
-| `vmManagerStats.js` | Per-VM stats, raw XML, VNC port extraction |
-| `vmManagerCloudInit.js` | Cloud-init config management, ISO generation/attach/detach |
-| `vmManagerXml.js` | XML parsing and building utilities (fast-xml-parser) |
-| `libvirtConstants.js` | Libvirt state names and constant mappings |
-
-### containerManager (`backend/src/lib/containerManager/index.js`)
-
-Platform facade: imports **`backend/src/lib/containerManager/linux/`** on Linux (gRPC to containerd) or **`backend/src/lib/containerManager/darwin/`** on macOS (dev stub). Path helpers and `buildOCISpec` are re-used from the Linux tree where they have no gRPC dependency. Routes import only the facade; only `containerManager/linux/*` imports `@grpc/grpc-js`.
-
-| Module (under `containerManager/linux/`) | Responsibility |
-|--------|---------------|
-| `index.js` | Re-exports the Linux implementation for the facade |
-| `containerManagerConnection.js` | gRPC client, containerd connection lifecycle |
-| `containerManagerSpec.js` | OCI spec builder from `container.json` + image config |
-| `containerManagerExec.js` | Interactive shell: containerd `Tasks.Exec` + PTY (FIFO I/O) for the container console WebSocket |
-| `containerManagerNetwork.js` | Bridge CNI, netns, DHCP IP discovery |
-| `containerManagerLifecycle.js` | Start, stop, kill, restart, task lifecycle |
-| `containerManagerRestartPolicy.js` | Applies `restartPolicy` on containerd `/tasks/exit` (backoff, intentional-stop matching) |
-| `containerManagerCreate.js` | Create container (pull, snapshot, define) |
-| `containerManagerConfig.js` | Read/update persisted config |
-| `containerManagerList.js` | List containers / summaries |
-| `containerManagerStats.js` | Per-container metrics |
-| `containerManagerLogs.js` | Log tail / SSE |
-| `containerManagerMounts.js` | Mount orchestration |
-| `containerManagerMountCrud.js` | Add/update/remove mount rows |
-| `containerManagerMountsContent.js` | File/zip upload, content read/write for mounts |
-| `containerPaths.js` | Path helpers under `containersPath` |
-
-containerManager has zero awareness of "apps" — it persists `metadata` opaquely on `container.json` and exposes the primitives that the `containerApps` glue layer composes (see `containerApps/index.js`).
-
-### containerApps (`backend/src/lib/containerApps/`)
-
-Wisp's app recipe layer. A peer of routes and a *consumer* of containerManager (not an extension of it). Owns the create/patch/eject flows for app containers; translates the high-level "I want a Jellyfin with these libraries and GPU on" into a sequence of containerManager API calls (`createContainer`, `updateContainerConfig`, `putMountFileTextContent`, `execCommandInContainer`).
-
-| Module | Responsibility |
-|--------|----------------|
-| `index.js` | Facade: `createAppContainer`, `applyAppConfig`, `eject`, `maskAppSecrets`, `maskContainerConfigSecrets` (full outbound masking — env secrets + appConfig; used by routes and MCP tools), registry helpers (`getAppModule`, `getAppEntry`, `isKnownApp`) |
-| `appRegistry.js` | `APP_REGISTRY` map of app id → `{ label, defaultImage, allowCustomImage, module, requiresRoot?, defaultServices? }` |
-| `caddy.js`, `jellyfin.js`, `tinySamba.js`, `zot.js` | Per-app modules: `getDefaultAppConfig`, `validateAppConfig`, `generateDerivedConfig`, `maskSecrets`, `getReloadCommand`, `requiresRestartForChange` |
-
-App identity persists in `container.json.metadata.app` (string id) + `container.json.metadata.appConfig` (object). containerManager treats `metadata` as opaque pass-through.
-
-### Supporting libraries (`backend/src/lib/`)
-
-| Module | Purpose |
-|--------|---------|
-| `auth.js` | JWT sign/verify, password verification, route access levels + the one auth hook enforcing each route's declared `config: { auth }` (session cookies, bearer API tokens, the bearer-only `mcp` level), startup declaration check |
-| `apiTokens.js` | Scoped bearer API tokens: mint (`wisp_<scope>_…`, plaintext returned once), verify (SHA-256 + `timingSafeEqual`), revoke, list. Persisted in `wisp-config.json` `apiTokens[]` via the settings mutex. |
-| `loginRateLimit.js` | Shared per-IP rate limiting for failed logins **and** invalid bearer tokens (one 60 s / 5-attempt window). |
-| `hostStatsSnapshot.js` | `buildHostStatsPayload()` — the `stats` topic payload builder for `/api/events`, shared with the MCP `get_host_stats` tool. |
-| `mcp/` | MCP server (app-glue): `mcpServer.js` (stateless JSON-RPC dispatch: initialize/ping/tools) + `tools/` (tool catalogue calling the same facades as routes, secrets masked — read tools plus admin-scoped mutating tools that expose a deliberate subset of the API; app config writes filtered by each app module's `agentWritableAppConfigFields`). See `docs/spec/MCP.md`. |
-| `atomicJson.js` | `writeJsonAtomic(path, obj)`: stage to `*.tmp.<pid>.<ts>.<rand>`, fsync, rename(2). Used for `wisp-config.json`, `container.json`, `oci-image-meta.json`. |
-| `bootCleanup.js` | `cleanPartialJsonArtifacts(log)` runs at boot, removes orphan atomic-write temp files left by a crash mid-rename. |
-| `config.js` | Sync reader for `wisp-config.json` with defaults (including `containersPath`) |
-| `settings.js` | Async read/write of `wisp-config.json`, network mount CRUD, masked API responses, backup destination helpers (read-modify-write happens **inside** the mutex via `withSettingsWriteLock`; persisted via `writeJsonAtomic`). |
-| `loadRuntimeEnv.js` | Optional `config/runtime.env` parsing (loaded from `index.js` before server start) |
-| `createJobStore.js` | Preconfigured job store for VM create progress (`routes/vms.js`) |
-| `containerJobStore.js` | Job store wrapper for container create (`routes/containers.js`) |
-| `downloadUtils.js` | Shared download helpers: exclusive unique-name create (`openUniqueFile`), response-body → file pipeline with progress and partial-file cleanup (also used by `wispUpdate.js`) |
-| `fileTypes.js` | `detectType` for image library files |
-| `networking/index.js` | Networking facade — host bridge enumeration (`listHostBridges`, `getDefaultBridge`, `getDefaultContainerParentBridge`), `/proc` IPv4 readout (`ipv4CidrFromProcFibTrie`), netplan-managed VLAN bridges, and the `isVlanLikeBridgeName` heuristic. Linux impl under `networking/linux/{hostBridges,managedBridges}.js`; macOS stubs under `networking/darwin/`. Carved module rules apply: errors come from its private `networkingError`, and it never imports the managers (they import it) — whether a bridge is in use is passed in by the route (`deleteManagedNetworkBridge(name, { assertNotInUse })`, glue in `lib/networkBridgeUsage.js`). |
-| `paths.js` | `getVMBasePath(name)`, `getImagePath()`, `ensureImageDir()` (container roots: `containerManager` `containerPaths.js` / `getContainersPath()`) |
-| `routeErrors.js` | `createAppError()`, `handleRouteError()`, `sendError()`, error code-to-HTTP mapping |
-| `validation.js` | VM name validation |
-| `sse.js` | SSE response helper (`setupSSE`, `closeAllSSE` on shutdown) |
-| `host/index.js` | Host introspection module facade — hardware inventory (`host/{linux,darwin}/hostHardware.js`; Linux uses sysfs/proc + `wisp-dmidecode` for RAM, macOS uses `system_profiler` via `host/darwin/systemProfiler{Hardware,Software}.js`), GPU enumeration (`host/{linux,darwin}/hostGpus.js`), power control via `wisp-power` (`host/linux/hostPower.js`; darwin stub), USB monitor (`host/{linux,darwin}/usbMonitor.js`; sysfs + `/dev/bus/usb` watch on Linux), `/proc` stats (`host/{linux,darwin}/procStats.js`), reboot-required signal (`host/{linux,darwin}/rebootRequired.js`), OS-update checker via `wisp-os-update` (`host/{linux,darwin}/osUpdates.js`), disk SMART summaries via `wisp-smartctl` (`host/linux/smart.js`; darwin returns empty). PCI vendor/device name lookup (`host/linux/pciIds.js`) is an internal helper. Public surface: `getHostHardwareInfo`, `listHostGpus`, `hostShutdown`/`hostReboot`, USB (`start`/`stop`/`getDevices`/`onChange`), `getHostStats`, `getRebootSignal`, OS updates (`getPendingUpdatesCount`, `setCachedUpdateCount`, `getLastCheckedAt`, `checkForUpdates`, `performUpgrade`, `listUpgradablePackages`, `startUpdateChecker`, `stopUpdateChecker`), SMART (`readDiskSmartSummary`/`readAllDiskSmartSummaries`). |
-| `storage/index.js` | Storage module facade — qemu-img wrappers (`storage/diskOps.js`, cross-platform), block-device enumeration + hotplug (`storage/{linux,darwin}/diskMonitor.js`), removable disk mount via `wisp-mount disk` (`storage/{linux,darwin}/diskMount.js`), SMB mount via `wisp-mount smb` (`storage/{linux,darwin}/smbMount.js`). Public surface: disk-image ops (`getDiskInfo`, `getBackingChain`, `copyAndConvert`, `resizeDisk`), block-device monitor (`start`, `stop`, `getDevices`, `onChange`, `refresh`), mounts (`mountDisk`/`unmountDisk`, `mountSMB`/`unmountSMB`/`getMountStatus`/`checkSMBConnection`/`rmdirMountpoint`). (SMART summaries are exposed by the host module — sole consumer is `host/linux/hostHardware.js`.) |
-| `cloudInit.js` | Cloud-init ISO generation via `cloud-localds` or `genisoimage` |
-| `jobStore.js` | Generic async job store with progress tracking (`kind`, `title`, `listJobs`) |
-| `backgroundJobTitles.js` | Display titles for background jobs (parity with UI) |
-| `listBackgroundJobs.js` | Merges job rows from create/backup/download/container stores for `GET /api/background-jobs` |
-| `backupJobStore.js` | Backup-specific job store |
-| `containerOperationLock.js` | Per-container in-memory operation lock (`acquireContainerOperationLock`, `withContainerOperationLock`, `tryAcquireContainerOperationLock`) taken by container lifecycle, delete, PATCH, mount/service row, backup (incl. scheduled) and restore routes and the MCP container tools; injected into containerManager via `configure({ tryAcquireOperationLock })` for the restart policy and autostart; a second operation gets 409 `CONTAINER_BUSY` (see [CONTAINERS.md](spec/CONTAINERS.md#per-container-operation-lock)) |
-| `vmOperationLock.js` | Per-VM in-memory operation lock (`acquireVmOperationLock`, `withVmOperationLock`) taken by VM start, backup, delete and rename (PATCH with a new name) routes; a second operation gets 409 `VM_BUSY` (see [BACKUPS.md](spec/BACKUPS.md#per-vm-operation-lock)) |
-| `backupDestinations.js` | `resolveBackupDestinations(settings, rawMounts, ids)` — shared destination-id → root resolution (SMB auto-mount included) for the VM/container backup routes and the backup scheduler; `backupToEachDestination(destinations, { push, backupOne, afterEach })` — the shared per-destination loop (percent slices, label prefixes, `destination-done`, never `done`) |
-| `backupRetention.js` | `computeScheduledBackupPruneList()` — pure GFS-lite keep-set over scheduled container backups (newest per day for N days + newest per ISO week for S weeks); manual/legacy backups never returned |
-| `containerBackupScheduler.js` | App-level glue. 60 s tick fires daily at `settings.backupSchedule.time`; sequentially backs up every container with `autoBackup: true` (pause→tar→resume via `createContainerBackup`), registers jobs in `backupJobStore`, prunes retention per destination. No persisted state (no catch-up); started/stopped from `index.js`. |
-| `downloadJobStore.js` | Download-specific job store |
-| `downloadFromUrl.js` | Generic URL download with progress |
-| `downloadUbuntuCloud.js` | Ubuntu Server cloud image download |
-| `downloadHaos.js` | Home Assistant OS image download |
-| `mountsAutoMount.js` | Startup mount reconciliation + hard-converge for `/mnt/wisp/` + disk hotplug handlers (auto-mount on insertion, lazy-unmount on removal) |
-| `mdns/index.js` | mDNS module facade — Avahi-backed Linux backend (`mdns/linux/avahi.js`) plus an in-process DNS forwarder for container `.local` queries (`mdns/linux/forwarder.js`); macOS stubs (`mdns/darwin/avahi.js`). Public surface: `connect`/`disconnect`, address + service registration, `subscribeServiceBrowse` (generic LAN service browsing — per-(interface,protocol) dedup, persistent per-service resolvers that push live record updates, survives avahi restarts); `connect(logger, { hostInterface })` names the containers' bridge, whose addresses the forwarder answers the host's own `.local` name with; `lookupLocalEntry`/`resolveLocalName`/`getHostFqdn` are private to the linux pair. Also exports the platform-agnostic helpers (`mdns/hostname.js` — `stripCidr`, `sanitizeHostname`) and service-type catalog (`mdns/serviceTypes.js`). |
-| `vmMdnsReconciler.js` | App-level glue (Wisp wiring, not part of vmManager). Single flat platform-agnostic file. Subscribes to `vmManager.subscribeVMNetworkChange` and (de)registers Avahi A records based on each VM's `localDns` flag. Libvirt `DomainEvent` + `AgentEvent` + 60s safety probe live inside vmManager (`vmManager/linux/vmManagerNetwork.js`). |
-| `containerMdnsReconciler.js` | App-level glue. Subscribes to `containerManager.subscribeContainerNetworkChange` and (de)registers Avahi A records based on each container's `localDns` flag. The 60 s netns probe + `container.json` IP persistence live inside containerManager (`containerManager/linux/containerManagerNetworkEvents.js`). |
-| `wispDiscovery.js` | App-level glue. Announces this instance as a `_wisp._tcp` mDNS service (TXT: url/name/version from settings) and browses for peer instances via `subscribeServiceBrowse`, self-filtering via avahi lookup-result flags. Feeds the `discovery` topic on `/api/events`. See `docs/spec/DISCOVERY.md`. |
-
-### Backend helper scripts (`backend/scripts/`)
-
-Source copies live in the repo; **`scripts/linux/setup/install-helpers.sh`** copies them to **`/usr/local/bin`** on install and upgrade (`setup-server.sh`, `wispctl helpers`, `push.sh`). See DEPLOYMENT.md *Privileged helpers checklist* when adding a script.
-
-| Script | Purpose |
-|--------|---------|
-| `wisp-os-update` | Check for and install OS package updates — Debian/Ubuntu (apt) and Arch (pacman); distro detected at runtime (invoked via `sudo`) |
-| `wisp-mount` | Mount/unmount/check SMB shares and mount adopted removable drives by UUID (invoked via `sudo`) |
-| `wisp-power` | Shut down or reboot the host (`/usr/local/bin` after setup, invoked via `sudo -n`) |
-| `wisp-dmidecode` | Output RAM DIMM JSON for Host Overview (type, size, speed, slot, form factor, manufacturer, voltage; `/usr/local/bin` after setup, invoked via `sudo -n`) |
-| `wisp-netns` | `ip netns add|delete` under `/var/run/netns` for container bridge networking (`sudo -n`) |
-| `wisp-cni` | Run one CNI plugin (e.g. bridge) with config file; `sudo -n` |
-| `wisp-smartctl` | Disk SMART summary via `smartctl --json` (`sudo -n`; see HOST-MONITORING) |
-| `wisp-bridge` | Managed VLAN bridges via netplan (`sudo -n`; Host Mgmt network bridges) |
-
-## Frontend Module Structure
-
-### Entry point
-
-`frontend/src/main.jsx` renders the React app into the DOM. `App.jsx` sets up routing: `/login` is public, all other routes are protected by authentication. `main.jsx` also registers the offline service worker (production builds only — in dev a worker caching the bundle would shadow every edit).
+- The URL is the source of truth for the active view and tab: tab buttons and list items
+  navigate rather than set store state, so a refresh restores the same view (routes:
+  [`specs/UI.md`](specs/UI.md), View Switching).
+- **Boot probe:** protected routes gate on one `GET /api/host`, aborted after 5 s — a dead
+  VPN swallows the connection rather than refusing it — and any failure renders the Server
+  Unreachable screen ([`specs/UI.md`](specs/UI.md)). Once ready the gate stops probing; a
+  mid-session drop is the streams' own reconnect.
 
 ### Offline shell (`frontend/public/sw.js`)
 
-Wisp is usually reachable only over a VPN, so the app is routinely launched with the server unreachable. Launched from an iOS home-screen icon there is no browser chrome to render a "cannot connect" page, so an uncached navigation paints white with no way to retry. The service worker keeps the app shell so the launch always boots React, which then renders `ServerUnreachable` (message + Retry button).
+Wisp is usually reached over a VPN, so it is often launched with the server unreachable;
+launched from a phone's home screen there is no browser chrome to show a "cannot connect"
+page. The service worker keeps the app shell so a launch always boots React.
 
-- **Navigations** → network-first with a 4 s timeout, falling back to the cached shell, then to a self-contained HTML page if even that is missing. Never cache-first: `wisp-updater` swaps `frontend/dist/` in place, and a cache-first shell would pin the user to a stale build.
-- **`/assets/*`** → cache-first. Vite content-hashes these names, so entries are immutable.
-- **`/api`, `/ws`, `/vendor`** → never intercepted. API responses must not be served stale, SSE/WebSocket streams must not pass through a cache, and noVNC is unhashed.
+- **Navigations** are network-first with a 4 s timeout, falling back to the cached shell,
+  then to a self-contained HTML page. Never cache-first: `wisp-updater` swaps
+  `frontend/dist/` in place, and a cache-first shell would pin the user to a stale build.
+- **`/assets/*`** is cache-first: Vite content-hashes those names.
+- **`/api`, `/ws`, `/vendor`** are never intercepted: API responses must not be served
+  stale, streams must not pass through a cache, and noVNC is unhashed.
+- The eager chunk graph is precached on `install`, resolved at build time from Vite's
+  build manifest (`frontend/scripts/generate-sw-precache.js`): browsers may serve
+  subresources from their own HTTP cache without a fetch event, which would leave the
+  worker's cache too sparse for an offline launch. Cache names carry a build id, so
+  `activate` purges the previous build's entries.
+- Service workers need a secure context: on a plain-HTTP install registration is skipped
+  and Wisp runs without the offline shell
+  ([`specs/CONFIGURATION.md`](specs/CONFIGURATION.md#reverse-proxy--https-trustedproxies)).
 
-The eager chunk graph (entry + static imports + CSS + fonts) is precached on `install`, resolved at build time by `frontend/scripts/generate-sw-precache.js` from Vite's build manifest. Runtime caching alone is not sufficient: browsers may serve subresources from their own HTTP cache without dispatching a fetch event, leaving the worker's asset cache sparse and blanking an offline launch. Cache names are scoped by a build id derived from that asset list, so `activate` purges the previous build's entries.
+## State
 
-**Service workers require a secure context.** On a plain-HTTP install `navigator.serviceWorker` is undefined, registration is skipped, and Wisp runs normally without the offline shell. See [CONFIGURATION.md](spec/CONFIGURATION.md#reverse-proxy--https-trustedproxies).
-
-### Boot probe (`ProtectedRoute`)
-
-Protected routes gate on a single `GET /api/host`. The probe is aborted after 5 s (a dead VPN swallows the connection rather than refusing it, so the request would otherwise hang until the OS connect timeout), and any failure renders `ServerUnreachable` rather than an empty page. It re-probes with exponential backoff (1 s → 15 s), and immediately on `online` or when the tab becomes visible again — the two moments the server is most likely to have come back. Once ready the gate stops probing; a mid-session drop is handled by the SSE streams' own reconnect logic.
-
-### View management
-
-The URL is the source of truth for which view and tab are active. `AppLayout` is a shell (TopBar + LeftPanel + react-router `<Outlet />`); nested routes decide what renders inside the outlet:
-
-| Route | Element |
-|-------|---------|
-| `/` | `<Navigate to="/host/overview" replace />` |
-| `/host/:tab` | `HostPanel` (tabs: `overview`, `host-mgmt`, `software`, `backups`, `app-config`) |
-| `/vm/:name/:tab?` | `VmRoute` → `OverviewPanel` + `VMStatsBar` (tabs: `overview`, `console`) |
-| `/container/:name/:tab?` | `ContainerRoute` → `ContainerOverviewPanel` + `ContainerStatsBar` (tabs: `overview`, `logs`, `console`) |
-| `/create/vm` | `CreateVMPanel` |
-| `/create/container` | `CreateContainerPanel` |
-| `*` | `<Navigate to="/host/overview" replace />` |
-
-`VmRoute` / `ContainerRoute` read `:name` from `useParams`, call `selectVM` / `selectContainer` on mount (starting the per-workload stats SSE) and `deselectVM` / `deselectContainer` on unmount. Tab buttons and sidebar list items call `navigate()` rather than setting store state, so refreshing the browser restores the same view and tab.
-
-### Stores (`frontend/src/store/`)
-
-| Store | State managed |
-|-------|--------------|
-| `vmStore` | VM list (SSE `startVMListSSE` / `stopVMListSSE`), selected VM, VM config (seeded from list data for instant header), VM stats, configLoading/error, VM action dispatchers |
-| `uiStore` | Sidebar list filter (`listFilter`) |
-| `authStore` | Auth token, login/logout |
-| `settingsStore` | App settings, loading/error |
-| `statsStore` | Host stats (CPU, RAM, disk, net) from SSE stream |
-| `usbStore` | Host USB device list from `/api/host/usb/stream` |
-| `hostStore` | Host hardware inventory (`GET /api/host/hardware`) for Host Overview |
-| `containerStore` | Container list/config (SSE + REST), selected container |
-
-### API layer (`frontend/src/api/`)
-
-| Module | Purpose |
-|--------|---------|
-| `client.js` | Base fetch wrapper with auth token injection, 401 redirect to login |
-| `vms.js` | VM CRUD, power actions, disks, CDROM, USB, cloud-init, host bridges |
-| `host.js` | Host info, OS update check/upgrade |
-| `settings.js` | Settings CRUD, network mount status/mount |
-| `auth.js` | Password change |
-| `backups.js` | Backup start, restore, delete, list |
-| `library.js` | Image library CRUD, upload, URL download, preset downloads |
-| `containers.js` | Container CRUD, power, mounts, logs; uses `sse.js` / `upload.js` |
-| `sse.js` | SSE helpers: `createSSE()` (long-lived with reconnect), `createJobSSE()` (one-shot) |
-| `upload.js` | Shared XHR multipart upload with progress (`postMultipartFile`) |
-| `console.js` | WebSocket URL builder for VNC console (includes token as query param) |
-
-### Components (`frontend/src/components/`)
-
-```
-components/
-├── layout/           App shell: TopBar, BackgroundJobsIndicator, LeftPanel, AppLayout, HostStatsBar
-├── vm/               VM views: OverviewPanel, CreateVMPanel, VMListItem, VMStatsBar,
-│                     BackupModal, XMLModal
-├── container/        CreateContainerPanel, ContainerOverviewPanel, ContainerListItem, ContainerStatsBar
-├── sections/         Shared form sections (Overview + Create VM where noted):
-│                     GeneralSection, DisksSection, USBSection, VmNetworkInterfacesSection,
-│                     AdvancedSection, CloudInitSection,
-│                     ContainerMountsSection, ContainerEnvSection,
-│                     ContainerGeneralSection, ContainerNetworkSection, ContainerLogsSection,
-│                     MountFileEditorModal
-├── console/          ConsolePanel, VNCConsole, ConsoleToolbar; ContainerConsolePanel, ContainerConsole, ContainerConsoleToolbar
-├── shared/           Reusable: SectionCard, DataTableChrome (table shell + tokens), ConfirmDialog, ImageLibraryModal,
-│                     UsbAttachModal, IconPickerModal, StatPill, Toggle, vmIcons
-├── library/          ImageLibrary (standalone page and modal)
-├── backups/          BackupsPanel
-├── settings/         PasswordChangeForm (Host App Config)
-└── host/             HostOverview, HostMgmt, HostNetworkBridges, HostStorage, HostBackup, AppConfig
-```
-
-### Pages (`frontend/src/pages/`)
-
-| Page | Purpose |
-|------|---------|
-| `Login.jsx` | Password authentication form |
-
-App settings, backup paths, storage (SMB shares + adopted removable drives), and password change live in the Host panel (`AppConfig.jsx`, `HostStorage.jsx`, `HostBackup.jsx`, `HostMgmt.jsx`), not a separate top-level page.
-
-### Key architectural pattern: shared sections
-
-The Overview panel and Create VM panel share the same section components (`GeneralSection`, `DisksSection`, `USBSection`, `VmNetworkInterfacesSection`, `AdvancedSection`, `CloudInitSection`). Each section accepts an `isCreating` boolean prop that controls which fields are visible. No field logic is duplicated between the two views. `DisksSection` uses `DataTableChrome` (disk / size / image / image type / bus / actions) with header **+ New disk**, **+ Select image**, and **+ CD-ROM** on the overview path.
-
-## Directory Layout
-
-```
-wisp/
-├── backend/
-│   ├── package.json
-│   ├── .npmrc                    # omit[]=optional
-│   ├── scripts/
-│   │   ├── wisp-os-update, wisp-mount, wisp-power, wisp-dmidecode, wisp-smartctl, wisp-bridge, wisp-netns, wisp-cni, wisp-nvram   # Privileged helpers → /usr/local/bin via install-helpers.sh
-│   │   ├── wisp-updater          # Self-update applier (root, via wisp-updater.service)
-│   │   └── migrate.mjs           # State-migration runner (end of common-steps.sh; see spec/UPDATES.md)
-│   ├── migrations/               # State migrations NNNN-short-name.js, tracked in config/migrations.json
-│   └── src/
-│       ├── index.js              # Entry point
-│       ├── routes/               # Route modules
-│       └── lib/                  # Business logic and utilities
-│           ├── vmManager.js      # Platform facade → linux/vmManager or darwin/vmManager
-│           ├── containerManager.js
-│           ├── networking/       # Cross-platform: bridge enumeration, default-bridge, /proc IPv4, netplan VLAN bridges
-│           ├── mdns/              # Cross-platform: Avahi backend (linux), DNS forwarder, hostname helpers, service-type catalog
-│           ├── host/              # Cross-platform: hardware/GPU enumeration, power, USB monitor, /proc stats, reboot-required, OS updates, SMART, pciIds
-│           ├── containerApps/     # Cross-platform: app recipes (caddy, jellyfin, tinySamba, zot) + glue (createAppContainer, applyAppConfig, eject)
-│           ├── linux/             # Linux-only manager internals: vmManager/, containerManager/
-│           ├── darwin/            # macOS dev stubs (no libvirt/containerd)
-│           ├── storage/           # Cross-platform: qemu-img ops, block-device monitor + hotplug, disk/SMB mount via wisp-mount
-│           └── *.js               # Auth, config, paths, app-level glue (mountsAutoMount, vmMdnsReconciler, containerMdnsReconciler), etc.
-├── frontend/
-│   ├── package.json
-│   ├── index.html
-│   ├── vite.config.js            # Includes Tailwind v4 (@tailwindcss/vite); theme lives in src/index.css @theme
-│   ├── scripts/
-│   │   └── ensure-novnc.js       # Prebuild noVNC check
-│   ├── public/
-│   │   └── vendor/novnc/         # Vendored noVNC (not in npm)
-│   ├── dist/                     # Vite build output (gitignored)
-│   └── src/
-│       ├── main.jsx, App.jsx
-│       ├── index.css
-│       ├── api/                  # Fetch wrappers, SSE helpers
-│       ├── apps/                 # Container-app UI (registry + per-app config sections: caddy, jellyfin, tinySamba, zot)
-│       ├── components/           # UI components by domain
-│       ├── hooks/                # Custom React hooks
-│       ├── lib/                  # Shared non-UI helpers (mDNS service types)
-│       ├── pages/                # Login
-│       ├── store/                # Zustand stores
-│       └── utils/                # Formatters, helpers
-├── scripts/
-│   ├── install.sh                # Wrapper → linux/install.sh
-│   ├── setup-server.sh           # Wrapper → linux/setup-server.sh
-│   ├── wispctl.sh                # Wrapper → linux/wispctl.sh
-│   ├── linux/
-│   │   ├── install.sh
-│   │   ├── setup-server.sh       # Orchestrates linux/setup/
-│   │   ├── wispctl.sh            # Build / local start-stop / systemd
-│   │   └── setup/                # Modular setup sub-scripts (each runnable standalone)
-│   │       ├── packages.sh       # Node, QEMU/KVM/libvirt
-│   │       ├── groups.sh         # libvirt/kvm/input groups
-│   │       ├── dirs.sh           # /var/lib/wisp/*, /mnt/wisp/smb
-│   │       ├── libvirt.sh        # libvirtd, virtlogd, disable default NAT
-│   │       ├── sanity.sh         # Verify virsh, /dev/kvm, DBus
-│   │       ├── common-steps.sh   # Shared by install + self-update: container DNS, helpers, state migrations
-│   │       ├── helper.sh         # One helper → /usr/local/bin + sudoers
-│   │       ├── install-helpers.sh
-│   │       ├── rapl.sh           # Intel RAPL read access
-│   │       ├── bridge.sh         # br0 bridged networking
-│   │       ├── copy.sh           # Replace app dirs; refresh config/*.example
-│   │       ├── config.sh         # config/wisp-config.json serverName
-│   │       ├── password.sh       # config/wisp-password
-│   │       └── permissions.sh    # chmod secrets and scripts
-│   ├── push.sh                   # Package + scp + remote install
-│   ├── package.sh                # Create deployment zip
-│   └── vendor-novnc.sh           # Clone noVNC into frontend/public/vendor
-├── systemd/
-│   └── linux/
-│       ├── wisp.service           # Template (placeholders substituted on install)
-│       └── wisp-updater.service   # Type=oneshot atomic-swap applier
-├── docs/
-│   ├── spec/                     # Feature and API specs (concrete behavior)
-│   ├── plans/                    # Plans for large work
-│   ├── review/                   # Audits
-│   ├── ARCHITECTURE.md           # System overview (this file)
-│   ├── CODING-RULES.md           # Coding principles (CODING-RULES §N in source)
-│   ├── TECH-STACK.md             # Stack at a glance + dependency inventory
-│   ├── DESCRIPTION.md
-│   ├── PLAN.md
-│   └── UI-PATTERNS.md
-├── config/
-│   ├── runtime.env.example
-│   └── wisp-config.json.example
-└── CLAUDE.md                     # Working rules for this repo
-```
-
-## Runtime Filesystem Layout
-
-On the Linux server:
+- Persistent state lives in three places, and nothing writes runtime state elsewhere:
+  - **`config/`** at the install root: `wisp-config.json` (application settings, API
+    token hashes), `wisp-password` (the scrypt hash the session secret derives from),
+    `migrations.json` (the migration ledger) and the optional `runtime.env`. The updater
+    preserves them across a swap ([`specs/UPDATES.md`](specs/UPDATES.md)).
+  - **libvirt's domain definitions**: a VM's configuration *is* its domain XML, with
+    Wisp's own settings in its `wisp:prefs` metadata.
+  - **`/var/lib/wisp/`**: the image library, per-VM directories, local backups and
+    per-container directories, below.
+- **The server is the source of truth**: VM metadata lives in domain XML, a container's
+  configuration in its `container.json`, settings in `wisp-config.json` — never in the
+  browser. containerd holds only runtime state (task status, metrics).
+- JSON state is written atomically (`writeJsonAtomic`: stage, fsync, rename); boot removes
+  orphan temp files a crash left mid-rename.
+- What an earlier release wrote is brought to the current shape by state migrations during
+  the update (`CODING-RULES.md` §16).
 
 ```
 /var/lib/wisp/
@@ -473,47 +76,126 @@ On the Linux server:
 │       ├── cloud-init.iso        # Cloud-init seed ISO (optional)
 │       ├── cloud-init.json       # Cloud-init config (optional)
 │       └── VARS.fd               # UEFI NVRAM (optional)
-└── backups/
-    └── <vm-name>/
-        └── <timestamp>/          # Individual backup
-            ├── manifest.json
-            ├── domain.xml
-            ├── disk0.qcow2.gz
-            └── ...
+├── backups/                      # Local backup destination (layout: specs/BACKUPS.md)
+└── containers/
+    └── <name>/
+        ├── container.json        # Container config (source of truth)
+        ├── files/                # Per-mount backing paths (see specs/CONTAINERS.md)
+        └── runs/                 # Per-run log file + sidecar metadata
+            ├── <runId>.log       # stdout/stderr for one task run
+            └── <runId>.json      # run metadata (startedAt, endedAt, exitCode, imageDigest)
 
 /mnt/wisp/smb/                    # Typical SMB mount parent for network storage mounts
-
-/var/lib/wisp/containers/         # Container data (one dir per container)
-    <name>/
-        container.json            # Container config (source of truth)
-        files/                    # Per-mount backing paths (see CONTAINERS.md)
-        runs/                     # Per-run log file + sidecar metadata (see CONTAINERS.md)
-            <runId>.log           # stdout/stderr for one task run
-            <runId>.json          # run metadata (startedAt, endedAt, exitCode, imageDigest)
 ```
 
-## Container Subsystem
+## Backend: events
 
-Containers are managed by containerd via gRPC, following the same architectural patterns as VMs:
+There is no central bus: each manager and module publishes its own events, and the
+stream to the client (Transport) subscribes like any other consumer.
 
+- **Events are push, not pull**: subscribe-and-replay surfaces on each facade — they fire
+  only on change, replay the current state to a new subscriber, and keep platform
+  plumbing private. A new event surface follows the same pattern.
+- **Manager network events** feed the app glue that publishes `.local` names:
+  - `vmManager.subscribeVMNetworkChange(handler)` — `(name, snapshot)`, with
+    `{ stateCode, ip, hostname }` while running and `null` when stopped.
+  - `containerManager.subscribeContainerNetworkChange(handler)` — `(name, snapshot)`,
+    with `{ state, ip, ip6 }` while running on a bridge and `null` when stopped or
+    removed. The manager writes new addresses into `container.json` before firing: it
+    owns the durable record, the glue only reacts.
+  - `containerManager.subscribeContainerNetnsRemoved(handler)` — `(name)` after Wisp
+    deleted a container's netns, with no replay; the glue re-publishes probing groups,
+    since avahi 0.8 strands entry groups probing on a removed interface.
+  - Both network-change events replay on subscribe, so glue that starts after the
+    managers still catches up. The macOS stubs never fire.
+  - Every A-record registration lives in the reconcilers
+    (`lib/{vm,container}MdnsReconciler.js`); the managers make none.
+- **Managers are configured, not reaching out**: `lib/managerBootstrap.js` (shared by the
+  backend and the migration runner) calls each manager's `configure()` with its paths and
+  callbacks (`resolveMount`, `tryAcquireOperationLock`) before any route registers. The
+  migration runner connects with `{ watchEvents: false, repairOnRead: false }`: no event
+  subscriptions, uncached lists that are complete or throw, and reads that write nothing.
+- **Mechanism is decoupled from trigger.** Any background or maintenance mechanism (the
+  update poll, apt checks, job-TTL cleanup, reconcilers, scheduled backups) is an
+  invocable unit; its triggers — boot, a schedule, events, a manual run — are wired
+  separately, and any trigger can invoke any mechanism. A manual run always works, for
+  testing or because it is needed now. Every execution logs what triggered it and the
+  result.
+
+## Transport
+
+- **One multiplexed SSE stream per tab, `/api/events`**, carries every always-on feed as
+  `{ topic, data }` frames: `stats` (sampled every 5 s), and the event-driven `vms`,
+  `containers`, `sections`, `discovery` and `home`. One connection, not one per feed,
+  because browsers cap plain HTTP/1.1 at 6 connections per origin: a new always-on feed is
+  a new topic, never a new endpoint ([`specs/API.md`](specs/API.md), Events stream).
+- **Each connect opens with the current state**: a new subscriber gets each topic's last
+  frame, and the client replaces its list with it, so one reconnect replaces any stale
+  state.
+- **What one view needs gets a scoped stream**, open only while the view is on screen:
+  per-workload stats and logs, the disk and USB streams. **Job progress** streams emit
+  until the job completes or fails, then close. No repeated-GET polling for live data.
+- **A stream that goes quiet is reopened**: the server writes a `: keepalive` comment
+  every 25 s; the client re-arms a 60 s read watchdog on every chunk and reconnects with
+  backoff when it fires. A frozen page can't run its watchdog, so every stream also
+  resyncs on `visibilitychange → visible` and on `online` when it has had no bytes for
+  longer than the keepalive. A 401 sends the user to sign in.
+- **Commands are REST calls under `/api`**; the state they change also reaches every
+  client through the stream.
+- **Consoles are WebSockets under `/ws`**: VNC bridges the browser to QEMU's VNC port over
+  TCP on `127.0.0.1` ([`specs/CONSOLE.md`](specs/CONSOLE.md)); the container shell drives
+  containerd's exec with a PTY. Both authenticate with the session cookie the browser
+  sends on the upgrade — no token in the URL.
+
+## Repo layout & subsystem boundaries
+
+- `backend/` (the server: `src/index.js`, `src/routes/`, `src/lib/`; `scripts/` holds the
+  privileged helpers, the updater and the migration runner; `migrations/` the state
+  migrations), `frontend/` (the client), `scripts/` (install, setup, push, release),
+  `systemd/` (unit templates), `config/` (examples). Each package has its own
+  `package.json`.
+- Backend subsystems are named modules under `src/lib/`, each behind a facade `index.js`,
+  with platform implementations under `<module>/linux/` and `<module>/darwin/`. App glue —
+  Wisp's own orchestration — stays flat at the top of `src/lib/`, and routes do HTTP
+  concerns and call the facades and the glue. The fences between them are CODING-RULES
+  §7: one caller per external system, and managers free of Wisp glue.
+- `frontend/src/`: `api/` (the fetch wrappers and the SSE client), `store/` (one Zustand
+  store per subsystem), `components/` by domain, `apps/` (container-app config UIs),
+  `pages/`, `hooks/`, `lib/`, `utils/`.
+
+## Subsystems
+
+```text
+  browser ──REST /api──▶ routes ──▶ app glue ──▶ vmManager ────DBus──▶ libvirt ──▶ QEMU/KVM
+     │ ▲   ──WS /ws────▶ consoles ──TCP / exec──▶   │
+     │ │                               │       ──▶ containerManager ──gRPC──▶ containerd
+     │ │                               │       ──▶ containerApps ──▶ containerManager
+     │ │                               │       ──▶ host · storage · networking · mdns
+     │ └──SSE /api/events◀── topics ◀── manager and module events
+  agents ──/mcp──▶ mcp tools ──▶ the same facades and glue as the routes
 ```
-containerStore (Zustand) ──SSE+REST──▶ containers.js routes ──▶ containerManager facade
-                                                                       │
-                         ┌─────────────────────────────────────────────┼─────────────────────────────────────────────┐
-                         ▼                         ▼                     ▼                     ▼                     ▼
-              containerManagerConnection   containerManagerSpec   containerManagerNetwork   containerManagerLifecycle
-              (@grpc/grpc-js ↔ containerd)  (OCI spec builder)     (bridge CNI + netns)     (start/stop/task)
-                         │                         │                     │                     │
-                         └─────────────────────────┴─────────────────────┴─────────────────────┘
-                    Also: containerManagerCreate, containerManagerConfig, containerManagerList,
-                    containerManagerStats, containerManagerLogs, containerManagerMounts*,
-                    containerPaths (see containerManager module table above).
-```
 
-- **Communication**: gRPC over unix socket to containerd, proto files in `backend/src/protos/`
-- **Namespace**: All operations use the `wisp` containerd namespace
-- **Networking**: CNI bridge plugin attaches each container as a veth port on a host Linux bridge (`br0` or a VLAN sub-bridge); DHCP via `cni-dhcp` gives each container its own LAN IP. Host↔container reachability works natively because the host owns the same bridge.
-- **State**: `container.json` is the Wisp source of truth; containerd provides runtime state (task status, metrics)
-- **Lifecycle**: Create = pull image + prepare snapshot + build OCI spec + create containerd container + create/start task
-
-See [CONTAINERS.md](spec/CONTAINERS.md) for detailed container management spec.
+- `vmManager` — VMs on libvirt over DBus, the only libvirt caller; a VM's domain XML is
+  its record ([`specs/VM-MANAGEMENT.md`](specs/VM-MANAGEMENT.md)).
+- `containerManager` — containers on containerd over gRPC, the only containerd caller, in
+  the `wisp` namespace. Each container is a veth port on a host bridge with its own LAN
+  IP by DHCP; `container.json` is its record
+  ([`specs/CONTAINERS.md`](specs/CONTAINERS.md)).
+- `containerApps` — the app recipe layer, a consumer of containerManager: it turns "a
+  Jellyfin with these libraries" into containerManager calls. App identity lives in
+  `container.json`'s `metadata`, which containerManager passes through untouched
+  ([`specs/CUSTOM-APPS.md`](specs/CUSTOM-APPS.md)).
+- `host` — hardware inventory, GPUs, power, the USB monitor, `/proc` stats, the
+  reboot-required signal, OS updates and SMART summaries
+  ([`specs/HOST-MONITORING.md`](specs/HOST-MONITORING.md)).
+- `storage` — `qemu-img` disk operations, the block-device monitor, removable-disk and SMB
+  mounts ([`specs/STORAGE.md`](specs/STORAGE.md)).
+- `networking` — host bridges, `/proc` IPv4 and netplan-managed VLAN bridges; it never
+  imports the managers.
+- `mdns` — Avahi publishing and browsing, and the in-process DNS forwarder that answers
+  containers' `.local` queries.
+- `mcp` — the MCP endpoint: tools over the same facades and glue as the routes, secrets
+  masked ([`specs/MCP.md`](specs/MCP.md)).
+- App glue — auth and API tokens, settings, cloud-init, backups (scheduler, retention,
+  destinations), job stores, operation locks, the mDNS reconcilers, LAN discovery, the
+  home page and self-update.

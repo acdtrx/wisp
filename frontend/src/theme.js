@@ -6,7 +6,7 @@
 //
 // The preference is per-device (localStorage, not wisp-config.json): `system` is
 // only meaningful per device, and the phone wants dark at night while the
-// desktop stays light. See docs/spec/UI.md § Design Language.
+// desktop stays light. See docs/FRONTEND-RULES.md § Wisp's design.
 
 /** Mirrored by the no-flash script in index.html — change both together. */
 export const THEME_STORAGE_KEY = 'wisp_theme';

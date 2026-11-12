@@ -482,7 +482,7 @@ export async function updateSettings(updates) {
 /**
  * Update the OIDC block only. Separate from `updateSettings` because its route
  * is session-only (a token that could repoint SSO would mint itself a browser
- * session — docs/spec/AUTH.md § Denied surfaces). Returns the full merged
+ * session — docs/specs/AUTH.md § Denied surfaces). Returns the full merged
  * settings, like `updateSettings`.
  */
 export async function updateOidcSettings(updates) {

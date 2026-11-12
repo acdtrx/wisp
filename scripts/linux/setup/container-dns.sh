@@ -32,12 +32,12 @@
 # networkd restarts, `netplan apply`, DHCP renewals and carrier flaps cannot
 # touch it — and avahi never sees br0 without a routable address. Declaring it
 # in netplan is a third dead end: an `addresses:` entry alongside `dhcp4: true`
-# on a bridge sends networkd into a reconcile loop (docs/plans/setup-refactor.md).
+# on a bridge sends networkd into a reconcile loop (docs/specs/CONTAINERS.md, Local DNS).
 #
 # Does NOT touch systemd-resolved. Earlier Wisp versions (< 2026-04-18)
 # configured resolved with MulticastDNS=resolve — clean that up manually on
 # upgrade: remove /etc/systemd/resolved.conf.d/wisp-mdns.conf and restart
-# systemd-resolved. See docs/spec/CONTAINERS.md for the full cleanup list.
+# systemd-resolved. See docs/specs/CONTAINERS.md for the full cleanup list.
 #
 # Idempotent. Safe to re-run. Must run as root.
 set -euo pipefail

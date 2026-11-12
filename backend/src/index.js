@@ -274,7 +274,7 @@ app.register(backupsRoutes, { prefix: '/api' });
 app.register(containerRoutes, { prefix: '/api' });
 app.register(backgroundJobsRoutes, { prefix: '/api' });
 app.register(updatesRoutes, { prefix: '/api' });
-app.register(mcpRoutes); // /mcp — bearer-token-only MCP endpoint (see docs/spec/MCP.md)
+app.register(mcpRoutes); // /mcp — bearer-token-only MCP endpoint (see docs/specs/MCP.md)
 app.register(consoleRoutes, { prefix: '/ws' });
 app.register(containerConsoleRoutes, { prefix: '/ws' });
 

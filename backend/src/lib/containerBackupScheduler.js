@@ -22,7 +22,7 @@
  * this run.
  *
  * The run itself is `runScheduledBackups({ trigger })`, invocable on its own
- * (CODING-RULES §7); the minute tick is one trigger. Every run logs its
+ * (ARCHITECTURE.md, Backend: events); the minute tick is one trigger. Every run logs its
  * trigger, and at most one runs at a time whatever triggered it.
  */
 import { randomBytes } from 'node:crypto';
