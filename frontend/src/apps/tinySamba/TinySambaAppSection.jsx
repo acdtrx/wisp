@@ -9,8 +9,8 @@
  *
  * Share data follows the share: every row loaded from the server remembers the name it was
  * loaded with and sends it as `previousName`, so a rename moves the share's Local directory
- * instead of deleting it. A saved Local share removed from the form loses its files on Save,
- * so Save asks first.
+ * instead of deleting it. A saved Local share removed from the form, or switched to a storage
+ * mount, loses its local files on Save, so Save asks first.
  */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
@@ -81,16 +81,20 @@ function parseAppConfig(config) {
 }
 
 /**
- * Saved Local shares this form drops: their files/share-<name> directory is deleted on Save.
- * A row still carrying the original name (renamed or not) keeps the data, and so does a new
- * row that reuses the name (the backend keeps the directory for it). Storage-backed shares
- * never lose data — it lives outside the container.
+ * Saved Local shares whose files/share-<name> directory Save deletes. A saved share is
+ * claimed by the row still carrying its original name (renamed or not), else by a new row
+ * that reuses the name. It loses its data when no row claims it, or when the claiming row
+ * now points at a storage mount (switched — with or without a rename — the local
+ * directory is no longer used). Data on a storage mount is never touched.
  */
 function sharesLosingData(original, form) {
-  const claimed = new Set(form.shares.map((s) => s.originalName).filter(Boolean));
-  const finalNames = new Set(form.shares.map((s) => s.name.trim().toLowerCase()));
   return original.shares
-    .filter((o) => !o.sourceId && !claimed.has(o.name) && !finalNames.has(o.name))
+    .filter((o) => !o.sourceId)
+    .filter((o) => {
+      const claimant = form.shares.find((s) => s.originalName === o.name)
+        ?? form.shares.find((s) => !s.originalName && s.name.trim().toLowerCase() === o.name);
+      return !claimant || !!claimant.sourceId;
+    })
     .map((o) => o.name);
 }
 
@@ -571,21 +575,20 @@ export default function TinySambaAppSection({ config, onSave }) {
 
       <ConfirmDialog
         open={!!pendingDataLoss}
-        title={pendingDataLoss?.names.length === 1 ? 'Delete share data?' : 'Delete data of removed shares?'}
+        title="Delete share data?"
         confirmLabel="Delete and save"
         onConfirm={confirmDataLoss}
         onCancel={() => setPendingDataLoss(null)}
       >
         <p>
-          Saving removes {pendingDataLoss?.names.length === 1 ? 'this share' : 'these shares'} and
-          permanently deletes {pendingDataLoss?.names.length === 1 ? 'its' : 'their'} files from the
-          container&rsquo;s local storage:
+          Saving permanently deletes the files of {pendingDataLoss?.names.length === 1 ? 'this share' : 'these shares'} from
+          the container&rsquo;s local storage — removed, or moved to a storage mount:
         </p>
         <ul className="mt-2 list-disc pl-5 font-mono text-xs text-text-primary">
           {pendingDataLoss?.names.map((n) => <li key={n}>{n}</li>)}
         </ul>
         <p className="mt-2 text-xs text-text-muted">
-          This cannot be undone. Shares on a storage mount keep their data.
+          This cannot be undone. Data already on a storage mount is never touched.
         </p>
       </ConfirmDialog>
     </SectionCard>
