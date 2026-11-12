@@ -267,12 +267,14 @@ export async function deleteMountBackingStore(containerName, mountEntry) {
  * the explicit second step after `updateContainerConfig` reports it in
  * `removedMounts`. Replacing the mount list never deletes data by itself, so a
  * caller that only meant to rearrange mounts can't destroy any by accident.
- * Refuses while the name is still configured: a live mount's data goes through
- * `removeContainerMount` / `deleteMountData` instead.
+ * Refuses while the name is still configured as a Local mount: a live mount's
+ * data goes through `removeContainerMount` / `deleteMountData` instead. A name
+ * now configured as Storage-sourced no longer uses files/<name>.
  */
 export async function deleteRemovedMountData(containerName, mountName) {
   const config = await loadContainerJson(containerName);
-  if (findMount(config, mountName)) {
+  const configured = findMount(config, mountName);
+  if (configured && !configured.sourceId) {
     throw containerError('CONFIG_ERROR', `Mount "${mountName}" is still configured — remove it from the mount list first`);
   }
   await deleteMountBackingStore(containerName, { name: mountName });

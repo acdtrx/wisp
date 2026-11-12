@@ -26,7 +26,7 @@ import { markPendingRestart } from './containerManagerPendingRestart.js';
 const RESTART_WHEN_RUNNING = true;
 
 function taskIsRunning(task) {
-  return task && (task.status === 'RUNNING' || task.status === 'PAUSED');
+  return !!task && (task.status === 'RUNNING' || task.status === 'PAUSED');
 }
 
 /**

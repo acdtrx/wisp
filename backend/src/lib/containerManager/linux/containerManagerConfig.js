@@ -332,9 +332,12 @@ export async function updateContainerConfig(name, changes) {
       const renamedFrom = new Set(renamePairs.map(([prev]) => prev.name));
       const nextNames = new Set(normalized.map((m) => m.name));
       /* Storage-sourced entries point at user data outside the container dir and tmpfs has no
-       * on-disk artifact — only Local mounts leave data behind. */
+       * on-disk artifact — only Local mounts leave data behind: one that leaves the list, and
+       * one that stays under its name but now points at Storage (its files/<name> is unused). */
+      const nextByName = new Map(normalized.map((m) => [m.name, m]));
       removedMounts = prevMounts
-        .filter((m) => !nextNames.has(m.name) && !renamedFrom.has(m.name) && !m.sourceId && m.type !== 'tmpfs')
+        .filter((m) => !renamedFrom.has(m.name) && !m.sourceId && m.type !== 'tmpfs')
+        .filter((m) => !nextNames.has(m.name) || nextByName.get(m.name).sourceId)
         .map((m) => m.name);
       unflaggedSecretMounts = secretMountsLosingFlag(prevMounts, normalized, renamePairs);
       config.mounts = normalized;

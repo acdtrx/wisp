@@ -92,11 +92,6 @@ work on app containers, but Jellyfin's next `appConfig` save replaces them with 
 devices. **Revisit trigger:** a manual device pick on an app container is lost on a config
 save.
 
-**Container mount edge cases.** `updateContainerMount` returns `requiresRestart: null`
-when the container has no task; switching a tiny-samba share from Local to a Storage
-source leaves `files/share-<name>` behind. **Revisit trigger:** orphan share directories
-turn up, or a client trips on the null.
-
 **Removable disk mount state uses the first mount point.** `mountedAt` is the first
 `/proc/self/mounts` entry for the device, so a drive a desktop also automounted elsewhere
 can read as not mounted by Wisp. **Revisit trigger:** a drive shows unmounted while Wisp
