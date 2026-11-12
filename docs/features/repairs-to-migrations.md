@@ -95,3 +95,7 @@ the migration or event it moves to. Then it reports to the design session.
   - A running VM and a running container with a pending restart, then restarted, show
     the flag cleared.
   - `npm run check-imports` passes.
+- **A backup without `origin`** (one on a root unmounted when 0008 ran) stays possible:
+  `API.md` says so for both backup lists, and the UI shows it as manual.
+- **Cloud-init while disabled** takes no new password, and "has a password" comes from
+  the stored hash alone.

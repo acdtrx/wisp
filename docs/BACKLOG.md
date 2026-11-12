@@ -194,6 +194,16 @@ message in `detail`; `specs/ERROR-HANDLING.md` describes the message form (found
 2026-11-12). **Revisit trigger:** a client needs to branch on a route error, or the next
 work on the error contract.
 
+**Cloud-init: no way to remove a password in the UI.** A blank password field on edit
+keeps the stored one (settled 2026-11-12), so the only way to drop a password is deleting
+the VM's cloud-init config. **Revisit trigger:** a password needs removing without
+wiping cloud-init.
+
+**Container task-delete errors are swallowed.** `cleanupTask` ignores a failed
+`Tasks.Delete`; when it was a stale CREATED task, the start then fails with "already
+exists" and rolls back, with no clearer cause. **Revisit trigger:** a start is seen
+failing with "already exists".
+
 **Live-data SSE retries a 404 forever.** `createSSE` treats a 404 like a dropped
 connection and backs off indefinitely (job streams stop on 404). **Revisit trigger:** a
 stream for a deleted workload is seen retrying.
