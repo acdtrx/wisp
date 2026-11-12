@@ -69,6 +69,13 @@ that already says so):
 - An app save's `requiresRestart` also reports the flag the manager persisted
   (`CUSTOM-APPS.md` step 7).
 
+**Settled after the milestone 3 review (2026-11-12):**
+- The self-update install claim also expires after the updater unit's 600 s limit, so
+  an updater that fails before stopping Wisp can't block installs for good.
+- The tiny-samba confirm lists exactly what the backend deletes; a reused old name keeps
+  its data.
+- The allowed-roots check resolves paths asynchronously.
+
 ## Milestone 1 — VMs
 
 1. **VM mDNS reconciler:** serialize per VM, the same way the container reconciler

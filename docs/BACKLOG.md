@@ -210,6 +210,22 @@ failing with "already exists".
 module's hook (found 2026-11-12). **Revisit trigger:** the response and the badge are
 seen disagreeing again, or the next change to any of the three.
 
+**A timed-out avahi registration is never retried.** With the 5 s bound on avahi calls
+(settled 2026-11-12), a registration that times out leaves its entry unpublished;
+`reregisterAll` runs only when the daemon restarts, not when a hung one recovers, so a
+container stays unpublished until its next address change, a local DNS toggle or a
+restart (VMs recover on the 60 s probe). **Revisit trigger:** a workload is seen
+unpublished after avahi stalled.
+
+**A container that exits while its lock is held keeps its run open.** The exit settle
+skips the run when a backup, app save, config PATCH or mount operation holds the
+container's operation lock, so the run keeps `endedAt: null` (and its last line unshown)
+until the next start. **Revisit trigger:** a run is seen open for a stopped container.
+
+**The library picker lists symlinks that point outside the library.** The allowed-roots
+check now rejects them (422 `PATH_NOT_ALLOWED`), but the picker still offers them.
+**Revisit trigger:** a symlinked library entry is picked and refused.
+
 **Live-data SSE retries a 404 forever.** `createSSE` treats a 404 like a dropped
 connection and backs off indefinitely (job streams stop on 404). **Revisit trigger:** a
 stream for a deleted workload is seen retrying.
