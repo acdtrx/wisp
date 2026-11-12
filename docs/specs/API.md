@@ -903,7 +903,7 @@ List all backups across configured destinations. The backup is identified by the
 ]
 ```
 
-`destinationId` is `'local'` or the configured `backupMountId`. Pass it back unchanged on restore/delete. `origin` is `"manual"` or `"scheduled"`; VM backups predating the manifest field (and all backups today — there is no VM scheduler) list as `"manual"`.
+`destinationId` is `'local'` or the configured `backupMountId`. Pass it back unchanged on restore/delete. `origin` is `"manual"` or `"scheduled"`, as the manifest records it — every VM backup is `"manual"` (there is no VM scheduler); state migration `0008-backup-origin` wrote `"manual"` into the manifests of backups taken before the field existed ([UPDATES.md § State migrations](UPDATES.md#state-migrations)).
 
 ### POST /api/backups/restore · `admin`
 
@@ -965,7 +965,7 @@ List all container backups across currently-usable destinations. Container backu
 ]
 ```
 
-`origin` is `"manual"` or `"scheduled"`; backups predating the field list as `"manual"`.
+`origin` is `"manual"` or `"scheduled"`, as the manifest records it; state migration `0008-backup-origin` wrote `"manual"` into the manifests of backups taken before the field existed ([UPDATES.md § State migrations](UPDATES.md#state-migrations)).
 
 ### POST /api/container-backups/restore · `admin`
 

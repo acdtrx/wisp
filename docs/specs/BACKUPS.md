@@ -19,7 +19,7 @@ A backup directory contains:
 
 | File | Description |
 |------|-------------|
-| `manifest.json` | Backup metadata: VM name, timestamp, **`origin`** (`"manual"` / `"scheduled"` — all VM backups are manual today; the field exists for API symmetry with containers and backups predating it list as manual), **`vmBasePath`** (absolute path to the VM’s directory at backup time, used when restoring under a new name or after `vmsPath` changes), disk file list, total size |
+| `manifest.json` | Backup metadata: VM name, timestamp, **`origin`** (`"manual"` / `"scheduled"` — all VM backups are manual today; the field exists for API symmetry with containers. Backups predating it got `"manual"` from state migration `0008-backup-origin`), **`vmBasePath`** (absolute path to the VM’s directory at backup time, used when restoring under a new name or after `vmsPath` changes), disk file list, total size |
 | `domain.xml` | The libvirt domain XML at time of backup (a [flattened](#disks-on-a-backing-chain) disk's entry names its standalone file) |
 | `disk0.qcow2.gz` | Gzipped primary disk image — always standalone, see [Disks on a backing chain](#disks-on-a-backing-chain) |
 | `disk1.qcow2.gz` | Gzipped secondary disk image (if present) |
@@ -253,7 +253,7 @@ Owner-only like every backup: directory `0700`, both files `0600` ([Backup file 
 | `schemaVersion` | Manifest schema version (currently `1`) |
 | `name` | Container name at backup time |
 | `timestamp` | ISO 8601 timestamp (filesystem-safe form, used as the dir name) |
-| `origin` | `"manual"` or `"scheduled"` — who took the backup. Backups predating this field list as `manual`. Retention pruning only ever deletes `scheduled` backups. |
+| `origin` | `"manual"` or `"scheduled"` — who took the backup. Backups predating this field got `manual` from state migration `0008-backup-origin`. Retention pruning only ever deletes `scheduled` backups. |
 | `image` | OCI image reference from `container.json` (e.g. `nginx:latest`) |
 | `imageDigest` | Top-level manifest digest at backup time (`sha256:…`) — informational; restore re-pulls and adopts whatever the registry currently advertises |
 | `sourceBytes` | Pre-walked total bytes of the container directory (uncompressed) |
@@ -300,7 +300,7 @@ A daily scheduler (`lib/containerBackupScheduler.js`, app-glue — started/stopp
 
 - keep the **newest scheduled backup per calendar day** for the last `retainDays` days (today inclusive);
 - among older scheduled backups, keep the **newest per ISO week** for the `retainWeeks` most recent weeks that have backups (presence-based, so a gap in the schedule never causes the only remaining old backups to be deleted);
-- delete every other **scheduled** backup. **Manual backups — and backups predating the manifest `origin` field — are never auto-pruned.**
+- delete every other **scheduled** backup. **Manual backups are never auto-pruned** — nor is a backup without an `origin` (one on a backup mount that was unmounted when `0008-backup-origin` ran).
 
 ### Listing
 

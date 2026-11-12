@@ -60,7 +60,7 @@ async function hashPassword(password) {
  * @param {{ firstNicMac?: string, priorPasswordHash?: string, vmDir?: string }} [opts]
  *   firstNicMac: when set, emit network config matching that MAC so netplan applies to the VM's real NIC.
  *   vmDir: directory the ISO is written to (default: the VM's directory).
- *   priorPasswordHash: hashed password from a previous save. Used when the caller passes the `***` placeholder back in (the UI sends `'set'` / `'***'` to mean "leave password unchanged"); we re-emit the prior hash instead of re-hashing the placeholder string.
+ *   priorPasswordHash: hashed password from a previous save. Used when the caller passes a placeholder back in — `'set'` (what `GET` returns, so a client echoing it keeps the password) or `'***'` (the stored placeholder) — to mean "leave password unchanged"; we re-emit the prior hash instead of re-hashing the placeholder string.
  */
 export async function generateCloudInitISO(vmName, config, opts = {}) {
   const { firstNicMac, priorPasswordHash } = opts;
@@ -75,7 +75,7 @@ export async function generateCloudInitISO(vmName, config, opts = {}) {
   try {
     const hostname = config.hostname || vmName;
 
-    // The UI sends `'***'` (or legacy `'set'`) to mean "keep the existing password".
+    // `'set'` (what GET returns) and `'***'` (the stored placeholder) mean "keep the existing password".
     // Never feed those placeholders to openssl — that would silently set the VM
     // password to the literal placeholder string. Reuse the stored hash instead.
     const isPasswordPlaceholder = config.password === '***' || config.password === 'set';

@@ -45,6 +45,7 @@ import {
 } from './containerManagerLifecycle.js';
 import { noteIntentionalStop } from './containerManagerRestartPolicy.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
+import { writeJsonAtomic } from './atomicJson.js';
 import { generateContainerMac, resolveContainerResolvConf } from './containerManagerNetwork.js';
 import { validateContainerName } from './containerValidation.js';
 import { pullImage } from './containerManagerCreate.js';
@@ -375,9 +376,7 @@ export async function listContainerBackups(destinations, containerName = null) {
           path: backupPath,
           sizeBytes: typeof manifest.sizeBytes === 'number' ? manifest.sizeBytes : undefined,
           image: manifest.image ?? null,
-          /* Backups predating the origin field are treated as manual so
-           * retention pruning never touches them. */
-          origin: manifest.origin === 'scheduled' ? 'scheduled' : 'manual',
+          origin: manifest.origin,
         });
       }
     }
@@ -386,6 +385,23 @@ export async function listContainerBackups(destinations, containerName = null) {
     const d = a.name.localeCompare(b.name);
     return d !== 0 ? d : (b.timestamp || '').localeCompare(a.timestamp || '');
   });
+}
+
+/**
+ * Set a container backup's `origin` (`manual` | `scheduled`) in its
+ * manifest.json, keeping every other field; written atomically, owner-only.
+ */
+export async function setContainerBackupOrigin(backupPath, origin) {
+  if (origin !== 'manual' && origin !== 'scheduled') {
+    throw containerError('BACKUP_INVALID', `Invalid backup origin "${origin}"`);
+  }
+  const manifestPath = join(backupPath, 'manifest.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  if (manifest?.type !== 'container') {
+    throw containerError('BACKUP_INVALID', `Not a container backup: ${backupPath}`);
+  }
+  manifest.origin = origin;
+  await writeJsonAtomic(manifestPath, manifest, { mode: BACKUP_FILE_MODE });
 }
 
 /**

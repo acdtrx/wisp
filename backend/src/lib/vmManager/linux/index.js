@@ -67,6 +67,7 @@ export {
   restoreBackup,
   deleteBackup,
   resolveVmBackupDir,
+  setVMBackupOrigin,
 } from './vmManagerBackup.js';
 
 export { tightenVMBackupFileModes } from './vmManagerBackupModes.js';

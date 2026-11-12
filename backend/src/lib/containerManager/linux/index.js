@@ -54,6 +54,7 @@ export {
   restoreContainerBackup,
   restoreContainerBackupInPlace,
   deleteContainerBackup,
+  setContainerBackupOrigin,
 } from './containerManagerBackup.js';
 
 export { tightenContainerFileModes, tightenContainerBackupFileModes } from './containerManagerFileModes.js';

@@ -7,7 +7,7 @@
  * overlay made outside Wisp, e.g. by `virsh`) is first flattened into one
  * standalone qcow2, so every backup is self-contained.
  */
-import { copyFile, mkdir, writeFile, readdir, readFile, access, constants, stat, rm, realpath, lstat, open } from 'node:fs/promises';
+import { copyFile, mkdir, writeFile, readdir, readFile, access, constants, stat, rm, realpath, lstat, open, rename } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createGzip, createGunzip } from 'node:zlib';
@@ -467,9 +467,7 @@ export async function listBackups(destinations, vmName = null) {
         /* no readable manifest.json — incomplete (or foreign) dir, not a backup */
         continue;
       }
-      const sizeBytes = manifest.sizeBytes;
-      /* Backups predating the origin field list as manual. */
-      const origin = manifest.origin === 'scheduled' ? 'scheduled' : 'manual';
+      const { sizeBytes, origin } = manifest;
       results.push({
         vmName: name,
         timestamp: tsEnt.name,
@@ -590,6 +588,35 @@ async function readBackupManifest(backupPath) {
   const manifest = JSON.parse(await readFile(join(backupPath, 'manifest.json'), 'utf8'));
   if (!manifest || typeof manifest !== 'object') throw new Error('manifest.json is not an object');
   return manifest;
+}
+
+/**
+ * Set a backup's `origin` (`manual` | `scheduled`) in its manifest.json,
+ * keeping every other field. Staged and renamed into place: the manifest is
+ * what makes the directory a backup, so it is never left half-written.
+ */
+export async function setVMBackupOrigin(backupPath, origin) {
+  if (origin !== 'manual' && origin !== 'scheduled') {
+    throw vmError('BACKUP_INVALID', `Invalid backup origin "${origin}"`);
+  }
+  const manifestPath = join(backupPath, 'manifest.json');
+  const manifest = await readBackupManifest(backupPath);
+  manifest.origin = origin;
+  const tmp = `${manifestPath}.tmp.${process.pid}.${Date.now()}.${randomUUID().slice(0, 8)}`;
+  let handle;
+  try {
+    handle = await open(tmp, 'wx', BACKUP_FILE_MODE);
+    await handle.writeFile(JSON.stringify(manifest, null, 2), 'utf8');
+    await handle.sync();
+  } finally {
+    if (handle) await handle.close().catch(() => { /* write already settled; nothing to report */ });
+  }
+  try {
+    await rename(tmp, manifestPath);
+  } catch (err) {
+    await rm(tmp, { force: true }).catch(() => { /* best-effort: the rename error is the one to report */ });
+    throw err;
+  }
 }
 
 /** Read a backup's manifest.json and domain.xml (both required). */

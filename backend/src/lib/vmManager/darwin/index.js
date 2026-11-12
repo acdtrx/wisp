@@ -207,6 +207,10 @@ export async function createBackup() {
   throw noConn();
 }
 
+export async function setVMBackupOrigin() {
+  throw noConn();
+}
+
 export async function listBackups() {
   throw noConn();
 }

@@ -136,6 +136,10 @@ export async function createContainerBackup() {
   throw noContainerd();
 }
 
+export async function setContainerBackupOrigin() {
+  throw noContainerd();
+}
+
 export async function listContainerBackups() {
   return [];
 }
