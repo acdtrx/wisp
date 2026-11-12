@@ -160,11 +160,6 @@ reach standby.
 database assumes `/var/lib/pacman`. **Revisit trigger:** an Arch host with a custom
 `DBPath` runs Wisp.
 
-**Domain XML parser: `serial` array rule also hits disk `<serial>`.** The `isArray` list
-matches by element name, so a disk's `<serial>` text parses as an array like the
-`<serial>` char device. **Revisit trigger:** disk serials are read from domain XML
-(UI/API) or show up as arrays.
-
 **Malformed-URL errors skip the `{ error, detail }` shape.** Fastify's `FST_ERR_BAD_URL`
 (bad percent-encoding) is answered before `setErrorHandler`, in Fastify's default shape.
 **Revisit trigger:** a client depends on the uniform shape for malformed URLs.

@@ -14,10 +14,13 @@ const xmlParser = new XMLParser({
   textNodeName: '#text',
   parseTagValue: false,
   parseAttributeValue: false,
-  isArray: (name) =>
-    ['disk', 'interface', 'controller', 'channel', 'input', 'sound',
-     'video', 'hostdev', 'filesystem', 'serial', 'console', 'graphics',
-     'rng', 'tpm', 'watchdog', 'redirdev', 'boot', 'feature'].includes(name),
+  // `serial` is also a disk's `<serial>` text: only the char device under
+  // `<devices>` is a list.
+  isArray: (name, jPath) =>
+    (name === 'serial' && jPath === 'domain.devices.serial')
+    || ['disk', 'interface', 'controller', 'channel', 'input', 'sound',
+      'video', 'hostdev', 'filesystem', 'console', 'graphics',
+      'rng', 'tpm', 'watchdog', 'redirdev', 'boot', 'feature'].includes(name),
 });
 const xmlBuilder = new XMLBuilder({ ignoreAttributes: false, attributeNamePrefix: '@_' });
 
