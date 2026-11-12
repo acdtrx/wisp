@@ -17,11 +17,7 @@ import {
 } from './containerManagerConnection.js';
 import { getContainersPath } from './containerPaths.js';
 import { getTaskState, containerTaskStatusToUi } from './containerManagerLifecycle.js';
-import {
-  persistContainerIpFromNetnsIfMissing,
-  ensureContainerNetworkConfig,
-  normalizeContainerMac,
-} from './containerManagerNetwork.js';
+import { ensureContainerNetworkConfig, normalizeContainerMac } from './containerManagerNetwork.js';
 import { processUptimeMsFromProc } from './procUptime.js';
 import { pendingRestartInForce } from './containerManagerPendingRestart.js';
 import { getRegisteredHostname } from '../../mdns/index.js';
@@ -408,28 +404,19 @@ export async function getContainerConfig(name) {
 
   if (!(await pendingRestartInForce(config, pid))) delete config.pendingRestart;
 
-  let merged = config;
-  if (state === 'running' && repair) {
-    try {
-      merged = await persistContainerIpFromNetnsIfMissing(name, merged, pid);
-    } catch {
-      /* netns missing or helper failed — return config without ip */
-    }
-  }
-
-  const localDns = merged.localDns === true;
+  const localDns = config.localDns === true;
 
   const libraryDigests = await readLibraryDigestMap();
 
   return {
-    ...merged,
+    ...config,
     localDns,
     mdnsHostname: localDns ? getRegisteredHostname(name) : null,
     state,
     pid,
     uptime,
     type: 'container',
-    updateAvailable: deriveUpdateAvailable(merged, state, libraryDigests),
+    updateAvailable: deriveUpdateAvailable(config, state, libraryDigests),
     scheduledRestart: getScheduledRestart(name),
   };
 }

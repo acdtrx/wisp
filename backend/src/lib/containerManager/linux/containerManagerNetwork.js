@@ -397,7 +397,7 @@ const DEFAULT_IPV4_POLL = { maxAttempts: 80, sleepMs: 250 };
 
 /**
  * Read IPv4 on `eth0` inside the netns. Used after CNI ADD (DHCP often lags the CNI result)
- * and lazily when loading config if `network.ip` was never persisted.
+ * and by the periodic network probe.
  *
  * @param {object} [pollOpts] — `{ maxAttempts, sleepMs }` (default ~20s total at start)
  * @param {number|null} [taskPid] — when set, try `/proc/<pid>/net/fib_trie` first (no sudo)
@@ -456,27 +456,11 @@ async function discoverIpv4InNetns(name, ifname = 'eth0', pollOpts = DEFAULT_IPV
 
 /**
  * Single-shot wrapper around `discoverIpv4InNetns`. Used by the periodic
- * mDNS reconciler — a 60s tick can't afford to sit on the default 20s poll
+ * network probe — a 60s tick can't afford to sit on the default 20s poll
  * budget, but one quick lookup per container is fine.
  */
-export async function discoverIpv4InNetnsOnce(name, ifname = 'eth0') {
-  return discoverIpv4InNetns(name, ifname, { maxAttempts: 1, sleepMs: 0 });
-}
-
-/**
- * If the container has no persisted `network.ip` yet, read the live address from the netns
- * and save `container.json`. Call from GET config when the task is running — DHCP often
- * appears after the initial start-time poll.
- */
-export async function persistContainerIpFromNetnsIfMissing(name, config, taskPid = 0) {
-  if (config.network?.type !== 'bridge' || config.network?.ip) return config;
-  const pid = taskPid > 0 ? taskPid : null;
-  const ip = await discoverIpv4InNetns(name, 'eth0', { maxAttempts: 30, sleepMs: 200 }, pid);
-  if (!ip) return config;
-  return mergeNetworkLeaseIntoConfig(name, config, {
-    ips: [],
-    discoveredIp: ip,
-  });
+export async function discoverIpv4InNetnsOnce(name, ifname = 'eth0', taskPid = null) {
+  return discoverIpv4InNetns(name, ifname, { maxAttempts: 1, sleepMs: 0 }, taskPid);
 }
 
 /**

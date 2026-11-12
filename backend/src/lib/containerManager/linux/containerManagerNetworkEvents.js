@@ -74,17 +74,22 @@ async function probeAndEmit(name, state) {
     return;
   }
 
+  let pid = 0;
+  try {
+    pid = Number((await getTaskState(name))?.pid) || 0;
+  } catch {
+    /* task lookup failed — probe without the pid this tick */
+  }
+
   let liveIp = null;
   try {
-    liveIp = await discoverIpv4InNetnsOnce(name, 'eth0');
+    liveIp = await discoverIpv4InNetnsOnce(name, 'eth0', pid || null);
   } catch {
     /* netns missing or helper failed — treat as "no IP this tick" */
   }
 
   let liveIp6 = null;
   try {
-    const task = await getTaskState(name);
-    const pid = Number(task?.pid) || 0;
     if (pid > 0) liveIp6 = await ipv6GlobalCidrFromProcIfInet6(pid, 'eth0');
   } catch {
     /* task gone mid-tick — treat as "no IPv6 this tick" */
