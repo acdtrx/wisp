@@ -213,8 +213,10 @@ export default function DisksSection({
     return !sdc?.source || !sdd?.source;
   }
 
-  /* The second slot is free — the button is disabled, not hidden, while the VM runs. */
-  const sdbSlotFree = !!sda && !sdb;
+  /* The first free block-disk slot — sda on a VM created without disks (or
+   * whose sda was unmounted), else sdb. The button is disabled, not hidden,
+   * while the VM runs. */
+  const freeDiskSlot = !sda ? 'sda' : !sdb ? 'sdb' : null;
 
   const canAddFirstCreateDisk =
     !!isCreating && disk.type === 'none' && !createDiskDraft;
@@ -384,13 +386,13 @@ export default function DisksSection({
       )
     : (
         <div className="flex items-center gap-1.5">
-          {sdbSlotFree && (
+          {freeDiskSlot && (
             <button
               type="button"
-              onClick={() => openDiskEditor('sdb')}
+              onClick={() => openDiskEditor(freeDiskSlot)}
               disabled={!isStopped || vmBusy}
               className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
-              title={busyReason || (isStopped ? 'Add a second disk (new or from the library)' : 'Stop the VM to add a disk')}
+              title={busyReason || (isStopped ? `Add a disk as ${freeDiskSlot} (new or from the library)` : 'Stop the VM to add a disk')}
               aria-label="Add disk"
             >
               <Plus size={14} aria-hidden />

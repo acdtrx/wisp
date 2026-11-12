@@ -90,11 +90,6 @@ Shape: the create form offers the kept `disk*.qcow2` of a blocked name.
 without touching the paused QEMU. **Revisit trigger:** a CD-ROM change on a paused VM is
 reported as "didn't apply".
 
-**VM rename / disk edges.** Rename's existing-target-dir guard answers 422 `CONFIG_ERROR`,
-not 409 `VM_DIR_EXISTS` like create/restore. The UI also can't add an `sda` disk to a VM
-created without disks. **Revisit trigger:** a client needs to tell the rename conflict
-apart, or a disk-less VM needs a primary disk.
-
 **VM restart-flag clear can revert a concurrent define.** `writePendingRestart`
 (`vmManagerPendingRestart.js`) reads the inactive XML and calls `DomainDefineXML` with no
 per-VM lock, so a config, disk or ISO define landing in between is reverted. It now runs
