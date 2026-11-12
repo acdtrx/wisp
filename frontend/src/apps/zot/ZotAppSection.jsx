@@ -62,7 +62,6 @@ export default function ZotAppSection({ config, onSave }) {
   const [original, setOriginal] = useState(() => parseAppConfig(config));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [requiresRestart, setRequiresRestart] = useState(false);
   const [showPasswords, setShowPasswords] = useState({});
   const [showSecret, setShowSecret] = useState(false);
 
@@ -71,7 +70,6 @@ export default function ZotAppSection({ config, onSave }) {
     const parsed = parseAppConfig(config);
     setForm(parsed);
     setOriginal(parsed);
-    setRequiresRestart(false);
     setError(null);
     setShowPasswords({});
     setShowSecret(false);
@@ -154,8 +152,7 @@ export default function ZotAppSection({ config, onSave }) {
         oidc.clientSecret = form.oidcClientSecret;
       }
 
-      const result = await onSave({ users, externalUrl: form.externalUrl.trim(), oidc });
-      if (result?.requiresRestart) setRequiresRestart(true);
+      await onSave({ users, externalUrl: form.externalUrl.trim(), oidc });
     } catch (err) {
       setError(err?.detail || err?.message || 'Save failed');
     } finally {
@@ -189,7 +186,7 @@ export default function ZotAppSection({ config, onSave }) {
       onSave={handleSave}
       saving={saving}
       isDirty={dirty}
-      requiresRestart={requiresRestart || config?.pendingRestart}
+      requiresRestart={!!config?.pendingRestart}
       error={error}
       headerAction={addUserButton}
     >

@@ -36,7 +36,7 @@ import { getSettings, getRawMounts } from '../lib/settings.js';
 import { renameWorkloadAssignment } from '../lib/sections.js';
 import { publishContainer, unpublishContainer } from '../lib/containerMdnsReconciler.js';
 import { resolveBackupDestinations, backupToEachDestination } from '../lib/backupDestinations.js';
-import { recordBackupAttempt } from '../lib/backupStatus.js';
+import { recordBackupAttempt, forgetBackupStatus } from '../lib/backupStatus.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, isExpectedAppError, sendError } from '../lib/routeErrors.js';
 import { validateContainerName } from '../lib/validation.js';
@@ -144,6 +144,12 @@ export default async function containerRoutes(fastify) {
                 properties: {
                   attempt: { type: 'integer' },
                   at: { type: 'number' },
+                },
+              },
+              pendingRestart: {
+                type: ['object', 'null'],
+                properties: {
+                  since: { type: 'string' },
                 },
               },
             },
@@ -452,6 +458,7 @@ export default async function containerRoutes(fastify) {
         try { await unpublishContainer(request.params.name); } catch { /* best effort */ }
         await deleteContainer(request.params.name, deleteFiles);
       });
+      await forgetBackupStatus({ kind: 'container', name: request.params.name });
       return { ok: true };
     } catch (err) {
       handleRouteError(err, reply, request);

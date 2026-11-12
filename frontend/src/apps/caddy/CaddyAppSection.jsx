@@ -47,14 +47,12 @@ export default function CaddyAppSection({ config, onSave }) {
   const [original, setOriginal] = useState(() => parseAppConfig(config));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [requiresRestart, setRequiresRestart] = useState(false);
   const [showToken, setShowToken] = useState(false);
 
   useEffect(() => {
     const parsed = parseAppConfig(config);
     setForm(parsed);
     setOriginal(parsed);
-    setRequiresRestart(false);
     setError(null);
   }, [config?.metadata?.appConfig?.domain, config?.metadata?.appConfig?.email, JSON.stringify(config?.metadata?.appConfig?.hosts), config?.metadata?.appConfig?.cloudflareDnsEnabled, config?.metadata?.appConfig?.cloudflareApiToken?.isSet]);
 
@@ -114,8 +112,7 @@ export default function CaddyAppSection({ config, onSave }) {
       } else if (!form.cloudflareTokenIsSet) {
         appConfig.cloudflareApiToken = '';
       }
-      const result = await onSave(appConfig);
-      if (result?.requiresRestart) setRequiresRestart(true);
+      await onSave(appConfig);
     } catch (err) {
       setError(err?.detail || err?.message || 'Save failed');
     } finally {
@@ -132,7 +129,7 @@ export default function CaddyAppSection({ config, onSave }) {
       onSave={handleSave}
       saving={saving}
       isDirty={dirty}
-      requiresRestart={requiresRestart || config?.pendingRestart}
+      requiresRestart={!!config?.pendingRestart}
       error={error}
     >
       <div className="space-y-4">

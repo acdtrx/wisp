@@ -182,7 +182,7 @@ The on-disk backup tree only records successes (a failed backup removes its part
 }
 ```
 
-Recorded on every completion of a manual backup (both route handlers), a scheduled backup (the scheduler), and the safety backup inside a container restore-in-place job. It is a last-outcome cache, not history — safe to delete, self-healing.
+Recorded on every completion of a manual backup (both route handlers), a scheduled backup (the scheduler), and the safety backup inside a container restore-in-place job. It is a last-outcome cache, not history — safe to delete, self-healing. Deleting a container drops its entry *(settled 2026-11-12)*, so a deleted workload's failed last attempt doesn't linger in the panel.
 
 The map is pushed on the **`backups` topic of `GET /api/events`**: a snapshot on connect, then a frame after every attempt record and every backup delete/prune (`notifyBackupsChanged`). The frontend's Backups panel uses each frame both for the status badges and as its cue to refetch the backup lists — there is no polling.
 

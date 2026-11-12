@@ -117,9 +117,11 @@ async function fetchContainerListFromDisk({ complete = false } = {}) {
     }
 
     let state;
+    let pid = 0;
     try {
       const task = await getTaskState(name);
       state = task ? containerTaskStatusToUi(task) : 'stopped';
+      pid = task ? Number(task.pid) || 0 : 0;
     } catch (err) {
       if (complete) throw err;
       // getTaskState already returns null when the task genuinely doesn't
@@ -142,6 +144,7 @@ async function fetchContainerListFromDisk({ complete = false } = {}) {
       autoBackup: config.autoBackup === true,
       updateAvailable: deriveUpdateAvailable(config, state, libraryDigests),
       scheduledRestart: getScheduledRestart(name),
+      pendingRestart: await pendingRestartInForce(config, pid),
     });
   }
 

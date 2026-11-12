@@ -12,14 +12,22 @@ function sameScheduledRestart(a, b) {
 
 /**
  * The list topic is the live source for a workload's run state; carry its
- * `state` and `scheduledRestart` into the selected container's config.
+ * `state`, `scheduledRestart` and in-force `pendingRestart` into the selected
+ * container's config, so a restart done elsewhere drops the badge here.
  * Returns the updated config, or null when nothing changed.
  */
 function configSyncedFromListItem(config, item) {
   if (!item) return null;
   const scheduledRestart = item.scheduledRestart ?? null;
-  if (item.state === config.state && sameScheduledRestart(scheduledRestart, config.scheduledRestart)) return null;
-  return { ...config, state: item.state, scheduledRestart };
+  const pendingRestart = item.pendingRestart ?? null;
+  const unchanged = item.state === config.state
+    && sameScheduledRestart(scheduledRestart, config.scheduledRestart)
+    && (pendingRestart?.since ?? null) === (config.pendingRestart?.since ?? null);
+  if (unchanged) return null;
+  const next = { ...config, state: item.state, scheduledRestart };
+  if (pendingRestart) next.pendingRestart = pendingRestart;
+  else delete next.pendingRestart;
+  return next;
 }
 
 export const useContainerStore = create((set, get) => {

@@ -85,7 +85,6 @@ export default function JellyfinAppSection({ config, onSave }) {
   const [hostGpus, setHostGpus] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [requiresRestart, setRequiresRestart] = useState(false);
 
   const storageMounts = useMemo(() => settings?.mounts || [], [settings]);
 
@@ -105,7 +104,6 @@ export default function JellyfinAppSection({ config, onSave }) {
     const parsed = parseAppConfig(config);
     setForm(parsed);
     setOriginal(parsed);
-    setRequiresRestart(false);
     setError(null);
   }, [JSON.stringify(config?.metadata?.appConfig)]);
 
@@ -190,8 +188,7 @@ export default function JellyfinAppSection({ config, onSave }) {
         gpuEnabled: form.gpuEnabled,
         publishedUrl: form.publishedUrl,
       };
-      const result = await onSave(appConfig);
-      if (result?.requiresRestart) setRequiresRestart(true);
+      await onSave(appConfig);
       setOriginal(form);
     } catch (err) {
       setError(err?.detail || err?.message || 'Failed to save');
@@ -203,7 +200,7 @@ export default function JellyfinAppSection({ config, onSave }) {
   return (
     <SectionCard
       title="Jellyfin"
-      requiresRestart={requiresRestart || !!config.pendingRestart}
+      requiresRestart={!!config?.pendingRestart}
       error={error}
       onSave={handleSave}
       saving={saving}

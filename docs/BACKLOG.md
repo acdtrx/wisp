@@ -229,12 +229,6 @@ validation at the boundary; the manager validates fields piecemeal instead (foun
 2026-11-12 repairs inventory). **Revisit trigger:** a malformed PATCH body is stored, or
 the next work on that route.
 
-**Small container API/UI inconsistencies.** `POST /api/containers/:name/mounts` returns
-`requiresRestart: null` on a stopped container (spec: boolean); the container page keeps
-"Restart required" up after a restart done outside the page (stale frontend flag);
-`backup-status.json` keeps entries for deleted containers. **Revisit trigger:** any of
-them confuses a real session. (Plan 6 verification on tini)
-
 **Migration history in the UI.** The journal (`journalctl -u wisp-updater`) and the ledger
 (`config/migrations.json`) are the only record of what an update's state migrations
 changed. **Revisit trigger:** the user asks "what did the last update change?"

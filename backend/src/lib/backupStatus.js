@@ -81,6 +81,26 @@ export async function recordBackupAttempt({ kind, name, ok, origin = 'manual', d
   return entry;
 }
 
+/**
+ * Drop a deleted workload's last-attempt record, so its row doesn't linger in
+ * the backups panel. A no-op when there is none.
+ *
+ * @param {{ kind: 'vm' | 'container', name: string }} workload
+ */
+export async function forgetBackupStatus({ kind, name }) {
+  const bucket = kind === 'vm' ? 'vms' : 'containers';
+  const status = await loadStatus();
+  if (!(name in status[bucket])) return;
+  delete status[bucket][name];
+  writeChain = writeChain
+    .then(() => writeJsonAtomic(STATUS_PATH, status))
+    .catch(() => {
+      /* status file is best-effort — a failed write must never fail the delete */
+    });
+  await writeChain;
+  notifyBackupsChanged();
+}
+
 /** Poke subscribers that backup state changed (new/pruned/deleted backups, attempt status). */
 export function notifyBackupsChanged() {
   for (const handler of changeHandlers) {
