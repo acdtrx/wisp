@@ -383,6 +383,27 @@ export async function downloadAndStage(onProgress, signal) {
   return stagingDir;
 }
 
+/** True from an install's claim until it fails; a successful hand-off never releases it. */
+let installInFlight = false;
+
+/**
+ * Claim the one install slot: returns a release function, or null when an
+ * install is already in flight. Synchronous, so a caller that claims before
+ * its first await can't race another request between check and claim. The
+ * caller releases on failure only — after a successful hand-off the updater
+ * stops this process, and a second install in that window must still be refused.
+ */
+export function claimUpdateInstall() {
+  if (installInFlight) return null;
+  installInFlight = true;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    installInFlight = false;
+  };
+}
+
 /**
  * Trigger wisp-updater.service. Because that's a separate systemd unit running
  * in its own cgroup with its own stdio, the updater is fully decoupled from

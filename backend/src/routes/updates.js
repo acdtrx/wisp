@@ -3,6 +3,7 @@ import {
   checkForUpdate,
   downloadAndStage,
   applyUpdate,
+  claimUpdateInstall,
 } from '../lib/wispUpdate.js';
 import { listBackgroundJobs } from '../lib/jobs/index.js';
 import { handleRouteError } from '../lib/routeErrors.js';
@@ -89,12 +90,22 @@ export default async function updatesRoutes(fastify) {
         }
       }
 
+      // Claimed before the first await; `force` doesn't bypass it.
+      const releaseInstall = claimUpdateInstall();
+      if (!releaseInstall) {
+        return reply.code(409).send({
+          error: 'Update already in progress',
+          detail: 'An install was already started — wait for Wisp to restart on the new version',
+        });
+      }
+
       let stagingPath;
       try {
         /* Phase 1: download + verify + extract — blocks here for ~5–15s.
          * Errors are reported as HTTP errors before we hand off to the helper. */
         stagingPath = await downloadAndStage();
       } catch (err) {
+        releaseInstall();
         return handleRouteError(err, reply, request);
       }
 
@@ -104,6 +115,7 @@ export default async function updatesRoutes(fastify) {
          * this backend as its first real step. */
         await applyUpdate(stagingPath);
       } catch (err) {
+        releaseInstall();
         return handleRouteError(err, reply, request);
       }
 

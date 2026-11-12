@@ -329,7 +329,7 @@ Force an immediate self-update check; returns the same shape as `/status`. Which
 Synchronously downloads + verifies + extracts the new release tarball, writes the staging path to `/var/lib/wisp/updates/target`, triggers `wisp-updater.service` via `sudo -n systemctl start --no-block` and returns 202. The updater is a separate `Type=oneshot` systemd unit — it stops the backend as part of its first real step; the UI detects completion by polling `GET /api/host` for `wispVersion === targetVersion`. Updater progress is in journald (`journalctl -u wisp-updater.service`). `?force=1` overrides the active-jobs guard.
 
 - **202:** `{ targetVersion }`
-- **409:** `{ error, detail }` — no update available, or other background jobs are running and `force=1` was not supplied
+- **409:** `{ error, detail }` — no update available; other background jobs are running and `force=1` was not supplied; or an install is already in flight (`Update already in progress`, not bypassed by `force`)
 - **503/422/500:** `{ error, detail }` — download / verify / extract / unit-trigger failure
 
 ### GET /api/host/hardware · `read`

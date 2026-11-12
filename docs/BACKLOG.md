@@ -92,10 +92,6 @@ work on app containers, but Jellyfin's next `appConfig` save replaces them with 
 devices. **Revisit trigger:** a manual device pick on an app container is lost on a config
 save.
 
-**Self-update install has no in-flight guard.** Two concurrent `POST /api/updates/install`
-(two tabs) both download, stage and trigger the updater. **Revisit trigger:** a doubled
-install request causes a failed or repeated update.
-
 **Library upload name check races.** An upload checks `access()` and then writes, so two
 concurrent uploads of one name both pass and the later overwrites (no crash); downloads
 already reserve names with an exclusive create. **Revisit trigger:** two same-name uploads
