@@ -17,11 +17,11 @@
   (containerd's gRPC API — sole caller `lib/containerManager/`), **`fast-xml-parser`**
   (libvirt domain XML, never regex).
 - **Fastify 5** — JSON-schema validation at the boundary. Route **response schemas are
-  authoritative** for serialized output: a new response field is added to the route
-  schema in the same edit, or Fastify strips it. Plugins: cors, multipart (streamed
-  uploads), static (serves the SPA + vendored noVNC), websocket (VNC proxy, container
-  shell). CORS allows `localhost:5173` in development only; in production the backend
-  serves its own client, same origin.
+  authoritative** for serialized output: add a new response field to the route schema in
+  the same edit, or Fastify strips it. Plugins: cors, multipart (streamed uploads),
+  static (serves the SPA + vendored noVNC), websocket (VNC proxy, container shell). CORS
+  allows `localhost:5173` in development only; in production the backend serves its own
+  client, same origin.
 - **Logging: pino** — pino-pretty single-line in dev, plain JSON in production.
 - **`undici`** used directly for SSRF-hardened fetches; **`js-yaml`** for cloud-init YAML
   emission.

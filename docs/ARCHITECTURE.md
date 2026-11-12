@@ -49,7 +49,7 @@ page. The service worker keeps the app shell so a launch always boots React.
 
 ## State
 
-- Persistent state lives in three places, and nothing writes runtime state elsewhere:
+- Persistent state lives in three places; write runtime state nowhere else:
   - **`config/`** at the install root: `wisp-config.json` (application settings, API
     token hashes), `wisp-password` (the scrypt hash the session secret derives from),
     `migrations.json` (the migration ledger) and the optional `runtime.env`. The updater
@@ -61,7 +61,7 @@ page. The service worker keeps the app shell so a launch always boots React.
 - **The server is the source of truth**: VM metadata lives in domain XML, a container's
   configuration in its `container.json`, settings in `wisp-config.json` — never in the
   browser. containerd holds only runtime state (task status, metrics).
-- JSON state is written atomically (`writeJsonAtomic`: stage, fsync, rename); boot removes
+- Write JSON state atomically (`writeJsonAtomic`: stage, fsync, rename); boot removes
   orphan temp files a crash left mid-rename.
 - What an earlier release wrote is brought to the current shape by state migrations during
   the update (`CODING-RULES.md` §16).
@@ -119,7 +119,7 @@ stream to the client (Transport) subscribes like any other consumer.
   update poll, apt checks, job-TTL cleanup, reconcilers, scheduled backups) is an
   invocable unit; its triggers — boot, a schedule, events, a manual run — are wired
   separately, and any trigger can invoke any mechanism. A manual run always works, for
-  testing or because it is needed now. Every execution logs what triggered it and the
+  testing or because it is needed now. Log for every execution what triggered it and the
   result.
 
 ## Transport

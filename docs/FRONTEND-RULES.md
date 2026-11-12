@@ -5,40 +5,40 @@ holds the UI library's rules.
 
 ## Data
 
-- The client is an observer: it sends input and commands and renders server state. It
-  never holds authoritative state (e.g. browser localStorage) or runs an operation the
-  server could not complete with no client attached. How server state reaches it:
+- The client is an observer: it sends input and commands and renders server state. Never
+  hold authoritative state on it (e.g. browser localStorage) or run there an operation
+  the server could not complete with no client attached. How server state reaches it:
   `ARCHITECTURE.md`.
-  - Applied: per-viewer presentation is not server state: the theme is kept per device
+  - Applied: per-viewer presentation is not server state: keep the theme per device
     (Wisp's design, Theme activation and persistence).
-  - Applied: one Zustand store per subsystem, mirroring the established `vmStore`
-    patterns; live data through `createSSE` / `createJobSSE` and the `/api/events` topic
-    singleton.
-- Initialise form and component state with meaningful defaults derived from the data model,
-  never with an empty object.
-  - Applied: form state starts from the config's defaults — never `useState({})`.
-- Client-side collections that grow while the app runs (messages, log lines, feed items) are
-  bounded: capped or windowed.
-- Every view that loads data has a loading, an empty and an error state.
+  - Applied: keep one Zustand store per subsystem, mirroring the established `vmStore`
+    patterns; take live data through `createSSE` / `createJobSSE` and the `/api/events`
+    topic singleton.
+- Initialise form and component state with meaningful defaults derived from the data
+  model, never with an empty object.
+  - Applied: start form state from the config's defaults, never `useState({})`.
+- Bound client-side collections that grow while the app runs (messages, log lines, feed
+  items): cap or window them.
+- Give every view that loads data a loading, an empty and an error state.
 
 ## Routing
 
-- Every view has its own URL from the first one: `/` is the main view, and a deep link
+- Give every view its own URL from the first one: `/` is the main view, and a deep link
   (e.g. `/thing/:id`) opens any view directly.
 
 ## Errors
 
-- Errors shown to the user stay visible until the user dismisses them.
+- Keep an error shown to the user visible until the user dismisses it.
 
 ## Design
 
-- Themes are design tokens: a new theme is a token set, never a CSS rewrite. All text meets
-  WCAG AA (4.5:1) in every theme.
-- Every interactive element is reachable by keyboard, has an accessible name, and shows
-  focus.
-- **Action buttons are icon-only by default**, with `title` / `aria-label`. Visible text
-  labels only for primary form actions (Create/Save/Cancel at form bottoms) or on explicit
-  request. `[PROJECT]`
+- Build themes from design tokens: a new theme is a token set, never a CSS rewrite. Make
+  all text meet WCAG AA (4.5:1) in every theme.
+- Make every interactive element reachable by keyboard, with an accessible name and
+  visible focus.
+- **Action buttons are icon-only by default**, with `title` / `aria-label`. Give visible
+  text labels only to primary form actions (Create/Save/Cancel at form bottoms), or on
+  explicit request. `[PROJECT]`
 - Wisp's design is below; its screens are [`specs/UI.md`](specs/UI.md). `[PROJECT]`
 
 ### Wisp's design `[PROJECT]`
@@ -238,33 +238,37 @@ Small all-caps muted label style: `11px, font-semibold, uppercase, tracking-wide
 
 ## Phones and touch
 
-- Text fields a phone types into use at least a 16px font; pinch zoom is never disabled.
-- On a touch device only a tap on a field opens the keyboard: the app never focuses a
-  field by itself there. One module makes that call for every programmatic focus.
-- Hover effects exist only under `@media (hover: hover)`, and tap targets grow at phone
+- Give text fields a phone types into at least a 16px font; never disable pinch zoom.
+- On a touch device, let only a tap on a field open the keyboard: never focus a field
+  unprompted there. Route every programmatic focus through one module that makes that
+  call.
+- Put hover effects only under `@media (hover: hover)`, and grow tap targets at phone
   widths.
 
 ## Layers
 
-- Esc closes the top layer only, wherever focus is. A modal makes the page under it
-  inert, keeps Tab inside, and on close returns focus to what opened it. A click beside a
-  modal never dismisses it.
+- On Esc, close only the top layer, wherever focus is. Make the page under a modal inert,
+  keep Tab inside the modal, and on close return focus to what opened it. Never dismiss a
+  modal on a click beside it.
   - `[PROJECT]` Wisp's modals still close on a click that starts and ends on the backdrop
     (Modals and dialogs, below); bringing them to this rule is a backlog entry.
-- A popover anchored to a control is clamped to the viewport.
+- Clamp a popover anchored to a control to the viewport.
 
 ## Bundles
 
-- No CDN-loaded assets: JavaScript, CSS and fonts are bundled, or system defaults.
-  - Applied: body and UI text stay on the system stack; a custom face is self-hosted
-    woff2 with its license alongside (Wisp's design, Typography).
+- Never load assets from a CDN: bundle JavaScript, CSS and fonts, or use system defaults.
+  - Applied: keep body and UI text on the system stack; self-host a custom face as woff2
+    with its license alongside (Wisp's design, Typography).
 - Code-split large features with dynamic imports to keep bundle chunks small.
-  - Applied: the Console tab loads with `React.lazy`.
+  - Applied: load the Console tab with `React.lazy`.
 
 ## Files
 
-- One UI component per file; small local sub-components may share it only if they are not
-  exported.
+- **Rebuild a redesign; never redress it.** Build the redesigned page, panel or component
+  as new and let the old markup go: restyled old structure nests wrappers in wrappers and
+  keeps the old shape's bugs.
+- Put one UI component in each file; small local sub-components may share it only if they
+  are not exported.
 - Colocate related files: a view's components, styles and tests sit in one directory.
 
 ## UI patterns: section lists, tables and modals `[PROJECT]`
@@ -284,26 +288,26 @@ Apply these rules when building or refactoring:
 
 #### 1. Row-based persistence
 
-Each **save**, **delete**, and other mutating action should apply to **one row** (one API call / one server mutation scoped to that entity). Avoid PATCHing or replacing an **entire parent array** from the client for convenience when the product model is naturally per-item.
+Apply each **save**, **delete**, and other mutating action to **one row** (one API call / one server mutation scoped to that entity). Avoid PATCHing or replacing an **entire parent array** from the client for convenience when the product model is naturally per-item.
 
 - Prefer purpose-named backend operations and matching client calls (e.g. add/update/remove one mount), consistent with CODING-RULES §2 and §7.
 - If the API is intentionally a single “replace whole list” contract, document that exception in the API spec; still prefer row-scoped APIs when the UI presents independent rows.
 
 #### 2. Add controls in the section header (right)
 
-Place **add** actions in `SectionCard` **`headerAction`**, aligned to the **far right** of the section header (after restart badge and Save when dirty). Header clicks must not toggle collapse: the right-hand control cluster uses `stopPropagation` when the card is collapsible.
+Place **add** actions in `SectionCard` **`headerAction`**, aligned to the **far right** of the section header (after restart badge and Save when dirty). Never let header clicks toggle collapse: give the right-hand control cluster `stopPropagation` when the card is collapsible.
 
 - **Add buttons:** accent background; **icon-only** or **`Plus` + a second icon** that names the kind of thing being added (e.g. `Plus`+`File`, `Plus`+`Folder`, `Plus`+`Server` for network mount, `Plus`+`Network` for bridge or NIC, `Plus`+`Braces` for env).
 - Do **not** use a full-width dashed “add row” at the bottom of the table for the primary add path when a header add is appropriate.
-- **Empty state** copy should point users to the header control rather than duplicating a second add button.
+- Point **empty state** copy at the header control rather than duplicating a second add button.
 
 #### 3. Row actions: icon-only
 
-Table and list **row actions** (edit, delete, mount, check, revert, etc.) are **icon-only** buttons with `title` and `aria-label`. Use shared table chrome styling (e.g. bordered `p-1.5` hit targets) for consistency.
+Make table and list **row actions** (edit, delete, mount, check, revert, etc.) **icon-only** buttons with `title` and `aria-label`. Use shared table chrome styling (e.g. bordered `p-1.5` hit targets) for consistency.
 
-- **Order:** Place **other actions first** (save/cancel while editing, upload, test connection, mount/unmount, revert/restore, open file editor, etc.), then the **Edit** control (**`Pencil`** — or the row’s primary “enter edit” affordance), then **Delete** (**`Trash2`**) **last**. Edit and delete stay adjacent when both are shown.
+- **Order:** Place **other actions first** (save/cancel while editing, upload, test connection, mount/unmount, revert/restore, open file editor, etc.), then the **Edit** control (**`Pencil`** — or the row’s primary “enter edit” affordance), then **Delete** (**`Trash2`**) **last**. Keep Edit and Delete adjacent when both are shown.
 
-- **Save / Confirm uses the primary variant.** When a row is in edit/draft mode, the commit button (Save, Add, Attach, Confirm) uses **`rowActionIconBtnPrimary`** from `DataTableChrome.jsx` — accent background, white icon. The non-primary buttons (Cancel, Edit, Delete, etc.) use **`rowActionIconBtn`** (bordered, neutral). This keeps the commit affordance visible at a glance and matches the header `+` add buttons.
+- **Save / Confirm uses the primary variant.** When a row is in edit/draft mode, give the commit button (Save, Add, Attach, Confirm) **`rowActionIconBtnPrimary`** from `DataTableChrome.jsx` (accent background, white icon), and the non-primary buttons (Cancel, Edit, Delete, etc.) **`rowActionIconBtn`** (bordered, neutral). This keeps the commit affordance visible at a glance and matches the header `+` add buttons.
 
 - **Mount state:** Do not show a separate “Mounted / Not mounted” text column when a single mount/unmount control exists; encode state with the **background** of that control (e.g. green tint when mounted). When a row has a persistent state worth showing at a glance (mounted / present / disconnected), render it as a small **status dot before the label** (green `bg-status-running`, gray `bg-text-muted/40`, red `bg-status-stopped`; `title` + `aria-label` carry the words) instead of a Status column — this works at every breakpoint and frees a column on desktop. See `StatusDot` in [HostStorage.jsx](../frontend/src/components/host/HostStorage.jsx).
 
@@ -333,7 +337,7 @@ Accessibility:
 
 ### Section shell (Host panels and table pages)
 
-Major blocks on **Host** tabs (Overview, Host Mgmt, Image Library) use **`SectionCard`** so tables and forms match the same **white card on page background** look as Host Overview sections.
+Build major blocks on **Host** tabs (Overview, Host Mgmt, Image Library) with **`SectionCard`** so tables and forms match the same **white card on page background** look as Host Overview sections.
 
 | Aspect | Convention |
 |--------|----------------|
@@ -344,7 +348,7 @@ Major blocks on **Host** tabs (Overview, Host Mgmt, Image Library) use **`Sectio
 | **Body** | Default content padding `px-5 py-4` below the header divider (`border-t`). |
 | **Page gutters** | Outer wrapper **`px-6 py-5`** (and **`space-y-5`** between multiple sections); outer container scrolls when content is tall — same as Host Overview / Host Mgmt. |
 
-Single-section views (e.g. **Image Library**) use one **`SectionCard`** with the table inside the body. Multi-section views stack several **`SectionCard`**s.
+Give a single-section view (e.g. **Image Library**) one **`SectionCard`** with the table inside the body; stack several **`SectionCard`**s in a multi-section view.
 
 ### Row state and errors
 
@@ -384,7 +388,7 @@ Single-section views (e.g. **Image Library**) use one **`SectionCard`** with the
 
 ### Modals and dialogs
 
-All full-screen overlays go through the shared **[Modal.jsx](../frontend/src/components/shared/Modal.jsx)** primitive. It owns:
+Route every full-screen overlay through the shared **[Modal.jsx](../frontend/src/components/shared/Modal.jsx)** primitive. It owns:
 
 - The fixed-position backdrop (standardized on **`bg-black/40`**) and centered card (**`bg-surface-card`** + border + shadow).
 - Escape-to-close (via `useEscapeKey`) and the **`data-wisp-modal-root`** marker that tells `AppLayout` to suppress its own Escape handling.
@@ -394,7 +398,7 @@ All full-screen overlays go through the shared **[Modal.jsx](../frontend/src/com
 - Guard flags **`closeOnBackdrop`** and **`closeOnEscape`** for in-flight save/upload states.
 - **Backdrop close needs press and release on the backdrop.** A click whose mousedown started inside the card — drag-selecting a field's text and releasing past the card's edge — lands on the backdrop as the common ancestor; it must not close the modal and drop the edits.
 
-Do **not** open ad-hoc `fixed inset-0` overlays. New modal-style UI must wrap `<Modal>` so backdrop, escape, marker, and styling stay consistent.
+Never open ad-hoc `fixed inset-0` overlays: wrap new modal-style UI in `<Modal>` so backdrop, escape, marker, and styling stay consistent.
 
 #### Modal form editor
 
@@ -407,7 +411,7 @@ Structure (see **[FormModalChrome.jsx](../frontend/src/components/shared/FormMod
 - **Fields:** stacked **`FormField`** (label above control, optional hint below) in a `space-y-3` `<form id=…>`; short related fields pair into `sm:grid-cols-2`. Controls use the **`input-field`** utility; checkboxes use **`FormCheckbox`** (box left, label + hint right). Read-only identity (UUID, filesystem, derived names) renders as a muted summary box or preview line, not as disabled inputs. First field gets `autoFocus`; Enter submits via the form.
 - **Footer** (via the Modal `footer` prop): right-aligned **Cancel** (`formModalNeutralBtn`) + primary **Save/Create/Adopt** (`formModalPrimaryBtn`, disabled until valid **and** dirty, `Loader2` while saving). Secondary actions (e.g. SMB **Test connection**) sit footer-left in an `mr-auto` group with their result as inline text (green OK / truncated red error with full text in `title`).
 - **Errors:** sticky red line (**`FormModalError`**) at the bottom of the body; the modal stays open on failure. On success the modal calls `await onSaved()` then `onClose()`.
-- **Nested dialogs** (settled 2026-08-25): a `ConfirmDialog` opened from inside an editor modal is the top layer — while it is open the parent modal sets `closeOnEscape={false}` (and `closeOnBackdrop={false}`) so Escape and backdrop clicks close only the confirm. Rendered as a sibling of `<Modal>`, not inside its scrolling body. Reference: the generate-secret dialog in [EnvVarEditorModal.jsx](../frontend/src/components/sections/EnvVarEditorModal.jsx).
+- **Nested dialogs** (settled 2026-08-25): a `ConfirmDialog` opened from inside an editor modal is the top layer: while it is open, set the parent modal's `closeOnEscape={false}` (and `closeOnBackdrop={false}`) so Escape and backdrop clicks close only the confirm. Render it as a sibling of `<Modal>`, not inside its scrolling body. Reference: the generate-secret dialog in [EnvVarEditorModal.jsx](../frontend/src/components/sections/EnvVarEditorModal.jsx).
 - **Rows stay read-only.** The table keeps display cells only; row actions shrink to purpose actions (mount, check) + **Edit** + **Delete**, which fit on phones. Write-only secrets keep the "empty means keep what's on file" convention with a hint under the field.
 
 #### Confirmation, alert, and informational dialogs
@@ -415,13 +419,13 @@ Structure (see **[FormModalChrome.jsx](../frontend/src/components/shared/FormMod
 - **[ConfirmDialog.jsx](../frontend/src/components/shared/ConfirmDialog.jsx)** — Two-button confirm for destructive or impactful actions. Defaults to a red-tinted `Confirm` button (`variant="danger"`); pass `variant="primary"` for non-destructive accept (e.g. install update). Replaces `window.confirm()`.
 - **[AlertDialog.jsx](../frontend/src/components/shared/AlertDialog.jsx)** — Single-button informational/error dialog. Pass `tone="error"` to highlight the title in stopped color. Replaces `window.alert()`.
 
-- **Data-deleting section Save** (settled 2026-10-16): in a form that stages edits behind one section **Save** (e.g. the tiny-samba app config), removing a row only stages the removal — the confirm opens at **Save**, listing exactly what the save will delete (computed against the loaded state, so an unsaved row or one whose data survives needs no prompt), with a `Delete and save` danger button. Confirming at the trash icon would be premature: the user can still undo by not saving. Reference: [TinySambaAppSection.jsx](../frontend/src/apps/tinySamba/TinySambaAppSection.jsx).
+- **Data-deleting section Save** (settled 2026-10-16): in a form that stages edits behind one section **Save** (e.g. the tiny-samba app config), let removing a row only stage the removal, and open the confirm at **Save**, listing exactly what the save will delete (computed against the loaded state, so an unsaved row or one whose data survives needs no prompt), with a `Delete and save` danger button. Confirming at the trash icon would be premature: the user can still undo by not saving. Reference: [TinySambaAppSection.jsx](../frontend/src/apps/tinySamba/TinySambaAppSection.jsx).
 
-Never call native `window.alert()` or `window.confirm()` — async-error reporting and confirmation prompts must use these dialogs so they pick up the same shell, focus, and styling as the rest of the app.
+Never call native `window.alert()` or `window.confirm()`: use these dialogs for async-error reporting and confirmation prompts, so they pick up the same shell, focus, and styling as the rest of the app.
 
 ## React
 
-- Effect dependencies are **stable**: primitive values or serialised representations, not
-  object references that change identity every render.
+- Keep effect dependencies **stable**: primitive values or serialised representations,
+  not object references that change identity every render.
 - Memoise callbacks passed to effects or child components.
-  - Applied: `useCallback` for handlers passed to effects or children.
+  - Applied: use `useCallback` for handlers passed to effects or children.
