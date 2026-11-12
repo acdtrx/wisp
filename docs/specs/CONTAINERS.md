@@ -514,7 +514,7 @@ A container's name is its containerd container ID, the directory key under `cont
 5. `Containers.Create(new)` reusing the captured runtime / spec / labels / snapshotter, with `id` and `snapshotKey` set to the new name.
 6. `fs.rename(<containersPath>/<old>, <containersPath>/<new>)` — atomic on the same filesystem.
 7. Rewrite `container.json` under the new dir with `name: <new>` (also fans out a config-write notification → SSE list refresh).
-8. Best-effort cleanup under the old name: `deregisterServicesForContainer` (SRV/TXT services are containerManager's), and `wisp-netns delete <old>` for any orphan netns left behind by a previous run (stop does not tear down the netns; setupNetwork on next start would otherwise leak it), which fires `subscribeContainerNetnsRemoved`.
+8. Best-effort cleanup under the old name: `deregisterServicesForContainer` (SRV/TXT services are containerManager's), and, when a netns is left under the old name (stop does not tear it down; the next start under the new name would otherwise leak it), `teardownNetwork(<old>)`: CNI `DEL` — releasing the DHCP lease held under the old container id — then the netns delete, which fires `subscribeContainerNetnsRemoved`.
 
 **Then the route** (`PATCH /api/containers/:name`), best-effort, because sections and A-records are Wisp glue and the manager makes no A-record calls:
 

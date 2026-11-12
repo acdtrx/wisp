@@ -70,11 +70,6 @@ exact ordering only by luck. Confirm first with `systemctl restart avahi-daemon
 systemd-networkd`. **Revisit trigger:** Wisp `.local` names go dead on the LAN again,
 especially after an unattended-upgrades run.
 
-**Rename removes the old netns without CNI DEL.** `renameContainer` deletes the old-name
-netns directly, so the cni-dhcp daemon is never told to release that lease (same MAC, so
-the address itself is unaffected). **Revisit trigger:** cni-dhcp logs renew errors for a
-renamed container's old name.
-
 **Services stay published after an unexpected task exit.** SRV/TXT services are
 deregistered on stop/kill/delete only; a crash leaves them advertising until the next
 start or stop. **Revisit trigger:** a crashed container's service is seen being browsed on

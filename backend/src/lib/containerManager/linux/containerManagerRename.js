@@ -10,8 +10,6 @@
  * bind mounts, which travel with the directory move.
  */
 import { rename, access } from 'node:fs/promises';
-import { execFile as execFileCb } from 'node:child_process';
-import { promisify } from 'node:util';
 
 import { containerError, getClient, callUnary } from './containerManagerConnection.js';
 import { getContainerDir, getContainerNetnsPath } from './containerPaths.js';
@@ -20,9 +18,8 @@ import { noteIntentionalStop } from './containerManagerRestartPolicy.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { validateContainerName } from './containerValidation.js';
-import { notifyContainerNetnsRemoved } from './containerManagerNetwork.js';
+import { teardownNetwork } from './containerManagerNetwork.js';
 
-const execFile = promisify(execFileCb);
 const SNAPSHOTTER = 'overlayfs';
 
 async function ensureNewNameFree(newName) {
@@ -67,25 +64,23 @@ async function ensureStopped(name) {
   );
 }
 
-async function bestEffortRemoveOrphanNetns(name) {
-  const nsPath = getContainerNetnsPath(name);
+/**
+ * Tear down the old name's network: CNI DEL (so the DHCP lease under the old
+ * container id is released), then the netns. Stop leaves both in place, and
+ * the next start under the new name would otherwise leak them.
+ */
+async function bestEffortTeardownOldNetwork(name, networkConfig) {
   try {
-    await access(nsPath);
+    await access(getContainerNetnsPath(name));
   } catch {
-    /* No orphan netns to remove */
+    /* No netns left under the old name */
     return;
   }
-  /* Reuse wisp-netns helper via sudo; ignore errors (the netns will leak
-   * harmlessly if cleanup fails — next start under the new name will
-   * create a fresh one at a different path). */
   try {
-    await execFile('sudo', ['-n', '/usr/local/bin/wisp-netns', 'delete', name], {
-      timeout: 8000,
-    });
+    await teardownNetwork(name, networkConfig);
   } catch {
-    /* best effort */
+    /* best effort: a leaked netns is harmless — the new name gets its own */
   }
-  notifyContainerNetnsRemoved(name);
 }
 
 /**
@@ -232,7 +227,7 @@ export async function renameContainer(oldName, newName) {
    * dropped by routes/containers.js calling unpublishContainer after this
    * function returns. */
   try { await deregisterServicesForContainer(oldName); } catch { /* best effort */ }
-  await bestEffortRemoveOrphanNetns(oldName);
+  await bestEffortTeardownOldNetwork(oldName, config.network);
 
   return { name: newNameTrim };
 }
