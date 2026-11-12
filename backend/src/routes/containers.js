@@ -155,8 +155,11 @@ export default async function containerRoutes(fastify) {
 
   // ── Create ────────────────────────────────────────────────────────
   fastify.post('/containers', { config: { auth: 'admin' } }, async (request, reply) => {
-    const spec = request.body;
-    if (!spec?.name || !spec?.image) {
+    // Only the create contract's fields reach the manager: its spec also takes
+    // env / mounts / devices / metadata, which app creation fills in itself.
+    const { name, image, iconId, app, appConfig } = request.body && typeof request.body === 'object' ? request.body : {};
+    const spec = { name, image, iconId, app, appConfig };
+    if (!spec.name || !spec.image) {
       return sendError(reply, 422, 'Missing required fields', 'name and image are required');
     }
     if (spec.app && !isKnownApp(spec.app)) {
