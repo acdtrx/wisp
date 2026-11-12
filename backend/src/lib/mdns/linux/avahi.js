@@ -226,7 +226,17 @@ async function refreshHostFqdn() {
 async function createGroup() {
   const server = await ensureServer();
   if (!server) return null;
-  const path = await bounded(server.EntryGroupNew(), 'EntryGroupNew');
+  const pending = server.EntryGroupNew();
+  let path;
+  try {
+    path = await bounded(pending, 'EntryGroupNew');
+  } catch (err) {
+    // A late answer still creates the group: free it when its path arrives.
+    if (err.code === 'AVAHI_TIMEOUT') {
+      pending.then((latePath) => freeAvahiPath(latePath, AVAHI_GROUP_IFACE), () => { /* never created */ });
+    }
+    throw err;
+  }
   try {
     const obj = await bounded(state.bus.getProxyObject(AVAHI_BUS_NAME, path), 'entry group introspection');
     return { iface: obj.getInterface(AVAHI_GROUP_IFACE), path };
@@ -325,6 +335,12 @@ async function republishGroup(record) {
     // expected and leaves nothing to repair.
     if (state.groups.get(handle.path) !== record) return;
     state.logger?.warn?.({ ...logCtx, err: err?.message || err }, '[mdns] entry group re-publish failed');
+    // A failed Reset or fill left the group empty and uncommitted: drop it, and
+    // mark its owner unpublished (group: null) so the next register recreates it.
+    for (const owner of [...state.entries.values(), ...state.services.values()]) {
+      if (owner.group === handle) owner.group = null;
+    }
+    await freeGroup(handle);
   } finally {
     record.republishing = false;
   }
