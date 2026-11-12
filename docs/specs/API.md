@@ -842,6 +842,7 @@ Update cloud-init settings.
 ```
 
 - **200:** `{ ok: true }`
+- **404:** `VM_NOT_FOUND` — no such VM; nothing is written (no VM directory is created)
 - **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 
 ### DELETE /api/vms/:name/cloudinit · `admin`

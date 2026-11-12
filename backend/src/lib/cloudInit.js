@@ -360,6 +360,9 @@ export async function getCloudInitConfig(vmName) {
 }
 
 export async function updateCloudInit(vmName, config, log) {
+  // The VM must exist: generateCloudInit tolerates a missing domain (create
+  // builds the seed before the define), and would make its directory.
+  await getVMXML(vmName);
   if (config.enabled === false) {
     const existing = await loadCloudInitConfig(vmName);
     const merged = mergeCloudInitDisablePayload(existing, config);
