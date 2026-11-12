@@ -45,6 +45,9 @@ function backupTsToIso(ts) {
   return m ? `${m[1]}:${m[2]}:${m[3]}` : null;
 }
 
+/* A backup row may carry no `origin` (one on a backup mount that was unmounted
+ * when migration 0008 ran); it is shown as manual — never auto-pruned, as the
+ * server treats it. */
 function decorateVmRow(row) {
   return {
     kind: 'vm',
