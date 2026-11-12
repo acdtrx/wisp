@@ -199,6 +199,23 @@ async function moveRenamedMountsAndWrite(name, renamePairs, config) {
 }
 
 /**
+ * Whether a mount or device list changes what a task is created with. Both
+ * sides go through the same normalizer, so a stored entry written before a
+ * field existed compares equal to its re-sent self; an unreadable stored list
+ * counts as changed.
+ */
+function differsWhenNormalized(prev, next, normalize) {
+  let prevNormalized;
+  try {
+    prevNormalized = normalize(prev);
+  } catch {
+    /* the stored list fails today's checks — treat it as changed */
+    return true;
+  }
+  return JSON.stringify(prevNormalized) !== JSON.stringify(next);
+}
+
+/**
  * Partially update a container's config. Returns { requiresRestart, removedMounts }.
  *
  * `mounts` replaces the mount list. It never deletes mount data: a Local mount
@@ -322,7 +339,9 @@ export async function updateContainerConfig(name, changes) {
       unflaggedSecretMounts = secretMountsLosingFlag(prevMounts, normalized, renamePairs);
       config.mounts = normalized;
       mountsPersisted = normalized;
-      if (isRunning && RESTART_FIELDS.has(key)) requiresRestart = true;
+      if (isRunning && differsWhenNormalized(prevMounts, normalized, (l) => validateAndNormalizeMounts(l, resolveMount))) {
+        requiresRestart = true;
+      }
       continue;
     }
     if (key === 'image') {
@@ -338,8 +357,11 @@ export async function updateContainerConfig(name, changes) {
       continue;
     }
     if (key === 'devices') {
+      const prevDevices = Array.isArray(config.devices) ? config.devices : [];
       config.devices = validateAndNormalizeDevices(value);
-      if (isRunning && RESTART_FIELDS.has(key)) requiresRestart = true;
+      if (isRunning && differsWhenNormalized(prevDevices, config.devices, validateAndNormalizeDevices)) {
+        requiresRestart = true;
+      }
       continue;
     }
     config[key] = value;

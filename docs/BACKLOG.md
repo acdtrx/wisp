@@ -87,14 +87,6 @@ only on libvirt connect and the STARTED event (review of repairs-to-migrations,
 2026-11-12). Fix shape: vmManager takes a lock acquirer, as containerManager does.
 **Revisit trigger:** a VM edit made right as the VM starts is seen lost.
 
-**App config saves on a running container always flag Restart required.**
-`applyAppConfig`'s first write includes `mounts`, and any `mounts` write on a running
-container sets `pendingRestart` even when the list is unchanged, so a save that
-live-reloaded still shows the badge; the flag also survives an `APP_RELOAD_FAILED`
-rollback. Shape: `updateContainerConfig` flags a restart only when the normalized
-mounts/devices differ. **Revisit trigger:** the badge is seen after a Caddy / tiny-samba
-save that reloaded fine (likely on the next Caddy host edit — verify then).
-
 **App containers: devices and row-scoped mount routes bypass appConfig.** `PATCH
 {devices}` and the Devices section work on app containers, but Jellyfin's next `appConfig`
 save replaces them with its derived devices; the row mount routes (`POST`/`PATCH`/`DELETE

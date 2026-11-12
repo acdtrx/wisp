@@ -45,6 +45,7 @@ function mountLayoutSig(list) {
     type: m.type,
     name: m.name,
     containerPath: m.containerPath,
+    readonly: m.readonly === true,
     sourceId: m.sourceId || null,
     subPath: m.subPath || '',
     sizeMiB: Number.isInteger(m.sizeMiB) ? m.sizeMiB : null,
@@ -345,6 +346,8 @@ export async function applyAppConfig(name, newAppConfig) {
   }
 
   const oldAppConfig = config.metadata.appConfig;
+  /* The flag as it stands before this save, for a rejected reload to restore. */
+  const prevPendingRestart = config.pendingRestart ?? null;
   const validated = appModule.validateAppConfig(newAppConfig, oldAppConfig);
   const derived = await appModule.generateDerivedConfig(validated);
   const finalAppConfig = derived.appConfig ?? validated;
@@ -391,7 +394,7 @@ export async function applyAppConfig(name, newAppConfig) {
     }
   }
 
-  const { removedMounts } = await updateContainerConfig(name, updateChanges);
+  const { removedMounts, requiresRestart: persistFlagged } = await updateContainerConfig(name, updateChanges);
 
   if (derived.mountContents && Object.keys(derived.mountContents).length) {
     const appSecrets = appSecretMountNames(updateChanges);
@@ -424,7 +427,9 @@ export async function applyAppConfig(name, newAppConfig) {
   }
 
   const appWantsRestart = !!appModule.requiresRestartForChange?.(oldAppConfig, validated);
-  const stillNeedsRestart = appWantsRestart || mountLayoutChanged;
+  // The persist above flagged a running container whose normalized mounts or
+  // devices changed; the response says so too.
+  const stillNeedsRestart = appWantsRestart || mountLayoutChanged || persistFlagged;
 
   try {
     const result = await execCommandInContainer(name, reloadCmd, { timeoutMs: 15000 });
@@ -455,6 +460,9 @@ export async function applyAppConfig(name, newAppConfig) {
           rollbackChanges.devices = Array.isArray(config.devices) ? config.devices : [];
         }
         const rolledBack = await updateContainerConfig(name, rollbackChanges);
+        // Both writes compared mounts against a list that differs, so each may
+        // have flagged a restart; the running app kept its old config.
+        await setContainerPendingRestart(name, prevPendingRestart);
         for (const mountName of rolledBack.removedMounts) {
           await deleteRemovedMountData(name, mountName);
         }
