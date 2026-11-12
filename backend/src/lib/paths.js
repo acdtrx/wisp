@@ -1,6 +1,5 @@
-import { realpathSync } from 'node:fs';
 import { basename, dirname, join, sep } from 'node:path';
-import { access, mkdir } from 'node:fs/promises';
+import { access, mkdir, realpath } from 'node:fs/promises';
 import { getConfigSync } from './config.js';
 import { createAppError } from './routeErrors.js';
 
@@ -55,14 +54,15 @@ export function resolveLibraryPath(p) {
  * back out — the kernel would fail on the missing component first. Null when
  * an existing ancestor can't be read.
  */
-function realLocation(absPath) {
+async function realLocation(absPath) {
   const rest = [];
   let head = absPath;
   for (;;) {
     try {
-      // .native: libc realpath, which resolves `..` after a symlink as the kernel does
-      // (the JS realpathSync normalizes the path lexically first).
-      return join(realpathSync.native(head), ...rest);
+      // fs.promises.realpath is libc realpath (as realpathSync.native), which resolves
+      // `..` after a symlink as the kernel does; the JS realpathSync normalizes the path
+      // lexically first. Async: a stale network mount must not freeze the event loop.
+      return join(await realpath(head), ...rest);
     } catch (err) {
       if (err.code !== 'ENOENT' && err.code !== 'ENOTDIR') return null;
     }
@@ -79,11 +79,11 @@ function realLocation(absPath) {
  * under the image library or this VM's own directory. Restore passes it to
  * vmManager as the policy for CD-ROM sources a backup's domain XML may keep.
  */
-export function isPathInsideAllowedRoots(absPath, vmName) {
+export async function isPathInsideAllowedRoots(absPath, vmName) {
   if (typeof absPath !== 'string' || !absPath.startsWith('/')) return false;
-  const real = realLocation(absPath);
+  const real = await realLocation(absPath);
   if (!real) return false;
-  const allowedRoots = [realLocation(getImagePath()), realLocation(getVMBasePath(vmName))].filter(Boolean);
+  const allowedRoots = (await Promise.all([realLocation(getImagePath()), realLocation(getVMBasePath(vmName))])).filter(Boolean);
   return allowedRoots.some((root) => real === root || real.startsWith(root + sep));
 }
 
@@ -98,11 +98,11 @@ export function isPathInsideAllowedRoots(absPath, vmName) {
  * "allowed roots" are Wisp policy — a reusable vmManager has no opinion on
  * which host paths a deployment considers safe.
  */
-export function assertPathInsideAllowedRoots(absPath, vmName) {
+export async function assertPathInsideAllowedRoots(absPath, vmName) {
   if (typeof absPath !== 'string' || !absPath.startsWith('/')) {
     throw createAppError('PATH_NOT_ALLOWED', 'Path must be an absolute path');
   }
-  if (!isPathInsideAllowedRoots(absPath, vmName)) {
+  if (!(await isPathInsideAllowedRoots(absPath, vmName))) {
     throw createAppError(
       'PATH_NOT_ALLOWED',
       `Path must be under the image library or this VM's directory: ${absPath}`,

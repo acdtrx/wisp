@@ -690,7 +690,7 @@ function rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping, newBas
  * moved to the new VM directory — then checked as untrusted input
  * (assertRestorableDomain) before anything is written.
  */
-function restoredDomainXml(xml, { newVmName, manifest, config, diskPlan, newBase, isExternalSourceAllowed }) {
+async function restoredDomainXml(xml, { newVmName, manifest, config, diskPlan, newBase, isExternalSourceAllowed }) {
   const parsed = parseDomainRaw(xml);
   const dom = parsed?.domain;
   if (!dom) throw vmError('PARSE_ERROR', 'Failed to parse backup domain XML');
@@ -709,7 +709,7 @@ function restoredDomainXml(xml, { newVmName, manifest, config, diskPlan, newBase
     ifaces.mac['@_address'] = generateMAC();
   }
 
-  assertRestorableDomain(dom, { vmDir: newBase, isExternalSourceAllowed });
+  await assertRestorableDomain(dom, { vmDir: newBase, isExternalSourceAllowed });
 
   try {
     return buildXml(parsed);
@@ -831,7 +831,7 @@ async function copyBackupPayload(backupPath, payload, destBase) {
  * @param {string} backupPath - Full path to the backup directory (<root>/vms/<vmName>/<timestamp>)
  * @param {string} newVmName
  * @param {{ populateVMDir?: (vmDir: string, ctx: { xml: string }) => Promise<void>,
- *           isExternalSourceAllowed?: (absPath: string) => boolean }} [opts]
+ *           isExternalSourceAllowed?: (absPath: string) => Promise<boolean> }} [opts]
  *   populateVMDir: writes caller-owned files a backup does not hold (e.g. the
  *   cloud-init seed ISO) into the new VM directory once the payload is in
  *   place, before the domain is defined; `xml` is the domain XML about to be
@@ -850,7 +850,7 @@ export async function restoreBackup(backupPath, newVmName, { populateVMDir, isEx
 
   const newBase = normalizeBasePath(getVMBasePath(newVmName));
   const diskPlan = planRestoredDisks(config, newBase);
-  const newXml = restoredDomainXml(xml, { newVmName, manifest, config, diskPlan, newBase, isExternalSourceAllowed });
+  const newXml = await restoredDomainXml(xml, { newVmName, manifest, config, diskPlan, newBase, isExternalSourceAllowed });
 
   const payload = await openBackupPayload(backupPath, diskPlan);
   try {

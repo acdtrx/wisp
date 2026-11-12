@@ -118,7 +118,7 @@ function isEmptyElement(v) {
   return typeof v === 'object' && Object.keys(v).length === 0;
 }
 
-function checkDisk(d, { vmDir, isExternalSourceAllowed }) {
+async function checkDisk(d, { vmDir, isExternalSourceAllowed }) {
   const slot = attr(d.target, 'dev') || '?';
   const type = attr(d, 'type') ?? 'file';
   const device = attr(d, 'device') ?? 'disk';
@@ -136,7 +136,7 @@ function checkDisk(d, { vmDir, isExternalSourceAllowed }) {
   if (file == null && device === 'cdrom') return; // empty CD-ROM
   if (typeof file !== 'string' || !file) throw invalid(`disk ${slot} has no source file`);
   if (isInside(file, vmDir)) return;
-  if (device === 'cdrom' && typeof isExternalSourceAllowed === 'function' && isExternalSourceAllowed(file)) return;
+  if (device === 'cdrom' && typeof isExternalSourceAllowed === 'function' && await isExternalSourceAllowed(file)) return;
   throw invalid(device === 'cdrom'
     ? `CD-ROM ${slot} source ${file} is outside the new VM's directory and the allowed image paths`
     : `disk ${slot} source ${file} is outside the new VM's directory`);
@@ -247,11 +247,11 @@ const DEVICE_CHECKS = {
 
 /**
  * @param {object} dom - parsed `<domain>` (parseDomainRaw(xml).domain), paths already rewritten for the new VM
- * @param {{ vmDir: string, isExternalSourceAllowed?: (absPath: string) => boolean }} opts
+ * @param {{ vmDir: string, isExternalSourceAllowed?: (absPath: string) => Promise<boolean> }} opts
  *   vmDir: the new VM's directory; isExternalSourceAllowed: whether a CD-ROM may name a path outside it
  * @throws BACKUP_INVALID naming the first rule the domain breaks
  */
-export function assertRestorableDomain(dom, { vmDir, isExternalSourceAllowed }) {
+export async function assertRestorableDomain(dom, { vmDir, isExternalSourceAllowed }) {
   if (!dom || typeof dom !== 'object' || !dom.devices || typeof dom.devices !== 'object') {
     throw invalid('no <devices>');
   }
@@ -270,6 +270,6 @@ export function assertRestorableDomain(dom, { vmDir, isExternalSourceAllowed }) 
     // filesystem, redirdev, smartcard, shmem, memory, lease, parallel, … —
     // host directories, sockets, memory files or devices; not something a Wisp VM holds.
     if (!check) throw invalid(`device <${kind}> is not supported`);
-    for (const dev of asList(dom.devices[kind])) check(dev, ctx);
+    for (const dev of asList(dom.devices[kind])) await check(dev, ctx);
   }
 }

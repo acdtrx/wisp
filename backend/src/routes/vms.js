@@ -200,16 +200,16 @@ export default async function vmsRoutes(fastify) {
            is policy-agnostic about which host paths are "allowed". */
         if (spec.cdrom1Path) {
           spec.cdrom1Path = resolveLibraryPath(spec.cdrom1Path);
-          assertPathInsideAllowedRoots(spec.cdrom1Path, spec.name);
+          await assertPathInsideAllowedRoots(spec.cdrom1Path, spec.name);
         }
         if (spec.cdrom2Path) {
           spec.cdrom2Path = resolveLibraryPath(spec.cdrom2Path);
-          assertPathInsideAllowedRoots(spec.cdrom2Path, spec.name);
+          await assertPathInsideAllowedRoots(spec.cdrom2Path, spec.name);
         }
         for (const dspec of [spec.disk, spec.disk2]) {
           if (dspec && dspec.type === 'existing' && dspec.sourcePath) {
             dspec.sourcePath = resolveLibraryPath(dspec.sourcePath);
-            assertPathInsideAllowedRoots(dspec.sourcePath, spec.name);
+            await assertPathInsideAllowedRoots(dspec.sourcePath, spec.name);
           }
         }
         // Name must be free in libvirt and on disk before any artifact is built:
@@ -605,7 +605,7 @@ export default async function vmsRoutes(fastify) {
         const { name } = request.params;
         if (hasPath) {
           const absPath = resolveLibraryPath(path);
-          assertPathInsideAllowedRoots(absPath, name);
+          await assertPathInsideAllowedRoots(absPath, name);
           await withVmOperationLock(name, 'disk change', () => attachDisk(name, slot, absPath, bus));
         } else {
           await withVmOperationLock(name, 'disk change', () => createAndAttachDisk(name, slot, sizeGB, bus));
@@ -733,7 +733,7 @@ export default async function vmsRoutes(fastify) {
       try {
         const { name, slot } = request.params;
         const absPath = resolveLibraryPath(request.body.path);
-        assertPathInsideAllowedRoots(absPath, name);
+        await assertPathInsideAllowedRoots(absPath, name);
         await withVmOperationLock(name, 'CD-ROM change', () => attachISO(name, slot, absPath));
         return { ok: true };
       } catch (err) {
