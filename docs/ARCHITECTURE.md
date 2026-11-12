@@ -113,8 +113,9 @@ stream to the client (Transport) subscribes like any other consumer.
 - **Managers are configured, not reaching out**: `lib/managerBootstrap.js` (shared by the
   backend and the migration runner) calls each manager's `configure()` with its paths and
   callbacks (`resolveMount`, `tryAcquireOperationLock`) before any route registers. The
-  migration runner connects with `{ watchEvents: false, repairOnRead: false }`: no event
-  subscriptions, uncached lists that are complete or throw, and reads that write nothing.
+  migration runner connects with `{ watchEvents: false }`: no event subscriptions, so none
+  of the event-driven writes (restart-flag clearing, the network probe), and uncached
+  lists that are complete or throw. Reads write nothing in either process.
 - **Mechanism is decoupled from trigger.** Any background or maintenance mechanism (the
   update poll, apt checks, job-TTL cleanup, reconcilers, scheduled backups) is an
   invocable unit; its triggers — boot, a schedule, events, a manual run — are wired

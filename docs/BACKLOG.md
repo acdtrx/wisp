@@ -278,16 +278,6 @@ the next work on that route.
 `backup-status.json` keeps entries for deleted containers. **Revisit trigger:** any of
 them confuses a real session. (Plan 6 verification on tini)
 
-**Move the normal path's repairs into migrations.** CODING-RULES §16 says repairing data
-left by a past bug is a migration, never code in the normal path, but the backend still
-repairs on read: `repairOnRead` (`connectManagers` in
-`backend/src/lib/managerBootstrap.js`, on for the backend, off for the migration runner)
-covers stale restart-flag clearing and the `container.json` env-shape, network and IP
-rewrites in `getContainerConfig`. Review the code against §16 — those reads and any other
-repair in the normal path — and move each repair of a past bug's data into a migration
-script under `backend/migrations/`. **Revisit trigger:** the next work on the managers or
-their startup.
-
 **Migration history in the UI.** The journal (`journalctl -u wisp-updater`) and the ledger
 (`config/migrations.json`) are the only record of what an update's state migrations
 changed. **Revisit trigger:** the user asks "what did the last update change?"
