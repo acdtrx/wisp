@@ -87,14 +87,19 @@ async function probeAndEmit(name, state) {
   // Persist live addresses to container.json if they diverge. This keeps other
   // consumers of getContainerConfig consistent after a DHCP renewal or SLAAC
   // change — they'd otherwise see the addresses from the last setupNetwork.
+  // Merged into the latest file, not `config`: the probes above take long
+  // enough for a start or an edit to write in between (e.g. the start
+  // clearing the restart-required flag), and writing the older copy would
+  // revert it.
   const ipDiverged = liveIp && config.network?.ip !== liveIp;
   const ip6Diverged = liveIp6 && config.network?.ip6 !== liveIp6;
   if (ipDiverged || ip6Diverged) {
-    config.network = { ...(config.network || {}) };
-    if (ipDiverged) config.network.ip = liveIp;
-    if (ip6Diverged) config.network.ip6 = liveIp6;
     try {
-      await writeContainerConfig(name, config);
+      const latest = await readContainerConfig(name);
+      latest.network = { ...(latest.network || {}) };
+      if (ipDiverged) latest.network.ip = liveIp;
+      if (ip6Diverged) latest.network.ip6 = liveIp6;
+      await writeContainerConfig(name, latest);
     } catch (err) {
       log().warn?.({ err: err?.message || err, container: name, ip: liveIp, ip6: liveIp6 }, '[containerManager] persist new IP failed');
     }
