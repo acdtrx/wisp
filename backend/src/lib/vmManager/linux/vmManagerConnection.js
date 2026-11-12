@@ -46,7 +46,7 @@ export const connectionState = {
   /** Pino-compatible logger plumbed via connect(); null until connected. */
   logger: null,
   /** false (connect option): no DomainEvent listener, no QEMU-binary watcher,
-   *  inert network reconciler, uncached VM list — for a short-lived process
+   *  no restart-flag clearing, inert network reconciler, uncached VM list — for a short-lived process
    *  (the migration runner) that must not act alongside the backend. Kept
    *  across bus reconnects. */
   watchEvents: true,

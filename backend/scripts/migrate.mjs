@@ -170,7 +170,7 @@ function createLogger() {
  * run without event watching (connectManagers watchEvents: false): list calls
  * read live state — the whole list or an error, so a migration never passes over
  * workloads it could not see — and nothing reacts to the migration's changes in
- * this process. Reads never write (repairOnRead: false): the only changes are the
+ * this process. Reads never write: the only changes are the
  * migrations' own, each recorded, and none at all under --dry-run.
  */
 function buildContext(migration, { log, dryRun, changes }) {
@@ -198,9 +198,9 @@ function buildContext(migration, { log, dryRun, changes }) {
 async function runPending(pending, { ledger, dryRun, log }) {
   configureManagers();
   // Connections and calls only: the backend owns the reconcilers, the restart
-  // policy and the self-repairs reads make, and it comes back once the update
+  // policy and the event-driven writes, and it comes back once the update
   // finishes.
-  await connectManagers(log, { watchEvents: false, repairOnRead: false });
+  await connectManagers(log, { watchEvents: false });
   try {
     for (const migration of pending) {
       const changes = [];

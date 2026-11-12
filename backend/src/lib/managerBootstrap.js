@@ -48,21 +48,21 @@ export function configureManagers() {
  *
  * `watchEvents: false` connects without the managers' event-driven machinery —
  * no libvirt DomainEvent / containerd events subscription, so no container
- * restart policy, no network reconcilers, no list caches. `repairOnRead: false`
- * makes reads pure: no self-repair writes (stale restart-required flags, the
- * container.json shape fixes) — the backend makes those on its next read. Both
- * for a process other than the backend (the migration runner): one actor per
- * concern, and every write that process makes is one it records.
+ * restart policy, no network reconcilers, no list caches, and none of the
+ * event-driven writes (clearing outgrown restart-required flags, the network
+ * probe). For a process other than the backend (the migration runner): one
+ * actor per concern, and every write that process makes is one it records.
+ * Reads never write, in either mode.
  */
-export async function connectManagers(log, { watchEvents = true, repairOnRead = true } = {}) {
+export async function connectManagers(log, { watchEvents = true } = {}) {
   try {
-    await connectLibvirt(log, { watchEvents, repairOnRead });
+    await connectLibvirt(log, { watchEvents });
   } catch (err) {
     log.warn({ err }, 'libvirt connection failed — VM operations will be unavailable');
   }
 
   try {
-    await connectContainerd({ logger: log, watchEvents, repairOnRead });
+    await connectContainerd({ logger: log, watchEvents });
   } catch (err) {
     log.warn({ err }, 'containerd connection failed — container operations will be unavailable');
   }
