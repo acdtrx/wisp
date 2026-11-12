@@ -596,7 +596,7 @@ The HTTP server listens **after** these steps, so hosts with mounts configured m
 | `CONTAINER_MOUNT_FILE_TOO_LARGE` | 422 | Mount file exceeds 512 KiB (editor GET/PUT) |
 | `CONTAINER_MOUNT_FILE_NOT_UTF8` | 422 | Mount file is not valid UTF-8 (editor GET) |
 | `CONTAINER_MOUNT_SECRET` | 403 | Content GET on a secret file mount — write-only for every caller (see [Secret file mounts](#secret-file-mounts)) |
-| `APP_CONFIG_ONLY` | 422 | Content PUT, file upload, or row `PATCH` on a mount owned by the container's app module (see [CUSTOM-APPS.md](CUSTOM-APPS.md) § Mount content routes) |
+| `APP_CONFIG_ONLY` | 422 | Content PUT, file or zip upload, init, data delete, or row `PATCH` / `DELETE` on a mount owned by the container's app module, or any mount `POST` on an app container (see [CUSTOM-APPS.md](CUSTOM-APPS.md) § Mount content routes) |
 | `BAD_MULTIPART_TOO_MANY_FILES` | 400 | More than one file part in a mount upload request |
 | `CONTAINER_MOUNT_SOURCE_WRONG_TYPE` | 422 | Backing path is not a file/directory as required |
 | `INVALID_CONTAINER_DEVICES` | 422 | `devices` array invalid (shape, unknown type, bad path, > 1 entry) |

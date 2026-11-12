@@ -87,12 +87,10 @@ only on libvirt connect and the STARTED event (review of repairs-to-migrations,
 2026-11-12). Fix shape: vmManager takes a lock acquirer, as containerManager does.
 **Revisit trigger:** a VM edit made right as the VM starts is seen lost.
 
-**App containers: devices and row-scoped mount routes bypass appConfig.** `PATCH
-{devices}` and the Devices section work on app containers, but Jellyfin's next `appConfig`
-save replaces them with its derived devices; the row mount routes (`POST`/`PATCH`/`DELETE
-…/mounts`, `/zip`, `/init`, `DELETE …/data`) aren't guarded for app containers while a
-`mounts` PATCH is `APP_CONFIG_ONLY`. **Revisit trigger:** a manual device pick on an app
-container is lost on a config save, or an app breaks after a raw mount edit.
+**App containers: devices bypass appConfig.** `PATCH {devices}` and the Devices section
+work on app containers, but Jellyfin's next `appConfig` save replaces them with its derived
+devices. **Revisit trigger:** a manual device pick on an app container is lost on a config
+save.
 
 **Container mount edge cases.** `updateContainerMount` returns `requiresRestart: null`
 when the container has no task; switching a tiny-samba share from Local to a Storage

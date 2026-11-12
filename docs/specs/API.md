@@ -1685,7 +1685,7 @@ Download one run's log file. Responds with `Content-Type: text/plain; charset=ut
 
 Append one bind mount (row-scoped). **Body:** `{ type: "file"|"directory"|"tmpfs", name, containerPath, ... }` (same shape as one element of **`mounts`** in **PATCH**; `readonly`/`sourceId`/`subPath`/`containerOwnerUid`/`Gid` for file/directory; `secret` for file; `sizeMiB` for tmpfs). A new secret file mount starts empty (`isSet: false`) — write its content with **PUT** content or the file upload.
 
-**200:** `{ requiresRestart: boolean }` | **422:** `INVALID_CONTAINER_MOUNTS`, `CONTAINER_MOUNT_DUPLICATE`
+**200:** `{ requiresRestart: boolean }` | **422:** `INVALID_CONTAINER_MOUNTS`, `CONTAINER_MOUNT_DUPLICATE`, `APP_CONFIG_ONLY` on any app container (its mounts come from `appConfig`)
 
 ### PATCH /api/containers/:name/mounts/:mountName · `admin`
 
@@ -1697,7 +1697,7 @@ Update one mount by its current storage **`name`** (URL segment). **Body:** opti
 
 Remove one mount and delete its `files/<mountName>` backing store (tmpfs has no backing store; its row is removed config-only).
 
-**200:** `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND`
+**200:** `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
 
 ### Mount backing store (`files/<mountName>`)
 
@@ -1719,7 +1719,7 @@ Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an exis
 
 Multipart: one file part. Mount must have **`type: "directory"`**. Clears `files/<mountName>/` and extracts the zip using the system **`unzip`** binary (entry paths validated with **`unzip -Z1`** before extraction for zip-slip safety).
 
-**200:** `{ ok: true }` | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`
+**200:** `{ ok: true }` | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged)
 
 ### GET /api/containers/:name/mounts/:mountName/content · `admin`
 
@@ -1743,11 +1743,13 @@ Works on secret mounts (write-only); `{ "content": "" }` clears one.
 
 Create an empty file (0 bytes) or empty directory according to the mount **`type`** (still supported for API clients; the UI relies on automatic creation when saving mounts or starting).
 
-**200:** `{ ok: true }`
+**200:** `{ ok: true }` | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
 
 ### DELETE /api/containers/:name/mounts/:mountName/data · `admin`
 
 Remove the backing file or directory tree for that mount. The mount row remains in `container.json` until **DELETE** `/mounts/:mountName` or **PATCH** replaces **`mounts`**.
+
+**200:** `{ ok: true }` | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
 
 ### POST /api/containers/:name/services · `admin`
 

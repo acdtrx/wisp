@@ -51,6 +51,7 @@ import {
   eject as ejectAppContainer,
   maskContainerConfigSecrets,
   assertMountNotAppManaged,
+  assertMountListNotAppManaged,
   assertMountContentReadable,
 } from '../lib/containerApps/index.js';
 
@@ -724,7 +725,10 @@ export default async function containerRoutes(fastify) {
         return sendError(reply, 422, 'Invalid body', 'Expected JSON object with type, name, containerPath, readonly');
       }
       const { name } = request.params;
-      return await withContainerOperationLock(name, 'configuration change', () => addContainerMount(name, body));
+      return await withContainerOperationLock(name, 'configuration change', async () => {
+        assertMountListNotAppManaged(await getContainerConfig(name));
+        return addContainerMount(name, body);
+      });
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -748,7 +752,10 @@ export default async function containerRoutes(fastify) {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       const { name } = request.params;
-      return await withContainerOperationLock(name, 'configuration change', () => removeContainerMount(name, mountName));
+      return await withContainerOperationLock(name, 'configuration change', async () => {
+        assertMountNotAppManaged(await getContainerConfig(name), mountName);
+        return removeContainerMount(name, mountName);
+      });
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -777,7 +784,8 @@ export default async function containerRoutes(fastify) {
     const stagingPath = mountUploadStagingPath(containerName);
     try {
       const mountName = decodeURIComponent(request.params.mountName);
-      await getContainerConfig(containerName); // 404 before staging into a container dir that doesn't exist
+      // 404 / APP_CONFIG_ONLY before staging into the container dir.
+      assertMountNotAppManaged(await getContainerConfig(containerName), mountName);
       if (!(await stageSingleMultipartFile(request, stagingPath))) {
         return sendError(reply, 400, 'No file provided', 'Request must include a zip upload');
       }
@@ -824,6 +832,7 @@ export default async function containerRoutes(fastify) {
   fastify.post('/containers/:name/mounts/:mountName/init', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
+      assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
       return await initMountContent(request.params.name, mountName);
     } catch (err) {
       handleRouteError(err, reply, request);
@@ -833,6 +842,7 @@ export default async function containerRoutes(fastify) {
   fastify.delete('/containers/:name/mounts/:mountName/data', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
+      assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
       await deleteMountData(request.params.name, mountName);
       return { ok: true };
     } catch (err) {

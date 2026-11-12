@@ -234,6 +234,22 @@ export function assertMountNotAppManaged(config, mountName) {
 }
 
 /**
+ * Refuse adding a mount to an app container (`APP_CONFIG_ONLY`): its mounts
+ * are derived from appConfig, so the next app save would drop a hand-added one
+ * and delete its Local data. A `metadata.app` with no registered module owns
+ * nothing.
+ */
+export function assertMountListNotAppManaged(config) {
+  const appType = config?.metadata?.app;
+  if (!getAppModule(appType)) return;
+  throw createAppError(
+    'APP_CONFIG_ONLY',
+    `Mounts of this container are managed by the ${appType} app`,
+    'App mounts are derived from appConfig — configure the app, or eject to a generic container first',
+  );
+}
+
+/**
  * Create an app container. Computes the derived config from the app module,
  * builds an expanded spec with all the regular containerManager fields plus
  * `metadata.app`/`metadata.appConfig`, then writes derived file contents into
