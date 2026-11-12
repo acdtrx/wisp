@@ -10,10 +10,16 @@
  * `localDns`, renames a VM, or deletes one — those are metadata flips, not
  * network-state changes, so they bypass the event path.
  *
+ * Every operation for one VM — event handling and the route calls — runs on
+ * that VM's promise chain, one at a time in arrival order. A register awaits
+ * avahi before it records the entry, so without the chain a stop arriving in
+ * between found nothing to deregister and left a stopped VM published.
+ *
  * A VM leaving the running state also re-publishes entry groups left probing:
  * libvirt has removed the VM's tap by the time the stop is reported, and
  * avahi 0.8 strands any group that was probing on it (see
- * republishProbingGroups in the mdns module).
+ * republishProbingGroups in the mdns module). Not on any VM's chain: it acts
+ * on every Wisp group, and must run right after the stop.
  */
 import {
   subscribeVMNetworkChange,
@@ -25,6 +31,8 @@ import {
 } from './mdns/index.js';
 
 const registered = new Set();
+/** name → tail of that VM's operation chain */
+const chains = new Map();
 
 let logger = null;
 let unsubscribe = null;
@@ -33,9 +41,23 @@ function log() {
   return logger || console;
 }
 
+/**
+ * Run `op` after every earlier operation for `name` has settled. Resolves or
+ * rejects with `op`'s own outcome; a failure never blocks later operations.
+ */
+function enqueue(name, op) {
+  const prev = chains.get(name) || Promise.resolve();
+  const run = prev.then(op);
+  const tail = run.catch(() => { /* surfaced to this op's caller; the chain continues */ });
+  chains.set(name, tail);
+  tail.then(() => {
+    if (chains.get(name) === tail) chains.delete(name);
+  });
+  return run;
+}
+
 async function onNetworkChange(name, snapshot) {
   if (snapshot === null) {
-    republishProbingGroups({ event: 'vm-stopped', vm: name });
     if (registered.has(name)) {
       try { await deregisterAddress(name); }
       catch (err) { log().warn?.({ err: err?.message || err, vm: name }, '[vmMdns] deregister on stop failed'); }
@@ -70,7 +92,8 @@ export function startVmMdnsReconciler(log_) {
   if (unsubscribe) return; // already started
   logger = log_ || null;
   unsubscribe = subscribeVMNetworkChange((name, snapshot) => {
-    onNetworkChange(name, snapshot).catch((err) => {
+    if (snapshot === null) republishProbingGroups({ event: 'vm-stopped', vm: name });
+    enqueue(name, () => onNetworkChange(name, snapshot)).catch((err) => {
       log().warn?.({ err: err?.message || err, vm: name }, '[vmMdns] handler threw');
     });
   });
@@ -90,18 +113,22 @@ export function stopVmMdnsReconciler() {
  * the public vmManager facade. Safe to call when the VM isn't running — there
  * just won't be an IP to register.
  */
-export async function publishVm(name) {
-  const { ip, hostname } = await getGuestNetwork(name);
-  if (!ip) return;
-  await registerAddress(name, hostname || sanitizeHostname(name), ip);
-  registered.add(name);
+export function publishVm(name) {
+  return enqueue(name, async () => {
+    const { ip, hostname } = await getGuestNetwork(name);
+    if (!ip) return;
+    await registerAddress(name, hostname || sanitizeHostname(name), ip);
+    registered.add(name);
+  });
 }
 
 /**
  * Drop the VM's mDNS entry. Used by the config endpoint when the user toggles
  * localDns off, on rename (old name), and on delete.
  */
-export async function unpublishVm(name) {
-  await deregisterAddress(name);
-  registered.delete(name);
+export function unpublishVm(name) {
+  return enqueue(name, async () => {
+    await deregisterAddress(name);
+    registered.delete(name);
+  });
 }

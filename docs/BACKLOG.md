@@ -52,12 +52,6 @@ profile (CONTAINERS.md § OCI Runtime Spec). An opt-out would be a `container.js
 image the user needs fails with EPERM/ENOSYS on a syscall the default profile blocks (and
 a capability grant or image setting can't fix it).
 
-**VM mDNS reconciler: per-VM operation chain.** `vmMdnsReconciler.js` has the race the
-container reconciler had (async handlers can register after the following stop's
-deregister); avahi `registerAddress` also leaks an entry group when two calls for one key
-overlap. The container side serializes per container. **Revisit trigger:** a stopped VM is
-seen still resolving as `<name>.local`, or avahi shows duplicate groups for a VM.
-
 **Stuck-probe recovery misses removals outside Wisp.** The avahi 0.8 probe-counter leak
 (CONTAINERS.md § Stuck-probe recovery) is recovered only after Wisp's own interface
 removals. Observed 2026-10-21: unattended-upgrades (liblzma5) had needrestart restart
