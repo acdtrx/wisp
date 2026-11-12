@@ -233,11 +233,19 @@ async function runRestart(name, exitStatus, attempt) {
  * What Wisp's own stops do for their task, done for a task that exited on its
  * own: drop its SRV/TXT services and finalize its log run (`endedAt`, exit
  * code), so the run reads as ended and the live log delivers a last line
- * without a newline. Skipped when the container already runs a different
- * task — a late exit event must not end the newer run. Best-effort: failures
- * are logged, and the restart policy still applies.
+ * without a newline.
+ *
+ * Skipped when the container already runs a different task (a late exit
+ * event). The run is finalized under the container's operation lock, taken
+ * in the same tick as that check: a start holding the lock may already have
+ * allocated the next run, which this must never end, so a busy container is
+ * left to its holder (start, stop, kill and delete finalize via `cleanupTask`).
+ * The services are dropped without waiting — avahi calls are bounded but may
+ * be slow, and nothing here depends on them. Best-effort: failures are
+ * logged, and the restart policy applies either way.
  */
 async function settleUnexpectedExit(name, pid, exitCode) {
+  let release = null;
   try {
     const { getTaskState } = await import('./containerManagerLifecycle.js');
     const task = await getTaskState(name);
@@ -245,12 +253,21 @@ async function settleUnexpectedExit(name, pid, exitCode) {
       log()?.info?.({ container: name, pid, currentPid: Number(task.pid) }, 'Late exit event for an earlier task — run and services left as they are');
       return;
     }
-    await deregisterServicesForContainer(name);
+    release = tryAcquireOperationLock(name, 'exit handling');
+    deregisterServicesForContainer(name).catch((err) => {
+      log()?.warn?.({ err: err?.message || String(err), container: name }, 'Deregistering services after an unexpected exit failed');
+    });
+    if (!release) {
+      log()?.info?.({ container: name, exitCode }, 'Container exited on its own while another operation holds it — that operation finalizes the run');
+      return;
+    }
     const runId = await findCurrentRunId(name);
     if (runId) await finalizeRun(name, runId, { exitCode });
     log()?.info?.({ container: name, exitCode, runId }, 'Container exited on its own — services deregistered, run finalized');
   } catch (err) {
     log()?.warn?.({ err: err?.message || String(err), container: name }, 'Settling an unexpected exit failed');
+  } finally {
+    release?.();
   }
 }
 
