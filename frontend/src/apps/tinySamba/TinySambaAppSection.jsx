@@ -81,19 +81,20 @@ function parseAppConfig(config) {
 }
 
 /**
- * Saved Local shares whose files/share-<name> directory Save deletes. A saved share is
- * claimed by the row still carrying its original name (renamed or not), else by a new row
- * that reuses the name. It loses its data when no row claims it, or when the claiming row
- * now points at a storage mount (switched — with or without a rename — the local
- * directory is no longer used). Data on a storage mount is never touched.
+ * Saved Local shares whose files/share-<name> directory Save deletes — exactly what the
+ * backend deletes. A saved Local share keeps its data when the row carrying its original
+ * name stays Local (renamed or not: the directory moves with it), or when the saved form
+ * has a Local share under its name (a new row reusing the name serves the directory). It
+ * loses it otherwise: removed, or switched to a storage mount — with or without a rename —
+ * and its name not reused by a Local row. Data on a storage mount is never touched.
  */
 function sharesLosingData(original, form) {
   return original.shares
     .filter((o) => !o.sourceId)
     .filter((o) => {
-      const claimant = form.shares.find((s) => s.originalName === o.name)
-        ?? form.shares.find((s) => !s.originalName && s.name.trim().toLowerCase() === o.name);
-      return !claimant || !!claimant.sourceId;
+      const claimant = form.shares.find((s) => s.originalName === o.name);
+      if (claimant && !claimant.sourceId) return false;
+      return !form.shares.some((s) => !s.sourceId && s.name.trim().toLowerCase() === o.name);
     })
     .map((o) => o.name);
 }
