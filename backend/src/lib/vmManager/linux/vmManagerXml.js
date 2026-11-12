@@ -51,7 +51,7 @@ function parseWispPrefs(dom) {
   const iconText = wispPrefText(prefs, 'wisp:icon');
   const localDns = wispPrefText(prefs, 'wisp:localDns').toLowerCase() === 'true';
   const since = wispPrefText(prefs, 'wisp:pendingRestart');
-  const pendingRestart = since && Number.isFinite(Date.parse(since)) ? { since } : null;
+  const pendingRestart = since ? { since } : null;
   return { iconId: iconText || null, localDns, pendingRestart };
 }
 
