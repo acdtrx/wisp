@@ -107,6 +107,10 @@ const app = Fastify({
   logger: loggerConfig,
   forceCloseConnections: true,
   trustProxy: ['127.0.0.1', '::1', ...trustedProxies],
+  // Errors Fastify raises before routing (bad percent-encoding, an over-long
+  // parameter, a failed async constraint) skip setErrorHandler; this sends
+  // them through the same handler, in the same { error, detail } shape.
+  frameworkErrors: handleUncaughtError,
 });
 
 // In prod the backend also serves the SPA — apply baseline security headers to

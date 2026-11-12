@@ -43,7 +43,7 @@ Errors that never reach a route's own handling — raised by Fastify itself, or 
 | Source | Status | Response |
 |--------|--------|----------|
 | Request schema violation (body / params / querystring) | **400** | `{ error: "Invalid request body", detail: "body/updateChannel must be equal to one of the allowed values" }` — `error` names the part that failed |
-| Other framework rejection (malformed JSON, unsupported content type, payload too large, …) | Fastify's status (400, 415, 413, …) | `{ error: <HTTP reason phrase>, detail: <Fastify's message> }` |
+| Other framework rejection (malformed JSON, unsupported content type, payload too large, a malformed URL — bad percent-encoding — or an over-long route parameter, …) | Fastify's status (400, 415, 413, 414, …) | `{ error: <HTTP reason phrase>, detail: <Fastify's message> }`. Errors Fastify raises before routing reach the same handler through its `frameworkErrors` option (settled 2026-11-12). |
 | Uncaught error carrying a known app `code` | Mapped status | Same as `handleRouteError` |
 | Anything else (a bug, a response-serialization failure) | **500** | `{ error: "Internal error", detail: <redacted message> }`, full error logged at `error` |
 

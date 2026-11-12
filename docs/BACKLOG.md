@@ -108,10 +108,6 @@ reach standby.
 database assumes `/var/lib/pacman`. **Revisit trigger:** an Arch host with a custom
 `DBPath` runs Wisp.
 
-**Malformed-URL errors skip the `{ error, detail }` shape.** Fastify's `FST_ERR_BAD_URL`
-(bad percent-encoding) is answered before `setErrorHandler`, in Fastify's default shape.
-**Revisit trigger:** a client depends on the uniform shape for malformed URLs.
-
 **Route errors carry the message, not a stable code.** `handleRouteError` answers
 `error: err.message`, while CODING-RULES §5 wants `error` to be the stable code and the
 message in `detail`; `specs/ERROR-HANDLING.md` describes the message form (found
