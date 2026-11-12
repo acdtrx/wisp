@@ -104,6 +104,13 @@ not 409 `VM_DIR_EXISTS` like create/restore. The UI also can't add an `sda` disk
 created without disks. **Revisit trigger:** a client needs to tell the rename conflict
 apart, or a disk-less VM needs a primary disk.
 
+**VM restart-flag clear can revert a concurrent define.** `writePendingRestart`
+(`vmManagerPendingRestart.js`) reads the inactive XML and calls `DomainDefineXML` with no
+per-VM lock, so a config, disk or ISO define landing in between is reverted. It now runs
+only on libvirt connect and the STARTED event (review of repairs-to-migrations,
+2026-11-12). Fix shape: vmManager takes a lock acquirer, as containerManager does.
+**Revisit trigger:** a VM edit made right as the VM starts is seen lost.
+
 **App config saves on a running container always flag Restart required.**
 `applyAppConfig`'s first write includes `mounts`, and any `mounts` write on a running
 container sets `pendingRestart` even when the list is unchanged, so a save that
@@ -180,6 +187,12 @@ matches by element name, so a disk's `<serial>` text parses as an array like the
 **Malformed-URL errors skip the `{ error, detail }` shape.** Fastify's `FST_ERR_BAD_URL`
 (bad percent-encoding) is answered before `setErrorHandler`, in Fastify's default shape.
 **Revisit trigger:** a client depends on the uniform shape for malformed URLs.
+
+**Route errors carry the message, not a stable code.** `handleRouteError` answers
+`error: err.message`, while CODING-RULES §5 wants `error` to be the stable code and the
+message in `detail`; `specs/ERROR-HANDLING.md` describes the message form (found
+2026-11-12). **Revisit trigger:** a client needs to branch on a route error, or the next
+work on the error contract.
 
 **Live-data SSE retries a 404 forever.** `createSSE` treats a 404 like a dropped
 connection and backs off indefinitely (job streams stop on 404). **Revisit trigger:** a
