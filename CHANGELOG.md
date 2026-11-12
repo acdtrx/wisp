@@ -34,7 +34,8 @@
 - **The dev backend listens on localhost only.**
 - **`runtime.env` is honoured by a backend started by hand** — including a `WISP_CONFIG_PATH` set there.
 - **Malformed URLs get the usual error shape** — `{ error, detail }` instead of Fastify's own.
-- **A deleted container's log stream stops retrying.**
+- **A live stream stops on a 404** — e.g. a deleted container's log stream no longer retries forever.
+- **A hung avahi no longer stalls mDNS or the restart policy** — avahi calls give up after 5 s, and a crashed container restarts on time.
 - **Backup completion no longer reveals the host path.**
 - **Library symlinks can't point a VM outside the allowed folders** — disk and ISO paths are checked after following symlinks.
 
