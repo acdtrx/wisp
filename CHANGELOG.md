@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-11-12
+
+### Bug Fixes
+- **Cloud-init edits keep the password** — saving the Overview form with the password field blank keeps the password on file, as the field says, instead of removing it.
+- **Disabling cloud-init no longer takes a new password** — a password typed while turning cloud-init off is ignored, and the summary shows a password only when one is really on file.
+- **"Restart required" clears after a restart** — the flag is cleared when the VM or container starts, and a container's address update can no longer bring it back.
+- **Viewing a VM or container writes nothing** — opening lists and detail pages no longer rewrites a container's config or a VM's definition.
+- **Old container configs are updated on install** — a flat env, a non-bridge network, a missing MAC or a leftover `vlan` field is brought to the current shape (migration 0007); a running container whose network changed shows "Restart required".
+- **Container network must be bridge** — a config change to another network type is refused (422) instead of starting the container without a network.
+- **Container create takes only its own fields** — extra fields sent to `POST /api/containers` (such as a flat `env`) are ignored instead of stored.
+- **An interrupted container start is redone in full** — a task left created but not started is discarded and the container starts normally.
+- **Old backups are marked manual** — VM and container backups from before backup origins existed record `manual` (migration 0008).
+
 ## 2026-10-30 (v2.6.0)
 
 ### New Features
