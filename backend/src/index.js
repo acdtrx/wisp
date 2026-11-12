@@ -367,7 +367,9 @@ async function start() {
   // never rejects). Not awaited: a hung avahi/DBus must not delay app.listen.
   startWispDiscovery(app.log, { port: PORT });
 
-  await app.listen({ port: PORT, host: '0.0.0.0' });
+  // Production serves the LAN; the dev backend is reached only through the
+  // local Vite proxy, so it listens on loopback alone.
+  await app.listen({ port: PORT, host: isDev ? '127.0.0.1' : '0.0.0.0' });
 
   startUsbMonitor();
 

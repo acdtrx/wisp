@@ -92,10 +92,6 @@ work on app containers, but Jellyfin's next `appConfig` save replaces them with 
 devices. **Revisit trigger:** a manual device pick on an app container is lost on a config
 save.
 
-**Dev backend listens on every interface.** `app.listen` binds `0.0.0.0` in development
-too, exposing the dev stack (stub managers, dev CORS) to the LAN. **Revisit trigger:**
-developing on a network that isn't trusted.
-
 **Helper hardening leftovers.** `/mnt/wisp` is deploy-writable (0775), so `wisp-mount`'s
 realpath + symlink checks can't fully close a race by the deploy user; `wisp-cni` only
 checks that the netns argument is absolute (it could name the host's netns and disrupt

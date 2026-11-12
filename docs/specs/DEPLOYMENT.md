@@ -243,12 +243,11 @@ During `svc install`, `wispctl.sh` substitutes `WISP_USER` and `WISP_PATH` into 
 
 ### Local development
 
-For frontend development on macOS (backend runs on Linux server):
+Development is local only *(settled 2026-11-12)*: the backend and the Vite dev server run on the same machine, and on macOS the backend runs its stub managers. Manager paths are verified on a Linux host through a dev deploy (`scripts/push.sh`), not by running the dev backend there.
 
-1. Run backend on the Linux server: `cd backend && npm run dev` (uses `--watch` for auto-reload)
-2. Configure Vite proxy to point to the server
-3. Run frontend locally: `cd frontend && npm run dev`
-4. Vite dev server at `localhost:5173` proxies `/api` and `/ws` to the backend
+1. Run the backend: `cd backend && NODE_ENV=development npm run dev` (uses `--watch` for auto-reload). In development it listens on **`127.0.0.1`** only (`WISP_PORT`, default 8080); production listens on every interface.
+2. Run the frontend: `cd frontend && npx vite --port 5173`
+3. The Vite dev server at `localhost:5173` proxies `/api` and `/ws` to `127.0.0.1:8080`
 
 Backend enables CORS for `localhost:5173` when `NODE_ENV=development`.
 
