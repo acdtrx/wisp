@@ -19,6 +19,10 @@
  * probe-counter bug behind it.
  *
  * All avahi calls are best-effort: failures never break VM/container ops.
+ * Every call on the publishing path is bounded (`bounded`, AVAHI_CALL_TIMEOUT_MS):
+ * a hung avahi-daemon answers nothing, and an unbounded call would stall the
+ * workload's mDNS chain — and every later operation queued behind it — for
+ * good. Browser and resolver creation (discovery) are not on that path.
  */
 import dbus from 'dbus-next';
 
@@ -44,6 +48,34 @@ const AVAHI_ENTRY_GROUP_FAILURE = 4;
 // surface normalizes them into `svc.isLocal` so callers never see wire flags.
 const AVAHI_LOOKUP_RESULT_LOCAL = 8;
 const AVAHI_LOOKUP_RESULT_OUR_OWN = 16;
+
+/**
+ * Bound on one avahi call. Avahi answers a local publishing call in a few
+ * milliseconds; 5 s is three orders of magnitude of headroom, so a busy host
+ * never trips it, while a hung daemon holds a workload's mDNS chain for 5 s
+ * per failed operation (the register gives up at its first timed-out call,
+ * then frees what it made) instead of forever.
+ */
+const AVAHI_CALL_TIMEOUT_MS = 5000;
+
+/**
+ * Settle with `promise`, or reject with an AVAHI_TIMEOUT error after
+ * AVAHI_CALL_TIMEOUT_MS. The call itself stays queued at the daemon: a
+ * caller that gives up on a group must still Free it, so a late Commit is
+ * followed by its Free.
+ */
+function bounded(promise, what) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`avahi ${what} did not answer within ${AVAHI_CALL_TIMEOUT_MS} ms`);
+      err.code = 'AVAHI_TIMEOUT';
+      reject(err);
+    }, AVAHI_CALL_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 const state = {
   bus: null,
@@ -106,7 +138,7 @@ async function installAvahiWatch() {
   if (state.watchInstalled) return;
   try {
     const bus = await ensureBus();
-    const dbusObj = await bus.getProxyObject('org.freedesktop.DBus', '/org/freedesktop/DBus');
+    const dbusObj = await bounded(bus.getProxyObject('org.freedesktop.DBus', '/org/freedesktop/DBus'), 'bus introspection');
     const dbusIface = dbusObj.getInterface('org.freedesktop.DBus');
     // dbus-next auto-installs the match rule when we attach a listener on the proxy
     // iface (see proxy-interface.js _addMatch in dbus-next), so no explicit AddMatch
@@ -137,14 +169,14 @@ async function installAvahiWatch() {
     // RUNNING whenever its host name changes — including the automatic
     // `<host>-2` rename on a LAN name conflict — so every transition re-reads
     // the name.
-    await bus.call(new dbus.Message({
+    await bounded(bus.call(new dbus.Message({
       destination: 'org.freedesktop.DBus',
       path: '/org/freedesktop/DBus',
       interface: 'org.freedesktop.DBus',
       member: 'AddMatch',
       signature: 's',
       body: [`type='signal',sender='${AVAHI_BUS_NAME}',path='${AVAHI_SERVER_PATH}',interface='${AVAHI_SERVER_IFACE}',member='StateChanged'`],
-    }));
+    })), 'AddMatch');
     bus.on('message', (msg) => {
       if (msg.interface !== AVAHI_SERVER_IFACE || msg.member !== 'StateChanged') return;
       refreshHostFqdn();
@@ -159,7 +191,7 @@ async function ensureServer() {
   if (state.server) return state.server;
   try {
     const bus = await ensureBus();
-    const obj = await bus.getProxyObject(AVAHI_BUS_NAME, AVAHI_SERVER_PATH);
+    const obj = await bounded(bus.getProxyObject(AVAHI_BUS_NAME, AVAHI_SERVER_PATH), 'server introspection');
     state.server = obj.getInterface(AVAHI_SERVER_IFACE);
     return state.server;
   } catch {
@@ -178,7 +210,7 @@ async function refreshHostFqdn() {
   try {
     const server = await ensureServer();
     if (!server) return;
-    const raw = await server.GetHostNameFqdn();
+    const raw = await bounded(server.GetHostNameFqdn(), 'GetHostNameFqdn');
     const fqdn = String(raw || '').toLowerCase().replace(/\.$/, '') || null;
     if (seq !== state.hostFqdnSeq) return; // a newer read is in flight
     if (fqdn && fqdn !== state.hostFqdn) {
@@ -194,9 +226,14 @@ async function refreshHostFqdn() {
 async function createGroup() {
   const server = await ensureServer();
   if (!server) return null;
-  const path = await server.EntryGroupNew();
-  const obj = await state.bus.getProxyObject(AVAHI_BUS_NAME, path);
-  return { iface: obj.getInterface(AVAHI_GROUP_IFACE), path };
+  const path = await bounded(server.EntryGroupNew(), 'EntryGroupNew');
+  try {
+    const obj = await bounded(state.bus.getProxyObject(AVAHI_BUS_NAME, path), 'entry group introspection');
+    return { iface: obj.getInterface(AVAHI_GROUP_IFACE), path };
+  } catch (err) {
+    await freeAvahiPath(path, AVAHI_GROUP_IFACE); // made but never filled: drop it
+    throw err;
+  }
 }
 
 /**
@@ -230,7 +267,7 @@ async function commitGroup(handle, fill, logCtx) {
       republishAgain: false,
     };
     state.groups.set(handle.path, record);
-    await handle.iface.Commit();
+    await bounded(handle.iface.Commit(), 'Commit');
   } catch (err) {
     await freeGroup(handle); // never published; the caller records the failure
     throw err;
@@ -277,11 +314,11 @@ async function republishGroup(record) {
   try {
     do {
       record.republishAgain = false;
-      await handle.iface.Reset();
+      await bounded(handle.iface.Reset(), 'Reset');
       await fill(handle.iface);
       if (state.groups.get(handle.path) !== record) return;
       record.groupState = AVAHI_ENTRY_GROUP_REGISTERING;
-      await handle.iface.Commit();
+      await bounded(handle.iface.Commit(), 'Commit');
     } while (record.republishAgain && state.groups.get(handle.path) === record);
   } catch (err) {
     // A Free racing the re-publish (deregistered, replaced, avahi gone) is
@@ -307,7 +344,7 @@ function onGroupStateChanged(path, groupState, error) {
 async function freeGroup(handle) {
   if (!handle) return;
   state.groups.delete(handle.path);
-  try { await handle.iface.Free(); } catch { /* best effort */ }
+  try { await bounded(handle.iface.Free(), 'Free'); } catch { /* best effort — avahi gone, or hung (the queued Free still runs) */ }
 }
 
 async function reregisterAll() {
@@ -418,13 +455,13 @@ export async function registerAddress(key, preferredName, ipOrCidr, ip6OrCidr = 
     await commitGroup(group, async (iface) => {
       for (const address of [ip4, ip6]) {
         if (!address) continue;
-        await iface.AddAddress(
+        await bounded(iface.AddAddress(
           AVAHI_IF_UNSPEC,
           AVAHI_PROTO_UNSPEC,
           AVAHI_FLAG_DEFAULT,
           fqdn,
           address,
-        );
+        ), 'AddAddress');
       }
     }, { key, fqdn });
     state.entries.set(key, { group, host, ip4, ip6, fqdn });
@@ -484,7 +521,7 @@ export async function registerService(serviceKey, instanceName, type, port, txt,
       state.services.set(serviceKey, { group: null, instanceName, type, port, txt, host });
       return false;
     }
-    await commitGroup(group, (iface) => iface.AddService(
+    await commitGroup(group, (iface) => bounded(iface.AddService(
       AVAHI_IF_UNSPEC,
       AVAHI_PROTO_UNSPEC,
       AVAHI_FLAG_DEFAULT,
@@ -494,7 +531,7 @@ export async function registerService(serviceKey, instanceName, type, port, txt,
       host,        // SRV target host (must be a name avahi or another stack publishes)
       port,
       txtPairs,
-    ), { serviceKey, instanceName, type });
+    ), 'AddService'), { serviceKey, instanceName, type });
     state.services.set(serviceKey, { group, instanceName, type, port, txt, host });
     return true;
   } catch (err) {
@@ -551,13 +588,13 @@ function txtMapFromAvahi(txtPairs) {
 async function freeAvahiPath(path, iface) {
   if (!path || !state.bus) return;
   try {
-    await state.bus.call(new dbus.Message({
+    await bounded(state.bus.call(new dbus.Message({
       destination: AVAHI_BUS_NAME,
       path,
       interface: iface,
       member: 'Free',
-    }));
-  } catch { /* best effort — avahi may be gone */ }
+    })), 'Free');
+  } catch { /* best effort — avahi may be gone, or hung (the queued Free still runs) */ }
 }
 
 async function freeBrowserPath(path) {
