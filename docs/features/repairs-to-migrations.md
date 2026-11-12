@@ -59,6 +59,21 @@ Once nothing is left behind it, remove the `repairOnRead` option.
   - simplify the remaining `network.type === 'bridge'` guards once 0007 and the PATCH
     check land.
 
+**Settled after milestone 2 (2026-11-12):**
+- **The network probe takes the per-container operation lock** for its read and write of
+  `container.json`. A busy container is retried on the next probe. A user action in that
+  window gets 409 `CONTAINER_BUSY`. `CONTAINERS.md` § Per-container operation lock
+  changes to match: the probe is listed among the manager-side lock takers and removed
+  from "Not covered".
+- **Migration `0008`** writes `origin: "manual"` into VM and container backup manifests
+  that lack it, under the configured backup roots, skipping a root that isn't mounted
+  (as 0005 does). Then both read fallbacks go.
+- **The cloud-init `'set'` password value stays.** `GET` returns it, so a client sends
+  it back. The code comment and `CLOUD-INIT.md` stop calling it legacy.
+- **Cloud-init edit keeps the password.** The edit form's blank password ("Leave blank to
+  keep unchanged") must keep the stored hash. Reproduce the suspected erase first, then
+  fix it.
+
 ## Milestone 1 — inventory
 
 The builder lists every normal-path repair found, with its file and line, its kind, and
