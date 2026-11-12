@@ -220,6 +220,8 @@ tool descriptions ([`specs/MCP.md`](specs/MCP.md)).
   costs words and puts X in mind.
 - **A rejection says what to do instead**: a message a model reads when its call fails
   names the step that works.
+- **Write it in the imperative, concisely**: say what to do, in the shortest wording that
+  keeps the meaning.
 
 ## 14. Verification `[PROJECT]`
 
