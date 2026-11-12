@@ -71,15 +71,15 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 |-------|------|-------------|
 | `runId` | string | Matches the filename stem. |
 | `startedAt` | string | ISO 8601 time the run was allocated (immediately before `tasks.create`). |
-| `endedAt` | string \| null | ISO 8601 time the task exited (set in `cleanupTask` after `tasks.delete` returns). Null while the run is active. |
-| `exitCode` | number \| null | Process exit status from the `Tasks.Delete` response. Null while the run is active, or when the exit code is unavailable. |
+| `endedAt` | string \| null | ISO 8601 time the task exited (set in `cleanupTask` after `tasks.delete` returns, or on the `/tasks/exit` event of a task that exited on its own). Null while the run is active. |
+| `exitCode` | number \| null | Process exit status from the `Tasks.Delete` response (or the exit event's status for a task that exited on its own). Null while the run is active, or when the exit code is unavailable. |
 | `imageDigest` | string \| null | Library image digest the container was running at the time of the run, if known. |
 
 **Live log stream** *(settled 2026-10-16)*. The logs SSE (`GET /api/containers/:name/logs`) delivers every line of the run exactly once, in order: `readRunLogHistory` returns the last 500 **complete** lines plus the byte offset just past the last newline, and `streamContainerRunLogs` tails from exactly that offset — no gap between history and tail, no line in both. Reads are serialized per stream (a watch event or the 2 s interval arriving mid-read marks a rerun instead of a second reader over the same bytes), and bytes are split into lines before decoding, so a write that ends mid-line (or mid UTF-8 sequence) is held until its newline lands. A trailing line without a newline is delivered once the run has ended (sidecar `endedAt` set), or when it exceeds 64 KiB. One file handle per stream, closed on disconnect once no read is in flight. `getContainerRunLogs` (MCP `get_container_logs`) keeps returning the last N segments including a trailing partial line.
 
 **Retention.** The newest **10** runs are kept; older log+sidecar pairs are pruned on every new-run allocation. No separate GC job. Container delete removes the whole container directory, including all runs.
 
-**Finding the current run.** The active run is the one whose sidecar has `endedAt === null`. `cleanupTask` — called from `stopContainer` / `killContainer`, and also as a stale-task cleanup inside `startExistingContainer` before re-creating — captures the `exit_status` field from the `Tasks.Delete` response and writes both `endedAt` and `exitCode` to the sidecar in a single `finalizeRun` call. Already-finalized sidecars are not rewritten. Backend restart is safe: the "current" run is not tracked in memory, so a container mid-run looks identical across restarts.
+**Finding the current run.** The active run is the one whose sidecar has `endedAt === null`. `cleanupTask` — called from `stopContainer` / `killContainer`, and also as a stale-task cleanup inside `startExistingContainer` before re-creating — captures the `exit_status` field from the `Tasks.Delete` response and writes both `endedAt` and `exitCode` to the sidecar in a single `finalizeRun` call. A task that exits on its own is finalized on its `/tasks/exit` event, with the event's exit status *(settled 2026-11-12)* — unless the container already runs a newer task, so a late event never ends the newer run. Already-finalized sidecars are not rewritten. Backend restart is safe: the "current" run is not tracked in memory, so a container mid-run looks identical across restarts.
 
 ### container.json Schema
 
@@ -187,6 +187,7 @@ Each `services[]` element advertises one mDNS service for the container's `<name
 **Lifecycle:** services persist in `container.json` independent of run state. Live publication tracks the address registration:
 - **Container start:** once the task has started (and the IP is known), every entry in `services[]` is published via Avahi `EntryGroup.AddService` against the container's `<name>.local` host — read from the latest `container.json`, so a `localDns` switched off during the start publishes nothing. A start that fails after network setup publishes nothing and deregisters any services left under the name (with the netns and snapshot teardown). A registration failure after the task started is logged; the start still succeeds.
 - **Container stop / kill / delete:** every published service for the container is deregistered before the address itself is freed.
+- **Task exits on its own** (crash, `kill -9`, the process ending): on its `/tasks/exit` event every published service is deregistered, unless the container already runs a newer task; a restart by the restart policy registers them again with its start.
 - **`localDns` toggled off:** all services are deregistered alongside the address.
 - **`localDns` toggled on (running):** the address is republished and every entry in `services[]` is registered.
 - **Per-row mutation while running:** `addContainerService` / `updateContainerService` / `removeContainerService` apply the mDNS change live (no task restart). Updates are deregister + register (Avahi has no in-place update).

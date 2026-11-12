@@ -70,11 +70,6 @@ exact ordering only by luck. Confirm first with `systemctl restart avahi-daemon
 systemd-networkd`. **Revisit trigger:** Wisp `.local` names go dead on the LAN again,
 especially after an unattended-upgrades run.
 
-**Services stay published after an unexpected task exit.** SRV/TXT services are
-deregistered on stop/kill/delete only; a crash leaves them advertising until the next
-start or stop. **Revisit trigger:** a crashed container's service is seen being browsed on
-the LAN.
-
 **Adopt kept VM disks at create.** *Delete VM, keep disks* leaves `vms/<name>/`, and
 create/restore refuse that name (409 `VM_DIR_EXISTS`, settled 2026-10-16); reusing a kept
 disk means moving it into the image library by hand and picking it as an existing disk.
@@ -243,12 +238,6 @@ points `WISP_CONFIG_PATH` through `runtime.env` and gets the default config. (Pl
 `path.resolve`, not `realpath`, so a symlink placed inside the image library can point
 outside it. Only the admin can place files there. **Revisit trigger:** anything other than
 the admin can write into the image library or another allowed root. (Plan 6, B1)
-
-**A container that exits on its own never finalizes its run.** `finalizeRun` is only
-called from `cleanupTask` (stop / kill / start / delete), so the run keeps `endedAt: null`
-in `GET /runs` and a last line without a trailing newline is never shown. Fix shape:
-finalize on the task-exit event. **Revisit trigger:** a self-exited container's last
-output is missing or its run shows as still open. (Plan 6 verification on tini)
 
 **`PATCH /api/containers/:name` has no body schema.** CODING-RULES §9 wants request
 validation at the boundary; the manager validates fields piecemeal instead (found in the

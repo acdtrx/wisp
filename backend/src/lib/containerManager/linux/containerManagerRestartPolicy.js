@@ -41,6 +41,8 @@
 import { containerState } from './containerManagerConnection.js';
 import { readContainerConfig } from './containerManagerConfigIo.js';
 import { tryAcquireOperationLock } from './containerOperationGuard.js';
+import { findCurrentRunId, finalizeRun } from './containerManagerLogs.js';
+import { deregisterServicesForContainer } from '../../mdns/index.js';
 
 export const RESTART_POLICIES = ['never', 'on-failure', 'unless-stopped', 'always'];
 const DEFAULT_RESTART_POLICY = 'unless-stopped';
@@ -228,6 +230,31 @@ async function runRestart(name, exitStatus, attempt) {
 }
 
 /**
+ * What Wisp's own stops do for their task, done for a task that exited on its
+ * own: drop its SRV/TXT services and finalize its log run (`endedAt`, exit
+ * code), so the run reads as ended and the live log delivers a last line
+ * without a newline. Skipped when the container already runs a different
+ * task — a late exit event must not end the newer run. Best-effort: failures
+ * are logged, and the restart policy still applies.
+ */
+async function settleUnexpectedExit(name, pid, exitCode) {
+  try {
+    const { getTaskState } = await import('./containerManagerLifecycle.js');
+    const task = await getTaskState(name);
+    if (task && Number(task.pid) !== pid) {
+      log()?.info?.({ container: name, pid, currentPid: Number(task.pid) }, 'Late exit event for an earlier task — run and services left as they are');
+      return;
+    }
+    await deregisterServicesForContainer(name);
+    const runId = await findCurrentRunId(name);
+    if (runId) await finalizeRun(name, runId, { exitCode });
+    log()?.info?.({ container: name, exitCode, runId }, 'Container exited on its own — services deregistered, run finalized');
+  } catch (err) {
+    log()?.warn?.({ err: err?.message || String(err), container: name }, 'Settling an unexpected exit failed');
+  }
+}
+
+/**
  * Apply the restart policy to one observed exit of a container's main process.
  * @param {{ containerId: string, id?: string, pid?: number, exitStatus?: number }} exit
  */
@@ -256,6 +283,8 @@ export async function handleContainerExit({ containerId, id, pid, exitStatus }) 
     backoffState.delete(name);
     return;
   }
+
+  await settleUnexpectedExit(name, Number(pid), code);
 
   const policy = config.restartPolicy ?? DEFAULT_RESTART_POLICY;
   if (!RESTART_POLICIES.includes(policy)) {
