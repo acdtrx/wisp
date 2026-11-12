@@ -134,6 +134,10 @@ seen disagreeing again, or the next change to any of the three.
 (`forgetBackupStatus`, 2026-11-12); VM deletes don't. **Revisit trigger:** a stale VM
 entry confuses the backups view, or the next work on VM delete.
 
+**Help icons rely on `title`.** `HelpIcon.jsx` shows its text only as a `title` tooltip,
+which never appears on touch (found in the 2026-11-12 rules audit). **Revisit trigger:**
+help text is needed on a phone or tablet.
+
 **A timed-out avahi registration is never retried.** With the 5 s bound on avahi calls
 (settled 2026-11-12), a registration that times out leaves its entry unpublished;
 `reregisterAll` runs only when the daemon restarts, not when a hung one recovers, so a

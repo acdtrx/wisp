@@ -32,19 +32,54 @@ session.
 - **Acceptance:** the audit exists. Each rule above has a section with its findings or
   "none found", and each finding is marked clear or decision.
 
-## Milestone 2 — fixes
+**Settled after the audit (2026-11-12):** every decision in `AUDIT.md` goes as the audit
+recommends, with one exception: TMO-4 (the OS upgrade's 600 s cap) stays as it is, under the
+backlog entry "OS upgrade runs inside wisp.service". So, in short:
+- CFG-2: an invalid `trustedProxies` entry fails startup. This reverses
+  `CONFIGURATION.md`'s "a typo must not crash-loop".
+- LAY-3 and LAY-4: a hand-rolled layer stack, and no modal closes on a backdrop click.
+  The `[PROJECT]` exception leaves FRONTEND-RULES § Layers.
+- FEN-2: the fence lint is `npm run check-fences`, listed in AGENTS.md Project Facts.
+- FEN-5: undici is fenced to `lib/downloads/`.
+- Docs: TECH-STACK (dbus-next callers) and FRONTEND-RULES ("first field gets
+  `autoFocus`") are fixed to match.
 
-Fix the clear findings and the decision findings the user settles. Backlog the rest.
+## Milestone 2a — config and fences
+
+The §4 and §7 findings.
 
 - **Acceptance:**
-  - The fence lint runs as an npm script and fails on a deliberate stray import (e.g.
-    `dbus-next` from a route), then passes once that import is removed.
-  - A config file with an unknown key or a wrong type fails the dev backend's startup
-    with a message naming the key.
-  - Each fixed frontend finding is observed in the dev stack or a Vite harness. A modal
-    keeps Tab inside, returns focus to its opener, and the page under it doesn't scroll
-    or take clicks. On a phone-width emulated touch device, fields don't zoom on focus.
-  - Each added timeout is shown to fire (pointed at a blackhole address or a hung
-    command).
-  - The frontend build passes, and `npm run check-imports` passes.
-  - Each finding in `AUDIT.md` is marked fixed or backlogged.
+  - `npm run check-fences` fails on a deliberate stray import (e.g. `dbus-next` from a
+    route), then passes once that import is removed.
+  - A config file with an unknown key, a wrong type or invalid JSON fails the dev
+    backend's startup with a message naming the key or the parse error.
+  - Every value the UI writes (backup schedule, OIDC, advertised URL, trusted proxies)
+    passes the startup read: save each one through the UI or API, then restart.
+  - Deleting a mount used as a backup destination leaves no dangling reference.
+  - A bad `runtime.env` line fails startup.
+  - `npm run check-imports` passes.
+
+## Milestone 2b — timeouts
+
+The §6 findings except TMO-4.
+
+- **Acceptance:**
+  - Each added timeout or watchdog is shown to fire, pointed at a blackhole address, a
+    hung command or a stalled stream (on tini where it needs Linux).
+  - A normal long job (a large backup, a convert, an image pull) still completes.
+
+## Milestone 2c — frontend
+
+The Data, Phones and touch, and Layers findings. DAT-9 (cloud-init fetch failure) comes
+first.
+
+- **Acceptance:**
+  - Each fixed finding is observed in the dev stack or a Vite harness.
+  - A modal keeps Tab inside, returns focus to its opener, and leaves the page under it
+    inert. Esc closes only the top layer, and a backdrop click closes nothing.
+  - On a phone-width emulated touch device, fields don't zoom and nothing is focused by
+    code.
+  - Row actions are reachable on a touch device at 1024px or wider.
+  - The frontend build passes.
+
+Each finding in `AUDIT.md` ends up marked fixed or backlogged.
