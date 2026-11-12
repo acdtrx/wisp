@@ -122,11 +122,6 @@ turn up, or a client trips on the null.
 can read as not mounted by Wisp. **Revisit trigger:** a drive shows unmounted while Wisp
 has it mounted.
 
-**libvirt unreachable at boot is never retried.** A failed connect at startup logs a
-warning and gives up; only a dropped established connection reconnects with backoff (V17).
-**Revisit trigger:** wisp comes up before libvirt-dbus and VM pages stay empty until a
-restart.
-
 **Self-update install has no in-flight guard.** Two concurrent `POST /api/updates/install`
 (two tabs) both download, stage and trigger the updater. **Revisit trigger:** a doubled
 install request causes a failed or repeated update.

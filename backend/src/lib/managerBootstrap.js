@@ -58,7 +58,7 @@ export async function connectManagers(log, { watchEvents = true } = {}) {
   try {
     await connectLibvirt(log, { watchEvents });
   } catch (err) {
-    log.warn({ err }, 'libvirt connection failed — VM operations will be unavailable');
+    log.warn({ err }, 'libvirt connection failed — VM operations unavailable until it connects');
   }
 
   try {

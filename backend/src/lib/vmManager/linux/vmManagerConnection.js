@@ -203,6 +203,10 @@ export async function connect(logger = null, opts = {}) {
     await Promise.race([props.Get('org.libvirt.Connect', 'LibVersion'), busFailed]);
   } catch (err) {
     try { bus.disconnect(); } catch { /* bus may already be closed */ }
+    // A failed first connect (libvirt-dbus not up yet at boot) retries on the
+    // reconnect backoff, as a dropped bus does. Only with event watching: a
+    // pending timer would keep the one-shot migration runner alive.
+    if (connectionState.watchEvents) scheduleReconnect();
     throw err;
   }
   connectionState.bus = bus;
