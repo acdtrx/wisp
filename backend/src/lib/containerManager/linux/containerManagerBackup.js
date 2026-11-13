@@ -55,7 +55,7 @@ import { resolveMount } from './containerPaths.js';
 import { getImageDigest, resolveContainerImageRef } from './containerManagerImages.js';
 import { validateAndNormalizeMounts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';
-import { createStallWatchdog, stallMinutes } from '../../storage/index.js';
+import { createStallWatchdog, stallMinutes, killProcessGroup } from '../../storage/index.js';
 
 /* tar runs as long as the data is big: no total cap, but it is killed after
  * this long without progress (CODING-RULES §6) — bytes out of tar when
@@ -115,15 +115,17 @@ async function dirTotalBytes(dirPath) {
  * the pre-walked totalBytes denominator.
  */
 async function tarGzipDir(parent, baseName, destPath, totalBytes, onProgress) {
+  // A process group of its own, so a stall kills everything tar started.
   const tar = spawn('tar', ['-cf', '-', '-C', parent, baseName], {
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
 
   let stderrBuf = '';
   tar.stderr.on('data', (d) => { stderrBuf += d.toString(); });
   const watchdog = createStallWatchdog({
     stallMs: BACKUP_TAR_STALL_MS,
-    onStall: () => tar.kill('SIGKILL'),
+    onStall: () => killProcessGroup(tar),
   });
 
   let lastPct = -1;
@@ -174,13 +176,16 @@ async function tarGzipDir(parent, baseName, destPath, totalBytes, onProgress) {
  * stall watchdog watches.
  */
 async function untarGzipTo(archivePath, destDir) {
+  // tar -z forks (a reader and gzip), which hold its pipes too: a process
+  // group of its own, and a stall kills the whole group.
   const tar = spawn('tar', ['-xzf', archivePath, '-C', destDir, '--checkpoint=1000', '--checkpoint-action=dot'], {
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
   let stderrBuf = '';
   const watchdog = createStallWatchdog({
     stallMs: RESTORE_TAR_STALL_MS,
-    onStall: () => tar.kill('SIGKILL'),
+    onStall: () => killProcessGroup(tar),
   });
   tar.stdout.on('data', watchdog.poke);
   tar.stderr.on('data', (d) => { watchdog.poke(); stderrBuf += d.toString(); });
@@ -629,7 +634,12 @@ async function createContainerdRecord(name, config) {
  * missing; containerd container record is created (snapshot is prepared
  * lazily on first start, like a normal stopped container).
  */
-export async function restoreContainerBackup(backupPath, newName) {
+/**
+ * Check a restore as `newName` — the name is free on disk and in containerd,
+ * the backup's manifest reads and validates — and return its plan for
+ * `restoreContainerBackup`. Quick; changes nothing.
+ */
+export async function planContainerBackupRestore(backupPath, newName) {
   validateContainerName(newName);
   const newNameTrim = newName.trim();
 
@@ -650,7 +660,11 @@ export async function restoreContainerBackup(backupPath, newName) {
   }
 
   const { manifest, archivePath } = await readContainerBackupManifest(backupPath);
+  return { newName: newNameTrim, manifest, archivePath };
+}
 
+/** Run a `planContainerBackupRestore` plan: extract the archive as the new container and define it. */
+export async function restoreContainerBackup({ newName: newNameTrim, manifest, archivePath }) {
   /* Extract the tar into the containers root. The archive's top-level
    * entry is the *original* container name (we tarred `<name>` from
    * containersRoot). After extraction we rename the top-level directory

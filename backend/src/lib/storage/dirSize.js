@@ -10,13 +10,19 @@ import { lstat, readdir } from 'node:fs/promises';
 
 /**
  * @param {string} absPath - absolute path to a file or directory
+ * @param {{ deadline?: number }} [opts] - `deadline` (epoch ms): the walk stops
+ *   there and reports `partial` (CODING-RULES §6; a huge tree is sized in part)
  * @returns {Promise<{ sizeBytes: number, partial: boolean }>}
  */
-export async function measurePathSize(absPath) {
+export async function measurePathSize(absPath, { deadline } = {}) {
   let sizeBytes = 0;
   let partial = false;
 
   async function walk(path) {
+    if (deadline != null && Date.now() > deadline) {
+      partial = true;
+      return;
+    }
     let st;
     try {
       st = await lstat(path);

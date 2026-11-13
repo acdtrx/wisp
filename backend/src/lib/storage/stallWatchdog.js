@@ -72,6 +72,19 @@ export function processReadProbe(pid) {
   };
 }
 
+/**
+ * SIGKILL a child spawned with `detached: true` and everything in its process
+ * group — the forks a tool such as `tar -z` starts hold its pipes too, so
+ * killing the child alone leaves them running.
+ */
+export function killProcessGroup(child) {
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {
+    child.kill('SIGKILL');
+  }
+}
+
 /** `ms` as "N min" for messages ("N s" when it is not whole minutes). */
 export function stallMinutes(ms) {
   return ms % 60_000 === 0 ? `${ms / 60_000} min` : `${Math.round(ms / 1000)} s`;

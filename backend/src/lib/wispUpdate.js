@@ -21,7 +21,7 @@ import { promisify } from 'node:util';
 import { createAppError } from './routeErrors.js';
 import { getSettings } from './settings.js';
 import { ssrfSafeFetch, writeResponseToFile } from './downloads/index.js';
-import { createStallWatchdog, stallMinutes } from './storage/index.js';
+import { createStallWatchdog, stallMinutes, killProcessGroup } from './storage/index.js';
 
 const execFileAsync = promisify(execFileCb);
 
@@ -338,10 +338,7 @@ function extractTarball(tarballPath, stagingDir) {
       detached: true,
     });
     let stderr = '';
-    const killGroup = () => {
-      try { process.kill(-tar.pid, 'SIGKILL'); } catch { tar.kill('SIGKILL'); }
-    };
-    const watchdog = createStallWatchdog({ stallMs: TAR_IDLE_MS, onStall: killGroup });
+    const watchdog = createStallWatchdog({ stallMs: TAR_IDLE_MS, onStall: () => killProcessGroup(tar) });
     tar.stdout.on('data', watchdog.poke);
     tar.stderr.on('data', (d) => { watchdog.poke(); stderr = (stderr + d).slice(-4096); });
     tar.on('error', (err) => { watchdog.stop(); reject(err); });
