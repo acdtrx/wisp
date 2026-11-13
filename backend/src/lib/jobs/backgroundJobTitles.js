@@ -36,6 +36,18 @@ export function titleForImageUpdateCheckSingle(ref) {
   return `Check ${shortRef}`;
 }
 
+export const titleForVmStart = (name) => `Start ${name}`;
+export const titleForVmForceStop = (name) => `Force stop ${name}`;
+export const titleForVmDelete = (name) => `Delete ${name}`;
+export const titleForVmRestore = (newName) => `Restore ${newName}`;
+export const TITLE_OS_UPDATE_CHECK = 'Check for OS updates';
+export const TITLE_OS_UPGRADE = 'Install OS updates';
+export const titleForBridgeCreate = (name) => `Create bridge ${name}`;
+export const titleForBridgeDelete = (name) => `Delete bridge ${name}`;
+export const titleForUnmount = (label) => `Unmount ${label}`;
+export const titleForMountDelete = (label) => `Remove ${label}`;
+export const titleForSelfUpdate = (version) => `Update Wisp to ${version}`;
+
 export const TITLE_LIBRARY_UBUNTU_CLOUD = 'Ubuntu Cloud Image';
 export const TITLE_LIBRARY_ARCH_CLOUD = 'Arch Linux Cloud Image';
 export const TITLE_LIBRARY_HAOS = 'Home Assistant';

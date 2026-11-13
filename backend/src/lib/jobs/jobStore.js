@@ -170,6 +170,7 @@ export function createJobStore(formatResult) {
       step: 'error',
       error: errMessage,
       detail: errRaw || errMessage,
+      ...(typeof err?.code === 'string' ? { code: err.code } : {}),
     });
     const streams = job.streams;
     job.streams = [];

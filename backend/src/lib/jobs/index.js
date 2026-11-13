@@ -8,6 +8,7 @@
 export * as createJobStore from './createJobStore.js';
 export * as backupJobStore from './backupJobStore.js';
 export * as downloadJobStore from './downloadJobStore.js';
+export * as operationJobStore from './operationJobStore.js';
 
 export { containerJobStore } from './containerJobStore.js';
 export { imageUpdateJobStore } from './imageUpdateJobStore.js';
@@ -27,4 +28,15 @@ export {
   TITLE_LIBRARY_UBUNTU_CLOUD,
   TITLE_LIBRARY_ARCH_CLOUD,
   TITLE_LIBRARY_HAOS,
+  titleForVmStart,
+  titleForVmForceStop,
+  titleForVmDelete,
+  titleForVmRestore,
+  TITLE_OS_UPDATE_CHECK,
+  TITLE_OS_UPGRADE,
+  titleForBridgeCreate,
+  titleForBridgeDelete,
+  titleForUnmount,
+  titleForMountDelete,
+  titleForSelfUpdate,
 } from './backgroundJobTitles.js';
