@@ -9,17 +9,23 @@
  *   2. Facades — a file outside a module that has an `index.js` facade imports
  *      that module only through its `index.js`.
  *   3. Strict managers — vmManager and containerManager import only Node
- *      builtins, npm packages, their own files and the carved modules' facades.
- *   4. Carved modules — host, networking, mdns and storage may also import
- *      `createAppError` from lib/routeErrors.js, and nothing else of Wisp's glue.
+ *      builtins, npm packages, their own files and the mdns, networking and
+ *      storage facades (never lib/host).
+ *   4. Carved modules — host, networking, mdns and storage import their own
+ *      files, each other's facades and `createAppError` from lib/routeErrors.js,
+ *      and nothing else of Wisp's glue.
  *
  * A module's darwin stubs are its own files. Scripts and migrations are glue.
  * Specifiers inside comments (JSDoc type imports) are skipped: they load
  * nothing. A reviewed allowance is one line in EXCEPTIONS.
  *
  * Same dumb-scan spirit as check-imports.mjs: static `import … from`,
- * `export … from`, side-effect imports, and every relative literal inside a
- * dynamic `import(…)` (the facades' platform ternaries).
+ * `export … from`, side-effect imports; inside a dynamic `import(…)`, every
+ * string literal (the facades' platform ternaries, a package picked by a
+ * condition) and a template literal's static prefix (`./linux/${name}.js`
+ * checks as `./linux/`); `require(…)`, including through a `createRequire`
+ * result. A specifier computed with no literal prefix can't be checked: it is a
+ * violation unless EXCEPTIONS allows it.
  */
 import { readdir, readFile } from 'node:fs/promises';
 import { builtinModules } from 'node:module';
@@ -41,12 +47,20 @@ const PACKAGE_FENCES = {
 
 const STRICT_MANAGERS = ['vmManager', 'containerManager'];
 const CARVED = ['host', 'networking', 'mdns', 'storage'];
+/** The carved modules a strict manager may import (CODING-RULES §7). */
+const MANAGER_CARVED = ['mdns', 'networking', 'storage'];
 
 /**
  * Reviewed allowances: { file, specifier, reason }, both paths repo-relative.
  * Meet a new need with one added line here, flagged for review.
  */
-const EXCEPTIONS = [];
+const EXCEPTIONS = [
+  {
+    file: 'backend/scripts/migrate.mjs',
+    specifier: '<computed>',
+    reason: 'loads each migration file from the migrations directory it lists',
+  },
+];
 
 const BUILTINS = new Set(builtinModules.flatMap((m) => [m, `node:${m}`]));
 
@@ -119,6 +133,39 @@ function stripComments(src) {
 const STATIC_IMPORT = /(?<![\w$.])import\s*(?:([\w$*{}\s,]+?)\s*from\s*)?(['"])([^'"\n]+)\2/g;
 const EXPORT_FROM = /(?<![\w$.])export\s*(?:\*(?:\s*as\s+[\w$]+)?|\{[^}]*\})\s*from\s*(['"])([^'"\n]+)\1/g;
 const DYNAMIC_IMPORT = /(?<![\w$.])import\s*\(/g;
+const REQUIRE_CALL = /(?<![\w$.])require\s*\(/g;
+const CREATE_REQUIRE_BINDING = /(?<![\w$.])(?:const|let|var)\s+([\w$]+)\s*=\s*(?:[\w$.]+\.)?createRequire\s*\(/g;
+const CREATE_REQUIRE_DIRECT = /(?<![\w$.])(?:[\w$.]+\.)?createRequire\s*\([^()]*(?:\([^()]*\))*[^()]*\)\s*\(/g;
+
+/** The text between the `(` that ends at `open` and its matching `)`. */
+function callArgument(code, open) {
+  let depth = 1;
+  let j = open;
+  while (j < code.length && depth > 0) {
+    if (code[j] === '(') depth += 1;
+    else if (code[j] === ')') depth -= 1;
+    j += 1;
+  }
+  return code.slice(open, j - 1).trim();
+}
+
+/**
+ * The specifiers a dynamic import()/require() argument can name: a whole literal;
+ * else every string literal in it and each template literal's static prefix;
+ * `<computed>` when it has neither.
+ */
+function specifiersOfArgument(arg) {
+  const whole = /^(['"])([^'"\n]+)\1$/.exec(arg) || /^`([^`$]*)`$/.exec(arg);
+  if (whole) return [whole[2] ?? whole[1]];
+  const found = [];
+  for (const lit of arg.matchAll(/(['"])([^'"\n]+)\1/g)) found.push(lit[2]);
+  for (const tpl of arg.matchAll(/`([^`]*)`/g)) {
+    const prefix = tpl[1].split('${')[0];
+    if (/^\.\.?\//.test(prefix)) found.push(prefix);
+    else if (prefix && !tpl[1].includes('${')) found.push(prefix);
+  }
+  return found.length > 0 ? found : ['<computed>'];
+}
 
 /** `[{ index, specifier, clause }]` for one stripped source. */
 function importsOf(code) {
@@ -129,23 +176,14 @@ function importsOf(code) {
   for (const m of code.matchAll(EXPORT_FROM)) {
     found.push({ index: m.index, specifier: m[2], clause: null });
   }
-  for (const m of code.matchAll(DYNAMIC_IMPORT)) {
-    let depth = 1;
-    let j = m.index + m[0].length;
-    const start = j;
-    while (j < code.length && depth > 0) {
-      if (code[j] === '(') depth += 1;
-      else if (code[j] === ')') depth -= 1;
-      j += 1;
-    }
-    const arg = code.slice(start, j - 1).trim();
-    const whole = /^(['"])([^'"\n]+)\1$/.exec(arg);
-    if (whole) {
-      found.push({ index: m.index, specifier: whole[2], clause: null });
-      continue;
-    }
-    for (const lit of arg.matchAll(/(['"])(\.\.?\/[^'"\n]+)\1/g)) {
-      found.push({ index: m.index, specifier: lit[2], clause: null });
+  const calls = [...code.matchAll(DYNAMIC_IMPORT), ...code.matchAll(REQUIRE_CALL), ...code.matchAll(CREATE_REQUIRE_DIRECT)];
+  for (const b of code.matchAll(CREATE_REQUIRE_BINDING)) {
+    const name = b[1].replace(/\$/g, '\\$');
+    calls.push(...code.matchAll(new RegExp(`(?<![\\w$.])${name}\\s*\\(`, 'g')));
+  }
+  for (const m of calls) {
+    for (const specifier of specifiersOfArgument(callArgument(code, m.index + m[0].length))) {
+      found.push({ index: m.index, specifier, clause: null });
     }
   }
   return found;
@@ -188,6 +226,10 @@ async function main() {
         violations.push(`${fileRel}:${line} ${specifier} — ${why} (CODING-RULES §7)`);
       };
 
+      if (specifier === '<computed>') {
+        report('computed import specifier: the fence lint cannot check it');
+        continue;
+      }
       if (!specifier.startsWith('.')) {
         if (BUILTINS.has(specifier)) continue;
         const pkg = packageName(specifier);
@@ -209,8 +251,8 @@ async function main() {
 
       if (fileModule && (STRICT_MANAGERS.includes(fileModule) || CARVED.includes(fileModule))) {
         if (targetModule === fileModule) continue;
-        if (targetModule && CARVED.includes(targetModule)) continue;
         const isCarved = CARVED.includes(fileModule);
+        if (targetModule && (isCarved ? CARVED : MANAGER_CARVED).includes(targetModule)) continue;
         if (isCarved && targetRel === `${LIB}/routeErrors.js`) {
           const names = (clause || '').replace(/[{}\s]/g, '').split(',').filter(Boolean);
           if (names.length > 0 && names.every((n) => n === 'createAppError')) continue;
@@ -219,7 +261,7 @@ async function main() {
         }
         report(isCarved
           ? `carved module lib/${fileModule}/ may import only its own files, the carved facades and createAppError`
-          : `strict manager lib/${fileModule}/ may import only its own files and the carved facades (mdns, networking, storage)`);
+          : `strict manager lib/${fileModule}/ may import only its own files and the mdns, networking and storage facades`);
       }
     }
   }
