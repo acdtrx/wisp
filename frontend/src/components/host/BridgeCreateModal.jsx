@@ -11,6 +11,7 @@ import {
 import { createManagedNetworkBridge } from '../../api/host.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
+import { autoFocusField } from '../../lib/focus.js';
 
 const FORM_ID = 'bridge-create-form';
 
@@ -118,7 +119,7 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose, onCr
               value={vlanId}
               onChange={(e) => setVlanId(e.target.value)}
               placeholder="10"
-              autoFocus
+              ref={autoFocusField}
               className="input-field"
             />
           </FormField>

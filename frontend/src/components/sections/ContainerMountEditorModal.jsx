@@ -10,6 +10,7 @@ import {
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { addContainerMount, updateContainerMount } from '../../api/containers.js';
+import { autoFocusField } from '../../lib/focus.js';
 
 const FORM_ID = 'container-mount-editor-form';
 
@@ -294,7 +295,7 @@ export default function ContainerMountEditorModal({
             value={form.containerPath}
             onChange={(e) => setField('containerPath', e.target.value)}
             placeholder="/path/in/container"
-            autoFocus={!isEdit}
+            ref={!isEdit ? autoFocusField : undefined}
             autoComplete="off"
             spellCheck={false}
             className="input-field font-mono"

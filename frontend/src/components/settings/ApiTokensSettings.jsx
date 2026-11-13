@@ -15,6 +15,7 @@ import {
   rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
 import { listApiTokens, createApiToken, deleteApiToken } from '../../api/authTokens.js';
+import { autoFocusField } from '../../lib/focus.js';
 
 const HELP =
   'Bearer tokens for non-interactive clients (coding agents, scripts). Read-only tokens can ' +
@@ -141,7 +142,7 @@ export default function ApiTokensSettings() {
                 onClick={() => setMinted(null)}
                 title="Dismiss"
                 aria-label="Dismiss"
-                className="shrink-0 rounded-md p-1 text-text-muted hover:bg-surface transition-colors duration-150"
+                className="shrink-0 rounded-md p-2 lg:p-1 text-text-muted hover:bg-surface transition-colors duration-150"
               >
                 <X size={14} />
               </button>
@@ -198,7 +199,7 @@ export default function ApiTokensSettings() {
                         onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
                         placeholder="claude-code"
                         maxLength={64}
-                        autoFocus
+                        ref={autoFocusField}
                         className="input-field placeholder:text-text-muted"
                       />
                     </DataTableTd>

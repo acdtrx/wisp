@@ -10,6 +10,7 @@ import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import AlertDialog from '../shared/AlertDialog.jsx';
 import { useHomeStore, UNGROUPED_GROUP_ID } from '../../store/homeStore.js';
 import TileGroupPicker from './TileGroupPicker.jsx';
+import { autoFocusField } from '../../lib/focus.js';
 
 const LIT_STATES = new Set(['running', 'blocked']);
 
@@ -111,7 +112,7 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
           <span className="flex items-center gap-0.5">
             <input
               type="text"
-              autoFocus
+              ref={autoFocusField}
               value={draftName}
               maxLength={64}
               onChange={(e) => setDraftName(e.target.value)}
@@ -124,7 +125,7 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
             <button
               type="button"
               onClick={submitRename}
-              className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-status-running"
+              className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-status-running"
               title="Save"
               aria-label="Save name"
             >
@@ -133,7 +134,7 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
             <button
               type="button"
               onClick={() => setRenaming(false)}
-              className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-status-stopped"
+              className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-status-stopped"
               title="Cancel"
               aria-label="Cancel rename"
             >

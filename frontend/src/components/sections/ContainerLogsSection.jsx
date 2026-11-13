@@ -5,6 +5,7 @@ import { listContainerRuns } from '../../api/containers.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { randomId } from '../../utils/randomId.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
+import { autoFocusField } from '../../lib/focus.js';
 
 const CLIENT_BUFFER_HARD_LIMIT = 5000;
 const CLIENT_BUFFER_TRIM_TO = 4000;
@@ -245,7 +246,7 @@ export default function ContainerLogsSection({ containerName }) {
             type="button"
             onClick={refetchRuns}
             disabled={runsLoading}
-            className="shrink-0 rounded-md p-1.5 text-text-muted hover:text-text-secondary transition-colors duration-150 disabled:opacity-50"
+            className="shrink-0 rounded-md p-2 lg:p-1.5 text-text-muted hover:text-text-secondary transition-colors duration-150 disabled:opacity-50"
             title="Refresh run list"
             aria-label="Refresh run list"
           >
@@ -267,7 +268,7 @@ export default function ContainerLogsSection({ containerName }) {
         <button
           type="button"
           onClick={onClear}
-          className="rounded-md p-1.5 text-text-muted hover:text-text-secondary transition-colors duration-150"
+          className="rounded-md p-2 lg:p-1.5 text-text-muted hover:text-text-secondary transition-colors duration-150"
           title="Clear viewer (does not touch log files)"
           aria-label="Clear viewer"
         >
@@ -276,7 +277,7 @@ export default function ContainerLogsSection({ containerName }) {
         <button
           type="button"
           onClick={onMark}
-          className="rounded-md p-1.5 text-text-muted hover:text-text-secondary transition-colors duration-150"
+          className="rounded-md p-2 lg:p-1.5 text-text-muted hover:text-text-secondary transition-colors duration-150"
           title="Insert a marker line"
           aria-label="Insert a marker line"
         >
@@ -286,7 +287,7 @@ export default function ContainerLogsSection({ containerName }) {
           <a
             href={downloadHref}
             download={`${containerName}-${selectedRunId}.log`}
-            className="rounded-md p-1.5 text-text-muted hover:text-text-secondary transition-colors duration-150"
+            className="rounded-md p-2 lg:p-1.5 text-text-muted hover:text-text-secondary transition-colors duration-150"
             title="Download this run's log"
             aria-label="Download run log"
           >
@@ -299,7 +300,7 @@ export default function ContainerLogsSection({ containerName }) {
             setAutoScroll(true);
             if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
           }}
-          className={`rounded-md p-1.5 transition-colors duration-150 ${
+          className={`rounded-md p-2 lg:p-1.5 transition-colors duration-150 ${
             autoScroll ? 'text-accent bg-accent/10' : 'text-text-muted hover:text-text-secondary'
           }`}
           title="Auto-scroll"
@@ -360,7 +361,7 @@ export default function ContainerLogsSection({ containerName }) {
             value={markLabel ?? ''}
             onChange={(e) => setMarkLabel(e.target.value)}
             className="input-field w-full"
-            autoFocus
+            ref={autoFocusField}
           />
         </form>
       </ConfirmDialog>

@@ -10,6 +10,7 @@ import {
 } from '../shared/FormModalChrome.jsx';
 import NicModelPills from './NicModelPills.jsx';
 import { randomMac } from '../../utils/randomMac.js';
+import { autoFocusField } from '../../lib/focus.js';
 
 const FORM_ID = 'nic-editor-form';
 
@@ -100,7 +101,7 @@ export default function NicEditorModal({ open, nic, index, bridges = [], onSubmi
             id="nic-editor-bridge"
             value={form.source}
             onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
-            autoFocus={!isEdit}
+            ref={!isEdit ? autoFocusField : undefined}
             className="input-field"
           >
             {!form.source && <option value="">Select…</option>}

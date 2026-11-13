@@ -163,6 +163,9 @@
    built-in `dark:` follows prefers-color-scheme, which would ignore a manual
    Light/Dark choice — this repoints it at the attribute. */
 @custom-variant dark ([data-theme='dark'] &);
+/* Hover-only reveals (row actions shown on hover) apply only where hovering
+   exists; a touch device at lg widths (an iPad) always shows them. */
+@custom-variant hoverable (@media (hover: hover));
 
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,

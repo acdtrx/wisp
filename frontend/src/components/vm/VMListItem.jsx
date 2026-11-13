@@ -80,7 +80,7 @@ export default function VMListItem({ vm }) {
           <SectionPickerButton type="vm" name={vm.name} />
         </div>
       ) : (
-        <div className="flex shrink-0 items-center gap-0.5 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-150">
+        <div className="flex shrink-0 items-center gap-0.5 hoverable:lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100 transition-opacity duration-150">
           {isStopped && (
             <button
               onClick={(e) => { e.stopPropagation(); startVM(vm.name); }}

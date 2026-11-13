@@ -225,7 +225,7 @@ export default function ContainerOverviewPanel() {
           <button
             type="button"
             onClick={() => setIconPickerOpen(true)}
-            className={`shrink-0 rounded-lg p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 ${iconColorClass}`}
+            className={`shrink-0 rounded-lg p-2 lg:p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 ${iconColorClass}`}
             title="Change icon"
           >
             <IconComp size={18} className={isRunning ? 'wisp-lit-glyph' : undefined} />
@@ -325,7 +325,7 @@ export default function ContainerOverviewPanel() {
       {(actionError || error) && (
         <div className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-status-stopped/30 bg-status-stopped-soft px-4 py-2 text-xs text-status-stopped">
           <span className="min-w-0 flex-1">{actionError || error}</span>
-          <button type="button" onClick={() => { clearActionError(name); clearError(); }} className="shrink-0 rounded-sm p-1 hover:bg-status-stopped/20 transition-colors duration-150" title="Dismiss">
+          <button type="button" onClick={() => { clearActionError(name); clearError(); }} className="shrink-0 rounded-sm p-2 lg:p-1 hover:bg-status-stopped/20 transition-colors duration-150" title="Dismiss">
             <X size={14} />
           </button>
         </div>

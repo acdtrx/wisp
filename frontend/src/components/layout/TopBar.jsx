@@ -59,7 +59,7 @@ export default function TopBar() {
         <button
           type="button"
           onClick={handleLogout}
-          className="flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
+          className="flex items-center justify-center rounded-md border border-surface-border p-2 lg:p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
           title="Sign out"
           aria-label="Sign out"
         >

@@ -10,6 +10,7 @@ import {
 } from '../shared/FormModalChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
 import { addMount, patchMount, checkMountConnection } from '../../api/settings.js';
+import { autoFocusField } from '../../lib/focus.js';
 
 const FORM_ID = 'smb-share-editor-form';
 
@@ -182,7 +183,7 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
             value={form.label}
             onChange={setField('label')}
             placeholder="media-nas"
-            autoFocus
+            ref={autoFocusField}
             className="input-field"
           />
         </FormField>

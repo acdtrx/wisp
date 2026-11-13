@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { Search } from 'lucide-react';
 import Modal from './Modal.jsx';
 import { VM_ICONS } from './vmIcons.jsx';
+import { focusField } from '../../lib/focus.js';
 
 const CATEGORIES = ['OS', 'Service', 'Generic'];
 
@@ -17,7 +18,7 @@ export default function IconPickerModal({ open, currentIconId, onSelect, onClose
   // populated by then. Avoids the prior `setTimeout(50)` which raced the
   // mount and made testing flaky.
   useLayoutEffect(() => {
-    if (open) inputRef.current?.focus();
+    if (open) focusField(inputRef.current); // not on touch: the picker opens without the keyboard
   }, [open]);
 
   const filtered = useMemo(() => {

@@ -79,7 +79,7 @@ export default function ContainerListItem({ container }) {
           <SectionPickerButton type="container" name={container.name} />
         </div>
       ) : (
-        <div className="flex shrink-0 items-center gap-0.5 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-150">
+        <div className="flex shrink-0 items-center gap-0.5 hoverable:lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100 transition-opacity duration-150">
           {isStopped && (
             <button
               onClick={(e) => { e.stopPropagation(); startContainer(container.name); }}

@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/authStore';
 import { getOidcStatus, OIDC_LOGIN_URL } from '../api/auth';
 import FullScreenSpinner from '../components/shared/FullScreenSpinner.jsx';
 import WispGlyph from '../components/shared/WispGlyph.jsx';
+import { autoFocusField } from '../lib/focus.js';
 
 // Messages shown when the browser returns from an SSO attempt or a sign-out.
 // The presence of the `?sso=` marker is also what stops the auto-redirect
@@ -84,7 +85,7 @@ export default function Login() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter password"
-              autoFocus
+              ref={autoFocusField}
               className="input-field rounded-lg placeholder:text-text-muted focus:ring-1 focus:ring-accent"
             />
 

@@ -10,6 +10,7 @@ import {
 import IconPickerModal from '../shared/IconPickerModal.jsx';
 import { getVmIcon } from '../shared/vmIcons.jsx';
 import { useHomeStore } from '../../store/homeStore.js';
+import { autoFocusField } from '../../lib/focus.js';
 
 const DEFAULT_ICON_ID = 'globe';
 
@@ -88,7 +89,7 @@ export default function ManualLinkModal({ open, tile, onClose }) {
             <input
               id="manual-link-name"
               type="text"
-              autoFocus
+              ref={autoFocusField}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Router"

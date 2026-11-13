@@ -4,6 +4,7 @@ import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import AlertDialog from '../shared/AlertDialog.jsx';
 import { useHomeStore } from '../../store/homeStore.js';
 import HomeTile from './HomeTile.jsx';
+import { autoFocusField } from '../../lib/focus.js';
 
 const headerBtn =
   'rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-30 disabled:hover:bg-transparent';
@@ -72,7 +73,7 @@ export default function HomeGroup({ group, tiles, editing, hideLabel, autoEdit, 
           <div className="flex items-center gap-0.5">
             <input
               type="text"
-              autoFocus
+              ref={autoFocusField}
               value={draftName}
               maxLength={64}
               onChange={(e) => setDraftName(e.target.value)}

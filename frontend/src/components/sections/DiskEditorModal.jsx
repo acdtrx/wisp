@@ -17,6 +17,7 @@ import {
   updateDiskBus,
 } from '../../api/vms.js';
 import { formatSize } from '../../utils/formatters.js';
+import { autoFocusField } from '../../lib/focus.js';
 
 const FORM_ID = 'disk-editor-form';
 
@@ -226,7 +227,7 @@ export default function DiskEditorModal({
               value={form.imagePath}
               onChange={(e) => setField('imagePath', e.target.value)}
               disabled={imagesLoading}
-              autoFocus
+              ref={autoFocusField}
               className="input-field"
             >
               <option value="">{imagesLoading ? 'Loading…' : 'Select…'}</option>
@@ -273,7 +274,7 @@ export default function DiskEditorModal({
                 step={1}
                 value={form.sizeGB}
                 onChange={(e) => setField('sizeGB', e.target.value)}
-                autoFocus={!isEdit}
+                ref={!isEdit ? autoFocusField : undefined}
                 className="input-field w-28 text-right font-mono"
               />
               <span className="text-xs text-text-muted">GB</span>

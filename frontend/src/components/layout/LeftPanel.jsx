@@ -14,6 +14,7 @@ import VMListItem from '../vm/VMListItem.jsx';
 import ContainerListItem from '../container/ContainerListItem.jsx';
 import AlertDialog from '../shared/AlertDialog.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
+import { autoFocusField } from '../../lib/focus.js';
 
 const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -92,7 +93,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
         <div className="flex items-center gap-0.5">
           <input
             type="text"
-            autoFocus
+            ref={autoFocusField}
             value={draftName}
             onChange={(e) => setDraftName(e.target.value)}
             onKeyDown={(e) => {
@@ -105,7 +106,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
             type="button"
             onClick={submitRename}
             disabled={busy}
-            className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-status-running disabled:opacity-40"
+            className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-status-running disabled:opacity-40"
             title="Save"
             aria-label="Save"
           >
@@ -114,7 +115,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
           <button
             type="button"
             onClick={() => setEditing(false)}
-            className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-status-stopped"
+            className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-status-stopped"
             title="Cancel"
             aria-label="Cancel"
           >
@@ -132,7 +133,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
                 type="button"
                 onClick={() => onMove?.('up')}
                 disabled={busy || !canMoveUp}
-                className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
+                className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
                 title="Move up"
                 aria-label="Move section up"
               >
@@ -142,7 +143,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
                 type="button"
                 onClick={() => onMove?.('down')}
                 disabled={busy || !canMoveDown}
-                className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
+                className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
                 title="Move down"
                 aria-label="Move section down"
               >
@@ -152,7 +153,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
                 type="button"
                 onClick={startRename}
                 disabled={busy}
-                className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-40"
+                className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary disabled:opacity-40"
                 title="Rename section"
                 aria-label="Rename section"
               >
@@ -162,7 +163,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
                 type="button"
                 onClick={handleDelete}
                 disabled={busy}
-                className="rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-status-stopped disabled:opacity-40"
+                className="rounded-sm p-2 lg:p-0.5 text-text-secondary hover:bg-surface hover:text-status-stopped disabled:opacity-40"
                 title="Delete section"
                 aria-label="Delete section"
               >

@@ -10,6 +10,7 @@ import {
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
+import { autoFocusField } from '../../lib/focus.js';
 
 const FORM_ID = 'env-var-editor-form';
 
@@ -186,7 +187,7 @@ export default function EnvVarEditorModal({ open, row, existingKeys = [], onSubm
               value={form.key}
               onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
               placeholder="KEY"
-              autoFocus={!isEdit}
+              ref={!isEdit ? autoFocusField : undefined}
               autoComplete="off"
               spellCheck={false}
               className="input-field font-mono"

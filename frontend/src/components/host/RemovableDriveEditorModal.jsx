@@ -11,6 +11,7 @@ import {
 } from '../shared/FormModalChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
 import { addMount, patchMount } from '../../api/settings.js';
+import { autoFocusField } from '../../lib/focus.js';
 
 const FORM_ID = 'removable-drive-editor-form';
 
@@ -163,7 +164,7 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
             value={form.label}
             onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
             placeholder="backup-drive"
-            autoFocus
+            ref={autoFocusField}
             className="input-field"
           />
         </FormField>

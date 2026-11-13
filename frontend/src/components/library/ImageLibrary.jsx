@@ -30,6 +30,7 @@ import {
   DataTableTd,
 } from '../shared/DataTableChrome.jsx';
 import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
+import { focusField } from '../../lib/focus.js';
 
 const FILTERS_PAGE = [
   { key: 'all', label: 'All' },
@@ -168,8 +169,7 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
   const inputRef = useRef(null);
 
   useEffect(() => {
-    if (editing && inputRef.current) {
-      inputRef.current.focus();
+    if (editing && inputRef.current && focusField(inputRef.current)) {
       const dotIdx = editValue.lastIndexOf('.');
       inputRef.current.setSelectionRange(0, dotIdx > 0 ? dotIdx : editValue.length);
     }
@@ -203,10 +203,10 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
               }}
               className="rounded-sm border border-surface-border bg-surface-input px-2 py-0.5 text-sm text-text-primary outline-hidden focus:border-accent"
             />
-            <button type="button" onClick={commitRename} className="rounded-sm p-0.5 text-status-running hover:bg-status-running-soft" title="Confirm rename" aria-label="Confirm rename">
+            <button type="button" onClick={commitRename} className="rounded-sm p-2 lg:p-0.5 text-status-running hover:bg-status-running-soft" title="Confirm rename" aria-label="Confirm rename">
               <Check size={14} aria-hidden />
             </button>
-            <button type="button" onClick={cancelRename} className="rounded-sm p-0.5 text-text-muted hover:bg-surface" title="Cancel rename" aria-label="Cancel rename">
+            <button type="button" onClick={cancelRename} className="rounded-sm p-2 lg:p-0.5 text-text-muted hover:bg-surface" title="Cancel rename" aria-label="Cancel rename">
               <X size={14} aria-hidden />
             </button>
           </div>

@@ -6,6 +6,7 @@ import {
   formModalNeutralBtn,
   formModalPrimaryBtn,
 } from '../../components/shared/FormModalChrome.jsx';
+import { autoFocusField } from '../../lib/focus.js';
 
 const FORM_ID = 'jellyfin-library-editor-form';
 
@@ -85,7 +86,7 @@ export default function JellyfinLibraryEditorModal({
             placeholder="movies"
             value={form.label}
             onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
-            autoFocus
+            ref={autoFocusField}
           />
         </FormField>
 

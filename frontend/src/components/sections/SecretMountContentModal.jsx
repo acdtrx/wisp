@@ -11,6 +11,7 @@ import {
 } from '../shared/FormModalChrome.jsx';
 import { putMountFileContent } from '../../api/containers.js';
 import { formatSize } from '../../utils/formatters.js';
+import { autoFocusField } from '../../lib/focus.js';
 
 const FORM_ID = 'secret-mount-content-form';
 
@@ -108,7 +109,7 @@ export default function SecretMountContentModal({ open, containerName, mount, on
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Paste the new content"
-              autoFocus
+              ref={autoFocusField}
               autoComplete="off"
               spellCheck={false}
               rows={8}
