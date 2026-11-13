@@ -40,6 +40,7 @@
 - **Backup completion no longer reveals the host path.**
 - **Library symlinks can't point a VM outside the allowed folders** — disk and ISO paths are checked after following symlinks.
 - **Settings refuse invalid values** — a relative path, an unknown backup mount or an incomplete enabled single sign-on answers 422 instead of being saved as a default or silently disabled.
+- **Nothing waits forever any more** — every outbound request and subprocess has a bound: libvirt, containerd and avahi calls, downloads (connect, headers, a stalled body), helper scripts, consoles and the web UI's requests; size-dependent work (disk converts and copies, backup and restore archives, image decompression) is stopped only when it stops making progress.
 
 ## 2026-10-30 (v2.6.0)
 

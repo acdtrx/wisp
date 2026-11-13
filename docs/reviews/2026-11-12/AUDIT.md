@@ -232,6 +232,9 @@ connect 10 s, headers 300 s, body 300 s *between chunks* — "implicit" below.
   `containerManagerMountsContent.js:126`, `wispUpdate.js:365` (bounded-size tarball). *Fix:*
   execFile/spawn `timeout`: 5–15 s for openssl, mkfifo, systemctl; 30–60 s for qemu-img
   info/create/resize, ISO build, NVRAM copy; 120 s for the release tar. — **clear**
+  **Fixed:** openssl 10 s; mkfifo 5 s; the updater start 15 s; the zip listing 30 s;
+  qemu-img info/resize/create, the ISO build and the NVRAM copy 60 s; the release tar 120
+  s.
 - **TMO-2** — long, size-dependent work: `qemu-img convert` (`diskOps.js:202`), disk `cp`
   (`vmManagerBackup.js:50`), container backup `tar` (`containerManagerBackup.js:110` — the
   container stays frozen while it runs, `:186`), restore `tar` (`:152`), `xz`
@@ -240,11 +243,21 @@ connect 10 s, headers 300 s, body 300 s *between chunks* — "implicit" below.
   no-progress watchdog (kill after N minutes without output growth / byte progress — qemu-img
   `-p`, the byte counter at `containerManagerBackup.js:118`, destination size), no total cap;
   the unzip extract (bounded by the upload cap) gets a generous fixed cap.
+  **Fixed:** `storage/stallWatchdog.js` (`createStallWatchdog`): no total cap, killed
+  after a stall — convert (output or destination blocks, 10 min), VM backup `cp`
+  (destination blocks, 10 min; a stall is not retried through `copyFile`), container
+  backup tar (bytes, 5 min), restore tar (GNU checkpoint dots, 10 min), xz (output, 10
+  min); the unzip extract a fixed 30 min.
 - **TMO-3** — the execFile timeout signals `sudo`, not the worker: children of the bash
   helpers (`apt-get`/`pacman` in `wisp-os-update`, `mount`/`umount` in `wisp-mount`) inherit
   the stdout pipe and keep it open, so the promise can stay pending past its timeout (apt keeps
   its lock). *Fix:* inside the helpers wrap the command in `timeout --kill-after=5 N` or `exec`
   it; settle the JS side on its own timer. To verify on the Linux test host first. — **clear**
+  **Fixed:** on tini (sudo-rs with `use_pty`) the JS promise already settled on time, but
+  the helper's child was orphaned and kept running. `wisp-mount` bounds mount (20 s) and
+  umount (5 s), `wisp-os-update` its read-only apt/pacman steps (100 s) with `timeout
+  --kill-after`; the upgrade itself is not bounded (TMO-4). The callers also settle on
+  their own timer (timeout + 5 s, SIGKILL) for hosts without `use_pty`.
 - **TMO-4** — OS upgrade capped at 600 s (`osUpdates.js:183`); a dist-upgrade can run longer,
   and killing dpkg midway leaves it interrupted. — **decision.** *Recommendation:* replace the
   cap with an apt-output stall watchdog (e.g. 15 min without output), or run the upgrade as
@@ -254,47 +267,75 @@ connect 10 s, headers 300 s, body 300 s *between chunks* — "implicit" below.
 - **TMO-5** — small HTTP calls on implicit defaults: `downloadHaos.js:29`,
   `routes/cloudinit.js:152` (holds a request handler up to 300 s), checkUrl
   `downloadFromUrl.js:257`. *Fix:* `AbortSignal.timeout(10–15 s)`. — **clear**
+  **Fixed:** the HAOS release lookup 15 s, the GitHub keys fetch 10 s, `checkUrl` 15 s.
 - **TMO-6** — `downloadFromUrl.js:106-110` (`makePrivateIPGuardAgent`) relies on implicit
   defaults. *Fix:* set `connectTimeout` (10 s) and `headersTimeout` (30 s) explicitly. —
   **clear**
+  **Fixed:** connect 10 s, headers 30 s on the SSRF-guard Agent.
 - **TMO-7** — large downloads (`downloadFromUrl.js:279`, `downloadUtils.js:136`,
   `wispUpdate.js:287`) have only the implicit 300 s idle body timeout, no total cap. —
   **decision.** *Recommendation:* explicit idle `bodyTimeout` of 60–120 s, no total cap.
+  **Fixed:** body idle 120 s on the same Agent, no total cap.
 - **TMO-8** — `containerManagerConnection.js:102,126`: no gRPC deadline on any containerd
   call. *Fix:* default deadline (30 s) in `callUnary`, per-call override; content `read`
   streams through `collectStream` get one too (60 s). — **clear**
+  **Fixed:** `callUnary` takes `deadlineMs` (default 30 s; DEADLINE_EXCEEDED names the
+  method); content read streams 60 s.
 - **TMO-9** — long containerd work: image `transfer` pull (`containerManagerCreate.js:160`;
   callers create, image-update check `containerManagerImageUpdates.js:79`, restore, MCP),
   console `tasks.wait`, the events `subscribe` stream (`containerManagerList.js:230`). —
   **decision.** *Recommendation:* pulls get a generous cap (30 min) or progress-based idle
   detection; `tasks.wait` stays open (bounded by the session); the events stream uses gRPC
   channel keepalive (`grpc.keepalive_time_ms`) instead of an idle timeout.
+  **Fixed:** the image pull 30 min; snapshot removal 2 min; `tasks.wait` no deadline;
+  channel keepalive every 6 min with a 20 s timeout (containerd's server refuses pings
+  more often than 5 min), no pings without an active call.
 - **TMO-10** — `avahi.js:807,862,997,1017` unbounded: a hung daemon leaks
   `browseCreationsInFlight` and stalls `reregisterAll` (`await startBrowse`); resolves pile up
   behind the forwarder's race. *Fix:* wrap in `bounded()`; on a browser/resolver creation
   timeout, free a late-arriving path as `createGroup` does. — **clear**
+  **Fixed:** ServiceResolverNew and ServiceBrowserNew bounded, a late path freed as
+  `createGroup` does; ResolveHostName and ResolveAddress bounded.
 - **TMO-11** — libvirt dbus-next reads and defines have no timeout (`vmManagerConnection.js:273,285,304`,
   `vmManagerList.js:47,286`, `vmManagerConfig.js:128,303,385`, `vmManagerDisk.js:96`, stats).
   *Fix:* an avahi-style `bounded()` (30 s) in vmManager. — **clear**
+  **Fixed:** every libvirt DBus interface is wrapped in a Proxy that bounds each method
+  call (30 s), introspection included.
 - **TMO-12** — libvirt lifecycle calls (`vmManagerLifecycle.js:14-56` Create, Shutdown,
   Destroy, Reboot; `vmManagerCreate.js:535` Undefine; backup block jobs). — **decision.**
   *Recommendation:* the same bound with a longer value (2 min) — Create of a large VM and
   Undefine with NVRAM are the slow ones; a guest shutdown is already asynchronous in libvirt.
+  **Fixed:** Create, Shutdown, Destroy, Reboot, Undefine, Suspend and Resume bounded at 2
+  min through the same Proxy.
 - **TMO-13** — `backend/scripts/migrate.mjs:203` hangs `install.sh:112`, `common-steps.sh:72`
   and the updater when containerd or libvirtd is wedged. Fixed by TMO-8 and TMO-11. — **clear**
+  **Fixed:** follows from TMO-8 and TMO-11 — the runner uses the same managers.
 - **TMO-14** — `scripts/linux/setup/cni.sh:45`, `containerd.sh:75`, `packages.sh:81`: curl
   without bounds; `scripts/vendor-novnc.sh:18` git clone. *Fix:* `--connect-timeout 10
   --max-time 300`; `timeout 120 git clone` (or `http.lowSpeedLimit/Time`). — **clear**
+  **Fixed:** setup curls `--connect-timeout 10` with `--max-time` 300 (CNI tarball) or 60
+  (keys); the noVNC clone uses git's low-speed abort (under 1 KB/s for 60 s), portable to
+  the macOS dev machine.
 - **TMO-15** — `scripts/push.sh:66,77`: scp/ssh without bounds. *Fix:* `-o ConnectTimeout=10
   -o ServerAliveInterval=15 -o ServerAliveCountMax=4`. — **clear**
+  **Fixed:** `push.sh` passes `ConnectTimeout=10`, `ServerAliveInterval=15`,
+  `ServerAliveCountMax=4` to scp and ssh.
 - **TMO-16** — `fe/api/client.js:98`, `fe/api/auth.js:15`, `fe/store/authStore.js:14`: no
   timeout on REST calls. *Fix:* default `AbortSignal.any([callerSignal, AbortSignal.timeout(30 s)])`;
   long operations are jobs already. — **clear**
+  **Fixed, with a different value:** `api()` combines the caller's signal with a 60 s
+  deadline (not 30 s: the slowest synchronous routes are bounded at 30 s on the server, a
+  libvirt start at 2 min, so a 30 s client would cut their own errors off); `timeoutMs`
+  per call. The OIDC status probe 15 s, login 60 s.
 - **TMO-17** — long-lived client channels: XHR upload (`fe/api/upload.js:14`), console
   WebSockets (`VNCConsole.jsx:190`, `ContainerConsole.jsx:188`) and the VNC TCP leg
   (`routes/console.js:62`). — **decision.** *Recommendation:* an upload idle watchdog (abort
   after ~60 s without progress); a 10–15 s connect timeout until `open` on both consoles; a
   server-side WebSocket ping (in `be/lib/wsTracking.js`) that also bounds the VNC TCP leg.
+  **Fixed:** upload aborts after 60 s without progress, then 35 min for the reply; both
+  consoles close a socket not open within 15 s; `trackWebSocket` pings every 30 s and
+  terminates a socket that missed the previous ping, which tears down the VNC TCP leg or
+  exec session; the VNC TCP connect to QEMU 10 s.
 
 ---
 
