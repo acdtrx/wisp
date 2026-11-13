@@ -1,13 +1,13 @@
-import { broadcastLogout, readCsrfToken } from './client.js';
+import { API_TIMEOUT_MS, broadcastLogout, readCsrfToken } from './client.js';
 
 /*
  * CODING-RULES §6: no total cap while sending — a large file on a slow link
  * takes as long as it takes — but 60 s without upload progress aborts it. Once
- * the body is sent, the server's reply gets 35 min: above the server's own
- * 30 min bound on extracting an uploaded zip.
+ * the body is sent, the reply is a short request (API_TIMEOUT_MS): what can
+ * take longer, such as extracting an uploaded zip, is a job the reply names.
  */
 const UPLOAD_IDLE_MS = 60_000;
-const REPLY_TIMEOUT_MS = 35 * 60_000;
+const REPLY_TIMEOUT_MS = API_TIMEOUT_MS;
 
 /**
  * POST a single file as multipart field `file` with optional upload progress (0–100).
