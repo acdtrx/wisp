@@ -300,7 +300,9 @@ connect 10 s, headers 300 s, body 300 s *between chunks* — "implicit" below.
   `vmManagerList.js:47,286`, `vmManagerConfig.js:128,303,385`, `vmManagerDisk.js:96`, stats).
   *Fix:* an avahi-style `bounded()` (30 s) in vmManager. — **clear**
   **Fixed:** every libvirt DBus interface is wrapped in a Proxy that bounds each method
-  call (30 s), introspection included.
+  call (30 s), introspection included, and `connect()`'s setup calls (the `/org/libvirt/QEMU`
+  introspection and the `LibVersion` read) are bounded inside their race with the bus failing —
+  first left out, caught in the 2b review.
 - **TMO-12** — libvirt lifecycle calls (`vmManagerLifecycle.js:14-56` Create, Shutdown,
   Destroy, Reboot; `vmManagerCreate.js:535` Undefine; backup block jobs). — **decision.**
   *Recommendation:* the same bound with a longer value (2 min) — Create of a large VM and
@@ -309,7 +311,9 @@ connect 10 s, headers 300 s, body 300 s *between chunks* — "implicit" below.
   min through the same Proxy.
 - **TMO-13** — `backend/scripts/migrate.mjs:203` hangs `install.sh:112`, `common-steps.sh:72`
   and the updater when containerd or libvirtd is wedged. Fixed by TMO-8 and TMO-11. — **clear**
-  **Fixed:** follows from TMO-8 and TMO-11 — the runner uses the same managers.
+  **Fixed:** follows from TMO-8 and TMO-11 — the runner uses the same managers, whose connect
+  setup is bounded too: a wedged libvirt-dbus fails the connect after 30 s, and the runner warns
+  and goes on, as with any failed connect.
 - **TMO-14** — `scripts/linux/setup/cni.sh:45`, `containerd.sh:75`, `packages.sh:81`: curl
   without bounds; `scripts/vendor-novnc.sh:18` git clone. *Fix:* `--connect-timeout 10
   --max-time 300`; `timeout 120 git clone` (or `http.lowSpeedLimit/Time`). — **clear**

@@ -212,6 +212,10 @@ code too); `npm run dev` under a terminal was not affected. Not investigated: po
 shutdown step that waits on a darwin stub. **Revisit trigger:** it gets in the way of dev
 work or a script that restarts the dev backend.
 
+**A failed SMB check leaves its mount point.** `wisp-mount smb check` runs under `set -e`, so a mount that fails (a wrong password, an unreachable host, now also the helper's own timeout) exits before the `rmdir`, leaving a `/mnt/wisp/smb-check-*` directory behind (seen 2026-11-13). Fix shape: remove the check mount point in an `EXIT` trap. **Revisit trigger:** stray `smb-check-*` directories under `/mnt/wisp`, or the next work on the helper.
+
+**SMB shares without a password can't be mounted.** With no password in the credentials file, `mount.cifs` prompts on stdin; the helper never answers, so the mount waits until the helper's mount bound kills it (seen 2026-11-13). A guest share probably can't be mounted at all. Fix shape: pass `guest` (or an explicit empty `password=`) when no password is set. **Revisit trigger:** someone adds a guest share, or the next work on SMB mounts.
+
 **`PATCH /api/containers/:name` has no body schema.** CODING-RULES §9 wants request
 validation at the boundary; the manager validates fields piecemeal instead (found in the
 2026-11-12 repairs inventory). **Revisit trigger:** a malformed PATCH body is stored, or
