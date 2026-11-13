@@ -8,9 +8,14 @@ import { mkdir, rm, readFile, readdir } from 'node:fs/promises';
 import { randomBytes, createHash } from 'node:crypto';
 
 import {
-  containerError, containerState, getClient, callUnary, callStream, collectStream,
+  containerError, containerState, getClient, callUnary, callStream, collectStream, STREAM_DEADLINE_MS,
   packAny, packProtoAny,
 } from './containerManagerConnection.js';
+
+/** An image pull's deadline (CODING-RULES §6, TMO-9). */
+const PULL_DEADLINE_MS = 30 * 60_000;
+/** Removing a large rootfs snapshot can take a while. */
+const SNAPSHOT_REMOVE_DEADLINE_MS = 2 * 60_000;
 import { buildOCISpec } from './containerManagerSpec.js';
 import { getContainersPath, getContainerDir, getContainerFilesDir } from './containerPaths.js';
 import { createNewRun } from './containerManagerLogs.js';
@@ -157,11 +162,12 @@ export async function pullImage(imageRef, onStep) {
     }],
   });
 
+  // A pull runs as long as the image is big: a generous cap, not 30 s (TMO-9).
   await callUnary(getClient('transfer'), 'transfer', {
     source,
     destination,
     options: {},
-  });
+  }, { deadlineMs: PULL_DEADLINE_MS });
 
   onStep?.({ step: 'pulled', detail: `Image ${ref} pulled` });
   return ref;
@@ -172,7 +178,7 @@ export async function pullImage(imageRef, onStep) {
  */
 async function readContent(digest) {
   const chunks = await collectStream(
-    callStream(getClient('content'), 'read', { digest }),
+    callStream(getClient('content'), 'read', { digest }, { deadlineMs: STREAM_DEADLINE_MS }),
   );
   return Buffer.concat(chunks.map((c) => c.data));
 }
@@ -571,7 +577,7 @@ async function rollbackFailedStart(name, networkConfig) {
   await cleanupTask(name);
   try { await teardownNetwork(name, networkConfig); } catch { /* best-effort — the next start re-creates the netns */ }
   try {
-    await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name });
+    await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name }, { deadlineMs: SNAPSHOT_REMOVE_DEADLINE_MS });
   } catch { /* best-effort — the next start removes and re-prepares it */ }
   try { await deregisterServicesForContainer(name); } catch { /* best-effort — nothing may be registered */ }
 }
@@ -633,7 +639,7 @@ export async function startExistingContainer(name) {
   // Rootfs is ephemeral: on every start, discard the existing snapshot and re-prepare
   // from the current library image. State persists only through bind mounts.
   try {
-    await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name });
+    await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name }, { deadlineMs: SNAPSHOT_REMOVE_DEADLINE_MS });
   } catch { /* no snapshot yet (first-ever start) — prepareSnapshot below creates it */ }
 
   const currentDigest = await getImageDigest(imageRef);
@@ -658,7 +664,7 @@ export async function startExistingContainer(name) {
   } catch (err) {
     try { await teardownNetwork(name, config.network); } catch { /* best-effort */ }
     try {
-      await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name });
+      await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name }, { deadlineMs: SNAPSHOT_REMOVE_DEADLINE_MS });
     } catch { /* best-effort */ }
     throw containerError(
       'CONTAINER_NETWORK_SETUP_FAILED',
@@ -803,7 +809,7 @@ export async function deleteContainer(name, deleteFiles = true) {
 
   // Remove snapshot
   try {
-    await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name });
+    await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name }, { deadlineMs: SNAPSHOT_REMOVE_DEADLINE_MS });
   } catch {
     // Snapshot may not exist
   }

@@ -46,7 +46,7 @@ function getExecFifoSessionDir() {
  * is treated as a relative path and stat fails with "no such file".
  */
 function makeFifo(path) {
-  execFileSync('mkfifo', ['-m', '0600', path], { encoding: 'utf8' });
+  execFileSync('mkfifo', ['-m', '0600', path], { encoding: 'utf8', timeout: 5_000 }); // CODING-RULES §6
 }
 
 /**
@@ -224,7 +224,7 @@ export async function execInContainer(name, opts = {}) {
       containerId: name,
       execId,
     });
-    waitPromise = callUnary(getClient('tasks'), 'wait', { containerId: name, execId });
+    waitPromise = callUnary(getClient('tasks'), 'wait', { containerId: name, execId }, { deadlineMs: null }); // lasts as long as the process
     waitPromise.then(() => { exited = true; }, () => { /* cleanupSession only needs it settled */ });
 
     await callUnary(getClient('tasks'), 'resizePty', {
@@ -341,7 +341,7 @@ export async function execCommandInContainer(name, args, opts = {}) {
 
     await callUnary(getClient('tasks'), 'start', { containerId: name, execId });
 
-    waitPromise = callUnary(getClient('tasks'), 'wait', { containerId: name, execId });
+    waitPromise = callUnary(getClient('tasks'), 'wait', { containerId: name, execId }, { deadlineMs: null }); // lasts as long as the process
     waitPromise.then(() => { exited = true; }, () => { /* surfaced by the await below */ });
 
     // The process has exited and both FIFOs hit EOF — the timeout bounds the whole run.

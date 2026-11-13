@@ -83,11 +83,33 @@ function loadProto(relPath) {
   return grpc.loadPackageDefinition(loadProtoDef(relPath));
 }
 
+/*
+ * CODING-RULES §6 (settled 2026-11-12, TMO-8/TMO-9): every unary call carries
+ * a deadline — 30 s unless the call names its own (`deadlineMs`; null for none,
+ * e.g. tasks.wait, which lasts as long as the process it waits on); content
+ * read streams 60 s. The long-lived events stream has no deadline; channel
+ * keepalive notices a containerd that stopped answering instead. containerd's
+ * gRPC server refuses pings more often than every 5 min (ENHANCE_YOUR_CALM)
+ * and without an active call, hence 6 min and no pings while idle.
+ */
+export const DEFAULT_DEADLINE_MS = 30_000;
+export const STREAM_DEADLINE_MS = 60_000;
+const CHANNEL_OPTIONS = {
+  'grpc.keepalive_time_ms': 6 * 60_000,
+  'grpc.keepalive_timeout_ms': 20_000,
+  'grpc.keepalive_permit_without_calls': 0,
+};
+
 function createClient(ServiceClass) {
   return new ServiceClass(
     `unix:${SOCKET_PATH}`,
     grpc.credentials.createInsecure(),
+    CHANNEL_OPTIONS,
   );
+}
+
+function callOptions(deadlineMs) {
+  return deadlineMs == null ? {} : { deadline: new Date(Date.now() + deadlineMs) };
 }
 
 function namespaceMeta() {
@@ -97,13 +119,16 @@ function namespaceMeta() {
 }
 
 /**
- * Promisify a unary gRPC call with the wisp namespace header.
+ * Promisify a unary gRPC call with the wisp namespace header and a deadline
+ * (`deadlineMs`, default DEFAULT_DEADLINE_MS; null for none).
  */
-export function callUnary(client, method, request = {}) {
+export function callUnary(client, method, request = {}, { deadlineMs = DEFAULT_DEADLINE_MS } = {}) {
   return new Promise((resolve, reject) => {
-    client[method](request, namespaceMeta(), (err, response) => {
+    client[method](request, namespaceMeta(), callOptions(deadlineMs), (err, response) => {
       if (err) {
-        if (err.code === grpc.status.NOT_FOUND) {
+        if (err.code === grpc.status.DEADLINE_EXCEEDED) {
+          reject(containerError('CONTAINERD_ERROR', `containerd did not answer ${method} within ${Math.round(deadlineMs / 1000)} s`, err.message));
+        } else if (err.code === grpc.status.NOT_FOUND) {
           reject(containerError('CONTAINER_NOT_FOUND', err.details || err.message, err.message));
         } else if (err.code === grpc.status.ALREADY_EXISTS) {
           reject(containerError('CONTAINER_EXISTS', err.details || err.message, err.message));
@@ -120,11 +145,13 @@ export function callUnary(client, method, request = {}) {
 }
 
 /**
- * Open a server-streaming gRPC call with the wisp namespace header.
+ * Open a server-streaming gRPC call with the wisp namespace header and an
+ * optional deadline for the whole stream (`deadlineMs`; none by default — the
+ * events subscription lives as long as the connection).
  * Returns the stream object (EventEmitter with 'data', 'end', 'error').
  */
-export function callStream(client, method, request = {}) {
-  return client[method](request, namespaceMeta());
+export function callStream(client, method, request = {}, { deadlineMs = null } = {}) {
+  return client[method](request, namespaceMeta(), callOptions(deadlineMs));
 }
 
 /**
@@ -215,7 +242,9 @@ export function collectStream(stream) {
     stream.on('data', (msg) => items.push(msg));
     stream.on('end', () => resolve(items));
     stream.on('error', (err) => {
-      if (err.code === grpc.status.UNAVAILABLE) {
+      if (err.code === grpc.status.DEADLINE_EXCEEDED) {
+        reject(containerError('CONTAINERD_ERROR', 'containerd did not finish the stream in time', err.message));
+      } else if (err.code === grpc.status.UNAVAILABLE) {
         reject(containerError('NO_CONTAINERD', 'containerd is not reachable', err.message));
       } else {
         reject(containerError('CONTAINERD_ERROR', err.details || err.message, err.message));

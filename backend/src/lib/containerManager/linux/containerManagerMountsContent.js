@@ -116,6 +116,8 @@ export async function uploadMountFileStream(containerName, mountName, fileStream
 }
 
 const UNZIP_MAX_LIST = 50 * 1024 * 1024;
+/** Extracting an upload-capped zip takes minutes at most: a fixed, generous cap (CODING-RULES §6). */
+const UNZIP_EXTRACT_TIMEOUT_MS = 30 * 60_000;
 
 /**
  * List archive entry names with Info-ZIP `unzip -Z1`, reject zip-slip paths before extraction.
@@ -123,7 +125,7 @@ const UNZIP_MAX_LIST = 50 * 1024 * 1024;
 async function assertZipPathsSafe(zipPath) {
   let stdout;
   try {
-    const r = await execFile('unzip', ['-Z1', zipPath], { maxBuffer: UNZIP_MAX_LIST });
+    const r = await execFile('unzip', ['-Z1', zipPath], { maxBuffer: UNZIP_MAX_LIST, timeout: 30_000 }); // a listing: seconds (CODING-RULES §6)
     stdout = r.stdout;
   } catch (err) {
     if (isUnzipMissingError(err)) {
@@ -155,6 +157,8 @@ async function extractZipWithUnzipCli(zipPath, destDirAbs) {
   try {
     await execFile('unzip', ['-q', '-o', zipPath, '-d', destDirAbs], {
       maxBuffer: 4 * 1024 * 1024,
+      // The upload cap bounds the archive, so a fixed, generous cap (TMO-2).
+      timeout: UNZIP_EXTRACT_TIMEOUT_MS,
     });
   } catch (err) {
     if (isUnzipMissingError(err)) {
@@ -163,6 +167,9 @@ async function extractZipWithUnzipCli(zipPath, destDirAbs) {
         'The unzip program is not available (install the unzip package)',
         err.message,
       );
+    }
+    if (err.killed) {
+      throw containerError('CONTAINER_ZIP_INVALID', `Extracting the zip archive did not finish within ${UNZIP_EXTRACT_TIMEOUT_MS / 60_000} min`, err.message);
     }
     const code = err.code;
     if (code === 1 || code === '1') {

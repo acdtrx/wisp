@@ -143,7 +143,7 @@ export async function renameContainer(oldName, newName) {
     await callUnary(getClient('snapshots'), 'remove', {
       snapshotter: SNAPSHOTTER,
       key: oldName,
-    });
+    }, { deadlineMs: 2 * 60_000 }); // a large rootfs can take a while
   } catch {
     /* No snapshot to remove (never started, or already gone) */
   }

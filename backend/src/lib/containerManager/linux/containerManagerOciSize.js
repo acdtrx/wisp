@@ -3,7 +3,7 @@
  * platform manifest. The Images API `target.size` is only the top-level manifest/index blob
  * size — not useful for display.
  */
-import { getClient, callUnary, callStream, collectStream } from './containerManagerConnection.js';
+import { getClient, callUnary, callStream, collectStream, STREAM_DEADLINE_MS } from './containerManagerConnection.js';
 
 const OCI_ARCH = ({ x64: 'amd64', arm64: 'arm64', arm: 'arm' })[process.arch] || process.arch;
 
@@ -55,7 +55,7 @@ function pickLinuxManifestDescriptor(manifests) {
 
 async function readContent(digest) {
   const chunks = await collectStream(
-    callStream(getClient('content'), 'read', { digest }),
+    callStream(getClient('content'), 'read', { digest }, { deadlineMs: STREAM_DEADLINE_MS }),
   );
   return Buffer.concat(chunks.map((c) => c.data));
 }

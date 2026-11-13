@@ -55,6 +55,14 @@ import { resolveMount } from './containerPaths.js';
 import { getImageDigest, resolveContainerImageRef } from './containerManagerImages.js';
 import { validateAndNormalizeMounts } from './containerManagerMounts.js';
 import { validateAndNormalizeDevices } from './containerManagerDevices.js';
+import { createStallWatchdog, stallMinutes } from '../../storage/index.js';
+
+/* tar runs as long as the data is big: no total cap, but it is killed after
+ * this long without progress (CODING-RULES §6, TMO-2) — bytes out of tar when
+ * archiving (the container stays frozen meanwhile, hence the shorter bound),
+ * GNU tar's checkpoint dots when restoring. */
+const BACKUP_TAR_STALL_MS = 5 * 60_000;
+const RESTORE_TAR_STALL_MS = 10 * 60_000;
 
 /* A backup holds container.json (secret env values in plaintext) and the
  * mount data, so it is owner-only: the timestamp directory 0700, every file in
@@ -113,10 +121,15 @@ async function tarGzipDir(parent, baseName, destPath, totalBytes, onProgress) {
 
   let stderrBuf = '';
   tar.stderr.on('data', (d) => { stderrBuf += d.toString(); });
+  const watchdog = createStallWatchdog({
+    stallMs: BACKUP_TAR_STALL_MS,
+    onStall: () => tar.kill('SIGKILL'),
+  });
 
   let lastPct = -1;
   const counter = new Transform({
     transform(chunk, _enc, cb) {
+      watchdog.poke();
       counter.bytes = (counter.bytes || 0) + chunk.length;
       if (typeof onProgress === 'function' && totalBytes > 0) {
         const pct = Math.min(100, Math.round((counter.bytes / totalBytes) * 100));
@@ -136,31 +149,53 @@ async function tarGzipDir(parent, baseName, destPath, totalBytes, onProgress) {
   const tarExitPromise = new Promise((resolve, reject) => {
     tar.on('error', reject);
     tar.on('exit', (code, signal) => {
-      if (code === 0) resolve();
+      if (watchdog.fired) reject(new Error(`tar made no progress for ${stallMinutes(BACKUP_TAR_STALL_MS)} and was stopped`));
+      else if (code === 0) resolve();
       else reject(new Error(`tar exited ${code ?? signal}: ${stderrBuf.trim() || 'unknown'}`));
     });
   });
 
-  await Promise.all([
-    pipeline(tar.stdout, counter, gzip, out),
-    tarExitPromise,
-  ]);
+  try {
+    await Promise.all([
+      pipeline(tar.stdout, counter, gzip, out),
+      tarExitPromise,
+    ]);
+  } catch (err) {
+    // The tar exit names a stall; a pipeline error from the same kill would not.
+    throw watchdog.fired ? await tarExitPromise.catch((e) => e) : err;
+  } finally {
+    watchdog.stop();
+  }
 }
 
-/** Untar a gzipped archive into `destDir`. */
+/**
+ * Untar a gzipped archive into `destDir`. GNU tar prints a dot every 1000
+ * records (~10 MB) on stdout (`--checkpoint-action=dot`): the progress the
+ * stall watchdog watches.
+ */
 async function untarGzipTo(archivePath, destDir) {
-  const tar = spawn('tar', ['-xzf', archivePath, '-C', destDir], {
+  const tar = spawn('tar', ['-xzf', archivePath, '-C', destDir, '--checkpoint=1000', '--checkpoint-action=dot'], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stderrBuf = '';
-  tar.stderr.on('data', (d) => { stderrBuf += d.toString(); });
-  await new Promise((resolve, reject) => {
-    tar.on('error', reject);
-    tar.on('exit', (code, signal) => {
-      if (code === 0) resolve();
-      else reject(new Error(`tar exited ${code ?? signal}: ${stderrBuf.trim() || 'unknown'}`));
-    });
+  const watchdog = createStallWatchdog({
+    stallMs: RESTORE_TAR_STALL_MS,
+    onStall: () => tar.kill('SIGKILL'),
   });
+  tar.stdout.on('data', watchdog.poke);
+  tar.stderr.on('data', (d) => { watchdog.poke(); stderrBuf += d.toString(); });
+  try {
+    await new Promise((resolve, reject) => {
+      tar.on('error', reject);
+      tar.on('exit', (code, signal) => {
+        if (watchdog.fired) reject(new Error(`tar made no progress for ${stallMinutes(RESTORE_TAR_STALL_MS)} and was stopped`));
+        else if (code === 0) resolve();
+        else reject(new Error(`tar exited ${code ?? signal}: ${stderrBuf.replace(/^\.+/gm, '').trim() || 'unknown'}`));
+      });
+    });
+  } finally {
+    watchdog.stop();
+  }
 }
 
 async function ensureWritableDir(p) {
