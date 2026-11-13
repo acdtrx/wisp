@@ -59,6 +59,22 @@ The §4 and §7 findings.
   - A bad `runtime.env` line fails startup.
   - `npm run check-imports` passes.
 
+**Settled after the 2a review (2026-11-13):**
+- Values earlier releases wrote must not stop a host from booting or updating. Migration
+  0009 reads `wisp-config.json` and `runtime.env` raw. It strips the retired keys
+  (`refreshIntervalSeconds`, `networkMounts`, `backupNetworkMountId`, `WISP_BACKEND_PORT`,
+  `WISP_FRONTEND_PORT`), and removes mounts outside `/mnt/wisp/`, logging each removal. The
+  migrate runner runs pending migrations before its strict config check.
+- CFG-4 is reversed: the read is strict, and a dangling `backupMountId` or schedule
+  destination fails startup. The write path prunes the references a delete leaves behind.
+  Migration 0009 prunes the leftovers older releases left in the file (a deleted mount still
+  listed in `backupSchedule.destinationIds`).
+- CFG-11: the password file is read on every use, not once at startup, because
+  `wispctl password` doesn't restart Wisp.
+- Specs follow the code: API.md, ERROR-HANDLING.md, AUTH.md, UPDATES.md § Runner, and
+  CONFIGURATION.md (the wording on how an update fails).
+- Before release, the configs on the host `wisp` are checked against the schema (read only).
+
 ## Milestone 2b — timeouts
 
 The §6 findings except TMO-4.
