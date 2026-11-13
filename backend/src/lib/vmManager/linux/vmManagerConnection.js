@@ -54,6 +54,55 @@ export const connectionState = {
 
 export { vmError, unwrapVariant, unwrapDict, formatVersion, generateMAC };
 
+/*
+ * CODING-RULES §6 (settled 2026-11-12, TMO-11/TMO-12): every libvirt DBus call
+ * is bounded — 30 s, and 2 min for the lifecycle calls (starting a large VM,
+ * undefining one with NVRAM are the slow ones; a guest shutdown request returns
+ * at once anyway). dbus-next never settles a call libvirtd doesn't answer, so a
+ * wedged daemon would otherwise hang the route, a reconciler or the migration
+ * runner. A late answer still lands in libvirt; only the wait gives up.
+ */
+export const LIBVIRT_CALL_TIMEOUT_MS = 30_000;
+export const LIBVIRT_LIFECYCLE_TIMEOUT_MS = 2 * 60_000;
+const LIFECYCLE_METHODS = new Set(['Create', 'Shutdown', 'Destroy', 'Reboot', 'Undefine', 'Suspend', 'Resume']);
+
+export function boundedLibvirt(promise, what, ms = LIBVIRT_CALL_TIMEOUT_MS) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(vmError('LIBVIRT_ERROR', `libvirt did not answer ${what} within ${Math.round(ms / 1000)} s`)),
+      ms,
+    );
+    timer.unref?.();
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * A DBus interface whose method calls (the capitalized members) are bounded;
+ * everything else — its event-emitter side included — passes through.
+ */
+function boundedInterface(iface) {
+  return new Proxy(iface, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof value !== 'function' || typeof prop !== 'string' || !/^[A-Z]/.test(prop)) return value;
+      return (...args) => {
+        const result = value.apply(target, args);
+        if (!result || typeof result.then !== 'function') return result;
+        return boundedLibvirt(result, prop, LIFECYCLE_METHODS.has(prop) ? LIBVIRT_LIFECYCLE_TIMEOUT_MS : LIBVIRT_CALL_TIMEOUT_MS);
+      };
+    },
+  });
+}
+
+/** A libvirt object's interface, bounded (introspection included). */
+export async function getLibvirtInterface(path, name) {
+  if (!connectionState.bus) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
+  const obj = await boundedLibvirt(connectionState.bus.getProxyObject('org.libvirt', path), 'introspection');
+  return boundedInterface(obj.getInterface(name));
+}
+
 /**
  * Subscribe to libvirt domain lifecycle changes. The handler fires on every
  * `DomainEvent` signal from libvirt-dbus and once after each successful
@@ -213,8 +262,8 @@ export async function connect(logger = null, opts = {}) {
     throw err;
   }
   connectionState.bus = bus;
-  connectionState.connectIface = obj.getInterface('org.libvirt.Connect');
-  connectionState.connectProps = obj.getInterface('org.freedesktop.DBus.Properties');
+  connectionState.connectIface = boundedInterface(obj.getInterface('org.libvirt.Connect'));
+  connectionState.connectProps = boundedInterface(obj.getInterface('org.freedesktop.DBus.Properties'));
 
   if (!connectionState.watchEvents) return;
 
@@ -270,10 +319,10 @@ export async function getDomainObjAndIface(path) {
   const cached = connectionState.domainProxyCache.get(path);
   if (cached) return cached;
   if (!connectionState.bus) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
-  const obj = await connectionState.bus.getProxyObject('org.libvirt', path);
+  const obj = await boundedLibvirt(connectionState.bus.getProxyObject('org.libvirt', path), 'introspection');
   const entry = {
-    iface: obj.getInterface('org.libvirt.Domain'),
-    props: obj.getInterface('org.freedesktop.DBus.Properties'),
+    iface: boundedInterface(obj.getInterface('org.libvirt.Domain')),
+    props: boundedInterface(obj.getInterface('org.freedesktop.DBus.Properties')),
   };
   connectionState.domainProxyCache.set(path, entry);
   return entry;

@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 
 import dbus from 'dbus-next';
 
-import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError, generateMAC } from './vmManagerConnection.js';
+import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, getLibvirtInterface, vmError, generateMAC } from './vmManagerConnection.js';
 import { parseDomainRaw, buildXml } from './vmManagerXml.js';
 import { validateVMName } from './vmManagerValidation.js';
 import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
@@ -366,8 +366,7 @@ export async function createVM(spec, { onStep, populateVMDir } = {}) {
   if (s.autostart) {
     try {
       const path = await connectionState.connectIface.DomainLookupByName(name);
-      const obj = await connectionState.bus.getProxyObject('org.libvirt', path);
-      const props = obj.getInterface('org.freedesktop.DBus.Properties');
+      const props = await getLibvirtInterface(path, 'org.freedesktop.DBus.Properties');
       await props.Set('org.libvirt.Domain', 'Autostart', new dbus.Variant('b', true));
     } catch (err) {
       /* VM defined; autostart failure is non-fatal */
@@ -425,7 +424,7 @@ async function provisionAndDefineVM(s, vmBasePath, { emit, populateVMDir, primar
     } else {
       emit('creating-disk');
       const sizeGB = Math.max(1, parseInt(dspec.sizeGB, 10) || 32);
-      await execFile('qemu-img', ['create', '-f', 'qcow2', destPath, `${sizeGB}G`]);
+      await execFile('qemu-img', ['create', '-f', 'qcow2', destPath, `${sizeGB}G`], { timeout: 60_000 }); // sparse: seconds at most (CODING-RULES §6)
     }
   }
 
