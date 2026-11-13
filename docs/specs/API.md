@@ -99,7 +99,7 @@ Provider redirect target. Validates the one-time `state`, exchanges `code` for t
 
 ## Background jobs
 
-In-memory job registry (server process only; no persistence across restart). Used to restore the jobs tray after a full page reload and for server logging. Progress for each job still uses the existing per-job SSE endpoints (`/vms/create-progress`, `/vms/backup-progress`, `/library/download-progress`, `/containers/create-progress`).
+In-memory job registry (server process only; no persistence across restart). Used to restore the jobs tray after a full page reload and for server logging. Progress for each job uses its kind's SSE endpoint: the per-feature ones (`/vms/create-progress`, `/vms/backup-progress`, `/library/download-progress`, `/containers/create-progress`, …), or `GET /api/jobs/:jobId/progress` for the [job routes](#job-routes).
 
 ### GET /api/background-jobs · `read`
 
@@ -110,7 +110,7 @@ In-memory job registry (server process only; no persistence across restart). Use
   "jobs": [
     {
       "jobId": "string",
-      "kind": "vm-create | container-create | backup | container-backup | container-restore | library-download",
+      "kind": "vm-create | container-create | container-image-update-check | backup | container-backup | container-restore | library-download | vm-start | vm-force-stop | vm-delete | vm-restore | os-update-check | os-upgrade | network-bridge-create | network-bridge-delete | mount-unmount | mount-delete | self-update",
       "title": "string",
       "done": false,
       "createdAt": 1730000000000
@@ -127,6 +127,18 @@ In-memory job registry (server process only; no persistence across restart). Use
 - **Progress volume:** byte-driven progress (backup gzip / tar streams, library downloads, `qemu-img convert`) is emitted once per integer percent change — at most ~101 events per stream, whatever the size.
 - **Replay to a late or reconnecting stream:** live subscribers get every event, but the store keeps only the latest of consecutive events with the same `step` (progress ticks of one step replace each other). A stream that connects mid-job receives one event per step transition — the latest progress of each, plus milestones such as `destination-done` — then the live tail.
 - **Stream end:** the terminal event (`done` or `error`) is the last event of every progress SSE — the server ends the response right after it. A stream opened on an already-finished job gets the replay (ending with the terminal event) and is ended; it is never held open until the job expires. Clients stop on the terminal event and do not reconnect.
+- **Error event:** `{ step: "error", error, detail, code? }` — `code` is the error's code (e.g. `VM_ALREADY_RUNNING`, `UPDATE_BUSY`) when it has one.
+
+### Job routes
+
+(settled 2026-11-13.) A command that can outlast a short request runs as a server job (FRONTEND-RULES, Data: the client is an observer): its route checks what it can at once — a bad request, a missing resource, a conflict answer with their usual status — then starts the job and answers **202** `{ jobId, title }`. The job runs to completion whether or not a client follows it. Its progress, and its result as the `done` event's payload, arrive on `GET /api/jobs/:jobId/progress`; a failure is the `error` event, carrying the code the synchronous route would have answered with. The routes: VM start, force-stop and delete; VM restore as new; the OS update check, package refresh and upgrade; network-bridge create and delete; mount unmount and delete; the Wisp update install. Each lists its `done` payload below.
+
+### GET /api/jobs/:jobId/progress · `read`
+
+The progress SSE of a job started by a [job route](#job-routes) (the job store contract above).
+
+- **200:** `text/event-stream` — progress events, then `done` (the route's result) or `error`
+- **404:** unknown job (never started, or expired)
 
 ---
 
@@ -193,19 +205,15 @@ List Wisp-managed VLAN bridge definitions and eligible parent bridges.
 Create a managed VLAN bridge using netplan through the privileged `wisp-bridge` helper.
 
 - **Body:** `{ "baseBridge": "br0", "vlanId": 10 }`
-- **200:** `{ "name": "br0-vlan10", "baseBridge": "br0", "vlanId": 10, "vlanInterface": "br0.10", "present": true }`
-- **409:** `{ error, detail }` — bridge already exists
-- **422:** `{ error, detail }` — invalid parent bridge or VLAN ID
-- **503:** `{ error, detail }` — helper missing, privilege failure, or `netplan apply` failed
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ "name": "br0-vlan10", "baseBridge": "br0", "vlanId": 10, "vlanInterface": "br0.10", "present": true }`
+- **Job errors:** bridge already exists (409's code); invalid parent bridge or VLAN ID (422's); helper missing, privilege failure, or `netplan apply` failed (503's)
 
 ### DELETE /api/host/network-bridges/:name · `admin`
 
 Delete a managed VLAN bridge by name (removes Wisp netplan file, tears down live bridge/vlan interfaces, and reapplies netplan).
 
-- **200:** `{ ok: true }`
-- **404:** `{ error, detail }` — managed bridge not found
-- **409:** `{ error, detail }` — bridge is referenced by VM/container config
-- **503:** `{ error, detail }` — helper missing, privilege failure, or `netplan apply` failed
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{}`
+- **Job errors:** managed bridge not found; bridge is referenced by VM/container config; helper missing, privilege failure, or `netplan apply` failed
 
 ### GET /api/host/firmware · `read`
 
@@ -293,24 +301,26 @@ Server-Sent Events stream of the host block-device list.
 
 ### POST /api/host/updates/check · `admin`
 
-Check for OS package updates. On Debian/Ubuntu uses `apt-get -s upgrade` dry-run (excludes phased-only packages); on Arch uses `pacman -Qu`. Requires `/usr/local/bin/wisp-os-update` (installed by server setup).
+Check for OS package updates. On Debian/Ubuntu uses `apt-get -s upgrade` dry-run (excludes phased-only packages); on Arch uses `pacman -Qu`. Requires `/usr/local/bin/wisp-os-update` (installed by server setup). One shared run: a check or package refresh started while one runs joins it (the same `jobId`).
 
-- **200:** `{ count: number }`
-- **503:** `{ error, detail }` — update script not configured
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ count: number }`; the package list is then in the cache (`GET /api/host/updates/packages`)
+- **Job errors:** `UPDATE_BUSY` — the package manager is locked; `UPDATE_CHECK_UNAVAILABLE` — update script not configured, or a step stopped (see [HOST-MONITORING.md](HOST-MONITORING.md))
 
 ### GET /api/host/updates/packages · `read`
 
 Return the structured list of upgradable packages plus an estimated total download size. On Debian/Ubuntu uses `apt-get -s upgrade` to harvest `Inst …` lines and the `Need to get …` summary; on Arch uses `pacman -Qu` (download size cannot be computed non-interactively, so `downloadBytes` is `0`). Refreshes the cached `pendingUpdates` count and `updatesLastChecked` timestamp as a side-effect.
 
-- **200:** `{ packages: [{ name: string, from: string|null, to: string }], downloadBytes: number }`
+- **200:** `{ packages: [{ name: string, from: string|null, to: string }], downloadBytes: number }` — from the cache
+- **202:** `{ jobId, title }` — with `?refresh=1`, or no cache yet: the [check job](#post-apihostupdatescheck--admin) (started or joined); read the list again once it is done
 - **503:** `{ error, detail }` — update script not configured
 
 ### POST /api/host/updates/upgrade · `admin`
 
-Install OS package updates.
+Install OS package updates. Each line apt or pacman prints is a progress event (`{ step: "upgrading", detail }`).
 
-- **200:** `{ ok: true }`
-- **503:** `{ error, detail }` — update script not configured
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ ok: true }`
+- **409:** `UPDATE_BUSY` — a check or upgrade is already running
+- **Job errors:** `UPDATE_BUSY` — the package manager is locked; `UPDATE_CHECK_UNAVAILABLE` — update script not configured, the upgrade failed, or it printed nothing for its inactivity bound
 
 ### GET /api/updates/status · `read`
 
@@ -327,11 +337,11 @@ Force an immediate self-update check; returns the same shape as `/status`. Which
 
 ### POST /api/updates/install · `admin`
 
-Synchronously downloads + verifies + extracts the new release tarball, writes the staging path to `/var/lib/wisp/updates/target`, triggers `wisp-updater.service` via `sudo -n systemctl start --no-block` and returns 202. The updater is a separate `Type=oneshot` systemd unit — it stops the backend as part of its first real step; the UI detects completion by polling `GET /api/host` for `wispVersion === targetVersion`. Updater progress is in journald (`journalctl -u wisp-updater.service`). `?force=1` overrides the active-jobs guard.
+A [job](#job-routes): downloads + verifies + extracts the new release tarball (progress `{ step, percent? }`), writes the staging path to `/var/lib/wisp/updates/target`, reports `{ step: "restarting" }`, triggers `wisp-updater.service` via `sudo -n systemctl start --no-block` and ends with `done`: `{ targetVersion }`. The job's stream may end before `done` as the backend stops. The updater is a separate `Type=oneshot` systemd unit — it stops the backend as part of its first real step; the UI detects completion by polling `GET /api/host` for `wispVersion === targetVersion`. Updater progress is in journald (`journalctl -u wisp-updater.service`). `?force=1` overrides the active-jobs guard.
 
-- **202:** `{ targetVersion }`
+- **202:** `{ jobId, title, targetVersion }`
 - **409:** `{ error, detail }` — no update available; other background jobs are running and `force=1` was not supplied; or an install is already in flight (`Update already in progress`, not bypassed by `force`)
-- **503/422/500:** `{ error, detail }` — download / verify / extract / unit-trigger failure
+- **Job errors:** download / verify / extract / unit-trigger failure
 
 ### GET /api/host/hardware · `read`
 
@@ -654,7 +664,7 @@ Update VM configuration.
 Delete a VM.
 
 - **Query:** `?deleteDisks=true|false` — whether to also delete disk images and VM directory
-- **200:** `{ ok: true }`
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name }`
 - **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 
 ### GET /api/vms/:name/xml · `read`
@@ -665,8 +675,9 @@ Raw libvirt domain XML (for debugging/inspection).
 
 ### POST /api/vms/:name/start · `admin`
 
-- **200:** `{ ok: true }`
-- **409:** `VM_ALREADY_RUNNING`; `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name }`
+- **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
+- **Job errors:** `VM_NOT_FOUND`; `VM_ALREADY_RUNNING`; `LIBVIRT_ERROR`
 
 ### POST /api/vms/:name/stop · `admin`
 
@@ -678,7 +689,7 @@ Graceful shutdown (ACPI).
 
 Immediate force stop (destroy).
 
-- **200:** `{ ok: true }`
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name }`
 
 ### POST /api/vms/:name/reboot · `admin`
 
@@ -914,7 +925,7 @@ List all backups across configured destinations. The backup is identified by the
 Restore a backup as a new VM — the only VM restore; there is no VM restore-in-place ([BACKUPS.md → Scope](BACKUPS.md#scope-settled-2026-10-16)).
 
 - **Body:** `{ destinationId: string, vmName: string, timestamp: string, newVmName: string }` — `(destinationId, vmName, timestamp)` are typically copied from a `GET /api/backups` row.
-- **200:** `{ name: string }`
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name: string }`. The checks below answer at once, except `BACKUP_INVALID` and a disk with a backing file, which are job errors (the archive is read by the job).
 - **404:** backup not found
 - **409:** `VM_EXISTS` / `VM_DIR_EXISTS` when `newVmName` is taken in libvirt or on disk (same rule as `POST /api/vms`)
 - **422:** unknown `destinationId`, invalid `vmName`/`newVmName`, or invalid `timestamp`; `BACKUP_INVALID` when the backup's `domain.xml` or payload fails [validation](BACKUPS.md#archive-validation-vm-backups) (the message names the rule) or a restored disk has a backing file
@@ -1179,9 +1190,9 @@ Update one mount by **`id`**. **Body:** partial fields (`label`, `mountPath`, `a
 
 ### DELETE /api/host/mounts/:id · `admin`
 
-Remove one mount from settings. If it was **`backupMountId`**, that field is cleared.
+Remove one mount from settings, unmounting it first. If it was **`backupMountId`**, that field is cleared.
 
-- **200:** Array of mounts after removal | **404:** mount not found
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ mounts }` — the mounts after removal | **404:** mount not found | **409:** in use by a container
 
 ### GET /api/host/mounts/status · `read`
 
@@ -1209,7 +1220,7 @@ Mount an SMB share by settings id. Disk mounts are mounted automatically on devi
 
 Unmount a mount by settings id.
 
-- **200:** `{ ok: true }`
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ id }` | **404:** mount not found
 
 ---
 
@@ -1720,7 +1731,7 @@ Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an exis
 
 Multipart: one file part. Mount must have **`type: "directory"`**. Clears `files/<mountName>/` and extracts the zip using the system **`unzip`** binary (entry paths validated with **`unzip -Z1`** before extraction for zip-slip safety).
 
-**200:** `{ ok: true }` | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged)
+**200:** `{ ok: true }` | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged) | **500:** `CONTAINER_ZIP_EXTRACT_TIMEOUT` (the extract passed its bound)
 
 ### GET /api/containers/:name/mounts/:mountName/content · `admin`
 

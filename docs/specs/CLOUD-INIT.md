@@ -164,4 +164,4 @@ During VM creation:
 
 ## Timeouts
 
-(settled 2026-11-12, CODING-RULES §6.) The GitHub keys lookup **10 s**; the password hash (`openssl passwd`) **10 s**; the seed ISO build **60 s**.
+(settled 2026-11-12, CODING-RULES §6.) The GitHub keys lookup **10 s**; the password hash (`openssl passwd`) **10 s**; the seed ISO build **20 s** (settled 2026-11-13).

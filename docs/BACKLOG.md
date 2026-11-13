@@ -194,11 +194,11 @@ uplink and ports on PVID 1 untagged, plus explicit memberships for VLAN bridges.
 land on `br0`.
 
 **OS upgrade runs inside wisp.service.** `wisp-os-update upgrade` (apt/dpkg) is a child of
-the backend, so a Wisp self-update (its first step stops the service), a backend crash or
-the 600 s execFile timeout can kill dpkg mid-upgrade. Fix shape: run it in its own oneshot
-unit started via one fixed sudo rule (like `wisp-updater`), or at least refuse a
-self-update while an upgrade runs and drop the timeout. **Revisit trigger:** an upgrade is
-ever interrupted, or OS upgrades become unattended/scheduled. (re-review 2026-10-16, P2)
+the backend, so a Wisp self-update forced past the running-jobs guard (its first step
+stops the service) or a backend crash can kill dpkg mid-upgrade. Fix shape: run it in its
+own oneshot unit started via one fixed sudo rule (like `wisp-updater`). **Revisit
+trigger:** an upgrade is ever interrupted, or OS upgrades become unattended/scheduled.
+(re-review 2026-10-16, P2)
 
 **Settings forms drop bad paths on the client.** `AppConfig.jsx` and `HostBackup.jsx`
 send `undefined` for an empty or relative path, so the field silently keeps its old value

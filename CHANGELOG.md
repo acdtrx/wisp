@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-13
+
+### New Features
+- **Long actions keep going when you leave the page** — starting, force-stopping, deleting and restoring a VM, checking for and installing OS updates, adding and removing a network bridge, unmounting and removing storage, and updating Wisp run in the background: the jobs tray shows their progress, and closing the page no longer stops them.
+
+### Bug Fixes
+- **OS updates are no longer cut off after 10 minutes** — an update runs as long as the package manager keeps printing, and is stopped only after 15 minutes of silence.
+- **Stalled work fails instead of hanging** — a VM backup or restore that copies nothing for 10 minutes, a library upload that sends nothing for a minute, and a Wisp update whose download, unpack or package install stalls are stopped, saying what stalled.
+
 ## 2026-11-12
 
 ### Bug Fixes

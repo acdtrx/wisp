@@ -452,4 +452,6 @@ Domain object paths follow the pattern `/org/libvirt/domains/<uuid>` where UUIDs
 
 ## Timeouts
 
-(settled 2026-11-12, CODING-RULES §6.) Every libvirt DBus call, the connect setup and introspection included, gives up after **30 s**; the lifecycle calls (Create, Shutdown, Destroy, Reboot, Undefine, Suspend, Resume) after **2 min**. A call past its bound fails with `LIBVIRT_ERROR`; libvirt still runs it if it answers late. A failed connect retries on the reconnect backoff. `qemu-img create`, the NVRAM copy and the cloud-init seed ISO build: **60 s** each.
+(settled 2026-11-12, CODING-RULES §6.) Every libvirt DBus call, the connect setup and introspection included, gives up after **30 s**; the lifecycle calls (Create, Shutdown, Destroy, Reboot, Undefine, Suspend, Resume) after **2 min**. A call past its bound fails with `LIBVIRT_ERROR`; libvirt still runs it if it answers late. A failed connect retries on the reconnect backoff. The NVRAM copy: **60 s**. `qemu-img create` and the cloud-init seed ISO build: **20 s** each (settled 2026-11-13).
+
+Start, force-stop, delete and restore as a new VM run as server jobs (settled 2026-11-13): a lifecycle call's 2 min outlasts a short request. Stop, reboot, suspend and resume stay synchronous.

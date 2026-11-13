@@ -196,6 +196,7 @@ See [ERROR-HANDLING.md](ERROR-HANDLING.md) for the global error-code table.
 
 ## Timeouts
 
-(settled 2026-11-12, CODING-RULES §6.) 
-- `qemu-img info` and `resize`: **60 s**. A convert has no total bound: it is stopped after **10 min** with no progress output, no growth of the destination and no bytes read.
-- `wisp-mount` bounds its own commands, each with a kill grace (`timeout --kill-after`), so each ends inside the backend's bound: mount **20 s** (+3) of the backend's **30 s**; unmount **60 s** (+5) of **75 s** — long enough to flush after a large backup; an SMB check's mount **15 s** (+3) and umount **8 s** (+2) of **30 s**. `rmdir`: **5 s**.
+(settled 2026-11-12, CODING-RULES §6.)
+- `qemu-img info` and `resize`: **20 s** (settled 2026-11-13). A convert has no total bound: it is stopped after **10 min** with no progress output, no growth of the destination and no bytes read (the bytes-read probe settled 2026-11-13).
+- `wisp-mount` bounds its own commands, each with a kill grace (`timeout --kill-after`), so each ends inside the backend's bound: mount **20 s** (+3) of the backend's **30 s**; unmount **60 s** (+5) of **75 s** — long enough to flush after a large backup; an SMB check's mount **15 s** (+3) and umount **8 s** (+2) of **30 s** (the unmount and check bounds settled 2026-11-13). `rmdir`: **5 s**.
+- Unmount and mount delete run as server jobs (settled 2026-11-13): an unmount's 75 s outlasts a short request.

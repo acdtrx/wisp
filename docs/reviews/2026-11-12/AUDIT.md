@@ -262,8 +262,9 @@ connect 10 s, headers 300 s, body 300 s *between chunks* — "implicit" below.
   and killing dpkg midway leaves it interrupted. — **decision.** *Recommendation:* replace the
   cap with an apt-output stall watchdog (e.g. 15 min without output), or run the upgrade as
   its own systemd unit as the self-update does.
-  **Backlogged:** stays as it is, under the backlog entry "OS upgrade runs inside
-  wisp.service" (settled 2026-11-12).
+  **Fixed (reversed after the 2b review):** the upgrade is a server job, stopped after 15 min
+  without apt or pacman output, with no total cap. The backlog entry "OS upgrade runs inside
+  wisp.service" stays.
 - **TMO-5** — small HTTP calls on implicit defaults: `downloadHaos.js:29`,
   `routes/cloudinit.js:152` (holds a request handler up to 300 s), checkUrl
   `downloadFromUrl.js:257`. *Fix:* `AbortSignal.timeout(10–15 s)`. — **clear**
@@ -312,13 +313,13 @@ connect 10 s, headers 300 s, body 300 s *between chunks* — "implicit" below.
 - **TMO-13** — `backend/scripts/migrate.mjs:203` hangs `install.sh:112`, `common-steps.sh:72`
   and the updater when containerd or libvirtd is wedged. Fixed by TMO-8 and TMO-11. — **clear**
   **Fixed:** follows from TMO-8 and TMO-11 — the runner uses the same managers, whose connect
-  setup is bounded too: a wedged libvirt-dbus fails the connect after 30 s, and the runner warns
-  and goes on, as with any failed connect.
+  setup is bounded too: a wedged libvirt-dbus fails the connect within 60 s at worst, and the
+  runner warns and goes on, as with any failed connect.
 - **TMO-14** — `scripts/linux/setup/cni.sh:45`, `containerd.sh:75`, `packages.sh:81`: curl
   without bounds; `scripts/vendor-novnc.sh:18` git clone. *Fix:* `--connect-timeout 10
   --max-time 300`; `timeout 120 git clone` (or `http.lowSpeedLimit/Time`). — **clear**
-  **Fixed:** setup curls `--connect-timeout 10` with `--max-time` 300 (CNI tarball) or 60
-  (keys); the noVNC clone uses git's low-speed abort (under 1 KB/s for 60 s), portable to
+  **Fixed:** setup curls `--connect-timeout 10` and abort under 1 KB/s for 60 s, no total
+  (reworked after the 2b review); the noVNC clone uses git's low-speed abort (under 1 KB/s for 60 s), portable to
   the macOS dev machine.
 - **TMO-15** — `scripts/push.sh:66,77`: scp/ssh without bounds. *Fix:* `-o ConnectTimeout=10
   -o ServerAliveInterval=15 -o ServerAliveCountMax=4`. — **clear**
@@ -327,10 +328,10 @@ connect 10 s, headers 300 s, body 300 s *between chunks* — "implicit" below.
 - **TMO-16** — `fe/api/client.js:98`, `fe/api/auth.js:15`, `fe/store/authStore.js:14`: no
   timeout on REST calls. *Fix:* default `AbortSignal.any([callerSignal, AbortSignal.timeout(30 s)])`;
   long operations are jobs already. — **clear**
-  **Fixed, with a different value:** `api()` combines the caller's signal with a 60 s
-  deadline (not 30 s: the slowest synchronous routes are bounded at 30 s on the server, a
-  libvirt start at 2 min, so a 30 s client would cut their own errors off); `timeoutMs`
-  per call. The OIDC status probe 15 s, login 60 s.
+  **Fixed, with a different value:** `api()` combines the caller's signal with a 45 s
+  deadline; `timeoutMs` per call. The operations that can outlast it (a libvirt start, an
+  unmount, an OS upgrade, …) are server jobs observed over SSE (reworked after the 2b
+  review). The OIDC status probe 15 s, login 45 s.
 - **TMO-17** — long-lived client channels: XHR upload (`fe/api/upload.js:14`), console
   WebSockets (`VNCConsole.jsx:190`, `ContainerConsole.jsx:188`) and the VNC TCP leg
   (`routes/console.js:62`). — **decision.** *Recommendation:* an upload idle watchdog (abort
