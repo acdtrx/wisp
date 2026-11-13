@@ -50,8 +50,13 @@ const JOB_ACCEPTED = {
  * started while one runs joins it (the same job id). Its `done` payload is the
  * count; the packages are then served from the cache (GET /host/updates/packages).
  */
+/** An upgrade runs, or its job was started and has not reached it yet. */
+function upgradeRunning() {
+  return isUpgradeInProgress() || operationJobStore.findRunningJob(BACKGROUND_JOB_KIND.OS_UPGRADE, TITLE_OS_UPGRADE) != null;
+}
+
 function startOsUpdateCheckJob(log) {
-  if (isUpgradeInProgress()) {
+  if (upgradeRunning()) {
     throw createAppError('UPDATE_BUSY', 'An OS upgrade is in progress on the host', 'Wait for the upgrade to finish before checking again');
   }
   const running = operationJobStore.findRunningJob(BACKGROUND_JOB_KIND.OS_UPDATE_CHECK, TITLE_OS_UPDATE_CHECK);
@@ -221,7 +226,8 @@ export default async function hostRoutes(fastify) {
     config: { auth: 'admin' },
     schema: { response: JOB_ACCEPTED },
     handler: async (request, reply) => {
-      if (isUpdateOperationInProgress()) {
+      if (isUpdateOperationInProgress() || upgradeRunning()
+        || operationJobStore.findRunningJob(BACKGROUND_JOB_KIND.OS_UPDATE_CHECK, TITLE_OS_UPDATE_CHECK)) {
         return reply.code(409).send({
           error: 'Another OS update operation is in progress',
           detail: 'Wait for the running check or upgrade to finish',
