@@ -30,7 +30,7 @@ export function tolerantConfig(data) {
   return out;
 }
 
-/** Read the file at `path` tolerantly; a missing file is the defaults. Invalid JSON throws. */
+/** Read the file at `path` tolerantly; a missing file is the defaults. Invalid JSON throws, naming the file. */
 export function readTolerantConfig(path) {
   let raw;
   try {
@@ -39,5 +39,11 @@ export function readTolerantConfig(path) {
     if (err.code === 'ENOENT') return tolerantConfig({});
     throw err;
   }
-  return tolerantConfig(JSON.parse(raw));
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`wisp-config.json (${path}): invalid JSON — ${err.message}`);
+  }
+  return tolerantConfig(data);
 }

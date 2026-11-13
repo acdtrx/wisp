@@ -44,12 +44,14 @@ const PROJECT_ROOT = resolve(__dirname, '..', '..');
 // Under systemd the backend gets runtime.env from EnvironmentFile=; this script
 // runs from common-steps.sh / install.sh, which pass no environment.
 // Strictly, but for the retired keys an older release may have left, which
-// migration 0007 removes: so WISP_CONFIG_PATH — the config, and with it the
-// ledger, this run works on — is never taken from a malformed or repeated line.
+// migration 0007 removes (they never reach process.env), and with every WISP_*
+// value checked: so WISP_CONFIG_PATH — the config, and with it the ledger, this
+// run works on — is never taken from a malformed, repeated or invalid line, and
+// a bad value stops the run (exit 2) whether or not 0007 has run.
 const RUNTIME_ENV_PATH = join(PROJECT_ROOT, 'config', 'runtime.env');
 try {
   loadRuntimeEnv(PROJECT_ROOT, { tolerateKeys: RETIRED_ENV_KEYS });
-  checkRuntimeEnv({ WISP_CONFIG_PATH: process.env.WISP_CONFIG_PATH });
+  checkRuntimeEnv();
 } catch (err) {
   console.error(`migrate: ${err.message}`);
   process.exit(2);
@@ -57,6 +59,7 @@ try {
 
 const { writeJsonAtomic } = await import('../src/lib/atomicJson.js');
 const { CONFIG_PATH, getConfigSync } = await import('../src/lib/config.js');
+const { parseWispConfig, parseWispConfigText } = await import('../src/lib/configSchema.js');
 const { checkPasswordFile } = await import('../src/lib/auth.js');
 const { checkDefaultBridgeOverride } = await import('../src/lib/networking/index.js');
 const { readTolerantConfig } = await import('../migrations/lib/tolerantConfig.js');
@@ -197,6 +200,13 @@ function createLogger() {
  * this process. Reads never write: the only changes are the
  * migrations' own, each recorded, and none at all under --dry-run.
  */
+/**
+ * The runtime.env text and decoded wisp-config.json as migration 0007 leaves
+ * them (`ctx.setRepairedConfig`): under --dry-run, where nothing was written,
+ * the strict check judges these instead of the files.
+ */
+let repairedConfig = null;
+
 function buildContext(migration, { log, dryRun, changes }) {
   const migrationLog = log.child({ migration: migration.id });
   return {
@@ -211,6 +221,9 @@ function buildContext(migration, { log, dryRun, changes }) {
     setContainerPendingRestart: typeof containerManager.setContainerPendingRestart === 'function'
       ? containerManager.setContainerPendingRestart
       : undefined,
+    setRepairedConfig({ runtimeEnvText, configData }) {
+      repairedConfig = { runtimeEnvText, configData };
+    },
     recordChange(text) {
       changes.push(text);
       migrationLog.info({ dryRun }, text);
@@ -224,21 +237,33 @@ function getTolerantConfig() {
 
 /**
  * The backend's boot checks, run after the migrations. Throws the first problem.
- * (The runtime.env values are already in process.env, as under systemd.)
+ * (The runtime.env values are already in process.env, as under systemd.) Under
+ * --dry-run it reads the config as migration 0007 would have left it, when 0007
+ * ran in this dry run — the files themselves are still unrepaired.
  */
-async function checkConfigStrictly() {
-  if (existsSync(RUNTIME_ENV_PATH)) parseRuntimeEnvText(await readFile(RUNTIME_ENV_PATH, 'utf8'));
+async function checkConfigStrictly({ dryRun }) {
+  const fromMigration = dryRun ? repairedConfig : null;
+  if (fromMigration) {
+    if (fromMigration.runtimeEnvText !== null) parseRuntimeEnvText(fromMigration.runtimeEnvText);
+  } else if (existsSync(RUNTIME_ENV_PATH)) {
+    parseRuntimeEnvText(await readFile(RUNTIME_ENV_PATH, 'utf8'));
+  }
   checkRuntimeEnv();
-  getConfigSync();
+  if (fromMigration) {
+    const { configData } = fromMigration;
+    if (typeof configData === 'string') parseWispConfigText(configData);
+    else if (configData !== undefined) parseWispConfig(configData);
+  } else {
+    getConfigSync();
+  }
   checkPasswordFile();
   const bridgeProblem = await checkDefaultBridgeOverride();
   if (bridgeProblem) throw new Error(bridgeProblem);
 }
 
-/** Returns `{ code, changed }`: the exit code, and whether any migration recorded a change. */
+/** Returns the process exit code. */
 async function runPending(pending, { ledger, dryRun, log }) {
   configureManagers({ getConfig: getTolerantConfig });
-  let changed = false;
   // Connections and calls only: the backend owns the reconcilers, the restart
   // policy and the event-driven writes, and it comes back once the update
   // finishes.
@@ -265,14 +290,13 @@ async function runPending(pending, { ledger, dryRun, log }) {
         recordRun(ledger, entry);
         await writeLedger(ledger);
       }
-      if (changes.length > 0) changed = true;
       if (error) {
         log.error({ migration: migration.id, err: error }, 'migration failed — later migrations not run');
-        return { code: 1, changed };
+        return 1;
       }
       log.info({ migration: migration.id, dryRun, changes: changes.length }, 'migration done');
     }
-    return { code: 0, changed };
+    return 0;
   } finally {
     disconnectManagers();
   }
@@ -297,25 +321,24 @@ async function main() {
   const pending = migrations.filter((m) => !done.has(m.id));
   log.info({ ledger: LEDGER_PATH, shipped: migrations.length, pending: pending.length, dryRun: args.dryRun }, 'state migrations');
 
-  let changed = false;
   if (pending.length === 0) {
     // A ledger file on disk records that the runner has run on this host.
     if (!exists && !args.dryRun) await writeLedger(ledger);
   } else {
-    const result = await runPending(pending, { ledger, dryRun: args.dryRun, log });
-    if (result.code !== 0) return result.code;
-    changed = result.changed;
+    // The migrations (and the manager setup) read the config tolerantly — but
+    // it must still be JSON: a file that isn't is a setup error naming it.
+    try {
+      getTolerantConfig();
+    } catch (err) {
+      throw new SetupError(err.message);
+    }
+    const code = await runPending(pending, { ledger, dryRun: args.dryRun, log });
+    if (code !== 0) return code;
   }
 
   try {
-    await checkConfigStrictly();
+    await checkConfigStrictly({ dryRun: args.dryRun });
   } catch (err) {
-    // A dry run changed nothing, so the files are still what the migrations
-    // would have repaired: report, don't fail, when they would have changed something.
-    if (args.dryRun && changed) {
-      log.warn({ dryRun: true, problem: err.message }, 'config fails the strict check as it stands; the changes above come first in a real run');
-      return 0;
-    }
     throw new SetupError(err.message);
   }
   return 0;

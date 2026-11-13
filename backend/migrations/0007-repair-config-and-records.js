@@ -5,11 +5,11 @@
  * step the config repair).
  *
  * 1. runtime.env, read raw: lines setting the retired WISP_BACKEND_PORT /
- *    WISP_FRONTEND_PORT are removed; then the file is parsed strictly and the
- *    WISP_* values checked, as the backend's boot will — a file still invalid
- *    fails here, before wisp-config.json is touched. The runner resolved
- *    WISP_CONFIG_PATH from this same file, loading it strictly except for those
- *    two keys, so a malformed or repeated WISP_CONFIG_PATH has already stopped it.
+ *    WISP_FRONTEND_PORT are removed. Nothing else needs checking here: the
+ *    runner loaded the file strictly except for those two keys and checked
+ *    every WISP_* value before any migration, so a malformed, repeated or
+ *    invalid WISP_CONFIG_PATH has already stopped it and the config file
+ *    below is the one the backend will read.
  * 2. wisp-config.json, read raw: the retired keys refreshIntervalSeconds,
  *    networkMounts and backupNetworkMountId are removed; every mount whose
  *    mountPath is outside /mnt/wisp/ (the mount helper refuses them since
@@ -38,8 +38,10 @@
  *    the local path, and the backup mount when it is mounted. An unmounted
  *    backup mount is skipped (logged); its old backups keep no origin.
  *
- * Under --dry-run nothing is written, and steps 3 and 4 work from the config
- * as step 2 would leave it, so the run lists everything a real one would change.
+ * Under --dry-run nothing is written; steps 3 and 4 work from the config as
+ * step 2 would leave it, and the runner's strict check reads the would-be
+ * runtime.env and config this migration hands it (ctx.setRepairedConfig), so a
+ * dry run lists and judges what a real one would.
  *
  * Backward-compatible: the previous release ignores the removed keys, never
  * used a mount the helper refused, and writes the container and manifest shapes
@@ -47,11 +49,11 @@
  * again on the next update. Idempotent: state already in these shapes is left
  * alone.
  */
-import { readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 
-import { writeJsonAtomic } from '../src/lib/atomicJson.js';
+import { atomicTmpName, writeJsonAtomic } from '../src/lib/atomicJson.js';
 import { checkMountPath } from '../src/lib/configSchema.js';
-import { checkRuntimeEnv, parseRuntimeEnvText, retiredKeyOfLine } from '../src/lib/loadRuntimeEnv.js';
+import { retiredKeyOfLine } from '../src/lib/loadRuntimeEnv.js';
 import { listBackupDestinationsWithMountCheck, listConfiguredBackupRoots } from '../src/lib/settings.js';
 import { tolerantConfig } from './lib/tolerantConfig.js';
 
@@ -73,11 +75,11 @@ async function readIfExists(path) {
   }
 }
 
-/** Step 1. Returns nothing; throws when runtime.env is still invalid. */
+/** Step 1. Returns the text as this step leaves it, or null when there is no file. */
 async function repairRuntimeEnv(ctx) {
   const path = ctx.paths.runtimeEnvFile;
   const text = await readIfExists(path);
-  if (text === null) return;
+  if (text === null) return null;
   const lines = text.split('\n');
   const kept = lines.filter((line, i) => {
     const key = retiredKeyOfLine(line);
@@ -88,12 +90,17 @@ async function repairRuntimeEnv(ctx) {
   const repaired = kept.join('\n');
   if (kept.length !== lines.length && !ctx.dryRun) {
     const { mode } = await stat(path);
-    const tmp = `${path}.0007.${process.pid}`;
-    await writeFile(tmp, repaired, { mode: mode & 0o777 });
-    await rename(tmp, path);
+    // The atomic-write temp name: boot cleanup sweeps one a crash leaves behind.
+    const tmp = atomicTmpName(path);
+    try {
+      await writeFile(tmp, repaired, { mode: mode & 0o777 });
+      await rename(tmp, path);
+    } catch (err) {
+      await unlink(tmp).catch(() => {});
+      throw err;
+    }
   }
-  parseRuntimeEnvText(repaired);
-  checkRuntimeEnv();
+  return repaired;
 }
 
 /** Container names by the storage mount ids their mounts use as `sourceId`. */
@@ -274,8 +281,10 @@ async function markBackupOrigins(ctx, config) {
 }
 
 export async function run(ctx) {
-  await repairRuntimeEnv(ctx);
+  const runtimeEnvText = await repairRuntimeEnv(ctx);
   const config = await repairWispConfig(ctx);
+  // What the runner's strict check reads under --dry-run, in place of the files.
+  ctx.setRepairedConfig({ runtimeEnvText, configData: config });
   await migrateContainerShapes(ctx);
   await markBackupOrigins(ctx, config);
 }
