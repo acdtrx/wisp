@@ -820,11 +820,16 @@ export default async function containerRoutes(fastify) {
         return sendError(reply, 400, 'No file provided', 'Request must include a zip upload');
       }
       bodyWatch.stop();
-      const plan = await planMountZipExtract(containerName, mountName, stagingPath);
+      // Checked again under the lock the job then holds, so no edit can move
+      // the mount between the check and the extract.
+      let plan;
       const job = await startLockedContainerJob({
         name: containerName,
         operation: 'zip extract',
-        check: async () => {},
+        check: async () => {
+          assertMountNotAppManaged(await getContainerConfig(containerName), mountName);
+          plan = await planMountZipExtract(containerName, mountName, stagingPath);
+        },
         kind: BACKGROUND_JOB_KIND.CONTAINER_ZIP_EXTRACT,
         title: titleForZipExtract(containerName, mountName),
         log: request.log,
