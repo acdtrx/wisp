@@ -80,8 +80,9 @@ The §4 and §7 findings.
   ledger. If that one update fails after 0007 ran, later updates fail until 0007's ledger
   entry is deleted by hand; UPDATES.md says so. Accepted as a one-time risk. Rejected:
   shipping the ledger-restore change a release earlier; renaming the ledger file.
-- A `WISP_CONFIG_PATH` outside the install directory is not snapshotted, so a rollback
-  doesn't revert it together with the ledger. UPDATES.md states the limit; no host uses it.
+- A `WISP_CONFIG_PATH` outside the install directory moves the config and the ledger out of
+  the snapshot, so a rollback can revert `runtime.env` without its ledger entry. UPDATES.md
+  states the limit; no host uses it.
 - CFG-4 is reversed: the read is strict, and a dangling `backupMountId` or schedule
   destination fails startup. The write path prunes the references a delete leaves behind.
   The merged migration prunes the leftovers older releases left in the file (a deleted
