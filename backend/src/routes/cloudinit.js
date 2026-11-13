@@ -149,7 +149,8 @@ export default async function cloudInitRoutes(fastify) {
       }
       const { username } = request.params;
       try {
-        const resp = await fetch(`https://github.com/${username}.keys`, { redirect: 'manual' });
+        // One small text reply: 10 s bounds the request handler (CODING-RULES §6).
+        const resp = await fetch(`https://github.com/${username}.keys`, { redirect: 'manual', signal: AbortSignal.timeout(10_000) });
         if (resp.status >= 300 && resp.status < 400) {
           return sendError(reply, 502, 'Unexpected redirect from GitHub', 'GitHub returned a redirect for a .keys lookup');
         }

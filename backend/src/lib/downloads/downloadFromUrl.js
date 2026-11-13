@@ -103,9 +103,23 @@ function makePinnedLookup(pinnedAddrs) {
   };
 }
 
+/*
+ * Explicit, not undici's defaults (CODING-RULES §6): a connect that takes 10 s
+ * is a dead host; 30 s to the response headers; and between body chunks 120 s —
+ * an idle bound, not a total one, so a large image download on a slow link
+ * still finishes while a stalled one fails (settled 2026-11-12, TMO-6/TMO-7).
+ */
+const CONNECT_TIMEOUT_MS = 10_000;
+const HEADERS_TIMEOUT_MS = 30_000;
+const BODY_IDLE_TIMEOUT_MS = 120_000;
+/** A HEAD probe is one round trip. */
+const CHECK_URL_TIMEOUT_MS = 15_000;
+
 function makePrivateIPGuardAgent(pinnedAddrs) {
   return new Agent({
-    connect: { lookup: makePinnedLookup(pinnedAddrs) },
+    connect: { lookup: makePinnedLookup(pinnedAddrs), timeout: CONNECT_TIMEOUT_MS },
+    headersTimeout: HEADERS_TIMEOUT_MS,
+    bodyTimeout: BODY_IDLE_TIMEOUT_MS,
   });
 }
 
@@ -273,7 +287,7 @@ export async function checkUrl(urlStr) {
     return { ok: false, error: 'Only HTTP and HTTPS URLs are allowed' };
   }
   try {
-    const res = await ssrfSafeFetch(urlStr, { method: 'HEAD' });
+    const res = await ssrfSafeFetch(urlStr, { method: 'HEAD', signal: AbortSignal.timeout(CHECK_URL_TIMEOUT_MS) });
     if (!res.ok) {
       return { ok: false, error: `HTTP ${res.status}`, status: res.status };
     }
