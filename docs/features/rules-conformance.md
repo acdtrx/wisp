@@ -145,6 +145,13 @@ settles go into its spec, not into code comments or the audit.
   The `cloud-init.json` `cp` gets a fixed 30 s.
 - **The client's short-request timeout** is 45 s.
 
+**Settled after the 2b-2 review (2026-11-13):**
+- The updater unit's whole-run backstop (`TimeoutStartSec`) is raised from 600 s to 30 min,
+  so the 10 min `npm ci` inactivity bound can fire first.
+- The 45 s client request timeout is recorded in API.md.
+- The container tar watchdogs kill the whole process group, and the unmount error's stray
+  newline is fixed; both go in 2b-3.
+
 ## Milestone 2b-2 — VMs, host and self-update become jobs
 
 The jobs, bounds and client timeout above for VMs, the host and the self-update.
