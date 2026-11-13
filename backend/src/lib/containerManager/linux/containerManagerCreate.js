@@ -364,9 +364,14 @@ export async function assertContainerNameAvailable(name) {
   } catch (err) {
     if (err.code !== 'CONTAINER_NOT_FOUND') throw err;
   }
+  const containerDir = getContainerDir(name);
   try {
-    await stat(getContainerDir(name));
-    throw containerError('CONTAINER_EXISTS', `Container directory for "${name}" already exists`);
+    await stat(containerDir);
+    throw containerError(
+      'CONTAINER_EXISTS',
+      `Container directory for "${name}" already exists`,
+      `${containerDir} is left over from a deleted container (kept files?) — move or remove it, or pick another name`,
+    );
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;
   }
