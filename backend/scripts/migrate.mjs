@@ -14,6 +14,11 @@
  * Ledger: <config dir>/migrations.json (beside wisp-config.json, so
  * WISP_CONFIG_PATH moves it too). Exit 0 when nothing failed; non-zero on the
  * first failing migration, after recording it — the updater then rolls back.
+ *
+ * Every run (but --list) first repairs what older releases left in
+ * wisp-config.json and runtime.env (configRepair.mjs), then checks both
+ * strictly, as the backend's boot will: an invalid config is a setup error
+ * (exit 2) before any migration runs.
  */
 import { readdir, readFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -22,7 +27,7 @@ import { parseArgs } from 'node:util';
 
 import Fastify from 'fastify';
 
-import { checkRuntimeEnv, loadRuntimeEnv } from '../src/lib/loadRuntimeEnv.js';
+import { checkRuntimeEnv, loadRuntimeEnv, parseRuntimeEnvText } from '../src/lib/loadRuntimeEnv.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..', '..');
@@ -32,9 +37,10 @@ const PROJECT_ROOT = resolve(__dirname, '..', '..');
 // containerManager its socket path. Static imports would evaluate them first.
 // Under systemd the backend gets runtime.env from EnvironmentFile=; this script
 // runs from common-steps.sh / install.sh, which pass no environment.
+// Leniently: the file may still hold what an older release wrote, which the
+// config repair below removes before the strict check.
 try {
-  loadRuntimeEnv(PROJECT_ROOT);
-  checkRuntimeEnv();
+  loadRuntimeEnv(PROJECT_ROOT, { lenient: true });
 } catch (err) {
   console.error(`migrate: ${err.message}`);
   process.exit(2);
@@ -42,6 +48,8 @@ try {
 
 const { writeJsonAtomic } = await import('../src/lib/atomicJson.js');
 const { CONFIG_PATH, getConfigSync } = await import('../src/lib/config.js');
+const { parseWispConfig, parseWispConfigText } = await import('../src/lib/configSchema.js');
+const { repairConfig } = await import('./configRepair.mjs');
 const { DEV_LOG_TRANSPORT } = await import('../src/lib/logFormat.js');
 const { configureManagers, connectManagers, disconnectManagers } = await import('../src/lib/managerBootstrap.js');
 const vmManager = await import('../src/lib/vmManager/index.js');
@@ -255,14 +263,31 @@ async function main() {
     return 0;
   }
 
-  // The config the migrations read must parse, as it must for the backend to boot.
+  const log = createLogger();
+
+  // Repair what older releases left, then check the result as strictly as the
+  // backend's boot will: migrations read it, and the started backend refuses it.
+  const repaired = await repairConfig({
+    runtimeEnvPath: join(PROJECT_ROOT, 'config', 'runtime.env'),
+    configPath: CONFIG_PATH,
+    dryRun: args.dryRun,
+    log,
+  });
   try {
-    getConfigSync();
+    if (repaired.runtimeEnvText !== null) parseRuntimeEnvText(repaired.runtimeEnvText);
+    checkRuntimeEnv();
+    if (typeof repaired.configData === 'string') parseWispConfigText(repaired.configData);
+    else if (repaired.configData !== undefined) parseWispConfig(repaired.configData);
   } catch (err) {
     throw new SetupError(err.message);
   }
+  if (args.dryRun && repaired.changes.length > 0) {
+    // The migrations (and the manager setup) read the config files, which a dry
+    // run leaves unrepaired: they would fail on what the repair would remove.
+    log.warn({ dryRun: true }, 'dry run stops after the config repair: migrations read the repaired files, which a dry run does not write');
+    return 0;
+  }
 
-  const log = createLogger();
   const done = new Set(ledger.applied.filter((e) => e.result === 'ok').map((e) => e.id));
   const pending = migrations.filter((m) => !done.has(m.id));
   log.info({ ledger: LEDGER_PATH, shipped: migrations.length, pending: pending.length, dryRun: args.dryRun }, 'state migrations');

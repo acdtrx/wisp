@@ -46,6 +46,17 @@ function mergeBackupSchedule(current, updates, backupMountId) {
   return merged;
 }
 
+/**
+ * Drop every schedule destination that is no longer `'local'` or the backup
+ * mount — after a write that removes or swaps it, so the file never names a
+ * mount that isn't there (the read refuses one). An emptied list is `['local']`.
+ */
+function pruneBackupDestinations(state) {
+  const allowed = new Set(['local', ...(state.backupMountId ? [state.backupMountId] : [])]);
+  const kept = state.backupSchedule.destinationIds.filter((id) => allowed.has(id));
+  return { ...state, backupSchedule: { ...state.backupSchedule, destinationIds: kept.length > 0 ? kept : ['local'] } };
+}
+
 /** The parsed file: every key present, defaults for missing ones. Throws CONFIG_INVALID. */
 async function readSettingsFile() {
   let raw;
@@ -197,7 +208,7 @@ function mergeOidc(cur, u) {
  * to a default.
  */
 function buildUpdatedSettings(fromFile, updates) {
-  const next = { ...fromFile };
+  let next = { ...fromFile };
 
   if (updates.serverName !== undefined) {
     if (updates.serverName !== null && typeof updates.serverName !== 'string') {
@@ -219,6 +230,7 @@ function buildUpdatedSettings(fromFile, updates) {
       }
       next.backupMountId = id;
     }
+    next = pruneBackupDestinations(next);
   }
   /* After the backupMountId branch on purpose — a PATCH that swaps the backup
    * mount and updates the schedule in one request validates against the new id. */
@@ -259,9 +271,7 @@ export async function withSettingsWriteLock(mutate) {
 /**
  * Write the state through the same parse the read applies, so the file on disk
  * always passes the next read (and the startup read that gates boot). A state
- * that fails it throws here and nothing is written. The parse also drops the
- * references a delete left behind (a removed backup mount from the schedule's
- * destinations, assignments to a removed section).
+ * that fails it throws here and nothing is written.
  */
 async function persistSettings(state) {
   const toWrite = parseWispConfig({
@@ -441,8 +451,8 @@ export async function updateMount(mountId, body) {
 }
 
 /**
- * Remove one mount. Clears backupMountId when it pointed at this id; the
- * persist parse then drops the mount from the schedule's destinations.
+ * Remove one mount. When it was the backup mount, clears backupMountId and
+ * drops it from the schedule's destinations, in the same write.
  */
 export async function removeMount(mountId) {
   return withSettingsWriteLock((fromFile) => {
@@ -451,11 +461,11 @@ export async function removeMount(mountId) {
     if (list.length === existing.length) {
       throw createAppError('MOUNT_NOT_FOUND', `No mount with id "${mountId}"`);
     }
-    return {
+    return pruneBackupDestinations({
       ...fromFile,
       mounts: list,
       backupMountId: fromFile.backupMountId === mountId ? null : fromFile.backupMountId,
-    };
+    });
   });
 }
 

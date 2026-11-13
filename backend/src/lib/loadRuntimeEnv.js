@@ -73,18 +73,48 @@ function envInvalid(message) {
 }
 
 /**
+ * Parse runtime.env text into `[{ key, value }]`. Strict (CODING-RULES §4): a
+ * line that isn't `KEY=value`, a key given twice, or an unknown WISP_* key throws
+ * RUNTIME_ENV_INVALID naming the line. `lenient` skips those lines instead — only
+ * for the migration runner's config repair, which must read a file an older
+ * release wrote before it can clean it (backend/scripts/configRepair.mjs).
+ */
+export function parseRuntimeEnvText(content, { lenient = false } = {}) {
+  const entries = [];
+  const seen = new Set();
+  content.split('\n').forEach((line, i) => {
+    const trimmed = line.replace(/\r$/, '').trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+    const where = `runtime.env line ${i + 1}`;
+    const fail = (message) => {
+      if (!lenient) throw envInvalid(`${where}: ${message}`);
+    };
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(trimmed);
+    if (!match) return fail(`expected KEY=value, got ${JSON.stringify(trimmed)}`);
+    const key = match[1];
+    if (key.startsWith('WISP_') && !Object.hasOwn(WISP_KEYS, key)) return fail(`unknown key ${key}`);
+    if (seen.has(key)) return fail(`${key} is set twice`);
+    seen.add(key);
+    let value = match[2];
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    entries.push({ key, value });
+  });
+  return entries;
+}
+
+/**
  * Load KEY=value pairs from <projectRoot>/config/runtime.env into process.env.
  * Only sets keys that are not already present in process.env (under systemd,
  * EnvironmentFile= has set them already). File is optional; no-op if missing.
- *
- * Strict (CODING-RULES §4): a line that isn't `KEY=value`, a key given twice, or
- * an unknown WISP_* key throws RUNTIME_ENV_INVALID naming the line.
+ * Strict unless `lenient` (see parseRuntimeEnvText).
  *
  * Warns to stderr when the file's permission bits exceed 0o600 — runtime.env
  * holds secrets like GITHUB_TOKEN. We intentionally only warn (not refuse):
  * install/setup scripts also chmod the file at write time.
  */
-export function loadRuntimeEnv(projectRoot) {
+export function loadRuntimeEnv(projectRoot, { lenient = false } = {}) {
   const envPath = resolve(projectRoot, 'config/runtime.env');
   if (!existsSync(envPath)) return;
   try {
@@ -100,27 +130,9 @@ export function loadRuntimeEnv(projectRoot) {
   } catch {
     /* stat may fail in unusual mounts; the readFileSync below will surface a real failure */
   }
-  const content = readFileSync(envPath, 'utf8');
-  const seen = new Set();
-  content.split('\n').forEach((line, i) => {
-    const trimmed = line.replace(/\r$/, '').trim();
-    if (!trimmed || trimmed.startsWith('#')) return;
-    const where = `runtime.env line ${i + 1}`;
-    const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(trimmed);
-    if (!match) throw envInvalid(`${where}: expected KEY=value, got ${JSON.stringify(trimmed)}`);
-    const key = match[1];
-    if (key.startsWith('WISP_') && !Object.hasOwn(WISP_KEYS, key)) {
-      throw envInvalid(`${where}: unknown key ${key}`);
-    }
-    if (seen.has(key)) throw envInvalid(`${where}: ${key} is set twice`);
-    seen.add(key);
-    if (process.env[key] !== undefined) return;
-    let val = match[2];
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-      val = val.slice(1, -1);
-    }
-    process.env[key] = val;
-  });
+  for (const { key, value } of parseRuntimeEnvText(readFileSync(envPath, 'utf8'), { lenient })) {
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
 }
 
 /**

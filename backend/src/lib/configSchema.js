@@ -6,10 +6,13 @@
  * always passes the next read — and the startup read that gates boot.
  *
  * What parse rejects, with CONFIG_INVALID naming the key: an unknown key at any
- * level, a wrong type, an out-of-range value. What it still fills in: a missing
- * key takes its default. What it still heals, because a legitimate delete leaves
- * it behind (settled 2026-11-12, CFG-4): a backupMountId or schedule destination
- * naming a removed mount, an assignment to a removed section.
+ * level, a wrong type, an out-of-range value, and a backupMountId or schedule
+ * destination naming no mount (settled 2026-11-13, reversing CFG-4: the write
+ * paths prune those references in the write that deletes or swaps the mount,
+ * and the migration runner's config repair cleans what older releases left).
+ * What it fills in: a missing key takes its default. What it still drops: an
+ * assignment to a removed section — an assignment names a workload, and a
+ * section delete removes its assignments in the same write anyway.
  */
 import { isIP } from 'node:net';
 import path from 'node:path';
@@ -343,10 +346,13 @@ function parseBackupSchedule(src, backupMountId) {
   }
   if (src.destinationIds !== undefined) {
     const ids = at('backupSchedule.destinationIds', () => checkDestinationIds(src.destinationIds));
-    // Heals: an id naming a mount that is no longer the backup mount (CFG-4).
     const allowed = new Set(['local', ...(backupMountId ? [backupMountId] : [])]);
-    const kept = ids.filter((id) => allowed.has(id));
-    out.destinationIds = kept.length > 0 ? kept : ['local'];
+    for (const id of ids) {
+      if (!allowed.has(id)) {
+        throw configInvalid('backupSchedule.destinationIds', `"${id}" is neither "local" nor the backupMountId`);
+      }
+    }
+    out.destinationIds = ids;
   }
   return out;
 }
@@ -381,7 +387,7 @@ function parseAssignments(map, sectionIds) {
       throw configInvalid(`assignments.${key}`, 'key must be "vm:<name>" or "container:<name>"');
     }
     expectString(value, `assignments.${key}`);
-    // Heals: an assignment to a removed section falls back to Main (CFG-4).
+    // An assignment to a removed section falls back to Main.
     if (valid.has(value)) out[key] = value;
   }
   return out;
@@ -531,8 +537,8 @@ export function parseWispConfig(data) {
   }
   if (data.backupMountId !== undefined && data.backupMountId !== null) {
     const id = expectId(data.backupMountId, 'backupMountId');
-    // Heals: the id of a mount since removed (CFG-4).
-    out.backupMountId = out.mounts.some((m) => m.id === id) ? id : null;
+    if (!out.mounts.some((m) => m.id === id)) throw configInvalid('backupMountId', `no mount with id "${id}"`);
+    out.backupMountId = id;
   }
   if (data.backupSchedule !== undefined) {
     out.backupSchedule = parseBackupSchedule(data.backupSchedule, out.backupMountId);

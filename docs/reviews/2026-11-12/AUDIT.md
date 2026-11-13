@@ -43,7 +43,9 @@ is never validated at startup.
   **Fixed:** `lib/configSchema.js` is the one schema; `getConfigSync` and
   `readSettingsFile` parse through it, and `index.js` reads it before anything else,
   exiting with the message (e.g. `wisp-config.json → backupSchedule.time: …`). The
-  migration runner refuses to run on an invalid file.
+  migration runner first repairs what older releases left (retired keys, mounts outside
+  `/mnt/wisp/`, dangling backup references — `backend/scripts/configRepair.mjs`, every run),
+  then refuses to run on an invalid file (exit 2, before any migration).
 - **CFG-2** — `be/lib/config.js:44-62` (`parseTrustedProxies`) skips an invalid entry with a
   warning, deliberately ("a typo must not crash-loop the systemd service";
   `docs/specs/CONFIGURATION.md:147`). A dropped entry silently changes cookie `Secure` and the
@@ -71,8 +73,10 @@ is never validated at startup.
   deleted section) are dropped silently. — **decision.** *Recommendation:* these aren't typos:
   keep them self-healing, and make the deletes cascade so they don't arise (`removeMount`
   `:862-875` already clears `backupMountId`; also prune `destinationIds`).
-  **Fixed:** those three still heal on read; every write goes through the read's parse, so
-  deleting a mount drops it from `backupSchedule.destinationIds` in the file.
+  **Fixed, reversed (settled 2026-11-13):** a dangling `backupMountId` or schedule
+  destination fails the read, naming the key; deleting or swapping the backup mount prunes
+  both in the same write, and the runner's config repair prunes what older releases left.
+  An assignment to a removed section still falls back to Main.
 - **CFG-5** — values the UI itself wrote that a stricter read would reject. —
   **decision.** *Recommendation:* they block boot like a hand edit: make the write-side
   validators (`backupSchedule :225-264`, `oidc :546-565`, `advertisedUrl :525-544`) the single
@@ -313,7 +317,9 @@ are imported only inside their fences (`vmManager/linux/vmManagerConnection.js:4
   one-line allowances, output `file:line specifier — violates … (CODING-RULES §7)`, exit 1. —
   **clear**
   **Fixed:** `scripts/check-fences.mjs` checks package fences, facades, strict managers
-  and carved modules.
+  (mdns, networking and storage only — not host) and carved modules, across static
+  imports, every literal and template prefix in a dynamic `import()`, and
+  `require` / `createRequire`; a computed specifier fails unless `EXCEPTIONS` allows it.
 - **FEN-2** — fold the fence check into `check-imports` or add a command. — **decision.**
   *Recommendation:* a sibling `scripts/check-fences.mjs` as `npm run check-fences` (it answers
   a different question and should name §7); add it to AGENTS.md Project Facts, CODING-RULES §14
