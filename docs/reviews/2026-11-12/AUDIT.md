@@ -290,8 +290,8 @@ connect 10 s, headers 300 s, body 300 s *between chunks* — "implicit" below.
   **decision.** *Recommendation:* pulls get a generous cap (30 min) or progress-based idle
   detection; `tasks.wait` stays open (bounded by the session); the events stream uses gRPC
   channel keepalive (`grpc.keepalive_time_ms`) instead of an idle timeout.
-  **Fixed:** the image pull stopped after 5 min without progress (ingest offsets, active
-  snapshot usage; reworked after the 2b review, first a fixed 30 min); snapshot removal 2 min; `tasks.wait` no deadline;
+  **Fixed:** the image pull stopped after 5 min without progress on the transfer's progress
+  stream (reworked after the 2b review, first a fixed 30 min); snapshot removal 2 min; `tasks.wait` no deadline;
   channel keepalive every 6 min with a 20 s timeout (containerd's server refuses pings
   more often than 5 min), no pings without an active call.
 - **TMO-10** — `avahi.js:807,862,997,1017` unbounded: a hung daemon leaks
