@@ -32,13 +32,19 @@ import { createStallWatchdog } from '../lib/storage/index.js';
  */
 const UPLOAD_BODY_IDLE_MS = 60_000;
 
-/** Destroy `request`'s socket after `idleMs` without body bytes. Returns the watchdog. */
+/**
+ * Destroy `request`'s socket after `idleMs` without body bytes. Returns the
+ * watchdog. Progress is the socket's byte count: a 'data' listener on the
+ * request would switch it to flowing mode and take the body from the
+ * multipart parser.
+ */
 function watchRequestBody(request, idleMs) {
+  const { socket } = request.raw;
   const watchdog = createStallWatchdog({
     stallMs: idleMs,
+    probe: async () => socket?.bytesRead,
     onStall: () => request.raw.destroy(new Error(`upload made no progress for ${idleMs / 1000} s`)),
   });
-  request.raw.on('data', watchdog.poke);
   request.raw.once('close', watchdog.stop);
   return watchdog;
 }
