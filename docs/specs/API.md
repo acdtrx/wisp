@@ -19,6 +19,8 @@ Credentials:
 
 All error responses return `{ error: string, detail: string }` — including request-schema violations, which answer **400** `{ error: "Invalid request body", detail: "body/<field> …" }` (or `… params` / `… querystring`), and other framework rejections such as malformed JSON (400) or an unsupported content type (415). See [ERROR-HANDLING.md](ERROR-HANDLING.md) for details.
 
+**Short requests (settled 2026-11-13).** The web client gives up on a REST call after **45 s**, over the request and reading its body. Every route answers within that: an operation that can outlast it is a [job route](#job-routes), which answers 202 at once and reports through the job's stream.
+
 ## Authentication
 
 ### POST /api/auth/login · `public`
@@ -131,7 +133,7 @@ In-memory job registry (server process only; no persistence across restart). Use
 
 ### Job routes
 
-(settled 2026-11-13.) A command that can outlast a short request runs as a server job (FRONTEND-RULES, Data: the client is an observer): its route checks what it can at once — a bad request, a missing resource, a conflict answer with their usual status — then starts the job and answers **202** `{ jobId, title }`. The job runs to completion whether or not a client follows it. Its progress, and its result as the `done` event's payload, arrive on `GET /api/jobs/:jobId/progress`; a failure is the `error` event, carrying the code the synchronous route would have answered with. The routes: VM start, force-stop and delete; VM restore as new; the OS update check, package refresh and upgrade; network-bridge create and delete; mount unmount and delete; the Wisp update install. Each lists its `done` payload below.
+(settled 2026-11-13.) A command that can outlast a short request (45 s, above) runs as a server job (FRONTEND-RULES, Data: the client is an observer): its route checks what it can at once — a bad request, a missing resource, a conflict answer with their usual status — then starts the job and answers **202** `{ jobId, title }`. The job runs to completion whether or not a client follows it. Its progress, and its result as the `done` event's payload, arrive on `GET /api/jobs/:jobId/progress`; a failure is the `error` event, carrying the code the synchronous route would have answered with. The routes: VM start, force-stop and delete; VM restore as new; the OS update check, package refresh and upgrade; network-bridge create and delete; mount unmount and delete; the Wisp update install. Each lists its `done` payload below.
 
 ### GET /api/jobs/:jobId/progress · `read`
 
@@ -206,14 +208,19 @@ Create a managed VLAN bridge using netplan through the privileged `wisp-bridge` 
 
 - **Body:** `{ "baseBridge": "br0", "vlanId": 10 }`
 - **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ "name": "br0-vlan10", "baseBridge": "br0", "vlanId": 10, "vlanInterface": "br0.10", "present": true }`
-- **Job errors:** bridge already exists (409's code); invalid parent bridge or VLAN ID (422's); helper missing, privilege failure, or `netplan apply` failed (503's)
+- **409:** `NETWORK_BRIDGE_EXISTS` — bridge already exists
+- **422:** `INVALID_NETWORK_BRIDGE_NAME`, `INVALID_NETWORK_BRIDGE_PARENT`, an invalid VLAN ID
+- **503:** `NETWORK_BRIDGE_UNAVAILABLE` — not supported on this platform
+- **Job errors:** helper missing, privilege failure, or `netplan apply` failed
 
 ### DELETE /api/host/network-bridges/:name · `admin`
 
 Delete a managed VLAN bridge by name (removes Wisp netplan file, tears down live bridge/vlan interfaces, and reapplies netplan).
 
-- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{}`
-- **Job errors:** managed bridge not found; bridge is referenced by VM/container config; helper missing, privilege failure, or `netplan apply` failed
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name }`
+- **404:** `NETWORK_BRIDGE_NOT_FOUND` — managed bridge not found
+- **409:** `NETWORK_BRIDGE_IN_USE` — bridge is referenced by VM/container config
+- **Job errors:** helper missing, privilege failure, or `netplan apply` failed
 
 ### GET /api/host/firmware · `read`
 
@@ -304,6 +311,7 @@ Server-Sent Events stream of the host block-device list.
 Check for OS package updates. On Debian/Ubuntu uses `apt-get -s upgrade` dry-run (excludes phased-only packages); on Arch uses `pacman -Qu`. Requires `/usr/local/bin/wisp-os-update` (installed by server setup). One shared run: a check or package refresh started while one runs joins it (the same `jobId`).
 
 - **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ count: number }`; the package list is then in the cache (`GET /api/host/updates/packages`)
+- **409:** `UPDATE_BUSY` — an OS upgrade is running
 - **Job errors:** `UPDATE_BUSY` — the package manager is locked; `UPDATE_CHECK_UNAVAILABLE` — update script not configured, or a step stopped (see [HOST-MONITORING.md](HOST-MONITORING.md))
 
 ### GET /api/host/updates/packages · `read`
@@ -665,6 +673,7 @@ Delete a VM.
 
 - **Query:** `?deleteDisks=true|false` — whether to also delete disk images and VM directory
 - **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name }`
+- **404:** `VM_NOT_FOUND`
 - **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 
 ### GET /api/vms/:name/xml · `read`
@@ -676,8 +685,9 @@ Raw libvirt domain XML (for debugging/inspection).
 ### POST /api/vms/:name/start · `admin`
 
 - **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name }`
-- **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
-- **Job errors:** `VM_NOT_FOUND`; `VM_ALREADY_RUNNING`; `LIBVIRT_ERROR`
+- **404:** `VM_NOT_FOUND`
+- **409:** `VM_ALREADY_RUNNING`; `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
+- **Job errors:** `LIBVIRT_ERROR`
 
 ### POST /api/vms/:name/stop · `admin`
 
@@ -690,6 +700,8 @@ Graceful shutdown (ACPI).
 Immediate force stop (destroy).
 
 - **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name }`
+- **404:** `VM_NOT_FOUND` | **409:** `VM_NOT_RUNNING`
+- **Job errors:** `LIBVIRT_ERROR`
 
 ### POST /api/vms/:name/reboot · `admin`
 
@@ -925,7 +937,7 @@ List all backups across configured destinations. The backup is identified by the
 Restore a backup as a new VM — the only VM restore; there is no VM restore-in-place ([BACKUPS.md → Scope](BACKUPS.md#scope-settled-2026-10-16)).
 
 - **Body:** `{ destinationId: string, vmName: string, timestamp: string, newVmName: string }` — `(destinationId, vmName, timestamp)` are typically copied from a `GET /api/backups` row.
-- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name: string }`. The checks below answer at once, except `BACKUP_INVALID` and a disk with a backing file, which are job errors (the archive is read by the job).
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name: string }`. The checks below, the archive's validation included, answer at once; the copy's failures are job errors (`BACKUP_RESTORE_FAILED`).
 - **404:** backup not found
 - **409:** `VM_EXISTS` / `VM_DIR_EXISTS` when `newVmName` is taken in libvirt or on disk (same rule as `POST /api/vms`)
 - **422:** unknown `destinationId`, invalid `vmName`/`newVmName`, or invalid `timestamp`; `BACKUP_INVALID` when the backup's `domain.xml` or payload fails [validation](BACKUPS.md#archive-validation-vm-backups) (the message names the rule) or a restored disk has a backing file
@@ -1220,7 +1232,7 @@ Mount an SMB share by settings id. Disk mounts are mounted automatically on devi
 
 Unmount a mount by settings id.
 
-- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ id }` | **404:** mount not found
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ id }` | **404:** mount not found | **409:** not mounted
 
 ---
 

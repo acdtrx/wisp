@@ -84,10 +84,10 @@ The frontend distinguishes normal data events from error events by checking for 
 
 ### Job progress streams (VM create, backup, library download)
 
-Progress uses `step` on every event. **Failures** use the shared job-store terminal shape (no top-level `code`):
+Progress uses `step` on every event. **Failures** use the shared job-store terminal shape, with the error's `code` when it has one (e.g. `VM_NOT_RUNNING`, `UPDATE_BUSY`):
 
 ```json
-{ "step": "error", "error": "message", "detail": "raw detail" }
+{ "step": "error", "error": "message", "detail": "raw detail", "code": "ERROR_CODE" }
 ```
 
 The stream closes after that event. **Successful completion** uses `{ "step": "done", ...fields }` where the extra fields depend on the job (see [API.md](API.md) job SSE sections). `done` and `error` are the only terminal steps — clients close on either — so intermediate milestones use their own step names (e.g. a multi-destination backup's `destination-done`).
