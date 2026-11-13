@@ -36,14 +36,20 @@ WISP_MOUNT_ROOT="/mnt/wisp"
 # CODING-RULES §6: mount and umount are bounded here, not only by the caller.
 # The backend's timeout signals sudo, which ends this script but not a child it
 # is waiting on — a hung `mount -t cifs` would outlive the request, holding the
-# mount point. Each bound stays under the backend's own (mount 30 s, unmount
-# 10 s; an smb check is a mount plus an umount within 30 s).
+# mount point. Each bound, its kill grace included, ends inside the backend's
+# own (docs/specs/STORAGE.md): mount 20+3 s of 30 s; unmount 60+5 s of 75 s,
+# long enough to flush after a large backup; an smb check's mount and umount
+# 15+3 and 8+2 s of 30 s (it writes nothing to flush).
 MOUNT_TIMEOUT=20
-UMOUNT_TIMEOUT=5
+UMOUNT_TIMEOUT=60
+CHECK_MOUNT_TIMEOUT=15
+CHECK_UMOUNT_TIMEOUT=8
 bounded() {
   local secs="$1"; shift
-  local rc=0
-  timeout --kill-after=3 "$secs" "$@" || rc=$?
+  local rc=0 grace=3
+  (( secs >= 60 )) && grace=5
+  (( secs < 10 )) && grace=2
+  timeout --kill-after="$grace" "$secs" "$@" || rc=$?
   if (( rc == 124 || rc == 137 )); then
     echo "wisp-mount: $1 timed out after ${secs}s" >&2
   fi
@@ -267,12 +273,12 @@ do_smb_mount() {
     *) echo "wisp-mount: ownerOnly must be 1" >&2; exit 64 ;;
   esac
   prepare_mount_point "$mountPath"
-  bounded "$MOUNT_TIMEOUT" mount -t cifs "$share" "$MOUNT_TARGET" -o "$opts"
+  bounded "${SMB_MOUNT_TIMEOUT:-$MOUNT_TIMEOUT}" mount -t cifs "$share" "$MOUNT_TARGET" -o "$opts"
 }
 
 do_smb_check() {
-  do_smb_mount "$1"
-  bounded "$UMOUNT_TIMEOUT" umount -- "$MOUNT_TARGET"
+  SMB_MOUNT_TIMEOUT=$CHECK_MOUNT_TIMEOUT do_smb_mount "$1"
+  bounded "$CHECK_UMOUNT_TIMEOUT" umount -- "$MOUNT_TARGET"
   rmdir -- "$MOUNT_TARGET"
 }
 

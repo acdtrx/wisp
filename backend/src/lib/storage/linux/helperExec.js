@@ -1,10 +1,10 @@
 /**
  * Run the wisp-mount helper (through sudo unless already root) with a timeout
- * that settles on its own timer (CODING-RULES §6). execFile's `timeout` signals
- * sudo; a child the helper started keeps the stdout pipe open on a host whose
- * sudo hands it the pipe (no `use_pty`), so the promise would wait for that
- * child. This rejects `graceMs` after the timeout regardless, killing what is
- * left; the helper also bounds its own mount/umount (backend/scripts/wisp-mount).
+ * (CODING-RULES §6). execFile's `timeout` signals sudo, and the promise settles
+ * once sudo exits. The extra timer is a fallback for a sudo that doesn't exit
+ * on the signal: `graceMs` after the timeout it kills sudo and rejects. The
+ * helper bounds its own mount and umount (backend/scripts/wisp-mount), so a
+ * child it started never outlives it.
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';

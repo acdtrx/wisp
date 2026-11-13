@@ -7,6 +7,9 @@ import { join } from 'node:path';
 import { createAppError } from '../../routeErrors.js';
 import { execHelper } from './helperExec.js';
 
+/** The helper's own unmount bound (60 s + 5 s grace) ends inside this — long enough to flush after a large backup. */
+const UNMOUNT_TIMEOUT_MS = 75_000;
+
 const SCRIPT_PATH = '/usr/local/bin/wisp-mount';
 const UNAVAILABLE = 'DISK_MOUNT_UNAVAILABLE';
 
@@ -118,7 +121,7 @@ export async function unmountDisk(mountPath, { lazy = false, ignoreNotMounted = 
     throw createAppError('DISK_MOUNT_INVALID', 'Invalid mountPath', 'mountPath must be absolute');
   }
   try {
-    await runHelper([lazy ? 'unmount-lazy' : 'unmount', mountPath], { timeout: 10000 });
+    await runHelper([lazy ? 'unmount-lazy' : 'unmount', mountPath], { timeout: UNMOUNT_TIMEOUT_MS });
   } catch (err) {
     const rawMsg = String(err.stderr || err.message || '');
     if (ignoreNotMounted && /not mounted|no such file|not found/i.test(rawMsg)) return;
