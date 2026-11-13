@@ -55,7 +55,7 @@ export const connectionState = {
 export { vmError, unwrapVariant, unwrapDict, formatVersion, generateMAC };
 
 /*
- * CODING-RULES §6 (settled 2026-11-12, TMO-11/TMO-12): every libvirt DBus call
+ * CODING-RULES §6: every libvirt DBus call
  * is bounded — 30 s, and 2 min for the lifecycle calls (starting a large VM,
  * undefining one with NVRAM are the slow ones; a guest shutdown request returns
  * at once anyway). dbus-next never settles a call libvirtd doesn't answer, so a
@@ -246,13 +246,16 @@ export async function connect(logger = null, opts = {}) {
   /* Attached at creation: an 'error' with no listener would crash the process. */
   bus.on('error', (err) => handleBusError(bus, err));
   /* dbus-next never settles calls pending on a dead bus, so each setup call
-   * races the bus failing — a refused socket rejects instead of hanging. */
+   * races the bus failing — a refused socket rejects instead of hanging — and
+   * is bounded like every libvirt call, so a wedged libvirt-dbus fails the
+   * connect (and a reconnect retries) instead of hanging it. */
   const busFailed = new Promise((_, reject) => bus.once('error', reject));
+  busFailed.catch(() => {}); // a later bus error is handleBusError's; the races only need the rejection
   let obj;
   try {
-    obj = await Promise.race([bus.getProxyObject('org.libvirt', '/org/libvirt/QEMU'), busFailed]);
+    obj = await Promise.race([boundedLibvirt(bus.getProxyObject('org.libvirt', '/org/libvirt/QEMU'), 'introspection'), busFailed]);
     const props = obj.getInterface('org.freedesktop.DBus.Properties');
-    await Promise.race([props.Get('org.libvirt.Connect', 'LibVersion'), busFailed]);
+    await Promise.race([boundedLibvirt(props.Get('org.libvirt.Connect', 'LibVersion'), 'Get LibVersion'), busFailed]);
   } catch (err) {
     try { bus.disconnect(); } catch { /* bus may already be closed */ }
     // A failed first connect (libvirt-dbus not up yet at boot) retries on the
