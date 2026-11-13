@@ -6,6 +6,7 @@ import {
   restoreBackup,
   deleteBackup,
   resolveVmBackupDir,
+  assertVMNameAvailable,
 } from '../lib/vmManager/index.js';
 import { rebuildCloudInitISO } from '../lib/cloudInit.js';
 import { isPathInsideAllowedRoots } from '../lib/paths.js';
@@ -22,8 +23,10 @@ import { resolveBackupDestinations } from '../lib/backupDestinations.js';
 import { recordBackupAttempt, notifyBackupsChanged } from '../lib/backupStatus.js';
 import {
   backupJobStore,
+  operationJobStore,
   BACKGROUND_JOB_KIND,
   titleForContainerRestore,
+  titleForVmRestore,
 } from '../lib/jobs/index.js';
 import { createAppError, handleRouteError, isExpectedAppError } from '../lib/routeErrors.js';
 import { validateVMName, validateContainerName } from '../lib/validation.js';
@@ -185,12 +188,15 @@ export default async function backupsRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        200: {
+        202: {
           type: 'object',
-          properties: { name: { type: 'string' } },
+          properties: { jobId: { type: 'string' }, title: { type: 'string' } },
         },
       },
     },
+    // A job: restoring copies (and gunzips) every disk. The request is checked
+    // here (names, destination, backup folder); the restore's own outcome — the
+    // new VM's name, or the error — arrives over the job's stream.
     handler: async (request, reply) => {
       try {
         const { destinationId, vmName, timestamp, newVmName } = request.body;
@@ -200,14 +206,24 @@ export default async function backupsRoutes(fastify) {
         const settings = await getSettings();
         const root = resolveBackupRoot(settings, destinationId);
         const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
-        // Backups don't hold the cloud-init seed ISO; rebuild it from the
-        // restored cloud-init.json before the domain is defined. A CD-ROM may
-        // keep a source outside the new VM directory only under the paths an
-        // attach would accept (the image library).
-        return await restoreBackup(backupPath, newVmName, {
-          populateVMDir: (vmDir, { xml }) => rebuildCloudInitISO(newVmName, vmDir, xml),
-          isExternalSourceAllowed: (absPath) => isPathInsideAllowedRoots(absPath, newVmName),
+        await assertVMNameAvailable(newVmName); // a taken name is a 409 here, not a failed job
+        const job = operationJobStore.startOperationJob({
+          kind: BACKGROUND_JOB_KIND.VM_RESTORE,
+          title: titleForVmRestore(newVmName),
+          log: request.log,
+          // Backups don't hold the cloud-init seed ISO; rebuild it from the
+          // restored cloud-init.json before the domain is defined. A CD-ROM may
+          // keep a source outside the new VM directory only under the paths an
+          // attach would accept (the image library).
+          run: async () => {
+            const result = await restoreBackup(backupPath, newVmName, {
+              populateVMDir: (vmDir, { xml }) => rebuildCloudInitISO(newVmName, vmDir, xml),
+              isExternalSourceAllowed: (absPath) => isPathInsideAllowedRoots(absPath, newVmName),
+            });
+            return { name: result?.name ?? newVmName };
+          },
         });
+        return reply.code(202).send(job);
       } catch (err) {
         handleRouteError(err, reply, request);
       }

@@ -31,9 +31,13 @@ import {
 import {
   createJobStore,
   backupJobStore,
+  operationJobStore,
   BACKGROUND_JOB_KIND,
   titleForVmCreate,
   titleForBackup,
+  titleForVmStart,
+  titleForVmForceStop,
+  titleForVmDelete,
 } from '../lib/jobs/index.js';
 import { publishVm, unpublishVm } from '../lib/vmMdnsReconciler.js';
 import { generateCloudInit } from '../lib/cloudInit.js';
@@ -430,11 +434,27 @@ export default async function vmsRoutes(fastify) {
         additionalProperties: false,
       },
     },
+    // A job: undefining and deleting disk files can take a while. A busy VM is
+    // refused here (409); the outcome arrives over the job's stream.
     handler: async (request, reply) => {
       try {
         const { name } = request.params;
-        await withVmOperationLock(name, 'delete', () => deleteVM(name, request.query.deleteDisks === 'true'));
-        return { ok: true };
+        const deleteDisks = request.query.deleteDisks === 'true';
+        const release = acquireVmOperationLock(name, 'delete');
+        const job = operationJobStore.startOperationJob({
+          kind: BACKGROUND_JOB_KIND.VM_DELETE,
+          title: titleForVmDelete(name),
+          log: request.log,
+          run: async () => {
+            try {
+              await deleteVM(name, deleteDisks);
+              return { name };
+            } finally {
+              release();
+            }
+          },
+        });
+        return reply.code(202).send(job);
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -445,10 +465,50 @@ export default async function vmsRoutes(fastify) {
   // Only start takes the per-VM operation lock: the other actions apply to a
   // running VM and change no definition or disk file, while every locked
   // operation that holds the lock for long (backup) requires a stopped one.
+  // Start and force-stop are jobs — starting a large VM, or waiting for QEMU
+  // to exit, can outlast a short request: the POST answers 202 with the job
+  // id, the outcome arrives over the job's stream. The others answer at once.
+  const lifecycleJobs = [
+    { path: 'start', kind: BACKGROUND_JOB_KIND.VM_START, title: titleForVmStart, lock: 'start', fn: startVM },
+    { path: 'force-stop', kind: BACKGROUND_JOB_KIND.VM_FORCE_STOP, title: titleForVmForceStop, fn: forceStopVM },
+  ];
+  for (const { path, kind, title, lock, fn } of lifecycleJobs) {
+    fastify.post(`/vms/:name/${path}`, {
+      config: { auth: 'admin' },
+      schema: {
+        params: {
+          type: 'object',
+          required: ['name'],
+          properties: { name: { type: 'string' } },
+        },
+      },
+      handler: async (request, reply) => {
+        try {
+          const { name } = request.params;
+          const release = lock ? acquireVmOperationLock(name, lock) : () => {};
+          const job = operationJobStore.startOperationJob({
+            kind,
+            title: title(name),
+            log: request.log,
+            run: async () => {
+              try {
+                await fn(name);
+                return { name };
+              } finally {
+                release();
+              }
+            },
+          });
+          return reply.code(202).send(job);
+        } catch (err) {
+          handleRouteError(err, reply, request);
+        }
+      },
+    });
+  }
+
   const lifecycleActions = [
-    { path: 'start', fn: (name) => withVmOperationLock(name, 'start', () => startVM(name)) },
     { path: 'stop', fn: stopVM },
-    { path: 'force-stop', fn: forceStopVM },
     { path: 'reboot', fn: rebootVM },
     { path: 'suspend', fn: suspendVM },
     { path: 'resume', fn: resumeVM },
