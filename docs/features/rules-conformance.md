@@ -60,9 +60,10 @@ The §4 and §7 findings.
   - `npm run check-imports` passes.
 
 **Settled after the 2a review (2026-11-13):**
-- Values earlier releases wrote must not stop a host from booting or updating. Since no host
-  has run a migration yet, migrations 0001–0008 merge into one migration, `0001`. It first
-  repairs the config, reading `wisp-config.json` and `runtime.env` raw:
+- Values earlier releases wrote must not stop a host from booting or updating. Today's
+  unreleased migrations, 0007 and 0008, merge into one migration, `0007`. 0001–0006 shipped
+  in v2.6.0 and stay as they are. The merged migration first repairs the config, reading
+  `wisp-config.json` and `runtime.env` raw:
   - it strips the retired keys (`refreshIntervalSeconds`, `networkMounts`,
     `backupNetworkMountId`, `WISP_BACKEND_PORT`, `WISP_FRONTEND_PORT`);
   - it removes mounts outside `/mnt/wisp/`, logging each removal and the containers that
