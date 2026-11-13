@@ -11,6 +11,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import { isExpectedAppError } from '../routeErrors.js';
 import { createJobStore as createJobStoreFactory } from './jobStore.js';
 
 const store = createJobStoreFactory((result) => (result && typeof result === 'object' ? result : {}));
@@ -32,7 +33,11 @@ export function startOperationJob({ kind, title, log, run }) {
   log?.info({ jobId, kind, title }, 'Background job started');
   Promise.resolve()
     .then(() => run((ev) => store.pushEvent(jobId, ev)))
-    .then((result) => store.completeJob(jobId, result ?? {}), (err) => store.failJob(jobId, err));
+    .then((result) => store.completeJob(jobId, result ?? {}), (err) => {
+      // The store logs every failure at warn; an unexpected one also gets its stack.
+      if (!isExpectedAppError(err)) log?.error({ err, jobId, kind, title }, 'Background job failed unexpectedly');
+      store.failJob(jobId, err);
+    });
   return { jobId, title };
 }
 
