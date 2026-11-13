@@ -163,15 +163,23 @@ export default function WispUpdateSection() {
     setInstallTarget(latest);
     try {
       /* The install is a job: it downloads and stages the release (progress in
-       * the jobs tray), then starts wisp-updater.service and ends. The updater
-       * then stops this backend, so the job's stream may end before its result
-       * arrives: that too means the handover happened. Completion is detected
-       * below by polling /api/host wispVersion === target. */
+       * the jobs tray), reports `restarting`, starts wisp-updater.service and
+       * ends. The updater then stops this backend, so the job's stream may end
+       * before its result arrives: after `restarting`, that too means the
+       * handover happened. Before it, a lost stream is a failure to show.
+       * Completion is detected below by polling /api/host wispVersion === target. */
       const job = await installWispUpdate({ force: confirmForce });
+      let handedOver = false;
+      const unsubscribe = useBackgroundJobsStore.subscribe((state) => {
+        if (state.jobs[job.jobId]?.step === 'restarting') handedOver = true;
+      });
       try {
         await awaitJob(JOB_KIND.SELF_UPDATE, job);
       } catch (err) {
-        if (err.code !== 'CONNECTION_LOST' && err.code !== 'JOB_GONE') throw err;
+        const streamEnded = err.code === 'CONNECTION_LOST' || err.code === 'JOB_GONE';
+        if (!(streamEnded && handedOver)) throw err;
+      } finally {
+        unsubscribe();
       }
       setRestarting(true);
     } catch (err) {
