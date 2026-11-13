@@ -867,27 +867,18 @@ async function copyBackupPayload(backupPath, payload, destBase) {
 }
 
 /**
- * Restore a backup as a new VM. The backup is untrusted input: its domain XML
- * is checked (assertRestorableDomain) and its payload files opened (regular
- * files only, never through a symlink) before the new VM directory is created.
+ * Check a restore as `newVmName` and return its plan for `restoreBackup`. The
+ * backup is untrusted input: the name must be free, its domain XML is checked
+ * (assertRestorableDomain) and its payload files opened (regular files only,
+ * never through a symlink). It copies nothing; the plan holds the payload
+ * files open until `restoreBackup` closes them, so a caller runs it right
+ * before the restore.
  * @param {string} backupPath - Full path to the backup directory (<root>/vms/<vmName>/<timestamp>)
  * @param {string} newVmName
- * @param {{ populateVMDir?: (vmDir: string, ctx: { xml: string }) => Promise<void>,
- *           isExternalSourceAllowed?: (absPath: string) => Promise<boolean> }} [opts]
- *   populateVMDir: writes caller-owned files a backup does not hold (e.g. the
- *   cloud-init seed ISO) into the new VM directory once the payload is in
- *   place, before the domain is defined; `xml` is the domain XML about to be
- *   defined. A throw rolls the restore back like any other failure.
+ * @param {{ isExternalSourceAllowed?: (absPath: string) => Promise<boolean> }} [opts]
  *   isExternalSourceAllowed: whether a CD-ROM may keep a source outside the new
  *   VM directory (the caller's policy, e.g. its image library); without it,
  *   every source must be inside the new VM directory.
- * @returns { Promise<{ name: string }> }
- */
-/**
- * Check a restore as `newVmName` — the name is free, the backup's domain.xml
- * and payload pass validation — and return its plan for `restoreBackup`. It
- * copies nothing; the plan holds the payload files open until `restoreBackup`
- * closes them, so a caller runs it right before the restore.
  */
 export async function planBackupRestore(backupPath, newVmName, { isExternalSourceAllowed } = {}) {
   await assertVMNameAvailable(newVmName);
@@ -904,7 +895,17 @@ export async function planBackupRestore(backupPath, newVmName, { isExternalSourc
   return { backupPath, newVmName, newBase, newXml, payload };
 }
 
-/** Run a `planBackupRestore` plan: copy the payload into a new VM directory and define the VM. */
+/**
+ * Run a `planBackupRestore` plan: create the new VM directory, copy the
+ * payload into it and define the VM.
+ * @param {object} plan - from planBackupRestore
+ * @param {{ populateVMDir?: (vmDir: string, ctx: { xml: string }) => Promise<void> }} [opts]
+ *   populateVMDir: writes caller-owned files a backup does not hold (e.g. the
+ *   cloud-init seed ISO) into the new VM directory once the payload is in
+ *   place, before the domain is defined; `xml` is the domain XML about to be
+ *   defined. A throw rolls the restore back like any other failure.
+ * @returns { Promise<{ name: string }> }
+ */
 export async function restoreBackup({ backupPath, newVmName, newBase, newXml, payload }, { populateVMDir } = {}) {
   try {
     // createOwnVMDir creates getVMBasePath(newVmName) — newBase — exclusively,

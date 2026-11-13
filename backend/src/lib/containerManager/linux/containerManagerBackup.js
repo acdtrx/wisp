@@ -628,13 +628,6 @@ async function createContainerdRecord(name, config) {
 }
 
 /**
- * Restore a container backup as a brand-new container with `newName`.
- * Container directory is recreated from the archive; container.json is
- * rewritten with the new name and a fresh MAC; image is pulled if
- * missing; containerd container record is created (snapshot is prepared
- * lazily on first start, like a normal stopped container).
- */
-/**
  * Check a restore as `newName` — the name is free on disk and in containerd,
  * the backup's manifest reads and validates — and return its plan for
  * `restoreContainerBackup`. Quick; changes nothing.
@@ -663,7 +656,13 @@ export async function planContainerBackupRestore(backupPath, newName) {
   return { newName: newNameTrim, manifest, archivePath };
 }
 
-/** Run a `planContainerBackupRestore` plan: extract the archive as the new container and define it. */
+/**
+ * Run a `planContainerBackupRestore` plan: restore the backup as a brand-new
+ * container. Its directory is recreated from the archive; container.json is
+ * rewritten with the new name and a fresh MAC; the image is pulled if
+ * missing; the containerd container record is created (the snapshot is
+ * prepared lazily on first start, like a normal stopped container).
+ */
 export async function restoreContainerBackup({ newName: newNameTrim, manifest, archivePath }) {
   /* Extract the tar into the containers root. The archive's top-level
    * entry is the *original* container name (we tarred `<name>` from

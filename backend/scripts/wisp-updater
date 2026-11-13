@@ -40,8 +40,9 @@ fail() {
 # killed after SECS seconds without a line of output (returns 124) — an
 # inactivity bound for a step that shows progress (CODING-RULES §6). The unit's
 # TimeoutStartSec stays the backstop for the whole update. cmd runs in a session
-# (process group) of its own, and a stall kills the whole group: through
-# `sudo -u`, a signal to sudo alone would not reach npm.
+# (process group) of its own, and a stall signals the whole group: sudo forwards
+# a SIGTERM, but a SIGKILL can't be forwarded, and npm's own children (install
+# scripts) must die with it.
 idle_run() {
   local secs="$1"; shift
   local fifo fd line r rc=0 timed_out=0 pid

@@ -260,7 +260,6 @@ export async function initMountContent(containerName, mountName) {
   return { ok: true };
 }
 
-/** Remove backing file or directory; mount row stays in container.json until PATCH. */
 /**
  * The checks a mount's data delete (`'data'`) or a mount's removal
  * (`'remove'`) makes first, quick and without side effects:
@@ -278,6 +277,7 @@ export async function assertMountOperation(containerName, mountName, what) {
   }
 }
 
+/** Remove backing file or directory; mount row stays in container.json until PATCH. */
 export async function deleteMountData(containerName, mountName) {
   const config = await loadContainerJson(containerName);
   const m = findMount(config, mountName);
