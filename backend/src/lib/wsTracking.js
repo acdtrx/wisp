@@ -6,9 +6,37 @@
  */
 const liveSockets = new Set();
 
-export function trackWebSocket(socket) {
+/*
+ * CODING-RULES §6 (settled 2026-11-12, TMO-17): a console's sockets live as
+ * long as the user keeps it open, so there is no total cap — but a peer that
+ * vanished without a close (laptop lid, dropped VPN) would leave the socket,
+ * and the VNC TCP leg or container exec session behind it, open for good. Each
+ * tracked socket is pinged every 30 s; one that hasn't answered the previous
+ * ping is terminated, and its close tears down what it carried.
+ */
+export const WS_PING_INTERVAL_MS = 30_000;
+
+export function trackWebSocket(socket, { pingIntervalMs = WS_PING_INTERVAL_MS } = {}) {
   liveSockets.add(socket);
-  socket.on('close', () => liveSockets.delete(socket));
+  let alive = true;
+  socket.on('pong', () => { alive = true; });
+  const timer = setInterval(() => {
+    if (!alive) {
+      socket.terminate();
+      return;
+    }
+    alive = false;
+    try {
+      socket.ping();
+    } catch {
+      /* socket tearing down */
+    }
+  }, pingIntervalMs);
+  timer.unref?.();
+  socket.on('close', () => {
+    clearInterval(timer);
+    liveSockets.delete(socket);
+  });
 }
 
 export function closeAllWebSockets(reason = 'auth invalidated') {

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, isAuthenticated, broadcastLogout, isNetworkError, NETWORK_ERROR_MESSAGE } from '../api/client';
+import { api, isAuthenticated, broadcastLogout, isNetworkError, NETWORK_ERROR_MESSAGE, API_TIMEOUT_MS } from '../api/client';
 
 export const useAuthStore = create((set) => ({
   // Cookie-based session — the HttpOnly session cookie is invisible to JS.
@@ -16,6 +16,7 @@ export const useAuthStore = create((set) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
         credentials: 'include',
+        signal: AbortSignal.timeout(API_TIMEOUT_MS), // CODING-RULES §6
       });
 
       if (!res.ok) {
@@ -28,7 +29,8 @@ export const useAuthStore = create((set) => ({
       return true;
     } catch (err) {
       // A dead VPN surfaces here as fetch's bare "Load failed" — name the actual cause.
-      set({ error: isNetworkError(err) ? NETWORK_ERROR_MESSAGE : err.message, loading: false });
+      const timedOut = err?.name === 'TimeoutError';
+      set({ error: isNetworkError(err) || timedOut ? NETWORK_ERROR_MESSAGE : err.message, loading: false });
       return false;
     }
   },

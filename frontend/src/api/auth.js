@@ -12,7 +12,7 @@ export function changePassword(currentPassword, newPassword) {
 // 401 → /login redirect in the shared client.
 export async function getOidcStatus() {
   try {
-    const res = await fetch('/api/auth/oidc/status', { credentials: 'include' });
+    const res = await fetch('/api/auth/oidc/status', { credentials: 'include', signal: AbortSignal.timeout(15_000) }); // CODING-RULES §6
     if (!res.ok) return { enabled: false };
     return await res.json();
   } catch {

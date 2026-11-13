@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { consoleWsUrl } from '../../api/console.js';
+import { closeIfNotOpenWithin, consoleWsUrl } from '../../api/console.js';
 import { getHostInfo } from '../../api/host.js';
 
 let RFBClass = null;
@@ -188,6 +188,7 @@ export default function VNCConsole({ vmName, vmRunning, viewportRef, apiRef, onC
          * recorded by then. */
         lastWsCloseRef.current = null;
         const ws = new WebSocket(wsUrl);
+        closeIfNotOpenWithin(ws);
         ws.addEventListener('close', (e) => {
           lastWsCloseRef.current = { code: e.code, reason: String(e.reason || '') };
         });

@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
-import { consoleWsUrl } from '../../api/console.js';
+import { closeIfNotOpenWithin, consoleWsUrl } from '../../api/console.js';
 import { getHostInfo } from '../../api/host.js';
 import { useThemeStore } from '../../store/themeStore.js';
 import { consoleTheme } from './consoleTheme.js';
@@ -187,6 +187,7 @@ export default function ContainerConsole({
       try {
         ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
+        closeIfNotOpenWithin(ws);
       } catch (err) {
         setNotice({ kind: 'error', message: err?.message || 'Failed to open WebSocket' });
         disposeTerminal();

@@ -81,21 +81,62 @@ if (typeof window !== 'undefined') {
   });
 }
 
+/**
+ * Default deadline for one REST call (CODING-RULES §6), over the request and
+ * reading its body. Long operations run as background jobs; the slowest
+ * synchronous routes are bounded on the server at 30 s (mounts, the update
+ * check) and 2 min (a libvirt start), so 60 s lets their own error arrive.
+ * Pass `timeoutMs` for a call that needs another bound.
+ */
+export const API_TIMEOUT_MS = 60_000;
+
+/** `signals` combined: aborts with the first one's reason (AbortSignal.any where available). */
+export function anySignal(signals) {
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals);
+  const controller = new AbortController();
+  for (const s of signals) {
+    if (s.aborted) {
+      controller.abort(s.reason);
+      break;
+    }
+    s.addEventListener('abort', () => controller.abort(s.reason), { once: true });
+  }
+  return controller.signal;
+}
+
+/** The error for a call that hit its own deadline (not the caller's abort). */
+function timeoutError(timeoutMs) {
+  const err = new Error(`Wisp did not answer within ${Math.round(timeoutMs / 1000)} s`);
+  err.name = 'TimeoutError';
+  err.code = 'TIMEOUT';
+  return err;
+}
+
 export async function api(path, options = {}) {
-  const method = (options.method || 'GET').toUpperCase();
-  const headers = { ...options.headers };
+  const { timeoutMs = API_TIMEOUT_MS, signal: callerSignal, ...fetchOptions } = options;
+  const method = (fetchOptions.method || 'GET').toUpperCase();
+  const headers = { ...fetchOptions.headers };
 
   if (STATE_CHANGING_METHODS.has(method)) {
     const csrf = readCsrfToken();
     if (csrf) headers[CSRF_HEADER] = csrf;
   }
 
-  if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
+  if (fetchOptions.body && typeof fetchOptions.body === 'object' && !(fetchOptions.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
-    options.body = JSON.stringify(options.body);
+    fetchOptions.body = JSON.stringify(fetchOptions.body);
   }
 
-  const res = await fetch(path, { ...options, headers, credentials: 'include' });
+  const deadline = AbortSignal.timeout(timeoutMs);
+  const signal = callerSignal ? anySignal([callerSignal, deadline]) : deadline;
+  const ownDeadline = (err) => (deadline.aborted && !callerSignal?.aborted ? timeoutError(timeoutMs) : err);
+
+  let res;
+  try {
+    res = await fetch(path, { ...fetchOptions, headers, credentials: 'include', signal });
+  } catch (err) {
+    throw ownDeadline(err);
+  }
 
   if (res.status === 401) {
     broadcastLogout();
@@ -105,6 +146,7 @@ export async function api(path, options = {}) {
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
+    if (deadline.aborted && !callerSignal?.aborted) throw timeoutError(timeoutMs);
     const msg = data.error || data.message || `Request failed: ${res.status}`;
     const err = new Error(msg);
     err.status = res.status;
@@ -114,7 +156,11 @@ export async function api(path, options = {}) {
   }
 
   if (res.headers.get('content-type')?.includes('application/json')) {
-    return res.json();
+    try {
+      return await res.json();
+    } catch (err) {
+      throw ownDeadline(err);
+    }
   }
 
   return res;

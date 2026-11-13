@@ -60,8 +60,16 @@ export default async function consoleRoutes(fastify) {
     log.info({ port }, 'VNC opening TCP to QEMU');
 
     const sock = createConnection(port, '127.0.0.1', () => {
+      clearTimeout(connectTimer);
       log.info({ port }, 'VNC TCP connected to QEMU');
     });
+    // QEMU is local: a connect still pending after 10 s means it hung (CODING-RULES §6).
+    // Once connected the leg lives as long as the WebSocket, whose pings bound it.
+    const connectTimer = setTimeout(() => {
+      log.warn({ port }, 'VNC TCP connect to QEMU timed out');
+      sock.destroy();
+      if (socket.readyState === 1) socket.close(1011, 'TCP error');
+    }, 10_000);
 
     sock.on('data', (data) => {
       if (socket.readyState === 1) socket.send(data);
@@ -80,6 +88,7 @@ export default async function consoleRoutes(fastify) {
       if (socket.readyState === 1) socket.close(1011, 'TCP error');
     });
     sock.on('close', (hadError) => {
+      clearTimeout(connectTimer);
       log.info({ port, hadError }, 'VNC TCP to QEMU closed');
       if (socket.readyState === 1) socket.close();
     });
