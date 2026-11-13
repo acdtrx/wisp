@@ -138,7 +138,6 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
       subtitle={isEdit ? share.share || share.label : 'Network mount over SMB/CIFS'}
       size="md"
       height="cap"
-      closeOnBackdrop={!saving}
       closeOnEscape={!saving}
       footer={(
         <>

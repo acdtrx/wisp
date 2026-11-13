@@ -422,11 +422,14 @@ Most stores replace their data on each push; few collections grow.
 - **DAT-1** — `fe/components/sections/ContainerLogsSection.jsx:9-10,121-124`: log lines capped
   at 5000 (trimmed to 4000), rendered without windowing (`:301`). — **decision.**
   *Recommendation:* keep the cap; window only if phones are seen to lag.
+  **Kept:** the 5000-line cap stays, unwindowed (settled).
 - **DAT-2** — `fe/components/console/ContainerConsole.jsx:170`: xterm's scrollback is
   bounded only by its default (1000). *Fix:* pass `scrollback` explicitly. — **clear**
+  **Fixed:** `scrollback: 1000` is explicit.
 - **DAT-3** — `fe/store/workloadActions.js:10-15`: an error entry stays until dismissed, also
   for a workload deleted elsewhere. *Fix:* on each list push, drop entries whose name is gone.
   — **clear**
+  **Fixed:** each list frame drops the settled error entries of workloads no longer listed.
 
 Bounded already: background job tray (`fe/store/backgroundJobsStore.js:6,55-76`, 5 min TTL),
 `fe/api/events.js:24` (one frame per topic).
@@ -437,47 +440,61 @@ Bounded already: background job tray (`fe/store/backgroundJobsStore.js:6,55-76`,
   "No workloads" shows before the first frame; list error frames are dropped
   (`fe/store/vmStore.js:115`, `containerStore.js:129`). *Fix:* `loaded` + `listError` in both
   stores; skeleton, then an error row with retry. — **clear**
+  **Fixed:** both stores keep `listLoaded` and `listError`; the sidebar shows a skeleton, then an error row with retry.
 - **DAT-5** — `fe/components/home/HomePanel.jsx:144`: no loading or error state (`homeStore.js:47`
   ignores error frames). *Fix:* skeleton while `!loaded`; store and show the error. — **clear**
+  **Fixed:** a skeleton until loaded; the store keeps the error frame and the panel shows it.
 - **DAT-6** — `fe/store/containerStore.js:190-191`: a failed `getContainer` keeps the seed config,
   so the body renders empty env/mount/network sections. *Fix:* clear the config on error as the
   VM store does (`vmStore.js:166`). — **clear**
+  **Fixed:** a failed select clears the seed config; the panel shows the error.
 - **DAT-7** — `fe/components/sections/ContainerLogsSection.jsx:76-77`: a failed runs fetch shows
   "No runs yet". *Fix:* an error state. — **clear**
+  **Fixed:** a failed runs fetch is an error state and keeps the runs shown.
 - **DAT-8** — `ContainerLogsSection.jsx:117-128,296-299`: "No logs for this run." while
   connecting; the stream's `{ error }` frame (`be/routes/containers.js:691`) is ignored. *Fix:*
   a `streamState` (connecting / error / ready) and handle `data.error`. — **clear**
+  **Fixed:** a connecting / ready / error stream state; error frames and a lost stream show.
 - **DAT-9** — `fe/components/sections/CloudInitSection.jsx:68-76,282`: no loading state; a fetch
   failure shows "No cloud-init configuration" and **Configure**, inviting an overwrite of a
   real config. *Fix:* `loading` + `loadError`; no Configure on error. — **clear** (highest
   priority)
+  **Fixed (first):** loading and load-error states; on error a retry, never Configure.
 - **DAT-10** — `fe/components/sections/USBSection.jsx:44`: an attached-devices failure reads as
   "nothing attached"; `:92,158`: "Loading USB devices…" forever if the stream never delivers.
   *Fix:* error states for both. — **clear**
+  **Fixed:** attached-devices and stream errors show; the spinner gives way to the stream error.
 - **DAT-11** — `fe/components/vm/XMLModal.jsx:74`: the error text renders as the XML body.
   *Fix:* its own error state. — **clear**
+  **Fixed:** its own error state; Copy is disabled without XML.
 - **DAT-12** — `fe/components/host/HostOverview.jsx:346`, `fe/components/layout/HostStatsBar.jsx:15-18`:
   a stats stream that sends only errors (`fe/store/statsStore.js:20`) spins forever. *Fix:*
   `lastError` in the store; "Stats unavailable". — **clear**
+  **Fixed:** `lastError` in the store; "Stats unavailable".
 - **DAT-13** — `HostOverview.jsx:884-889`: "Loading…" forever when `getHostInfo` fails; `:875`
   merges loading and empty ("No hardware inventory listed (or still loading)"). *Fix:* separate
   loading / empty / error. — **clear**
+  **Fixed:** separate loading, empty and error for the inventory; the software block has an error with retry.
 - **DAT-14** — `fe/components/host/HostStorage.jsx:407-411`: "Connecting to device stream…"
   forever if the disk stream fails. *Fix:* show `diskStore` connection errors. — **clear**
+  **Fixed:** the disk store keeps stream errors and the section shows them.
 - **DAT-15** — `fe/store/settingsStore.js:16`: `error` is set but never rendered
   (`fe/components/layout/AppLayout.jsx:29` swallows the failure); `AppConfig.jsx:78`,
   `HostStorage.jsx:227`, `HostBackup.jsx`, `HostBackupScheduler.jsx`, `OidcSettings.jsx` and the
   storage pickers in `fe/apps/jellyfin/JellyfinAppSection.jsx:89`,
   `fe/apps/tinySamba/TinySambaAppSection.jsx:111` show blank or default forms. *Fix:* a loading
   line while `settings == null` and the store error in each section. — **clear**
+  **Fixed:** `SettingsGate` shows loading, or the store error with retry, in each listed section instead of a default form.
 - **DAT-16** — `fe/components/settings/ApiTokensSettings.jsx:45-47,168`: "Loading…" forever under
   the error banner. *Fix:* an error row with retry. — **clear**
+  **Fixed:** an error row with retry.
 - **DAT-17** — a false empty state under an error: `fe/components/backups/BackupsPanel.jsx:173-178,611-613`
   (a failed refetch also wipes a loaded list), `fe/components/library/ImageLibrary.jsx:361-363`,
   `fe/components/host/HostNetworkBridges.jsx:41-42,106-110`,
   `fe/components/sections/ContainerDevicesSection.jsx:36-38,115-117`,
   `fe/apps/jellyfin/JellyfinAppSection.jsx:99,144,313` ("No supported GPU" also while loading).
   *Fix:* keep the previous data on a failed refetch; no empty state when `error`. — **clear**
+  **Fixed:** a failed refetch keeps the data; no empty state renders under an error (GPU "checking" while loading).
 - **DAT-18** — supporting lookups that fall back silently: bridges → `[]`
   (`VmNetworkInterfacesSection.jsx:69`, `ContainerNetworkSection.jsx:254`), an invented
   `['virbr0']` (`fe/components/vm/CreateVMPanel.jsx:92`), mount usage and status → `[]`
@@ -485,6 +502,7 @@ Bounded already: background job tray (`fe/store/backgroundJobsStore.js:6,55-76`,
   (`OverviewPanel.jsx:205`, `ContainerOverviewPanel.jsx:194`, `BackupsPanel.jsx:214`), job-tray
   hydration swallowed (`AppLayout.jsx:47`). — **decision.** *Recommendation:* keep the
   fallbacks, add a muted inline "couldn't load …" hint; drop the invented `virbr0`.
+  **Fixed as recommended:** the fallbacks stay with a muted "Couldn't load …" hint (`LoadHint`); the invented `virbr0` is gone (an empty source lets the server use its default bridge); the tray says a failed hydration may miss jobs.
 
 ---
 
@@ -509,14 +527,17 @@ rules or JS hover handlers.
   icon picker opens on a phone). FRONTEND-RULES § Modal form editor itself prescribes "First
   field gets `autoFocus`". *Fix:* `fe/lib/focus.js` (`focusField`, `useAutoFocus`) that does
   nothing on touch; route every site through it; reword the FRONTEND-RULES line. — **clear**
+  **Fixed:** `lib/focus.js` (`focusField`, `focusElement`, `autoFocusField`); every site goes through it; the FRONTEND-RULES line is reworded.
 - **TCH-2** — how the focus module detects touch. — **decision.** *Recommendation:*
   `matchMedia('(hover: none) and (pointer: coarse)')`, the same query as the 16px rule, so the
   two agree; focusing a non-field element (a dialog container) stays unconditional.
+  **Settled as recommended:** the 16px rule's query; non-field focus stays unconditional.
 - **TCH-3** — hover-revealed row actions are invisible on a touch device ≥1024px (iPad
   landscape): `lg:opacity-0` hides them unconditionally while the `group-hover` that reveals them
   is hover-gated — `fe/components/vm/VMListItem.jsx:83`, `container/ContainerListItem.jsx:82`
   (`shared/DataTableChrome.jsx:121` at least adds `group-focus-within`). *Fix:* a
   `@custom-variant hoverable (@media (hover: hover))` and `hoverable:lg:opacity-0`. — **clear**
+  **Fixed:** a `hoverable` variant; the reveal applies only under `(hover: hover)`, and the list rows also reveal on focus-within.
 - **TCH-4** — tap targets that don't grow at phone widths: `p-0.5` (~19px) at
   `LeftPanel.jsx:108,117,135,145,155,165`, `HomeTile.jsx:127,136`, `ImageLibrary.jsx:206,209`;
   `p-1` (~22–24px) at `sidebar/SectionPickerButton.jsx:72`, `shared/Modal.jsx:117` (close X),
@@ -525,9 +546,11 @@ rules or JS hover handlers.
   `layout/ThemeToggle.jsx:22`, `ContainerLogsSection.jsx:226,248,257,267`. *Fix:* `p-2 lg:p-…`
   as the row actions already do (`DataTableChrome.jsx:105-113`), or a shared `iconBtn` token.
   — **clear**
+  **Fixed:** `p-2` at phone widths, the old padding from `lg`.
 - **TCH-5** — the 16px rule keys on `pointer: coarse`, so an iPad with a trackpad
   (`pointer: fine`) still zooms on small fields. — **decision.** *Recommendation:* accept; the
   rule targets phones.
+  **Accepted** (settled).
 
 Minor, for the backlog rather than this feature: `fe/components/shared/HelpIcon.jsx:10` relies
 on `title`, which never shows on touch.
@@ -541,6 +564,7 @@ on `title`, which never shows on touch.
   `role="dialog"` / `aria-modal` / `aria-labelledby`. ConfirmDialog and AlertDialog
   (`shared/ConfirmDialog.jsx:24`, `shared/AlertDialog.jsx:29`) inherit all of it. *Fix:* see
   LAY-3. — **clear**
+  **Fixed:** see LAY-3; the card is a `role="dialog"` `aria-modal` named by its title.
 - **LAY-2** — Esc closes every open layer, not only the top one: `fe/hooks/useEscapeKey.js:11-20`
   adds a bubble-phase listener per modal with no stack; nesting works only by the parent's
   `closeOnEscape={false}` convention. Broken cases: `home/ManualLinkModal.jsx:68` with
@@ -550,6 +574,7 @@ on `title`, which never shows on touch.
   from it (`:177,185,643`); every popover's Esc also reaches the drawer or the VM/container
   route's Esc handler (`vm/VmRoute.jsx:29`, `container/ContainerRoute.jsx:31`). *Fix:* one layer
   stack (LAY-3). — **clear**
+  **Fixed:** one stack; inline editors claim their Escape with `preventDefault()`; route handlers stand down while a layer is open.
 - **LAY-3** — how to implement inert / Tab trap / focus return / top-layer Esc without a
   library. — **decision.** *Recommendation:* a small `fe/lib/layers.js`: a module-level stack
   every modal, drawer and popover pushes onto; one capture-phase Escape handler closes only the
@@ -559,25 +584,31 @@ on `title`, which never shows on touch.
   through the TCH-1 focus module. Rejected alternative to weigh: native
   `<dialog>.showModal()` gives inert, trap, top layer and Esc for free but changes how the
   backdrop and stacking are styled, and doesn't cover the drawer or popovers.
+  **Fixed as recommended:** `lib/layers.js` (window-level Escape after the target's handlers, Tab wrap, `inert` on `#root` and lower layers, opener refocused through the focus module); modals render in a portal.
 - **LAY-4** — modals close on a click that starts and ends on the backdrop
   (`shared/Modal.jsx:75-85,92-93`), the `[PROJECT]` exception to "never dismiss a modal on a
   click beside it". — **decision.** *Recommendation:* bring the modals to the rule — drop
   backdrop close (Esc, Cancel and the X stay), remove `closeOnBackdrop`, the `[PROJECT]` note in
   FRONTEND-RULES § Layers and its backlog mention; a stray click can't discard a form's edits.
+  **Fixed as recommended:** no backdrop close; `closeOnBackdrop` and the `[PROJECT]` note are gone, and so is the backlog mention.
 - **LAY-5** — the phone sidebar drawer (`layout/LeftPanel.jsx:458-468`) is an ad-hoc overlay:
   not on any stack, no inert, no focus move/trap/return. *Fix:* it joins the LAY-3 stack. —
   **clear**
+  **Fixed:** below `lg` the drawer is a layer: Escape, Tab kept inside, the page beside it inert, focus back to the menu button.
 - **LAY-6** — popovers (`sidebar/SectionPickerButton.jsx:21-34`, `home/TileGroupPicker.jsx:20-32`,
   `layout/ServerSwitcher.jsx:41-55`, `library/PresetImageDownloadMenu.jsx:19-33`,
   `layout/BackgroundJobsIndicator.jsx:55-62` — the last has no Esc at all) neither move nor
   return focus and aren't on a stack. *Fix:* join the LAY-3 stack; outside-click on
   `pointerdown`. — **clear**
+  **Fixed:** `lib/popover.js` (layer, outside `pointerdown`, focus in and back); the jobs tray gets Escape.
 - **LAY-7** — no popover is clamped to the viewport: `SectionPickerButton.jsx:81` (`right-0
   top-full w-44`), `TileGroupPicker.jsx:79` (`left-0 bottom-full w-44` — spills off the right
   edge for a right-column tile on a phone), `ServerSwitcher.jsx:80`,
   `PresetImageDownloadMenu.jsx:54`, `BackgroundJobsIndicator.jsx:90` (width capped, position
   not); none flips near the bottom. — **clear**
+  **Fixed:** see LAY-8.
 - **LAY-8** — how to clamp. — **decision.** *Recommendation:* a shared
   `useClampToViewport(anchorRef, popRef)` that measures in a layout effect and shifts or flips,
   with the popover in a portal (which also escapes the sidebar's overflow clipping). CSS anchor
   positioning (`position-try`) is the no-JS alternative where the target browsers support it.
+  **Fixed as recommended:** `useClampToViewport` measures in a layout effect, flips above or below, clamps both axes, in a portal.

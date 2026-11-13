@@ -199,7 +199,7 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename }) {
               onChange={(e) => setEditValue(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') commitRename();
-                if (e.key === 'Escape') cancelRename();
+                if (e.key === 'Escape') { e.preventDefault(); cancelRename(); } // claimed: the modal stays open
               }}
               className="rounded-sm border border-surface-border bg-surface-input px-2 py-0.5 text-sm text-text-primary outline-hidden focus:border-accent"
             />

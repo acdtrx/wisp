@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Plus, Monitor, Search, Server, Box, FolderCog,
@@ -15,6 +15,8 @@ import ContainerListItem from '../container/ContainerListItem.jsx';
 import AlertDialog from '../shared/AlertDialog.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { autoFocusField } from '../../lib/focus.js';
+import { useLayer, focusIntoLayer } from '../../lib/layers.js';
+import { useMediaQuery } from '../../hooks/useMediaQuery.js';
 
 const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -98,7 +100,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
             onChange={(e) => setDraftName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') submitRename();
-              else if (e.key === 'Escape') setEditing(false);
+              else if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
             }}
             className="w-28 rounded-sm border border-surface-border bg-surface-card px-1.5 py-0.5 text-[10px] text-text-primary outline-hidden focus:border-accent"
           />
@@ -332,6 +334,8 @@ export default function LeftPanel() {
   const organizeMode = useUiStore((s) => s.organizeMode);
   const setOrganizeMode = useUiStore((s) => s.setOrganizeMode);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
+  const asideRef = useRef(null);
+  const belowLg = useMediaQuery('(max-width: 1023.98px)');
   const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
   const sections = useSectionsStore((s) => s.sections);
   const assignments = useSectionsStore((s) => s.assignments);
@@ -376,14 +380,19 @@ export default function LeftPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
+  /* Below lg the open panel is a drawer: a layer (Escape closes it, Tab stays
+   * in it, the page beside it is inert, focus returns to the menu button). At
+   * lg+ it is the static sidebar and no layer. */
+  const isDrawer = sidebarOpen && belowLg;
+  useLayer(isDrawer, {
+    kind: 'drawer',
+    ref: asideRef,
+    onEscape: () => setSidebarOpen(false),
+    inertTargets: () => [document.querySelector('[data-wisp-main]')],
+  });
   useEffect(() => {
-    if (!sidebarOpen) return undefined;
-    function onKeyDown(e) {
-      if (e.key === 'Escape') setSidebarOpen(false);
-    }
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [sidebarOpen, setSidebarOpen]);
+    if (isDrawer) focusIntoLayer(asideRef.current);
+  }, [isDrawer]);
 
   const allItems = useMemo(() => {
     const vmItems = (listFilter === 'all' || listFilter === 'vms')
@@ -475,8 +484,11 @@ export default function LeftPanel() {
       {/* Below lg: drawer under the top bar — full-width on phones, 280px rail
           from sm up. At lg+ it is the static sidebar. */}
       <aside
+        ref={asideRef}
+        tabIndex={-1}
+        aria-label="Workloads"
         /* px-safe: the drawer is `fixed`, so AppLayout's inset doesn't reach it. */
-        className={`${sidebarOpen ? 'flex' : 'hidden'} fixed top-[calc(3rem+env(safe-area-inset-top))] bottom-0 left-0 z-40 w-full flex-col border-r border-surface-border bg-surface-sidebar px-safe sm:w-[280px] lg:static lg:z-auto lg:flex`}
+        className={`${sidebarOpen ? 'flex' : 'hidden'} outline-hidden fixed top-[calc(3rem+env(safe-area-inset-top))] bottom-0 left-0 z-40 w-full flex-col border-r border-surface-border bg-surface-sidebar px-safe sm:w-[280px] lg:static lg:z-auto lg:flex`}
       >
       <button
         type="button"

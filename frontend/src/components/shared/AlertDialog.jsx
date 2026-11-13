@@ -26,7 +26,7 @@ export default function AlertDialog({
       : 'text-sm font-semibold text-text-primary';
 
   return (
-    <Modal open={open} onClose={onClose} size="sm" bodyPadding="none">
+    <Modal open={open} onClose={onClose} size="sm" bodyPadding="none" ariaLabel={typeof title === 'string' ? title : undefined}>
       <div className="p-6">
         {title && <h3 className={titleCls}>{title}</h3>}
         {children != null ? (

@@ -255,14 +255,3 @@ containers on a Mac.
 (settings, the password hash, the migration ledger; `PRODUCTION.md`, Backups): a host
 whose install is lost is set up again by hand. **Revisit trigger:** a host's configuration
 is lost, or has to be rebuilt by hand.
-
-**Check the code against the rules adopted with the template sync (2026-11-12).** Rules
-the code was not checked against when they were adopted: CODING-RULES §4, config read
-strictly (invalid persisted `backupSchedule` values fall back to defaults on read,
-`specs/CONFIGURATION.md`); §6, every outbound request and subprocess has a timeout; §7, a
-lint enforcing the external-system fences (`npm run check-imports` checks only that
-imports resolve); FRONTEND-RULES Data (growing collections bounded; loading, empty and
-error states), Phones and touch (16px fields, no programmatic focus on touch, hover only
-under `@media (hover: hover)`) and Layers (the page under a modal inert, Tab kept inside,
-focus returned; Wisp's modals still close on a backdrop click). **Revisit trigger:** the
-next audit (`docs/reviews/`), or earlier work in an area one of these rules covers.

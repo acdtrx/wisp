@@ -65,7 +65,6 @@ export default function ManualLinkModal({ open, tile, onClose }) {
         subtitle="A tile for anything with a URL — on this host or elsewhere."
         size="sm"
         height="cap"
-        closeOnBackdrop={!saving}
         closeOnEscape={!saving}
         footer={
           <>

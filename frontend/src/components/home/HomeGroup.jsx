@@ -79,7 +79,7 @@ export default function HomeGroup({ group, tiles, editing, hideLabel, autoEdit, 
               onChange={(e) => setDraftName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') submitRename();
-                else if (e.key === 'Escape') setRenaming(false);
+                else if (e.key === 'Escape') { e.preventDefault(); setRenaming(false); }
               }}
               className="w-36 rounded-sm border border-surface-border bg-surface-card px-1.5 py-0.5 text-[11px] text-text-primary outline-hidden focus:border-accent"
             />

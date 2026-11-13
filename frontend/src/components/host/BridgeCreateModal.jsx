@@ -70,7 +70,6 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose, onCr
       subtitle="The host handles VLAN tagging — guests connect untagged."
       size="sm"
       height="cap"
-      closeOnBackdrop={!submitting}
       closeOnEscape={!submitting}
       footer={(
         <>

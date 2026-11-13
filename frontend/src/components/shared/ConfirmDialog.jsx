@@ -24,6 +24,7 @@ export default function ConfirmDialog({
     <Modal
       open={open}
       onClose={onCancel}
+      ariaLabel={typeof title === 'string' ? title : undefined}
       size="sm"
       bodyPadding="none"
     >

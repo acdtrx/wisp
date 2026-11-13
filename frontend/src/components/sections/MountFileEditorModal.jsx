@@ -60,7 +60,6 @@ export default function MountFileEditorModal({
       size="3xl"
       height="tall"
       bodyPadding="none"
-      closeOnBackdrop={!saving}
       closeOnEscape={!saving}
       footer={
         <>

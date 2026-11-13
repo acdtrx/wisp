@@ -160,9 +160,8 @@ export default function EnvVarEditorModal({ open, row, existingKeys = [], onSubm
         subtitle={isEdit ? row.key : 'Container environment variable'}
         size="md"
         height="cap"
-        closeOnBackdrop={!saving && !pendingGenerate}
         /* A nested confirm is the top layer — Escape must close only it. */
-        closeOnEscape={!saving && !pendingGenerate}
+        closeOnEscape={!saving}
         footer={(
           <>
             <button type="button" onClick={onClose} disabled={saving} className={formModalNeutralBtn}>

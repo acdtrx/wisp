@@ -1,12 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { FolderInput, Check, FolderPlus } from 'lucide-react';
 import { useHomeStore, UNGROUPED_GROUP_ID } from '../../store/homeStore.js';
 import AlertDialog from '../shared/AlertDialog.jsx';
+import { usePopover } from '../../lib/popover.js';
 
 /**
  * Move-to-group popover for a tile in edit mode. Same interaction as the
- * sidebar's `SectionPickerButton`: anchored to its trigger, closes on outside
- * click or Escape, with a "New group…" entry at the bottom.
+ * sidebar's `SectionPickerButton`: anchored to its trigger (lib/popover.js:
+ * clamped to the viewport, above it where it fits), with a "New group…" entry
+ * at the bottom.
  */
 export default function TileGroupPicker({ tileId, currentGroupId, className = '' }) {
   const groups = useHomeStore((s) => s.groups);
@@ -15,23 +18,10 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
-  const rootRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onDoc = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
-    };
-    const onKey = (e) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDoc);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  const anchorRef = useRef(null);
+  const popRef = useRef(null);
+  const close = useCallback(() => setOpen(false), []);
+  const popStyle = usePopover(open, { anchorRef, popRef, onClose: close, align: 'start', side: 'top' });
 
   const pick = async (groupId) => {
     if (busy) return;
@@ -64,8 +54,9 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
   };
 
   return (
-    <div className="relative" ref={rootRef}>
+    <div className="relative">
       <button
+        ref={anchorRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={className}
@@ -75,8 +66,13 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
       >
         <FolderInput size={13} aria-hidden />
       </button>
-      {open && (
-        <div className="absolute left-0 bottom-full z-30 mb-1 w-44 rounded-lg border border-surface-border bg-surface-card py-1 shadow-popover">
+      {open && createPortal(
+        <div
+          ref={popRef}
+          tabIndex={-1}
+          style={popStyle}
+          className="z-[60] w-44 overflow-y-auto rounded-lg border border-surface-border bg-surface-card py-1 shadow-popover outline-hidden"
+        >
           <div className="border-b border-surface-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
             Move to
           </div>
@@ -111,7 +107,8 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
               </button>
             </li>
           </ul>
-        </div>
+        </div>,
+        document.body,
       )}
       <AlertDialog
         open={!!errorMsg}

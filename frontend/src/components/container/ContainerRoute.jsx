@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useContainerStore } from '../../store/containerStore.js';
 import { useVmStore } from '../../store/vmStore.js';
+import { hasOpenLayer } from '../../lib/layers.js';
 
 const ContainerOverviewPanel = lazy(() => import('./ContainerOverviewPanel.jsx'));
 const ContainerStatsBar = lazy(() => import('./ContainerStatsBar.jsx'));
@@ -28,7 +29,7 @@ export default function ContainerRoute() {
   useEffect(() => {
     const handler = (e) => {
       if (e.key !== 'Escape') return;
-      if (document.querySelector('[data-wisp-modal-root]')) return;
+      if (hasOpenLayer()) return; // the layer stack closes the top layer instead
       // Don't hijack Escape when the user is interacting with a form control — they're
       // likely trying to cancel an inline edit, not navigate away from the page.
       const t = e.target;

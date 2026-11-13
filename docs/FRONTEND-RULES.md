@@ -250,8 +250,6 @@ Small all-caps muted label style: `11px, font-semibold, uppercase, tracking-wide
 - On Esc, close only the top layer, wherever focus is. Make the page under a modal inert,
   keep Tab inside the modal, and on close return focus to what opened it. Never dismiss a
   modal on a click beside it.
-  - `[PROJECT]` Wisp's modals still close on a click that starts and ends on the backdrop
-    (Modals and dialogs, below); bringing them to this rule is a backlog entry.
 - Clamp a popover anchored to a control to the viewport.
 
 ## Bundles
@@ -390,13 +388,12 @@ Give a single-section view (e.g. **Image Library**) one **`SectionCard`** with t
 
 Route every full-screen overlay through the shared **[Modal.jsx](../frontend/src/components/shared/Modal.jsx)** primitive. It owns:
 
-- The fixed-position backdrop (standardized on **`bg-black/40`**) and centered card (**`bg-surface-card`** + border + shadow).
-- Escape-to-close (via `useEscapeKey`) and the **`data-wisp-modal-root`** marker that tells `AppLayout` to suppress its own Escape handling.
+- The fixed-position backdrop (standardized on **`bg-black/40`**) and centered card (**`bg-surface-card`** + border + shadow), rendered in a portal on `document.body`; the card is a `role="dialog"` `aria-modal` named by its title (or `ariaLabel`).
+- Its layer on the shared stack (**[lib/layers.js](../frontend/src/lib/layers.js)**, settled 2026-11-12): Escape closes only the top layer, Tab stays inside the card, the app root under it is inert, and focus returns to the opener on close. Page-level Escape handlers stand down while `hasOpenLayer()`; a control that uses Escape itself (an inline rename) claims it with `preventDefault()`. The phone drawer and every popover are layers too; popovers go through **[lib/popover.js](../frontend/src/lib/popover.js)** (portal, viewport clamp, outside press closes).
 - An optional **title / subtitle / X-button** header bar and an optional **footer** bar (right-aligned, bordered).
 - Width via **`size`** (`sm` | `md` | `lg` | `xl` | `2xl` | `3xl` | `4xl`) and height via **`height`** (`auto` | `tall` for `h-[80vh]` | `cap` for `max-h-[85vh]`).
 - Body padding via **`bodyPadding`** (`default` `px-4 py-4` | `compact` `px-4 py-3` | `none` for full-bleed content).
-- Guard flags **`closeOnBackdrop`** and **`closeOnEscape`** for in-flight save/upload states.
-- **Backdrop close needs press and release on the backdrop.** A click whose mousedown started inside the card — drag-selecting a field's text and releasing past the card's edge — lands on the backdrop as the common ancestor; it must not close the modal and drop the edits.
+- Guard flag **`closeOnEscape`** for in-flight save/upload states. A click on the backdrop closes nothing (settled 2026-11-12): Escape, the X and Cancel do, so a stray click can't discard a form's edits.
 
 Never open ad-hoc `fixed inset-0` overlays: wrap new modal-style UI in `<Modal>` so backdrop, escape, marker, and styling stay consistent.
 
@@ -407,11 +404,11 @@ The standard shape for creating or editing **one entity** (a mount, a bridge, a 
 Structure (see **[FormModalChrome.jsx](../frontend/src/components/shared/FormModalChrome.jsx)** for the shared tokens):
 
 - **One purpose-named modal component per entity kind** (`SmbShareEditorModal`, not a generic kind-switched editor), owning its field state, validation, and API calls. Create vs edit is the presence of the entity prop (`share`, `drive`); the parent passes `onSaved` (refresh) and `onClose`.
-- **Shell:** `<Modal size="sm"|"md" height="cap">` with `title` (e.g. "Edit SMB share") and a context `subtitle` (the share path, the device name). `closeOnBackdrop={!saving}` / `closeOnEscape={!saving}` guard in-flight saves.
-- **Fields:** stacked **`FormField`** (label above control, optional hint below) in a `space-y-3` `<form id=…>`; short related fields pair into `sm:grid-cols-2`. Controls use the **`input-field`** utility; checkboxes use **`FormCheckbox`** (box left, label + hint right). Read-only identity (UUID, filesystem, derived names) renders as a muted summary box or preview line, not as disabled inputs. First field gets `autoFocus`; Enter submits via the form.
+- **Shell:** `<Modal size="sm"|"md" height="cap">` with `title` (e.g. "Edit SMB share") and a context `subtitle` (the share path, the device name). `closeOnEscape={!saving}` guards in-flight saves.
+- **Fields:** stacked **`FormField`** (label above control, optional hint below) in a `space-y-3` `<form id=…>`; short related fields pair into `sm:grid-cols-2`. Controls use the **`input-field`** utility; checkboxes use **`FormCheckbox`** (box left, label + hint right). Read-only identity (UUID, filesystem, derived names) renders as a muted summary box or preview line, not as disabled inputs. The first field focuses on open through the focus module (`ref={autoFocusField}`, [lib/focus.js](../frontend/src/lib/focus.js)) — never on a touch device; Enter submits via the form.
 - **Footer** (via the Modal `footer` prop): right-aligned **Cancel** (`formModalNeutralBtn`) + primary **Save/Create/Adopt** (`formModalPrimaryBtn`, disabled until valid **and** dirty, `Loader2` while saving). Secondary actions (e.g. SMB **Test connection**) sit footer-left in an `mr-auto` group with their result as inline text (green OK / truncated red error with full text in `title`).
 - **Errors:** sticky red line (**`FormModalError`**) at the bottom of the body; the modal stays open on failure. On success the modal calls `await onSaved()` then `onClose()`.
-- **Nested dialogs** (settled 2026-08-25): a `ConfirmDialog` opened from inside an editor modal is the top layer: while it is open, set the parent modal's `closeOnEscape={false}` (and `closeOnBackdrop={false}`) so Escape and backdrop clicks close only the confirm. Render it as a sibling of `<Modal>`, not inside its scrolling body. Reference: the generate-secret dialog in [EnvVarEditorModal.jsx](../frontend/src/components/sections/EnvVarEditorModal.jsx).
+- **Nested dialogs** (settled 2026-08-25, reworked 2026-11-12): a `ConfirmDialog` opened from inside an editor modal is the top layer; the layer stack sends Escape to it alone, with no flag on the parent. Render it as a sibling of `<Modal>`, not inside its scrolling body. Reference: the generate-secret dialog in [EnvVarEditorModal.jsx](../frontend/src/components/sections/EnvVarEditorModal.jsx).
 - **Rows stay read-only.** The table keeps display cells only; row actions shrink to purpose actions (mount, check) + **Edit** + **Delete**, which fit on phones. Write-only secrets keep the "empty means keep what's on file" convention with a hint under the field.
 
 #### Confirmation, alert, and informational dialogs

@@ -1,6 +1,7 @@
-import { useCallback, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import { useEscapeKey } from '../../hooks/useEscapeKey.js';
+import { useLayer, focusIntoLayer } from '../../lib/layers.js';
 
 const SIZE_CLASS = {
   sm: 'max-w-sm',
@@ -25,23 +26,26 @@ const BODY_PADDING_CLASS = {
 };
 
 /**
- * Shared modal shell. Owns backdrop, escape, modal-root marker, and an
- * optional title/X header + footer. Standardized on a `bg-black/40` backdrop
- * (deepened to /60 in dark, where 40% over an already-dark canvas barely
- * separates the dialog from the page) and a `bg-surface-card` body.
+ * Shared modal shell. Owns the backdrop, the layer (lib/layers.js: Escape
+ * closes only the top layer, Tab stays inside, the page under it is inert,
+ * focus returns to the opener on close), and an optional title/X header +
+ * footer. Rendered in a portal on `document.body`, so the app root can be made
+ * inert under it. Standardized on a `bg-black/40` backdrop (deepened to /60 in
+ * dark, where 40% over an already-dark canvas barely separates the dialog from
+ * the page) and a `bg-surface-card` body. A click beside the modal closes
+ * nothing: Escape, the X and Cancel do.
  *
  * @param {boolean} open
- * @param {() => void} onClose - called on backdrop click (press and release both on
- *   the backdrop), X, and Escape
+ * @param {() => void} onClose - called on the X and on Escape
  * @param {React.ReactNode} [title]
  * @param {React.ReactNode} [subtitle] - small muted text under title
+ * @param {string} [ariaLabel] - the dialog's accessible name when there is no `title`
  * @param {React.ReactNode} [headerExtra] - rendered to the left of the close X
  * @param {React.ReactNode} [footer] - rendered in a bottom-bordered footer bar
  * @param {'sm'|'md'|'lg'|'xl'|'2xl'|'3xl'|'4xl'} [size]
  * @param {'auto'|'tall'|'cap'} [height]
  * @param {'default'|'compact'|'none'} [bodyPadding]
- * @param {boolean} [closeOnBackdrop]
- * @param {boolean} [closeOnEscape]
+ * @param {boolean} [closeOnEscape] - false while a save runs: Escape then does nothing
  * @param {string} [className] - extra classes on the modal card
  */
 export default function Modal({
@@ -49,61 +53,58 @@ export default function Modal({
   onClose,
   title,
   subtitle,
+  ariaLabel,
   headerExtra,
   footer,
   size = 'md',
   height = 'auto',
   bodyPadding = 'default',
-  closeOnBackdrop = true,
   closeOnEscape = true,
   className = '',
   children,
 }) {
-  const handleEscape = useCallback(() => {
-    if (closeOnEscape) onClose?.();
-  }, [closeOnEscape, onClose]);
+  const layerRef = useRef(null);
+  const cardRef = useRef(null);
+  const titleId = useId();
 
-  useEscapeKey(open, handleEscape);
+  useLayer(open, {
+    kind: 'modal',
+    ref: layerRef,
+    onEscape: closeOnEscape ? () => onClose?.() : undefined,
+  });
 
-  /* A click whose press started inside the card (e.g. drag-selecting text in a
-   * field and releasing past the card's edge) is dispatched to the backdrop as
-   * the common ancestor — it must not close the modal and lose the edits. */
-  const pressedOnBackdropRef = useRef(false);
+  /* Into the dialog once it is on screen — after its fields' own touch-aware
+   * autofocus, which this leaves alone. */
+  useEffect(() => {
+    if (open) focusIntoLayer(cardRef.current);
+  }, [open]);
 
   if (!open) return null;
-
-  const handleBackdropMouseDown = (e) => {
-    pressedOnBackdropRef.current = e.target === e.currentTarget;
-  };
-
-  const handleBackdrop = (e) => {
-    const pressedOnBackdrop = pressedOnBackdropRef.current;
-    pressedOnBackdropRef.current = false;
-    if (e.target !== e.currentTarget || !pressedOnBackdrop) return;
-    if (closeOnBackdrop) onClose?.();
-  };
 
   const widthCls = SIZE_CLASS[size] || SIZE_CLASS.md;
   const heightCls = HEIGHT_CLASS[height] || '';
   const bodyPadCls = BODY_PADDING_CLASS[bodyPadding] ?? BODY_PADDING_CLASS.default;
   const showHeader = title != null || headerExtra != null;
 
-  return (
+  return createPortal(
     <div
+      ref={layerRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 p-4"
-      onMouseDown={handleBackdropMouseDown}
-      onClick={handleBackdrop}
     >
       <div
-        className={`relative flex w-full ${widthCls} ${heightCls} flex-col overflow-hidden rounded-card border border-surface-border bg-surface-card shadow-popover ${className}`}
-        data-wisp-modal-root
-        onClick={(e) => e.stopPropagation()}
+        ref={cardRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title != null ? titleId : undefined}
+        aria-label={title == null ? ariaLabel : undefined}
+        tabIndex={-1}
+        className={`relative flex w-full ${widthCls} ${heightCls} flex-col overflow-hidden rounded-card border border-surface-border bg-surface-card shadow-popover outline-hidden ${className}`}
       >
         {showHeader && (
           <div className="flex items-start justify-between gap-3 border-b border-surface-border px-4 py-3 shrink-0">
             <div className="min-w-0 flex-1">
               {title != null && (
-                <h3 className="truncate text-sm font-semibold text-text-primary">{title}</h3>
+                <h3 id={titleId} className="truncate text-sm font-semibold text-text-primary">{title}</h3>
               )}
               {subtitle != null && (
                 <p className="mt-0.5 text-xs text-text-muted">{subtitle}</p>
@@ -131,6 +132,7 @@ export default function Modal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

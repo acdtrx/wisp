@@ -1,12 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { FolderInput, Check, FolderPlus } from 'lucide-react';
 import { useSectionsStore, MAIN_SECTION_ID, selectSectionId } from '../../store/sectionsStore.js';
 import AlertDialog from '../shared/AlertDialog.jsx';
+import { usePopover } from '../../lib/popover.js';
 
 /**
  * Tiny popover trigger used inside a workload row in organize mode.
  * Lists every section + Main; clicking one calls assignWorkload and closes.
- * Anchored to the button; closes on outside click or Escape.
+ * Anchored to the button (lib/popover.js: clamped to the viewport; Escape or a
+ * press outside closes it).
  */
 export default function SectionPickerButton({ type, name, disabled }) {
   const sections = useSectionsStore((s) => s.sections);
@@ -16,23 +19,10 @@ export default function SectionPickerButton({ type, name, disabled }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
-  const rootRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
-    };
-    const onKey = (e) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDoc);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  const anchorRef = useRef(null);
+  const popRef = useRef(null);
+  const close = useCallback(() => setOpen(false), []);
+  const popStyle = usePopover(open, { anchorRef, popRef, onClose: close, align: 'end' });
 
   const pick = async (sectionId) => {
     if (busy) return;
@@ -61,8 +51,9 @@ export default function SectionPickerButton({ type, name, disabled }) {
   };
 
   return (
-    <div className="relative" ref={rootRef}>
+    <div className="relative">
       <button
+        ref={anchorRef}
         type="button"
         onClick={(e) => {
           e.stopPropagation();
@@ -76,9 +67,12 @@ export default function SectionPickerButton({ type, name, disabled }) {
       >
         <FolderInput size={14} />
       </button>
-      {open && (
+      {open && createPortal(
         <div
-          className="absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-surface-border bg-surface-card py-1 shadow-popover"
+          ref={popRef}
+          tabIndex={-1}
+          style={popStyle}
+          className="z-[60] w-44 overflow-y-auto rounded-lg border border-surface-border bg-surface-card py-1 shadow-popover outline-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="border-b border-surface-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
@@ -117,7 +111,8 @@ export default function SectionPickerButton({ type, name, disabled }) {
               </button>
             </li>
           </ul>
-        </div>
+        </div>,
+        document.body,
       )}
       <AlertDialog
         open={!!errorMsg}

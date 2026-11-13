@@ -188,7 +188,6 @@ export default function DiskEditorModal({
       subtitle={`${slot} · ${vmName}`}
       size="md"
       height="cap"
-      closeOnBackdrop={!saving}
       closeOnEscape={!saving}
       footer={(
         <>

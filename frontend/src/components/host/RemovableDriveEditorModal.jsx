@@ -128,7 +128,6 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
       subtitle={isEdit ? drive.label || shortUuid(drive.uuid) : `${adoptDeviceName} · ${adoptDisk?.devPath || ''}`}
       size="md"
       height="cap"
-      closeOnBackdrop={!saving}
       closeOnEscape={!saving}
       footer={(
         <>

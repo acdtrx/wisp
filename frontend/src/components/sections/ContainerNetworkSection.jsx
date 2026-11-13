@@ -441,7 +441,6 @@ export default function ContainerNetworkSection({
                   : ''
             }
             size="xl"
-            closeOnBackdrop={!strip?.saving}
             closeOnEscape={!strip?.saving}
           >
             {strip && (

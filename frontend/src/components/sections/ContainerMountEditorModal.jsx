@@ -269,7 +269,6 @@ export default function ContainerMountEditorModal({
       subtitle={isEdit ? `${mount.name} · ${containerName}` : meta.subtitle}
       size="md"
       height="cap"
-      closeOnBackdrop={!saving}
       closeOnEscape={!saving}
       footer={(
         <>

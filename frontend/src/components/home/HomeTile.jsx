@@ -118,7 +118,7 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
               onChange={(e) => setDraftName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') submitRename();
-                else if (e.key === 'Escape') setRenaming(false);
+                else if (e.key === 'Escape') { e.preventDefault(); setRenaming(false); }
               }}
               className="min-w-0 flex-1 rounded-sm border border-surface-border bg-surface-card px-1.5 py-0.5 text-sm text-text-primary outline-hidden focus:border-accent"
             />

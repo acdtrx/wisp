@@ -64,9 +64,8 @@ export default function SecretMountContentModal({ open, containerName, mount, on
         subtitle={mount ? `${mount.name} · ${containerName}` : containerName}
         size="md"
         height="cap"
-        closeOnBackdrop={!saving && !confirmClear}
         /* A nested confirm is the top layer — Escape must close only it. */
-        closeOnEscape={!saving && !confirmClear}
+        closeOnEscape={!saving}
         footer={(
           <>
             {isSet && (

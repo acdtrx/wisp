@@ -77,7 +77,6 @@ export default function NicEditorModal({ open, nic, index, bridges = [], onSubmi
       subtitle={`net${index} · bridged`}
       size="md"
       height="cap"
-      closeOnBackdrop={!saving}
       closeOnEscape={!saving}
       footer={(
         <>

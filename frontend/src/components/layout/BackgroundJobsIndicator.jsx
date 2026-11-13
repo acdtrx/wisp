@@ -1,6 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ListTodo } from 'lucide-react';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
+import { usePopover } from '../../lib/popover.js';
+import LoadHint from '../shared/LoadHint.jsx';
 
 function formatStep(row) {
   if (row.status === 'done') return 'Done';
@@ -46,26 +49,23 @@ function JobProgressBar({ percent, status }) {
 export default function BackgroundJobsIndicator() {
   const jobs = useBackgroundJobsStore((s) => s.jobs);
   const dismissJob = useBackgroundJobsStore((s) => s.dismissJob);
+  const hydrateFailed = useBackgroundJobsStore((s) => s.hydrateFailed);
   const [open, setOpen] = useState(false);
-  const rootRef = useRef(null);
+  const anchorRef = useRef(null);
+  const popRef = useRef(null);
+  const close = useCallback(() => setOpen(false), []);
 
   const list = Object.values(jobs).sort((a, b) => b.startedAt - a.startedAt);
   const running = list.filter((j) => j.status === 'running').length;
 
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [open]);
-
-  const isEmpty = list.length === 0;
+  // A failed reload of the server's jobs keeps the tray openable, to say so.
+  const isEmpty = list.length === 0 && !hydrateFailed;
+  const popStyle = usePopover(open && !isEmpty, { anchorRef, popRef, onClose: close, align: 'end' });
 
   return (
-    <div className="relative shrink-0" ref={rootRef}>
+    <div className="relative shrink-0">
       <button
+        ref={anchorRef}
         type="button"
         onClick={() => !isEmpty && setOpen((o) => !o)}
         disabled={isEmpty}
@@ -86,11 +86,18 @@ export default function BackgroundJobsIndicator() {
         )}
       </button>
 
-      {open && !isEmpty && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-[min(100vw-2rem,22rem)] rounded-lg border border-surface-border bg-surface-card py-1 shadow-popover">
+      {open && !isEmpty && createPortal(
+        <div
+          ref={popRef}
+          tabIndex={-1}
+          style={popStyle}
+          aria-label="Background jobs"
+          className="z-[60] w-[min(100vw-2rem,22rem)] overflow-y-auto rounded-lg border border-surface-border bg-surface-card py-1 shadow-popover outline-hidden"
+        >
           <div className="border-b border-surface-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
             Background jobs
           </div>
+          {hydrateFailed && <LoadHint what="the running jobs after the reload; some may be missing" className="px-3 py-2" />}
           <ul className="max-h-72 overflow-y-auto">
             {list.map((row) => (
               <li
@@ -126,7 +133,8 @@ export default function BackgroundJobsIndicator() {
               </li>
             ))}
           </ul>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

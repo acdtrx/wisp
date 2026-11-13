@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
+import { usePopover } from '../../lib/popover.js';
 
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { useDiscoveryStore } from '../../store/discoveryStore.js';
@@ -29,40 +31,25 @@ export default function ServerSwitcher() {
   const disconnect = useDiscoveryStore((s) => s.disconnect);
 
   const [open, setOpen] = useState(false);
-  const rootRef = useRef(null);
+  const anchorRef = useRef(null);
+  const popRef = useRef(null);
 
   const close = useCallback(() => setOpen(false), []);
+  const popStyle = usePopover(open && peers.length > 0, { anchorRef, popRef, onClose: close, align: 'start' });
 
   useEffect(() => {
     connect();
     return () => disconnect();
   }, [connect, disconnect]);
 
-  useEffect(() => {
-    if (!open) return undefined;
-    function onDocMouseDown(e) {
-      if (rootRef.current && !rootRef.current.contains(e.target)) {
-        close();
-      }
-    }
-    function onKeyDown(e) {
-      if (e.key === 'Escape') close();
-    }
-    document.addEventListener('mousedown', onDocMouseDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open, close]);
-
   if (peers.length === 0) {
     return <span className="text-sm text-text-muted">{serverName}</span>;
   }
 
   return (
-    <div ref={rootRef} className="relative">
+    <div className="relative">
       <button
+        ref={anchorRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1 rounded-md text-sm text-text-muted hover:text-text-primary transition-colors duration-150"
@@ -74,10 +61,13 @@ export default function ServerSwitcher() {
         {serverName}
         <ChevronDown size={12} className="text-text-muted" aria-hidden />
       </button>
-      {open && (
+      {open && createPortal(
         <div
+          ref={popRef}
           role="menu"
-          className="absolute left-0 top-full z-50 mt-1 min-w-56 rounded-md border border-surface-border bg-surface-card py-1 shadow-popover"
+          tabIndex={-1}
+          style={popStyle}
+          className="z-[60] min-w-56 overflow-y-auto rounded-md border border-surface-border bg-surface-card py-1 shadow-popover outline-hidden"
         >
           {peers.map((peer) => (
             <a
@@ -96,7 +86,8 @@ export default function ServerSwitcher() {
               </span>
             </a>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

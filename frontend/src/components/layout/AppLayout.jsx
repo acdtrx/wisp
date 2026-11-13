@@ -63,7 +63,7 @@ export default function AppLayout() {
       <div className="flex flex-1 overflow-hidden">
         <LeftPanel />
 
-        <main className="flex flex-1 flex-col overflow-hidden bg-surface">
+        <main data-wisp-main className="flex flex-1 flex-col overflow-hidden bg-surface">
           <Outlet />
         </main>
       </div>

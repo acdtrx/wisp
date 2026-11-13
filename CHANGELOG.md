@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-14
+
+### Bug Fixes
+- **A cloud-init that fails to load can no longer be overwritten by mistake** — the section says it couldn't load and offers Retry instead of "Configure".
+- **Pages say when something failed to load** — the workload list, home page, logs, USB devices, stats, hardware, storage, API tokens, backups, the image library and bridges show "Loading…" while they load and an error with Retry when they fail, instead of an empty page; settings forms wait for the real settings instead of showing defaults.
+- **Dialogs behave** — Escape closes only the dialog on top, Tab stays inside it, the page behind can't be clicked, focus goes back where it was, and a click beside a dialog no longer closes it and loses your edits. The phone menu drawer and the small pop-up menus work the same way, and pop-up menus stay on screen.
+- **Phones and tablets** — opening a dialog no longer pops up the keyboard, row buttons are visible on an iPad, and small buttons are easier to tap.
+
 ## 2026-11-13
 
 ### New Features

@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, CloudDownload } from 'lucide-react';
+import { usePopover } from '../../lib/popover.js';
 
 import { getVmIcon } from '../shared/vmIcons.jsx';
 
@@ -12,31 +14,16 @@ const PRESETS = [
 /** Icon-only trigger opens a custom menu (not a native select) with preset image downloads. */
 export default function PresetImageDownloadMenu({ onSelectPreset }) {
   const [open, setOpen] = useState(false);
-  const rootRef = useRef(null);
+  const anchorRef = useRef(null);
+  const popRef = useRef(null);
 
   const close = useCallback(() => setOpen(false), []);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    function onDocMouseDown(e) {
-      if (rootRef.current && !rootRef.current.contains(e.target)) {
-        close();
-      }
-    }
-    function onKeyDown(e) {
-      if (e.key === 'Escape') close();
-    }
-    document.addEventListener('mousedown', onDocMouseDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onDocMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open, close]);
+  const popStyle = usePopover(open, { anchorRef, popRef, onClose: close, align: 'end' });
 
   return (
-    <div ref={rootRef} className="relative">
+    <div className="relative">
       <button
+        ref={anchorRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center justify-center gap-0.5 rounded-md border border-surface-border px-1.5 py-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150"
@@ -48,10 +35,13 @@ export default function PresetImageDownloadMenu({ onSelectPreset }) {
         <CloudDownload size={14} aria-hidden />
         <ChevronDown size={12} className="text-text-muted" aria-hidden />
       </button>
-      {open && (
+      {open && createPortal(
         <div
+          ref={popRef}
           role="menu"
-          className="absolute right-0 top-full z-50 mt-1 min-w-56 rounded-md border border-surface-border bg-surface-card py-1 shadow-popover"
+          tabIndex={-1}
+          style={popStyle}
+          className="z-[60] min-w-56 overflow-y-auto rounded-md border border-surface-border bg-surface-card py-1 shadow-popover outline-hidden"
         >
           {PRESETS.map((p) => {
             const Icon = getVmIcon(p.iconId).component;
@@ -73,7 +63,8 @@ export default function PresetImageDownloadMenu({ onSelectPreset }) {
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
