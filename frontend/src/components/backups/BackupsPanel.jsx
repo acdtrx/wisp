@@ -46,7 +46,7 @@ function backupTsToIso(ts) {
 }
 
 /* A backup row may carry no `origin` (one on a backup mount that was unmounted
- * when migration 0008 ran); it is shown as manual — never auto-pruned, as the
+ * when migration 0007 ran); it is shown as manual — never auto-pruned, as the
  * server treats it. */
 function decorateVmRow(row) {
   return {

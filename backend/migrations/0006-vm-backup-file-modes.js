@@ -16,13 +16,15 @@
  * group/other bits is left alone.
  */
 import { describeModeChanges } from '../src/lib/storage/index.js';
-import { getSettings, listBackupDestinationsWithMountCheck, listConfiguredBackupRoots } from '../src/lib/settings.js';
+import { listBackupDestinationsWithMountCheck, listConfiguredBackupRoots } from '../src/lib/settings.js';
 
 export const id = '0006-vm-backup-file-modes';
 export const description = 'VM backups are owner-only (directory 0700, files 0600)';
 
 export async function run(ctx) {
-  const settings = await getSettings();
+  // Tolerant, not getSettings(): on a host updating from before v2.6.0 this runs
+  // before 0007 has repaired the config for the strict reader.
+  const settings = ctx.getConfig();
   const roots = (await listBackupDestinationsWithMountCheck(settings)).map((d) => d.path);
   for (const root of listConfiguredBackupRoots(settings)) {
     if (!roots.includes(root)) ctx.log.warn({ root }, 'Backup mount not mounted — its VM backups are left as they are');

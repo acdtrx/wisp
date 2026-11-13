@@ -21,7 +21,7 @@
  * alone.
  */
 import { describeModeChanges } from '../src/lib/storage/index.js';
-import { getSettings, listBackupDestinationsWithMountCheck, listConfiguredBackupRoots } from '../src/lib/settings.js';
+import { listBackupDestinationsWithMountCheck, listConfiguredBackupRoots } from '../src/lib/settings.js';
 
 export const id = '0005-container-config-modes';
 export const description = 'Container directories, container.json and container backups are owner-only (0700 / 0600)';
@@ -32,7 +32,9 @@ export async function run(ctx) {
 
   record(await ctx.containerManager.tightenContainerFileModes({ dryRun }));
 
-  const settings = await getSettings();
+  // Tolerant, not getSettings(): on a host updating from before v2.6.0 this runs
+  // before 0007 has repaired the config for the strict reader.
+  const settings = ctx.getConfig();
   const roots = (await listBackupDestinationsWithMountCheck(settings)).map((d) => d.path);
   for (const root of listConfiguredBackupRoots(settings)) {
     if (!roots.includes(root)) ctx.log.warn({ root }, 'Backup mount not mounted — its container backups are left as they are');

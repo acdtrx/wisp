@@ -24,15 +24,18 @@ import { tryAcquireContainerOperationLock } from './containerOperationLock.js';
  * manager-internal code runs; after it, vmManager and containerManager have no
  * Wisp-glue dependencies — they read everything from the configure() slots. The
  * resolver is sync: wisp-config.json is small and the OS caches the read.
+ * `getConfig` reads the config: the strict `getConfigSync` for the backend; the
+ * migration runner passes its tolerant reader (migrations/lib/tolerantConfig.js),
+ * since it runs before migration 0007 has repaired what older releases wrote.
  */
-export function configureManagers() {
-  const cfg = getConfigSync();
+export function configureManagers({ getConfig = getConfigSync } = {}) {
+  const cfg = getConfig();
   configureVmManager({ vmsPath: cfg.vmsPath });
   configureContainerManager({
     containersPath: cfg.containersPath,
     resolveMount: (id) => {
       if (typeof id !== 'string' || !id) return null;
-      const mounts = getConfigSync().mounts || [];
+      const mounts = getConfig().mounts || [];
       const m = mounts.find((x) => x && x.id === id);
       return m ? { id: m.id, mountPath: m.mountPath, label: m.label } : null;
     },

@@ -12,7 +12,7 @@
 - **Container network must be bridge** — a config change to another network type is refused (422) instead of being accepted and silently reset to bridge at the next start.
 - **Container create takes only its own fields** — extra fields sent to `POST /api/containers` (such as a flat `env`) are ignored instead of stored.
 - **An interrupted container start is redone in full** — a task left created but not started is discarded and the container starts normally.
-- **Old backups are marked manual** — VM and container backups from before backup origins existed record `manual` (migration 0008).
+- **Old backups are marked manual** — VM and container backups from before backup origins existed record `manual` (migration 0007).
 - **A stopped VM stops resolving as `<name>.local`** — a VM's mDNS register and deregister run one at a time, so a quick start/stop no longer leaves a stopped VM published.
 - **Bad graphics or video types are refused** — `graphicsType` / `videoDriver` other than the values Wisp writes answer 400 instead of reaching the VM definition.
 - **A VM without disks can get a primary disk** — **+ Add disk** offers `sda` when the VM has none.

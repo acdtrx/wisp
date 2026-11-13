@@ -15,11 +15,15 @@
  * WISP_CONFIG_PATH moves it too). Exit 0 when nothing failed; non-zero on the
  * first failing migration, after recording it — the updater then rolls back.
  *
- * Every run (but --list) first repairs what older releases left in
- * wisp-config.json and runtime.env (configRepair.mjs), then checks both
- * strictly, as the backend's boot will: an invalid config is a setup error
- * (exit 2) before any migration runs.
+ * After the migrations (but not under --list) the runner checks the config as
+ * strictly as the backend's boot will — runtime.env, wisp-config.json, the
+ * password file and the default-bridge override: a config still invalid then is
+ * a setup error (exit 2). Before that, nothing reads wisp-config.json strictly:
+ * the manager setup and ctx.getConfig() read its paths tolerantly
+ * (migrations/lib/tolerantConfig.js), since migration 0007 is what repairs what
+ * older releases left in it.
  */
+import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -27,7 +31,9 @@ import { parseArgs } from 'node:util';
 
 import Fastify from 'fastify';
 
-import { checkRuntimeEnv, loadRuntimeEnv, parseRuntimeEnvText } from '../src/lib/loadRuntimeEnv.js';
+import {
+  checkRuntimeEnv, loadRuntimeEnv, parseRuntimeEnvText, RETIRED_ENV_KEYS,
+} from '../src/lib/loadRuntimeEnv.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..', '..');
@@ -37,10 +43,13 @@ const PROJECT_ROOT = resolve(__dirname, '..', '..');
 // containerManager its socket path. Static imports would evaluate them first.
 // Under systemd the backend gets runtime.env from EnvironmentFile=; this script
 // runs from common-steps.sh / install.sh, which pass no environment.
-// Leniently: the file may still hold what an older release wrote, which the
-// config repair below removes before the strict check.
+// Strictly, but for the retired keys an older release may have left, which
+// migration 0007 removes: so WISP_CONFIG_PATH — the config, and with it the
+// ledger, this run works on — is never taken from a malformed or repeated line.
+const RUNTIME_ENV_PATH = join(PROJECT_ROOT, 'config', 'runtime.env');
 try {
-  loadRuntimeEnv(PROJECT_ROOT, { lenient: true });
+  loadRuntimeEnv(PROJECT_ROOT, { tolerateKeys: RETIRED_ENV_KEYS });
+  checkRuntimeEnv({ WISP_CONFIG_PATH: process.env.WISP_CONFIG_PATH });
 } catch (err) {
   console.error(`migrate: ${err.message}`);
   process.exit(2);
@@ -48,8 +57,9 @@ try {
 
 const { writeJsonAtomic } = await import('../src/lib/atomicJson.js');
 const { CONFIG_PATH, getConfigSync } = await import('../src/lib/config.js');
-const { parseWispConfig, parseWispConfigText } = await import('../src/lib/configSchema.js');
-const { repairConfig } = await import('./configRepair.mjs');
+const { checkPasswordFile } = await import('../src/lib/auth.js');
+const { checkDefaultBridgeOverride } = await import('../src/lib/networking/index.js');
+const { readTolerantConfig } = await import('../migrations/lib/tolerantConfig.js');
 const { DEV_LOG_TRANSPORT } = await import('../src/lib/logFormat.js');
 const { configureManagers, connectManagers, disconnectManagers } = await import('../src/lib/managerBootstrap.js');
 const vmManager = await import('../src/lib/vmManager/index.js');
@@ -194,8 +204,8 @@ function buildContext(migration, { log, dryRun, changes }) {
     log: migrationLog,
     vmManager,
     containerManager,
-    getConfig: getConfigSync,
-    paths: { installDir: PROJECT_ROOT, configDir: CONFIG_DIR },
+    getConfig: getTolerantConfig,
+    paths: { installDir: PROJECT_ROOT, configDir: CONFIG_DIR, configFile: CONFIG_PATH, runtimeEnvFile: RUNTIME_ENV_PATH },
     // Restart-required setters, when the manager facades provide them.
     setVMPendingRestart: typeof vmManager.setVMPendingRestart === 'function' ? vmManager.setVMPendingRestart : undefined,
     setContainerPendingRestart: typeof containerManager.setContainerPendingRestart === 'function'
@@ -208,9 +218,27 @@ function buildContext(migration, { log, dryRun, changes }) {
   };
 }
 
-/** Returns the process exit code. */
+function getTolerantConfig() {
+  return readTolerantConfig(CONFIG_PATH);
+}
+
+/**
+ * The backend's boot checks, run after the migrations. Throws the first problem.
+ * (The runtime.env values are already in process.env, as under systemd.)
+ */
+async function checkConfigStrictly() {
+  if (existsSync(RUNTIME_ENV_PATH)) parseRuntimeEnvText(await readFile(RUNTIME_ENV_PATH, 'utf8'));
+  checkRuntimeEnv();
+  getConfigSync();
+  checkPasswordFile();
+  const bridgeProblem = await checkDefaultBridgeOverride();
+  if (bridgeProblem) throw new Error(bridgeProblem);
+}
+
+/** Returns `{ code, changed }`: the exit code, and whether any migration recorded a change. */
 async function runPending(pending, { ledger, dryRun, log }) {
-  configureManagers();
+  configureManagers({ getConfig: getTolerantConfig });
+  let changed = false;
   // Connections and calls only: the backend owns the reconcilers, the restart
   // policy and the event-driven writes, and it comes back once the update
   // finishes.
@@ -237,13 +265,14 @@ async function runPending(pending, { ledger, dryRun, log }) {
         recordRun(ledger, entry);
         await writeLedger(ledger);
       }
+      if (changes.length > 0) changed = true;
       if (error) {
         log.error({ migration: migration.id, err: error }, 'migration failed — later migrations not run');
-        return 1;
+        return { code: 1, changed };
       }
       log.info({ migration: migration.id, dryRun, changes: changes.length }, 'migration done');
     }
-    return 0;
+    return { code: 0, changed };
   } finally {
     disconnectManagers();
   }
@@ -264,40 +293,32 @@ async function main() {
   }
 
   const log = createLogger();
-
-  // Repair what older releases left, then check the result as strictly as the
-  // backend's boot will: migrations read it, and the started backend refuses it.
-  const repaired = await repairConfig({
-    runtimeEnvPath: join(PROJECT_ROOT, 'config', 'runtime.env'),
-    configPath: CONFIG_PATH,
-    dryRun: args.dryRun,
-    log,
-  });
-  try {
-    if (repaired.runtimeEnvText !== null) parseRuntimeEnvText(repaired.runtimeEnvText);
-    checkRuntimeEnv();
-    if (typeof repaired.configData === 'string') parseWispConfigText(repaired.configData);
-    else if (repaired.configData !== undefined) parseWispConfig(repaired.configData);
-  } catch (err) {
-    throw new SetupError(err.message);
-  }
-  if (args.dryRun && repaired.changes.length > 0) {
-    // The migrations (and the manager setup) read the config files, which a dry
-    // run leaves unrepaired: they would fail on what the repair would remove.
-    log.warn({ dryRun: true }, 'dry run stops after the config repair: migrations read the repaired files, which a dry run does not write');
-    return 0;
-  }
-
   const done = new Set(ledger.applied.filter((e) => e.result === 'ok').map((e) => e.id));
   const pending = migrations.filter((m) => !done.has(m.id));
   log.info({ ledger: LEDGER_PATH, shipped: migrations.length, pending: pending.length, dryRun: args.dryRun }, 'state migrations');
 
+  let changed = false;
   if (pending.length === 0) {
     // A ledger file on disk records that the runner has run on this host.
     if (!exists && !args.dryRun) await writeLedger(ledger);
-    return 0;
+  } else {
+    const result = await runPending(pending, { ledger, dryRun: args.dryRun, log });
+    if (result.code !== 0) return result.code;
+    changed = result.changed;
   }
-  return runPending(pending, { ledger, dryRun: args.dryRun, log });
+
+  try {
+    await checkConfigStrictly();
+  } catch (err) {
+    // A dry run changed nothing, so the files are still what the migrations
+    // would have repaired: report, don't fail, when they would have changed something.
+    if (args.dryRun && changed) {
+      log.warn({ dryRun: true, problem: err.message }, 'config fails the strict check as it stands; the changes above come first in a real run');
+      return 0;
+    }
+    throw new SetupError(err.message);
+  }
+  return 0;
 }
 
 main().then(

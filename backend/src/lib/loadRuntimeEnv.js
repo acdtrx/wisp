@@ -24,6 +24,19 @@ const WISP_KEYS = {
   WISP_ROUTE_ACCESS_REPORT: checkFlag,
 };
 
+/**
+ * WISP_* keys earlier releases wrote and no release reads any more. Migration
+ * 0007 removes them; until it has, the migration runner loads the file
+ * tolerating exactly these (backend/scripts/migrate.mjs).
+ */
+export const RETIRED_ENV_KEYS = Object.freeze(['WISP_BACKEND_PORT', 'WISP_FRONTEND_PORT']);
+
+/** A line assigning one of `keys` (optionally `export`-prefixed), or null. */
+export function retiredKeyOfLine(line, keys = RETIRED_ENV_KEYS) {
+  const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line);
+  return m && keys.includes(m[1]) ? m[1] : null;
+}
+
 function checkPort(v) {
   if (!/^\d+$/.test(v) || Number(v) < 1 || Number(v) > 65535) return 'must be a port number (1–65535)';
   return null;
@@ -75,19 +88,20 @@ function envInvalid(message) {
 /**
  * Parse runtime.env text into `[{ key, value }]`. Strict (CODING-RULES §4): a
  * line that isn't `KEY=value`, a key given twice, or an unknown WISP_* key throws
- * RUNTIME_ENV_INVALID naming the line. `lenient` skips those lines instead — only
- * for the migration runner's config repair, which must read a file an older
- * release wrote before it can clean it (backend/scripts/configRepair.mjs).
+ * RUNTIME_ENV_INVALID naming the line. `tolerateKeys` skips the lines assigning
+ * those keys instead, and nothing else — for the migration runner, which must
+ * load a file an older release wrote before migration 0007 removes them.
  */
-export function parseRuntimeEnvText(content, { lenient = false } = {}) {
+export function parseRuntimeEnvText(content, { tolerateKeys = [] } = {}) {
   const entries = [];
   const seen = new Set();
   content.split('\n').forEach((line, i) => {
     const trimmed = line.replace(/\r$/, '').trim();
     if (!trimmed || trimmed.startsWith('#')) return;
+    if (tolerateKeys.length > 0 && retiredKeyOfLine(trimmed, tolerateKeys)) return;
     const where = `runtime.env line ${i + 1}`;
     const fail = (message) => {
-      if (!lenient) throw envInvalid(`${where}: ${message}`);
+      throw envInvalid(`${where}: ${message}`);
     };
     const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(trimmed);
     if (!match) return fail(`expected KEY=value, got ${JSON.stringify(trimmed)}`);
@@ -108,13 +122,13 @@ export function parseRuntimeEnvText(content, { lenient = false } = {}) {
  * Load KEY=value pairs from <projectRoot>/config/runtime.env into process.env.
  * Only sets keys that are not already present in process.env (under systemd,
  * EnvironmentFile= has set them already). File is optional; no-op if missing.
- * Strict unless `lenient` (see parseRuntimeEnvText).
+ * Strict, but for `tolerateKeys` (see parseRuntimeEnvText).
  *
  * Warns to stderr when the file's permission bits exceed 0o600 — runtime.env
  * holds secrets like GITHUB_TOKEN. We intentionally only warn (not refuse):
  * install/setup scripts also chmod the file at write time.
  */
-export function loadRuntimeEnv(projectRoot, { lenient = false } = {}) {
+export function loadRuntimeEnv(projectRoot, { tolerateKeys = [] } = {}) {
   const envPath = resolve(projectRoot, 'config/runtime.env');
   if (!existsSync(envPath)) return;
   try {
@@ -130,7 +144,7 @@ export function loadRuntimeEnv(projectRoot, { lenient = false } = {}) {
   } catch {
     /* stat may fail in unusual mounts; the readFileSync below will surface a real failure */
   }
-  for (const { key, value } of parseRuntimeEnvText(readFileSync(envPath, 'utf8'), { lenient })) {
+  for (const { key, value } of parseRuntimeEnvText(readFileSync(envPath, 'utf8'), { tolerateKeys })) {
     if (process.env[key] === undefined) process.env[key] = value;
   }
 }

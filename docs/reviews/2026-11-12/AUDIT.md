@@ -43,9 +43,10 @@ is never validated at startup.
   **Fixed:** `lib/configSchema.js` is the one schema; `getConfigSync` and
   `readSettingsFile` parse through it, and `index.js` reads it before anything else,
   exiting with the message (e.g. `wisp-config.json → backupSchedule.time: …`). The
-  migration runner first repairs what older releases left (retired keys, mounts outside
-  `/mnt/wisp/`, dangling backup references — `backend/scripts/configRepair.mjs`, every run),
-  then refuses to run on an invalid file (exit 2, before any migration).
+  merged migration `0007-repair-config-and-records` repairs what older releases left
+  (retired keys, mounts outside `/mnt/wisp/`, dangling backup references), the migrations
+  before it read paths tolerantly, and the runner refuses an invalid config after the
+  migrations (exit 2).
 - **CFG-2** — `be/lib/config.js:44-62` (`parseTrustedProxies`) skips an invalid entry with a
   warning, deliberately ("a typo must not crash-loop the systemd service";
   `docs/specs/CONFIGURATION.md:147`). A dropped entry silently changes cookie `Secure` and the
@@ -75,7 +76,7 @@ is never validated at startup.
   `:862-875` already clears `backupMountId`; also prune `destinationIds`).
   **Fixed, reversed (settled 2026-11-13):** a dangling `backupMountId` or schedule
   destination fails the read, naming the key; deleting or swapping the backup mount prunes
-  both in the same write, and the runner's config repair prunes what older releases left.
+  both in the same write, and migration 0007 prunes what older releases left.
   An assignment to a removed section still falls back to Main.
 - **CFG-5** — values the UI itself wrote that a stricter read would reject. —
   **decision.** *Recommendation:* they block boot like a hand edit: make the write-side
