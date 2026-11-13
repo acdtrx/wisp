@@ -449,3 +449,7 @@ Every host-supplied disk or ISO path (attach disk/CDROM at runtime, plus `disk.s
 | `/org/libvirt/domains/<uuid>` | `org.freedesktop.DBus.Properties` | Read domain properties (autostart, etc.) |
 
 Domain object paths follow the pattern `/org/libvirt/domains/<uuid>` where UUIDs are obtained from `ListDomains`. Per-domain proxy objects are cached in `connectionState.domainProxyCache` (path → `{ iface, props }`) so `getDomainObjAndIface(path)` skips the DBus `Introspect` round-trip on hot paths like the per-VM stats SSE. The cache is cleared on bus disconnect/error and the entry for a given path is dropped on `VIR_DOMAIN_EVENT_UNDEFINED`, so a redefined VM with the same path gets a fresh proxy. Do not stash proxy references in module-level state outside this cache.
+
+## Timeouts
+
+(settled 2026-11-12, CODING-RULES §6.) Every libvirt DBus call, the connect setup and introspection included, gives up after **30 s**; the lifecycle calls (Create, Shutdown, Destroy, Reboot, Undefine, Suspend, Resume) after **2 min**. A call past its bound fails with `LIBVIRT_ERROR`; libvirt still runs it if it answers late. A failed connect retries on the reconnect backoff. `qemu-img create`, the NVRAM copy and the cloud-init seed ISO build: **60 s** each.

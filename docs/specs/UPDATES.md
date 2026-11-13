@@ -244,3 +244,7 @@ scripts/
 .github/workflows/
   release.yml                        ← runs on v* tag push
 ```
+
+## Timeouts
+
+(settled 2026-11-12, CODING-RULES §6.) The GitHub releases API: **30 s** per request, its DNS lookup and body included. Unpacking a release tarball **120 s**; starting `wisp-updater.service` **15 s**.

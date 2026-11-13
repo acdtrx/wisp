@@ -161,3 +161,7 @@ During VM creation:
 |---------|----------|
 | **Create VM** (`isCreating=true`) | Full editable form: a **Cloud Init** master toggle (first in the toggle row, default on) gates whether cloud-init runs for this VM; when off, other fields are disabled and creation skips the seed ISO. |
 | **Overview** (`isCreating=false`) | Read-only summary includes Cloud Init on/off, hostname, username, masked password, SSH key status, and option toggles. Edit opens the full form; save with Cloud Init off performs a soft-disable (ISO removed, json kept). **Remove** performs full removal (same as `DELETE`). |
+
+## Timeouts
+
+(settled 2026-11-12, CODING-RULES §6.) The GitHub keys lookup **10 s**; the password hash (`openssl passwd`) **10 s**; the seed ISO build **60 s**.

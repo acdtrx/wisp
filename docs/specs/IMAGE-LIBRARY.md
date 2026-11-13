@@ -105,3 +105,7 @@ The image library component accepts a `mode` prop and, in picker mode, a `picker
 - `mode="picker"`, `pickerKind="container"` — modal view that shows only OCI images, each row has a Select button that emits `{ kind: 'oci', name, digest }`
 
 The picker mode is wrapped in a modal component (`ImageLibraryModal`) that handles overlay, close, and value return.
+
+## Timeouts
+
+(settled 2026-11-12, CODING-RULES §6.) Downloads (through the SSRF guard): connect **10 s**, response headers **30 s**, and **120 s** between body chunks — an idle bound, no total, so a large image on a slow link still finishes. The URL check (`HEAD`) **15 s**; the HAOS release lookup **15 s**; decompressing an `.xz` image is stopped after **10 min** without output. Uploads from the browser: no total; aborted after **60 s** without upload progress, then **35 min** for the server's reply.

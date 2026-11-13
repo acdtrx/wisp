@@ -7,9 +7,9 @@
  *
  * What parse rejects, with CONFIG_INVALID naming the key: an unknown key at any
  * level, a wrong type, an out-of-range value, and a backupMountId or schedule
- * destination naming no mount (settled 2026-11-13, reversing CFG-4: the write
- * paths prune those references in the write that deletes or swaps the mount,
- * and migration 0007 cleans what older releases left).
+ * destination naming no mount (the write paths prune those references in the
+ * write that deletes or swaps the mount, and migration 0007 cleans what older
+ * releases left).
  * What it fills in: a missing key takes its default. What it still drops: an
  * assignment to a removed section — an assignment names a workload, and a
  * section delete removes its assignments in the same write anyway.

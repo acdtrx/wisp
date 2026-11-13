@@ -11,7 +11,7 @@ export function consoleWsUrl(path) {
 }
 
 /**
- * Close `ws` if it hasn't opened within `ms` (CODING-RULES §6, TMO-17): a
+ * Close `ws` if it hasn't opened within `ms` (CODING-RULES §6): a
  * WebSocket has no connect timeout of its own, and a half-open network leaves it
  * CONNECTING for minutes. The close then takes the console's usual retry path.
  */

@@ -7,7 +7,7 @@
 const liveSockets = new Set();
 
 /*
- * CODING-RULES §6 (settled 2026-11-12, TMO-17): a console's sockets live as
+ * CODING-RULES §6: a console's sockets live as
  * long as the user keeps it open, so there is no total cap — but a peer that
  * vanished without a close (laptop lid, dropped VPN) would leave the socket,
  * and the VNC TCP leg or container exec session behind it, open for good. Each

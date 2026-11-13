@@ -15,7 +15,7 @@ import { createStallWatchdog, stallMinutes } from '../storage/index.js';
 
 /** The release lookup is one small JSON reply (CODING-RULES §6). */
 const GITHUB_API_TIMEOUT_MS = 15_000;
-/** xz runs as long as the image is big: killed only after this long without output (TMO-2). */
+/** xz runs as long as the image is big: killed only after this long without output. */
 const XZ_STALL_MS = 10 * 60_000;
 
 const GITHUB_API = 'https://api.github.com/repos/home-assistant/operating-system/releases/latest';

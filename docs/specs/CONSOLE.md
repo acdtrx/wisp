@@ -127,3 +127,7 @@ The bidirectional pipe:
 - WebSocket `message` event → `socket.write(data)`
 - TCP `data` event → `ws.send(data)` (only if WebSocket is open, readyState === 1)
 - Either side closing/erroring triggers cleanup of the other side
+
+## Timeouts
+
+(settled 2026-11-12, CODING-RULES §6.) A console socket has no total bound — it lives as long as the user keeps it open. The client closes one still connecting after **15 s** and takes its usual retry path; the server pings every tracked socket every **30 s** and terminates one that missed the previous ping, which tears down the VNC TCP leg or the container exec session behind it. The VNC TCP connect to QEMU: **10 s**.

@@ -20,8 +20,8 @@
 # User config (config/wisp-config.json, wisp-password, runtime.env), the backup
 # status cache (config/backup-status.json), the state-migration ledger
 # (config/migrations.json) and runtime scratch (.pids, .logs) survive the swap.
-# A rollback restores all of config/ from the snapshot, the ledger included
-# (settled 2026-11-13): a migration may change config/, and the ledger must
+# A rollback restores all of config/ from the snapshot, the ledger included:
+# a migration may change config/, and the ledger must
 # revert with it, so every migration this update ran runs again on the next one —
 # safe because migrations are idempotent.
 

@@ -107,7 +107,7 @@ function makePinnedLookup(pinnedAddrs) {
  * Explicit, not undici's defaults (CODING-RULES §6): a connect that takes 10 s
  * is a dead host; 30 s to the response headers; and between body chunks 120 s —
  * an idle bound, not a total one, so a large image download on a slow link
- * still finishes while a stalled one fails (settled 2026-11-12, TMO-6/TMO-7).
+ * still finishes while a stalled one fails.
  */
 const CONNECT_TIMEOUT_MS = 10_000;
 const HEADERS_TIMEOUT_MS = 30_000;

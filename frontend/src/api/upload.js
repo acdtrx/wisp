@@ -1,7 +1,7 @@
 import { broadcastLogout, readCsrfToken } from './client.js';
 
 /*
- * CODING-RULES §6 (settled 2026-11-12, TMO-17): no total cap while sending — a
+ * CODING-RULES §6: no total cap while sending — a
  * large file on a slow link takes as long as it takes — but 60 s without upload
  * progress aborts it. Once the body is sent, the server's reply gets 35 min:
  * above the server's own 30 min bound on extracting an uploaded zip.

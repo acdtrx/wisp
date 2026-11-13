@@ -360,3 +360,7 @@ tar -tzf <dest>/containers/<name>/<timestamp>/data.tar.gz | head
 | Unmount | `POST /api/host/mounts/:id/unmount` | Unmount |
 
 The `wisp-mount` helper script handles the actual mount/unmount operations and is invoked via `sudo` for the necessary filesystem permissions.
+
+## Timeouts
+
+(settled 2026-11-12, CODING-RULES §6.) No backup or restore has a total bound — they take as long as the data is big — but each is stopped when it stops progressing: a VM disk copy after **10 min** with neither the destination growing nor bytes read; a container backup's tar after **5 min** without bytes (the container is frozen meanwhile); a container restore's tar after **10 min** without its checkpoint output. The job then fails, naming the stall.

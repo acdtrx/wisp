@@ -1,8 +1,7 @@
 /**
  * Brings what older releases left in the config and the records up to what
- * this release reads (settled 2026-11-13: today's two unreleased migrations,
- * container-config-shape and backup-origin, merged into this one, its first
- * step the config repair).
+ * this release reads: the config first, then container.json and backup
+ * manifests.
  *
  * 1. runtime.env, read raw: lines setting the retired WISP_BACKEND_PORT /
  *    WISP_FRONTEND_PORT are removed. Nothing else needs checking here: the
