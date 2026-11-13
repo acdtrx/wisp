@@ -5,7 +5,9 @@ import {
   applyUpdate,
   claimUpdateInstall,
 } from '../lib/wispUpdate.js';
-import { listBackgroundJobs } from '../lib/jobs/index.js';
+import {
+  listBackgroundJobs, operationJobStore, BACKGROUND_JOB_KIND, titleForSelfUpdate,
+} from '../lib/jobs/index.js';
 import { handleRouteError } from '../lib/routeErrors.js';
 
 function activeOtherJobs() {
@@ -66,6 +68,8 @@ export default async function updatesRoutes(fastify) {
         202: {
           type: 'object',
           properties: {
+            jobId: { type: 'string' },
+            title: { type: 'string' },
             targetVersion: { type: 'string' },
           },
         },
@@ -99,27 +103,31 @@ export default async function updatesRoutes(fastify) {
         });
       }
 
-      let stagingPath;
-      try {
-        /* Phase 1: download + verify + extract — blocks here for ~5–15s.
-         * Errors are reported as HTTP errors before we hand off to the helper. */
-        stagingPath = await downloadAndStage();
-      } catch (err) {
-        releaseInstall();
-        return handleRouteError(err, reply, request);
-      }
-
-      try {
-        /* Phase 2: fire-and-forget the privileged helper. applyUpdate spawns
-         * detached + ignores stdio and returns immediately. The helper kills
-         * this backend as its first real step. */
-        await applyUpdate(stagingPath);
-      } catch (err) {
-        releaseInstall();
-        return handleRouteError(err, reply, request);
-      }
-
-      return reply.code(202).send({ targetVersion: status.latest });
+      /* A job: download, verify and extract, then hand off to the privileged
+       * helper, which stops this backend as its first real step. The job's
+       * progress (download percent, verify, extract) and its `done` — sent just
+       * before the restart — arrive over its stream; the client then waits for
+       * Wisp to come back on the new version. */
+      const job = operationJobStore.startOperationJob({
+        kind: BACKGROUND_JOB_KIND.SELF_UPDATE,
+        title: titleForSelfUpdate(status.latest),
+        log: request.log,
+        run: async (report) => {
+          try {
+            const stagingPath = await downloadAndStage((p) => {
+              const percent = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : undefined;
+              report({ step: p.step, ...(percent != null ? { percent } : {}) });
+            });
+            report({ step: 'restarting' });
+            await applyUpdate(stagingPath);
+            return { targetVersion: status.latest };
+          } catch (err) {
+            releaseInstall();
+            throw err;
+          }
+        },
+      });
+      return reply.code(202).send({ ...job, targetVersion: status.latest });
     },
   });
 }

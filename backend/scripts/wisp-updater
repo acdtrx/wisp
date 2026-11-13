@@ -20,10 +20,10 @@
 # User config (config/wisp-config.json, wisp-password, runtime.env), the backup
 # status cache (config/backup-status.json), the state-migration ledger
 # (config/migrations.json) and runtime scratch (.pids, .logs) survive the swap.
-# A rollback restores all of config/ from the snapshot, the ledger included:
-# a migration may change config/, and the ledger must
-# revert with it, so every migration this update ran runs again on the next one —
-# safe because migrations are idempotent.
+# A rollback restores all of config/ from the snapshot, the ledger included: a
+# migration may change config/, and the ledger must revert with it, so every
+# migration this update ran runs again on the next one — safe because
+# migrations are idempotent.
 
 set -uo pipefail
 
@@ -35,6 +35,44 @@ fail() {
   echo "error: $*" >&2
   exit 1
 }
+
+# idle_run SECS cmd...: run cmd with its output passed through (to the journal),
+# killed after SECS seconds without a line of output (returns 124) — an
+# inactivity bound for a step that shows progress (CODING-RULES §6). The unit's
+# TimeoutStartSec stays the backstop for the whole update.
+idle_run() {
+  local secs="$1"; shift
+  local fifo fd line r rc=0 timed_out=0 pid
+  fifo="$(mktemp -u -t wisp-updater-fifo.XXXXXX)"
+  mkfifo -m 600 "$fifo"
+  "$@" > "$fifo" 2>&1 &
+  pid=$!
+  exec {fd}< "$fifo"
+  rm -f -- "$fifo"
+  while :; do
+    IFS= read -r -t "$secs" -u "$fd" line && r=0 || r=$?
+    if (( r == 0 )); then printf '%s\n' "$line"; continue; fi
+    if (( r > 128 )); then
+      timed_out=1
+      kill -TERM "$pid" 2>/dev/null
+      sleep 5
+      kill -KILL "$pid" 2>/dev/null
+    elif [[ -n "$line" ]]; then
+      printf '%s\n' "$line"
+    fi
+    break
+  done
+  exec {fd}<&-
+  wait "$pid" 2>/dev/null || rc=$?
+  if (( timed_out )); then
+    echo "error: the step printed nothing for ${secs}s and was stopped" >&2
+    return 124
+  fi
+  return "$rc"
+}
+
+# npm ci logs each fetch at --loglevel=http: its progress, watched by idle_run.
+NPM_CI_IDLE_SEC=600
 
 [[ -n "$INSTALL_DIR" ]] || fail "WISP_INSTALL_DIR not set (unit file should template it)"
 [[ "$INSTALL_DIR" == /* ]] || fail "install dir must be absolute: $INSTALL_DIR"
@@ -190,7 +228,7 @@ chown -R "$DEPLOY_OWNER" "$INSTALL_DIR" || fail "chown failed"
 
 echo "step:install-deps"
 # Tarball ships without node_modules — install runtime deps for backend.
-sudo -u "$DEPLOY_USER" bash -c "cd '$INSTALL_DIR/backend' && npm ci --omit=dev --omit=optional" \
+idle_run "$NPM_CI_IDLE_SEC" sudo -u "$DEPLOY_USER" bash -c "cd '$INSTALL_DIR/backend' && npm ci --omit=dev --omit=optional --loglevel=http" \
   || fail "backend npm ci failed"
 
 echo "step:common-setup"

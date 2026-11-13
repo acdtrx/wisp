@@ -16,11 +16,12 @@ import { mkdir, rm, access, writeFile, rename } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { execFile as execFileCb } from 'node:child_process';
+import { execFile as execFileCb, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createAppError } from './routeErrors.js';
 import { getSettings } from './settings.js';
 import { ssrfSafeFetch, writeResponseToFile } from './downloads/index.js';
+import { createStallWatchdog } from './storage/index.js';
 
 const execFileAsync = promisify(execFileCb);
 
@@ -318,6 +319,33 @@ async function downloadToFile(url, destPath, onProgress, signal) {
   return { received, total };
 }
 
+/*
+ * The release tar extract is bounded on inactivity (CODING-RULES §6): GNU tar
+ * prints a checkpoint dot every 100 records (~1 MB), and tar is stopped after
+ * TAR_IDLE_MS without one. macOS dev has bsdtar, which has no checkpoints: a
+ * fixed bound there.
+ */
+const TAR_IDLE_MS = 60_000;
+
+function extractTarball(tarballPath, stagingDir) {
+  const args = ['-xzf', tarballPath, '-C', stagingDir, '--strip-components=1'];
+  if (process.platform !== 'linux') return execFileAsync('tar', args, { timeout: TAR_IDLE_MS });
+  return new Promise((resolve, reject) => {
+    const tar = spawn('tar', [...args, '--checkpoint=100', '--checkpoint-action=dot'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    const watchdog = createStallWatchdog({ stallMs: TAR_IDLE_MS, onStall: () => tar.kill('SIGKILL') });
+    tar.stdout.on('data', watchdog.poke);
+    tar.stderr.on('data', (d) => { watchdog.poke(); stderr = (stderr + d).slice(-4096); });
+    tar.on('error', (err) => { watchdog.stop(); reject(err); });
+    tar.on('close', (code, signal) => {
+      watchdog.stop();
+      if (watchdog.fired) reject(createAppError('UPDATE_CHECK_UNAVAILABLE', 'Unpacking the release made no progress and was stopped'));
+      else if (code === 0) resolve();
+      else reject(createAppError('UPDATE_CHECK_UNAVAILABLE', 'Unpacking the release failed', stderr.replace(/^\.+/gm, '').trim() || `tar exited ${code ?? signal}`));
+    });
+  });
+}
+
 async function fileSha256(path) {
   return await new Promise((resolveHash, reject) => {
     const h = createHash('sha256');
@@ -372,8 +400,7 @@ export async function downloadAndStage(onProgress, signal) {
   if (onProgress) onProgress({ step: 'extract' });
   await mkdir(stagingDir, { recursive: true });
   /* Tarball top-level dir is `wisp/`; --strip-components=1 puts contents at stagingDir root. */
-  // A release tarball is a few MB: 120 s means tar hung (CODING-RULES §6).
-  await execFileAsync('tar', ['-xzf', tarballPath, '-C', stagingDir, '--strip-components=1'], { timeout: 120_000 });
+  await extractTarball(tarballPath, stagingDir);
 
   /* Sanity-check: backend/package.json must exist with the expected version. */
   let stagingVersion = null;
