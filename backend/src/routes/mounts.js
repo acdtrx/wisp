@@ -12,6 +12,11 @@ import {
 } from '../lib/storage/index.js';
 import { findContainersUsingStorageMount } from '../lib/containerManager/index.js';
 import { handleRouteError, sendError } from '../lib/routeErrors.js';
+import { operationJobStore, BACKGROUND_JOB_KIND, titleForUnmount, titleForMountDelete } from '../lib/jobs/index.js';
+
+const JOB_ACCEPTED = {
+  202: { type: 'object', properties: { jobId: { type: 'string' }, title: { type: 'string' } } },
+};
 
 /* Response schema deliberately omits `password`: the field never leaves the
  * server. `mountForApi` (settings.js) replaces it with `hasPassword: boolean`
@@ -127,10 +132,14 @@ export default async function mountsRoutes(fastify) {
     },
   });
 
+  // A job: it unmounts first, which may flush for a while. Not found (404) and
+  // in use by a container (409) are answered here; the remaining mounts list is
+  // the job's `done` payload (`{ mounts }`).
   fastify.delete('/host/mounts/:id', {
     config: { auth: 'admin' },
     schema: {
       params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      response: JOB_ACCEPTED,
     },
     handler: async (request, reply) => {
       try {
@@ -149,27 +158,35 @@ export default async function mountsRoutes(fastify) {
             detail: `Detach this mount from containers first: ${inUseBy.join(', ')}`,
           });
         }
-        /* Best-effort unmount before we forget about it; both flavours also rmdir /mnt/wisp/<name>
-         * separately (delete-only cleanup — regular unmount leaves the dir in place). */
-        try {
-          if (d.type === 'disk') {
-            await unmountDisk(d.mountPath, { ignoreNotMounted: true });
-          } else {
-            await unmountSMB(d.mountPath, { ignoreNotMounted: true });
-          }
-        } catch (err) {
-          /* Log but continue with the delete — the user is telling us to forget this entry. */
-          request.log.warn({ err, id: d.id, mountPath: d.mountPath }, 'Unmount before delete failed; removing entry anyway');
-        }
-        try {
-          await rmdirMountpoint(d.mountPath);
-        } catch (err) {
-          /* Non-fatal — leaves a stale empty dir the user can clean up, but the config entry is gone. */
-          request.log.warn({ err, mountPath: d.mountPath }, 'Mount point rmdir failed on delete');
-        }
-        const result = await removeMount(request.params.id);
-        if (d.type === 'disk') refreshDiskSnapshot();
-        return result.mounts || [];
+        const job = operationJobStore.startOperationJob({
+          kind: BACKGROUND_JOB_KIND.MOUNT_DELETE,
+          title: titleForMountDelete(d.label || d.mountPath),
+          log: request.log,
+          run: async () => {
+            /* Best-effort unmount before we forget about it; both flavours also rmdir /mnt/wisp/<name>
+             * separately (delete-only cleanup — regular unmount leaves the dir in place). */
+            try {
+              if (d.type === 'disk') {
+                await unmountDisk(d.mountPath, { ignoreNotMounted: true });
+              } else {
+                await unmountSMB(d.mountPath, { ignoreNotMounted: true });
+              }
+            } catch (err) {
+              /* Log but continue with the delete — the user is telling us to forget this entry. */
+              request.log.warn({ err, id: d.id, mountPath: d.mountPath }, 'Unmount before delete failed; removing entry anyway');
+            }
+            try {
+              await rmdirMountpoint(d.mountPath);
+            } catch (err) {
+              /* Non-fatal — leaves a stale empty dir the user can clean up, but the config entry is gone. */
+              request.log.warn({ err, mountPath: d.mountPath }, 'Mount point rmdir failed on delete');
+            }
+            const result = await removeMount(d.id);
+            if (d.type === 'disk') refreshDiskSnapshot();
+            return { mounts: result.mounts || [] };
+          },
+        });
+        return reply.code(202).send(job);
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -303,11 +320,12 @@ export default async function mountsRoutes(fastify) {
     },
   });
 
+  // A job: an unmount flushes first, which after a large write takes a while.
   fastify.post('/host/mounts/:id/unmount', {
     config: { auth: 'admin' },
     schema: {
       params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
-      response: { 200: { type: 'object', properties: { ok: { type: 'boolean' } } } },
+      response: JOB_ACCEPTED,
     },
     handler: async (request, reply) => {
       try {
@@ -316,23 +334,23 @@ export default async function mountsRoutes(fastify) {
         if (!d) {
           return reply.code(404).send({ error: 'Mount not found', detail: request.params.id });
         }
-        if (d.type === 'disk') {
-          await unmountDisk(d.mountPath);
-          refreshDiskSnapshot();
-        } else {
-          await unmountSMB(d.mountPath);
-        }
-        return { ok: true };
+        const job = operationJobStore.startOperationJob({
+          kind: BACKGROUND_JOB_KIND.MOUNT_UNMOUNT,
+          title: titleForUnmount(d.label || d.mountPath),
+          log: request.log,
+          run: async () => {
+            if (d.type === 'disk') {
+              await unmountDisk(d.mountPath);
+              refreshDiskSnapshot();
+            } else {
+              await unmountSMB(d.mountPath);
+            }
+            return { id: d.id };
+          },
+        });
+        return reply.code(202).send(job);
       } catch (err) {
-        if (
-          err.code === 'SMB_INVALID' ||
-          err.code === 'SMB_MOUNT_UNAVAILABLE' ||
-          err.code === 'DISK_MOUNT_UNAVAILABLE'
-        ) {
-          return reply.code(503).send({ error: err.message, detail: err.raw || err.detail || err.message });
-        }
-        fastify.log.error({ err }, 'Unmount failed');
-        sendError(reply, 500, 'Unmount failed', err.raw || err.detail || err.message);
+        handleRouteError(err, reply, request);
       }
     },
   });
