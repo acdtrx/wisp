@@ -13,6 +13,7 @@ import HelpIcon from '../../components/shared/HelpIcon.jsx';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { getHostGpus } from '../../api/host.js';
 import JellyfinLibraryEditorModal from './JellyfinLibraryEditorModal.jsx';
+import SettingsGate from '../../components/shared/SettingsGate.jsx';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -83,6 +84,7 @@ export default function JellyfinAppSection({ config, onSave }) {
   const [form, setForm] = useState(() => parseAppConfig(config));
   const [original, setOriginal] = useState(() => parseAppConfig(config));
   const [hostGpus, setHostGpus] = useState(null);
+  const [gpuError, setGpuError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -96,7 +98,7 @@ export default function JellyfinAppSection({ config, onSave }) {
     let cancelled = false;
     getHostGpus()
       .then((res) => { if (!cancelled) setHostGpus(Array.isArray(res?.gpus) ? res.gpus : []); })
-      .catch(() => { if (!cancelled) setHostGpus([]); });
+      .catch((err) => { if (!cancelled) { setHostGpus([]); setGpuError(err.detail || err.message || 'failed'); } });
     return () => { cancelled = true; };
   }, []);
 
@@ -206,6 +208,7 @@ export default function JellyfinAppSection({ config, onSave }) {
       saving={saving}
       isDirty={dirty && !hasRowErrors}
     >
+      <SettingsGate label="storage settings">
       <div className="space-y-4">
         <div>
           <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-text-muted">
@@ -310,7 +313,9 @@ export default function JellyfinAppSection({ config, onSave }) {
             <p className="mt-0.5 text-[11px] text-text-muted">
               {gpuAvailable
                 ? `Expose the host GPU (${gpuLabel}) to Jellyfin. After enabling, turn on hardware acceleration in Jellyfin's Dashboard → Playback (VAAPI / device /dev/dri/renderD128).`
-                : 'No supported GPU detected on the host (Intel/AMD render nodes only in v1).'}
+                : hostGpus == null ? 'Checking the host for a GPU…'
+                  : gpuError ? `Couldn't check the host for a GPU: ${gpuError}`
+                    : 'No supported GPU detected on the host (Intel/AMD render nodes only in v1).'}
             </p>
           </div>
           <Toggle
@@ -321,6 +326,7 @@ export default function JellyfinAppSection({ config, onSave }) {
         </div>
 
       </div>
+      </SettingsGate>
     </SectionCard>
   );
 }

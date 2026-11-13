@@ -169,6 +169,7 @@ export default function ContainerConsole({
       viewportRef.current.innerHTML = '';
       const term = new Terminal({
         cursorBlink: true,
+        scrollback: 1000, // bounded (FRONTEND-RULES, Data): xterm keeps this many lines
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
         theme: consoleTheme(),
       });

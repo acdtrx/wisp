@@ -8,7 +8,7 @@ function applyResponse(set, response) {
   if (!response || !Array.isArray(response.tiles) || !Array.isArray(response.groups)) {
     return response;
   }
-  set({ tiles: response.tiles, groups: response.groups, loaded: true });
+  set({ tiles: response.tiles, groups: response.groups, loaded: true, loadError: null });
   return response;
 }
 
@@ -37,6 +37,8 @@ export const useHomeStore = create((set, get) => ({
   tiles: [],
   groups: [],
   loaded: false,
+  /** The home stream's last error (the tiles shown are the last good ones). */
+  loadError: null,
   /* Set after a group is created so the matching header opens its rename input
    * on first render, then clears it — same flow as the sidebar's new section. */
   pendingRenameId: null,
@@ -44,7 +46,11 @@ export const useHomeStore = create((set, get) => ({
   startHomeSSE: () => {
     if (homeCloseFn) return;
     homeCloseFn = subscribeTopic('home', (data) => {
-      if (!data || !Array.isArray(data.tiles)) return; // error frame; keep the last good envelope
+      if (data && data.error) {
+        set({ loadError: data.detail || data.error }); // keep the last good envelope
+        return;
+      }
+      if (!data || !Array.isArray(data.tiles)) return;
       applyResponse(set, data);
     });
   },

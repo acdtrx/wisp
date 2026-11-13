@@ -27,6 +27,7 @@ export default function HostNetworkBridges({ onError }) {
   const [deletingName, setDeletingName] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [managed, setManaged] = useState([]);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [eligibleParents, setEligibleParents] = useState([]);
 
   const reportError = useCallback((value) => {
@@ -40,7 +41,9 @@ export default function HostNetworkBridges({ onError }) {
       const data = await listManagedNetworkBridges();
       setManaged(Array.isArray(data.managed) ? data.managed : []);
       setEligibleParents(Array.isArray(data.eligibleParents) ? data.eligibleParents : []);
+      setLoadFailed(false);
     } catch (err) {
+      setLoadFailed(true); // the error shows on the card; the list shown stays
       reportError(err.detail || err.message || 'Failed to load network bridges');
     } finally {
       setLoading(false);
@@ -108,7 +111,7 @@ export default function HostNetworkBridges({ onError }) {
                 {managed.length === 0 && (
                   <tr className={dataTableBodyRowClass}>
                     <td colSpan={5} className={`${dataTableEmptyCellClass} text-xs text-text-muted`}>
-                      No managed VLAN bridges yet.
+                      {loadFailed ? "Couldn't load the bridges." : 'No managed VLAN bridges yet.'}
                     </td>
                   </tr>
                 )}

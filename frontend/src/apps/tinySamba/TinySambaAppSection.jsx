@@ -41,6 +41,7 @@ import {
 } from '../../components/shared/DataTableChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
+import SettingsGate from '../../components/shared/SettingsGate.jsx';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -367,6 +368,7 @@ export default function TinySambaAppSection({ config, onSave }) {
       requiresRestart={!!config?.pendingRestart}
       error={error}
     >
+      <SettingsGate label="storage settings">
       <div className="space-y-4">
         {/* ── Server ─────────────────────────────────────────────── */}
         <div className={subHeader} onClick={() => setServerOpen((v) => !v)}>
@@ -592,6 +594,7 @@ export default function TinySambaAppSection({ config, onSave }) {
           This cannot be undone. Data already on a storage mount is never touched.
         </p>
       </ConfirmDialog>
+      </SettingsGate>
     </SectionCard>
   );
 }

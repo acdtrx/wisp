@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { CircuitBoard, Cpu, Gpu, HardDrive, Loader2, MemoryStick, Network, Package, Usb } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import {
@@ -337,6 +337,7 @@ function CoreUsageGrid({ title, cores }) {
 export default function HostOverview() {
   const { hardware, hardwareError, fetchHardware } = useHostStore();
   const stats = useStatsStore((s) => s.stats);
+  const statsError = useStatsStore((s) => s.lastError);
 
   useEffect(() => {
     /* hardwareError in store handles display; swallow to avoid unhandled rejection */
@@ -346,7 +347,11 @@ export default function HostOverview() {
   if (!stats) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <Loader2 size={24} className="animate-spin text-text-muted" />
+        {statsError ? (
+          <p className="text-xs text-status-stopped" role="alert" title={statsError}>Stats unavailable</p>
+        ) : (
+          <Loader2 size={24} className="animate-spin text-text-muted" />
+        )}
       </div>
     );
   }
@@ -559,6 +564,7 @@ export default function HostOverview() {
 
       {/* Hardware inventory (PCI + DMI) */}
       <HostHardwareInventorySection
+        hardwareLoaded={hardware != null}
         hardwareError={hardwareError}
         pciDevices={hardware?.pciDevices}
         system={hardware?.system}
@@ -573,6 +579,7 @@ export default function HostOverview() {
 }
 
 function HostHardwareInventorySection({
+  hardwareLoaded,
   hardwareError,
   pciDevices,
   system,
@@ -871,8 +878,8 @@ function HostHardwareInventorySection({
           </DataTable>
         </DataTableScroll>
       ) : (
-        <p className="text-sm text-text-muted">
-          {hardwareError ? 'Could not load hardware inventory.' : 'No hardware inventory listed (or still loading).'}
+        <p className={`text-sm ${hardwareError ? 'text-status-stopped' : 'text-text-muted'}`}>
+          {hardwareError ? 'Could not load hardware inventory.' : hardwareLoaded ? 'No hardware inventory listed.' : 'Loading hardware inventory…'}
         </p>
       )}
     </SectionCard>
@@ -881,11 +888,21 @@ function HostHardwareInventorySection({
 
 function HostSoftwareBlock() {
   const [hostInfo, setHostInfo] = useState(null);
-  useEffect(() => {
-    /* Non-fatal: Software block stays empty/loading if GET /api/host fails */
-    getHostInfo().then(setHostInfo).catch(() => {});
+  const [hostInfoError, setHostInfoError] = useState(null);
+  const load = useCallback(() => {
+    setHostInfoError(null);
+    getHostInfo().then(setHostInfo).catch((err) => setHostInfoError(err.detail || err.message || 'Failed to load host information'));
   }, []);
+  useEffect(() => { load(); }, [load]);
 
+  if (!hostInfo && hostInfoError) {
+    return (
+      <p className="text-sm text-status-stopped" role="alert">
+        Couldn't load host information: {hostInfoError}{' '}
+        <button type="button" onClick={load} className="font-medium underline">Retry</button>
+      </p>
+    );
+  }
   if (!hostInfo) return <p className="text-sm text-text-muted">Loading…</p>;
 
   const osLabel = hostInfo.osRelease?.prettyName ?? (hostInfo.osRelease ? [hostInfo.osRelease.id, hostInfo.osRelease.versionId].filter(Boolean).join(' ') : null);

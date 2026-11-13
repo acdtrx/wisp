@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import PasswordChangeForm from '../settings/PasswordChangeForm.jsx';
@@ -7,10 +6,10 @@ import OidcSettings from '../settings/OidcSettings.jsx';
 import ApiTokensSettings from '../settings/ApiTokensSettings.jsx';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { updateSettings } from '../../api/settings.js';
+import SettingsGate from '../shared/SettingsGate.jsx';
 
 export default function AppConfig() {
   const settings = useSettingsStore((s) => s.settings);
-  const settingsLoading = useSettingsStore((s) => s.loading);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
   const setSettings = useSettingsStore((s) => s.setSettings);
 
@@ -75,11 +74,8 @@ export default function AppConfig() {
         isDirty={dirty}
         error={error}
       >
-        {settingsLoading && !settings ? (
-          <div className="flex items-center gap-2 text-sm text-text-muted">
-            <Loader2 size={16} className="animate-spin" />
-            Loading…
-          </div>
+        {!settings ? (
+          <SettingsGate />
         ) : (
           <div className="grid gap-6 sm:grid-cols-2">
             <div className="space-y-4">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Modal from './Modal.jsx';
+import LoadHint from './LoadHint.jsx';
 
 // How long to keep showing "Backup complete." before the modal auto-dismisses.
 // Long enough to be a clear "did it succeed?" signal, short enough that the
@@ -68,6 +69,9 @@ export default function BackupModal({
         </p>
 
         <div className={`mt-4 space-y-2 ${inProgress ? 'opacity-60' : ''}`}>
+          {destinations.some((d) => d.fallback) && (
+            <LoadHint what="the backup destinations; only Local is offered" />
+          )}
           {destinations.map((d) => (
             <label key={d.id} className="flex items-center gap-2 cursor-pointer">
               <input

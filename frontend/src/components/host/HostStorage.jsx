@@ -38,6 +38,7 @@ import {
   unmountMount,
   checkMountConnection,
 } from '../../api/settings.js';
+import SettingsGate from '../shared/SettingsGate.jsx';
 
 /* Same geometry as rowActionIconBtn but color-neutral, for tinted (mount/check) states. */
 const tintedActionBtnBase =
@@ -71,6 +72,7 @@ export default function HostStorage() {
   const disks = useDiskStore((s) => s.disks);
   const connectDisks = useDiskStore((s) => s.connect);
   const disconnectDisks = useDiskStore((s) => s.disconnect);
+  const diskStreamError = useDiskStore((s) => s.error);
 
   useEffect(() => {
     connectDisks();
@@ -78,12 +80,14 @@ export default function HostStorage() {
   }, [connectDisks, disconnectDisks]);
 
   const [mountStatus, setMountStatus] = useState([]);
+  const [mountStatusError, setMountStatusError] = useState(null);
   const [error, setError] = useState(null);
 
   const refreshStatus = useCallback(() => {
     getMountStatus()
-      .then((list) => setMountStatus(Array.isArray(list) ? list : []))
-      .catch(() => setMountStatus([]));
+      .then((list) => { setMountStatus(Array.isArray(list) ? list : []); setMountStatusError(null); })
+      // Rows then read as not mounted: say the status is unknown.
+      .catch((err) => { setMountStatus([]); setMountStatusError(err.detail || err.message || 'failed'); });
   }, []);
 
   useEffect(() => { refreshStatus(); }, [settings, refreshStatus]);
@@ -103,7 +107,11 @@ export default function HostStorage() {
 
   return (
     <SectionCard title="Storage" titleIcon={<Server size={14} strokeWidth={2} />} error={error}>
+      <SettingsGate label="storage settings">
       <div className="space-y-6">
+        {mountStatusError && (
+          <p className="text-[11px] text-text-muted" role="status">Couldn't load the mount status ({mountStatusError}); the dots below may be wrong.</p>
+        )}
         <SmbMountsSection
           smbSaved={smbSaved}
           mountStatus={mountStatus}
@@ -119,8 +127,10 @@ export default function HostStorage() {
           refreshStatus={refreshStatus}
           loadSettings={loadSettings}
           onError={setError}
+          diskStreamError={diskStreamError}
         />
       </div>
+      </SettingsGate>
     </SectionCard>
   );
 }
@@ -352,6 +362,7 @@ function SmbMountsSection({ smbSaved, mountStatus, refreshStatus, loadSettings, 
 /* ------------------------ Removable drives sub-section ------------------------ */
 
 function RemovableDrivesSection({
+  diskStreamError,
   diskSaved,
   detectedDisks,
   unadoptedDetected,
@@ -414,7 +425,11 @@ function RemovableDrivesSection({
     return (
       <div className="space-y-2">
         <SubHeading label="Removable drives" />
-        <p className="text-[11px] text-text-muted">Connecting to device stream…</p>
+        {diskStreamError ? (
+          <p className="text-[11px] text-status-stopped" role="alert">{diskStreamError}</p>
+        ) : (
+          <p className="text-[11px] text-text-muted">Connecting to device stream…</p>
+        )}
       </div>
     );
   }

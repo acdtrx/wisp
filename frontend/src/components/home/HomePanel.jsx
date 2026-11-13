@@ -33,6 +33,7 @@ export default function HomePanel() {
   const tiles = useHomeStore((s) => s.tiles);
   const groups = useHomeStore((s) => s.groups);
   const loaded = useHomeStore((s) => s.loaded);
+  const loadError = useHomeStore((s) => s.loadError);
   const startHomeSSE = useHomeStore((s) => s.startHomeSSE);
   const stopHomeSSE = useHomeStore((s) => s.stopHomeSSE);
   const createGroup = useHomeStore((s) => s.createGroup);
@@ -141,7 +142,18 @@ export default function HomePanel() {
           </div>
         </header>
 
-        {loaded && visibleTileCount === 0 && !editing ? (
+        {loadError && (
+          <p className="mb-4 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-3 py-2 text-xs text-status-stopped" role="alert">
+            Couldn't load the home page: {loadError}
+          </p>
+        )}
+        {!loaded ? (
+          loadError ? null : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-busy="true" aria-label="Loading home">
+              {[0, 1, 2, 3].map((i) => <div key={i} className="h-20 animate-pulse rounded-card bg-surface" />)}
+            </div>
+          )
+        ) : visibleTileCount === 0 && !editing ? (
           <div className="flex flex-col items-center py-16 text-center">
             <Lightbulb size={32} className="mb-3 text-text-muted" aria-hidden />
             <p className="font-display text-lg font-semibold text-text-primary">No lanterns yet</p>

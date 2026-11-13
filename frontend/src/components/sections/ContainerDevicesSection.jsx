@@ -35,7 +35,7 @@ export default function ContainerDevicesSection({ config, onSave }) {
       setHostGpus(Array.isArray(res?.gpus) ? res.gpus : []);
     } catch (err) {
       setLoadError(err?.message || 'Failed to query host GPUs');
-      setHostGpus([]);
+      setHostGpus(null);
     }
   }, []);
 
@@ -113,9 +113,11 @@ export default function ContainerDevicesSection({ config, onSave }) {
     >
       {!currentGpu && !picking && (
         <div className="rounded-md border border-dashed border-surface-border px-3 py-3 text-xs text-text-muted">
-          {Array.isArray(hostGpus) && hostGpus.length === 0
-            ? 'No supported GPUs detected on the host. Intel and AMD render nodes (/dev/dri/renderD*) are supported in v1.'
-            : 'No devices configured.'}
+          {loadError
+            ? 'No devices configured. The host GPUs could not be listed.'
+            : Array.isArray(hostGpus) && hostGpus.length === 0
+              ? 'No supported GPUs detected on the host. Intel and AMD render nodes (/dev/dri/renderD*) are supported in v1.'
+              : 'No devices configured.'}
         </div>
       )}
 

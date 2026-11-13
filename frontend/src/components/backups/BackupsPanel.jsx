@@ -171,8 +171,9 @@ export default function BackupsPanel() {
     setError(null);
     Promise.allSettled([listBackups(), listContainerBackups()])
       .then(([vmRes, ctRes]) => {
-        setVmBackups(vmRes.status === 'fulfilled' && Array.isArray(vmRes.value) ? vmRes.value : []);
-        setCtBackups(ctRes.status === 'fulfilled' && Array.isArray(ctRes.value) ? ctRes.value : []);
+        // A failed refetch keeps the list already shown.
+        if (vmRes.status === 'fulfilled') setVmBackups(Array.isArray(vmRes.value) ? vmRes.value : []);
+        if (ctRes.status === 'fulfilled') setCtBackups(Array.isArray(ctRes.value) ? ctRes.value : []);
         const errs = [vmRes, ctRes]
           .filter((r) => r.status === 'rejected')
           .map((r) => r.reason?.message || 'Failed to load backups');
@@ -212,7 +213,8 @@ export default function BackupsPanel() {
         setSchedule(s.backupSchedule || null);
       })
       .catch(() => {
-        /* settings unavailable — Local default keeps Back up now usable */
+        /* settings unavailable — the Local default keeps Back up now usable, flagged as a fallback */
+        setDestinations([{ id: 'local', label: 'Local', path: '/var/lib/wisp/backups', fallback: true }]);
       });
   }, []);
 
@@ -611,7 +613,7 @@ export default function BackupsPanel() {
             Loading…
           </div>
         ) : visibleGroups.length === 0 ? (
-          <p className="text-sm text-text-muted">
+          error ? null : <p className="text-sm text-text-muted">
             No backups yet. Back up a VM or container from its page and it will appear here.
           </p>
         ) : (

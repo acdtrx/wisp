@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import * as vmApi from '../api/vms.js';
 import { createSSE } from '../api/sse.js';
 import { subscribeTopic } from '../api/events.js';
-import { withWorkloadAction, anyActionInFlight } from './workloadActions.js';
+import { withWorkloadAction, anyActionInFlight, pruneWorkloadActions } from './workloadActions.js';
 import { awaitJob } from './backgroundJobsStore.js';
 import { JOB_KIND } from '../api/jobProgress.js';
 
@@ -85,12 +85,15 @@ export const useVmStore = create((set, get) => {
     /** Per-VM action state (workloadActions.js); `error` is for list and select failures only. */
     actions: {},
     error: null,
+    /** The list has loaded once; `listError` is the list stream's last error (the list shown is the last good one). */
+    listLoaded: false,
+    listError: null,
 
     fetchVMs: async () => {
       try {
         const vms = await vmApi.listVMs();
         migrateSelectionIfRenamed(vms);
-        set({ vms });
+        set((prev) => ({ vms, listLoaded: true, listError: null, actions: pruneWorkloadActions(prev.actions, new Set(vms.map((v) => v.name))) }));
 
         const { selectedVM, vmConfig, configLoading, actions } = get();
         // Skip auto-deselect while a select or action is in flight — the VM may
@@ -105,7 +108,7 @@ export const useVmStore = create((set, get) => {
           if (merged) set({ vmConfig: merged });
         }
       } catch (err) {
-        set({ error: err.message });
+        set({ error: err.message, listError: err.detail || err.message });
       }
     },
 
@@ -114,6 +117,10 @@ export const useVmStore = create((set, get) => {
       listCloseFn = subscribeTopic(
         'vms',
         (data) => {
+          if (data && !Array.isArray(data) && data.error) {
+            set({ listError: data.detail || data.error });
+            return;
+          }
           if (!Array.isArray(data)) return;
           migrateSelectionIfRenamed(data);
           const state = get();
@@ -132,7 +139,12 @@ export const useVmStore = create((set, get) => {
             get().deselectVM();
           }
           set((prev) => {
-            const next = { vms: data };
+            const next = {
+              vms: data,
+              listLoaded: true,
+              listError: null,
+              actions: pruneWorkloadActions(prev.actions, new Set(data.map((x) => x.name))),
+            };
             if (prev.selectedVM && prev.vmConfig) {
               const vm = data.find((v) => v.name === prev.selectedVM);
               const merged = vm && mergeListFields(prev.vmConfig, vm);

@@ -4,6 +4,7 @@ import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { updateOidcSettings } from '../../api/settings.js';
+import SettingsGate from '../shared/SettingsGate.jsx';
 
 const HELP =
   'Single sign-on via OpenID Connect (e.g. Pocket ID). Wisp stays single-user — a ' +
@@ -113,6 +114,7 @@ export default function OidcSettings() {
       isDirty={dirty}
       error={error}
     >
+      <SettingsGate>
       <div className="max-w-xl space-y-4">
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -206,6 +208,7 @@ export default function OidcSettings() {
           </p>
         </div>
       </div>
+      </SettingsGate>
     </SectionCard>
   );
 }

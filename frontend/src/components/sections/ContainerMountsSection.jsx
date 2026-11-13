@@ -44,6 +44,7 @@ import { useSettingsStore } from '../../store/settingsStore.js';
 import { getMountStatus } from '../../api/settings.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
+import LoadHint from '../shared/LoadHint.jsx';
 
 const addBtn =
   'inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150';
@@ -118,6 +119,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
   /* Secret file mounts never open the text editor — only this write-only dialog. */
   const [secretEditor, setSecretEditor] = useState({ open: false, mount: null });
   const [storageStatus, setStorageStatus] = useState([]);
+  const [usageFailed, setUsageFailed] = useState(false);
+  const [statusFailed, setStatusFailed] = useState(false);
   const [mountUsage, setMountUsage] = useState(null);
   /* Phones: row actions live in a strip that expands under the row text on tap. */
   const [expandedName, setExpandedName] = useState(null);
@@ -141,8 +144,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     setMountUsage(null);
     if (!config.name || (config.mounts || []).length === 0) return undefined;
     getContainerMountUsage(config.name)
-      .then((res) => { if (!cancelled) setMountUsage(res.mounts || []); })
-      .catch(() => { if (!cancelled) setMountUsage([]); });
+      .then((res) => { if (!cancelled) { setMountUsage(res.mounts || []); setUsageFailed(false); } })
+      .catch(() => { if (!cancelled) { setMountUsage([]); setUsageFailed(true); } });
     return () => { cancelled = true; };
   }, [config.name, mountsKey]);
 
@@ -156,8 +159,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
    * endpoint tells us which ones are currently mounted so we can warn on orphan references. */
   const refreshStorageStatus = useCallback(() => {
     getMountStatus()
-      .then((list) => setStorageStatus(Array.isArray(list) ? list : []))
-      .catch(() => setStorageStatus([]));
+      .then((list) => { setStorageStatus(Array.isArray(list) ? list : []); setStatusFailed(false); })
+      .catch(() => { setStorageStatus([]); setStatusFailed(true); });
   }, []);
 
   useEffect(() => {
@@ -308,6 +311,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
       headerAction={headerAdds}
     >
       <div className="space-y-3">
+        {usageFailed && <LoadHint what="the mount sizes" />}
+        {statusFailed && <LoadHint what="the storage mount status" />}
         <DataTableScroll>
           <DataTable>
             <thead>

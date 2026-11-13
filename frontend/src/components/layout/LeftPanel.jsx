@@ -314,6 +314,16 @@ export default function LeftPanel() {
   const startVMListSSE = useVmStore((s) => s.startVMListSSE);
   const stopVMListSSE = useVmStore((s) => s.stopVMListSSE);
   const containers = useContainerStore((s) => s.containers);
+  const vmsLoaded = useVmStore((s) => s.listLoaded);
+  const containersLoaded = useContainerStore((s) => s.listLoaded);
+  const vmListError = useVmStore((s) => s.listError);
+  const containerListError = useContainerStore((s) => s.listError);
+  const listsLoaded = vmsLoaded && containersLoaded;
+  const listError = vmListError || containerListError;
+  const retryLists = () => {
+    useVmStore.getState().fetchVMs();
+    useContainerStore.getState().fetchContainers();
+  };
   const startContainerListSSE = useContainerStore((s) => s.startContainerListSSE);
   const stopContainerListSSE = useContainerStore((s) => s.stopContainerListSSE);
   const listFilter = useUiStore((s) => s.listFilter);
@@ -564,7 +574,19 @@ export default function LeftPanel() {
       {/* overscroll-contain stops the drawer's scroll from chaining to the
           content behind it on iOS when the list hits its top/bottom edge. */}
       <div className="flex-1 overflow-y-auto overscroll-contain py-1">
-        {totalCount === 0 ? (
+        {listError && (
+          <div className="mx-3 my-2 flex items-center gap-2 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-2 py-1.5 text-xs text-status-stopped" role="alert">
+            <span className="min-w-0 flex-1 truncate" title={listError}>Couldn't load workloads: {listError}</span>
+            <button type="button" onClick={retryLists} className="shrink-0 rounded px-2 py-1 font-medium hover:underline">Retry</button>
+          </div>
+        )}
+        {!listsLoaded && totalCount === 0 ? (
+          listError ? null : (
+            <div className="space-y-2 px-3 py-2" aria-busy="true" aria-label="Loading workloads">
+              {[0, 1, 2].map((i) => <div key={i} className="h-8 animate-pulse rounded-md bg-surface" />)}
+            </div>
+          )
+        ) : totalCount === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Monitor size={32} className="text-text-muted mb-2" />
             <p className="text-sm text-text-muted">No workloads</p>

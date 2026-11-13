@@ -202,7 +202,7 @@ export default function OverviewPanel() {
         if (m && p) dests.push({ id: m.id, label: m.label || 'Network', path: p });
       }
       setBackupDestinations(dests);
-    }).catch(() => setBackupDestinations([{ id: 'local', label: 'Local', path: '/var/lib/wisp/backups' }]));
+    }).catch(() => setBackupDestinations([{ id: 'local', label: 'Local', path: '/var/lib/wisp/backups', fallback: true }]));
   };
 
   const handleSectionSave = async (changes) => {

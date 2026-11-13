@@ -4,6 +4,7 @@ import { Archive } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { updateSettings } from '../../api/settings.js';
+import SettingsGate from '../shared/SettingsGate.jsx';
 
 export default function HostBackup() {
   const settings = useSettingsStore((s) => s.settings);
@@ -61,6 +62,7 @@ export default function HostBackup() {
       isDirty={dirty}
       error={error}
     >
+      <SettingsGate>
       <div className="space-y-2">
         <div className="flex flex-wrap gap-x-6 gap-y-3 items-end">
           <div className="min-w-0 flex-1 basis-[min(100%,18rem)] max-w-2xl">
@@ -94,6 +96,7 @@ export default function HostBackup() {
           </div>
         </div>
       </div>
+      </SettingsGate>
     </SectionCard>
   );
 }

@@ -15,6 +15,7 @@ import {
 import {
   addContainerService, updateContainerService, removeContainerService,
 } from '../../api/containers.js';
+import LoadHint from '../shared/LoadHint.jsx';
 
 function serviceProto(type) {
   return typeof type === 'string' && type.endsWith('._udp') ? 'udp' : 'tcp';
@@ -97,6 +98,7 @@ export default function ContainerNetworkSection({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [requiresRestart, setRequiresRestart] = useState(false);
+  const [bridgesFailed, setBridgesFailed] = useState(false);
   const [bridges, setBridges] = useState([]);
 
   /** Service editor strip state: { port: number|null, hasExisting, portEditable, draft, saving, error } */
@@ -239,6 +241,7 @@ export default function ContainerNetworkSection({
     getHostBridges()
       .then((b) => {
         setBridges(b);
+        setBridgesFailed(false);
         if (isCreating && !config.network?.interface && b.length > 0) {
           const pick = b.find((name) => !isVlanLikeBridgeName(name)) ?? b[0];
           setInterfaceDraft(pick);
@@ -253,6 +256,7 @@ export default function ContainerNetworkSection({
       })
       .catch(() => {
         setBridges([]);
+        setBridgesFailed(true);
       });
   }, [isCreating, config.network?.interface, onFormChange]);
 
@@ -316,6 +320,7 @@ export default function ContainerNetworkSection({
       error={error}
       requiresRestart={requiresRestart}
     >
+      {bridgesFailed && <LoadHint what="the host bridges" className="mb-2" />}
       <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
         <Field label="Interface">
           {interfaceEditable ? (

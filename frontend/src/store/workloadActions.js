@@ -14,6 +14,20 @@ export function withWorkloadAction(actions, name, entry) {
   return next;
 }
 
+/**
+ * The map without the settled entries (an error, nothing in flight) of
+ * workloads no longer in `names` — deleted or renamed elsewhere.
+ */
+export function pruneWorkloadActions(actions, names) {
+  let next = null;
+  for (const [name, entry] of Object.entries(actions)) {
+    if (entry.action || names.has(name)) continue;
+    next ??= { ...actions };
+    delete next[name];
+  }
+  return next ?? actions;
+}
+
 /** Whether any workload has an action in flight. */
 export function anyActionInFlight(actions) {
   return Object.values(actions).some((a) => a.action);

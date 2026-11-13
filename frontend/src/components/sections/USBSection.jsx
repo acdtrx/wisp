@@ -22,11 +22,13 @@ const iconBtn =
 
 export default function USBSection({ vmConfig, busyReason }) {
   const hostDevices = useUsbStore((s) => s.devices);
+  const hostError = useUsbStore((s) => s.error);
   const connectUsb = useUsbStore((s) => s.connect);
   const disconnectUsb = useUsbStore((s) => s.disconnect);
 
   const [attachedDevices, setAttachedDevices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [attachedError, setAttachedError] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
   const [error, setError] = useState(null);
   const [attachModalOpen, setAttachModalOpen] = useState(false);
@@ -41,12 +43,15 @@ export default function USBSection({ vmConfig, busyReason }) {
 
   const fetchAttachedOnly = useCallback(async (signal) => {
     try {
-      const attached = vmName ? await getVMUSB(vmName).catch(() => []) : [];
+      const attached = vmName ? await getVMUSB(vmName) : [];
       if (signal?.aborted) return;
       setAttachedDevices(attached);
+      setAttachedError(null);
       setLoading(false);
-    } catch {
+    } catch (err) {
       if (signal?.aborted) return;
+      // A failure is not "nothing attached": keep what was shown and say so.
+      setAttachedError(err.detail || err.message || 'Failed to load attached devices');
       setLoading(false);
     }
   }, [vmName]);
@@ -154,9 +159,15 @@ export default function USBSection({ vmConfig, busyReason }) {
         actionLoadingKey={actionLoading}
       />
 
-      {showSpinner ? (
+      {attachedError && (
+        <p className="py-1 text-xs text-status-stopped" role="alert">Couldn't load the attached devices: {attachedError}</p>
+      )}
+      {hostError && (
+        <p className="py-1 text-xs text-status-stopped" role="alert">{hostError}</p>
+      )}
+      {showSpinner && !(hostError && hostLoading) ? (
         <p className="text-xs text-text-muted py-2">Loading USB devices…</p>
-      ) : hostList.length === 0 && attachedDevices.length === 0 ? (
+      ) : hostLoading ? null : hostList.length === 0 && attachedDevices.length === 0 ? (
         <div className="flex flex-col items-center py-6 text-center">
           <Usb size={24} className="text-text-muted mb-2" />
           <p className="text-xs text-text-muted">No USB devices detected on host</p>

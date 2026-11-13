@@ -54,6 +54,10 @@ export default function ContainerLogsSection({ containerName }) {
 
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(false);
+  const [runsError, setRunsError] = useState(null);
+  /** The selected run's log stream: 'connecting' until its first frame, 'ready', or 'error'. */
+  const [streamState, setStreamState] = useState('connecting');
+  const [streamError, setStreamError] = useState(null);
   const [selectedRunId, setSelectedRunId] = useState(null);
   /** True while the user is on the newest run — follow new runs automatically on next start. */
   const [followLatest, setFollowLatest] = useState(true);
@@ -71,13 +75,16 @@ export default function ContainerLogsSection({ containerName }) {
     const seq = ++runsSeqRef.current;
     setRunsLoading(true);
     let next;
+    let failure = null;
     try {
       ({ runs: next } = await listContainerRuns(containerName));
-    } catch {
-      next = []; // container gone or runs unreadable — show an empty run list
+    } catch (err) {
+      failure = err.detail || err.message || 'Failed to load runs';
     }
     if (seq !== runsSeqRef.current) return;
-    setRuns(next || []);
+    // A failed refetch keeps the runs already shown.
+    if (!failure) setRuns(next || []);
+    setRunsError(failure);
     setRunsLoading(false);
   }, [containerName]);
 
@@ -105,6 +112,8 @@ export default function ContainerLogsSection({ containerName }) {
   // Tail (and replay history for) the selected run.
   useEffect(() => {
     setEntries([]);
+    setStreamState('connecting');
+    setStreamError(null);
     if (closeSseRef.current) {
       closeSseRef.current();
       closeSseRef.current = null;
@@ -115,6 +124,13 @@ export default function ContainerLogsSection({ containerName }) {
     closeSseRef.current = createSSE(
       `/api/containers/${encodeURIComponent(containerName)}/logs${q}`,
       (data) => {
+        if (data && data.error) {
+          setStreamState('error');
+          setStreamError(data.detail || data.error);
+          return;
+        }
+        setStreamState('ready');
+        setStreamError(null);
         if (data.type === 'history' && Array.isArray(data.lines)) {
           setEntries(data.lines.map((text) => ({ id: randomId(), kind: 'line', text })));
         } else if (data.type === 'line' && data.line) {
@@ -125,7 +141,11 @@ export default function ContainerLogsSection({ containerName }) {
           });
         }
       },
-      () => { /* createSSE reconnects on failure */ },
+      (reason) => {
+        // createSSE reconnects on every failure but a 404 (the run is gone).
+        setStreamState('error');
+        setStreamError(reason === 'not_found' ? 'This run no longer exists' : 'The log stream was interrupted — reconnecting…');
+      },
     );
 
     return () => {
@@ -214,7 +234,9 @@ export default function ContainerLogsSection({ containerName }) {
             title="Select a run"
             className="max-w-88 truncate rounded-md border border-surface-border bg-surface-card px-2 py-1.5 text-xs text-text-primary outline-hidden focus:border-accent transition-colors duration-150 disabled:opacity-50"
           >
-            {runs.length === 0 && <option value="">No runs yet</option>}
+            {runs.length === 0 && (
+              <option value="">{runsError ? 'Runs unavailable' : runsLoading ? 'Loading runs…' : 'No runs yet'}</option>
+            )}
             {runs.map((r) => (
               <option key={r.runId} value={r.runId}>{runLabel(r)}</option>
             ))}
@@ -293,9 +315,16 @@ export default function ContainerLogsSection({ containerName }) {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto bg-surface-sidebar p-4 font-mono text-xs leading-5 text-text-primary"
       >
+        {streamState === 'error' && (
+          <div className="mb-2 text-status-stopped" role="alert">{streamError}</div>
+        )}
         {filtered.length === 0 ? (
           <span className="text-text-muted">
-            {selectedRunId ? 'No logs for this run.' : 'No logs available.'}
+            {!selectedRunId
+              ? (runsError ? `Couldn't load the runs: ${runsError}` : runsLoading ? 'Loading runs…' : 'No logs available.')
+              : streamState === 'connecting' ? 'Loading logs…'
+                : streamState === 'error' ? null
+                  : 'No logs for this run.'}
           </span>
         ) : (
           filtered.map((e) => (

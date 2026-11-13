@@ -8,6 +8,8 @@ export const useUsbStore = create((set) => {
     /** @type { Array<{ bus: string, device: string, vendorId: string, productId: string, name: string }> | null } */
     devices: null,
     connected: false,
+    /** The stream's last failure (an error frame, or a connection that dropped); cleared by the next list. */
+    error: null,
 
     connect: () => {
       if (closeFn) return;
@@ -16,10 +18,12 @@ export const useUsbStore = create((set) => {
         '/api/host/usb/stream',
         (data) => {
           if (Array.isArray(data)) {
-            set({ devices: data, connected: true });
+            set({ devices: data, connected: true, error: null });
+          } else if (data && data.error) {
+            set({ error: data.detail || data.error });
           }
         },
-        () => set({ connected: false }),
+        () => set({ connected: false, error: 'The USB device stream is not connected — retrying…' }),
       );
     },
 
@@ -28,7 +32,7 @@ export const useUsbStore = create((set) => {
         closeFn();
         closeFn = null;
       }
-      set({ devices: null, connected: false });
+      set({ devices: null, connected: false, error: null });
     },
   };
 });

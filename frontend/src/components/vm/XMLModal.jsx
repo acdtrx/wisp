@@ -63,15 +63,17 @@ function highlightXml(xml) {
 export default function XMLModal({ open, vmName, onClose }) {
   const [xml, setXml] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!open || !vmName) return;
     setLoading(true);
     setCopied(false);
+    setLoadError(null);
     getVMXML(vmName)
       .then((data) => setXml(data.xml || ''))
-      .catch((err) => setXml(`Failed to load XML: ${err?.message || 'unknown error'}`))
+      .catch((err) => { setXml(''); setLoadError(err?.detail || err?.message || 'unknown error'); })
       .finally(() => setLoading(false));
   }, [open, vmName]);
 
@@ -93,6 +95,7 @@ export default function XMLModal({ open, vmName, onClose }) {
       headerExtra={
         <button
           onClick={handleCopy}
+          disabled={!xml}
           className="flex items-center gap-1.5 rounded-md border border-surface-border px-2.5 py-1 text-xs font-medium text-text-secondary hover:bg-surface transition-colors duration-150"
         >
           {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
@@ -104,6 +107,8 @@ export default function XMLModal({ open, vmName, onClose }) {
           <div className="flex items-center justify-center py-12">
             <Loader2 size={20} className="animate-spin text-text-muted" />
           </div>
+        ) : loadError ? (
+          <p className="py-12 text-center text-xs text-status-stopped" role="alert">Couldn't load the domain XML: {loadError}</p>
         ) : (
           <pre className="text-xs leading-relaxed font-mono text-text-primary whitespace-pre overflow-x-auto">
             {highlightXml(xml)}

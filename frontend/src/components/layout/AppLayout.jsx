@@ -45,7 +45,8 @@ export default function AppLayout() {
         }
       })
       .catch(() => {
-        /* non-fatal: tray stays empty until next action */
+        /* non-fatal: the tray says it may be missing jobs */
+        if (!cancelled) useBackgroundJobsStore.setState({ hydrateFailed: true });
       });
     return () => {
       cancelled = true;

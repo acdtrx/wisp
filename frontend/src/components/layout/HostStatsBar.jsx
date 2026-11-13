@@ -5,7 +5,7 @@ import StatPill from '../shared/StatPill.jsx';
 import { formatDecimal } from '../../utils/formatters.js';
 
 export default function HostStatsBar({ embedded = false }) {
-  const { stats, connected, connect, disconnect } = useStatsStore();
+  const { stats, connected, lastError, connect, disconnect } = useStatsStore();
 
   useEffect(() => {
     connect();
@@ -15,7 +15,7 @@ export default function HostStatsBar({ embedded = false }) {
   if (!stats) {
     const loader = (
       <span className="text-xs text-text-muted whitespace-nowrap">
-        {connected ? 'Loading stats…' : 'Connecting…'}
+        {lastError ? 'Stats unavailable' : connected ? 'Loading stats…' : 'Connecting…'}
       </span>
     );
     if (embedded) {

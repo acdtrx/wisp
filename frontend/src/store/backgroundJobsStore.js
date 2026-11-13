@@ -45,6 +45,8 @@ function applyEvent(row, ev) {
 }
 
 export const useBackgroundJobsStore = create((set, get) => ({
+  /** Loading the server's running jobs (after a reload) failed: the tray may miss some. */
+  hydrateFailed: false,
   /** @type {Record<string, BackgroundJobRow>} */
   jobs: {},
   /** @type {Record<string, () => void>} */

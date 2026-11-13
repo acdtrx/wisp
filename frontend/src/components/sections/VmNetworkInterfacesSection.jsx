@@ -19,6 +19,7 @@ import {
 } from '../shared/DataTableChrome.jsx';
 import NicEditorModal from './NicEditorModal.jsx';
 import NicModelPills from './NicModelPills.jsx';
+import LoadHint from '../shared/LoadHint.jsx';
 
 /** Compact icon button for the create-flow draft rows (desktop-only layout). */
 const draftIconBtn =
@@ -59,14 +60,15 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
   const [editor, setEditor] = useState({ open: false, idx: null, nic: null });
   const [removingIdx, setRemovingIdx] = useState(null);
   const [error, setError] = useState(null);
+  const [bridgesFailed, setBridgesFailed] = useState(false);
 
   useEffect(() => {
     setNics(initNicsFromConfig(vmConfig.nics));
   }, [nicsSignature]);
 
   useEffect(() => {
-    /* Non-fatal: NIC section works with an empty bridge list if host bridges fail to load */
-    getHostBridges().then(setBridges).catch(() => {});
+    /* Non-fatal: the NIC section works with an empty bridge list, and says so */
+    getHostBridges().then((b) => { setBridges(b); setBridgesFailed(false); }).catch(() => setBridgesFailed(true));
   }, []);
 
   const syncNicsToParent = (nextNics) => {
@@ -170,6 +172,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
       error={error}
       headerAction={headerAdd}
     >
+      {bridgesFailed && <LoadHint what="the host bridges" className="mb-2" />}
       <DataTableScroll>
         <DataTable>
           <thead>

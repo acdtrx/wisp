@@ -79,17 +79,17 @@ export default function CreateVMPanel() {
   useEffect(() => {
     getHostBridges()
       .then((list) => {
-        const b = list?.length ? list : ['virbr0'];
+        const b = Array.isArray(list) ? list : [];
         setBridges(b);
+        if (!b.length) return;
         setForm((prev) => {
           if (!prev.nics?.length) return prev;
-          const nics = prev.nics.map((nic, i) =>
-            i === 0 && (!nic.source || nic.source === 'virbr0') ? { ...nic, source: b[0] } : nic
-          );
+          const nics = prev.nics.map((nic, i) => (i === 0 && !nic.source ? { ...nic, source: b[0] } : nic));
           return { ...prev, nics };
         });
       })
-      .catch(() => setBridges(['virbr0']));
+      // No invented bridge: an empty source lets the server use its default bridge.
+      .catch(() => setBridges([]));
   }, []);
 
   const vmConfig = useCallback(() => ({
@@ -186,7 +186,7 @@ export default function CreateVMPanel() {
         localDns: form.localDns,
         nics: form.nics.map((n) => ({
           type: n.type || 'bridge',
-          source: n.source || bridges[0] || 'virbr0',
+          source: n.source || bridges[0] || undefined,
           model: n.model || 'virtio',
           mac: n.mac || undefined,
         })),

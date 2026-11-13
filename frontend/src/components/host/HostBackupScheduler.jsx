@@ -5,6 +5,7 @@ import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { updateSettings } from '../../api/settings.js';
+import SettingsGate from '../shared/SettingsGate.jsx';
 
 const DEFAULT_SCHEDULE = {
   enabled: false,
@@ -105,6 +106,7 @@ export default function HostBackupScheduler() {
       isDirty={dirty}
       error={error}
     >
+      <SettingsGate>
       <div className="flex flex-wrap gap-x-6 gap-y-3 items-end">
         <div className="shrink-0">
           <label className="block text-[11px] font-medium uppercase tracking-wider text-text-muted mb-1">
@@ -173,6 +175,7 @@ export default function HostBackupScheduler() {
           />
         </div>
       </div>
+      </SettingsGate>
     </SectionCard>
   );
 }

@@ -30,6 +30,7 @@ function formatCreated(iso) {
 export default function ApiTokensSettings() {
   const [tokens, setTokens] = useState(null);
   const [error, setError] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [newScope, setNewScope] = useState('read');
@@ -41,10 +42,11 @@ export default function ApiTokensSettings() {
   const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
+    setLoadError(null);
     try {
       setTokens(await listApiTokens());
     } catch (err) {
-      setError(err.detail || err.message || 'Failed to load API tokens');
+      setLoadError(err.detail || err.message || 'Failed to load API tokens');
     }
   }, []);
 
@@ -166,7 +168,14 @@ export default function ApiTokensSettings() {
         )}
 
         {tokens == null ? (
-          <p className="text-xs text-text-muted">Loading…</p>
+          loadError ? (
+            <p className="text-xs text-status-stopped" role="alert">
+              Couldn't load the API tokens: {loadError}{' '}
+              <button type="button" onClick={load} className="font-medium underline">Retry</button>
+            </p>
+          ) : (
+            <p className="text-xs text-text-muted">Loading…</p>
+          )
         ) : (
           <DataTableScroll>
             <DataTable>

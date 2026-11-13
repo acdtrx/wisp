@@ -671,6 +671,9 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
           )}
           {loading ? (
           <p className="py-8 text-center text-sm text-text-muted">Loading…</p>
+        ) : error && files.length === 0 && containerImages.length === 0 ? (
+          // The load failed (its error shows above): not an empty library.
+          null
         ) : isOciView ? (
           containerImages.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">

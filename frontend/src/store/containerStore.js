@@ -3,7 +3,7 @@ import * as containerApi from '../api/containers.js';
 import { createSSE } from '../api/sse.js';
 import { subscribeTopic } from '../api/events.js';
 import { subscribeJobProgress, JOB_KIND } from '../api/jobProgress.js';
-import { withWorkloadAction, anyActionInFlight } from './workloadActions.js';
+import { withWorkloadAction, anyActionInFlight, pruneWorkloadActions } from './workloadActions.js';
 import { awaitJob } from './backgroundJobsStore.js';
 
 /** Same scheduled restart (or both none)? Compared by value — list pushes carry fresh objects. */
@@ -80,6 +80,9 @@ export const useContainerStore = create((set, get) => {
     /** Per-container action state (workloadActions.js); `error` is for list and select failures only. */
     actions: {},
     error: null,
+    /** The list has loaded once; `listError` is the list stream's last error (the list shown is the last good one). */
+    listLoaded: false,
+    listError: null,
 
     imageUpdateCheck: {
       running: false,
@@ -96,7 +99,7 @@ export const useContainerStore = create((set, get) => {
     fetchContainers: async () => {
       try {
         const containers = await containerApi.listContainers();
-        set({ containers });
+        set((prev) => ({ containers, listLoaded: true, listError: null, actions: pruneWorkloadActions(prev.actions, new Set(containers.map((c) => c.name))) }));
 
         const { selectedContainer, containerConfig, loading, actions } = get();
         // Skip auto-deselect while a select or action is in flight — the
@@ -117,7 +120,7 @@ export const useContainerStore = create((set, get) => {
           if (synced) set({ containerConfig: synced });
         }
       } catch (err) {
-        set({ error: err.message });
+        set({ error: err.message, listError: err.detail || err.message });
       }
     },
 
@@ -127,6 +130,10 @@ export const useContainerStore = create((set, get) => {
       listCloseFn = subscribeTopic(
         'containers',
         (data) => {
+          if (data && !Array.isArray(data) && data.error) {
+            set({ listError: data.detail || data.error });
+            return;
+          }
           if (!Array.isArray(data)) return;
           const state = get();
           // Only deselect when the stream lists other workloads but not this one.
@@ -141,7 +148,12 @@ export const useContainerStore = create((set, get) => {
             get().deselectContainer();
           }
           set((prev) => {
-            const next = { containers: data };
+            const next = {
+              containers: data,
+              listLoaded: true,
+              listError: null,
+              actions: pruneWorkloadActions(prev.actions, new Set(data.map((x) => x.name))),
+            };
             if (prev.selectedContainer && prev.containerConfig) {
               const synced = configSyncedFromListItem(
                 prev.containerConfig,
@@ -189,7 +201,9 @@ export const useContainerStore = create((set, get) => {
         set({ containerConfig: config, loading: false });
       } catch (err) {
         if (seq !== selectionSeq) return;
-        set({ error: err.message, loading: false });
+        // The seed lacks env, mounts and network: rendering it would show empty
+        // sections as if that were the config. The panel shows the error instead.
+        set({ containerConfig: null, error: err.message, loading: false });
       }
     },
 
