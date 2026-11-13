@@ -3,11 +3,13 @@
 ## 2026-11-13
 
 ### New Features
-- **Long actions keep going when you leave the page** — starting, force-stopping, deleting and restoring a VM, checking for and installing OS updates, adding and removing a network bridge, unmounting and removing storage, and updating Wisp run in the background: the jobs tray shows their progress, and closing the page no longer stops them.
+- **Long actions keep going when you leave the page** — starting, force-stopping, deleting and restoring a VM; starting, stopping, restarting, deleting and restoring a container; removing a container mount or its data, deleting an image and unpacking an uploaded zip; checking for and installing OS updates, adding and removing a network bridge, unmounting and removing storage, and updating Wisp run in the background: the jobs tray shows their progress, and closing the page no longer stops them. A request that can't go ahead (a name taken, a VM already running, a bridge in use) is still refused at once.
+- **Agents follow their long actions** — the MCP tools that deploy, update, start, stop or restart a container, or check for image updates, return a job id, and the new `get_job` tool reads the job until it finishes.
 
 ### Bug Fixes
 - **OS updates are no longer cut off after 10 minutes** — an update runs as long as the package manager keeps printing, and is stopped only after 15 minutes of silence.
-- **Stalled work fails instead of hanging** — a VM backup or restore that copies nothing for 10 minutes, a library upload that sends nothing for a minute, and a Wisp update whose download, unpack or package install stalls are stopped, saying what stalled.
+- **Stalled work fails instead of hanging** — a VM backup or restore that copies nothing for 10 minutes, an image pull or zip unpack that makes no progress for 5 minutes, an upload that sends nothing for a minute, and a Wisp update whose download, unpack or package install stalls are stopped, saying what stalled. A stuck container backup or restore is now stopped completely.
+- **Large mounts no longer hold up the usage view** — sizing a container's mounts stops after 20 seconds and shows what it has measured as partial.
 
 ## 2026-11-12
 

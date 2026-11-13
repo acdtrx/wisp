@@ -247,7 +247,9 @@ connect 10 s, headers 300 s, body 300 s *between chunks* — "implicit" below.
   after a stall — convert (output or destination blocks, 10 min), VM backup `cp`
   (destination blocks, 10 min; a stall is not retried through `copyFile`), container
   backup tar (bytes, 5 min), restore tar (GNU checkpoint dots, 10 min), xz (output, 10
-  min); the unzip extract a fixed 30 min.
+  min); the unzip extract a fixed 30 min. Reworked after the 2b review: the unzip extract
+  is a job stopped after 5 min without output or bytes read, and a stalled tar is killed
+  with its whole process group.
 - **TMO-3** — the execFile timeout signals `sudo`, not the worker: children of the bash
   helpers (`apt-get`/`pacman` in `wisp-os-update`, `mount`/`umount` in `wisp-mount`) inherit
   the stdout pipe and keep it open, so the promise can stay pending past its timeout (apt keeps
@@ -288,7 +290,8 @@ connect 10 s, headers 300 s, body 300 s *between chunks* — "implicit" below.
   **decision.** *Recommendation:* pulls get a generous cap (30 min) or progress-based idle
   detection; `tasks.wait` stays open (bounded by the session); the events stream uses gRPC
   channel keepalive (`grpc.keepalive_time_ms`) instead of an idle timeout.
-  **Fixed:** the image pull 30 min; snapshot removal 2 min; `tasks.wait` no deadline;
+  **Fixed:** the image pull stopped after 5 min without progress (ingest offsets, active
+  snapshot usage; reworked after the 2b review, first a fixed 30 min); snapshot removal 2 min; `tasks.wait` no deadline;
   channel keepalive every 6 min with a 20 s timeout (containerd's server refuses pings
   more often than 5 min), no pings without an active call.
 - **TMO-10** — `avahi.js:807,862,997,1017` unbounded: a hung daemon leaks

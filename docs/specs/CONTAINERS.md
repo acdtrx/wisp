@@ -591,7 +591,7 @@ The HTTP server listens **after** these steps, so hosts with mounts configured m
 | `CONTAINER_MOUNT_TYPE_MISMATCH` | 422 | Operation does not match mount `type` |
 | `CONTAINER_ZIP_INVALID` | 422 | Zip archive missing or corrupt |
 | `CONTAINER_ZIP_UNSAFE` | 422 | Zip path escapes target directory |
-| `CONTAINER_ZIP_EXTRACT_TIMEOUT` | 500 | Extracting an uploaded zip passed its bound ([Timeouts](#timeouts)) |
+| `CONTAINER_ZIP_EXTRACT_TIMEOUT` | job error | The zip extract job made no progress for its bound ([Timeouts](#timeouts)); 500 where a route answers it directly |
 | `CONTAINER_MOUNT_SOURCE_MISSING` | 422 | Backing path missing when reading mount file content in the editor, or Storage-sourced mount references a deleted `settings.mounts` entry |
 | `CONTAINER_MOUNT_SOURCE_NOT_MOUNTED` | 503 | Storage-sourced mount's referenced share/drive is not currently mounted on the host |
 | `CONTAINER_MOUNT_SOURCE_UNSAFE` | 422 | Storage-sourced path resolves outside its storage root (symlink escape) |
@@ -644,5 +644,7 @@ The HTTP server listens **after** these steps, so hosts with mounts configured m
 ## Timeouts
 
 (settled 2026-11-12, CODING-RULES §6.) 
-- containerd gRPC: every unary call **30 s** unless named here; content reads **60 s**; an image pull **30 min**; snapshot removal and image delete (which waits for garbage collection) **2 min** (settled 2026-11-13); `tasks.wait` none — it lasts as long as the process. Channel keepalive pings every **6 min** with a **20 s** timeout while a call is active (containerd refuses pings more often than every 5 min), so a dead containerd drops the events stream, which resubscribes.
-- Zip mount uploads: the listing **30 s**, the extract **30 min** (a timed-out extract is a 500, `CONTAINER_ZIP_EXTRACT_TIMEOUT`, settled 2026-11-13). FIFO creation for an exec: **5 s**.
+- containerd gRPC: every unary call **30 s** unless named here; content reads **60 s**; an image pull has no total bound and is stopped after **5 min** without progress — neither the content store's ingest offsets nor the active snapshots' usage changing (settled 2026-11-13); snapshot removal and image delete (which waits for garbage collection) **2 min** (settled 2026-11-13); `tasks.wait` none — it lasts as long as the process. Channel keepalive pings every **6 min** with a **20 s** timeout while a call is active (containerd refuses pings more often than every 5 min), so a dead containerd drops the events stream, which resubscribes.
+- Zip mount uploads: the listing **30 s**; the extract, a job, has no total bound and is stopped after **5 min** with neither an output line nor bytes read — the job fails with `CONTAINER_ZIP_EXTRACT_TIMEOUT` (settled 2026-11-13). FIFO creation for an exec: **5 s**.
+- Mount uploads and mount content writes: dropped after **60 s** without body bytes. The mount-usage walk: **20 s**, then it answers what it has sized, `partial: true` (settled 2026-11-13).
+- Start, stop, restart, delete, mount and mount-data delete, image delete, restore as new and the zip extract run as server jobs (settled 2026-11-13); their checks (not found, busy, already running / not running, in use, validation) answer on the request.

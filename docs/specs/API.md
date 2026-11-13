@@ -112,7 +112,7 @@ In-memory job registry (server process only; no persistence across restart). Use
   "jobs": [
     {
       "jobId": "string",
-      "kind": "vm-create | container-create | container-image-update-check | backup | container-backup | container-restore | library-download | vm-start | vm-force-stop | vm-delete | vm-restore | os-update-check | os-upgrade | network-bridge-create | network-bridge-delete | mount-unmount | mount-delete | self-update",
+      "kind": "vm-create | container-create | container-image-update-check | backup | container-backup | container-restore | library-download | vm-start | vm-force-stop | vm-delete | vm-restore | os-update-check | os-upgrade | network-bridge-create | network-bridge-delete | mount-unmount | mount-delete | self-update | container-start | container-stop | container-restart | container-delete | container-mount-delete | container-mount-data-delete | container-image-delete | container-restore-new | container-zip-extract | container-deploy | container-image-update | container-image-check",
       "title": "string",
       "done": false,
       "createdAt": 1730000000000
@@ -133,7 +133,7 @@ In-memory job registry (server process only; no persistence across restart). Use
 
 ### Job routes
 
-(settled 2026-11-13.) A command that can outlast a short request (45 s, above) runs as a server job (FRONTEND-RULES, Data: the client is an observer): its route checks what it can at once — a bad request, a missing resource, a conflict answer with their usual status — then starts the job and answers **202** `{ jobId, title }`. The job runs to completion whether or not a client follows it. Its progress, and its result as the `done` event's payload, arrive on `GET /api/jobs/:jobId/progress`; a failure is the `error` event, carrying the code the synchronous route would have answered with. The routes: VM start, force-stop and delete; VM restore as new; the OS update check, package refresh and upgrade; network-bridge create and delete; mount unmount and delete; the Wisp update install. Each lists its `done` payload below.
+(settled 2026-11-13.) A command that can outlast a short request (45 s, above) runs as a server job (FRONTEND-RULES, Data: the client is an observer): its route checks what it can at once — a bad request, a missing resource, a conflict answer with their usual status — then starts the job and answers **202** `{ jobId, title }`. The job runs to completion whether or not a client follows it. Its progress, and its result as the `done` event's payload, arrive on `GET /api/jobs/:jobId/progress`; a failure is the `error` event, carrying the code the synchronous route would have answered with. The routes: VM start, force-stop and delete; VM restore as new; the OS update check, package refresh and upgrade; network-bridge create and delete; mount unmount and delete; the Wisp update install; container start, stop, restart and delete; container mount delete and mount-data delete; image delete; container restore as new; the zip extract after its upload. Each lists its `done` payload below. The MCP tools that start jobs return the same `{ jobId, title }` ([MCP.md](MCP.md)).
 
 ### GET /api/jobs/:jobId/progress · `read`
 
@@ -999,11 +999,11 @@ List all container backups across currently-usable destinations. Container backu
 Restore a container backup under a new name. The new name must be free both on disk and in containerd. Image is re-pulled if missing locally; MAC address is regenerated; section assignment is **not** carried over (storage assignments live in `wisp-config.json`, not in the backup).
 
 - **Body:** `{ destinationId: string, name: string, timestamp: string, newName: string }`
-- **200:** `{ name: string, sourceName: string, image: string | null }` — `sourceName` is the original container name from the manifest, useful when the user picked a backup whose folder name no longer matches.
+- **202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name: string, sourceName: string, image: string | null }` — `sourceName` is the original container name from the manifest, useful when the user picked a backup whose folder name no longer matches. The job holds the new name's operation lock.
 - **404:** backup not found
 - **409:** `CONTAINER_EXISTS` if the new name is already in use; `CONTAINER_BUSY` while another operation holds the new name's [operation lock](CONTAINERS.md#per-container-operation-lock)
-- **422:** `INVALID_CONTAINER_NAME`, `BACKUP_INVALID` (unknown destination or invalid timestamp), or archive missing/malformed
-- **500:** `BACKUP_RESTORE_FAILED` if extraction or containerd record creation fails
+- **422:** `INVALID_CONTAINER_NAME`, `BACKUP_INVALID` (unknown destination, invalid timestamp, or a missing/malformed manifest)
+- **Job errors:** `BACKUP_RESTORE_FAILED` if extraction or containerd record creation fails; `BACKUP_INVALID` for an invalid `container.json` inside the archive
 
 ### POST /api/container-backups/restore-in-place · `admin`
 
@@ -1529,7 +1529,7 @@ Optional `app` is an app registry ID (e.g. `"caddy-reverse-proxy"`) — creates 
 
 On create, the server writes defaults in `container.json` (empty `mounts`, bridge `network` with a generated MAC and the default container parent bridge, `localDns: true`, etc.). Use **PATCH** to change command, resources, env, mounts, and network before starting.
 
-**200:** `{ jobId: "uuid", title: string }` — `title` is e.g. `Create <name>`
+**200:** `{ jobId: "uuid", title: string }` — `title` is e.g. `Create <name>` | **409:** `CONTAINER_EXISTS` — the name is taken in containerd or on disk | **422:** `INVALID_CONTAINER_NAME`
 
 ### GET /api/containers/create-progress/:jobId · `read`
 
@@ -1551,7 +1551,7 @@ List OCI images in the containerd `wisp` namespace (same store used when creatin
 
 Remove an image from containerd. Query parameter **`ref`** (required): the image's name exactly as `GET /api/containers/images` lists it (e.g. `docker.io/library/nginx:latest`, or a local-only `myapp:v1`). It is not normalized — a short ref only deletes an image listed under that literal name.
 
-**200:** `{ ok: true }`
+**202:** `{ jobId, title }` — a [job](#job-routes) (the delete waits for containerd's garbage collection, up to 2 min); `done`: `{ ref }`
 
 **404:** `CONTAINER_IMAGE_NOT_FOUND`
 
@@ -1607,7 +1607,7 @@ Host-side disk usage of each bind mount. On-demand snapshot (not a live feed): e
 
 - `source`: `local` | `storage` | `tmpfs` | `missing` (`missing` = the mount's `sourceId` no longer resolves to a configured storage mount).
 - `hostPath` / `sizeBytes`: `null` for `tmpfs` (no host backing) and `missing`.
-- `partial`: `true` when some entries were unreadable or vanished mid-walk — `sizeBytes` is an undercount.
+- `partial`: `true` when some entries were unreadable or vanished mid-walk, or the walk hit its **20 s** budget (settled 2026-11-13) — `sizeBytes` is an undercount.
 
 **404:** `{ error, detail }` if container not found.
 
@@ -1648,25 +1648,25 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 Delete a container. Query param: `deleteFiles` (default `true`). With `deleteFiles=false` the container directory keeps only `files/` (mount data) — `container.json`, run logs and the rest are removed, so the container disappears from the list. Creating a container with the same name then fails with **409** `CONTAINER_EXISTS` until that directory is moved or removed.
 
-**200:** `{ ok: true }`
+**202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_BUSY`
 
 ### POST /api/containers/:name/start · `admin`
 
 Start a stopped container.
 
-**200:** `{ ok: true }` | **409:** already running
+**202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_ALREADY_RUNNING`, `CONTAINER_BUSY`
 
 ### POST /api/containers/:name/stop · `admin`
 
 Stop a running container (SIGTERM + grace period). On a stopped container with a restart-policy restart scheduled, cancels that restart.
 
-**200:** `{ ok: true, restartCancelled: boolean }` — `restartCancelled: true` when a scheduled restart was cancelled | **409:** not running and nothing scheduled
+**202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name, restartCancelled: boolean }` — `restartCancelled: true` when a scheduled restart was cancelled | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_NOT_RUNNING` (not running and nothing scheduled), `CONTAINER_BUSY`
 
 ### POST /api/containers/:name/restart · `admin`
 
 Restart a container (stop + start).
 
-**200:** `{ ok: true }`
+**202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_BUSY`
 
 ### POST /api/containers/:name/kill · `admin`
 
@@ -1721,7 +1721,7 @@ Update one mount by its current storage **`name`** (URL segment). **Body:** opti
 
 Remove one mount and delete its `files/<mountName>` backing store (tmpfs has no backing store; its row is removed config-only).
 
-**200:** `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
+**202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **409:** `CONTAINER_BUSY` | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
 
 ### Mount backing store (`files/<mountName>`)
 
@@ -1729,7 +1729,7 @@ Multipart **file** upload: a single file part (field name typically **`file`**).
 
 The file part is streamed to a staging file inside the container directory as it arrives, and handed to the mount only once the whole body has been read — so every rejection below leaves the mount untouched. Field parts are ignored, before or after the file.
 
-**400:** `BAD_MULTIPART_TOO_MANY_FILES` if more than one file part (extra parts are read and discarded first) | plain `{ error, detail }` if no file part. **404:** container not found. **422:** `UPLOAD_TOO_LARGE` (`File too large`) past the multipart `fileSize` limit (50 GiB).
+**400:** `BAD_MULTIPART_TOO_MANY_FILES` if more than one file part (extra parts are read and discarded first) | plain `{ error, detail }` if no file part. **404:** container not found. **422:** `UPLOAD_TOO_LARGE` (`File too large`) past the multipart `fileSize` limit (50 GiB). An upload whose body sends nothing for **60 s** is dropped (settled 2026-11-13; also the PUT content body).
 
 (settled 2026-10-16: the file part is consumed while iterating, never held across later parts. busboy finishes a body only after every file stream has been read to its end, and `@fastify/multipart` ≥ 10.1 ends the parts iterator only when busboy finishes — holding the part to check for a second file hung every upload; on 10.0 it hung only once the body outgrew the stream buffers (observed between 70 and 200 KB). Staging rather than streaming straight into the mount keeps the one-file and size rejections from half-applying.)
 
@@ -1741,9 +1741,9 @@ Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an exis
 
 ### POST /api/containers/:name/mounts/:mountName/zip · `admin`
 
-Multipart: one file part. Mount must have **`type: "directory"`**. Clears `files/<mountName>/` and extracts the zip using the system **`unzip`** binary (entry paths validated with **`unzip -Z1`** before extraction for zip-slip safety).
+Multipart: one file part. Mount must have **`type: "directory"`** (Local, not storage-sourced). Once the upload is received and its entry paths pass the zip-slip check (**`unzip -Z1`**), the extract is a [job](#job-routes): it clears `files/<mountName>/` and extracts the zip with the system **`unzip`** binary, holding the container's operation lock.
 
-**200:** `{ ok: true }` | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged) | **500:** `CONTAINER_ZIP_EXTRACT_TIMEOUT` (the extract passed its bound)
+**202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name, mount }` | **409:** `CONTAINER_BUSY` | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged) | **Job errors:** `CONTAINER_ZIP_EXTRACT_TIMEOUT` (the extract made no progress for its bound), `CONTAINER_ZIP_INVALID` (unzip failed)
 
 ### GET /api/containers/:name/mounts/:mountName/content · `admin`
 
@@ -1773,7 +1773,7 @@ Create an empty file (0 bytes) or empty directory according to the mount **`type
 
 Remove the backing file or directory tree for that mount. The mount row remains in `container.json` until **DELETE** `/mounts/:mountName` or **PATCH** replaces **`mounts`**.
 
-**200:** `{ ok: true }` | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
+**202:** `{ jobId, title }` — a [job](#job-routes); `done`: `{ name, mount }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** `CONTAINER_MOUNT_TYPE_MISMATCH` (tmpfs), `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
 
 ### POST /api/containers/:name/services · `admin`
 
