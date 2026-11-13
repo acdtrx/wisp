@@ -6,10 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAppError } from '../../routeErrors.js';
 import { execHelper } from './helperExec.js';
+import { isMountPoint } from '../mountTable.js';
 
 /** The helper's own unmount bound (60 s + 5 s grace) ends inside this — long enough to flush after a large backup. */
 const UNMOUNT_TIMEOUT_MS = 75_000;
-import { isMountPoint } from '../mountTable.js';
 
 const SCRIPT_PATH = '/usr/local/bin/wisp-mount';
 

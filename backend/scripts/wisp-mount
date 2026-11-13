@@ -252,7 +252,9 @@ read_disk_config() {
   done < "$1"
 }
 
+# do_smb_mount CONFIG [SECS]: SECS bounds the mount (default MOUNT_TIMEOUT).
 do_smb_mount() {
+  local secs="${2:-$MOUNT_TIMEOUT}"
   read_smb_config "$1"
   if [[ -z "${mountPath:-}" || -z "${share:-}" ]]; then
     echo "Config must set mountPath and share" >&2
@@ -273,11 +275,11 @@ do_smb_mount() {
     *) echo "wisp-mount: ownerOnly must be 1" >&2; exit 64 ;;
   esac
   prepare_mount_point "$mountPath"
-  bounded "${SMB_MOUNT_TIMEOUT:-$MOUNT_TIMEOUT}" mount -t cifs "$share" "$MOUNT_TARGET" -o "$opts"
+  bounded "$secs" mount -t cifs "$share" "$MOUNT_TARGET" -o "$opts"
 }
 
 do_smb_check() {
-  SMB_MOUNT_TIMEOUT=$CHECK_MOUNT_TIMEOUT do_smb_mount "$1"
+  do_smb_mount "$1" "$CHECK_MOUNT_TIMEOUT"
   bounded "$CHECK_UMOUNT_TIMEOUT" umount -- "$MOUNT_TARGET"
   rmdir -- "$MOUNT_TARGET"
 }
