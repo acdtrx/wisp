@@ -8,16 +8,6 @@ SCRIPTS_ROOT="$(dirname "$SCRIPT_DIR")"
 RUNTIME_ENV="$PROJECT_DIR/config/runtime.env"
 SETUP_DIR="$SCRIPT_DIR/setup"
 
-read_env() {
-  local key="$1"
-  local default="${2:-}"
-  local val=""
-  if [[ -f "$RUNTIME_ENV" ]]; then
-    val="$(grep "^${key}=" "$RUNTIME_ENV" | head -1 | cut -d= -f2- | tr -d '\r')" || true
-  fi
-  echo "${val:-$default}"
-}
-
 normalize_runtime_env() {
   # Bare `return` would inherit [[ ]]'s exit 1 when the file is missing, tripping set -e in set_env_vars.
   [[ -f "$RUNTIME_ENV" ]] || return 0
@@ -26,16 +16,12 @@ normalize_runtime_env() {
 
 SERVICE_UNIT="wisp"
 
+# shellcheck source=../../backend/scripts/wisp-port.sh
+source "$PROJECT_DIR/backend/scripts/wisp-port.sh"
+
 set_env_vars() {
   normalize_runtime_env
-  WISP_PORT="$(read_env WISP_PORT 8080)"
-  WISP_PORT="${WISP_PORT#[\"\']}"
-  WISP_PORT="${WISP_PORT%[\"\']}"
-  # As the backend checks it (loadRuntimeEnv.js): digits, 1-65535.
-  if ! [[ "$WISP_PORT" =~ ^[0-9]+$ ]] || (( 10#$WISP_PORT < 1 || 10#$WISP_PORT > 65535 )); then
-    echo "error: WISP_PORT in $RUNTIME_ENV is not a port number (1-65535): $WISP_PORT" >&2
-    exit 1
-  fi
+  WISP_PORT="$(wisp_port "$RUNTIME_ENV")" || exit 1
 }
 
 PID_DIR="$PROJECT_DIR/.pids"

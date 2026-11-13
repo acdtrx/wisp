@@ -85,24 +85,17 @@ HEALTH_TIMEOUT_SEC=90
 # A public route that needs no session and nothing but the backend itself.
 HEALTH_PATH=/api/auth/oidc/status
 
-# The port wisp.service listens on: WISP_PORT from config/runtime.env (its
-# EnvironmentFile=), else the backend's default. Checked as the backend checks
-# it (loadRuntimeEnv.js): digits, 1–65535, quotes optional; anything else fails.
+# The port wisp.service listens on, read as the backend reads it — by the
+# new tree's backend/scripts/wisp-port.sh, the one parser wispctl and install.sh
+# share. A tree from before that file (a downgrade) gets the backend default.
 service_port() {
-  local env_file="$INSTALL_DIR/config/runtime.env" value=""
-  if [[ -f "$env_file" ]]; then
-    value="$(sed -n -E 's/^[[:space:]]*WISP_PORT=(.*)$/\1/p' "$env_file" | tail -n 1 | tr -d '\r')"
-    value="${value#[\"\']}"
-    value="${value%[\"\']}"
-  fi
-  if [[ -z "$value" ]]; then
+  local helper="$INSTALL_DIR/backend/scripts/wisp-port.sh"
+  if [[ ! -f "$helper" ]]; then
     echo 8080
-  elif [[ "$value" =~ ^[0-9]+$ ]] && (( 10#$value >= 1 && 10#$value <= 65535 )); then
-    echo "$((10#$value))"
-  else
-    echo "error: WISP_PORT in $env_file is not a port number (1-65535): $value" >&2
-    return 1
+    return 0
   fi
+  # shellcheck source=/dev/null
+  source "$helper" && wisp_port "$INSTALL_DIR/config/runtime.env"
 }
 
 # Polls until the unit is active AND the local API answers — `systemctl start`

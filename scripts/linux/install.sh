@@ -170,15 +170,10 @@ if [[ "$RESTART_SVC" -eq 0 ]] && [[ -x "$SETUP_DIR/bridge.sh" ]]; then
 fi
 
 # --- Summary ---
-WISP_PORT="8080"
-if [[ -f "$RUNTIME_ENV" ]] && grep -q '^WISP_PORT=' "$RUNTIME_ENV" 2>/dev/null; then
-  WISP_PORT="$(grep '^WISP_PORT=' "$RUNTIME_ENV" | head -1 | cut -d= -f2- | tr -d '\r')"
-  WISP_PORT="${WISP_PORT#[\"\']}"
-  WISP_PORT="${WISP_PORT%[\"\']}"
-fi
-# As the backend checks it (loadRuntimeEnv.js): digits, 1-65535 — else it won't start.
-if ! [[ "$WISP_PORT" =~ ^[0-9]+$ ]] || (( 10#$WISP_PORT < 1 || 10#$WISP_PORT > 65535 )); then
-  echo "error: WISP_PORT in $RUNTIME_ENV is not a port number (1-65535): $WISP_PORT — Wisp will not start until it is fixed" >&2
+# shellcheck source=../../backend/scripts/wisp-port.sh
+source "$INSTALL_DIR/backend/scripts/wisp-port.sh"
+if ! WISP_PORT="$(wisp_port "$RUNTIME_ENV")"; then
+  echo "  Wisp will not start until WISP_PORT is fixed." >&2
   WISP_PORT="<WISP_PORT>"
 fi
 
