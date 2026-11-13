@@ -75,9 +75,11 @@ export function usePopover(open, { anchorRef, popRef, onClose, align, side }) {
     return () => document.removeEventListener('pointerdown', onDown);
   }, [open, anchorRef, popRef, onClose]);
 
+  // Once placed: a popover is hidden (unfocusable) until its first measure.
+  const placed = open && style.visibility === 'visible';
   useEffect(() => {
-    if (open) focusIntoLayer(popRef.current, { preferFirst: true });
-  }, [open, popRef]);
+    if (placed) focusIntoLayer(popRef.current, { preferFirst: true });
+  }, [placed, popRef]);
 
   return style;
 }

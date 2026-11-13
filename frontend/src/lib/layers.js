@@ -31,7 +31,8 @@ export function hasOpenLayer() {
 }
 
 function focusablesIn(root) {
-  return [...root.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
+  // Rendered ones only (offsetParent is null for any fixed-position element, so it can't tell).
+  return [...root.querySelectorAll(FOCUSABLE)].filter((el) => el.getClientRects().length > 0 || el === document.activeElement);
 }
 
 function onKeyDown(e) {
