@@ -137,7 +137,7 @@ export async function createAndAttachDisk(name, slot, sizeGB, bus = 'virtio') {
   const sizeG = Math.max(1, parseInt(sizeGB, 10) || 32);
   const diskPath = await reserveNewDiskFile(getVMBasePath(name));
   try {
-    await execFile('qemu-img', ['create', '-f', 'qcow2', diskPath, `${sizeG}G`]);
+    await execFile('qemu-img', ['create', '-f', 'qcow2', diskPath, `${sizeG}G`], { timeout: 60_000 }); // sparse: seconds at most (CODING-RULES §6)
     await defineWithNewDisk(parsed, slot, diskPath, bus, 'qcow2');
   } catch (err) {
     /* The file is ours (reserved above) and not referenced by the domain — remove it. */

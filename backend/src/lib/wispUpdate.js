@@ -372,7 +372,8 @@ export async function downloadAndStage(onProgress, signal) {
   if (onProgress) onProgress({ step: 'extract' });
   await mkdir(stagingDir, { recursive: true });
   /* Tarball top-level dir is `wisp/`; --strip-components=1 puts contents at stagingDir root. */
-  await execFileAsync('tar', ['-xzf', tarballPath, '-C', stagingDir, '--strip-components=1']);
+  // A release tarball is a few MB: 120 s means tar hung (CODING-RULES §6).
+  await execFileAsync('tar', ['-xzf', tarballPath, '-C', stagingDir, '--strip-components=1'], { timeout: 120_000 });
 
   /* Sanity-check: backend/package.json must exist with the expected version. */
   let stagingVersion = null;
@@ -460,7 +461,8 @@ export async function applyUpdate(stagingPath) {
     ? ['/usr/bin/systemctl', 'start', '--no-block', UPDATER_UNIT]
     : ['sudo', '-n', '/usr/bin/systemctl', 'start', '--no-block', UPDATER_UNIT];
 
-  await execFileAsync(argv[0], argv.slice(1));
+  // --no-block returns at once; 15 s means sudo or systemd hung (CODING-RULES §6).
+  await execFileAsync(argv[0], argv.slice(1), { timeout: 15_000 });
   return { started: true };
 }
 

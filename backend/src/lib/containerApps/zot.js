@@ -50,7 +50,8 @@ const SESSION_ENCRYPT_KEY_BYTES = 24;
  */
 function hashPassword(password) {
   return new Promise((resolve, reject) => {
-    const proc = spawn('openssl', ['passwd', '-6', '-stdin'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    // CODING-RULES §6: a local hash takes milliseconds; 10 s means it hung.
+    const proc = spawn('openssl', ['passwd', '-6', '-stdin'], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 10_000 });
     let stdout = '';
     let stderr = '';
     proc.stdout.setEncoding('utf8');
@@ -58,9 +59,9 @@ function hashPassword(password) {
     proc.stderr.setEncoding('utf8');
     proc.stderr.on('data', (chunk) => { stderr += chunk; });
     proc.on('error', (err) => reject(containerError('INVALID_APP_CONFIG', 'Failed to hash password', err.message)));
-    proc.on('close', (code) => {
+    proc.on('close', (code, signal) => {
       if (code === 0) resolve(stdout.trim());
-      else reject(containerError('INVALID_APP_CONFIG', 'Failed to hash password', stderr || `openssl exited ${code}`));
+      else reject(containerError('INVALID_APP_CONFIG', 'Failed to hash password', stderr || (signal ? `openssl killed (${signal}) after the 10 s timeout` : `openssl exited ${code}`)));
     });
     proc.stdin.end(password, 'utf8');
   });

@@ -32,11 +32,15 @@ import {
 
 const execFile = promisify(execFileCb);
 
+/** A seed ISO is a few KB: building one past 60 s means the tool hung (CODING-RULES §6). */
+const ISO_BUILD_TIMEOUT_MS = 60_000;
+
 // ─── Password Hashing ───────────────────────────
 
 async function hashPassword(password) {
   return new Promise((resolve, reject) => {
-    const proc = spawn('openssl', ['passwd', '-6', '-stdin'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    // CODING-RULES §6: a local hash takes milliseconds; 10 s means it hung.
+    const proc = spawn('openssl', ['passwd', '-6', '-stdin'], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 10_000 });
     let stdout = '';
     let stderr = '';
     proc.stdout.setEncoding('utf8');
@@ -44,9 +48,9 @@ async function hashPassword(password) {
     proc.stderr.setEncoding('utf8');
     proc.stderr.on('data', (chunk) => { stderr += chunk; });
     proc.on('error', (err) => reject(createAppError('HASH_FAILED', 'Failed to hash password', err.message)));
-    proc.on('close', (code) => {
+    proc.on('close', (code, signal) => {
       if (code === 0) resolve(stdout.trim());
-      else reject(createAppError('HASH_FAILED', 'Failed to hash password', stderr || `openssl exited ${code}`));
+      else reject(createAppError('HASH_FAILED', 'Failed to hash password', stderr || (signal ? `openssl killed (${signal}) after the 10 s timeout` : `openssl exited ${code}`)));
     });
     proc.stdin.end(password, 'utf8');
   });
@@ -186,7 +190,7 @@ export async function generateCloudInitISO(vmName, config, opts = {}) {
         isoPath,
         join(tmpDir, 'user-data'),
         join(tmpDir, 'meta-data'),
-      ]);
+      ], { timeout: ISO_BUILD_TIMEOUT_MS });
     } catch {
       /* cloud-localds missing — use genisoimage */
       await execFile('genisoimage', [
@@ -195,7 +199,7 @@ export async function generateCloudInitISO(vmName, config, opts = {}) {
         '-r', '-J',
         join(tmpDir, 'user-data'),
         join(tmpDir, 'meta-data'),
-      ]);
+      ], { timeout: ISO_BUILD_TIMEOUT_MS });
     }
 
     // The ISO bakes in user-data containing the SHA-512-crypt password hash. The

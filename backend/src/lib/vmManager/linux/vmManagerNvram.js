@@ -15,7 +15,8 @@ const execFile = promisify(execFileCb);
 // not yet on disk) while still surfacing permission/IO failures loudly.
 export async function copyNvram(src, dst, { allowMissing = false } = {}) {
   try {
-    await execFile('sudo', ['-n', 'wisp-nvram', 'copy', src, dst]);
+    // An NVRAM file is a few MB; 60 s means the copy hung (CODING-RULES §6).
+    await execFile('sudo', ['-n', 'wisp-nvram', 'copy', src, dst], { timeout: 60_000 });
   } catch (err) {
     const stderr = (err && err.stderr) || '';
     const isMissing = /src not found/i.test(stderr) || (err && err.code === 2);
