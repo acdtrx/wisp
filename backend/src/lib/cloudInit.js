@@ -32,8 +32,8 @@ import {
 
 const execFile = promisify(execFileCb);
 
-/** A seed ISO is a few KB: building one past 60 s means the tool hung (CODING-RULES §6). */
-const ISO_BUILD_TIMEOUT_MS = 60_000;
+/** A seed ISO is a few KB: building one past 20 s means the tool hung (CODING-RULES §6). */
+const ISO_BUILD_TIMEOUT_MS = 20_000;
 
 // ─── Password Hashing ───────────────────────────
 

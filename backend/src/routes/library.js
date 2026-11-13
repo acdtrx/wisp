@@ -23,6 +23,25 @@ import { ensureImageDir, getImagePath } from '../lib/paths.js';
 import { findVMsUsingImage } from '../lib/vmManager/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { isExpectedAppError, sendError } from '../lib/routeErrors.js';
+import { createStallWatchdog } from '../lib/storage/index.js';
+
+/**
+ * An upload has no total bound — a large image on a slow link takes as long as
+ * it takes — but the request is dropped after this long without body bytes
+ * (CODING-RULES §6; docs/specs/IMAGE-LIBRARY.md § Timeouts).
+ */
+const UPLOAD_BODY_IDLE_MS = 60_000;
+
+/** Destroy `request`'s socket after `idleMs` without body bytes. Returns the watchdog. */
+function watchRequestBody(request, idleMs) {
+  const watchdog = createStallWatchdog({
+    stallMs: idleMs,
+    onStall: () => request.raw.destroy(new Error(`upload made no progress for ${idleMs / 1000} s`)),
+  });
+  request.raw.on('data', watchdog.poke);
+  request.raw.once('close', watchdog.stop);
+  return watchdog;
+}
 
 function validateFilename(name) {
   if (!name || typeof name !== 'string') return false;
@@ -113,64 +132,73 @@ export default async function libraryRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      const dir = await ensureImageDir();
-      const data = await request.file();
-
-      if (!data) {
-        reply.code(400).send({ error: 'No file provided', detail: 'Request must include a file upload' });
-        return;
-      }
-
-      const filename = basename(data.filename);
-      if (!validateFilename(filename)) {
-        reply.code(422).send({ error: 'Invalid filename', detail: 'Filename contains invalid characters' });
-        return;
-      }
-
-      const destPath = join(dir, filename);
-
-      // Reserve the name with an exclusive create, as downloads do: a check
-      // then a write lets two same-name uploads both pass and clobber each
-      // other, and would follow a symlink planted at the name.
-      let handle;
+      const bodyWatch = watchRequestBody(request, UPLOAD_BODY_IDLE_MS);
       try {
-        handle = await open(destPath, 'wx');
-      } catch (err) {
-        if (err.code === 'EEXIST') {
-          reply.code(409).send({ error: 'File already exists', detail: `A file named "${filename}" already exists in the library` });
-          return;
-        }
-        reply.code(500).send({ error: 'Upload failed', detail: err.message });
-        return;
+        return await receiveUpload(request, reply);
+      } finally {
+        bodyWatch.stop();
       }
-
-      // Stream to disk. fastify-multipart sets `data.file.truncated` when the
-      // configured fileSize limit is exceeded; the pipeline still resolves
-      // successfully, so we must check explicitly. On any failure path,
-      // unlink the partial file — this request created it — to avoid disk-fill DoS.
-      try {
-        await pipeline(data.file, handle.createWriteStream());
-      } catch (err) {
-        await unlink(destPath).catch(() => { /* best-effort cleanup */ });
-        reply.code(500).send({ error: 'Upload failed', detail: err.message });
-        return;
-      }
-
-      if (data.file.truncated) {
-        await unlink(destPath).catch(() => { /* best-effort cleanup */ });
-        reply.code(422).send({ error: 'File too large', detail: 'Upload exceeded the configured size limit' });
-        return;
-      }
-
-      const info = await stat(destPath);
-      return {
-        name: filename,
-        type: detectType(filename),
-        size: info.size,
-        modified: info.mtime.toISOString(),
-      };
     },
   });
+
+  async function receiveUpload(request, reply) {
+    const dir = await ensureImageDir();
+    const data = await request.file();
+
+    if (!data) {
+      reply.code(400).send({ error: 'No file provided', detail: 'Request must include a file upload' });
+      return;
+    }
+
+    const filename = basename(data.filename);
+    if (!validateFilename(filename)) {
+      reply.code(422).send({ error: 'Invalid filename', detail: 'Filename contains invalid characters' });
+      return;
+    }
+
+    const destPath = join(dir, filename);
+
+    // Reserve the name with an exclusive create, as downloads do: a check
+    // then a write lets two same-name uploads both pass and clobber each
+    // other, and would follow a symlink planted at the name.
+    let handle;
+    try {
+      handle = await open(destPath, 'wx');
+    } catch (err) {
+      if (err.code === 'EEXIST') {
+        reply.code(409).send({ error: 'File already exists', detail: `A file named "${filename}" already exists in the library` });
+        return;
+      }
+      reply.code(500).send({ error: 'Upload failed', detail: err.message });
+      return;
+    }
+
+    // Stream to disk. fastify-multipart sets `data.file.truncated` when the
+    // configured fileSize limit is exceeded; the pipeline still resolves
+    // successfully, so we must check explicitly. On any failure path,
+    // unlink the partial file — this request created it — to avoid disk-fill DoS.
+    try {
+      await pipeline(data.file, handle.createWriteStream());
+    } catch (err) {
+      await unlink(destPath).catch(() => { /* best-effort cleanup */ });
+      reply.code(500).send({ error: 'Upload failed', detail: err.message });
+      return;
+    }
+
+    if (data.file.truncated) {
+      await unlink(destPath).catch(() => { /* best-effort cleanup */ });
+      reply.code(422).send({ error: 'File too large', detail: 'Upload exceeded the configured size limit' });
+      return;
+    }
+
+    const info = await stat(destPath);
+    return {
+      name: filename,
+      type: detectType(filename),
+      size: info.size,
+      modified: info.mtime.toISOString(),
+    };
+  }
 
   fastify.delete('/library/:filename', {
     config: { auth: 'admin' },

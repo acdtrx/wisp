@@ -72,7 +72,7 @@ if $NEED_INSTALL; then
 
     install -m 0755 -d /etc/apt/keyrings
     if [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
-      curl -fsSL --connect-timeout 10 --max-time 60 "$DOCKER_URL/gpg" | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 60 "$DOCKER_URL/gpg" | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
       chmod a+r /etc/apt/keyrings/docker.gpg
     fi
 

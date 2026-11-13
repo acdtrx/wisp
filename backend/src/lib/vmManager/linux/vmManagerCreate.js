@@ -424,7 +424,7 @@ async function provisionAndDefineVM(s, vmBasePath, { emit, populateVMDir, primar
     } else {
       emit('creating-disk');
       const sizeGB = Math.max(1, parseInt(dspec.sizeGB, 10) || 32);
-      await execFile('qemu-img', ['create', '-f', 'qcow2', destPath, `${sizeGB}G`], { timeout: 60_000 }); // sparse: seconds at most (CODING-RULES §6)
+      await execFile('qemu-img', ['create', '-f', 'qcow2', destPath, `${sizeGB}G`], { timeout: 20_000 }); // sparse: seconds at most (CODING-RULES §6)
     }
   }
 

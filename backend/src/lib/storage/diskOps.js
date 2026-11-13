@@ -17,8 +17,8 @@ const execFile = promisify(execFileCb);
  */
 const CONVERT_STALL_MS = 10 * 60_000;
 
-/** qemu-img info / resize touch only metadata (resize grows sparsely): 60 s means hung (CODING-RULES §6). */
-const QEMU_IMG_TIMEOUT_MS = 60_000;
+/** qemu-img info / resize touch only metadata (resize grows sparsely): 20 s means hung (CODING-RULES §6). */
+const QEMU_IMG_TIMEOUT_MS = 20_000;
 
 /*
  * Every qemu-img call names the image format (`-f`); none lets qemu-img probe

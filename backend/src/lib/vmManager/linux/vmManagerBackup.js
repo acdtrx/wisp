@@ -13,7 +13,8 @@ import { pipeline } from 'node:stream/promises';
 import { createGzip, createGunzip } from 'node:zlib';
 import { Transform } from 'node:stream';
 import { join, dirname, basename } from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFile as execFileCb } from 'node:child_process';
+import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError, generateMAC } from './vmManagerConnection.js';
 import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
@@ -22,16 +23,53 @@ import { isOfflineState } from './libvirtConstants.js';
 import { copyNvram } from './vmManagerNvram.js';
 import { assertVMNameAvailable, createOwnVMDir, removeOwnVMDir } from './vmManagerCreate.js';
 import {
-  getBackingChain, copyAndConvert, inspectDiskImage, createStallWatchdog, fileBlocksProbe, processReadProbe, stallMinutes,
+  getBackingChain, copyAndConvert, inspectDiskImage, createStallWatchdog, stallMinutes,
 } from '../../storage/index.js';
 import { assertRestorableDomain } from './vmManagerRestoreCheck.js';
 
-/**
- * A disk copy runs as long as the disk is big: no total cap, but `cp` is killed
- * after this long with neither the destination growing nor bytes read (a run of
- * zeros in a sparse disk is read without growing the destination).
+/*
+ * Bounds (CODING-RULES §6; contracts in docs/specs/BACKUPS.md § Timeouts). A
+ * disk's data runs through an in-process pipeline (read → gzip → write, and
+ * back on restore) as long as the disk is big: no total cap, but the pipeline
+ * is destroyed after STREAM_STALL_MS without bytes passing through. A write
+ * blocked inside the kernel (a hung network mount) can't be cancelled from
+ * here; the destroy takes effect once it returns. The only `cp` copies
+ * cloud-init.json, a few KB: a fixed bound.
  */
-const COPY_STALL_MS = 10 * 60_000;
+const execFile = promisify(execFileCb);
+const STREAM_STALL_MS = 10 * 60_000;
+const CLOUD_INIT_COPY_TIMEOUT_MS = 30_000;
+
+/**
+ * pipeline(...streams) with a bytes-through watchdog: the streams are destroyed
+ * after STREAM_STALL_MS without a chunk, and the call rejects naming the stall.
+ * `onBytes(n)` sees each chunk's size (progress); `code` is the stall's error code.
+ */
+async function watchedPipeline(streams, what, { onBytes, code = 'BACKUP_FAILED' } = {}) {
+  const controller = new AbortController();
+  const watchdog = createStallWatchdog({
+    stallMs: STREAM_STALL_MS,
+    onStall: () => controller.abort(),
+  });
+  const counter = new Transform({
+    transform(chunk, _encoding, callback) {
+      watchdog.poke();
+      onBytes?.(chunk.length);
+      callback(null, chunk);
+    },
+  });
+  const [source, ...rest] = streams;
+  try {
+    await pipeline(source, counter, ...rest, { signal: controller.signal });
+  } catch (err) {
+    if (watchdog.fired) {
+      throw vmError(code, `${what} made no progress for ${stallMinutes(STREAM_STALL_MS)} and was stopped`, err.message);
+    }
+    throw err;
+  } finally {
+    watchdog.stop();
+  }
+}
 
 // Layout: VM backups under <root>/vms/<vmName>/<timestamp>/ (VMS_BACKUP_DIRNAME),
 // beside container backups under <root>/containers/<name>/<timestamp>/.
@@ -51,33 +89,11 @@ function backupTimestamp() {
   return new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
 }
 
-/** `cp --reflink=auto` under a stall watchdog. Rejects `{ stalled: true }` when it fired. */
-function cpWatched(srcPath, dstPath) {
-  return new Promise((resolve, reject) => {
-    const cp = spawn('cp', ['--reflink=auto', srcPath, dstPath], { stdio: ['ignore', 'ignore', 'pipe'] });
-    let stderr = '';
-    cp.stderr.on('data', (d) => { stderr += d; });
-    const watchdog = createStallWatchdog({
-      stallMs: COPY_STALL_MS,
-      probe: [fileBlocksProbe(dstPath), processReadProbe(cp.pid)],
-      onStall: () => cp.kill('SIGKILL'),
-    });
-    cp.on('error', (err) => { watchdog.stop(); reject(err); });
-    cp.on('close', (code, signal) => {
-      watchdog.stop();
-      if (watchdog.fired) {
-        reject(Object.assign(new Error(`copying ${basename(srcPath)} made no progress for ${stallMinutes(COPY_STALL_MS)}`), { stalled: true }));
-      } else if (code === 0) resolve();
-      else reject(new Error(stderr.trim() || `cp exited ${code ?? signal}`));
-    });
-  });
-}
-
 async function copyWithProgress(srcPath, dstPath, onProgress) {
   try {
-    await cpWatched(srcPath, dstPath);
+    await execFile('cp', ['--reflink=auto', srcPath, dstPath], { timeout: CLOUD_INIT_COPY_TIMEOUT_MS });
   } catch (err) {
-    if (err.stalled) throw vmError('BACKUP_FAILED', `Backup stopped: ${err.message}`, err.message);
+    if (err.killed) throw vmError('BACKUP_FAILED', `Copying ${basename(srcPath)} did not finish within ${CLOUD_INIT_COPY_TIMEOUT_MS / 1000} s`, err.message);
     /* cp unusable here — fall back to a plain copy */
     await copyFile(srcPath, dstPath);
   }
@@ -92,25 +108,20 @@ async function streamWithGzip(sourcePath, destPath, { totalBytes, onProgress } =
   const readStream = createReadStream(sourcePath);
   const gzip = createGzip();
   const writeStream = createWriteStream(destPath, { mode: BACKUP_FILE_MODE });
-
-  if (typeof onProgress === 'function' && totalBytes != null && totalBytes > 0) {
-    let readBytes = 0;
-    let lastPct = -1;
-    const progress = new Transform({
-      transform(chunk, encoding, callback) {
-        readBytes += chunk.length;
-        const pct = Math.min(100, Math.round((readBytes / totalBytes) * 100));
-        if (pct !== lastPct) {
-          lastPct = pct;
-          onProgress(pct);
-        }
-        callback(null, chunk);
-      },
-    });
-    await pipeline(readStream, progress, gzip, writeStream);
-  } else {
-    await pipeline(readStream, gzip, writeStream);
-  }
+  const reports = typeof onProgress === 'function' && totalBytes != null && totalBytes > 0;
+  let readBytes = 0;
+  let lastPct = -1;
+  await watchedPipeline([readStream, gzip, writeStream], `Backing up ${basename(sourcePath)}`, {
+    onBytes: (n) => {
+      if (!reports) return;
+      readBytes += n;
+      const pct = Math.min(100, Math.round((readBytes / totalBytes) * 100));
+      if (pct !== lastPct) {
+        lastPct = pct;
+        onProgress(pct);
+      }
+    },
+  });
 }
 
 /** Strip trailing slashes for stable prefix matching (root stays "/"). */
@@ -816,7 +827,9 @@ async function openBackupPayload(backupPath, diskPlan) {
 async function copyPayloadFile(handle, destPath, { gunzip = false, mode } = {}) {
   const read = handle.createReadStream({ start: 0, autoClose: false });
   const write = createWriteStream(destPath, { flags: 'wx', ...(mode != null ? { mode } : {}) });
-  await (gunzip ? pipeline(read, createGunzip(), write) : pipeline(read, write));
+  await watchedPipeline(gunzip ? [read, createGunzip(), write] : [read, write], `Restoring ${basename(destPath)}`, {
+    code: 'BACKUP_RESTORE_FAILED',
+  });
 }
 
 /**
