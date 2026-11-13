@@ -19,10 +19,11 @@
 # wisp.service from it, so helpers, sudoers and units match the code that runs.
 # User config (config/wisp-config.json, wisp-password, runtime.env), the backup
 # status cache (config/backup-status.json), the state-migration ledger
-# (config/migrations.json) and runtime scratch (.pids, .logs) are never deleted
-# from the install dir. A rollback leaves the ledger alone too: it restores the
-# tree, but cannot undo a migration that already ran, so the ledger must keep
-# saying it ran.
+# (config/migrations.json) and runtime scratch (.pids, .logs) survive the swap.
+# A rollback restores all of config/ from the snapshot, the ledger included
+# (settled 2026-11-13): a migration may change config/, and the ledger must
+# revert with it, so every migration this update ran runs again on the next one —
+# safe because migrations are idempotent.
 
 set -uo pipefail
 
@@ -141,9 +142,9 @@ rollback() {
   # and so the restored common-steps.sh can run its migrations step.
   systemctl stop "$SERVICE_UNIT" 2>/dev/null || echo "rollback-warning: stopping $SERVICE_UNIT failed"
   if [[ "$snapshot_taken" -eq 1 && -d "$PREV_DIR" ]]; then
-    # The snapshot predates this update's migrations; restoring its ledger would
-    # forget migrations whose effects stay on the host.
-    rsync -a --delete --exclude '/config/migrations.json' "$PREV_DIR/" "$INSTALL_DIR/" \
+    # config/ and its ledger revert together: the migrations this update ran
+    # run again on the next one (they are idempotent).
+    rsync -a --delete "$PREV_DIR/" "$INSTALL_DIR/" \
       || echo "rollback-warning: restoring the tree from $PREV_DIR failed"
     chown -R "$DEPLOY_OWNER" "$INSTALL_DIR" \
       || echo "rollback-warning: chown of $INSTALL_DIR failed"
