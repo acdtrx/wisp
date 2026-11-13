@@ -34,6 +34,7 @@ function mappedErrorStatus(code) {
     case 'DISK_SLOT_IN_USE':
     case 'BACKUP_EXISTS':
     case 'VM_BUSY':
+    case 'UPDATE_BUSY':
       return 409;
     case 'PARSE_ERROR':
     case 'RESIZE_INVALID':

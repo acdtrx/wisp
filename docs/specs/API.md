@@ -320,6 +320,7 @@ Return the structured list of upgradable packages plus an estimated total downlo
 
 - **200:** `{ packages: [{ name: string, from: string|null, to: string }], downloadBytes: number }` — from the cache
 - **202:** `{ jobId, title }` — with `?refresh=1`, or no cache yet: the [check job](#post-apihostupdatescheck--admin) (started or joined); read the list again once it is done
+- **409:** `UPDATE_BUSY` — a refresh, or no cache yet, while an OS upgrade runs
 - **503:** `{ error, detail }` — update script not configured
 
 ### POST /api/host/updates/upgrade · `admin`

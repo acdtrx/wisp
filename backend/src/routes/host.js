@@ -28,7 +28,7 @@ import {
   getProfilerSoftwareOverview,
 } from '../lib/host/index.js';
 import { assertBridgeNotInUse } from '../lib/networkBridgeUsage.js';
-import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
+import { createAppError, handleRouteError, isExpectedAppError, sendError } from '../lib/routeErrors.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/storage/index.js';
 import { getCurrentVersion } from '../lib/wispUpdate.js';
@@ -45,16 +45,17 @@ const JOB_ACCEPTED = {
   202: { type: 'object', properties: { jobId: { type: 'string' }, title: { type: 'string' } } },
 };
 
-/**
- * The OS update check as a job: one shared run — a check or package refresh
- * started while one runs joins it (the same job id). Its `done` payload is the
- * count; the packages are then served from the cache (GET /host/updates/packages).
- */
 /** An upgrade runs, or its job was started and has not reached it yet. */
 function upgradeRunning() {
   return isUpgradeInProgress() || operationJobStore.findRunningJob(BACKGROUND_JOB_KIND.OS_UPGRADE, TITLE_OS_UPGRADE) != null;
 }
 
+/**
+ * The OS update check as a job: one shared run — a check or package refresh
+ * started while one runs joins it (the same job id). Its `done` payload is the
+ * count; the packages are then served from the cache (GET /host/updates/packages).
+ * Refused with UPDATE_BUSY while an upgrade runs.
+ */
 function startOsUpdateCheckJob(log) {
   if (upgradeRunning()) {
     throw createAppError('UPDATE_BUSY', 'An OS upgrade is in progress on the host', 'Wait for the upgrade to finish before checking again');
@@ -209,7 +210,9 @@ export default async function hostRoutes(fastify) {
         if (!cached) return reply.code(202).send(startOsUpdateCheckJob(request.log));
         return cached;
       } catch (err) {
-        request.log.error({ err }, 'GET /host/updates/packages failed');
+        // UPDATE_BUSY (an upgrade running) is an expected 409, not a server fault.
+        if (isExpectedAppError(err)) request.log.info({ code: err.code }, 'GET /host/updates/packages refused');
+        else request.log.error({ err }, 'GET /host/updates/packages failed');
         reply.code(osUpdateErrorStatus(err)).send({
           error: err.message || 'Package list failed',
           detail: err.raw || err.detail || err.message,
