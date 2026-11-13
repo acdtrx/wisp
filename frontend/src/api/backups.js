@@ -54,7 +54,10 @@ export function listContainerBackups(containerName = null) {
   return api(`/api/container-backups${q}`);
 }
 
-/** @param {{ destinationId: string, name: string, timestamp: string }} target */
+/**
+ * Restore a container backup as a new container: a job, answers `{ jobId, title }`.
+ * @param {{ destinationId: string, name: string, timestamp: string }} target
+ */
 export function restoreContainerBackup(target, newName) {
   const { destinationId, name, timestamp } = target;
   return api('/api/container-backups/restore', { method: 'POST', body: { destinationId, name, timestamp, newName } });

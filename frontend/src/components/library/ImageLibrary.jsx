@@ -12,7 +12,7 @@ import {
   startDownloadHaos,
   startDownloadArchCloud,
 } from '../../api/library.js';
-import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
+import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { listContainerImages, deleteContainerImage } from '../../api/containers.js';
@@ -421,7 +421,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     if (!deleteTarget) return;
     try {
       if (deleteTarget.kind === 'oci') {
-        await deleteContainerImage(deleteTarget.ref);
+        await awaitJob(JOB_KIND.CONTAINER_IMAGE_DELETE, await deleteContainerImage(deleteTarget.ref));
       } else {
         await deleteFile(deleteTarget.name);
       }

@@ -4,6 +4,7 @@ import { createSSE } from '../api/sse.js';
 import { subscribeTopic } from '../api/events.js';
 import { subscribeJobProgress, JOB_KIND } from '../api/jobProgress.js';
 import { withWorkloadAction, anyActionInFlight } from './workloadActions.js';
+import { awaitJob } from './backgroundJobsStore.js';
 
 /** Same scheduled restart (or both none)? Compared by value — list pushes carry fresh objects. */
 function sameScheduledRestart(a, b) {
@@ -233,19 +234,23 @@ export const useContainerStore = create((set, get) => {
     },
 
     startContainer: async (name) => {
-      await get().withAction(name, 'start', () => containerApi.startContainerApi(name));
+      await get().withAction(name, 'start', async () =>
+        awaitJob(JOB_KIND.CONTAINER_START, await containerApi.startContainerApi(name)));
     },
     stopContainer: async (name) => {
-      await get().withAction(name, 'stop', () => containerApi.stopContainerApi(name));
+      await get().withAction(name, 'stop', async () =>
+        awaitJob(JOB_KIND.CONTAINER_STOP, await containerApi.stopContainerApi(name)));
     },
     restartContainer: async (name) => {
-      await get().withAction(name, 'restart', () => containerApi.restartContainerApi(name));
+      await get().withAction(name, 'restart', async () =>
+        awaitJob(JOB_KIND.CONTAINER_RESTART, await containerApi.restartContainerApi(name)));
     },
     killContainer: async (name) => {
       await get().withAction(name, 'kill', () => containerApi.killContainerApi(name));
     },
     deleteContainer: async (name, deleteFiles) => {
-      await get().withAction(name, 'delete', () => containerApi.deleteContainerApi(name, deleteFiles));
+      await get().withAction(name, 'delete', async () =>
+        awaitJob(JOB_KIND.CONTAINER_DELETE, await containerApi.deleteContainerApi(name, deleteFiles)));
     },
 
     refreshImageUpdateStatus: async () => {

@@ -20,6 +20,18 @@ export const JOB_KIND = {
   MOUNT_UNMOUNT: 'mount-unmount',
   MOUNT_DELETE: 'mount-delete',
   SELF_UPDATE: 'self-update',
+  CONTAINER_START: 'container-start',
+  CONTAINER_STOP: 'container-stop',
+  CONTAINER_RESTART: 'container-restart',
+  CONTAINER_DELETE: 'container-delete',
+  CONTAINER_MOUNT_DELETE: 'container-mount-delete',
+  CONTAINER_MOUNT_DATA_DELETE: 'container-mount-data-delete',
+  CONTAINER_IMAGE_DELETE: 'container-image-delete',
+  CONTAINER_RESTORE_AS_NEW: 'container-restore-new',
+  CONTAINER_ZIP_EXTRACT: 'container-zip-extract',
+  CONTAINER_DEPLOY: 'container-deploy',
+  CONTAINER_IMAGE_UPDATE: 'container-image-update',
+  CONTAINER_IMAGE_CHECK: 'container-image-check',
 };
 
 /** Operation jobs (commands that can outlast a short request) share one stream route. */
@@ -44,6 +56,18 @@ const PATHS = {
   [JOB_KIND.MOUNT_UNMOUNT]: operationJobPath,
   [JOB_KIND.MOUNT_DELETE]: operationJobPath,
   [JOB_KIND.SELF_UPDATE]: operationJobPath,
+  [JOB_KIND.CONTAINER_START]: operationJobPath,
+  [JOB_KIND.CONTAINER_STOP]: operationJobPath,
+  [JOB_KIND.CONTAINER_RESTART]: operationJobPath,
+  [JOB_KIND.CONTAINER_DELETE]: operationJobPath,
+  [JOB_KIND.CONTAINER_MOUNT_DELETE]: operationJobPath,
+  [JOB_KIND.CONTAINER_MOUNT_DATA_DELETE]: operationJobPath,
+  [JOB_KIND.CONTAINER_IMAGE_DELETE]: operationJobPath,
+  [JOB_KIND.CONTAINER_RESTORE_AS_NEW]: operationJobPath,
+  [JOB_KIND.CONTAINER_ZIP_EXTRACT]: operationJobPath,
+  [JOB_KIND.CONTAINER_DEPLOY]: operationJobPath,
+  [JOB_KIND.CONTAINER_IMAGE_UPDATE]: operationJobPath,
+  [JOB_KIND.CONTAINER_IMAGE_CHECK]: operationJobPath,
 };
 
 /**

@@ -42,6 +42,8 @@ import {
 import { formatSize } from '../../utils/formatters.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { getMountStatus } from '../../api/settings.js';
+import { JOB_KIND } from '../../api/jobProgress.js';
+import { awaitJob } from '../../store/backgroundJobsStore.js';
 
 const addBtn =
   'inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150';
@@ -196,7 +198,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     setError(null);
     setDeletingRowName(row.name);
     try {
-      await removeContainerMount(config.name, row.name);
+      await awaitJob(JOB_KIND.CONTAINER_MOUNT_DELETE, await removeContainerMount(config.name, row.name));
       if (onRefresh) await onRefresh();
     } catch (err) {
       setError(err.message);
@@ -231,7 +233,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     e.target.value = '';
     if (!file) return;
     if (row.type !== 'directory') return;
-    runUploadForRow(row, (mn) => uploadMountZip(config.name, mn, file));
+    // The upload answers once received; the extract is a job.
+    runUploadForRow(row, async (mn) => awaitJob(JOB_KIND.CONTAINER_ZIP_EXTRACT, await uploadMountZip(config.name, mn, file)));
   };
 
   const headerAdds = (

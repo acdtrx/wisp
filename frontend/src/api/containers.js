@@ -10,6 +10,7 @@ export function listContainerImages() {
   return api('/api/containers/images');
 }
 
+/** A job: answers `{ jobId, title }` (follow with awaitJob). */
 export function deleteContainerImage(ref) {
   const params = new URLSearchParams({ ref });
   return api(`/api/containers/images?${params}`, { method: 'DELETE' });
@@ -63,7 +64,7 @@ export function updateContainerMount(containerName, mountName, changes) {
   );
 }
 
-/** Remove mount definition and delete files/<mountName> backing store. */
+/** Remove mount definition and delete files/<mountName> backing store. A job: answers `{ jobId, title }`. */
 export function removeContainerMount(containerName, mountName) {
   return api(
     `/api/containers/${encodeURIComponent(containerName)}/mounts/${encodeURIComponent(mountName)}`,
@@ -95,6 +96,7 @@ export function removeContainerService(containerName, port) {
   );
 }
 
+/** Delete, start, stop and restart are jobs: they answer `{ jobId, title }` (follow with awaitJob). */
 export function deleteContainerApi(name, deleteFiles = true) {
   return api(`/api/containers/${encodeURIComponent(name)}?deleteFiles=${deleteFiles}`, { method: 'DELETE' });
 }
@@ -120,6 +122,7 @@ export function uploadMountFile(containerName, mountName, file, options) {
   return postMultipartFile(url, file, options);
 }
 
+/** Answers once the upload is received: `{ jobId, title }` of the extract job. */
 export function uploadMountZip(containerName, mountName, file, options) {
   const url = `/api/containers/${encodeURIComponent(containerName)}/mounts/${encodeURIComponent(mountName)}/zip`;
   return postMultipartFile(url, file, options);
@@ -142,6 +145,7 @@ export function listContainerRuns(name) {
   return api(`/api/containers/${encodeURIComponent(name)}/runs`);
 }
 
+/** A job: answers `{ jobId, title }`. */
 export function deleteMountDataApi(containerName, mountName) {
   return api(
     `/api/containers/${encodeURIComponent(containerName)}/mounts/${encodeURIComponent(mountName)}/data`,

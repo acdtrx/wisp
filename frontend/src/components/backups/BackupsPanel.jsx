@@ -315,10 +315,11 @@ export default function BackupsPanel() {
     try {
       const { backup } = restoreTarget;
       if (backup.kind === 'container') {
-        await restoreContainerBackup(
+        const job = await restoreContainerBackup(
           { destinationId: backup.destinationId, name: backup.name, timestamp: backup.timestamp },
           restoreName.trim(),
         );
+        await awaitJob(JOB_KIND.CONTAINER_RESTORE_AS_NEW, job);
       } else {
         const job = await restoreBackup(
           { destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp },
