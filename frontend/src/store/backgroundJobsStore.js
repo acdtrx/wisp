@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { subscribeJobProgress } from '../api/jobProgress.js';
+import { fetchBackgroundJobs } from '../api/backgroundJobs.js';
 
 /** Same TTL as the server's job store, measured the same way: from completion.
  *  A finished row leaves the tray once it has been finished this long. */
@@ -47,6 +48,19 @@ function applyEvent(row, ev) {
 export const useBackgroundJobsStore = create((set, get) => ({
   /** Loading the server's running jobs (after a reload) failed: the tray may miss some. */
   hydrateFailed: false,
+
+  /** Register the server's jobs (after a page load); `hydrateFailed` says whether that worked. */
+  hydrate: async () => {
+    try {
+      const { jobs } = await fetchBackgroundJobs();
+      for (const j of jobs) {
+        get().registerJob({ jobId: j.jobId, kind: j.kind, title: j.title, startedAt: j.createdAt });
+      }
+      set({ hydrateFailed: false });
+    } catch {
+      set({ hydrateFailed: true });
+    }
+  },
   /** @type {Record<string, BackgroundJobRow>} */
   jobs: {},
   /** @type {Record<string, () => void>} */

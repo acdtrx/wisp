@@ -81,7 +81,8 @@ export const streamContainerRunLogs = impl.streamContainerRunLogs;
 export const resolveRunId = impl.resolveRunId;
 export const createRunLogReadStream = impl.createRunLogReadStream;
 
-export const uploadMountFileStream = impl.uploadMountFileStream;
+export const planMountFileUpload = impl.planMountFileUpload;
+export const commitMountFileUpload = impl.commitMountFileUpload;
 export const assertMountTakesZip = impl.assertMountTakesZip;
 export const planMountZipExtract = impl.planMountZipExtract;
 export const extractMountZip = impl.extractMountZip;

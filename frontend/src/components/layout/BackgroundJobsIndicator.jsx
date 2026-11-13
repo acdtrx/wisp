@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ListTodo } from 'lucide-react';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
@@ -50,6 +50,7 @@ export default function BackgroundJobsIndicator() {
   const jobs = useBackgroundJobsStore((s) => s.jobs);
   const dismissJob = useBackgroundJobsStore((s) => s.dismissJob);
   const hydrateFailed = useBackgroundJobsStore((s) => s.hydrateFailed);
+  const hydrate = useBackgroundJobsStore((s) => s.hydrate);
   const [open, setOpen] = useState(false);
   const anchorRef = useRef(null);
   const popRef = useRef(null);
@@ -61,6 +62,11 @@ export default function BackgroundJobsIndicator() {
   // A failed reload of the server's jobs keeps the tray openable, to say so.
   const isEmpty = list.length === 0 && !hydrateFailed;
   const popStyle = usePopover(open && !isEmpty, { anchorRef, popRef, onClose: close, align: 'end' });
+  /* Emptied (last row dismissed): closed for good, so the next job doesn't
+   * reopen the tray and pull focus to it. */
+  useEffect(() => {
+    if (isEmpty && open) setOpen(false);
+  }, [isEmpty, open]);
 
   return (
     <div className="relative shrink-0">
@@ -97,7 +103,14 @@ export default function BackgroundJobsIndicator() {
           <div className="border-b border-surface-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
             Background jobs
           </div>
-          {hydrateFailed && <LoadHint what="the running jobs after the reload; some may be missing" className="px-3 py-2" />}
+          {hydrateFailed && (
+            <div className="flex items-center gap-2 px-3 py-2">
+              <LoadHint what="the running jobs after the reload; some may be missing" className="min-w-0 flex-1" />
+              <button type="button" onClick={hydrate} className="shrink-0 rounded-sm px-1.5 py-0.5 text-[11px] font-medium text-text-secondary hover:bg-surface">
+                Retry
+              </button>
+            </div>
+          )}
           <ul className="max-h-72 overflow-y-auto">
             {list.map((row) => (
               <li

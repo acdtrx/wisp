@@ -29,8 +29,26 @@ another rule found reworded.
 
 **A hung CIFS mount blocks Node's filesystem calls.** Listings, deletes and copies on an
 unresponsive SMB destination block the libuv thread pool and can't be timed out; running
-them as jobs contains the damage but doesn't fix it. **Revisit trigger:** Wisp is seen
+them as jobs contains the damage but doesn't fix it. The container mount-usage walk is one
+such caller: its 20 s budget answers the page, but a walk stuck in `lstat` on a dead
+hard-mounted source keeps one of libuv's 4 threads, so about 4 such page visits stall all
+file access, login password hashing included. Likely fix there: skip sizing a storage mount
+that isn't mounted, or run one walk per mount at a time. **Revisit trigger:** Wisp is seen
 stalled by an unresponsive SMB share.
+
+**Deleting a container's last backup leaves its folder.** The empty
+`backups/containers/<name>/` stays after its last timestamp directory is deleted (seen on
+tini). Harmless, but it piles up. **Revisit trigger:** backup listings or cleanup start
+tripping over empty folders.
+
+**VM restore as new shows no progress.** The restore job reports only its end:
+`restoreBackup` takes no progress callback, so the tray shows no percent while a large disk
+is copied back. **Revisit trigger:** a slow restore looks stuck to a user.
+
+**Watchdogs fire up to 15 s late.** `createStallWatchdog` checks every
+`min(15 s, stallMs / 4)`, so a 60 s or 90 s bound fires up to 15 s after it is reached.
+**Revisit trigger:** a bound's precision starts to matter (a caller's bound that must end
+inside another's).
 
 **Live VM memory growth (balloon headroom / virtio-mem).** Wisp pins `<memory>` equal to
 `<currentMemory>`, so a running VM's RAM ceiling is its boot-time size and every increase

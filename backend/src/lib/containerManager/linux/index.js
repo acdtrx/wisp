@@ -107,7 +107,8 @@ export {
 } from './containerManagerLogs.js';
 
 export {
-  uploadMountFileStream,
+  planMountFileUpload,
+  commitMountFileUpload,
   assertMountTakesZip,
   planMountZipExtract,
   extractMountZip,

@@ -48,7 +48,7 @@ export default function BackupModal({
 
   if (!destinations?.length) {
     return (
-      <Modal open={!!onClose} onClose={onClose} size="sm" bodyPadding="none">
+      <Modal open={!!onClose} onClose={onClose} size="sm" bodyPadding="none" ariaLabel={`Backup ${name}`}>
         <div className="p-6">
           <h3 className="text-sm font-semibold text-text-primary">Backup {subjectLabel}</h3>
           <p className="mt-2 text-xs text-text-muted">Loading destinations…</p>
@@ -59,7 +59,7 @@ export default function BackupModal({
   }
 
   return (
-    <Modal open={!!onClose} onClose={onClose} size="md" bodyPadding="none">
+    <Modal open={!!onClose} onClose={onClose} size="md" bodyPadding="none" ariaLabel={`Backup ${name}`}>
       <div className="p-6">
         <h3 className="text-sm font-semibold text-text-primary">Backup — {name}</h3>
         <p className="mt-1 text-xs text-text-secondary">

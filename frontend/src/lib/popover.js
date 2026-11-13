@@ -62,7 +62,7 @@ export function useClampToViewport(open, anchorRef, popRef, { align = 'end', sid
  * @returns {object} the popover's style (fixed position)
  */
 export function usePopover(open, { anchorRef, popRef, onClose, align, side }) {
-  useLayer(open, { kind: 'popover', ref: popRef, onEscape: onClose });
+  useLayer(open, { kind: 'popover', ref: popRef, onEscape: onClose, returnFocusTo: anchorRef });
   const style = useClampToViewport(open, anchorRef, popRef, { align, side });
 
   useEffect(() => {

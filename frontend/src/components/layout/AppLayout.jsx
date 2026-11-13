@@ -4,7 +4,6 @@ import TopBar from './TopBar';
 import LeftPanel from './LeftPanel';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
-import { fetchBackgroundJobs } from '../../api/backgroundJobs.js';
 
 export default function AppLayout() {
   const loadSettings = useSettingsStore((s) => s.loadSettings);
@@ -30,27 +29,8 @@ export default function AppLayout() {
   }, [loadSettings]);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchBackgroundJobs()
-      .then(({ jobs }) => {
-        if (cancelled) return;
-        const registerJob = useBackgroundJobsStore.getState().registerJob;
-        for (const j of jobs) {
-          registerJob({
-            jobId: j.jobId,
-            kind: j.kind,
-            title: j.title,
-            startedAt: j.createdAt,
-          });
-        }
-      })
-      .catch(() => {
-        /* non-fatal: the tray says it may be missing jobs */
-        if (!cancelled) useBackgroundJobsStore.setState({ hydrateFailed: true });
-      });
-    return () => {
-      cancelled = true;
-    };
+    /* Non-fatal on failure: the tray says it may be missing jobs, with a retry. */
+    useBackgroundJobsStore.getState().hydrate();
   }, []);
 
   /* px-safe keeps the shell out of the landscape notch, which viewport-fit=cover would

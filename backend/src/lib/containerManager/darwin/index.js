@@ -268,7 +268,11 @@ export function createRunLogReadStream() {
   throw noContainerd();
 }
 
-export async function uploadMountFileStream() {
+export async function planMountFileUpload() {
+  throw noContainerd();
+}
+
+export async function commitMountFileUpload() {
   throw noContainerd();
 }
 

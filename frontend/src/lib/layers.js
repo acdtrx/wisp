@@ -44,6 +44,12 @@ function onKeyDown(e) {
     top.onEscape();
     return;
   }
+  if (e.key === 'Tab' && top.kind === 'popover') {
+    // Tab leaves a popover: it closes, and focus goes back to its anchor.
+    e.preventDefault();
+    top.onEscape();
+    return;
+  }
   if (e.key !== 'Tab' || !top.trap) return;
   const root = top.getElement();
   if (!root) return;
@@ -101,15 +107,24 @@ function syncInert() {
  *   onEscape: called when Escape reaches this layer on top (absent: Escape is
  *   swallowed, e.g. while a save runs).
  */
-export function useLayer(open, { kind, ref, onEscape, inertTargets }) {
+export function useLayer(open, { kind, ref, onEscape, inertTargets, returnFocusTo }) {
   const escapeRef = useRef(onEscape);
   escapeRef.current = onEscape;
   const targetsRef = useRef(inertTargets);
   targetsRef.current = inertTargets;
+  /* The opener is read during the render that opens the layer — before any
+   * child's ref runs, since a field's autofocus ref would otherwise be taken
+   * for the opener and focus would fall to <body> on close. */
+  const openerRef = useRef(null);
+  const wasOpenRef = useRef(false);
+  if (open && !wasOpenRef.current && typeof document !== 'undefined') {
+    openerRef.current = document.activeElement;
+  }
+  wasOpenRef.current = open;
 
   useLayoutEffect(() => {
     if (!open) return undefined;
-    const opener = document.activeElement;
+    const opener = returnFocusTo?.current ?? openerRef.current;
     const layer = {
       id: nextId++,
       kind,
@@ -138,7 +153,7 @@ export function useLayer(open, { kind, ref, onEscape, inertTargets }) {
         focusElement(opener, { preventScroll: true });
       }
     };
-  }, [open, kind, ref]);
+  }, [open, kind, ref, returnFocusTo]);
 }
 
 /** Move focus into a layer that just opened, unless something inside already has it. */

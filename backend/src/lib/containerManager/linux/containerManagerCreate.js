@@ -364,13 +364,13 @@ export async function assertContainerNameAvailable(name) {
   } catch (err) {
     if (err.code !== 'CONTAINER_NOT_FOUND') throw err;
   }
-  const containerDir = getContainerDir(name);
   try {
-    await stat(containerDir);
+    await stat(getContainerDir(name));
+    // No absolute path in the detail: the route redacts paths, and MCP shows it as is.
     throw containerError(
       'CONTAINER_EXISTS',
       `Container directory for "${name}" already exists`,
-      `${containerDir} is left over from a deleted container (kept files?) — move or remove it, or pick another name`,
+      `The directory "${name}" under the containers path is left over from a deleted container (kept files?) — move or remove it, or pick another name`,
     );
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;

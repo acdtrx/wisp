@@ -8,9 +8,7 @@
  * un-marking empties it and puts it back to the plain-file mode (`clearMountBackingFile`).
  */
 import { join, resolve } from 'node:path';
-import { createWriteStream } from 'node:fs';
 import { chmod, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { pipeline } from 'node:stream/promises';
 import { execFile as execFileCb, spawn } from 'node:child_process';
 import { TextDecoder, TextEncoder } from 'node:util';
 
@@ -18,6 +16,7 @@ import { containerError } from './containerManagerConnection.js';
 import { getContainerDir, getContainerFilesDir } from './containerPaths.js';
 import { findMount, validateMountSegmentName, SECRET_MOUNT_FILE_MODE } from './containerManagerMounts.js';
 import { createStallWatchdog, processReadProbe, stallMinutes } from '../../storage/index.js';
+import { atomicTmpName } from './atomicJson.js';
 
 /** Same contract as `import { execFile } from 'node:child_process/promises'` (avoids subpath builtin issues on some runtimes). */
 function execFile(command, args, options) {
@@ -94,10 +93,14 @@ function isUnzipMissingError(err) {
 }
 
 /**
- * Stream upload to files/<mountName> (file mount). Overwrites existing file; a secret
- * mount's file is tightened to SECRET_MOUNT_FILE_MODE first (or created at it).
+ * Plan an upload to files/<mountName> (a file mount): `tmp` is a temp file
+ * beside the destination (same filesystem, the atomic-write suffix boot
+ * cleanup sweeps) that the caller streams the upload into, created at
+ * `mode`, then `commitMountFileUpload` renames over the destination — an
+ * atomic replace, the old content intact until then. A secret mount's file
+ * is created at SECRET_MOUNT_FILE_MODE. The caller removes `tmp` on failure.
  */
-export async function uploadMountFileStream(containerName, mountName, fileStream) {
+export async function planMountFileUpload(containerName, mountName) {
   const config = await loadContainerJson(containerName);
   const m = findMount(config, mountName);
   if (!m) {
@@ -106,14 +109,16 @@ export async function uploadMountFileStream(containerName, mountName, fileStream
   if (m.type !== 'file') {
     throw containerError('CONTAINER_MOUNT_TYPE_MISMATCH', `Mount "${mountName}" is not a file mount`);
   }
-  const filesDir = getContainerFilesDir(containerName);
-  await mkdir(filesDir, { recursive: true });
+  await mkdir(getContainerFilesDir(containerName), { recursive: true });
   const dest = artifactPath(containerName, mountName);
-  const mode = mountFileWriteMode(m, undefined);
-  if (mode != null) await chmodIfExists(dest, mode);
-  await pipeline(fileStream, createWriteStream(dest, mode != null ? { mode } : undefined));
+  return { name: mountName, dest, tmp: atomicTmpName(dest), mode: mountFileWriteMode(m, undefined) ?? 0o666 };
+}
+
+/** Put a planned upload in place (rename over the destination). */
+export async function commitMountFileUpload({ name, dest, tmp }) {
+  await rename(tmp, dest);
   const s = await stat(dest);
-  return { name: mountName, size: s.size, modified: s.mtime.toISOString() };
+  return { name, size: s.size, modified: s.mtime.toISOString() };
 }
 
 const UNZIP_MAX_LIST = 50 * 1024 * 1024;

@@ -2,7 +2,7 @@
  * Container API routes: CRUD, lifecycle, mount content, stats SSE, logs SSE, create progress SSE.
  */
 import { randomUUID, randomBytes } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { createWriteStream } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -17,7 +17,7 @@ import {
   getContainerStats,
   listContainerRuns, readRunLogHistory, streamContainerRunLogs, resolveRunId,
   createRunLogReadStream,
-  uploadMountFileStream, assertMountTakesZip, planMountZipExtract, extractMountZip,
+  planMountFileUpload, commitMountFileUpload, assertMountTakesZip, planMountZipExtract, extractMountZip,
   initMountContent, assertMountOperation, deleteMountData, deleteRemovedMountData,
   getMountFileTextContent, putMountFileTextContent,
   listContainerImages, assertContainerImageDeletable, deleteContainerImage,
@@ -86,7 +86,7 @@ function mountUploadStagingPath(containerName) {
  * multipart fileSize limit answers UPLOAD_TOO_LARGE — in each case before the
  * mount is touched.
  */
-async function stageSingleMultipartFile(request, stagingPath) {
+async function stageSingleMultipartFile(request, stagingPath, { mode = 0o600 } = {}) {
   let staged = false;
   let extraFiles = false;
   try {
@@ -98,7 +98,7 @@ async function stageSingleMultipartFile(request, stagingPath) {
         continue;
       }
       staged = true;
-      await pipeline(part.file, createWriteStream(stagingPath, { mode: 0o600 }));
+      await pipeline(part.file, createWriteStream(stagingPath, { mode, flags: 'wx' }));
       if (part.file.truncated) throw uploadTooLargeError();
     }
   } catch (err) {
@@ -783,23 +783,32 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Mount backing store (files/<mountName>) ───────────────────────
+  // The file part streams into a temp file beside the mount's file and is
+  // renamed over it once the whole body is read: the reply comes right after
+  // the upload, the replace is atomic, and every rejection leaves the mount
+  // as it was. The temp file goes on any failure (boot cleanup sweeps one a
+  // crash leaves).
   fastify.post('/containers/:name/mounts/:mountName/file', { config: { auth: 'admin' } }, async (request, reply) => {
     const containerName = request.params.name;
-    const stagingPath = mountUploadStagingPath(containerName);
     const bodyWatch = watchRequestBody(request);
+    let plan = null;
+    let committed = false;
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       assertMountNotAppManaged(await getContainerConfig(containerName), mountName);
-      if (!(await stageSingleMultipartFile(request, stagingPath))) {
+      plan = await planMountFileUpload(containerName, mountName);
+      if (!(await stageSingleMultipartFile(request, plan.tmp, { mode: plan.mode }))) {
         return sendError(reply, 400, 'No file provided', 'Request must include a file upload');
       }
       bodyWatch.stop();
-      return await uploadMountFileStream(containerName, mountName, createReadStream(stagingPath));
+      const result = await commitMountFileUpload(plan);
+      committed = true;
+      return result;
     } catch (err) {
       handleRouteError(err, reply, request);
     } finally {
       bodyWatch.stop();
-      await unlink(stagingPath).catch(() => { /* never created, or already gone */ });
+      if (plan && !committed) await unlink(plan.tmp).catch(() => { /* never created, or already gone */ });
     }
   });
 

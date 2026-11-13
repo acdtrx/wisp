@@ -1728,7 +1728,7 @@ Remove one mount and delete its `files/<mountName>` backing store (tmpfs has no 
 
 Multipart **file** upload: a single file part (field name typically **`file`**). The mount must already exist in `container.json`.
 
-The file part is streamed to a staging file inside the container directory as it arrives, and handed to the mount only once the whole body has been read — so every rejection below leaves the mount untouched. Field parts are ignored, before or after the file.
+The file part is streamed as it arrives — for a **file** mount into a temp file beside the mount's file in `files/` (renamed over it once the whole body has been read: an atomic replace, and the reply follows the upload at once), for a **zip** into a staging file inside the container directory (handed to the extract job) — so every rejection below leaves the mount untouched. The temp file is removed on any failure or abort; one a crash leaves behind carries the atomic-write suffix the boot cleanup sweeps (settled 2026-11-14). Field parts are ignored, before or after the file.
 
 **400:** `BAD_MULTIPART_TOO_MANY_FILES` if more than one file part (extra parts are read and discarded first) | plain `{ error, detail }` if no file part. **404:** container not found. **422:** `UPLOAD_TOO_LARGE` (`File too large`) past the multipart `fileSize` limit (50 GiB). An upload whose body sends nothing for **60 s** is dropped (settled 2026-11-13; also the PUT content body).
 

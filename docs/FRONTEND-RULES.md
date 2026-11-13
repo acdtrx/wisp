@@ -395,7 +395,7 @@ Route every full-screen overlay through the shared **[Modal.jsx](../frontend/src
 - Body padding via **`bodyPadding`** (`default` `px-4 py-4` | `compact` `px-4 py-3` | `none` for full-bleed content).
 - Guard flag **`closeOnEscape`** for in-flight save/upload states. A click on the backdrop closes nothing (settled 2026-11-12): Escape, the X and Cancel do, so a stray click can't discard a form's edits.
 
-Never open ad-hoc `fixed inset-0` overlays: wrap new modal-style UI in `<Modal>` so backdrop, escape, marker, and styling stay consistent.
+Never open ad-hoc `fixed inset-0` overlays: wrap new modal-style UI in `<Modal>` so backdrop, escape, layer, and styling stay consistent.
 
 #### Modal form editor
 
