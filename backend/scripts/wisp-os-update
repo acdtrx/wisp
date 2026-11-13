@@ -24,6 +24,23 @@ set -euo pipefail
 # When matched, the script exits 75 so callers can distinguish "busy" from "broken".
 LOCK_PATTERN='Could not get lock|Could not open lock|Unable to (acquire|lock)|Resource temporarily unavailable|already locked|unable to lock database|could not lock database|database is locked|frontend is locked'
 
+# CODING-RULES §6: the read-only package-manager steps (index refresh,
+# simulated upgrade, the pacman scratch sync) are bounded here, not only by the
+# caller: the backend's timeout (list: 120 s) signals sudo, which ends this
+# script but not the apt/pacman child it waits on — it would keep running, and
+# keep the lock, after the request failed. The upgrade itself is not bounded
+# (backlog: "OS upgrade runs inside wisp.service"): killing dpkg mid-run is
+# worse than letting it finish.
+READ_TIMEOUT=100
+bounded() {
+  local rc=0
+  timeout --kill-after=5 "$READ_TIMEOUT" "$@" || rc=$?
+  if (( rc == 124 || rc == 137 )); then
+    echo "wisp-os-update: $1 timed out after ${READ_TIMEOUT}s" >&2
+  fi
+  return "$rc"
+}
+
 # Run a command, capturing stderr. On failure, if stderr matches LOCK_PATTERN,
 # print the stderr and exit 75. Otherwise print stderr and exit 1.
 # stdout from the wrapped command is discarded; use directly when you need stdout.
@@ -37,6 +54,15 @@ run_or_busy() {
     echo "$err" >&2
     exit 1
   fi
+}
+
+# `apt-get -s dist-upgrade` output (it may exit non-zero and still print what
+# it would do; only a timeout is a failure).
+simulate_dist_upgrade() {
+  local out rc=0
+  out=$(export LC_ALL=C; bounded apt-get -s dist-upgrade 2>&1) || rc=$?
+  if (( rc == 124 || rc == 137 )); then exit 1; fi
+  printf '%s\n' "$out"
 }
 
 # Detect distro from /etc/os-release
@@ -96,7 +122,7 @@ sync_scratch_db() {
   for f in "$PACMAN_DB"/sync/*.db "$PACMAN_DB"/sync/*.db.sig; do
     if [[ -f "$f" ]]; then cp -p -- "$f" "$SCRATCH_DB/sync/"; fi
   done
-  run_or_busy pacman -Sy --dbpath "$SCRATCH_DB" --logfile /dev/null
+  run_or_busy bounded pacman -Sy --dbpath "$SCRATCH_DB" --logfile /dev/null
 }
 
 # Emit PKG lines for packages `pacman -Syu` would upgrade. `pacman -Qu` prints
@@ -104,7 +130,10 @@ sync_scratch_db() {
 # trailing "[ignored]" are IgnorePkg entries that -Syu skips, so NF == 4 drops them.
 list_arch_upgradable() {
   local out
-  out=$(pacman -Qu --dbpath "$SCRATCH_DB" 2>/dev/null || true)
+  local rc=0
+  # pacman -Qu exits 1 when nothing is upgradable; only a timeout is a failure.
+  out=$(bounded pacman -Qu --dbpath "$SCRATCH_DB" 2>/dev/null) || rc=$?
+  if (( rc == 124 || rc == 137 )); then exit 1; fi
   echo "$out" | awk '
     NF == 4 && $3 == "->" { printf "PKG%s%s%s%s%s%s\n", "\t", $1, "\t", $2, "\t", $4 }
   '
@@ -153,9 +182,9 @@ case "$DISTRO" in
     export UCF_FORCE_CONFFOLD=1
     case "$CMD" in
       check)
-        run_or_busy apt-get update -qq
+        run_or_busy bounded apt-get update -qq
         # Simulate dist-upgrade so count matches what the upgrade action would install (excludes phased-only, etc.).
-        OUT=$(LC_ALL=C apt-get -s dist-upgrade 2>&1 || true)
+        OUT=$(simulate_dist_upgrade) || exit 1
         SUMMARY=$(echo "$OUT" | grep -E '^[0-9]+ upgraded,' | tail -n1 || true)
         if [[ -z "$SUMMARY" ]]; then
           echo 0
@@ -166,8 +195,8 @@ case "$DISTRO" in
         fi
         ;;
       list)
-        run_or_busy apt-get update -qq
-        OUT=$(LC_ALL=C apt-get -s dist-upgrade 2>&1 || true)
+        run_or_busy bounded apt-get update -qq
+        OUT=$(simulate_dist_upgrade) || exit 1
         # `Inst <name> [<from>] (<to> ...)` for upgrades; `Inst <name> (<to> ...)` for new pulls.
         echo "$OUT" | awk -v OFS='\t' '
           /^Inst / {
@@ -197,7 +226,7 @@ case "$DISTRO" in
         echo "TOTAL ${BYTES}"
         ;;
       upgrade)
-        run_or_busy apt-get update -qq
+        run_or_busy bounded apt-get update -qq
         # apt-get dist-upgrade prints progress on stdout; capture stderr for lock detection.
         # confdef+confold: an untouched conffile takes the package's new version,
         # a locally modified one is kept (the new one lands as .dpkg-dist).

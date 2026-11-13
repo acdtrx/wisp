@@ -79,8 +79,21 @@ async function runUpdateScript(scriptPath, action, timeoutMs, signal) {
    * into EOF. */
   pending.child.stdin?.end();
 
+  /* Settle on our own timer too (CODING-RULES §6): execFile's timeout signals
+   * sudo, and on a host whose sudo hands its pipe to the helper (no use_pty) an
+   * apt child the helper left behind would hold the promise open. The helper
+   * bounds its read-only apt/pacman steps itself (backend/scripts/wisp-os-update). */
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      pending.child?.kill('SIGKILL');
+      reject(Object.assign(new Error(`wisp-os-update ${action} did not finish within ${timeoutMs} ms`), { killed: true }));
+    }, timeoutMs + 5_000);
+  });
+  pending.catch(() => {}); // settled by the race below
+
   try {
-    return await pending;
+    return await Promise.race([pending, deadline]);
   } catch (err) {
     if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
       throw err;
@@ -93,6 +106,8 @@ async function runUpdateScript(scriptPath, action, timeoutMs, signal) {
     }
     const detail = err.stderr || err.stdout || err.message;
     throw createAppError(UNAVAILABLE, `OS update ${action} failed (privilege or package manager error)`, detail?.trim() || err.message);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

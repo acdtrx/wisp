@@ -33,6 +33,23 @@ ARG="${3:-}"
 SUPPORTED_DISK_FSTYPES=(ext4 btrfs vfat exfat ntfs3)
 WISP_MOUNT_ROOT="/mnt/wisp"
 
+# CODING-RULES §6: mount and umount are bounded here, not only by the caller.
+# The backend's timeout signals sudo, which ends this script but not a child it
+# is waiting on — a hung `mount -t cifs` would outlive the request, holding the
+# mount point. Each bound stays under the backend's own (mount 30 s, unmount
+# 10 s; an smb check is a mount plus an umount within 30 s).
+MOUNT_TIMEOUT=20
+UMOUNT_TIMEOUT=5
+bounded() {
+  local secs="$1"; shift
+  local rc=0
+  timeout --kill-after=3 "$secs" "$@" || rc=$?
+  if (( rc == 124 || rc == 137 )); then
+    echo "wisp-mount: $1 timed out after ${secs}s" >&2
+  fi
+  return "$rc"
+}
+
 is_supported_fstype() {
   local t="$1"
   for x in "${SUPPORTED_DISK_FSTYPES[@]}"; do
@@ -158,7 +175,7 @@ unmount_wisp_child() {
     exit 32
   fi
   shift
-  umount "$@" -- "$TARGET_PATH"
+  bounded "$UMOUNT_TIMEOUT" umount "$@" -- "$TARGET_PATH"
 }
 
 # Strict key=value parser. Reads a config file line by line, splits on the
@@ -250,12 +267,12 @@ do_smb_mount() {
     *) echo "wisp-mount: ownerOnly must be 1" >&2; exit 64 ;;
   esac
   prepare_mount_point "$mountPath"
-  mount -t cifs "$share" "$MOUNT_TARGET" -o "$opts"
+  bounded "$MOUNT_TIMEOUT" mount -t cifs "$share" "$MOUNT_TARGET" -o "$opts"
 }
 
 do_smb_check() {
   do_smb_mount "$1"
-  umount -- "$MOUNT_TARGET"
+  bounded "$UMOUNT_TIMEOUT" umount -- "$MOUNT_TARGET"
   rmdir -- "$MOUNT_TARGET"
 }
 
@@ -296,7 +313,7 @@ do_disk_mount() {
   esac
   opts="${opts#,}"
   prepare_mount_point "$mountPath"
-  mount -t "$fsType" "$devPath" "$MOUNT_TARGET" -o "$opts"
+  bounded "$MOUNT_TIMEOUT" mount -t "$fsType" "$devPath" "$MOUNT_TARGET" -o "$opts"
 }
 
 case "$CMD" in

@@ -1,14 +1,11 @@
 /**
  * Removable/fixed disk mount via `wisp-mount disk` helper. Same invocation pattern as smbMount.
  */
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { access, writeFile, unlink, rm, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAppError } from '../../routeErrors.js';
-
-const execFileAsync = promisify(execFile);
+import { execHelper } from './helperExec.js';
 
 const SCRIPT_PATH = '/usr/local/bin/wisp-mount';
 const UNAVAILABLE = 'DISK_MOUNT_UNAVAILABLE';
@@ -48,11 +45,7 @@ async function getScriptPath() {
 }
 
 async function runHelper(args, { timeout = 30000 } = {}) {
-  const scriptPath = await getScriptPath();
-  const isRoot = process.getuid && process.getuid() === 0;
-  const cmd = isRoot ? scriptPath : 'sudo';
-  const cmdArgs = isRoot ? args : ['-n', scriptPath, ...args];
-  return execFileAsync(cmd, cmdArgs, { timeout });
+  return execHelper(await getScriptPath(), args, { timeout });
 }
 
 /**
