@@ -102,6 +102,11 @@ The §6 findings except TMO-4.
     hung command or a stalled stream (on tini where it needs Linux).
   - A normal long job (a large backup, a convert, an image pull) still completes.
 
+**Settled after 2b (2026-11-13):** the REST client's default deadline is 60 s, not the
+audit's 30 s. Some routes run for up to 30 s on the server, and a libvirt lifecycle call
+for up to 2 min, so a 30 s client would cut off their real errors. A call may pass its own
+`timeoutMs`.
+
 ## Milestone 2c — frontend
 
 The Data, Phones and touch, and Layers findings. DAT-9 (cloud-init fetch failure) comes
