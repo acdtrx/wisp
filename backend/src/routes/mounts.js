@@ -321,6 +321,7 @@ export default async function mountsRoutes(fastify) {
   });
 
   // A job: an unmount flushes first, which after a large write takes a while.
+  // Not found (404) and not mounted (409) are answered here.
   fastify.post('/host/mounts/:id/unmount', {
     config: { auth: 'admin' },
     schema: {
@@ -333,6 +334,9 @@ export default async function mountsRoutes(fastify) {
         const d = mounts.find((x) => x.id === request.params.id);
         if (!d) {
           return reply.code(404).send({ error: 'Mount not found', detail: request.params.id });
+        }
+        if (!(await getMountStatus(d.mountPath)).mounted) {
+          return reply.code(409).send({ error: 'Not mounted', detail: d.mountPath });
         }
         const job = operationJobStore.startOperationJob({
           kind: BACKGROUND_JOB_KIND.MOUNT_UNMOUNT,

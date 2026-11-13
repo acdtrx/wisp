@@ -35,7 +35,7 @@ export { subscribeVMNetworkChange } from './vmManagerNetwork.js';
 
 export { getGuestNetwork } from './vmManagerStats.js';
 
-export { startVM, stopVM, forceStopVM, rebootVM, suspendVM, resumeVM } from './vmManagerLifecycle.js';
+export { assertVMState, startVM, stopVM, forceStopVM, rebootVM, suspendVM, resumeVM } from './vmManagerLifecycle.js';
 
 export { getVMStats, getVMXML, getVNCPort } from './vmManagerStats.js';
 
@@ -64,6 +64,7 @@ export { attachISO, ejectISO } from './vmManagerIso.js';
 export {
   createBackup,
   listBackups,
+  planBackupRestore,
   restoreBackup,
   deleteBackup,
   resolveVmBackupDir,

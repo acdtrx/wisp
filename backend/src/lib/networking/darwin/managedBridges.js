@@ -13,6 +13,14 @@ export async function listEligibleParentBridges() {
   return [];
 }
 
+export async function planManagedNetworkBridgeCreate() {
+  throw networkingError(UNAVAILABLE, 'Managed network bridges are only supported on Linux', 'Unsupported platform');
+}
+
+export async function planManagedNetworkBridgeDelete() {
+  throw networkingError(UNAVAILABLE, 'Managed network bridges are only supported on Linux', 'Unsupported platform');
+}
+
 export async function createManagedNetworkBridge() {
   throw networkingError(UNAVAILABLE, 'Managed network bridges are only supported on Linux', 'Unsupported platform');
 }

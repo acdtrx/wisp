@@ -62,6 +62,7 @@ export const getRebootSignal = rebootImpl.getRebootSignal;
 export const getPendingUpdatesCount = updatesImpl.getPendingUpdatesCount;
 export const getLastCheckedAt = updatesImpl.getLastCheckedAt;
 export const isUpdateOperationInProgress = updatesImpl.isOperationInProgress;
+export const isUpgradeInProgress = updatesImpl.isUpgradeInProgress;
 export const getCachedPackages = updatesImpl.getCachedPackages;
 export const checkForUpdates = updatesImpl.checkForUpdates;
 export const performUpgrade = updatesImpl.performUpgrade;

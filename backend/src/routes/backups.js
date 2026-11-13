@@ -6,7 +6,7 @@ import {
   restoreBackup,
   deleteBackup,
   resolveVmBackupDir,
-  assertVMNameAvailable,
+  planBackupRestore,
 } from '../lib/vmManager/index.js';
 import { rebuildCloudInitISO } from '../lib/cloudInit.js';
 import { isPathInsideAllowedRoots } from '../lib/paths.js';
@@ -195,8 +195,9 @@ export default async function backupsRoutes(fastify) {
       },
     },
     // A job: restoring copies (and gunzips) every disk. The request is checked
-    // here (names, destination, backup folder); the restore's own outcome — the
-    // new VM's name, or the error — arrives over the job's stream.
+    // here (names, destination, backup folder, the archive's validation); the
+    // copy's outcome — the new VM's name, or the error — arrives over the job's
+    // stream.
     handler: async (request, reply) => {
       try {
         const { destinationId, vmName, timestamp, newVmName } = request.body;
@@ -206,19 +207,20 @@ export default async function backupsRoutes(fastify) {
         const settings = await getSettings();
         const root = resolveBackupRoot(settings, destinationId);
         const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
-        await assertVMNameAvailable(newVmName); // a taken name is a 409 here, not a failed job
+        // A CD-ROM may keep a source outside the new VM directory only under
+        // the paths an attach would accept (the image library).
+        const plan = await planBackupRestore(backupPath, newVmName, {
+          isExternalSourceAllowed: (absPath) => isPathInsideAllowedRoots(absPath, newVmName),
+        });
         const job = operationJobStore.startOperationJob({
           kind: BACKGROUND_JOB_KIND.VM_RESTORE,
           title: titleForVmRestore(newVmName),
           log: request.log,
           // Backups don't hold the cloud-init seed ISO; rebuild it from the
-          // restored cloud-init.json before the domain is defined. A CD-ROM may
-          // keep a source outside the new VM directory only under the paths an
-          // attach would accept (the image library).
+          // restored cloud-init.json before the domain is defined.
           run: async () => {
-            const result = await restoreBackup(backupPath, newVmName, {
+            const result = await restoreBackup(plan, {
               populateVMDir: (vmDir, { xml }) => rebuildCloudInitISO(newVmName, vmDir, xml),
-              isExternalSourceAllowed: (absPath) => isPathInsideAllowedRoots(absPath, newVmName),
             });
             return { name: result?.name ?? newVmName };
           },

@@ -99,6 +99,10 @@ export async function findVMsUsingImage() {
   return [];
 }
 
+export async function assertVMState() {
+  throw noConn();
+}
+
 export async function startVM() {
   throw noConn();
 }
@@ -216,6 +220,10 @@ export async function listBackups() {
 }
 
 export async function deleteBackup() {
+  throw noConn();
+}
+
+export async function planBackupRestore() {
   throw noConn();
 }
 

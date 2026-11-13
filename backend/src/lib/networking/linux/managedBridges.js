@@ -218,7 +218,12 @@ async function assertCreateInput(baseBridgeRaw, vlanRaw) {
   return { baseBridge, vlanId, bridgeName };
 }
 
-export async function createManagedNetworkBridge(input) {
+/**
+ * Check a bridge create (format, VLAN range, parent, an existing bridge) and
+ * return its plan for `createManagedNetworkBridge`. Fast, and changes nothing:
+ * a caller runs it before starting the slow part.
+ */
+export async function planManagedNetworkBridgeCreate(input) {
   const { baseBridge, vlanId, bridgeName } = await assertCreateInput(input?.baseBridge, input?.vlanId);
   if (await interfaceExists(bridgeName)) {
     throw networkingError('NETWORK_BRIDGE_EXISTS', `Bridge "${bridgeName}" already exists`);
@@ -227,7 +232,11 @@ export async function createManagedNetworkBridge(input) {
   if (managed.some((m) => m.bridgeName === bridgeName)) {
     throw networkingError('NETWORK_BRIDGE_EXISTS', `Bridge "${bridgeName}" already exists`);
   }
+  return { baseBridge, vlanId, bridgeName };
+}
 
+/** Create the bridge a `planManagedNetworkBridgeCreate` plan describes (netplan apply). */
+export async function createManagedNetworkBridge({ baseBridge, vlanId, bridgeName }) {
   await runHelper([
     'create-vlan-bridge',
     '--base',
@@ -250,17 +259,17 @@ export async function createManagedNetworkBridge(input) {
 }
 
 /**
- * Delete a managed VLAN bridge. Whether workloads still use the bridge is the
- * caller's knowledge, not this module's (the VM and container managers import
- * networking, not the reverse): `assertNotInUse(name)` is required and runs
- * once the bridge is known to be managed, before anything changes; it throws
- * to refuse the delete.
+ * Check a bridge delete and return its plan for `deleteManagedNetworkBridge`.
+ * Whether workloads still use the bridge is the caller's knowledge, not this
+ * module's (the VM and container managers import networking, not the
+ * reverse): `assertNotInUse(name)` is required and runs once the bridge is
+ * known to be managed; it throws to refuse the delete. Changes nothing.
  * @param {string} nameRaw
  * @param {{ assertNotInUse: (name: string) => Promise<void> }} opts
  */
-export async function deleteManagedNetworkBridge(nameRaw, { assertNotInUse } = {}) {
+export async function planManagedNetworkBridgeDelete(nameRaw, { assertNotInUse } = {}) {
   if (typeof assertNotInUse !== 'function') {
-    throw new TypeError('deleteManagedNetworkBridge requires an assertNotInUse check');
+    throw new TypeError('planManagedNetworkBridgeDelete requires an assertNotInUse check');
   }
   if (!isLinux()) {
     throw networkingError('NETWORK_BRIDGE_UNAVAILABLE', 'Network bridge management is only supported on Linux');
@@ -272,7 +281,12 @@ export async function deleteManagedNetworkBridge(nameRaw, { assertNotInUse } = {
     throw networkingError('NETWORK_BRIDGE_NOT_FOUND', `Managed bridge "${name}" not found`);
   }
   await assertNotInUse(name);
+  return target;
+}
 
+/** Delete the bridge a `planManagedNetworkBridgeDelete` plan names (netplan apply). */
+export async function deleteManagedNetworkBridge(target) {
+  const name = target.bridgeName;
   await runHelper([
     'delete-vlan-bridge',
     '--base',
@@ -285,5 +299,5 @@ export async function deleteManagedNetworkBridge(nameRaw, { assertNotInUse } = {
     netplanFilename(target.baseBridge, target.vlanId, target.bridgeName),
   ]);
 
-  return { ok: true };
+  return { name };
 }

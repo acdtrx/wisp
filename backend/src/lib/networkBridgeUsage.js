@@ -9,7 +9,7 @@ import { createAppError } from './routeErrors.js';
 
 /**
  * Throw NETWORK_BRIDGE_IN_USE when any VM NIC or container network is attached
- * to `bridgeName`. Passed to `deleteManagedNetworkBridge` as its in-use check.
+ * to `bridgeName`. Passed to `planManagedNetworkBridgeDelete` as its in-use check.
  */
 export async function assertBridgeNotInUse(bridgeName) {
   const vmRefs = [];

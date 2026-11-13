@@ -4,6 +4,22 @@
 import { connectionState, resolveDomain, getDomainState, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
 import { isOfflineState } from './libvirtConstants.js';
 
+/**
+ * The checks a lifecycle call makes first, alone and quick, for a caller that
+ * answers them before starting slow work: `start` (VM_NOT_FOUND,
+ * VM_ALREADY_RUNNING), `running` (VM_NOT_FOUND, VM_NOT_RUNNING), `exists`
+ * (VM_NOT_FOUND).
+ * @param {string} name
+ * @param {'start' | 'running' | 'exists'} what
+ */
+export async function assertVMState(name, what) {
+  const path = await resolveDomain(name);
+  if (what === 'exists') return;
+  const state = await getDomainState(path);
+  if (what === 'start' && state.code === 1) throw vmError('VM_ALREADY_RUNNING', `VM "${name}" is already running`);
+  if (what === 'running' && isOfflineState(state.code)) throw vmError('VM_NOT_RUNNING', `VM "${name}" is not running`);
+}
+
 export async function startVM(name) {
   const path = await resolveDomain(name);
   const state = await getDomainState(path);

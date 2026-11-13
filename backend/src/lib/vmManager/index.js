@@ -25,6 +25,7 @@ export const subscribeVMListChange = impl.subscribeVMListChange;
 export const subscribeVMNetworkChange = impl.subscribeVMNetworkChange;
 export const getGuestNetwork = impl.getGuestNetwork;
 
+export const assertVMState = impl.assertVMState;
 export const startVM = impl.startVM;
 export const stopVM = impl.stopVM;
 export const forceStopVM = impl.forceStopVM;
@@ -63,6 +64,7 @@ export const isOfflineState = impl.isOfflineState;
 
 export const createBackup = impl.createBackup;
 export const listBackups = impl.listBackups;
+export const planBackupRestore = impl.planBackupRestore;
 export const restoreBackup = impl.restoreBackup;
 export const deleteBackup = impl.deleteBackup;
 export const resolveVmBackupDir = impl.resolveVmBackupDir;

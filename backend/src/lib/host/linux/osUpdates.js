@@ -51,6 +51,11 @@ export function isOperationInProgress() {
   return inflightRead != null || inflightUpgrade != null;
 }
 
+/** True while an upgrade runs (a check then answers UPDATE_BUSY). */
+export function isUpgradeInProgress() {
+  return inflightUpgrade != null;
+}
+
 async function getScriptPath() {
   try {
     await access(SCRIPT_PATH);
@@ -208,15 +213,17 @@ export async function checkForUpdates(signal) {
  * @returns { Promise<{ ok: true }> }
  * @throws {{ code: 'UPDATE_CHECK_UNAVAILABLE' | 'UPDATE_BUSY', message: string, detail?: string }}
  */
-export async function performUpgrade(signal, { onLine } = {}) {
+export function performUpgrade(signal, { onLine } = {}) {
   if (inflightUpgrade) {
-    throw createAppError(BUSY, 'An OS upgrade is already in progress', 'Wait for the running upgrade to complete');
+    return Promise.reject(createAppError(BUSY, 'An OS upgrade is already in progress', 'Wait for the running upgrade to complete'));
   }
   if (inflightRead) {
-    throw createAppError(BUSY, 'An update check is in progress', 'Try again once the check completes');
+    return Promise.reject(createAppError(BUSY, 'An update check is in progress', 'Try again once the check completes'));
   }
-  const scriptPath = await getScriptPath();
-  const promise = runUpdateScript(scriptPath, 'upgrade', { idleMs: UPGRADE_IDLE_MS, signal, onLine })
+  // inflightUpgrade is set before anything awaits, so a second upgrade or a
+  // check started meanwhile sees it.
+  const promise = getScriptPath()
+    .then((scriptPath) => runUpdateScript(scriptPath, 'upgrade', { idleMs: UPGRADE_IDLE_MS, signal, onLine }))
     .then(() => {
       const now = new Date().toISOString();
       cachedUpdateCount = 0;

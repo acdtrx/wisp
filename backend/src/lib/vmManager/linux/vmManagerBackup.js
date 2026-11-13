@@ -883,7 +883,13 @@ async function copyBackupPayload(backupPath, payload, destBase) {
  *   every source must be inside the new VM directory.
  * @returns { Promise<{ name: string }> }
  */
-export async function restoreBackup(backupPath, newVmName, { populateVMDir, isExternalSourceAllowed } = {}) {
+/**
+ * Check a restore as `newVmName` — the name is free, the backup's domain.xml
+ * and payload pass validation — and return its plan for `restoreBackup`. It
+ * copies nothing; the plan holds the payload files open until `restoreBackup`
+ * closes them, so a caller runs it right before the restore.
+ */
+export async function planBackupRestore(backupPath, newVmName, { isExternalSourceAllowed } = {}) {
   await assertVMNameAvailable(newVmName);
 
   const { xml, manifest } = await readBackupDomain(backupPath);
@@ -895,6 +901,11 @@ export async function restoreBackup(backupPath, newVmName, { populateVMDir, isEx
   const newXml = await restoredDomainXml(xml, { newVmName, manifest, config, diskPlan, newBase, isExternalSourceAllowed });
 
   const payload = await openBackupPayload(backupPath, diskPlan);
+  return { backupPath, newVmName, newBase, newXml, payload };
+}
+
+/** Run a `planBackupRestore` plan: copy the payload into a new VM directory and define the VM. */
+export async function restoreBackup({ backupPath, newVmName, newBase, newXml, payload }, { populateVMDir } = {}) {
   try {
     // createOwnVMDir creates getVMBasePath(newVmName) — newBase — exclusively,
     // so removing it undoes the restore.

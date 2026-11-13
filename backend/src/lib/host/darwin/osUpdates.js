@@ -21,6 +21,10 @@ export function isOperationInProgress() {
   return false;
 }
 
+export function isUpgradeInProgress() {
+  return false;
+}
+
 export async function checkForUpdates() {
   throw createAppError(UNAVAILABLE, 'OS update operations are only supported on Linux', 'Unsupported platform');
 }

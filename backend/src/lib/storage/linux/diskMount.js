@@ -20,7 +20,7 @@ const mountLocks = new Map();
 
 function sanitizeStderr(msg) {
   if (!msg || typeof msg !== 'string') return msg || '';
-  return msg;
+  return msg.trim();
 }
 
 /**

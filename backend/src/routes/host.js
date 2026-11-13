@@ -8,13 +8,16 @@ import {
   listHostBridges,
   listManagedNetworkBridges,
   listEligibleParentBridges,
+  planManagedNetworkBridgeCreate,
   createManagedNetworkBridge,
+  planManagedNetworkBridgeDelete,
   deleteManagedNetworkBridge,
 } from '../lib/networking/index.js';
 import {
   checkForUpdates,
   performUpgrade,
   isUpdateOperationInProgress,
+  isUpgradeInProgress,
   listUpgradablePackages,
   getHostHardwareInfo,
   hostShutdown,
@@ -25,7 +28,7 @@ import {
   getProfilerSoftwareOverview,
 } from '../lib/host/index.js';
 import { assertBridgeNotInUse } from '../lib/networkBridgeUsage.js';
-import { handleRouteError, sendError } from '../lib/routeErrors.js';
+import { createAppError, handleRouteError, sendError } from '../lib/routeErrors.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/storage/index.js';
 import { getCurrentVersion } from '../lib/wispUpdate.js';
@@ -48,6 +51,9 @@ const JOB_ACCEPTED = {
  * count; the packages are then served from the cache (GET /host/updates/packages).
  */
 function startOsUpdateCheckJob(log) {
+  if (isUpgradeInProgress()) {
+    throw createAppError('UPDATE_BUSY', 'An OS upgrade is in progress on the host', 'Wait for the upgrade to finish before checking again');
+  }
   const running = operationJobStore.findRunningJob(BACKGROUND_JOB_KIND.OS_UPDATE_CHECK, TITLE_OS_UPDATE_CHECK);
   if (running) return { jobId: running.jobId, title: running.title };
   return operationJobStore.startOperationJob({
@@ -147,7 +153,13 @@ export default async function hostRoutes(fastify) {
   fastify.post('/host/updates/check', {
     config: { auth: 'admin' },
     schema: { response: JOB_ACCEPTED },
-    handler: async (request, reply) => reply.code(202).send(startOsUpdateCheckJob(request.log)),
+    handler: async (request, reply) => {
+      try {
+        return reply.code(202).send(startOsUpdateCheckJob(request.log));
+      } catch (err) {
+        return reply.code(osUpdateErrorStatus(err)).send({ error: err.message, detail: err.raw || err.message, code: err.code });
+      }
+    },
   });
 
   fastify.get('/host/updates/packages', {
@@ -298,20 +310,25 @@ export default async function hostRoutes(fastify) {
       },
       response: JOB_ACCEPTED,
     },
-    // A job: applying netplan can take a while. The created bridge (name, base,
-    // VLAN, interface, present) is the job's `done` payload.
+    // A job: applying netplan can take a while. The request is checked here
+    // (format, VLAN range, parent, an existing bridge); the created bridge is
+    // the job's `done` payload.
     handler: async (request, reply) => {
-      const { baseBridge, vlanId } = request.body;
-      const job = operationJobStore.startOperationJob({
-        kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_CREATE,
-        title: titleForBridgeCreate(`${baseBridge} VLAN ${vlanId}`),
-        log: request.log,
-        run: async () => {
-          const b = await createManagedNetworkBridge(request.body);
-          return { name: b.name, baseBridge: b.baseBridge, vlanId: b.vlanId, vlanInterface: b.vlanInterface, present: b.present };
-        },
-      });
-      return reply.code(202).send(job);
+      try {
+        const plan = await planManagedNetworkBridgeCreate(request.body);
+        const job = operationJobStore.startOperationJob({
+          kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_CREATE,
+          title: titleForBridgeCreate(`${plan.baseBridge} VLAN ${plan.vlanId}`),
+          log: request.log,
+          run: async () => {
+            const b = await createManagedNetworkBridge(plan);
+            return { name: b.name, baseBridge: b.baseBridge, vlanId: b.vlanId, vlanInterface: b.vlanInterface, present: b.present };
+          },
+        });
+        return reply.code(202).send(job);
+      } catch (err) {
+        handleRouteError(err, reply, request);
+      }
     },
   });
 
@@ -327,19 +344,21 @@ export default async function hostRoutes(fastify) {
       },
       response: JOB_ACCEPTED,
     },
-    // A job, like create: removing the bridge applies netplan.
+    // A job, like create: removing the bridge applies netplan. Not found and
+    // in use are answered here.
     handler: async (request, reply) => {
-      const { name } = request.params;
-      const job = operationJobStore.startOperationJob({
-        kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_DELETE,
-        title: titleForBridgeDelete(name),
-        log: request.log,
-        run: async () => {
-          await deleteManagedNetworkBridge(name, { assertNotInUse: assertBridgeNotInUse });
-          return { name };
-        },
-      });
-      return reply.code(202).send(job);
+      try {
+        const target = await planManagedNetworkBridgeDelete(request.params.name, { assertNotInUse: assertBridgeNotInUse });
+        const job = operationJobStore.startOperationJob({
+          kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_DELETE,
+          title: titleForBridgeDelete(target.bridgeName),
+          log: request.log,
+          run: () => deleteManagedNetworkBridge(target),
+        });
+        return reply.code(202).send(job);
+      } catch (err) {
+        handleRouteError(err, reply, request);
+      }
     },
   });
 

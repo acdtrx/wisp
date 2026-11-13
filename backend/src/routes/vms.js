@@ -7,6 +7,7 @@ import {
   updateVMConfig,
   assertVMNameAvailable,
   createVM,
+  assertVMState,
   startVM,
   stopVM,
   forceStopVM,
@@ -434,13 +435,20 @@ export default async function vmsRoutes(fastify) {
         additionalProperties: false,
       },
     },
-    // A job: undefining and deleting disk files can take a while. A busy VM is
-    // refused here (409); the outcome arrives over the job's stream.
+    // A job: undefining and deleting disk files can take a while. A missing VM
+    // (404) or a busy one (409) is refused here; the outcome arrives over the
+    // job's stream.
     handler: async (request, reply) => {
       try {
         const { name } = request.params;
         const deleteDisks = request.query.deleteDisks === 'true';
         const release = acquireVmOperationLock(name, 'delete');
+        try {
+          await assertVMState(name, 'exists');
+        } catch (err) {
+          release();
+          throw err;
+        }
         const job = operationJobStore.startOperationJob({
           kind: BACKGROUND_JOB_KIND.VM_DELETE,
           title: titleForVmDelete(name),
@@ -469,10 +477,10 @@ export default async function vmsRoutes(fastify) {
   // to exit, can outlast a short request: the POST answers 202 with the job
   // id, the outcome arrives over the job's stream. The others answer at once.
   const lifecycleJobs = [
-    { path: 'start', kind: BACKGROUND_JOB_KIND.VM_START, title: titleForVmStart, lock: 'start', fn: startVM },
-    { path: 'force-stop', kind: BACKGROUND_JOB_KIND.VM_FORCE_STOP, title: titleForVmForceStop, fn: forceStopVM },
+    { path: 'start', kind: BACKGROUND_JOB_KIND.VM_START, title: titleForVmStart, lock: 'start', check: 'start', fn: startVM },
+    { path: 'force-stop', kind: BACKGROUND_JOB_KIND.VM_FORCE_STOP, title: titleForVmForceStop, check: 'running', fn: forceStopVM },
   ];
-  for (const { path, kind, title, lock, fn } of lifecycleJobs) {
+  for (const { path, kind, title, lock, check, fn } of lifecycleJobs) {
     fastify.post(`/vms/:name/${path}`, {
       config: { auth: 'admin' },
       schema: {
@@ -486,6 +494,12 @@ export default async function vmsRoutes(fastify) {
         try {
           const { name } = request.params;
           const release = lock ? acquireVmOperationLock(name, lock) : () => {};
+          try {
+            await assertVMState(name, check); // not found, already running / not running: answered here
+          } catch (err) {
+            release();
+            throw err;
+          }
           const job = operationJobStore.startOperationJob({
             kind,
             title: title(name),

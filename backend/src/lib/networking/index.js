@@ -25,5 +25,7 @@ export const ipv6GlobalCidrFromProcIfInet6 = hostImpl.ipv6GlobalCidrFromProcIfIn
 
 export const listManagedNetworkBridges = managedImpl.listManagedNetworkBridges;
 export const listEligibleParentBridges = managedImpl.listEligibleParentBridges;
+export const planManagedNetworkBridgeCreate = managedImpl.planManagedNetworkBridgeCreate;
 export const createManagedNetworkBridge = managedImpl.createManagedNetworkBridge;
+export const planManagedNetworkBridgeDelete = managedImpl.planManagedNetworkBridgeDelete;
 export const deleteManagedNetworkBridge = managedImpl.deleteManagedNetworkBridge;
