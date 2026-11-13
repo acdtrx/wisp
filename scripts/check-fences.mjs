@@ -20,15 +20,22 @@
  * nothing. A reviewed allowance is one line in EXCEPTIONS.
  *
  * Same dumb-scan spirit as check-imports.mjs: static `import … from`,
- * `export … from`, side-effect imports; inside a dynamic `import(…)`, every
- * string literal (the facades' platform ternaries, a package picked by a
- * condition, a concatenation's leading literal) and a template literal's static
- * prefix (`./linux/${name}.js` checks as `./linux/`; a prefix ending in `/` on a
- * module's root folder reaches inside it); `require(…)`, including through
- * `createRequire` under any import alias and whatever name its result is
- * assigned to. A specifier computed with no relative literal prefix (a
- * substituted package template included) can't be checked: it is a violation
- * unless EXCEPTIONS allows it.
+ * `export … from`, side-effect imports; `import(…)` and `require(…)` calls,
+ * including through `createRequire` — under an import alias, a destructuring
+ * rename (`{ createRequire: cr }`) or a plain assignment (`const c =
+ * createRequire`) — and through whatever name its result is assigned to.
+ * A call's argument is read value by value (a ternary's condition skipped):
+ * a literal is checked as written; a template or a concatenation by its leading
+ * static prefix, which counts only when it lands inside one module's folder
+ * (`./linux/${name}.js`, `'./vmManager/' + x` — reaching into that module) or in
+ * a folder outside lib/. Anything else — no literal, a prefix on lib/ itself or
+ * above it (`./${x}` from lib, `../lib/${x}`), a partial folder name
+ * (`./vmManager${x}`), a substituted package template — is `<computed>`: a
+ * violation unless EXCEPTIONS allows it.
+ *
+ * Known limits (a dumb scan, not a parser): a require function re-bound to
+ * another name (`const s = r`) or called through `r.call(…)` / `r.apply(…)`
+ * is not followed, nor is any property access other than `<object>.name(`.
  */
 import { readdir, readFile } from 'node:fs/promises';
 import { builtinModules } from 'node:module';
@@ -137,7 +144,11 @@ const STATIC_IMPORT = /(?<![\w$.])import\s*(?:([\w$*{}\s,]+?)\s*from\s*)?(['"])(
 const EXPORT_FROM = /(?<![\w$.])export\s*(?:\*(?:\s*as\s+[\w$]+)?|\{[^}]*\})\s*from\s*(['"])([^'"\n]+)\1/g;
 const DYNAMIC_IMPORT = /(?<![\w$.])import\s*\(/g;
 const REQUIRE_CALL = /(?<![\w$.])require\s*\(/g;
-const CREATE_REQUIRE_ALIAS = /\bcreateRequire\s+as\s+([\w$]+)/g;
+const CREATE_REQUIRE_ALIASES = [
+  /\bcreateRequire\s+as\s+([\w$]+)/g, // import { createRequire as cr }
+  /\bcreateRequire\s*:\s*([\w$]+)/g, // const { createRequire: cr } = …
+  /(?<![\w$.])([\w$]+)\s*=(?!=)\s*(?:[\w$.]+\.)?createRequire\b(?!\s*\()/g, // c = createRequire
+];
 
 function escapeName(name) {
   return name.replace(/\$/g, '\\$');
@@ -150,7 +161,7 @@ function escapeName(name) {
  * declared or not (`const r = cr(…)`, `r = mod.createRequire(…)`).
  */
 function createRequireCalls(code) {
-  const names = ['createRequire', ...[...code.matchAll(CREATE_REQUIRE_ALIAS)].map((m) => m[1])];
+  const names = ['createRequire', ...CREATE_REQUIRE_ALIASES.flatMap((re) => [...code.matchAll(re)].map((m) => m[1]))];
   const calls = [];
   for (const name of names.map(escapeName)) {
     const direct = new RegExp(`(?<![\\w$.])(?:[\\w$.]+\\.)?${name}\\s*\\([^()]*(?:\\([^()]*\\))*[^()]*\\)\\s*\\(`, 'g');
@@ -176,24 +187,86 @@ function callArgument(code, open) {
 }
 
 /**
- * The specifiers a dynamic import()/require() argument can name: a whole literal;
- * else every string literal in it (a concatenation's leading `'./x/' + …`
- * included) and each template literal — a relative one by its static prefix, a
- * package one with a substitution as `<computed>`; `<computed>` when it has no
- * literal at all.
+ * Split a call's first argument (up to a depth-0 `,`) at its depth-0 `?` / `:`
+ * (and `||`, `??`) — outside literals, templates and brackets — into
+ * `[{ text, isCondition }]`: the part before each `?` is a ternary's condition,
+ * the rest are the values it can take.
+ */
+function argumentValues(arg) {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  let i = 0;
+  const cut = (end, sep) => {
+    parts.push({ text: arg.slice(start, end).trim(), isCondition: sep === '?' });
+  };
+  let end = arg.length;
+  while (i < arg.length) {
+    const c = arg[i];
+    if (c === '"' || c === "'" || c === '`') {
+      let j = i + 1;
+      while (j < arg.length && arg[j] !== c) j += arg[j] === '\\' ? 2 : 1;
+      i = j + 1;
+      continue;
+    }
+    if ('([{'.includes(c)) depth += 1;
+    else if (')]}'.includes(c)) depth -= 1;
+    else if (depth === 0 && c === ',') {
+      // Only the first argument names the module (import()'s second is options).
+      end = i;
+      break;
+    } else if (depth === 0 && (c === '?' || c === ':') && arg[i + 1] !== '?' && arg[i + 1] !== '.') {
+      cut(i, c);
+      start = i + 1;
+    } else if (depth === 0 && (arg.startsWith('||', i) || arg.startsWith('??', i))) {
+      cut(i, '|');
+      start = i + 2;
+      i += 2;
+      continue;
+    }
+    i += 1;
+  }
+  cut(end, null);
+  return parts;
+}
+
+/**
+ * The specifiers a dynamic import()/require() argument can name:
+ * `{ specifier, prefix }`, where `prefix` marks the static start of a template
+ * or a concatenation (see the header), and `<computed>` a value with none.
  */
 function specifiersOfArgument(arg) {
-  const whole = /^(['"])([^'"\n]+)\1$/.exec(arg) || /^`([^`$]*)`$/.exec(arg);
-  if (whole) return [whole[2] ?? whole[1]];
   const found = [];
-  for (const lit of arg.matchAll(/(['"])([^'"\n]+)\1/g)) found.push(lit[2]);
-  for (const tpl of arg.matchAll(/`([^`]*)`/g)) {
-    const prefix = tpl[1].split('${')[0];
-    if (!tpl[1].includes('${')) found.push(tpl[1]);
-    else if (/^\.\.?\//.test(prefix)) found.push(prefix);
-    else found.push('<computed>');
+  for (const { text, isCondition } of argumentValues(arg)) {
+    if (isCondition) continue;
+    let m;
+    if ((m = /^(['"])([^'"\n]*)\1$/.exec(text))) {
+      found.push({ specifier: m[2], prefix: false });
+    } else if ((m = /^`([^`]*)`$/.exec(text))) {
+      if (!m[1].includes('${')) found.push({ specifier: m[1], prefix: false });
+      else found.push({ specifier: m[1].split('${')[0], prefix: true });
+    } else if ((m = /^(['"])([^'"\n]*)\1\s*\+/.exec(text)) || (m = /^`([^`$]*)`\s*\+/.exec(text))) {
+      found.push({ specifier: m[2] ?? m[1], prefix: true });
+    } else {
+      found.push({ specifier: '<computed>', prefix: false });
+    }
   }
-  return found.length > 0 ? found : ['<computed>'];
+  return found;
+}
+
+/**
+ * A static prefix as an import target: the folder it names (its own, when it
+ * ends in `/`; its parent, when its last segment is cut short), or `<computed>`
+ * when that folder is lib/ itself or above it, so the value could reach any
+ * module, or the prefix isn't relative.
+ */
+function prefixTarget(file, prefix, rel) {
+  if (!/^\.\.?\//.test(prefix)) return '<computed>';
+  const resolved = path.resolve(path.dirname(file), prefix);
+  const folder = prefix.endsWith('/') ? resolved : path.dirname(resolved);
+  const folderRel = rel(folder);
+  if (`${LIB}/`.startsWith(`${folderRel}/`)) return '<computed>';
+  return `${folderRel}/`;
 }
 
 /** `[{ index, specifier, clause }]` for one stripped source. */
@@ -210,8 +283,8 @@ function importsOf(code) {
   for (const m of calls) {
     if (seen.has(m.index)) continue;
     seen.add(m.index);
-    for (const specifier of specifiersOfArgument(callArgument(code, m.index + m[0].length))) {
-      found.push({ index: m.index, specifier, clause: null });
+    for (const { specifier, prefix } of specifiersOfArgument(callArgument(code, m.index + m[0].length))) {
+      found.push({ index: m.index, specifier, clause: null, prefix });
     }
   }
   return found;
@@ -246,7 +319,9 @@ async function main() {
     const fileModule = moduleOf(fileRel);
     const source = await readFile(file, 'utf8');
     const code = stripComments(source);
-    for (const { index, specifier, clause } of importsOf(code)) {
+    for (const found of importsOf(code)) {
+      const { index, clause } = found;
+      const specifier = found.prefix ? prefixTarget(file, found.specifier, rel) : found.specifier;
       count += 1;
       const line = source.slice(0, index).split('\n').length;
       const report = (why) => {
@@ -258,7 +333,7 @@ async function main() {
         report('computed import specifier: the fence lint cannot check it');
         continue;
       }
-      if (!specifier.startsWith('.')) {
+      if (!found.prefix && !specifier.startsWith('.')) {
         if (BUILTINS.has(specifier)) continue;
         const pkg = packageName(specifier);
         const allowed = PACKAGE_FENCES[pkg];
@@ -268,10 +343,9 @@ async function main() {
         continue;
       }
 
-      // A prefix ending in `/` (`./vmManager/${x}`, `'./vmManager/' + x`) names a
-      // folder: keep the slash, so landing on a module's root folder counts as
-      // reaching inside it.
-      const targetRel = rel(path.resolve(path.dirname(file), specifier)) + (specifier.endsWith('/') ? '/' : '');
+      // A static prefix arrives as the repo-relative folder it lands in (ending in
+      // `/`: reaching inside a module's folder counts as reaching into the module).
+      const targetRel = found.prefix ? specifier : rel(path.resolve(path.dirname(file), specifier));
       const targetModule = moduleOf(targetRel);
 
       if (targetModule && targetModule !== fileModule && facaded.has(targetModule)
