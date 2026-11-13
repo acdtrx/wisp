@@ -331,9 +331,17 @@ function extractTarball(tarballPath, stagingDir) {
   const args = ['-xzf', tarballPath, '-C', stagingDir, '--strip-components=1'];
   if (process.platform !== 'linux') return execFileAsync('tar', args, { timeout: TAR_IDLE_MS });
   return new Promise((resolve, reject) => {
-    const tar = spawn('tar', [...args, '--checkpoint=100', '--checkpoint-action=dot'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    /* tar -z forks (a reader and gzip) that hold its pipes too: tar runs in a
+     * process group of its own, and a stall kills the whole group. */
+    const tar = spawn('tar', [...args, '--checkpoint=100', '--checkpoint-action=dot'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    });
     let stderr = '';
-    const watchdog = createStallWatchdog({ stallMs: TAR_IDLE_MS, onStall: () => tar.kill('SIGKILL') });
+    const killGroup = () => {
+      try { process.kill(-tar.pid, 'SIGKILL'); } catch { tar.kill('SIGKILL'); }
+    };
+    const watchdog = createStallWatchdog({ stallMs: TAR_IDLE_MS, onStall: killGroup });
     tar.stdout.on('data', watchdog.poke);
     tar.stderr.on('data', (d) => { watchdog.poke(); stderr = (stderr + d).slice(-4096); });
     tar.on('error', (err) => { watchdog.stop(); reject(err); });
