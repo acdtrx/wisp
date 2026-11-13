@@ -107,9 +107,9 @@ The §6 findings except TMO-4.
 operation gets its own timeout, on inactivity wherever it shows progress. And the existing
 FRONTEND-RULES Data rule "the client is an observer" is followed as written: an operation
 that can outlast a short request is a server job, which the client observes over SSE,
-never a request the client holds open. These replace the 60 s REST client deadline and TMO-4's
-fixed 600 s upgrade cap. The OS upgrade times out on inactivity of apt's output; the
-backlog entry "OS upgrade runs inside wisp.service" stays. The values each subsystem
+never a request the client holds open. These replace the 60 s REST client deadline and
+TMO-4's fixed 600 s upgrade cap. The OS upgrade times out on inactivity of apt's output;
+the backlog entry "OS upgrade runs inside wisp.service" stays. The values each subsystem
 settles go into its spec, not into code comments or the audit.
 
 ## Milestone 2b-2 — long operations become jobs
