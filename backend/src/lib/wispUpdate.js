@@ -431,11 +431,11 @@ export async function downloadAndStage(onProgress, signal) {
 
 /**
  * How long a claimed install may stay in flight: the updater unit's start
- * limit (`TimeoutStartSec=600` in systemd/linux/wisp-updater.service). An
+ * limit (`TimeoutStartSec=1800` in systemd/linux/wisp-updater.service). An
  * updater that fails before it stops this process never comes back to release
  * the claim; past this, systemd has failed the unit, so a new install is safe.
  */
-const INSTALL_CLAIM_MAX_MS = 600_000;
+const INSTALL_CLAIM_MAX_MS = 30 * 60_000;
 
 /** When the current install was claimed (monotonic ms, `performance.now()` — a wall-clock step can't skew the expiry), or null when none is in flight. */
 let installClaimedAt = null;

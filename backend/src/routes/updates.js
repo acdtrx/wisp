@@ -48,12 +48,13 @@ export default async function updatesRoutes(fastify) {
   });
 
   /**
-   * Synchronously download + verify + extract the new release tarball, then
-   * trigger wisp-updater.service and return 202. The updater is a separate
-   * systemd unit — it runs in its own cgroup, with its own stdio, and stops
-   * this backend as its first real step. The UI polls GET /api/host
-   * wispVersion to detect completion; updater steps are in journald
-   * (`journalctl -u wisp-updater.service`).
+   * Check the install can start (an update available, no other jobs unless
+   * forced, no install in flight), claim it and answer 202 with a job. The
+   * job downloads, verifies and extracts the release, then triggers
+   * wisp-updater.service. The updater is a separate systemd unit — it runs in
+   * its own cgroup, with its own stdio, and stops this backend as its first
+   * real step. The UI polls GET /api/host wispVersion to detect completion;
+   * updater steps are in journald (`journalctl -u wisp-updater.service`).
    *
    * Pass ?force=1 to bypass the active-jobs guard (UI confirms first).
    */

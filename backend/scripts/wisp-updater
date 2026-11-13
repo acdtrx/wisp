@@ -39,13 +39,17 @@ fail() {
 # idle_run SECS cmd...: run cmd with its output passed through (to the journal),
 # killed after SECS seconds without a line of output (returns 124) — an
 # inactivity bound for a step that shows progress (CODING-RULES §6). The unit's
-# TimeoutStartSec stays the backstop for the whole update.
+# TimeoutStartSec stays the backstop for the whole update. cmd runs in a session
+# (process group) of its own, and a stall kills the whole group: through
+# `sudo -u`, a signal to sudo alone would not reach npm.
 idle_run() {
   local secs="$1"; shift
   local fifo fd line r rc=0 timed_out=0 pid
   fifo="$(mktemp -u -t wisp-updater-fifo.XXXXXX)"
   mkfifo -m 600 "$fifo"
-  "$@" > "$fifo" 2>&1 &
+  # Not a job-control shell, so the background child is no group leader and
+  # setsid execs in place: $pid is the new group's id.
+  setsid "$@" > "$fifo" 2>&1 &
   pid=$!
   exec {fd}< "$fifo"
   rm -f -- "$fifo"
@@ -54,9 +58,9 @@ idle_run() {
     if (( r == 0 )); then printf '%s\n' "$line"; continue; fi
     if (( r > 128 )); then
       timed_out=1
-      kill -TERM "$pid" 2>/dev/null
+      kill -TERM -- "-$pid" 2>/dev/null
       sleep 5
-      kill -KILL "$pid" 2>/dev/null
+      kill -KILL -- "-$pid" 2>/dev/null
     elif [[ -n "$line" ]]; then
       printf '%s\n' "$line"
     fi

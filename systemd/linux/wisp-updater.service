@@ -10,8 +10,10 @@ ExecStart=/usr/local/bin/wisp-updater
 StandardOutput=journal
 StandardError=journal
 # Bounds the whole update run (stop, snapshot, swap, npm ci, common-steps,
-# start); typical runs finish in a few minutes. On expiry systemd SIGTERMs the
-# unit and wisp-updater rolls back; TimeoutStopSec is the time that rollback gets
-# before systemd escalates to SIGKILL, which would leave a half-restored tree.
-TimeoutStartSec=600
+# start); typical runs finish in a few minutes. A backstop only: the steps carry
+# their own bounds (npm ci 10 min without output), which fire first. On expiry
+# systemd SIGTERMs the unit and wisp-updater rolls back; TimeoutStopSec is the
+# time that rollback gets before systemd escalates to SIGKILL, which would leave
+# a half-restored tree.
+TimeoutStartSec=1800
 TimeoutStopSec=300
