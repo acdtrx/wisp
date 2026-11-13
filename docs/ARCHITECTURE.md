@@ -135,7 +135,8 @@ stream to the client (Transport) subscribes like any other consumer.
   state.
 - **What one view needs gets a scoped stream**, open only while the view is on screen:
   per-workload stats and logs, the disk and USB streams. **Job progress** streams emit
-  until the job completes or fails, then close. No repeated-GET polling for live data.
+  until the job completes or fails, then close. Any operation that can outlast a short
+  request is such a job: its POST returns the job id at once (FRONTEND-RULES, Data). No repeated-GET polling for live data.
 - **A stream that goes quiet is reopened**: the server writes a `: keepalive` comment
   every 25 s; the client re-arms a 60 s read watchdog on every chunk and reconnects with
   backoff when it fires. A frozen page can't run its watchdog, so every stream also

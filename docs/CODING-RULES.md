@@ -98,6 +98,12 @@ source refer to them.
 - Use `AbortController` (or the platform's cancellation primitive) for cancellable
   operations instead of boolean flags.
 - Give every outbound request and subprocess a timeout; nothing waits forever.
+  - Applied (settled 2026-11-13): choose each operation's timeout for what it does; there
+    is no project-wide value. Where the operation shows progress (output on stdout or
+    stderr, bytes written, stream data, progress events), the timeout is on inactivity:
+    it fails after N seconds without progress, N set for that operation. Use a fixed
+    total only where there is no progress signal (a DBus call, a short request). A review
+    checks every new or changed operation for this.
 - Prefer streaming over buffering: pipe data through transform streams instead of reading
   an entire payload into memory and then writing it out.
   - Applied: pipe file uploads from multipart to a write stream, never buffering whole

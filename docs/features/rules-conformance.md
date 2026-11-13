@@ -33,8 +33,9 @@ session.
   "none found", and each finding is marked clear or decision.
 
 **Settled after the audit (2026-11-12):** every decision in `AUDIT.md` goes as the audit
-recommends, with one exception: TMO-4 (the OS upgrade's 600 s cap) stays as it is, under the
-backlog entry "OS upgrade runs inside wisp.service". So, in short:
+recommends, with one exception: TMO-4 (the OS upgrade's 600 s cap) stays as it is, under
+the backlog entry "OS upgrade runs inside wisp.service" (reversed after the 2b review). So,
+in short:
 - CFG-2: an invalid `trustedProxies` entry fails startup. This reverses
   `CONFIGURATION.md`'s "a typo must not crash-loop".
 - LAY-3 and LAY-4: a hand-rolled layer stack, and no modal closes on a backdrop click.
@@ -102,10 +103,29 @@ The §6 findings except TMO-4.
     hung command or a stalled stream (on tini where it needs Linux).
   - A normal long job (a large backup, a convert, an image pull) still completes.
 
-**Settled after 2b (2026-11-13):** the REST client's default deadline is 60 s, not the
-audit's 30 s. Some routes run for up to 30 s on the server, and a libvirt lifecycle call
-for up to 2 min, so a 30 s client would cut off their real errors. A call may pass its own
-`timeoutMs`.
+**Settled after the 2b review (2026-11-13):** two project rules are added. CODING-RULES §6:
+each operation gets its own timeout, on inactivity wherever it shows progress.
+FRONTEND-RULES Data: an operation that can outlast a short request is a server job, which
+the client observes over SSE. These replace the 60 s REST client deadline and TMO-4's
+fixed 600 s upgrade cap. The OS upgrade times out on inactivity of apt's output; the
+backlog entry "OS upgrade runs inside wisp.service" stays. The values each subsystem
+settles go into its spec, not into code comments or the audit.
+
+## Milestone 2b-2 — long operations become jobs
+
+Open points first: list every route that can outlast a short request, each with a
+proposal (job, or stays synchronous with its bound). List each 2b timeout that is still a
+fixed total where its operation shows progress. The user settles both lists before the
+build.
+
+- **Acceptance:**
+  - Each route settled as a job returns its job id at once. Its progress and result arrive
+    over SSE, and closing the page mid-operation leaves it running to completion.
+  - An OS upgrade that keeps printing runs past 600 s, and one that goes silent fails at
+    its inactivity bound (on tini, with a stand-in for apt).
+  - Each timeout changed to inactivity is shown to fire on a stall and to survive a long
+    run that keeps progressing.
+  - The frontend build passes.
 
 ## Milestone 2c — frontend
 
