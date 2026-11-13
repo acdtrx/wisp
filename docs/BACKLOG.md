@@ -15,9 +15,9 @@ burying.
 
 **Short commands that return their result in the response.** ARCHITECTURE § Transport
 says a POST carries only the ack and validation errors, and the result arrives through the
-stream. Long operations follow it (rules-conformance 2b-2); short ones such as a settings
-PATCH still answer with the new state, which mostly also reaches clients through the
-stream. **Revisit trigger:** a client shows stale state after a short command, or a short
+stream. Long operations follow it (they run as jobs since 2026-11-13); short ones such as
+a settings PATCH still answer with the new state, which mostly also reaches clients
+through the stream. **Revisit trigger:** a client shows stale state after a short command, or a short
 command turns out to run long.
 
 **Check Wisp's docs against the template for reworded rules.** ARCHITECTURE's "commands
