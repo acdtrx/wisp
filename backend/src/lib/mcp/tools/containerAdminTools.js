@@ -31,7 +31,7 @@ import {
 import { validateContainerName } from '../../validation.js';
 import { createAppError } from '../../routeErrors.js';
 import { withContainerOperationLock } from '../../containerOperationLock.js';
-import { startContainerLifecycleJob } from '../../containerJobs.js';
+import { startContainerLifecycleJob, startLockedContainerJob } from '../../containerJobs.js';
 import {
   operationJobStore,
   BACKGROUND_JOB_KIND,
@@ -135,29 +135,31 @@ export const containerAdminTools = [
       }
       const env = buildEnv(args.env, args.secretEnv);
       const changes = buildSettingsChanges(args); // validate before creating anything
-      await assertContainerNameAvailable(name);
 
-      return operationJobStore.startOperationJob({
+      // The new name's operation lock is held for the whole job (taken, or
+      // busy, answers at once), so nothing starts or edits it mid-deploy.
+      return startLockedContainerJob({
+        name,
+        operation: 'deploy',
+        check: () => assertContainerNameAvailable(name),
         kind: BACKGROUND_JOB_KIND.CONTAINER_DEPLOY,
         title: titleForContainerDeploy(name),
         log,
         run: async (report) => {
           await createContainer({ name, image: image.trim(), env }, report);
-          await withContainerOperationLock(name, 'deploy', async () => {
-            if (Object.keys(changes).length) {
-              await updateContainerConfig(name, changes);
-            }
-            report({ step: 'starting' });
-            try {
-              await startContainer(name);
-            } catch (err) {
-              throw createAppError(
-                err.code || 'CONTAINERD_ERROR',
-                `Container "${name}" was created but failed to start: ${err.message}. It exists in stopped state — check get_container_logs, or fix and start_container.`,
-                err.raw ?? err.message,
-              );
-            }
-          });
+          if (Object.keys(changes).length) {
+            await updateContainerConfig(name, changes);
+          }
+          report({ step: 'starting' });
+          try {
+            await startContainer(name);
+          } catch (err) {
+            throw createAppError(
+              err.code || 'CONTAINERD_ERROR',
+              `Container "${name}" was created but failed to start: ${err.message}. It exists in stopped state — check get_container_logs, or fix and start_container.`,
+              err.raw ?? err.message,
+            );
+          }
           return await maskContainerConfigSecrets(await getContainerConfig(name));
         },
       });
@@ -188,7 +190,13 @@ export const containerAdminTools = [
       // The ref create and PATCH store: an exact local name when containerd has
       // one, else the normalized ref the pull stores the image under.
       const { ref } = await resolveContainerImageRef(requested);
-      return operationJobStore.startOperationJob({
+      // The container's operation lock is held for the whole job, pull
+      // included: busy answers at once, and nothing changes the container
+      // between the pull and the restart.
+      return startLockedContainerJob({
+        name,
+        operation: 'image update',
+        check: async () => {},
         kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_UPDATE,
         title: titleForContainerImageUpdate(name),
         log,
@@ -202,19 +210,15 @@ export const containerAdminTools = [
               throw createAppError('IMAGE_PULL_FAILED', `Cannot pull "${ref}" and it is not present locally`, err.message);
             }
           }
-          // The pull ran outside the lock; the decision to write and restart reads
-          // the state under it.
           let restarted = false;
-          await withContainerOperationLock(name, 'image update', async () => {
-            const current = await getContainerConfig(name);
-            if (ref !== current.image) {
-              await updateContainerConfig(name, { image: ref });
-            }
-            if (current.state === 'running') {
-              await restartContainer(name);
-              restarted = true;
-            }
-          });
+          const current = await getContainerConfig(name);
+          if (ref !== current.image) {
+            await updateContainerConfig(name, { image: ref });
+          }
+          if (current.state === 'running') {
+            await restartContainer(name);
+            restarted = true;
+          }
           return {
             name,
             image: ref,
