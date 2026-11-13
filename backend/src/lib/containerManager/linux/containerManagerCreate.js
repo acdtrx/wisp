@@ -8,17 +8,18 @@ import { mkdir, rm, readFile, readdir, stat } from 'node:fs/promises';
 import { randomBytes, createHash } from 'node:crypto';
 
 import {
-  containerError, containerState, getClient, callUnary, callStream, collectStream, STREAM_DEADLINE_MS,
-  packAny, packProtoAny,
+  containerError, containerState, getClient, callUnary, callStream, callBidi, collectStream, STREAM_DEADLINE_MS,
+  packAny, packProtoAny, unpackAny,
 } from './containerManagerConnection.js';
 
 /**
  * An image pull runs as long as the image is big: no total bound, but it is
  * stopped after PULL_STALL_MS without progress (CODING-RULES §6). Progress is
- * what containerd reports while it works: the offsets of the content store's
- * ingests (downloading) and the usage of the active snapshots (unpacking).
+ * the transfer service's own progress stream: bytes fetched, bytes extracted.
  */
 const PULL_STALL_MS = 5 * 60_000;
+/** Opening the progress stream is one round trip. */
+const PROGRESS_STREAM_OPEN_MS = 30_000;
 /** Removing a large rootfs snapshot can take a while. */
 const SNAPSHOT_REMOVE_DEADLINE_MS = 2 * 60_000;
 import { buildOCISpec } from './containerManagerSpec.js';
@@ -171,37 +172,63 @@ export async function pullImage(imageRef, onStep) {
   const controller = new AbortController();
   const watchdog = createStallWatchdog({
     stallMs: PULL_STALL_MS,
-    probe: pullProgressProbe,
     onStall: () => controller.abort(
       containerError('IMAGE_PULL_FAILED', `Pulling ${ref} made no progress for ${stallMinutes(PULL_STALL_MS)} and was stopped`),
     ),
   });
+  let progress = null;
   try {
+    // containerd re-sends an extracting layer's progress every tick, changed or
+    // not: only a new step or a moved byte count is progress.
+    const seen = new Map();
+    progress = await openProgressStream((ev) => {
+      const key = `${ev?.name ?? ''}|${ev?.event ?? ''}`;
+      const value = String(ev?.progress ?? '');
+      if (seen.get(key) === value) return;
+      seen.set(key, value);
+      watchdog.poke();
+    });
     await callUnary(getClient('transfer'), 'transfer', {
       source,
       destination,
-      options: {},
+      options: { progress: progress.id },
     }, { deadlineMs: null, signal: controller.signal });
   } finally {
     watchdog.stop();
+    progress?.close();
   }
 
   onStep?.({ step: 'pulled', detail: `Image ${ref} pulled` });
   return ref;
 }
 
-/** A stall-watchdog probe for a pull: changes while containerd downloads or unpacks. */
-async function pullProgressProbe() {
-  const [{ statuses = [] }, snapshots] = await Promise.all([
-    callUnary(getClient('content'), 'listStatuses', { filters: [] }),
-    collectStream(callStream(getClient('snapshots'), 'list', { snapshotter: SNAPSHOTTER }, { deadlineMs: STREAM_DEADLINE_MS })),
-  ]);
-  const ingested = statuses.map((s) => `${s.ref}=${s.offset}`).join(',');
-  const active = snapshots.flatMap((m) => m.info || []).filter((i) => i.kind === 'ACTIVE');
-  const usage = await Promise.all(active.map((i) =>
-    callUnary(getClient('snapshots'), 'usage', { snapshotter: SNAPSHOTTER, key: i.name })
-      .then((u) => `${i.name}=${u.size}`, () => i.name)));
-  return `${ingested}|${usage.join(',')}`;
+/**
+ * Open a transfer progress stream (containerd's Streaming service): its id
+ * goes into the transfer's options, and `onEvent` gets each progress event.
+ * Resolves once containerd acknowledges the stream.
+ */
+function openProgressStream(onEvent) {
+  const id = `wisp-pull-${randomBytes(8).toString('hex')}`;
+  const stream = callBidi(getClient('streaming'), 'stream');
+  const close = () => { try { stream.cancel(); } catch { /* already closed */ } };
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      close();
+      reject(containerError('CONTAINERD_ERROR', `containerd did not open the pull progress stream within ${PROGRESS_STREAM_OPEN_MS / 1000} s`));
+    }, PROGRESS_STREAM_OPEN_MS);
+    stream.once('error', (err) => {
+      clearTimeout(timer);
+      reject(containerError('CONTAINERD_ERROR', 'Could not open the pull progress stream', err.message));
+    });
+    stream.once('data', () => { // the ack: the stream is ready
+      clearTimeout(timer);
+      stream.on('data', (any) => onEvent(unpackAny(any)));
+      stream.removeAllListeners('error');
+      stream.on('error', () => { /* ends with the pull: a lost stream only loses progress */ });
+      resolve({ id, close });
+    });
+    stream.write(packProtoAny('containerd.services.streaming.v1.StreamInit', { id }));
+  });
 }
 
 /**

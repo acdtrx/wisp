@@ -1,0 +1,14 @@
+syntax = "proto3";
+package containerd.services.streaming.v1;
+
+import "google/protobuf/any.proto";
+
+option go_package = "github.com/containerd/containerd/api/services/streaming/v1;streaming";
+
+service Streaming {
+  rpc Stream(stream google.protobuf.Any) returns (stream google.protobuf.Any);
+}
+
+message StreamInit {
+  string id = 1;
+}

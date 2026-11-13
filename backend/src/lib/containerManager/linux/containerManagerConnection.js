@@ -161,6 +161,11 @@ export function callStream(client, method, request = {}, { deadlineMs = null } =
   return client[method](request, namespaceMeta(), callOptions(deadlineMs));
 }
 
+/** Open a bidirectional gRPC stream with the wisp namespace header (no deadline). */
+export function callBidi(client, method) {
+  return client[method](namespaceMeta(), {});
+}
+
 /**
  * Pack a JS object into a google.protobuf.Any field.
  * Uses JSON encoding — correct for non-proto types (OCI runtime spec).
@@ -280,6 +285,7 @@ export async function connect(opts = {}) {
   const leasesPkg = loadProto('containerd/services/leases/v1/leases.proto');
   const transferPkg = loadProto('containerd/services/transfer/v1/transfer.proto');
   const namespacesPkg = loadProto('containerd/services/namespaces/v1/namespaces.proto');
+  const streamingPkg = loadProto('containerd/services/streaming/v1/streaming.proto');
 
   // Load Transfer types via protobufjs directly for binary encoding.
   // @grpc/proto-loader converts Types to descriptor objects (no encode/decode),
@@ -289,6 +295,8 @@ export async function connect(opts = {}) {
   transferRoot.loadSync([
     'containerd/types/transfer/registry.proto',
     'containerd/types/transfer/imagestore.proto',
+    'containerd/types/transfer/progress.proto',
+    'containerd/services/streaming/v1/streaming.proto',
   ]);
 
   // Cgroup metrics types — used by unpackAny to decode tasks.Metrics payloads.
@@ -314,6 +322,12 @@ export async function connect(opts = {}) {
     'containerd.types.transfer.ImageStore': {
       type: transferRoot.lookupType('containerd.types.transfer.ImageStore'),
     },
+    'containerd.types.transfer.Progress': {
+      type: transferRoot.lookupType('containerd.types.transfer.Progress'),
+    },
+    'containerd.services.streaming.v1.StreamInit': {
+      type: transferRoot.lookupType('containerd.services.streaming.v1.StreamInit'),
+    },
     'io.containerd.cgroups.v1.Metrics': {
       type: cgroupRoot.lookupType('io.containerd.cgroups.v1.Metrics'),
     },
@@ -332,6 +346,7 @@ export async function connect(opts = {}) {
     events: createClient(eventsPkg.containerd.services.events.v1.Events),
     leases: createClient(leasesPkg.containerd.services.leases.v1.Leases),
     transfer: createClient(transferPkg.containerd.services.transfer.v1.Transfer),
+    streaming: createClient(streamingPkg.containerd.services.streaming.v1.Streaming),
     namespaces: createClient(namespacesPkg.containerd.services.namespaces.v1.Namespaces),
   };
 
