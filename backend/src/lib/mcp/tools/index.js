@@ -3,13 +3,14 @@ import { containerTools } from './containerTools.js';
 import { containerAdminTools } from './containerAdminTools.js';
 import { vmTools } from './vmTools.js';
 import { hostTools } from './hostTools.js';
+import { jobTools } from './jobTools.js';
 
 /**
  * Every MCP tool: { name, title, description, inputSchema, scope, handler }.
  * `scope` is the minimum token scope required ('read' | 'admin'); an admin
  * token can call everything.
  */
-export const allTools = [...overviewTools, ...containerTools, ...containerAdminTools, ...vmTools, ...hostTools];
+export const allTools = [...overviewTools, ...containerTools, ...containerAdminTools, ...vmTools, ...hostTools, ...jobTools];
 
 {
   const names = new Set();

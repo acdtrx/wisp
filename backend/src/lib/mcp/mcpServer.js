@@ -116,7 +116,7 @@ export async function handleMcpMessage(message, { scope, log }) {
         return { status: 200, body: toolError(id, { message: 'Insufficient scope', raw: `Tool "${tool.name}" requires an admin-scoped API token` }) };
       }
       try {
-        const data = await tool.handler(params?.arguments ?? {});
+        const data = await tool.handler(params?.arguments ?? {}, { log });
         return { status: 200, body: toolResult(id, data) };
       } catch (err) {
         log?.warn({ err: err.message, code: err.code, tool: tool.name }, 'MCP tool failed');

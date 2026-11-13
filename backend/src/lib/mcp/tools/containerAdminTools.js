@@ -3,13 +3,18 @@
  * REST API: agents get deploy/update/lifecycle and a filtered app-config
  * surface, never mounts, devices, runAsRoot, deletes, or secret-bearing
  * fields. Human-only concerns stay in the UI.
+ *
+ * Deploy, image update, the lifecycle and the image check are jobs, as on the
+ * REST API: the tool checks what it can at once (those errors return
+ * immediately), starts the job and returns `{ jobId, title }`; `get_job` reads
+ * it to the end.
  */
 import {
+  assertContainerNameAvailable,
   createContainer,
   getContainerConfig,
   updateContainerConfig,
   startContainer,
-  stopContainer,
   restartContainer,
   pullImage,
   getImageDigest,
@@ -26,6 +31,16 @@ import {
 import { validateContainerName } from '../../validation.js';
 import { createAppError } from '../../routeErrors.js';
 import { withContainerOperationLock } from '../../containerOperationLock.js';
+import { startContainerLifecycleJob } from '../../containerJobs.js';
+import {
+  operationJobStore,
+  BACKGROUND_JOB_KIND,
+  titleForContainerDeploy,
+  titleForContainerImageUpdate,
+  TITLE_IMAGE_UPDATE_CHECK_ALL,
+} from '../../jobs/index.js';
+
+const JOB_NOTE = 'A job: returns { jobId, title } at once; read it with get_job until it is done.';
 
 const RESTART_POLICIES = ['never', 'on-failure', 'unless-stopped', 'always'];
 
@@ -86,7 +101,8 @@ export const containerAdminTools = [
       'DHCP LAN IP and registers <name>.local (localDns defaults true). Use a fully-qualified image ' +
       'ref (e.g. zotty.anapana.trixbits.ro/acdtrx/app:tag). Deliberately simple on purpose: no ' +
       'mounts, devices, root, or app templates — configure those in the Wisp UI. Put secret env ' +
-      'values in secretEnv (stored write-only; get_container can never read them back).',
+      'values in secretEnv (stored write-only; get_container can never read them back). ' + JOB_NOTE +
+      ' Its result is the new container (secrets masked).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -111,7 +127,7 @@ export const containerAdminTools = [
       additionalProperties: false,
     },
     scope: 'admin',
-    handler: async (args) => {
+    handler: async (args, { log } = {}) => {
       const { name, image } = args;
       validateContainerName(name);
       if (typeof image !== 'string' || !image.trim()) {
@@ -119,23 +135,32 @@ export const containerAdminTools = [
       }
       const env = buildEnv(args.env, args.secretEnv);
       const changes = buildSettingsChanges(args); // validate before creating anything
+      await assertContainerNameAvailable(name);
 
-      await createContainer({ name, image: image.trim(), env });
-      await withContainerOperationLock(name, 'deploy', async () => {
-        if (Object.keys(changes).length) {
-          await updateContainerConfig(name, changes);
-        }
-        try {
-          await startContainer(name);
-        } catch (err) {
-          throw createAppError(
-            err.code || 'CONTAINERD_ERROR',
-            `Container "${name}" was created but failed to start: ${err.message}. It exists in stopped state — check get_container_logs, or fix and start_container.`,
-            err.raw ?? err.message,
-          );
-        }
+      return operationJobStore.startOperationJob({
+        kind: BACKGROUND_JOB_KIND.CONTAINER_DEPLOY,
+        title: titleForContainerDeploy(name),
+        log,
+        run: async (report) => {
+          await createContainer({ name, image: image.trim(), env }, report);
+          await withContainerOperationLock(name, 'deploy', async () => {
+            if (Object.keys(changes).length) {
+              await updateContainerConfig(name, changes);
+            }
+            report({ step: 'starting' });
+            try {
+              await startContainer(name);
+            } catch (err) {
+              throw createAppError(
+                err.code || 'CONTAINERD_ERROR',
+                `Container "${name}" was created but failed to start: ${err.message}. It exists in stopped state — check get_container_logs, or fix and start_container.`,
+                err.raw ?? err.message,
+              );
+            }
+          });
+          return await maskContainerConfigSecrets(await getContainerConfig(name));
+        },
       });
-      return await maskContainerConfigSecrets(await getContainerConfig(name));
     },
   },
   {
@@ -145,7 +170,7 @@ export const containerAdminTools = [
       'Point a container at a new image ref, or re-pull its current tag to pick up a newer digest ' +
       '(rootfs is rebuilt from the image on every start). Running containers are restarted to apply; ' +
       'stopped ones apply at next start. Use fully-qualified refs as shown by list_images; a short ' +
-      'Docker Hub ref (nginx:1.27) is stored normalized (docker.io/library/nginx:1.27).',
+      'Docker Hub ref (nginx:1.27) is stored normalized (docker.io/library/nginx:1.27). ' + JOB_NOTE,
     inputSchema: {
       type: 'object',
       properties: {
@@ -156,47 +181,55 @@ export const containerAdminTools = [
       additionalProperties: false,
     },
     scope: 'admin',
-    handler: async ({ name, image }) => {
+    handler: async ({ name, image }, { log } = {}) => {
       validateContainerName(name);
       const cfg = await getContainerConfig(name);
       const requested = typeof image === 'string' && image.trim() ? image.trim() : cfg.image;
       // The ref create and PATCH store: an exact local name when containerd has
       // one, else the normalized ref the pull stores the image under.
       const { ref } = await resolveContainerImageRef(requested);
-      try {
-        await pullImage(ref);
-      } catch (err) {
-        // Locally-imported images have no registry to pull from — fine if present.
-        if (!(await getImageDigest(ref))) {
-          throw createAppError('IMAGE_PULL_FAILED', `Cannot pull "${ref}" and it is not present locally`, err.message);
-        }
-      }
-      // The pull ran outside the lock; the decision to write and restart reads
-      // the state under it.
-      let restarted = false;
-      await withContainerOperationLock(name, 'image update', async () => {
-        const current = await getContainerConfig(name);
-        if (ref !== current.image) {
-          await updateContainerConfig(name, { image: ref });
-        }
-        if (current.state === 'running') {
-          await restartContainer(name);
-          restarted = true;
-        }
+      return operationJobStore.startOperationJob({
+        kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_UPDATE,
+        title: titleForContainerImageUpdate(name),
+        log,
+        run: async (report) => {
+          report({ step: 'pulling', detail: ref });
+          try {
+            await pullImage(ref);
+          } catch (err) {
+            // Locally-imported images have no registry to pull from — fine if present.
+            if (!(await getImageDigest(ref))) {
+              throw createAppError('IMAGE_PULL_FAILED', `Cannot pull "${ref}" and it is not present locally`, err.message);
+            }
+          }
+          // The pull ran outside the lock; the decision to write and restart reads
+          // the state under it.
+          let restarted = false;
+          await withContainerOperationLock(name, 'image update', async () => {
+            const current = await getContainerConfig(name);
+            if (ref !== current.image) {
+              await updateContainerConfig(name, { image: ref });
+            }
+            if (current.state === 'running') {
+              await restartContainer(name);
+              restarted = true;
+            }
+          });
+          return {
+            name,
+            image: ref,
+            restarted,
+            applied: restarted,
+            note: restarted ? 'Restarted on the updated image.' : 'Image updated; takes effect at the next start.',
+          };
+        },
       });
-      return {
-        name,
-        image: ref,
-        restarted,
-        applied: restarted,
-        note: restarted ? 'Restarted on the updated image.' : 'Image updated; takes effect at the next start.',
-      };
     },
   },
   {
     name: 'start_container',
     title: 'Start a container',
-    description: 'Start a stopped container (rootfs is re-prepared from its image; data in mounts persists).',
+    description: 'Start a stopped container (rootfs is re-prepared from its image; data in mounts persists). ' + JOB_NOTE,
     inputSchema: {
       type: 'object',
       properties: { name: { type: 'string', description: 'Container name' } },
@@ -204,10 +237,9 @@ export const containerAdminTools = [
       additionalProperties: false,
     },
     scope: 'admin',
-    handler: async ({ name }) => {
+    handler: async ({ name }, { log } = {}) => {
       validateContainerName(name);
-      await withContainerOperationLock(name, 'start', () => startContainer(name));
-      return { name, state: (await getContainerConfig(name)).state };
+      return startContainerLifecycleJob({ name, action: 'start', log });
     },
   },
   {
@@ -215,7 +247,7 @@ export const containerAdminTools = [
     title: 'Stop a container',
     description:
       'Stop a running container. Careful with infrastructure containers (reverse proxy, registry, ' +
-      'identity provider) — stopping them takes down every service behind them.',
+      'identity provider) — stopping them takes down every service behind them. ' + JOB_NOTE,
     inputSchema: {
       type: 'object',
       properties: { name: { type: 'string', description: 'Container name' } },
@@ -223,16 +255,15 @@ export const containerAdminTools = [
       additionalProperties: false,
     },
     scope: 'admin',
-    handler: async ({ name }) => {
+    handler: async ({ name }, { log } = {}) => {
       validateContainerName(name);
-      await withContainerOperationLock(name, 'stop', () => stopContainer(name));
-      return { name, state: (await getContainerConfig(name)).state };
+      return startContainerLifecycleJob({ name, action: 'stop', log });
     },
   },
   {
     name: 'restart_container',
     title: 'Restart a container',
-    description: 'Restart a running container (applies pending image/env changes; rootfs rebuilt from image).',
+    description: 'Restart a running container (applies pending image/env changes; rootfs rebuilt from image). ' + JOB_NOTE,
     inputSchema: {
       type: 'object',
       properties: { name: { type: 'string', description: 'Container name' } },
@@ -240,10 +271,9 @@ export const containerAdminTools = [
       additionalProperties: false,
     },
     scope: 'admin',
-    handler: async ({ name }) => {
+    handler: async ({ name }, { log } = {}) => {
       validateContainerName(name);
-      await withContainerOperationLock(name, 'restart', () => restartContainer(name));
-      return { name, state: (await getContainerConfig(name)).state };
+      return startContainerLifecycleJob({ name, action: 'restart', log });
     },
   },
   {
@@ -316,18 +346,23 @@ export const containerAdminTools = [
     title: 'Check for image updates',
     description:
       'Run the image-update digest check now (otherwise hourly) and report which containers have a ' +
-      'newer image available. Apply one with update_container_image.',
+      'newer image available. Apply one with update_container_image. ' + JOB_NOTE,
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     scope: 'admin',
-    handler: async () => {
-      await checkAllImagesForUpdates();
-      const containers = await listContainers();
-      return {
-        lastCheck: getImageUpdateStatus(),
-        updatesAvailable: containers
-          .filter((c) => c.updateAvailable === true)
-          .map((c) => ({ container: c.name, image: c.image })),
-      };
-    },
+    handler: async (_args, { log } = {}) => operationJobStore.startOperationJob({
+      kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_CHECK,
+      title: TITLE_IMAGE_UPDATE_CHECK_ALL,
+      log,
+      run: async (report) => {
+        await checkAllImagesForUpdates(report);
+        const containers = await listContainers();
+        return {
+          lastCheck: getImageUpdateStatus(),
+          updatesAvailable: containers
+            .filter((c) => c.updateAvailable === true)
+            .map((c) => ({ container: c.name, image: c.image })),
+        };
+      },
+    }),
   },
 ];
