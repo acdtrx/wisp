@@ -21,7 +21,7 @@ import { promisify } from 'node:util';
 import { createAppError } from './routeErrors.js';
 import { getSettings } from './settings.js';
 import { ssrfSafeFetch, writeResponseToFile } from './downloads/index.js';
-import { createStallWatchdog } from './storage/index.js';
+import { createStallWatchdog, stallMinutes } from './storage/index.js';
 
 const execFileAsync = promisify(execFileCb);
 
@@ -339,7 +339,7 @@ function extractTarball(tarballPath, stagingDir) {
     tar.on('error', (err) => { watchdog.stop(); reject(err); });
     tar.on('close', (code, signal) => {
       watchdog.stop();
-      if (watchdog.fired) reject(createAppError('UPDATE_CHECK_UNAVAILABLE', 'Unpacking the release made no progress and was stopped'));
+      if (watchdog.fired) reject(createAppError('UPDATE_CHECK_UNAVAILABLE', `Unpacking the release made no progress for ${stallMinutes(TAR_IDLE_MS)} and was stopped`));
       else if (code === 0) resolve();
       else reject(createAppError('UPDATE_CHECK_UNAVAILABLE', 'Unpacking the release failed', stderr.replace(/^\.+/gm, '').trim() || `tar exited ${code ?? signal}`));
     });

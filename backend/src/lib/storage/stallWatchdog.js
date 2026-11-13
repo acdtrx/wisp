@@ -72,7 +72,7 @@ export function processReadProbe(pid) {
   };
 }
 
-/** `ms` as "N min" for messages. */
+/** `ms` as "N min" for messages ("N s" when it is not whole minutes). */
 export function stallMinutes(ms) {
-  return `${Math.round(ms / 60_000)} min`;
+  return ms % 60_000 === 0 ? `${ms / 60_000} min` : `${Math.round(ms / 1000)} s`;
 }
