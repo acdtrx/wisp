@@ -103,10 +103,11 @@ The §6 findings except TMO-4.
     hung command or a stalled stream (on tini where it needs Linux).
   - A normal long job (a large backup, a convert, an image pull) still completes.
 
-**Settled after the 2b review (2026-11-13):** two project rules are added. CODING-RULES §6:
-each operation gets its own timeout, on inactivity wherever it shows progress.
-FRONTEND-RULES Data: an operation that can outlast a short request is a server job, which
-the client observes over SSE. These replace the 60 s REST client deadline and TMO-4's
+**Settled after the 2b review (2026-11-13):** CODING-RULES §6 gains a project rule: each
+operation gets its own timeout, on inactivity wherever it shows progress. And the existing
+FRONTEND-RULES Data rule "the client is an observer" is followed as written: an operation
+that can outlast a short request is a server job, which the client observes over SSE,
+never a request the client holds open. These replace the 60 s REST client deadline and TMO-4's
 fixed 600 s upgrade cap. The OS upgrade times out on inactivity of apt's output; the
 backlog entry "OS upgrade runs inside wisp.service" stays. The values each subsystem
 settles go into its spec, not into code comments or the audit.

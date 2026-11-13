@@ -9,11 +9,6 @@ holds the UI library's rules.
   hold authoritative state on it (e.g. browser localStorage) or run there an operation
   the server could not complete with no client attached. How server state reaches it:
   `ARCHITECTURE.md`.
-  - Applied (settled 2026-11-13): an operation that can outlast a short request runs as a
-    server job. Its POST starts it and returns the job id at once, and its progress and
-    result arrive over SSE. The client never holds a request open waiting for it, and
-    closing the page leaves the job running. The client's request timeout bounds only
-    short requests.
   - Applied: per-viewer presentation is not server state: keep the theme per device
     (Wisp's design, Theme activation and persistence).
   - Applied: keep one Zustand store per subsystem, mirroring the established `vmStore`
