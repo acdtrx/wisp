@@ -9,17 +9,18 @@ import { pipeline } from 'node:stream/promises';
 
 import {
   getContainerDir,
-  listContainers, getContainerConfig, getContainerMountUsage, createContainer, deleteContainer, renameContainer,
+  listContainers, getContainerConfig, getContainerMountUsage, assertContainerNameAvailable, createContainer, renameContainer,
   createContainerBackup,
-  startContainer, stopContainer, killContainer, restartContainer,
+  killContainer,
   updateContainerConfig, addContainerMount, updateContainerMount, removeContainerMount,
   addContainerService, updateContainerService, removeContainerService,
   getContainerStats,
   listContainerRuns, readRunLogHistory, streamContainerRunLogs, resolveRunId,
   createRunLogReadStream,
-  uploadMountFileStream, uploadMountZipStream, initMountContent, deleteMountData, deleteRemovedMountData,
+  uploadMountFileStream, assertMountTakesZip, planMountZipExtract, extractMountZip,
+  initMountContent, assertMountOperation, deleteMountData, deleteRemovedMountData,
   getMountFileTextContent, putMountFileTextContent,
-  listContainerImages, deleteContainerImage,
+  listContainerImages, assertContainerImageDeletable, deleteContainerImage,
   checkAllImagesForUpdates, checkSingleImageForUpdates, getImageUpdateStatus,
 } from '../lib/containerManager/index.js';
 import {
@@ -31,12 +32,19 @@ import {
   titleForContainerBackup,
   TITLE_IMAGE_UPDATE_CHECK_ALL,
   titleForImageUpdateCheckSingle,
+  operationJobStore,
+  titleForContainerMountDelete,
+  titleForContainerMountDataDelete,
+  titleForContainerImageDelete,
+  titleForZipExtract,
 } from '../lib/jobs/index.js';
+import { startContainerLifecycleJob, startContainerDeleteJob, startLockedContainerJob } from '../lib/containerJobs.js';
+import { watchRequestBody, bodyWatchHooks } from '../lib/requestBodyWatch.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { renameWorkloadAssignment } from '../lib/sections.js';
 import { publishContainer, unpublishContainer } from '../lib/containerMdnsReconciler.js';
 import { resolveBackupDestinations, backupToEachDestination } from '../lib/backupDestinations.js';
-import { recordBackupAttempt, forgetBackupStatus } from '../lib/backupStatus.js';
+import { recordBackupAttempt } from '../lib/backupStatus.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { createAppError, handleRouteError, isExpectedAppError, sendError } from '../lib/routeErrors.js';
 import { validateContainerName } from '../lib/validation.js';
@@ -111,6 +119,11 @@ function uploadTooLargeError() {
   return createAppError('UPLOAD_TOO_LARGE', 'File too large', 'Upload exceeded the configured size limit');
 }
 
+const JOB_ACCEPTED_BODY = {
+  type: 'object',
+  properties: { jobId: { type: 'string' }, title: { type: 'string' } },
+};
+
 export default async function containerRoutes(fastify) {
   fastify.addHook('preHandler', async (request, reply) => {
     const name = request.params?.name;
@@ -171,6 +184,12 @@ export default async function containerRoutes(fastify) {
     }
     if (spec.app && !isKnownApp(spec.app)) {
       return sendError(reply, 422, 'Unknown app type', `App "${spec.app}" is not a known app type`);
+    }
+
+    try {
+      await assertContainerNameAvailable(spec.name); // a taken name is a 409 here, not a failed job
+    } catch (err) {
+      return handleRouteError(err, reply, request);
     }
 
     const jobId = randomUUID();
@@ -244,21 +263,27 @@ export default async function containerRoutes(fastify) {
           ref: { type: 'string', minLength: 1 },
         },
       },
-      response: {
-        200: {
-          type: 'object',
-          properties: { ok: { type: 'boolean' } },
-        },
-      },
+      response: { 202: JOB_ACCEPTED_BODY },
     },
+    // A job: the delete waits for containerd's garbage collection. In use and
+    // not found are answered here.
     handler: async (request, reply) => {
       const ref = request.query.ref;
       if (!ref || typeof ref !== 'string' || !ref.trim()) {
         return sendError(reply, 422, 'Missing image reference', 'ref query parameter is required');
       }
       try {
-        await deleteContainerImage(ref);
-        return { ok: true };
+        const imageName = await assertContainerImageDeletable(ref);
+        const job = operationJobStore.startOperationJob({
+          kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_DELETE,
+          title: titleForContainerImageDelete(imageName),
+          log: request.log,
+          run: async () => {
+            await deleteContainerImage(imageName);
+            return { ref: imageName };
+          },
+        });
+        return reply.code(202).send(job);
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -448,54 +473,32 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Delete ────────────────────────────────────────────────────────
+  // A job (stopping the task and removing the snapshot and files take a
+  // while); a missing or busy container is answered here.
   fastify.delete('/containers/:name', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const deleteFiles = request.query.deleteFiles !== 'false';
-      // Drop the mDNS A-record before tearing down the container so the
-      // name doesn't keep resolving to a vanishing IP. Services are
-      // deregistered inside deleteContainer.
-      await withContainerOperationLock(request.params.name, 'delete', async () => {
-        try { await unpublishContainer(request.params.name); } catch { /* best effort */ }
-        await deleteContainer(request.params.name, deleteFiles);
-      });
-      await forgetBackupStatus({ kind: 'container', name: request.params.name });
-      return { ok: true };
+      const job = await startContainerDeleteJob({ name: request.params.name, deleteFiles, log: request.log });
+      return reply.code(202).send(job);
     } catch (err) {
       handleRouteError(err, reply, request);
     }
   });
 
   // ── Lifecycle ─────────────────────────────────────────────────────
-  // Each action holds the per-container operation lock for its duration.
-  fastify.post('/containers/:name/start', { config: { auth: 'admin' } }, async (request, reply) => {
-    try {
-      const { name } = request.params;
-      await withContainerOperationLock(name, 'start', () => startContainer(name));
-      return { ok: true };
-    } catch (err) {
-      handleRouteError(err, reply, request);
-    }
-  });
-
-  fastify.post('/containers/:name/stop', { config: { auth: 'admin' } }, async (request, reply) => {
-    try {
-      const { name } = request.params;
-      const { restartCancelled } = await withContainerOperationLock(name, 'stop', () => stopContainer(name));
-      return { ok: true, restartCancelled };
-    } catch (err) {
-      handleRouteError(err, reply, request);
-    }
-  });
-
-  fastify.post('/containers/:name/restart', { config: { auth: 'admin' } }, async (request, reply) => {
-    try {
-      const { name } = request.params;
-      await withContainerOperationLock(name, 'restart', () => restartContainer(name));
-      return { ok: true };
-    } catch (err) {
-      handleRouteError(err, reply, request);
-    }
-  });
+  // Start, stop and restart are jobs holding the per-container operation
+  // lock; not found, busy and already running / not running are answered
+  // here. Kill answers at once.
+  for (const action of ['start', 'stop', 'restart']) {
+    fastify.post(`/containers/:name/${action}`, { config: { auth: 'admin' } }, async (request, reply) => {
+      try {
+        const job = await startContainerLifecycleJob({ name: request.params.name, action, log: request.log });
+        return reply.code(202).send(job);
+      } catch (err) {
+        handleRouteError(err, reply, request);
+      }
+    });
+  }
 
   fastify.post('/containers/:name/kill', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
@@ -755,14 +758,25 @@ export default async function containerRoutes(fastify) {
     }
   });
 
+  // A job: removing a Local mount deletes its data. Not found, app-managed
+  // and busy are answered here; `done` is `{ requiresRestart }`.
   fastify.delete('/containers/:name/mounts/:mountName', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       const { name } = request.params;
-      return await withContainerOperationLock(name, 'configuration change', async () => {
-        assertMountNotAppManaged(await getContainerConfig(name), mountName);
-        return removeContainerMount(name, mountName);
+      const job = await startLockedContainerJob({
+        name,
+        operation: 'configuration change',
+        check: async () => {
+          assertMountNotAppManaged(await getContainerConfig(name), mountName);
+          await assertMountOperation(name, mountName, 'remove');
+        },
+        kind: BACKGROUND_JOB_KIND.CONTAINER_MOUNT_DELETE,
+        title: titleForContainerMountDelete(name, mountName),
+        log: request.log,
+        run: () => removeContainerMount(name, mountName),
       });
+      return reply.code(202).send(job);
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -772,35 +786,64 @@ export default async function containerRoutes(fastify) {
   fastify.post('/containers/:name/mounts/:mountName/file', { config: { auth: 'admin' } }, async (request, reply) => {
     const containerName = request.params.name;
     const stagingPath = mountUploadStagingPath(containerName);
+    const bodyWatch = watchRequestBody(request);
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       assertMountNotAppManaged(await getContainerConfig(containerName), mountName);
       if (!(await stageSingleMultipartFile(request, stagingPath))) {
         return sendError(reply, 400, 'No file provided', 'Request must include a file upload');
       }
+      bodyWatch.stop();
       return await uploadMountFileStream(containerName, mountName, createReadStream(stagingPath));
     } catch (err) {
       handleRouteError(err, reply, request);
     } finally {
+      bodyWatch.stop();
       await unlink(stagingPath).catch(() => { /* never created, or already gone */ });
     }
   });
 
+  // The upload is received here; the extract that follows is a job (202).
+  // Not found, app-managed, a mount that takes no zip, an invalid or unsafe
+  // archive and busy are answered here. The job owns the staged zip.
   fastify.post('/containers/:name/mounts/:mountName/zip', { config: { auth: 'admin' } }, async (request, reply) => {
     const containerName = request.params.name;
     const stagingPath = mountUploadStagingPath(containerName);
+    const bodyWatch = watchRequestBody(request);
+    let staged = true; // the finally removes it unless the job took it
     try {
       const mountName = decodeURIComponent(request.params.mountName);
-      // 404 / APP_CONFIG_ONLY before staging into the container dir.
+      // 404 / APP_CONFIG_ONLY / not a directory mount, before staging into the container dir.
       assertMountNotAppManaged(await getContainerConfig(containerName), mountName);
+      await assertMountTakesZip(containerName, mountName);
       if (!(await stageSingleMultipartFile(request, stagingPath))) {
         return sendError(reply, 400, 'No file provided', 'Request must include a zip upload');
       }
-      return await uploadMountZipStream(containerName, mountName, createReadStream(stagingPath));
+      bodyWatch.stop();
+      const plan = await planMountZipExtract(containerName, mountName, stagingPath);
+      const job = await startLockedContainerJob({
+        name: containerName,
+        operation: 'zip extract',
+        check: async () => {},
+        kind: BACKGROUND_JOB_KIND.CONTAINER_ZIP_EXTRACT,
+        title: titleForZipExtract(containerName, mountName),
+        log: request.log,
+        run: async () => {
+          try {
+            await extractMountZip(plan);
+            return { name: containerName, mount: mountName };
+          } finally {
+            await unlink(stagingPath).catch(() => { /* already gone */ });
+          }
+        },
+      });
+      staged = false;
+      return reply.code(202).send(job);
     } catch (err) {
       handleRouteError(err, reply, request);
     } finally {
-      await unlink(stagingPath).catch(() => { /* never created, or already gone */ });
+      bodyWatch.stop();
+      if (staged) await unlink(stagingPath).catch(() => { /* never created, or already gone */ });
     }
   });
 
@@ -819,7 +862,7 @@ export default async function containerRoutes(fastify) {
   // byte-length check at MOUNT_FILE_CONTENT_MAX_BYTES (512 KiB); the route
   // limit allows a small headroom for the JSON wrapper around `content`.
   const MOUNT_FILE_PUT_BODY_LIMIT = 600 * 1024;
-  fastify.put('/containers/:name/mounts/:mountName/content', { bodyLimit: MOUNT_FILE_PUT_BODY_LIMIT, config: { auth: 'admin' } }, async (request, reply) => {
+  fastify.put('/containers/:name/mounts/:mountName/content', { bodyLimit: MOUNT_FILE_PUT_BODY_LIMIT, config: { auth: 'admin' }, ...bodyWatchHooks }, async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       const body = request.body;
@@ -846,12 +889,24 @@ export default async function containerRoutes(fastify) {
     }
   });
 
+  // A job: a large data directory takes a while to delete. Not found,
+  // app-managed and a tmpfs mount are answered here.
   fastify.delete('/containers/:name/mounts/:mountName/data', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
-      assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
-      await deleteMountData(request.params.name, mountName);
-      return { ok: true };
+      const { name } = request.params;
+      assertMountNotAppManaged(await getContainerConfig(name), mountName);
+      await assertMountOperation(name, mountName, 'data');
+      const job = operationJobStore.startOperationJob({
+        kind: BACKGROUND_JOB_KIND.CONTAINER_MOUNT_DATA_DELETE,
+        title: titleForContainerMountDataDelete(name, mountName),
+        log: request.log,
+        run: async () => {
+          await deleteMountData(name, mountName);
+          return { name, mount: mountName };
+        },
+      });
+      return reply.code(202).send(job);
     } catch (err) {
       handleRouteError(err, reply, request);
     }

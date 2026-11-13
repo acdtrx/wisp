@@ -23,31 +23,7 @@ import { ensureImageDir, getImagePath } from '../lib/paths.js';
 import { findVMsUsingImage } from '../lib/vmManager/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { isExpectedAppError, sendError } from '../lib/routeErrors.js';
-import { createStallWatchdog } from '../lib/storage/index.js';
-
-/**
- * An upload has no total bound — a large image on a slow link takes as long as
- * it takes — but the request is dropped after this long without body bytes
- * (CODING-RULES §6; docs/specs/IMAGE-LIBRARY.md § Timeouts).
- */
-const UPLOAD_BODY_IDLE_MS = 60_000;
-
-/**
- * Destroy `request`'s socket after `idleMs` without body bytes. Returns the
- * watchdog. Progress is the socket's byte count: a 'data' listener on the
- * request would switch it to flowing mode and take the body from the
- * multipart parser.
- */
-function watchRequestBody(request, idleMs) {
-  const { socket } = request.raw;
-  const watchdog = createStallWatchdog({
-    stallMs: idleMs,
-    probe: async () => socket?.bytesRead,
-    onStall: () => request.raw.destroy(new Error(`upload made no progress for ${idleMs / 1000} s`)),
-  });
-  request.raw.once('close', watchdog.stop);
-  return watchdog;
-}
+import { watchRequestBody } from '../lib/requestBodyWatch.js';
 
 function validateFilename(name) {
   if (!name || typeof name !== 'string') return false;
@@ -138,7 +114,7 @@ export default async function libraryRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      const bodyWatch = watchRequestBody(request, UPLOAD_BODY_IDLE_MS);
+      const bodyWatch = watchRequestBody(request); // IMAGE-LIBRARY.md § Timeouts
       try {
         return await receiveUpload(request, reply);
       } finally {

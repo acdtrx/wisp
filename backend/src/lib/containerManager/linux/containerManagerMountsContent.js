@@ -1,5 +1,5 @@
 /**
- * Backing store for container mounts under files/<mountName>: upload, zip extract, init, rename, delete,
+ * Backing store for container mounts under files/<mountName>: upload, zip check and extract, init, rename, delete,
  * text read/write (refused for secret mounts), clear.
  *
  * A stored `secret: true` file mount's backing file is always SECRET_MOUNT_FILE_MODE (0600):
@@ -9,14 +9,15 @@
  */
 import { join, resolve } from 'node:path';
 import { createWriteStream } from 'node:fs';
-import { chmod, lstat, mkdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
-import { execFile as execFileCb } from 'node:child_process';
+import { execFile as execFileCb, spawn } from 'node:child_process';
 import { TextDecoder, TextEncoder } from 'node:util';
 
 import { containerError } from './containerManagerConnection.js';
 import { getContainerDir, getContainerFilesDir } from './containerPaths.js';
 import { findMount, validateMountSegmentName, SECRET_MOUNT_FILE_MODE } from './containerManagerMounts.js';
+import { createStallWatchdog, processReadProbe, stallMinutes } from '../../storage/index.js';
 
 /** Same contract as `import { execFile } from 'node:child_process/promises'` (avoids subpath builtin issues on some runtimes). */
 function execFile(command, args, options) {
@@ -116,8 +117,12 @@ export async function uploadMountFileStream(containerName, mountName, fileStream
 }
 
 const UNZIP_MAX_LIST = 50 * 1024 * 1024;
-/** Extracting an upload-capped zip takes minutes at most: a fixed, generous cap (CODING-RULES §6). */
-const UNZIP_EXTRACT_TIMEOUT_MS = 30 * 60_000;
+/**
+ * An extract runs as long as the archive is big: no total bound, but it is
+ * stopped after UNZIP_STALL_MS with neither an output line (unzip names each
+ * file it inflates) nor bytes read (CODING-RULES §6).
+ */
+const UNZIP_STALL_MS = 5 * 60_000;
 
 /**
  * List archive entry names with Info-ZIP `unzip -Z1`, reject zip-slip paths before extraction.
@@ -153,37 +158,41 @@ async function assertZipPathsSafe(zipPath) {
 /**
  * Extract with system `unzip` into destDir (must exist). Exit 1 = warnings only (accepted).
  */
-async function extractZipWithUnzipCli(zipPath, destDirAbs) {
-  try {
-    await execFile('unzip', ['-q', '-o', zipPath, '-d', destDirAbs], {
-      maxBuffer: 4 * 1024 * 1024,
-      // The upload cap bounds the archive, so a fixed, generous cap.
-      timeout: UNZIP_EXTRACT_TIMEOUT_MS,
+function extractZipWithUnzipCli(zipPath, destDirAbs) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn('unzip', ['-o', zipPath, '-d', destDirAbs], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    const watchdog = createStallWatchdog({
+      stallMs: UNZIP_STALL_MS,
+      probe: processReadProbe(child.pid),
+      onStall: () => child.kill('SIGKILL'),
     });
-  } catch (err) {
-    if (isUnzipMissingError(err)) {
-      throw containerError(
-        'CONTAINER_ZIP_INVALID',
-        'The unzip program is not available (install the unzip package)',
-        err.message,
-      );
-    }
-    if (err.killed) {
-      // Not the archive's fault: a server-side failure (5xx), not CONTAINER_ZIP_INVALID's 422.
-      throw containerError('CONTAINER_ZIP_EXTRACT_TIMEOUT', `Extracting the zip archive did not finish within ${UNZIP_EXTRACT_TIMEOUT_MS / 60_000} min`, err.message);
-    }
-    const code = err.code;
-    if (code === 1 || code === '1') {
-      return;
-    }
-    throw containerError('CONTAINER_ZIP_INVALID', 'Failed to extract zip archive', String(err.stderr || err.message));
-  }
+    child.stdout.on('data', watchdog.poke);
+    child.stderr.on('data', (d) => { watchdog.poke(); stderr = (stderr + d).slice(-4096); });
+    child.on('error', (err) => {
+      watchdog.stop();
+      if (isUnzipMissingError(err)) {
+        reject(containerError('CONTAINER_ZIP_INVALID', 'The unzip program is not available (install the unzip package)', err.message));
+      } else {
+        reject(containerError('CONTAINER_ZIP_INVALID', 'Failed to extract zip archive', err.message));
+      }
+    });
+    child.on('close', (code) => {
+      watchdog.stop();
+      if (watchdog.fired) {
+        // Not the archive's fault: a server-side failure, not CONTAINER_ZIP_INVALID.
+        reject(containerError('CONTAINER_ZIP_EXTRACT_TIMEOUT', `Extracting the zip archive made no progress for ${stallMinutes(UNZIP_STALL_MS)} and was stopped`, stderr.trim()));
+      } else if (code === 0 || code === 1) {
+        resolvePromise();
+      } else {
+        reject(containerError('CONTAINER_ZIP_INVALID', 'Failed to extract zip archive', stderr.trim() || `unzip exited ${code}`));
+      }
+    });
+  });
 }
 
-/**
- * Replace directory mount contents with extracted zip (system `unzip`, zip-slip check via `unzip -Z1`).
- */
-export async function uploadMountZipStream(containerName, mountName, zipStream) {
+/** A directory mount's config entry, or the error a zip upload to it gets. */
+async function zipTargetMount(containerName, mountName) {
   const config = await loadContainerJson(containerName);
   const m = findMount(config, mountName);
   if (!m) {
@@ -198,21 +207,32 @@ export async function uploadMountZipStream(containerName, mountName, zipStream) 
       `Zip upload is only supported for Local directory mounts; "${mountName}" is sourced from a storage mount`,
     );
   }
-  const containerDir = getContainerDir(containerName);
-  const filesDir = getContainerFilesDir(containerName);
-  await mkdir(filesDir, { recursive: true });
+  return m;
+}
+
+/** Fail fast before an upload is staged: the mount must take a zip. */
+export async function assertMountTakesZip(containerName, mountName) {
+  await zipTargetMount(containerName, mountName);
+}
+
+/**
+ * Check a staged zip for `mountName` (the mount takes zips; no zip-slip path,
+ * via `unzip -Z1`) and return its plan for `extractMountZip`. Quick; changes
+ * nothing.
+ */
+export async function planMountZipExtract(containerName, mountName, zipPath) {
+  await zipTargetMount(containerName, mountName);
+  await assertZipPathsSafe(zipPath);
+  return { containerName, mountName, zipPath };
+}
+
+/** Replace the directory mount's contents with the planned zip's (system `unzip`). The caller removes the zip. */
+export async function extractMountZip({ containerName, mountName, zipPath }) {
+  await mkdir(getContainerFilesDir(containerName), { recursive: true });
   const destDir = artifactPath(containerName, mountName);
-  const tmpZip = join(containerDir, '.wisp-upload.zip');
-  await pipeline(zipStream, createWriteStream(tmpZip));
-  try {
-    await assertZipPathsSafe(tmpZip);
-    await rm(destDir, { recursive: true, force: true });
-    await mkdir(destDir, { recursive: true });
-    await extractZipWithUnzipCli(tmpZip, resolve(destDir));
-  } finally {
-    /* Best-effort temp zip cleanup; ignore ENOENT/already removed */
-    await unlink(tmpZip).catch(() => {});
-  }
+  await rm(destDir, { recursive: true, force: true });
+  await mkdir(destDir, { recursive: true });
+  await extractZipWithUnzipCli(zipPath, resolve(destDir));
   return { ok: true };
 }
 
@@ -241,6 +261,23 @@ export async function initMountContent(containerName, mountName) {
 }
 
 /** Remove backing file or directory; mount row stays in container.json until PATCH. */
+/**
+ * The checks a mount's data delete (`'data'`) or a mount's removal
+ * (`'remove'`) makes first, quick and without side effects:
+ * CONTAINER_NOT_FOUND, CONTAINER_MOUNT_NOT_FOUND, and for data a tmpfs mount
+ * (CONTAINER_MOUNT_TYPE_MISMATCH).
+ */
+export async function assertMountOperation(containerName, mountName, what) {
+  const config = await loadContainerJson(containerName);
+  const m = findMount(config, mountName);
+  if (!m) {
+    throw containerError('CONTAINER_MOUNT_NOT_FOUND', `No mount named "${mountName}"`);
+  }
+  if (what === 'data' && m.type === 'tmpfs') {
+    throw containerError('CONTAINER_MOUNT_TYPE_MISMATCH', `Mount "${mountName}" is tmpfs and has no host backing store`);
+  }
+}
+
 export async function deleteMountData(containerName, mountName) {
   const config = await loadContainerJson(containerName);
   const m = findMount(config, mountName);

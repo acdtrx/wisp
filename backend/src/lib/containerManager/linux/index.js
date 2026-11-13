@@ -31,6 +31,7 @@ export {
 export { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 
 export {
+  assertContainerState,
   startContainer,
   stopContainer,
   killContainer,
@@ -41,6 +42,7 @@ export {
 } from './containerManagerLifecycle.js';
 
 export {
+  assertContainerNameAvailable,
   createContainer,
   deleteContainer,
   pullImage,
@@ -51,6 +53,7 @@ export { renameContainer } from './containerManagerRename.js';
 export {
   createContainerBackup,
   listContainerBackups,
+  planContainerBackupRestore,
   restoreContainerBackup,
   restoreContainerBackupInPlace,
   deleteContainerBackup,
@@ -61,6 +64,7 @@ export { tightenContainerFileModes, tightenContainerBackupFileModes } from './co
 
 export {
   listContainerImages,
+  assertContainerImageDeletable,
   deleteContainerImage,
   getImageDigest,
   resolveContainerImageRef,
@@ -104,8 +108,11 @@ export {
 
 export {
   uploadMountFileStream,
-  uploadMountZipStream,
+  assertMountTakesZip,
+  planMountZipExtract,
+  extractMountZip,
   initMountContent,
+  assertMountOperation,
   deleteMountData,
   deleteRemovedMountData,
   MOUNT_FILE_CONTENT_MAX_BYTES,

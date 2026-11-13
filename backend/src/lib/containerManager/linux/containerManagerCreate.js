@@ -4,7 +4,7 @@
  */
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { mkdir, rm, readFile, readdir } from 'node:fs/promises';
+import { mkdir, rm, readFile, readdir, stat } from 'node:fs/promises';
 import { randomBytes, createHash } from 'node:crypto';
 
 import {
@@ -12,8 +12,13 @@ import {
   packAny, packProtoAny,
 } from './containerManagerConnection.js';
 
-/** An image pull's deadline (CODING-RULES §6). */
-const PULL_DEADLINE_MS = 30 * 60_000;
+/**
+ * An image pull runs as long as the image is big: no total bound, but it is
+ * stopped after PULL_STALL_MS without progress (CODING-RULES §6). Progress is
+ * what containerd reports while it works: the offsets of the content store's
+ * ingests (downloading) and the usage of the active snapshots (unpacking).
+ */
+const PULL_STALL_MS = 5 * 60_000;
 /** Removing a large rootfs snapshot can take a while. */
 const SNAPSHOT_REMOVE_DEADLINE_MS = 2 * 60_000;
 import { buildOCISpec } from './containerManagerSpec.js';
@@ -33,6 +38,7 @@ import { assertBindSourcesReady, resolveBindSources } from './containerManagerMo
 import { resolveDeviceSpecs } from './containerDeviceNode.js';
 import { resolveMount } from './containerPaths.js';
 import { normalizeImageRef } from './containerImageRef.js';
+import { createStallWatchdog, stallMinutes } from '../../storage/index.js';
 import { getImageDigest, resolveContainerImageRef } from './containerManagerImages.js';
 import { readContainerConfig, writeContainerConfig, notifyContainerConfigWrite } from './containerManagerConfigIo.js';
 import { RESTART_FIELDS } from './containerManagerConfig.js';
@@ -162,15 +168,40 @@ export async function pullImage(imageRef, onStep) {
     }],
   });
 
-  // A pull runs as long as the image is big: a generous cap, not 30 s.
-  await callUnary(getClient('transfer'), 'transfer', {
-    source,
-    destination,
-    options: {},
-  }, { deadlineMs: PULL_DEADLINE_MS });
+  const controller = new AbortController();
+  const watchdog = createStallWatchdog({
+    stallMs: PULL_STALL_MS,
+    probe: pullProgressProbe,
+    onStall: () => controller.abort(
+      containerError('IMAGE_PULL_FAILED', `Pulling ${ref} made no progress for ${stallMinutes(PULL_STALL_MS)} and was stopped`),
+    ),
+  });
+  try {
+    await callUnary(getClient('transfer'), 'transfer', {
+      source,
+      destination,
+      options: {},
+    }, { deadlineMs: null, signal: controller.signal });
+  } finally {
+    watchdog.stop();
+  }
 
   onStep?.({ step: 'pulled', detail: `Image ${ref} pulled` });
   return ref;
+}
+
+/** A stall-watchdog probe for a pull: changes while containerd downloads or unpacks. */
+async function pullProgressProbe() {
+  const [{ statuses = [] }, snapshots] = await Promise.all([
+    callUnary(getClient('content'), 'listStatuses', { filters: [] }),
+    collectStream(callStream(getClient('snapshots'), 'list', { snapshotter: SNAPSHOTTER }, { deadlineMs: STREAM_DEADLINE_MS })),
+  ]);
+  const ingested = statuses.map((s) => `${s.ref}=${s.offset}`).join(',');
+  const active = snapshots.flatMap((m) => m.info || []).filter((i) => i.kind === 'ACTIVE');
+  const usage = await Promise.all(active.map((i) =>
+    callUnary(getClient('snapshots'), 'usage', { snapshotter: SNAPSHOTTER, key: i.name })
+      .then((u) => `${i.name}=${u.size}`, () => i.name)));
+  return `${ingested}|${usage.join(',')}`;
 }
 
 /**
@@ -288,6 +319,29 @@ async function getSnapshotMounts(name) {
     return snapshotMountsForTask(res.mounts || []);
   } catch {
     return null;
+  }
+}
+
+/**
+ * The name checks a create makes first, quick and without side effects:
+ * INVALID_CONTAINER_NAME, and CONTAINER_EXISTS when containerd or the
+ * containers directory already has the name.
+ */
+export async function assertContainerNameAvailable(name) {
+  if (!name || typeof name !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$/.test(name)) {
+    throw containerError('INVALID_CONTAINER_NAME', 'Container name must be alphanumeric (with . _ -), 1-63 chars');
+  }
+  try {
+    await callUnary(getClient('containers'), 'get', { id: name });
+    throw containerError('CONTAINER_EXISTS', `Container "${name}" already exists`);
+  } catch (err) {
+    if (err.code !== 'CONTAINER_NOT_FOUND') throw err;
+  }
+  try {
+    await stat(getContainerDir(name));
+    throw containerError('CONTAINER_EXISTS', `Container directory for "${name}" already exists`);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
   }
 }
 

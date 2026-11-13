@@ -12,6 +12,7 @@ import { rebuildCloudInitISO } from '../lib/cloudInit.js';
 import { isPathInsideAllowedRoots } from '../lib/paths.js';
 import {
   listContainerBackups,
+  planContainerBackupRestore,
   restoreContainerBackup,
   restoreContainerBackupInPlace,
   deleteContainerBackup,
@@ -27,7 +28,9 @@ import {
   BACKGROUND_JOB_KIND,
   titleForContainerRestore,
   titleForVmRestore,
+  titleForContainerRestoreAsNew,
 } from '../lib/jobs/index.js';
+import { startLockedContainerJob } from '../lib/containerJobs.js';
 import { createAppError, handleRouteError, isExpectedAppError } from '../lib/routeErrors.js';
 import { validateVMName, validateContainerName } from '../lib/validation.js';
 import {
@@ -330,16 +333,15 @@ export default async function backupsRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        200: {
+        202: {
           type: 'object',
-          properties: {
-            name: { type: 'string' },
-            sourceName: { type: 'string' },
-            image: { type: ['string', 'null'] },
-          },
+          properties: { jobId: { type: 'string' }, title: { type: 'string' } },
         },
       },
     },
+    // A job: the archive is extracted and the image pulled. The request is
+    // checked here (names, destination, the new name free, the manifest);
+    // `done` is `{ name, sourceName, image }`.
     handler: async (request, reply) => {
       try {
         const { destinationId, name, timestamp, newName } = request.body;
@@ -352,9 +354,19 @@ export default async function backupsRoutes(fastify) {
         // route knows the layout because it owns the API contract; the
         // container manager keeps generic "absolute path in" semantics.
         const backupPath = join(root, 'containers', name, timestamp);
+        let plan;
         // The new container's name is held for the restore, so nothing starts
         // or edits it while its directory is being populated.
-        return await withContainerOperationLock(newName, 'restore', () => restoreContainerBackup(backupPath, newName));
+        const job = await startLockedContainerJob({
+          name: newName,
+          operation: 'restore',
+          check: async () => { plan = await planContainerBackupRestore(backupPath, newName); },
+          kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE_AS_NEW,
+          title: titleForContainerRestoreAsNew(newName),
+          log: request.log,
+          run: () => restoreContainerBackup(plan),
+        });
+        return reply.code(202).send(job);
       } catch (err) {
         handleRouteError(err, reply, request);
       }

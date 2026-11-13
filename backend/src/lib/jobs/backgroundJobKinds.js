@@ -21,4 +21,17 @@ export const BACKGROUND_JOB_KIND = {
   MOUNT_UNMOUNT: 'mount-unmount',
   MOUNT_DELETE: 'mount-delete',
   SELF_UPDATE: 'self-update',
+  CONTAINER_START: 'container-start',
+  CONTAINER_STOP: 'container-stop',
+  CONTAINER_RESTART: 'container-restart',
+  CONTAINER_DELETE: 'container-delete',
+  CONTAINER_MOUNT_DELETE: 'container-mount-delete',
+  CONTAINER_MOUNT_DATA_DELETE: 'container-mount-data-delete',
+  CONTAINER_IMAGE_DELETE: 'container-image-delete',
+  CONTAINER_RESTORE_AS_NEW: 'container-restore-new',
+  CONTAINER_ZIP_EXTRACT: 'container-zip-extract',
+  // Started by MCP tools (lib/mcp/tools/containerAdminTools.js).
+  CONTAINER_DEPLOY: 'container-deploy',
+  CONTAINER_IMAGE_UPDATE: 'container-image-update',
+  CONTAINER_IMAGE_CHECK: 'container-image-check',
 };

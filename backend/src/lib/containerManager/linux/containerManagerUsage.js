@@ -10,6 +10,9 @@ import { getContainerFilesDir, resolveMount } from './containerPaths.js';
 import { resolveMountHostPath } from './containerManagerMounts.js';
 import { measurePathSize } from '../../storage/index.js';
 
+/** The whole walk's budget (CODING-RULES §6): past it, sizes are partial. */
+const USAGE_WALK_MS = 20_000;
+
 /**
  * @param {string} name
  * @returns {Promise<{ name: string, mounts: Array<{
@@ -23,6 +26,7 @@ export async function getContainerMountUsage(name) {
   const filesDir = getContainerFilesDir(name);
   const mounts = Array.isArray(config.mounts) ? config.mounts : [];
 
+  const deadline = Date.now() + USAGE_WALK_MS;
   const out = [];
   for (const mount of mounts) {
     const base = { name: mount.name, containerPath: mount.containerPath, type: mount.type };
@@ -39,7 +43,7 @@ export async function getContainerMountUsage(name) {
       out.push({ ...base, source: 'missing', hostPath: null, sizeBytes: null, partial: false });
       continue;
     }
-    const { sizeBytes, partial } = await measurePathSize(resolved.hostPath);
+    const { sizeBytes, partial } = await measurePathSize(resolved.hostPath, { deadline });
     out.push({ ...base, source: resolved.source, hostPath: resolved.hostPath, sizeBytes, partial });
   }
   return { name, mounts: out };

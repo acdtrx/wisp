@@ -92,6 +92,10 @@ export async function getContainerMountUsage(name) {
   throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
 }
 
+export async function assertContainerState(name) {
+  throw containerError('CONTAINER_NOT_FOUND', `Container "${name}" not found`);
+}
+
 export async function startContainer() {
   throw noContainerd();
 }
@@ -120,6 +124,10 @@ export async function getTaskState() {
   throw noContainerd();
 }
 
+export async function assertContainerNameAvailable() {
+  throw noContainerd();
+}
+
 export async function createContainer() {
   throw noContainerd();
 }
@@ -144,6 +152,10 @@ export async function listContainerBackups() {
   return [];
 }
 
+export async function planContainerBackupRestore() {
+  throw noContainerd();
+}
+
 export async function restoreContainerBackup() {
   throw noContainerd();
 }
@@ -162,6 +174,10 @@ export async function pullImage() {
 
 export async function listContainerImages() {
   return [];
+}
+
+export async function assertContainerImageDeletable() {
+  throw noContainerd();
 }
 
 export async function deleteContainerImage() {
@@ -256,7 +272,19 @@ export async function uploadMountFileStream() {
   throw noContainerd();
 }
 
-export async function uploadMountZipStream() {
+export async function assertMountTakesZip() {
+  throw noContainerd();
+}
+
+export async function planMountZipExtract() {
+  throw noContainerd();
+}
+
+export async function extractMountZip() {
+  throw noContainerd();
+}
+
+export async function assertMountOperation() {
   throw noContainerd();
 }
 

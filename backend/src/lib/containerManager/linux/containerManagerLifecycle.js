@@ -11,7 +11,8 @@ import {
 import { deregisterServicesForContainer } from '../../mdns/index.js';
 import { findCurrentRunId, finalizeRun } from './containerManagerLogs.js';
 import { getContainerDir } from './containerPaths.js';
-import { noteIntentionalStop, noteContainerStart } from './containerManagerRestartPolicy.js';
+import { noteIntentionalStop, noteContainerStart, getScheduledRestart } from './containerManagerRestartPolicy.js';
+import { readContainerConfig } from './containerManagerConfigIo.js';
 import { tryAcquireOperationLock } from './containerOperationGuard.js';
 
 const SIGTERM = 15;
@@ -83,6 +84,28 @@ export async function getTaskState(name) {
   } catch (err) {
     if (err.code === 'CONTAINER_NOT_FOUND' || err.raw?.includes('not found')) return null;
     throw err;
+  }
+}
+
+/**
+ * The checks a lifecycle call makes first, alone, quick and without side
+ * effects, for a caller that answers them before starting the slow part:
+ * `exists` (CONTAINER_NOT_FOUND), `start` (also CONTAINER_ALREADY_RUNNING),
+ * `stop` (also CONTAINER_NOT_RUNNING, unless a policy restart is pending,
+ * which a stop cancels).
+ * @param {string} name
+ * @param {'exists' | 'start' | 'stop'} what
+ */
+export async function assertContainerState(name, what) {
+  await readContainerConfig(name);
+  if (what === 'exists') return;
+  const task = await getTaskState(name);
+  const st = task ? normalizeTaskStatus(task.status) : null;
+  if (what === 'start' && st === 'RUNNING') {
+    throw containerError('CONTAINER_ALREADY_RUNNING', `Container "${name}" is already running`);
+  }
+  if (what === 'stop' && (!task || task.status === 'STOPPED') && !getScheduledRestart(name)) {
+    throw containerError('CONTAINER_NOT_RUNNING', `Container "${name}" is not running`);
   }
 }
 

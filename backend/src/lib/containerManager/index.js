@@ -23,6 +23,7 @@ export const subscribeContainerListChange = impl.subscribeContainerListChange;
 export const subscribeContainerNetworkChange = impl.subscribeContainerNetworkChange;
 export const subscribeContainerNetnsRemoved = impl.subscribeContainerNetnsRemoved;
 
+export const assertContainerState = impl.assertContainerState;
 export const startContainer = impl.startContainer;
 export const startAutostartContainersAtBackendBoot = impl.startAutostartContainersAtBackendBoot;
 export const resumeStalePausedContainersAtBackendBoot = impl.resumeStalePausedContainersAtBackendBoot;
@@ -31,6 +32,7 @@ export const killContainer = impl.killContainer;
 export const restartContainer = impl.restartContainer;
 export const getTaskState = impl.getTaskState;
 
+export const assertContainerNameAvailable = impl.assertContainerNameAvailable;
 export const createContainer = impl.createContainer;
 export const deleteContainer = impl.deleteContainer;
 export const pullImage = impl.pullImage;
@@ -38,6 +40,7 @@ export const renameContainer = impl.renameContainer;
 
 export const createContainerBackup = impl.createContainerBackup;
 export const listContainerBackups = impl.listContainerBackups;
+export const planContainerBackupRestore = impl.planContainerBackupRestore;
 export const restoreContainerBackup = impl.restoreContainerBackup;
 export const restoreContainerBackupInPlace = impl.restoreContainerBackupInPlace;
 export const deleteContainerBackup = impl.deleteContainerBackup;
@@ -46,6 +49,7 @@ export const tightenContainerBackupFileModes = impl.tightenContainerBackupFileMo
 export const setContainerBackupOrigin = impl.setContainerBackupOrigin;
 
 export const listContainerImages = impl.listContainerImages;
+export const assertContainerImageDeletable = impl.assertContainerImageDeletable;
 export const deleteContainerImage = impl.deleteContainerImage;
 export const getImageDigest = impl.getImageDigest;
 export const resolveContainerImageRef = impl.resolveContainerImageRef;
@@ -78,7 +82,10 @@ export const resolveRunId = impl.resolveRunId;
 export const createRunLogReadStream = impl.createRunLogReadStream;
 
 export const uploadMountFileStream = impl.uploadMountFileStream;
-export const uploadMountZipStream = impl.uploadMountZipStream;
+export const assertMountTakesZip = impl.assertMountTakesZip;
+export const planMountZipExtract = impl.planMountZipExtract;
+export const extractMountZip = impl.extractMountZip;
+export const assertMountOperation = impl.assertMountOperation;
 export const initMountContent = impl.initMountContent;
 export const deleteMountData = impl.deleteMountData;
 export const deleteRemovedMountData = impl.deleteRemovedMountData;

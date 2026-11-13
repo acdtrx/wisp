@@ -122,11 +122,14 @@ function namespaceMeta() {
  * Promisify a unary gRPC call with the wisp namespace header and a deadline
  * (`deadlineMs`, default DEFAULT_DEADLINE_MS; null for none).
  */
-export function callUnary(client, method, request = {}, { deadlineMs = DEFAULT_DEADLINE_MS } = {}) {
+export function callUnary(client, method, request = {}, { deadlineMs = DEFAULT_DEADLINE_MS, signal } = {}) {
   return new Promise((resolve, reject) => {
-    client[method](request, namespaceMeta(), callOptions(deadlineMs), (err, response) => {
+    const call = client[method](request, namespaceMeta(), callOptions(deadlineMs), (err, response) => {
+      signal?.removeEventListener('abort', onAbort);
       if (err) {
-        if (err.code === grpc.status.DEADLINE_EXCEEDED) {
+        if (err.code === grpc.status.CANCELLED && signal?.aborted) {
+          reject(signal.reason ?? containerError('CONTAINERD_ERROR', `${method} was cancelled`, err.message));
+        } else if (err.code === grpc.status.DEADLINE_EXCEEDED) {
           reject(containerError('CONTAINERD_ERROR', `containerd did not answer ${method} within ${Math.round(deadlineMs / 1000)} s`, err.message));
         } else if (err.code === grpc.status.NOT_FOUND) {
           reject(containerError('CONTAINER_NOT_FOUND', err.details || err.message, err.message));
@@ -141,6 +144,10 @@ export function callUnary(client, method, request = {}, { deadlineMs = DEFAULT_D
         resolve(response);
       }
     });
+    // `signal` cancels the call; it rejects with the signal's reason.
+    function onAbort() { call.cancel(); }
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
