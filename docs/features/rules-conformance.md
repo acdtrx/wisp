@@ -76,6 +76,12 @@ The §4 and §7 findings.
   update. This is safe because migrations must be idempotent. It replaces UPDATES.md's "never
   restored: the ledger" rule and its "no in-tree config" authoring rule: a migration may
   change `config/`, because a rollback reverts both together.
+- The first update from v2.6.0 is rolled back by v2.6.0's own updater, which keeps the
+  ledger. If that one update fails after 0007 ran, later updates fail until 0007's ledger
+  entry is deleted by hand; UPDATES.md says so. Accepted as a one-time risk. Rejected:
+  shipping the ledger-restore change a release earlier; renaming the ledger file.
+- A `WISP_CONFIG_PATH` outside the install directory is not snapshotted, so a rollback
+  doesn't revert it together with the ledger. UPDATES.md states the limit; no host uses it.
 - CFG-4 is reversed: the read is strict, and a dangling `backupMountId` or schedule
   destination fails startup. The write path prunes the references a delete leaves behind.
   The merged migration prunes the leftovers older releases left in the file (a deleted
