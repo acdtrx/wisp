@@ -39,6 +39,11 @@ if [[ ! "$REMOTE_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
   exit 1
 fi
 
+# CODING-RULES §6: a dead host fails the connect in 10 s, and a link that stops
+# answering for a minute (4 missed keepalives, 15 s apart) drops — the install
+# itself may run long, but sshd answers keepalives throughout.
+SSH_OPTS=(-o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
@@ -63,7 +68,7 @@ echo ""
 
 # --- Upload ---
 echo "--- Uploading $ZIP_NAME to $TARGET:/tmp ---"
-scp "$ZIP_PATH" "$TARGET:/tmp/$ZIP_NAME"
+scp "${SSH_OPTS[@]}" "$ZIP_PATH" "$TARGET:/tmp/$ZIP_NAME"
 
 echo ""
 
@@ -74,7 +79,7 @@ if [[ "$RESTART_SVC" -eq 1 ]]; then
 fi
 
 echo "--- Installing on $TARGET ---"
-ssh -t "$TARGET" "set -e; rm -rf /tmp/wisp-update; mkdir -p /tmp/wisp-update; unzip -q '/tmp/$ZIP_NAME' -d /tmp/wisp-update; cd /tmp/wisp-update; bash ./scripts/install.sh $INSTALL_FLAGS; rm -rf /tmp/wisp-update '/tmp/$ZIP_NAME'"
+ssh "${SSH_OPTS[@]}" -t "$TARGET" "set -e; rm -rf /tmp/wisp-update; mkdir -p /tmp/wisp-update; unzip -q '/tmp/$ZIP_NAME' -d /tmp/wisp-update; cd /tmp/wisp-update; bash ./scripts/install.sh $INSTALL_FLAGS; rm -rf /tmp/wisp-update '/tmp/$ZIP_NAME'"
 
 echo ""
 echo "=== Push complete ==="

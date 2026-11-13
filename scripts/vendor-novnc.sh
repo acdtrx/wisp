@@ -15,7 +15,9 @@ fi
 
 mkdir -p "$DEST"
 TMP_NOVNC="$(mktemp -d)"
-if git clone --depth 1 --config core.hooksPath=/dev/null https://github.com/novnc/noVNC.git "$TMP_NOVNC/novnc" 2>/dev/null && [[ -d "$TMP_NOVNC/novnc/core" ]]; then
+# Bounded (CODING-RULES §6) by git's low-speed abort — portable, unlike timeout(1)
+# on the macOS dev machine: under 1 KB/s for 60 s gives up.
+if git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 clone --depth 1 --config core.hooksPath=/dev/null https://github.com/novnc/noVNC.git "$TMP_NOVNC/novnc" 2>/dev/null && [[ -d "$TMP_NOVNC/novnc/core" ]]; then
   cp -R "$TMP_NOVNC/novnc/core" "$DEST/"
   echo "  Copied noVNC core"
   if [[ -d "$TMP_NOVNC/novnc/vendor" ]]; then

@@ -42,7 +42,7 @@ if [[ ! -x "$CNI_BIN_DIR/bridge" ]]; then
 
   TMP_DIR="$(mktemp -d)"
   TARBALL="cni-plugins-linux-${ARCH}-${CNI_VERSION}.tgz"
-  curl -fsSL "https://github.com/containernetworking/plugins/releases/download/${CNI_VERSION}/${TARBALL}" \
+  curl -fsSL --connect-timeout 10 --max-time 300 "https://github.com/containernetworking/plugins/releases/download/${CNI_VERSION}/${TARBALL}" \
     -o "$TMP_DIR/$TARBALL"
   if ! echo "${EXPECTED_SHA}  $TMP_DIR/$TARBALL" | sha256sum -c - >/dev/null 2>&1; then
     echo "ERROR: CNI plugin checksum mismatch for $TARBALL — refusing to install." >&2

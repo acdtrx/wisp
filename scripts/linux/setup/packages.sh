@@ -78,7 +78,7 @@ else
     apt-get install -y -qq ca-certificates curl gnupg
     install -m 0755 -d /etc/apt/keyrings
     if [[ ! -f /etc/apt/keyrings/nodesource.gpg ]]; then
-      curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+      curl -fsSL --connect-timeout 10 --max-time 60 https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
         | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
       chmod a+r /etc/apt/keyrings/nodesource.gpg
     fi
