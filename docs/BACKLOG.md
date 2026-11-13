@@ -200,6 +200,18 @@ unit started via one fixed sudo rule (like `wisp-updater`), or at least refuse a
 self-update while an upgrade runs and drop the timeout. **Revisit trigger:** an upgrade is
 ever interrupted, or OS upgrades become unattended/scheduled. (re-review 2026-10-16, P2)
 
+**Settings forms drop bad paths on the client.** `AppConfig.jsx` and `HostBackup.jsx`
+send `undefined` for an empty or relative path, so the field silently keeps its old value
+and the backend's 422 `INVALID_SETTINGS` (2026-11-12) never reaches the user. Fix shape:
+send the trimmed value and show the 422's message. **Revisit trigger:** someone types a
+path that doesn't save, or the next work on those forms.
+
+**macOS dev backend sometimes ignores SIGTERM.** A dev backend started with plain
+`nohup node src/index.js` sometimes kept running after `kill` (seen 2026-11-12, on main's
+code too); `npm run dev` under a terminal was not affected. Not investigated: possibly a
+shutdown step that waits on a darwin stub. **Revisit trigger:** it gets in the way of dev
+work or a script that restarts the dev backend.
+
 **`PATCH /api/containers/:name` has no body schema.** CODING-RULES §9 wants request
 validation at the boundary; the manager validates fields piecemeal instead (found in the
 2026-11-12 repairs inventory). **Revisit trigger:** a malformed PATCH body is stored, or

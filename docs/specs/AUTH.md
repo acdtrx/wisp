@@ -26,7 +26,7 @@ Wisp uses single-user JWT authentication carried in **HttpOnly cookies**. There 
 
 **`config/wisp-password`** (mode `0600`) holds a **scrypt hash** in the form `scrypt:<salt_hex>:<key_hex>` (written by install, `wispctl password`, and change-password).
 
-If the file is missing, JWT signing fails until a password is set (`wispctl password` or install). There is no `WISP_PASSWORD` env fallback. If the file exists but is not in the expected scrypt form, the backend refuses to use it (the auth route returns 503 with `PASSWORD_FILE_UNSUPPORTED_FORMAT`) — run `wispctl password` to repair.
+If the file is missing, JWT signing fails until a password is set (`wispctl password` or install). There is no `WISP_PASSWORD` env fallback. If the file exists but is not in the expected scrypt form, or can't be read, the backend refuses to start (settled 2026-11-12) — run `wispctl password` to repair. The file is read on each use, not cached, so `wispctl password` applies without a restart; one broken while Wisp runs answers 503 (`PASSWORD_FILE_UNSUPPORTED_FORMAT` / `PASSWORD_FILE_UNREADABLE`).
 
 ### Password change
 
@@ -189,7 +189,7 @@ Delegated to the identity provider. Restrict the Wisp OIDC client to your own us
 
 ### Configuration
 
-Stored under `settings.oidc` in `wisp-config.json` (`{ enabled, issuer, clientId, clientSecret }`) and edited in **Host → App Config → Single sign-on** through `PATCH /api/settings/oidc` — a `session` route, never reachable with an API token (see § Denied surfaces). The client secret is masked on read (`hasClientSecret` boolean, like SMB passwords) and the file is written `0600`. `enabled` only sticks when `issuer` (valid `http`/`https`), `clientId`, and `clientSecret` are all present.
+Stored under `settings.oidc` in `wisp-config.json` (`{ enabled, issuer, clientId, clientSecret }`) and edited in **Host → App Config → Single sign-on** through `PATCH /api/settings/oidc` — a `session` route, never reachable with an API token (see § Denied surfaces). The client secret is masked on read (`hasClientSecret` boolean, like SMB passwords) and the file is written `0600`. `enabled: true` requires `issuer` (valid `http`/`https`), `clientId`, and `clientSecret`: the PATCH refuses it otherwise with **422** `INVALID_OIDC`, and a file that has it fails startup ([CONFIGURATION.md → Strict reading](CONFIGURATION.md#strict-reading)).
 
 **The saved secret is bound to its issuer and client (settled 2026-10-16).** An empty or omitted `clientSecret` keeps the saved one only while `issuer` and `clientId` stay the same; changing either without a new secret is refused with **422** `INVALID_OIDC` (clearing either field drops the saved secret instead). Otherwise the secret issued by one provider would be sent to another provider's token endpoint.
 
