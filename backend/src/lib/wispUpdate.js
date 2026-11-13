@@ -178,6 +178,9 @@ async function fetchGithubJson(url, signal) {
       signal: requestSignal,
     });
   } catch (err) {
+    if (deadline.aborted) {
+      throw checkFailure('GitHub API timed out', 'GitHub Releases did not answer in time', err.message);
+    }
     throw checkFailure(`Network error: ${err.message}`, 'Failed to reach GitHub Releases', err.message);
   }
   if (res.status === 404) return null;
@@ -185,7 +188,15 @@ async function fetchGithubJson(url, signal) {
     const body = await res.text().catch(() => '');
     throw checkFailure(`GitHub API ${res.status}`, `GitHub API returned ${res.status}`, body.slice(0, 200));
   }
-  const data = await res.json().catch(() => null);
+  let data;
+  try {
+    data = await res.json();
+  } catch (err) {
+    if (deadline.aborted) {
+      throw checkFailure('GitHub API timed out', 'GitHub Releases did not answer in time', err.message);
+    }
+    data = null;
+  }
   if (!data || typeof data !== 'object') throw malformedResponse();
   return data;
 }

@@ -211,6 +211,24 @@ function literalIpAddrs(hostname) {
 }
 
 /**
+ * Settle with `promise`, or reject with the signal's reason once it aborts —
+ * for work that takes no signal of its own (dns.lookup), which keeps running
+ * but no longer holds the caller.
+ */
+function untilAborted(promise, signal) {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (v) => { signal.removeEventListener('abort', onAbort); resolve(v); },
+      (e) => { signal.removeEventListener('abort', onAbort); reject(e); },
+    );
+  });
+}
+
+/**
  * Fetch with manual redirect handling. Each Location target is re-validated by
  * `assertUrlNotPrivate` and DNS-pinned to a fresh undici Agent. Up to
  * `MAX_REDIRECTS` redirects are followed.
@@ -221,7 +239,8 @@ function literalIpAddrs(hostname) {
 export async function ssrfSafeFetch(urlStr, init = {}) {
   let currentUrl = urlStr;
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
-    const addrs = await assertUrlNotPrivate(currentUrl);
+    // The caller's signal bounds the DNS lookup too, not only the request.
+    const addrs = await untilAborted(assertUrlNotPrivate(currentUrl), init.signal);
     const dispatcher = makePrivateIPGuardAgent(addrs);
 
     const res = await undiciFetch(currentUrl, {
