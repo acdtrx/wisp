@@ -804,10 +804,19 @@ async function onBrowseItemNew(record, iface, proto, name, domain) {
     }
     state.browseCreationsInFlight += 1;
     try {
-      path = await server.ServiceResolverNew(
+      const creating = server.ServiceResolverNew(
         AVAHI_IF_UNSPEC, AVAHI_PROTO_UNSPEC, name, record.type, domain,
         AVAHI_PROTO_UNSPEC, AVAHI_FLAG_DEFAULT,
       );
+      try {
+        path = await bounded(creating, 'ServiceResolverNew');
+      } catch (err) {
+        // A late answer still creates the resolver: free it when its path arrives.
+        if (err.code === 'AVAHI_TIMEOUT') {
+          creating.then((latePath) => freeAvahiPath(latePath, AVAHI_RESOLVER_IFACE), () => { /* never created */ });
+        }
+        throw err;
+      }
       if (record.resolvers.get(name) !== token) {
         // service vanished, record reset, or a newer call took over while
         // this one was in flight — this path is ours alone to free
@@ -859,9 +868,19 @@ async function startBrowse(record) {
     installBrowseDispatch();
     state.browseCreationsInFlight += 1;
     try {
-      const path = await server.ServiceBrowserNew(
+      const creating = server.ServiceBrowserNew(
         AVAHI_IF_UNSPEC, AVAHI_PROTO_UNSPEC, record.type, '', AVAHI_FLAG_DEFAULT,
       );
+      let path;
+      try {
+        path = await bounded(creating, 'ServiceBrowserNew');
+      } catch (err) {
+        // A late answer still creates the browser: free it when its path arrives.
+        if (err.code === 'AVAHI_TIMEOUT') {
+          creating.then((latePath) => freeAvahiPath(latePath, AVAHI_BROWSER_IFACE), () => { /* never created */ });
+        }
+        throw err;
+      }
       if (record.subscribers.size === 0) {
         // everyone unsubscribed while the call was in flight
         await freeBrowserPath(path);
@@ -994,9 +1013,9 @@ export async function resolveLocalName(name, family = 'any') {
   const cleaned = String(name || '').replace(/\.$/, '');
   if (!cleaned) return null;
   try {
-    const out = await server.ResolveHostName(
+    const out = await bounded(server.ResolveHostName(
       AVAHI_IF_UNSPEC, AVAHI_PROTO_UNSPEC, cleaned, aproto, AVAHI_FLAG_DEFAULT,
-    );
+    ), 'ResolveHostName');
     // [interface, protocol, name, aprotocol, address, flags]
     const aprotocol = out[3];
     const address = out[4];
@@ -1014,9 +1033,9 @@ export async function resolveLocalAddress(ip) {
   const server = await ensureServer();
   if (!server) return null;
   try {
-    const out = await server.ResolveAddress(
+    const out = await bounded(server.ResolveAddress(
       AVAHI_IF_UNSPEC, AVAHI_PROTO_UNSPEC, ip, AVAHI_FLAG_DEFAULT,
-    );
+    ), 'ResolveAddress');
     // [interface, protocol, aprotocol, address, name, flags]
     return out[4] || null;
   } catch {
