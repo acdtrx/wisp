@@ -14,6 +14,7 @@ import {
 import {
   checkForUpdates,
   performUpgrade,
+  isUpdateOperationInProgress,
   listUpgradablePackages,
   getHostHardwareInfo,
   hostShutdown,
@@ -28,6 +29,34 @@ import { handleRouteError, sendError } from '../lib/routeErrors.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/storage/index.js';
 import { getCurrentVersion } from '../lib/wispUpdate.js';
+import {
+  operationJobStore,
+  BACKGROUND_JOB_KIND,
+  TITLE_OS_UPDATE_CHECK,
+  TITLE_OS_UPGRADE,
+  titleForBridgeCreate,
+  titleForBridgeDelete,
+} from '../lib/jobs/index.js';
+
+const JOB_ACCEPTED = {
+  202: { type: 'object', properties: { jobId: { type: 'string' }, title: { type: 'string' } } },
+};
+
+/**
+ * The OS update check as a job: one shared run — a check or package refresh
+ * started while one runs joins it (the same job id). Its `done` payload is the
+ * count; the packages are then served from the cache (GET /host/updates/packages).
+ */
+function startOsUpdateCheckJob(log) {
+  const running = operationJobStore.findRunningJob(BACKGROUND_JOB_KIND.OS_UPDATE_CHECK, TITLE_OS_UPDATE_CHECK);
+  if (running) return { jobId: running.jobId, title: running.title };
+  return operationJobStore.startOperationJob({
+    kind: BACKGROUND_JOB_KIND.OS_UPDATE_CHECK,
+    title: TITLE_OS_UPDATE_CHECK,
+    log,
+    run: () => checkForUpdates(),
+  });
+}
 
 function getOsRelease() {
   try {
@@ -113,28 +142,12 @@ export default async function hostRoutes(fastify) {
     return 500;
   }
 
+  // A job (it refreshes the package index): 202 with the job id; the count
+  // arrives as the job's `done` payload.
   fastify.post('/host/updates/check', {
     config: { auth: 'admin' },
-    schema: {
-      response: {
-        200: {
-          type: 'object',
-          properties: { count: { type: 'number' } },
-        },
-      },
-    },
-    handler: async (request, reply) => {
-      try {
-        return await checkForUpdates();
-      } catch (err) {
-        request.log.error({ err }, 'POST /host/updates/check failed');
-        reply.code(osUpdateErrorStatus(err)).send({
-          error: err.message || 'Update check failed',
-          detail: err.raw || err.detail || err.message,
-          code: err.code,
-        });
-      }
-    },
+    schema: { response: JOB_ACCEPTED },
+    handler: async (request, reply) => reply.code(202).send(startOsUpdateCheckJob(request.log)),
   });
 
   fastify.get('/host/updates/packages', {
@@ -145,6 +158,7 @@ export default async function hostRoutes(fastify) {
         properties: { refresh: { type: ['string', 'number', 'boolean'] } },
       },
       response: {
+        ...JOB_ACCEPTED,
         200: {
           type: 'object',
           properties: {
@@ -167,12 +181,16 @@ export default async function hostRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      /* Default: serve cache when available (instant; populated by background hourly check
-       * or any prior call). ?refresh=1 forces a fresh apt invocation. */
+      /* Default: serve the cache (instant; populated by the background hourly
+       * check or any prior run). ?refresh=1 starts — or joins — the shared check
+       * job and answers 202 with its id; read the list once it is done. With no
+       * cache yet, the same. */
       const refresh = request.query?.refresh;
-      const useCache = !(refresh === '1' || refresh === 1 || refresh === true || refresh === 'true');
+      const wantFresh = refresh === '1' || refresh === 1 || refresh === true || refresh === 'true';
       try {
-        return await listUpgradablePackages(undefined, { useCache });
+        const cached = wantFresh ? null : await listUpgradablePackages(undefined, { useCache: true, cacheOnly: true });
+        if (!cached) return reply.code(202).send(startOsUpdateCheckJob(request.log));
+        return cached;
       } catch (err) {
         request.log.error({ err }, 'GET /host/updates/packages failed');
         reply.code(osUpdateErrorStatus(err)).send({
@@ -184,27 +202,27 @@ export default async function hostRoutes(fastify) {
     },
   });
 
+  // A job: an upgrade runs as long as it keeps printing (no total bound). A
+  // check or upgrade already running is refused here (409); the outcome, and
+  // each output line as progress, arrive over the job's stream.
   fastify.post('/host/updates/upgrade', {
     config: { auth: 'admin' },
-    schema: {
-      response: {
-        200: {
-          type: 'object',
-          properties: { ok: { type: 'boolean' } },
-        },
-      },
-    },
+    schema: { response: JOB_ACCEPTED },
     handler: async (request, reply) => {
-      try {
-        return await performUpgrade();
-      } catch (err) {
-        request.log.error({ err }, 'POST /host/updates/upgrade failed');
-        reply.code(osUpdateErrorStatus(err)).send({
-          error: err.message || 'Upgrade failed',
-          detail: err.raw || err.detail || err.message,
-          code: err.code,
+      if (isUpdateOperationInProgress()) {
+        return reply.code(409).send({
+          error: 'Another OS update operation is in progress',
+          detail: 'Wait for the running check or upgrade to finish',
+          code: 'UPDATE_BUSY',
         });
       }
+      const job = operationJobStore.startOperationJob({
+        kind: BACKGROUND_JOB_KIND.OS_UPGRADE,
+        title: TITLE_OS_UPGRADE,
+        log: request.log,
+        run: (report) => performUpgrade(undefined, { onLine: (line) => report({ step: 'upgrading', detail: line }) }),
+      });
+      return reply.code(202).send(job);
     },
   });
 
@@ -278,25 +296,22 @@ export default async function hostRoutes(fastify) {
           vlanId: { type: 'number' },
         },
       },
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            name: { type: 'string' },
-            baseBridge: { type: 'string' },
-            vlanId: { type: 'number' },
-            vlanInterface: { type: 'string' },
-            present: { type: 'boolean' },
-          },
-        },
-      },
+      response: JOB_ACCEPTED,
     },
+    // A job: applying netplan can take a while. The created bridge (name, base,
+    // VLAN, interface, present) is the job's `done` payload.
     handler: async (request, reply) => {
-      try {
-        return await createManagedNetworkBridge(request.body);
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { baseBridge, vlanId } = request.body;
+      const job = operationJobStore.startOperationJob({
+        kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_CREATE,
+        title: titleForBridgeCreate(`${baseBridge} VLAN ${vlanId}`),
+        log: request.log,
+        run: async () => {
+          const b = await createManagedNetworkBridge(request.body);
+          return { name: b.name, baseBridge: b.baseBridge, vlanId: b.vlanId, vlanInterface: b.vlanInterface, present: b.present };
+        },
+      });
+      return reply.code(202).send(job);
     },
   });
 
@@ -310,19 +325,21 @@ export default async function hostRoutes(fastify) {
           name: { type: 'string', minLength: 1 },
         },
       },
-      response: {
-        200: {
-          type: 'object',
-          properties: { ok: { type: 'boolean' } },
-        },
-      },
+      response: JOB_ACCEPTED,
     },
+    // A job, like create: removing the bridge applies netplan.
     handler: async (request, reply) => {
-      try {
-        return await deleteManagedNetworkBridge(request.params.name, { assertNotInUse: assertBridgeNotInUse });
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { name } = request.params;
+      const job = operationJobStore.startOperationJob({
+        kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_DELETE,
+        title: titleForBridgeDelete(name),
+        log: request.log,
+        run: async () => {
+          await deleteManagedNetworkBridge(name, { assertNotInUse: assertBridgeNotInUse });
+          return { name };
+        },
+      });
+      return reply.code(202).send(job);
     },
   });
 

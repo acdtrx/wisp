@@ -1,9 +1,7 @@
-import { execFile as execFileCb } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { createAppError } from '../../routeErrors.js';
-
-const execFileAsync = promisify(execFileCb);
+import { createStallWatchdog, stallMinutes } from '../../storage/index.js';
 
 const SCRIPT_PATH = '/usr/local/bin/wisp-os-update';
 
@@ -62,53 +60,76 @@ async function getScriptPath() {
   return SCRIPT_PATH;
 }
 
+/*
+ * Bounds (CODING-RULES §6; contracts in docs/specs/HOST-MONITORING.md § OS
+ * Updates): the helper passes apt/pacman's output through on stderr, and the
+ * run is stopped after this long without any of it. `list` gets 90 s — above
+ * the helper's own per-step bounds (60 s each), which stop a hung step first;
+ * `upgrade` 15 min, since dkms and initramfs builds can be silent for minutes.
+ */
+const LIST_IDLE_MS = 90_000;
+const UPGRADE_IDLE_MS = 15 * 60_000;
+const STDERR_KEEP = 64 * 1024;
+
 /**
+ * Run wisp-os-update `action` (through sudo unless root), stopped after
+ * `idleMs` without output. `onLine(text)` gets each non-empty output line
+ * (progress). Resolves `{ stdout, stderr }`.
  * @param {AbortSignal} [signal] - When aborted (e.g. process shutdown), the child process is killed.
  */
-async function runUpdateScript(scriptPath, action, timeoutMs, signal) {
-  const isRoot = process.getuid && process.getuid() === 0;
-  const opts = { timeout: timeoutMs };
-  if (signal) opts.signal = signal;
+function runUpdateScript(scriptPath, action, { idleMs, signal, onLine } = {}) {
+  return new Promise((resolve, reject) => {
+    const isRoot = process.getuid && process.getuid() === 0;
+    /* stdin is /dev/null: anything in the apt/dpkg/pacman chain that reads a
+     * prompt answer gets EOF instead of waiting forever. */
+    const child = isRoot
+      ? spawn(scriptPath, [action], { stdio: ['ignore', 'pipe', 'pipe'] })
+      : spawn('sudo', ['-n', scriptPath, action], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    let partial = '';
+    let killTimer = null;
+    const stop = () => {
+      child.kill('SIGTERM'); // sudo relays it; the helper stops its step's child
+      killTimer = setTimeout(() => child.kill('SIGKILL'), 15_000);
+    };
+    const watchdog = createStallWatchdog({ stallMs: idleMs, onStall: stop });
+    const onAbort = () => stop();
+    signal?.addEventListener('abort', onAbort, { once: true });
 
-  const pending = isRoot
-    ? execFileAsync(scriptPath, [action], opts)
-    : execFileAsync('sudo', ['-n', scriptPath, action], opts);
-  /* execFile has no `stdio` option and leaves stdin an open pipe nobody writes
-   * to; anything in the apt/dpkg/pacman chain that reads a prompt answer would
-   * block until the timeout kills it mid-run. Closing stdin turns that read
-   * into EOF. */
-  pending.child.stdin?.end();
-
-  /* execFile's timeout signals sudo, and the promise settles once sudo exits.
-   * This timer is a fallback for a sudo that doesn't exit on the signal: it
-   * kills sudo and rejects 5 s later. The helper bounds its read-only apt/pacman
-   * steps itself (backend/scripts/wisp-os-update). */
-  let timer;
-  const deadline = new Promise((_, reject) => {
-    timer = setTimeout(() => {
-      pending.child?.kill('SIGKILL');
-      reject(Object.assign(new Error(`wisp-os-update ${action} did not finish within ${timeoutMs} ms`), { killed: true }));
-    }, timeoutMs + 5_000);
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (d) => { watchdog.poke(); stdout += d; });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (d) => {
+      watchdog.poke();
+      stderr = (stderr + d).slice(-STDERR_KEEP);
+      if (!onLine) return;
+      const lines = (partial + d).split(/\r?\n/);
+      partial = lines.pop();
+      for (const line of lines) if (line.trim()) onLine(line.trim());
+    });
+    child.on('error', (err) => {
+      watchdog.stop();
+      reject(createAppError(UNAVAILABLE, `OS update ${action} failed to start`, err.message));
+    });
+    child.on('close', (code) => {
+      watchdog.stop();
+      clearTimeout(killTimer);
+      signal?.removeEventListener('abort', onAbort);
+      if (signal?.aborted) {
+        reject(Object.assign(new Error('aborted'), { name: 'AbortError', code: 'ABORT_ERR' }));
+      } else if (watchdog.fired) {
+        reject(createAppError(UNAVAILABLE, `OS update ${action} printed nothing for ${stallMinutes(idleMs)} and was stopped`, stderr.trim().split('\n').slice(-5).join('\n')));
+      } else if (code === 0) {
+        resolve({ stdout, stderr });
+      } else if (code === 75) {
+        /* EX_TEMPFAIL: another apt/dpkg/pacman process holds the package-manager lock. */
+        reject(createAppError(BUSY, 'Another package manager operation is running on the host', stderr.trim().split('\n').slice(-5).join('\n') || 'package manager lock held by another process'));
+      } else {
+        reject(createAppError(UNAVAILABLE, `OS update ${action} failed (privilege or package manager error)`, stderr.trim().split('\n').slice(-20).join('\n') || `exit ${code}`));
+      }
+    });
   });
-  pending.catch(() => {}); // settled by the race below
-
-  try {
-    return await Promise.race([pending, deadline]);
-  } catch (err) {
-    if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') {
-      throw err;
-    }
-    /* Exit code 75 (EX_TEMPFAIL) is wisp-os-update's signal that another
-     * apt/dpkg/pacman process is holding the package-manager lock. */
-    if (typeof err.code === 'number' && err.code === 75) {
-      const detail = (err.stderr || err.stdout || '').trim() || 'package manager lock held by another process';
-      throw createAppError(BUSY, 'Another package manager operation is running on the host', detail);
-    }
-    const detail = err.stderr || err.stdout || err.message;
-    throw createAppError(UNAVAILABLE, `OS update ${action} failed (privilege or package manager error)`, detail?.trim() || err.message);
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 /**
@@ -118,7 +139,7 @@ async function runUpdateScript(scriptPath, action, timeoutMs, signal) {
  */
 async function runListOp(signal) {
   const scriptPath = await getScriptPath();
-  const { stdout } = await runUpdateScript(scriptPath, 'list', 120000, signal);
+  const { stdout } = await runUpdateScript(scriptPath, 'list', { idleMs: LIST_IDLE_MS, signal });
   const packages = [];
   let downloadBytes = 0;
   for (const line of String(stdout).split('\n')) {
@@ -187,7 +208,7 @@ export async function checkForUpdates(signal) {
  * @returns { Promise<{ ok: true }> }
  * @throws {{ code: 'UPDATE_CHECK_UNAVAILABLE' | 'UPDATE_BUSY', message: string, detail?: string }}
  */
-export async function performUpgrade(signal) {
+export async function performUpgrade(signal, { onLine } = {}) {
   if (inflightUpgrade) {
     throw createAppError(BUSY, 'An OS upgrade is already in progress', 'Wait for the running upgrade to complete');
   }
@@ -195,7 +216,7 @@ export async function performUpgrade(signal) {
     throw createAppError(BUSY, 'An update check is in progress', 'Try again once the check completes');
   }
   const scriptPath = await getScriptPath();
-  const promise = runUpdateScript(scriptPath, 'upgrade', 600000, signal)
+  const promise = runUpdateScript(scriptPath, 'upgrade', { idleMs: UPGRADE_IDLE_MS, signal, onLine })
     .then(() => {
       const now = new Date().toISOString();
       cachedUpdateCount = 0;
@@ -216,13 +237,15 @@ export async function performUpgrade(signal) {
  * Return the upgradable-package list. By default serves the cached list
  * (populated by the background hourly check or any prior call) so the UI's
  * "View packages" modal opens instantly. Pass `{ useCache: false }` to force
- * a fresh apt invocation.
+ * a fresh apt invocation; `{ cacheOnly: true }` answers null instead of
+ * running one when there is no cache yet.
  * @param {AbortSignal} [signal]
- * @param { { useCache?: boolean } } [opts]
+ * @param { { useCache?: boolean, cacheOnly?: boolean } } [opts]
  * @returns { Promise<{ packages: Array<{ name: string, from: string|null, to: string }>, downloadBytes: number, cached: boolean, lastCheckedAt: string|null }> }
  * @throws {{ code: 'UPDATE_CHECK_UNAVAILABLE' | 'UPDATE_BUSY', message: string, detail?: string }}
  */
-export async function listUpgradablePackages(signal, { useCache = true } = {}) {
+export async function listUpgradablePackages(signal, { useCache = true, cacheOnly = false } = {}) {
+  if (cacheOnly && cachedPackages == null) return null;
   if (useCache && cachedPackages != null) {
     return {
       packages: cachedPackages,

@@ -24,45 +24,110 @@ set -euo pipefail
 # When matched, the script exits 75 so callers can distinguish "busy" from "broken".
 LOCK_PATTERN='Could not get lock|Could not open lock|Unable to (acquire|lock)|Resource temporarily unavailable|already locked|unable to lock database|could not lock database|database is locked|frontend is locked'
 
-# CODING-RULES §6: the read-only package-manager steps (index refresh,
-# simulated upgrade, the pacman scratch sync) are bounded here, not only by the
-# caller: the backend's timeout (list: 120 s) signals sudo, which ends this
-# script but not the apt/pacman child it waits on — it would keep running, and
-# keep the lock, after the request failed. The upgrade itself is not bounded
-# (backlog: "OS upgrade runs inside wisp.service"): killing dpkg mid-run is
-# worse than letting it finish.
-READ_TIMEOUT=100
-bounded() {
-  local rc=0
-  timeout --kill-after=5 "$READ_TIMEOUT" "$@" || rc=$?
-  if (( rc == 124 || rc == 137 )); then
-    echo "wisp-os-update: $1 timed out after ${READ_TIMEOUT}s" >&2
+# Bounds (CODING-RULES §6; the values are contracts in docs/specs/HOST-MONITORING.md
+# § OS Updates). Every package-manager step passes its output through to stderr —
+# the backend's progress signal, which it watches for inactivity — and keeps a
+# copy for lock detection. A step that shows progress is bounded on inactivity
+# here too, so a hung one is killed rather than orphaned holding the lock: the
+# index refresh after REFRESH_IDLE seconds without output. The simulated upgrade
+# prints nothing until it ends, so it gets a fixed SIMULATE_TIMEOUT. The upgrade
+# itself has no bound here: the backend stops it after its own inactivity bound,
+# and a TERM reaching this script stops the running step's child with it.
+REFRESH_IDLE=60
+SIMULATE_TIMEOUT=60
+
+RUN_LOG="$(mktemp -t wisp-os-update-log.XXXXXX)"
+CHILD_PID=""
+SCRATCH_DB=""
+cleanup() {
+  rm -f -- "$RUN_LOG"
+  # rm -r removes the `local` symlink itself, never its target.
+  if [[ -n "$SCRATCH_DB" ]]; then rm -rf -- "$SCRATCH_DB"; fi
+}
+trap cleanup EXIT
+stop_child() {
+  if [[ -n "$CHILD_PID" ]]; then
+    kill -TERM "$CHILD_PID" 2>/dev/null || true
+    sleep 5
+    kill -KILL "$CHILD_PID" 2>/dev/null || true
+  fi
+  exit 143
+}
+trap stop_child TERM INT
+
+# idle_run SECS cmd...: run cmd with its stdout and stderr passed through to our
+# stderr and copied into $RUN_LOG; with SECS > 0, killed after SECS seconds
+# without a line of output (exit 124). Returns cmd's exit status.
+idle_run() {
+  local secs="$1"; shift
+  local fifo fd line r rc=0 timed_out=0
+  : > "$RUN_LOG"
+  fifo="$(mktemp -u -t wisp-os-update-fifo.XXXXXX)"
+  mkfifo -m 600 "$fifo"
+  "$@" > "$fifo" 2>&1 &
+  CHILD_PID=$!
+  exec {fd}< "$fifo"
+  rm -f -- "$fifo"
+  while :; do
+    if (( secs > 0 )); then
+      IFS= read -r -t "$secs" -u "$fd" line && r=0 || r=$?
+    else
+      IFS= read -r -u "$fd" line && r=0 || r=$?
+    fi
+    if (( r == 0 )); then
+      printf '%s\n' "$line" >&2
+      printf '%s\n' "$line" >> "$RUN_LOG"
+      continue
+    fi
+    if (( r > 128 )); then
+      timed_out=1
+      kill -TERM "$CHILD_PID" 2>/dev/null || true
+      sleep 5
+      kill -KILL "$CHILD_PID" 2>/dev/null || true
+    elif [[ -n "$line" ]]; then
+      printf '%s\n' "$line" >&2
+      printf '%s\n' "$line" >> "$RUN_LOG"
+    fi
+    break
+  done
+  exec {fd}<&-
+  wait "$CHILD_PID" 2>/dev/null || rc=$?
+  CHILD_PID=""
+  if (( timed_out )); then
+    echo "wisp-os-update: $1 printed nothing for ${secs}s and was stopped" >&2
+    return 124
   fi
   return "$rc"
 }
 
-# Run a command, capturing stderr. On failure, if stderr matches LOCK_PATTERN,
-# print the stderr and exit 75. Otherwise print stderr and exit 1.
-# stdout from the wrapped command is discarded; use directly when you need stdout.
-run_or_busy() {
-  local err
-  if ! err=$("$@" 2>&1 >/dev/null); then
-    if echo "$err" | grep -qE "$LOCK_PATTERN"; then
-      echo "$err" >&2
-      exit 75
-    fi
-    echo "$err" >&2
-    exit 1
+# run_step SECS cmd...: idle_run, then exit 75 when the output names a held
+# package-manager lock and 1 on any other failure.
+run_step() {
+  local rc=0
+  idle_run "$@" || rc=$?
+  (( rc == 0 )) && return 0
+  if grep -qE "$LOCK_PATTERN" "$RUN_LOG"; then exit 75; fi
+  exit 1
+}
+
+# bounded SECS cmd...: a fixed bound for a step with no progress output.
+bounded() {
+  local secs="$1"; shift
+  local rc=0
+  timeout --kill-after=5 "$secs" "$@" || rc=$?
+  if (( rc == 124 || rc == 137 )); then
+    echo "wisp-os-update: $1 timed out after ${secs}s" >&2
   fi
+  return "$rc"
 }
 
 # `apt-get -s dist-upgrade` output (it may exit non-zero and still print what
 # it would do; only a timeout is a failure).
 simulate_dist_upgrade() {
   local out rc=0
-  out=$(export LC_ALL=C; bounded apt-get -s dist-upgrade 2>&1) || rc=$?
+  out=$(export LC_ALL=C; bounded "$SIMULATE_TIMEOUT" apt-get -s dist-upgrade 2>&1) || rc=$?
   # bounded's message went into $out with the rest of the output: say it again.
-  if (( rc == 124 || rc == 137 )); then echo "wisp-os-update: apt-get -s dist-upgrade timed out after ${READ_TIMEOUT}s" >&2; exit 1; fi
+  if (( rc == 124 || rc == 137 )); then echo "wisp-os-update: apt-get -s dist-upgrade timed out after ${SIMULATE_TIMEOUT}s" >&2; exit 1; fi
   printf '%s\n' "$out"
 }
 
@@ -97,12 +162,6 @@ CMD="${1:-}"
 # only what changed, and the whole directory is removed on exit. The real sync
 # dbs are only refreshed by `upgrade` (-Syu), together with the upgrade itself.
 PACMAN_DB=/var/lib/pacman
-SCRATCH_DB=""
-
-cleanup_scratch_db() {
-  # rm -r removes the `local` symlink itself, never its target.
-  if [[ -n "$SCRATCH_DB" ]]; then rm -rf -- "$SCRATCH_DB"; fi
-}
 
 sync_scratch_db() {
   # The scratch dbpath has its own lock file, so a running pacman would not
@@ -113,7 +172,6 @@ sync_scratch_db() {
     exit 75
   fi
   SCRATCH_DB="$(mktemp -d -t wisp-os-update.XXXXXX)"
-  trap cleanup_scratch_db EXIT
   # pacman 7+ downloads as an unprivileged DownloadUser, which must be able to
   # traverse this directory. It holds only public repo metadata.
   chmod 755 "$SCRATCH_DB"
@@ -123,7 +181,7 @@ sync_scratch_db() {
   for f in "$PACMAN_DB"/sync/*.db "$PACMAN_DB"/sync/*.db.sig; do
     if [[ -f "$f" ]]; then cp -p -- "$f" "$SCRATCH_DB/sync/"; fi
   done
-  run_or_busy bounded pacman -Sy --dbpath "$SCRATCH_DB" --logfile /dev/null
+  run_step "$REFRESH_IDLE" pacman -Sy --dbpath "$SCRATCH_DB" --logfile /dev/null
 }
 
 # Emit PKG lines for packages `pacman -Syu` would upgrade. `pacman -Qu` prints
@@ -133,9 +191,9 @@ list_arch_upgradable() {
   local out
   local rc=0
   # pacman -Qu exits 1 when nothing is upgradable; only a timeout is a failure.
-  out=$(bounded pacman -Qu --dbpath "$SCRATCH_DB" 2>/dev/null) || rc=$?
+  out=$(bounded "$SIMULATE_TIMEOUT" pacman -Qu --dbpath "$SCRATCH_DB" 2>/dev/null) || rc=$?
   # stderr (bounded's message with it) is discarded above: say it here.
-  if (( rc == 124 || rc == 137 )); then echo "wisp-os-update: pacman -Qu timed out after ${READ_TIMEOUT}s" >&2; exit 1; fi
+  if (( rc == 124 || rc == 137 )); then echo "wisp-os-update: pacman -Qu timed out after ${SIMULATE_TIMEOUT}s" >&2; exit 1; fi
   echo "$out" | awk '
     NF == 4 && $3 == "->" { printf "PKG%s%s%s%s%s%s\n", "\t", $1, "\t", $2, "\t", $4 }
   '
@@ -156,15 +214,8 @@ case "$DISTRO" in
         echo "TOTAL 0"
         ;;
       upgrade)
-        # pacman -Syu prints progress on stdout; stderr only on lock/error.
-        if ! err=$(pacman -Syu --noconfirm 2>&1 >/dev/null); then
-          if echo "$err" | grep -qE "$LOCK_PATTERN"; then
-            echo "$err" >&2
-            exit 75
-          fi
-          echo "$err" >&2
-          exit 1
-        fi
+        # Output passed through: the backend's inactivity bound watches it.
+        run_step 0 pacman -Syu --noconfirm
         ;;
       *)
         echo "Usage: $0 check|list|upgrade" >&2
@@ -184,7 +235,7 @@ case "$DISTRO" in
     export UCF_FORCE_CONFFOLD=1
     case "$CMD" in
       check)
-        run_or_busy bounded apt-get update -qq
+        run_step "$REFRESH_IDLE" apt-get update
         # Simulate dist-upgrade so count matches what the upgrade action would install (excludes phased-only, etc.).
         OUT=$(simulate_dist_upgrade) || exit 1
         SUMMARY=$(echo "$OUT" | grep -E '^[0-9]+ upgraded,' | tail -n1 || true)
@@ -197,7 +248,7 @@ case "$DISTRO" in
         fi
         ;;
       list)
-        run_or_busy bounded apt-get update -qq
+        run_step "$REFRESH_IDLE" apt-get update
         OUT=$(simulate_dist_upgrade) || exit 1
         # `Inst <name> [<from>] (<to> ...)` for upgrades; `Inst <name> (<to> ...)` for new pulls.
         echo "$OUT" | awk -v OFS='\t' '
@@ -228,21 +279,14 @@ case "$DISTRO" in
         echo "TOTAL ${BYTES}"
         ;;
       upgrade)
-        run_or_busy bounded apt-get update -qq
-        # apt-get dist-upgrade prints progress on stdout; capture stderr for lock detection.
+        run_step "$REFRESH_IDLE" apt-get update
+        # Output passed through: the backend's inactivity bound watches it.
         # confdef+confold: an untouched conffile takes the package's new version,
         # a locally modified one is kept (the new one lands as .dpkg-dist).
-        if ! err=$(apt-get -y \
-            -o Dpkg::Options::=--force-confdef \
-            -o Dpkg::Options::=--force-confold \
-            dist-upgrade 2>&1 >/dev/null); then
-          if echo "$err" | grep -qE "$LOCK_PATTERN"; then
-            echo "$err" >&2
-            exit 75
-          fi
-          echo "$err" >&2
-          exit 1
-        fi
+        run_step 0 apt-get -y \
+          -o Dpkg::Options::=--force-confdef \
+          -o Dpkg::Options::=--force-confold \
+          dist-upgrade
         ;;
       *)
         echo "Usage: $0 check|list|upgrade" >&2
