@@ -61,7 +61,8 @@ run_or_busy() {
 simulate_dist_upgrade() {
   local out rc=0
   out=$(export LC_ALL=C; bounded apt-get -s dist-upgrade 2>&1) || rc=$?
-  if (( rc == 124 || rc == 137 )); then exit 1; fi
+  # bounded's message went into $out with the rest of the output: say it again.
+  if (( rc == 124 || rc == 137 )); then echo "wisp-os-update: apt-get -s dist-upgrade timed out after ${READ_TIMEOUT}s" >&2; exit 1; fi
   printf '%s\n' "$out"
 }
 
@@ -133,7 +134,8 @@ list_arch_upgradable() {
   local rc=0
   # pacman -Qu exits 1 when nothing is upgradable; only a timeout is a failure.
   out=$(bounded pacman -Qu --dbpath "$SCRATCH_DB" 2>/dev/null) || rc=$?
-  if (( rc == 124 || rc == 137 )); then exit 1; fi
+  # stderr (bounded's message with it) is discarded above: say it here.
+  if (( rc == 124 || rc == 137 )); then echo "wisp-os-update: pacman -Qu timed out after ${READ_TIMEOUT}s" >&2; exit 1; fi
   echo "$out" | awk '
     NF == 4 && $3 == "->" { printf "PKG%s%s%s%s%s%s\n", "\t", $1, "\t", $2, "\t", $4 }
   '

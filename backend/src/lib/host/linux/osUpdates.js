@@ -79,10 +79,10 @@ async function runUpdateScript(scriptPath, action, timeoutMs, signal) {
    * into EOF. */
   pending.child.stdin?.end();
 
-  /* Settle on our own timer too (CODING-RULES §6): execFile's timeout signals
-   * sudo, and on a host whose sudo hands its pipe to the helper (no use_pty) an
-   * apt child the helper left behind would hold the promise open. The helper
-   * bounds its read-only apt/pacman steps itself (backend/scripts/wisp-os-update). */
+  /* execFile's timeout signals sudo, and the promise settles once sudo exits.
+   * This timer is a fallback for a sudo that doesn't exit on the signal: it
+   * kills sudo and rejects 5 s later. The helper bounds its read-only apt/pacman
+   * steps itself (backend/scripts/wisp-os-update). */
   let timer;
   const deadline = new Promise((_, reject) => {
     timer = setTimeout(() => {
