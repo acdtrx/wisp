@@ -48,6 +48,18 @@ export async function measurePathSize(absPath, { deadline } = {}) {
     }
   }
 
-  await walk(absPath);
-  return { sizeBytes, partial };
+  if (deadline == null) {
+    await walk(absPath);
+    return { sizeBytes, partial };
+  }
+  // A call stuck in the kernel (an lstat on a dead SMB source) never reaches
+  // the deadline check between entries: race the walk against a timer and
+  // answer the sum so far. A stuck walk then stops at its next check.
+  let timer;
+  const timedOut = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(true), Math.max(0, deadline - Date.now()));
+  });
+  const late = await Promise.race([walk(absPath).then(() => false), timedOut]);
+  clearTimeout(timer);
+  return { sizeBytes, partial: partial || late };
 }
