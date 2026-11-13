@@ -191,6 +191,13 @@ function createLogger() {
 }
 
 /**
+ * The runtime.env text and decoded wisp-config.json as migration 0007 leaves
+ * them (`ctx.setRepairedConfig`): under --dry-run, where nothing was written,
+ * the strict check judges these instead of the files.
+ */
+let repairedConfig = null;
+
+/**
  * What a migration gets. Changes go through the managers (the app's own code
  * paths), never by editing their files directly; every change is reported via
  * recordChange, which logs it and lands it in the ledger entry. The managers
@@ -200,13 +207,6 @@ function createLogger() {
  * this process. Reads never write: the only changes are the
  * migrations' own, each recorded, and none at all under --dry-run.
  */
-/**
- * The runtime.env text and decoded wisp-config.json as migration 0007 leaves
- * them (`ctx.setRepairedConfig`): under --dry-run, where nothing was written,
- * the strict check judges these instead of the files.
- */
-let repairedConfig = null;
-
 function buildContext(migration, { log, dryRun, changes }) {
   const migrationLog = log.child({ migration: migration.id });
   return {
@@ -321,17 +321,18 @@ async function main() {
   const pending = migrations.filter((m) => !done.has(m.id));
   log.info({ ledger: LEDGER_PATH, shipped: migrations.length, pending: pending.length, dryRun: args.dryRun }, 'state migrations');
 
+  // The migrations (and the manager setup) read the config tolerantly — but it
+  // must still be JSON: a file that isn't is a setup error naming it, pending
+  // migrations or not.
+  try {
+    getTolerantConfig();
+  } catch (err) {
+    throw new SetupError(err.message);
+  }
   if (pending.length === 0) {
     // A ledger file on disk records that the runner has run on this host.
     if (!exists && !args.dryRun) await writeLedger(ledger);
   } else {
-    // The migrations (and the manager setup) read the config tolerantly — but
-    // it must still be JSON: a file that isn't is a setup error naming it.
-    try {
-      getTolerantConfig();
-    } catch (err) {
-      throw new SetupError(err.message);
-    }
     const code = await runPending(pending, { ledger, dryRun: args.dryRun, log });
     if (code !== 0) return code;
   }

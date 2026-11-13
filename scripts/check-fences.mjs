@@ -264,9 +264,11 @@ function prefixTarget(file, prefix, rel) {
   if (!/^\.\.?\//.test(prefix)) return '<computed>';
   const resolved = path.resolve(path.dirname(file), prefix);
   const folder = prefix.endsWith('/') ? resolved : path.dirname(resolved);
-  const folderRel = rel(folder);
-  if (`${LIB}/`.startsWith(`${folderRel}/`)) return '<computed>';
-  return `${folderRel}/`;
+  // Absolute paths: lib/ itself, or any folder above it up to `/`, could reach
+  // any module (a repo-relative path is '' or '../…' at the root and above).
+  const libAbs = path.join(REPO_ROOT, LIB);
+  if (libAbs === folder || libAbs.startsWith(`${folder.replace(/\/$/, '')}${path.sep}`)) return '<computed>';
+  return `${rel(folder)}/`;
 }
 
 /** `[{ index, specifier, clause }]` for one stripped source. */

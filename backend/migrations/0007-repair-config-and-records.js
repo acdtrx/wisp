@@ -49,9 +49,9 @@
  * again on the next update. Idempotent: state already in these shapes is left
  * alone.
  */
-import { readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 
-import { atomicTmpName, writeJsonAtomic } from '../src/lib/atomicJson.js';
+import { writeFileAtomic, writeJsonAtomic } from '../src/lib/atomicJson.js';
 import { checkMountPath } from '../src/lib/configSchema.js';
 import { retiredKeyOfLine } from '../src/lib/loadRuntimeEnv.js';
 import { listBackupDestinationsWithMountCheck, listConfiguredBackupRoots } from '../src/lib/settings.js';
@@ -90,15 +90,8 @@ async function repairRuntimeEnv(ctx) {
   const repaired = kept.join('\n');
   if (kept.length !== lines.length && !ctx.dryRun) {
     const { mode } = await stat(path);
-    // The atomic-write temp name: boot cleanup sweeps one a crash leaves behind.
-    const tmp = atomicTmpName(path);
-    try {
-      await writeFile(tmp, repaired, { mode: mode & 0o777 });
-      await rename(tmp, path);
-    } catch (err) {
-      await unlink(tmp).catch(() => {});
-      throw err;
-    }
+    // Staged, synced and renamed; a crash's leftover temp file is swept at boot.
+    await writeFileAtomic(path, repaired, { mode: mode & 0o777 });
   }
   return repaired;
 }

@@ -1,5 +1,6 @@
 /**
- * Atomic JSON write: stage to a sibling temp file, fsync, then rename(2).
+ * Atomic file writes (JSON, and plain text for runtime.env): stage to a sibling
+ * temp file, fsync, then rename(2).
  *
  * Why: a crash mid-write of a JSON config file (container.json, wisp-config.json,
  * oci-image-meta.json) leaves a truncated file that can't be parsed on next start.
@@ -19,21 +20,29 @@ export function atomicTmpName(filePath) {
   return `${filePath}.tmp.${process.pid}.${Date.now()}.${randomBytes(4).toString('hex')}`;
 }
 
-export async function writeJsonAtomic(filePath, obj, { spaces = 2, mode } = {}) {
+/**
+ * Atomic text write: stage `text` to a sibling temp file created with `mode`
+ * (wx: never reusing one), fsync, close, rename over `filePath`. The temp file
+ * is removed when any step fails.
+ */
+export async function writeFileAtomic(filePath, text, { mode } = {}) {
   await mkdir(dirname(filePath), { recursive: true });
   const tmp = atomicTmpName(filePath);
   let handle;
   try {
     handle = await open(tmp, 'wx', mode);
-    await handle.writeFile(JSON.stringify(obj, null, spaces), 'utf8');
+    await handle.writeFile(text, 'utf8');
     await handle.sync();
-  } finally {
-    if (handle) await handle.close().catch(() => {});
-  }
-  try {
+    await handle.close();
+    handle = null;
     await rename(tmp, filePath);
   } catch (err) {
+    if (handle) await handle.close().catch(() => {});
     await unlink(tmp).catch(() => {});
     throw err;
   }
+}
+
+export async function writeJsonAtomic(filePath, obj, { spaces = 2, mode } = {}) {
+  await writeFileAtomic(filePath, JSON.stringify(obj, null, spaces), { mode });
 }
