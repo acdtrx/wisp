@@ -7,12 +7,12 @@
 const liveSockets = new Set();
 
 /*
- * CODING-RULES §6: a console's sockets live as
- * long as the user keeps it open, so there is no total cap — but a peer that
- * vanished without a close (laptop lid, dropped VPN) would leave the socket,
- * and the VNC TCP leg or container exec session behind it, open for good. Each
- * tracked socket is pinged every 30 s; one that hasn't answered the previous
- * ping is terminated, and its close tears down what it carried.
+ * CODING-RULES §6: a console's sockets live as long as the user keeps it open,
+ * so there is no total cap — but a peer that vanished without a close (laptop
+ * lid, dropped VPN) would leave the socket, and the VNC TCP leg or container
+ * exec session behind it, open for good. Each tracked socket is pinged every
+ * 30 s; one that hasn't answered the previous ping is terminated, and its close
+ * tears down what it carried.
  */
 export const WS_PING_INTERVAL_MS = 30_000;
 

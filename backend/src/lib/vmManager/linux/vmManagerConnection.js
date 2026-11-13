@@ -55,12 +55,12 @@ export const connectionState = {
 export { vmError, unwrapVariant, unwrapDict, formatVersion, generateMAC };
 
 /*
- * CODING-RULES §6: every libvirt DBus call
- * is bounded — 30 s, and 2 min for the lifecycle calls (starting a large VM,
- * undefining one with NVRAM are the slow ones; a guest shutdown request returns
- * at once anyway). dbus-next never settles a call libvirtd doesn't answer, so a
- * wedged daemon would otherwise hang the route, a reconciler or the migration
- * runner. A late answer still lands in libvirt; only the wait gives up.
+ * CODING-RULES §6: every libvirt DBus call is bounded — 30 s, and 2 min for the
+ * lifecycle calls (starting a large VM, undefining one with NVRAM are the slow
+ * ones; a guest shutdown request returns at once anyway). dbus-next never
+ * settles a call libvirtd doesn't answer, so a wedged daemon would otherwise
+ * hang the route, a reconciler or the migration runner. A late answer still
+ * lands in libvirt; only the wait gives up.
  */
 export const LIBVIRT_CALL_TIMEOUT_MS = 30_000;
 export const LIBVIRT_LIFECYCLE_TIMEOUT_MS = 2 * 60_000;

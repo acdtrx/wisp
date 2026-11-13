@@ -84,13 +84,13 @@ function loadProto(relPath) {
 }
 
 /*
- * CODING-RULES §6: every unary call carries
- * a deadline — 30 s unless the call names its own (`deadlineMs`; null for none,
- * e.g. tasks.wait, which lasts as long as the process it waits on); content
- * read streams 60 s. The long-lived events stream has no deadline; channel
- * keepalive notices a containerd that stopped answering instead. containerd's
- * gRPC server refuses pings more often than every 5 min (ENHANCE_YOUR_CALM)
- * and without an active call, hence 6 min and no pings while idle.
+ * CODING-RULES §6: every unary call carries a deadline — 30 s unless the call
+ * names its own (`deadlineMs`; null for none, e.g. tasks.wait, which lasts as
+ * long as the process it waits on); content read streams 60 s. The long-lived
+ * events stream has no deadline; channel keepalive notices a containerd that
+ * stopped answering instead. containerd's gRPC server refuses pings more often
+ * than every 5 min (ENHANCE_YOUR_CALM) and without an active call, hence 6 min
+ * and no pings while idle.
  */
 export const DEFAULT_DEADLINE_MS = 30_000;
 export const STREAM_DEADLINE_MS = 60_000;
