@@ -6,7 +6,8 @@ import UpdateCard from './UpdateCard.jsx';
 import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
-import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
+import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
+import { JOB_KIND } from '../../api/jobProgress.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { getHostInfo } from '../../api/host.js';
 import { updateSettings } from '../../api/settings.js';
@@ -62,6 +63,9 @@ export default function WispUpdateSection() {
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [installTarget, setInstallTarget] = useState(null);
+  /* Set once the install job hands over to the updater: from then on the
+   * backend restarts, and the version poll below waits for it. */
+  const [restarting, setRestarting] = useState(false);
   const [installSlow, setInstallSlow] = useState(false);
   const [installStuck, setInstallStuck] = useState(false);
   const [error, setError] = useState(null);
@@ -155,17 +159,25 @@ export default function WispUpdateSection() {
     setInstallSlow(false);
     setInstallStuck(false);
     setInstalling(true);
+    setRestarting(false);
     setInstallTarget(latest);
     try {
-      /* Backend blocks during download (~5–15s) then triggers
-       * wisp-updater.service and returns 202. After that the backend dies
-       * as the updater runs systemctl stop wisp; we detect completion
+      /* The install is a job: it downloads and stages the release (progress in
+       * the jobs tray), then starts wisp-updater.service and ends. The updater
+       * then stops this backend, so the job's stream may end before its result
+       * arrives: that too means the handover happened. Completion is detected
        * below by polling /api/host wispVersion === target. */
-      await installWispUpdate({ force: confirmForce });
+      const job = await installWispUpdate({ force: confirmForce });
+      try {
+        await awaitJob(JOB_KIND.SELF_UPDATE, job);
+      } catch (err) {
+        if (err.code !== 'CONNECTION_LOST' && err.code !== 'JOB_GONE') throw err;
+      }
+      setRestarting(true);
     } catch (err) {
       setInstalling(false);
       setInstallTarget(null);
-      setError(err.detail || err.message || 'Install failed to start');
+      setError(err.detail || err.message || 'Install failed');
     }
   }, [confirmForce, latest]);
 
@@ -176,7 +188,7 @@ export default function WispUpdateSection() {
    * against `consecutiveFailures` only, and reset on every successful poll. */
   const pollIntervalRef = useRef(null);
   useEffect(() => {
-    if (!installing || !installTarget) return undefined;
+    if (!installing || !restarting || !installTarget) return undefined;
 
     let consecutiveFailures = 0;
     let totalPolls = 0;
@@ -217,7 +229,7 @@ export default function WispUpdateSection() {
         pollIntervalRef.current = null;
       }
     };
-  }, [installing, installTarget]);
+  }, [installing, restarting, installTarget]);
 
   const releaseUrl = repo && latest ? `https://github.com/${repo}/releases/tag/v${latest}` : null;
   const publishedLabel = formatRelativeTime(publishedAt);

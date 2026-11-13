@@ -3,6 +3,8 @@ import * as vmApi from '../api/vms.js';
 import { createSSE } from '../api/sse.js';
 import { subscribeTopic } from '../api/events.js';
 import { withWorkloadAction, anyActionInFlight } from './workloadActions.js';
+import { awaitJob } from './backgroundJobsStore.js';
+import { JOB_KIND } from '../api/jobProgress.js';
 
 /**
  * The list feed refreshes on every libvirt domain event, so it carries the
@@ -229,13 +231,13 @@ export const useVmStore = create((set, get) => {
     },
 
     startVM: async (name) => {
-      await get().withAction(name, 'start', () => vmApi.startVM(name));
+      await get().withAction(name, 'start', async () => awaitJob(JOB_KIND.VM_START, await vmApi.startVM(name)));
     },
     stopVM: async (name) => {
       await get().withAction(name, 'stop', () => vmApi.stopVM(name));
     },
     forceStopVM: async (name) => {
-      await get().withAction(name, 'force-stop', () => vmApi.forceStopVM(name));
+      await get().withAction(name, 'force-stop', async () => awaitJob(JOB_KIND.VM_FORCE_STOP, await vmApi.forceStopVM(name)));
     },
     rebootVM: async (name) => {
       await get().withAction(name, 'reboot', () => vmApi.rebootVM(name));
@@ -247,7 +249,8 @@ export const useVmStore = create((set, get) => {
       await get().withAction(name, 'resume', () => vmApi.resumeVM(name));
     },
     deleteVM: async (name, deleteDisks) => {
-      await get().withAction(name, 'delete', () => vmApi.deleteVM(name, deleteDisks));
+      await get().withAction(name, 'delete', async () =>
+        awaitJob(JOB_KIND.VM_DELETE, await vmApi.deleteVM(name, deleteDisks)));
     },
   };
 });

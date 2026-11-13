@@ -9,6 +9,8 @@ import {
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { createManagedNetworkBridge } from '../../api/host.js';
+import { JOB_KIND } from '../../api/jobProgress.js';
+import { awaitJob } from '../../store/backgroundJobsStore.js';
 
 const FORM_ID = 'bridge-create-form';
 
@@ -49,7 +51,7 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose, onCr
     setSubmitting(true);
     setError(null);
     try {
-      await createManagedNetworkBridge(baseBridge, Number(vlanId));
+      await awaitJob(JOB_KIND.NETWORK_BRIDGE_CREATE, await createManagedNetworkBridge(baseBridge, Number(vlanId)));
       await onCreated?.();
       onClose();
     } catch (err) {

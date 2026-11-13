@@ -19,7 +19,8 @@ export function listBackups(vmName = null) {
 }
 
 /**
- * Restore a backup as a new VM.
+ * Restore a backup as a new VM: starts a job and answers `{ jobId, title }`
+ * (follow it with awaitJob).
  * @param {{ destinationId: string, vmName: string, timestamp: string }} target — typically a row from listBackups()
  */
 export function restoreBackup(target, newVmName) {

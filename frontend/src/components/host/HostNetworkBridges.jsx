@@ -15,6 +15,8 @@ import {
   rowActionIconBtn,
 } from '../shared/DataTableChrome.jsx';
 import BridgeCreateModal from './BridgeCreateModal.jsx';
+import { JOB_KIND } from '../../api/jobProgress.js';
+import { awaitJob } from '../../store/backgroundJobsStore.js';
 import {
   listManagedNetworkBridges,
   deleteManagedNetworkBridge,
@@ -53,7 +55,7 @@ export default function HostNetworkBridges({ onError }) {
     setDeletingName(name);
     reportError(null);
     try {
-      await deleteManagedNetworkBridge(name);
+      await awaitJob(JOB_KIND.NETWORK_BRIDGE_DELETE, await deleteManagedNetworkBridge(name));
       await refresh();
     } catch (err) {
       reportError(err.detail || err.message || `Failed to delete bridge ${name}`);

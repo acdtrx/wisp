@@ -4,6 +4,8 @@ import UpdateCard from './UpdateCard.jsx';
 import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
 import { checkForUpdates, performUpgrade, listUpgradablePackages } from '../../api/host.js';
+import { JOB_KIND } from '../../api/jobProgress.js';
+import { awaitJob } from '../../store/backgroundJobsStore.js';
 
 function formatBytes(b) {
   if (!b || b <= 0) return null;
@@ -55,7 +57,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
     setUpgradeSuccess(false);
     setChecking(true);
     try {
-      const data = await checkForUpdates();
+      const data = await awaitJob(JOB_KIND.OS_UPDATE_CHECK, await checkForUpdates());
       const newCount = data.count ?? 0;
       /* Invalidate the locally-rendered package list only if the count
        * actually changed — otherwise the cached list is still accurate and
@@ -83,7 +85,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
     setUpgradeSuccess(false);
     setUpgrading(true);
     try {
-      await performUpgrade();
+      await awaitJob(JOB_KIND.OS_UPGRADE, await performUpgrade());
       setUpgradeSuccess(true);
       setManualCount(0);
       setPackages([]);
@@ -104,7 +106,14 @@ export default function OsUpdateSection({ onRequestRestart }) {
     setPackagesError(null);
     setPackagesLoading(true);
     try {
-      const data = await listUpgradablePackages({ refresh });
+      /* A refresh, or no cache yet, answers with the shared check job: follow
+       * it, then read the list it left in the cache. */
+      let data = await listUpgradablePackages({ refresh });
+      if (data?.jobId) {
+        await awaitJob(JOB_KIND.OS_UPDATE_CHECK, data);
+        data = await listUpgradablePackages();
+        if (data?.jobId) throw new Error('The package list is not available yet');
+      }
       setPackages(data.packages ?? []);
       setDownloadBytes(data.downloadBytes ?? 0);
       setPackagesCached(!!data.cached);

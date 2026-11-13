@@ -9,8 +9,8 @@ export function checkForWispUpdate() {
 }
 
 /**
- * Start the install pipeline. force=true bypasses the active-jobs guard
- * (UI confirms with the user first).
+ * Start the install pipeline as a job: answers `{ jobId, title, targetVersion }`.
+ * force=true bypasses the active-jobs guard (UI confirms with the user first).
  */
 export function installWispUpdate({ force = false } = {}) {
   const qs = force ? '?force=1' : '';

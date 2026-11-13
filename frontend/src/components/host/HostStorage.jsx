@@ -29,6 +29,8 @@ import SmbShareEditorModal from './SmbShareEditorModal.jsx';
 import RemovableDriveEditorModal, { SUPPORTED_FSTYPES } from './RemovableDriveEditorModal.jsx';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { useDiskStore } from '../../store/diskStore.js';
+import { awaitJob } from '../../store/backgroundJobsStore.js';
+import { JOB_KIND } from '../../api/jobProgress.js';
 import {
   deleteMount,
   getMountStatus,
@@ -160,7 +162,7 @@ function SmbMountsSection({ smbSaved, mountStatus, refreshStatus, loadSettings, 
     setConfirmDelete(null);
     setDeletingId(row.id);
     try {
-      await deleteMount(row.id);
+      await awaitJob(JOB_KIND.MOUNT_DELETE, await deleteMount(row.id));
       await loadSettings();
       refreshStatus();
     } catch (err) {
@@ -172,7 +174,9 @@ function SmbMountsSection({ smbSaved, mountStatus, refreshStatus, loadSettings, 
 
   const handleMountToggle = (id, mounted) => {
     setMountActionId(id);
-    const p = mounted ? unmountMount(id) : mountMount(id);
+    const p = mounted
+      ? unmountMount(id).then((job) => awaitJob(JOB_KIND.MOUNT_UNMOUNT, job))
+      : mountMount(id);
     p.then(() => refreshStatus())
       /* SMB mount errors surface via refreshStatus / server state */
       .catch(() => {})
@@ -385,7 +389,7 @@ function RemovableDrivesSection({
     setConfirmDelete(null);
     setDeletingId(row.id);
     try {
-      await deleteMount(row.id);
+      await awaitJob(JOB_KIND.MOUNT_DELETE, await deleteMount(row.id));
       await loadSettings();
       refreshStatus();
     } catch (err) {
@@ -397,7 +401,9 @@ function RemovableDrivesSection({
 
   const handleMountToggle = (id, mounted) => {
     setMountActionId(id);
-    const p = mounted ? unmountMount(id) : mountMount(id);
+    const p = mounted
+      ? unmountMount(id).then((job) => awaitJob(JOB_KIND.MOUNT_UNMOUNT, job))
+      : mountMount(id);
     p.then(() => refreshStatus())
       .catch((err) => onError(err.detail || err.message || 'Mount toggle failed'))
       .finally(() => setMountActionId(null));

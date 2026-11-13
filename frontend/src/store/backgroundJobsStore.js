@@ -15,6 +15,9 @@ const DONE_UI_TTL_MS = 5 * 60 * 1000;
  * @property {string | null} detail
  * @property {'running' | 'done' | 'error'} status
  * @property {string | null} error
+ * @property {string | null} [errorDetail]
+ * @property {string | null} [errorCode]
+ * @property {object | null} [result] - the `done` event (the job's result)
  * @property {number} startedAt
  * @property {number | null} [finishedAt]
  */
@@ -29,10 +32,13 @@ function applyEvent(row, ev) {
   if (ev.step === 'error') {
     next.status = 'error';
     next.error = ev.error || ev.detail || 'Failed';
+    next.errorDetail = ev.detail ?? null;
+    next.errorCode = ev.code ?? null;
     next.finishedAt = Date.now();
   }
   if (ev.step === 'done') {
     next.status = 'done';
+    next.result = ev;
     next.finishedAt = Date.now();
   }
   return next;
@@ -140,6 +146,7 @@ export const useBackgroundJobsStore = create((set, get) => ({
                 ...cur,
                 status: 'error',
                 error: 'Connection lost',
+                errorCode: 'CONNECTION_LOST',
                 step: 'error',
                 finishedAt: Date.now(),
               },
@@ -171,3 +178,46 @@ export const useBackgroundJobsStore = create((set, get) => ({
   runningCount: () =>
     Object.values(get().jobs).filter((j) => j.status === 'running').length,
 }));
+
+/**
+ * Follow a job the server accepted (the `{ jobId, title }` its route answered):
+ * show it in the tray, and resolve with its `done` event or reject with its
+ * error (`message`, `detail`, `code`, as `api()` throws; `code` is
+ * CONNECTION_LOST or JOB_GONE when the stream, not the job, ended it). The job runs on the
+ * server whether or not anyone follows it; this works whether or not the tray
+ * already holds the job (the tray's hydration may have registered it first).
+ * @param {string} kind - a JOB_KIND
+ * @param {{ jobId: string, title: string }} accepted
+ * @returns {Promise<object>}
+ */
+export function awaitJob(kind, { jobId, title }) {
+  const store = useBackgroundJobsStore;
+  store.getState().registerJob({ jobId, kind, title });
+  return new Promise((resolve, reject) => {
+    const settle = (row) => {
+      if (!row) {
+        // Dismissed, or unknown to the server (it restarted, or the job expired).
+        const err = new Error('The job is no longer followed');
+        err.code = 'JOB_GONE';
+        reject(err);
+        return true;
+      }
+      if (row.status === 'done') {
+        resolve(row.result ?? {});
+        return true;
+      }
+      if (row.status === 'error') {
+        const err = new Error(row.error || 'Failed');
+        err.detail = row.errorDetail ?? undefined;
+        err.code = row.errorCode ?? undefined;
+        reject(err);
+        return true;
+      }
+      return false;
+    };
+    if (settle(store.getState().jobs[jobId])) return;
+    const unsubscribe = store.subscribe((state) => {
+      if (settle(state.jobs[jobId])) unsubscribe();
+    });
+  });
+}

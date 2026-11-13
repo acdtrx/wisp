@@ -29,7 +29,7 @@ import {
 import { getSettings } from '../../api/settings.js';
 import { subscribeTopic } from '../../api/events.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
-import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
+import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
 import { useVmStore } from '../../store/vmStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
@@ -320,10 +320,11 @@ export default function BackupsPanel() {
           restoreName.trim(),
         );
       } else {
-        await restoreBackup(
+        const job = await restoreBackup(
           { destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp },
           restoreName.trim(),
         );
+        await awaitJob(JOB_KIND.VM_RESTORE, job);
       }
       setRestoreTarget(null);
       setRestoreName('');

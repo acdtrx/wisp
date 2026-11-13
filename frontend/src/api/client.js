@@ -83,12 +83,11 @@ if (typeof window !== 'undefined') {
 
 /**
  * Default deadline for one REST call (CODING-RULES §6), over the request and
- * reading its body. Long operations run as background jobs; the slowest
- * synchronous routes are bounded on the server at 30 s (mounts, the update
- * check) and 2 min (a libvirt start), so 60 s lets their own error arrive.
- * Pass `timeoutMs` for a call that needs another bound.
+ * reading its body. An operation that can outlast a short request is a server
+ * job: its route answers with the job id at once and the result arrives over
+ * the job's stream. Pass `timeoutMs` for a call that needs another bound.
  */
-export const API_TIMEOUT_MS = 60_000;
+export const API_TIMEOUT_MS = 45_000;
 
 /** `signals` combined: aborts with the first one's reason (AbortSignal.any where available). */
 export function anySignal(signals) {
