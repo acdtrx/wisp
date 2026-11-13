@@ -142,8 +142,10 @@ stream to the client (Transport) subscribes like any other consumer.
   resyncs on `visibilitychange → visible` and on `online` when it has had no bytes for
   longer than the keepalive. A 401 sends the user to sign in; a 404 (the stream's subject
   is gone, e.g. a deleted container's logs) stops the stream instead of retrying.
-- **Commands are REST calls under `/api`**; the state they change also reaches every
-  client through the stream.
+- **Commands go in as POSTs; results come back through the stream.** The POST response
+  carries the ack and validation errors; the resulting state change arrives as an event
+  like any other (settled 2026-11-13: restored from the template, whose line had been
+  reworded to fit routes that hold the request open until the work is done).
 - **Consoles are WebSockets under `/ws`**: VNC bridges the browser to QEMU's VNC port over
   TCP on `127.0.0.1` ([`specs/CONSOLE.md`](specs/CONSOLE.md)); the container shell drives
   containerd's exec with a PTY. Both authenticate with the session cookie the browser

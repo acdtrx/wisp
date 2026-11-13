@@ -105,27 +105,67 @@ The §6 findings except TMO-4.
 
 **Settled after the 2b review (2026-11-13):** CODING-RULES §6 gains a project rule: each
 operation gets its own timeout, on inactivity wherever it shows progress. And the existing
-FRONTEND-RULES Data rule "the client is an observer" is followed as written: an operation
+FRONTEND-RULES Data rule "the client is an observer", with ARCHITECTURE § Transport
+"commands go in as POSTs; results come back through the stream", is followed as written: an operation
 that can outlast a short request is a server job, which the client observes over SSE,
 never a request the client holds open. These replace the 60 s REST client deadline and
 TMO-4's fixed 600 s upgrade cap. The OS upgrade times out on inactivity of apt's output;
 the backlog entry "OS upgrade runs inside wisp.service" stays. The values each subsystem
 settles go into its spec, not into code comments or the audit.
 
-## Milestone 2b-2 — long operations become jobs
+**Settled for 2b-2 (2026-11-13):** the builder's lists as proposed.
+- **Jobs** (the POST returns the job id; progress and result over SSE):
+  - VMs: start, force-stop, delete, restore as new.
+  - Containers: start, stop, restart, delete, mount delete, mount-data delete, image
+    delete, backup restore as new, and the zip extract after its upload.
+  - Host: the OS update check and package refresh (one shared run), the OS upgrade,
+    network-bridge create and delete, unmount, mount delete.
+  - The self-update install, with progress until Wisp restarts.
+- **Stay synchronous:**
+  - Everything else: VM stop, reboot, suspend, resume; settings; mount checks; hardware;
+    and so on.
+  - Tighter bounds: qemu-img metadata, resize and the seed ISO build get 20 s.
+  - Uploads and mount content writes get a server-side body-inactivity bound of 60 s.
+  - The mount-usage walk gets 20 s and answers `partial: true`.
+- **MCP:** a tool for a job-backed operation starts the job and returns its id; a new tool
+  reads a job's status.
+- **Inactivity bounds:**
 
-Open points first: list every route that can outlast a short request, each with a
-proposal (job, or stays synchronous with its bound). List each 2b timeout that is still a
-fixed total where its operation shows progress. The user settles both lists before the
-build.
+  | Operation | Inactivity bound |
+  |---|---|
+  | zip extract | 5 min |
+  | image pull | 5 min |
+  | apt list steps | 60 s per step, caller 90 s; the simulate step stays fixed at 60 s |
+  | OS upgrade | 15 min |
+  | release tar extract | 60 s |
+  | setup curls | under 1 KB/s for 60 s |
+  | `npm ci` in the updater | 10 min, under the 600 s unit backstop |
+  | VM backup and restore disk streams | 10 min |
+
+  The `cloud-init.json` `cp` gets a fixed 30 s.
+- **The client's short-request timeout** is 45 s.
+
+## Milestone 2b-2 — VMs, host and self-update become jobs
+
+The jobs, bounds and client timeout above for VMs, the host and the self-update.
 
 - **Acceptance:**
-  - Each route settled as a job returns its job id at once. Its progress and result arrive
-    over SSE, and closing the page mid-operation leaves it running to completion.
+  - Each route made a job returns its job id at once. Its progress and result arrive over
+    SSE, and closing the page mid-operation leaves it running to completion.
   - An OS upgrade that keeps printing runs past 600 s, and one that goes silent fails at
     its inactivity bound (on tini, with a stand-in for apt).
   - Each timeout changed to inactivity is shown to fire on a stall and to survive a long
     run that keeps progressing.
+  - The frontend build passes.
+
+## Milestone 2b-3 — containers and MCP become jobs
+
+The container jobs and bounds above, and the MCP job tools.
+
+- **Acceptance:**
+  - The same job checks as 2b-2 for each container route.
+  - An MCP client starts a job-backed operation, gets its id, and reads the job to
+    completion through the status tool.
   - The frontend build passes.
 
 ## Milestone 2c — frontend

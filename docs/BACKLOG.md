@@ -13,6 +13,25 @@ single ordering shared by every consumer. **Revisit trigger:** the existing sort
 demonstrably fight a real workflow — repeatedly hunting for a workload the sort keeps
 burying.
 
+**Short commands that return their result in the response.** ARCHITECTURE § Transport
+says a POST carries only the ack and validation errors, and the result arrives through the
+stream. Long operations follow it (rules-conformance 2b-2); short ones such as a settings
+PATCH still answer with the new state, which mostly also reaches clients through the
+stream. **Revisit trigger:** a client shows stale state after a short command, or a short
+command turns out to run long.
+
+**Check Wisp's docs against the template for reworded rules.** ARCHITECTURE's "commands
+go in as POSTs; results come back through the stream" had been reworded to fit the code
+when the template was adopted, and the drift surfaced only through a timeout debate.
+Diff each doc against `../claude-template` and list every place a template rule was
+weakened rather than the code changed. **Revisit trigger:** the next template sync, or
+another rule found reworded.
+
+**A hung CIFS mount blocks Node's filesystem calls.** Listings, deletes and copies on an
+unresponsive SMB destination block the libuv thread pool and can't be timed out; running
+them as jobs contains the damage but doesn't fix it. **Revisit trigger:** Wisp is seen
+stalled by an unresponsive SMB share.
+
 **Live VM memory growth (balloon headroom / virtio-mem).** Wisp pins `<memory>` equal to
 `<currentMemory>`, so a running VM's RAM ceiling is its boot-time size and every increase
 costs a stop/start. Writing `<maxMemory>` above `<currentMemory>` and driving the virtio
