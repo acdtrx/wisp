@@ -1,14 +1,22 @@
 /**
- * No-progress watchdog for size-dependent work (CODING-RULES §6, settled
- * 2026-11-12 as audit TMO-2): a disk convert, a disk copy, a backup tar run as
- * long as the data is big, so a fixed cap would either kill a legitimate job or
- * mean nothing. Instead the work is killed once it shows no progress for
- * `stallMs` — progress being a `poke()` from its output or byte stream, or a
- * change in what `probe()` returns (e.g. the destination's allocated blocks).
+ * No-progress watchdog for size-dependent work (CODING-RULES §6): a disk
+ * convert, a disk copy, a backup tar run as long as the data is big, so a fixed
+ * cap would either kill a legitimate job or mean nothing. Instead the work is
+ * killed once it shows no progress for `stallMs` — progress being a `poke()`
+ * from its output or byte stream, or a change in what a probe returns (the
+ * destination's allocated blocks, the process's bytes read). `probe` is one
+ * probe or a list; any of them changing counts.
  */
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 
-export function createStallWatchdog({ stallMs, onStall, probe }) {
+function combineProbes(probe) {
+  if (!probe) return null;
+  if (!Array.isArray(probe)) return probe;
+  return async () => (await Promise.all(probe.map((p) => p().catch(() => undefined)))).join(':');
+}
+
+export function createStallWatchdog({ stallMs, onStall, probe: probes }) {
+  const probe = combineProbes(probes);
   let last = Date.now();
   let lastProbe;
   let fired = false;
@@ -50,6 +58,18 @@ export function createStallWatchdog({ stallMs, onStall, probe }) {
 /** A probe for `createStallWatchdog`: the file's allocated blocks (grows as data lands). */
 export function fileBlocksProbe(path) {
   return async () => (await stat(path)).blocks;
+}
+
+/**
+ * A probe for `createStallWatchdog`: bytes the process has read (`rchar` in
+ * /proc/<pid>/io, Linux). It grows while a copy reads a long run of zeros that
+ * writes nothing to a sparse destination.
+ */
+export function processReadProbe(pid) {
+  return async () => {
+    const io = await readFile(`/proc/${pid}/io`, 'utf8');
+    return /^rchar:\s*(\d+)/m.exec(io)?.[1];
+  };
 }
 
 /** `ms` as "N min" for messages. */

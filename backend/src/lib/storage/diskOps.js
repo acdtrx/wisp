@@ -5,14 +5,15 @@ import { extname } from 'node:path';
 import { createInterface } from 'node:readline';
 
 import { createAppError } from '../routeErrors.js';
-import { createStallWatchdog, fileBlocksProbe, stallMinutes } from './stallWatchdog.js';
+import { createStallWatchdog, fileBlocksProbe, processReadProbe, stallMinutes } from './stallWatchdog.js';
 
 const execFile = promisify(execFileCb);
 
 /**
  * A convert runs as long as the image is big: no total cap, but killed after
- * this long with neither progress output nor the destination growing (TMO-2).
- * `-p` reports only each whole percent, so the destination's blocks count too.
+ * this long with no progress output, no growth of the destination and no bytes
+ * read. `-p` reports only each whole percent, and a run of zeros in a sparse
+ * source is read without growing the destination.
  */
 const CONVERT_STALL_MS = 10 * 60_000;
 
@@ -216,7 +217,7 @@ export async function copyAndConvert(srcPath, dstPath, onProgress, { srcFormat }
     });
     const watchdog = createStallWatchdog({
       stallMs: CONVERT_STALL_MS,
-      probe: fileBlocksProbe(dstPath),
+      probe: [fileBlocksProbe(dstPath), processReadProbe(proc.pid)],
       onStall: () => proc.kill('SIGKILL'),
     });
     proc.stdout.on('data', watchdog.poke);

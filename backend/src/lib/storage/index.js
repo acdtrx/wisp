@@ -25,7 +25,7 @@ export {
   getDiskInfo, inspectDiskImage, imageFormatForFile, getBackingChain, copyAndConvert, resizeDisk,
 } from './diskOps.js';
 export { measurePathSize } from './dirSize.js';
-export { createStallWatchdog, fileBlocksProbe, stallMinutes } from './stallWatchdog.js';
+export { createStallWatchdog, fileBlocksProbe, processReadProbe, stallMinutes } from './stallWatchdog.js';
 export { restrictToOwner, describeModeChanges } from './fileModes.js';
 
 // Kernel mount table (/proc/self/mounts), decoded — the one reader for mount state

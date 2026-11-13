@@ -22,13 +22,14 @@ import { isOfflineState } from './libvirtConstants.js';
 import { copyNvram } from './vmManagerNvram.js';
 import { assertVMNameAvailable, createOwnVMDir, removeOwnVMDir } from './vmManagerCreate.js';
 import {
-  getBackingChain, copyAndConvert, inspectDiskImage, createStallWatchdog, fileBlocksProbe, stallMinutes,
+  getBackingChain, copyAndConvert, inspectDiskImage, createStallWatchdog, fileBlocksProbe, processReadProbe, stallMinutes,
 } from '../../storage/index.js';
 import { assertRestorableDomain } from './vmManagerRestoreCheck.js';
 
 /**
  * A disk copy runs as long as the disk is big: no total cap, but `cp` is killed
- * after this long without the destination growing (CODING-RULES §6, TMO-2).
+ * after this long with neither the destination growing nor bytes read (a run of
+ * zeros in a sparse disk is read without growing the destination).
  */
 const COPY_STALL_MS = 10 * 60_000;
 
@@ -58,7 +59,7 @@ function cpWatched(srcPath, dstPath) {
     cp.stderr.on('data', (d) => { stderr += d; });
     const watchdog = createStallWatchdog({
       stallMs: COPY_STALL_MS,
-      probe: fileBlocksProbe(dstPath),
+      probe: [fileBlocksProbe(dstPath), processReadProbe(cp.pid)],
       onStall: () => cp.kill('SIGKILL'),
     });
     cp.on('error', (err) => { watchdog.stop(); reject(err); });
