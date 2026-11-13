@@ -74,6 +74,7 @@ function mappedErrorStatus(code) {
     case 'UPDATE_CHECK_UNAVAILABLE':
     case 'POWER_UNAVAILABLE':
       return 503;
+    case 'BACKUP_FAILED':
     case 'BACKUP_RESTORE_FAILED':
       return 500;
     case 'DISK_INFO_FAILED':

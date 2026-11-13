@@ -11,6 +11,12 @@ import { pipeline } from 'node:stream/promises';
 import { ensureImageDir } from '../paths.js';
 import { openUniqueFile, downloadWithProgress } from './downloadUtils.js';
 import { createAppError } from '../routeErrors.js';
+import { createStallWatchdog, stallMinutes } from '../storage/index.js';
+
+/** The release lookup is one small JSON reply (CODING-RULES §6). */
+const GITHUB_API_TIMEOUT_MS = 15_000;
+/** xz runs as long as the image is big: killed only after this long without output (TMO-2). */
+const XZ_STALL_MS = 10 * 60_000;
 
 const GITHUB_API = 'https://api.github.com/repos/home-assistant/operating-system/releases/latest';
 const ASSET_PATTERNS = [
@@ -26,7 +32,7 @@ export async function getLatestHaosAsset() {
   const token = process.env.GITHUB_TOKEN;
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(GITHUB_API, { headers });
+  const res = await fetch(GITHUB_API, { headers, signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS) });
   if (!res.ok) {
     throw createAppError('GITHUB_API', `GitHub API error: ${res.status}`, String(res.status));
   }
@@ -49,10 +55,13 @@ export async function getLatestHaosAsset() {
  */
 async function decompressXzToFile(srcPath, handle) {
   const xz = spawn('xz', ['-dc', srcPath], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const watchdog = createStallWatchdog({ stallMs: XZ_STALL_MS, onStall: () => xz.kill('SIGKILL') });
+  xz.stdout.on('data', watchdog.poke);
   const exited = new Promise((resolve, reject) => {
     xz.on('error', reject);
     xz.on('close', (code, signal) => {
-      if (code === 0) resolve();
+      if (watchdog.fired) reject(new Error(`xz made no progress for ${stallMinutes(XZ_STALL_MS)} and was stopped`));
+      else if (code === 0) resolve();
       else reject(new Error(`xz exited with ${code ?? signal}`));
     });
   });
@@ -60,6 +69,8 @@ async function decompressXzToFile(srcPath, handle) {
     pipeline(xz.stdout, handle.createWriteStream()),
     exited,
   ]);
+  watchdog.stop();
+  if (watchdog.fired) throw exit.reason;
   if (written.status === 'rejected') throw written.reason;
   if (exit.status === 'rejected') throw exit.reason;
 }

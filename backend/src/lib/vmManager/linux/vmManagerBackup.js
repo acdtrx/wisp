@@ -13,8 +13,7 @@ import { pipeline } from 'node:stream/promises';
 import { createGzip, createGunzip } from 'node:zlib';
 import { Transform } from 'node:stream';
 import { join, dirname, basename } from 'node:path';
-import { execFile as execFileCb } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError, generateMAC } from './vmManagerConnection.js';
 import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
@@ -22,10 +21,16 @@ import { getVMBasePath, VMS_BACKUP_DIRNAME } from './vmManagerPaths.js';
 import { isOfflineState } from './libvirtConstants.js';
 import { copyNvram } from './vmManagerNvram.js';
 import { assertVMNameAvailable, createOwnVMDir, removeOwnVMDir } from './vmManagerCreate.js';
-import { getBackingChain, copyAndConvert, inspectDiskImage } from '../../storage/index.js';
+import {
+  getBackingChain, copyAndConvert, inspectDiskImage, createStallWatchdog, fileBlocksProbe, stallMinutes,
+} from '../../storage/index.js';
 import { assertRestorableDomain } from './vmManagerRestoreCheck.js';
 
-const execFile = promisify(execFileCb);
+/**
+ * A disk copy runs as long as the disk is big: no total cap, but `cp` is killed
+ * after this long without the destination growing (CODING-RULES §6, TMO-2).
+ */
+const COPY_STALL_MS = 10 * 60_000;
 
 // Layout: VM backups under <root>/vms/<vmName>/<timestamp>/ (VMS_BACKUP_DIRNAME),
 // beside container backups under <root>/containers/<name>/<timestamp>/.
@@ -45,11 +50,34 @@ function backupTimestamp() {
   return new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
 }
 
+/** `cp --reflink=auto` under a stall watchdog. Rejects `{ stalled: true }` when it fired. */
+function cpWatched(srcPath, dstPath) {
+  return new Promise((resolve, reject) => {
+    const cp = spawn('cp', ['--reflink=auto', srcPath, dstPath], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    cp.stderr.on('data', (d) => { stderr += d; });
+    const watchdog = createStallWatchdog({
+      stallMs: COPY_STALL_MS,
+      probe: fileBlocksProbe(dstPath),
+      onStall: () => cp.kill('SIGKILL'),
+    });
+    cp.on('error', (err) => { watchdog.stop(); reject(err); });
+    cp.on('close', (code, signal) => {
+      watchdog.stop();
+      if (watchdog.fired) {
+        reject(Object.assign(new Error(`copying ${basename(srcPath)} made no progress for ${stallMinutes(COPY_STALL_MS)}`), { stalled: true }));
+      } else if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || `cp exited ${code ?? signal}`));
+    });
+  });
+}
+
 async function copyWithProgress(srcPath, dstPath, onProgress) {
   try {
-    await execFile('cp', ['--reflink=auto', srcPath, dstPath]);
-  } catch {
-    /* reflink copy unsupported — fall back to full copy */
+    await cpWatched(srcPath, dstPath);
+  } catch (err) {
+    if (err.stalled) throw vmError('BACKUP_FAILED', `Backup stopped: ${err.message}`, err.message);
+    /* cp unusable here — fall back to a plain copy */
     await copyFile(srcPath, dstPath);
   }
   if (typeof onProgress === 'function') onProgress();

@@ -5,8 +5,19 @@ import { extname } from 'node:path';
 import { createInterface } from 'node:readline';
 
 import { createAppError } from '../routeErrors.js';
+import { createStallWatchdog, fileBlocksProbe, stallMinutes } from './stallWatchdog.js';
 
 const execFile = promisify(execFileCb);
+
+/**
+ * A convert runs as long as the image is big: no total cap, but killed after
+ * this long with neither progress output nor the destination growing (TMO-2).
+ * `-p` reports only each whole percent, so the destination's blocks count too.
+ */
+const CONVERT_STALL_MS = 10 * 60_000;
+
+/** qemu-img info / resize touch only metadata (resize grows sparsely): 60 s means hung (CODING-RULES §6). */
+const QEMU_IMG_TIMEOUT_MS = 60_000;
 
 /*
  * Every qemu-img call names the image format (`-f`); none lets qemu-img probe
@@ -77,7 +88,7 @@ async function readImageInfo(filePath, format) {
   }
   let stdout;
   try {
-    ({ stdout } = await execFile('qemu-img', ['info', '-f', format, '--output=json', filePath]));
+    ({ stdout } = await execFile('qemu-img', ['info', '-f', format, '--output=json', filePath], { timeout: QEMU_IMG_TIMEOUT_MS }));
   } catch (err) {
     throw createAppError('DISK_INFO_FAILED', `Failed to read disk info for ${filePath} as ${format}`, err.stderr || err.message);
   }
@@ -162,6 +173,7 @@ export async function getBackingChain(filePath, { format } = {}) {
   try {
     ({ stdout } = await execFile('qemu-img', ['info', '-f', format, '--backing-chain', '--output=json', filePath], {
       maxBuffer: 16 * 1024 * 1024,
+      timeout: QEMU_IMG_TIMEOUT_MS,
     }));
   } catch (err) {
     throw createAppError('DISK_INFO_FAILED', `Failed to read the backing chain of ${filePath}`, err.stderr || err.message);
@@ -202,6 +214,13 @@ export async function copyAndConvert(srcPath, dstPath, onProgress, { srcFormat }
     const proc = spawn('qemu-img', ['convert', '-f', srcFormat, '-O', 'qcow2', '-p', srcPath, dstPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    const watchdog = createStallWatchdog({
+      stallMs: CONVERT_STALL_MS,
+      probe: fileBlocksProbe(dstPath),
+      onStall: () => proc.kill('SIGKILL'),
+    });
+    proc.stdout.on('data', watchdog.poke);
+    proc.stderr.on('data', watchdog.poke);
 
     let lastPercent = -1;
     const onLine = (line) => {
@@ -223,14 +242,20 @@ export async function copyAndConvert(srcPath, dstPath, onProgress, { srcFormat }
     if (rlOut) rlOut.on('line', onLine);
 
     proc.on('error', (err) => {
+      watchdog.stop();
       rlErr.close();
       if (rlOut) rlOut.close();
       reject(createAppError('CONVERT_FAILED', `Failed to run qemu-img convert: ${err.message}`, err.message));
     });
 
     proc.on('close', (code, signal) => {
+      watchdog.stop();
       rlErr.close();
       if (rlOut) rlOut.close();
+      if (watchdog.fired) {
+        reject(createAppError('CONVERT_FAILED', `qemu-img convert made no progress for ${stallMinutes(CONVERT_STALL_MS)} and was stopped`, String(signal)));
+        return;
+      }
       if (signal) {
         reject(createAppError('CONVERT_FAILED', `qemu-img convert killed by signal ${signal}`, String(signal)));
         return;
@@ -264,7 +289,7 @@ export async function resizeDisk(filePath, newSizeGB, { format } = {}) {
   }
 
   try {
-    await execFile('qemu-img', ['resize', '-f', format, filePath, `${newSizeGB}G`]);
+    await execFile('qemu-img', ['resize', '-f', format, filePath, `${newSizeGB}G`], { timeout: QEMU_IMG_TIMEOUT_MS });
   } catch (err) {
     throw createAppError('RESIZE_FAILED', `Failed to resize disk ${filePath}`, err.stderr || err.message);
   }
