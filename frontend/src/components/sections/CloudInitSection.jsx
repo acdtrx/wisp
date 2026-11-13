@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Cloud, AtSign, RefreshCw, Trash2, Loader2, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { Cloud, AtSign, RefreshCw, Trash2, Loader2, Eye, EyeOff, KeyRound, AlertCircle } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
@@ -43,6 +43,11 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
 
   const [collapsed, setCollapsed] = useState(!isCreating);
   const [config, setConfig] = useState(null);
+  /* Until the first read lands, and when it fails, nothing may offer to
+   * configure cloud-init: a failed read is not "no configuration", and
+   * Configure would overwrite the real one. */
+  const [loading, setLoading] = useState(!isCreating);
+  const [loadError, setLoadError] = useState(null);
   const [form, setForm] = useState(() => {
     const hostname = (initialCloudInit?.hostname) || vmConfig.name || '';
     if (initialCloudInit && typeof initialCloudInit === 'object') {
@@ -67,11 +72,15 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
 
   const loadConfig = useCallback(async () => {
     if (isCreating) return;
+    setLoading(true);
     try {
       const data = await getCloudInit(vmName);
       setConfig(isBareCloudInitPlaceholder(data) ? null : data);
-    } catch {
-      setConfig(null);
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(err.detail || err.message || 'Failed to load cloud-init');
+    } finally {
+      setLoading(false);
     }
   }, [vmName, isCreating]);
 
@@ -229,7 +238,24 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
     >
       {!editing ? (
         <div className="space-y-3">
-          {hasConfig ? (
+          {loading && !hasConfig && !loadError ? (
+            <div className="flex items-center gap-2 py-4 text-xs text-text-muted">
+              <Loader2 size={14} className="animate-spin" /> Loading cloud-init…
+            </div>
+          ) : loadError ? (
+            <div className="flex flex-col items-center gap-3 py-4">
+              <AlertCircle size={24} className="text-status-stopped" aria-hidden />
+              <p className="text-xs text-status-stopped">Couldn't load the cloud-init configuration: {loadError}</p>
+              <button
+                type="button"
+                onClick={loadConfig}
+                disabled={loading}
+                className="flex items-center gap-1.5 rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface disabled:opacity-50 transition-colors duration-150"
+              >
+                {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Retry
+              </button>
+            </div>
+          ) : hasConfig ? (
             <>
               <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
                 <SummaryRow
