@@ -22,10 +22,13 @@
  * Same dumb-scan spirit as check-imports.mjs: static `import … from`,
  * `export … from`, side-effect imports; inside a dynamic `import(…)`, every
  * string literal (the facades' platform ternaries, a package picked by a
- * condition) and a template literal's static prefix (`./linux/${name}.js`
- * checks as `./linux/`); `require(…)`, including through a `createRequire`
- * result. A specifier computed with no literal prefix can't be checked: it is a
- * violation unless EXCEPTIONS allows it.
+ * condition, a concatenation's leading literal) and a template literal's static
+ * prefix (`./linux/${name}.js` checks as `./linux/`; a prefix ending in `/` on a
+ * module's root folder reaches inside it); `require(…)`, including through
+ * `createRequire` under any import alias and whatever name its result is
+ * assigned to. A specifier computed with no relative literal prefix (a
+ * substituted package template included) can't be checked: it is a violation
+ * unless EXCEPTIONS allows it.
  */
 import { readdir, readFile } from 'node:fs/promises';
 import { builtinModules } from 'node:module';
@@ -134,8 +137,31 @@ const STATIC_IMPORT = /(?<![\w$.])import\s*(?:([\w$*{}\s,]+?)\s*from\s*)?(['"])(
 const EXPORT_FROM = /(?<![\w$.])export\s*(?:\*(?:\s*as\s+[\w$]+)?|\{[^}]*\})\s*from\s*(['"])([^'"\n]+)\1/g;
 const DYNAMIC_IMPORT = /(?<![\w$.])import\s*\(/g;
 const REQUIRE_CALL = /(?<![\w$.])require\s*\(/g;
-const CREATE_REQUIRE_BINDING = /(?<![\w$.])(?:const|let|var)\s+([\w$]+)\s*=\s*(?:[\w$.]+\.)?createRequire\s*\(/g;
-const CREATE_REQUIRE_DIRECT = /(?<![\w$.])(?:[\w$.]+\.)?createRequire\s*\([^()]*(?:\([^()]*\))*[^()]*\)\s*\(/g;
+const CREATE_REQUIRE_ALIAS = /\bcreateRequire\s+as\s+([\w$]+)/g;
+
+function escapeName(name) {
+  return name.replace(/\$/g, '\\$');
+}
+
+/**
+ * Every call that loads a module through createRequire: `createRequire` and its
+ * import aliases (`import { createRequire as cr }`), called directly —
+ * `cr(import.meta.url)('x')` — or through the name their result is assigned to,
+ * declared or not (`const r = cr(…)`, `r = mod.createRequire(…)`).
+ */
+function createRequireCalls(code) {
+  const names = ['createRequire', ...[...code.matchAll(CREATE_REQUIRE_ALIAS)].map((m) => m[1])];
+  const calls = [];
+  for (const name of names.map(escapeName)) {
+    const direct = new RegExp(`(?<![\\w$.])(?:[\\w$.]+\\.)?${name}\\s*\\([^()]*(?:\\([^()]*\\))*[^()]*\\)\\s*\\(`, 'g');
+    calls.push(...code.matchAll(direct));
+    const binding = new RegExp(`(?<![\\w$.])([\\w$]+)\\s*=(?!=)\\s*(?:[\\w$.]+\\.)?${name}\\s*\\(`, 'g');
+    for (const b of code.matchAll(binding)) {
+      calls.push(...code.matchAll(new RegExp(`(?<![\\w$.])${escapeName(b[1])}\\s*\\(`, 'g')));
+    }
+  }
+  return calls;
+}
 
 /** The text between the `(` that ends at `open` and its matching `)`. */
 function callArgument(code, open) {
@@ -151,8 +177,10 @@ function callArgument(code, open) {
 
 /**
  * The specifiers a dynamic import()/require() argument can name: a whole literal;
- * else every string literal in it and each template literal's static prefix;
- * `<computed>` when it has neither.
+ * else every string literal in it (a concatenation's leading `'./x/' + …`
+ * included) and each template literal — a relative one by its static prefix, a
+ * package one with a substitution as `<computed>`; `<computed>` when it has no
+ * literal at all.
  */
 function specifiersOfArgument(arg) {
   const whole = /^(['"])([^'"\n]+)\1$/.exec(arg) || /^`([^`$]*)`$/.exec(arg);
@@ -161,8 +189,9 @@ function specifiersOfArgument(arg) {
   for (const lit of arg.matchAll(/(['"])([^'"\n]+)\1/g)) found.push(lit[2]);
   for (const tpl of arg.matchAll(/`([^`]*)`/g)) {
     const prefix = tpl[1].split('${')[0];
-    if (/^\.\.?\//.test(prefix)) found.push(prefix);
-    else if (prefix && !tpl[1].includes('${')) found.push(prefix);
+    if (!tpl[1].includes('${')) found.push(tpl[1]);
+    else if (/^\.\.?\//.test(prefix)) found.push(prefix);
+    else found.push('<computed>');
   }
   return found.length > 0 ? found : ['<computed>'];
 }
@@ -176,12 +205,11 @@ function importsOf(code) {
   for (const m of code.matchAll(EXPORT_FROM)) {
     found.push({ index: m.index, specifier: m[2], clause: null });
   }
-  const calls = [...code.matchAll(DYNAMIC_IMPORT), ...code.matchAll(REQUIRE_CALL), ...code.matchAll(CREATE_REQUIRE_DIRECT)];
-  for (const b of code.matchAll(CREATE_REQUIRE_BINDING)) {
-    const name = b[1].replace(/\$/g, '\\$');
-    calls.push(...code.matchAll(new RegExp(`(?<![\\w$.])${name}\\s*\\(`, 'g')));
-  }
+  const calls = [...code.matchAll(DYNAMIC_IMPORT), ...code.matchAll(REQUIRE_CALL), ...createRequireCalls(code)];
+  const seen = new Set();
   for (const m of calls) {
+    if (seen.has(m.index)) continue;
+    seen.add(m.index);
     for (const specifier of specifiersOfArgument(callArgument(code, m.index + m[0].length))) {
       found.push({ index: m.index, specifier, clause: null });
     }
@@ -240,7 +268,10 @@ async function main() {
         continue;
       }
 
-      const targetRel = rel(path.resolve(path.dirname(file), specifier));
+      // A prefix ending in `/` (`./vmManager/${x}`, `'./vmManager/' + x`) names a
+      // folder: keep the slash, so landing on a module's root folder counts as
+      // reaching inside it.
+      const targetRel = rel(path.resolve(path.dirname(file), specifier)) + (specifier.endsWith('/') ? '/' : '');
       const targetModule = moduleOf(targetRel);
 
       if (targetModule && targetModule !== fileModule && facaded.has(targetModule)
