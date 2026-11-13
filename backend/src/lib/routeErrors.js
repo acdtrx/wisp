@@ -79,6 +79,7 @@ function mappedErrorStatus(code) {
       return 500;
     case 'DISK_INFO_FAILED':
     case 'LIBVIRT_ERROR':
+    case 'CONTAINER_ZIP_EXTRACT_TIMEOUT':
       return 500;
     case 'NO_CONNECTION':
     case 'NO_CONTAINERD':

@@ -58,7 +58,7 @@ import { validateAndNormalizeDevices } from './containerManagerDevices.js';
 import { createStallWatchdog, stallMinutes } from '../../storage/index.js';
 
 /* tar runs as long as the data is big: no total cap, but it is killed after
- * this long without progress (CODING-RULES §6, TMO-2) — bytes out of tar when
+ * this long without progress (CODING-RULES §6) — bytes out of tar when
  * archiving (the container stays frozen meanwhile, hence the shorter bound),
  * GNU tar's checkpoint dots when restoring. */
 const BACKUP_TAR_STALL_MS = 5 * 60_000;

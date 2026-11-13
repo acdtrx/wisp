@@ -12,7 +12,7 @@ import {
   packAny, packProtoAny,
 } from './containerManagerConnection.js';
 
-/** An image pull's deadline (CODING-RULES §6, TMO-9). */
+/** An image pull's deadline (CODING-RULES §6). */
 const PULL_DEADLINE_MS = 30 * 60_000;
 /** Removing a large rootfs snapshot can take a while. */
 const SNAPSHOT_REMOVE_DEADLINE_MS = 2 * 60_000;
@@ -162,7 +162,7 @@ export async function pullImage(imageRef, onStep) {
     }],
   });
 
-  // A pull runs as long as the image is big: a generous cap, not 30 s (TMO-9).
+  // A pull runs as long as the image is big: a generous cap, not 30 s.
   await callUnary(getClient('transfer'), 'transfer', {
     source,
     destination,

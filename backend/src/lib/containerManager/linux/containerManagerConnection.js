@@ -84,7 +84,7 @@ function loadProto(relPath) {
 }
 
 /*
- * CODING-RULES §6 (settled 2026-11-12, TMO-8/TMO-9): every unary call carries
+ * CODING-RULES §6: every unary call carries
  * a deadline — 30 s unless the call names its own (`deadlineMs`; null for none,
  * e.g. tasks.wait, which lasts as long as the process it waits on); content
  * read streams 60 s. The long-lived events stream has no deadline; channel

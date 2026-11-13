@@ -240,7 +240,8 @@ export async function deleteContainerImage(ref) {
   }
 
   try {
-    await callUnary(getClient('images'), 'delete', { name: imageName, sync: true });
+    // sync: true waits for the garbage collection of the image's content and snapshots.
+    await callUnary(getClient('images'), 'delete', { name: imageName, sync: true }, { deadlineMs: 2 * 60_000 });
   } catch (err) {
     if (err?.code === 'CONTAINER_NOT_FOUND') {
       throw containerError(

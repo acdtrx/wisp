@@ -157,7 +157,7 @@ async function extractZipWithUnzipCli(zipPath, destDirAbs) {
   try {
     await execFile('unzip', ['-q', '-o', zipPath, '-d', destDirAbs], {
       maxBuffer: 4 * 1024 * 1024,
-      // The upload cap bounds the archive, so a fixed, generous cap (TMO-2).
+      // The upload cap bounds the archive, so a fixed, generous cap.
       timeout: UNZIP_EXTRACT_TIMEOUT_MS,
     });
   } catch (err) {
@@ -169,7 +169,8 @@ async function extractZipWithUnzipCli(zipPath, destDirAbs) {
       );
     }
     if (err.killed) {
-      throw containerError('CONTAINER_ZIP_INVALID', `Extracting the zip archive did not finish within ${UNZIP_EXTRACT_TIMEOUT_MS / 60_000} min`, err.message);
+      // Not the archive's fault: a server-side failure (5xx), not CONTAINER_ZIP_INVALID's 422.
+      throw containerError('CONTAINER_ZIP_EXTRACT_TIMEOUT', `Extracting the zip archive did not finish within ${UNZIP_EXTRACT_TIMEOUT_MS / 60_000} min`, err.message);
     }
     const code = err.code;
     if (code === 1 || code === '1') {
