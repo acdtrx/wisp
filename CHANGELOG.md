@@ -1,27 +1,19 @@
 # Changelog
 
-## 2026-11-14
-
-### Bug Fixes
-- **A cloud-init that fails to load can no longer be overwritten by mistake** — the section says it couldn't load and offers Retry instead of "Configure".
-- **Pages say when something failed to load** — the workload list, home page, logs, USB devices, stats, hardware, storage, API tokens, backups, the image library and bridges show "Loading…" while they load and an error with Retry when they fail, instead of an empty page; settings forms wait for the real settings instead of showing defaults.
-- **Dialogs behave** — Escape closes only the dialog on top, Tab stays inside it, the page behind can't be clicked, focus goes back where it was, and a click beside a dialog no longer closes it and loses your edits. The phone menu drawer and the small pop-up menus work the same way, and pop-up menus stay on screen.
-- **Phones and tablets** — opening a dialog no longer pops up the keyboard, row buttons are visible on an iPad, and small buttons are easier to tap.
-
-## 2026-11-13
+## 2026-11-14 (v2.7.0)
 
 ### New Features
 - **Long actions keep going when you leave the page** — starting, force-stopping, deleting and restoring a VM; starting, stopping, restarting, deleting and restoring a container; removing a container mount or its data, deleting an image and unpacking an uploaded zip; checking for and installing OS updates, adding and removing a network bridge, unmounting and removing storage, and updating Wisp run in the background: the jobs tray shows their progress, and closing the page no longer stops them. A request that can't go ahead (a name taken, a VM already running, a bridge in use) is still refused at once.
 - **Agents follow their long actions** — the MCP tools that deploy, update, start, stop or restart a container, or check for image updates, return a job id, and the new `get_job` tool reads the job until it finishes.
 
 ### Bug Fixes
+- **A cloud-init that fails to load can no longer be overwritten by mistake** — the section says it couldn't load and offers Retry instead of "Configure".
+- **Pages say when something failed to load** — the workload list, home page, logs, USB devices, stats, hardware, storage, API tokens, backups, the image library and bridges show "Loading…" while they load and an error with Retry when they fail, instead of an empty page; settings forms wait for the real settings instead of showing defaults.
+- **Dialogs behave** — Escape closes only the dialog on top, Tab stays inside it, the page behind can't be clicked, focus goes back where it was, and a click beside a dialog no longer closes it and loses your edits. The phone menu drawer and the small pop-up menus work the same way, and pop-up menus stay on screen.
+- **Phones and tablets** — opening a dialog no longer pops up the keyboard, row buttons are visible on an iPad, and small buttons are easier to tap.
 - **OS updates are no longer cut off after 10 minutes** — an update runs as long as the package manager keeps printing, and is stopped only after 15 minutes of silence.
 - **Stalled work fails instead of hanging** — a VM backup or restore that copies nothing for 10 minutes, an image pull or zip unpack that makes no progress for 5 minutes, an upload that sends nothing for a minute, and a Wisp update whose download, unpack or package install stalls are stopped, saying what stalled. A stuck container backup or restore is now stopped completely.
 - **Large mounts no longer hold up the usage view** — sizing a container's mounts stops after 20 seconds and shows what it has measured as partial.
-
-## 2026-11-12
-
-### Bug Fixes
 - **A config typo stops the start instead of becoming a default** — an unknown key, a wrong type, an invalid value or invalid JSON in `wisp-config.json`, a bad `runtime.env` line or `WISP_*` value, an unreadable `wisp-password`, or a `WISP_DEFAULT_BRIDGE` naming no bridge fails startup with a message naming it; invalid `trustedProxies` entries are no longer skipped. **Updating:** a config that earlier releases tolerated now fails the update, which rolls back — unless it is something the update repairs itself (retired keys, mounts outside `/mnt/wisp/`, a deleted backup mount still referenced).
 - **Cloud-init edits keep the password** — saving the Overview form with the password field blank keeps the password on file, as the field says, instead of removing it.
 - **Disabling cloud-init no longer takes a new password** — a password typed while turning cloud-init off is ignored, and the summary shows a password only when one is really on file.
