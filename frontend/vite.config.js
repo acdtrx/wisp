@@ -27,6 +27,12 @@ export default defineConfig({
     rolldownOptions: {
       external: [/^\/vendor\//],
       output: {
+        // Puts the bundler's runtime helpers in a chunk of their own. Without it they
+        // can land in a shared app chunk that imports `vendor` while `vendor` imports
+        // the helpers back: `vendor` then runs first and calls a helper not yet
+        // defined, and the page boots blank. scripts/check-chunk-cycles.js fails the
+        // build on any such cycle.
+        strictExecutionOrder: true,
         // Split the eagerly-used UI foundation into a `vendor` chunk so it
         // caches across releases. Heavy lazy-only deps (react-markdown for
         // release notes, @xterm/* for the console) are deliberately left out
