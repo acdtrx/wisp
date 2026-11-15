@@ -84,6 +84,7 @@ export default function OverviewPanel() {
   const error = useVmStore((s) => s.error);
   const clearError = useVmStore((s) => s.clearError);
   const clearActionError = useVmStore((s) => s.clearActionError);
+  const reportActionError = useVmStore((s) => s.reportActionError);
   const startVM = useVmStore((s) => s.startVM);
   const stopVM = useVmStore((s) => s.stopVM);
   const forceStopVM = useVmStore((s) => s.forceStopVM);
@@ -495,7 +496,11 @@ export default function OverviewPanel() {
         open={iconPickerOpen}
         currentIconId={vmConfig.iconId || getDefaultIconId(vmConfig.osCategory)}
         onSelect={async (selectedIconId) => {
-          await runVMCommand(name, () => updateVM(name, { iconId: selectedIconId }));
+          try {
+            await runVMCommand(name, () => updateVM(name, { iconId: selectedIconId }));
+          } catch (err) {
+            reportActionError(name, err.message || 'Failed to change the icon');
+          }
         }}
         onClose={() => setIconPickerOpen(false)}
       />

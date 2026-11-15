@@ -226,6 +226,8 @@ export const useVmStore = create((set, get) => {
 
     clearError: () => set({ error: null }),
     clearActionError: (name) => set((s) => ({ actions: withWorkloadAction(s.actions, name, { action: null, error: null }) })),
+    /** Show a command's failure in VM `name`'s action error (the detail view's banner). */
+    reportActionError: (name, message) => set((s) => ({ actions: withWorkloadAction(s.actions, name, { action: null, error: message }) })),
 
     /**
      * Re-read the selected VM's config. A failure is recorded in `error` (the detail
