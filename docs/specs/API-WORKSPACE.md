@@ -6,7 +6,7 @@ The sidebar sections and the home page launcher. Shared contracts (access levels
 
 User-defined groupings for the sidebar workload list. The synthetic **Main** section (`id: "main"`, `builtin: true`) is always present in responses but never persisted. Workloads with no explicit assignment — or with an assignment pointing at a deleted section — fall back to Main on the next read.
 
-All section endpoints (GET, POST, PATCH, DELETE, PUT assign) return the same `{ sections, assignments }` envelope so the client can keep its local copy in sync from a single response — no separate fetch needed after a mutation. The `sections` topic of `GET /api/events` pushes that same envelope to every connected client, so a mutation from one device reaches the others.
+`GET /api/sections` returns the `{ sections, assignments }` envelope; every write answers with an ack ([Command responses](API.md)): `201 { id }` for a create, `204` otherwise. The `sections` topic of `GET /api/events` pushes the envelope to every connected client after each write, the one that sent it included.
 
 ### Response envelope
 
@@ -42,10 +42,10 @@ This is the sidebar's live channel for grouping. It exists because sections are 
 
 ### POST /api/sections · `admin`
 
-Create a section. Returns the updated envelope.
+Create a section.
 
 - **Body:** `{ "name": "string (1–64)" }`
-- **200:** Envelope.
+- **201:** `{ id }` — the new section's id; the section arrives on the `sections` topic.
 - **422 (`SECTION_INVALID`):** Empty / too-long name.
 - **409 (`SECTION_DUPLICATE`):** Case-insensitive name collision.
 
@@ -54,7 +54,7 @@ Create a section. Returns the updated envelope.
 Rename a section. The `main` section cannot be renamed.
 
 - **Body:** `{ "name": "string (1–64)" }`
-- **200:** Envelope.
+- **204:** Renamed.
 - **404 (`SECTION_NOT_FOUND`):** No section with that id.
 - **422 (`SECTION_INVALID`):** Empty name or attempted Main rename.
 - **409 (`SECTION_DUPLICATE`):** Case-insensitive name collision.
@@ -63,7 +63,7 @@ Rename a section. The `main` section cannot be renamed.
 
 Delete a section. Workloads previously assigned to it return to Main on next read. The `main` section cannot be deleted.
 
-- **200:** Envelope (after removal — the assignments map will no longer reference the deleted id).
+- **204:** Deleted; the next envelope's assignments map no longer references the deleted id.
 - **404 (`SECTION_NOT_FOUND`):** No section with that id.
 
 ### POST /api/sections/reorder · `admin`
@@ -71,7 +71,7 @@ Delete a section. Workloads previously assigned to it return to Main on next rea
 Replace the persisted ordering of user-defined sections. The body must list every existing section id exactly once (Main is implicit and never appears in the array).
 
 - **Body:** `{ "ids": ["<section-id>", "<section-id>", …] }`
-- **200:** Envelope (with `order` reassigned to the array index).
+- **204:** Reordered; the next envelope has `order` reassigned to the array index.
 - **422 (`SECTION_INVALID`):** `ids` is not an array, or doesn't list every section exactly once.
 - **404 (`SECTION_NOT_FOUND`):** An id in `ids` doesn't match any section.
 
@@ -81,13 +81,13 @@ Move a workload to a section.
 
 - **Body:** `{ "type": "vm" | "container", "name": "string", "sectionId": "string | null" }`
 - `sectionId === null` (or `"main"`) drops the explicit assignment — the workload returns to Main.
-- **200:** Envelope.
+- **204:** Assigned.
 - **404 (`SECTION_NOT_FOUND`):** Target sectionId doesn't exist.
 - **422 (`SECTION_INVALID`):** Bad `type` or empty `name`.
 
 The workload itself isn't validated — assignments are pure metadata, so referencing an unknown VM/container name is a no-op (the entry is ignored on the next list read).
 
-> Section info is **not** embedded in the VM/container list payloads or their live topics. libvirt/containerd don't emit events on assignment changes, so the lists wouldn't be a reliable carrier — the feed could stay stale until the next workload event. Sections get their own topic instead: subscribe to `sections` on `GET /api/events` for steady state. `GET /api/sections` remains for the one case that needs the envelope synchronously before acting on it (the container-rename flow, which must know the moved assignment before it navigates).
+> Section info is **not** embedded in the VM/container list payloads or their live topics. libvirt/containerd don't emit events on assignment changes, so the lists wouldn't be a reliable carrier — the feed could stay stale until the next workload event. Sections get their own topic instead: subscribe to `sections` on `GET /api/events` for steady state. `GET /api/sections` remains for API clients.
 
 ---
 
@@ -97,7 +97,7 @@ The Home tab's launcher tiles. Everything a tile *is* — its URL, the workload 
 
 Tiles and the MCP `get_deployment_overview` tool read workloads through one aggregate join, `lib/deploymentOverview.js` (`gatherDeployment`), so the two cannot drift. Keep that join the only one.
 
-Every endpoint below returns the same `{ tiles, groups }` envelope the `home` topic pushes, so one response keeps a client in sync after a mutation — no follow-up fetch. Writes go through these routes only, never `PATCH /api/settings`.
+`GET /api/homepage` returns the `{ tiles, groups }` envelope the `home` topic pushes; every write answers with an ack ([Command responses](API.md)): `201 { id }` for a create, `204` otherwise, and the new envelope reaches every client on the `home` topic. Writes go through these routes only, never `PATCH /api/settings`.
 
 ### Response envelope
 
@@ -154,24 +154,26 @@ Return the current envelope.
 Create a group.
 
 - **Body:** `{ "name": "string (1–64)" }`
-- **200:** Envelope. **422 (`HOME_INVALID`):** empty/too-long name. **409 (`HOME_DUPLICATE`):** case-insensitive name collision.
+- **201:** `{ id }` — the new group's id. **422 (`HOME_INVALID`):** empty/too-long name. **409 (`HOME_DUPLICATE`):** case-insensitive name collision.
 
 ### PATCH /api/homepage/groups/:id · `admin`
 
 Rename a group. Same body and errors as create, plus **404 (`HOME_NOT_FOUND`)**.
 
+- **204:** Renamed.
+
 ### DELETE /api/homepage/groups/:id · `admin`
 
 Delete a group. Its tiles fall back to Ungrouped on the next derivation.
 
-- **200:** Envelope. **404 (`HOME_NOT_FOUND`).**
+- **204:** Deleted. **404 (`HOME_NOT_FOUND`).**
 
 ### POST /api/homepage/groups/reorder · `admin`
 
 Replace the group ordering. The body must list every existing group id exactly once (Ungrouped is implicit and never appears).
 
 - **Body:** `{ "ids": ["<group-id>", …] }`
-- **200:** Envelope. **422 (`HOME_INVALID`)** / **404 (`HOME_NOT_FOUND`).**
+- **204:** Reordered. **422 (`HOME_INVALID`)** / **404 (`HOME_NOT_FOUND`).**
 
 ### PUT /api/homepage/tiles/assign · `admin`
 
@@ -179,7 +181,7 @@ Place a tile in a group, optionally at an index. Moving a tile within its curren
 
 - **Body:** `{ "tileId": "string", "groupId": "string | null", "index": "integer | null" }`
 - `groupId` of `null` (or `"ungrouped"`) drops the placement — the tile returns to Ungrouped. `index` omitted appends.
-- **200:** Envelope. **404 (`HOME_NOT_FOUND`):** unknown `groupId`. **422 (`HOME_INVALID`):** missing `tileId` or negative `index`.
+- **204:** Placed. **404 (`HOME_NOT_FOUND`):** unknown `groupId`. **422 (`HOME_INVALID`):** missing `tileId` or negative `index`.
 - The tile itself is not validated — placements are pure metadata, and an id that no longer derives is ignored on the next read.
 
 ### PUT /api/homepage/tiles/override · `admin`
@@ -187,7 +189,7 @@ Place a tile in a group, optionally at an index. Moving a tile within its curren
 Set or clear a tile's overrides. An omitted field is left untouched; `null` clears one. An override left empty is deleted outright, so the config never accumulates husks.
 
 - **Body:** `{ "tileId": "string", "hidden": "boolean | null", "name": "string | null", "iconId": "string | null" }`
-- **200:** Envelope. **422 (`HOME_INVALID`).**
+- **204:** Saved. **422 (`HOME_INVALID`).**
 
 ### POST /api/homepage/manual-tiles · `admin`
 
@@ -195,19 +197,19 @@ Add a manual link.
 
 - **Body:** `{ "name": "string (1–64)", "url": "string", "iconId": "string | null" }`
 - `url` must be an absolute `http`/`https` URL — anything else (a bare hostname, `javascript:`, `data:`) is rejected at the boundary, since tiles render as links the user clicks.
-- **200:** Envelope. **422 (`HOME_INVALID`).**
+- **201:** `{ id }` — the new link's id. **422 (`HOME_INVALID`).**
 
 ### PATCH /api/homepage/manual-tiles/:id · `admin`
 
 Update a manual link (any subset of `name` / `url` / `iconId`).
 
-- **200:** Envelope. **404 (`HOME_NOT_FOUND`)** / **422 (`HOME_INVALID`).**
+- **204:** Saved. **404 (`HOME_NOT_FOUND`)** / **422 (`HOME_INVALID`).**
 
 ### DELETE /api/homepage/manual-tiles/:id · `admin`
 
 Remove a manual link along with its group placement and overrides.
 
-- **200:** Envelope. **404 (`HOME_NOT_FOUND`).**
+- **204:** Removed. **404 (`HOME_NOT_FOUND`).**
 
 ### `home` topic (live channel)
 
