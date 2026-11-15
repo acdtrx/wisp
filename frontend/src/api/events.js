@@ -149,7 +149,14 @@ async function sendAndAwaitFrame(topic, matches, send) {
    * one fails the command, so it never resolves onto the old state. */
   const settled = await Promise.allSettled(rereads);
   const failed = settled.find((r) => r.status === 'rejected');
-  if (failed) throw failed.reason;
+  if (failed) {
+    const cause = failed.reason;
+    const err = new Error(`The change went through, but its new state didn't load: ${cause?.message || 'request failed'}`);
+    err.status = cause?.status;
+    err.code = cause?.code;
+    err.detail = cause?.detail;
+    throw err;
+  }
   return ack;
 }
 
