@@ -250,11 +250,11 @@ export const useVmStore = create((set, get) => {
     startVM: async (name) => {
       await get().withAction(name, 'start', async () => awaitJob(JOB_KIND.VM_START, await vmApi.startVM(name)));
     },
-    /* Stop, suspend and resume stay busy until the `vms` frame that carries the new
-     * state. Reboot has none to wait for: the VM stays running and libvirt sends no
-     * lifecycle event, so it ends at the ack. */
+    /* Suspend and resume stay busy until the `vms` frame that carries the new state.
+     * Stop (an ACPI shutdown) and reboot are requests the guest may ignore, so they
+     * end at the ack: the list shows the VM stopping when it does. */
     stopVM: async (name) => {
-      await get().withAction(name, 'stop', () => sendAndAwaitTopic('vms', () => vmApi.stopVM(name)));
+      await get().withAction(name, 'stop', () => vmApi.stopVM(name));
     },
     forceStopVM: async (name) => {
       await get().withAction(name, 'force-stop', async () => awaitJob(JOB_KIND.VM_FORCE_STOP, await vmApi.forceStopVM(name)));
