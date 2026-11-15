@@ -14,6 +14,10 @@ holds the UI library's rules.
   - Applied: keep one Zustand store per subsystem, mirroring the established `vmStore`
     patterns; take live data through `createSSE` / `createJobSSE` and the `/api/events`
     topic singleton.
+  - Applied (settled 2026-11-15): a command's control stays busy until the stream brings
+    its new state (its topic's next frame, or the `changes` reference and the re-read it
+    triggers), so a section or modal closes onto fresh data; a command error ends it at
+    once. Settings forms instead treat what they sent as saved (`specs/SETTINGS.md`).
 - Initialise form and component state with meaningful defaults derived from the data
   model, never with an empty object.
   - Applied: start form state from the config's defaults, never `useState({})`.
