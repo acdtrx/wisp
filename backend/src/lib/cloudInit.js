@@ -364,11 +364,15 @@ export async function attachCloudInitDisk(vmName) {
   await attachISO(vmName, 'sde', isoPath, { createIfMissing: true });
 }
 
-/** Detach the cloud-init disk from sde (best-effort), remove the ISO file, and clear the JSON config. */
+/**
+ * Clear the JSON config, detach the cloud-init disk from sde (best-effort) and
+ * remove the ISO file. The config goes first: the detach announces a VM change,
+ * and a client re-reading cloud-init on it must already see it removed.
+ */
 export async function detachCloudInitDisk(vmName) {
+  await deleteCloudInitConfig(vmName);
   await ejectISO(vmName, 'sde', { removeSlot: true });
   await deleteCloudInitISO(vmName);
-  await deleteCloudInitConfig(vmName);
   announceCloudInitChange(vmName);
 }
 
@@ -393,9 +397,10 @@ export async function updateCloudInit(vmName, config, log) {
   if (config.enabled === false) {
     const existing = await loadCloudInitConfig(vmName);
     const merged = mergeCloudInitDisablePayload(existing, config);
+    // Saved first, as in detachCloudInitDisk: the detach's VM change must find it.
+    await saveCloudInitConfig(vmName, merged);
     await ejectISO(vmName, 'sde', { removeSlot: true });
     await deleteCloudInitISO(vmName);
-    await saveCloudInitConfig(vmName, merged);
     announceCloudInitChange(vmName);
     return;
   }
