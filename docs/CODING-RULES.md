@@ -188,13 +188,14 @@ In projects with a web UI: `FRONTEND-RULES.md`.
   `Authorization` headers.
 - Never log secrets, tokens, credentials or whole request bodies.
 - Require a verified session on the WebSocket console routes, as on every other route.
-- Create temp directories that hold credentials with a restrictive umask.
+  `[PROJECT]`
+- Create temp directories that hold credentials with a restrictive umask. `[PROJECT]`
 
 ## 10. Code Quality
 
 - Remove all debug logging before committing.
 - Keep a small helper used in only one file inline.
-- Split large modules by **domain of functionality**, not arbitrarily.
+- Split large modules by **domain of functionality**, not arbitrarily. `[PROJECT]`
 - Never commit commented-out code: version control history recovers old code.
 - Match existing patterns over personal preference: the file's when editing, existing
   subsystems' when adding one.

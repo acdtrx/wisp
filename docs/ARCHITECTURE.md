@@ -13,8 +13,10 @@
   server serves the client and proxies `/api` and `/ws` to the backend; on macOS the
   backend runs stub managers (no libvirt, no containerd).
 - At startup the backend connects to libvirt and avahi over DBus and to containerd over
-  gRPC, and mounts the configured SMB mounts. On shutdown it closes the open streams and
-  disconnects the managers.
+  gRPC, and mounts the configured SMB mounts. On SIGTERM it stops accepting connections,
+  ends the open streams, disconnects the managers and exits within a bounded time. An
+  unhandled rejection or exception is logged and ends the process (settled 2026-11-15:
+  restored from the template).
 
 ### The client
 
@@ -61,6 +63,13 @@ page. The service worker keeps the app shell so a launch always boots React.
 - **The server is the source of truth**: VM metadata lives in domain XML, a container's
   configuration in its `container.json`, settings in `wisp-config.json` — never in the
   browser. containerd holds only runtime state (task status, metrics).
+- **Secrets are write-only and live in their owner's record** `[PROJECT]`: SMB passwords
+  and the OIDC client secret in `wisp-config.json`, secret env values and secret file
+  mounts in `container.json` (both `0600`), the cloud-init password as a hash in
+  `cloud-init.json`. The API never returns one, only a flag that it is on file, and an
+  edit that omits or blanks a secret keeps the stored one; each secret's exact rules are
+  in its spec (settled 2026-11-15: kept over the template's one `secrets.json`, whose
+  edits clear a secret they don't carry).
 - Write JSON state atomically (`writeJsonAtomic`: stage, fsync, rename); boot removes
   orphan temp files a crash left mid-rename.
 - What an earlier release wrote is brought to the current shape by state migrations during
@@ -88,10 +97,12 @@ page. The service worker keeps the app shell so a launch always boots React.
 /mnt/wisp/smb/                    # Typical SMB mount parent for network storage mounts
 ```
 
-## Backend: events
+## Backend: events `[PROJECT]`
 
 There is no central bus: each manager and module publishes its own events, and the
-stream to the client (Transport) subscribes like any other consumer.
+stream to the client (Transport) subscribes like any other consumer (settled 2026-11-15:
+kept over the template's one in-memory bus; the per-facade surfaces below serve every
+consumer, and nothing has called for more).
 
 - **Events are push, not pull**: subscribe-and-replay surfaces on each facade — they fire
   only on change, replay the current state to a new subscriber, and keep platform
@@ -133,19 +144,31 @@ stream to the client (Transport) subscribes like any other consumer.
 - **Each connect opens with the current state**: a new subscriber gets each topic's last
   frame, and the client replaces its list with it, so one reconnect replaces any stale
   state.
-- **What one view needs gets a scoped stream**, open only while the view is on screen:
-  per-workload stats and logs, the disk and USB streams. **Job progress** streams emit
-  until the job completes or fails, then close. No repeated-GET polling for live data.
+- **A topic's frame is its whole current state** `[PROJECT]`, on connect and on every
+  change, and a topic may be shaped for the screen that shows it (`home`) (settled
+  2026-11-15: kept over the template's one-record events and "records, not screens";
+  with one user the lists are small).
+- **What one view needs gets a scoped stream** `[PROJECT]`, open only while the view is
+  on screen: per-workload stats and logs, the disk and USB streams. **Job progress**
+  streams emit until the job completes or fails, then close. No repeated-GET polling for
+  live data (settled 2026-11-15: kept over the template's by-reference GETs and its one
+  connection per tab; logs, live stats and job progress are streams by nature, and the
+  scoped ones stay few enough for HTTP/1.1's six connections per origin).
 - **A stream that goes quiet is reopened**: the server writes a `: keepalive` comment
   every 25 s; the client re-arms a 60 s read watchdog on every chunk and reconnects with
   backoff when it fires. A frozen page can't run its watchdog, so every stream also
   resyncs on `visibilitychange → visible` and on `online` when it has had no bytes for
   longer than the keepalive. A 401 sends the user to sign in; a 404 (the stream's subject
   is gone, e.g. a deleted container's logs) stops the stream instead of retrying.
-- **Commands go in as POSTs; results come back through the stream.** The POST response
-  carries the ack and validation errors; the resulting state change arrives as an event
-  like any other (settled 2026-11-13: restored from the template, whose line had been
-  reworded to fit routes that hold the request open until the work is done).
+- **Commands answer once the work has started; the outcome comes through the stream.** A
+  command responds as soon as its input is valid and the work is underway, never waiting
+  for it to finish. It answers with an ack that names what to follow (the job or the
+  record), or with the error that kept it from starting (validation, a conflict, a
+  failed start). Everything after that (progress, the new state, a later failure)
+  reaches clients as events on the records they follow. A request that changes no state,
+  such as a check or a preview, answers with its result; so does a secret shown only
+  once. An instant command, a settings save included, answers with the ack too, never
+  its result (settled 2026-11-15, sharpening the template line restored 2026-11-13).
 - **Consoles are WebSockets under `/ws`**: VNC bridges the browser to QEMU's VNC port over
   TCP on `127.0.0.1` ([`specs/CONSOLE.md`](specs/CONSOLE.md)); the container shell drives
   containerd's exec with a PTY. Both authenticate with the session cookie the browser
@@ -162,7 +185,8 @@ stream to the client (Transport) subscribes like any other consumer.
   with platform implementations under `<module>/linux/` and `<module>/darwin/`. App glue —
   Wisp's own orchestration — stays flat at the top of `src/lib/`, and routes do HTTP
   concerns and call the facades and the glue. The fences between them are CODING-RULES
-  §7: one caller per external system, and managers free of Wisp glue.
+  §7: one caller per external system, and managers free of Wisp glue. The import graph
+  stays acyclic, enforced by a lint (settled 2026-11-15: restored from the template).
 - `frontend/src/`: `api/` (the fetch wrappers and the SSE client), `store/` (one Zustand
   store per subsystem), `components/` by domain, `apps/` (container-app config UIs),
   `pages/`, `hooks/`, `lib/`, `utils/`.

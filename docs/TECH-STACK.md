@@ -17,7 +17,9 @@
   callers), **`@grpc/grpc-js`** + proto-loader + protobufjs (containerd's gRPC API — sole
   caller `lib/containerManager/linux/`), **`fast-xml-parser`** (libvirt domain XML, never
   regex).
-- **Fastify 5** — JSON-schema validation at the boundary. Route **response schemas are
+- **Fastify 5.** **Schema validation: JSON Schema with ajv**, which ships inside Fastify
+  and checks every route's input. One error handler maps every failure, validation
+  errors included, to the failure shape (CODING-RULES §5). Route **response schemas are
   authoritative** for serialized output: add a new response field to the route schema in
   the same edit, or Fastify strips it. Plugins: cors, multipart (streamed uploads),
   static (serves the SPA + vendored noVNC), websocket (VNC proxy, container shell). CORS

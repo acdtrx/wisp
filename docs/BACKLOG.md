@@ -13,19 +13,19 @@ single ordering shared by every consumer. **Revisit trigger:** the existing sort
 demonstrably fight a real workflow — repeatedly hunting for a workload the sort keeps
 burying.
 
-**Short commands that return their result in the response.** ARCHITECTURE § Transport
-says a POST carries only the ack and validation errors, and the result arrives through the
-stream. Long operations follow it (they run as jobs since 2026-11-13); short ones such as
-a settings PATCH still answer with the new state, which mostly also reaches clients
-through the stream. **Revisit trigger:** a client shows stale state after a short command, or a short
-command turns out to run long.
+**Short commands answer with their result.** ARCHITECTURE § Transport (settled
+2026-11-15) has every command answer with an ack, and the outcome reach clients through
+the stream. Long operations follow it (they run as jobs since 2026-11-13); short ones
+(settings, sections, the home page, mounts, cloud-init, container and VM PATCHes) answer
+with the new state, the client reads it from the response, and some, settings among them,
+reach no stream at all. (ruled 2026-11-15: build it; the feature is to be written.)
+**Revisit trigger:** writing that feature.
 
-**Check Wisp's docs against the template for reworded rules.** ARCHITECTURE's "commands
-go in as POSTs; results come back through the stream" had been reworded to fit the code
-when the template was adopted, and the drift surfaced only through a timeout debate.
-Diff each doc against `../claude-template` and list every place a template rule was
-weakened rather than the code changed. **Revisit trigger:** the next template sync, or
-another rule found reworded.
+**The backend's import graph isn't checked for cycles.** ARCHITECTURE § Repo layout
+(settled 2026-11-15) wants it acyclic, enforced by a lint; `check-fences` checks the
+fences only, and only the frontend's chunk cycles fail a build. Fix shape: a cycle check
+in `check-fences`. **Revisit trigger:** the next work on the lints, or a backend boot that
+fails on a half-initialised import.
 
 **A hung CIFS mount blocks Node's filesystem calls.** Listings, deletes and copies on an
 unresponsive SMB destination block the libuv thread pool and can't be timed out; running
@@ -148,8 +148,10 @@ database assumes `/var/lib/pacman`. **Revisit trigger:** an Arch host with a cus
 **Route errors carry the message, not a stable code.** `handleRouteError` answers
 `error: err.message`, while CODING-RULES §5 wants `error` to be the stable code and the
 message in `detail`; `specs/ERROR-HANDLING.md` describes the message form (found
-2026-11-12). **Revisit trigger:** a client needs to branch on a route error, or the next
-work on the error contract.
+2026-11-12). The handlers also catch and call `handleRouteError` themselves (96 places),
+while TECH-STACK (restored 2026-11-15) wants one error handler to map every failure.
+**Revisit trigger:** a client needs to branch on a route error, or the next work on the
+error contract.
 
 **Cloud-init: no way to remove a password in the UI.** A blank password field on edit
 keeps the stored one (settled 2026-11-12), so the only way to drop a password is deleting
