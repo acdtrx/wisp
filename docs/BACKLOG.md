@@ -13,6 +13,12 @@ single ordering shared by every consumer. **Revisit trigger:** the existing sort
 demonstrably fight a real workflow — repeatedly hunting for a workload the sort keeps
 burying.
 
+**Split CONTAINERS.md and UI.md by area.** Like API.md (split 2026-11-15), both are large
+enough that an agent reading one for a single area loads all of it: `specs/CONTAINERS.md`
+is about 129 KB, `specs/UI.md` about 78 KB. Shape: a shared core file plus one file per
+area, content moved unchanged, links fixed across the docs. **Revisit trigger:** the next
+feature that works in either spec.
+
 **Six job progress streams.** Job routes report on `GET /api/jobs/:jobId/progress`, while
 VM create and backup, container create and backup, the image-update check and library
 downloads keep their own job stores and progress routes (found in the 2026-11-15 command

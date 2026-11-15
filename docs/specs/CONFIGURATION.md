@@ -75,7 +75,7 @@ JSON file managed by the Settings UI. Default path: `config/wisp-config.json` (o
 
 ### Home page object (`homepage`)
 
-Only the human half of the Home page is persisted — every tile is re-derived from live workload data on each read (see [API.md § Home page](API.md#home-page) and [UI.md § Tab: Home](UI.md#tab-home)). A Wisp with no `homepage` key renders a complete launcher.
+Only the human half of the Home page is persisted — every tile is re-derived from live workload data on each read (see [API-WORKSPACE.md § Home page](API-WORKSPACE.md#home-page) and [UI.md § Tab: Home](UI.md#tab-home)). A Wisp with no `homepage` key renders a complete launcher.
 
 ```jsonc
 {

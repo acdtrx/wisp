@@ -55,7 +55,7 @@ SMB passwords never leave the server: `GET /api/settings` and `GET /api/host/mou
 
 ### Mount operations
 
-**Host → Host Mgmt → Storage**: add/edit/remove mounts via row-scoped **POST** / **PATCH** / **DELETE** on `/api/host/mounts`; **Mount**, **Unmount**, and **Check** (SMB only) per mount; status (mounted or not). See [API.md](API.md).
+**Host → Host Mgmt → Storage**: add/edit/remove mounts via row-scoped **POST** / **PATCH** / **DELETE** on `/api/host/mounts`; **Mount**, **Unmount**, and **Check** (SMB only) per mount; status (mounted or not). See [API-HOST.md](API-HOST.md).
 
 ## Backup (`backupLocalPath`, `backupMountId`)
 

@@ -1,6 +1,6 @@
 # UI Specification
 
-Layout, visual system, navigation, and user-visible behavior for Wisp. **API request/response contracts** belong in [API.md](API.md). **Row-level save rules, table chrome, and documented exceptions** (e.g. VM NIC full-array save, container env full-map save) are in [FRONTEND-RULES.md](../FRONTEND-RULES.md), UI patterns.
+Layout, visual system, navigation, and user-visible behavior for Wisp. **API request/response contracts** belong in [API.md](API.md) and its `API-*.md` area files. **Row-level save rules, table chrome, and documented exceptions** (e.g. VM NIC full-array save, container env full-map save) are in [FRONTEND-RULES.md](../FRONTEND-RULES.md), UI patterns.
 
 ## Design Language
 
@@ -344,7 +344,7 @@ The Host panel is opened from the left panel "Host" entry. It uses the same layo
 
 The launcher, and the app's landing page — homelab-homepage tiles for the services this Wisp hosts, derived from data Wisp already holds. First tab, before Overview. No host-vitals strip: the top bar's `HostStatsBar` already carries it.
 
-Components live in `frontend/src/components/home/` (`HomePanel.jsx`, `HomeGroup.jsx`, `HomeTile.jsx`, `HomeMotes.jsx`, `TileGroupPicker.jsx`, `ManualLinkModal.jsx`); data comes from `homeStore` subscribing to the **`home`** topic on `/api/events` (see [API.md](API.md)). The server sends the full `{ tiles, groups }` envelope, so the page is correct on first paint with **zero configuration**.
+Components live in `frontend/src/components/home/` (`HomePanel.jsx`, `HomeGroup.jsx`, `HomeTile.jsx`, `HomeMotes.jsx`, `TileGroupPicker.jsx`, `ManualLinkModal.jsx`); data comes from `homeStore` subscribing to the **`home`** topic on `/api/events` (see [API-WORKSPACE.md](API-WORKSPACE.md)). The server sends the full `{ tiles, groups }` envelope, so the page is correct on first paint with **zero configuration**.
 
 #### Tile derivation
 

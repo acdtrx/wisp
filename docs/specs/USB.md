@@ -21,7 +21,7 @@ Each device is identified by:
 | `productId` | 4-character hex product ID (e.g. "c077") |
 | `name` | Human-readable device name (e.g. "Logitech USB Mouse") |
 
-**Live updates:** The backend watches `/dev/bus/usb` (and per-bus subdirectories) with `fs.watch`. When the device set changes, clients subscribed to `GET /api/host/usb/stream` receive a new JSON array (see [API.md](API.md)). `GET /api/host/usb` still returns a one-off snapshot (same shape).
+**Live updates:** The backend watches `/dev/bus/usb` (and per-bus subdirectories) with `fs.watch`. When the device set changes, clients subscribed to `GET /api/host/usb/stream` receive a new JSON array (see [API-HOST.md](API-HOST.md)). `GET /api/host/usb` still returns a one-off snapshot (same shape).
 
 On macOS (development), host USB listing returns an empty array.
 

@@ -51,7 +51,7 @@ import { resolveLibraryPath, assertPathInsideAllowedRoots } from '../lib/paths.j
 import { createAppError, handleRouteError, isExpectedAppError } from '../lib/routeErrors.js';
 import { validateVMName } from '../lib/validation.js';
 
-/** The values Wisp writes into `<video><model type>` and `<graphics type>` (API.md). */
+/** The values Wisp writes into `<video><model type>` and `<graphics type>` (API-VMS.md). */
 const VIDEO_DRIVERS = ['virtio', 'qxl', 'vga'];
 const GRAPHICS_TYPES = ['vnc', 'spice'];
 

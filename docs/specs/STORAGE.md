@@ -157,7 +157,7 @@ Storage mounts are designed to be referenced by other features. Current consumer
 
 ## API
 
-See [API.md](API.md) §**Storage / Mounts** for the full `/api/host/mounts/*` and `/api/host/disks/*` endpoints.
+See [API-HOST.md](API-HOST.md) §**Storage / Mounts** for the full `/api/host/mounts/*` and `/api/host/disks/*` endpoints.
 
 ## UI
 

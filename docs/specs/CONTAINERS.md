@@ -258,7 +258,7 @@ Host device passthrough for containers. Unlike VM PCI passthrough (VFIO), the ho
 Individual env vars can be marked `secret: true` to hide their values from the UI. Secret values are persisted in `container.json` like any other env var (the OCI process needs them at runtime), but:
 
 - **`GET /api/containers/:name`** strips the value and returns `{ value: null, secret: true, isSet: boolean }` for every secret entry. `isSet` is `true` when a value is stored on disk.
-- **`PATCH /api/containers/:name`** only accepts env-var changes through the **`envPatch`** delta (a plain `env` field is rejected with `CONFIG_ERROR`). See API.md for the delta shape.
+- **`PATCH /api/containers/:name`** only accepts env-var changes through the **`envPatch`** delta (a plain `env` field is rejected with `CONFIG_ERROR`). See [API-CONTAINERS.md](API-CONTAINERS.md) for the delta shape.
 - Flipping a key from `secret: true` to `secret: false` without providing a new value clears the stored value server-side. This is intentional: since the UI never received the old value, there is nothing to preserve. The UI warns the user before flipping the toggle.
 - Creating a brand-new secret key without a `value` is rejected with `CONFIG_ERROR` (`Secret env var "X" requires a value`).
 

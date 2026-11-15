@@ -7,7 +7,10 @@ and many changes reach no stream, so a second tab never sees them. Closes the ba
 entry "Short commands answer with their result".
 
 **Specs and docs changed:** `specs/API.md`: Command responses and the `changes` topic
-(written with this feature), and each route's success response as its milestone lands;
+(written with this feature); each route's success response in its area file
+(`specs/API-<AREA>.md`) as its milestone lands: settings in API-HOST, sections and the
+home page in API-WORKSPACE, VMs and cloud-init in API-VMS, containers in API-CONTAINERS,
+and milestone 5 across API-HOST, API-LIBRARY, API-CONTAINERS (images) and API-AUTH;
 `specs/MCP.md`: tools are exempt (written); `specs/SETTINGS.md` where it describes a
 response; `ARCHITECTURE.md` § Transport: the `changes` topic, in milestone 1.
 
@@ -102,4 +105,5 @@ image delete, token revoke, and `POST /api/updates/check` (204, the status on `{
   - A new API token still shows its secret once in tab A, and appears in tab B's token
     list without it.
   - `npm run route-access` and a scan of `backend/src/routes/` find no state-changing
-    route outside the exceptions in API.md that answers with a body other than the acks.
+    route outside the exceptions in API.md, Command responses, that answers with a body
+    other than the acks.

@@ -1,0 +1,297 @@
+# API — Containers
+
+Containers, their mounts, services, logs, images and app config. Shared contracts (access levels, errors, command responses, jobs, the events stream): [API.md](API.md).
+
+## Containers
+
+Routes with a `:name` path parameter validate it via `validateContainerName` (length 1–63, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..`/`/`/`\`, no surrounding whitespace); failures return 422 `INVALID_CONTAINER_NAME`.
+
+Start, stop, restart, kill, delete, `PATCH`, the mount and service row routes, backup and restore take the container's [operation lock](CONTAINERS.md#per-container-operation-lock): while another of them (or the restart policy's start) runs on the same container they answer **409** `CONTAINER_BUSY`, the message naming the running operation.
+
+### GET /api/containers · `read`
+
+List all containers (summary).
+
+**200:** `[{ name, type: "container", image, state, iconId, autoBackup, updateAvailable, scheduledRestart, pendingRestart }]`. `pendingRestart` is the restart-required flag while it is still in force (`{ since }`), else `null` — as on the detail payload, so an open container page drops its badge after a restart done elsewhere (settled 2026-11-12). `scheduledRestart` is `{ attempt, at }` (epoch ms) while the restart policy waits out a backoff for this stopped container, else `null` (see CONTAINERS.md → *Restart policy*). List payload is intentionally minimal — only what the sidebar and the Backups panel render. `updateAvailable` is set by the image update checker (see CONTAINERS.md → *Image updates*) and defaults to `false` when the field is not set on disk. `autoBackup` mirrors the `container.json` flag (drives the auto-backup badge in Host → Backups). Section assignment is not part of this payload — read it from `GET /api/sections` (see [Sections](API-WORKSPACE.md#sections)). Detail fields (`pid`, `cpuLimit`, `memoryLimitMiB`, `restartPolicy`, `autostart`, etc.) are returned by `GET /api/containers/:name`; runtime samples (`uptime`, live CPU/IO) come from the per-container stats SSE.
+
+`iconId` is the optional UI icon key (same registry as VM icons); omit or `null` means the client uses the default container icon.
+
+Live updates arrive on the `containers` topic of `GET /api/events` (see [Events stream](API.md#events-stream-sse)): the same array, pushed when containerd emits a relevant event (`tasks/start`, `tasks/exit`, `tasks/delete`, `containers/create`, `containers/update`, `containers/delete`, etc.), when a `container.json` is written by wisp, or when an image-update check completes. No polling timer.
+
+### POST /api/containers · `admin`
+
+Create a new container (async job with image pull). The container is **defined in containerd but not started** (no task, no CNI setup yet) so mounts and settings can be configured before **Start**.
+
+**Body:** `{ name, image, iconId?, app?, appConfig? }`
+
+Optional `iconId` selects a workload icon from the same set as VMs (persisted in `container.json`).
+
+Optional `app` is an app registry ID (e.g. `"caddy-reverse-proxy"`) — creates a custom app container with a dedicated config UI. If `app` is set without `appConfig`, the app module's default config is used. Unknown `app` values → **422**. See [CUSTOM-APPS.md](CUSTOM-APPS.md).
+
+On create, the server writes defaults in `container.json` (empty `mounts`, bridge `network` with a generated MAC and the default container parent bridge, `localDns: true`, etc.). Use **PATCH** to change command, resources, env, mounts, and network before starting.
+
+**200:** `{ jobId: "uuid", title: string }` — `title` is e.g. `Create <name>` | **409:** `CONTAINER_EXISTS` — the name is taken in containerd or on disk | **422:** `INVALID_CONTAINER_NAME`
+
+### GET /api/containers/create-progress/:jobId · `read`
+
+SSE stream for container creation progress. Events: `{ step: "validating"|"using-local"|"pulling"|"pulled"|"creating"|"created"|"done"|"error", ... }`
+
+The `using-local` step replaces `pulling`/`pulled` when the exact literal `image` in the request body already exists in containerd's `wisp` namespace (e.g. an operator pre-loaded it with `ctr -n wisp image import`, or the Create Container form's picker selected it verbatim). In that case the backend skips ref normalization and the Transfer pull entirely, so the sequence is `validating` → `using-local` → `creating` → `created` → `done`. For registry-named refs (`nginx:latest` etc.) the sequence is unchanged: `validating` → `pulling` → `pulled` → `creating` → `created` → `done`.
+
+`created` (`{ step, name, imageDigest }`) means the containerd definition exists; it is not terminal — an app container still writes its config files after it, and a failure there rolls the container back and ends the job with `error`. The terminal `{ step: "done", name }` comes only from job completion.
+
+### GET /api/containers/images · `read`
+
+List OCI images in the containerd `wisp` namespace (same store used when creating containers).
+
+**200:** `[{ name, digest, size, updated }]` — `name` is the full image reference; `digest` is the manifest descriptor digest; **`size`** is the total **compressed** content-store size in bytes (sum of the image manifest’s config + layer descriptor sizes for this host’s platform), not the small top-level index/manifest blob alone; **`updated`** is ISO 8601 from containerd image `updatedAt` / `createdAt`, or `null` if timestamps are missing. If compressed size cannot be resolved, `size` falls back to the top-level descriptor size.
+
+**503:** `NO_CONTAINERD` when containerd is unavailable.
+
+### DELETE /api/containers/images · `admin`
+
+Remove an image from containerd. Query parameter **`ref`** (required): the image's name exactly as `GET /api/containers/images` lists it (e.g. `docker.io/library/nginx:latest`, or a local-only `myapp:v1`). It is not normalized — a short ref only deletes an image listed under that literal name.
+
+**202:** `{ jobId, title }` — a [job](API.md#job-routes) (the delete waits for containerd's garbage collection, up to 2 min); `done`: `{ ref }`
+
+**404:** `CONTAINER_IMAGE_NOT_FOUND`
+
+**409:** `CONTAINER_IMAGE_IN_USE` — at least one Wisp container’s `container.json` `image` is this name, verbatim or after reference normalization. Delete or reconfigure those containers first.
+
+**422:** `INVALID_CONTAINER_IMAGE_REF` — empty or missing `ref`.
+
+**503:** `NO_CONTAINERD`
+
+### POST /api/containers/images/check-updates · `admin`
+
+Start an image update check in the background. **Body:** `{ ref?: string }` — when `ref` is omitted (or empty) a bulk check runs over every image in the library; when `ref` is given, only that image is checked.
+
+For each image, the current top-level digest is recorded, the image is re-pulled via the Transfer service (idempotent), and the new digest is compared. Nothing is written to `container.json`: `updateAvailable` is derived per running/paused container from its stored `imageDigest` vs. the library digest. The check ends by refreshing the image-meta sidecar and the container list (pushed on the `containers` SSE topic) before the job's `done` event, so the badge is visible when the job completes. The hourly sweep and MCP `check_image_updates` run the same check. See CONTAINERS.md → *Image updates*.
+
+**200:** `{ jobId, title }`. Subscribe to `GET /api/containers/images/check-updates/:jobId` for progress.
+
+### GET /api/containers/images/check-updates/:jobId · `read`
+
+SSE stream for the check-updates job. Events:
+
+- `{ step: "checking", ref, index, total }` — check is starting on this image (bulk: index within total; single: 1/1).
+- `{ step: "unchanged", ref }` — digest did not change.
+- `{ step: "updated", ref, oldDigest, newDigest }` — the registry returned new content; layers were downloaded.
+- `{ step: "skipped", ref, reason }` — pull failed (local-only ref, unreachable registry, auth required, etc.); the sweep continues.
+- `{ step: "flagged-container", name }` — this running/paused container now reads `updateAvailable: true`.
+- `{ step: "done", checked, updated, flaggedContainers, lastCheckedAt }` — terminal.
+- `{ step: "error", error, detail }` — terminal; unexpected failure (e.g. containerd disconnected mid-sweep). Single-image failures use `skipped` instead.
+
+**404:** job not found / expired (TTL 5 min after terminal).
+
+### GET /api/containers/images/update-status · `read`
+
+Cached summary of the last check. **200:** `{ lastCheckedAt: ISO8601 | null, imagesChecked: number, imagesUpdated: number }`. In-memory; resets on backend restart.
+
+### GET /api/containers/:name · `read`
+
+Full container config including live state.
+
+**200:** Full `container.json` fields plus `state`, `pid`, `uptime`, `type`, and `mdnsHostname` when Local DNS is enabled and registration is active. `network.ip` / `network.mac` are set after CNI DHCP; a lease that lands late is saved by the network probe (see CONTAINERS.md). `pendingRestart` (`{ since }`) is present only while the restart-required rule still holds — a flag older than the running task's start is left out of the response; the read writes nothing (CONTAINERS.md → *Config changes that need a restart*).
+
+The **`env`** field uses a structured shape: `{ KEY: { value, secret?, isSet? } }`. Non-secret entries are returned as `{ value: "plaintext" }`. Secret entries are returned as `{ value: null, secret: true, isSet: boolean }` — the value is never sent to the client, and `isSet` is `true` when a value is stored on disk. See CONTAINERS.md → *Secret env vars*.
+
+Secret **file mounts** in **`mounts`** (a stored `secret: true`, or declared secret by the container's app module) carry `secret: true`, `isSet` (the file is non-empty) and `sizeBytes` (`null` when no file is on disk); their content is never part of any response. See CONTAINERS.md → *Secret file mounts*.
+
+**404:** `{ error, detail }` if container not found.
+
+### GET /api/containers/:name/mounts/usage · `read`
+
+Host-side disk usage of each bind mount. On-demand snapshot (not a live feed): each mount's bind source — Local `files/<name>` dir or storage `mountPath/subPath` — is sized as the sum of file byte lengths (stdlib walk, symlinks not followed). Can take seconds for large data directories.
+
+**200:** `{ name, mounts: [{ name, containerPath, type, source, hostPath, sizeBytes, partial }] }`
+
+- `source`: `local` | `storage` | `tmpfs` | `missing` (`missing` = the mount's `sourceId` no longer resolves to a configured storage mount).
+- `hostPath` / `sizeBytes`: `null` for `tmpfs` (no host backing) and `missing`.
+- `partial`: `true` when some entries were unreadable or vanished mid-walk, or the walk hit its **20 s** budget (settled 2026-11-13) — `sizeBytes` is an undercount.
+
+**404:** `{ error, detail }` if container not found.
+
+### PATCH /api/containers/:name · `admin`
+
+Partially update container config.
+
+**Body:** Any subset of container.json fields, except environment variables — those must use **`envPatch`** (see below). **`iconId`:** set to a string to choose a UI icon (same ids as VM icons), or `null` / empty string to clear and use the client default. **`localDns`:** boolean toggle for mDNS registration. **`autoBackup`:** boolean — include this container in the daily scheduled backup (no restart needed). **`restartPolicy`:** `never` | `on-failure` | `unless-stopped` | `always`, anything else → **422** `CONFIG_ERROR`; applies to the next exit, no restart needed (CONTAINERS.md → [Restart policy](CONTAINERS.md#restart-policy)). **`image`:** non-empty string (trimmed), else **422** `INVALID_CONTAINER_IMAGE_REF`; stored exactly as create stores it — the literal name when containerd holds an image by that name, else Docker-normalized (`nginx:1.27` → `docker.io/library/nginx:1.27`; CONTAINERS.md → *Image Management*). A changed image on a running container sets `requiresRestart`. **`runAsRoot`:** boolean — when `true`, the container process runs as UID/GID 0 instead of the Wisp deploy user (required for images that write to root-owned paths inside the container, e.g. OpenWebUI); requires restart.
+
+**`name`:** Renaming the container. The container must be **stopped** (no running/paused task) — otherwise **409** `CONTAINER_MUST_BE_STOPPED`. The new name is validated with the same rules as create (1–63 chars, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..` / path separators); invalid → **422** `INVALID_CONTAINER_NAME`. Conflicts with an existing container or directory → **409** `CONTAINER_EXISTS`. The rename runs first, then any other fields in the body apply to the renamed container; the response always carries the name actually in effect (`{ ..., name: <newOrUnchangedName> }`). URL paths and SSE channels under the old name stop responding immediately — clients should follow the response and re-subscribe under the returned `name`. The on-disk container directory and the containerd container record are renamed in lockstep; the (ephemeral) rootfs snapshot is dropped and re-prepared on next start. See CONTAINERS.md → [Rename](../specs/CONTAINERS.md#rename).
+
+**`envPatch`:** Delta applied to the container's environment variables. Keyed by env var name:
+
+- `envPatch[KEY] = { value: "new", secret?: boolean }` — upsert. Fields omitted on an existing entry are preserved.
+- `envPatch[KEY] = null` — remove the entry.
+
+Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwise **422** `CONFIG_ERROR`). Flipping an existing entry from `secret: true` → `secret: false` without providing a new `value` clears the stored value to `""` (the UI warns the user before doing this). Renames are expressed as `{ OLD: null, NEW: { value: "..." } }`. Sending a top-level `env` field in the PATCH body is rejected with **422** `CONFIG_ERROR` (`Use envPatch to update environment variables`). An `envPatch` that changes the stored env of a running container sets `requiresRestart: true`; one that leaves it as it was (e.g. re-sending the current values) does not.
+
+**`network`:** Merged with the existing object (not replaced wholesale). `network.type` must be `bridge` after merge, else **422** `CONFIG_ERROR`; **`network.mac`** is required after merge (unicast format). While the task is **running or paused**, **`network.ip`** from the body is ignored (server-owned), and changing **`network.mac`** or **`network.interface`** returns **409** `CONTAINER_MUST_BE_STOPPED`. Invalid MAC → **422** `INVALID_CONTAINER_MAC`.
+
+**`mounts`:** Replaces the entire mounts array (bulk update). Prefer row-scoped mount routes below for UI editing. Each element: `{ type: "file"|"directory"|"tmpfs", name, containerPath, ... }`. For `file`/`directory`: `readonly`, optional `sourceId`/`subPath` (directories only), `containerOwnerUid`/`Gid`, `secret` (file only, boolean — an entry that drops it from a secret mount, by name or as a `mountRenames` target, empties that file first). For `tmpfs`: `sizeMiB` (1–2048, default 64); `sourceId`/`subPath`/`readonly`/`containerOwnerUid`/`Gid` are rejected. **`name`** is a single path segment (storage key under the container’s `files/` directory; tmpfs entries have no on-disk artifact). Duplicate **`name`** or duplicate **`containerPath`** → **422** `CONTAINER_MOUNT_DUPLICATE`. Invalid shape → **422** `INVALID_CONTAINER_MOUNTS`. Mounts removed from the array have their on-disk artifacts deleted automatically (tmpfs has no artifact).
+
+**`mountRenames`:** Optional, only together with `mounts`: `{ "<oldName>": "<newName>" }` marks entries of the new list as renamed current mounts, so Local data moves from `files/<old>` to `files/<new>` instead of being deleted with the old row. Rules and errors: [CONTAINERS.md § Mount entry](CONTAINERS.md#mount-entry). Local mounts dropped from `mounts` without a rename have their data deleted.
+
+**`devices`:** Replaces the entire devices array. Each element: `{ type: "gpu", device }`. v1 caps the array at one entry; `type` must be `"gpu"`; `device` must match `^/dev/dri/renderD\d+$`. Invalid shape → **422** `INVALID_CONTAINER_DEVICES`. Always requires a task restart on running containers. The configured device must exist and be a character device at start; otherwise the container fails to start with **503** `CONTAINER_DEVICE_MISSING`. See CONTAINERS.md → [Devices entry](../specs/CONTAINERS.md#devices-entry) for details.
+
+**`services`:** Not editable via PATCH — returns **422** `CONFIG_ERROR`. Use the row-scoped service endpoints (`POST` / `PATCH` / `DELETE` `/api/containers/:name/services[/:port]`) below.
+
+**`appConfig`:** (app containers only) Structured config for the app. Validated by the app module; on success, regenerates derived env, mounts, and mount files. Sets `pendingRestart` (`{ since }`) if the container is running and the change can't be live-reloaded. Sending `envPatch` or `mounts` on an app container → **422** `APP_CONFIG_ONLY`.
+
+**`eject: true`:** (app containers only) Removes `app`, `appConfig`, and `pendingRestart` from the config. Generated env vars and mounts are preserved as-is and become directly editable. One-way operation.
+
+**200:** `{ requiresRestart: boolean, reloaded?: boolean, name: string }` — `reloaded: true` when the app was live-reloaded (no restart needed). `name` always reflects the container's current name (unchanged unless the body included a `name` rename).
+
+**422:** `APP_RELOAD_FAILED` — the app's reload command exited non-zero. The persisted config and mount file contents are rolled back to the previous (accepted) state, matching what the running app kept serving; check `detail` for stderr.
+
+### DELETE /api/containers/:name · `admin`
+
+Delete a container. Query param: `deleteFiles` (default `true`). With `deleteFiles=false` the container directory keeps only `files/` (mount data) — `container.json`, run logs and the rest are removed, so the container disappears from the list. Creating a container with the same name then fails with **409** `CONTAINER_EXISTS` until that directory is moved or removed.
+
+**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_BUSY`
+
+### POST /api/containers/:name/start · `admin`
+
+Start a stopped container.
+
+**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_ALREADY_RUNNING`, `CONTAINER_BUSY`
+
+### POST /api/containers/:name/stop · `admin`
+
+Stop a running container (SIGTERM + grace period). On a stopped container with a restart-policy restart scheduled, cancels that restart.
+
+**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name, restartCancelled: boolean }` — `restartCancelled: true` when a scheduled restart was cancelled | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_NOT_RUNNING` (not running and nothing scheduled), `CONTAINER_BUSY`
+
+### POST /api/containers/:name/restart · `admin`
+
+Restart a container (stop + start).
+
+**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_BUSY`
+
+### POST /api/containers/:name/kill · `admin`
+
+Kill a container (SIGKILL). Same scheduled-restart handling as Stop.
+
+**200:** `{ ok: true, restartCancelled: boolean }` | **409:** not running and nothing scheduled
+
+### GET /api/containers/:name/stats · `read`
+
+SSE stream for per-container stats.
+
+- **Query:** `?intervalMs=` (default **3000**, min **2000**, max **60000**) — push interval in milliseconds for sampled metrics (CPU, memory, uptime).
+- **Event data:** `{ state, cpuPercent, memoryUsageMiB, memoryLimitMiB, uptime, pid, mdnsHostname, ip }` (and related fields from `getContainerStats`).
+- `mdnsHostname` (registered `<hostname>.local`, or `null`) and `ip` (CNI-assigned address, or `null`) are re-read from the live container config on every tick. Both only exist once the container is *running*, so they cannot ride the `GET /api/containers/:name` snapshot the client takes when it selects a workload — clients must read them from this stream, exactly as the VM stats stream carries `mdnsHostname`/`guestIp`.
+- **Errors:** `{ error, detail, code }` (same shape as other SSE error payloads).
+
+Default interval is **3s** when `intervalMs` is omitted.
+
+### GET /api/containers/:name/runs · `read`
+
+List log runs for a container. Each start creates a new run under `runs/<runId>.log` with a sidecar `runs/<runId>.json` holding timing + exit status. The newest 10 runs are kept (older pairs pruned on new-run allocation).
+
+**200:** `{ runs: [{ runId, startedAt, endedAt, exitCode, imageDigest, logSizeBytes }, ...] }` — newest first. `endedAt` / `exitCode` are null for the currently-running run.
+
+### GET /api/containers/:name/logs · `read`
+
+SSE stream for a single run's logs. Initial event: `{ type: "history", lines, runId }`. Subsequent: `{ type: "line", line }`.
+
+- **Query:** `?runId=<runId>` — optional. Omit (or pass an empty value) to stream the newest run (the currently-running one if any, else the most recent completed run). Runs that have ended are served from disk and then idle-tailed — the SSE connection stays open with no new lines until the client disconnects. The history is the last 500 complete lines; the live tail continues from the exact byte where the history ended, so every line arrives once, in order, never split — a line still being written arrives when its newline lands (or when the run ends). See CONTAINERS.md → *Live log stream*.
+- **Errors:** `CONTAINER_RUN_NOT_FOUND` (404) if a non-existent or malformed `runId` is requested. A history read failure after the stream opened sends one `{ error, detail, code }` event and ends the stream.
+- **Empty state:** containers with no runs yet (never started) return a single history event with `lines: []` and `runId: null`.
+
+### GET /api/containers/:name/runs/:runId/log · `read`
+
+Download one run's log file. Responds with `Content-Type: text/plain; charset=utf-8` and an RFC 5987 `Content-Disposition: attachment; filename*=UTF-8''<percent-encoded(name-runId.log)>` header. Streams the file directly from disk. `runId` must match `^[a-zA-Z0-9._-]+$`.
+
+**404:** `CONTAINER_RUN_NOT_FOUND` if the run does not exist. **422:** invalid `runId` format.
+
+### POST /api/containers/:name/mounts · `admin`
+
+Append one bind mount (row-scoped). **Body:** `{ type: "file"|"directory"|"tmpfs", name, containerPath, ... }` (same shape as one element of **`mounts`** in **PATCH**; `readonly`/`sourceId`/`subPath`/`containerOwnerUid`/`Gid` for file/directory; `secret` for file; `sizeMiB` for tmpfs). A new secret file mount starts empty (`isSet: false`) — write its content with **PUT** content or the file upload.
+
+**200:** `{ requiresRestart: boolean }` | **422:** `INVALID_CONTAINER_MOUNTS`, `CONTAINER_MOUNT_DUPLICATE`, `APP_CONFIG_ONLY` on any app container (its mounts come from `appConfig`)
+
+### PATCH /api/containers/:name/mounts/:mountName · `admin`
+
+Update one mount by its current storage **`name`** (URL segment). **Body:** optional subset of `{ name, containerPath, readonly, sourceId, subPath, containerOwnerUid, containerOwnerGid, secret }` for file/directory mounts (`secret` on file mounts only), or `{ name, containerPath, sizeMiB }` for tmpfs mounts (other fields rejected on tmpfs). Renaming **`name`** moves `files/<oldName>` to `files/<newName>` on disk; tmpfs renames are config-only. **`secret: false`** on a secret mount empties its file first (write-only content can't be revealed by dropping the flag); a change of `secret` alone needs no restart (`requiresRestart: false`).
+
+**200:** `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** duplicate path/name, `INVALID_CONTAINER_MOUNTS`, `APP_CONFIG_ONLY` (mount of an app container — see CUSTOM-APPS.md § Mount content routes)
+
+### DELETE /api/containers/:name/mounts/:mountName · `admin`
+
+Remove one mount and delete its `files/<mountName>` backing store (tmpfs has no backing store; its row is removed config-only).
+
+**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **409:** `CONTAINER_BUSY` | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
+
+### Mount backing store (`files/<mountName>`)
+
+Multipart **file** upload: a single file part (field name typically **`file`**). The mount must already exist in `container.json`.
+
+The file part is streamed as it arrives — for a **file** mount into a temp file beside the mount's file in `files/` (renamed over it once the whole body has been read: an atomic replace, and the reply follows the upload at once), for a **zip** into a staging file inside the container directory (handed to the extract job) — so every rejection below leaves the mount untouched. The temp file is removed on any failure or abort; one a crash leaves behind carries the atomic-write suffix the boot cleanup sweeps (settled 2026-11-14). Field parts are ignored, before or after the file.
+
+**400:** `BAD_MULTIPART_TOO_MANY_FILES` if more than one file part (extra parts are read and discarded first) | plain `{ error, detail }` if no file part. **404:** container not found. **422:** `UPLOAD_TOO_LARGE` (`File too large`) past the multipart `fileSize` limit (50 GiB). An upload whose body sends nothing for **60 s** is dropped (settled 2026-11-13; also the PUT content body).
+
+(settled 2026-10-16: the file part is consumed while iterating, never held across later parts. busboy finishes a body only after every file stream has been read to its end, and `@fastify/multipart` ≥ 10.1 ends the parts iterator only when busboy finishes — holding the part to check for a second file hung every upload; on 10.0 it hung only once the body outgrew the stream buffers (observed between 70 and 200 KB). Staging rather than streaming straight into the mount keeps the one-file and size rejections from half-applying.)
+
+### POST /api/containers/:name/mounts/:mountName/file · `admin`
+
+Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an existing file.
+
+**200:** `{ name, size, modified }` | **422:** `APP_CONFIG_ONLY` (app-managed mount — see GET content below). Works on secret mounts (write-only).
+
+### POST /api/containers/:name/mounts/:mountName/zip · `admin`
+
+Multipart: one file part. Mount must have **`type: "directory"`** (Local, not storage-sourced). Once the upload is received and its entry paths pass the zip-slip check (**`unzip -Z1`**), the extract is a [job](API.md#job-routes): it clears `files/<mountName>/` and extracts the zip with the system **`unzip`** binary, holding the container's operation lock.
+
+**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name, mount }` | **409:** `CONTAINER_BUSY` | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged) | **Job errors:** `CONTAINER_ZIP_EXTRACT_TIMEOUT` (the extract made no progress for its bound), `CONTAINER_ZIP_INVALID` (unzip failed)
+
+### GET /api/containers/:name/mounts/:mountName/content · `admin`
+
+**File** mounts only. Returns the backing file as UTF-8 text for the in-app editor.
+
+**Secret file mounts are refused for every caller** (session or token, any scope) with **403** `CONTAINER_MOUNT_SECRET` — a stored `secret: true`, or a file the container's app module declares secret (tiny-samba `tiny-samba-passwords`; zot `htpasswd`, `session-keys`, and `config-json` while OIDC is on). Their content is write-only: replace it with **PUT** or the file upload, never read it back. Non-secret files of app containers (Caddy's `Caddyfile`, …) are readable; *writes* to any app-managed mount stay refused with `APP_CONFIG_ONLY` (see PUT below). (settled 2026-10-16: P5.2 replaced the earlier refuse-all-app-mounts read guard with this generic secret rule — refusal for all callers, no token-only special case.)
+
+**200:** `{ content: string }` — UTF-8 text (max **512 KiB** decoded size on disk).
+
+**403:** `CONTAINER_MOUNT_SECRET` | **404:** `CONTAINER_NOT_FOUND`, `CONTAINER_MOUNT_NOT_FOUND` | **422:** `CONTAINER_MOUNT_TYPE_MISMATCH`, `CONTAINER_MOUNT_FILE_TOO_LARGE`, `CONTAINER_MOUNT_FILE_NOT_UTF8`, `CONTAINER_MOUNT_SOURCE_MISSING` (no file on disk yet)
+
+### PUT /api/containers/:name/mounts/:mountName/content · `admin`
+
+**Body:** JSON `{ "content": string }`. Replaces the backing file with UTF-8 bytes (max **512 KiB** encoded length). The route's `bodyLimit` is set just above the content cap to reject oversized payloads at the parser before reaching the handler; the handler enforces the exact byte cap on the decoded content.
+
+Works on secret mounts (write-only); `{ "content": "" }` clears one.
+
+**200:** `{ ok: true }` | **413:** request body too large | **422:** same family as GET for type/size/encoding, plus `APP_CONFIG_ONLY` for app-managed mounts (an app container's files are regenerated from `appConfig` on every save — configure the app, or eject it first)
+
+### POST /api/containers/:name/mounts/:mountName/init · `admin`
+
+Create an empty file (0 bytes) or empty directory according to the mount **`type`** (still supported for API clients; the UI relies on automatic creation when saving mounts or starting).
+
+**200:** `{ ok: true }` | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
+
+### DELETE /api/containers/:name/mounts/:mountName/data · `admin`
+
+Remove the backing file or directory tree for that mount. The mount row remains in `container.json` until **DELETE** `/mounts/:mountName` or **PATCH** replaces **`mounts`**.
+
+**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name, mount }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** `CONTAINER_MOUNT_TYPE_MISMATCH` (tmpfs), `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
+
+### POST /api/containers/:name/services · `admin`
+
+Append one mDNS service advertisement (row-scoped, keyed by port). **Body:** `{ port: integer, type: string, txt?: object }` — `type` matches `^_[a-z0-9-]+\._(tcp|udp)$`; `txt` is a flat key/value map (values stringified). Requires `localDns: true` on the container. Live registration happens immediately if the container is running.
+
+**200:** `{ requiresRestart: false }` | **409:** `CONTAINER_LOCAL_DNS_DISABLED`, `CONTAINER_SERVICE_DUPLICATE` | **422:** `INVALID_CONTAINER_SERVICE`
+
+### PATCH /api/containers/:name/services/:port · `admin`
+
+Update one service identified by its current **`port`** (URL segment). **Body:** optional subset of `{ type, txt }`. Port is not editable — delete + create to move to a different port.
+
+**200:** `{ requiresRestart: false }` | **404:** `CONTAINER_SERVICE_NOT_FOUND` | **409:** `CONTAINER_LOCAL_DNS_DISABLED` | **422:** `INVALID_CONTAINER_SERVICE`
+
+### DELETE /api/containers/:name/services/:port · `admin`
+
+Remove an mDNS service by its port. Live deregistration happens immediately if the container is running.
+
+**200:** `{ requiresRestart: false }` | **404:** `CONTAINER_SERVICE_NOT_FOUND`
+
+**200:** `{ ok: true }`

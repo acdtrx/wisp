@@ -81,7 +81,7 @@ VM backups land under a `vms/` subdirectory of each destination root, beside con
 
 The timestamp folder name is `YYYY-MM-DDTHH-mm-ss` (ISO with `:` swapped to `-`, e.g. `2026-05-08T06-30-00`).
 
-**The on-disk layout is a server-side detail, not part of the API.** Backups are identified across the API as `(destinationId, vmName, timestamp)`; clients never receive or send the absolute backup path. See [API.md → Backups](API.md#backups).
+**The on-disk layout is a server-side detail, not part of the API.** Backups are identified across the API as `(destinationId, vmName, timestamp)`; clients never receive or send the absolute backup path. See [API-BACKUPS.md → Backups](API-BACKUPS.md#backups).
 
 ## Backup Destinations
 

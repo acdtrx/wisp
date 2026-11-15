@@ -1,6 +1,6 @@
 # Image Library
 
-The image library is a central place to manage **VM disk and ISO files** on disk and, on the Host **Library** page, **OCI container images** stored in containerd (same namespace as Wisp containers). VM files live in a flat directory with type detection by extension; container images are listed and deleted via the containerd API (see [API.md](API.md) `GET/DELETE /api/containers/images`).
+The image library is a central place to manage **VM disk and ISO files** on disk and, on the Host **Library** page, **OCI container images** stored in containerd (same namespace as Wisp containers). VM files live in a flat directory with type detection by extension; container images are listed and deleted via the containerd API (see [API-CONTAINERS.md](API-CONTAINERS.md) `GET/DELETE /api/containers/images`).
 
 ## Container (OCI) images
 
