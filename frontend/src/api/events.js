@@ -46,7 +46,9 @@ function dispatch(frame) {
   const handlers = topicHandlers.get(frame.topic);
   /* A handler that starts a re-read returns its promise: a command waiting on this
    * frame waits for those too. Each is marked handled here, so one with no command
-   * waiting on it fails quietly; its view shows the failure. */
+   * waiting on it raises no unhandled rejection: every handler that returns a re-read
+   * shows its failure in its own view (vmStore's `error` banner, USBSection and
+   * CloudInitSection's load errors). */
   const rereads = [];
   if (handlers) {
     for (const handler of handlers) {

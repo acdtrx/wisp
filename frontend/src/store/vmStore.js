@@ -77,8 +77,8 @@ export const useVmStore = create((set, get) => {
     set({ selectedVM: match.name, renamedSelection: { from: selectedVM, to: match.name } });
     startStatsSSE(match.name);
     queueMicrotask(() => {
-      get().refreshSelectedVM().catch((err) => {
-        if (import.meta.env.DEV) console.warn('[vmStore] re-read after rename failed', match.name, err);
+      get().refreshSelectedVM().catch(() => {
+        /* refreshSelectedVM records the failure in `error`, which the detail view shows */
       });
     });
   }
@@ -219,15 +219,25 @@ export const useVmStore = create((set, get) => {
     clearActionError: (name) => set((s) => ({ actions: withWorkloadAction(s.actions, name, { action: null, error: null }) })),
 
     /**
-     * Re-read the selected VM's config. Rejects when the GET fails, so a command
-     * waiting on it (runVMCommand) shows the error instead of the old config.
+     * Re-read the selected VM's config. A failure is recorded in `error` (the detail
+     * view's dismissible banner; the config shown stays) unless a newer read is
+     * already on its way, and rejects, so a command waiting on it (runVMCommand)
+     * fails instead of resolving onto the old config.
      */
     refreshSelectedVM: async () => {
       const { selectedVM } = get();
       if (!selectedVM) return;
       const seq = selectionSeq;
       const read = ++configReadsSent;
-      const config = await vmApi.getVM(selectedVM);
+      let config;
+      try {
+        config = await vmApi.getVM(selectedVM);
+      } catch (err) {
+        if (seq === selectionSeq && read === configReadsSent && read > configReadsApplied) {
+          set({ error: `Couldn't refresh this VM: ${err.detail || err.message}` });
+        }
+        throw err;
+      }
       if (seq !== selectionSeq || read <= configReadsApplied) return;
       configReadsApplied = read;
       set({ vmConfig: config });
