@@ -355,6 +355,9 @@ export default function LeftPanel() {
   const [search, setSearch] = useState('');
   const [sortRunningFirst, setSortRunningFirst] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
+  /* A section create or move in flight, until its frame lands: a second one would
+   * act on the sections as they were (the same default name, a stale order). */
+  const [sectionsBusy, setSectionsBusy] = useState(false);
 
   useEffect(() => {
     startVMListSSE();
@@ -450,18 +453,25 @@ export default function LeftPanel() {
     if (swapWith < 0 || swapWith >= userSections.length) return;
     const next = [...userSections];
     [next[idx], next[swapWith]] = [next[swapWith], next[idx]];
+    setSectionsBusy(true);
     try {
       await reorderSections(next.map((s) => s.id));
     } catch (err) {
       setErrorMsg(err.message);
+    } finally {
+      setSectionsBusy(false);
     }
   };
 
   const handleCreateAndAssign = async ({ type, name }) => {
+    if (sectionsBusy) return;
+    setSectionsBusy(true);
     try {
       await createAndAssign({ type, name });
     } catch (err) {
       setErrorMsg(err.message);
+    } finally {
+      setSectionsBusy(false);
     }
   };
 
@@ -640,8 +650,8 @@ export default function LeftPanel() {
                     onDropWorkload={({ type, name }) => assignWorkload({ type, name, sectionId: section.id })}
                     autoEdit={pendingRenameId === section.id}
                     onAutoEditConsumed={clearPendingRenameId}
-                    canMoveUp={canMoveUp}
-                    canMoveDown={canMoveDown}
+                    canMoveUp={!sectionsBusy && canMoveUp}
+                    canMoveDown={!sectionsBusy && canMoveDown}
                     onMove={(direction) => handleMoveSection(section.id, direction)}
                   />
                 );

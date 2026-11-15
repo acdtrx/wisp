@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import * as homeApi from '../api/homepage.js';
-import { subscribeTopic } from '../api/events.js';
+import { sendAndAwaitTopic, subscribeTopic } from '../api/events.js';
 
 export const UNGROUPED_GROUP_ID = 'ungrouped';
 
@@ -25,6 +25,8 @@ function uniqueDefaultName(groups) {
 /** Single subscriber: only one `home` topic subscription is ever active. Held at
  *  module scope (the store is a singleton) so start/stop can clean up after it. */
 let homeCloseFn = null;
+
+const onHomeTopic = (send) => sendAndAwaitTopic('home', send);
 
 /**
  * Home page state. Mirrors `sectionsStore`: the `home` topic on `/api/events` is
@@ -62,33 +64,35 @@ export const useHomeStore = create((set, get) => ({
     }
   },
 
-  /* Writes answer with an ack; the new envelope arrives on the `home` topic. */
+  /* Writes answer with an ack; each resolves once the new envelope has arrived on
+   * the `home` topic too. */
 
   /** Create a group with a default name and flag it for rename: its header opens
    *  the rename input when it first renders, whenever the topic brings it.
    *  @returns {Promise<string>} the new group's id */
   createGroup: async () => {
     const name = uniqueDefaultName(get().groups);
-    const { id } = await homeApi.createGroup(name);
+    const { id } = await onHomeTopic(() => homeApi.createGroup(name));
     set({ pendingRenameId: id });
     return id;
   },
 
-  renameGroup: (id, name) => homeApi.renameGroup(id, name),
+  renameGroup: (id, name) => onHomeTopic(() => homeApi.renameGroup(id, name)),
 
-  deleteGroup: (id) => homeApi.deleteGroup(id),
+  deleteGroup: (id) => onHomeTopic(() => homeApi.deleteGroup(id)),
 
-  reorderGroups: (ids) => homeApi.reorderGroups(ids),
+  reorderGroups: (ids) => onHomeTopic(() => homeApi.reorderGroups(ids)),
 
-  assignTile: ({ tileId, groupId, index }) => homeApi.assignTile({ tileId, groupId, index }),
+  assignTile: ({ tileId, groupId, index }) =>
+    onHomeTopic(() => homeApi.assignTile({ tileId, groupId, index })),
 
-  setTileOverride: (patch) => homeApi.setTileOverride(patch),
+  setTileOverride: (patch) => onHomeTopic(() => homeApi.setTileOverride(patch)),
 
-  addManualTile: (tile) => homeApi.addManualTile(tile),
+  addManualTile: (tile) => onHomeTopic(() => homeApi.addManualTile(tile)),
 
-  updateManualTile: (id, patch) => homeApi.updateManualTile(id, patch),
+  updateManualTile: (id, patch) => onHomeTopic(() => homeApi.updateManualTile(id, patch)),
 
-  removeManualTile: (id) => homeApi.removeManualTile(id),
+  removeManualTile: (id) => onHomeTopic(() => homeApi.removeManualTile(id)),
 
   clearPendingRenameId: () => set({ pendingRenameId: null }),
 }));

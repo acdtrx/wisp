@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import * as sectionsApi from '../api/sections.js';
-import { subscribeTopic } from '../api/events.js';
+import { sendAndAwaitTopic, subscribeTopic } from '../api/events.js';
 
 export const MAIN_SECTION_ID = 'main';
 
@@ -43,6 +43,8 @@ function uniqueDefaultName(sections) {
  *  clean up after it. */
 let sectionsCloseFn = null;
 
+const onSectionsTopic = (send) => sendAndAwaitTopic('sections', send);
+
 export const useSectionsStore = create((set, get) => ({
   sections: [DEFAULT_MAIN],
   assignments: {},
@@ -73,14 +75,16 @@ export const useSectionsStore = create((set, get) => ({
     }
   },
 
-  /* Writes answer with an ack; the new envelope arrives on the `sections` topic. */
-  renameSection: (id, name) => sectionsApi.renameSection(id, name),
+  /* Writes answer with an ack; each resolves once the new envelope has arrived on
+   * the `sections` topic too. */
+  renameSection: (id, name) => onSectionsTopic(() => sectionsApi.renameSection(id, name)),
 
-  deleteSection: (id) => sectionsApi.deleteSection(id),
+  deleteSection: (id) => onSectionsTopic(() => sectionsApi.deleteSection(id)),
 
-  reorderSections: (orderedIds) => sectionsApi.reorderSections(orderedIds),
+  reorderSections: (orderedIds) => onSectionsTopic(() => sectionsApi.reorderSections(orderedIds)),
 
-  assignWorkload: ({ type, name, sectionId }) => sectionsApi.assignWorkload({ type, name, sectionId }),
+  assignWorkload: ({ type, name, sectionId }) =>
+    onSectionsTopic(() => sectionsApi.assignWorkload({ type, name, sectionId })),
 
   /**
    * Create a new section with an auto-suffixed default name, assign the given
@@ -91,8 +95,8 @@ export const useSectionsStore = create((set, get) => ({
    */
   createAndAssign: async ({ type, name }) => {
     const defaultName = uniqueDefaultName(get().sections);
-    const { id } = await sectionsApi.createSection(defaultName);
-    await sectionsApi.assignWorkload({ type, name, sectionId: id });
+    const { id } = await onSectionsTopic(() => sectionsApi.createSection(defaultName));
+    await onSectionsTopic(() => sectionsApi.assignWorkload({ type, name, sectionId: id }));
     set({ pendingRenameId: id });
   },
 

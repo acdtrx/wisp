@@ -44,6 +44,9 @@ export default function HomePanel() {
   const [editing, setEditing] = useState(false);
   const [addLinkOpen, setAddLinkOpen] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
+  /* A group add or move in flight, until its frame lands: a second one would act on
+   * the groups as they were (the same default name, a stale order). */
+  const [groupsBusy, setGroupsBusy] = useState(false);
 
   useEffect(() => {
     startHomeSSE();
@@ -73,18 +76,24 @@ export default function HomePanel() {
     if (swapWith < 0 || swapWith >= userGroups.length) return;
     const next = [...userGroups];
     [next[idx], next[swapWith]] = [next[swapWith], next[idx]];
+    setGroupsBusy(true);
     try {
       await reorderGroups(next.map((g) => g.id));
     } catch (err) {
       setErrorMsg(err.detail || err.message);
+    } finally {
+      setGroupsBusy(false);
     }
   };
 
   const handleAddGroup = async () => {
+    setGroupsBusy(true);
     try {
       await createGroup();
     } catch (err) {
       setErrorMsg(err.detail || err.message);
+    } finally {
+      setGroupsBusy(false);
     }
   };
 
@@ -119,7 +128,7 @@ export default function HomePanel() {
                   <LinkIcon size={13} aria-hidden />
                   <span>Add link</span>
                 </button>
-                <button type="button" onClick={handleAddGroup} className={headerBtn}>
+                <button type="button" onClick={handleAddGroup} disabled={groupsBusy} className={headerBtn}>
                   <Plus size={13} aria-hidden />
                   <FolderPlus size={13} aria-hidden />
                   <span>Add group</span>
@@ -183,8 +192,8 @@ export default function HomePanel() {
                 hideLabel={group.builtin && onlyUngrouped && !editing}
                 autoEdit={pendingRenameId === group.id}
                 onAutoEditConsumed={clearPendingRenameId}
-                canMoveUp={userIdx > 0}
-                canMoveDown={userIdx >= 0 && userIdx < userGroupIds.length - 1}
+                canMoveUp={!groupsBusy && userIdx > 0}
+                canMoveDown={!groupsBusy && userIdx >= 0 && userIdx < userGroupIds.length - 1}
                 onMove={(direction) => handleMoveGroup(group.id, direction)}
               />
             );

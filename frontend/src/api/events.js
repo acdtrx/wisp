@@ -26,14 +26,25 @@ const lastFrames = new Map();
 /** `changes` frames are cues to GET, not state: a late subscriber GETs on mount
  *  instead, so replaying the last cue would only repeat that GET. */
 const CHANGES_TOPIC = 'changes';
+/** topic -> Set<release>, released by the topic's next frame */
+const frameWaiters = new Map();
 let closeFn = null;
+
+function releaseFrameWaiters(topic) {
+  const waiters = frameWaiters.get(topic);
+  if (!waiters) return;
+  for (const release of waiters) release();
+  waiters.clear();
+}
 
 function dispatch(frame) {
   if (!frame || typeof frame.topic !== 'string' || !('data' in frame)) return;
   if (frame.topic !== CHANGES_TOPIC) lastFrames.set(frame.topic, frame.data);
   const handlers = topicHandlers.get(frame.topic);
-  if (!handlers) return;
-  for (const handler of handlers) handler.onData(frame.data);
+  if (handlers) {
+    for (const handler of handlers) handler.onData(frame.data);
+  }
+  releaseFrameWaiters(frame.topic);
 }
 
 function streamDown() {
@@ -78,6 +89,7 @@ export function subscribeTopic(topic, onData, onStreamDown) {
       closeFn();
       closeFn = null;
       lastFrames.clear(); // next connect (e.g. after re-login) starts from server snapshots
+      for (const topic of frameWaiters.keys()) releaseFrameWaiters(topic);
     }
   };
 }
@@ -99,4 +111,39 @@ export function subscribeChanges(kinds, onChange) {
     if (!change || typeof change.kind !== 'string') return;
     if (change.kind === 'all' || wanted.has(change.kind)) onChange(change);
   });
+}
+
+/**
+ * Send a command whose new state arrives on `topic`, and resolve with its ack once
+ * the topic's next frame has arrived too: the control that sent it stays busy until
+ * the client holds the new state, so a quick second click can't act on the old one.
+ * The wait starts before the request, since the frame can beat the ack; any frame
+ * of the topic ends it, a reconnect snapshot included, so it can't hang while the
+ * stream is up. An error from the command ends it at once. With no stream open
+ * there is no frame to wait for.
+ *
+ * @template T
+ * @param {string} topic
+ * @param {() => Promise<T>} send
+ * @returns {Promise<T>}
+ */
+export async function sendAndAwaitTopic(topic, send) {
+  if (!closeFn) return send();
+  let release;
+  const frame = new Promise((resolve) => { release = resolve; });
+  let waiters = frameWaiters.get(topic);
+  if (!waiters) {
+    waiters = new Set();
+    frameWaiters.set(topic, waiters);
+  }
+  waiters.add(release);
+  let ack;
+  try {
+    ack = await send();
+  } catch (err) {
+    waiters.delete(release);
+    throw err;
+  }
+  await frame;
+  return ack;
 }
