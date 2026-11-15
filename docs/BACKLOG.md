@@ -13,6 +13,16 @@ single ordering shared by every consumer. **Revisit trigger:** the existing sort
 demonstrably fight a real workflow — repeatedly hunting for a workload the sort keeps
 burying.
 
+**Two tabs can exhaust HTTP/1.1's six connections.** Chrome's cap is per origin and
+shared by every tab: each tab holds `/api/events`, and a detail page or Host Mgmt adds
+its scoped streams (stats, logs, disks, USB, job progress), so two such tabs can reach
+six and queue every further request until a stream closes. Seen once during the
+command-acks milestone 1 check (2026-11-15): a GET queued 15–30 s in the second tab right
+after a navigation in the first; unconfirmed. ARCHITECTURE § Transport counts on the
+scoped streams staying few enough. Behind an HTTP/2 proxy it can't happen. **Revisit
+trigger:** a request seen stalled in DevTools ("Stalled"/"Queueing") with two tabs open
+over plain HTTP.
+
 **Split CONTAINERS.md and UI.md by area.** Like API.md (split 2026-11-15), both are large
 enough that an agent reading one for a single area loads all of it: `specs/CONTAINERS.md`
 is about 129 KB, `specs/UI.md` about 78 KB. Shape: a shared core file plus one file per
