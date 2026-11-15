@@ -121,6 +121,16 @@ consumer, and nothing has called for more).
     managers still catches up. The macOS stubs never fire.
   - Every A-record registration lives in the reconcilers
     (`lib/{vm,container}MdnsReconciler.js`); the managers make none.
+- **Record change cues** feed the `changes` topic (Transport), with no replay — a
+  cue to read the record again, not its state:
+  - `vmManager.subscribeVMChange(handler)` — `(name)` after every successful write
+    vmManager makes to a VM's definition or devices, hot-plug included (libvirt sends
+    no `DomainEvent` for it), under the new name after a rename. Out-of-band changes
+    (`virsh edit`) fire nothing. The macOS stub never fires.
+  - `lib/cloudInit.js` `subscribeCloudInitChange(handler)` — `(vmName)` after a VM's
+    cloud-init config is saved, disabled or removed.
+  - `lib/settings.js` `subscribeSettingsChange(handler)` — after every write that
+    changes what `GET /api/settings` returns.
 - **Managers are configured, not reaching out**: `lib/managerBootstrap.js` (shared by the
   backend and the migration runner) calls each manager's `configure()` with its paths and
   callbacks (`resolveMount`, `tryAcquireOperationLock`) before any route registers. The
