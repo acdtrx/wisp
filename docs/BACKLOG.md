@@ -13,6 +13,22 @@ single ordering shared by every consumer. **Revisit trigger:** the existing sort
 demonstrably fight a real workflow — repeatedly hunting for a workload the sort keeps
 burying.
 
+**A command's busy wait can end on a frame it didn't cause.** `sendAndAwaitTopic` and
+`sendAndAwaitChange` end on the topic's (or the VM's) next frame, which may come from
+another tab, a gather that started before the write, or a second frame of the same change
+(found in the command-acks milestone 3 review, 2026-11-15). The window is narrow; closing
+it needs frames that name the command they answer. **Revisit trigger:** a control seen
+re-enabled on stale state.
+
+**A late USB hot-unplug is never re-read.** `DetachDevice` on a running VM can return
+before the guest releases the device; `GET /usb` then still lists it, and nothing listens
+for libvirt's `DeviceRemoved` to send a second `vm` frame. **Revisit trigger:** a detached
+USB device seen still listed until a reload.
+
+**A VM rename doesn't move its sidebar section.** `renameWorkloadAssignment` is called only
+by the container PATCH route, so a renamed VM drops back to Main. **Revisit trigger:** the
+next work on VM rename, or a user notices the VM leaving its section.
+
 **Two tabs can exhaust HTTP/1.1's six connections.** Chrome's cap is per origin and
 shared by every tab: each tab holds `/api/events`, and a detail page or Host Mgmt adds
 its scoped streams (stats, logs, disks, USB, job progress), so two such tabs can reach
