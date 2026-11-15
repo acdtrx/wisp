@@ -353,7 +353,7 @@ The shipped `wisp-config.json.example` has empty `mounts`. Mounts are added via 
 Update settings. Partial update — only include fields to change.
 
 - **Body:** Partial settings object (`serverName`, `vmsPath`, `imagePath`, `backupLocalPath`, `containersPath`, `backupMountId`, `backupSchedule`, `discoveryEnabled`, `advertisedUrl`, `updateChannel`)
-- **200:** Updated settings object
+- **204:** saved; the new settings reach every client as `{ kind: "settings" }` on the [`changes`](API.md#changes-topic-payload) topic ([Command responses](API.md))
 - **Validation:** Every field sent must be valid — nothing is coerced to a default. Paths must be absolute (start with `/`), `backupMountId` must name a configured mount (or be `null`/empty to clear), `updateChannel` must be `"stable"` or `"beta"` — else **422** `{ error, detail }` with code `INVALID_SETTINGS`. `advertisedUrl` must be a valid `http`/`https` URL of at most 251 bytes (mDNS TXT record limit), or `null`/empty to clear — else **422** with code `INVALID_URL`. Changing or clearing `backupMountId` drops the previous mount from `backupSchedule.destinationIds` in the same write (`["local"]` when nothing else remains).
 - **`backupSchedule`:** Object `{ enabled?, time?, destinationIds?, retainDays?, retainWeeks? }`, merged per-field. Any field the client actually sends must be valid — `time` matching `HH:MM` (24-hour), `retainDays` 1–365, `retainWeeks` 0–52, `destinationIds` a non-empty subset of `'local'` + the configured `backupMountId` (validated against the merged result, so swapping the mount and updating the schedule in one PATCH works) — else **422** with code `INVALID_BACKUP_SCHEDULE`. See [BACKUPS.md → Scheduled backups](BACKUPS.md#scheduled-backups).
 - **`oidc`:** Refused for every caller with **403** `{ error: "OIDC settings require a browser session", detail }` (code `OIDC_SESSION_ONLY`) — use `PATCH /api/settings/oidc`, which API tokens cannot reach.
@@ -367,7 +367,7 @@ Update settings. Partial update — only include fields to change.
 Update the OIDC / SSO configuration. Session-only: an API token of either scope gets **403 Session required** — a token able to repoint the issuer could log itself in as a browser session (see [AUTH.md](AUTH.md) § Denied surfaces).
 
 - **Body:** `{ enabled?, issuer?, clientId?, clientSecret? }`, merged per field.
-- **200:** Updated settings object (same shape as `GET /api/settings`).
+- **204:** saved; announced like `PATCH /api/settings`.
 - **`clientSecret`:** Write-only. Omit or send empty to keep the saved secret — only while `issuer` and `clientId` are unchanged. Changing either without a new `clientSecret` returns **422** `INVALID_OIDC` (the saved secret is never sent to a different provider); clearing either drops the saved secret.
 - **Validation:** When `enabled: true`, the merged config must have a valid `http`/`https` `issuer`, a `clientId`, and a `clientSecret` on file, else **422** `{ error, detail }` with code `INVALID_OIDC`. Persisted to `wisp-config.json` (written `0600`).
 
