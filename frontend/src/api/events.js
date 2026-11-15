@@ -50,9 +50,12 @@ function dispatch(frame) {
    * shows its failure in its own view (vmStore's `error` banner, USBSection and
    * CloudInitSection's load errors). */
   const rereads = [];
+  /* Whether a command is waiting on this frame: its failure then reaches the user
+   * through the command, so a handler need not show it too. */
+  const awaited = [...frameWaiters].some((w) => w.topic === frame.topic && w.matches(frame.data));
   if (handlers) {
     for (const handler of handlers) {
-      const result = handler.onData(frame.data);
+      const result = handler.onData(frame.data, { awaited });
       if (result && typeof result.then === 'function') {
         result.catch(() => {});
         rereads.push(result);
@@ -117,16 +120,17 @@ export function subscribeTopic(topic, onData, onStreamDown) {
  * frame is replayed to a late subscriber.
  *
  * @param {string[]} kinds — e.g. `['settings']`
- * @param {(change: { kind: string, id?: string }) => (Promise<unknown> | void)} onChange —
+ * @param {(change: { kind: string, id?: string }, info: { awaited: boolean }) => (Promise<unknown> | void)} onChange —
  *   return the promise of a re-read it starts, so a command waiting on the frame
- *   waits for it too (`sendAndAwaitChange`)
+ *   waits for it too (`sendAndAwaitChange`); `awaited` says whether one is, in which
+ *   case the command reports the re-read's failure
  * @returns {() => void} unsubscribe
  */
 export function subscribeChanges(kinds, onChange) {
   const wanted = new Set(kinds);
-  return subscribeTopic(CHANGES_TOPIC, (change) => {
+  return subscribeTopic(CHANGES_TOPIC, (change, frameInfo) => {
     if (!change || typeof change.kind !== 'string') return;
-    if (change.kind === 'all' || wanted.has(change.kind)) return onChange(change);
+    if (change.kind === 'all' || wanted.has(change.kind)) return onChange(change, frameInfo);
     return undefined;
   });
 }

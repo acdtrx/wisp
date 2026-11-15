@@ -79,10 +79,15 @@ export const useVmStore = create((set, get) => {
     if (!match || match.name === selectedVM) return;
     stopStatsSSE();
     selectionSeq += 1;
-    set({ selectedVM: match.name, renamedSelection: { from: selectedVM, to: match.name } });
+    set({
+      selectedVM: match.name,
+      renamedSelection: { from: selectedVM, to: match.name },
+      // A re-read failure under the old name (a 404 racing the rename) isn't this VM's.
+      ...(get().refreshErrorFor === selectedVM ? { error: null, refreshErrorFor: null } : {}),
+    });
     startStatsSSE(match.name);
     queueMicrotask(() => {
-      get().refreshSelectedVM().catch(() => {
+      get().refreshSelectedVM({ reportFailure: true }).catch(() => {
         /* refreshSelectedVM records the failure in `error`, which the detail view shows */
       });
     });
@@ -97,6 +102,8 @@ export const useVmStore = create((set, get) => {
     /** Per-VM action state (workloadActions.js); `error` is for list and select failures only. */
     actions: {},
     error: null,
+    /** The VM a "Couldn't refresh" `error` is about. */
+    refreshErrorFor: null,
     /** The list has loaded once; `listError` is the list stream's last error (the list shown is the last good one). */
     listLoaded: false,
     listError: null,
@@ -130,10 +137,11 @@ export const useVmStore = create((set, get) => {
 
     startVMListSSE: () => {
       if (listCloseFn) return;
-      changesCloseFn = subscribeChanges(['vm'], (change) => {
+      changesCloseFn = subscribeChanges(['vm'], (change, { awaited }) => {
         const { selectedVM } = get();
-        if (!selectedVM) return;
-        if (change.kind === 'all' || change.id === selectedVM) return get().refreshSelectedVM();
+        if (!selectedVM) return undefined;
+        // A command waiting on the frame reports a failed re-read itself.
+        if (change.kind === 'all' || change.id === selectedVM) return get().refreshSelectedVM({ reportFailure: !awaited });
         return undefined;
       });
       listCloseFn = subscribeTopic(
@@ -195,7 +203,7 @@ export const useVmStore = create((set, get) => {
         ? { name: listItem.name, uuid: listItem.uuid, state: listItem.state, stateCode: listItem.stateCode, vcpus: listItem.vcpus, memoryMiB: listItem.memoryMiB, osCategory: listItem.osCategory, iconId: listItem.iconId, pendingRestart: listItem.pendingRestart }
         : null;
       const seq = ++selectionSeq;
-      set({ selectedVM: name, vmConfig: seed, vmStats: null, configLoading: true, error: null });
+      set({ selectedVM: name, vmConfig: seed, vmStats: null, configLoading: true, error: null, refreshErrorFor: null });
       startStatsSSE(name);
       const read = ++configReadsSent;
       try {
@@ -225,7 +233,7 @@ export const useVmStore = create((set, get) => {
       set({ selectedVM: null, vmConfig: null, vmStats: null, configLoading: false });
     },
 
-    clearError: () => set({ error: null }),
+    clearError: () => set({ error: null, refreshErrorFor: null }),
     clearActionError: (name) => set((s) => ({ actions: withWorkloadAction(s.actions, name, { action: null, error: null }) })),
     /** Show a command's failure in VM `name`'s action error (the detail view's banner),
      *  leaving any action in flight on it tracked. */
@@ -234,12 +242,13 @@ export const useVmStore = create((set, get) => {
     })),
 
     /**
-     * Re-read the selected VM's config. A failure is recorded in `error` (the detail
-     * view's dismissible banner; the config shown stays) unless a newer read is
-     * already on its way, and rejects, so a command waiting on it (runVMCommand)
-     * fails instead of resolving onto the old config.
+     * Re-read the selected VM's config. Rejects on failure, so a command waiting on it
+     * (runVMCommand) fails instead of resolving onto the old config. With
+     * `reportFailure` (no command waiting), a failure is also recorded in `error`, the
+     * detail view's dismissible banner, over the config still shown — unless a newer
+     * read is already on its way.
      */
-    refreshSelectedVM: async () => {
+    refreshSelectedVM: async ({ reportFailure = false } = {}) => {
       const { selectedVM } = get();
       if (!selectedVM) return;
       const seq = selectionSeq;
@@ -248,8 +257,8 @@ export const useVmStore = create((set, get) => {
       try {
         config = await vmApi.getVM(selectedVM);
       } catch (err) {
-        if (seq === selectionSeq && read === configReadsSent && read > configReadsApplied) {
-          set({ error: `Couldn't refresh this VM: ${err.detail || err.message}` });
+        if (reportFailure && seq === selectionSeq && read === configReadsSent && read > configReadsApplied) {
+          set({ error: `Couldn't refresh this VM: ${err.detail || err.message}`, refreshErrorFor: selectedVM });
         }
         throw err;
       }
