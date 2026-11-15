@@ -204,6 +204,10 @@ export const useVmStore = create((set, get) => {
         set({ vmConfig: config, configLoading: false });
       } catch (err) {
         if (seq !== selectionSeq) return;
+        if (read <= configReadsApplied) {
+          set({ configLoading: false });
+          return;
+        }
         set({ vmConfig: null, error: err.message, configLoading: false });
       }
     },
