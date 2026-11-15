@@ -185,9 +185,6 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
     setError(null);
     try {
       await runVMCommand(vmName, () => deleteCloudInit(vmName));
-      // Removed is what's on file now; a read still in flight is older.
-      readsRef.current.applied = readsRef.current.sent;
-      setConfig(null);
       setEditing(false);
     } catch (err) {
       setError(err.message);
