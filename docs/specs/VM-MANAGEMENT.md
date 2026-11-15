@@ -300,7 +300,7 @@ VMs can be registered on the local network via mDNS (`.local`) using avahi-daemo
 - vmManager auto-attaches `AgentEvent` listeners for every running VM and detaches when a VM leaves the running set; the reconciler doesn't track per-domain subscriptions.
 - Registration is removed when the VM stops, is undefined, or `localDns` is toggled off.
 - **One operation at a time per VM** *(settled 2026-11-12)*: every reconciler operation for a VM — network-change handlers and the route calls (`publishVm` / `unpublishVm`) — runs on that VM's promise chain, in arrival order. A register awaits avahi before it records the entry; without the chain a stop arriving in between found nothing to deregister, leaving a stopped VM published. The stuck-probe re-publish on a stop runs outside the chain (it acts on every Wisp group).
-- **A `localDns` toggle is orchestrated by the route.** Flipping the flag changes only Wisp metadata, so libvirt fires no `DomainEvent`: the `PATCH` route calls `updateVMConfig`, then `publishVm` / `unpublishVm` as `body.localDns` says. Don't add a manager event for metadata changes, or a synthetic `DomainEvent` — the managers do their part, the glue does its part, and the route stitches them.
+- **A `localDns` toggle is orchestrated by the route.** Flipping the flag changes only Wisp metadata, so libvirt fires no `DomainEvent`: the `PATCH` route calls `updateVMConfig`, then `publishVm` / `unpublishVm` as `body.localDns` says. Don't drive the mDNS reconciler from a manager event for metadata changes, or from a synthetic `DomainEvent` — the managers do their part, the glue does its part, and the route stitches them.
 - UI: General section has a **DNS** toggle (Local DNS); VM stats bar shows the registered `.local` hostname when active, plus a guest-agent `connected/disconnected` pill.
 
 ### Avahi restart recovery
@@ -365,6 +365,7 @@ The shared parser keeps every text node and attribute as the exact string libvir
 - `getCachedDomainPath(name)` — returns the libvirt-dbus domain path captured during cache population; used by `getVMStats` to skip `DomainLookupByName` on the hot path
 - `getCachedStaleBinary(name)` — reads the `staleBinary` flag from the cached list; used by `getVMStats` to avoid per-tick `/proc` syscalls
 - `subscribeVMListChange(handler)` — subscribe to cache-refresh events. Used by the `/api/events` route to push the `vms` topic to clients without a polling timer. Returns an unsubscribe function.
+- `subscribeVMChange(handler)` — `(name)` after each successful write to a VM's definition or devices (config, disks, CD-ROM, USB, graphics, the restart flag); no replay. The `/api/events` route turns it into `changes { kind: "vm", id }` ([API.md](API.md)). Never drives the mDNS reconciler (settled 2026-11-16).
 
 ### vmManagerLifecycle.js
 

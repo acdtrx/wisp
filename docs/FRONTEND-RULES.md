@@ -17,7 +17,9 @@ holds the UI library's rules.
   - Applied (settled 2026-11-15): a command's control stays busy until the stream brings
     its new state (its topic's next frame, or the `changes` reference and the re-read it
     triggers), so a section or modal closes onto fresh data; a command error ends it at
-    once. Settings forms instead treat what they sent as saved (`specs/SETTINGS.md`).
+    once. Settings forms instead treat what they sent as saved (`specs/SETTINGS.md`). A
+    request the guest may ignore (VM Stop, which is an ACPI shutdown, and Reboot) ends at
+    the ack: the list shows the VM stopping when it does (settled 2026-11-16).
 - Initialise form and component state with meaningful defaults derived from the data
   model, never with an empty object.
   - Applied: start form state from the config's defaults, never `useState({})`.

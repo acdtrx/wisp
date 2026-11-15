@@ -107,19 +107,21 @@ When `cloudInit.enabled` is `false`, creation **skips** cloud-init: no ISO, no `
 4. Attach/update `sde` in the domain XML
 
 `PUT` with **`enabled: false`** (soft-disable):
-1. Detach/eject `sde` and delete `cloud-init.iso`
-2. Save `cloud-init.json` with `enabled: false` and the submitted fields merged into the stored config (so settings are kept for re-enabling) — except `password`: a disabled config takes no new password, and the stored hash stays as it was (settled 2026-11-12)
+1. Save `cloud-init.json` with `enabled: false` and the submitted fields merged into the stored config (so settings are kept for re-enabling) — except `password`: a disabled config takes no new password, and the stored hash stays as it was (settled 2026-11-12)
+2. Detach/eject `sde` and delete `cloud-init.iso`
 
 A notice is displayed in the UI: changes take effect on next boot if cloud-init has already run inside the guest.
 
 ### Disable (full removal)
 
 `DELETE /api/vms/:name/cloudinit`:
-1. Detach `sde` from the domain XML
-2. Delete `cloud-init.iso`
-3. Delete `cloud-init.json`
+1. Delete `cloud-init.json`
+2. Detach `sde` from the domain XML
+3. Delete `cloud-init.iso`
 
 The Cloud-Init section in the UI then shows a way to configure again from scratch.
+
+**The json goes first** (settled 2026-11-16), in soft-disable and in removal: detaching `sde` makes every tab re-read the VM, and that re-read must find the new cloud-init state, not the old "On". Accepted cost: if the detach fails after a removal deleted the json, the VM keeps an ISO with no config behind it; the section offers to configure from scratch, and a new save replaces the ISO.
 
 ### Regenerate
 
