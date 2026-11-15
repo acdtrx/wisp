@@ -156,8 +156,8 @@ export function subscribeSettingsChange(handler) {
 }
 
 /** Persist a settings change, then announce it. A mutator that throws rejects
- *  before any handler runs. Once the write landed, the announcement goes out even
- *  if reading the result back fails: subscribers read it themselves. */
+ *  before any handler runs. Returns nothing: subscribers read the result
+ *  themselves, so a write that landed never fails on reading it back. */
 async function commitSettings(mutate) {
   await writeSettingsUnderLock(mutate);
   for (const handler of settingsChangeHandlers) {
@@ -168,27 +168,24 @@ async function commitSettings(mutate) {
       console.error('settings: change subscriber failed', err);
     }
   }
-  return getSettings();
 }
 
 /**
  * Update only the allowed top-level keys. Mount CRUD goes via dedicated mounts lib;
  * OIDC via `updateOidcSettings`.
- * Returns the full merged settings after write. Serialised via a mutex; reads
- * happen inside the lock to avoid lost-update races.
+ * Serialised via a mutex; reads happen inside the lock to avoid lost-update races.
  */
 export async function updateSettings(updates) {
-  return commitSettings((fromFile) => buildUpdatedSettings(fromFile, updates));
+  await commitSettings((fromFile) => buildUpdatedSettings(fromFile, updates));
 }
 
 /**
  * Update the OIDC block only. Separate from `updateSettings` because its route
  * is session-only (a token that could repoint SSO would mint itself a browser
- * session — docs/specs/AUTH.md § Denied surfaces). Returns the full merged
- * settings, like `updateSettings`.
+ * session — docs/specs/AUTH.md § Denied surfaces).
  */
 export async function updateOidcSettings(updates) {
-  return commitSettings((fromFile) => {
+  await commitSettings((fromFile) => {
     const next = { ...fromFile, oidc: mergeOidc(fromFile.oidc, updates || {}) };
     // Validate the *merged* result: the secret may already be on file even when
     // this PATCH doesn't include it, so completeness can only be judged post-merge.
@@ -416,7 +413,7 @@ export async function addMount(body) {
   if (!body || typeof body !== 'object') {
     throw createAppError('MOUNT_INVALID', 'Body must be a JSON object');
   }
-  return commitSettings((fromFile) => {
+  await commitSettings((fromFile) => {
     const id =
       typeof body.id === 'string' && body.id.trim() ? body.id.trim() : randomUUID();
     const existing = fromFile.mounts || [];
@@ -426,6 +423,7 @@ export async function addMount(body) {
     const entry = mountEntryFromBody(body, id);
     return { ...fromFile, mounts: [...existing, entry] };
   });
+  return getSettings();
 }
 
 /**
@@ -436,7 +434,7 @@ export async function updateMount(mountId, body) {
   if (!body || typeof body !== 'object') {
     throw createAppError('MOUNT_INVALID', 'Body must be a JSON object');
   }
-  return commitSettings((fromFile) => {
+  await commitSettings((fromFile) => {
     const list = [...(fromFile.mounts || [])];
     const idx = list.findIndex((m) => m.id === mountId);
     if (idx < 0) {
@@ -479,6 +477,7 @@ export async function updateMount(mountId, body) {
     list[idx] = cur;
     return { ...fromFile, mounts: list };
   });
+  return getSettings();
 }
 
 /**
@@ -486,7 +485,7 @@ export async function updateMount(mountId, body) {
  * drops it from the schedule's destinations, in the same write.
  */
 export async function removeMount(mountId) {
-  return commitSettings((fromFile) => {
+  await commitSettings((fromFile) => {
     const existing = fromFile.mounts || [];
     const list = existing.filter((m) => m.id !== mountId);
     if (list.length === existing.length) {
@@ -498,6 +497,7 @@ export async function removeMount(mountId) {
       backupMountId: fromFile.backupMountId === mountId ? null : fromFile.backupMountId,
     });
   });
+  return getSettings();
 }
 
 /**
