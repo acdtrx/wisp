@@ -147,8 +147,11 @@ async function sendAndAwaitFrame(topic, matches, send) {
     throw err;
   }
   const rereads = await frame;
-  /* Every re-read the frame started lands before the command resolves; a failed
-   * one fails the command, so it never resolves onto the old state. */
+  /* Every re-read the frame started lands before the command resolves, and a failed
+   * one fails the command. A matching frame that arrives before the command's own
+   * (a reconnect's snapshot, another cue for the same record) can still resolve it
+   * onto the old state: docs/BACKLOG.md, "A command's busy wait can end on a frame
+   * it didn't cause". */
   const settled = await Promise.allSettled(rereads);
   const failed = settled.find((r) => r.status === 'rejected');
   if (failed) {

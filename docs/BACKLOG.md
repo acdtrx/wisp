@@ -16,8 +16,11 @@ burying.
 **A command's busy wait can end on a frame it didn't cause.** `sendAndAwaitTopic` and
 `sendAndAwaitChange` end on the topic's (or the VM's) next frame, which may come from
 another tab, a gather that started before the write, or a second frame of the same change
-(found in the command-acks milestone 3 review, 2026-11-15). The window is narrow; closing
-it needs frames that name the command they answer. The opposite case too: suspend and
+(found in the command-acks milestone 3 review, 2026-11-15). Two seen in review: a
+reconnect's `{ kind: "all" }` landing during a VM PATCH releases it onto the config before
+the save, and cloud-init's own cue for the VM releases a USB attach sent just after. The
+window is narrow; closing it needs frames that name the command they answer. The opposite
+case too: suspend and
 resume wait for a `vms` frame showing the VM in its new state, so a lost `DomainEvent` or
 a failed list refresh leaves the control busy until an unrelated frame or a reconnect
 brings it. **Revisit trigger:** a control seen re-enabled on stale state, or seen stuck
