@@ -209,7 +209,8 @@ export const useVmStore = create((set, get) => {
         set({ vmConfig: config, configLoading: false });
       } catch (err) {
         if (seq !== selectionSeq) return;
-        if (read <= configReadsApplied) {
+        // A newer read already applied, or still on its way, has the say.
+        if (read !== configReadsSent || read <= configReadsApplied) {
           set({ configLoading: false });
           return;
         }
