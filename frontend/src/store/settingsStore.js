@@ -22,6 +22,8 @@ export const useSettingsStore = create((set, get) => ({
    *  it is a failed refresh: the last good settings stay. */
   error: null,
   errorDetail: null,
+  /** The error came from a load before any settings had loaded (SettingsGate showed it). */
+  errorBeforeFirstLoad: false,
 
   loadSettings: async () => {
     const request = ++lastSent;
@@ -41,7 +43,7 @@ export const useSettingsStore = create((set, get) => ({
     } catch (err) {
       /* A newer GET already sent supersedes this one: show only the newest failure. */
       if (request === lastSent && request > lastApplied) {
-        set({ error: err.message, errorDetail: err.detail ?? null });
+        set({ error: err.message, errorDetail: err.detail ?? null, errorBeforeFirstLoad: get().settings == null });
       }
       throw err;
     } finally {
@@ -50,7 +52,7 @@ export const useSettingsStore = create((set, get) => ({
     }
   },
 
-  dismissError: () => set({ error: null, errorDetail: null }),
+  dismissError: () => set({ error: null, errorDetail: null, errorBeforeFirstLoad: false }),
 
   /**
    * Load the settings, and again whenever the `changes` topic names them — a save

@@ -2,13 +2,15 @@ import { X } from 'lucide-react';
 import { useSettingsStore } from '../../store/settingsStore.js';
 
 /**
- * A failed settings reload while the last good settings are on screen: says so
- * until dismissed. Before the first load, SettingsGate shows the error instead.
+ * A settings load failure while settings are on screen, shown until dismissed: a
+ * failed refresh (the last good settings stay), or a first load that failed and
+ * succeeded later. Before any settings load, SettingsGate shows the error instead.
  */
 export default function SettingsRefreshNotice() {
   const hasSettings = useSettingsStore((s) => s.settings != null);
   const error = useSettingsStore((s) => s.error);
   const errorDetail = useSettingsStore((s) => s.errorDetail);
+  const errorBeforeFirstLoad = useSettingsStore((s) => s.errorBeforeFirstLoad);
   const dismissError = useSettingsStore((s) => s.dismissError);
   if (!hasSettings || !error) return null;
   const detail = errorDetail && errorDetail !== error ? `${error}: ${errorDetail}` : error;
@@ -17,7 +19,11 @@ export default function SettingsRefreshNotice() {
       role="alert"
       className="flex items-center justify-between gap-2 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-3 py-2 text-xs text-status-stopped"
     >
-      <span className="min-w-0 flex-1">Couldn't refresh settings — {detail}</span>
+      <span className="min-w-0 flex-1">
+        {errorBeforeFirstLoad
+          ? `Settings failed to load at first (${detail}); they have loaded since.`
+          : `Couldn't refresh settings — ${detail}`}
+      </span>
       <button
         type="button"
         onClick={dismissError}
