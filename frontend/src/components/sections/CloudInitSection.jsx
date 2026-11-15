@@ -71,15 +71,23 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
   const [ghKeys, setGhKeys] = useState([]);
   const [showPassword, setShowPassword] = useState(false);
   const prevVmNameRef = useRef(vmName);
+  /* Each read is numbered; only one newer than the last applied lands, so two quick
+   * re-reads can't apply out of order. */
+  const readsRef = useRef({ sent: 0, applied: 0 });
 
   const loadConfig = useCallback(async () => {
     if (isCreating) return;
+    const reads = readsRef.current;
+    const read = ++reads.sent;
     setLoading(true);
     try {
       const data = await getCloudInit(vmName);
+      if (read <= reads.applied) return;
+      reads.applied = read;
       setConfig(isBareCloudInitPlaceholder(data) ? null : data);
       setLoadError(null);
     } catch (err) {
+      if (read <= reads.applied) return;
       setLoadError(err.detail || err.message || 'Failed to load cloud-init');
     } finally {
       setLoading(false);
@@ -177,6 +185,8 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
     setError(null);
     try {
       await runVMCommand(vmName, () => deleteCloudInit(vmName));
+      // Removed is what's on file now; a read still in flight is older.
+      readsRef.current.applied = readsRef.current.sent;
       setConfig(null);
       setEditing(false);
     } catch (err) {

@@ -20,9 +20,6 @@ function mergeListFields(vmConfig, listItem) {
   return { ...vmConfig, state: listItem.state, pendingRestart };
 }
 
-/** The re-read of the selected VM that the latest `{ kind: 'vm' }` frame started. */
-let selectedVMRefresh = Promise.resolve();
-
 export const useVmStore = create((set, get) => {
   // Single subscriber per feed: one `vms` topic subscription (shared /api/events
   // stream) and one per-VM stats SSE are active at a time. Close functions are
@@ -35,6 +32,10 @@ export const useVmStore = create((set, get) => {
   // flight — otherwise a slow response for the previous VM would overwrite the
   // current one and the header actions would target the wrong VM.
   let selectionSeq = 0;
+  // Every getVM of the selection is numbered; a response is applied only when it is
+  // newer than the last one applied, so two quick re-reads can't land out of order.
+  let configReadsSent = 0;
+  let configReadsApplied = 0;
 
   function startStatsSSE(name) {
     stopStatsSSE();
@@ -76,7 +77,9 @@ export const useVmStore = create((set, get) => {
     set({ selectedVM: match.name, renamedSelection: { from: selectedVM, to: match.name } });
     startStatsSSE(match.name);
     queueMicrotask(() => {
-      get().refreshSelectedVM(match.name);
+      get().refreshSelectedVM().catch((err) => {
+        if (import.meta.env.DEV) console.warn('[vmStore] re-read after rename failed', match.name, err);
+      });
     });
   }
 
@@ -125,7 +128,8 @@ export const useVmStore = create((set, get) => {
       changesCloseFn = subscribeChanges(['vm'], (change) => {
         const { selectedVM } = get();
         if (!selectedVM) return;
-        if (change.kind === 'all' || change.id === selectedVM) selectedVMRefresh = get().refreshSelectedVM();
+        if (change.kind === 'all' || change.id === selectedVM) return get().refreshSelectedVM();
+        return undefined;
       });
       listCloseFn = subscribeTopic(
         'vms',
@@ -188,9 +192,15 @@ export const useVmStore = create((set, get) => {
       const seq = ++selectionSeq;
       set({ selectedVM: name, vmConfig: seed, vmStats: null, configLoading: true, error: null });
       startStatsSSE(name);
+      const read = ++configReadsSent;
       try {
         const config = await vmApi.getVM(name);
         if (seq !== selectionSeq) return;
+        if (read <= configReadsApplied) {
+          set({ configLoading: false });
+          return;
+        }
+        configReadsApplied = read;
         set({ vmConfig: config, configLoading: false });
       } catch (err) {
         if (seq !== selectionSeq) return;
@@ -209,35 +219,18 @@ export const useVmStore = create((set, get) => {
     clearActionError: (name) => set((s) => ({ actions: withWorkloadAction(s.actions, name, { action: null, error: null }) })),
 
     /**
-     * Reload config for the current selection. Pass `newSelectedName` after a rename so the
-     * selected VM key and stats stream match libvirt before the next list SSE tick.
+     * Re-read the selected VM's config. Rejects when the GET fails, so a command
+     * waiting on it (runVMCommand) shows the error instead of the old config.
      */
-    refreshSelectedVM: async (newSelectedName) => {
+    refreshSelectedVM: async () => {
       const { selectedVM } = get();
-      const trimmed =
-        typeof newSelectedName === 'string'
-          ? newSelectedName.trim()
-          : newSelectedName != null
-            ? String(newSelectedName).trim()
-            : '';
-      const targetName = trimmed !== '' ? trimmed : selectedVM;
-      if (!targetName) return;
-      if (trimmed !== '' && trimmed !== selectedVM) {
-        stopStatsSSE();
-        selectionSeq += 1;
-        set({ selectedVM: trimmed });
-        startStatsSSE(trimmed);
-      }
+      if (!selectedVM) return;
       const seq = selectionSeq;
-      try {
-        const config = await vmApi.getVM(targetName);
-        if (seq !== selectionSeq) return;
-        set({ vmConfig: config });
-      } catch (err) {
-        if (import.meta.env.DEV) {
-          console.warn('[vmStore] refreshSelectedVM: getVM failed', targetName, err);
-        }
-      }
+      const read = ++configReadsSent;
+      const config = await vmApi.getVM(selectedVM);
+      if (seq !== selectionSeq || read <= configReadsApplied) return;
+      configReadsApplied = read;
+      set({ vmConfig: config });
     },
 
     /** Run one action on VM `name`, tracked in `actions[name]`. Only touches the selection when it is `name`. */
@@ -282,17 +275,15 @@ export const useVmStore = create((set, get) => {
 /**
  * Send a command that changes VM `name` (its name after a rename) and resolve with
  * its ack once the client holds the new state: the `{ kind: 'vm', id: name }`
- * frame has arrived and, when `name` is the selected VM, the re-read it started
- * has landed. The control that sent it stays busy until then. A command error
- * rejects at once.
+ * frame has arrived and every re-read the open detail view started for it (the
+ * store's config, the USB and cloud-init sections) has landed. The control that
+ * sent it stays busy until then. A command error, or a failed re-read, rejects.
  *
  * @template T
  * @param {string} name
  * @param {() => Promise<T>} send
  * @returns {Promise<T>}
  */
-export async function runVMCommand(name, send) {
-  const ack = await sendAndAwaitChange('vm', name, send);
-  if (useVmStore.getState().selectedVM === name) await selectedVMRefresh;
-  return ack;
+export function runVMCommand(name, send) {
+  return sendAndAwaitChange('vm', name, send);
 }

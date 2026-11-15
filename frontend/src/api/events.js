@@ -30,11 +30,13 @@ const CHANGES_TOPIC = 'changes';
 const frameWaiters = new Set();
 let closeFn = null;
 
-function releaseFrameWaiters(frame) {
+/** Release the waiters a frame satisfies (every waiter when `frame` is null), with
+ *  the re-reads the frame's handlers started. */
+function releaseFrameWaiters(frame, rereads = []) {
   for (const waiter of frameWaiters) {
     if (frame && (waiter.topic !== frame.topic || !waiter.matches(frame.data))) continue;
     frameWaiters.delete(waiter);
-    waiter.release();
+    waiter.release(rereads);
   }
 }
 
@@ -42,10 +44,20 @@ function dispatch(frame) {
   if (!frame || typeof frame.topic !== 'string' || !('data' in frame)) return;
   if (frame.topic !== CHANGES_TOPIC) lastFrames.set(frame.topic, frame.data);
   const handlers = topicHandlers.get(frame.topic);
+  /* A handler that starts a re-read returns its promise: a command waiting on this
+   * frame waits for those too. Each is marked handled here, so one with no command
+   * waiting on it fails quietly; its view shows the failure. */
+  const rereads = [];
   if (handlers) {
-    for (const handler of handlers) handler.onData(frame.data);
+    for (const handler of handlers) {
+      const result = handler.onData(frame.data);
+      if (result && typeof result.then === 'function') {
+        result.catch(() => {});
+        rereads.push(result);
+      }
+    }
   }
-  releaseFrameWaiters(frame);
+  releaseFrameWaiters(frame, rereads);
 }
 
 function streamDown() {
@@ -103,14 +115,17 @@ export function subscribeTopic(topic, onData, onStreamDown) {
  * frame is replayed to a late subscriber.
  *
  * @param {string[]} kinds — e.g. `['settings']`
- * @param {(change: { kind: string, id?: string }) => void} onChange
+ * @param {(change: { kind: string, id?: string }) => (Promise<unknown> | void)} onChange —
+ *   return the promise of a re-read it starts, so a command waiting on the frame
+ *   waits for it too (`sendAndAwaitChange`)
  * @returns {() => void} unsubscribe
  */
 export function subscribeChanges(kinds, onChange) {
   const wanted = new Set(kinds);
   return subscribeTopic(CHANGES_TOPIC, (change) => {
     if (!change || typeof change.kind !== 'string') return;
-    if (change.kind === 'all' || wanted.has(change.kind)) onChange(change);
+    if (change.kind === 'all' || wanted.has(change.kind)) return onChange(change);
+    return undefined;
   });
 }
 
@@ -129,7 +144,12 @@ async function sendAndAwaitFrame(topic, matches, send) {
     frameWaiters.delete(waiter);
     throw err;
   }
-  await frame;
+  const rereads = await frame;
+  /* Every re-read the frame started lands before the command resolves; a failed
+   * one fails the command, so it never resolves onto the old state. */
+  const settled = await Promise.allSettled(rereads);
+  const failed = settled.find((r) => r.status === 'rejected');
+  if (failed) throw failed.reason;
   return ack;
 }
 
@@ -153,8 +173,9 @@ export function sendAndAwaitTopic(topic, send) {
 /**
  * Like `sendAndAwaitTopic`, for a command whose new state is announced on the
  * `changes` topic: resolves once a `changes` frame names that record (`kind`,
- * `id`) or the connect snapshot `{ kind: 'all' }` arrives. Subscribers to the
- * frame have already been called by then, so a GET it started is under way.
+ * `id`) or the connect snapshot `{ kind: 'all' }` arrives and every re-read its
+ * subscribers started (each returns its promise) has landed. A failed re-read
+ * rejects the command.
  *
  * @template T
  * @param {string} kind

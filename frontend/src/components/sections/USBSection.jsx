@@ -35,6 +35,9 @@ export default function USBSection({ vmConfig, busyReason }) {
   const [error, setError] = useState(null);
   const [attachModalOpen, setAttachModalOpen] = useState(false);
   const abortRef = useRef(null);
+  /* Each read is numbered; only one newer than the last applied lands, so two quick
+   * re-reads can't apply out of order. */
+  const readsRef = useRef({ sent: 0, applied: 0 });
 
   const vmName = vmConfig?.name;
 
@@ -44,14 +47,17 @@ export default function USBSection({ vmConfig, busyReason }) {
   }, [connectUsb, disconnectUsb]);
 
   const fetchAttachedOnly = useCallback(async (signal) => {
+    const reads = readsRef.current;
+    const read = ++reads.sent;
     try {
       const attached = vmName ? await getVMUSB(vmName) : [];
-      if (signal?.aborted) return;
+      if (signal?.aborted || read <= reads.applied) return;
+      reads.applied = read;
       setAttachedDevices(attached);
       setAttachedError(null);
       setLoading(false);
     } catch (err) {
-      if (signal?.aborted) return;
+      if (signal?.aborted || read <= reads.applied) return;
       // A failure is not "nothing attached": keep what was shown and say so.
       setAttachedError(err.detail || err.message || 'Failed to load attached devices');
       setLoading(false);
