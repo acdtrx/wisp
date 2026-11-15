@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import * as vmApi from '../api/vms.js';
 import { createSSE } from '../api/sse.js';
-import { sendAndAwaitChange, subscribeChanges, subscribeTopic } from '../api/events.js';
+import { sendAndAwaitChange, sendAndAwaitTopic, subscribeChanges, subscribeTopic } from '../api/events.js';
 import { withWorkloadAction, anyActionInFlight, pruneWorkloadActions } from './workloadActions.js';
 import { awaitJob } from './backgroundJobsStore.js';
 import { JOB_KIND } from '../api/jobProgress.js';
@@ -250,8 +250,11 @@ export const useVmStore = create((set, get) => {
     startVM: async (name) => {
       await get().withAction(name, 'start', async () => awaitJob(JOB_KIND.VM_START, await vmApi.startVM(name)));
     },
+    /* Stop, suspend and resume stay busy until the `vms` frame that carries the new
+     * state. Reboot has none to wait for: the VM stays running and libvirt sends no
+     * lifecycle event, so it ends at the ack. */
     stopVM: async (name) => {
-      await get().withAction(name, 'stop', () => vmApi.stopVM(name));
+      await get().withAction(name, 'stop', () => sendAndAwaitTopic('vms', () => vmApi.stopVM(name)));
     },
     forceStopVM: async (name) => {
       await get().withAction(name, 'force-stop', async () => awaitJob(JOB_KIND.VM_FORCE_STOP, await vmApi.forceStopVM(name)));
@@ -260,10 +263,10 @@ export const useVmStore = create((set, get) => {
       await get().withAction(name, 'reboot', () => vmApi.rebootVM(name));
     },
     suspendVM: async (name) => {
-      await get().withAction(name, 'suspend', () => vmApi.suspendVM(name));
+      await get().withAction(name, 'suspend', () => sendAndAwaitTopic('vms', () => vmApi.suspendVM(name)));
     },
     resumeVM: async (name) => {
-      await get().withAction(name, 'resume', () => vmApi.resumeVM(name));
+      await get().withAction(name, 'resume', () => sendAndAwaitTopic('vms', () => vmApi.resumeVM(name)));
     },
     deleteVM: async (name, deleteDisks) => {
       await get().withAction(name, 'delete', async () =>
