@@ -126,8 +126,9 @@ consumer, and nothing has called for more).
   record again, not its state. A write that changed nothing still fires, and one
   change can fire twice (cloud-init's own cue after vmManager's).
   - `vmManager.subscribeVMChange(handler)` — `(name)` after each successful config,
-    disk, CD-ROM, USB or restart-flag write through the facade, hot-plug included
-    (libvirt sends no `DomainEvent` for it), under the new name after a rename.
+    disk, CD-ROM, USB, graphics-listen or restart-flag write through the facade,
+    hot-plug included (libvirt sends no `DomainEvent` for it), under the new name after
+    a rename.
     Create, delete and restore don't fire: the VM list carries them. Out-of-band
     changes (`virsh edit`) fire nothing. The macOS stub never fires.
   - `lib/cloudInit.js` `subscribeCloudInitChange(handler)` — `(vmName)` after a VM's
