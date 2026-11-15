@@ -156,10 +156,10 @@ export function subscribeSettingsChange(handler) {
 }
 
 /** Persist a settings change, then announce it. A mutator that throws rejects
- *  before any handler runs. Returns nothing: subscribers read the result
- *  themselves, so a write that landed never fails on reading it back. */
+ *  before any handler runs. Returns the state as written, never a read-back, so
+ *  a write that landed never fails on reading it back. */
 async function commitSettings(mutate) {
-  await writeSettingsUnderLock(mutate);
+  const written = await writeSettingsUnderLock(mutate);
   for (const handler of settingsChangeHandlers) {
     try {
       handler();
@@ -168,6 +168,7 @@ async function commitSettings(mutate) {
       console.error('settings: change subscriber failed', err);
     }
   }
+  return written;
 }
 
 /**
@@ -284,16 +285,18 @@ export async function withSettingsWriteLock(mutate) {
   return getSettings();
 }
 
+/** Returns the state the mutator produced, as persisted (null when it wrote nothing). */
 async function writeSettingsUnderLock(mutate) {
   const run = writeLock.then(async () => {
     const fromFile = await readSettingsFile();
     const next = await mutate(fromFile);
     if (next) await persistSettings(next);
+    return next ?? null;
   });
   // Keep the chain alive past rejections — a throwing mutate (validation) must
   // fail its own caller only, not poison every subsequent settings write.
   writeLock = run.catch(() => {});
-  await run;
+  return run;
 }
 
 /**
@@ -407,13 +410,13 @@ function mountEntryFromBody(body, id) {
 }
 
 /**
- * Append one mount. Returns merged settings like getSettings().
+ * Append one mount. Returns `{ mounts }` as written, shaped as getSettings() shows them.
  */
 export async function addMount(body) {
   if (!body || typeof body !== 'object') {
     throw createAppError('MOUNT_INVALID', 'Body must be a JSON object');
   }
-  await commitSettings((fromFile) => {
+  const written = await commitSettings((fromFile) => {
     const id =
       typeof body.id === 'string' && body.id.trim() ? body.id.trim() : randomUUID();
     const existing = fromFile.mounts || [];
@@ -423,7 +426,7 @@ export async function addMount(body) {
     const entry = mountEntryFromBody(body, id);
     return { ...fromFile, mounts: [...existing, entry] };
   });
-  return getSettings();
+  return { mounts: written.mounts.map(mountForApi) };
 }
 
 /**
@@ -434,7 +437,7 @@ export async function updateMount(mountId, body) {
   if (!body || typeof body !== 'object') {
     throw createAppError('MOUNT_INVALID', 'Body must be a JSON object');
   }
-  await commitSettings((fromFile) => {
+  const written = await commitSettings((fromFile) => {
     const list = [...(fromFile.mounts || [])];
     const idx = list.findIndex((m) => m.id === mountId);
     if (idx < 0) {
@@ -477,7 +480,7 @@ export async function updateMount(mountId, body) {
     list[idx] = cur;
     return { ...fromFile, mounts: list };
   });
-  return getSettings();
+  return { mounts: written.mounts.map(mountForApi) };
 }
 
 /**
@@ -485,7 +488,7 @@ export async function updateMount(mountId, body) {
  * drops it from the schedule's destinations, in the same write.
  */
 export async function removeMount(mountId) {
-  await commitSettings((fromFile) => {
+  const written = await commitSettings((fromFile) => {
     const existing = fromFile.mounts || [];
     const list = existing.filter((m) => m.id !== mountId);
     if (list.length === existing.length) {
@@ -497,7 +500,7 @@ export async function removeMount(mountId) {
       backupMountId: fromFile.backupMountId === mountId ? null : fromFile.backupMountId,
     });
   });
-  return getSettings();
+  return { mounts: written.mounts.map(mountForApi) };
 }
 
 /**
