@@ -77,12 +77,7 @@ export default async function settingsRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: {
-        200: {
-          type: 'object',
-          properties: settingsResponseProps,
-        },
-      },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       const body = request.body || {};
@@ -100,7 +95,7 @@ export default async function settingsRoutes(fastify) {
         return;
       }
       try {
-        const result = await updateSettings(body);
+        await updateSettings(body);
         // Re-announce on the LAN when a discovery-relevant field changed —
         // not on every save: re-registering is a goodbye+announce on the
         // wire, so peers would see this server flicker in their dropdowns.
@@ -112,7 +107,7 @@ export default async function settingsRoutes(fastify) {
         ) {
           refreshWispAnnouncement().catch(() => {});
         }
-        return result;
+        reply.code(204).send();
       } catch (err) {
         // Only the validation codes take the 422 path — Node fs errors also
         // carry a truthy `code` (EACCES, ENOSPC) and must keep the generic 500.
@@ -144,16 +139,12 @@ export default async function settingsRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: {
-        200: {
-          type: 'object',
-          properties: settingsResponseProps,
-        },
-      },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       try {
-        return await updateOidcSettings(request.body || {});
+        await updateOidcSettings(request.body || {});
+        reply.code(204).send();
       } catch (err) {
         if (err?.code === 'INVALID_OIDC') {
           handleRouteError(err, reply, request);

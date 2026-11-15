@@ -144,6 +144,25 @@ export async function getRawOidcConfig() {
 
 let writeLock = Promise.resolve();
 
+/** Notified after every write that changes what `getSettings()` returns: the
+ *  settings fields, OIDC and the mounts. Sections, homepage and token writes share
+ *  the write lock but not this signal: they have their own topics. No replay —
+ *  it is a cue to read the settings again, not their state. */
+const settingsChangeHandlers = new Set();
+
+export function subscribeSettingsChange(handler) {
+  settingsChangeHandlers.add(handler);
+  return () => settingsChangeHandlers.delete(handler);
+}
+
+/** Persist a settings change, then announce it. A mutator that throws rejects
+ *  before any handler runs. */
+async function commitSettings(mutate) {
+  const settings = await withSettingsWriteLock(mutate);
+  for (const handler of settingsChangeHandlers) handler();
+  return settings;
+}
+
 /**
  * Update only the allowed top-level keys. Mount CRUD goes via dedicated mounts lib;
  * OIDC via `updateOidcSettings`.
@@ -151,7 +170,7 @@ let writeLock = Promise.resolve();
  * happen inside the lock to avoid lost-update races.
  */
 export async function updateSettings(updates) {
-  return withSettingsWriteLock((fromFile) => buildUpdatedSettings(fromFile, updates));
+  return commitSettings((fromFile) => buildUpdatedSettings(fromFile, updates));
 }
 
 /**
@@ -161,7 +180,7 @@ export async function updateSettings(updates) {
  * settings, like `updateSettings`.
  */
 export async function updateOidcSettings(updates) {
-  return withSettingsWriteLock((fromFile) => {
+  return commitSettings((fromFile) => {
     const next = { ...fromFile, oidc: mergeOidc(fromFile.oidc, updates || {}) };
     // Validate the *merged* result: the secret may already be on file even when
     // this PATCH doesn't include it, so completeness can only be judged post-merge.
@@ -385,7 +404,7 @@ export async function addMount(body) {
   if (!body || typeof body !== 'object') {
     throw createAppError('MOUNT_INVALID', 'Body must be a JSON object');
   }
-  return withSettingsWriteLock((fromFile) => {
+  return commitSettings((fromFile) => {
     const id =
       typeof body.id === 'string' && body.id.trim() ? body.id.trim() : randomUUID();
     const existing = fromFile.mounts || [];
@@ -405,7 +424,7 @@ export async function updateMount(mountId, body) {
   if (!body || typeof body !== 'object') {
     throw createAppError('MOUNT_INVALID', 'Body must be a JSON object');
   }
-  return withSettingsWriteLock((fromFile) => {
+  return commitSettings((fromFile) => {
     const list = [...(fromFile.mounts || [])];
     const idx = list.findIndex((m) => m.id === mountId);
     if (idx < 0) {
@@ -455,7 +474,7 @@ export async function updateMount(mountId, body) {
  * drops it from the schedule's destinations, in the same write.
  */
 export async function removeMount(mountId) {
-  return withSettingsWriteLock((fromFile) => {
+  return commitSettings((fromFile) => {
     const existing = fromFile.mounts || [];
     const list = existing.filter((m) => m.id !== mountId);
     if (list.length === existing.length) {

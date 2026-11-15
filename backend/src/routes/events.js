@@ -6,6 +6,7 @@ import { subscribeHomepageChange } from '../lib/homepage.js';
 import { buildHomeEnvelope } from '../lib/homeTiles.js';
 import { getDiscoveredPeers, subscribeDiscoveredPeersChange } from '../lib/wispDiscovery.js';
 import { getBackupStatus, subscribeBackupEvents } from '../lib/backupStatus.js';
+import { subscribeSettingsChange } from '../lib/settings.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { buildSectionsEnvelope } from './sections.js';
 
@@ -14,7 +15,8 @@ const HOST_STATS_INTERVAL_MS = 5000;
 /**
  * GET /events — the single always-on SSE stream. Multiplexes every topic the
  * app needs continuously (host stats, VM list, container list, sections,
- * discovered peers) as `data: {"topic": <name>, "data": <payload>}` frames.
+ * discovered peers, backups, change references) as
+ * `data: {"topic": <name>, "data": <payload>}` frames.
  *
  * One stream instead of five: browsers cap plain-HTTP/1.1 connections at 6
  * per origin, and each SSE stream holds one for its lifetime. With per-topic
@@ -110,10 +112,18 @@ export default async function eventsRoutes(fastify) {
         }
       }
 
+      /* References to changed records that no other topic carries in full: a client
+       * showing the record GETs it again. The connect snapshot is `{ kind: 'all' }` —
+       * anything may have changed while this stream was down. */
+      function sendChange(change) {
+        sendTopic('changes', change);
+      }
+
       await Promise.all([
         sendStats(), sendVMs(), sendContainers(), sendSections(), sendBackups(), sendHome(),
       ]);
       sendDiscovery();
+      sendChange({ kind: 'all' });
 
       const statsTimer = setInterval(sendStats, HOST_STATS_INTERVAL_MS);
       const unsubscribes = [
@@ -123,6 +133,7 @@ export default async function eventsRoutes(fastify) {
         subscribeHomepageChange(() => { sendHome(); }),
         subscribeDiscoveredPeersChange(() => { sendDiscovery(); }),
         subscribeBackupEvents(() => { sendBackups(); }),
+        subscribeSettingsChange(() => { sendChange({ kind: 'settings' }); }),
       ];
 
       onSSEClose(reply, () => {
