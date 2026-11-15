@@ -117,7 +117,7 @@ Each VM is a full-width flat row (no rounded corners, edge-to-edge in the list a
 
 ### Behavior
 
-- VM list is updated via an SSE stream at a configurable interval (from Settings: refresh interval in seconds), not periodic GET requests.
+- VM list is updated by the `vms` topic of the SSE stream, sent when the list changes, not by periodic GET requests.
 - Click to select → loads Overview panel in center
 - Selected VM uses the same active styling as Host entry: subtle card background with a left accent border only (no full outline or rounded corners)
 - Escape key deselects the current VM
@@ -324,7 +324,7 @@ These are tabs inside the Host panel (not a separate `/settings` page):
 
 Section-based layout:
 
-1. **App Config tab** — General (server name, VM storage path, image library path, refresh interval). Save button. Password change (current + new, Change button). Single sign-on card. API tokens card.
+1. **App Config tab** — General (server name, VM storage path, image library path). Save button. Password change (current + new, Change button). Single sign-on card. API tokens card.
 2. **Host Mgmt tab** — **Network Storage** (SMB/CIFS mounts in a **table** with shared DataTable chrome; header **`Plus`+server** adds a row; icon-only row actions; **Pencil** enters inline edit, then save/cancel icons; combined **mount/unmount** control with **green background when mounted**; **Check** (shield) turns **green after success** and **red after failure** (failure text on hover), not inline under the row; delete as icon; no separate “mounted” text column); **Backup** (one row: local path input and network-mount select aligned to the same control height; optional `(none)` or one configured mount); **Backup Scheduler** (enabled toggle, time-of-day, destination checkboxes, retention inputs — see Tab: Host Mgmt below). **Software tab** renders **Wisp Update** and **OS Update** side-by-side in a 2-column grid (1 col below `lg`), then the **Image Library** stacked below.
 3. **Overview tab** — Software section shows Wisp, Node.js, libvirt, QEMU, OS info (see Host Panel).
 
