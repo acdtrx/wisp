@@ -17,8 +17,11 @@ burying.
 `sendAndAwaitChange` end on the topic's (or the VM's) next frame, which may come from
 another tab, a gather that started before the write, or a second frame of the same change
 (found in the command-acks milestone 3 review, 2026-11-15). The window is narrow; closing
-it needs frames that name the command they answer. **Revisit trigger:** a control seen
-re-enabled on stale state.
+it needs frames that name the command they answer. The opposite case too: suspend and
+resume wait for a `vms` frame showing the VM in its new state, so a lost `DomainEvent` or
+a failed list refresh leaves the control busy until an unrelated frame or a reconnect
+brings it. **Revisit trigger:** a control seen re-enabled on stale state, or seen stuck
+busy after the VM changed state.
 
 **A late USB hot-unplug is never re-read.** `DetachDevice` on a running VM can return
 before the guest releases the device; `GET /usb` then still lists it, and nothing listens

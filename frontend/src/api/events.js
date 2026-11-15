@@ -166,17 +166,20 @@ async function sendAndAwaitFrame(topic, matches, send) {
  * Send a command whose new state arrives on `topic`, and resolve with its ack once
  * the topic's next frame has arrived too: the control that sent it stays busy until
  * the client holds the new state, so a quick second click can't act on the old one.
- * Any frame of the topic ends the wait, a reconnect snapshot included, so it can't
- * hang while the stream is up. An error from the command ends it at once. With no
- * stream open there is no frame to wait for.
+ * The first frame of the topic that `matches` ends the wait — by default any frame,
+ * a reconnect snapshot included, so it can't hang while the stream is up. An error
+ * from the command ends it at once. With no stream open there is no frame to wait
+ * for.
  *
  * @template T
  * @param {string} topic
  * @param {() => Promise<T>} send
+ * @param {(data: any) => boolean} [matches] — a frame that carries the command's
+ *   new state; a narrower test waits until the stream brings that state
  * @returns {Promise<T>}
  */
-export function sendAndAwaitTopic(topic, send) {
-  return sendAndAwaitFrame(topic, () => true, send);
+export function sendAndAwaitTopic(topic, send, matches = () => true) {
+  return sendAndAwaitFrame(topic, matches, send);
 }
 
 /**

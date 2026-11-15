@@ -20,6 +20,11 @@ function mergeListFields(vmConfig, listItem) {
   return { ...vmConfig, state: listItem.state, pendingRestart };
 }
 
+/** A `vms` frame matcher: the list shows VM `name` in `state` (an error frame never matches). */
+function listShowsState(name, state) {
+  return (list) => Array.isArray(list) && list.some((vm) => vm.name === name && vm.state === state);
+}
+
 export const useVmStore = create((set, get) => {
   // Single subscriber per feed: one `vms` topic subscription (shared /api/events
   // stream) and one per-VM stats SSE are active at a time. Close functions are
@@ -264,7 +269,7 @@ export const useVmStore = create((set, get) => {
     startVM: async (name) => {
       await get().withAction(name, 'start', async () => awaitJob(JOB_KIND.VM_START, await vmApi.startVM(name)));
     },
-    /* Suspend and resume stay busy until the `vms` frame that carries the new state.
+    /* Suspend and resume stay busy until a `vms` frame shows the VM in its new state.
      * Stop (an ACPI shutdown) and reboot are requests the guest may ignore, so they
      * end at the ack: the list shows the VM stopping when it does. */
     stopVM: async (name) => {
@@ -277,10 +282,12 @@ export const useVmStore = create((set, get) => {
       await get().withAction(name, 'reboot', () => vmApi.rebootVM(name));
     },
     suspendVM: async (name) => {
-      await get().withAction(name, 'suspend', () => sendAndAwaitTopic('vms', () => vmApi.suspendVM(name)));
+      await get().withAction(name, 'suspend', () =>
+        sendAndAwaitTopic('vms', () => vmApi.suspendVM(name), listShowsState(name, 'paused')));
     },
     resumeVM: async (name) => {
-      await get().withAction(name, 'resume', () => sendAndAwaitTopic('vms', () => vmApi.resumeVM(name)));
+      await get().withAction(name, 'resume', () =>
+        sendAndAwaitTopic('vms', () => vmApi.resumeVM(name), listShowsState(name, 'running')));
     },
     deleteVM: async (name, deleteDisks) => {
       await get().withAction(name, 'delete', async () =>
