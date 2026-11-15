@@ -371,9 +371,13 @@ export async function attachCloudInitDisk(vmName) {
  */
 export async function detachCloudInitDisk(vmName) {
   await deleteCloudInitConfig(vmName);
-  await ejectISO(vmName, 'sde', { removeSlot: true });
-  await deleteCloudInitISO(vmName);
-  announceCloudInitChange(vmName);
+  // The config is gone from here on: announce it even when the detach throws.
+  try {
+    await ejectISO(vmName, 'sde', { removeSlot: true });
+    await deleteCloudInitISO(vmName);
+  } finally {
+    announceCloudInitChange(vmName);
+  }
 }
 
 export async function getCloudInitConfig(vmName) {
@@ -399,9 +403,13 @@ export async function updateCloudInit(vmName, config, log) {
     const merged = mergeCloudInitDisablePayload(existing, config);
     // Saved first, as in detachCloudInitDisk: the detach's VM change must find it.
     await saveCloudInitConfig(vmName, merged);
-    await ejectISO(vmName, 'sde', { removeSlot: true });
-    await deleteCloudInitISO(vmName);
-    announceCloudInitChange(vmName);
+    // The disabled config is on file from here on: announce it even when the detach throws.
+    try {
+      await ejectISO(vmName, 'sde', { removeSlot: true });
+      await deleteCloudInitISO(vmName);
+    } finally {
+      announceCloudInitChange(vmName);
+    }
     return;
   }
 
