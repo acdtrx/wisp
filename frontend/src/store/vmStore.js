@@ -20,9 +20,15 @@ function mergeListFields(vmConfig, listItem) {
   return { ...vmConfig, state: listItem.state, pendingRestart };
 }
 
-/** A `vms` frame matcher: the list shows VM `name` in `state` (an error frame never matches). */
-function listShowsState(name, state) {
-  return (list) => Array.isArray(list) && list.some((vm) => vm.name === name && vm.state === state);
+/** A `vms` frame matcher: the list shows VM `name` out of `state`, the one it was in
+ *  before the command — moved on to the target or past it, or gone (an error frame
+ *  never matches). */
+function listShowsLeft(name, state) {
+  return (list) => {
+    if (!Array.isArray(list)) return false;
+    const vm = list.find((v) => v.name === name);
+    return !vm || vm.state !== state;
+  };
 }
 
 export const useVmStore = create((set, get) => {
@@ -290,7 +296,8 @@ export const useVmStore = create((set, get) => {
     startVM: async (name) => {
       await get().withAction(name, 'start', async () => awaitJob(JOB_KIND.VM_START, await vmApi.startVM(name)));
     },
-    /* Suspend and resume stay busy until a `vms` frame shows the VM in its new state.
+    /* Suspend and resume stay busy until a `vms` frame shows the VM out of the state it
+     * was in (suspend: no longer running; resume: no longer paused).
      * Stop (an ACPI shutdown) and reboot are requests the guest may ignore, so they
      * end at the ack: the list shows the VM stopping when it does. */
     stopVM: async (name) => {
@@ -304,11 +311,11 @@ export const useVmStore = create((set, get) => {
     },
     suspendVM: async (name) => {
       await get().withAction(name, 'suspend', () =>
-        sendAndAwaitTopic('vms', () => vmApi.suspendVM(name), listShowsState(name, 'paused')));
+        sendAndAwaitTopic('vms', () => vmApi.suspendVM(name), listShowsLeft(name, 'running')));
     },
     resumeVM: async (name) => {
       await get().withAction(name, 'resume', () =>
-        sendAndAwaitTopic('vms', () => vmApi.resumeVM(name), listShowsState(name, 'running')));
+        sendAndAwaitTopic('vms', () => vmApi.resumeVM(name), listShowsLeft(name, 'paused')));
     },
     deleteVM: async (name, deleteDisks) => {
       await get().withAction(name, 'delete', async () =>
