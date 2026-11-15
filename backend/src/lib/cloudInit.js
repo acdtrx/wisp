@@ -37,6 +37,27 @@ const ISO_BUILD_TIMEOUT_MS = 20_000;
 
 // ─── Password Hashing ───────────────────────────
 
+/** Notified with the VM's name after its cloud-init config is saved, disabled or
+ *  removed (`cloud-init.json` is Wisp's record, so no vmManager event covers it).
+ *  No replay: a cue to read the VM's cloud-init again. */
+const cloudInitChangeHandlers = new Set();
+
+export function subscribeCloudInitChange(handler) {
+  cloudInitChangeHandlers.add(handler);
+  return () => cloudInitChangeHandlers.delete(handler);
+}
+
+function announceCloudInitChange(vmName) {
+  for (const handler of cloudInitChangeHandlers) {
+    try {
+      handler(vmName);
+    } catch (err) {
+      // A broken subscriber must not fail the saved change or silence the others.
+      console.error('cloud-init: change subscriber failed', err);
+    }
+  }
+}
+
 async function hashPassword(password) {
   return new Promise((resolve, reject) => {
     // CODING-RULES §6: a local hash takes milliseconds; 10 s means it hung.
@@ -347,6 +368,7 @@ export async function detachCloudInitDisk(vmName) {
   await ejectISO(vmName, 'sde', { removeSlot: true });
   await deleteCloudInitISO(vmName);
   await deleteCloudInitConfig(vmName);
+  announceCloudInitChange(vmName);
 }
 
 export async function getCloudInitConfig(vmName) {
@@ -373,6 +395,7 @@ export async function updateCloudInit(vmName, config, log) {
     await ejectISO(vmName, 'sde', { removeSlot: true });
     await deleteCloudInitISO(vmName);
     await saveCloudInitConfig(vmName, merged);
+    announceCloudInitChange(vmName);
     return;
   }
 
@@ -383,4 +406,5 @@ export async function updateCloudInit(vmName, config, log) {
     /* ISO regenerated; live attach can fail if VM state disallows it — config still saved */
     log?.warn?.({ err: err.message, vm: vmName }, '[cloudInit] Could not hot-swap cloud-init disk');
   }
+  announceCloudInitChange(vmName);
 }

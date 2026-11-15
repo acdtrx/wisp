@@ -23,6 +23,7 @@ import {
   domainNameFromParsed,
 } from './vmManagerXml.js';
 import { refreshVMListCache } from './vmManagerList.js';
+import { announceVMChange } from './vmManagerChange.js';
 import { getQemuStartTimeMs } from './vmManagerProc.js';
 import { isOfflineState } from './libvirtConstants.js';
 
@@ -93,6 +94,7 @@ async function clearOutgrownRestartFlag(domPath) {
   const startedAt = isOfflineState(code) ? null : await getQemuStartTimeMs(vm);
   if (pendingRestartInForce(flag, startedAt)) return { vm, result: 'kept', since: flag.since };
   const cleared = await writePendingRestart(domPath, null, { expectSince: flag.since });
+  if (cleared) announceVMChange(vm);
   return { vm, result: cleared ? 'cleared' : 'kept', since: flag.since };
 }
 

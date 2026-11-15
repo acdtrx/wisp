@@ -1,5 +1,5 @@
 import { buildHostStatsPayload } from '../lib/hostStatsSnapshot.js';
-import { listVMs, subscribeVMListChange } from '../lib/vmManager/index.js';
+import { listVMs, subscribeVMListChange, subscribeVMChange } from '../lib/vmManager/index.js';
 import { listContainers, subscribeContainerListChange } from '../lib/containerManager/index.js';
 import { subscribeSectionsChange } from '../lib/sections.js';
 import { subscribeHomepageChange } from '../lib/homepage.js';
@@ -7,6 +7,7 @@ import { buildHomeEnvelope } from '../lib/homeTiles.js';
 import { getDiscoveredPeers, subscribeDiscoveredPeersChange } from '../lib/wispDiscovery.js';
 import { getBackupStatus, subscribeBackupEvents } from '../lib/backupStatus.js';
 import { subscribeSettingsChange } from '../lib/settings.js';
+import { subscribeCloudInitChange } from '../lib/cloudInit.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { buildSectionsEnvelope } from './sections.js';
 
@@ -132,6 +133,8 @@ export default async function eventsRoutes(fastify) {
         subscribeDiscoveredPeersChange(() => { sendDiscovery(); }),
         subscribeBackupEvents(() => { sendBackups(); }),
         subscribeSettingsChange(() => { sendChange({ kind: 'settings' }); }),
+        subscribeVMChange((name) => { sendChange({ kind: 'vm', id: name }); }),
+        subscribeCloudInitChange((name) => { sendChange({ kind: 'vm', id: name }); }),
       ];
 
       onSSEClose(reply, () => {

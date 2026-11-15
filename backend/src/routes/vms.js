@@ -187,7 +187,7 @@ export default async function vmsRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        201: {
+        202: {
           type: 'object',
           properties: {
             jobId: { type: 'string' },
@@ -266,7 +266,7 @@ export default async function vmsRoutes(fastify) {
           }
         }
       })();
-      return reply.code(201).send({ jobId, title });
+      return reply.code(202).send({ jobId, title });
     },
   });
 
@@ -541,7 +541,7 @@ export default async function vmsRoutes(fastify) {
       handler: async (request, reply) => {
         try {
           await fn(request.params.name);
-          return { ok: true };
+          reply.code(204).send();
         } catch (err) {
           request.log.warn({ err: err.message, code: err.code, detail: err.raw }, 'VM action failed');
           handleRouteError(err, reply, request);
@@ -617,7 +617,7 @@ export default async function vmsRoutes(fastify) {
         } else if (request.body.localDns === true) {
           await publishVm(result.name).catch(() => { /* best effort */ });
         }
-        return result;
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -684,7 +684,7 @@ export default async function vmsRoutes(fastify) {
         } else {
           await withVmOperationLock(name, 'disk change', () => createAndAttachDisk(name, slot, sizeGB, bus));
         }
-        return { ok: true };
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -708,7 +708,7 @@ export default async function vmsRoutes(fastify) {
       try {
         const { name, slot } = request.params;
         await withVmOperationLock(name, 'disk change', () => detachDisk(name, slot));
-        return { ok: true };
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -740,7 +740,7 @@ export default async function vmsRoutes(fastify) {
       try {
         const { name, slot } = request.params;
         await withVmOperationLock(name, 'disk change', () => resizeDiskBySlot(name, slot, request.body.sizeGB));
-        return { ok: true };
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -772,7 +772,7 @@ export default async function vmsRoutes(fastify) {
       try {
         const { name, slot } = request.params;
         await withVmOperationLock(name, 'disk change', () => updateDiskBus(name, slot, request.body.bus));
-        return { ok: true };
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -809,7 +809,7 @@ export default async function vmsRoutes(fastify) {
         const absPath = resolveLibraryPath(request.body.path);
         await assertPathInsideAllowedRoots(absPath, name);
         await withVmOperationLock(name, 'CD-ROM change', () => attachISO(name, slot, absPath));
-        return { ok: true };
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -833,7 +833,7 @@ export default async function vmsRoutes(fastify) {
       try {
         const { name, slot } = request.params;
         await withVmOperationLock(name, 'CD-ROM change', () => ejectISO(name, slot));
-        return { ok: true };
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -895,7 +895,7 @@ export default async function vmsRoutes(fastify) {
         const { name } = request.params;
         const { vendorId, productId } = request.body;
         await withVmOperationLock(name, 'USB change', () => attachUSBDevice(name, vendorId, productId));
-        return { ok: true };
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -926,7 +926,7 @@ export default async function vmsRoutes(fastify) {
         }
         const { name } = request.params;
         await withVmOperationLock(name, 'USB change', () => detachUSBDevice(name, vendorId, productId));
-        return { ok: true };
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }

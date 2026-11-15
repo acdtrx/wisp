@@ -83,6 +83,10 @@ export function subscribeVMNetworkChange() {
   return () => {};
 }
 
+export function subscribeVMChange() {
+  return () => {};
+}
+
 export async function getGuestNetwork() {
   return { ip: null, hostname: null };
 }

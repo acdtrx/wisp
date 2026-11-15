@@ -75,7 +75,7 @@ export default async function cloudInitRoutes(fastify) {
         // a running backup.
         const { name } = request.params;
         await withVmOperationLock(name, 'cloud-init change', () => updateCloudInit(name, request.body, request.log));
-        return { ok: true };
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -96,7 +96,7 @@ export default async function cloudInitRoutes(fastify) {
       try {
         const { name } = request.params;
         await withVmOperationLock(name, 'cloud-init change', () => detachCloudInitDisk(name));
-        return { ok: true };
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }

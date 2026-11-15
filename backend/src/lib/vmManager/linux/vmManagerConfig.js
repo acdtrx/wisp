@@ -145,7 +145,7 @@ export async function updateVMConfig(name, changes) {
     }
     delete patch.name;
     if (Object.keys(patch).length === 0) {
-      return { ok: true, requiresRestart: false };
+      return { ok: true, requiresRestart: false, name: effectiveName };
     }
   }
 

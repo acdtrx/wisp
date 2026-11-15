@@ -2,6 +2,18 @@
  * Linux vmManager implementation (libvirt over DBus).
  */
 import { setVmManagerPaths } from './vmManagerPaths.js';
+import { announcingVMChange } from './vmManagerChange.js';
+import { updateVMConfig as updateVMConfigImpl, setGraphicsListen as setGraphicsListenImpl } from './vmManagerConfig.js';
+import { setVMPendingRestart as setVMPendingRestartImpl } from './vmManagerPendingRestart.js';
+import { attachUSBDevice as attachUSBDeviceImpl, detachUSBDevice as detachUSBDeviceImpl } from './vmManagerUsb.js';
+import {
+  attachDisk as attachDiskImpl,
+  createAndAttachDisk as createAndAttachDiskImpl,
+  detachDisk as detachDiskImpl,
+  resizeDiskBySlot as resizeDiskBySlotImpl,
+  updateDiskBus as updateDiskBusImpl,
+} from './vmManagerDisk.js';
+import { attachISO as attachISOImpl, ejectISO as ejectISOImpl } from './vmManagerIso.js';
 
 export function configure(cfg) {
   setVmManagerPaths(cfg);
@@ -33,6 +45,8 @@ export {
 
 export { subscribeVMNetworkChange } from './vmManagerNetwork.js';
 
+export { subscribeVMChange } from './vmManagerChange.js';
+
 export { getGuestNetwork } from './vmManagerStats.js';
 
 export { assertVMState, startVM, stopVM, forceStopVM, rebootVM, suspendVM, resumeVM } from './vmManagerLifecycle.js';
@@ -45,21 +59,31 @@ export {
   deleteVM,
 } from './vmManagerCreate.js';
 
-export { updateVMConfig, getGraphicsListen, setGraphicsListen } from './vmManagerConfig.js';
+/* Every write to a VM's definition or devices announces itself (subscribeVMChange). */
+export const updateVMConfig = announcingVMChange(updateVMConfigImpl, (_args, result) => result.name);
+export { getGraphicsListen } from './vmManagerConfig.js';
+export const setGraphicsListen = announcingVMChange(
+  setGraphicsListenImpl,
+  ([name], result) => (result.changed ? name : null),
+);
 
-export { setVMPendingRestart } from './vmManagerPendingRestart.js';
+export const setVMPendingRestart = announcingVMChange(
+  setVMPendingRestartImpl,
+  ([name], result) => (result.changed ? name : null),
+);
 
-export { getVMUSBDevices, attachUSBDevice, detachUSBDevice } from './vmManagerUsb.js';
+export { getVMUSBDevices } from './vmManagerUsb.js';
+export const attachUSBDevice = announcingVMChange(attachUSBDeviceImpl);
+export const detachUSBDevice = announcingVMChange(detachUSBDeviceImpl);
 
-export {
-  attachDisk,
-  createAndAttachDisk,
-  detachDisk,
-  resizeDiskBySlot,
-  updateDiskBus,
-} from './vmManagerDisk.js';
+export const attachDisk = announcingVMChange(attachDiskImpl);
+export const createAndAttachDisk = announcingVMChange(createAndAttachDiskImpl);
+export const detachDisk = announcingVMChange(detachDiskImpl);
+export const resizeDiskBySlot = announcingVMChange(resizeDiskBySlotImpl);
+export const updateDiskBus = announcingVMChange(updateDiskBusImpl);
 
-export { attachISO, ejectISO } from './vmManagerIso.js';
+export const attachISO = announcingVMChange(attachISOImpl);
+export const ejectISO = announcingVMChange(ejectISOImpl);
 
 export {
   createBackup,
