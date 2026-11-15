@@ -1,28 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Archive } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
-import { useSettingsStore } from '../../store/settingsStore.js';
+import { useSettingsForm } from '../../hooks/useSettingsForm.js';
 import { updateSettings } from '../../api/settings.js';
 import SettingsGate from '../shared/SettingsGate.jsx';
 
 export default function HostBackup() {
-  const settings = useSettingsStore((s) => s.settings);
-
   const [backupLocalPath, setBackupLocalPath] = useState('');
   const [backupMountId, setBackupMountId] = useState('');
-  /* The form as last saved: it counts as the saved state until the settings
-   * reload lands and resets the form. */
-  const [sent, setSent] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    if (!settings) return;
-    setBackupLocalPath(settings.backupLocalPath ?? '');
-    setBackupMountId(settings.backupMountId ?? '');
-    setSent(null);
-  }, [settings]);
+  const { settings, sent, save } = useSettingsForm((loaded) => {
+    setBackupLocalPath(loaded.backupLocalPath ?? '');
+    setBackupMountId(loaded.backupMountId ?? '');
+  });
 
   const saved = sent ?? {
     backupLocalPath: settings?.backupLocalPath ?? '',
@@ -33,14 +26,11 @@ export default function HostBackup() {
   const handleSave = async () => {
     setError(null);
     setSaving(true);
-    const savedFrom = settings;
     try {
-      await updateSettings({
+      await save({ backupLocalPath, backupMountId }, () => updateSettings({
         backupLocalPath: backupLocalPath.trim() || undefined,
         backupMountId: backupMountId ? backupMountId : null,
-      });
-      // Unless the reload already landed (its frame can beat the 204).
-      if (useSettingsStore.getState().settings === savedFrom) setSent({ backupLocalPath, backupMountId });
+      }));
     } catch (err) {
       setError(err.message || 'Failed to save backup settings');
     } finally {

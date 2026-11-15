@@ -14,6 +14,9 @@ let inFlight = 0;
 
 export const useSettingsStore = create((set, get) => ({
   settings: null,
+  /** Counts applied loads, an equal one included: the settings forms resolve a
+   *  pending save on each (hooks/useSettingsForm.js). */
+  loadCount: 0,
   loading: false,
   /** A load's failure, shown until the user dismisses it. While `settings` is set
    *  it is a failed refresh: the last good settings stay. */
@@ -29,10 +32,10 @@ export const useSettingsStore = create((set, get) => ({
       if (request > lastApplied) {
         lastApplied = request;
         const previous = get().settings;
-        /* Keep the same object when nothing changed (a reconnect's reload): the
-         * forms reset on a new object, and only a change should drop their edits. */
+        /* Keep the same object when nothing changed (a reconnect's reload), so a
+         * form with no pending save keeps its unsaved edits. */
         const same = previous && JSON.stringify(previous) === JSON.stringify(settings);
-        set({ settings: same ? previous : settings });
+        set({ settings: same ? previous : settings, loadCount: get().loadCount + 1 });
       }
       return settings;
     } catch (err) {

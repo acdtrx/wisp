@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import PasswordChangeForm from '../settings/PasswordChangeForm.jsx';
 import OidcSettings from '../settings/OidcSettings.jsx';
 import ApiTokensSettings from '../settings/ApiTokensSettings.jsx';
-import { useSettingsStore } from '../../store/settingsStore.js';
+import { useSettingsForm } from '../../hooks/useSettingsForm.js';
 import { updateSettings } from '../../api/settings.js';
 import SettingsGate from '../shared/SettingsGate.jsx';
 import SettingsRefreshNotice from '../shared/SettingsRefreshNotice.jsx';
@@ -20,29 +20,22 @@ function formFromSettings(settings) {
 }
 
 export default function AppConfig() {
-  const settings = useSettingsStore((s) => s.settings);
-
   const [serverName, setServerName] = useState('');
   const [vmsPath, setVmsPath] = useState('');
   const [imagePath, setImagePath] = useState('');
   const [discoveryEnabled, setDiscoveryEnabled] = useState(true);
   const [advertisedUrl, setAdvertisedUrl] = useState('');
-  /* The form as last saved: it counts as the saved state until the settings
-   * reload lands and resets the form. */
-  const [sent, setSent] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    if (!settings) return;
-    const fields = formFromSettings(settings);
+  const { settings, sent, save } = useSettingsForm((loaded) => {
+    const fields = formFromSettings(loaded);
     setServerName(fields.serverName);
     setVmsPath(fields.vmsPath);
     setImagePath(fields.imagePath);
     setDiscoveryEnabled(fields.discoveryEnabled);
     setAdvertisedUrl(fields.advertisedUrl);
-    setSent(null);
-  }, [settings]);
+  });
 
   const form = { serverName, vmsPath, imagePath, discoveryEnabled, advertisedUrl };
   const saved = sent ?? (settings ? formFromSettings(settings) : null);
@@ -51,18 +44,15 @@ export default function AppConfig() {
   const handleSave = async () => {
     setError(null);
     setSaving(true);
-    const savedFrom = settings;
     try {
-      await updateSettings({
+      await save(form, () => updateSettings({
         serverName: serverName.trim() || undefined,
         vmsPath: vmsPath.trim().startsWith('/') ? vmsPath.trim() : undefined,
         imagePath: imagePath.trim().startsWith('/') ? imagePath.trim() : undefined,
         discoveryEnabled,
         // explicit null clears back to the default announcement
         advertisedUrl: advertisedUrl.trim() || null,
-      });
-      // Unless the reload already landed (its frame can beat the 204).
-      if (useSettingsStore.getState().settings === savedFrom) setSent(form);
+      }));
     } catch (err) {
       setError(err.message || 'Failed to save settings');
     } finally {

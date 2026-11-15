@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ShieldCheck, Copy, Check } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
-import { useSettingsStore } from '../../store/settingsStore.js';
+import { useSettingsForm } from '../../hooks/useSettingsForm.js';
 import { updateOidcSettings } from '../../api/settings.js';
 import SettingsGate from '../shared/SettingsGate.jsx';
 
@@ -12,14 +12,6 @@ const HELP =
   'your provider (limit this client to your user/group). The password remains as a backup.';
 
 export default function OidcSettings() {
-  const settings = useSettingsStore((s) => s.settings);
-
-  const oidc = settings?.oidc;
-  /* What was last saved: it counts as the saved state until the settings reload
-   * lands and resets the form. */
-  const [sent, setSent] = useState(null);
-  const saved = sent ?? oidc;
-
   const [enabled, setEnabled] = useState(false);
   const [issuer, setIssuer] = useState('');
   const [clientId, setClientId] = useState('');
@@ -30,16 +22,15 @@ export default function OidcSettings() {
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    if (oidc) {
-      setEnabled(oidc.enabled === true);
-      setIssuer(oidc.issuer || '');
-      setClientId(oidc.clientId || '');
-      setHasSecret(!!oidc.hasClientSecret);
-      setClientSecret('');
-      setSent(null);
-    }
-  }, [oidc]);
+  const { settings, sent, save } = useSettingsForm((loaded) => {
+    const { oidc } = loaded;
+    setEnabled(oidc.enabled === true);
+    setIssuer(oidc.issuer || '');
+    setClientId(oidc.clientId || '');
+    setHasSecret(!!oidc.hasClientSecret);
+    setClientSecret('');
+  });
+  const saved = sent ?? settings?.oidc;
 
   useEffect(() => {
     if (!saved) { setDirty(false); return; }
@@ -84,7 +75,6 @@ export default function OidcSettings() {
       return;
     }
     setSaving(true);
-    const savedFrom = settings;
     try {
       const oidcUpdate = {
         enabled,
@@ -96,10 +86,8 @@ export default function OidcSettings() {
       // long as issuer and client ID are unchanged.
       if (clientSecret) oidcUpdate.clientSecret = clientSecret;
 
-      await updateOidcSettings(oidcUpdate);
-      // Unless the reload already landed (its frame can beat the 204).
-      if (useSettingsStore.getState().settings === savedFrom) {
-        setSent({ enabled, issuer, clientId });
+      const held = await save({ enabled, issuer, clientId }, () => updateOidcSettings(oidcUpdate));
+      if (held) {
         // The server drops the saved secret when the issuer or client ID is cleared.
         setHasSecret(!!clientSecret || (hasSecret && !!oidcUpdate.issuer && !!oidcUpdate.clientId));
         setClientSecret('');

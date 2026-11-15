@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { CalendarClock } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
-import { useSettingsStore } from '../../store/settingsStore.js';
+import { useSettingsForm } from '../../hooks/useSettingsForm.js';
 import { updateSettings } from '../../api/settings.js';
 import SettingsGate from '../shared/SettingsGate.jsx';
 
@@ -35,20 +35,11 @@ function clampInt(value, min, max, fallback) {
 }
 
 export default function HostBackupScheduler() {
-  const settings = useSettingsStore((s) => s.settings);
-
-  const [form, setForm] = useState(() => fromSettings(settings));
-  /* The form as last saved: it counts as the saved state until the settings
-   * reload lands and resets the form. */
-  const [sent, setSent] = useState(null);
+  const [form, setForm] = useState(() => fromSettings(null));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    if (!settings) return;
-    setForm(fromSettings(settings));
-    setSent(null);
-  }, [settings]);
+  const { settings, sent, save } = useSettingsForm((loaded) => setForm(fromSettings(loaded)));
 
   const dirty = JSON.stringify(form) !== JSON.stringify(sent ?? fromSettings(settings));
 
@@ -80,9 +71,8 @@ export default function HostBackupScheduler() {
   const handleSave = async () => {
     setError(null);
     setSaving(true);
-    const savedFrom = settings;
     try {
-      await updateSettings({
+      await save(form, () => updateSettings({
         backupSchedule: {
           enabled: form.enabled,
           time: form.time,
@@ -90,9 +80,7 @@ export default function HostBackupScheduler() {
           retainDays: clampInt(form.retainDays, 1, 365, DEFAULT_SCHEDULE.retainDays),
           retainWeeks: clampInt(form.retainWeeks, 0, 52, DEFAULT_SCHEDULE.retainWeeks),
         },
-      });
-      // Unless the reload already landed (its frame can beat the 204).
-      if (useSettingsStore.getState().settings === savedFrom) setSent(form);
+      }));
     } catch (err) {
       setError(err.message || 'Failed to save backup schedule');
     } finally {
