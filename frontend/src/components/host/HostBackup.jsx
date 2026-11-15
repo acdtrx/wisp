@@ -11,33 +11,36 @@ export default function HostBackup() {
 
   const [backupLocalPath, setBackupLocalPath] = useState('');
   const [backupMountId, setBackupMountId] = useState('');
-  const [dirty, setDirty] = useState(false);
+  /* The form as last saved: it counts as the saved state until the settings
+   * reload lands and resets the form. */
+  const [sent, setSent] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (settings) {
-      setBackupLocalPath(settings.backupLocalPath ?? '');
-      setBackupMountId(settings.backupMountId ?? '');
-    }
+    if (!settings) return;
+    setBackupLocalPath(settings.backupLocalPath ?? '');
+    setBackupMountId(settings.backupMountId ?? '');
+    setSent(null);
   }, [settings]);
 
-  useEffect(() => {
-    const lp = settings?.backupLocalPath ?? '';
-    const savedNet = settings?.backupMountId ?? '';
-    setDirty(backupLocalPath !== lp || (backupMountId || '') !== (savedNet || ''));
-  }, [settings, backupLocalPath, backupMountId]);
+  const saved = sent ?? {
+    backupLocalPath: settings?.backupLocalPath ?? '',
+    backupMountId: settings?.backupMountId ?? '',
+  };
+  const dirty = backupLocalPath !== saved.backupLocalPath || (backupMountId || '') !== (saved.backupMountId || '');
 
   const handleSave = async () => {
     setError(null);
     setSaving(true);
+    const savedFrom = settings;
     try {
       await updateSettings({
         backupLocalPath: backupLocalPath.trim() || undefined,
         backupMountId: backupMountId ? backupMountId : null,
       });
-      // What was sent counts as saved until the settings reload resets the form.
-      setDirty(false);
+      // Unless the reload already landed (its frame can beat the 204).
+      if (useSettingsStore.getState().settings === savedFrom) setSent({ backupLocalPath, backupMountId });
     } catch (err) {
       setError(err.message || 'Failed to save backup settings');
     } finally {

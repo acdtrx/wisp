@@ -9,6 +9,16 @@ import { updateSettings } from '../../api/settings.js';
 import SettingsGate from '../shared/SettingsGate.jsx';
 import SettingsRefreshNotice from '../shared/SettingsRefreshNotice.jsx';
 
+function formFromSettings(settings) {
+  return {
+    serverName: settings.serverName || '',
+    vmsPath: settings.vmsPath ?? '',
+    imagePath: settings.imagePath ?? '',
+    discoveryEnabled: settings.discoveryEnabled !== false,
+    advertisedUrl: settings.advertisedUrl ?? '',
+  };
+}
+
 export default function AppConfig() {
   const settings = useSettingsStore((s) => s.settings);
 
@@ -17,34 +27,31 @@ export default function AppConfig() {
   const [imagePath, setImagePath] = useState('');
   const [discoveryEnabled, setDiscoveryEnabled] = useState(true);
   const [advertisedUrl, setAdvertisedUrl] = useState('');
-  const [dirty, setDirty] = useState(false);
+  /* The form as last saved: it counts as the saved state until the settings
+   * reload lands and resets the form. */
+  const [sent, setSent] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (settings) {
-      setServerName(settings.serverName || '');
-      setVmsPath(settings.vmsPath ?? '');
-      setImagePath(settings.imagePath ?? '');
-      setDiscoveryEnabled(settings.discoveryEnabled !== false);
-      setAdvertisedUrl(settings.advertisedUrl ?? '');
-    }
+    if (!settings) return;
+    const fields = formFromSettings(settings);
+    setServerName(fields.serverName);
+    setVmsPath(fields.vmsPath);
+    setImagePath(fields.imagePath);
+    setDiscoveryEnabled(fields.discoveryEnabled);
+    setAdvertisedUrl(fields.advertisedUrl);
+    setSent(null);
   }, [settings]);
 
-  useEffect(() => {
-    setDirty(
-      settings != null &&
-      (serverName !== (settings.serverName || '') ||
-        vmsPath !== (settings.vmsPath ?? '') ||
-        imagePath !== (settings.imagePath ?? '') ||
-        discoveryEnabled !== (settings.discoveryEnabled !== false) ||
-        advertisedUrl !== (settings.advertisedUrl ?? ''))
-    );
-  }, [settings, serverName, vmsPath, imagePath, discoveryEnabled, advertisedUrl]);
+  const form = { serverName, vmsPath, imagePath, discoveryEnabled, advertisedUrl };
+  const saved = sent ?? (settings ? formFromSettings(settings) : null);
+  const dirty = saved != null && JSON.stringify(form) !== JSON.stringify(saved);
 
   const handleSave = async () => {
     setError(null);
     setSaving(true);
+    const savedFrom = settings;
     try {
       await updateSettings({
         serverName: serverName.trim() || undefined,
@@ -54,8 +61,8 @@ export default function AppConfig() {
         // explicit null clears back to the default announcement
         advertisedUrl: advertisedUrl.trim() || null,
       });
-      // What was sent counts as saved until the settings reload resets the form.
-      setDirty(false);
+      // Unless the reload already landed (its frame can beat the 204).
+      if (useSettingsStore.getState().settings === savedFrom) setSent(form);
     } catch (err) {
       setError(err.message || 'Failed to save settings');
     } finally {
