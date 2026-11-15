@@ -21,6 +21,15 @@ All error responses return `{ error: string, detail: string }` — including req
 
 **Short requests (settled 2026-11-13).** The web client gives up on a REST call after **45 s**, over the request and reading its body. Every route answers within that: an operation that can outlast it is a [job route](#job-routes), which answers 202 at once and reports through the job's stream.
 
+**Command responses (settled 2026-11-15; ARCHITECTURE § Transport).** A state-changing request (`POST` / `PUT` / `PATCH` / `DELETE`) answers with an ack, never its result:
+
+- **`204`**, no body: an instant command (a settings save, a rename, a disk attach).
+- **`201 { id }`**: a create that assigns the new record's id (a section, a home-page group or manual tile, a host mount). The new record itself arrives on the stream.
+- **`202 { jobId, title }`**: a [job route](#job-routes).
+- An error that kept the command from starting answers as any error does (above).
+
+The new state reaches every client through the [events stream](#events-stream-sse): on the topic that carries the record, or as a reference on the [`changes`](#changes-topic-payload) topic, after which a client showing that record GETs it. Exceptions that answer with their result: requests that change no state (`POST /api/host/mounts/check`), a secret shown once (`POST /api/auth/tokens`), and the auth routes (login, logout, change-password). The [MCP endpoint](MCP.md) has no stream and is exempt.
+
 ## Authentication
 
 ### POST /api/auth/login · `public`
@@ -468,10 +477,29 @@ Every topic sends a snapshot frame on connect (and after every client reconnect)
 | `home` | The `{ tiles, groups }` envelope (see [Home page](#home-page)) | On every VM list change, container list change (which includes `container.json` writes, so app-config edits land here), and homepage write |
 | `discovery` | Sorted peer array (see [Discovery](#discovery)) | On mDNS browse events (peer appeared/left, avahi restart) |
 | `backups` | Per-workload last-backup-attempt map (below) | After every backup attempt (manual or scheduled, success or failure) and every backup delete/prune — consumers also use the frame as the cue to refetch the backup lists |
+| `changes` | A reference to a changed record (below) | After every saved change no other topic carries in full |
 
 No topic uses a polling timer except the sampled `stats` metrics.
 
 Every topic except `discovery` (an in-memory list that can't fail) may carry an error frame instead of its payload — `{ error, detail, code? }` when that topic's gather fails (e.g. `stats` when a host read throws). Clients ignore error frames and keep the last good payload; nothing renders the error object as data.
+
+#### `changes` topic payload
+
+(settled 2026-11-15.) `{ "kind": "<kind>", "id": "<id>" }`, `id` omitted when the kind is one record or a whole list. The module that saved the change publishes it, never the route. A client that shows the record GETs it again; every other client ignores the frame.
+
+| `kind` | `id` | GET it names |
+|--------|------|--------------|
+| `vm` | VM name | `GET /api/vms/:name` and what its detail view reads (cloud-init, USB attachments) |
+| `container` | container name | `GET /api/containers/:name` and what its detail view reads (mounts, files, services) |
+| `settings` | — | `GET /api/settings` |
+| `host-mounts` | — | `GET /api/host/mounts`, `GET /api/host/mounts/status` |
+| `network-bridges` | — | `GET /api/host/network-bridges` |
+| `library` | — | `GET /api/library` |
+| `images` | — | `GET /api/containers/images` |
+| `tokens` | — | `GET /api/auth/tokens` |
+| `wisp-update` | — | `GET /api/updates/status` |
+
+The snapshot frame on connect is `{ "kind": "all" }`: anything may have changed while the stream was down, so a client GETs every record it shows.
 
 #### `backups` topic payload
 

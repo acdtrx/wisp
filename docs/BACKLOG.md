@@ -13,13 +13,23 @@ single ordering shared by every consumer. **Revisit trigger:** the existing sort
 demonstrably fight a real workflow — repeatedly hunting for a workload the sort keeps
 burying.
 
-**Short commands answer with their result.** ARCHITECTURE § Transport (settled
-2026-11-15) has every command answer with an ack, and the outcome reach clients through
-the stream. Long operations follow it (they run as jobs since 2026-11-13); short ones
-(settings, sections, the home page, mounts, cloud-init, container and VM PATCHes) answer
-with the new state, the client reads it from the response, and some, settings among them,
-reach no stream at all. (ruled 2026-11-15: build it; the feature is to be written.)
-**Revisit trigger:** writing that feature.
+**Six job progress streams.** Job routes report on `GET /api/jobs/:jobId/progress`, while
+VM create and backup, container create and backup, the image-update check and library
+downloads keep their own job stores and progress routes (found in the 2026-11-15 command
+inventory). **Revisit trigger:** a new job kind needs one of the older stores, or the
+next work on the jobs tray.
+
+**MCP's `get_job` reads only the operation job store.** Jobs from the other stores
+(create, backup, download, image-update) can't be read through MCP. **Revisit trigger:**
+an MCP tool starts a job outside the operation store.
+
+**A GET that starts a job.** `GET /api/host/updates/packages?refresh=1` answers 202 with a
+job ack; a command belongs in a POST. **Revisit trigger:** the next work on OS updates.
+
+**Host power and the SMB mount toggle swallow errors.** `HostPanel.jsx` closes the
+shutdown/restart dialog whatever the answer, and `HostStorage.jsx`'s mount toggle
+catches and drops the error, against FRONTEND-RULES, Errors. **Revisit trigger:** a
+failed power action or mount goes unnoticed, or the next work on either screen.
 
 **The backend's import graph isn't checked for cycles.** ARCHITECTURE § Repo layout
 (settled 2026-11-15) wants it acyclic, enforced by a lint; `check-fences` checks the
