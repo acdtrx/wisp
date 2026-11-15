@@ -29,12 +29,21 @@ USB device seen still listed until a reload.
 by the container PATCH route, so a renamed VM drops back to Main. **Revisit trigger:** the
 next work on VM rename, or a user notices the VM leaving its section.
 
+**A disk bus change off VirtIO always fails.** `updateDiskBus` rewrites `<target bus>` but
+keeps the disk's `<address type='pci'>`, so libvirt refuses SATA, SCSI or IDE with
+"Invalid address type 'pci' for the disk … with the bus type 'sata'" (500). Seen on tini
+in the command-acks milestone 3 check (2026-11-16). The other direction likely fails the
+same way with a `drive` address. **Revisit trigger:** fix with the next disk work, or as
+soon as a user needs a non-VirtIO bus.
+
 **Two tabs can exhaust HTTP/1.1's six connections.** Chrome's cap is per origin and
 shared by every tab: each tab holds `/api/events`, and a detail page or Host Mgmt adds
 its scoped streams (stats, logs, disks, USB, job progress), so two such tabs can reach
 six and queue every further request until a stream closes. Seen once during the
 command-acks milestone 1 check (2026-11-15): a GET queued 15–30 s in the second tab right
-after a navigation in the first; unconfirmed. ARCHITECTURE § Transport counts on the
+after a navigation in the first. Confirmed on tini (2026-11-16): two tabs on one VM's
+detail page (each holds `/api/events`, the VM's stats and the host USB stream) left the
+second tab's USB section on "Loading USB devices…". ARCHITECTURE § Transport counts on the
 scoped streams staying few enough. Behind an HTTP/2 proxy it can't happen. **Revisit
 trigger:** a request seen stalled in DevTools ("Stalled"/"Queueing") with two tabs open
 over plain HTTP.
