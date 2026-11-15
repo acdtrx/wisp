@@ -9,6 +9,7 @@ import IconPickerModal from '../shared/IconPickerModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import AlertDialog from '../shared/AlertDialog.jsx';
 import { useHomeStore, UNGROUPED_GROUP_ID } from '../../store/homeStore.js';
+import { useBusyCommand } from '../../hooks/useBusyCommand.js';
 import TileGroupPicker from './TileGroupPicker.jsx';
 import { autoFocusField } from '../../lib/focus.js';
 
@@ -38,7 +39,7 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
   const [draftName, setDraftName] = useState(tile.name);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, runCommand] = useBusyCommand();
   const [errorMsg, setErrorMsg] = useState(null);
 
   const Icon = getVmIcon(tile.iconId).component;
@@ -47,13 +48,10 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
   const updateAvailable = tile.workload?.updateAvailable === true;
 
   const run = async (action) => {
-    setBusy(true);
     try {
-      await action();
+      await runCommand(action);
     } catch (err) {
       setErrorMsg(err.detail || err.message);
-    } finally {
-      setBusy(false);
     }
   };
 

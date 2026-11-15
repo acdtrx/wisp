@@ -17,6 +17,7 @@ import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { autoFocusField } from '../../lib/focus.js';
 import { useLayer, focusIntoLayer } from '../../lib/layers.js';
 import { useMediaQuery } from '../../hooks/useMediaQuery.js';
+import { useBusyCommand } from '../../hooks/useBusyCommand.js';
 
 const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -357,7 +358,7 @@ export default function LeftPanel() {
   const [errorMsg, setErrorMsg] = useState(null);
   /* A section create or move in flight, until its frame lands: a second one would
    * act on the sections as they were (the same default name, a stale order). */
-  const [sectionsBusy, setSectionsBusy] = useState(false);
+  const [sectionsBusy, runSectionsCommand] = useBusyCommand();
 
   useEffect(() => {
     startVMListSSE();
@@ -453,25 +454,18 @@ export default function LeftPanel() {
     if (swapWith < 0 || swapWith >= userSections.length) return;
     const next = [...userSections];
     [next[idx], next[swapWith]] = [next[swapWith], next[idx]];
-    setSectionsBusy(true);
     try {
-      await reorderSections(next.map((s) => s.id));
+      await runSectionsCommand(() => reorderSections(next.map((s) => s.id)));
     } catch (err) {
       setErrorMsg(err.message);
-    } finally {
-      setSectionsBusy(false);
     }
   };
 
   const handleCreateAndAssign = async ({ type, name }) => {
-    if (sectionsBusy) return;
-    setSectionsBusy(true);
     try {
-      await createAndAssign({ type, name });
+      await runSectionsCommand(() => createAndAssign({ type, name }));
     } catch (err) {
       setErrorMsg(err.message);
-    } finally {
-      setSectionsBusy(false);
     }
   };
 

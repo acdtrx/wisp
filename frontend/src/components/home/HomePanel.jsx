@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Link as LinkIcon, FolderPlus, Check, Pencil, Lightbulb } from 'lucide-react';
 import { useHomeStore, UNGROUPED_GROUP_ID } from '../../store/homeStore.js';
+import { useBusyCommand } from '../../hooks/useBusyCommand.js';
 import AlertDialog from '../shared/AlertDialog.jsx';
 import HomeMotes from './HomeMotes.jsx';
 import HomeGroup from './HomeGroup.jsx';
@@ -46,7 +47,7 @@ export default function HomePanel() {
   const [errorMsg, setErrorMsg] = useState(null);
   /* A group add or move in flight, until its frame lands: a second one would act on
    * the groups as they were (the same default name, a stale order). */
-  const [groupsBusy, setGroupsBusy] = useState(false);
+  const [groupsBusy, runGroupsCommand] = useBusyCommand();
 
   useEffect(() => {
     startHomeSSE();
@@ -76,24 +77,18 @@ export default function HomePanel() {
     if (swapWith < 0 || swapWith >= userGroups.length) return;
     const next = [...userGroups];
     [next[idx], next[swapWith]] = [next[swapWith], next[idx]];
-    setGroupsBusy(true);
     try {
-      await reorderGroups(next.map((g) => g.id));
+      await runGroupsCommand(() => reorderGroups(next.map((g) => g.id)));
     } catch (err) {
       setErrorMsg(err.detail || err.message);
-    } finally {
-      setGroupsBusy(false);
     }
   };
 
   const handleAddGroup = async () => {
-    setGroupsBusy(true);
     try {
-      await createGroup();
+      await runGroupsCommand(createGroup);
     } catch (err) {
       setErrorMsg(err.detail || err.message);
-    } finally {
-      setGroupsBusy(false);
     }
   };
 
