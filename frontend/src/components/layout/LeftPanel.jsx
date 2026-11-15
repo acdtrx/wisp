@@ -421,13 +421,10 @@ export default function LeftPanel() {
     return list;
   }, [vms, containers, search, sortRunningFirst, listFilter]);
 
-  /* Bucket items using the assignments map from sectionsStore. The store is
-   * the client mirror of /api/sections — refreshed (via applyResponse) by
-   * every section/assignment API response, not optimistically. The
-   * VM/container list SSE streams intentionally don't carry section info:
-   * libvirt and containerd don't emit events on assignment changes, so
-   * sectionsStore is the only source that updates when a user moves a
-   * workload between sections. */
+  /* Bucket items using the assignments map from sectionsStore, which takes it
+   * only from the `sections` topic. The VM/container list topics intentionally
+   * don't carry section info: libvirt and containerd don't emit events on
+   * assignment changes. */
   const itemsBySection = useMemo(() => {
     const buckets = new Map();
     for (const s of sections) buckets.set(s.id, []);
