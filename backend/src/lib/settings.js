@@ -156,11 +156,19 @@ export function subscribeSettingsChange(handler) {
 }
 
 /** Persist a settings change, then announce it. A mutator that throws rejects
- *  before any handler runs. */
+ *  before any handler runs. Once the write landed, the announcement goes out even
+ *  if reading the result back fails: subscribers read it themselves. */
 async function commitSettings(mutate) {
-  const settings = await withSettingsWriteLock(mutate);
-  for (const handler of settingsChangeHandlers) handler();
-  return settings;
+  await writeSettingsUnderLock(mutate);
+  for (const handler of settingsChangeHandlers) {
+    try {
+      handler();
+    } catch (err) {
+      // A broken subscriber must not fail the saved write or silence the others.
+      console.error('settings: change subscriber failed', err);
+    }
+  }
+  return getSettings();
 }
 
 /**
@@ -275,6 +283,11 @@ function buildUpdatedSettings(fromFile, updates) {
  * Returns the merged settings as `getSettings()` would.
  */
 export async function withSettingsWriteLock(mutate) {
+  await writeSettingsUnderLock(mutate);
+  return getSettings();
+}
+
+async function writeSettingsUnderLock(mutate) {
   const run = writeLock.then(async () => {
     const fromFile = await readSettingsFile();
     const next = await mutate(fromFile);
@@ -284,7 +297,6 @@ export async function withSettingsWriteLock(mutate) {
   // fail its own caller only, not poison every subsequent settings write.
   writeLock = run.catch(() => {});
   await run;
-  return getSettings();
 }
 
 /**
