@@ -145,6 +145,7 @@ export async function updateVMConfig(name, changes) {
     }
     delete patch.name;
     if (Object.keys(patch).length === 0) {
+      refreshVMListCache();
       return { ok: true, requiresRestart: false, name: effectiveName };
     }
   }
@@ -304,7 +305,9 @@ export async function updateVMConfig(name, changes) {
   } catch (err) {
     throw vmError('LIBVIRT_ERROR', `Failed to update VM "${effectiveName}" configuration`, err.message);
   }
-  if (requiresRestart) refreshVMListCache();
+  /* The list carries the name, sizing, icon, Local DNS and the restart flag; libvirt's
+   * DEFINED events are unreliable, so refresh it here as create and delete do. */
+  refreshVMListCache();
 
   if (patch.autostart != null) {
     try {
