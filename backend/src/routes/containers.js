@@ -408,7 +408,7 @@ export default async function containerRoutes(fastify) {
         workingName = renamed.name;
         // Carry any custom-section assignment over to the new name so the
         // container keeps its sidebar section. Best-effort: assignments are
-        // pure UI metadata and the frontend re-reads /api/sections.
+        // pure UI metadata, and the move reaches clients on the sections topic.
         try { await renameWorkloadAssignment('container', oldName, workingName); } catch { /* best effort */ }
         // mDNS A-record follows the rename: drop old name, register new. Best
         // effort — the reconciler will pick up the new name on the next event.

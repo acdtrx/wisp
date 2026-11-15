@@ -61,21 +61,24 @@ export function resolveSectionId(assignments, type, name) {
   return id || MAIN_SECTION_ID;
 }
 
+/** Create a section. Returns its new id. */
 export async function createSection(rawName) {
   const name = validName(rawName);
   if (!name) {
     throw createAppError('SECTION_INVALID', 'Section name is required');
   }
-  return commitSections((fromFile) => {
+  const id = randomUUID();
+  await commitSections((fromFile) => {
     const sections = fromFile.sections || [];
     const exists = sections.some((s) => s.name.toLowerCase() === name.toLowerCase());
     if (exists) {
       throw createAppError('SECTION_DUPLICATE', `A section named "${name}" already exists`);
     }
     const maxOrder = sections.reduce((m, s) => Math.max(m, s.order ?? 0), -1);
-    const next = { id: randomUUID(), name, order: maxOrder + 1 };
+    const next = { id, name, order: maxOrder + 1 };
     return { ...fromFile, sections: [...sections, next] };
   });
+  return id;
 }
 
 export async function renameSection(id, rawName) {

@@ -67,10 +67,16 @@ const responseSchema = {
 const nameProperty = { type: 'string', minLength: 1, maxLength: 64 };
 const idParams = { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] };
 
+/** The ack of a create: the new record's id. The record itself arrives on the topic. */
+const createdSchema = {
+  type: 'object',
+  properties: { id: { type: 'string' } },
+};
+
 /**
- * Home page routes. Every one returns the same `{ tiles, groups }` envelope the
- * `home` topic pushes, so a client stays in sync from one response — no
- * follow-up fetch after a mutation. Mirrors the sections routes.
+ * Home page routes. A write answers with an ack (204, or `201 { id }` for a
+ * create); the new `{ tiles, groups }` envelope reaches every client on the
+ * `home` topic. Mirrors the sections routes.
  *
  * Tile ids are URLs for derived tiles, so they travel in the body rather than
  * the path (`PUT /homepage/tiles/assign`, `PUT /homepage/tiles/override`).
@@ -91,12 +97,12 @@ export default async function homepageRoutes(fastify) {
         properties: { name: nameProperty },
         additionalProperties: false,
       },
-      response: { 200: responseSchema },
+      response: { 201: createdSchema },
     },
     handler: async (request, reply) => {
       try {
-        await createHomeGroup(request.body.name);
-        return await buildHomeEnvelope();
+        const id = await createHomeGroup(request.body.name);
+        reply.code(201).send({ id });
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -113,12 +119,12 @@ export default async function homepageRoutes(fastify) {
         properties: { name: nameProperty },
         additionalProperties: false,
       },
-      response: { 200: responseSchema },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       try {
         await renameHomeGroup(request.params.id, request.body.name);
-        return await buildHomeEnvelope();
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -127,11 +133,11 @@ export default async function homepageRoutes(fastify) {
 
   fastify.delete('/homepage/groups/:id', {
     config: { auth: 'admin' },
-    schema: { params: idParams, response: { 200: responseSchema } },
+    schema: { params: idParams, response: { 204: { type: 'null' } } },
     handler: async (request, reply) => {
       try {
         await deleteHomeGroup(request.params.id);
-        return await buildHomeEnvelope();
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -147,12 +153,12 @@ export default async function homepageRoutes(fastify) {
         properties: { ids: { type: 'array', items: { type: 'string' } } },
         additionalProperties: false,
       },
-      response: { 200: responseSchema },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       try {
         await reorderHomeGroups(request.body.ids);
-        return await buildHomeEnvelope();
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -172,13 +178,13 @@ export default async function homepageRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: { 200: responseSchema },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       try {
         const { tileId, groupId, index } = request.body;
         await assignTileToGroup({ tileId, groupId: groupId ?? null, index: index ?? null });
-        return await buildHomeEnvelope();
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -199,12 +205,12 @@ export default async function homepageRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: { 200: responseSchema },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       try {
         await setTileOverride(request.body);
-        return await buildHomeEnvelope();
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -224,12 +230,12 @@ export default async function homepageRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: { 200: responseSchema },
+      response: { 201: createdSchema },
     },
     handler: async (request, reply) => {
       try {
-        await addManualTile(request.body);
-        return await buildHomeEnvelope();
+        const id = await addManualTile(request.body);
+        reply.code(201).send({ id });
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -249,12 +255,12 @@ export default async function homepageRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: { 200: responseSchema },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       try {
         await updateManualTile(request.params.id, request.body);
-        return await buildHomeEnvelope();
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -263,11 +269,11 @@ export default async function homepageRoutes(fastify) {
 
   fastify.delete('/homepage/manual-tiles/:id', {
     config: { auth: 'admin' },
-    schema: { params: idParams, response: { 200: responseSchema } },
+    schema: { params: idParams, response: { 204: { type: 'null' } } },
     handler: async (request, reply) => {
       try {
         await removeManualTile(request.params.id);
-        return await buildHomeEnvelope();
+        reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }

@@ -43,18 +43,21 @@ export async function getHomepage() {
   return getRawHomepage();
 }
 
+/** Create a group. Returns its new id. */
 export async function createHomeGroup(rawName) {
   const name = validName(rawName);
   if (!name) {
     throw createAppError('HOME_INVALID', 'Group name is required');
   }
-  return commitHomepage((homepage) => {
+  const id = randomUUID();
+  await commitHomepage((homepage) => {
     const exists = homepage.groups.some((g) => g.name.toLowerCase() === name.toLowerCase());
     if (exists) {
       throw createAppError('HOME_DUPLICATE', `A group named "${name}" already exists`);
     }
-    return { ...homepage, groups: [...homepage.groups, { id: randomUUID(), name, tiles: [] }] };
+    return { ...homepage, groups: [...homepage.groups, { id, name, tiles: [] }] };
   });
+  return id;
 }
 
 export async function renameHomeGroup(id, rawName) {
@@ -189,6 +192,7 @@ export async function setTileOverride({ tileId, hidden, name, iconId }) {
   });
 }
 
+/** Add a manual link. Returns its new id. */
 export async function addManualTile({ name, url, iconId }) {
   const tileName = validName(name);
   if (!tileName) {
@@ -198,18 +202,20 @@ export async function addManualTile({ name, url, iconId }) {
   if (!tileUrl) {
     throw createAppError('HOME_INVALID', 'url must be an absolute http or https URL');
   }
-  return commitHomepage((homepage) => ({
+  const id = randomUUID();
+  await commitHomepage((homepage) => ({
     ...homepage,
     manualTiles: [
       ...homepage.manualTiles,
       {
-        id: randomUUID(),
+        id,
         name: tileName,
         url: tileUrl,
         iconId: typeof iconId === 'string' && iconId.trim() ? iconId.trim() : null,
       },
     ],
   }));
+  return id;
 }
 
 export async function updateManualTile(id, { name, url, iconId }) {
