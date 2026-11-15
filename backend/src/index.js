@@ -399,6 +399,10 @@ async function start() {
   startContainerBackupScheduler(app.log);
 }
 
+/* Below wisp.service's TimeoutStopSec (15 s), so a hung step ends in our own
+   logged exit rather than systemd's SIGKILL. */
+const SHUTDOWN_DEADLINE_MS = 10_000;
+
 let shuttingDown = false;
 let unsubscribeMountHotplug = null;
 let stopMountRetry = null;
@@ -407,6 +411,10 @@ async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   app.log.info(`Received ${signal}, shutting down`);
+  setTimeout(() => {
+    console.error(`Shutdown did not finish within ${SHUTDOWN_DEADLINE_MS / 1000} s, exiting`);
+    process.exit(1);
+  }, SHUTDOWN_DEADLINE_MS).unref();
   closeAllSSE();
   if (unsubscribeMountHotplug) {
     try { unsubscribeMountHotplug(); } catch { /* no-op */ }
@@ -436,6 +444,15 @@ async function shutdown(signal) {
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+/* stderr rather than app.log: the dev log transport runs on a worker thread
+   that may not flush before the exit. systemd restarts the unit on failure. */
+function exitOnFatal(kind, err) {
+  console.error(`${kind}:`, err);
+  process.exit(1);
+}
+process.on('unhandledRejection', (err) => exitOnFatal('Unhandled rejection', err));
+process.on('uncaughtException', (err) => exitOnFatal('Uncaught exception', err));
 
 start().catch((err) => {
   // Bootstrap fatal — Fastify's logger may not have flushed by the time we
