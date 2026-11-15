@@ -71,7 +71,7 @@ export default async function settingsRoutes(fastify) {
           advertisedUrl: { type: ['string', 'null'] },
           updateChannel: { type: 'string', enum: ['stable', 'beta'] },
           // Declared only so the handler sees it and refuses it: Fastify's ajv
-          // strips undeclared keys silently, which would answer 200 to a token
+          // strips undeclared keys silently, which would answer 204 to a token
           // that tried to repoint SSO. OIDC goes through PATCH /settings/oidc.
           oidc: {},
         },
