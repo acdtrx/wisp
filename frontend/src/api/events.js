@@ -151,8 +151,10 @@ async function sendAndAwaitFrame(topic, matches, send) {
     throw err;
   }
   const rereads = await frame;
-  /* Every re-read the frame started lands before the command resolves, and a failed
-   * one fails the command. A matching frame that arrives before the command's own
+  /* Every re-read the frame started lands before the command resolves. One that
+   * rejects (vmStore's config re-read) fails the command; the USB and cloud-init
+   * sections' re-reads catch their own failures and resolve, and those sections show
+   * their load error instead. A matching frame that arrives before the command's own
    * (a reconnect's snapshot, another cue for the same record) can still resolve it
    * onto the old state: docs/BACKLOG.md, "A command's busy wait can end on a frame
    * it didn't cause". */
