@@ -6,7 +6,8 @@ import { useSettingsStore } from '../../store/settingsStore.js';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 
 export default function AppLayout() {
-  const loadSettings = useSettingsStore((s) => s.loadSettings);
+  const startSettingsSync = useSettingsStore((s) => s.startSettingsSync);
+  const stopSettingsSync = useSettingsStore((s) => s.stopSettingsSync);
   const settings = useSettingsStore((s) => s.settings);
 
   useEffect(() => {
@@ -24,9 +25,9 @@ export default function AppLayout() {
   }, [settings]);
 
   useEffect(() => {
-    /* Non-fatal: settings store tracks error; app shell still renders */
-    loadSettings().catch(() => {});
-  }, [loadSettings]);
+    startSettingsSync();
+    return stopSettingsSync;
+  }, [startSettingsSync, stopSettingsSync]);
 
   useEffect(() => {
     /* Non-fatal on failure: the tray says it may be missing jobs, with a retry. */
