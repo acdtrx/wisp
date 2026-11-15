@@ -44,13 +44,27 @@ export async function cleanPartialJsonArtifacts(log) {
   const settingsDir = dirname(CONFIG_PATH);
   await sweepDir(settingsDir, log);
 
-  let containersPath;
+  let settings;
   try {
-    const settings = await getSettings();
-    containersPath = settings.containersPath;
+    settings = await getSettings();
   } catch {
     return;
   }
+
+  // Per-VM directories hold cloud-init.json, written atomically.
+  if (settings.vmsPath) {
+    let vmEntries = [];
+    try {
+      vmEntries = await readdir(settings.vmsPath, { withFileTypes: true });
+    } catch {
+      /* no VM storage yet: nothing to sweep */
+    }
+    for (const entry of vmEntries) {
+      if (entry.isDirectory()) await sweepDir(join(settings.vmsPath, entry.name), log);
+    }
+  }
+
+  const { containersPath } = settings;
   if (!containersPath) return;
 
   let entries;

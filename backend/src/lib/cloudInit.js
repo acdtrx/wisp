@@ -23,6 +23,7 @@ import { dump as yamlDump } from 'js-yaml';
 
 import { getVMBasePath } from './paths.js';
 import { createAppError } from './routeErrors.js';
+import { writeJsonAtomic } from './atomicJson.js';
 import {
   attachISO,
   ejectISO,
@@ -261,10 +262,10 @@ export async function saveCloudInitConfig(vmName, config) {
   const basePath = getVMBasePath(vmName);
   await mkdir(basePath, { recursive: true });
   // Holds `passwordHash` and sits in the group-readable per-VM dir (wisp:libvirt
-  // 0775) — same exposure as the ISO, same 0600. `mode` only applies when the file
-  // is created, so chmod also tightens a file that already exists.
-  await writeFile(configPath(vmName), JSON.stringify(config, null, 2), { mode: 0o600 });
-  await chmod(configPath(vmName), 0o600);
+  // 0775) — same exposure as the ISO, same 0600. Atomic: a reader (the client's
+  // re-read on the change cue) never sees a half-written file, and every save
+  // replaces the file with a fresh 0600 one.
+  await writeJsonAtomic(configPath(vmName), config, { mode: 0o600 });
 }
 
 export async function loadCloudInitConfig(vmName) {
