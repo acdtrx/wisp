@@ -27,6 +27,7 @@ import {
   rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
 import DiskEditorModal, { libraryImagePath } from './DiskEditorModal.jsx';
+import { runVMCommand } from '../../store/vmStore.js';
 import {
   detachDiskFromVM,
   attachISO,
@@ -81,7 +82,6 @@ const imageColClass = 'min-w-0 max-w-28 w-28';
 
 export default function DisksSection({
   vmConfig,
-  onRefresh,
   isCreating,
   createDisk,
   onCreateDiskChange,
@@ -140,9 +140,8 @@ export default function DisksSection({
     setLoading(actionName);
     setError(null);
     try {
-      await fn();
+      await runVMCommand(vmName, fn);
       if (typeof afterSuccess === 'function') afterSuccess();
-      if (onRefresh) await onRefresh();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -615,7 +614,6 @@ export default function DisksSection({
         slot={editor.slot}
         disk={editor.disk}
         defaultBus={sda?.bus || 'virtio'}
-        onSaved={onRefresh}
         onClose={() => setEditor({ open: false, slot: 'sdb', disk: null })}
       />
 

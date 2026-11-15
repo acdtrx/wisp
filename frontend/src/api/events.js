@@ -26,15 +26,16 @@ const lastFrames = new Map();
 /** `changes` frames are cues to GET, not state: a late subscriber GETs on mount
  *  instead, so replaying the last cue would only repeat that GET. */
 const CHANGES_TOPIC = 'changes';
-/** topic -> Set<release>, released by the topic's next frame */
-const frameWaiters = new Map();
+/** Commands waiting for a frame: { topic, matches(data), release } */
+const frameWaiters = new Set();
 let closeFn = null;
 
-function releaseFrameWaiters(topic) {
-  const waiters = frameWaiters.get(topic);
-  if (!waiters) return;
-  for (const release of waiters) release();
-  waiters.clear();
+function releaseFrameWaiters(frame) {
+  for (const waiter of frameWaiters) {
+    if (frame && (waiter.topic !== frame.topic || !waiter.matches(frame.data))) continue;
+    frameWaiters.delete(waiter);
+    waiter.release();
+  }
 }
 
 function dispatch(frame) {
@@ -44,7 +45,7 @@ function dispatch(frame) {
   if (handlers) {
     for (const handler of handlers) handler.onData(frame.data);
   }
-  releaseFrameWaiters(frame.topic);
+  releaseFrameWaiters(frame);
 }
 
 function streamDown() {
@@ -89,7 +90,7 @@ export function subscribeTopic(topic, onData, onStreamDown) {
       closeFn();
       closeFn = null;
       lastFrames.clear(); // next connect (e.g. after re-login) starts from server snapshots
-      for (const topic of frameWaiters.keys()) releaseFrameWaiters(topic);
+      releaseFrameWaiters(null); // no stream, no frame to wait for
     }
   };
 }
@@ -113,37 +114,58 @@ export function subscribeChanges(kinds, onChange) {
   });
 }
 
+/** Send, then wait for the first frame of `topic` that `matches`; the wait starts
+ *  before the request, since the frame can beat the ack. */
+async function sendAndAwaitFrame(topic, matches, send) {
+  if (!closeFn) return send();
+  let release;
+  const frame = new Promise((resolve) => { release = resolve; });
+  const waiter = { topic, matches, release };
+  frameWaiters.add(waiter);
+  let ack;
+  try {
+    ack = await send();
+  } catch (err) {
+    frameWaiters.delete(waiter);
+    throw err;
+  }
+  await frame;
+  return ack;
+}
+
 /**
  * Send a command whose new state arrives on `topic`, and resolve with its ack once
  * the topic's next frame has arrived too: the control that sent it stays busy until
  * the client holds the new state, so a quick second click can't act on the old one.
- * The wait starts before the request, since the frame can beat the ack; any frame
- * of the topic ends it, a reconnect snapshot included, so it can't hang while the
- * stream is up. An error from the command ends it at once. With no stream open
- * there is no frame to wait for.
+ * Any frame of the topic ends the wait, a reconnect snapshot included, so it can't
+ * hang while the stream is up. An error from the command ends it at once. With no
+ * stream open there is no frame to wait for.
  *
  * @template T
  * @param {string} topic
  * @param {() => Promise<T>} send
  * @returns {Promise<T>}
  */
-export async function sendAndAwaitTopic(topic, send) {
-  if (!closeFn) return send();
-  let release;
-  const frame = new Promise((resolve) => { release = resolve; });
-  let waiters = frameWaiters.get(topic);
-  if (!waiters) {
-    waiters = new Set();
-    frameWaiters.set(topic, waiters);
-  }
-  waiters.add(release);
-  let ack;
-  try {
-    ack = await send();
-  } catch (err) {
-    waiters.delete(release);
-    throw err;
-  }
-  await frame;
-  return ack;
+export function sendAndAwaitTopic(topic, send) {
+  return sendAndAwaitFrame(topic, () => true, send);
+}
+
+/**
+ * Like `sendAndAwaitTopic`, for a command whose new state is announced on the
+ * `changes` topic: resolves once a `changes` frame names that record (`kind`,
+ * `id`) or the connect snapshot `{ kind: 'all' }` arrives. Subscribers to the
+ * frame have already been called by then, so a GET it started is under way.
+ *
+ * @template T
+ * @param {string} kind
+ * @param {string} id
+ * @param {() => Promise<T>} send
+ * @returns {Promise<T>}
+ */
+export function sendAndAwaitChange(kind, id, send) {
+  return sendAndAwaitFrame(
+    CHANGES_TOPIC,
+    (change) => change?.kind === 'all' || (change?.kind === kind && change?.id === id),
+    send,
+  );
 }

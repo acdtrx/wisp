@@ -17,6 +17,7 @@ import {
   updateDiskBus,
 } from '../../api/vms.js';
 import { formatSize } from '../../utils/formatters.js';
+import { runVMCommand } from '../../store/vmStore.js';
 import { autoFocusField } from '../../lib/focus.js';
 
 const FORM_ID = 'disk-editor-form';
@@ -68,8 +69,8 @@ function positiveNumber(value) {
  * ImageLibraryModal stays the direct-action path for ISO slots).
  *
  * Saves through the same row-scoped disk APIs and in the same order the inline
- * editors used, then `onSaved` (parent refresh) before closing; stays open on
- * failure.
+ * editors used, each one resolving once the VM's new config is in; closes after
+ * the last, stays open on failure.
  */
 export default function DiskEditorModal({
   open,
@@ -77,7 +78,6 @@ export default function DiskEditorModal({
   slot,
   disk = null,
   defaultBus = 'virtio',
-  onSaved,
   onClose,
 }) {
   const [form, setForm] = useState(() => formFromDisk(null, 'virtio'));
@@ -145,16 +145,16 @@ export default function DiskEditorModal({
     setSaving(true);
     setError(null);
     try {
+      const command = (send) => runVMCommand(vmName, send);
       if (isEdit) {
-        if (busChanged) await updateDiskBus(vmName, slot, form.bus);
-        if (sizeChanged) await resizeDisk(vmName, slot, sizeValue);
+        if (busChanged) await command(() => updateDiskBus(vmName, slot, form.bus));
+        if (sizeChanged) await command(() => resizeDisk(vmName, slot, sizeValue));
       } else if (isAttach) {
-        await attachDiskToVM(vmName, slot, form.imagePath, form.bus);
-        if (resizeValue != null) await resizeDisk(vmName, slot, resizeValue);
+        await command(() => attachDiskToVM(vmName, slot, form.imagePath, form.bus));
+        if (resizeValue != null) await command(() => resizeDisk(vmName, slot, resizeValue));
       } else {
-        await createDiskOnVM(vmName, slot, Math.max(1, parseInt(form.sizeGB, 10) || 32), form.bus);
+        await command(() => createDiskOnVM(vmName, slot, Math.max(1, parseInt(form.sizeGB, 10) || 32), form.bus));
       }
-      await onSaved?.();
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to save');

@@ -4,6 +4,8 @@ import { AlertTriangle, Loader2, Plus, Unplug, Usb } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import UsbAttachModal from '../shared/UsbAttachModal.jsx';
 import { getVMUSB, attachUSBToVM, detachUSBFromVM } from '../../api/vms.js';
+import { runVMCommand } from '../../store/vmStore.js';
+import { useChanges } from '../../hooks/useChanges.js';
 import { useUsbStore } from '../../store/usbStore.js';
 import {
   DataTableScroll,
@@ -64,13 +66,14 @@ export default function USBSection({ vmConfig, busyReason }) {
     return () => controller.abort();
   }, [fetchAttachedOnly]);
 
+  useChanges('vm', vmName, () => fetchAttachedOnly(abortRef.current?.signal));
+
   const handleAttach = async (vendorId, productId) => {
     const key = `${vendorId}:${productId}`;
     setActionLoading(key);
     setError(null);
     try {
-      await attachUSBToVM(vmName, vendorId, productId);
-      await fetchAttachedOnly(abortRef.current?.signal);
+      await runVMCommand(vmName, () => attachUSBToVM(vmName, vendorId, productId));
       setAttachModalOpen(false);
     } catch (err) {
       setError(err.message || 'Failed to attach USB device');
@@ -84,8 +87,7 @@ export default function USBSection({ vmConfig, busyReason }) {
     setActionLoading(key);
     setError(null);
     try {
-      await detachUSBFromVM(vmName, vendorId, productId);
-      await fetchAttachedOnly(abortRef.current?.signal);
+      await runVMCommand(vmName, () => detachUSBFromVM(vmName, vendorId, productId));
     } catch (err) {
       setError(err.message || 'Failed to detach USB device');
     } finally {

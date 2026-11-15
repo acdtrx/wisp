@@ -5,7 +5,7 @@ import {
   Trash2, Loader2, Code2, X, Archive,
 } from 'lucide-react';
 
-import { useVmStore } from '../../store/vmStore.js';
+import { useVmStore, runVMCommand } from '../../store/vmStore.js';
 import { getVmIcon, getDefaultIconId } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
 import { updateVM } from '../../api/vms.js';
@@ -91,7 +91,6 @@ export default function OverviewPanel() {
   const suspendVM = useVmStore((s) => s.suspendVM);
   const resumeVM = useVmStore((s) => s.resumeVM);
   const deleteVM = useVmStore((s) => s.deleteVM);
-  const refreshSelectedVM = useVmStore((s) => s.refreshSelectedVM);
   const registerJob = useBackgroundJobsStore((s) => s.registerJob);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
 
@@ -205,14 +204,13 @@ export default function OverviewPanel() {
     }).catch(() => setBackupDestinations([{ id: 'local', label: 'Local', path: '/var/lib/wisp/backups', fallback: true }]));
   };
 
+  /* A rename is followed from the request: the server takes the name exactly as
+   * sent, and announces the change under it. */
   const handleSectionSave = async (changes) => {
-    const result = await updateVM(name, changes);
-    const newName =
-      typeof changes.name === 'string' ? changes.name.trim() : '';
-    const renamed = newName !== '' && newName !== name;
-    await refreshSelectedVM(renamed ? newName : undefined);
-    if (renamed) navigate(`/vm/${encodeURIComponent(newName)}/${activeTab}`);
-    return result;
+    const renamed = typeof changes.name === 'string' && changes.name !== name;
+    const target = renamed ? changes.name : name;
+    await runVMCommand(target, () => updateVM(name, changes));
+    if (renamed) navigate(`/vm/${encodeURIComponent(target)}/${activeTab}`, { replace: true });
   };
 
   const iconId = vmConfig.iconId || getDefaultIconId(vmConfig.osCategory);
@@ -381,7 +379,6 @@ export default function OverviewPanel() {
           <>
             <DisksSection
               vmConfig={vmConfig}
-              onRefresh={refreshSelectedVM}
               busyReason={busyHint}
             />
 
@@ -405,7 +402,6 @@ export default function OverviewPanel() {
               <CloudInitSection
                 vmConfig={vmConfig}
                 isCreating={false}
-                onRefresh={refreshSelectedVM}
                 busyReason={busyHint}
               />
             )}
@@ -499,8 +495,7 @@ export default function OverviewPanel() {
         open={iconPickerOpen}
         currentIconId={vmConfig.iconId || getDefaultIconId(vmConfig.osCategory)}
         onSelect={async (selectedIconId) => {
-          await updateVM(name, { iconId: selectedIconId });
-          await refreshSelectedVM();
+          await runVMCommand(name, () => updateVM(name, { iconId: selectedIconId }));
         }}
         onClose={() => setIconPickerOpen(false)}
       />

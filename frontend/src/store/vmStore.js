@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import * as vmApi from '../api/vms.js';
 import { createSSE } from '../api/sse.js';
-import { subscribeTopic } from '../api/events.js';
+import { sendAndAwaitChange, subscribeChanges, subscribeTopic } from '../api/events.js';
 import { withWorkloadAction, anyActionInFlight, pruneWorkloadActions } from './workloadActions.js';
 import { awaitJob } from './backgroundJobsStore.js';
 import { JOB_KIND } from '../api/jobProgress.js';
@@ -20,11 +20,15 @@ function mergeListFields(vmConfig, listItem) {
   return { ...vmConfig, state: listItem.state, pendingRestart };
 }
 
+/** The re-read of the selected VM that the latest `{ kind: 'vm' }` frame started. */
+let selectedVMRefresh = Promise.resolve();
+
 export const useVmStore = create((set, get) => {
   // Single subscriber per feed: one `vms` topic subscription (shared /api/events
   // stream) and one per-VM stats SSE are active at a time. Close functions are
   // stored here so stopVMListSSE/stopStatsSSE/deselectVM can clean up.
   let listCloseFn = null;
+  let changesCloseFn = null;
   let statsCloseFn = null;
   // Bumped on every selection change (select, deselect, rename-follow). A getVM
   // response is applied only if no selection change happened while it was in
@@ -69,7 +73,7 @@ export const useVmStore = create((set, get) => {
     if (!match || match.name === selectedVM) return;
     stopStatsSSE();
     selectionSeq += 1;
-    set({ selectedVM: match.name });
+    set({ selectedVM: match.name, renamedSelection: { from: selectedVM, to: match.name } });
     startStatsSSE(match.name);
     queueMicrotask(() => {
       get().refreshSelectedVM(match.name);
@@ -88,6 +92,10 @@ export const useVmStore = create((set, get) => {
     /** The list has loaded once; `listError` is the list stream's last error (the list shown is the last good one). */
     listLoaded: false,
     listError: null,
+    /** `{ from, to }` after the selection followed a rename seen on the list, until the route follows it. */
+    renamedSelection: null,
+
+    clearRenamedSelection: () => set({ renamedSelection: null }),
 
     fetchVMs: async () => {
       try {
@@ -114,6 +122,11 @@ export const useVmStore = create((set, get) => {
 
     startVMListSSE: () => {
       if (listCloseFn) return;
+      changesCloseFn = subscribeChanges(['vm'], (change) => {
+        const { selectedVM } = get();
+        if (!selectedVM) return;
+        if (change.kind === 'all' || change.id === selectedVM) selectedVMRefresh = get().refreshSelectedVM();
+      });
       listCloseFn = subscribeTopic(
         'vms',
         (data) => {
@@ -160,6 +173,10 @@ export const useVmStore = create((set, get) => {
       if (listCloseFn) {
         listCloseFn();
         listCloseFn = null;
+      }
+      if (changesCloseFn) {
+        changesCloseFn();
+        changesCloseFn = null;
       }
     },
 
@@ -227,16 +244,11 @@ export const useVmStore = create((set, get) => {
     async withAction(name, actionName, fn) {
       const track = (entry) => set((s) => ({ actions: withWorkloadAction(s.actions, name, entry) }));
       track({ action: actionName, error: null });
+      /* The new state arrives on the `vms` topic and the stats stream: no follow-up GET. */
       try {
         await fn();
         track({ action: null, error: null });
-        await get().fetchVMs();
-        if (get().selectedVM !== name) return;
-        if (actionName === 'delete') {
-          get().deselectVM();
-        } else {
-          await get().refreshSelectedVM();
-        }
+        if (actionName === 'delete' && get().selectedVM === name) get().deselectVM();
       } catch (err) {
         track({ action: null, error: err.message });
       }
@@ -266,3 +278,21 @@ export const useVmStore = create((set, get) => {
     },
   };
 });
+
+/**
+ * Send a command that changes VM `name` (its name after a rename) and resolve with
+ * its ack once the client holds the new state: the `{ kind: 'vm', id: name }`
+ * frame has arrived and, when `name` is the selected VM, the re-read it started
+ * has landed. The control that sent it stays busy until then. A command error
+ * rejects at once.
+ *
+ * @template T
+ * @param {string} name
+ * @param {() => Promise<T>} send
+ * @returns {Promise<T>}
+ */
+export async function runVMCommand(name, send) {
+  const ack = await sendAndAwaitChange('vm', name, send);
+  if (useVmStore.getState().selectedVM === name) await selectedVMRefresh;
+  return ack;
+}

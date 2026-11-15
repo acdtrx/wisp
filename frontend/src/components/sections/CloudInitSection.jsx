@@ -4,6 +4,8 @@ import { Cloud, AtSign, RefreshCw, Trash2, Loader2, Eye, EyeOff, KeyRound, Alert
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import { getCloudInit, updateCloudInit, deleteCloudInit, fetchGithubKeys } from '../../api/vms.js';
+import { runVMCommand } from '../../store/vmStore.js';
+import { useChanges } from '../../hooks/useChanges.js';
 
 /** API returns `{ enabled: false }` when no cloud-init.json exists. */
 function isBareCloudInitPlaceholder(data) {
@@ -37,7 +39,7 @@ const DEFAULTS = {
   installAvahiDaemon: true,
 };
 
-export default function CloudInitSection({ vmConfig, isCreating, onRefresh, initialCloudInit, onCloudInitChange, busyReason }) {
+export default function CloudInitSection({ vmConfig, isCreating, initialCloudInit, onCloudInitChange, busyReason }) {
   const vmName = vmConfig.name;
   const osCategory = vmConfig.osCategory || 'linux';
 
@@ -85,6 +87,7 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
   }, [vmName, isCreating]);
 
   useEffect(() => { loadConfig(); }, [loadConfig]);
+  useChanges('vm', isCreating ? null : vmName, loadConfig);
 
   // In create mode, keep hostname prefilled with VM name when name changes (until user edits hostname)
   useEffect(() => {
@@ -160,10 +163,8 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
       // A blank password keeps the one on file ("Leave blank to keep
       // unchanged"): the API reads '' as no password and 'set' as keep.
       const password = form.password || (config?.password === 'set' ? 'set' : '');
-      await updateCloudInit(vmName, { ...form, password });
+      await runVMCommand(vmName, () => updateCloudInit(vmName, { ...form, password }));
       setEditing(false);
-      if (onRefresh) await onRefresh();
-      await loadConfig();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -175,10 +176,9 @@ export default function CloudInitSection({ vmConfig, isCreating, onRefresh, init
     setSaving(true);
     setError(null);
     try {
-      await deleteCloudInit(vmName);
+      await runVMCommand(vmName, () => deleteCloudInit(vmName));
       setConfig(null);
       setEditing(false);
-      if (onRefresh) await onRefresh();
     } catch (err) {
       setError(err.message);
     } finally {

@@ -7,13 +7,15 @@ import { useContainerStore } from '../../store/containerStore.js';
 import { hasOpenLayer } from '../../lib/layers.js';
 
 export default function VmRoute() {
-  const { name } = useParams();
+  const { name, tab } = useParams();
   const navigate = useNavigate();
   const decodedName = name ? decodeURIComponent(name) : '';
 
   const selectVM = useVmStore((s) => s.selectVM);
   const deselectVM = useVmStore((s) => s.deselectVM);
   const deselectContainer = useContainerStore((s) => s.deselectContainer);
+  const renamedSelection = useVmStore((s) => s.renamedSelection);
+  const clearRenamedSelection = useVmStore((s) => s.clearRenamedSelection);
 
   useEffect(() => {
     if (!decodedName) return;
@@ -23,6 +25,16 @@ export default function VmRoute() {
       deselectVM();
     };
   }, [decodedName, selectVM, deselectVM, deselectContainer]);
+
+  /* The open VM was renamed (here or in another tab): the URL follows, so a refresh
+   * opens it again. */
+  useEffect(() => {
+    if (!renamedSelection) return;
+    clearRenamedSelection();
+    if (renamedSelection.from !== decodedName) return;
+    const tabPart = tab ? `/${tab}` : '';
+    navigate(`/vm/${encodeURIComponent(renamedSelection.to)}${tabPart}`, { replace: true });
+  }, [renamedSelection, clearRenamedSelection, decodedName, tab, navigate]);
 
   useEffect(() => {
     const handler = (e) => {

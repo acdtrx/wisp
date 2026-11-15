@@ -288,7 +288,6 @@ export default function CreateVMPanel() {
             <CloudInitSection
               vmConfig={{ ...config, name: form.name }}
               isCreating
-              onRefresh={() => {}}
               initialCloudInit={form.cloudInit}
               onCloudInitChange={handleCloudInitChange}
             />
