@@ -226,8 +226,11 @@ export const useVmStore = create((set, get) => {
 
     clearError: () => set({ error: null }),
     clearActionError: (name) => set((s) => ({ actions: withWorkloadAction(s.actions, name, { action: null, error: null }) })),
-    /** Show a command's failure in VM `name`'s action error (the detail view's banner). */
-    reportActionError: (name, message) => set((s) => ({ actions: withWorkloadAction(s.actions, name, { action: null, error: message }) })),
+    /** Show a command's failure in VM `name`'s action error (the detail view's banner),
+     *  leaving any action in flight on it tracked. */
+    reportActionError: (name, message) => set((s) => ({
+      actions: withWorkloadAction(s.actions, name, { action: s.actions[name]?.action ?? null, error: message }),
+    })),
 
     /**
      * Re-read the selected VM's config. A failure is recorded in `error` (the detail
@@ -254,17 +257,23 @@ export const useVmStore = create((set, get) => {
       set({ vmConfig: config });
     },
 
-    /** Run one action on VM `name`, tracked in `actions[name]`. Only touches the selection when it is `name`. */
+    /**
+     * Run one action on VM `name`, tracked in `actions[name]`. Only touches the selection
+     * when it is `name`. An error already shown on the VM stays until it is dismissed:
+     * the action replaces it only with its own failure.
+     */
     async withAction(name, actionName, fn) {
-      const track = (entry) => set((s) => ({ actions: withWorkloadAction(s.actions, name, entry) }));
-      track({ action: actionName, error: null });
+      const track = (action, error) => set((s) => ({
+        actions: withWorkloadAction(s.actions, name, { action, error: error === undefined ? (s.actions[name]?.error ?? null) : error }),
+      }));
+      track(actionName);
       /* The new state arrives on the `vms` topic and the stats stream: no follow-up GET. */
       try {
         await fn();
-        track({ action: null, error: null });
+        track(null);
         if (actionName === 'delete' && get().selectedVM === name) get().deselectVM();
       } catch (err) {
-        track({ action: null, error: err.message });
+        track(null, err.message);
       }
     },
 
