@@ -82,7 +82,11 @@ export default function WispUpdateSection() {
   const channel = useSettingsStore((s) => s.settings?.updateChannel ?? 'stable');
   const settingsLoaded = useSettingsStore((s) => s.settings != null);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
-  const setSettings = useSettingsStore((s) => s.setSettings);
+  /* The channel just chosen, shown until the settings reload carries it. */
+  const [pendingChannel, setPendingChannel] = useState(null);
+  useEffect(() => {
+    setPendingChannel(null);
+  }, [channel]);
 
   const applyStatus = useCallback((s) => {
     setHydrated(s);
@@ -136,16 +140,23 @@ export default function WispUpdateSection() {
     const next = event.target.value;
     setError(null);
     setChecking(true);
+    setPendingChannel(next);
     try {
-      const saved = await updateSettings({ updateChannel: next });
-      setSettings({ updateChannel: saved.updateChannel });
+      await updateSettings({ updateChannel: next });
+    } catch (err) {
+      setPendingChannel(null);
+      setError(err.detail || err.message || 'Failed to switch update channel');
+      setChecking(false);
+      return;
+    }
+    try {
       applyStatus(await checkForWispUpdate());
     } catch (err) {
-      setError(err.detail || err.message || 'Failed to switch update channel');
+      setError(err.detail || err.message || 'Check failed');
     } finally {
       setChecking(false);
     }
-  }, [applyStatus, setSettings]);
+  }, [applyStatus]);
 
   const beginInstall = useCallback(() => {
     setError(null);
@@ -266,7 +277,7 @@ export default function WispUpdateSection() {
       ) : (
         'Check for newer Wisp releases on GitHub.'
       )}
-      {channel === 'beta' && (
+      {(pendingChannel ?? channel) === 'beta' && (
         <span className="block text-text-muted">Beta channel — pre-releases included.</span>
       )}
     </>
@@ -295,7 +306,7 @@ export default function WispUpdateSection() {
           </label>
           <select
             id="wisp-update-channel"
-            value={channel}
+            value={pendingChannel ?? channel}
             onChange={handleChannelChange}
             disabled={checking || installing}
             className="input-field h-7 w-auto py-0 text-xs"

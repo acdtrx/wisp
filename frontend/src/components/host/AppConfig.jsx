@@ -10,8 +10,6 @@ import SettingsGate from '../shared/SettingsGate.jsx';
 
 export default function AppConfig() {
   const settings = useSettingsStore((s) => s.settings);
-  const loadSettings = useSettingsStore((s) => s.loadSettings);
-  const setSettings = useSettingsStore((s) => s.setSettings);
 
   const [serverName, setServerName] = useState('');
   const [vmsPath, setVmsPath] = useState('');
@@ -47,7 +45,7 @@ export default function AppConfig() {
     setError(null);
     setSaving(true);
     try {
-      const updated = await updateSettings({
+      await updateSettings({
         serverName: serverName.trim() || undefined,
         vmsPath: vmsPath.trim().startsWith('/') ? vmsPath.trim() : undefined,
         imagePath: imagePath.trim().startsWith('/') ? imagePath.trim() : undefined,
@@ -55,8 +53,7 @@ export default function AppConfig() {
         // explicit null clears back to the default announcement
         advertisedUrl: advertisedUrl.trim() || null,
       });
-      setSettings(updated);
-      await loadSettings();
+      // What was sent counts as saved until the settings reload resets the form.
       setDirty(false);
     } catch (err) {
       setError(err.message || 'Failed to save settings');

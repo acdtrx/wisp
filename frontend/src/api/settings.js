@@ -4,12 +4,14 @@ export function getSettings() {
   return api('/api/settings');
 }
 
-export function updateSettings(body) {
-  return api('/api/settings', { method: 'PATCH', body });
+/** Answers 204: the new settings arrive through the settings store's sync. */
+export async function updateSettings(body) {
+  await api('/api/settings', { method: 'PATCH', body });
 }
 
-export function updateOidcSettings(body) {
-  return api('/api/settings/oidc', { method: 'PATCH', body });
+/** Answers 204, like `updateSettings`. */
+export async function updateOidcSettings(body) {
+  await api('/api/settings/oidc', { method: 'PATCH', body });
 }
 
 export function getMounts() {

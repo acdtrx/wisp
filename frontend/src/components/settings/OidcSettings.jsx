@@ -13,10 +13,12 @@ const HELP =
 
 export default function OidcSettings() {
   const settings = useSettingsStore((s) => s.settings);
-  const loadSettings = useSettingsStore((s) => s.loadSettings);
-  const setSettings = useSettingsStore((s) => s.setSettings);
 
   const oidc = settings?.oidc;
+  /* What was last saved: it counts as the saved state until the settings reload
+   * lands and resets the form. */
+  const [sent, setSent] = useState(null);
+  const saved = sent ?? oidc;
 
   const [enabled, setEnabled] = useState(false);
   const [issuer, setIssuer] = useState('');
@@ -35,18 +37,19 @@ export default function OidcSettings() {
       setClientId(oidc.clientId || '');
       setHasSecret(!!oidc.hasClientSecret);
       setClientSecret('');
+      setSent(null);
     }
   }, [oidc]);
 
   useEffect(() => {
-    if (!oidc) { setDirty(false); return; }
+    if (!saved) { setDirty(false); return; }
     setDirty(
-      enabled !== (oidc.enabled === true) ||
-      issuer !== (oidc.issuer || '') ||
-      clientId !== (oidc.clientId || '') ||
+      enabled !== (saved.enabled === true) ||
+      issuer !== (saved.issuer || '') ||
+      clientId !== (saved.clientId || '') ||
       clientSecret !== '',
     );
-  }, [oidc, enabled, issuer, clientId, clientSecret]);
+  }, [saved, enabled, issuer, clientId, clientSecret]);
 
   // Full URL to register as the redirect/callback in the provider — the same
   // one the backend sends: the advertised URL's origin when set, else the
@@ -58,7 +61,7 @@ export default function OidcSettings() {
     hasSecret &&
     !!issuer.trim() &&
     !!clientId.trim() &&
-    (issuer.trim() !== (oidc?.issuer || '') || clientId.trim() !== (oidc?.clientId || ''));
+    (issuer.trim() !== (saved?.issuer || '').trim() || clientId.trim() !== (saved?.clientId || '').trim());
 
   const redirectUri = advertisedUrl
     ? new URL('/api/auth/oidc/callback', advertisedUrl).href
@@ -81,6 +84,7 @@ export default function OidcSettings() {
       return;
     }
     setSaving(true);
+    const savedFrom = settings;
     try {
       const oidcUpdate = {
         enabled,
@@ -92,11 +96,14 @@ export default function OidcSettings() {
       // long as issuer and client ID are unchanged.
       if (clientSecret) oidcUpdate.clientSecret = clientSecret;
 
-      const updated = await updateOidcSettings(oidcUpdate);
-      setSettings(updated);
-      await loadSettings();
-      setClientSecret('');
-      setDirty(false);
+      await updateOidcSettings(oidcUpdate);
+      // Unless the reload already landed (its frame can beat the 204).
+      if (useSettingsStore.getState().settings === savedFrom) {
+        setSent({ enabled, issuer, clientId });
+        // The server drops the saved secret when the issuer or client ID is cleared.
+        setHasSecret(!!clientSecret || (hasSecret && !!oidcUpdate.issuer && !!oidcUpdate.clientId));
+        setClientSecret('');
+      }
     } catch (err) {
       setError(err.detail || err.message || 'Failed to save SSO settings');
     } finally {

@@ -26,12 +26,12 @@ import {
   restoreContainerBackupInPlace,
   deleteContainerBackup,
 } from '../../api/backups.js';
-import { getSettings } from '../../api/settings.js';
 import { subscribeTopic } from '../../api/events.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
 import { useVmStore } from '../../store/vmStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
+import { useSettingsStore } from '../../store/settingsStore.js';
 import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
 
 /* Same stopped set as the VM Overview. `shutdown` is a guest shutdown still in
@@ -136,8 +136,21 @@ export default function BackupsPanel() {
   const [vmBackups, setVmBackups] = useState([]);
   const [ctBackups, setCtBackups] = useState([]);
   const [status, setStatus] = useState(null);
-  const [schedule, setSchedule] = useState(null);
-  const [destinations, setDestinations] = useState([{ id: 'local', label: 'Local', path: '/var/lib/wisp/backups' }]);
+  const settings = useSettingsStore((s) => s.settings);
+  const settingsError = useSettingsStore((s) => s.error);
+  const schedule = settings?.backupSchedule || null;
+  const destinations = useMemo(() => {
+    if (!settings) {
+      /* settings unavailable — the Local default keeps Back up now usable, flagged as a fallback once the load failed */
+      return [{ id: 'local', label: 'Local', path: '/var/lib/wisp/backups', ...(settingsError ? { fallback: true } : {}) }];
+    }
+    const dests = [{ id: 'local', label: 'Local', path: settings.backupLocalPath || '/var/lib/wisp/backups' }];
+    if (settings.backupMountId) {
+      const m = (settings.mounts || []).find((x) => x.id === settings.backupMountId);
+      if (m?.mountPath) dests.push({ id: m.id, label: m.label || 'Mount', path: m.mountPath });
+    }
+    return dests;
+  }, [settings, settingsError]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState(() => new Set());
@@ -200,23 +213,6 @@ export default function BackupsPanel() {
     });
     return unsubscribe;
   }, [fetchLists]);
-
-  useEffect(() => {
-    getSettings()
-      .then((s) => {
-        const dests = [{ id: 'local', label: 'Local', path: s.backupLocalPath || '/var/lib/wisp/backups' }];
-        if (s.backupMountId) {
-          const m = (s.mounts || []).find((x) => x.id === s.backupMountId);
-          if (m?.mountPath) dests.push({ id: m.id, label: m.label || 'Mount', path: m.mountPath });
-        }
-        setDestinations(dests);
-        setSchedule(s.backupSchedule || null);
-      })
-      .catch(() => {
-        /* settings unavailable — the Local default keeps Back up now usable, flagged as a fallback */
-        setDestinations([{ id: 'local', label: 'Local', path: '/var/lib/wisp/backups', fallback: true }]);
-      });
-  }, []);
 
   const groups = useMemo(() => {
     const map = new Map();

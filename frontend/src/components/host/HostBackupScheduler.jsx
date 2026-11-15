@@ -36,17 +36,21 @@ function clampInt(value, min, max, fallback) {
 
 export default function HostBackupScheduler() {
   const settings = useSettingsStore((s) => s.settings);
-  const loadSettings = useSettingsStore((s) => s.loadSettings);
 
   const [form, setForm] = useState(() => fromSettings(settings));
+  /* The form as last saved: it counts as the saved state until the settings
+   * reload lands and resets the form. */
+  const [sent, setSent] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (settings) setForm(fromSettings(settings));
+    if (!settings) return;
+    setForm(fromSettings(settings));
+    setSent(null);
   }, [settings]);
 
-  const dirty = JSON.stringify(form) !== JSON.stringify(fromSettings(settings));
+  const dirty = JSON.stringify(form) !== JSON.stringify(sent ?? fromSettings(settings));
 
   /* Local, plus the mount chosen in the Backup section above (when set). */
   const backupMount = settings?.backupMountId
@@ -76,6 +80,7 @@ export default function HostBackupScheduler() {
   const handleSave = async () => {
     setError(null);
     setSaving(true);
+    const savedFrom = settings;
     try {
       await updateSettings({
         backupSchedule: {
@@ -86,7 +91,8 @@ export default function HostBackupScheduler() {
           retainWeeks: clampInt(form.retainWeeks, 0, 52, DEFAULT_SCHEDULE.retainWeeks),
         },
       });
-      await loadSettings();
+      // Unless the reload already landed (its frame can beat the 204).
+      if (useSettingsStore.getState().settings === savedFrom) setSent(form);
     } catch (err) {
       setError(err.message || 'Failed to save backup schedule');
     } finally {

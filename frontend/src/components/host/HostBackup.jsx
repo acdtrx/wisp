@@ -8,7 +8,6 @@ import SettingsGate from '../shared/SettingsGate.jsx';
 
 export default function HostBackup() {
   const settings = useSettingsStore((s) => s.settings);
-  const loadSettings = useSettingsStore((s) => s.loadSettings);
 
   const [backupLocalPath, setBackupLocalPath] = useState('');
   const [backupMountId, setBackupMountId] = useState('');
@@ -33,13 +32,11 @@ export default function HostBackup() {
     setError(null);
     setSaving(true);
     try {
-      const updated = await updateSettings({
+      await updateSettings({
         backupLocalPath: backupLocalPath.trim() || undefined,
         backupMountId: backupMountId ? backupMountId : null,
       });
-      await loadSettings();
-      setBackupLocalPath(updated.backupLocalPath ?? '');
-      setBackupMountId(updated.backupMountId ?? '');
+      // What was sent counts as saved until the settings reload resets the form.
       setDirty(false);
     } catch (err) {
       setError(err.message || 'Failed to save backup settings');
