@@ -40,11 +40,10 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
     if (busy) return;
     setBusy(true);
     try {
-      await createGroup();
-      /* The new group is last in the freshly-applied envelope; move the tile
-       * into it so "New group…" behaves like the sidebar's create-and-assign. */
-      const created = useHomeStore.getState().groups.filter((g) => !g.builtin).at(-1);
-      if (created) await assignTile({ tileId, groupId: created.id });
+      /* Move the tile into the new group so "New group…" behaves like the
+       * sidebar's create-and-assign. */
+      const groupId = await createGroup();
+      await assignTile({ tileId, groupId });
       setOpen(false);
     } catch (err) {
       setErrorMsg(err.message);

@@ -1,39 +1,41 @@
 import { api } from './client.js';
 
-/* Every call returns the same `{ tiles, groups }` envelope the `home` topic
- * pushes, so the store can apply a mutation's response directly. */
+/* Writes answer with an ack (204, or `201 { id }` for a create); the new
+ * `{ tiles, groups }` envelope arrives on the `home` topic. */
 
 export function getHomepage() {
   return api('/api/homepage');
 }
 
+/** @returns {Promise<{ id: string }>} */
 export function createGroup(name) {
   return api('/api/homepage/groups', { method: 'POST', body: { name } });
 }
 
-export function renameGroup(id, name) {
-  return api(`/api/homepage/groups/${encodeURIComponent(id)}`, { method: 'PATCH', body: { name } });
+export async function renameGroup(id, name) {
+  await api(`/api/homepage/groups/${encodeURIComponent(id)}`, { method: 'PATCH', body: { name } });
 }
 
-export function deleteGroup(id) {
-  return api(`/api/homepage/groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export async function deleteGroup(id) {
+  await api(`/api/homepage/groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
-export function reorderGroups(ids) {
-  return api('/api/homepage/groups/reorder', { method: 'POST', body: { ids } });
+export async function reorderGroups(ids) {
+  await api('/api/homepage/groups/reorder', { method: 'POST', body: { ids } });
 }
 
-export function assignTile({ tileId, groupId, index }) {
-  return api('/api/homepage/tiles/assign', {
+export async function assignTile({ tileId, groupId, index }) {
+  await api('/api/homepage/tiles/assign', {
     method: 'PUT',
     body: { tileId, groupId: groupId ?? null, index: index ?? null },
   });
 }
 
-export function setTileOverride(patch) {
-  return api('/api/homepage/tiles/override', { method: 'PUT', body: patch });
+export async function setTileOverride(patch) {
+  await api('/api/homepage/tiles/override', { method: 'PUT', body: patch });
 }
 
+/** @returns {Promise<{ id: string }>} */
 export function addManualTile({ name, url, iconId }) {
   return api('/api/homepage/manual-tiles', {
     method: 'POST',
@@ -41,13 +43,13 @@ export function addManualTile({ name, url, iconId }) {
   });
 }
 
-export function updateManualTile(id, patch) {
-  return api(`/api/homepage/manual-tiles/${encodeURIComponent(id)}`, {
+export async function updateManualTile(id, patch) {
+  await api(`/api/homepage/manual-tiles/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: patch,
   });
 }
 
-export function removeManualTile(id) {
-  return api(`/api/homepage/manual-tiles/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export async function removeManualTile(id) {
+  await api(`/api/homepage/manual-tiles/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

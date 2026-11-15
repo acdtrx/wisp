@@ -4,7 +4,7 @@ import { subscribeTopic } from '../api/events.js';
 
 export const UNGROUPED_GROUP_ID = 'ungrouped';
 
-function applyResponse(set, response) {
+function applyEnvelope(set, response) {
   if (!response || !Array.isArray(response.tiles) || !Array.isArray(response.groups)) {
     return response;
   }
@@ -51,7 +51,7 @@ export const useHomeStore = create((set, get) => ({
         return;
       }
       if (!data || !Array.isArray(data.tiles)) return;
-      applyResponse(set, data);
+      applyEnvelope(set, data);
     });
   },
 
@@ -62,33 +62,33 @@ export const useHomeStore = create((set, get) => ({
     }
   },
 
+  /* Writes answer with an ack; the new envelope arrives on the `home` topic. */
+
+  /** Create a group with a default name and flag it for rename: its header opens
+   *  the rename input when it first renders, whenever the topic brings it.
+   *  @returns {Promise<string>} the new group's id */
   createGroup: async () => {
     const name = uniqueDefaultName(get().groups);
-    const response = await homeApi.createGroup(name);
-    applyResponse(set, response);
-    const created = (response.groups || []).find(
-      (g) => g.name.toLowerCase() === name.toLowerCase(),
-    );
-    if (created) set({ pendingRenameId: created.id });
+    const { id } = await homeApi.createGroup(name);
+    set({ pendingRenameId: id });
+    return id;
   },
 
-  renameGroup: async (id, name) => applyResponse(set, await homeApi.renameGroup(id, name)),
+  renameGroup: (id, name) => homeApi.renameGroup(id, name),
 
-  deleteGroup: async (id) => applyResponse(set, await homeApi.deleteGroup(id)),
+  deleteGroup: (id) => homeApi.deleteGroup(id),
 
-  reorderGroups: async (ids) => applyResponse(set, await homeApi.reorderGroups(ids)),
+  reorderGroups: (ids) => homeApi.reorderGroups(ids),
 
-  assignTile: async ({ tileId, groupId, index }) =>
-    applyResponse(set, await homeApi.assignTile({ tileId, groupId, index })),
+  assignTile: ({ tileId, groupId, index }) => homeApi.assignTile({ tileId, groupId, index }),
 
-  setTileOverride: async (patch) => applyResponse(set, await homeApi.setTileOverride(patch)),
+  setTileOverride: (patch) => homeApi.setTileOverride(patch),
 
-  addManualTile: async (tile) => applyResponse(set, await homeApi.addManualTile(tile)),
+  addManualTile: (tile) => homeApi.addManualTile(tile),
 
-  updateManualTile: async (id, patch) =>
-    applyResponse(set, await homeApi.updateManualTile(id, patch)),
+  updateManualTile: (id, patch) => homeApi.updateManualTile(id, patch),
 
-  removeManualTile: async (id) => applyResponse(set, await homeApi.removeManualTile(id)),
+  removeManualTile: (id) => homeApi.removeManualTile(id),
 
   clearPendingRenameId: () => set({ pendingRenameId: null }),
 }));

@@ -7,7 +7,6 @@ import {
 } from 'lucide-react';
 
 import { useContainerStore } from '../../store/containerStore.js';
-import { useSectionsStore } from '../../store/sectionsStore.js';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { updateContainer } from '../../api/containers.js';
 import { startContainerBackup } from '../../api/backups.js';
@@ -201,13 +200,8 @@ export default function ContainerOverviewPanel() {
      * name so the stats SSE reconnects, then update the URL. */
     const nextName = result?.name && result.name !== name ? result.name : null;
     if (nextName) {
-      /* The backend moved the section assignment as part of the rename, but
-       * the LeftPanel buckets workloads from the client-side sectionsStore
-       * (which isn't optimistic — it mirrors the server's `{sections,
-       * assignments}` payload after every API response that returns one).
-       * PATCH /containers/:name doesn't return that payload, so refetch
-       * sections to pick up the moved assignment. */
-      await useSectionsStore.getState().loadSections();
+      /* The section assignment moves with the rename and reaches the sidebar on
+       * the sections topic. */
       await selectContainer(nextName);
       navigate(`/container/${encodeURIComponent(nextName)}/${activeTab}`, { replace: true });
     } else {

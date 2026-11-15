@@ -6,7 +6,7 @@ export const MAIN_SECTION_ID = 'main';
 
 const DEFAULT_MAIN = { id: MAIN_SECTION_ID, name: 'Main', order: -Infinity, builtin: true };
 
-function applyResponse(set, response) {
+function applyEnvelope(set, response) {
   const sections = response?.sections?.length ? response.sections : [DEFAULT_MAIN];
   const assignments = response?.assignments && typeof response.assignments === 'object'
     ? response.assignments
@@ -50,13 +50,11 @@ export const useSectionsStore = create((set, get) => ({
    * zone or picker "+ New section"); the matching SectionHeader reads this
    * to auto-open its rename input on first render, then clears it. */
   pendingRenameId: null,
-  loading: false,
-  error: null,
 
   /**
    * Subscribe to the `sections` topic on `/api/events`. The server sends the full
    * `{ sections, assignments }` envelope on connect and again after every mutation, so
-   * this both seeds the store and keeps it live — a workload moved from another device
+   * this both seeds the store and keeps it live, its only source — a workload moved from another device
    * (or while this client was suspended in the iOS app switcher) lands here without a
    * reload.
    */
@@ -64,7 +62,7 @@ export const useSectionsStore = create((set, get) => ({
     if (sectionsCloseFn) return;
     sectionsCloseFn = subscribeTopic('sections', (data) => {
       if (!data || !Array.isArray(data.sections)) return; // error frame; keep the last good envelope
-      applyResponse(set, data);
+      applyEnvelope(set, data);
     });
   },
 
@@ -75,63 +73,27 @@ export const useSectionsStore = create((set, get) => ({
     }
   },
 
-  /** One-shot read. The stream is the steady-state source; this exists for the one flow
-   *  that needs the envelope *before* it navigates — see ContainerOverviewPanel's rename. */
-  loadSections: async () => {
-    set({ loading: true, error: null });
-    try {
-      const response = await sectionsApi.listSections();
-      applyResponse(set, response);
-      set({ loading: false });
-      return response;
-    } catch (err) {
-      set({ error: err.message, loading: false });
-      throw err;
-    }
-  },
+  /* Writes answer with an ack; the new envelope arrives on the `sections` topic. */
+  renameSection: (id, name) => sectionsApi.renameSection(id, name),
 
-  createSection: async (name) => {
-    const response = await sectionsApi.createSection(name);
-    return applyResponse(set, response);
-  },
+  deleteSection: (id) => sectionsApi.deleteSection(id),
 
-  renameSection: async (id, name) => {
-    const response = await sectionsApi.renameSection(id, name);
-    return applyResponse(set, response);
-  },
+  reorderSections: (orderedIds) => sectionsApi.reorderSections(orderedIds),
 
-  deleteSection: async (id) => {
-    const response = await sectionsApi.deleteSection(id);
-    return applyResponse(set, response);
-  },
-
-  reorderSections: async (orderedIds) => {
-    const response = await sectionsApi.reorderSections(orderedIds);
-    applyResponse(set, response);
-  },
-
-  assignWorkload: async ({ type, name, sectionId }) => {
-    const response = await sectionsApi.assignWorkload({ type, name, sectionId });
-    applyResponse(set, response);
-  },
+  assignWorkload: ({ type, name, sectionId }) => sectionsApi.assignWorkload({ type, name, sectionId }),
 
   /**
    * Create a new section with an auto-suffixed default name, assign the given
    * workload to it, and flag the new section for auto-rename. Used by both
    * the "Create section" ghost drop zone and the picker's "+ New section"
-   * option so the two flows stay in lockstep.
+   * option so the two flows stay in lockstep. The section header opens its
+   * rename input when it first renders, whenever the topic brings it.
    */
   createAndAssign: async ({ type, name }) => {
     const defaultName = uniqueDefaultName(get().sections);
-    const created = await sectionsApi.createSection(defaultName);
-    applyResponse(set, created);
-    const newSection = (created.sections || []).find(
-      (s) => s.name.toLowerCase() === defaultName.toLowerCase(),
-    );
-    if (!newSection) return;
-    const assigned = await sectionsApi.assignWorkload({ type, name, sectionId: newSection.id });
-    applyResponse(set, assigned);
-    set({ pendingRenameId: newSection.id });
+    const { id } = await sectionsApi.createSection(defaultName);
+    await sectionsApi.assignWorkload({ type, name, sectionId: id });
+    set({ pendingRenameId: id });
   },
 
   clearPendingRenameId: () => set({ pendingRenameId: null }),
