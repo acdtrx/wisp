@@ -7,6 +7,7 @@ import ApiTokensSettings from '../settings/ApiTokensSettings.jsx';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { updateSettings } from '../../api/settings.js';
 import SettingsGate from '../shared/SettingsGate.jsx';
+import SettingsRefreshNotice from '../shared/SettingsRefreshNotice.jsx';
 
 export default function AppConfig() {
   const settings = useSettingsStore((s) => s.settings);
@@ -64,6 +65,8 @@ export default function AppConfig() {
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
+      <SettingsRefreshNotice />
+
       <SectionCard
         title="General"
         onSave={handleSave}

@@ -5,6 +5,7 @@ import {
 
 import BackupModal from '../shared/BackupModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
+import SettingsRefreshNotice from '../shared/SettingsRefreshNotice.jsx';
 import {
   DataTableScroll,
   DataTable,
@@ -598,6 +599,7 @@ export default function BackupsPanel() {
       </div>
 
       <div className="flex-1 space-y-3 px-4 py-4 lg:px-6 lg:py-5">
+        <SettingsRefreshNotice />
         {error && (
           <div className="rounded-md border border-status-stopped/30 bg-status-stopped-soft px-3 py-2 text-sm text-status-stopped">
             {error}
