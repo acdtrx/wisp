@@ -56,45 +56,47 @@ export default async function eventsRoutes(fastify) {
         }
       }
 
-      async function sendVMs() {
-        try {
-          sendTopic('vms', await listVMs());
-        } catch (err) {
-          request.log.warn({ err: err.message }, 'events: listVMs failed');
-          sendTopic('vms', { error: err.message, detail: err.raw || err.message, code: err.code });
-        }
+      /* An event-driven topic's gathers can finish out of order (two writes close
+       * together); a frame from a gather a later one overtook would bring back the
+       * older state. So only the latest gather started for a topic sends its frame,
+       * its error frame included. */
+      function latestGatherSender(topic, gather, describeFailure) {
+        let lastStarted = 0;
+        return async function send() {
+          const mine = ++lastStarted;
+          let data;
+          try {
+            data = await gather();
+          } catch (err) {
+            data = describeFailure(err);
+          }
+          if (mine === lastStarted) sendTopic(topic, data);
+        };
       }
 
-      async function sendContainers() {
-        try {
-          sendTopic('containers', await listContainers());
-        } catch (err) {
-          request.log.warn({ err: err.message }, 'events: listContainers failed');
-          sendTopic('containers', { error: 'Failed to list containers', detail: err.raw || err.message, code: err.code });
-        }
-      }
+      const sendVMs = latestGatherSender('vms', listVMs, (err) => {
+        request.log.warn({ err: err.message }, 'events: listVMs failed');
+        return { error: err.message, detail: err.raw || err.message, code: err.code };
+      });
 
-      async function sendSections() {
-        try {
-          sendTopic('sections', await buildSectionsEnvelope());
-        } catch (err) {
-          request.log.warn({ err: err.message }, 'events: sections read failed');
-          sendTopic('sections', { error: err.message, detail: err.raw || err.message, code: err.code });
-        }
-      }
+      const sendContainers = latestGatherSender('containers', listContainers, (err) => {
+        request.log.warn({ err: err.message }, 'events: listContainers failed');
+        return { error: 'Failed to list containers', detail: err.raw || err.message, code: err.code };
+      });
+
+      const sendSections = latestGatherSender('sections', buildSectionsEnvelope, (err) => {
+        request.log.warn({ err: err.message }, 'events: sections read failed');
+        return { error: err.message, detail: err.raw || err.message, code: err.code };
+      });
 
       /* Home page launcher tiles. Recomputed from live workload state joined with
        * the persisted overlay — so a container starting, a Caddy host being added,
        * or a tile being renamed all reach the page on the event that caused them.
        * No timer: every input has a change event of its own. */
-      async function sendHome() {
-        try {
-          sendTopic('home', await buildHomeEnvelope());
-        } catch (err) {
-          request.log.warn({ err: err.message }, 'events: home tiles build failed');
-          sendTopic('home', { error: err.message, detail: err.raw || err.message, code: err.code });
-        }
-      }
+      const sendHome = latestGatherSender('home', buildHomeEnvelope, (err) => {
+        request.log.warn({ err: err.message }, 'events: home tiles build failed');
+        return { error: err.message, detail: err.raw || err.message, code: err.code };
+      });
 
       function sendDiscovery() {
         sendTopic('discovery', getDiscoveredPeers());
@@ -103,14 +105,10 @@ export default async function eventsRoutes(fastify) {
       /* Per-workload last-backup-attempt map. Fires on every backup-shaped
        * change (attempt recorded, backup deleted/pruned) — consumers also use
        * the frame as their cue to refetch the backup lists. */
-      async function sendBackups() {
-        try {
-          sendTopic('backups', await getBackupStatus());
-        } catch (err) {
-          request.log.warn({ err: err.message }, 'events: backup status read failed');
-          sendTopic('backups', { error: err.message, detail: err.raw || err.message, code: err.code });
-        }
-      }
+      const sendBackups = latestGatherSender('backups', getBackupStatus, (err) => {
+        request.log.warn({ err: err.message }, 'events: backup status read failed');
+        return { error: err.message, detail: err.raw || err.message, code: err.code };
+      });
 
       /* References to changed records that no other topic carries in full: a client
        * showing the record GETs it again. The connect snapshot is `{ kind: 'all' }` —
