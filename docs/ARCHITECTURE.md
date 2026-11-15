@@ -139,16 +139,21 @@ consumer, and nothing has called for more).
 - **One multiplexed SSE stream per tab, `/api/events`**, carries every always-on feed as
   `{ topic, data }` frames: `stats` (sampled every 5 s), and the event-driven `vms`,
   `containers`, `sections`, `discovery`, `home`, `backups` and `changes` (references to
-  saved records no other topic carries, which a client showing them GETs again). One connection, not one per feed,
-  because browsers cap plain HTTP/1.1 at 6 connections per origin: a new always-on feed is
-  a new topic, never a new endpoint ([`specs/API.md`](specs/API.md), Events stream).
+  saved records no other topic carries, which a client showing them GETs again). One
+  connection, not one per feed, because browsers cap plain HTTP/1.1 at 6 connections per
+  origin: a new always-on feed is a new topic, never a new endpoint
+  ([`specs/API.md`](specs/API.md), Events stream).
 - **Each connect opens with the current state**: a new subscriber gets each topic's last
   frame, and the client replaces its list with it, so one reconnect replaces any stale
-  state.
+  state. `changes` is the exception: its frames are references, not state, and are not
+  replayed to late subscribers; its connect frame `{ kind: "all" }` tells the client to
+  GET what it shows.
 - **A topic's frame is its whole current state** `[PROJECT]`, on connect and on every
   change, and a topic may be shaped for the screen that shows it (`home`) (settled
   2026-11-15: kept over the template's one-record events and "records, not screens";
-  with one user the lists are small).
+  with one user the lists are small). `changes` is the exception: it carries a reference
+  to the changed record, which a client showing it GETs ([`specs/API.md`](specs/API.md),
+  `changes` topic payload).
 - **What one view needs gets a scoped stream** `[PROJECT]`, open only while the view is
   on screen: per-workload stats and logs, the disk and USB streams. **Job progress**
   streams emit until the job completes or fails, then close. No repeated-GET polling for
