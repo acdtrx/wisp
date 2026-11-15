@@ -3,8 +3,7 @@ import { useSettingsStore } from '../../store/settingsStore.js';
 
 /**
  * A failed settings reload while the last good settings are on screen: says so
- * until dismissed or the next successful load. Before the first load,
- * SettingsGate shows the error instead.
+ * until dismissed. Before the first load, SettingsGate shows the error instead.
  */
 export default function SettingsRefreshNotice() {
   const hasSettings = useSettingsStore((s) => s.settings != null);

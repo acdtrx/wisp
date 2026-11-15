@@ -11,12 +11,20 @@ export default function SettingsGate({ children, label = 'settings' }) {
   const error = useSettingsStore((s) => s.error);
   const loading = useSettingsStore((s) => s.loading);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
+  const dismissError = useSettingsStore((s) => s.dismissError);
   if (settings) return children;
   if (error && !loading) {
     return (
       <p className="text-xs text-status-stopped" role="alert">
         Couldn't load the {label}: {error}{' '}
-        <button type="button" onClick={() => loadSettings().catch(() => {})} className="font-medium underline">
+        <button
+          type="button"
+          onClick={() => {
+            dismissError();
+            loadSettings().catch(() => {});
+          }}
+          className="font-medium underline"
+        >
           Retry
         </button>
       </p>

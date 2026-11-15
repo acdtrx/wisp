@@ -15,8 +15,8 @@ let inFlight = 0;
 export const useSettingsStore = create((set, get) => ({
   settings: null,
   loading: false,
-  /** The last load's failure, until the next successful load or a dismiss. While
-   *  `settings` is set it is a failed refresh: the last good settings stay. */
+  /** A load's failure, shown until the user dismisses it. While `settings` is set
+   *  it is a failed refresh: the last good settings stay. */
   error: null,
   errorDetail: null,
 
@@ -32,11 +32,14 @@ export const useSettingsStore = create((set, get) => ({
         /* Keep the same object when nothing changed (a reconnect's reload): the
          * forms reset on a new object, and only a change should drop their edits. */
         const same = previous && JSON.stringify(previous) === JSON.stringify(settings);
-        set({ settings: same ? previous : settings, error: null, errorDetail: null });
+        set({ settings: same ? previous : settings });
       }
       return settings;
     } catch (err) {
-      if (request > lastApplied) set({ error: err.message, errorDetail: err.detail ?? null });
+      /* A newer GET already sent supersedes this one: show only the newest failure. */
+      if (request === lastSent && request > lastApplied) {
+        set({ error: err.message, errorDetail: err.detail ?? null });
+      }
       throw err;
     } finally {
       inFlight -= 1;
