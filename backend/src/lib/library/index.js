@@ -18,7 +18,8 @@ import { createAppError } from '../routeErrors.js';
 import { ensureImageDir, getImagePath } from '../paths.js';
 
 /** Notified after a file is uploaded, renamed, deleted or downloaded into the
- *  library. No replay: a cue to list the library again. */
+ *  library, and after a failed upload or download removed its partial file. No
+ *  replay: a cue to list the library again. */
 const libraryChangeHandlers = new Set();
 
 export function subscribeLibraryChange(handler) {
@@ -45,6 +46,19 @@ function announcing(write) {
   };
 }
 
+/** For a write that may leave a partial file in the library before it fails (a
+ *  download): it announces however it settles, so a listing that caught the
+ *  partial file is read again once it is gone. */
+function announcingSettled(write) {
+  return async (...args) => {
+    try {
+      return await write(...args);
+    } finally {
+      announceLibraryChange();
+    }
+  };
+}
+
 /**
  * Stream a multipart upload into the library under `filename`. The name is
  * reserved with an exclusive create, as downloads do: a check then a write lets
@@ -54,7 +68,8 @@ function announcing(write) {
  *
  * Throws the open error as is (`code: 'EEXIST'` when the name is taken), the
  * stream's error, or `LIBRARY_UPLOAD_TOO_LARGE` when multipart truncated the
- * file at its size limit.
+ * file at its size limit. Announces once the name was reserved, however it ends:
+ * the partial file was in the library meanwhile.
  *
  * @param {string} filename — already validated by the caller
  * @param {import('node:stream').Readable & { truncated?: boolean }} file
@@ -63,14 +78,18 @@ async function saveUpload(filename, file) {
   const destPath = join(await ensureImageDir(), filename);
   const handle = await open(destPath, 'wx');
   try {
-    await pipeline(file, handle.createWriteStream());
-  } catch (err) {
-    await unlink(destPath).catch(() => { /* best-effort cleanup */ });
-    throw err;
-  }
-  if (file.truncated) {
-    await unlink(destPath).catch(() => { /* best-effort cleanup */ });
-    throw createAppError('LIBRARY_UPLOAD_TOO_LARGE', 'Upload exceeded the configured size limit');
+    try {
+      await pipeline(file, handle.createWriteStream());
+    } catch (err) {
+      await unlink(destPath).catch(() => { /* best-effort cleanup */ });
+      throw err;
+    }
+    if (file.truncated) {
+      await unlink(destPath).catch(() => { /* best-effort cleanup */ });
+      throw createAppError('LIBRARY_UPLOAD_TOO_LARGE', 'Upload exceeded the configured size limit');
+    }
+  } finally {
+    announceLibraryChange();
   }
 }
 
@@ -85,12 +104,15 @@ async function deleteFile(name) {
   await unlink(join(getImagePath(), name));
 }
 
-export const saveLibraryUpload = announcing(saveUpload);
+export const saveLibraryUpload = saveUpload;
 export const renameLibraryFile = announcing(renameFile);
 export const deleteLibraryFile = announcing(deleteFile);
 
-/* The downloads land their file in the library: each announces once it is there. */
-export const downloadUrlToLibrary = announcing(downloadUrl);
-export const downloadUbuntuCloudToLibrary = announcing(downloadUbuntuCloud);
-export const downloadArchCloudToLibrary = announcing(downloadArchCloud);
-export const downloadHaosToLibrary = announcing(downloadHaos);
+/* The downloads land their file in the library (HAOS its decompressed output too):
+ * each announces however it settles — a failed or cancelled one removes the
+ * partial file it reserved. One that failed before reserving announces too: a
+ * cue that changed nothing is allowed. */
+export const downloadUrlToLibrary = announcingSettled(downloadUrl);
+export const downloadUbuntuCloudToLibrary = announcingSettled(downloadUbuntuCloud);
+export const downloadArchCloudToLibrary = announcingSettled(downloadArchCloud);
+export const downloadHaosToLibrary = announcingSettled(downloadHaos);

@@ -150,7 +150,8 @@ consumer, and nothing has called for more).
     `/images/create`, `/images/update` and `/images/delete` in the `wisp` namespace:
     every pull, update and delete, outside ones included. The macOS stub never fires.
   - `library.subscribeLibraryChange(handler)` — after every upload, rename, delete and
-    finished download into the library.
+    finished download into the library, and after a failed upload or download removed
+    its partial file.
   - `lib/apiTokens.js` `subscribeApiTokensChange(handler)` — after a token is created or
     revoked.
   - `lib/wispUpdate.js` `subscribeWispUpdateChange(handler)` — after every self-update
