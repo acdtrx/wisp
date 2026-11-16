@@ -2,13 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import Modal from '../shared/Modal.jsx';
 import { getMountFileContent, putMountFileContent } from '../../api/containers.js';
+import { runContainerCommand } from '../../store/containerStore.js';
 
 export default function MountFileEditorModal({
   open,
   containerName,
   mountName,
   onClose,
-  onSaved,
 }) {
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -42,8 +42,7 @@ export default function MountFileEditorModal({
     setSaving(true);
     setSaveError(null);
     try {
-      await putMountFileContent(containerName, mountName, text);
-      if (typeof onSaved === 'function') await onSaved();
+      await runContainerCommand(containerName, () => putMountFileContent(containerName, mountName, text));
       onClose();
     } catch (err) {
       setSaveError(err.message || 'Failed to save');

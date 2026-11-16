@@ -15,6 +15,7 @@ import {
 import {
   addContainerService, updateContainerService, removeContainerService,
 } from '../../api/containers.js';
+import { runContainerCommand } from '../../store/containerStore.js';
 import LoadHint from '../shared/LoadHint.jsx';
 
 function serviceProto(type) {
@@ -84,7 +85,7 @@ function txtPairsToObject(pairs) {
 }
 
 export default function ContainerNetworkSection({
-  config, onSave, isCreating = false, onFormChange, onRefresh,
+  config, onSave, isCreating = false, onFormChange,
 }) {
   const net = config.network || {};
   const isUp = config.state === 'running';
@@ -97,7 +98,8 @@ export default function ContainerNetworkSection({
   const [originalInterface, setOriginalInterface] = useState(() => net.interface || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [requiresRestart, setRequiresRestart] = useState(false);
+  /* The restart badge follows the container's `pendingRestart`. */
+  const requiresRestart = !isCreating && !!config.pendingRestart;
   const [bridgesFailed, setBridgesFailed] = useState(false);
   const [bridges, setBridges] = useState([]);
 
@@ -194,12 +196,9 @@ export default function ContainerNetworkSection({
     const txt = txtPairsToObject(strip.draft.txtPairs);
     setStrip({ ...strip, saving: true, error: null });
     try {
-      if (strip.hasExisting) {
-        await updateContainerService(config.name, port, { type, txt });
-      } else {
-        await addContainerService(config.name, { port, type, txt });
-      }
-      await onRefresh?.();
+      await runContainerCommand(config.name, () => (strip.hasExisting
+        ? updateContainerService(config.name, port, { type, txt })
+        : addContainerService(config.name, { port, type, txt })));
       setStrip(null);
     } catch (err) {
       setStrip((s) => (s ? { ...s, saving: false, error: err.message } : s));
@@ -210,8 +209,7 @@ export default function ContainerNetworkSection({
     if (!strip || !strip.hasExisting || strip.port == null) return;
     setStrip({ ...strip, saving: true, error: null });
     try {
-      await removeContainerService(config.name, strip.port);
-      await onRefresh?.();
+      await runContainerCommand(config.name, () => removeContainerService(config.name, strip.port));
       setStrip(null);
     } catch (err) {
       setStrip((s) => (s ? { ...s, saving: false, error: err.message } : s));
@@ -297,8 +295,7 @@ export default function ContainerNetworkSection({
       if (Object.keys(networkChanges).length > 0) {
         changes.network = { ...net, ...networkChanges };
       }
-      const result = await onSave(changes);
-      if (result?.requiresRestart) setRequiresRestart(true);
+      await onSave(changes);
       setOriginalMac(macDraft.trim());
       setOriginalInterface(interfaceDraft.trim());
     } catch (err) {

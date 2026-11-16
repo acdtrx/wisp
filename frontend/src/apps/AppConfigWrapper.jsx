@@ -6,7 +6,7 @@ import { Unplug } from 'lucide-react';
 import ConfirmDialog from '../components/shared/ConfirmDialog.jsx';
 import { getAppEntry } from './appRegistry.js';
 
-export default function AppConfigWrapper({ config, onSave, onRefresh }) {
+export default function AppConfigWrapper({ config, onSave }) {
   const [ejectOpen, setEjectOpen] = useState(false);
 
   const appEntry = getAppEntry(config.metadata?.app);
@@ -14,15 +14,11 @@ export default function AppConfigWrapper({ config, onSave, onRefresh }) {
 
   const AppComponent = appEntry.component;
 
-  const handleAppSave = async (appConfig) => {
-    const result = await onSave({ appConfig });
-    return result;
-  };
+  const handleAppSave = (appConfig) => onSave({ appConfig });
 
   const handleEject = async () => {
     setEjectOpen(false);
     await onSave({ eject: true });
-    await onRefresh();
   };
 
   return (

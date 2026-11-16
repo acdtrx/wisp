@@ -44,6 +44,8 @@ import { useSettingsStore } from '../../store/settingsStore.js';
 import { getMountStatus } from '../../api/settings.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
+import { runContainerCommand } from '../../store/containerStore.js';
+import { useChanges } from '../../hooks/useChanges.js';
 import LoadHint from '../shared/LoadHint.jsx';
 
 const addBtn =
@@ -106,7 +108,7 @@ function MountTypeIcon({ type }) {
   );
 }
 
-export default function ContainerMountsSection({ config, onRefresh }) {
+export default function ContainerMountsSection({ config }) {
   const settings = useSettingsStore((s) => s.settings);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
   const [busyRowName, setBusyRowName] = useState(null);
@@ -136,18 +138,23 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     setExpandedName(null);
   }, [config.name]);
 
-  /* Host-side disk usage per mount — one on-demand snapshot per mounts change, not a live feed
-   * (sizing walks the data dir and can take seconds for large trees). Best-effort: on failure
-   * the Size column just shows em-dashes. */
+  /* Host-side disk usage per mount — one on-demand snapshot per mounts change, and again when
+   * the container's change cue says its content may have changed (an upload, a content edit);
+   * not a live feed (sizing walks the data dir and can take seconds for large trees), and no
+   * command waits for it. Best-effort: on failure the Size column just shows em-dashes. */
+  const [usageCue, setUsageCue] = useState(0);
+  useChanges('container', config.name, () => { setUsageCue((n) => n + 1); });
   useEffect(() => {
     let cancelled = false;
-    setMountUsage(null);
-    if (!config.name || (config.mounts || []).length === 0) return undefined;
+    if (!config.name || (config.mounts || []).length === 0) {
+      setMountUsage(null);
+      return undefined;
+    }
     getContainerMountUsage(config.name)
       .then((res) => { if (!cancelled) { setMountUsage(res.mounts || []); setUsageFailed(false); } })
       .catch(() => { if (!cancelled) { setMountUsage([]); setUsageFailed(true); } });
     return () => { cancelled = true; };
-  }, [config.name, mountsKey]);
+  }, [config.name, mountsKey, usageCue]);
 
   const usageByName = useMemo(() => {
     const map = new Map();
@@ -192,8 +199,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
 
   const closeEditor = () => setEditor({ open: false, kind: 'file', mount: null });
 
-  const handleSaved = async () => {
-    if (onRefresh) await onRefresh();
+  const handleSaved = () => {
     refreshStorageStatus();
   };
 
@@ -201,8 +207,8 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     setError(null);
     setDeletingRowName(row.name);
     try {
-      await awaitJob(JOB_KIND.CONTAINER_MOUNT_DELETE, await removeContainerMount(config.name, row.name));
-      if (onRefresh) await onRefresh();
+      await runContainerCommand(config.name, async () =>
+        awaitJob(JOB_KIND.CONTAINER_MOUNT_DELETE, await removeContainerMount(config.name, row.name)));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -214,8 +220,7 @@ export default function ContainerMountsSection({ config, onRefresh }) {
     setBusyRowName(row.name);
     setError(null);
     try {
-      await uploadFn(row.name);
-      if (onRefresh) await onRefresh();
+      await runContainerCommand(config.name, () => uploadFn(row.name));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -588,7 +593,6 @@ export default function ContainerMountsSection({ config, onRefresh }) {
         open={secretEditor.open}
         containerName={config.name}
         mount={secretEditor.mount}
-        onSaved={onRefresh}
         onClose={() => setSecretEditor({ open: false, mount: null })}
       />
 
@@ -597,7 +601,6 @@ export default function ContainerMountsSection({ config, onRefresh }) {
         containerName={config.name}
         mountName={fileEditor.mountName}
         onClose={() => setFileEditor({ open: false, mountName: '' })}
-        onSaved={onRefresh}
       />
     </SectionCard>
   );

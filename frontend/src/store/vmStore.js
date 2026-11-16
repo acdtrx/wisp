@@ -3,6 +3,9 @@ import * as vmApi from '../api/vms.js';
 import { createSSE } from '../api/sse.js';
 import { sendAndAwaitChange, sendAndAwaitTopic, subscribeChanges, subscribeTopic } from '../api/events.js';
 import { awaitJob } from './backgroundJobsStore.js';
+import {
+  errorKey, withError, withoutError, withoutErrorsOfVanished, withErrorsRenamed, withBusy, anyActionInFlight,
+} from './workloadActions.js';
 import { JOB_KIND } from '../api/jobProgress.js';
 
 /**
@@ -29,63 +32,6 @@ function listShowsLeft(name, state) {
     return !vm || vm.state !== state;
   };
 }
-
-/*
- * Busy and errors are kept apart. `actions[name]` is the action in flight on VM `name`
- * ('start', 'delete', …), nothing else. `errors` holds what the detail view shows, each
- * until the user dismisses it, keyed by owner and VM: an `action`'s failure (a new
- * action's failure replaces it; a success leaves it), a failed `refresh` of the config,
- * the `select` read that left no config (the error page), and the `list` (no VM).
- */
-function errorKey(owner, vm) {
-  return `${owner}:${vm ?? ''}`;
-}
-
-function withError(errors, owner, vm, message) {
-  return { ...errors, [errorKey(owner, vm)]: { owner, vm: vm ?? null, message } };
-}
-
-function withoutError(errors, owner, vm) {
-  const key = errorKey(owner, vm);
-  if (!(key in errors)) return errors;
-  const next = { ...errors };
-  delete next[key];
-  return next;
-}
-
-/** The errors without those of VMs no longer listed (deleted). A `select` error stays:
- *  it is the error page of a VM that may never have been listed, up until the user
- *  leaves the view (selectVM and deselectVM clear it). */
-function withoutErrorsOfVanished(errors, names) {
-  let next = null;
-  for (const [key, entry] of Object.entries(errors)) {
-    if (entry.vm == null || entry.owner === 'select' || names.has(entry.vm)) continue;
-    next ??= { ...errors };
-    delete next[key];
-  }
-  return next ?? errors;
-}
-
-/** The errors with VM `from`'s action and refresh errors moved to `to` (a rename: the
- *  VM still exists, so its undismissed errors stay with it). */
-function withErrorsRenamed(errors, from, to) {
-  let next = errors;
-  for (const owner of ['action', 'refresh']) {
-    const entry = errors[errorKey(owner, from)];
-    if (!entry) continue;
-    next = withError(withoutError(next, owner, from), owner, to, entry.message);
-  }
-  return next;
-}
-
-function withBusy(actions, name, action) {
-  const next = { ...actions };
-  if (action) next[name] = action;
-  else delete next[name];
-  return next;
-}
-
-const anyActionInFlight = (actions) => Object.keys(actions).length > 0;
 
 export const useVmStore = create((set, get) => {
   // Single subscriber per feed: one `vms` topic subscription (shared /api/events

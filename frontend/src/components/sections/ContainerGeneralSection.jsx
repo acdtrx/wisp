@@ -39,7 +39,8 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
   const [original, setOriginal] = useState(() => buildGeneralFormDefaults(config));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [requiresRestart, setRequiresRestart] = useState(false);
+  /* The restart badge follows the container's `pendingRestart`. */
+  const requiresRestart = !isCreating && !!config?.pendingRestart;
   const [pickerOpen, setPickerOpen] = useState(false);
 
   /* Name is editable in create mode and on stopped containers; renaming a
@@ -116,8 +117,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
       if (form.runAsRoot !== original.runAsRoot) changes.runAsRoot = form.runAsRoot;
       if (form.localDns !== original.localDns) changes.localDns = form.localDns;
 
-      const result = await onSave(changes);
-      if (result?.requiresRestart) setRequiresRestart(true);
+      await onSave(changes);
       /* Snap form + original to the values we actually sent. Without this, cosmetic-only
        * diffs (trailing whitespace in command, "2" vs "2.0" in cpuLimit, etc.) keep
        * isDirty=true when the server stores the normalized value and the parent's

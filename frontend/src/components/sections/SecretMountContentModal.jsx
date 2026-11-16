@@ -10,6 +10,7 @@ import {
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { putMountFileContent } from '../../api/containers.js';
+import { runContainerCommand } from '../../store/containerStore.js';
 import { formatSize } from '../../utils/formatters.js';
 import { autoFocusField } from '../../lib/focus.js';
 
@@ -20,9 +21,10 @@ const FORM_ID = 'secret-mount-content-form';
  * secret env var model): the stored content is never fetched, only replaced
  * with pasted text or cleared (emptied). `mount` carries the masked metadata
  * from the container detail (`isSet`, `sizeBytes`). Writes go through the same
- * PUT content route as the plain-text editor; `onSaved` refreshes the parent.
+ * PUT content route as the plain-text editor, and resolve once the container's
+ * re-read has landed (runContainerCommand).
  */
-export default function SecretMountContentModal({ open, containerName, mount, onSaved, onClose }) {
+export default function SecretMountContentModal({ open, containerName, mount, onClose }) {
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -39,8 +41,7 @@ export default function SecretMountContentModal({ open, containerName, mount, on
     setSaving(true);
     setError(null);
     try {
-      await putMountFileContent(containerName, mount.name, content);
-      await onSaved?.();
+      await runContainerCommand(containerName, () => putMountFileContent(containerName, mount.name, content));
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to save');

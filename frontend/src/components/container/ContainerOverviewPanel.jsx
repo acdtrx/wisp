@@ -6,7 +6,7 @@ import {
   Play, Square, Zap, RotateCcw, Trash2, Archive, Loader2, X,
 } from 'lucide-react';
 
-import { useContainerStore } from '../../store/containerStore.js';
+import { useContainerStore, runContainerCommand } from '../../store/containerStore.js';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { updateContainer } from '../../api/containers.js';
 import { startContainerBackup } from '../../api/backups.js';
@@ -53,18 +53,16 @@ function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default
 export default function ContainerOverviewPanel() {
   const config = useContainerStore((s) => s.containerConfig);
   const loading = useContainerStore((s) => s.loading);
-  const actionLoading = useContainerStore((s) => s.actions[s.selectedContainer]?.action ?? null);
-  const actionError = useContainerStore((s) => s.actions[s.selectedContainer]?.error ?? null);
-  const error = useContainerStore((s) => s.error);
-  const clearError = useContainerStore((s) => s.clearError);
-  const clearActionError = useContainerStore((s) => s.clearActionError);
+  const actionLoading = useContainerStore((s) => s.actions[s.selectedContainer] ?? null);
+  const selectedContainer = useContainerStore((s) => s.selectedContainer);
+  const errors = useContainerStore((s) => s.errors);
+  const dismissError = useContainerStore((s) => s.dismissError);
+  const reportActionError = useContainerStore((s) => s.reportActionError);
   const startContainer = useContainerStore((s) => s.startContainer);
   const stopContainer = useContainerStore((s) => s.stopContainer);
   const killContainer = useContainerStore((s) => s.killContainer);
   const restartContainer = useContainerStore((s) => s.restartContainer);
   const deleteContainer = useContainerStore((s) => s.deleteContainer);
-  const selectContainer = useContainerStore((s) => s.selectContainer);
-  const refreshSelectedContainer = useContainerStore((s) => s.refreshSelectedContainer);
   const registerJob = useBackgroundJobsStore((s) => s.registerJob);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
 
@@ -130,13 +128,15 @@ export default function ContainerOverviewPanel() {
     setBackupModalOpen(false);
   }, [containerName]);
 
-  if (!config && error && !loading) {
+  /* The error page: the select read left no config. */
+  const selectError = selectedContainer ? errors[`select:${selectedContainer}`] : null;
+  if (!config && selectError && !loading) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-        <p className="text-sm font-medium text-status-stopped">{error}</p>
+        <p className="text-sm font-medium text-status-stopped">{selectError.message}</p>
         <button
           type="button"
-          onClick={() => { clearError(); navigate('/host/overview'); }}
+          onClick={() => { dismissError('select', selectedContainer); navigate('/host/overview'); }}
           className="text-xs text-text-muted hover:text-text-secondary"
         >
           Go to Host overview
@@ -166,10 +166,14 @@ export default function ContainerOverviewPanel() {
   const iconId = config.iconId || getDefaultContainerIconId();
   const IconComp = getVmIcon(iconId).component;
 
+  /* The banner: this container's action and refresh errors, and the list's. */
+  const bannerErrors = Object.values(errors).filter(
+    (e) => (e.vm === name && (e.owner === 'action' || e.owner === 'refresh')) || e.owner === 'list',
+  );
+
   const handleDelete = async () => {
     setDeleteDialogOpen(false);
-    await deleteContainer(name, deleteFiles);
-    if (!useContainerStore.getState().actions[name]?.error) navigate('/host/overview');
+    if (await deleteContainer(name, deleteFiles)) navigate('/host/overview');
   };
 
   const handleOpenBackup = () => {
@@ -193,21 +197,16 @@ export default function ContainerOverviewPanel() {
     }).catch(() => setBackupDestinations([{ id: 'local', label: 'Local', path: '/var/lib/wisp/backups', fallback: true }]));
   };
 
+  /* A rename is followed from the request: the server takes the name as sent (after
+   * validation) and announces the change under it. The section assignment moves with
+   * the rename and reaches the sidebar on the sections topic. */
   const handleSectionSave = async (changes) => {
-    const result = await updateContainer(name, changes);
-    /* PATCH may rename the container (when `name` is in the body); the
-     * response reports the name actually in effect. Re-select under the new
-     * name so the stats SSE reconnects, then update the URL. */
-    const nextName = result?.name && result.name !== name ? result.name : null;
-    if (nextName) {
-      /* The section assignment moves with the rename and reaches the sidebar on
-       * the sections topic. */
-      await selectContainer(nextName);
-      navigate(`/container/${encodeURIComponent(nextName)}/${activeTab}`, { replace: true });
-    } else {
-      await refreshSelectedContainer();
-    }
-    return result;
+    const renamed = typeof changes.name === 'string' && changes.name !== name;
+    const target = renamed ? changes.name : name;
+    await runContainerCommand(target, () => updateContainer(name, changes));
+    if (!renamed) return;
+    useContainerStore.getState().followRename(name, target);
+    navigate(`/container/${encodeURIComponent(target)}/${activeTab}`, { replace: true });
   };
 
   return (
@@ -316,14 +315,15 @@ export default function ContainerOverviewPanel() {
         </div>
       </div>
 
-      {(actionError || error) && (
-        <div className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-status-stopped/30 bg-status-stopped-soft px-4 py-2 text-xs text-status-stopped">
-          <span className="min-w-0 flex-1">{actionError || error}</span>
-          <button type="button" onClick={() => { clearActionError(name); clearError(); }} className="shrink-0 rounded-sm p-2 lg:p-1 hover:bg-status-stopped/20 transition-colors duration-150" title="Dismiss">
+      {/* Each error stays until dismissed */}
+      {bannerErrors.map((e) => (
+        <div key={`${e.owner}:${e.vm ?? ''}`} className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-status-stopped/30 bg-status-stopped-soft px-4 py-2 text-xs text-status-stopped">
+          <span className="min-w-0 flex-1">{e.message}</span>
+          <button type="button" onClick={() => dismissError(e.owner, e.vm)} className="shrink-0 rounded-sm p-2 lg:p-1 hover:bg-status-stopped/20 transition-colors duration-150" title="Dismiss" aria-label="Dismiss error">
             <X size={14} />
           </button>
         </div>
-      )}
+      ))}
 
       {config.updateAvailable && (
         <div className="shrink-0 border-b border-status-warning/30 bg-status-warning-soft px-4 py-2 text-xs text-status-warning">
@@ -354,14 +354,14 @@ export default function ContainerOverviewPanel() {
         <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
           <ContainerGeneralSection config={config} onSave={handleSectionSave} />
           {config.metadata?.app && getAppEntry(config.metadata.app) ? (
-            <AppConfigWrapper config={config} onSave={handleSectionSave} onRefresh={refreshSelectedContainer} />
+            <AppConfigWrapper config={config} onSave={handleSectionSave} />
           ) : (
             <>
               <ContainerEnvSection config={config} onSave={handleSectionSave} />
-              <ContainerMountsSection config={config} onRefresh={refreshSelectedContainer} />
+              <ContainerMountsSection config={config} />
             </>
           )}
-          <ContainerNetworkSection config={config} onSave={handleSectionSave} onRefresh={refreshSelectedContainer} />
+          <ContainerNetworkSection config={config} onSave={handleSectionSave} />
           <ContainerDevicesSection config={config} onSave={handleSectionSave} />
         </div>
       )}
@@ -390,8 +390,11 @@ export default function ContainerOverviewPanel() {
         open={iconPickerOpen}
         currentIconId={config.iconId || getDefaultContainerIconId()}
         onSelect={async (selectedIconId) => {
-          await updateContainer(name, { iconId: selectedIconId });
-          await refreshSelectedContainer();
+          try {
+            await runContainerCommand(name, () => updateContainer(name, { iconId: selectedIconId }));
+          } catch (err) {
+            reportActionError(name, err.message || 'Failed to change the icon');
+          }
         }}
         onClose={() => setIconPickerOpen(false)}
       />

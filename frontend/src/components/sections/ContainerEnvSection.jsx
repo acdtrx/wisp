@@ -41,7 +41,8 @@ const truncate = (s, n) => {
 
 export default function ContainerEnvSection({ config, onSave }) {
   const [error, setError] = useState(null);
-  const [requiresRestart, setRequiresRestart] = useState(false);
+  /* The restart badge follows the container's `pendingRestart`. */
+  const requiresRestart = !!config.pendingRestart;
   const [deletingKey, setDeletingKey] = useState(null);
   /* The row is snapshotted when the editor opens so a background refresh of
    * `config.env` can't reset the open form. */
@@ -50,7 +51,6 @@ export default function ContainerEnvSection({ config, onSave }) {
   const rows = useMemo(() => rowsFromEnv(config.env), [config.env]);
 
   useEffect(() => {
-    setRequiresRestart(false);
     setError(null);
   }, [config.env]);
 
@@ -59,17 +59,14 @@ export default function ContainerEnvSection({ config, onSave }) {
    * restart badge. Failures propagate so the modal can show them and stay open. */
   const submitEnvPatch = async ({ envPatch }) => {
     setError(null);
-    const result = await onSave({ envPatch });
-    if (result?.requiresRestart) setRequiresRestart(true);
-    return result;
+    await onSave({ envPatch });
   };
 
   const removeRow = async (row) => {
     setError(null);
     setDeletingKey(row.key);
     try {
-      const result = await onSave({ envPatch: { [row.key]: null } });
-      if (result?.requiresRestart) setRequiresRestart(true);
+      await onSave({ envPatch: { [row.key]: null } });
     } catch (err) {
       setError(err.message);
     } finally {
