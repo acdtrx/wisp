@@ -91,6 +91,30 @@ export const useVmStore = create((set, get) => {
   // newer than the last one applied, so two quick re-reads can't land out of order.
   let configReadsSent = 0;
   let configReadsApplied = 0;
+  // The newest read of the current selection that failed: `{ seq, read, message }`. An
+  // older read landing after it must not hide it (see applyConfigRead).
+  let newestFailedRead = null;
+
+  function noteFailedRead(seq, read, err) {
+    if (newestFailedRead && newestFailedRead.seq === seq && newestFailedRead.read > read) return;
+    newestFailedRead = { seq, read, message: err.detail || err.message };
+  }
+
+  /** Apply read `read`'s config to VM `name`. When a newer read of this selection has
+   *  already failed, the config shown predates it: that failure becomes the VM's
+   *  `refresh` error (the banner), in place of a select error page it may have left. */
+  function applyConfigRead(seq, read, name, config) {
+    configReadsApplied = read;
+    const failed = newestFailedRead && newestFailedRead.seq === seq ? newestFailedRead : null;
+    if (failed && failed.read < read) newestFailedRead = null;
+    set((prev) => {
+      const next = { vmConfig: config, configLoading: false };
+      if (failed && failed.read > read) {
+        next.errors = withError(withoutError(prev.errors, 'select', name), 'refresh', name, `Couldn't refresh this VM: ${failed.message}`);
+      }
+      return next;
+    });
+  }
 
   function startStatsSSE(name) {
     stopStatsSSE();
@@ -260,10 +284,10 @@ export const useVmStore = create((set, get) => {
           set({ configLoading: false });
           return;
         }
-        configReadsApplied = read;
-        set({ vmConfig: config, configLoading: false });
+        applyConfigRead(seq, read, name, config);
       } catch (err) {
         if (seq !== selectionSeq) return;
+        noteFailedRead(seq, read, err);
         /* A newer read already applied, or still on its way, has the say: the view stays
          * loading (no section renders the list seed as the config) until it settles. */
         if (read !== configReadsSent || read <= configReadsApplied) return;
@@ -298,7 +322,9 @@ export const useVmStore = create((set, get) => {
       try {
         config = await vmApi.getVM(selectedVM);
       } catch (err) {
-        if (seq !== selectionSeq || read !== configReadsSent || read <= configReadsApplied) return;
+        if (seq !== selectionSeq) return;
+        noteFailedRead(seq, read, err);
+        if (read !== configReadsSent || read <= configReadsApplied) return;
         if (get().configLoading) {
           // The last read of a select that never got its config: the error page.
           set((prev) => ({ vmConfig: null, configLoading: false, errors: withError(prev.errors, 'select', selectedVM, err.message) }));
@@ -308,8 +334,7 @@ export const useVmStore = create((set, get) => {
         return;
       }
       if (seq !== selectionSeq || read <= configReadsApplied) return;
-      configReadsApplied = read;
-      set({ vmConfig: config, configLoading: false });
+      applyConfigRead(seq, read, selectedVM, config);
     },
 
     /**
