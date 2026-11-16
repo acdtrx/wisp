@@ -29,6 +29,13 @@ it (a suspend that ends in `shutoff`); waiting for "left the old state" fixed th
 off the list's auto-deselect for every VM. **Revisit trigger:** a control seen re-enabled on stale state, or seen stuck
 busy after the VM changed state.
 
+**The VM General section renders the list seed while the config loads.** On the VM
+detail page `GeneralSection` sits outside the `configLoading` skeleton (`OverviewPanel.jsx`),
+so until the select's `getVM` lands it shows the list item as the config: Local DNS and
+Auto Start read as off whatever they are. Predates command-acks (found in its milestone 3
+review, 2026-11-16). **Revisit trigger:** the next work on the VM detail page, or a user
+seeing those toggles flip on load.
+
 **A late USB hot-unplug is never re-read.** `DetachDevice` on a running VM can return
 before the guest releases the device; `GET /usb` then still lists it, and nothing listens
 for libvirt's `DeviceRemoved` to send a second `vm` frame. **Revisit trigger:** a detached
