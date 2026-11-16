@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Plus,
   File,
@@ -45,7 +45,7 @@ import { getMountStatus } from '../../api/settings.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
 import { runContainerCommand } from '../../store/containerStore.js';
-import { useChanges } from '../../hooks/useChanges.js';
+import { useChanges, useKindChanges } from '../../hooks/useChanges.js';
 import LoadHint from '../shared/LoadHint.jsx';
 
 const addBtn =
@@ -164,11 +164,23 @@ export default function ContainerMountsSection({ config }) {
 
   /* Settings store holds the storage-mount catalogue and is cheap to (re)load; the mount-status
    * endpoint tells us which ones are currently mounted so we can warn on orphan references. */
+  const statusReadsSent = useRef(0);
   const refreshStorageStatus = useCallback(() => {
-    getMountStatus()
-      .then((list) => { setStorageStatus(Array.isArray(list) ? list : []); setStatusFailed(false); })
-      .catch(() => { setStorageStatus([]); setStatusFailed(true); });
+    const request = ++statusReadsSent.current; // only the newest read applies
+    return getMountStatus()
+      .then((list) => {
+        if (request !== statusReadsSent.current) return;
+        setStorageStatus(Array.isArray(list) ? list : []);
+        setStatusFailed(false);
+      })
+      .catch(() => {
+        if (request !== statusReadsSent.current) return;
+        setStorageStatus([]);
+        setStatusFailed(true);
+      });
   }, []);
+  /* A host mount or unmount (any tab, the auto-mount too) changes the status. */
+  useKindChanges('host-mounts', refreshStorageStatus);
 
   useEffect(() => {
     if (!settings) {
