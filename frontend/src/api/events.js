@@ -134,6 +134,11 @@ export function subscribeChanges(kinds, onChange) {
 
 /** Send, then wait for the first frame of `topic` that `matches`; the wait starts
  *  before the request, since the frame can beat the ack. */
+/** How long a command waits for its frame (and the re-reads it starts) after the ack.
+ *  The command was accepted, so the wait then ends with no error (FRONTEND-RULES, Data;
+ *  CODING-RULES §6: nothing waits forever). */
+const FRAME_WAIT_MS = 30_000;
+
 async function sendAndAwaitFrame(topic, matches, send) {
   if (!closeFn) return send();
   let release;
@@ -147,15 +152,25 @@ async function sendAndAwaitFrame(topic, matches, send) {
     frameWaiters.delete(waiter);
     throw err;
   }
-  const rereads = await frame;
-  /* Every re-read the frame started settles before the command resolves. The ack
-   * already succeeded, so the command resolves either way: a failed re-read shows in
-   * its own view. A matching frame that arrives before the command's own (a
-   * reconnect's snapshot, another cue for the same record) can still resolve it onto
-   * the old state: docs/BACKLOG.md, "A command's busy wait can end on a frame it
-   * didn't cause". */
-  await Promise.allSettled(rereads);
-  return ack;
+  let timer;
+  const deadline = new Promise((resolve) => { timer = setTimeout(resolve, FRAME_WAIT_MS, null); });
+  try {
+    const rereads = await Promise.race([frame, deadline]);
+    if (rereads === null) {
+      frameWaiters.delete(waiter); // no frame within the deadline: the command still stands
+      return ack;
+    }
+    /* Every re-read the frame started settles before the command resolves (within the
+     * same deadline). The ack already succeeded, so the command resolves either way: a
+     * failed re-read shows in its own view. A matching frame that arrives before the
+     * command's own (a reconnect's snapshot, another cue for the same record) can still
+     * resolve it onto the old state: docs/BACKLOG.md, "A command's busy wait can end on
+     * a frame it didn't cause". */
+    await Promise.race([Promise.allSettled(rereads), deadline]);
+    return ack;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -163,9 +178,8 @@ async function sendAndAwaitFrame(topic, matches, send) {
  * the topic's next frame has arrived too: the control that sent it stays busy until
  * the client holds the new state, so a quick second click can't act on the old one.
  * The first frame of the topic that `matches` ends the wait — by default any frame,
- * a reconnect snapshot included, so it can't hang while the stream is up. An error
- * from the command ends it at once. With no stream open there is no frame to wait
- * for.
+ * a reconnect snapshot included — and so does 30 s without one. An error from the
+ * command ends it at once. With no stream open there is no frame to wait for.
  *
  * @template T
  * @param {string} topic

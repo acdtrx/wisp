@@ -19,15 +19,9 @@ another tab, a gather that started before the write, or a second frame of the sa
 (found in the command-acks milestone 3 review, 2026-11-15). Two seen in review: a
 reconnect's `{ kind: "all" }` landing during a VM PATCH releases it onto the config before
 the save, and cloud-init's own cue for the VM releases a USB attach sent just after. The
-window is narrow; closing it needs frames that name the command they answer. The opposite
-case too: suspend and
-resume wait for a `vms` frame showing the VM out of its pre-command state, so a lost
-`DomainEvent` or a failed list refresh leaves the control busy until an unrelated frame or
-a reconnect brings it. Waiting for the exact target state also hung when the VM moved past
-it (a suspend that ends in `shutoff`); waiting for "left the old state" fixed that
-(2026-11-16). And while one VM's wait hangs, `anyActionInFlight` stays true, which turns
-off the list's auto-deselect for every VM. **Revisit trigger:** a control seen re-enabled on stale state, or seen stuck
-busy after the VM changed state.
+window is narrow; closing it needs frames that name the command they answer. (The opposite
+case, a wait that never ends because its frame never comes, is bounded since 2026-11-16: a
+wait ends after 30 s.) **Revisit trigger:** a control seen re-enabled on stale state.
 
 **A VM deleted elsewhere leaves its open tab on an endless spinner.** When another tab or
 an MCP agent deletes the VM a tab has open, the list's auto-deselect nulls the config, and
