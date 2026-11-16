@@ -1,5 +1,5 @@
 /**
- * Per-workload action state for the VM and container stores:
+ * Per-workload action state for the container store:
  * `{ [name]: { action, error } }` — the action in flight on that workload
  * (e.g. 'start'), or the error its last action ended with. Keyed by name so a
  * slow action on one workload never disables or errors another's buttons.
