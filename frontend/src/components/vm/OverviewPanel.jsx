@@ -216,7 +216,9 @@ export default function OverviewPanel() {
     const renamed = typeof changes.name === 'string' && changes.name !== name;
     const target = renamed ? changes.name : name;
     await runVMCommand(target, () => updateVM(name, changes));
-    if (renamed) navigate(`/vm/${encodeURIComponent(target)}/${activeTab}`, { replace: true });
+    if (!renamed) return;
+    useVmStore.getState().followRename(name, target);
+    navigate(`/vm/${encodeURIComponent(target)}/${activeTab}`, { replace: true });
   };
 
   const iconId = vmConfig.iconId || getDefaultIconId(vmConfig.osCategory);

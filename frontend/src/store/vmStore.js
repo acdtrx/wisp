@@ -154,6 +154,22 @@ export const useVmStore = create((set, get) => {
   }
 
   /** If the selected name vanished from the list but the same UUID appears under a new name (rename), follow it. */
+  /** Follow VM `from`'s rename to `to`, the one way both paths take (this tab's own
+   *  rename, and one seen on the list): its undismissed errors go with it, and the
+   *  selection moves when it is `from`. */
+  function followRename(from, to) {
+    const moveSelection = get().selectedVM === from;
+    if (moveSelection) {
+      stopStatsSSE();
+      selectionSeq += 1;
+    }
+    set((prev) => ({
+      ...(moveSelection ? { selectedVM: to } : {}),
+      errors: withErrorsRenamed(prev.errors, from, to),
+    }));
+    if (moveSelection) startStatsSSE(to);
+  }
+
   function migrateSelectionIfRenamed(vmsList) {
     if (!Array.isArray(vmsList) || vmsList.length === 0) return;
     const { selectedVM, vmConfig } = get();
@@ -163,14 +179,8 @@ export const useVmStore = create((set, get) => {
     if (!uuid) return;
     const match = vmsList.find((v) => v.uuid === uuid);
     if (!match || match.name === selectedVM) return;
-    stopStatsSSE();
-    selectionSeq += 1;
-    set((prev) => ({
-      selectedVM: match.name,
-      renamedSelection: { from: selectedVM, to: match.name },
-      errors: withErrorsRenamed(prev.errors, selectedVM, match.name),
-    }));
-    startStatsSSE(match.name);
+    followRename(selectedVM, match.name);
+    set({ renamedSelection: { from: selectedVM, to: match.name } });
     queueMicrotask(() => {
       get().refreshSelectedVM();
     });
@@ -193,6 +203,9 @@ export const useVmStore = create((set, get) => {
     renamedSelection: null,
 
     clearRenamedSelection: () => set({ renamedSelection: null }),
+
+    /** This tab renamed VM `from` to `to` and follows it from the request. */
+    followRename: (from, to) => followRename(from, to),
 
     fetchVMs: async () => {
       try {
