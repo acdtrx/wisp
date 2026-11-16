@@ -32,7 +32,7 @@ List all VMs with summary info.
 
 - `staleBinary` is `true` when the VM's running qemu process is using a binary that has been replaced on disk (typically after a qemu/libvirt package upgrade); the VM needs to be restarted to pick up the new binary. Always `false` for non-running VMs. Detected by reading `/var/run/libvirt/qemu/<name>.pid` and checking whether `/proc/<pid>/exe` ends with ` (deleted)`.
 - The list payload does **not** carry section assignment. Section info arrives on its own channel, the `sections` topic of `GET /api/events` (see [Sections](API-WORKSPACE.md#sections)) — libvirt/containerd events don't fire on assignment changes, so the list feeds aren't a usable carrier for it.
-- Live updates arrive on the `vms` topic of `GET /api/events` (see [Events stream](API.md#events-stream-sse)): the same array, pushed when libvirt emits a `DomainEvent` (define/undefine/start/stop/etc.) or when a `qemu-system-*` binary is replaced on disk (apt/dnf upgrade). No polling timer.
+- Live updates arrive on the `vms` topic of `GET /api/events` (see [Events stream](API.md#events-stream-sse)): the same array, pushed when libvirt emits a `DomainEvent` (define/undefine/start/stop/etc.), when a VM's config is saved (a rename included), or when a `qemu-system-*` binary is replaced on disk (apt/dnf upgrade). No polling timer.
 
 ### POST /api/vms · `admin`
 

@@ -19,7 +19,9 @@ holds the UI library's rules.
     triggers), so a section or modal closes onto fresh data; a command error ends it at
     once. Settings forms instead treat what they sent as saved (`specs/SETTINGS.md`). A
     request the guest may ignore (VM Stop, which is an ACPI shutdown, and Reboot) ends at
-    the ack: the list shows the VM stopping when it does (settled 2026-11-16).
+    the ack: the list shows the VM stopping when it does (settled 2026-11-16). A wait
+    ends after 30 s even if no frame came, with no error: the command was accepted
+    (settled 2026-11-16, CODING-RULES §6).
 - Initialise form and component state with meaningful defaults derived from the data
   model, never with an empty object.
   - Applied: start form state from the config's defaults, never `useState({})`.

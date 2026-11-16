@@ -121,7 +121,7 @@ A notice is displayed in the UI: changes take effect on next boot if cloud-init 
 
 The Cloud-Init section in the UI then shows a way to configure again from scratch.
 
-**The json goes first** (settled 2026-11-16), in soft-disable and in removal: detaching `sde` makes every tab re-read the VM, and that re-read must find the new cloud-init state, not the old "On". Accepted cost: if the detach fails after a removal deleted the json, the VM keeps an ISO with no config behind it; the section offers to configure from scratch, and a new save replaces the ISO.
+**The json goes first** (settled 2026-11-16), in soft-disable and in removal: detaching `sde` makes every tab re-read the VM, and that re-read must find the new cloud-init state, not the old "On". Accepted cost: if the detach fails after a removal deleted the json, the VM keeps an ISO with no config behind it; the section offers to configure from scratch, and a new save replaces the ISO. The same for a soft-disable: if its detach fails, the summary shows Off while the ISO stays attached until a soft-disable is saved again (settled 2026-11-16).
 
 ### Regenerate
 
