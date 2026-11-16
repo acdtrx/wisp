@@ -6,6 +6,7 @@ export async function listFiles(type) {
   return api(`/api/library${params}`);
 }
 
+/** Answers 204: the list follows on the `library` cue (also rename and upload). */
 export async function deleteFile(filename) {
   return api(`/api/library/${encodeURIComponent(filename)}`, { method: 'DELETE' });
 }
@@ -22,6 +23,7 @@ export async function checkDownloadUrl(url) {
   return api(`/api/library/check-url?${params}`);
 }
 
+/** A job: answers 202 `{ jobId, title }` (all four downloads). */
 export async function startDownloadFromUrl(url) {
   return api('/api/library/download', { method: 'POST', body: { url } });
 }

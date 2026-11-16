@@ -27,7 +27,7 @@ List image files in the library.
 Upload a file to the image library. Streaming multipart — not buffered in memory.
 
 - **Body:** Multipart file upload
-- **200:** `{ name, type, size, modified }`
+- **204:** uploaded; the list follows on the `library` cue
 - **409:** File already exists
 - **422:** Invalid filename
 
@@ -35,7 +35,7 @@ Upload a file to the image library. Streaming multipart — not buffered in memo
 
 Delete a file from the library.
 
-- **200:** `{ ok: true }`
+- **204:** deleted; announced like an upload
 - **404:** File not found
 - **409:** File in use — referenced by one or more VMs (detail lists names)
 
@@ -44,7 +44,7 @@ Delete a file from the library.
 Rename a file.
 
 - **Body:** `{ name: string }`
-- **200:** `{ name, type, size, modified }`
+- **204:** renamed; announced like an upload
 - **404:** File not found
 - **409:** New name already taken, or source file is referenced by one or more VMs
 
@@ -60,26 +60,26 @@ Check if a URL is reachable (HEAD request).
 Start downloading a file from a URL. Returns job ID.
 
 - **Body:** `{ url: string }`
-- **201:** `{ jobId: string, title: string }` — `title` matches the truncated URL display rule used in the UI
+- **202:** `{ jobId: string, title: string }` — a job; `title` matches the truncated URL display rule used in the UI. The finished download is announced like an upload
 - **422:** Invalid URL (only HTTP/HTTPS allowed)
 
 ### POST /api/library/download-ubuntu-cloud · `admin`
 
 Download Ubuntu Server LTS cloud image.
 
-- **201:** `{ jobId: string, title: string }`
+- **202:** `{ jobId: string, title: string }` — like `POST /api/library/download`
 
 ### POST /api/library/download-arch-cloud · `admin`
 
 Download latest Arch Linux x86_64 cloud image (qcow2) from the pkgbuild mirror.
 
-- **201:** `{ jobId: string, title: string }`
+- **202:** `{ jobId: string, title: string }` — like `POST /api/library/download`
 
 ### POST /api/library/download-haos · `admin`
 
 Download Home Assistant OS image.
 
-- **201:** `{ jobId: string, title: string }`
+- **202:** `{ jobId: string, title: string }` — like `POST /api/library/download`
 
 ### GET /api/library/download-progress/:jobId · `read`
 

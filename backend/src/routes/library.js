@@ -1,6 +1,5 @@
-import { readdir, stat, unlink, rename, access, open } from 'node:fs/promises';
+import { readdir, stat, access } from 'node:fs/promises';
 import { join, basename } from 'node:path';
-import { pipeline } from 'node:stream/promises';
 import { randomBytes } from 'node:crypto';
 import {
   downloadJobStore,
@@ -10,15 +9,16 @@ import {
   TITLE_LIBRARY_HAOS,
   TITLE_LIBRARY_UBUNTU_CLOUD,
 } from '../lib/jobs/index.js';
+import { checkUrl, isAllowedUrl, detectType } from '../lib/downloads/index.js';
 import {
-  checkUrl,
-  downloadToLibrary,
-  isAllowedUrl,
-  downloadAndDecompressHaos,
-  downloadUbuntuCloudImage,
-  downloadArchCloudImage,
-  detectType,
-} from '../lib/downloads/index.js';
+  saveLibraryUpload,
+  renameLibraryFile,
+  deleteLibraryFile,
+  downloadUrlToLibrary,
+  downloadUbuntuCloudToLibrary,
+  downloadArchCloudToLibrary,
+  downloadHaosToLibrary,
+} from '../lib/library/index.js';
 import { ensureImageDir, getImagePath } from '../lib/paths.js';
 import { findVMsUsingImage } from '../lib/vmManager/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
@@ -98,20 +98,12 @@ export default async function libraryRoutes(fastify) {
     },
   });
 
+  // Answers 204 once the file is in the library; the list follows on the
+  // `library` cue the library module announces.
   fastify.post('/library/upload', {
     config: { auth: 'admin' },
     schema: {
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            name: { type: 'string' },
-            type: { type: 'string' },
-            size: { type: 'number' },
-            modified: { type: 'string' },
-          },
-        },
-      },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       const bodyWatch = watchRequestBody(request); // IMAGE-LIBRARY.md § Timeouts
@@ -124,7 +116,6 @@ export default async function libraryRoutes(fastify) {
   });
 
   async function receiveUpload(request, reply) {
-    const dir = await ensureImageDir();
     const data = await request.file();
 
     if (!data) {
@@ -138,48 +129,23 @@ export default async function libraryRoutes(fastify) {
       return;
     }
 
-    const destPath = join(dir, filename);
-
-    // Reserve the name with an exclusive create, as downloads do: a check
-    // then a write lets two same-name uploads both pass and clobber each
-    // other, and would follow a symlink planted at the name.
-    let handle;
+    // fastify-multipart sets `data.file.truncated` when the configured fileSize
+    // limit is exceeded; the library module checks it once the stream ends.
     try {
-      handle = await open(destPath, 'wx');
+      await saveLibraryUpload(filename, data.file);
     } catch (err) {
       if (err.code === 'EEXIST') {
         reply.code(409).send({ error: 'File already exists', detail: `A file named "${filename}" already exists in the library` });
         return;
       }
+      if (err.code === 'LIBRARY_UPLOAD_TOO_LARGE') {
+        reply.code(422).send({ error: 'File too large', detail: 'Upload exceeded the configured size limit' });
+        return;
+      }
       reply.code(500).send({ error: 'Upload failed', detail: err.message });
       return;
     }
-
-    // Stream to disk. fastify-multipart sets `data.file.truncated` when the
-    // configured fileSize limit is exceeded; the pipeline still resolves
-    // successfully, so we must check explicitly. On any failure path,
-    // unlink the partial file — this request created it — to avoid disk-fill DoS.
-    try {
-      await pipeline(data.file, handle.createWriteStream());
-    } catch (err) {
-      await unlink(destPath).catch(() => { /* best-effort cleanup */ });
-      reply.code(500).send({ error: 'Upload failed', detail: err.message });
-      return;
-    }
-
-    if (data.file.truncated) {
-      await unlink(destPath).catch(() => { /* best-effort cleanup */ });
-      reply.code(422).send({ error: 'File too large', detail: 'Upload exceeded the configured size limit' });
-      return;
-    }
-
-    const info = await stat(destPath);
-    return {
-      name: filename,
-      type: detectType(filename),
-      size: info.size,
-      modified: info.mtime.toISOString(),
-    };
+    reply.code(204).send();
   }
 
   fastify.delete('/library/:filename', {
@@ -192,6 +158,7 @@ export default async function libraryRoutes(fastify) {
           filename: { type: 'string' },
         },
       },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       const { filename } = request.params;
@@ -226,13 +193,13 @@ export default async function libraryRoutes(fastify) {
       }
 
       try {
-        await unlink(filePath);
+        await deleteLibraryFile(filename);
       } catch (err) {
         reply.code(500).send({ error: 'Delete failed', detail: err.message });
         return;
       }
 
-      return { ok: true };
+      reply.code(204).send();
     },
   });
 
@@ -279,7 +246,7 @@ export default async function libraryRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        201: {
+        202: {
           type: 'object',
           properties: {
             jobId: { type: 'string' },
@@ -309,7 +276,7 @@ export default async function libraryRoutes(fastify) {
       );
       (async () => {
         try {
-          const result = await downloadToLibrary(url, (percent, loaded, total) => {
+          const result = await downloadUrlToLibrary(url, (percent, loaded, total) => {
             downloadJobStore.pushEvent(jobId, { step: 'progress', percent, loaded, total });
           });
           downloadJobStore.completeJob(jobId, result);
@@ -323,7 +290,7 @@ export default async function libraryRoutes(fastify) {
           }
         }
       })();
-      return reply.code(201).send({ jobId, title });
+      return reply.code(202).send({ jobId, title });
     },
   });
 
@@ -332,7 +299,7 @@ export default async function libraryRoutes(fastify) {
     config: { auth: 'admin' },
     schema: {
       response: {
-        201: {
+        202: {
           type: 'object',
           properties: {
             jobId: { type: 'string' },
@@ -355,7 +322,7 @@ export default async function libraryRoutes(fastify) {
       );
       (async () => {
         try {
-          const result = await downloadUbuntuCloudImage((percent) => {
+          const result = await downloadUbuntuCloudToLibrary((percent) => {
             downloadJobStore.pushEvent(jobId, { step: 'progress', percent, loaded: null, total: null });
           });
           downloadJobStore.completeJob(jobId, result);
@@ -369,7 +336,7 @@ export default async function libraryRoutes(fastify) {
           }
         }
       })();
-      return reply.code(201).send({ jobId, title });
+      return reply.code(202).send({ jobId, title });
     },
   });
 
@@ -378,7 +345,7 @@ export default async function libraryRoutes(fastify) {
     config: { auth: 'admin' },
     schema: {
       response: {
-        201: {
+        202: {
           type: 'object',
           properties: {
             jobId: { type: 'string' },
@@ -401,7 +368,7 @@ export default async function libraryRoutes(fastify) {
       );
       (async () => {
         try {
-          const result = await downloadArchCloudImage((percent) => {
+          const result = await downloadArchCloudToLibrary((percent) => {
             downloadJobStore.pushEvent(jobId, { step: 'progress', percent, loaded: null, total: null });
           });
           downloadJobStore.completeJob(jobId, result);
@@ -414,7 +381,7 @@ export default async function libraryRoutes(fastify) {
           }
         }
       })();
-      return reply.code(201).send({ jobId, title });
+      return reply.code(202).send({ jobId, title });
     },
   });
 
@@ -423,7 +390,7 @@ export default async function libraryRoutes(fastify) {
     config: { auth: 'admin' },
     schema: {
       response: {
-        201: {
+        202: {
           type: 'object',
           properties: {
             jobId: { type: 'string' },
@@ -446,7 +413,7 @@ export default async function libraryRoutes(fastify) {
       );
       (async () => {
         try {
-          const result = await downloadAndDecompressHaos({
+          const result = await downloadHaosToLibrary({
             onProgress: (percent) => {
               downloadJobStore.pushEvent(jobId, { step: 'progress', percent, loaded: null, total: null });
             },
@@ -465,7 +432,7 @@ export default async function libraryRoutes(fastify) {
           }
         }
       })();
-      return reply.code(201).send({ jobId, title });
+      return reply.code(202).send({ jobId, title });
     },
   });
 
@@ -509,6 +476,7 @@ export default async function libraryRoutes(fastify) {
         },
         additionalProperties: false,
       },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       const { filename } = request.params;
@@ -561,19 +529,13 @@ export default async function libraryRoutes(fastify) {
       }
 
       try {
-        await rename(oldPath, newPath);
+        await renameLibraryFile(filename, newName);
       } catch (err) {
         reply.code(500).send({ error: 'Rename failed', detail: err.message });
         return;
       }
 
-      const info = await stat(newPath);
-      return {
-        name: newName,
-        type: detectType(newName),
-        size: info.size,
-        modified: info.mtime.toISOString(),
-      };
+      reply.code(204).send();
     },
   });
 }

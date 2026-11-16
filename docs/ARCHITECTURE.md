@@ -140,6 +140,8 @@ consumer, and nothing has called for more).
     cloud-init config is saved, disabled or removed.
   - `lib/settings.js` `subscribeSettingsChange(handler)` — after every write that
     changes what `GET /api/settings` returns.
+  - `library.subscribeLibraryChange(handler)` — after every upload, rename, delete and
+    finished download into the library.
 - **Managers are configured, not reaching out**: `lib/managerBootstrap.js` (shared by the
   backend and the migration runner) calls each manager's `configure()` with its paths and
   callbacks (`resolveMount`, `tryAcquireOperationLock`) before any route registers. The
@@ -247,6 +249,9 @@ consumer, and nothing has called for more).
   imports the managers.
 - `mdns` — Avahi publishing and browsing, and the in-process DNS forwarder that answers
   containers' `.local` queries.
+- `library` — the image library's files: it owns every write to the library directory
+  (upload, rename, delete, and the downloads, through `downloads`, that land a file
+  there) and announces each ([`specs/IMAGE-LIBRARY.md`](specs/IMAGE-LIBRARY.md)).
 - `mcp` — the MCP endpoint: tools over the same facades and glue as the routes, secrets
   masked ([`specs/MCP.md`](specs/MCP.md)).
 - App glue — auth and API tokens, settings, cloud-init, backups (scheduler, retention,

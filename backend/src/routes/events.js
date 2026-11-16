@@ -13,6 +13,7 @@ import { subscribeMountStateChange } from '../lib/storage/index.js';
 import { subscribeCloudInitChange } from '../lib/cloudInit.js';
 import { subscribeApiTokensChange } from '../lib/apiTokens.js';
 import { subscribeNetworkBridgesChange } from '../lib/networking/index.js';
+import { subscribeLibraryChange } from '../lib/library/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { buildSectionsEnvelope } from './sections.js';
 
@@ -146,6 +147,7 @@ export default async function eventsRoutes(fastify) {
         subscribeMountsChange(() => { sendChange({ kind: 'host-mounts' }); }),
         subscribeMountStateChange(() => { sendChange({ kind: 'host-mounts' }); }),
         subscribeImagesChange(() => { sendChange({ kind: 'images' }); }),
+        subscribeLibraryChange(() => { sendChange({ kind: 'library' }); }),
       ];
 
       onSSEClose(reply, () => {

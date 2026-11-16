@@ -17,6 +17,7 @@ import { useContainerStore } from '../../store/containerStore.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { listContainerImages, deleteContainerImage } from '../../api/containers.js';
 import { useKindChanges } from '../../hooks/useChanges.js';
+import { sendAndAwaitKindChange } from '../../api/events.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import Modal from '../shared/Modal.jsx';
 import SectionCard from '../shared/SectionCard.jsx';
@@ -392,6 +393,8 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
    * the update check — or a reconnect re-reads the list. */
   const rereadList = useCallback(() => fetchFiles(), [fetchFiles]);
   useKindChanges('images', rereadList);
+  /* A library file uploaded, renamed, deleted or downloaded — by any tab — too. */
+  useKindChanges('library', rereadList);
 
   /** Fetch cached update-check status once on mount so the "Checked X ago" line is populated. */
   useEffect(() => {
@@ -403,8 +406,8 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     setUploadProgress(0);
     setUploadError(null);
     try {
-      await uploadFile(file, setUploadProgress);
-      await fetchFiles();
+      /* Done once the list holds the file: it arrives on the `library` cue. */
+      await sendAndAwaitKindChange('library', () => uploadFile(file, setUploadProgress));
     } catch (err) {
       setUploadError(err.message);
     } finally {
@@ -426,8 +429,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
         /* The removal reaches the list on the `images` cue. */
         await awaitJob(JOB_KIND.CONTAINER_IMAGE_DELETE, await deleteContainerImage(deleteTarget.ref));
       } else {
-        await deleteFile(deleteTarget.name);
-        await fetchFiles();
+        await sendAndAwaitKindChange('library', () => deleteFile(deleteTarget.name));
       }
       setDeleteTarget(null);
     } catch (err) {
@@ -438,8 +440,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
 
   const handleRename = async (oldName, newName) => {
     try {
-      await renameFile(oldName, newName);
-      await fetchFiles();
+      await sendAndAwaitKindChange('library', () => renameFile(oldName, newName));
     } catch (err) {
       setError(err.message);
     }
@@ -477,7 +478,6 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             setUrlModalOpen(false);
             setUrlInput('');
             setUrlCheckResult(null);
-            fetchFiles();
           }
           if (data.step === 'error') {
             setUrlDownloadError(data.error || 'Download failed');
@@ -507,9 +507,6 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       kind: JOB_KIND.LIBRARY_DOWNLOAD,
       title: label,
       onTerminal: (data) => {
-        if (data.step === 'done') {
-          queueMicrotask(() => fetchFiles());
-        }
         setPresetJobId((current) => {
           if (current !== jobId) return current;
           if (data.step === 'done') {
