@@ -21,7 +21,7 @@ import {
 } from '../lib/containerManager/index.js';
 import { getSettings, getRawMounts, listConfiguredBackupRoots, listBackupDestinationsWithMountCheck } from '../lib/settings.js';
 import { resolveBackupDestinations } from '../lib/backupDestinations.js';
-import { recordBackupAttempt, notifyBackupsChanged } from '../lib/backupStatus.js';
+import { recordBackupAttempt } from '../lib/backupStatus.js';
 import {
   backupJobStore,
   operationJobStore,
@@ -261,7 +261,6 @@ export default async function backupsRoutes(fastify) {
         const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
         const roots = listConfiguredBackupRoots(settings);
         await deleteBackup(backupPath, roots);
-        notifyBackupsChanged();
         return reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
@@ -467,7 +466,6 @@ export default async function backupsRoutes(fastify) {
         const backupPath = join(root, 'containers', name, timestamp);
         const roots = listConfiguredBackupRoots(settings);
         await deleteContainerBackup(backupPath, roots);
-        notifyBackupsChanged();
         return reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);

@@ -2,7 +2,8 @@
  * Linux containerManager implementation (containerd over gRPC).
  */
 import { setContainerManagerConfig } from './containerPaths.js';
-import { announcingContainerChange } from './containerManagerChange.js';
+import { announcingContainerChange, announcingContainerBackupDeleted } from './containerManagerChange.js';
+import { deleteContainerBackup as deleteContainerBackupImpl } from './containerManagerBackup.js';
 import {
   commitMountFileUpload as commitMountFileUploadImpl,
   extractMountZip as extractMountZipImpl,
@@ -66,9 +67,11 @@ export {
   planContainerBackupRestore,
   restoreContainerBackup,
   restoreContainerBackupInPlace,
-  deleteContainerBackup,
   setContainerBackupOrigin,
 } from './containerManagerBackup.js';
+
+export const deleteContainerBackup = announcingContainerBackupDeleted(deleteContainerBackupImpl);
+export { subscribeContainerBackupDeleted } from './containerManagerChange.js';
 
 export { tightenContainerFileModes, tightenContainerBackupFileModes } from './containerManagerFileModes.js';
 

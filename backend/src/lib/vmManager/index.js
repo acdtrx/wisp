@@ -68,6 +68,7 @@ export const listBackups = impl.listBackups;
 export const planBackupRestore = impl.planBackupRestore;
 export const restoreBackup = impl.restoreBackup;
 export const deleteBackup = impl.deleteBackup;
+export const subscribeVMBackupDeleted = impl.subscribeVMBackupDeleted;
 export const resolveVmBackupDir = impl.resolveVmBackupDir;
 export const tightenVMBackupFileModes = impl.tightenVMBackupFileModes;
 export const setVMBackupOrigin = impl.setVMBackupOrigin;

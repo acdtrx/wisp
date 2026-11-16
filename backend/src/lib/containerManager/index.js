@@ -46,6 +46,7 @@ export const planContainerBackupRestore = impl.planContainerBackupRestore;
 export const restoreContainerBackup = impl.restoreContainerBackup;
 export const restoreContainerBackupInPlace = impl.restoreContainerBackupInPlace;
 export const deleteContainerBackup = impl.deleteContainerBackup;
+export const subscribeContainerBackupDeleted = impl.subscribeContainerBackupDeleted;
 export const tightenContainerFileModes = impl.tightenContainerFileModes;
 export const tightenContainerBackupFileModes = impl.tightenContainerBackupFileModes;
 export const setContainerBackupOrigin = impl.setContainerBackupOrigin;

@@ -227,6 +227,10 @@ export async function deleteBackup() {
   throw noConn();
 }
 
+export function subscribeVMBackupDeleted() {
+  return () => {};
+}
+
 export async function planBackupRestore() {
   throw noConn();
 }

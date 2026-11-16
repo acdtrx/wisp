@@ -146,6 +146,10 @@ consumer, and nothing has called for more).
     mount and unmount, the auto-mounts included.
   - `networking.subscribeNetworkBridgesChange(handler)` — when a managed bridge create or
     delete settles, a failed one included (netplan may have written part of it).
+  - `vmManager.subscribeVMBackupDeleted(handler)` and
+    `containerManager.subscribeContainerBackupDeleted(handler)` — after a backup was
+    deleted by any caller (the routes, the scheduler's retention); `lib/backupStatus.js`
+    passes them on to the `backups` topic, which carries every backup-list cue.
   - `containerManager.subscribeImagesChange(handler)` — on containerd's
     `/images/create`, `/images/update` and `/images/delete` in the `wisp` namespace:
     every pull, update and delete, outside ones included. The macOS stub never fires.

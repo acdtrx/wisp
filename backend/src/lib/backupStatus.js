@@ -19,6 +19,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { writeJsonAtomic } from './atomicJson.js';
+import { subscribeVMBackupDeleted } from './vmManager/index.js';
+import { subscribeContainerBackupDeleted } from './containerManager/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Repo-root config/ (beside wisp-config.json), the directory the updater's swap
@@ -111,6 +113,11 @@ export function notifyBackupsChanged() {
     }
   }
 }
+
+/* A backup deleted by any caller (the routes, the scheduler's retention) changes
+ * the backup lists: the managers announce it, and this module passes it on. */
+subscribeVMBackupDeleted(() => notifyBackupsChanged());
+subscribeContainerBackupDeleted(() => notifyBackupsChanged());
 
 export function subscribeBackupEvents(handler) {
   changeHandlers.add(handler);

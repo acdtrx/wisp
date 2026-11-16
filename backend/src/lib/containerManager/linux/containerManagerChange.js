@@ -35,4 +35,28 @@ export function announcingContainerChange(mutation, changedName = (args) => args
   };
 }
 
+/** Notified after a container backup was deleted (by any caller: the route, the
+ *  scheduler's retention). No replay: a cue to read the backup lists again. */
+const backupDeletedHandlers = new Set();
+
+export function subscribeContainerBackupDeleted(handler) {
+  backupDeletedHandlers.add(handler);
+  return () => backupDeletedHandlers.delete(handler);
+}
+
+/** Wrap the backup delete so it announces itself once it succeeded. */
+export function announcingContainerBackupDeleted(deleteBackup) {
+  return async (...args) => {
+    const result = await deleteBackup(...args);
+    for (const handler of backupDeletedHandlers) {
+      try {
+        handler();
+      } catch (err) {
+        containerState.logger?.warn?.({ err: err?.message || err }, '[containerManager] backup-deleted handler threw');
+      }
+    }
+    return result;
+  };
+}
+
 subscribeContainerConfigWrite(announceContainerChange);

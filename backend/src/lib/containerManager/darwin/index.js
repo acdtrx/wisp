@@ -176,6 +176,10 @@ export async function deleteContainerBackup() {
   throw noContainerd();
 }
 
+export function subscribeContainerBackupDeleted() {
+  return () => {};
+}
+
 export async function pullImage() {
   throw noContainerd();
 }

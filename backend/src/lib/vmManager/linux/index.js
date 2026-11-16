@@ -2,7 +2,8 @@
  * Linux vmManager implementation (libvirt over DBus).
  */
 import { setVmManagerPaths } from './vmManagerPaths.js';
-import { announcingVMChange } from './vmManagerChange.js';
+import { announcingVMChange, announcingVMBackupDeleted } from './vmManagerChange.js';
+import { deleteBackup as deleteBackupImpl } from './vmManagerBackup.js';
 import { updateVMConfig as updateVMConfigImpl, setGraphicsListen as setGraphicsListenImpl } from './vmManagerConfig.js';
 import { setVMPendingRestart as setVMPendingRestartImpl } from './vmManagerPendingRestart.js';
 import { attachUSBDevice as attachUSBDeviceImpl, detachUSBDevice as detachUSBDeviceImpl } from './vmManagerUsb.js';
@@ -90,9 +91,11 @@ export {
   listBackups,
   planBackupRestore,
   restoreBackup,
-  deleteBackup,
   resolveVmBackupDir,
   setVMBackupOrigin,
 } from './vmManagerBackup.js';
+
+export const deleteBackup = announcingVMBackupDeleted(deleteBackupImpl);
+export { subscribeVMBackupDeleted } from './vmManagerChange.js';
 
 export { tightenVMBackupFileModes } from './vmManagerBackupModes.js';
