@@ -66,6 +66,18 @@ function withoutErrorsOfVanished(errors, names) {
   return next ?? errors;
 }
 
+/** The errors with VM `from`'s action and refresh errors moved to `to` (a rename: the
+ *  VM still exists, so its undismissed errors stay with it). */
+function withErrorsRenamed(errors, from, to) {
+  let next = errors;
+  for (const owner of ['action', 'refresh']) {
+    const entry = errors[errorKey(owner, from)];
+    if (!entry) continue;
+    next = withError(withoutError(next, owner, from), owner, to, entry.message);
+  }
+  return next;
+}
+
 function withBusy(actions, name, action) {
   const next = { ...actions };
   if (action) next[name] = action;
@@ -153,7 +165,11 @@ export const useVmStore = create((set, get) => {
     if (!match || match.name === selectedVM) return;
     stopStatsSSE();
     selectionSeq += 1;
-    set({ selectedVM: match.name, renamedSelection: { from: selectedVM, to: match.name } });
+    set((prev) => ({
+      selectedVM: match.name,
+      renamedSelection: { from: selectedVM, to: match.name },
+      errors: withErrorsRenamed(prev.errors, selectedVM, match.name),
+    }));
     startStatsSSE(match.name);
     queueMicrotask(() => {
       get().refreshSelectedVM();
