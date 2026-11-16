@@ -381,7 +381,7 @@ List configured mounts (SMB + disk). SMB passwords are never returned; SMB entri
 
 Append one mount. **Body:** `{ type: "smb" | "disk", label?, mountPath, autoMount?, ...type-specific }`. **`id`** optional (server generates a UUID if omitted). Paths must be absolute. For `type: "smb"`, `share` is required. For `type: "disk"`, `uuid` is required; `fsType` must be one of `ext4`, `btrfs`, `vfat`, `exfat`, `ntfs3`.
 
-- **200:** Array of mounts after the insert
+- **201:** `{ id }` — the new mount's id; the mount arrives on the stream (`settings` and `host-mounts`)
 - **409:** `MOUNT_DUPLICATE` — id already exists
 - **422:** `MOUNT_INVALID` — missing/invalid fields
 
@@ -389,7 +389,7 @@ Append one mount. **Body:** `{ type: "smb" | "disk", label?, mountPath, autoMoun
 
 Update one mount by **`id`**. **Body:** partial fields (`label`, `mountPath`, `autoMount`, and type-specific: `share`/`username`/`password` for SMB, `fsType`/`readOnly` for disk). An omitted or empty `password` preserves the stored password. `type` and `uuid` cannot be changed after creation.
 
-- **200:** Array of mounts after the update | **404:** mount not found
+- **204:** saved; announced like `POST /api/host/mounts` | **404:** mount not found
 
 ### DELETE /api/host/mounts/:id · `admin`
 
@@ -416,7 +416,7 @@ Test an SMB connection for a saved mount or ad hoc credentials.
 
 Mount an SMB share by settings id. Disk mounts are mounted automatically on device insertion and this endpoint currently returns **422** for `type: "disk"` — dedicated support lands with the disk monitor work.
 
-- **200:** `{ ok: true }`
+- **204:** mounted; the status arrives on `host-mounts`
 - **503:** Mount unavailable (platform/helper error)
 
 ### POST /api/host/mounts/:id/unmount · `admin`

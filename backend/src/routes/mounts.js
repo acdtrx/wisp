@@ -74,16 +74,12 @@ export default async function mountsRoutes(fastify) {
         required: ['type', 'mountPath'],
         additionalProperties: false,
       },
+      response: { 201: { type: 'object', properties: { id: { type: 'string' } } } },
     },
     handler: async (request, reply) => {
       try {
         const result = await addMount(request.body || {});
-        const created = (result.mounts || []).find((m) => {
-          if (request.body?.id) return m.id === request.body.id;
-          if (request.body?.type === 'disk' && request.body?.uuid) return m.uuid === request.body.uuid;
-          if (request.body?.type === 'smb' && request.body?.share) return m.share === request.body.share && m.mountPath === request.body.mountPath;
-          return false;
-        });
+        const created = (result.mounts || []).find((m) => m.id === result.id);
         if (created && created.type === 'disk' && created.autoMount !== false) {
           const devices = getDiskDevices();
           const present = devices.find((d) => d.uuid === created.uuid);
@@ -96,7 +92,7 @@ export default async function mountsRoutes(fastify) {
             }
           }
         }
-        return result.mounts || [];
+        return reply.code(201).send({ id: result.id });
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -121,11 +117,12 @@ export default async function mountsRoutes(fastify) {
         },
         additionalProperties: false,
       },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       try {
-        const result = await updateMount(request.params.id, request.body || {});
-        return result.mounts || [];
+        await updateMount(request.params.id, request.body || {});
+        return reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -281,7 +278,7 @@ export default async function mountsRoutes(fastify) {
     config: { auth: 'admin' },
     schema: {
       params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
-      response: { 200: { type: 'object', properties: { ok: { type: 'boolean' } } } },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       try {
@@ -295,12 +292,12 @@ export default async function mountsRoutes(fastify) {
           await mountSMB(d.share, d.mountPath, {
             username: d.username, password: d.password, ownerOnly: d.id === backupMountId,
           });
-          return { ok: true };
+          return reply.code(204).send();
         }
         if (d.type === 'disk') {
           await mountDisk(d.uuid, d.mountPath, { fsType: d.fsType, readOnly: d.readOnly });
           refreshDiskSnapshot();
-          return { ok: true };
+          return reply.code(204).send();
         }
         return reply.code(422).send({ error: 'Unknown mount type', detail: d.type });
       } catch (err) {

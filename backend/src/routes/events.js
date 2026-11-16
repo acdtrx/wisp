@@ -6,7 +6,8 @@ import { subscribeHomepageChange } from '../lib/homepage.js';
 import { buildHomeEnvelope } from '../lib/homeTiles.js';
 import { getDiscoveredPeers, subscribeDiscoveredPeersChange } from '../lib/wispDiscovery.js';
 import { getBackupStatus, subscribeBackupEvents } from '../lib/backupStatus.js';
-import { subscribeSettingsChange } from '../lib/settings.js';
+import { subscribeSettingsChange, subscribeMountsChange } from '../lib/settings.js';
+import { subscribeMountStateChange } from '../lib/storage/index.js';
 import { subscribeCloudInitChange } from '../lib/cloudInit.js';
 import { subscribeApiTokensChange } from '../lib/apiTokens.js';
 import { subscribeNetworkBridgesChange } from '../lib/networking/index.js';
@@ -140,6 +141,8 @@ export default async function eventsRoutes(fastify) {
         subscribeCloudInitChange((name) => { sendChange({ kind: 'vm', id: name }); }),
         subscribeApiTokensChange(() => { sendChange({ kind: 'tokens' }); }),
         subscribeNetworkBridgesChange(() => { sendChange({ kind: 'network-bridges' }); }),
+        subscribeMountsChange(() => { sendChange({ kind: 'host-mounts' }); }),
+        subscribeMountStateChange(() => { sendChange({ kind: 'host-mounts' }); }),
       ];
 
       onSSEClose(reply, () => {

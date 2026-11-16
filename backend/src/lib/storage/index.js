@@ -38,13 +38,37 @@ export const getDevices = monitorImpl.getDevices;
 export const onChange = monitorImpl.onChange;
 export const refresh = monitorImpl.refresh;
 
+/** Notified after a mount or unmount (disk or SMB) succeeded. No replay: a cue to
+ *  read the mount status again. */
+const mountStateHandlers = new Set();
+
+export function subscribeMountStateChange(handler) {
+  mountStateHandlers.add(handler);
+  return () => mountStateHandlers.delete(handler);
+}
+
+function announcingMountState(operation) {
+  return async (...args) => {
+    const result = await operation(...args);
+    for (const handler of mountStateHandlers) {
+      try {
+        handler();
+      } catch (err) {
+        // A broken subscriber must not fail the mount or silence the others.
+        console.error('storage: mount state subscriber failed', err);
+      }
+    }
+    return result;
+  };
+}
+
 // Removable disk mount via wisp-mount
-export const mountDisk = mountImpl.mountDisk;
-export const unmountDisk = mountImpl.unmountDisk;
+export const mountDisk = announcingMountState(mountImpl.mountDisk);
+export const unmountDisk = announcingMountState(mountImpl.unmountDisk);
 
 // SMB mount via wisp-mount
-export const mountSMB = smbImpl.mountSMB;
+export const mountSMB = announcingMountState(smbImpl.mountSMB);
 export const checkSMBConnection = smbImpl.checkSMBConnection;
-export const unmountSMB = smbImpl.unmountSMB;
+export const unmountSMB = announcingMountState(smbImpl.unmountSMB);
 export const getMountStatus = smbImpl.getMountStatus;
 export const rmdirMountpoint = smbImpl.rmdirMountpoint;

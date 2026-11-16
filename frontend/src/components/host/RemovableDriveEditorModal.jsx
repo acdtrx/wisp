@@ -10,6 +10,7 @@ import {
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
+import { sendAndAwaitKindChange } from '../../api/events.js';
 import { addMount, patchMount } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
 
@@ -89,7 +90,8 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
     setError(null);
     try {
       if (!isEdit) {
-        await addMount({
+        /* Saved once the settings store holds it: the mount list is read from there. */
+        await sendAndAwaitKindChange('settings', () => addMount({
           id: form.id,
           type: 'disk',
           label: form.label.trim(),
@@ -98,14 +100,14 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
           uuid: form.uuid,
           fsType: form.fsType,
           readOnly: form.readOnly,
-        });
+        }));
       } else {
         const patch = {};
         if (form.label.trim() !== (drive.label || '').trim()) patch.label = form.label.trim();
         if (trimmedPath !== (drive.mountPath || '').trim()) patch.mountPath = trimmedPath;
         if (form.autoMount !== (drive.autoMount !== false)) patch.autoMount = form.autoMount;
         if (form.readOnly !== (drive.readOnly === true)) patch.readOnly = form.readOnly;
-        if (Object.keys(patch).length > 0) await patchMount(form.id, patch);
+        if (Object.keys(patch).length > 0) await sendAndAwaitKindChange('settings', () => patchMount(form.id, patch));
       }
       await onSaved?.();
       onClose();

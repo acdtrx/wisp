@@ -63,9 +63,8 @@ export const useSettingsStore = create((set, get) => ({
     const { loadSettings } = get();
     /* Non-fatal: the store tracks the error; the app shell still renders */
     loadSettings().catch(() => {});
-    syncCloseFn = subscribeChanges(['settings'], () => {
-      loadSettings().catch(() => {});
-    });
+    /* The handler returns the load, so a command waiting on the frame waits for it. */
+    syncCloseFn = subscribeChanges(['settings'], () => loadSettings().catch(() => {}));
   },
 
   stopSettingsSync: () => {

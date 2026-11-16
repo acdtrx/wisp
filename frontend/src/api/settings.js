@@ -22,6 +22,7 @@ export function getMountStatus() {
   return api('/api/host/mounts/status');
 }
 
+/** Answers 204 once mounted: the status arrives on the `host-mounts` cue. */
 export function mountMount(id) {
   return api(`/api/host/mounts/${encodeURIComponent(id)}/mount`, { method: 'POST' });
 }
@@ -35,10 +36,12 @@ export function checkMountConnection(body) {
   return api('/api/host/mounts/check', { method: 'POST', body });
 }
 
+/** Answers `201 { id }`: the mount arrives with the settings (the `settings` cue). */
 export function addMount(body) {
   return api('/api/host/mounts', { method: 'POST', body });
 }
 
+/** Answers 204, like `addMount`. */
 export function patchMount(id, body) {
   return api(`/api/host/mounts/${encodeURIComponent(id)}`, { method: 'PATCH', body });
 }

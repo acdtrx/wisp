@@ -9,6 +9,7 @@ import {
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
+import { sendAndAwaitKindChange } from '../../api/events.js';
 import { addMount, patchMount, checkMountConnection } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
 
@@ -100,7 +101,8 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
     setError(null);
     try {
       if (!isEdit) {
-        await addMount({
+        /* Saved once the settings store holds it: the mount list is read from there. */
+        await sendAndAwaitKindChange('settings', () => addMount({
           id: form.id,
           type: 'smb',
           label: form.label.trim(),
@@ -108,7 +110,7 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
           mountPath: trimmedPath,
           username: form.username.trim(),
           password: form.password.trim(),
-        });
+        }));
       } else {
         const patch = {};
         if (form.label.trim() !== (share.label || '').trim()) patch.label = form.label.trim();
@@ -119,7 +121,7 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
          * "keep what's on file" (the backend never returns the stored value). */
         const newPw = form.password.trim();
         if (newPw !== '') patch.password = newPw;
-        if (Object.keys(patch).length > 0) await patchMount(form.id, patch);
+        if (Object.keys(patch).length > 0) await sendAndAwaitKindChange('settings', () => patchMount(form.id, patch));
       }
       await onSaved?.();
       onClose();

@@ -155,6 +155,26 @@ export function subscribeSettingsChange(handler) {
   return () => settingsChangeHandlers.delete(handler);
 }
 
+/** Notified after a mount is added, edited or removed (on top of the settings
+ *  cue every write gives). No replay: a cue to read the mounts again. */
+const mountsChangeHandlers = new Set();
+
+export function subscribeMountsChange(handler) {
+  mountsChangeHandlers.add(handler);
+  return () => mountsChangeHandlers.delete(handler);
+}
+
+function announceMountsChange() {
+  for (const handler of mountsChangeHandlers) {
+    try {
+      handler();
+    } catch (err) {
+      // A broken subscriber must not fail the saved write or silence the others.
+      console.error('settings: mounts change subscriber failed', err);
+    }
+  }
+}
+
 /** Persist a settings change, then announce it. A mutator that throws rejects
  *  before any handler runs. Returns the state as written, never a read-back, so
  *  a write that landed never fails on reading it back. */
@@ -410,15 +430,16 @@ function mountEntryFromBody(body, id) {
 }
 
 /**
- * Append one mount. Returns `{ mounts }` as written, shaped as getSettings() shows them.
+ * Append one mount. Returns `{ id, mounts }`: the new mount's id, and the mounts
+ * as written, shaped as getSettings() shows them.
  */
 export async function addMount(body) {
   if (!body || typeof body !== 'object') {
     throw createAppError('MOUNT_INVALID', 'Body must be a JSON object');
   }
+  const id =
+    typeof body.id === 'string' && body.id.trim() ? body.id.trim() : randomUUID();
   const written = await commitSettings((fromFile) => {
-    const id =
-      typeof body.id === 'string' && body.id.trim() ? body.id.trim() : randomUUID();
     const existing = fromFile.mounts || [];
     if (existing.some((m) => m.id === id)) {
       throw createAppError('MOUNT_DUPLICATE', `Mount "${id}" already exists`);
@@ -426,7 +447,8 @@ export async function addMount(body) {
     const entry = mountEntryFromBody(body, id);
     return { ...fromFile, mounts: [...existing, entry] };
   });
-  return { mounts: written.mounts.map(mountForApi) };
+  announceMountsChange();
+  return { id, mounts: written.mounts.map(mountForApi) };
 }
 
 /**
@@ -480,6 +502,7 @@ export async function updateMount(mountId, body) {
     list[idx] = cur;
     return { ...fromFile, mounts: list };
   });
+  announceMountsChange();
   return { mounts: written.mounts.map(mountForApi) };
 }
 
@@ -500,6 +523,7 @@ export async function removeMount(mountId) {
       backupMountId: fromFile.backupMountId === mountId ? null : fromFile.backupMountId,
     });
   });
+  announceMountsChange();
   return { mounts: written.mounts.map(mountForApi) };
 }
 

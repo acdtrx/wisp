@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Plus,
   Trash2,
@@ -28,6 +28,8 @@ import {
 import SmbShareEditorModal from './SmbShareEditorModal.jsx';
 import RemovableDriveEditorModal, { SUPPORTED_FSTYPES } from './RemovableDriveEditorModal.jsx';
 import { useSettingsStore } from '../../store/settingsStore.js';
+import { useKindChanges } from '../../hooks/useChanges.js';
+import { sendAndAwaitKindChange } from '../../api/events.js';
 import { useDiskStore } from '../../store/diskStore.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
@@ -68,7 +70,6 @@ function shortUuid(u) {
 
 export default function HostStorage() {
   const settings = useSettingsStore((s) => s.settings);
-  const loadSettings = useSettingsStore((s) => s.loadSettings);
   const disks = useDiskStore((s) => s.disks);
   const connectDisks = useDiskStore((s) => s.connect);
   const disconnectDisks = useDiskStore((s) => s.disconnect);
@@ -83,14 +84,28 @@ export default function HostStorage() {
   const [mountStatusError, setMountStatusError] = useState(null);
   const [error, setError] = useState(null);
 
+  /* Reads are numbered: only the newest one sent applies. */
+  const statusReadsSent = useRef(0);
   const refreshStatus = useCallback(() => {
-    getMountStatus()
-      .then((list) => { setMountStatus(Array.isArray(list) ? list : []); setMountStatusError(null); })
+    const request = ++statusReadsSent.current;
+    return getMountStatus()
+      .then((list) => {
+        if (request !== statusReadsSent.current) return;
+        setMountStatus(Array.isArray(list) ? list : []);
+        setMountStatusError(null);
+      })
       // Rows then read as not mounted: say the status is unknown.
-      .catch((err) => { setMountStatus([]); setMountStatusError(err.detail || err.message || 'failed'); });
+      .catch((err) => {
+        if (request !== statusReadsSent.current) return;
+        setMountStatus([]);
+        setMountStatusError(err.detail || err.message || 'failed');
+      });
   }, []);
 
-  useEffect(() => { refreshStatus(); }, [settings, refreshStatus]);
+  useEffect(() => { refreshStatus(); }, [refreshStatus]);
+  /* A mount added, edited or removed, a mount or unmount — from any tab, the
+   * auto-mount included — or a reconnect re-reads the status. */
+  useKindChanges('host-mounts', refreshStatus);
 
   const smbSaved = useMemo(() => (settings?.mounts || []).filter((m) => m.type === 'smb'), [settings]);
   const diskSaved = useMemo(() => (settings?.mounts || []).filter((m) => m.type === 'disk'), [settings]);
@@ -115,8 +130,6 @@ export default function HostStorage() {
         <SmbMountsSection
           smbSaved={smbSaved}
           mountStatus={mountStatus}
-          refreshStatus={refreshStatus}
-          loadSettings={loadSettings}
           onError={setError}
         />
 
@@ -124,8 +137,6 @@ export default function HostStorage() {
           diskSaved={diskSaved}
           detectedDisks={disks}
           unadoptedDetected={unadoptedDetected}
-          refreshStatus={refreshStatus}
-          loadSettings={loadSettings}
           onError={setError}
           diskStreamError={diskStreamError}
         />
@@ -137,7 +148,7 @@ export default function HostStorage() {
 
 /* -------------------------- SMB mounts sub-section -------------------------- */
 
-function SmbMountsSection({ smbSaved, mountStatus, refreshStatus, loadSettings, onError }) {
+function SmbMountsSection({ smbSaved, mountStatus, onError }) {
   const [editor, setEditor] = useState({ open: false, share: null });
   const [deletingId, setDeletingId] = useState(null);
   const [mountActionId, setMountActionId] = useState(null);
@@ -159,9 +170,7 @@ function SmbMountsSection({ smbSaved, mountStatus, refreshStatus, loadSettings, 
 
   const closeEditor = () => setEditor({ open: false, share: null });
 
-  const handleSaved = async () => {
-    await loadSettings();
-    refreshStatus();
+  const handleSaved = () => {
     /* Saved config may invalidate earlier connection-test results. */
     setCheckByRow({});
   };
@@ -172,9 +181,8 @@ function SmbMountsSection({ smbSaved, mountStatus, refreshStatus, loadSettings, 
     setConfirmDelete(null);
     setDeletingId(row.id);
     try {
+      /* The removal reaches the list and the status on their cues. */
       await awaitJob(JOB_KIND.MOUNT_DELETE, await deleteMount(row.id));
-      await loadSettings();
-      refreshStatus();
     } catch (err) {
       onError(err.message || 'Failed to remove mount');
     } finally {
@@ -186,9 +194,9 @@ function SmbMountsSection({ smbSaved, mountStatus, refreshStatus, loadSettings, 
     setMountActionId(id);
     const p = mounted
       ? unmountMount(id).then((job) => awaitJob(JOB_KIND.MOUNT_UNMOUNT, job))
-      : mountMount(id);
-    p.then(() => refreshStatus())
-      /* SMB mount errors surface via refreshStatus / server state */
+      : sendAndAwaitKindChange('host-mounts', () => mountMount(id));
+    p
+      /* SMB mount errors surface via the status / server state */
       .catch(() => {})
       .finally(() => setMountActionId(null));
   };
@@ -366,8 +374,6 @@ function RemovableDrivesSection({
   diskSaved,
   detectedDisks,
   unadoptedDetected,
-  refreshStatus,
-  loadSettings,
   onError,
 }) {
   const [editor, setEditor] = useState({ open: false, drive: null, adoptDisk: null });
@@ -389,10 +395,6 @@ function RemovableDrivesSection({
 
   const closeEditor = () => setEditor({ open: false, drive: null, adoptDisk: null });
 
-  const handleSaved = async () => {
-    await loadSettings();
-    refreshStatus();
-  };
 
   const handleRemoveConfirm = async () => {
     const row = confirmDelete;
@@ -400,9 +402,8 @@ function RemovableDrivesSection({
     setConfirmDelete(null);
     setDeletingId(row.id);
     try {
+      /* The removal reaches the list and the status on their cues. */
       await awaitJob(JOB_KIND.MOUNT_DELETE, await deleteMount(row.id));
-      await loadSettings();
-      refreshStatus();
     } catch (err) {
       onError(err.message || 'Failed to remove');
     } finally {
@@ -414,8 +415,8 @@ function RemovableDrivesSection({
     setMountActionId(id);
     const p = mounted
       ? unmountMount(id).then((job) => awaitJob(JOB_KIND.MOUNT_UNMOUNT, job))
-      : mountMount(id);
-    p.then(() => refreshStatus())
+      : sendAndAwaitKindChange('host-mounts', () => mountMount(id));
+    p
       .catch((err) => onError(err.detail || err.message || 'Mount toggle failed'))
       .finally(() => setMountActionId(null));
   };
@@ -615,7 +616,6 @@ function RemovableDrivesSection({
         drive={editor.drive}
         adoptDisk={editor.adoptDisk}
         onClose={closeEditor}
-        onSaved={handleSaved}
       />
       <ConfirmDialog
         open={!!confirmDelete}
