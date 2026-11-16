@@ -152,7 +152,8 @@ consumer, and nothing has called for more).
     passes them on to the `backups` topic, which carries every backup-list cue.
   - `containerManager.subscribeImagesChange(handler)` — on containerd's
     `/images/create`, `/images/update` and `/images/delete` in the `wisp` namespace:
-    every pull, update and delete, outside ones included. The macOS stub never fires.
+    every pull, update and delete, outside ones included, and once more when the event
+    stream resubscribes (events missed meanwhile). The macOS stub never fires.
   - `library.subscribeLibraryChange(handler)` — after every upload, rename, delete and
     finished download into the library, and after a failed upload or download removed
     its partial file.

@@ -236,8 +236,10 @@ function scheduleEventsReconnect() {
     eventsReconnectTimer = null;
     if (!containerState.connected) return;
     startEventsStream();
-    // Catch up on anything that happened during the gap.
+    // Catch up on anything that happened during the gap: the list, and the image
+    // store (no image event reached us meanwhile).
     refreshContainerListCache();
+    announceImagesChange();
   }, delay);
 }
 
@@ -290,6 +292,7 @@ subscribeContainerdConnect(() => {
   clearEventsReconnect();
   startEventsStream();
   refreshContainerListCache();
+  announceImagesChange(); // image events missed while containerd was away
 });
 subscribeContainerdDisconnect(() => {
   clearEventsReconnect();
