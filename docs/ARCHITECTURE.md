@@ -131,6 +131,11 @@ consumer, and nothing has called for more).
     a rename.
     Create, delete and restore don't fire: the VM list carries them. Out-of-band
     changes (`virsh edit`) fire nothing. The macOS stub never fires.
+  - `containerManager.subscribeContainerChange(handler)` — `(name)` after every
+    `container.json` write (config, mounts, services, the restart flag, a rename under
+    the new name, the network probe's address) and every write of a mount's content
+    (upload, zip extract, content edit, init, data delete, file mode). The macOS stub
+    never fires.
   - `lib/cloudInit.js` `subscribeCloudInitChange(handler)` — `(vmName)` after a VM's
     cloud-init config is saved, disabled or removed.
   - `lib/settings.js` `subscribeSettingsChange(handler)` — after every write that
