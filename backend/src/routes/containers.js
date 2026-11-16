@@ -318,7 +318,7 @@ export default async function containerRoutes(fastify) {
       .then((result) => imageUpdateJobStore.completeJob(jobId, result))
       .catch((err) => imageUpdateJobStore.failJob(jobId, err));
 
-    return { jobId, title };
+    return reply.code(202).send({ jobId, title });
   });
 
   fastify.get('/containers/images/check-updates/:jobId', { config: { auth: 'read' } }, async (request, reply) => {
@@ -527,7 +527,7 @@ export default async function containerRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        201: {
+        202: {
           type: 'object',
           properties: {
             jobId: { type: 'string' },
@@ -582,7 +582,7 @@ export default async function containerRoutes(fastify) {
             kind: 'container', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
           });
         });
-        return reply.code(201).send({ jobId, title });
+        return reply.code(202).send({ jobId, title });
       } catch (err) {
         handleRouteError(err, reply, request);
       }

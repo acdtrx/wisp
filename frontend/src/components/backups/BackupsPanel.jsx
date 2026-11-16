@@ -27,7 +27,7 @@ import {
   restoreContainerBackupInPlace,
   deleteContainerBackup,
 } from '../../api/backups.js';
-import { subscribeTopic } from '../../api/events.js';
+import { sendAndAwaitTopic, subscribeTopic } from '../../api/events.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
 import { useVmStore } from '../../store/vmStore.js';
@@ -183,7 +183,7 @@ export default function BackupsPanel() {
   const fetchLists = useCallback((initial = false) => {
     if (initial) setLoading(true);
     setError(null);
-    Promise.allSettled([listBackups(), listContainerBackups()])
+    return Promise.allSettled([listBackups(), listContainerBackups()])
       .then(([vmRes, ctRes]) => {
         // A failed refetch keeps the list already shown.
         if (vmRes.status === 'fulfilled') setVmBackups(Array.isArray(vmRes.value) ? vmRes.value : []);
@@ -208,9 +208,10 @@ export default function BackupsPanel() {
       if (data && !data.error) setStatus(data);
       if (firstFrameRef.current) {
         firstFrameRef.current = false;
-        return;
+        return undefined;
       }
-      fetchLists();
+      /* Returned, so a delete waiting on the frame waits for the lists too. */
+      return fetchLists();
     });
     return unsubscribe;
   }, [fetchLists]);
@@ -374,13 +375,11 @@ export default function BackupsPanel() {
     setDeleteSaving(true);
     try {
       const { backup } = deleteTarget;
-      if (backup.kind === 'container') {
-        await deleteContainerBackup({ destinationId: backup.destinationId, name: backup.name, timestamp: backup.timestamp });
-      } else {
-        await deleteBackup({ destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp });
-      }
+      /* The delete answers 204; the lists re-read on the `backups` frame it announces. */
+      await sendAndAwaitTopic('backups', () => (backup.kind === 'container'
+        ? deleteContainerBackup({ destinationId: backup.destinationId, name: backup.name, timestamp: backup.timestamp })
+        : deleteBackup({ destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp })));
       setDeleteTarget(null);
-      fetchLists();
     } catch (err) {
       setDeleteError(err.message || 'Delete failed');
     } finally {

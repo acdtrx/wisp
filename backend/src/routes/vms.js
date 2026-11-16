@@ -309,7 +309,7 @@ export default async function vmsRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        201: {
+        202: {
           type: 'object',
           properties: {
             jobId: { type: 'string' },
@@ -370,7 +370,7 @@ export default async function vmsRoutes(fastify) {
             });
           },
         );
-        return reply.code(201).send({ jobId, title });
+        return reply.code(202).send({ jobId, title });
       } catch (err) {
         handleRouteError(err, reply, request);
       }

@@ -68,7 +68,7 @@ Start an image update check in the background. **Body:** `{ ref?: string }` — 
 
 For each image, the current top-level digest is recorded, the image is re-pulled via the Transfer service (idempotent), and the new digest is compared. Nothing is written to `container.json`: `updateAvailable` is derived per running/paused container from its stored `imageDigest` vs. the library digest. The check ends by refreshing the image-meta sidecar and the container list (pushed on the `containers` SSE topic) before the job's `done` event, so the badge is visible when the job completes. The hourly sweep and MCP `check_image_updates` run the same check. See CONTAINERS.md → *Image updates*.
 
-**200:** `{ jobId, title }`. Subscribe to `GET /api/containers/images/check-updates/:jobId` for progress.
+**202:** `{ jobId, title }` — a [job](API.md#job-routes). Subscribe to `GET /api/containers/images/check-updates/:jobId` for progress.
 
 ### GET /api/containers/images/check-updates/:jobId · `read`
 

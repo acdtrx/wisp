@@ -249,12 +249,7 @@ export default async function backupsRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: {
-        200: {
-          type: 'object',
-          properties: { ok: { type: 'boolean' } },
-        },
-      },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       try {
@@ -267,7 +262,7 @@ export default async function backupsRoutes(fastify) {
         const roots = listConfiguredBackupRoots(settings);
         await deleteBackup(backupPath, roots);
         notifyBackupsChanged();
-        return { ok: true };
+        return reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -391,7 +386,7 @@ export default async function backupsRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        201: {
+        202: {
           type: 'object',
           properties: {
             jobId: { type: 'string' },
@@ -440,7 +435,7 @@ export default async function backupsRoutes(fastify) {
           releaseLock,
           log: request.log,
         });
-        return reply.code(201).send({ jobId, title });
+        return reply.code(202).send({ jobId, title });
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -460,12 +455,7 @@ export default async function backupsRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: {
-        200: {
-          type: 'object',
-          properties: { ok: { type: 'boolean' } },
-        },
-      },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       try {
@@ -478,7 +468,7 @@ export default async function backupsRoutes(fastify) {
         const roots = listConfiguredBackupRoots(settings);
         await deleteContainerBackup(backupPath, roots);
         notifyBackupsChanged();
-        return { ok: true };
+        return reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
