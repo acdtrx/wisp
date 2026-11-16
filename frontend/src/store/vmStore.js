@@ -53,11 +53,13 @@ function withoutError(errors, owner, vm) {
   return next;
 }
 
-/** The errors without those of VMs no longer listed (deleted, or renamed: the old name's). */
+/** The errors without those of VMs no longer listed (deleted). A `select` error stays:
+ *  it is the error page of a VM that may never have been listed, up until the user
+ *  navigates away (the next select of that name clears it). */
 function withoutErrorsOfVanished(errors, names) {
   let next = null;
   for (const [key, entry] of Object.entries(errors)) {
-    if (entry.vm == null || names.has(entry.vm)) continue;
+    if (entry.vm == null || entry.owner === 'select' || names.has(entry.vm)) continue;
     next ??= { ...errors };
     delete next[key];
   }
@@ -163,7 +165,8 @@ export const useVmStore = create((set, get) => {
         // legitimately not be in the list yet (post-create race) or be there
         // under its prior name (post-rename race). Subsequent SSE frames will
         // deselect once configLoading and the actions clear if it is truly gone.
-        if (selectedVM && !vms.find(v => v.name === selectedVM) && !configLoading && !anyActionInFlight(actions)) {
+        if (selectedVM && !vms.find(v => v.name === selectedVM) && !configLoading && !anyActionInFlight(actions)
+          && !get().errors[errorKey('select', selectedVM)]) {
           get().deselectVM();
         } else if (selectedVM && vmConfig) {
           const vm = vms.find(v => v.name === selectedVM);
@@ -198,12 +201,14 @@ export const useVmStore = create((set, get) => {
           // before libvirt's DomainEvent reaches us). Without this gate, the
           // listener fires deselectVM during the gap between selectVM setting
           // selectedVM and getVM resolving, leaving selectedVM=null while
-          // vmConfig still gets populated from getVM — a stuck-stale state.
+          // vmConfig still gets populated from getVM — a stuck-stale state. Nor while
+          // the view shows the select's error page: it stays until the user navigates.
           if (
             state.selectedVM &&
             !data.find((v) => v.name === state.selectedVM) &&
             !state.configLoading &&
-            !anyActionInFlight(state.actions)
+            !anyActionInFlight(state.actions) &&
+            !state.errors[errorKey('select', state.selectedVM)]
           ) {
             get().deselectVM();
           }
