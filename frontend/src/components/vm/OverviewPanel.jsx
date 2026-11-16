@@ -79,11 +79,10 @@ export default function OverviewPanel() {
   const vmConfig = useVmStore((s) => s.vmConfig);
   const vmStats = useVmStore((s) => s.vmStats);
   const configLoading = useVmStore((s) => s.configLoading);
-  const actionLoading = useVmStore((s) => s.actions[s.selectedVM]?.action ?? null);
-  const actionError = useVmStore((s) => s.actions[s.selectedVM]?.error ?? null);
-  const error = useVmStore((s) => s.error);
-  const clearError = useVmStore((s) => s.clearError);
-  const clearActionError = useVmStore((s) => s.clearActionError);
+  const actionLoading = useVmStore((s) => s.actions[s.selectedVM] ?? null);
+  const selectedVM = useVmStore((s) => s.selectedVM);
+  const errors = useVmStore((s) => s.errors);
+  const dismissError = useVmStore((s) => s.dismissError);
   const reportActionError = useVmStore((s) => s.reportActionError);
   const startVM = useVmStore((s) => s.startVM);
   const stopVM = useVmStore((s) => s.stopVM);
@@ -146,13 +145,15 @@ export default function OverviewPanel() {
     setBackupModalOpen(false);
   }, [vmName]);
 
-  if (!vmConfig && error && !configLoading) {
+  /* The error page: the select read left no config. */
+  const selectError = selectedVM ? errors[`select:${selectedVM}`] : null;
+  if (!vmConfig && selectError && !configLoading) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-        <p className="text-sm font-medium text-status-stopped">{error}</p>
+        <p className="text-sm font-medium text-status-stopped">{selectError.message}</p>
         <button
           type="button"
-          onClick={() => { clearError(); navigate('/host/overview'); }}
+          onClick={() => { dismissError('select', selectedVM); navigate('/host/overview'); }}
           className="text-xs text-text-muted hover:text-text-secondary"
         >
           Go to Host overview
@@ -176,10 +177,14 @@ export default function OverviewPanel() {
   const iconColorClass = STATE_ICON_COLOR[state] || STATE_ICON_COLOR.nostate;
   const name = vmConfig.name;
 
+  /* The banner: this VM's action and refresh errors, and the list's. */
+  const bannerErrors = Object.values(errors).filter(
+    (e) => (e.vm === name && (e.owner === 'action' || e.owner === 'refresh')) || e.owner === 'list',
+  );
+
   const handleDelete = async () => {
     setDeleteDialogOpen(false);
-    await deleteVM(name, deleteDisks);
-    if (!useVmStore.getState().actions[name]?.error) navigate('/host/overview');
+    if (await deleteVM(name, deleteDisks)) navigate('/host/overview');
     // Do not reset deleteDisks here so the checkbox stays selected if delete fails and user retries
   };
 
@@ -332,13 +337,13 @@ export default function OverviewPanel() {
         </div>
       </div>
 
-      {/* Error display - visible in both tabs */}
-      {(actionError || error) && (
-        <div className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-status-stopped/30 bg-status-stopped-soft px-4 py-2 text-xs text-status-stopped">
-          <span className="min-w-0 flex-1">{actionError || error}</span>
+      {/* Error display - visible in both tabs; each error stays until dismissed */}
+      {bannerErrors.map((e) => (
+        <div key={`${e.owner}:${e.vm ?? ''}`} className="shrink-0 flex items-center justify-between gap-2 rounded-none border-b border-status-stopped/30 bg-status-stopped-soft px-4 py-2 text-xs text-status-stopped">
+          <span className="min-w-0 flex-1">{e.message}</span>
           <button
             type="button"
-            onClick={() => { clearActionError(name); clearError(); }}
+            onClick={() => dismissError(e.owner, e.vm)}
             className="shrink-0 rounded-sm p-1 hover:bg-status-stopped/20 transition-colors duration-150"
             title="Dismiss"
             aria-label="Dismiss error"
@@ -346,7 +351,7 @@ export default function OverviewPanel() {
             <X size={14} />
           </button>
         </div>
-      )}
+      ))}
 
       {activeTab === 'console' ? (
         <Suspense fallback={

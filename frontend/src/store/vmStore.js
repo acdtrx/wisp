@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import * as vmApi from '../api/vms.js';
 import { createSSE } from '../api/sse.js';
 import { sendAndAwaitChange, sendAndAwaitTopic, subscribeChanges, subscribeTopic } from '../api/events.js';
-import { withWorkloadAction, anyActionInFlight, pruneWorkloadActions } from './workloadActions.js';
 import { awaitJob } from './backgroundJobsStore.js';
 import { JOB_KIND } from '../api/jobProgress.js';
 
@@ -30,6 +29,49 @@ function listShowsLeft(name, state) {
     return !vm || vm.state !== state;
   };
 }
+
+/*
+ * Busy and errors are kept apart. `actions[name]` is the action in flight on VM `name`
+ * ('start', 'delete', …), nothing else. `errors` holds what the detail view shows, each
+ * until the user dismisses it, keyed by owner and VM: an `action`'s failure (a new
+ * action's failure replaces it; a success leaves it), a failed `refresh` of the config,
+ * the `select` read that left no config (the error page), and the `list` (no VM).
+ */
+function errorKey(owner, vm) {
+  return `${owner}:${vm ?? ''}`;
+}
+
+function withError(errors, owner, vm, message) {
+  return { ...errors, [errorKey(owner, vm)]: { owner, vm: vm ?? null, message } };
+}
+
+function withoutError(errors, owner, vm) {
+  const key = errorKey(owner, vm);
+  if (!(key in errors)) return errors;
+  const next = { ...errors };
+  delete next[key];
+  return next;
+}
+
+/** The errors without those of VMs no longer listed (deleted, or renamed: the old name's). */
+function withoutErrorsOfVanished(errors, names) {
+  let next = null;
+  for (const [key, entry] of Object.entries(errors)) {
+    if (entry.vm == null || names.has(entry.vm)) continue;
+    next ??= { ...errors };
+    delete next[key];
+  }
+  return next ?? errors;
+}
+
+function withBusy(actions, name, action) {
+  const next = { ...actions };
+  if (action) next[name] = action;
+  else delete next[name];
+  return next;
+}
+
+const anyActionInFlight = (actions) => Object.keys(actions).length > 0;
 
 export const useVmStore = create((set, get) => {
   // Single subscriber per feed: one `vms` topic subscription (shared /api/events
@@ -85,16 +127,11 @@ export const useVmStore = create((set, get) => {
     if (!match || match.name === selectedVM) return;
     stopStatsSSE();
     selectionSeq += 1;
-    set({
-      selectedVM: match.name,
-      renamedSelection: { from: selectedVM, to: match.name },
-      // A re-read failure under the old name (a 404 racing the rename) isn't this VM's.
-      ...(get().refreshErrorFor === selectedVM ? { error: null, refreshErrorFor: null } : {}),
-    });
+    set({ selectedVM: match.name, renamedSelection: { from: selectedVM, to: match.name } });
     startStatsSSE(match.name);
     queueMicrotask(() => {
       get().refreshSelectedVM({ reportFailure: true }).catch(() => {
-        /* refreshSelectedVM records the failure in `error`, which the detail view shows */
+        /* refreshSelectedVM records the failure in `errors`, which the detail view shows */
       });
     });
   }
@@ -105,11 +142,10 @@ export const useVmStore = create((set, get) => {
     vmConfig: null,
     vmStats: null,
     configLoading: false,
-    /** Per-VM action state (workloadActions.js); `error` is for list and select failures only. */
+    /** `{ [name]: action }`: the action in flight on each VM (see above). */
     actions: {},
-    error: null,
-    /** The VM a "Couldn't refresh" `error` is about. */
-    refreshErrorFor: null,
+    /** `{ [key]: { owner, vm, message } }`: the errors shown until dismissed (see above). */
+    errors: {},
     /** The list has loaded once; `listError` is the list stream's last error (the list shown is the last good one). */
     listLoaded: false,
     listError: null,
@@ -122,7 +158,7 @@ export const useVmStore = create((set, get) => {
       try {
         const vms = await vmApi.listVMs();
         migrateSelectionIfRenamed(vms);
-        set((prev) => ({ vms, listLoaded: true, listError: null, actions: pruneWorkloadActions(prev.actions, new Set(vms.map((v) => v.name))) }));
+        set((prev) => ({ vms, listLoaded: true, listError: null, errors: withoutErrorsOfVanished(prev.errors, new Set(vms.map((v) => v.name))) }));
 
         const { selectedVM, vmConfig, configLoading, actions } = get();
         // Skip auto-deselect while a select or action is in flight — the VM may
@@ -137,7 +173,7 @@ export const useVmStore = create((set, get) => {
           if (merged) set({ vmConfig: merged });
         }
       } catch (err) {
-        set({ error: err.message, listError: err.detail || err.message });
+        set((prev) => ({ errors: withError(prev.errors, 'list', null, err.message), listError: err.detail || err.message }));
       }
     },
 
@@ -179,7 +215,7 @@ export const useVmStore = create((set, get) => {
               vms: data,
               listLoaded: true,
               listError: null,
-              actions: pruneWorkloadActions(prev.actions, new Set(data.map((x) => x.name))),
+              errors: withoutErrorsOfVanished(prev.errors, new Set(data.map((x) => x.name))),
             };
             if (prev.selectedVM && prev.vmConfig) {
               const vm = data.find((v) => v.name === prev.selectedVM);
@@ -209,7 +245,10 @@ export const useVmStore = create((set, get) => {
         ? { name: listItem.name, uuid: listItem.uuid, state: listItem.state, stateCode: listItem.stateCode, vcpus: listItem.vcpus, memoryMiB: listItem.memoryMiB, osCategory: listItem.osCategory, iconId: listItem.iconId, pendingRestart: listItem.pendingRestart }
         : null;
       const seq = ++selectionSeq;
-      set({ selectedVM: name, vmConfig: seed, vmStats: null, configLoading: true, error: null, refreshErrorFor: null });
+      set((prev) => ({
+        selectedVM: name, vmConfig: seed, vmStats: null, configLoading: true,
+        errors: withoutError(prev.errors, 'select', name),
+      }));
       startStatsSSE(name);
       const read = ++configReadsSent;
       try {
@@ -228,7 +267,7 @@ export const useVmStore = create((set, get) => {
           set({ configLoading: false });
           return;
         }
-        set({ vmConfig: null, error: err.message, configLoading: false });
+        set((prev) => ({ vmConfig: null, configLoading: false, errors: withError(prev.errors, 'select', name, err.message) }));
       }
     },
 
@@ -239,18 +278,15 @@ export const useVmStore = create((set, get) => {
       set({ selectedVM: null, vmConfig: null, vmStats: null, configLoading: false });
     },
 
-    clearError: () => set({ error: null, refreshErrorFor: null }),
-    clearActionError: (name) => set((s) => ({ actions: withWorkloadAction(s.actions, name, { action: null, error: null }) })),
-    /** Show a command's failure in VM `name`'s action error (the detail view's banner),
-     *  leaving any action in flight on it tracked. */
-    reportActionError: (name, message) => set((s) => ({
-      actions: withWorkloadAction(s.actions, name, { action: s.actions[name]?.action ?? null, error: message }),
-    })),
+    /** Dismiss one error (`owner`, `vm`): never touches an action in flight. */
+    dismissError: (owner, vm) => set((s) => ({ errors: withoutError(s.errors, owner, vm) })),
+    /** Show a command's failure as VM `name`'s action error (the detail view's banner). */
+    reportActionError: (name, message) => set((s) => ({ errors: withError(s.errors, 'action', name, message) })),
 
     /**
      * Re-read the selected VM's config. Rejects on failure, so a command waiting on it
      * (runVMCommand) fails instead of resolving onto the old config. With
-     * `reportFailure` (no command waiting), a failure is also recorded in `error`, the
+     * `reportFailure` (no command waiting), a failure is also recorded in `errors`, the
      * detail view's dismissible banner, over the config still shown — unless a newer
      * read is already on its way.
      */
@@ -264,7 +300,7 @@ export const useVmStore = create((set, get) => {
         config = await vmApi.getVM(selectedVM);
       } catch (err) {
         if (reportFailure && seq === selectionSeq && read === configReadsSent && read > configReadsApplied) {
-          set({ error: `Couldn't refresh this VM: ${err.detail || err.message}`, refreshErrorFor: selectedVM });
+          set((prev) => ({ errors: withError(prev.errors, 'refresh', selectedVM, `Couldn't refresh this VM: ${err.detail || err.message}`) }));
         }
         throw err;
       }
@@ -274,51 +310,51 @@ export const useVmStore = create((set, get) => {
     },
 
     /**
-     * Run one action on VM `name`, tracked in `actions[name]`. Only touches the selection
-     * when it is `name`. An error already shown on the VM stays until it is dismissed:
-     * the action replaces it only with its own failure.
+     * Run one action on VM `name`, busy in `actions[name]` while it runs. Resolves whether
+     * it succeeded. Its failure becomes the VM's action error, replacing an earlier one; a
+     * success leaves an earlier error until it is dismissed. Only touches the selection
+     * when it is `name`.
      */
     async withAction(name, actionName, fn) {
-      const track = (action, error) => set((s) => ({
-        actions: withWorkloadAction(s.actions, name, { action, error: error === undefined ? (s.actions[name]?.error ?? null) : error }),
-      }));
-      track(actionName);
+      set((s) => ({ actions: withBusy(s.actions, name, actionName) }));
       /* The new state arrives on the `vms` topic and the stats stream: no follow-up GET. */
       try {
         await fn();
-        track(null);
+        set((s) => ({ actions: withBusy(s.actions, name, null) }));
         if (actionName === 'delete' && get().selectedVM === name) get().deselectVM();
+        return true;
       } catch (err) {
-        track(null, err.message);
+        set((s) => ({ actions: withBusy(s.actions, name, null), errors: withError(s.errors, 'action', name, err.message) }));
+        return false;
       }
     },
 
     startVM: async (name) => {
-      await get().withAction(name, 'start', async () => awaitJob(JOB_KIND.VM_START, await vmApi.startVM(name)));
+      return get().withAction(name, 'start', async () => awaitJob(JOB_KIND.VM_START, await vmApi.startVM(name)));
     },
     /* Suspend and resume stay busy until a `vms` frame shows the VM out of the state it
      * was in (suspend: no longer running; resume: no longer paused).
      * Stop (an ACPI shutdown) and reboot are requests the guest may ignore, so they
      * end at the ack: the list shows the VM stopping when it does. */
     stopVM: async (name) => {
-      await get().withAction(name, 'stop', () => vmApi.stopVM(name));
+      return get().withAction(name, 'stop', () => vmApi.stopVM(name));
     },
     forceStopVM: async (name) => {
-      await get().withAction(name, 'force-stop', async () => awaitJob(JOB_KIND.VM_FORCE_STOP, await vmApi.forceStopVM(name)));
+      return get().withAction(name, 'force-stop', async () => awaitJob(JOB_KIND.VM_FORCE_STOP, await vmApi.forceStopVM(name)));
     },
     rebootVM: async (name) => {
-      await get().withAction(name, 'reboot', () => vmApi.rebootVM(name));
+      return get().withAction(name, 'reboot', () => vmApi.rebootVM(name));
     },
     suspendVM: async (name) => {
-      await get().withAction(name, 'suspend', () =>
+      return get().withAction(name, 'suspend', () =>
         sendAndAwaitTopic('vms', () => vmApi.suspendVM(name), listShowsLeft(name, 'running')));
     },
     resumeVM: async (name) => {
-      await get().withAction(name, 'resume', () =>
+      return get().withAction(name, 'resume', () =>
         sendAndAwaitTopic('vms', () => vmApi.resumeVM(name), listShowsLeft(name, 'paused')));
     },
     deleteVM: async (name, deleteDisks) => {
-      await get().withAction(name, 'delete', async () =>
+      return get().withAction(name, 'delete', async () =>
         awaitJob(JOB_KIND.VM_DELETE, await vmApi.deleteVM(name, deleteDisks)));
     },
   };
