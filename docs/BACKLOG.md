@@ -32,6 +32,13 @@ the rest needs the client to normalise like the server, or the ack to say nothin
 written (found in the command-acks milestone 4 review, 2026-11-16). **Revisit trigger:** a
 user seeing a save spin for 30 s.
 
+**Restore in place can't repair a container whose `container.json` is missing or corrupt.**
+The restore route checks the container against `listContainers`, which skips a directory
+without a readable `container.json`, so it answers 404; and the safety backup taken before
+the swap reads that file strictly and fails. Restore as new is the only way back. Predates
+command-acks (found in its milestone 4 review, 2026-11-16). **Revisit trigger:** a user
+with a damaged `container.json` and a backup they can't restore over it.
+
 **A VM deleted elsewhere leaves its open tab on an endless spinner.** When another tab or
 an MCP agent deletes the VM a tab has open, the list's auto-deselect nulls the config, and
 the tab stays on `/vm/<name>` with the loading spinner: nothing navigates away or says the
