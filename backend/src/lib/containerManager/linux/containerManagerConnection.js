@@ -12,7 +12,7 @@ import protobuf from 'protobufjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROTOS_DIR = resolve(__dirname, '../../../protos');
 const SOCKET_PATH = process.env.WISP_CONTAINERD_SOCK || '/run/containerd/containerd.sock';
-const NAMESPACE = 'wisp';
+export const NAMESPACE = 'wisp';
 
 export const IS_DARWIN = false;
 

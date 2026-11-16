@@ -1,6 +1,8 @@
 import { buildHostStatsPayload } from '../lib/hostStatsSnapshot.js';
 import { listVMs, subscribeVMListChange, subscribeVMChange } from '../lib/vmManager/index.js';
-import { listContainers, subscribeContainerListChange, subscribeContainerChange } from '../lib/containerManager/index.js';
+import {
+  listContainers, subscribeContainerListChange, subscribeContainerChange, subscribeImagesChange,
+} from '../lib/containerManager/index.js';
 import { subscribeSectionsChange } from '../lib/sections.js';
 import { subscribeHomepageChange } from '../lib/homepage.js';
 import { buildHomeEnvelope } from '../lib/homeTiles.js';
@@ -143,6 +145,7 @@ export default async function eventsRoutes(fastify) {
         subscribeNetworkBridgesChange(() => { sendChange({ kind: 'network-bridges' }); }),
         subscribeMountsChange(() => { sendChange({ kind: 'host-mounts' }); }),
         subscribeMountStateChange(() => { sendChange({ kind: 'host-mounts' }); }),
+        subscribeImagesChange(() => { sendChange({ kind: 'images' }); }),
       ];
 
       onSSEClose(reply, () => {

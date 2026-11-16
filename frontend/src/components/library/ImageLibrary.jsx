@@ -16,6 +16,7 @@ import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStor
 import { useContainerStore } from '../../store/containerStore.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { listContainerImages, deleteContainerImage } from '../../api/containers.js';
+import { useKindChanges } from '../../hooks/useChanges.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import Modal from '../shared/Modal.jsx';
 import SectionCard from '../shared/SectionCard.jsx';
@@ -333,10 +334,14 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
    *  filter's request is still in flight must not let that late response repaint the list. */
   const fetchSeqRef = useRef(0);
 
-  const fetchFiles = useCallback(async () => {
+  /* `initial`: a new view (mount, filter switch) shows the loading state and drops
+   * the last error. A re-read on a cue keeps both: an error stays until dismissed. */
+  const fetchFiles = useCallback(async ({ initial = false } = {}) => {
     const seq = ++fetchSeqRef.current;
-    setLoading(true);
-    setError(null);
+    if (initial) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       if (filter === 'container') {
         const data = await listContainerImages();
@@ -361,8 +366,9 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     } catch (err) {
       if (seq !== fetchSeqRef.current) return;
       setError(err.message);
+    } finally {
+      if (seq === fetchSeqRef.current) setLoading(false);
     }
-    setLoading(false);
   }, [filter, isPageLike]);
 
   const mergedAllRows = useMemo(() => {
@@ -380,21 +386,17 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   }, [isPageLike, filter, files, containerImages]);
 
   useEffect(() => {
-    fetchFiles();
+    fetchFiles({ initial: true });
   }, [fetchFiles]);
+  /* An image pulled, updated or deleted — by any tab, a container create or
+   * the update check — or a reconnect re-reads the list. */
+  const rereadList = useCallback(() => fetchFiles(), [fetchFiles]);
+  useKindChanges('images', rereadList);
 
   /** Fetch cached update-check status once on mount so the "Checked X ago" line is populated. */
   useEffect(() => {
     refreshImageUpdateStatus();
   }, [refreshImageUpdateStatus]);
-
-  /** When a check finishes, re-fetch images so new digests/sizes show up. */
-  const updateCheckRunning = imageUpdateCheck.running;
-  useEffect(() => {
-    if (!updateCheckRunning) {
-      fetchFiles();
-    }
-  }, [updateCheckRunning, fetchFiles]);
 
   const handleUpload = async (file) => {
     setUploading(true);
@@ -421,12 +423,13 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     if (!deleteTarget) return;
     try {
       if (deleteTarget.kind === 'oci') {
+        /* The removal reaches the list on the `images` cue. */
         await awaitJob(JOB_KIND.CONTAINER_IMAGE_DELETE, await deleteContainerImage(deleteTarget.ref));
       } else {
         await deleteFile(deleteTarget.name);
+        await fetchFiles();
       }
       setDeleteTarget(null);
-      await fetchFiles();
     } catch (err) {
       setError(err.message);
       setDeleteTarget(null);

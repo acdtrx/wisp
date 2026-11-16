@@ -35,6 +35,7 @@ export {
   getRunningContainerCount,
   findContainersUsingStorageMount,
   subscribeContainerListChange,
+  subscribeImagesChange,
 } from './containerManagerList.js';
 
 export { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';

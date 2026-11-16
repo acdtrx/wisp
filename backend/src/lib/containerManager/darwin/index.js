@@ -64,6 +64,10 @@ export function subscribeContainerChange() {
   return () => {};
 }
 
+export function subscribeImagesChange() {
+  return () => {};
+}
+
 export function subscribeContainerNetnsRemoved() {
   return () => {};
 }

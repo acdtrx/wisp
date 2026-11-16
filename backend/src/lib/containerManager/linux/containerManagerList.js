@@ -14,6 +14,7 @@ import {
   callStream,
   subscribeContainerdConnect,
   subscribeContainerdDisconnect,
+  NAMESPACE,
 } from './containerManagerConnection.js';
 import { getContainersPath } from './containerPaths.js';
 import { getTaskState, containerTaskStatusToUi } from './containerManagerLifecycle.js';
@@ -51,6 +52,29 @@ let refreshQueued = false;
 let refreshWaiters = [];
 let eventsStream = null;
 const listChangeHandlers = new Set();
+
+/** Containerd event topics that change the image store (GET /api/containers/images). */
+const IMAGE_TOPICS = new Set(['/images/create', '/images/update', '/images/delete']);
+
+/** Notified after containerd reports an image created, updated or deleted in
+ *  Wisp's namespace — every writer, a pull, a delete or `ctr` from outside. No
+ *  replay: a cue to list the images again. */
+const imagesChangeHandlers = new Set();
+
+export function subscribeImagesChange(handler) {
+  imagesChangeHandlers.add(handler);
+  return () => imagesChangeHandlers.delete(handler);
+}
+
+function announceImagesChange() {
+  for (const handler of imagesChangeHandlers) {
+    try {
+      handler();
+    } catch (err) {
+      containerState.logger?.warn?.({ err: err?.message || err }, '[containerManager] images-change handler threw');
+    }
+  }
+}
 
 /** Containerd event topics that affect what listContainers returns. */
 const LIST_AFFECTING_TOPICS = new Set([
@@ -236,6 +260,9 @@ function startEventsStream() {
         refreshContainerListCache();
       }
       if (envelope?.topic === '/tasks/exit') handleTaskExitEvent(envelope.event);
+      if (IMAGE_TOPICS.has(envelope?.topic) && (!envelope.namespace || envelope.namespace === NAMESPACE)) {
+        announceImagesChange();
+      }
     });
     eventsStream.on('error', (err) => {
       containerState.logger?.warn?.({ err: err?.message || String(err) }, 'containerd events stream error — will reconnect');
