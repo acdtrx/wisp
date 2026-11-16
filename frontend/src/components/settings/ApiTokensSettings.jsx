@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { KeyRound, Plus, Check, X, Trash2, Copy, Loader2 } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
@@ -16,6 +16,8 @@ import {
 } from '../shared/DataTableChrome.jsx';
 import { listApiTokens, createApiToken, deleteApiToken } from '../../api/authTokens.js';
 import { autoFocusField } from '../../lib/focus.js';
+import { useKindChanges } from '../../hooks/useChanges.js';
+import { sendAndAwaitKindChange } from '../../api/events.js';
 
 const HELP =
   'Bearer tokens for non-interactive clients (coding agents, scripts). Read-only tokens can ' +
@@ -42,16 +44,24 @@ export default function ApiTokensSettings() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
+  /* Loads are numbered: only the newest one sent applies, or reports its failure. */
+  const loadsSent = useRef(0);
   const load = useCallback(async () => {
-    setLoadError(null);
+    const request = ++loadsSent.current;
     try {
-      setTokens(await listApiTokens());
+      const list = await listApiTokens();
+      if (request !== loadsSent.current) return;
+      setTokens(list);
+      setLoadError(null);
     } catch (err) {
+      if (request !== loadsSent.current) return;
       setLoadError(err.detail || err.message || 'Failed to load API tokens');
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  /* A create or revoke from any tab, or a reconnect, re-reads the list. */
+  useKindChanges('tokens', load);
 
   const openAdd = () => {
     setError(null);
@@ -70,12 +80,12 @@ export default function ApiTokensSettings() {
     setError(null);
     setCreating(true);
     try {
-      const created = await createApiToken({ label: newLabel.trim(), scope: newScope });
+      /* The secret is shown once, from the 201; the list row arrives with the cue. */
+      const created = await sendAndAwaitKindChange('tokens', () => createApiToken({ label: newLabel.trim(), scope: newScope }));
       setMinted({ label: created.label, token: created.token });
       setCopied(false);
       setAdding(false);
       setNewLabel('');
-      await load();
     } catch (err) {
       setError(err.detail || err.message || 'Failed to create API token');
     } finally {
@@ -88,9 +98,8 @@ export default function ApiTokensSettings() {
     setError(null);
     setDeleting(true);
     try {
-      await deleteApiToken(deleteTarget.id);
+      await sendAndAwaitKindChange('tokens', () => deleteApiToken(deleteTarget.id));
       setDeleteTarget(null);
-      await load();
     } catch (err) {
       setError(err.detail || err.message || 'Failed to revoke API token');
     } finally {

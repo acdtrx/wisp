@@ -26,3 +26,19 @@ export function useChanges(kind, id, refetch) {
     });
   }, [kind, id]);
 }
+
+/**
+ * `useChanges` for a kind that names one record or a whole list (no `id`):
+ * re-read on every frame of that kind and on `{ kind: 'all' }`.
+ *
+ * @param {string} kind
+ * @param {() => Promise<unknown>} refetch
+ */
+export function useKindChanges(kind, refetch) {
+  const refetchRef = useRef(refetch);
+  useEffect(() => {
+    refetchRef.current = refetch;
+  });
+
+  useEffect(() => subscribeChanges([kind], () => refetchRef.current()), [kind]);
+}

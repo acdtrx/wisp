@@ -7,6 +7,26 @@ export const API_TOKEN_SCOPES = ['read', 'admin'];
 const TOKEN_RANDOM_BYTES = 32;
 const LABEL_MAX_LENGTH = 64;
 
+/** Notified after a token is created or revoked. No replay: a cue to list the
+ *  tokens again. */
+const tokensChangeHandlers = new Set();
+
+export function subscribeApiTokensChange(handler) {
+  tokensChangeHandlers.add(handler);
+  return () => tokensChangeHandlers.delete(handler);
+}
+
+function announceApiTokensChange() {
+  for (const handler of tokensChangeHandlers) {
+    try {
+      handler();
+    } catch (err) {
+      // A broken subscriber must not fail the saved change or silence the others.
+      console.error('apiTokens: change subscriber failed', err);
+    }
+  }
+}
+
 function hashToken(token) {
   return createHash('sha256').update(token).digest('hex');
 }
@@ -45,6 +65,7 @@ export async function createApiToken(label, scope) {
     ...fromFile,
     apiTokens: [...(fromFile.apiTokens || []), entry],
   }));
+  announceApiTokensChange();
   return { id: entry.id, label: entry.label, scope: entry.scope, createdAt: entry.createdAt, token };
 }
 
@@ -57,6 +78,7 @@ export async function revokeApiToken(id) {
     }
     return { ...fromFile, apiTokens: next };
   });
+  announceApiTokensChange();
 }
 
 /**

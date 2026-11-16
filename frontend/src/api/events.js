@@ -212,3 +212,20 @@ export function sendAndAwaitChange(kind, id, send) {
     send,
   );
 }
+
+/**
+ * `sendAndAwaitChange` for a kind with no `id` (one record or a whole list, e.g.
+ * `tokens`, `library`).
+ *
+ * @template T
+ * @param {string} kind
+ * @param {() => Promise<T>} send
+ * @returns {Promise<T>}
+ */
+export function sendAndAwaitKindChange(kind, send) {
+  return sendAndAwaitFrame(
+    CHANGES_TOPIC,
+    (change) => change?.kind === 'all' || (change?.kind === kind && change?.id === undefined),
+    send,
+  );
+}
