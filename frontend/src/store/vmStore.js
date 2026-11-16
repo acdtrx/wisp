@@ -55,7 +55,7 @@ function withoutError(errors, owner, vm) {
 
 /** The errors without those of VMs no longer listed (deleted). A `select` error stays:
  *  it is the error page of a VM that may never have been listed, up until the user
- *  navigates away (the next select of that name clears it). */
+ *  leaves the view (selectVM and deselectVM clear it). */
 function withoutErrorsOfVanished(errors, names) {
   let next = null;
   for (const [key, entry] of Object.entries(errors)) {
@@ -153,7 +153,6 @@ export const useVmStore = create((set, get) => {
     set({ vmStats: null });
   }
 
-  /** If the selected name vanished from the list but the same UUID appears under a new name (rename), follow it. */
   /** Follow VM `from`'s rename to `to`, the one way both paths take (this tab's own
    *  rename, and one seen on the list): its undismissed errors go with it, and the
    *  selection moves when it is `from`. */
@@ -170,6 +169,7 @@ export const useVmStore = create((set, get) => {
     if (moveSelection) startStatsSSE(to);
   }
 
+  /** If the selected name vanished from the list but the same UUID appears under a new name (rename), follow it. */
   function migrateSelectionIfRenamed(vmsList) {
     if (!Array.isArray(vmsList) || vmsList.length === 0) return;
     const { selectedVM, vmConfig } = get();
