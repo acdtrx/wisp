@@ -125,6 +125,24 @@ export const useContainerStore = create((set, get) => {
     if (moveSelection) startStatsSSE(to);
   }
 
+  /** If the selected name vanished from the list but the same uuid appears under a new
+   *  name (renamed in another tab), follow it. */
+  function migrateSelectionIfRenamed(list) {
+    if (!Array.isArray(list) || list.length === 0) return;
+    const { selectedContainer, containerConfig } = get();
+    if (!selectedContainer) return;
+    if (list.some((c) => c.name === selectedContainer)) return;
+    const uuid = containerConfig?.uuid;
+    if (!uuid) return;
+    const match = list.find((c) => c.uuid === uuid);
+    if (!match || match.name === selectedContainer) return;
+    followRename(selectedContainer, match.name);
+    set({ renamedSelection: { from: selectedContainer, to: match.name } });
+    queueMicrotask(() => {
+      get().refreshSelectedContainer();
+    });
+  }
+
   /** Auto-deselect a selected container the list no longer shows — unless a select or
    *  action is in flight (it may not be listed yet: post-create race), or the view
    *  shows its select error page (it stays until the user navigates). */
@@ -175,6 +193,10 @@ export const useContainerStore = create((set, get) => {
     /** The list has loaded once; `listError` is the list stream's last error (the list shown is the last good one). */
     listLoaded: false,
     listError: null,
+    /** `{ from, to }` after the selection followed a rename seen on the list, until the route follows it. */
+    renamedSelection: null,
+
+    clearRenamedSelection: () => set({ renamedSelection: null }),
 
     imageUpdateCheck: {
       running: false,
@@ -191,6 +213,7 @@ export const useContainerStore = create((set, get) => {
     fetchContainers: async () => {
       try {
         const containers = await containerApi.listContainers();
+        migrateSelectionIfRenamed(containers);
         deselectIfGone(containers);
         applyList(containers);
       } catch (err) {
@@ -215,6 +238,7 @@ export const useContainerStore = create((set, get) => {
             return;
           }
           if (!Array.isArray(data)) return;
+          migrateSelectionIfRenamed(data);
           // Empty [] can be transient (race, parse glitch); deselecting clears the panel and looks like a blank page.
           if (data.length > 0) deselectIfGone(data);
           applyList(data);
@@ -242,6 +266,7 @@ export const useContainerStore = create((set, get) => {
       const seed = listItem
         ? {
             name: listItem.name,
+            uuid: listItem.uuid ?? null,
             type: 'container',
             image: listItem.image,
             state: listItem.state,

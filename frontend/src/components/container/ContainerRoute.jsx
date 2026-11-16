@@ -9,13 +9,15 @@ const ContainerOverviewPanel = lazy(() => import('./ContainerOverviewPanel.jsx')
 const ContainerStatsBar = lazy(() => import('./ContainerStatsBar.jsx'));
 
 export default function ContainerRoute() {
-  const { name } = useParams();
+  const { name, tab } = useParams();
   const navigate = useNavigate();
   const decodedName = name ? decodeURIComponent(name) : '';
 
   const selectContainer = useContainerStore((s) => s.selectContainer);
   const deselectContainer = useContainerStore((s) => s.deselectContainer);
   const deselectVM = useVmStore((s) => s.deselectVM);
+  const renamedSelection = useContainerStore((s) => s.renamedSelection);
+  const clearRenamedSelection = useContainerStore((s) => s.clearRenamedSelection);
 
   useEffect(() => {
     if (!decodedName) return;
@@ -25,6 +27,16 @@ export default function ContainerRoute() {
       deselectContainer();
     };
   }, [decodedName, selectContainer, deselectContainer, deselectVM]);
+
+  /* The open container was renamed in another tab: the URL follows, so a refresh opens
+   * it again. */
+  useEffect(() => {
+    if (!renamedSelection) return;
+    clearRenamedSelection();
+    if (renamedSelection.from !== decodedName) return;
+    const tabPart = tab ? `/${tab}` : '';
+    navigate(`/container/${encodeURIComponent(renamedSelection.to)}${tabPart}`, { replace: true });
+  }, [renamedSelection, clearRenamedSelection, decodedName, tab, navigate]);
 
   useEffect(() => {
     const handler = (e) => {
