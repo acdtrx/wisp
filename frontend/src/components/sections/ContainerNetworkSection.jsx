@@ -224,7 +224,6 @@ export default function ContainerNetworkSection({
     setInterfaceDraft(iface);
     setOriginalInterface(iface);
     setError(null);
-    setRequiresRestart(false);
   }, [config.name, config.network?.mac, config.network?.interface]);
 
   useEffect(() => {

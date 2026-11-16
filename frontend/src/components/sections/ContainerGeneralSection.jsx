@@ -53,7 +53,6 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
     const d = buildGeneralFormDefaults(config);
     setForm(d);
     setOriginal(d);
-    setRequiresRestart(false);
     setError(null);
     /* command serialised so re-renders with same-contents arrays don't trigger re-init */
   }, [
