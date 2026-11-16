@@ -4,12 +4,13 @@ export function getUpdateStatus() {
   return api('/api/updates/status');
 }
 
+/** Answers 204 (or the check's error): the status follows on the `wisp-update` cue. */
 export function checkForWispUpdate() {
   return api('/api/updates/check', { method: 'POST' });
 }
 
 /**
- * Start the install pipeline as a job: answers `{ jobId, title, targetVersion }`.
+ * Start the install pipeline as a job: answers `{ jobId, title }`.
  * force=true bypasses the active-jobs guard (UI confirms with the user first).
  */
 export function installWispUpdate({ force = false } = {}) {

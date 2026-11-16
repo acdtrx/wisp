@@ -683,13 +683,12 @@ export default async function hostRoutes(fastify) {
   fastify.post('/host/power/shutdown', {
     config: { auth: 'admin' },
     schema: {
-      response: {
-        200: { type: 'object', properties: { ok: { type: 'boolean' } } },
-      },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       try {
-        return await hostShutdown();
+        await hostShutdown();
+        return reply.code(204).send();
       } catch (err) {
         request.log.error({ err }, 'POST /host/power/shutdown failed');
         const code = err.code === 'POWER_UNAVAILABLE' ? 503 : 500;
@@ -704,13 +703,12 @@ export default async function hostRoutes(fastify) {
   fastify.post('/host/power/restart', {
     config: { auth: 'admin' },
     schema: {
-      response: {
-        200: { type: 'object', properties: { ok: { type: 'boolean' } } },
-      },
+      response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
       try {
-        return await hostReboot();
+        await hostReboot();
+        return reply.code(204).send();
       } catch (err) {
         request.log.error({ err }, 'POST /host/power/restart failed');
         const code = err.code === 'POWER_UNAVAILABLE' ? 503 : 500;

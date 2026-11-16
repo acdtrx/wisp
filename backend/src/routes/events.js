@@ -14,6 +14,7 @@ import { subscribeCloudInitChange } from '../lib/cloudInit.js';
 import { subscribeApiTokensChange } from '../lib/apiTokens.js';
 import { subscribeNetworkBridgesChange } from '../lib/networking/index.js';
 import { subscribeLibraryChange } from '../lib/library/index.js';
+import { subscribeWispUpdateChange } from '../lib/wispUpdate.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { buildSectionsEnvelope } from './sections.js';
 
@@ -148,6 +149,7 @@ export default async function eventsRoutes(fastify) {
         subscribeMountStateChange(() => { sendChange({ kind: 'host-mounts' }); }),
         subscribeImagesChange(() => { sendChange({ kind: 'images' }); }),
         subscribeLibraryChange(() => { sendChange({ kind: 'library' }); }),
+        subscribeWispUpdateChange(() => { sendChange({ kind: 'wisp-update' }); }),
       ];
 
       onSSEClose(reply, () => {

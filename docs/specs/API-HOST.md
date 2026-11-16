@@ -197,16 +197,16 @@ Cached state of the Wisp self-update checker (hourly poll of GitHub Releases). S
 
 ### POST /api/updates/check · `admin`
 
-Force an immediate self-update check; returns the same shape as `/status`. Which release is considered follows `updateChannel` from `wisp-config.json`, read at check time — see [UPDATES.md → Update channels](UPDATES.md#update-channels).
+Force an immediate self-update check. Which release is considered follows `updateChannel` from `wisp-config.json`, read at check time — see [UPDATES.md → Update channels](UPDATES.md#update-channels).
 
-- **200:** `{ current, latest, available, notes, publishedAt, lastChecked, lastError, repo }`
-- **503:** `{ error, detail }` — GitHub unreachable, rate-limited, or response malformed
+- **204:** checked; the new status (the `GET /api/updates/status` shape) follows on `{ kind: "wisp-update" }`, which every check announces — this one, a failed one and the hourly poll
+- **503:** `{ error, detail }` — GitHub unreachable, rate-limited, or response malformed; the failure is recorded in the status (`lastError`) and announced too
 
 ### POST /api/updates/install · `admin`
 
 A [job](API.md#job-routes): downloads + verifies + extracts the new release tarball (progress `{ step, percent? }`), writes the staging path to `/var/lib/wisp/updates/target`, reports `{ step: "restarting" }`, triggers `wisp-updater.service` via `sudo -n systemctl start --no-block` and ends with `done`: `{ targetVersion }`. The job's stream may end before `done` as the backend stops. The updater is a separate `Type=oneshot` systemd unit — it stops the backend as part of its first real step; the UI detects completion by polling `GET /api/host` for `wispVersion === targetVersion`. Updater progress is in journald (`journalctl -u wisp-updater.service`). `?force=1` overrides the active-jobs guard.
 
-- **202:** `{ jobId, title, targetVersion }`
+- **202:** `{ jobId, title }`
 - **409:** `{ error, detail }` — no update available; other background jobs are running and `force=1` was not supplied; or an install is already in flight (`Update already in progress`, not bypassed by `force`)
 - **Job errors:** download / verify / extract / unit-trigger failure
 
@@ -293,14 +293,14 @@ Each `disks[]` entry includes `rotational` (`true` = HDD, `false` = SSD-style, `
 
 Shut down the host. Requires `wisp-power` at `/usr/local/bin` (after `setup-server.sh`) or `WISP_POWER_SCRIPT`, plus matching sudoers.
 
-- **200:** `{ ok: true }`
+- **204:** the shutdown was started
 - **503:** `{ error, detail }` — power script not configured or privilege error
 
 ### POST /api/host/power/restart · `admin`
 
 Reboot the host. Same requirements as shutdown (`wisp-power reboot`).
 
-- **200:** `{ ok: true }`
+- **204:** the reboot was started
 - **503:** `{ error, detail }` — power script not configured or privilege error
 
 ---

@@ -11,6 +11,8 @@ import { JOB_KIND } from '../../api/jobProgress.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { getHostInfo } from '../../api/host.js';
 import { updateSettings } from '../../api/settings.js';
+import { sendAndAwaitKindChange } from '../../api/events.js';
+import { useKindChanges } from '../../hooks/useChanges.js';
 import {
   getUpdateStatus,
   checkForWispUpdate,
@@ -95,17 +97,23 @@ export default function WispUpdateSection() {
     setRepo(s.repo ?? null);
   }, []);
 
+  /* Reads are numbered: only the newest one sent applies, or reports its failure. */
+  const statusReadsSent = useRef(0);
   const refreshFromServer = useCallback(async () => {
+    const request = ++statusReadsSent.current;
     try {
-      applyStatus(await getUpdateStatus());
+      const status = await getUpdateStatus();
+      if (request === statusReadsSent.current) applyStatus(status);
     } catch (err) {
-      setError(err.detail || err.message || 'Failed to load status');
+      if (request === statusReadsSent.current) setError(err.detail || err.message || 'Failed to load status');
     }
   }, [applyStatus]);
 
   useEffect(() => {
     refreshFromServer();
   }, [refreshFromServer]);
+  /* A check from any tab, the hourly poll, or a reconnect re-reads the status. */
+  useKindChanges('wisp-update', refreshFromServer);
 
   /* The Software tab can be the first page opened, so the settings store may
    * still be empty — the channel select needs it. */
@@ -125,13 +133,13 @@ export default function WispUpdateSection() {
     setError(null);
     setChecking(true);
     try {
-      applyStatus(await checkForWispUpdate());
+      await sendAndAwaitKindChange('wisp-update', checkForWispUpdate);
     } catch (err) {
       setError(err.detail || err.message || 'Check failed');
     } finally {
       setChecking(false);
     }
-  }, [applyStatus]);
+  }, []);
 
   /* Save the channel, then check on it right away: the backend reads the
    * setting at check time, so the card would otherwise keep showing the
@@ -150,13 +158,13 @@ export default function WispUpdateSection() {
       return;
     }
     try {
-      applyStatus(await checkForWispUpdate());
+      await sendAndAwaitKindChange('wisp-update', checkForWispUpdate);
     } catch (err) {
       setError(err.detail || err.message || 'Check failed');
     } finally {
       setChecking(false);
     }
-  }, [applyStatus]);
+  }, []);
 
   const beginInstall = useCallback(() => {
     setError(null);

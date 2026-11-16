@@ -137,6 +137,26 @@ export function compareSemver(a, b) {
   return comparePrerelease(va.prerelease, vb.prerelease);
 }
 
+/** Notified after every check settles — success, failure or the hourly poll —
+ *  since each rewrites the cached status. No replay: a cue to read it again. */
+const updateChangeHandlers = new Set();
+
+export function subscribeWispUpdateChange(handler) {
+  updateChangeHandlers.add(handler);
+  return () => updateChangeHandlers.delete(handler);
+}
+
+function announceWispUpdateChange() {
+  for (const handler of updateChangeHandlers) {
+    try {
+      handler();
+    } catch (err) {
+      // A broken subscriber must not fail the check or silence the others.
+      console.error('wispUpdate: change subscriber failed', err);
+    }
+  }
+}
+
 export function getCachedStatus() {
   return {
     current: cache.current,
@@ -281,12 +301,17 @@ function cacheRelease(release) {
  * effect on the next check, with no wiring from settings back into the checker.
  */
 export async function checkForUpdate(signal) {
-  const repo = getRepo();
-  const { updateChannel } = await getSettings();
-  const release = updateChannel === 'beta'
-    ? await fetchBetaRelease(repo, signal)
-    : await fetchStableRelease(repo, signal);
-  return cacheRelease(release);
+  try {
+    const repo = getRepo();
+    const { updateChannel } = await getSettings();
+    const release = updateChannel === 'beta'
+      ? await fetchBetaRelease(repo, signal)
+      : await fetchStableRelease(repo, signal);
+    return cacheRelease(release);
+  } finally {
+    // A failure records itself on the cache too (lastError, lastChecked).
+    announceWispUpdateChange();
+  }
 }
 
 async function downloadToFile(url, destPath, onProgress, signal) {

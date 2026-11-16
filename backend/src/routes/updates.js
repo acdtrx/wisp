@@ -35,12 +35,15 @@ export default async function updatesRoutes(fastify) {
     handler: async () => getCachedStatus(),
   });
 
+  // Answers 204; the new status follows on the `wisp-update` cue. A failed
+  // check answers its error (503) and is announced too: it records lastError.
   fastify.post('/updates/check', {
     config: { auth: 'admin' },
-    schema: { response: { 200: STATUS_RESPONSE } },
+    schema: { response: { 204: { type: 'null' } } },
     handler: async (request, reply) => {
       try {
-        return await checkForUpdate();
+        await checkForUpdate();
+        return reply.code(204).send();
       } catch (err) {
         handleRouteError(err, reply, request);
       }
@@ -71,7 +74,6 @@ export default async function updatesRoutes(fastify) {
           properties: {
             jobId: { type: 'string' },
             title: { type: 'string' },
-            targetVersion: { type: 'string' },
           },
         },
       },
@@ -128,7 +130,7 @@ export default async function updatesRoutes(fastify) {
           }
         },
       });
-      return reply.code(202).send({ ...job, targetVersion: status.latest });
+      return reply.code(202).send(job);
     },
   });
 }
