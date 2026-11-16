@@ -140,8 +140,21 @@ consumer, and nothing has called for more).
     cloud-init config is saved, disabled or removed.
   - `lib/settings.js` `subscribeSettingsChange(handler)` — after every write that
     changes what `GET /api/settings` returns.
+  - `lib/settings.js` `subscribeMountsChange(handler)` — after every host mount add,
+    edit and removal, on top of the settings cue.
+  - `storage.subscribeMountStateChange(handler)` — after every successful disk or SMB
+    mount and unmount, the auto-mounts included.
+  - `networking.subscribeNetworkBridgesChange(handler)` — when a managed bridge create or
+    delete settles, a failed one included (netplan may have written part of it).
+  - `containerManager.subscribeImagesChange(handler)` — on containerd's
+    `/images/create`, `/images/update` and `/images/delete` in the `wisp` namespace:
+    every pull, update and delete, outside ones included. The macOS stub never fires.
   - `library.subscribeLibraryChange(handler)` — after every upload, rename, delete and
     finished download into the library.
+  - `lib/apiTokens.js` `subscribeApiTokensChange(handler)` — after a token is created or
+    revoked.
+  - `lib/wispUpdate.js` `subscribeWispUpdateChange(handler)` — after every self-update
+    check settles (manual, hourly, failed): each rewrites the cached status.
 - **Managers are configured, not reaching out**: `lib/managerBootstrap.js` (shared by the
   backend and the migration runner) calls each manager's `configure()` with its paths and
   callbacks (`resolveMount`, `tryAcquireOperationLock`) before any route registers. The
