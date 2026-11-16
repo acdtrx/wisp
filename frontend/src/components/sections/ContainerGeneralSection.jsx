@@ -119,7 +119,9 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
       if (form.runAsRoot !== original.runAsRoot) changes.runAsRoot = form.runAsRoot;
       if (form.localDns !== original.localDns) changes.localDns = form.localDns;
 
-      await onSave(changes);
+      /* Values that only re-format the stored ones write nothing, so no change cue
+       * would end the wait: nothing is sent. */
+      if (Object.keys(changes).length > 0) await onSave(changes);
       /* Snap form + original to the values we actually sent. Without this, cosmetic-only
        * diffs (trailing whitespace in command, "2" vs "2.0" in cpuLimit, etc.) keep
        * isDirty=true when the server stores the normalized value and the parent's

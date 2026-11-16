@@ -23,6 +23,15 @@ window is narrow; closing it needs frames that name the command they answer. (Th
 case, a wait that never ends because its frame never comes, is bounded since 2026-11-16: a
 wait ends after 30 s.) **Revisit trigger:** a control seen re-enabled on stale state.
 
+**A save whose values only normalise to the stored ones waits out the deadline.** A
+command whose write the backend finds unchanged (e.g. a mount PATCH that only
+re-normalises its fields, the `layoutUnchanged` return in `containerManagerMountCrud.js`)
+writes nothing and so fires no change cue: the busy wait runs the full 30 s. The forms skip
+the request when they can see nothing changed (container General, an unchanged service);
+the rest needs the client to normalise like the server, or the ack to say nothing was
+written (found in the command-acks milestone 4 review, 2026-11-16). **Revisit trigger:** a
+user seeing a save spin for 30 s.
+
 **A VM deleted elsewhere leaves its open tab on an endless spinner.** When another tab or
 an MCP agent deletes the VM a tab has open, the list's auto-deselect nulls the config, and
 the tab stays on `/vm/<name>` with the loading spinner: nothing navigates away or says the

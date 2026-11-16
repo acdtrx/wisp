@@ -194,6 +194,12 @@ export default function ContainerNetworkSection({
       port = parsed;
     }
     const txt = txtPairsToObject(strip.draft.txtPairs);
+    /* An unchanged service writes nothing, so no change cue would end the wait. */
+    const stored = strip.hasExisting ? (config.services || []).find((s) => s.port === port) : null;
+    if (stored && stored.type === type && JSON.stringify(stored.txt || {}) === JSON.stringify(txt)) {
+      setStrip(null);
+      return;
+    }
     setStrip({ ...strip, saving: true, error: null });
     try {
       await runContainerCommand(config.name, () => (strip.hasExisting
