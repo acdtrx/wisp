@@ -39,6 +39,19 @@ the swap reads that file strictly and fails. Restore as new is the only way back
 command-acks (found in its milestone 4 review, 2026-11-16). **Revisit trigger:** a user
 with a damaged `container.json` and a backup they can't restore over it.
 
+**A failed SMB connection test leaves its `/mnt/wisp/smb-check-*` directory.**
+`wisp-mount smb check` exits on the failed mount before its `rmdir`, so every failed test
+(a timeout, bad credentials) leaves an empty root-owned directory under `/mnt/wisp/`.
+Predates command-acks (found in its milestone 5 tini run, 2026-11-16). **Revisit
+trigger:** the next work on the mount helper, or a user seeing the directories pile up.
+
+**A Samba server run as a Wisp container never answers SMB.** Both
+`dperson/samba` and `ghcr.io/servercontainers/samba` (run as root) accept the TCP
+connection and the negotiate, then never reply, from the host and from the LAN alike; a
+lower open-files limit didn't change it. Cause unknown (capabilities, seccomp, the
+container's DNS?). Found while building a test share in the command-acks milestone 5 run,
+2026-11-16. **Revisit trigger:** a user running a file server in a container.
+
 **A VM deleted elsewhere leaves its open tab on an endless spinner.** When another tab or
 an MCP agent deletes the VM a tab has open, the list's auto-deselect nulls the config, and
 the tab stays on `/vm/<name>` with the loading spinner: nothing navigates away or says the
