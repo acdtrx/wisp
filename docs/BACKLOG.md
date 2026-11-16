@@ -43,6 +43,19 @@ Auto Start read as off whatever they are. Predates command-acks (found in its mi
 review, 2026-11-16). **Revisit trigger:** the next work on the VM detail page, or a user
 seeing those toggles flip on load.
 
+**A stale `vms` frame can undo a same-tab VM rename.** After a rename, the renaming tab
+follows it at once (`followRename`, then `navigate`, in `OverviewPanel.jsx`). A `vms`
+frame whose list was computed before libvirt's rename, arriving after that, shows the old
+name and not the new, and `migrateSelectionIfRenamed` follows the uuid back to the old name;
+the user lands on "not found" for a VM that exists under the new one. It needs a server
+list refresh that spans the rename: plausible, rare (found in the command-acks milestone 3
+review, 2026-11-16). **Revisit trigger:** a rename seen to land on "not found".
+
+**A VM rename navigates even after the user moved on.** `handleSectionSave` in
+`OverviewPanel.jsx` navigates to the renamed VM once the save resolves, even if the user
+opened another VM while it ran. Predates command-acks (found in its milestone 3 review,
+2026-11-16). **Revisit trigger:** a user pulled back to a VM they had left.
+
 **A late USB hot-unplug is never re-read.** `DetachDevice` on a running VM can return
 before the guest releases the device; `GET /usb` then still lists it, and nothing listens
 for libvirt's `DeviceRemoved` to send a second `vm` frame. **Revisit trigger:** a detached
