@@ -60,6 +60,10 @@ export function subscribeContainerNetworkChange() {
   return () => {};
 }
 
+export function subscribeContainerChange() {
+  return () => {};
+}
+
 export function subscribeContainerNetnsRemoved() {
   return () => {};
 }

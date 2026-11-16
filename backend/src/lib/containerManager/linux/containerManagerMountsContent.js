@@ -111,7 +111,7 @@ export async function planMountFileUpload(containerName, mountName) {
   }
   await mkdir(getContainerFilesDir(containerName), { recursive: true });
   const dest = artifactPath(containerName, mountName);
-  return { name: mountName, dest, tmp: atomicTmpName(dest), mode: mountFileWriteMode(m, undefined) ?? 0o666 };
+  return { containerName, name: mountName, dest, tmp: atomicTmpName(dest), mode: mountFileWriteMode(m, undefined) ?? 0o666 };
 }
 
 /** Put a planned upload in place (rename over the destination). */

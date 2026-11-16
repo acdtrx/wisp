@@ -22,6 +22,7 @@ export const findContainersUsingStorageMount = impl.findContainersUsingStorageMo
 export const subscribeContainerListChange = impl.subscribeContainerListChange;
 export const subscribeContainerNetworkChange = impl.subscribeContainerNetworkChange;
 export const subscribeContainerNetnsRemoved = impl.subscribeContainerNetnsRemoved;
+export const subscribeContainerChange = impl.subscribeContainerChange;
 
 export const assertContainerState = impl.assertContainerState;
 export const startContainer = impl.startContainer;

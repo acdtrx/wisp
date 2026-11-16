@@ -1,6 +1,6 @@
 import { buildHostStatsPayload } from '../lib/hostStatsSnapshot.js';
 import { listVMs, subscribeVMListChange, subscribeVMChange } from '../lib/vmManager/index.js';
-import { listContainers, subscribeContainerListChange } from '../lib/containerManager/index.js';
+import { listContainers, subscribeContainerListChange, subscribeContainerChange } from '../lib/containerManager/index.js';
 import { subscribeSectionsChange } from '../lib/sections.js';
 import { subscribeHomepageChange } from '../lib/homepage.js';
 import { buildHomeEnvelope } from '../lib/homeTiles.js';
@@ -134,6 +134,7 @@ export default async function eventsRoutes(fastify) {
         subscribeBackupEvents(() => { sendBackups(); }),
         subscribeSettingsChange(() => { sendChange({ kind: 'settings' }); }),
         subscribeVMChange((name) => { sendChange({ kind: 'vm', id: name }); }),
+        subscribeContainerChange((name) => { sendChange({ kind: 'container', id: name }); }),
         subscribeCloudInitChange((name) => { sendChange({ kind: 'vm', id: name }); }),
       ];
 

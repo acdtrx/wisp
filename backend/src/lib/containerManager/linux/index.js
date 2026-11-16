@@ -2,6 +2,15 @@
  * Linux containerManager implementation (containerd over gRPC).
  */
 import { setContainerManagerConfig } from './containerPaths.js';
+import { announcingContainerChange } from './containerManagerChange.js';
+import {
+  commitMountFileUpload as commitMountFileUploadImpl,
+  extractMountZip as extractMountZipImpl,
+  initMountContent as initMountContentImpl,
+  deleteMountData as deleteMountDataImpl,
+  putMountFileTextContent as putMountFileTextContentImpl,
+  setMountFileMode as setMountFileModeImpl,
+} from './containerManagerMountsContent.js';
 import { setOperationLockAcquirer } from './containerOperationGuard.js';
 
 export function configure(cfg) {
@@ -108,21 +117,26 @@ export {
 
 export {
   planMountFileUpload,
-  commitMountFileUpload,
   assertMountTakesZip,
   planMountZipExtract,
-  extractMountZip,
-  initMountContent,
   assertMountOperation,
-  deleteMountData,
   deleteRemovedMountData,
   MOUNT_FILE_CONTENT_MAX_BYTES,
   getMountFileTextContent,
-  putMountFileTextContent,
   getMountFileSize,
   getMountFileMode,
-  setMountFileMode,
 } from './containerManagerMountsContent.js';
+
+export { subscribeContainerChange } from './containerManagerChange.js';
+
+/* Every write of a mount's content announces itself (subscribeContainerChange);
+ * container.json writes announce through the config-write notification. */
+export const commitMountFileUpload = announcingContainerChange(commitMountFileUploadImpl, ([plan]) => plan.containerName);
+export const extractMountZip = announcingContainerChange(extractMountZipImpl, ([job]) => job.containerName);
+export const initMountContent = announcingContainerChange(initMountContentImpl);
+export const deleteMountData = announcingContainerChange(deleteMountDataImpl);
+export const putMountFileTextContent = announcingContainerChange(putMountFileTextContentImpl);
+export const setMountFileMode = announcingContainerChange(setMountFileModeImpl);
 
 export {
   subscribeContainerNetnsRemoved,

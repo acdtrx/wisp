@@ -211,7 +211,7 @@ export default async function containerRoutes(fastify) {
       .then((result) => containerJobStore.completeJob(jobId, result))
       .catch((err) => containerJobStore.failJob(jobId, err));
 
-    return { jobId, title };
+    return reply.code(202).send({ jobId, title });
   });
 
   // ── Create progress SSE ───────────────────────────────────────────
@@ -417,7 +417,7 @@ export default async function containerRoutes(fastify) {
       }
 
       if (Object.keys(rest).length === 0) {
-        return { ok: true, name: workingName };
+        return reply.code(204).send();
       }
 
       // Dispatch to containerApps for app-driven flows; everything else goes
@@ -427,7 +427,7 @@ export default async function containerRoutes(fastify) {
 
       if (rest.eject === true) {
         if (isAppContainer) await ejectAppContainer(workingName);
-        return { ok: true, name: workingName };
+        return reply.code(204).send();
       }
 
       if (isAppContainer && 'appConfig' in rest) {
@@ -437,8 +437,8 @@ export default async function containerRoutes(fastify) {
             'Use appConfig to configure app containers, or eject to generic first',
           );
         }
-        const result = await applyAppConfig(workingName, rest.appConfig);
-        return { ...result, name: workingName };
+        await applyAppConfig(workingName, rest.appConfig);
+        return reply.code(204).send();
       }
 
       if (isAppContainer && ('env' in rest || 'envPatch' in rest || 'mounts' in rest)) {
@@ -448,7 +448,7 @@ export default async function containerRoutes(fastify) {
         );
       }
 
-      const { removedMounts, ...result } = await updateContainerConfig(workingName, rest);
+      const { removedMounts } = await updateContainerConfig(workingName, rest);
       // A generic PATCH that drops a Local mount from `mounts` deletes its data —
       // the same contract as DELETE /mounts/:name. The manager only reports it;
       // deleting is this caller's explicit decision (app flows decide their own).
@@ -464,7 +464,7 @@ export default async function containerRoutes(fastify) {
           else if (rest.localDns === true) await publishContainer(workingName);
         } catch { /* best effort */ }
       }
-      return { ...result, name: workingName };
+      return reply.code(204).send();
     } catch (err) {
       handleRouteError(err, reply, request);
     } finally {
@@ -503,8 +503,8 @@ export default async function containerRoutes(fastify) {
   fastify.post('/containers/:name/kill', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const { name } = request.params;
-      const { restartCancelled } = await withContainerOperationLock(name, 'kill', () => killContainer(name));
-      return { ok: true, restartCancelled };
+      await withContainerOperationLock(name, 'kill', () => killContainer(name));
+      return reply.code(204).send();
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -735,10 +735,11 @@ export default async function containerRoutes(fastify) {
         return sendError(reply, 422, 'Invalid body', 'Expected JSON object with type, name, containerPath, readonly');
       }
       const { name } = request.params;
-      return await withContainerOperationLock(name, 'configuration change', async () => {
+      await withContainerOperationLock(name, 'configuration change', async () => {
         assertMountListNotAppManaged(await getContainerConfig(name));
         return addContainerMount(name, body);
       });
+      return reply.code(204).send();
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -749,10 +750,11 @@ export default async function containerRoutes(fastify) {
       const mountName = decodeURIComponent(request.params.mountName);
       const body = request.body && typeof request.body === 'object' ? request.body : {};
       const { name } = request.params;
-      return await withContainerOperationLock(name, 'configuration change', async () => {
+      await withContainerOperationLock(name, 'configuration change', async () => {
         assertMountNotAppManaged(await getContainerConfig(name), mountName);
         return updateContainerMount(name, mountName, body);
       });
+      return reply.code(204).send();
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -801,9 +803,9 @@ export default async function containerRoutes(fastify) {
         return sendError(reply, 400, 'No file provided', 'Request must include a file upload');
       }
       bodyWatch.stop();
-      const result = await commitMountFileUpload(plan);
+      await commitMountFileUpload(plan);
       committed = true;
-      return result;
+      return reply.code(204).send();
     } catch (err) {
       handleRouteError(err, reply, request);
     } finally {
@@ -887,7 +889,8 @@ export default async function containerRoutes(fastify) {
         return sendError(reply, 400, 'Invalid body', 'Expected JSON object { "content": string }');
       }
       assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
-      return await putMountFileTextContent(request.params.name, mountName, content);
+      await putMountFileTextContent(request.params.name, mountName, content);
+      return reply.code(204).send();
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -897,7 +900,8 @@ export default async function containerRoutes(fastify) {
     try {
       const mountName = decodeURIComponent(request.params.mountName);
       assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
-      return await initMountContent(request.params.name, mountName);
+      await initMountContent(request.params.name, mountName);
+      return reply.code(204).send();
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -934,7 +938,8 @@ export default async function containerRoutes(fastify) {
         return sendError(reply, 422, 'Invalid body', 'Expected JSON object with port, type, txt?');
       }
       const { name } = request.params;
-      return await withContainerOperationLock(name, 'configuration change', () => addContainerService(name, body));
+      await withContainerOperationLock(name, 'configuration change', () => addContainerService(name, body));
+      return reply.code(204).send();
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -944,7 +949,8 @@ export default async function containerRoutes(fastify) {
     try {
       const body = request.body && typeof request.body === 'object' ? request.body : {};
       const { name, port } = request.params;
-      return await withContainerOperationLock(name, 'configuration change', () => updateContainerService(name, port, body));
+      await withContainerOperationLock(name, 'configuration change', () => updateContainerService(name, port, body));
+      return reply.code(204).send();
     } catch (err) {
       handleRouteError(err, reply, request);
     }
@@ -953,7 +959,8 @@ export default async function containerRoutes(fastify) {
   fastify.delete('/containers/:name/services/:port', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
       const { name, port } = request.params;
-      return await withContainerOperationLock(name, 'configuration change', () => removeContainerService(name, port));
+      await withContainerOperationLock(name, 'configuration change', () => removeContainerService(name, port));
+      return reply.code(204).send();
     } catch (err) {
       handleRouteError(err, reply, request);
     }
