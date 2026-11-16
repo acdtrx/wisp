@@ -9,7 +9,7 @@ entry "Short commands answer with their result".
 **Specs and docs changed:** `specs/API.md`: Command responses and the `changes` topic
 (written with this feature); each route's success response in its area file
 (`specs/API-<AREA>.md`) as its milestone lands: settings in API-HOST, sections and the
-home page in API-WORKSPACE, VMs and cloud-init in API-VMS, containers in API-CONTAINERS,
+home page in API-WORKSPACE, VMs and cloud-init in API-VMS, containers in API-CONTAINERS, plus the container `uuid` in CONTAINERS.md and UPDATES.md (migration `0008`),
 and milestone 5 across API-HOST, API-LIBRARY, API-CONTAINERS (images) and API-AUTH;
 `specs/MCP.md`: tools are exempt (written); `specs/SETTINGS.md` where it describes a
 response; `ARCHITECTURE.md` § Transport: the `changes` topic, in milestone 1.
@@ -83,13 +83,18 @@ included; the cloud-init glue publishes its own. The VM detail view GETs on `{ k
 service routes, mount file content, init and the file upload answer 204;
 `POST /api/containers` and the job routes answer 202. containerManager publishes a
 change for every saved container change. The detail view GETs on `{ kind: "container",
-id }`; rename is followed from the request, the restart badge from `pendingRestart`.
+id }`; rename is followed from the request in the tab that made it, and by the container's
+`uuid` (migration `0008-container-uuid`, carried in the list) in every other tab; the
+restart badge comes from `pendingRestart`.
 
 - **Acceptance (on the Linux server):**
   - Each of: a general edit, a rename, an env and a network edit, an app config save,
     a device change, a mount add, edit and delete, a file upload, a file content edit, a
     mount init, a service add, edit and delete: shows in tab B's open container detail.
+  - A rename in tab A moves tab B's open view to the new name.
   - An edit that needs a restart shows the restart badge in both tabs.
+  - After an update to this build every existing container has a `uuid`, and a second run
+    of the migration changes nothing.
 
 ## Milestone 5 — host, library, images, tokens, updates
 
