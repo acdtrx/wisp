@@ -94,8 +94,10 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
     setError(null);
     try {
       const changes = {};
+      /* Compared with the stored name: a padded name saved earlier snapped the form, not
+       * the container, so it is no rename once the padding goes. */
       const trimmedName = form.name.trim();
-      if (trimmedName !== original.name) changes.name = trimmedName;
+      if (trimmedName !== config.name) changes.name = trimmedName;
       if (form.image !== original.image) changes.image = form.image;
       /* `original.command` is always formatter output, so parsing it gives the stored argv;
        * a re-quoted but identical command is not sent. */
@@ -126,7 +128,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
        * diffs (trailing whitespace in command, "2" vs "2.0" in cpuLimit, etc.) keep
        * isDirty=true when the server stores the normalized value and the parent's
        * config prop doesn't change (so the init useEffect doesn't re-fire). */
-      const canonical = { ...form, command: commandText };
+      const canonical = { ...form, name: trimmedName, command: commandText };
       setForm(canonical);
       setOriginal(canonical);
     } catch (err) {
