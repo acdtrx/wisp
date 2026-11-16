@@ -761,8 +761,14 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
     );
   }
   /* The same container comes back: it keeps the live container's identity, whatever
-   * the archive's config holds (older backups carry none). */
-  const liveUuid = (await readContainerConfig(name)).uuid ?? randomUUID();
+   * the archive's config holds. The live container.json may be missing or corrupt —
+   * restore in place is how it gets repaired — so its uuid is read leniently, and the
+   * archive's uuid (older backups carry none), then a fresh one, stand in. */
+  let liveUuid = null;
+  try {
+    const live = await readContainerConfig(name);
+    if (typeof live?.uuid === 'string' && live.uuid !== '') liveUuid = live.uuid;
+  } catch { /* unreadable live config: fall back below */ }
 
   /* Must be stopped: the directory is about to be swapped out from under
    * any running rootfs mounts, and a paused task would resume onto files
@@ -801,7 +807,8 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
     throw err;
   }
   config.name = name;
-  config.uuid = liveUuid;
+  config.uuid = liveUuid
+    ?? (typeof config.uuid === 'string' && config.uuid !== '' ? config.uuid : randomUUID());
 
   /* Swap: move the live dir aside, move the staged dir in, then drop the
    * old dir. If the second rename fails the old dir is moved back. */
