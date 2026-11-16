@@ -130,9 +130,7 @@ export const useVmStore = create((set, get) => {
     set({ selectedVM: match.name, renamedSelection: { from: selectedVM, to: match.name } });
     startStatsSSE(match.name);
     queueMicrotask(() => {
-      get().refreshSelectedVM({ reportFailure: true }).catch(() => {
-        /* refreshSelectedVM records the failure in `errors`, which the detail view shows */
-      });
+      get().refreshSelectedVM();
     });
   }
 
@@ -179,11 +177,10 @@ export const useVmStore = create((set, get) => {
 
     startVMListSSE: () => {
       if (listCloseFn) return;
-      changesCloseFn = subscribeChanges(['vm'], (change, { awaited }) => {
+      changesCloseFn = subscribeChanges(['vm'], (change) => {
         const { selectedVM } = get();
         if (!selectedVM) return undefined;
-        // A command waiting on the frame reports a failed re-read itself.
-        if (change.kind === 'all' || change.id === selectedVM) return get().refreshSelectedVM({ reportFailure: !awaited });
+        if (change.kind === 'all' || change.id === selectedVM) return get().refreshSelectedVM();
         return undefined;
       });
       listCloseFn = subscribeTopic(
@@ -284,13 +281,12 @@ export const useVmStore = create((set, get) => {
     reportActionError: (name, message) => set((s) => ({ errors: withError(s.errors, 'action', name, message) })),
 
     /**
-     * Re-read the selected VM's config. Rejects on failure, so a command waiting on it
-     * (runVMCommand) fails instead of resolving onto the old config. With
-     * `reportFailure` (no command waiting), a failure is also recorded in `errors`, the
-     * detail view's dismissible banner, over the config still shown — unless a newer
-     * read is already on its way.
+     * Re-read the selected VM's config. Never rejects: a failure is the VM's `refresh`
+     * error, the detail view's dismissible banner over the config still shown, unless
+     * a newer read is already on its way. A command waiting on the re-read
+     * (runVMCommand) resolves either way.
      */
-    refreshSelectedVM: async ({ reportFailure = false } = {}) => {
+    refreshSelectedVM: async () => {
       const { selectedVM } = get();
       if (!selectedVM) return;
       const seq = selectionSeq;
@@ -299,10 +295,10 @@ export const useVmStore = create((set, get) => {
       try {
         config = await vmApi.getVM(selectedVM);
       } catch (err) {
-        if (reportFailure && seq === selectionSeq && read === configReadsSent && read > configReadsApplied) {
+        if (seq === selectionSeq && read === configReadsSent && read > configReadsApplied) {
           set((prev) => ({ errors: withError(prev.errors, 'refresh', selectedVM, `Couldn't refresh this VM: ${err.detail || err.message}`) }));
         }
-        throw err;
+        return;
       }
       if (seq !== selectionSeq || read <= configReadsApplied) return;
       configReadsApplied = read;
@@ -364,8 +360,9 @@ export const useVmStore = create((set, get) => {
  * Send a command that changes VM `name` (its name after a rename) and resolve with
  * its ack once the client holds the new state: the `{ kind: 'vm', id: name }`
  * frame has arrived and every re-read the open detail view started for it (the
- * store's config, the USB and cloud-init sections) has landed. The control that
- * sent it stays busy until then. A command error, or a failed re-read, rejects.
+ * store's config, the USB and cloud-init sections) has settled. The control that
+ * sent it stays busy until then. A command error rejects; a failed re-read doesn't,
+ * since the ack succeeded, and shows in its own view.
  *
  * @template T
  * @param {string} name

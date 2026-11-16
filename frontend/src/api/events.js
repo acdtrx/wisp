@@ -45,17 +45,14 @@ function dispatch(frame) {
   if (frame.topic !== CHANGES_TOPIC) lastFrames.set(frame.topic, frame.data);
   const handlers = topicHandlers.get(frame.topic);
   /* A handler that starts a re-read returns its promise: a command waiting on this
-   * frame waits for those too. Each is marked handled here, so one with no command
-   * waiting on it raises no unhandled rejection: every handler that returns a re-read
-   * shows its failure in its own view (vmStore's `error` banner, USBSection and
-   * CloudInitSection's load errors). */
+   * frame waits for those to settle too. A re-read shows its own failure in its view
+   * (vmStore's error banner for the VM config, USBSection's and CloudInitSection's
+   * load errors), so the failure reaches the user once whether or not a command waits;
+   * the catch only keeps a stray rejection from going unhandled. */
   const rereads = [];
-  /* Whether a command is waiting on this frame: its failure then reaches the user
-   * through the command, so a handler need not show it too. */
-  const awaited = [...frameWaiters].some((w) => w.topic === frame.topic && w.matches(frame.data));
   if (handlers) {
     for (const handler of handlers) {
-      const result = handler.onData(frame.data, { awaited });
+      const result = handler.onData(frame.data);
       if (result && typeof result.then === 'function') {
         result.catch(() => {});
         rereads.push(result);
@@ -120,17 +117,17 @@ export function subscribeTopic(topic, onData, onStreamDown) {
  * frame is replayed to a late subscriber.
  *
  * @param {string[]} kinds — e.g. `['settings']`
- * @param {(change: { kind: string, id?: string }, info: { awaited: boolean }) => (Promise<unknown> | void)} onChange —
+ * @param {(change: { kind: string, id?: string }) => (Promise<unknown> | void)} onChange —
  *   return the promise of a re-read it starts, so a command waiting on the frame
- *   waits for it too (`sendAndAwaitChange`); `awaited` says whether one is, in which
- *   case the command reports the re-read's failure
+ *   waits for it to settle too (`sendAndAwaitChange`); the re-read shows its own
+ *   failure
  * @returns {() => void} unsubscribe
  */
 export function subscribeChanges(kinds, onChange) {
   const wanted = new Set(kinds);
-  return subscribeTopic(CHANGES_TOPIC, (change, frameInfo) => {
+  return subscribeTopic(CHANGES_TOPIC, (change) => {
     if (!change || typeof change.kind !== 'string') return;
-    if (change.kind === 'all' || wanted.has(change.kind)) return onChange(change, frameInfo);
+    if (change.kind === 'all' || wanted.has(change.kind)) return onChange(change);
     return undefined;
   });
 }
@@ -151,23 +148,13 @@ async function sendAndAwaitFrame(topic, matches, send) {
     throw err;
   }
   const rereads = await frame;
-  /* Every re-read the frame started lands before the command resolves. One that
-   * rejects (vmStore's config re-read) fails the command; the USB and cloud-init
-   * sections' re-reads catch their own failures and resolve, and those sections show
-   * their load error instead. A matching frame that arrives before the command's own
-   * (a reconnect's snapshot, another cue for the same record) can still resolve it
-   * onto the old state: docs/BACKLOG.md, "A command's busy wait can end on a frame
-   * it didn't cause". */
-  const settled = await Promise.allSettled(rereads);
-  const failed = settled.find((r) => r.status === 'rejected');
-  if (failed) {
-    const cause = failed.reason;
-    const err = new Error(`The change went through, but its new state didn't load: ${cause?.message || 'request failed'}`);
-    err.status = cause?.status;
-    err.code = cause?.code;
-    err.detail = cause?.detail;
-    throw err;
-  }
+  /* Every re-read the frame started settles before the command resolves. The ack
+   * already succeeded, so the command resolves either way: a failed re-read shows in
+   * its own view. A matching frame that arrives before the command's own (a
+   * reconnect's snapshot, another cue for the same record) can still resolve it onto
+   * the old state: docs/BACKLOG.md, "A command's busy wait can end on a frame it
+   * didn't cause". */
+  await Promise.allSettled(rereads);
   return ack;
 }
 
@@ -195,8 +182,8 @@ export function sendAndAwaitTopic(topic, send, matches = () => true) {
  * Like `sendAndAwaitTopic`, for a command whose new state is announced on the
  * `changes` topic: resolves once a `changes` frame names that record (`kind`,
  * `id`) or the connect snapshot `{ kind: 'all' }` arrives and every re-read its
- * subscribers started (each returns its promise) has landed. A failed re-read
- * rejects the command.
+ * subscribers started (each returns its promise) has settled. A failed re-read
+ * doesn't fail the command, whose ack succeeded: it shows in its own view.
  *
  * @template T
  * @param {string} kind
