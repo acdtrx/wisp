@@ -395,10 +395,10 @@ export default async function containerRoutes(fastify) {
       const body = request.body && typeof request.body === 'object' ? request.body : {};
       const { name: requestedName, ...rest } = body;
       let workingName = request.params.name;
-      const renameTo = typeof requestedName === 'string' && requestedName.trim()
-        && requestedName.trim() !== workingName
-        ? requestedName.trim()
-        : null;
+      // A body name is validated as sent, never trimmed or skipped when empty:
+      // the name in effect is the one the client sent.
+      if ('name' in body) validateContainerName(requestedName);
+      const renameTo = 'name' in body && requestedName !== workingName ? requestedName : null;
 
       releaseLocks.push(acquireContainerOperationLock(workingName, renameTo ? 'rename' : 'configuration change'));
       if (renameTo) releaseLocks.push(acquireContainerOperationLock(renameTo, 'rename'));

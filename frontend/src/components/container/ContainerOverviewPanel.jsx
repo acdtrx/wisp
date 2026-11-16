@@ -201,7 +201,7 @@ export default function ContainerOverviewPanel() {
    * validation) and announces the change under it. The section assignment moves with
    * the rename and reaches the sidebar on the sections topic. */
   const handleSectionSave = async (changes) => {
-    const renamed = typeof changes.name === 'string' && changes.name !== name;
+    const renamed = typeof changes.name === 'string' && changes.name !== '' && changes.name !== name;
     const target = renamed ? changes.name : name;
     await runContainerCommand(target, () => updateContainer(name, changes));
     if (!renamed) return;

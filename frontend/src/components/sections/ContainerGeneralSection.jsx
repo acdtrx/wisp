@@ -80,6 +80,8 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
   }, [isCreating, config?.image]);
 
   const isDirty = JSON.stringify(form) !== JSON.stringify(original);
+  /* An empty name is never a rename: Save stays blocked until the field holds one. */
+  const nameError = !isCreating && form.name.trim() === '' ? 'Name is required' : null;
 
   const updateField = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -87,6 +89,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
   };
 
   const handleSave = async () => {
+    if (nameError) return;
     setSaving(true);
     setError(null);
     try {
@@ -132,10 +135,10 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
   };
 
   return (
-    <SectionCard title="General" isDirty={!isCreating && isDirty} onSave={isCreating ? undefined : handleSave} saving={saving} requiresRestart={requiresRestart} error={error} headerAction={headerAction}>
+    <SectionCard title="General" isDirty={!isCreating && isDirty} onSave={isCreating ? undefined : handleSave} saving={saving} saveDisabledReason={nameError ?? undefined} requiresRestart={requiresRestart} error={error} headerAction={headerAction}>
       <div className="space-y-3">
         <div className="flex items-end gap-4 flex-wrap">
-          <Field label="Name" className="w-[180px]">
+          <Field label="Name" className="relative w-[180px]">
             <input
               type="text"
               value={form.name}
@@ -145,8 +148,12 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
               autoComplete="off"
               spellCheck={false}
               title={nameEditable ? undefined : 'Stop the container to rename it'}
+              aria-invalid={nameError ? true : undefined}
               className="input-field"
             />
+            {nameError && (
+              <p className="absolute left-0 top-full mt-0.5 text-[11px] text-status-stopped" role="alert">{nameError}</p>
+            )}
           </Field>
 
           {!isCreating && (
