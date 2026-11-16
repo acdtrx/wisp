@@ -27,6 +27,7 @@
  * which is the right place to address the host-specific config drift.
  */
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import {
   access, chmod, constants, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile,
 } from 'node:fs/promises';
@@ -695,6 +696,8 @@ export async function restoreContainerBackup({ newName: newNameTrim, manifest, a
     throw err;
   }
   config.name = newNameTrim;
+  /* A new container: its own identity, whatever the archive's config holds. */
+  config.uuid = randomUUID();
   if (!config.network || typeof config.network !== 'object') config.network = { type: 'bridge' };
   config.network.mac = generateContainerMac();
   /* Drop persisted addresses — DHCP lease and SLAAC IPv6 both derive from the old MAC. */
@@ -757,6 +760,9 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
       err.message,
     );
   }
+  /* The same container comes back: it keeps the live container's identity, whatever
+   * the archive's config holds (older backups carry none). */
+  const liveUuid = (await readContainerConfig(name)).uuid ?? randomUUID();
 
   /* Must be stopped: the directory is about to be swapped out from under
    * any running rootfs mounts, and a paused task would resume onto files
@@ -795,6 +801,7 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
     throw err;
   }
   config.name = name;
+  config.uuid = liveUuid;
 
   /* Swap: move the live dir aside, move the staged dir in, then drop the
    * old dir. If the second rename fails the old dir is moved back. */

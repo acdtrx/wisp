@@ -5,7 +5,7 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { mkdir, rm, readFile, readdir, stat } from 'node:fs/promises';
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes, randomUUID, createHash } from 'node:crypto';
 
 import {
   containerError, containerState, getClient, callUnary, callStream, callBidi, collectStream, STREAM_DEADLINE_MS,
@@ -504,6 +504,7 @@ async function defineNewContainer(spec, filesDir, onStep) {
 
   let config = {
     name,
+    uuid: randomUUID(),
     image: imageRef,
     command: null,
     exposedPorts,

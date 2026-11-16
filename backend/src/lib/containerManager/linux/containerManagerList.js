@@ -137,6 +137,7 @@ async function fetchContainerListFromDisk({ complete = false } = {}) {
 
     results.push({
       name,
+      uuid: config.uuid ?? null,
       type: 'container',
       image: config.image || '',
       state,

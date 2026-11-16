@@ -255,7 +255,7 @@ export async function updateContainerConfig(name, changes) {
   }
 
   for (const [key, value] of Object.entries(changes)) {
-    if (key === 'name' || key === 'createdAt' || key === 'state') continue;
+    if (key === 'name' || key === 'uuid' || key === 'createdAt' || key === 'state') continue;
     if (key === 'envPatch' || key === 'mountRenames') continue;
     /** Server-managed — never writable via PATCH. */
     if (key === 'imageDigest' || key === 'imagePulledAt'

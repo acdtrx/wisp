@@ -146,6 +146,7 @@ export default async function containerRoutes(fastify) {
             type: 'object',
             properties: {
               name: { type: 'string' },
+              uuid: { type: ['string', 'null'] },
               type: { type: 'string' },
               image: { type: 'string' },
               state: { type: 'string' },
