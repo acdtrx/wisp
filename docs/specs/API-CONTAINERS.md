@@ -30,7 +30,7 @@ Optional `app` is an app registry ID (e.g. `"caddy-reverse-proxy"`) — creates 
 
 On create, the server writes defaults in `container.json` (empty `mounts`, bridge `network` with a generated MAC and the default container parent bridge, `localDns: true`, etc.). Use **PATCH** to change command, resources, env, mounts, and network before starting.
 
-**200:** `{ jobId: "uuid", title: string }` — `title` is e.g. `Create <name>` | **409:** `CONTAINER_EXISTS` — the name is taken in containerd or on disk | **422:** `INVALID_CONTAINER_NAME`
+**202:** `{ jobId: "uuid", title: string }` — `title` is e.g. `Create <name>` | **409:** `CONTAINER_EXISTS` — the name is taken in containerd or on disk | **422:** `INVALID_CONTAINER_NAME`
 
 ### GET /api/containers/create-progress/:jobId · `read`
 
@@ -116,16 +116,16 @@ Host-side disk usage of each bind mount. On-demand snapshot (not a live feed): e
 
 Partially update container config.
 
-**Body:** Any subset of container.json fields, except environment variables — those must use **`envPatch`** (see below). **`iconId`:** set to a string to choose a UI icon (same ids as VM icons), or `null` / empty string to clear and use the client default. **`localDns`:** boolean toggle for mDNS registration. **`autoBackup`:** boolean — include this container in the daily scheduled backup (no restart needed). **`restartPolicy`:** `never` | `on-failure` | `unless-stopped` | `always`, anything else → **422** `CONFIG_ERROR`; applies to the next exit, no restart needed (CONTAINERS.md → [Restart policy](CONTAINERS.md#restart-policy)). **`image`:** non-empty string (trimmed), else **422** `INVALID_CONTAINER_IMAGE_REF`; stored exactly as create stores it — the literal name when containerd holds an image by that name, else Docker-normalized (`nginx:1.27` → `docker.io/library/nginx:1.27`; CONTAINERS.md → *Image Management*). A changed image on a running container sets `requiresRestart`. **`runAsRoot`:** boolean — when `true`, the container process runs as UID/GID 0 instead of the Wisp deploy user (required for images that write to root-owned paths inside the container, e.g. OpenWebUI); requires restart.
+**Body:** Any subset of container.json fields, except environment variables — those must use **`envPatch`** (see below). **`iconId`:** set to a string to choose a UI icon (same ids as VM icons), or `null` / empty string to clear and use the client default. **`localDns`:** boolean toggle for mDNS registration. **`autoBackup`:** boolean — include this container in the daily scheduled backup (no restart needed). **`restartPolicy`:** `never` | `on-failure` | `unless-stopped` | `always`, anything else → **422** `CONFIG_ERROR`; applies to the next exit, no restart needed (CONTAINERS.md → [Restart policy](CONTAINERS.md#restart-policy)). **`image`:** non-empty string (trimmed), else **422** `INVALID_CONTAINER_IMAGE_REF`; stored exactly as create stores it — the literal name when containerd holds an image by that name, else Docker-normalized (`nginx:1.27` → `docker.io/library/nginx:1.27`; CONTAINERS.md → *Image Management*). A changed image on a running container sets its `pendingRestart` flag. **`runAsRoot`:** boolean — when `true`, the container process runs as UID/GID 0 instead of the Wisp deploy user (required for images that write to root-owned paths inside the container, e.g. OpenWebUI); requires restart.
 
-**`name`:** Renaming the container. The container must be **stopped** (no running/paused task) — otherwise **409** `CONTAINER_MUST_BE_STOPPED`. The new name is validated with the same rules as create (1–63 chars, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..` / path separators); invalid → **422** `INVALID_CONTAINER_NAME`. Conflicts with an existing container or directory → **409** `CONTAINER_EXISTS`. The rename runs first, then any other fields in the body apply to the renamed container; the response always carries the name actually in effect (`{ ..., name: <newOrUnchangedName> }`). URL paths and SSE channels under the old name stop responding immediately — clients should follow the response and re-subscribe under the returned `name`. The on-disk container directory and the containerd container record are renamed in lockstep; the (ephemeral) rootfs snapshot is dropped and re-prepared on next start. See CONTAINERS.md → [Rename](../specs/CONTAINERS.md#rename).
+**`name`:** Renaming the container. The container must be **stopped** (no running/paused task) — otherwise **409** `CONTAINER_MUST_BE_STOPPED`. The new name is validated with the same rules as create (1–63 chars, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..` / path separators); invalid → **422** `INVALID_CONTAINER_NAME`. Conflicts with an existing container or directory → **409** `CONTAINER_EXISTS`. The rename runs first, then any other fields in the body apply to the renamed container. The name in effect is the one sent (validation refuses anything it would change), so the client that renamed follows from its request; the change is announced under the new name. URL paths and SSE channels under the old name stop responding immediately — clients re-subscribe under the new name. The on-disk container directory and the containerd container record are renamed in lockstep; the (ephemeral) rootfs snapshot is dropped and re-prepared on next start. See CONTAINERS.md → [Rename](../specs/CONTAINERS.md#rename).
 
 **`envPatch`:** Delta applied to the container's environment variables. Keyed by env var name:
 
 - `envPatch[KEY] = { value: "new", secret?: boolean }` — upsert. Fields omitted on an existing entry are preserved.
 - `envPatch[KEY] = null` — remove the entry.
 
-Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwise **422** `CONFIG_ERROR`). Flipping an existing entry from `secret: true` → `secret: false` without providing a new `value` clears the stored value to `""` (the UI warns the user before doing this). Renames are expressed as `{ OLD: null, NEW: { value: "..." } }`. Sending a top-level `env` field in the PATCH body is rejected with **422** `CONFIG_ERROR` (`Use envPatch to update environment variables`). An `envPatch` that changes the stored env of a running container sets `requiresRestart: true`; one that leaves it as it was (e.g. re-sending the current values) does not.
+Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwise **422** `CONFIG_ERROR`). Flipping an existing entry from `secret: true` → `secret: false` without providing a new `value` clears the stored value to `""` (the UI warns the user before doing this). Renames are expressed as `{ OLD: null, NEW: { value: "..." } }`. Sending a top-level `env` field in the PATCH body is rejected with **422** `CONFIG_ERROR` (`Use envPatch to update environment variables`). An `envPatch` that changes the stored env of a running container sets its `pendingRestart` flag; one that leaves it as it was (e.g. re-sending the current values) does not.
 
 **`network`:** Merged with the existing object (not replaced wholesale). `network.type` must be `bridge` after merge, else **422** `CONFIG_ERROR`; **`network.mac`** is required after merge (unicast format). While the task is **running or paused**, **`network.ip`** from the body is ignored (server-owned), and changing **`network.mac`** or **`network.interface`** returns **409** `CONTAINER_MUST_BE_STOPPED`. Invalid MAC → **422** `INVALID_CONTAINER_MAC`.
 
@@ -141,7 +141,7 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 **`eject: true`:** (app containers only) Removes `app`, `appConfig`, and `pendingRestart` from the config. Generated env vars and mounts are preserved as-is and become directly editable. One-way operation.
 
-**200:** `{ requiresRestart: boolean, reloaded?: boolean, name: string }` — `reloaded: true` when the app was live-reloaded (no restart needed). `name` always reflects the container's current name (unchanged unless the body included a `name` rename).
+**204:** saved; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic, under the new name after a rename. A change the running process can't pick up (or an `appConfig` change the app can't live-reload) sets `pendingRestart`.
 
 **422:** `APP_RELOAD_FAILED` — the app's reload command exited non-zero. The persisted config and mount file contents are rolled back to the previous (accepted) state, matching what the running app kept serving; check `detail` for stderr.
 
@@ -173,7 +173,7 @@ Restart a container (stop + start).
 
 Kill a container (SIGKILL). Same scheduled-restart handling as Stop.
 
-**200:** `{ ok: true, restartCancelled: boolean }` | **409:** not running and nothing scheduled
+**204:** killed (or the scheduled restart cancelled); the state arrives on the `containers` topic | **409:** not running and nothing scheduled
 
 ### GET /api/containers/:name/stats · `read`
 
@@ -210,13 +210,13 @@ Download one run's log file. Responds with `Content-Type: text/plain; charset=ut
 
 Append one bind mount (row-scoped). **Body:** `{ type: "file"|"directory"|"tmpfs", name, containerPath, ... }` (same shape as one element of **`mounts`** in **PATCH**; `readonly`/`sourceId`/`subPath`/`containerOwnerUid`/`Gid` for file/directory; `secret` for file; `sizeMiB` for tmpfs). A new secret file mount starts empty (`isSet: false`) — write its content with **PUT** content or the file upload.
 
-**200:** `{ requiresRestart: boolean }` | **422:** `INVALID_CONTAINER_MOUNTS`, `CONTAINER_MOUNT_DUPLICATE`, `APP_CONFIG_ONLY` on any app container (its mounts come from `appConfig`)
+**204:** added; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic; a running container gets `pendingRestart` | **422:** `INVALID_CONTAINER_MOUNTS`, `CONTAINER_MOUNT_DUPLICATE`, `APP_CONFIG_ONLY` on any app container (its mounts come from `appConfig`)
 
 ### PATCH /api/containers/:name/mounts/:mountName · `admin`
 
-Update one mount by its current storage **`name`** (URL segment). **Body:** optional subset of `{ name, containerPath, readonly, sourceId, subPath, containerOwnerUid, containerOwnerGid, secret }` for file/directory mounts (`secret` on file mounts only), or `{ name, containerPath, sizeMiB }` for tmpfs mounts (other fields rejected on tmpfs). Renaming **`name`** moves `files/<oldName>` to `files/<newName>` on disk; tmpfs renames are config-only. **`secret: false`** on a secret mount empties its file first (write-only content can't be revealed by dropping the flag); a change of `secret` alone needs no restart (`requiresRestart: false`).
+Update one mount by its current storage **`name`** (URL segment). **Body:** optional subset of `{ name, containerPath, readonly, sourceId, subPath, containerOwnerUid, containerOwnerGid, secret }` for file/directory mounts (`secret` on file mounts only), or `{ name, containerPath, sizeMiB }` for tmpfs mounts (other fields rejected on tmpfs). Renaming **`name`** moves `files/<oldName>` to `files/<newName>` on disk; tmpfs renames are config-only. **`secret: false`** on a secret mount empties its file first (write-only content can't be revealed by dropping the flag); a change of `secret` alone needs no restart (no `pendingRestart`).
 
-**200:** `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** duplicate path/name, `INVALID_CONTAINER_MOUNTS`, `APP_CONFIG_ONLY` (mount of an app container — see CUSTOM-APPS.md § Mount content routes)
+**204:** saved; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic; a running container gets `pendingRestart` when the change needs it | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** duplicate path/name, `INVALID_CONTAINER_MOUNTS`, `APP_CONFIG_ONLY` (mount of an app container — see CUSTOM-APPS.md § Mount content routes)
 
 ### DELETE /api/containers/:name/mounts/:mountName · `admin`
 
@@ -238,7 +238,7 @@ The file part is streamed as it arrives — for a **file** mount into a temp fil
 
 Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an existing file.
 
-**200:** `{ name, size, modified }` | **422:** `APP_CONFIG_ONLY` (app-managed mount — see GET content below). Works on secret mounts (write-only).
+**204:** written; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **422:** `APP_CONFIG_ONLY` (app-managed mount — see GET content below). Works on secret mounts (write-only).
 
 ### POST /api/containers/:name/mounts/:mountName/zip · `admin`
 
@@ -262,13 +262,13 @@ Multipart: one file part. Mount must have **`type: "directory"`** (Local, not st
 
 Works on secret mounts (write-only); `{ "content": "" }` clears one.
 
-**200:** `{ ok: true }` | **413:** request body too large | **422:** same family as GET for type/size/encoding, plus `APP_CONFIG_ONLY` for app-managed mounts (an app container's files are regenerated from `appConfig` on every save — configure the app, or eject it first)
+**204:** written; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **413:** request body too large | **422:** same family as GET for type/size/encoding, plus `APP_CONFIG_ONLY` for app-managed mounts (an app container's files are regenerated from `appConfig` on every save — configure the app, or eject it first)
 
 ### POST /api/containers/:name/mounts/:mountName/init · `admin`
 
 Create an empty file (0 bytes) or empty directory according to the mount **`type`** (still supported for API clients; the UI relies on automatic creation when saving mounts or starting).
 
-**200:** `{ ok: true }` | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
+**204:** created; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
 
 ### DELETE /api/containers/:name/mounts/:mountName/data · `admin`
 
@@ -280,18 +280,18 @@ Remove the backing file or directory tree for that mount. The mount row remains 
 
 Append one mDNS service advertisement (row-scoped, keyed by port). **Body:** `{ port: integer, type: string, txt?: object }` — `type` matches `^_[a-z0-9-]+\._(tcp|udp)$`; `txt` is a flat key/value map (values stringified). Requires `localDns: true` on the container. Live registration happens immediately if the container is running.
 
-**200:** `{ requiresRestart: false }` | **409:** `CONTAINER_LOCAL_DNS_DISABLED`, `CONTAINER_SERVICE_DUPLICATE` | **422:** `INVALID_CONTAINER_SERVICE`
+**204:** added; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **409:** `CONTAINER_LOCAL_DNS_DISABLED`, `CONTAINER_SERVICE_DUPLICATE` | **422:** `INVALID_CONTAINER_SERVICE`
 
 ### PATCH /api/containers/:name/services/:port · `admin`
 
 Update one service identified by its current **`port`** (URL segment). **Body:** optional subset of `{ type, txt }`. Port is not editable — delete + create to move to a different port.
 
-**200:** `{ requiresRestart: false }` | **404:** `CONTAINER_SERVICE_NOT_FOUND` | **409:** `CONTAINER_LOCAL_DNS_DISABLED` | **422:** `INVALID_CONTAINER_SERVICE`
+**204:** saved; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **404:** `CONTAINER_SERVICE_NOT_FOUND` | **409:** `CONTAINER_LOCAL_DNS_DISABLED` | **422:** `INVALID_CONTAINER_SERVICE`
 
 ### DELETE /api/containers/:name/services/:port · `admin`
 
 Remove an mDNS service by its port. Live deregistration happens immediately if the container is running.
 
-**200:** `{ requiresRestart: false }` | **404:** `CONTAINER_SERVICE_NOT_FOUND`
+**204:** removed; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **404:** `CONTAINER_SERVICE_NOT_FOUND`
 
 **200:** `{ ok: true }`
