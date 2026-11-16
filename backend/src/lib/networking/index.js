@@ -26,6 +26,38 @@ export const ipv6GlobalCidrFromProcIfInet6 = hostImpl.ipv6GlobalCidrFromProcIfIn
 export const listManagedNetworkBridges = managedImpl.listManagedNetworkBridges;
 export const listEligibleParentBridges = managedImpl.listEligibleParentBridges;
 export const planManagedNetworkBridgeCreate = managedImpl.planManagedNetworkBridgeCreate;
-export const createManagedNetworkBridge = managedImpl.createManagedNetworkBridge;
 export const planManagedNetworkBridgeDelete = managedImpl.planManagedNetworkBridgeDelete;
-export const deleteManagedNetworkBridge = managedImpl.deleteManagedNetworkBridge;
+
+/** Notified after a managed bridge create or delete settles. A failed one is
+ *  announced too: netplan may have written part of it. No replay: a cue to list
+ *  the bridges again. */
+const bridgesChangeHandlers = new Set();
+
+export function subscribeNetworkBridgesChange(handler) {
+  bridgesChangeHandlers.add(handler);
+  return () => bridgesChangeHandlers.delete(handler);
+}
+
+function announceNetworkBridgesChange() {
+  for (const handler of bridgesChangeHandlers) {
+    try {
+      handler();
+    } catch (err) {
+      // A broken subscriber must not fail the change or silence the others.
+      console.error('networking: bridges change subscriber failed', err);
+    }
+  }
+}
+
+function announcingBridgesChange(mutation) {
+  return async (...args) => {
+    try {
+      return await mutation(...args);
+    } finally {
+      announceNetworkBridgesChange();
+    }
+  };
+}
+
+export const createManagedNetworkBridge = announcingBridgesChange(managedImpl.createManagedNetworkBridge);
+export const deleteManagedNetworkBridge = announcingBridgesChange(managedImpl.deleteManagedNetworkBridge);

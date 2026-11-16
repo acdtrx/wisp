@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Plus, Trash2, Network } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
@@ -17,6 +17,7 @@ import {
 import BridgeCreateModal from './BridgeCreateModal.jsx';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
+import { useKindChanges } from '../../hooks/useChanges.js';
 import {
   listManagedNetworkBridges,
   deleteManagedNetworkBridge,
@@ -34,32 +35,37 @@ export default function HostNetworkBridges({ onError }) {
     if (typeof onError === 'function') onError(value);
   }, [onError]);
 
+  /* Reads are numbered: only the newest one sent applies, or reports its failure. */
+  const readsSent = useRef(0);
   const refresh = useCallback(async () => {
-    setLoading(true);
-    reportError(null);
+    const request = ++readsSent.current;
     try {
       const data = await listManagedNetworkBridges();
+      if (request !== readsSent.current) return;
       setManaged(Array.isArray(data.managed) ? data.managed : []);
       setEligibleParents(Array.isArray(data.eligibleParents) ? data.eligibleParents : []);
       setLoadFailed(false);
     } catch (err) {
+      if (request !== readsSent.current) return;
       setLoadFailed(true); // the error shows on the card; the list shown stays
       reportError(err.detail || err.message || 'Failed to load network bridges');
     } finally {
-      setLoading(false);
+      if (request === readsSent.current) setLoading(false);
     }
   }, [reportError]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+  /* A bridge create or delete from any tab (announced when its job settles), or a
+   * reconnect, re-reads the list. */
+  useKindChanges('network-bridges', refresh);
 
   const onDelete = async (name) => {
     setDeletingName(name);
     reportError(null);
     try {
       await awaitJob(JOB_KIND.NETWORK_BRIDGE_DELETE, await deleteManagedNetworkBridge(name));
-      await refresh();
     } catch (err) {
       reportError(err.detail || err.message || `Failed to delete bridge ${name}`);
     } finally {
@@ -154,7 +160,6 @@ export default function HostNetworkBridges({ onError }) {
         open={createOpen}
         eligibleParents={eligibleParents}
         onClose={() => setCreateOpen(false)}
-        onCreated={refresh}
       />
     </SectionCard>
   );

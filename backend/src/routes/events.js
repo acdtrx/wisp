@@ -9,6 +9,7 @@ import { getBackupStatus, subscribeBackupEvents } from '../lib/backupStatus.js';
 import { subscribeSettingsChange } from '../lib/settings.js';
 import { subscribeCloudInitChange } from '../lib/cloudInit.js';
 import { subscribeApiTokensChange } from '../lib/apiTokens.js';
+import { subscribeNetworkBridgesChange } from '../lib/networking/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { buildSectionsEnvelope } from './sections.js';
 
@@ -138,6 +139,7 @@ export default async function eventsRoutes(fastify) {
         subscribeContainerChange((name) => { sendChange({ kind: 'container', id: name }); }),
         subscribeCloudInitChange((name) => { sendChange({ kind: 'vm', id: name }); }),
         subscribeApiTokensChange(() => { sendChange({ kind: 'tokens' }); }),
+        subscribeNetworkBridgesChange(() => { sendChange({ kind: 'network-bridges' }); }),
       ];
 
       onSSEClose(reply, () => {

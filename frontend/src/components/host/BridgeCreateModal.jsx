@@ -18,10 +18,10 @@ const FORM_ID = 'bridge-create-form';
 /**
  * Modal form editor for creating one managed VLAN bridge (see
  * docs/FRONTEND-RULES.md § Modal form editor). The bridge name is derived
- * (`<parent>-vlan<id>`) and shown as a preview. Calls `onCreated` after a
- * successful create so the parent can refresh its list.
+ * (`<parent>-vlan<id>`) and shown as a preview. The new bridge reaches the list
+ * on the `network-bridges` cue its job announces.
  */
-export default function BridgeCreateModal({ open, eligibleParents, onClose, onCreated }) {
+export default function BridgeCreateModal({ open, eligibleParents, onClose }) {
   const [baseBridge, setBaseBridge] = useState('');
   const [vlanId, setVlanId] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -53,7 +53,6 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose, onCr
     setError(null);
     try {
       await awaitJob(JOB_KIND.NETWORK_BRIDGE_CREATE, await createManagedNetworkBridge(baseBridge, Number(vlanId)));
-      await onCreated?.();
       onClose();
     } catch (err) {
       setError(err.detail || err.message || 'Failed to create bridge');
