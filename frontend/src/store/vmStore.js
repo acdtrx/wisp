@@ -113,10 +113,19 @@ export const useVmStore = create((set, get) => {
   }
 
   /** Apply read `read`'s config to VM `name`. A config is on screen now, so a select
-   *  error page it may have replaced goes. */
+   *  error page it may have replaced goes. When the newest read sent has already
+   *  failed (and the user hasn't dismissed it), the config shown predates it: that
+   *  failure becomes the VM's `refresh` error, the banner. */
   function applyConfigRead(seq, read, name, config) {
     configReadsApplied = read;
-    set((prev) => ({ vmConfig: config, configLoading: false, errors: withoutError(prev.errors, 'select', name) }));
+    const failed = newestFailedRead && newestFailedRead.seq === seq ? newestFailedRead : null;
+    const raise = failed && failed.read > read && failed.read === configReadsSent;
+    if (failed && !raise) newestFailedRead = null;
+    set((prev) => {
+      let errors = withoutError(prev.errors, 'select', name);
+      if (raise) errors = withError(errors, 'refresh', name, `Couldn't refresh this VM: ${failed.message}`);
+      return { vmConfig: config, configLoading: false, errors };
+    });
   }
 
   function startStatsSSE(name) {
@@ -309,8 +318,12 @@ export const useVmStore = create((set, get) => {
       set({ selectedVM: null, vmConfig: null, vmStats: null, configLoading: false });
     },
 
-    /** Dismiss one error (`owner`, `vm`): never touches an action in flight. */
-    dismissError: (owner, vm) => set((s) => ({ errors: withoutError(s.errors, owner, vm) })),
+    /** Dismiss one error (`owner`, `vm`): never touches an action in flight. A dismissed
+     *  read failure doesn't come back when an older read lands. */
+    dismissError: (owner, vm) => {
+      if ((owner === 'select' || owner === 'refresh') && vm === get().selectedVM) newestFailedRead = null;
+      set((s) => ({ errors: withoutError(s.errors, owner, vm) }));
+    },
     /** Show a command's failure as VM `name`'s action error (the detail view's banner). */
     reportActionError: (name, message) => set((s) => ({ errors: withError(s.errors, 'action', name, message) })),
 
