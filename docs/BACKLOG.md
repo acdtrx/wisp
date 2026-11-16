@@ -69,6 +69,14 @@ fences only, and only the frontend's chunk cycles fail a build. Fix shape: a cyc
 in `check-fences`. **Revisit trigger:** the next work on the lints, or a backend boot that
 fails on a half-initialised import.
 
+**Nothing catches a use of an undefined name.** The frontend build (Vite) and the two
+lints pass a component that calls a function no longer defined or imported; it throws
+only when the code runs. command-acks milestone 4 (2026-11-16) shipped two leftover
+`setRequiresRestart` calls that crashed every container page on the Linux server. Fix
+shape: an undefined-identifier check (ESLint `no-undef` alone, or a small script) run
+with the other lints, a TECH-STACK decision. **Revisit trigger:** the next work on the
+lints, or another crash of the kind.
+
 **A hung CIFS mount blocks Node's filesystem calls.** Listings, deletes and copies on an
 unresponsive SMB destination block the libuv thread pool and can't be timed out; running
 them as jobs contains the damage but doesn't fix it. The container mount-usage walk is one
