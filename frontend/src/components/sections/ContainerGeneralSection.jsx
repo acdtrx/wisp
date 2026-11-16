@@ -140,7 +140,12 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
     <SectionCard title="General" isDirty={!isCreating && isDirty} onSave={isCreating ? undefined : handleSave} saving={saving} saveDisabledReason={nameError ?? undefined} requiresRestart={requiresRestart} error={error} headerAction={headerAction}>
       <div className="space-y-3">
         <div className="flex items-end gap-4 flex-wrap">
-          <Field label="Name" className="relative w-[180px]">
+          <Field
+            label={nameError
+              ? <>Name <span className="font-normal text-status-stopped" role="alert">— required</span></>
+              : 'Name'}
+            className="w-[180px]"
+          >
             <input
               type="text"
               value={form.name}
@@ -153,9 +158,6 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
               aria-invalid={nameError ? true : undefined}
               className="input-field"
             />
-            {nameError && (
-              <p className="absolute left-0 top-full mt-0.5 text-[11px] text-status-stopped" role="alert">{nameError}</p>
-            )}
           </Field>
 
           {!isCreating && (
