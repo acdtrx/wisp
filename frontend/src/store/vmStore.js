@@ -302,7 +302,8 @@ export const useVmStore = create((set, get) => {
       const seq = ++selectionSeq;
       set((prev) => ({
         selectedVM: name, vmConfig: seed, vmStats: null, configLoading: true,
-        errors: withoutError(prev.errors, 'select', name),
+        // The error page of the VM being left goes with it, as does an earlier one of this name.
+        errors: withoutError(withoutError(prev.errors, 'select', prev.selectedVM), 'select', name),
       }));
       startStatsSSE(name);
       const read = ++configReadsSent;
@@ -328,7 +329,11 @@ export const useVmStore = create((set, get) => {
       stopStatsSSE();
       selectionSeq += 1;
       // configLoading is reset here because the in-flight select's response is now dropped.
-      set({ selectedVM: null, vmConfig: null, vmStats: null, configLoading: false });
+      // The error page of the VM being left goes with it (Escape, a sidebar click, Back).
+      set((prev) => ({
+        selectedVM: null, vmConfig: null, vmStats: null, configLoading: false,
+        errors: prev.selectedVM ? withoutError(prev.errors, 'select', prev.selectedVM) : prev.errors,
+      }));
     },
 
     /** Dismiss one error (`owner`, `vm`): never touches an action in flight. A dismissed
