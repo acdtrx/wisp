@@ -29,6 +29,20 @@ it (a suspend that ends in `shutoff`); waiting for "left the old state" fixed th
 off the list's auto-deselect for every VM. **Revisit trigger:** a control seen re-enabled on stale state, or seen stuck
 busy after the VM changed state.
 
+**A VM deleted elsewhere leaves its open tab on an endless spinner.** When another tab or
+an MCP agent deletes the VM a tab has open, the list's auto-deselect nulls the config, and
+the tab stays on `/vm/<name>` with the loading spinner: nothing navigates away or says the
+VM is gone. Predates command-acks (found in its milestone 3 review, 2026-11-16).
+**Revisit trigger:** the next work on the VM detail page, or a user left on a spinner after
+a delete.
+
+**A refresh error raised behind the select error page surfaces later, unexplained.** A VM
+re-read that fails while the select error page is up records a `refresh` error nobody sees
+there; once a later read brings the config back, the banner shows it, about a read the
+user never saw fail. Predates command-acks (found in its milestone 3 review, 2026-11-16).
+**Revisit trigger:** a user puzzled by a "Couldn't refresh this VM" banner on a VM that
+loaded fine.
+
 **The VM General section renders the list seed while the config loads.** On the VM
 detail page `GeneralSection` sits outside the `configLoading` skeleton (`OverviewPanel.jsx`),
 so until the select's `getVM` lands it shows the list item as the config: Local DNS and
