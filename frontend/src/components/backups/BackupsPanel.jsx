@@ -180,11 +180,17 @@ export default function BackupsPanel() {
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
 
+  /* Reads are numbered: only the newest one sent applies. A burst of `backups`
+   * frames (retention prunes one backup per frame) must not let a slow earlier
+   * read show a pruned backup again. */
+  const listReadsSent = useRef(0);
   const fetchLists = useCallback((initial = false) => {
+    const request = ++listReadsSent.current;
     if (initial) setLoading(true);
     setError(null);
     return Promise.allSettled([listBackups(), listContainerBackups()])
       .then(([vmRes, ctRes]) => {
+        if (request !== listReadsSent.current) return;
         // A failed refetch keeps the list already shown.
         if (vmRes.status === 'fulfilled') setVmBackups(Array.isArray(vmRes.value) ? vmRes.value : []);
         if (ctRes.status === 'fulfilled') setCtBackups(Array.isArray(ctRes.value) ? ctRes.value : []);
