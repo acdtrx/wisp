@@ -363,8 +363,8 @@ export const useVmStore = create((set, get) => {
         if (seq !== selectionSeq) return;
         noteFailedRead(seq, read, err);
         if (read !== configReadsSent || read <= configReadsApplied) return;
-        if (get().configLoading) {
-          // The last read of a select that never got its config: the error page.
+        if (get().configLoading || !get().vmConfig) {
+          // No config on screen (a select still loading, or its error page): the error page.
           set((prev) => ({ vmConfig: null, configLoading: false, errors: withError(prev.errors, 'select', selectedVM, err.message) }));
           return;
         }

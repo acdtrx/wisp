@@ -36,13 +36,6 @@ VM is gone. Predates command-acks (found in its milestone 3 review, 2026-11-16).
 **Revisit trigger:** the next work on the VM detail page, or a user left on a spinner after
 a delete.
 
-**A refresh error raised behind the select error page surfaces later, unexplained.** A VM
-re-read that fails while the select error page is up records a `refresh` error nobody sees
-there; once a later read brings the config back, the banner shows it, about a read the
-user never saw fail. Predates command-acks (found in its milestone 3 review, 2026-11-16).
-**Revisit trigger:** a user puzzled by a "Couldn't refresh this VM" banner on a VM that
-loaded fine.
-
 **The VM General section renders the list seed while the config loads.** On the VM
 detail page `GeneralSection` sits outside the `configLoading` skeleton (`OverviewPanel.jsx`),
 so until the select's `getVM` lands it shows the list item as the config: Local DNS and
