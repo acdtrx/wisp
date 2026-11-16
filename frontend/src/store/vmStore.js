@@ -259,11 +259,9 @@ export const useVmStore = create((set, get) => {
         set({ vmConfig: config, configLoading: false });
       } catch (err) {
         if (seq !== selectionSeq) return;
-        // A newer read already applied, or still on its way, has the say.
-        if (read !== configReadsSent || read <= configReadsApplied) {
-          set({ configLoading: false });
-          return;
-        }
+        /* A newer read already applied, or still on its way, has the say: the view stays
+         * loading (no section renders the list seed as the config) until it settles. */
+        if (read !== configReadsSent || read <= configReadsApplied) return;
         set((prev) => ({ vmConfig: null, configLoading: false, errors: withError(prev.errors, 'select', name, err.message) }));
       }
     },
@@ -295,14 +293,18 @@ export const useVmStore = create((set, get) => {
       try {
         config = await vmApi.getVM(selectedVM);
       } catch (err) {
-        if (seq === selectionSeq && read === configReadsSent && read > configReadsApplied) {
-          set((prev) => ({ errors: withError(prev.errors, 'refresh', selectedVM, `Couldn't refresh this VM: ${err.detail || err.message}`) }));
+        if (seq !== selectionSeq || read !== configReadsSent || read <= configReadsApplied) return;
+        if (get().configLoading) {
+          // The last read of a select that never got its config: the error page.
+          set((prev) => ({ vmConfig: null, configLoading: false, errors: withError(prev.errors, 'select', selectedVM, err.message) }));
+          return;
         }
+        set((prev) => ({ errors: withError(prev.errors, 'refresh', selectedVM, `Couldn't refresh this VM: ${err.detail || err.message}`) }));
         return;
       }
       if (seq !== selectionSeq || read <= configReadsApplied) return;
       configReadsApplied = read;
-      set({ vmConfig: config });
+      set({ vmConfig: config, configLoading: false });
     },
 
     /**
