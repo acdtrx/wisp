@@ -112,20 +112,11 @@ export const useVmStore = create((set, get) => {
     newestFailedRead = { seq, read, message: err.detail || err.message };
   }
 
-  /** Apply read `read`'s config to VM `name`. When a newer read of this selection has
-   *  already failed, the config shown predates it: that failure becomes the VM's
-   *  `refresh` error (the banner), in place of a select error page it may have left. */
+  /** Apply read `read`'s config to VM `name`. A config is on screen now, so a select
+   *  error page it may have replaced goes. */
   function applyConfigRead(seq, read, name, config) {
     configReadsApplied = read;
-    const failed = newestFailedRead && newestFailedRead.seq === seq ? newestFailedRead : null;
-    if (failed && failed.read < read) newestFailedRead = null;
-    set((prev) => {
-      const next = { vmConfig: config, configLoading: false };
-      if (failed && failed.read > read) {
-        next.errors = withError(withoutError(prev.errors, 'select', name), 'refresh', name, `Couldn't refresh this VM: ${failed.message}`);
-      }
-      return next;
-    });
+    set((prev) => ({ vmConfig: config, configLoading: false, errors: withoutError(prev.errors, 'select', name) }));
   }
 
   function startStatsSSE(name) {
