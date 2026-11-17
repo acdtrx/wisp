@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-17
+
+### New Features
+- **Every open tab stays current** — a change made in one tab shows in every other tab with no reload. This covers settings, sections and the home page, VM and container edits, host mounts, network bridges, the image library, images, API tokens and the Wisp update check.
+- **A renamed container is followed everywhere** — containers get a permanent id (migration 0008), so a tab open on a container renamed in another tab moves to the new name.
+- **API: commands answer with an ack** — a route that changes state answers 204, `201 { id }` or `202 { jobId, title }`, and the new state arrives on the `/api/events` stream's new `changes` topic. **Updating:** an API client that read the new state from a command's response must now `GET` it.
+
+### Bug Fixes
+- **Buttons stay busy until the change is in** — a control that sent a command stays busy until the new state reaches the page, or for at most 30 seconds.
+- **Load errors stay visible** — a failed reload shows its error until dismissed, and an older reload that answers late can no longer overwrite a newer one.
+- **Container names are checked** — an empty or space-padded name is refused (422), and a save that changes nothing is not sent.
+- **A container keeps its id when restored in place**.
+- **Cloud-init is saved safely** — `cloud-init.json` is written atomically and before the cloud-init disk is detached.
+- **The backend stops cleanly** — shutdown finishes within 10 seconds, and an unhandled error is logged and ends the process so systemd restarts it.
+
 ## 2026-11-14 (v2.7.0)
 
 ### New Features
