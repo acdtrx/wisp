@@ -50,6 +50,14 @@ safe to run again, ending with Wisp usable.
   files, edited through the tool. Any other uplink (a bond, a VLAN, a definition that
   matches several interfaces) is refused before anything changes: the operator makes
   the bridge with the host's tool, and setup uses it.
+- **A host whose network cloud-init still manages is refused** (settled 2026-11-18),
+  before anything changes, with the one documented line that switches that off. Setup
+  never edits a file cloud-init generates and never changes cloud-init's own
+  configuration. This is about cloud-init managing the network, not about the package
+  being installed: an Ubuntu Server installed from its ISO has cloud-init, with its
+  networking already switched off by the installer, and is supported. With that out of
+  the way there is one path for DHCP and static alike: the interface's definition moves
+  to the bridge in the operator's own file.
 - **A bridge setup makes is checked before and after.** The new configuration is
   validated before it goes live. Afterwards the bridge must hold the address, hardware
   address and DHCP identity the interface had; if it does not, setup puts the host's
