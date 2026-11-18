@@ -98,7 +98,7 @@ _journal_read() {
 # journal_classify: prints finished | untouched | restore | refuse <why>.
 journal_classify() {
   _journal_read || { echo "refuse $JOURNAL_DIR/journal is not a journal setup wrote"; return; }
-  local i cur w=0 o=0 n=0 why="" uuid fp ac
+  local i cur w=0 o=0 n=0 why="" uuid fp
   for i in "${!J_FILES[@]}"; do
     cur="$(_sha "${J_FILES[$i]}")"
     if [[ "$cur" == "${J_WROTE[$i]}" ]]; then w=$((w + 1))
@@ -110,8 +110,7 @@ journal_classify() {
     if ! timeout 30 nmcli -t -f connection.uuid connection show "$uuid" >/dev/null 2>&1; then o=$((o + 1)); continue; fi
     fp="$(nm_fingerprint "$uuid")"
     if [[ -n "${J_FP[$uuid]:-}" && "$fp" != "${J_FP[$uuid]}" ]]; then n=$((n + 1)); why+=" connection $uuid"; continue; fi
-    ac="$(timeout 30 nmcli -g connection.autoconnect connection show "$uuid" 2>/dev/null)"
-    if [[ "$ac" == yes ]]; then w=$((w + 1)); else w=$((w + 1)); o=$((o + 1)); fi   # added, not switched on: half way
+    w=$((w + 1))
   done
   if (( n > 0 )); then echo "refuse changed since by someone else:$why"; return; fi
   local total=$(( ${#J_FILES[@]} + ${#J_CONNS[@]} ))
@@ -134,9 +133,17 @@ journal_restore() (
   local i uuid copy
   if [[ "$J_TOOL" == networkmanager ]]; then
     # The uplink's own connection first, so the device is never without one;
-    # then what the step added, by UUID, the port before the bridge.
-    if [[ "$J_CON" != - && "$(timeout 30 nmcli -g GENERAL.STATE connection show "$J_CON" 2>/dev/null)" != activated ]]; then
-      timeout "$JOURNAL_APPLY_SEC" nmcli --wait "$JOURNAL_APPLY_SEC" connection up "$J_CON" >/dev/null || exit 1
+    # then what the step added, by UUID, the port before the bridge. When the
+    # uplink's connection is gone — NetworkManager's default wired one, held in
+    # memory, does not outlive a reboot once a stored connection is for the
+    # device — a restart of NetworkManager, with no such connection left, makes
+    # it again.
+    local uplink_con=no
+    if [[ "$J_CON" != - ]] && timeout 30 nmcli -t -f connection.uuid connection show "$J_CON" >/dev/null 2>&1; then
+      uplink_con=yes
+      if [[ "$(timeout 30 nmcli -g GENERAL.STATE connection show "$J_CON" 2>/dev/null)" != activated ]]; then
+        timeout "$JOURNAL_APPLY_SEC" nmcli --wait "$JOURNAL_APPLY_SEC" connection up "$J_CON" >/dev/null || exit 1
+      fi
     fi
     for (( i = ${#J_CONNS[@]} - 1; i >= 0; i-- )); do
       uuid="${J_CONNS[$i]}"
@@ -144,6 +151,9 @@ journal_restore() (
         timeout 30 nmcli connection delete "$uuid" >/dev/null || exit 1
       fi
     done
+    if [[ "$uplink_con" == no ]]; then
+      timeout 60 systemctl restart NetworkManager || exit 1
+    fi
   fi
   for (( i = ${#J_FILES[@]} - 1; i >= 0; i-- )); do
     if [[ "${J_EXISTED[$i]}" == yes ]]; then

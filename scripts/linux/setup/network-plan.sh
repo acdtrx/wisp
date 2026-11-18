@@ -629,10 +629,11 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
       # identifier it sent on DHCP, exactly (NM takes it as bytes), and its
       # hardware address. The port connection: no addressing of its own, and
       # the uplink connection's link settings (every 802-3-ethernet.* and
-      # ethtool.* property). Both are added not connecting by themselves.
+      # ethtool.* property). Both connect by themselves from the moment they
+      # are added (see the bridge step).
       {
         printf '%s\n' type bridge ifname "$BRIDGE" con-name "$BRIDGE" bridge.mac-address "$UPLINK_MAC" \
-          bridge.stp no connection.autoconnect no connection.autoconnect-ports true
+          bridge.stp no connection.autoconnect yes connection.autoconnect-ports true
         awk -v m4="$_metric4" -v m6="$_metric6" '/^ipv[46]\./ {
           k = $0; sub(/:.*/, "", k); v = substr($0, length(k) + 2)
           if (v == "" || v == "--" || k == "ipv4.dhcp-client-id" || k ~ /-deprecated$/) next
@@ -644,7 +645,7 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
       } > "$NET_PLAN_DIR/bridge.args"
       {
         printf '%s\n' type ethernet ifname "$UPLINK" con-name "${BRIDGE}-port-${UPLINK}" \
-          controller "$BRIDGE" port-type bridge connection.autoconnect no \
+          controller "$BRIDGE" port-type bridge connection.autoconnect yes \
           connection.autoconnect-priority "$NM_PORT_PRIORITY"
         awk '/^(802-3-ethernet|ethtool)\./ {
           k = $0; sub(/:.*/, "", k); v = substr($0, length(k) + 2)

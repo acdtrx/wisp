@@ -148,11 +148,14 @@ verify_networkd() {
 }
 
 # --- NetworkManager: the bridge and port connections, checked by nmcli in the
-# plan, added under UUIDs of their own, not connecting by themselves, and
-# brought up. The uplink's own connection is not changed: once the bridge holds
-# the address, the two connect by themselves, and the port's autoconnect
-# priority, above the uplink connection's, makes it the one NetworkManager
-# brings up on the uplink at boot. ---
+# plan, added under UUIDs of their own, both connecting by themselves, and the
+# bridge brought up with its port. The uplink's own connection is not changed.
+# The bridge first: on its own it holds nothing (no port, no carrier), and a
+# boot then still brings the uplink up on its own connection — NetworkManager's
+# default wired one too, which it makes only while no stored connection is
+# for that device. From the port on, a boot brings up the port, whose
+# autoconnect priority is above the uplink connection's, and so the bridge.
+# Never a boot with neither. ---
 nm_add() {
   local args
   mapfile -t args < "$1"
@@ -168,16 +171,11 @@ apply_networkmanager() {
   nm_add "$NET_PLAN_DIR/bridge.args" "$NM_BRIDGE_UUID" || return 1
   changed "NetworkManager connection $BRIDGE (bridge, ${UPLINK}'s layer 3 and DHCP identity)"
   nm_add "$NET_PLAN_DIR/port.args" "$NM_PORT_UUID" || return 1
-  changed "NetworkManager connection ${BRIDGE}-port-${UPLINK} ($UPLINK as ${BRIDGE}'s port, with its link settings)"
+  changed "NetworkManager connection ${BRIDGE}-port-${UPLINK} ($UPLINK as ${BRIDGE}'s port, with its link settings, ahead of ${UPLINK}'s own connection at boot)"
   apply_notice
   timeout -k 10 "$APPLY_WAIT_SEC" nmcli --wait "$APPLY_WAIT_SEC" connection up "$NM_BRIDGE_UUID" >/dev/null
 }
-verify_networkmanager() {
-  timeout -k 10 "$NET_CMD_SEC" nmcli connection modify "$NM_BRIDGE_UUID" connection.autoconnect yes \
-    && timeout -k 10 "$NET_CMD_SEC" nmcli connection modify "$NM_PORT_UUID" connection.autoconnect yes \
-    || { WHY="NetworkManager refused to make $BRIDGE connect by itself"; return 1; }
-  changed "NetworkManager: $BRIDGE and its port connect by themselves, the port ahead of ${UPLINK}'s own connection"
-}
+verify_networkmanager() { :; }
 
 # undo: from the journal; the step fails either way.
 undo() {
