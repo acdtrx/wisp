@@ -109,6 +109,14 @@ jobs:
             exit 1
           fi
 
+          # Sanity: unit tests run from the repo (npm test), never on a host.
+          TESTS="$(find "$STAGE" -name '*.test.js')"
+          if [[ -n "$TESTS" ]]; then
+            echo "ERROR: the staged tree holds test files:"
+            echo "$TESTS"
+            exit 1
+          fi
+
           echo "Staged tree size:"
           du -sh "$STAGE"
 
