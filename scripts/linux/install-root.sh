@@ -145,8 +145,11 @@ if [[ "$BRIDGE_CREATE" == yes ]]; then
 fi
 
 # --- The work, handed on ---
+# root's, readable by the deploy user's group: root may not write to a file of
+# another user's in /tmp (fs.protected_regular).
 LOG="$(mktemp -t wisp-install.XXXXXX.log)"
-chown "$DEPLOY_USER:$DEPLOY_GROUP" "$LOG"
+chgrp "$DEPLOY_GROUP" "$LOG"
+chmod 0640 "$LOG"
 echo ""
 echo "Installing. The log is $LOG; the install goes on if this connection drops."
 echo ""
@@ -162,6 +165,9 @@ trap 'echo ""; echo "Stopped following. The install goes on; its log is $LOG"; t
 tail -n +1 -f --pid="$WORK_PID" "$LOG"
 rc=0
 wait "$WORK_PID" || rc=$?
+# The work removes these when it ends; and so does this, for a work that did
+# not get to start.
+rm -rf "$NET_PLAN_DIR" "$WISP_INSTALL_ANSWERS"
 if (( rc != 0 )); then
   echo "" >&2
   echo "ERROR: the install failed; its log is $LOG" >&2
