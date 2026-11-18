@@ -222,8 +222,9 @@ systemctl daemon-reload || fail "daemon-reload failed"
 echo "step:start-service"
 # Blocks until the new backend is ready or has failed (Type=notify; bounded by
 # the unit's TimeoutStartSec, inside this unit's own).
+START_TS="$(date +%s)"
 if ! systemctl start "$SERVICE_UNIT"; then
-  journalctl -u "$SERVICE_UNIT" -n 20 --no-pager -o cat 2>/dev/null | sed 's/^/  wisp: /' || true
+  journalctl -u "$SERVICE_UNIT" --since "@$START_TS" -n 20 --no-pager -o cat 2>/dev/null | sed 's/^/  wisp: /' || true
   fail "new release did not start"
 fi
 

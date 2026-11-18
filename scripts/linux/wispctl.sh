@@ -112,9 +112,11 @@ cmd_svc_uninstall() {
 # this waits until the backend is ready (its state migrations run, listening)
 # and fails when it exits first: the service's last log lines then say why.
 svc_run() {
+  local since
+  since="$(date +%s)"
   if ! sudo systemctl "$1" "$SERVICE_UNIT"; then
-    echo "ERROR: wisp.service did not start. Its last log lines:" >&2
-    sudo journalctl -u "$SERVICE_UNIT" -n 30 --no-pager -o cat >&2 || true
+    echo "ERROR: wisp.service did not start. Its log since this $1:" >&2
+    sudo journalctl -u "$SERVICE_UNIT" --since "@$since" -n 30 --no-pager -o cat >&2 || true
     exit 1
   fi
 }
