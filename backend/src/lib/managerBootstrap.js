@@ -1,8 +1,9 @@
 /**
- * vmManager / containerManager wiring shared by the backend (`src/index.js`)
- * and the state-migration runner (`scripts/migrate.mjs`). Both processes must
- * configure and connect the managers identically, or a migration would act on a
- * differently configured host than the app it migrates for.
+ * vmManager / containerManager wiring shared by the backend's normal work
+ * (`src/index.js`), its start-time migrations (`lib/stateMigrations.js`) and
+ * the update-time runner (`scripts/migrate.mjs`). All configure and connect the
+ * managers identically, or a migration would act on a differently configured
+ * host than the app it migrates for.
  */
 import { getConfigSync } from './config.js';
 import {
@@ -24,9 +25,9 @@ import { tryAcquireContainerOperationLock } from './containerOperationLock.js';
  * manager-internal code runs; after it, vmManager and containerManager have no
  * Wisp-glue dependencies — they read everything from the configure() slots. The
  * resolver is sync: wisp-config.json is small and the OS caches the read.
- * `getConfig` reads the config: the strict `getConfigSync` for the backend; the
- * migration runner passes its tolerant reader (migrations/lib/tolerantConfig.js),
- * since it runs before migration 0007 has repaired what older releases wrote.
+ * `getConfig` reads the config: the strict `getConfigSync` for normal work; the
+ * migrations pass the tolerant reader (migrations/lib/tolerantConfig.js), since
+ * they run before migration 0007 has repaired what older releases wrote.
  */
 export function configureManagers({ getConfig = getConfigSync } = {}) {
   const cfg = getConfig();
@@ -53,8 +54,8 @@ export function configureManagers({ getConfig = getConfigSync } = {}) {
  * no libvirt DomainEvent / containerd events subscription, so no container
  * restart policy, no network reconcilers, no list caches, and none of the
  * event-driven writes (clearing outgrown restart-required flags, the network
- * probe). For a process other than the backend (the migration runner): one
- * actor per concern, and every write that process makes is one it records.
+ * probe). For the migrations, before the start connects for normal work: one
+ * actor per concern, and every write they make is one they record.
  * Reads never write, in either mode.
  */
 export async function connectManagers(log, { watchEvents = true } = {}) {

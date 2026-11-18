@@ -12,6 +12,14 @@
   endpoint at `/mcp`; every other path serves the client. In development the Vite dev
   server serves the client and proxies `/api` and `/ws` to the backend; on macOS the
   backend runs stub managers (no libvirt, no containerd).
+- **The start runs in one order** (`main()` in `src/index.js`): `runtime.env` (loaded as
+  the first import, its retired keys skipped), then the pending state migrations, then the
+  strict checks of the config, then the managers configured, the app and its routes
+  built, the boot work (connections, mounts, container autostart), and the port opened
+  last. A start whose migrations or checks fail exits non-zero without listening.
+  **No module reads stored state or connects when it loads**: whatever it needs is read
+  by a function this order calls, so nothing has read the state before the migrations
+  have brought it up to date (settled 2026-11-18).
 - At startup the backend connects to libvirt and avahi over DBus and to containerd over
   gRPC, and mounts the configured SMB mounts. On SIGTERM it stops accepting connections,
   ends the open streams, disconnects the managers and exits within a bounded time. An

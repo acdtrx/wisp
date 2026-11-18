@@ -5,15 +5,20 @@
  * imports before the importing module's own code runs. Under systemd the
  * unit's EnvironmentFile= has set the same variables already; loadRuntimeEnv
  * never overrides one that is set.
+ *
+ * Strict (CODING-RULES §4), but for the lines setting the retired keys, which
+ * never reach the environment: migration 0007 removes them, and the start
+ * checks the file strictly once the migrations have run. Every WISP_* value is
+ * checked here, so WISP_CONFIG_PATH (the config, and with it the ledger, the
+ * migrations work on) never comes from a bad line.
  */
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { checkRuntimeEnv, loadRuntimeEnv } from './loadRuntimeEnv.js';
+import { checkRuntimeEnv, loadRuntimeEnv, RETIRED_ENV_KEYS } from './loadRuntimeEnv.js';
 
-/* Strict (CODING-RULES §4): a bad line or value stops the boot, naming it. */
 try {
-  loadRuntimeEnv(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'));
+  loadRuntimeEnv(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'), { tolerateKeys: RETIRED_ENV_KEYS });
   checkRuntimeEnv();
 } catch (err) {
   console.error(`Failed to start: ${err.message}`);

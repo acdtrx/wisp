@@ -26,8 +26,9 @@ const WISP_KEYS = {
 
 /**
  * WISP_* keys earlier releases wrote and no release reads any more. Migration
- * 0007 removes them; until it has, the migration runner loads the file
- * tolerating exactly these (backend/scripts/migrate.mjs).
+ * 0007 removes them; until it has, the start loads the file tolerating
+ * exactly these (bootRuntimeEnv.js), and checks it strictly once the
+ * migrations have run (checkRuntimeEnvFile).
  */
 export const RETIRED_ENV_KEYS = Object.freeze(['WISP_BACKEND_PORT', 'WISP_FRONTEND_PORT']);
 
@@ -89,7 +90,7 @@ function envInvalid(message) {
  * Parse runtime.env text into `[{ key, value }]`. Strict (CODING-RULES §4): a
  * line that isn't `KEY=value`, a key given twice, or an unknown WISP_* key throws
  * RUNTIME_ENV_INVALID naming the line. `tolerateKeys` skips the lines assigning
- * those keys instead, and nothing else — for the migration runner, which must
+ * those keys instead, and nothing else — for the start, which must
  * load a file an older release wrote before migration 0007 removes them.
  */
 export function parseRuntimeEnvText(content, { tolerateKeys = [] } = {}) {
@@ -161,4 +162,15 @@ export function checkRuntimeEnv(env = process.env) {
     const problem = check(value);
     if (problem) throw envInvalid(`${key}: ${problem}`);
   }
+}
+
+/**
+ * Parse <projectRoot>/config/runtime.env strictly, retired keys included. The
+ * start's check once the migrations have run; throws RUNTIME_ENV_INVALID naming
+ * the line. A missing file is fine.
+ */
+export function checkRuntimeEnvFile(projectRoot) {
+  const envPath = resolve(projectRoot, 'config/runtime.env');
+  if (!existsSync(envPath)) return;
+  parseRuntimeEnvText(readFileSync(envPath, 'utf8'));
 }

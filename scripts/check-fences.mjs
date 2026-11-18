@@ -84,6 +84,11 @@ const EXCEPTIONS = [
     specifier: '<computed>',
     reason: 'loads each migration file from the migrations directory it lists',
   },
+  {
+    file: 'backend/src/lib/stateMigrations.js',
+    specifier: '<computed>',
+    reason: 'loads each migration file from the migrations directory it lists',
+  },
 ];
 
 /**

@@ -15,6 +15,8 @@ import {
 import { handleUncaughtError } from './lib/routeErrors.js';
 import { getConfigSync } from './lib/config.js';
 import { configureManagers, connectManagers, disconnectManagers } from './lib/managerBootstrap.js';
+import { checkRuntimeEnvFile } from './lib/loadRuntimeEnv.js';
+import { migrateState } from './lib/stateMigrations.js';
 import { DEV_LOG_TRANSPORT } from './lib/logFormat.js';
 import { startImageUpdateChecker, stopImageUpdateChecker } from './lib/containerManager/index.js';
 import {
@@ -57,21 +59,6 @@ import { startWispDiscovery, stopWispDiscovery } from './lib/wispDiscovery.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, '..', '..');
 
-/* Config is read strictly (CODING-RULES §4): an invalid wisp-config.json or an
-   unusable wisp-password stops the boot here, naming the problem, before any
-   module reads them. runtime.env was checked as it loaded (bootRuntimeEnv.js). */
-try {
-  getConfigSync();
-  checkPasswordFile();
-} catch (err) {
-  console.error(`Failed to start: ${err.message}`);
-  process.exit(1);
-}
-
-/* Configure the managers before any route registers or any manager-internal
-   code runs (lib/managerBootstrap.js — shared with scripts/migrate.mjs). */
-configureManagers();
-
 const PORT = process.env.WISP_PORT ? Number(process.env.WISP_PORT) : 8080;
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -79,10 +66,6 @@ const isDev = process.env.NODE_ENV === 'development';
 const distPath = resolve(projectRoot, 'frontend/dist');
 const publicVendorPath = resolve(projectRoot, 'frontend/public/vendor');
 const indexHtmlPath = resolve(distPath, 'index.html');
-// Read the SPA shell once at startup so the SPA-fallback notFoundHandler
-// doesn't hit disk on every miss. In dev the file may not exist (no build);
-// the fallback is gated on isDev so this is only required in prod.
-const indexHtml = !isDev && existsSync(indexHtmlPath) ? readFileSync(indexHtmlPath, 'utf-8') : null;
 
 function redactToken(url) {
   return typeof url === 'string'
@@ -108,26 +91,15 @@ const loggerConfig = {
     : {}),
 };
 
-// trustProxy decides whose X-Forwarded-Proto / X-Forwarded-For are honored —
-// which drives request.protocol (https redirects + the cookie `Secure` flag) and
-// request.ip (login rate-limit key). Loopback is always trusted (an optional
-// same-host TLS proxy). When the reverse proxy (Caddy/nginx/Traefik) runs on a
-// DIFFERENT host or container, add its IP/subnet to `trustedProxies` in
-// wisp-config.json so the browser's real https scheme survives the hop.
-// Never `true` — that would trust forged headers from anyone on the network.
-const trustedProxies = getConfigSync().trustedProxies || [];
-const app = Fastify({
-  logger: loggerConfig,
-  forceCloseConnections: true,
-  trustProxy: ['127.0.0.1', '::1', ...trustedProxies],
-  // Errors Fastify raises before routing (bad percent-encoding, an over-long
-  // parameter, a failed async constraint) skip setErrorHandler; this sends
-  // them through the same handler, in the same { error, detail } shape.
-  frameworkErrors: handleUncaughtError,
-});
+/* pino is Fastify's dependency, not the backend's: the start takes its logger
+   from a Fastify instance that never listens, so the migrations log exactly as
+   the app does, and the app is handed the same logger. */
+function createStartLogger() {
+  return Fastify({ logger: loggerConfig }).log;
+}
 
-// In prod the backend also serves the SPA — apply baseline security headers to
-// every response. `style-src 'unsafe-inline'` is required because xterm.js and
+// In prod the backend also serves the SPA, with baseline security headers on
+// every response (buildApp). `style-src 'unsafe-inline'` is required because xterm.js and
 // noVNC inject inline style attributes; tightening it would need CSP nonces.
 // `img-src data:` covers favicons / lucide-react inline data URIs. HSTS is
 // intentionally not set — Wisp is often deployed on plain HTTP behind a LAN;
@@ -209,17 +181,6 @@ function applyShellCachePolicy(request, reply) {
   }
 }
 
-if (!isDev) {
-  app.addHook('onSend', async (request, reply, payload) => {
-    reply.header('Content-Security-Policy', CSP);
-    reply.header('X-Content-Type-Options', 'nosniff');
-    reply.header('X-Frame-Options', 'DENY');
-    reply.header('Referrer-Policy', 'same-origin');
-    applyShellCachePolicy(request, reply);
-    return payload;
-  });
-}
-
 // In prod, 404s outside the API and the static-file prefixes serve the SPA shell
 // so client-side routing works on deep-link refresh. /api and /ws keep the JSON
 // 404, and so do misses under /assets/ and /vendor/: those URLs name files, and
@@ -228,89 +189,133 @@ if (!isDev) {
 // SPA on :5173 and the backend stays a pure JSON API.
 const NO_SHELL_FALLBACK_PREFIXES = ['/api', '/ws', '/assets/', '/vendor/'];
 
-app.setNotFoundHandler((request, reply) => {
-  const path = routePath(request);
-  if (indexHtml && !NO_SHELL_FALLBACK_PREFIXES.some((p) => path.startsWith(p))) {
-    reply.type('text/html').send(indexHtml);
-    return;
-  }
-  request.log.info({ method: request.method, url: redactToken(request.url) }, 'Route not found');
-  reply.code(404).send({ error: 'Not Found', detail: `Route ${request.method} ${redactToken(request.url)} not found` });
-});
-
-// Framework errors (schema validation, body parsing) and anything a handler
-// lets escape answer in the same { error, detail } shape as handled errors.
-app.setErrorHandler(handleUncaughtError);
-
-// Every route declares its access level (`config: { auth }`, lib/auth.js). The
-// registry sees each route as it is added; start() checks the declarations
-// once routing is final.
-const routeAccess = createRouteAccessRegistry();
-app.addHook('onRoute', routeAccess.onRoute);
-
-// Third-party plugins that add routes of their own (the CORS preflight, static
-// assets) can't carry a per-route declaration, so the routes such a plugin
-// registers while it loads are marked public. Pending plugins are flushed first
-// so the window holds only that plugin's routes; a route it added later would
-// stay undeclared and fail closed.
-let markingPluginRoutesPublic = false;
-app.addHook('onRoute', (routeOptions) => {
-  if (markingPluginRoutesPublic) routeOptions.config = { ...routeOptions.config, auth: 'public' };
-});
-async function registerPluginWithPublicRoutes(plugin, opts) {
-  await app.after();
-  markingPluginRoutesPublic = true;
-  try {
-    await app.register(plugin, opts);
-  } finally {
-    markingPluginRoutesPublic = false;
-  }
-}
-
-if (isDev) {
-  await registerPluginWithPublicRoutes(cors, { origin: 'http://localhost:5173' });
-}
-
-await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 * 1024 } });
-
-app.addHook('onRequest', createAuthHook());
-
-await app.register(fastifyWebsocket);
-
-app.register(authRoutes, { prefix: '/api/auth' });
-app.register(hostRoutes, { prefix: '/api' });
-app.register(eventsRoutes, { prefix: '/api' });
-app.register(libraryRoutes, { prefix: '/api' });
-app.register(vmsRoutes, { prefix: '/api' });
-app.register(cloudInitRoutes, { prefix: '/api' });
-app.register(settingsRoutes, { prefix: '/api' });
-app.register(mountsRoutes, { prefix: '/api' });
-app.register(sectionsRoutes, { prefix: '/api' });
-app.register(homepageRoutes, { prefix: '/api' });
-app.register(backupsRoutes, { prefix: '/api' });
-app.register(containerRoutes, { prefix: '/api' });
-app.register(backgroundJobsRoutes, { prefix: '/api' });
-app.register(updatesRoutes, { prefix: '/api' });
-app.register(mcpRoutes); // /mcp — bearer-token-only MCP endpoint (see docs/specs/MCP.md)
-app.register(consoleRoutes, { prefix: '/ws' });
-app.register(containerConsoleRoutes, { prefix: '/ws' });
-
-// SPA static serving — only in prod; dev hits vite on :5173. /vendor/* serves
-// noVNC. The dist root has wildcard:false so unmatched paths fall through to
-// setNotFoundHandler (which returns index.html for client-side routing).
-// Dotfiles (noVNC's `.pinned` record) are build bookkeeping, never served.
-if (!isDev && existsSync(distPath)) {
-  await registerPluginWithPublicRoutes(fastifyStatic, {
-    root: publicVendorPath,
-    prefix: '/vendor/',
-    decorateReply: false,
-    dotfiles: 'ignore',
+/**
+ * The app with every hook, plugin and route registered, and ready: routing is
+ * final when it returns. It reads the config (trustedProxies) and the SPA shell,
+ * so the start calls it once the stored state is migrated and checked.
+ */
+async function buildApp(log) {
+  // trustProxy decides whose X-Forwarded-Proto / X-Forwarded-For are honored —
+  // which drives request.protocol (https redirects + the cookie `Secure` flag) and
+  // request.ip (login rate-limit key). Loopback is always trusted (an optional
+  // same-host TLS proxy). When the reverse proxy (Caddy/nginx/Traefik) runs on a
+  // DIFFERENT host or container, add its IP/subnet to `trustedProxies` in
+  // wisp-config.json so the browser's real https scheme survives the hop.
+  // Never `true` — that would trust forged headers from anyone on the network.
+  const trustedProxies = getConfigSync().trustedProxies || [];
+  const app = Fastify({
+    loggerInstance: log,
+    forceCloseConnections: true,
+    trustProxy: ['127.0.0.1', '::1', ...trustedProxies],
+    // Errors Fastify raises before routing (bad percent-encoding, an over-long
+    // parameter, a failed async constraint) skip setErrorHandler; this sends
+    // them through the same handler, in the same { error, detail } shape.
+    frameworkErrors: handleUncaughtError,
   });
-  await registerPluginWithPublicRoutes(fastifyStatic, {
-    root: distPath,
-    wildcard: false,
-    dotfiles: 'ignore',
+
+  // The SPA shell, read once so the SPA-fallback notFoundHandler doesn't hit
+  // disk on every miss. In dev the file may not exist (no build); the fallback
+  // is gated on isDev so this is only required in prod.
+  const indexHtml = !isDev && existsSync(indexHtmlPath) ? readFileSync(indexHtmlPath, 'utf-8') : null;
+
+  if (!isDev) {
+    app.addHook('onSend', async (request, reply, payload) => {
+      reply.header('Content-Security-Policy', CSP);
+      reply.header('X-Content-Type-Options', 'nosniff');
+      reply.header('X-Frame-Options', 'DENY');
+      reply.header('Referrer-Policy', 'same-origin');
+      applyShellCachePolicy(request, reply);
+      return payload;
+    });
+  }
+
+  app.setNotFoundHandler((request, reply) => {
+    const path = routePath(request);
+    if (indexHtml && !NO_SHELL_FALLBACK_PREFIXES.some((p) => path.startsWith(p))) {
+      reply.type('text/html').send(indexHtml);
+      return;
+    }
+    request.log.info({ method: request.method, url: redactToken(request.url) }, 'Route not found');
+    reply.code(404).send({ error: 'Not Found', detail: `Route ${request.method} ${redactToken(request.url)} not found` });
   });
+
+  // Framework errors (schema validation, body parsing) and anything a handler
+  // lets escape answer in the same { error, detail } shape as handled errors.
+  app.setErrorHandler(handleUncaughtError);
+
+  // Every route declares its access level (`config: { auth }`, lib/auth.js). The
+  // registry sees each route as it is added; start() checks the declarations
+  // once routing is final.
+  const routeAccess = createRouteAccessRegistry();
+  app.addHook('onRoute', routeAccess.onRoute);
+
+  // Third-party plugins that add routes of their own (the CORS preflight, static
+  // assets) can't carry a per-route declaration, so the routes such a plugin
+  // registers while it loads are marked public. Pending plugins are flushed first
+  // so the window holds only that plugin's routes; a route it added later would
+  // stay undeclared and fail closed.
+  let markingPluginRoutesPublic = false;
+  app.addHook('onRoute', (routeOptions) => {
+    if (markingPluginRoutesPublic) routeOptions.config = { ...routeOptions.config, auth: 'public' };
+  });
+  async function registerPluginWithPublicRoutes(plugin, opts) {
+    await app.after();
+    markingPluginRoutesPublic = true;
+    try {
+      await app.register(plugin, opts);
+    } finally {
+      markingPluginRoutesPublic = false;
+    }
+  }
+
+  if (isDev) {
+    await registerPluginWithPublicRoutes(cors, { origin: 'http://localhost:5173' });
+  }
+
+  await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 * 1024 } });
+
+  app.addHook('onRequest', createAuthHook());
+
+  await app.register(fastifyWebsocket);
+
+  app.register(authRoutes, { prefix: '/api/auth' });
+  app.register(hostRoutes, { prefix: '/api' });
+  app.register(eventsRoutes, { prefix: '/api' });
+  app.register(libraryRoutes, { prefix: '/api' });
+  app.register(vmsRoutes, { prefix: '/api' });
+  app.register(cloudInitRoutes, { prefix: '/api' });
+  app.register(settingsRoutes, { prefix: '/api' });
+  app.register(mountsRoutes, { prefix: '/api' });
+  app.register(sectionsRoutes, { prefix: '/api' });
+  app.register(homepageRoutes, { prefix: '/api' });
+  app.register(backupsRoutes, { prefix: '/api' });
+  app.register(containerRoutes, { prefix: '/api' });
+  app.register(backgroundJobsRoutes, { prefix: '/api' });
+  app.register(updatesRoutes, { prefix: '/api' });
+  app.register(mcpRoutes); // /mcp — bearer-token-only MCP endpoint (see docs/specs/MCP.md)
+  app.register(consoleRoutes, { prefix: '/ws' });
+  app.register(containerConsoleRoutes, { prefix: '/ws' });
+
+  // SPA static serving — only in prod; dev hits vite on :5173. /vendor/* serves
+  // noVNC. The dist root has wildcard:false so unmatched paths fall through to
+  // setNotFoundHandler (which returns index.html for client-side routing).
+  // Dotfiles (noVNC's `.pinned` record) are build bookkeeping, never served.
+  if (!isDev && existsSync(distPath)) {
+    await registerPluginWithPublicRoutes(fastifyStatic, {
+      root: publicVendorPath,
+      prefix: '/vendor/',
+      decorateReply: false,
+      dotfiles: 'ignore',
+    });
+    await registerPluginWithPublicRoutes(fastifyStatic, {
+      root: distPath,
+      wildcard: false,
+      dotfiles: 'ignore',
+    });
+  }
+
+  await app.ready();
+  return { app, routeAccess };
 }
 
 /**
@@ -341,19 +346,51 @@ function printRouteAccessReport(routes) {
   return undeclared > 0 ? 1 : 0;
 }
 
-if (process.env.WISP_ROUTE_ACCESS_REPORT === '1') {
-  await app.ready();
-  process.exit(printRouteAccessReport(routeAccess.list()));
-}
-
-async function start() {
-  // Routing is final once the app is ready: development refuses to boot on a
-  // route without an access declaration; production enforces it as admin.
-  await app.ready();
-  checkRouteAccess(routeAccess.list(), { strict: isDev, log: app.log });
-
+/**
+ * The checks stored state must pass once the migrations have run (CODING-RULES
+ * §4): runtime.env strictly, retired keys included; wisp-config.json through
+ * the strict schema; the password file; WISP_DEFAULT_BRIDGE naming a host
+ * bridge. Throws the first problem, naming it.
+ */
+async function checkStoredConfig() {
+  checkRuntimeEnvFile(projectRoot);
+  getConfigSync();
+  checkPasswordFile();
   const bridgeProblem = await checkDefaultBridgeOverride();
   if (bridgeProblem) throw new Error(bridgeProblem);
+}
+
+/** Set once the app is built; until then a signal has nothing to close. */
+let app = null;
+
+/**
+ * The start, in order (docs/ARCHITECTURE.md, Run shape). No module reads stored
+ * state or connects when it loads, so nothing has read it before this runs:
+ * migrations first, then the strict checks, then the managers, the app and the
+ * boot work, and the port opens last.
+ */
+async function main() {
+  const log = createStartLogger();
+
+  // `npm run route-access`: every route with the level the auth hook enforces
+  // for it, then exit without migrating, connecting or listening.
+  if (process.env.WISP_ROUTE_ACCESS_REPORT === '1') {
+    configureManagers();
+    const { routeAccess } = await buildApp(log);
+    process.exit(printRouteAccessReport(routeAccess.list()));
+  }
+
+  await migrateState(log);
+  await checkStoredConfig();
+  // Before any route registers or any manager-internal code runs
+  // (lib/managerBootstrap.js), now with the strict config.
+  configureManagers();
+
+  const built = await buildApp(log);
+  app = built.app;
+  // Development refuses to boot on a route without an access declaration;
+  // production enforces it as admin.
+  checkRouteAccess(built.routeAccess.list(), { strict: isDev, log: app.log });
 
   await cleanPartialJsonArtifacts(app.log);
 
@@ -413,6 +450,12 @@ let stopMountRetry = null;
 async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
+  if (!app) {
+    // Still migrating or checking: nothing is open yet. A migration cut short
+    // runs again on the next start, whole: its ledger entry is written when it ends.
+    console.error(`Received ${signal} before the server was up, exiting`);
+    process.exit(0);
+  }
   app.log.info(`Received ${signal}, shutting down`);
   setTimeout(() => {
     console.error(`Shutdown did not finish within ${SHUTDOWN_DEADLINE_MS / 1000} s, exiting`);
@@ -457,9 +500,10 @@ function exitOnFatal(kind, err) {
 process.on('unhandledRejection', (err) => exitOnFatal('Unhandled rejection', err));
 process.on('uncaughtException', (err) => exitOnFatal('Uncaught exception', err));
 
-start().catch((err) => {
-  // Bootstrap fatal — Fastify's logger may not have flushed by the time we
-  // exit, so use stderr directly to ensure the message reaches journald.
-  console.error('Failed to start:', err);
+main().catch((err) => {
+  // Fastify's logger may not have flushed by the time we exit, so use stderr
+  // directly to ensure the message reaches journald.
+  console.error(`Failed to start: ${err.message}`);
+  if (!err.code) console.error(err.stack);
   process.exit(1);
 });
