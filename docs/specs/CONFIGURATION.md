@@ -4,7 +4,7 @@ Wisp uses **`config/`** at the project (install) root for persistent data: optio
 
 ## Deployment (install.sh)
 
-On a new server, run `./scripts/install.sh` from the unpacked release (slim zip from `scripts/package.sh`) or from a full git checkout. The script prompts for install directory (default `/opt/wisp`), server name, and initial password; runs `scripts/linux/setup/copy.sh` (replaces `frontend/`, `backend/`, `scripts/`, `systemd/` from the source tree and refreshes `config/*.example`); runs `scripts/setup-server.sh` with sudo; runs `scripts/linux/setup/config.sh` and `scripts/linux/setup/password.sh`; runs `scripts/wispctl.sh build`; and `scripts/linux/setup/permissions.sh`. Optionally installs and starts the systemd unit (`wisp.service`) on first install; if it is already present, prompts to **restart** it instead (default yes), for upgrades without reinstalling. Run as a normal user; sudo is used for install directory creation (when needed) and for `setup-server.sh`.
+On a new server, run `./scripts/install.sh` from the unpacked release tarball, or `scripts/push.sh` from a development machine ([DEPLOYMENT.md → Install](DEPLOYMENT.md#install)). It asks, before it changes anything, for the server name and the initial password when the install has none yet, and for one confirmation of the bridge when the uplink has none; it then copies the tree, runs setup (which writes the answers into `config/` and its secrets at 0600) and starts `wisp.service`, waiting until it is ready. Run as a normal user; it uses sudo once, for the rest.
 
 ## Optional `config/runtime.env`
 
@@ -17,10 +17,10 @@ If this file exists, the backend parses `KEY=value` lines (comments and blank li
 | `WISP_PORT` | `8080` | Port the Wisp server listens on (serves both API and SPA). Digits, 1–65535. |
 | `WISP_DEFAULT_BRIDGE` | (unset) | Override default bridge for new VM NICs; backend auto-detects if unset. Must name an existing host bridge, checked at startup (Linux). |
 | `GITHUB_TOKEN` | (unset) | Optional; some download flows in the backend. |
-| `WISP_POWER_SCRIPT` | (unset) | Path to `wisp-power` helper (each `*_SCRIPT` override must be an absolute path to an executable file). If unset, backend uses first existing path: `/usr/local/bin/wisp-power` (after `setup-server.sh`), then bundled `<install>/backend/scripts/wisp-power`. |
-| `WISP_DMIDECODE_SCRIPT` | (unset) | Path to RAM info helper. If unset, backend uses first existing path: `/usr/local/bin/wisp-dmidecode` (after `setup-server.sh`), then bundled `<install>/backend/scripts/wisp-dmidecode`. |
+| `WISP_POWER_SCRIPT` | (unset) | Path to `wisp-power` helper (each `*_SCRIPT` override must be an absolute path to an executable file). If unset, backend uses first existing path: `/usr/local/bin/wisp-power` (installed by setup), then bundled `<install>/backend/scripts/wisp-power`. |
+| `WISP_DMIDECODE_SCRIPT` | (unset) | Path to RAM info helper. If unset, backend uses first existing path: `/usr/local/bin/wisp-dmidecode` (installed by setup), then bundled `<install>/backend/scripts/wisp-dmidecode`. |
 | `WISP_SMARTCTL_SCRIPT` | (unset) | Path to `wisp-smartctl` helper for disk SMART. If unset: `/usr/local/bin/wisp-smartctl`, then bundled `backend/scripts/wisp-smartctl`. Same sudoers pattern as `wisp-dmidecode`. |
-| `WISP_NETNS_SCRIPT` | (unset) | Path to `wisp-netns` helper (`add`/`delete` + `ip netns`). If unset: `/usr/local/bin/wisp-netns` (installed by install-helpers, which also grants the deploy user `sudo -n`); with no helper, netns add/delete fall back to plain `ip netns` (works only when the backend runs as root). |
+| `WISP_NETNS_SCRIPT` | (unset) | Path to `wisp-netns` helper (`add`/`delete` + `ip netns`). If unset: `/usr/local/bin/wisp-netns` (installed by setup's helpers step, which also grants the deploy user `sudo -n`); with no helper, netns add/delete fall back to plain `ip netns` (works only when the backend runs as root). |
 | `WISP_CNI_SCRIPT` | (unset) | Path to `wisp-cni` helper (runs a CNI plugin with config file). If unset: `/usr/local/bin/wisp-cni`; with no helper the plugin under `/opt/cni/bin` is executed directly. Same sudoers pattern as `wisp-netns`. |
 | `WISP_CONFIG_PATH` | (unset) | Override path for `wisp-config.json`; default `<project>/config/wisp-config.json`. Absolute. |
 | `WISP_CONTAINERD_SOCK` | `/run/containerd/containerd.sock` | containerd's gRPC socket. Absolute. |
@@ -33,7 +33,7 @@ If this file exists, the backend parses `KEY=value` lines (comments and blank li
 
 Shipped template: `config/runtime.env.example` (copy to `runtime.env` if you need overrides).
 
-OS updates, SMB shares, and removable-drive mounts use **`/usr/local/bin/wisp-os-update`** and **`/usr/local/bin/wisp-mount`** when installed by `setup-server.sh` (no env vars required).
+OS updates, SMB shares, and removable-drive mounts use **`/usr/local/bin/wisp-os-update`** and **`/usr/local/bin/wisp-mount`** when installed by setup (no env vars required).
 
 ## Application Config (`config/wisp-config.json`)
 

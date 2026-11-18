@@ -362,18 +362,6 @@ tag (found in the safety-net milestone 3 review, 2026-11-18). Fix shape: both ch
 the other guards, before the bumps. **Revisit trigger:** a release cut that stops there,
 or the next work on `release.sh`.
 
-**Setup strategy: one update-safe path.** The installer (`push.sh` → `install.sh` →
-`setup-server.sh`) and the self-update (`wisp-updater`) run different setup steps, so a
-step added to setup reaches new installs but not updated ones. `common-steps.sh` is the
-seam both run today; an audit found most setup steps safe to re-run on a live update.
-Letting the updater run all of setup still needs: a `--strict` mode, because `run_step`
-always returns 0 and the updater would lose its rollback trigger; `packages.sh` non-fatal
-even under strict, since an overlapping `apt-daily-upgrade` holds the dpkg lock; and the
-packages and containerd installs consolidated. Shapes considered: an update mode for
-`setup-server.sh`, per-step metadata, re-runnable scripts, an update-hooks directory.
-**Revisit trigger:** a second drift bug ships, or a setup addition must reach existing
-installs.
-
 **Containers on macOS through Apple's `container` CLI.** A Darwin implementation of the
 containerManager facade on Apple's `container` CLI (macOS 26+, Apple Silicon), so the
 Containers tab works on a Mac: containers sit behind vmnet with no LAN IP of their own, so

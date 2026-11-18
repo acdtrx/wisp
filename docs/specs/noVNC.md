@@ -39,7 +39,7 @@ These are copies of the `core/` and `vendor/` directories from the upstream [noV
 
 ## Prebuild Step
 
-The frontend's `npm run build` runs the vendor script before `vite build`, so every build goes through it — `wispctl build` on hosts, CI and the dev machine:
+The frontend's `npm run build` runs the vendor script before `vite build`, so every build goes through it — CI and the dev machine (hosts never build: the release tarball carries the built frontend, settled 2026-11-18):
 
 ```
 bash ../scripts/vendor-novnc.sh && vite build

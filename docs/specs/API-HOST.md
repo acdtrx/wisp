@@ -281,7 +281,7 @@ Static/semi-static hardware details for the Host Overview tab. On Linux: `/proc`
 }
 ```
 
-`cpu` is null only when the host reports no logical CPUs (unusual). On macOS Tier A, `cpu.coreTypes`, `mhz`, and `cacheKb` are always `null`. `cpu.coreTypes` is `null` on Linux when hybrid core groups are unavailable; when present, `performance` and `efficiency` list logical CPU IDs from Linux sysfs (`/sys/devices/cpu_core/cpus` and `/sys/devices/cpu_atom/cpus`). `memory` is from dmidecode via `wisp-dmidecode` (installed to `/usr/local/bin` and sudoers by `setup-server.sh`, or override `WISP_DMIDECODE_SCRIPT`); empty array if the helper is missing, sudo denies, or DMI has no modules. Each element may include `formFactor`, `manufacturer`, and `voltage` (string, human-readable; `voltage` prefers Configured Voltage, else min–max from SMBIOS); fields are JSON `null` when absent.
+`cpu` is null only when the host reports no logical CPUs (unusual). On macOS Tier A, `cpu.coreTypes`, `mhz`, and `cacheKb` are always `null`. `cpu.coreTypes` is `null` on Linux when hybrid core groups are unavailable; when present, `performance` and `efficiency` list logical CPU IDs from Linux sysfs (`/sys/devices/cpu_core/cpus` and `/sys/devices/cpu_atom/cpus`). `memory` is from dmidecode via `wisp-dmidecode` (installed to `/usr/local/bin` and sudoers by setup, or override `WISP_DMIDECODE_SCRIPT`); empty array if the helper is missing, sudo denies, or DMI has no modules. Each element may include `formFactor`, `manufacturer`, and `voltage` (string, human-readable; `voltage` prefers Configured Voltage, else min–max from SMBIOS); fields are JSON `null` when absent.
 
 Each `disks[]` entry includes `rotational` (`true` = HDD, `false` = SSD-style, `null` if unknown) from `/sys/block/<name>/queue/rotational`, and `pciAddress` (PCI BDF or `null`) derived from the block device’s sysfs path so the UI can associate drives with PCI controllers. Linux disks also include `smart` summary fields from `wisp-smartctl` (`smartctl --json -a`): `supported`, `overall` (`healthy` / `warning` / `failing` / `unknown`, or `sleeping` — the disk is spun down and was not woken, so every other field is `null` and `error` is `null`), `temperatureC`, `powerOnHours` (cumulative power-on time, not I/O hours), `criticalWarning`, `lastUpdated`, and `error` (non-null when SMART is unavailable or read fails for that disk). When present: NVMe `percentageUsed` (0–255 per NVM Express; may exceed 100), `availableSpare`, `availableSpareThreshold`; ATA `reallocatedSectors`, `pendingSectors`, `offlineUncorrectableSectors` (from SMART attributes 5 / 197 / 198); `ssdLifePercentRemaining` (0–100, vendor-dependent, from attributes 231 / 202 / 233 when the normalized `value` is in range).
 
@@ -291,7 +291,7 @@ Each `disks[]` entry includes `rotational` (`true` = HDD, `false` = SSD-style, `
 
 ### POST /api/host/power/shutdown · `admin`
 
-Shut down the host. Requires `wisp-power` at `/usr/local/bin` (after `setup-server.sh`) or `WISP_POWER_SCRIPT`, plus matching sudoers.
+Shut down the host. Requires `wisp-power` at `/usr/local/bin` (installed by setup) or `WISP_POWER_SCRIPT`, plus matching sudoers.
 
 - **204:** the shutdown was started
 - **503:** `{ error, detail }` — power script not configured or privilege error

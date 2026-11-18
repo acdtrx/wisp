@@ -1,178 +1,93 @@
 # Deployment
 
-Wisp runs directly on a Linux server as a single systemd service — no Docker or containers. One Node process serves both the API and the prebuilt SPA. This document covers server setup, installation, developer workflow, packaging, and the production server architecture.
+Wisp runs directly on a Linux server as a single systemd service — never in a container. One Node process serves the API and the prebuilt SPA. This document is the contract for installing Wisp, for setup (what the install and every update run), and for a manual upgrade: what the operator runs, what is asked, and what the host looks like afterwards. How an update from the UI works is [UPDATES.md](UPDATES.md).
 
-## Deployment Overview
+## Supported hosts
 
-```mermaid
-flowchart TD
-    Setup["sudo setup-server.sh\n(one-time, as root)"]
-    Install["install.sh or wispctl.sh build\n(as deploy user)"]
-    Service["systemd service\nwisp.service"]
-    Access["Browser → http://host:8080"]
+(settled 2026-11-18)
 
-    Setup --> Install --> Service --> Access
-```
+- **Debian or Ubuntu** (or a derivative that names one of them in `ID_LIKE`) with **systemd 254 or newer** (Debian 13, Ubuntu 24.04 and later; read from `systemctl --version`, not from the release number: the unit's restart backoff needs it). Arch Linux is dropped as a host; it stays as a guest.
+- **The network run by netplan, NetworkManager or systemd-networkd**, and an **IPv4 default route**: its interface is the uplink.
+- **A bridge on the uplink**, which every VM and container joins. When the uplink already is a bridge, setup uses it and changes nothing in the network. Otherwise setup makes `br0` on it, for one shape of uplink (settled 2026-11-18): **a plain Ethernet interface, on DHCP or with a static address set through the host's network tool, defined on its own**. For any other shape the operator makes the bridge with the host's own tool, and setup then uses it.
 
-### Script and unit layout (repo)
+Every refusal comes before setup or the installer changes anything, and names what was found:
 
-- **`scripts/install.sh`**, **`scripts/setup-server.sh`**, and **`scripts/wispctl.sh`** are thin wrappers that `exec` the Linux implementations under **`scripts/linux/`**.
-- Server setup sub-scripts live in **`scripts/linux/setup/`**.
-- Systemd unit templates live in **`systemd/linux/`** (copied into the install tree as `systemd/linux/*.service`).
+| Refused | What the operator does |
+|---|---|
+| Another distro, or systemd older than 254 | Use a supported host. |
+| No IPv4 default route | Give the host one. |
+| The uplink run by none of the three tools; run by ifupdown (`/etc/network/interfaces`); up through something other than a NetworkManager profile ("connected (externally)") | Run it with netplan, NetworkManager or systemd-networkd. |
+| cloud-init still manages the network (installed, not switched off, and its configuration does not say `network: {config: disabled}`) | Add the one documented line `network: {config: disabled}` in a file under `/etc/cloud/cloud.cfg.d/`. Nothing else: the netplan file cloud-init wrote is then the operator's, and setup edits it like any other (settled 2026-11-18). |
+| A bond, a VLAN, Wi-Fi, a tunnel, or a definition that matches more than the uplink (a wildcard, another hardware address, a driver) | Make the bridge with the host's tool. |
+| A setting setup does not carry over: netplan `critical`, a key outside layer 3 and the link settings, a definition the uplink's file shares with another netplan file; a networkd section or `[Network]` setting that ties the link to another device, or a pinned IAID; a NetworkManager 802.1X or controller setting, or a NetworkManager without `nmcli --offline` (before 1.44) | Make the bridge with the host's tool. |
+| A `br0` that exists but does not carry the uplink; NetworkManager connections already named `br0` or `br0-port-<uplink>` while no bridge is in use | Remove them, or bring up the bridge they belong to. |
+| Another DNS server on port 53 of `169.254.53.53` or of every IPv4 address (`0.0.0.0`, `*`, or a wildcard bound to one device) | Bind it to the addresses it serves. `[::]:53` (IPv6 only) is no conflict. |
+| A bridge step that did not finish left a journal whose files or connections were changed since by someone else | Put each back as the step wrote it or as it was, or remove the journal once the network is as wanted. |
 
-## Supported Linux Distributions
+## Install
 
-Wisp hosts run **Debian or Ubuntu** (or a derivative that names one of them in `ID_LIKE`) with **systemd 254 or newer** (Debian 13, Ubuntu 24.04 and later; read from `systemctl --version`, settled 2026-11-18). Setup and the installer check `/etc/os-release` first (`scripts/linux/setup/distro.sh`) and refuse any other distro before they change anything (settled 2026-11-18: Arch Linux hosts dropped).
-
-## Server Prerequisites (`setup-server.sh`)
-
-One-time server preparation script. Run as root with `sudo`. Safe to re-run. It orchestrates sub-scripts in `scripts/linux/setup/`; each step runs independently so a single failure does not skip remaining steps. Failed steps are reported at the end. Each sub-script can also be run standalone for debugging or partial re-runs (see [Setup sub-scripts](#setup-sub-scripts)).
-
-### What it does
-
-1. **Detects deploy user** from `$SUDO_USER`
-
-2. **Runs `scripts/linux/setup/packages.sh`** — Detects distro and installs Node.js 24+ and system packages:
-
-   **Debian/Ubuntu** — Node.js from NodeSource's **GPG-signed apt repo** (key pinned under `/etc/apt/keyrings/nodesource.gpg`, so apt verifies package signatures — the setup script is not piped into root `bash`); packages:
-   - `qemu-system-x86` — KVM hypervisor (the old `qemu-kvm` transitional package was dropped in Ubuntu 24.04)
-   - `libvirt-daemon-system` — libvirt daemon
-   - `libvirt-clients` — CLI tools (virsh)
-   - `libvirt-dbus` — DBus interface for libvirt (required by the app)
-   - `ovmf` — UEFI firmware
-   - `swtpm`, `swtpm-tools` — Software TPM
-   - `avahi-daemon` — mDNS daemon for Local DNS registrations
-   - `hwdata` — PCI and USB ID databases (`/usr/share/hwdata/pci.ids`, `usb.ids`); used by Host Overview PCI naming and host USB product-name fallback (Wisp reads these files only; it does not invoke `lspci` or `lsusb`)
-   - `smartmontools` — `smartctl` backend for disk SMART summary reads (`wisp-smartctl` helper)
-   - `cloud-image-utils` — cloud-init ISO generation
-   - `genisoimage` — fallback ISO generation
-   - `qemu-utils` — disk operations (qemu-img)
-
-3. **Runs `scripts/linux/setup/groups.sh`** — Adds deploy user to groups: `libvirt`, `kvm`, `input`; chmod `/dev/kvm`
-
-4. **Runs `scripts/linux/setup/dirs.sh`** — Creates directories with permissions:
-   | Path | Owner | Mode |
-   |------|-------|------|
-   | `/var/lib/wisp/images` | `$USER:libvirt` | `0775` |
-   | `/var/lib/wisp/vms` | `$USER:libvirt` | `0775` |
-   | `/var/lib/wisp/backups` | `$USER:libvirt` | `0775` |
-   | `/var/lib/wisp/containers` | `$USER:libvirt` | `0775` |
-   | `/mnt/wisp/smb` | `$USER:libvirt` | `0775` |
-
-5. **Runs `scripts/linux/setup/libvirt.sh`** — Enables libvirt and `virtlogd`; disables libvirt default NAT network. On Debian/Ubuntu (including 26.04, which ships libvirt 12) the script enables the monolithic `libvirtd.service`. Where the packaging ships modular libvirt daemons it socket-activates `virtqemud`, `virtnetworkd`, `virtstoraged`, `virtnodedevd`, `virtsecretd`, `virtproxyd`, `virtinterfaced`, `virtnwfilterd` instead — `virtproxyd.socket` provides the legacy `/var/run/libvirt/libvirt-sock` path that libvirt-dbus and the sanity check expect.
-
-6. **Optionally runs `scripts/linux/setup/bridge.sh`** — Bridged networking (br0). Skipped when `--skip-bridge` is passed (e.g. from `install.sh`, which offers bridge at end of install).
-
-7. **Runs `scripts/linux/setup/containerd.sh`** — Installs containerd 2.0+ (from the official Docker apt repo). The Docker repo is picked from `/etc/os-release`: `linux/ubuntu` when `ID`/`ID_LIKE` names Ubuntu (derivatives such as Mint and Pop!_OS use `UBUNTU_CODENAME`), otherwise `linux/debian` with `DEBIAN_CODENAME` or `VERSION_CODENAME`. If `apt-get update` fails with the repo added, the script removes `/etc/apt/sources.list.d/docker.list` again and exits with an error, so a release Docker does not publish never leaves apt broken host-wide. It then creates a `containerd` system group, adds the deploy user to it, configures the socket `gid` in `/etc/containerd/config.toml` so the deploy user can connect, enables the service, creates the `wisp` namespace
-
-8. **Runs `scripts/linux/setup/cni.sh`** — Installs CNI plugins (bridge, dhcp, etc.) to `/opt/cni/bin/`, removes any legacy `10-wisp-macvlan.conflist`, and **overwrites** `/etc/cni/net.d/10-wisp-bridge.conflist` each time with the default-route Linux bridge as the `bridge` master (aborts if that interface is not an existing bridge — run `bridge.sh` first). Enables the `cni-dhcp` systemd service for DHCP IPAM.
-
-9. **Runs `scripts/linux/setup/sanity.sh`** — Verifies virsh, /dev/kvm, libvirt socket, org.libvirt DBus service
-
-10. **Runs `scripts/linux/setup/common-steps.sh`** — the steps `wisp-updater` also runs on every self-update, in order:
-    - `container-dns.sh` (see the sub-scripts table below);
-    - `avahi.sh` (see the sub-scripts table below);
-    - `install-helpers.sh` — copies each `backend/scripts/wisp-*` helper to `/usr/local/bin` and refreshes `/etc/sudoers.d/*` (via `helper.sh`). Idempotent and safe to re-run on every upgrade. See [Privileged helpers checklist](#privileged-helpers-checklist) when adding a new helper.
-
-11. **Runs `scripts/linux/setup/rapl.sh`** — Optionally grants deploy user read access to Intel RAPL (`/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj`) so the app can show CPU power in Host Overview when running as the deploy user. Creates group `wisp-power`, adds the deploy user to it, and installs a udev rule (`/etc/udev/rules.d/99-wisp-rapl.rules`) that runs `chgrp`/`chmod g+r` on the RAPL `energy_uj` file each time the powercap device appears, and applies it once immediately. Always the udev rule, never a direct `setfacl`/`chmod`: sysfs attributes are recreated on every boot, so permissions set on the file itself are lost at reboot (settled 2026-10-16). `wisp.service` picks up the group on its next start; an interactive shell needs a fresh login (or `newgrp wisp-power`). Skipped if the path does not exist (e.g. VM or non-Intel).
-
-### Post-setup
-
-Group changes (e.g. `libvirt`, `containerd`, `wisp-power`) require logging out and back in (or `newgrp <group>`).
-
-### Setup sub-scripts (`scripts/linux/setup/`)
-
-Server setup and install logic is split into standalone scripts under `scripts/linux/setup/`. Each can be run directly for debugging or to re-run a single step:
-
-| Script | Run as | Purpose |
-|--------|--------|---------|
-| `packages.sh` | root | Node.js 24+, QEMU/KVM/libvirt stack |
-| `groups.sh <user>` | root | Add user to libvirt/kvm/input; chmod /dev/kvm |
-| `dirs.sh <user>` | root | Create /var/lib/wisp/*, /mnt/wisp/smb |
-| `libvirt.sh` | root | Enable modular libvirt daemons (virtqemud + sidecars) or monolithic `libvirtd`; enable `virtlogd`; disable default NAT |
-| `sanity.sh` | root or libvirt user | Verify virsh, /dev/kvm, socket, DBus |
-| `helper.sh <src> <basename> <user> [pkg...]` | root | Copy one script to `/usr/local/bin/<basename>` + sudoers (used by `install-helpers.sh`) |
-| `install-helpers.sh <project-root> <user>` | root | Install or **refresh** all `wisp-*` helpers from the install tree → `/usr/local/bin` |
-| `common-steps.sh <project-root> <user>` | root | Steps shared by install and self-update: `container-dns.sh`, `avahi.sh`, `install-helpers.sh` |
-| `rapl.sh <user>` | root | Intel RAPL read access for Host Overview |
-| `containerd.sh [user]` | root | Install containerd 2.0+, socket group perms, wisp namespace |
-| `cni.sh` | root | CNI plugins (bridge, dhcp); **overwrites** `10-wisp-bridge.conflist`; DHCP daemon |
-| `bridge.sh` | root | Create br0 on primary NIC (netplan / nmcli / systemd-networkd) |
-| `container-dns.sh` | root | Hold link-local `169.254.53.53/32` (the bind address for Wisp's in-process DNS forwarder) on the dedicated dummy interface `wisp-dns0` — declared to systemd-networkd (`/etc/systemd/network/10-wisp-dns0.{netdev,network}`), brought up for this boot, and re-asserted by `wisp.service` `ExecStartPre` — and write `/var/lib/wisp/container-resolv.conf` for bind-mounting into containers. Never on br0 (see [CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns)); does not need br0 to exist, so a fresh install that adds the bridge last still gets container DNS. Part of `common-steps.sh`, so it re-runs on every self-update. |
-| `avahi.sh` | root | Set `publish-aaaa-on-ipv4=no` in `/etc/avahi/avahi-daemon.conf` (in place, the rest of the distro file untouched) and restart avahi-daemon only when that changed the file — see [CONTAINERS.md → Host name conflicts on address churn](CONTAINERS.md#publishing-avahi-daemon-via-dbus). Skipped when avahi is not installed. Part of `common-steps.sh`, so it re-runs on every self-update. |
-| `copy.sh <source-dir> <install-dir>` | user | Replace `frontend/`, `backend/`, `scripts/`, `systemd/`; refresh `config/*.example` |
-| `config.sh <install-dir> [server-name]` | user | `config/wisp-config.json` from example + serverName |
-| `password.sh <install-dir> [--force]` | user | `config/wisp-password` (scrypt hash) |
-| `permissions.sh <install-dir>` | user | chmod secrets and scripts |
-
-Example: `sudo scripts/linux/setup/sanity.sh` or `scripts/linux/setup/password.sh /opt/wisp --force`.
-
-## Installation (`install.sh`)
-
-Run as the deploy user from the unpacked release root (or repo root).
+As the user Wisp will run as (not root), with sudo, on the host — from a release tarball:
 
 ```
-./scripts/install.sh [install-dir] [--restart-svc]
+tar -xzf wisp-<version>.tar.gz
+cd wisp
+./scripts/install.sh [install-dir] [--server-name NAME]
 ```
 
-| Argument | Description |
-|----------|-------------|
-| `install-dir` | Target directory. If omitted, prompts interactively (default `/opt/wisp`). |
-| `--restart-svc` | Auto-restart (or install+start) systemd services without prompting. Also skips the bridged-networking prompt. |
+or from a development machine, which stages the same release-shaped tarball (`scripts/stage-release.sh`) and runs that installer on the host: `scripts/push.sh user@host /opt/wisp`. Hosts never build: the tarball carries the prebuilt frontend. A fresh host needs only ssh, sudo and `tar`. The install directory defaults to `/opt/wisp`; it must be missing, empty, or a Wisp install already.
 
-Steps: prompts for install directory (unless provided as arg), runs `scripts/linux/setup/copy.sh`, then `sudo setup-server.sh --skip-bridge`, then `config.sh`, `password.sh`, `wispctl.sh build`, and `permissions.sh`. For systemd: if `wisp.service` is not yet installed, optionally installs and starts it; if it already exists (e.g. upgrade), prompts to **restart** it instead (default yes) — unless `--restart-svc` is set, which does it automatically. Optionally offers bridged networking (`scripts/linux/setup/bridge.sh`) in interactive mode only.
+What is asked, all before anything changes (settled 2026-11-18):
 
-1. **Copy and server setup:** `copy.sh` then `sudo setup-server.sh`
-2. **Config and password:** `config.sh`, `password.sh`
-3. **Build:** `wispctl.sh build`
-4. **Permissions:** `permissions.sh`
-5. **Service:** re-template the unit and restart it (or start it on a first install); the backend runs its pending state migrations as it starts ([UPDATES.md → State migrations](UPDATES.md#state-migrations)).
-6. **Optional:** bridged networking (interactive only)
+1. sudo's password, once.
+2. `Server name [<hostname>]:` and `Wisp password:` / `Confirm password:` (at least 6 characters, not `changeme`) — only when the install has none yet.
+3. Only when the uplink has no bridge: `Create br0 on <uplink> (<address>), keeping its address? The connection may pause while it is applied. [Y/n]`. Declined, the install stops with "Wisp needs a bridge: make one on <uplink> with the host's network tool, or let setup make it. Nothing was changed."
 
-**Prompts live in `install.sh`.** Ask the operator (install directory, server name, password, bridge, service restart) only from `install.sh` and the setup scripts it calls itself; keep `setup-server.sh --skip-bridge`, which `install.sh` runs, free of prompts, so the interactive boundary stays in one script.
+With no terminal on stdin, the password (when needed) is one line on stdin, the server name comes from `--server-name` and defaults to the host name, and the bridge is made without asking. Then the install works to the end unattended, in a process of its own that ignores a hangup: it copies the tree, runs [setup](#setup) — which works its plan out again and stops before any change if the network changed since the question — and starts Wisp, waiting until it is ready. It writes to a log, `/tmp/wisp-install.<id>.log`, which the installer follows: removed when the install succeeds, kept and named when it fails. A dropped connection or Ctrl-C stops only the following.
 
-## `wispctl.sh helpers` (after upgrade)
+One install, update or setup runs at a time: each takes `/run/wisp.lock` for its whole run.
 
-On Linux, from the install directory:
-
-```bash
-./scripts/wispctl.sh helpers
-```
-
-Runs `sudo scripts/linux/setup/install-helpers.sh` with the current user as deploy user. Use after pulling or copying a new app version so `/usr/local/bin/wisp-*` matches `backend/scripts/` (sudoers entries are rewritten; same paths, updated script bodies).
-
-## Build Process (`wispctl.sh build`)
-
-1. **Optional `config/runtime.env`** — not required; defaults apply for ports if absent
-2. **Backend:** `npm ci --omit=dev --omit=optional` in `backend/` (deterministic install from lock file)
-3. **Frontend:** `npm install && npm run build` in `frontend/` — the build first runs `vendor-novnc.sh` → `frontend/public/vendor/novnc/` (the pinned noVNC)
-
-## Running the App
-
-### Local (non-systemd)
+## Setup
 
 ```
-wispctl.sh local start      # Start the Wisp process
-wispctl.sh local stop       # Stop it
-wispctl.sh local restart    # Stop then start
-wispctl.sh local status     # Show running state
-wispctl.sh local logs       # Follow log
-wispctl.sh local tail [n]   # Show last n lines
+sudo <install-dir>/scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>
 ```
 
-Local mode runs the Wisp process as a `nohup` background process. PID is stored in `.pids/wisp.pid`, log in `.logs/wisp.log`.
+The one list of steps the install and every update run, by path from the install tree (settled 2026-11-18). Every step checks first and changes only what is missing: a second run reports every step in place, starts no package manager and changes no file it owns. A step that fails stops the run with a non-zero exit and its name. A stop (TERM, INT) is passed to the step running, which ends — the bridge step undoing itself — and the run then ends.
 
-### Systemd (production)
+Afterwards the host has: the packages Wisp uses (Node.js 24 and containerd 2 from their vendors' signed apt repos); the deploy user in the libvirt, kvm, input and containerd groups; Wisp's directories under `/var/lib/wisp` and `/mnt/wisp`; libvirt with its default NAT network not autostarting; containerd with Wisp's namespace; the CNI plugins and a bridge config for the uplink's bridge, with `cni-dhcp.service`; the container DNS stub (below); avahi with `publish-aaaa-on-ipv4=no`; the privileged `wisp-*` helpers and their sudoers rules; `wisp.service` rendered and enabled; the backend's dependencies; the install's answers, with `config/` secrets at 0600; and the bridge, made last.
+
+**The container DNS stub** (`wisp-dns0`, `169.254.53.53/32`) is declared through the daemon that runs the links — systemd-networkd's own files (also on netplan hosts), or a NetworkManager dummy connection — so it exists at every boot before Wisp starts, with nothing of Wisp's creating it; `wisp.service` has no `ExecStartPre`. [CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns).
+
+## The bridge
+
+(settled 2026-11-18)
+
+**It keeps the host's address.** `br0` takes the uplink's hardware address and its whole layer 3 — on DHCP its client identifier, so the DHCP server hands it the same lease; on a static address its addresses, routes, gateways, name servers and search domains — and the uplink becomes its port with no addressing of its own; its link settings (MTU, offloads, wake-on-LAN) stay on it. The bridge keeps the IPv4 address. Addresses the host gets by DHCPv6 or from router advertisements can change: the DHCPv6 identity is pinned only where the tool has a key for it (networkd's IAID, on netplan and networkd hosts).
+
+Per tool, through the tool:
+
+- **netplan**: the operator's file that defines the uplink, edited with `netplan set` (which rewrites it whole: comments and key order are not kept) and checked as a whole by netplan in a staged copy of `/lib`, `/etc` and `/run/netplan`; what was checked goes live by one rename. For a DUID identity, a networkd drop-in on netplan's unit for the bridge pins the IAID.
+- **systemd-networkd**: `00-wisp-br0.netdev` and `00-wisp-br0.network` (the uplink's file's settings but `[Match]`; what the boot waits for, `RequiredForOnline=`, goes with the address), and `00-wisp-br0-port.network`, which makes the uplink the port and sorts before its own file, which is not changed.
+- **NetworkManager**: a bridge connection and a port connection, checked offline by `nmcli` first. The uplink's own connection is not changed; the port's autoconnect priority is above it, so a boot brings up the bridge. NetworkManager's default wired connection, held in memory, is a supported uplink. To re-apply the bridge, use `nmcli device reapply br0`: `nmcli connection up br0` on the active bridge detaches every container's and VM's port from it.
+
+**Checked before, verified after, undone on failure.** Within 90 s after the apply the bridge must hold the uplink's hardware address, IPv4 addresses and default route, and on DHCP its client identifier and name servers, on a static address all its routes, name servers and search domains; the uplink must hold none of it. Every step of the apply and of its undo leaves a network that boots, old or new. Before each change the bridge step records it in a journal, `/var/lib/wisp/bridge-journal`; if the check fails or the step is stopped, it undoes from the journal, in reverse, and fails saying so. A step that died leaves the journal, and the next run decides from it before anything else, changing nothing while it decides: a step that in fact finished is recorded as done, one that changed nothing is dropped, one caught half way is undone, and one whose files or connections someone changed since is refused (see the table above).
+
+**The originals are kept**: the operator's network files the step was made from, in `/var/lib/wisp/network-before-bridge`, named by their path; the step says so when it kept any.
+
+**An update makes the bridge on a host that has none** — a host installed before setup made bridges — through the same step, from `wisp-updater.service`, so the update goes on while the address moves to the bridge, and completes and reports done.
+
+## Manual upgrade
+
+Run the new release's installer over the install: from its tarball (`./scripts/install.sh <install-dir>`) or with `scripts/push.sh`. It asks nothing that the install already has, runs setup and restarts Wisp. There is no "git checkout on the server" path (settled 2026-11-18).
+
+## Operating Wisp
 
 ```
-wispctl.sh svc install      # Install and enable wisp.service
-wispctl.sh svc start        # Start via systemd
-wispctl.sh svc stop         # Stop via systemd
-wispctl.sh svc restart      # Restart
-wispctl.sh svc logs         # journalctl -u wisp -f
-wispctl.sh svc uninstall    # Remove unit
-wispctl.sh password [--force]   # Set or reset config/wisp-password
+<install-dir>/scripts/wispctl.sh svc start|stop|restart|logs   # wisp.service through systemd
+<install-dir>/scripts/wispctl.sh password --force              # set a new password
 ```
+
+`svc start` and `svc restart` wait until the backend is ready, and on a failure print its last log lines.
 
 ## Systemd Service Unit
 
@@ -193,7 +108,6 @@ TimeoutStartSec=15min
 User=WISP_USER
 WorkingDirectory=WISP_PATH/backend
 EnvironmentFile=-WISP_PATH/config/runtime.env
-ExecStartPre=+/bin/sh -c '...ensures wisp-dns0 exists, is up, and holds 169.254.53.53/32...'
 ExecStart=/usr/bin/node src/index.js
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=on-failure
@@ -220,11 +134,7 @@ In production, the same Node process serves the prebuilt SPA from `frontend/dist
 
 ### Placeholder substitution
 
-During `svc install`, `wispctl.sh` substitutes `WISP_USER` and `WISP_PATH` into `systemd/linux/wisp.service`, which is installed as `/etc/systemd/system/wisp.service`.
-
-#### Troubleshooting: `svc install` exits early; `Unit … not found`
-
-`config/runtime.env` is optional (systemd uses `EnvironmentFile=-…`). An older `wispctl.sh` could exit with `set -e` before printing `=== Installing systemd unit ===` when `runtime.env` was missing (bare `return` after a failed `[[ -f … ]]` test inherited a non-zero status). **Fix:** use current `scripts/wispctl.sh` (`normalize_runtime_env` uses `return 0` when the file is absent). Otherwise verify `sudo` works and `/opt/wisp/systemd/linux/wisp.service` exists.
+Setup's `service-unit` step substitutes `WISP_USER` and `WISP_PATH` into `systemd/linux/wisp.service`, installs it as `/etc/systemd/system/wisp.service` and enables it.
 
 ## Developer Workflow
 
@@ -240,32 +150,8 @@ Backend enables CORS for `localhost:5173` when `NODE_ENV=development`.
 
 On macOS, the backend starts without connecting to libvirt (dev mode) — VM operations are unavailable but the server starts.
 
-### Push deploy (`push.sh`)
+## Releases (maintainers)
 
-Package and deploy to a remote server:
-
-```
-./scripts/push.sh user@server-ip /remote/path [--restart-svc]
-```
-
-1. **Package** — runs `scripts/package.sh` to create `build/wisp-<version>.zip`
-2. **Upload** — `scp` the zip to `/tmp` on the remote server
-3. **Remote install** — SSH into the server, unzip to `/tmp/wisp-update`, run `scripts/install.sh <remote-path> [--restart-svc]`
-4. **Cleanup** — removes the staging directory and zip from `/tmp`
-
-Pass `--restart-svc` to auto-restart systemd services after install (no interactive prompts on the server).
-
-## Updating the app (after install)
-
-The recommended path is **self-update from the UI** — Host → Software → Wisp Update. Wisp polls GitHub Releases hourly, surfaces a badge on the Software tab when a new tag is published, and downloads + verifies + atomic-swaps the new tarball via `wisp-updater.service` (a `Type=oneshot` systemd unit triggered by the backend). See [UPDATES.md](UPDATES.md) for the pipeline, API, and rollback semantics.
-
-Manual paths remain supported:
-
-- From a **full git checkout** on the server: pull, then **`./scripts/wispctl.sh helpers`** (refreshes `/usr/local/bin` privileged scripts), then `./scripts/wispctl.sh build` and restart (`svc restart` or `local restart`).
-- From a **release tarball** (the same artifact the self-updater pulls from GitHub): extract over a working directory, then `./scripts/install.sh <path> --restart-svc` — `install.sh` auto-detects the prebuilt `frontend/dist/` and skips the frontend build.
-- From a **slim zip** install: unpack/replace app dirs while preserving `config/`, then run **`sudo <install>/scripts/linux/setup/install-helpers.sh <install> <deploy-user>`** (or `wispctl helpers` from `<install>`), then `wispctl.sh build` and restart. Skipping `helpers` after an upgrade can leave stale `wisp-*` shims on the host.
-
-### Cutting a release (maintainers)
 
 ```bash
 # Edit CHANGELOG.md (add a new "## YYYY-MM-DD" section at the top), do NOT commit it.
@@ -277,25 +163,6 @@ git push && git push origin v1.0.6
 
 The `v1.0.6` tag triggers `.github/workflows/release.yml`, which runs `npm run check` (a failure stops it before anything is published), builds the frontend, packages `wisp-1.0.6.tar.gz` (with prebuilt `frontend/dist/`) plus a `.sha256`, extracts the matching CHANGELOG section as release notes, and creates the GitHub Release. Tags shaped `v*-*` (e.g. `v1.0.6-rc.1`) are published as prereleases — these are not surfaced by the in-app auto-checker (GitHub's `releases/latest` endpoint excludes prereleases).
 
-### Push from a dev machine (`push.sh`)
-
-```bash
-./scripts/push.sh user@server-ip /opt/wisp --restart-svc
-```
-
-Packages the project into a zip, uploads it to the server, unzips to a staging directory, and runs `install.sh` with the target path. With `--restart-svc`, systemd services are restarted automatically. Without it, `install.sh` prompts interactively on the server.
-
-## Packaging (`package.sh`)
-
-```
-./scripts/package.sh
-```
-
-1. Reads version from `frontend/package.json`
-2. Writes `build/wisp-<version>.zip` containing **only** `frontend/`, `backend/`, `scripts/`, `systemd/`, and `config/*.example` files (no docs, no root `.env`).
-
-On the server: unzip, then `./scripts/install.sh` (runs `setup-server.sh` with sudo as part of the flow).
-
 ## Helper Scripts
 
 ### Privileged helpers checklist (maintainers)
@@ -305,7 +172,7 @@ When you add a new **`backend/scripts/wisp-*`** script that the app runs via **`
 1. **Register it** in **`scripts/linux/setup/install-helpers.sh`** (one `helper.sh` invocation; add apt packages as extra args if needed).
 2. **Backend** — Prefer **`/usr/local/bin/<name>`** first, then bundled `backend/scripts/`, with an optional env override (match `host/linux/osUpdates.js` / `host/linux/hostPower.js` / `host/linux/hostHardware.js` patterns). A bundled fallback is exec'd directly (as root; `sudo -n` only matches the installed path), so commit the script executable (`git update-index --chmod=+x`), and resolve the path from the module's own location to `backend/scripts/` — `npm run check-imports` flags a `resolve(__dirname, …)` target that doesn't exist.
 3. **Docs** — `docs/specs/DEPLOYMENT.md` (this section), `docs/specs/API-<AREA>.md` / `CONFIGURATION.md` as appropriate; the CLI tools inventory in `docs/TECH-STACK.md`; the **shell-exec allowlist in `docs/CODING-RULES.md` §7**.
-4. **Install / upgrade** — Covered automatically if step 1 is done (`setup-server.sh`, **`wispctl.sh helpers`**, **`push.sh`** all invoke `install-helpers.sh`).
+4. **Install / upgrade** — Covered automatically if step 1 is done: setup's `helpers` step runs `install-helpers.sh` on every install and update.
 
 ### `wisp-os-update` (installed to `/usr/local/bin/`)
 
@@ -323,12 +190,12 @@ Non-interactivity and the conffile policy are part of the OS Updates contract in
 | `wisp-os-update list` | Sync package DB, print `PKG<TAB>name<TAB>from<TAB>to` lines plus `TOTAL <bytes>` (the op the backend uses for check and list) |
 | `wisp-os-update upgrade` | Sync package DB and perform a full non-interactive upgrade |
 
-The backend invokes **`/usr/local/bin/wisp-os-update`** only. `install-helpers.sh` (via `setup-server.sh` or `wispctl helpers`) installs it and configures sudoers. If the file is missing, OS update APIs return 503.
+The backend invokes **`/usr/local/bin/wisp-os-update`** only. Setup's `helpers` step installs it and configures sudoers. If the file is missing, OS update APIs return 503.
 
 #### Troubleshooting: OS update check not working
 
 1. **Backend logs** — 503 responses include `detail` (often sudo/package manager stderr).
-2. **Path** — Confirm `/usr/local/bin/wisp-os-update` exists and `setup-server.sh` completed the helper step.
+2. **Path** — Confirm `/usr/local/bin/wisp-os-update` exists and setup completed its `helpers` step.
 3. **Privilege** — `/etc/sudoers.d/wisp-os-update` should allow: `<deploy_user> ALL=(root) NOPASSWD: /usr/local/bin/wisp-os-update`. Test: `sudo -n /usr/local/bin/wisp-os-update check`.
 4. **Package manager** — Network and apt sources must work.
 
@@ -353,21 +220,21 @@ Requires `cifs-utils`. The backend writes a temp config file (mode `0600`) per o
 
 Reads SMBIOS memory devices (`dmidecode --type 17`) and prints JSON for Host Overview RAM modules. Invoked via `sudo -n` as the deploy user.
 
-The backend tries **`/usr/local/bin/wisp-dmidecode`** first (after server setup), then the bundled script under `backend/scripts/` if `WISP_DMIDECODE_SCRIPT` is unset. `setup-server.sh` installs the helper, installs the `dmidecode` package, and adds `/etc/sudoers.d/wisp-dmidecode` so `sudo -n /usr/local/bin/wisp-dmidecode` succeeds.
+The backend tries **`/usr/local/bin/wisp-dmidecode`** first (after server setup), then the bundled script under `backend/scripts/` if `WISP_DMIDECODE_SCRIPT` is unset. Setup installs the helper, installs the `dmidecode` package, and adds `/etc/sudoers.d/wisp-dmidecode` so `sudo -n /usr/local/bin/wisp-dmidecode` succeeds.
 
 If the array is empty in the API: helper missing, sudoers not configured, `dmidecode` unavailable, or a VM/guest with no useful DMI (expected).
 
 #### Troubleshooting: RAM modules not listed
 
 1. **Test** — As deploy user: `sudo -n /usr/local/bin/wisp-dmidecode` should print JSON `[...]`. Compare with **`dmidecode --type 17`** (not the full `dmidecode` dump): each populated slot should have a numeric **Size** line (`MB`/`MiB`/`GB`/`GiB`).
-2. **Re-run setup** — `sudo scripts/setup-server.sh` or **`./scripts/wispctl.sh helpers`** so `/usr/local/bin/wisp-dmidecode` matches the version in `backend/scripts/`.
+2. **Re-run setup** ([Setup](#setup)) so `/usr/local/bin/wisp-dmidecode` matches the version in `backend/scripts/`.
 3. **DMI** — Some environments expose no DIMM entries; live usage stats still come from `/proc`.
 
 ### `wisp-smartctl` (installed to `/usr/local/bin/`)
 
 Reads per-disk SMART summaries for `GET /api/host/hardware` by running `smartctl --json -a /dev/<disk>` and returning JSON to the backend. Invoked via `sudo -n` as the deploy user.
 
-The backend tries **`/usr/local/bin/wisp-smartctl`** first (after server setup), then the bundled script under `backend/scripts/` if `WISP_SMARTCTL_SCRIPT` is unset. `setup-server.sh` installs the helper and `/etc/sudoers.d/wisp-smartctl`; package install ensures `smartmontools` is present.
+The backend tries **`/usr/local/bin/wisp-smartctl`** first (after server setup), then the bundled script under `backend/scripts/` if `WISP_SMARTCTL_SCRIPT` is unset. Setup installs the helper and `/etc/sudoers.d/wisp-smartctl`; package install ensures `smartmontools` is present.
 
 If SMART fields are unavailable in the API for a disk, the backend keeps the disk row and returns `smart.supported: false` with a per-disk `smart.error`.
 
@@ -375,7 +242,7 @@ If SMART fields are unavailable in the API for a disk, the backend keeps the dis
 
 Runs `shutdown -h now` or `shutdown -r now` for Host panel power actions. Invoked via `sudo -n` as the deploy user.
 
-The backend tries **`/usr/local/bin/wisp-power`** first, then the bundled `backend/scripts/wisp-power`, unless `WISP_POWER_SCRIPT` is set. `setup-server.sh` installs the helper and `/etc/sudoers.d/wisp-power`.
+The backend tries **`/usr/local/bin/wisp-power`** first, then the bundled `backend/scripts/wisp-power`, unless `WISP_POWER_SCRIPT` is set. Setup installs the helper and `/etc/sudoers.d/wisp-power`.
 
 **Troubleshooting:** As deploy user, `sudo -n /usr/local/bin/wisp-power` should print usage and exit 1 if sudoers allow the script (do not pass `shutdown`/`reboot` except on a host you intend to power off). Confirm `/etc/sudoers.d/wisp-power`: `<deploy_user> ALL=(root) NOPASSWD: /usr/local/bin/wisp-power`.
 
@@ -402,7 +269,7 @@ Creates or removes a network namespace under `/var/run/netns/<name>` using `mkdi
 | `ipv4 <name> [ifname]` | Print `ip -4 addr show dev <ifname>` inside the netns (default `eth0`). Used to persist DHCP-assigned addresses when the CNI ADD result has no `ips[]`. |
 | `route-add <name> <ifname> <ipv4>` | `ip -n <name> route replace <ipv4>/32 dev <ifname>` — installs an on-link /32 route inside the container's netns so Wisp's DNS forwarder stub IP (`169.254.53.53`) is reachable via the veth instead of being sent to the LAN gateway and black-holed. |
 
-**Troubleshooting:** `EACCES` on `mkdir '/var/run/netns'` in backend logs → helpers not installed or sudoers missing. Run **`sudo ./scripts/linux/setup/install-helpers.sh <project-root> <deploy-user>`** or **`./scripts/wispctl.sh helpers`**. Test: `sudo -n /usr/local/bin/wisp-netns add wisp-netns-test` then `sudo -n /usr/local/bin/wisp-netns delete wisp-netns-test`. After upgrading Wisp, re-run install-helpers so **`wisp-netns ipv4`** and **`wisp-netns route-add`** exist; otherwise container **network IP** may stay blank or `.local` resolution from containers on br0 fails.
+**Troubleshooting:** `EACCES` on `mkdir '/var/run/netns'` in backend logs → helpers not installed or sudoers missing. Run [setup](#setup). Test: `sudo -n /usr/local/bin/wisp-netns add wisp-netns-test` then `sudo -n /usr/local/bin/wisp-netns delete wisp-netns-test`. Every install and update reinstalls the helpers (setup's `helpers` step), so **`wisp-netns ipv4`** and **`wisp-netns route-add`** always match the backend.
 
 ### `wisp-cni` (installed to `/usr/local/bin/`)
 
@@ -447,7 +314,7 @@ Atomic-swap applier for the Wisp self-update pipeline. Not invoked directly — 
 
 | Operation | Description |
 |---------|-------------|
-| `systemctl start --no-block wisp-updater.service` | Stop service → snapshot install to `<install>.prev/` → rsync staging into install (preserving `config/wisp-config.json`, `wisp-password`, `runtime.env`, `backup-status.json`, `migrations.json`, `.pids`, `.logs`) → `npm ci --omit=dev` in backend → run the new tree's `common-steps.sh` (container DNS, `avahi.sh`, `install-helpers.sh` — refreshes all wisp-* shims + the unit + sudoers) → re-template `wisp.service` → start service. Auto-rolls back from `<install>.prev/` on any failure. |
+| `systemctl start --no-block wisp-updater.service` | Stop service → snapshot install to `<install>.prev/` → rsync staging into install (preserving `config/wisp-config.json`, `wisp-password`, `runtime.env`, `backup-status.json`, `migrations.json`, `.pids`, `.logs`) → run the new tree's setup (the backend's dependencies, the `wisp-*` helpers, their sudoers rules, `wisp.service`) → start service. Auto-rolls back from `<install>.prev/` on any failure ([UPDATES.md → Rollback](UPDATES.md#rollback)). |
 
 Steps are echoed to journald (`journalctl -u wisp-updater.service`) — Wisp does not capture them since it dies during `step:stop-service`.
 

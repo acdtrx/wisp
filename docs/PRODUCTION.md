@@ -37,9 +37,9 @@ What a project facing real users or a network adds to the rules.
 - Cut **releases** with `scripts/release.sh` (version bumps, changelog fold, `v*` tag);
   pushing the tag to `github` runs the workflow that builds the release tarball.
 - **Self-update is a first-class path**: `wisp-updater` swaps the install atomically from
-  a GitHub release, runs the shared setup steps (`common-steps.sh`: container DNS, avahi,
-  helpers), re-templates the systemd unit, starts Wisp, which runs its state migrations as
-  it starts, waits until it is ready (`Type=notify`), and rolls the whole tree back when a step fails
+  a GitHub release, runs setup — the same steps the install runs, the backend's
+  dependencies and the systemd unit among them — starts Wisp, which runs its state
+  migrations as it starts, waits until it is ready (`Type=notify`), and rolls the whole tree back when a step fails
   ([`specs/UPDATES.md`](specs/UPDATES.md)).
 - **A change that touches the install layout, persisted state, privileged helpers or the
   systemd templates keeps the updater's contract.** The recurring traps: a persisted file

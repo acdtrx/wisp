@@ -79,18 +79,18 @@ Full details in [`docs/specs/DEPLOYMENT.md`](./docs/specs/DEPLOYMENT.md). The re
    cd wisp
    ```
 
-3. **Install as your normal (non-root) user** — the script will use `sudo` itself for the steps that need it (host packages, libvirt setup, systemd units):
+3. **Install as your normal (non-root) user** — the script uses `sudo` once, for the rest:
    ```
-   ./scripts/install.sh /opt/wisp --restart-svc
+   ./scripts/install.sh /opt/wisp
    ```
 
-   `--restart-svc` skips the interactive restart prompt and starts services on first run. The release tarball ships a prebuilt `frontend/dist/`, so no Node build runs on the install host.
+   It asks, before it changes anything, for a server name and a Wisp password, and — when the host's uplink has no bridge yet — for one confirmation that names the interface and address it will bridge, keeping that address. Then it installs everything Wisp needs, makes the bridge and starts Wisp. The release tarball ships a prebuilt `frontend/dist/`: hosts never build. Supported hosts, what setup makes and what it refuses: [`docs/specs/DEPLOYMENT.md`](docs/specs/DEPLOYMENT.md).
 
-After install, a single systemd service runs the app: `wisp.service`. Default port is **8080** (override `WISP_PORT` via `config/runtime.env`). Set or rotate the login password with `./scripts/wispctl.sh password`.
+After install, a single systemd service runs the app: `wisp.service`. Default port is **8080** (override `WISP_PORT` via `config/runtime.env`). Set a new login password with `/opt/wisp/scripts/wispctl.sh password --force`.
 
 **Updates after install** — use the in-app **Wisp Update** section (Host → Software). Wisp polls GitHub Releases hourly; the Install button downloads the new tarball, verifies its checksum, and atomic-swaps it via a dedicated systemd unit.
 
-**Developing from a checkout** — clone the repo, run `./scripts/install.sh /opt/wisp` from inside it (frontend is built locally). For pushing to a remote host: `./scripts/push.sh user@host /opt/wisp --restart-svc`.
+**Developing from a checkout** — run the backend and the frontend locally (see `AGENTS.md`), and deploy a build to a Linux host with `./scripts/push.sh user@host /opt/wisp`, which stages the same release-shaped tarball and runs its installer there.
 
 ## Security
 
