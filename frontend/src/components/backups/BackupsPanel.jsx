@@ -266,10 +266,16 @@ export default function BackupsPanel() {
     });
   };
 
-  /** The running backup/restore job for a workload, if any (matched by title, like the Overview panels). */
-  const activeJobFor = (group) => Object.values(bgJobs).find(
-    (j) => j.status === 'running' && (j.title === `Backup ${group.name}` || j.title === `Restore ${group.name}`),
-  ) || null;
+  /** The running backup/restore job for a workload, if any (matched by kind and title, like the Overview panels). */
+  const activeJobFor = (group) => {
+    const kinds = group.kind === 'vm'
+      ? [JOB_KIND.BACKUP, JOB_KIND.VM_RESTORE]
+      : [JOB_KIND.CONTAINER_BACKUP, JOB_KIND.CONTAINER_RESTORE, JOB_KIND.CONTAINER_RESTORE_AS_NEW];
+    return Object.values(bgJobs).find(
+      (j) => j.status === 'running' && kinds.includes(j.kind)
+        && (j.title === `Backup ${group.name}` || j.title === `Restore ${group.name}`),
+    ) || null;
+  };
 
   const isWorkloadStopped = (group) => (
     group.kind === 'vm'
