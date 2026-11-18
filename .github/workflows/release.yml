@@ -61,83 +61,17 @@ jobs:
         timeout-minutes: 10
         run: npm run check
 
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
-
-      - name: Stage release tree
-        run: |
-          set -euo pipefail
-          VERSION="${{ steps.ver.outputs.version }}"
-          STAGE="dist/wisp"
-          rm -rf dist
-          mkdir -p "$STAGE"
-
-          # The release tarball is a "ready to install" tree:
-          #  - backend/ source (no node_modules — wisp-updater runs npm ci on the target)
-          #  - frontend/dist + frontend/public (static assets the backend serves; no
-          #    runtime code in frontend/ anymore — it's all bundled via vite build)
-          #  - scripts/, systemd/, config/, docs/
-          rsync -a \
-            --exclude '.git' \
-            --exclude 'node_modules' \
-            --exclude '.pids' \
-            --exclude '.logs' \
-            --exclude 'dist' \
-            --exclude 'reports' \
-            --exclude 'screenshots' \
-            --exclude 'web' \
-            --exclude '.github' \
-            --exclude '*.test.js' \
-            backend/ "$STAGE/backend/"
-
-          # Frontend: ship only the static-serving payload. Backend's @fastify/static
-          # reads from frontend/dist (built SPA) and frontend/public/vendor (noVNC).
-          # No package.json / lockfile shipped — the updater no longer touches
-          # frontend/. install.sh's auto-detect picks --prebuilt when dist exists
-          # and src does not, which is exactly this layout.
-          mkdir -p "$STAGE/frontend"
-          rsync -a frontend/dist/ "$STAGE/frontend/dist/"
-          rsync -a frontend/public/ "$STAGE/frontend/public/"
-
-          # Top-level non-build assets
-          for d in scripts systemd config docs; do
-            rsync -a "$d/" "$STAGE/$d/"
-          done
-          for f in package.json CHANGELOG.md LICENSE README.md AGENTS.md CLAUDE.md; do
-            [[ -f "$f" ]] && cp "$f" "$STAGE/$f"
-          done
-
-          # Sanity: dist/index.html must be present (proves prebuilt frontend is in)
-          test -f "$STAGE/frontend/dist/index.html"
-
-          # Sanity: the offline shell must ship, with its precache list baked in by
-          # scripts/generate-sw-precache.js. A missing or unsubstituted sw.js silently
-          # returns every installed client to a blank page when the server is down.
-          test -f "$STAGE/frontend/dist/sw.js"
-          if grep -q '__WISP_BUILD_ID__\|__WISP_PRECACHE_URLS__' "$STAGE/frontend/dist/sw.js"; then
-            echo "ERROR: dist/sw.js still contains build placeholders."
-            exit 1
-          fi
-
-          # Sanity: unit tests run from the repo (npm test), never on a host.
-          TESTS="$(find "$STAGE" -name '*.test.js')"
-          if [[ -n "$TESTS" ]]; then
-            echo "ERROR: the staged tree holds test files:"
-            echo "$TESTS"
-            exit 1
-          fi
-
-          echo "Staged tree size:"
-          du -sh "$STAGE"
-
-      - name: Create tarball + sha256
+      # The release-shaped tree and its tarball, by the same script push.sh uses:
+      # it builds the frontend, stages the file list and refuses a tree or tarball
+      # holding test files, extended attributes or macOS litter.
+      - name: Stage release tarball
         id: pack
         run: |
           set -euo pipefail
           VERSION="${{ steps.ver.outputs.version }}"
+          scripts/stage-release.sh dist
           ARCHIVE="wisp-$VERSION.tar.gz"
-          tar -czf "$ARCHIVE" -C dist wisp
+          mv "dist/$ARCHIVE" "$ARCHIVE"
           sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
           echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
           echo "sha256=$ARCHIVE.sha256" >> "$GITHUB_OUTPUT"

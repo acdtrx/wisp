@@ -55,9 +55,8 @@
   2026-11-18).
 - **Unit tests on `node --test`**, Node's built-in runner, with no test framework or
   dependency, for code with no platform behind it; browser stand-ins in
-  `frontend/src/testing/`. Test files never ship: the release staging and `package.sh`
-  leave them out, and the release workflow fails a staged tree that holds one (settled
-  2026-11-18).
+  `frontend/src/testing/`. Test files never ship: `scripts/stage-release.sh` leaves them
+  out and fails a staged tree or tarball that holds one (settled 2026-11-18).
 - **ESLint**, a dev-only dependency of the repo root with its React hooks plugin and
   `globals`, for correctness rules only: `no-undef`, `no-unused-vars` (rest siblings
   ignored), `no-dupe-keys`, `react-hooks/rules-of-hooks`. No style rule;
@@ -82,9 +81,9 @@
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | Process manager | systemd | Single service unit (`wisp.service`) — one Node process serves both API and SPA. |
-| Deployment | scp + SSH (`scripts/push.sh`) | Packages a zip (`package.sh`), uploads to `/tmp` on the server, runs `install.sh` over SSH |
-| Privileged helpers | `install-helpers.sh` | Refreshes `/usr/local/bin/wisp-*` from `backend/scripts/` on install/upgrade (`setup-server.sh`, `wispctl helpers`, `push.sh`) |
-| Packaging | zip | Deployment archive for manual server setup |
+| Deployment | scp + SSH (`scripts/push.sh`) | Stages the release-shaped tarball, uploads it to `/tmp` on the server, runs its `install.sh` over SSH |
+| Privileged helpers | `install-helpers.sh` | Setup's helpers step: copies `/usr/local/bin/wisp-*` from `backend/scripts/` where they differ, on every install and update |
+| Packaging | tar.gz (`scripts/stage-release.sh`) | One release-shaped tarball, prebuilt frontend, for releases and dev pushes alike |
 | Releases | GitHub Releases + GitHub Actions (`.github/workflows/release.yml`) | Tag `v*` triggers a workflow that builds the frontend and publishes a tarball + SHA256 as a GitHub Release |
 | Self-update | `backend/src/lib/wispUpdate.js` + `wisp-updater.service` (Type=oneshot, runs `/usr/local/bin/wisp-updater`) | Hourly poll of GitHub Releases; in-app Install button downloads, verifies, atomic-swaps via the dedicated systemd unit. See [specs/UPDATES.md](specs/UPDATES.md) |
 | Containerization | None | No Docker. Services run directly on the Linux host. |

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Package wisp, upload to a remote server, and install/update.
+# Stage the release-shaped tarball (scripts/stage-release.sh), upload it to a
+# remote server, and install/update from it there.
 #
 # Usage: ./scripts/push.sh user@server /remote/path [--restart-svc]
 #   --restart-svc  auto-restart systemd services after install (no prompt)
@@ -51,35 +52,31 @@ echo "=== Wisp Push ==="
 echo "Target: $TARGET:$REMOTE_PATH"
 echo ""
 
-# --- Package ---
-echo "--- Packaging ---"
-"$SCRIPT_DIR/package.sh"
+# --- Stage: the release-shaped tarball, as a release ships it ---
+echo "--- Staging ---"
+STAGE_OUT="$PROJECT_DIR/build/push"
+"$SCRIPT_DIR/stage-release.sh" "$STAGE_OUT"
 
-VERSION="$(node -e "console.log(require('$PROJECT_DIR/frontend/package.json').version)")"
-ZIP_NAME="wisp-${VERSION}.zip"
-ZIP_PATH="$PROJECT_DIR/build/$ZIP_NAME"
-
-if [[ ! -f "$ZIP_PATH" ]]; then
-  echo "ERROR: Expected package not found at $ZIP_PATH"
-  exit 1
-fi
+VERSION="$(node -p "require('$PROJECT_DIR/package.json').version")"
+TARBALL_NAME="wisp-${VERSION}.tar.gz"
+TARBALL="$STAGE_OUT/$TARBALL_NAME"
 
 echo ""
 
 # --- Upload ---
-echo "--- Uploading $ZIP_NAME to $TARGET:/tmp ---"
-scp "${SSH_OPTS[@]}" "$ZIP_PATH" "$TARGET:/tmp/$ZIP_NAME"
+echo "--- Uploading $TARBALL_NAME to $TARGET:/tmp ---"
+scp "${SSH_OPTS[@]}" "$TARBALL" "$TARGET:/tmp/$TARBALL_NAME"
 
 echo ""
 
-# --- Remote install ---
+# --- Remote install: tar is all the host needs ---
 INSTALL_FLAGS="$REMOTE_PATH"
 if [[ "$RESTART_SVC" -eq 1 ]]; then
   INSTALL_FLAGS="$REMOTE_PATH --restart-svc"
 fi
 
 echo "--- Installing on $TARGET ---"
-ssh "${SSH_OPTS[@]}" -t "$TARGET" "set -e; rm -rf /tmp/wisp-update; mkdir -p /tmp/wisp-update; unzip -q '/tmp/$ZIP_NAME' -d /tmp/wisp-update; cd /tmp/wisp-update; bash ./scripts/install.sh $INSTALL_FLAGS; rm -rf /tmp/wisp-update '/tmp/$ZIP_NAME'"
+ssh "${SSH_OPTS[@]}" -t "$TARGET" "set -e; rm -rf /tmp/wisp-update; mkdir -p /tmp/wisp-update; tar -xzf '/tmp/$TARBALL_NAME' -C /tmp/wisp-update; cd /tmp/wisp-update/wisp; bash ./scripts/install.sh $INSTALL_FLAGS; rm -rf /tmp/wisp-update '/tmp/$TARBALL_NAME'"
 
 echo ""
 echo "=== Push complete ==="
