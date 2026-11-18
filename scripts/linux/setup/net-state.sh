@@ -80,7 +80,13 @@ l3_state() {
 # UPLINK_CONNECTION.
 plan_sources() {
   case "$NET_TOOL" in
-    netplan) sha256sum /lib/netplan/* /etc/netplan/* /run/netplan/* 2>/dev/null | LC_ALL=C sort -k2 ;;
+    netplan)
+      local f
+      for f in /lib/netplan/* /etc/netplan/* /run/netplan/*; do
+        [[ -f "$f" ]] || continue
+        sha256sum "$f" || return 1
+      done
+      ;;
     networkd) xargs -d '\n' sha256sum < "$NET_PLAN_DIR/networkd-sources" ;;
     networkmanager)
       timeout "$NET_CMD_SEC" nmcli -t connection show "$UPLINK_CONNECTION" | grep -vE '^(GENERAL|IP[46]|DHCP[46])\.|^connection\.timestamp:' | sha256sum

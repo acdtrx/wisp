@@ -56,14 +56,22 @@ current_sources="$(plan_sources)" || fail "cannot read what the plan was made fr
 # applied: within APPLY_WAIT_SEC the bridge holds what the uplink held (see
 # the header) and the uplink holds nothing; there is no one event to wait on.
 # Sets WHY to what differs.
+# On DHCP the default route is compared by its gateway: its metric and source
+# are the lease's and the tool's, and an uplink may carry the same route twice
+# (once from the initramfs).
+facts_of() {
+  if [[ "$UPLINK_MODE" == static ]]; then
+    grep -E '^(addr[46]|route[46]|dns|domain) ' || true
+  else
+    grep -E '^(addr4|route4 default|dns) ' | sed -E 's/^(route4 default via [^ ]+).*/\1/' | LC_ALL=C sort -u || true
+  fi
+}
 applied() {
-  local waited=0 mac cid want have port facts
-  facts='^(addr4|route4 default|dns) '
-  [[ "$UPLINK_MODE" == static ]] && facts='^(addr[46]|route[46]|dns|domain) '
-  want="$(grep -E "$facts" "$NET_PLAN_DIR/uplink.state" || true)"
+  local waited=0 mac cid want have port
+  want="$(facts_of < "$NET_PLAN_DIR/uplink.state")"
   while :; do
     mac="$(cat "/sys/class/net/$BRIDGE/address" 2>/dev/null || true)"
-    have="$(l3_state "$BRIDGE" "$NET_TOOL" 2>/dev/null | grep -E "$facts" || true)"
+    have="$(l3_state "$BRIDGE" "$NET_TOOL" 2>/dev/null | facts_of)"
     port="$(l3_state "$UPLINK" "$NET_TOOL" 2>/dev/null | grep -E '^(addr[46]|route[46]) ' || true)"
     cid=""
     [[ "$UPLINK_MODE" == dhcp ]] && cid="$(client_id "$BRIDGE" "$NET_TOOL")"
