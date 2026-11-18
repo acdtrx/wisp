@@ -279,6 +279,9 @@ do_smb_mount() {
 }
 
 do_smb_check() {
+  # A failed mount exits (set -e) before the rmdir below: the trap removes the
+  # check's mount point then too. rmdir refuses a directory still mounted on.
+  trap 'if [[ -n "${MOUNT_TARGET:-}" ]]; then rmdir -- "$MOUNT_TARGET" 2>/dev/null || true; fi' EXIT
   do_smb_mount "$1" "$CHECK_MOUNT_TIMEOUT"
   bounded "$CHECK_UMOUNT_TIMEOUT" umount -- "$MOUNT_TARGET"
   rmdir -- "$MOUNT_TARGET"
