@@ -179,18 +179,18 @@ refuse_cloud_init_network() {
   if command -v cloud-init >/dev/null && [[ ! -e /etc/cloud/cloud-init.disabled ]] \
     && ! grep -qwE 'cloud-init=disabled|network-config=disabled' /proc/cmdline; then
     _ci="$(python3 -c '
-  import glob, sys, yaml
-  state = "managed"
-  for path in ["/etc/cloud/cloud.cfg"] + sorted(glob.glob("/etc/cloud/cloud.cfg.d/*.cfg")):
-      try:
-          doc = yaml.safe_load(open(path)) or {}
-      except FileNotFoundError:
-          continue
-      net = doc.get("network") if isinstance(doc, dict) else None
-      if isinstance(net, dict) and "config" in net:
-          state = "managed" if net["config"] != "disabled" else "off:" + path
-  print(state)
-  ')" || net_fail "cannot read cloud-init's configuration in /etc/cloud"
+import glob, sys, yaml
+state = "managed"
+for path in ["/etc/cloud/cloud.cfg"] + sorted(glob.glob("/etc/cloud/cloud.cfg.d/*.cfg")):
+    try:
+        doc = yaml.safe_load(open(path)) or {}
+    except FileNotFoundError:
+        continue
+    net = doc.get("network") if isinstance(doc, dict) else None
+    if isinstance(net, dict) and "config" in net:
+        state = "managed" if net["config"] != "disabled" else "off:" + path
+print(state)
+')" || net_fail "cannot read cloud-init's configuration in /etc/cloud"
     if [[ "$_ci" != off:* ]]; then
       echo "ERROR: cloud-init manages this host's network, and setup does not edit what cloud-init writes." >&2
       echo "       Switch its networking off with the one documented line, network: {config: disabled}," >&2
