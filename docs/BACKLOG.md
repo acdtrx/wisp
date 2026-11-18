@@ -138,10 +138,10 @@ file access, login password hashing included. Likely fix there: skip sizing a st
 that isn't mounted, or run one walk per mount at a time. **Revisit trigger:** Wisp is seen
 stalled by an unresponsive SMB share.
 
-**Deleting a container's last backup leaves its folder.** The empty
-`backups/containers/<name>/` stays after its last timestamp directory is deleted (seen on
-tini). Harmless, but it piles up. **Revisit trigger:** backup listings or cleanup start
-tripping over empty folders.
+**Deleting a workload's last backup leaves its folder.** The empty
+`backups/containers/<name>/` or `backups/vms/<name>/` stays after its last timestamp
+directory is deleted (seen on tini, for VMs too on 2026-11-18). Harmless, but it piles
+up. **Revisit trigger:** backup listings or cleanup start tripping over empty folders.
 
 **VM restore as new shows no progress.** The restore job reports only its end:
 `restoreBackup` takes no progress callback, so the tray shows no percent while a large disk
@@ -322,11 +322,6 @@ before `install.sh` runs, and `unzip` arrives only with the setup's packages, so
 first push to a stock Ubuntu cloud image stops at `unzip: command not found` (seen
 2026-11-18 in a throwaway VM). **Revisit trigger:** the next dev deploy to a new host,
 or the next work on `push.sh`.
-
-**Deleting a workload's last backup leaves its empty directory.** After the last backup of
-a VM or container is deleted, `<backup root>/vms/<name>/` or `containers/<name>/` stays
-behind, empty (seen 2026-11-18 on tini). **Revisit trigger:** empty directories piling
-up on a backup destination, or the next work on backup delete.
 
 **The server display name can't be cleared from App Config.** `AppConfig.jsx` sends
 `undefined` for an empty name, so the save leaves the stored name in place, though the

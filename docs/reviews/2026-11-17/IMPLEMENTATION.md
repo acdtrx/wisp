@@ -121,16 +121,9 @@ Why second: cheap, and they are stability problems today.
 - P-1 is checked by running the installer in a throwaway VM on the test host.
 - Suspected five, reproduced 2026-11-18 (tini, libvirt 12, and a throwaway Ubuntu 26.04
   VM on it):
-  - V-4: confirmed in part, left to phase 5. A VM created `uefi-secure` reads back as
-    such (libvirt fills in `secure='yes'` from the loader path). The firmware PATCH does
-    not: see phase 5.
-  - V-6: confirmed, left to phase 5. While `GET /api/host/hardware` stats a dead CIFS
-    share, every other request goes unanswered: 181 s on a Wisp (soft) mount, and on a
-    hand-made hard mount until the server came back (216 s here).
-  - V-10: confirmed, left to phase 5. After `systemctl restart dbus` the backend logs
-    "avahi-daemon went away" and "system bus error: write EPIPE", and a running
-    container's `.local` name stays unresolvable (3 min watched) until the backend
-    restarts.
+  - V-4: confirmed in part; left to phase 5 (observation there).
+  - V-6: confirmed; left to phase 5 (observation there).
+  - V-10: confirmed; left to phase 5 (observation there).
   - D-4: confirmed and fixed here. During a container backup, the Backups panel showed
     the job on the same-named VM's card and disabled its Back up; the VM page did not
     (it filters by kind). The panel now filters by kind too; phase 3's `subject`
@@ -202,12 +195,13 @@ test host.
 - vmManager: one define helper that takes a per-VM lock (V-1, 13 sites); device XML built
   once for create and PATCH (V-2); one "is running" (V-3); firmware expressed one way
   (V-4); `updateVMConfig` broken up (V-5); no guessing Windows from the name (V-7).
-  V-4 as observed on 2026-11-18: a firmware PATCH to bios leaves `VARS.fd` in the VM
-  directory; a PATCH back to UEFI (`uefi` or `uefi-secure`) writes `firmware='efi'`,
-  which libvirt resolves to the Secure Boot firmware with its NVRAM in
-  `/var/lib/libvirt/qemu/nvram/<name>_VARS.fd`, so `uefi` reads back as `uefi-secure`,
-  the backup copies the stale `VARS.fd` from the VM directory, and a VM delete leaves the
-  libvirt NVRAM file behind.
+  V-4 as observed on 2026-11-18 (libvirt 12): a VM created `uefi-secure` reads back as
+  such (libvirt fills in `secure='yes'` from the loader path). A firmware PATCH to bios
+  leaves `VARS.fd` in the VM directory; a PATCH back to UEFI (`uefi` or `uefi-secure`)
+  writes `firmware='efi'`, which libvirt resolves to the Secure Boot firmware with its
+  NVRAM in `/var/lib/libvirt/qemu/nvram/<name>_VARS.fd`, so `uefi` reads back as
+  `uefi-secure`, and a VM delete leaves that NVRAM file behind. Which NVRAM file a
+  backup copies after a firmware change was not checked.
 - containerManager: one config read (C-1); `containerManagerCreate.js` split by domain,
   which empties the cycle exceptions (C-3); one rule for "restart required"; dead code
   out (C-6); the smaller duplicates (C-7, C-8). The stacked fallbacks are pruned one at a
@@ -215,10 +209,15 @@ test host.
 - host, storage, mdns: silent catches logged or surfaced (V-6, 41 sites); the 5 s stats
   reads off the main thread's sync calls; the SMB and disk mount twins merged (V-11);
   mDNS reopens its bus (V-10).
-  Observed 2026-11-18: the `statfsSync` that freezes the backend on a dead CIFS share
-  runs on `GET /api/host/hardware` (Host Overview, MCP `get_host_hardware`), not on the
-  5 s stats; mDNS stays dead after a system bus restart until the backend restarts
-  (phase 2's notes).
+  V-6 as observed on 2026-11-18: while `GET /api/host/hardware` (Host Overview, MCP
+  `get_host_hardware`) stats a dead CIFS share with `statfsSync`, every other request
+  goes unanswered: 181 s on a Wisp (soft) mount, and on a hand-made hard mount until the
+  server came back (216 s here). The 5 s stats read only `/proc` and `/sys` (by
+  reading the code, not run).
+  V-10 as observed on 2026-11-18: after `systemctl restart dbus` the backend logs
+  "avahi-daemon went away" and "system bus error: write EPIPE", and a running
+  container's `.local` name stays unresolvable (3 min watched) until the backend
+  restarts.
 - Needs two rulings first, brought with this phase's feature: what "strict manager"
   covers (C-5, V-8) and whether old backup shapes stay readable (V-9).
 - Backlog: "VM restart-flag clear can revert a concurrent define", "A disk bus change off
