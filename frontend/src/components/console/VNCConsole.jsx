@@ -89,7 +89,7 @@ export default function VNCConsole({ vmName, vmRunning, viewportRef, apiRef, onC
    */
   const sessionRef = useRef(0);
   const [, setConnected] = useState(false);
-  /** Mirrors `connected` for listeners that run outside React's render (visibility / online). */
+  /** Whether the session is connected, for listeners that run outside React's render (visibility / online). */
   const connectedRef = useRef(false);
   const [error, setError] = useState(null);
   const reconnectTimerRef = useRef(null);

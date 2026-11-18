@@ -261,9 +261,11 @@ checks and the unit tests below for what they cover:
   - `check-fences`: the import fences (§7), and no import cycle in the backend beyond
     its listed exceptions.
   - `lint`: ESLint over `backend/` and `frontend/src/`, correctness rules only: a use
-    of an undefined name, an unused import, variable or parameter, a duplicate object
-    key, a hook called outside the rules of hooks, an `eslint-disable` that disables
-    nothing.
+    of an undefined name, an unused import or variable, an unused parameter after the
+    last used one, a duplicate object key, a hook called outside the rules of hooks.
+    Inline ESLint comments (`eslint-disable`, `/* global */`) are not honoured, and
+    one left in the code fails the check: an allowance, if one is ever needed, is a
+    reviewed line in `eslint.config.mjs`, like the lists of the other checks.
   - the shell check: `bash -n` over every shell script.
   - `npm test`: the unit tests, `node --test` over the `*.test.js` files beside the
     modules they test (`frontend/src/`), for code with no platform behind it: timing,

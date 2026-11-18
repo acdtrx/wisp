@@ -358,6 +358,14 @@ the next work on that route.
 (`config/migrations.json`) are the only record of what an update's state migrations
 changed. **Revisit trigger:** the user asks "what did the last update change?"
 
+**No check sees the manager members a migration reads.** Migrations take the managers
+from their context and read them as `ctx.vmManager.X` / `ctx.containerManager.X`
+(0001–0008, sometimes through an alias), which the import check cannot follow: a
+misnamed member in a new migration fails the host's update, which then rolls back
+(found in the safety-net review, 2026-11-18). Fix shape: check those member reads in
+`backend/migrations/` against the facades' exports. **Revisit trigger:** the next new
+migration, or the next work on the checks.
+
 **`release.sh` can stop halfway through.** Its "CHANGELOG.md missing" guard and its
 "topmost section already has a release suffix" check run after the version bumps, so a
 suffixed top section stops the script with five files bumped and dirty, no commit and no
