@@ -107,26 +107,19 @@ apply_notice() {
   echo "  applying: $BRIDGE on $UPLINK (was $UPLINK_ADDR); an ssh session may pause"
 }
 
-# --- netplan: the plan's `netplan set` edits (the uplink's layer 3 off the
-# file that defines it, the bridge in Wisp's own file), cloud-init's network
-# configuration switched off when it writes that file, and for a DUID identity
-# networkd's drop-in on netplan's unit for the bridge; applied with
-# `netplan apply`. /etc/netplan is kept as it was, to be put back. ---
+# --- netplan: the plan's `netplan set` edits in the operator's file that
+# defines the uplink (its layer 3 off the interface, the bridge with it), and
+# for a DUID identity networkd's drop-in on netplan's unit for the bridge
+# (netplan has no IAID key); applied with `netplan apply`. /etc/netplan is kept
+# as it was, to be put back. ---
 apply_netplan() {
   local hint kv dropin_src="$NET_PLAN_DIR/50-wisp-dhcp-identity.conf"
   mkdir -p "$BACKUP"
   cp -a /etc/netplan "$BACKUP/netplan" || { WHY="cannot keep a copy of /etc/netplan"; return 1; }
-  if [[ -n "${NETPLAN_CLOUD_INIT_OFF:-}" ]]; then
-    printf '# Written by Wisp setup: cloud-init would write %s back at boot.
-network: {config: disabled}
-' \
-      "$NETPLAN_ORIGIN" > "$NETPLAN_CLOUD_INIT_OFF"
-    changed "$NETPLAN_CLOUD_INIT_OFF (cloud-init's network configuration off)"
-  fi
   while IFS=$'\t' read -r hint kv; do
     timeout "$CMD_SEC" netplan set --origin-hint "$hint" "$kv" || { WHY="netplan set refused ${kv%%=*}"; return 1; }
   done < "$NET_PLAN_DIR/netplan-set.args"
-  changed "netplan: ${UPLINK}'s layer 3 off $NETPLAN_ORIGIN, $BRIDGE in /etc/netplan/90-wisp-bridge.yaml"
+  changed "$NETPLAN_ORIGIN (netplan set): ${UPLINK}'s layer 3 moved to $BRIDGE"
   if [[ -s "$dropin_src" ]]; then
     mkdir -p "$(dirname "$NETPLAN_DROPIN")"
     if write_if_changed "$NETPLAN_DROPIN" 0644 "$dropin_src"; then changed "$NETPLAN_DROPIN"; fi
@@ -141,7 +134,6 @@ rollback_netplan() {
   fi
   rm -f "$NETPLAN_DROPIN"
   rmdir "$(dirname "$NETPLAN_DROPIN")" 2>/dev/null || true
-  [[ -z "${NETPLAN_CLOUD_INIT_OFF:-}" ]] || rm -f "$NETPLAN_CLOUD_INIT_OFF"
   [[ ! -e "/sys/class/net/$BRIDGE" ]] || ip link delete "$BRIDGE" || true
   timeout "$APPLY_WAIT_SEC" netplan apply || true
 }

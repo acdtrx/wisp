@@ -45,8 +45,6 @@
 #     networkmanager: bridge.args, port.args (nmcli arguments, one per line)
 #   UPLINK_NETPLAN_ID     netplan: the uplink's definition id
 #   NETPLAN_ORIGIN        netplan: the file that defines it
-#   NETPLAN_CLOUD_INIT_OFF  netplan: set when cloud-init writes that file and
-#                         its network configuration must be switched off here
 #   NETWORKD_PORT_FILE    networkd: the file that makes the uplink a port; it
 #                         sorts before the uplink's own, so it wins the match
 #   UPLINK_CONNECTION     networkmanager: the uplink's connection (UUID)
@@ -115,6 +113,35 @@ if [[ -z "$NET_TOOL" ]] && systemctl is-active --quiet NetworkManager; then
 fi
 [[ -n "$NET_TOOL" ]] || net_refuse "$UPLINK is run by none of netplan, NetworkManager or systemd-networkd."
 
+# cloud-init managing the network: setup never edits what cloud-init writes
+# nor changes cloud-init's own configuration, so such a host is refused. It
+# manages the network when it is installed, not switched off as a whole
+# (/etc/cloud/cloud-init.disabled, cloud-init=disabled on the kernel command
+# line), and its merged configuration (/etc/cloud/cloud.cfg, then
+# cloud.cfg.d/*.cfg in name order, the last word winning) does not say
+# `network: {config: disabled}` — nor network-config=disabled on the command
+# line. An installer that writes the host's own netplan file (Ubuntu Server's)
+# switches it off that way. cloud-init's own runtime, python3 and its yaml
+# module, reads the files.
+if command -v cloud-init >/dev/null && [[ ! -e /etc/cloud/cloud-init.disabled ]] \
+  && ! grep -qwE 'cloud-init=disabled|network-config=disabled' /proc/cmdline; then
+  _ci="$(python3 -c '
+import glob, sys, yaml
+state = "managed"
+for path in ["/etc/cloud/cloud.cfg"] + sorted(glob.glob("/etc/cloud/cloud.cfg.d/*.cfg")):
+    try:
+        doc = yaml.safe_load(open(path)) or {}
+    except FileNotFoundError:
+        continue
+    net = doc.get("network") if isinstance(doc, dict) else None
+    if isinstance(net, dict) and "config" in net:
+        state = "managed" if net["config"] != "disabled" else "off:" + path
+print(state)
+')" || net_fail "cannot read cloud-init's configuration in /etc/cloud"
+  [[ "$_ci" == off:* ]] || net_refuse "cloud-init manages this host's network: setup does not edit what it writes. Switch its networking off with the one documented line, network: {config: disabled}, in a file under /etc/cloud/cloud.cfg.d/ (for example 99-disable-network-config.cfg), with the network's definition kept as a file of your own."
+  unset _ci
+fi
+
 # networkd's JSON for a link, one value: a flat array.
 _json_array() { [[ "$1" =~ \"$2\":\[([^]]*)\] ]] && printf '%s' "${BASH_REMATCH[1]}"; }
 # The DHCPv4 client identifier in networkd's JSON for a link, as hex bytes.
@@ -159,14 +186,16 @@ print(s[sys.argv[1]].filepath)
 ' "$UPLINK_NETPLAN_ID")" || net_fail "netplan cannot parse its configuration"
       [[ "$NETPLAN_ORIGIN" == /etc/netplan/*.yaml ]] \
         || net_refuse "netplan defines $UPLINK in $NETPLAN_ORIGIN, outside /etc/netplan, where setup cannot edit it."
+      [[ "$NETPLAN_ORIGIN" != /etc/netplan/50-cloud-init.yaml ]] \
+        || net_refuse "netplan defines $UPLINK in $NETPLAN_ORIGIN, which cloud-init generated; setup does not edit cloud-init's files. With cloud-init's networking off, keep the definition under a name of your own."
       _json="$(net_read networkctl status "$UPLINK" --json=short)" || exit 1
       UPLINK_CLIENT_ID="$(_client_id_of "$_json")"
       _def="$NET_PLAN_DIR/uplink.yaml"
       net_read netplan get "ethernets.$UPLINK_NETPLAN_ID" > "$_def" || exit 1
       # The uplink's definition, checked; what moves to the bridge worked out;
       # the edits written as `netplan set` arguments (one per line: the origin
-      # hint, a tab, key=value): the uplink's layer-3 keys removed from the file
-      # that defines it, and the bridge defined in Wisp's own file.
+      # hint, a tab, key=value), all in the operator's file that defines the
+      # uplink: its layer-3 keys removed, and the bridge defined with them.
       IFS= read -r -d '' _py <<'PY' || true
 import json
 import sys
@@ -253,20 +282,13 @@ hint = origin.rsplit('/', 1)[-1][:-len('.yaml')]
 with open(f'{out}/netplan-set.args', 'w') as f:
     for k in sorted(MOVED & set(d)):
         f.write(f'{hint}\tethernets.{nid}.{k}=null\n')
-    f.write(f'90-wisp-bridge\tbridges.{bridge}={json.dumps(bridge_def, sort_keys=True)}\n')
+    f.write(f'{hint}\tbridges.{bridge}={json.dumps(bridge_def, sort_keys=True)}\n')
 with open(f'{out}/50-wisp-dhcp-identity.conf', 'w') as f:
     f.write(dropin)
 print('dhcp' if dhcp else 'static')
 PY
       UPLINK_MODE="$(python3 -c "$_py" "$_def" "$UPLINK_NETPLAN_ID" "$UPLINK" "$UPLINK_MAC" "$BRIDGE" "$UPLINK_CLIENT_ID" "$NETPLAN_ORIGIN" "$NET_PLAN_DIR")" \
         || { _rc=$?; (( _rc == 3 )) && net_refuse "$UPLINK_MODE."; net_fail "cannot work out the bridge for netplan: $UPLINK_MODE"; }
-      # cloud-init writes its file (50-cloud-init.yaml, its netplan renderer's)
-      # again at boot unless its network configuration is switched off, the way
-      # its documentation gives.
-      if [[ "$NETPLAN_ORIGIN" == /etc/netplan/50-cloud-init.yaml ]] && command -v cloud-init >/dev/null \
-        && ! grep -qsE 'config:[[:space:]]*disabled' /etc/cloud/cloud.cfg.d/*.cfg /etc/cloud/cloud.cfg; then
-        NETPLAN_CLOUD_INIT_OFF=/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
-      fi
       # The edits made in a staged copy of /etc/netplan, generated, and the
       # merged definitions read back: the interface must keep no layer 3, the
       # bridge must be what setup wrote.
@@ -470,7 +492,7 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
 fi
 
 for _var in NET_TOOL UPLINK UPLINK_ADDR BRIDGE BRIDGE_CREATE UPLINK_MAC UPLINK_MODE UPLINK_CLIENT_ID \
-    UPLINK_NETPLAN_ID NETPLAN_ORIGIN NETPLAN_CLOUD_INIT_OFF NETWORKD_PORT_FILE UPLINK_CONNECTION; do
+    UPLINK_NETPLAN_ID NETPLAN_ORIGIN NETWORKD_PORT_FILE UPLINK_CONNECTION; do
   [[ -z "${!_var:-}" ]] || printf '%s=%q\n' "$_var" "${!_var}"
 done > "$NET_PLAN_DIR/plan.env"
 unset _route _addrs _status _netfile _json _def _py _rc _stage _merged _why _var
