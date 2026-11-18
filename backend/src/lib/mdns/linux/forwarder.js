@@ -32,8 +32,6 @@ import net from 'node:net';
 import os from 'node:os';
 import { readFileSync } from 'node:fs';
 
-import { resolveLocalName, resolveLocalAddress, lookupLocalEntry, getHostFqdn } from './avahi.js';
-
 const STUB_IP = '169.254.53.53';
 const PORT = 53;
 const UPSTREAM_TIMEOUT_MS = 5000;
@@ -62,6 +60,9 @@ const state = {
   upstream: null,
   /** Interface (the containers' bridge) whose addresses answer the host's own name. */
   hostInterface: null,
+  /** avahi.js's name lookups — { lookupLocalEntry, getHostFqdn, resolveLocalName,
+   *  resolveLocalAddress } — handed over by startForwarder. */
+  lookups: null,
   logger: null,
 };
 
@@ -334,7 +335,7 @@ export async function answerQuery(packet, transport) {
     // crucially, family-specific avahi queries for a record we *didn't*
     // publish (e.g. AAAA on a v4-only Wisp container) trigger a ~5s mDNS
     // multicast wait inside avahi that stalls the caller.
-    const local = lookupLocalEntry(q.qname);
+    const local = state.lookups.lookupLocalEntry(q.qname);
     if (local) {
       const address = wantedFamily === 'inet' ? local.ip4 : local.ip6;
       if (!address) return buildNoAnswer(q, RCODE_NOERROR);
@@ -348,7 +349,7 @@ export async function answerQuery(packet, transport) {
     // addresses: avahi's slow path both stalled in production (bursts of
     // NODATA past the 1.5 s cap) and answered AAAA with a random veth's
     // fe80:: address. NODATA for a family the bridge has no usable address in.
-    if (q.qname === getHostFqdn()) {
+    if (q.qname === state.lookups.getHostFqdn()) {
       const rdatas = hostBridgeAddresses(wantedFamily)
         .map((a) => (q.qtype === QTYPE_A ? encodeIPv4(a) : encodeIPv6(a)))
         .filter(Boolean);
@@ -361,7 +362,7 @@ export async function answerQuery(packet, transport) {
     // the client. If the timeout fires, we return NODATA — cannot reliably
     // distinguish "doesn't exist" from "slow mDNS responder" at this layer.
     const result = await withTimeout(
-      resolveLocalName(q.qname, wantedFamily),
+      state.lookups.resolveLocalName(q.qname, wantedFamily),
       AVAHI_LOOKUP_TIMEOUT_MS,
       null,
     );
@@ -379,7 +380,7 @@ export async function answerQuery(packet, transport) {
     const ip = isReverseV4 ? ptrNameToIPv4(q.qname) : ptrNameToIPv6(q.qname);
     if (ip) {
       const hostname = await withTimeout(
-        resolveLocalAddress(ip),
+        state.lookups.resolveLocalAddress(ip),
         AVAHI_LOOKUP_TIMEOUT_MS,
         null,
       );
@@ -549,14 +550,17 @@ function handleTcpConnection(conn) {
 
 /**
  * @param {object|null} logger
- * @param {{ hostInterface?: string|null }} [opts] `hostInterface` — the
- *   containers' bridge; its addresses answer the host's own `.local` name.
- *   Chosen once at boot by the caller: a bridge created later is picked up
- *   on the next wisp restart. Null → the host's name gets NODATA.
+ * @param {{ lookups: object, hostInterface?: string|null }} opts `lookups` —
+ *   avahi.js's `{ lookupLocalEntry, getHostFqdn, resolveLocalName,
+ *   resolveLocalAddress }`, which answer the `.local` queries. `hostInterface`
+ *   — the containers' bridge; its addresses answer the host's own `.local`
+ *   name. Chosen once at boot by the caller: a bridge created later is picked
+ *   up on the next wisp restart. Null → the host's name gets NODATA.
  */
-export async function startForwarder(logger = null, { hostInterface = null } = {}) {
+export async function startForwarder(logger = null, { lookups, hostInterface = null }) {
   if (state.udp || state.tcp) return;
   state.logger = logger;
+  state.lookups = lookups;
   state.hostInterface = hostInterface || null;
   state.upstream = readUpstreamFromResolvConf();
   if (!state.upstream) {

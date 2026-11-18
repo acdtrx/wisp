@@ -3,8 +3,8 @@
  *   - publishes <container>.local on the LAN via avahi's EntryGroup API
  *   - browses LAN services by type via avahi's ServiceBrowser API
  *     (subscribeServiceBrowse), resolving each hit to host/port/TXT
- *   - exposes resolveLocalName/resolveLocalAddress helpers for forwarder.js,
- *     which answers container DNS queries from 169.254.53.53
+ *   - hands its name lookups to forwarder.js (startForwarder), which answers
+ *     container DNS queries from 169.254.53.53
  *   - tracks avahi's own host name (getHostFqdn) so the forwarder can answer
  *     the host's `.local` name without an avahi round-trip
  *
@@ -412,7 +412,10 @@ export async function connect(logger = null, { hostInterface = null } = {}) {
   // Not awaited: a stalled avahi must not hold up boot. Until the first read
   // lands the host name takes the forwarder's avahi slow path.
   refreshHostFqdn();
-  await startForwarder(logger, { hostInterface });
+  await startForwarder(logger, {
+    lookups: { lookupLocalEntry, getHostFqdn, resolveLocalName, resolveLocalAddress },
+    hostInterface,
+  });
 }
 
 export async function disconnect() {
