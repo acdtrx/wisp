@@ -19,7 +19,10 @@
  *      ternary's both sides included: a cycle closed by a dynamic import still
  *      runs one module half-initialised. A reviewed cycle is one file → file
  *      edge in CYCLE_EXCEPTIONS; an entry whose edge no longer closes a cycle
- *      fails too, so the list only shrinks.
+ *      fails too, so the list only shrinks. Since an excepted edge would hide
+ *      any new cycle through it, the files that import each other around those
+ *      edges are listed too (CYCLE_GROUP): a file joining them fails, and so
+ *      does a listed file that left.
  *
  * A module's darwin stubs are its own files. Scripts and migrations are glue.
  * Specifiers inside comments (JSDoc type imports) are skipped: they load
@@ -100,6 +103,19 @@ const CYCLE_EXCEPTIONS = [
     to: `${LIB}/containerManager/linux/containerManagerLifecycle.js`,
     reason: 'a policy restart reads the task and starts the container; Lifecycle imports RestartPolicy',
   },
+];
+
+/**
+ * The files that import each other, directly or not, around the
+ * CYCLE_EXCEPTIONS edges (repo-relative). No other file may join them.
+ */
+const CYCLE_GROUP = [
+  `${LIB}/containerManager/linux/containerManagerConfig.js`,
+  `${LIB}/containerManager/linux/containerManagerCreate.js`,
+  `${LIB}/containerManager/linux/containerManagerLifecycle.js`,
+  `${LIB}/containerManager/linux/containerManagerList.js`,
+  `${LIB}/containerManager/linux/containerManagerRestartPolicy.js`,
+  `${LIB}/containerManager/linux/containerManagerServices.js`,
 ];
 
 const BUILTINS = new Set(builtinModules.flatMap((m) => [m, `node:${m}`]));
@@ -282,10 +298,10 @@ function moduleOf(rel) {
 }
 
 /**
- * Import cycles in `edges` (file → [{ to, line }]): one cycle per strongly
- * connected component, as its edges `[{ from, to, line }]` in order.
+ * The groups of files in `edges` (file → [{ to, line }]) that import each other,
+ * directly or not (strongly connected components with a cycle), as arrays.
  */
-function findCycles(edges) {
+function cycleGroups(edges) {
   let next = 0;
   const index = new Map();
   const low = new Map();
@@ -317,9 +333,13 @@ function findCycles(edges) {
     if (component.length > 1 || (edges.get(v) ?? []).some((e) => e.to === v)) components.push(component);
   };
   for (const v of [...edges.keys()].sort()) if (!index.has(v)) visit(v);
+  return components;
+}
 
-  // A cycle through the component's first file: a path back to it inside the component.
-  return components.map((component) => {
+/** Import cycles in `edges`: one per cycle group, as its edges `[{ from, to, line }]` in order. */
+function findCycles(edges) {
+  // A cycle through the group's first file: a path back to it inside the group.
+  return cycleGroups(edges).map((component) => {
     const members = new Set(component);
     const start = [...component].sort()[0];
     const seen = new Set([start]);
@@ -441,6 +461,24 @@ async function main() {
       violations.push(`${e.from}:${edge.line} → ${e.to} — CYCLE_EXCEPTIONS lists an import that no longer closes a cycle: remove the entry`);
     }
   }
+  const exceptionFiles = new Set(CYCLE_EXCEPTIONS.flatMap((e) => [e.from, e.to]));
+  const group = new Set(cycleGroups(edges).filter((g) => g.some((f) => exceptionFiles.has(f))).flat());
+  for (const file of [...group].sort()) {
+    if (CYCLE_GROUP.includes(file)) continue;
+    const through = [];
+    for (const e of edges.get(file)) if (group.has(e.to)) through.push(`  ${file}:${e.line} → ${e.to}`);
+    for (const [from, out] of edges) {
+      for (const e of out) if (e.to === file && group.has(from)) through.push(`  ${from}:${e.line} → ${file}`);
+    }
+    violations.push([
+      `${file} — joins the import cycle around the CYCLE_EXCEPTIONS edges, through:`,
+      ...through,
+    ].join('\n'));
+  }
+  for (const file of CYCLE_GROUP) {
+    if (!group.has(file)) violations.push(`${file} — CYCLE_GROUP lists a file no longer in that cycle: remove the entry`);
+  }
+
   const acyclic = new Map([...edges].map(([from, out]) => [from, out.filter((e) => !excepted(from, e.to))]));
   const cycles = findCycles(acyclic);
   for (const cycle of cycles) {
@@ -452,7 +490,7 @@ async function main() {
 
   for (const v of violations) console.error(v);
   const summary = `${count} imports across ${files.length} files`;
-  const cycleSummary = `no import cycle outside the ${CYCLE_EXCEPTIONS.length} listed`;
+  const cycleSummary = `no import cycle outside the ${CYCLE_EXCEPTIONS.length} listed, among the ${CYCLE_GROUP.length} files listed`;
   if (violations.length > 0) {
     console.error(`\n${violations.length} fence violation(s) (${summary}).`);
     process.exit(1);
