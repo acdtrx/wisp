@@ -32,6 +32,16 @@
  * does**. That catches the wrong-directory class — a `../` too few, a fallback
  * into a directory that was never there — but not a misspelled file name in a
  * real directory.
+ *
+ * Facade parity: a platform facade (`lib/<module>/index.js`) binds each
+ * implementation with `const impl = await import(isLinux ? './linux/x.js' :
+ * './darwin/x.js')` and re-exports `impl.name`. A name one side lacks is
+ * `undefined` at call time, and only on that platform. So every `impl.name` the
+ * facade reads must be exported by each file its import can load: both sides of
+ * the ternary, or the one side of a single-platform import. Exports are read as
+ * written (`export function`, `export const`, `export { … }`, with or without
+ * `from`); an implementation that uses `export *` fails, since the scan cannot
+ * see what it exports.
  */
 import { access, readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -100,6 +110,86 @@ async function collectSourceFiles(dir) {
   return found;
 }
 
+/** Blank out comments (newlines kept); a facade's comments may name `impl.x`. */
+function stripComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/\/\/[^\n]*/g, '');
+}
+
+/** The names a module exports, or null when it re-exports with `export *`. */
+function exportedNames(source) {
+  const code = stripComments(source);
+  if (/(?<![\w$.])export\s*\*\s*from/.test(code)) return null;
+  const names = new Set();
+  for (const m of code.matchAll(/(?<![\w$.])export\s+(?:async\s+)?function\s*\*?\s*([\w$]+)/g)) names.add(m[1]);
+  for (const m of code.matchAll(/(?<![\w$.])export\s+(?:const|let|var|class)\s+([\w$]+)/g)) names.add(m[1]);
+  for (const m of code.matchAll(/(?<![\w$.])export\s*\*\s*as\s+([\w$]+)/g)) names.add(m[1]);
+  for (const m of code.matchAll(/(?<![\w$.])export\s+default\b/g)) names.add('default');
+  for (const m of code.matchAll(/(?<![\w$.])export\s*\{([^}]*)\}/g)) {
+    for (const part of m[1].split(',')) {
+      const name = part.trim().split(/\s+as\s+/).pop().trim();
+      if (name) names.add(name);
+    }
+  }
+  return names;
+}
+
+/** `const name = … await import(…)` bindings in a facade: `[{ name, targets }]`, the
+ *  targets being the platform files (`./linux/…`, `./darwin/…`) the import can load. */
+function platformImports(code) {
+  const found = [];
+  for (const m of code.matchAll(/(?<![\w$.])const\s+([\w$]+)\s*=[^;]*?\bawait\s+import\s*\(/g)) {
+    let depth = 1;
+    let j = m.index + m[0].length;
+    const start = j;
+    while (j < code.length && depth > 0) {
+      if (code[j] === '(') depth += 1;
+      else if (code[j] === ')') depth -= 1;
+      j += 1;
+    }
+    const targets = [...code.slice(start, j - 1).matchAll(/['"](\.\/(?:linux|darwin)\/[^'"\n]+)['"]/g)].map((t) => t[1]);
+    if (targets.length > 0) found.push({ name: m[1], targets });
+  }
+  return found;
+}
+
+/** Facade parity violations: `[{ file, line, message }]`. */
+async function facadeParity(files) {
+  const problems = [];
+  let pairs = 0;
+  const facades = files.filter((f) => /\/backend\/src\/lib\/[^/]+\/index\.js$/.test(f));
+  for (const facade of facades) {
+    const source = await readFile(facade, 'utf8');
+    const code = stripComments(source);
+    for (const { name, targets } of platformImports(code)) {
+      const uses = new Map();
+      for (const m of code.matchAll(new RegExp(`(?<![\\w$.])${name.replace(/\$/g, '\\$')}\\.([\\w$]+)`, 'g'))) {
+        if (!uses.has(m[1])) uses.set(m[1], m.index);
+      }
+      for (const target of targets) {
+        pairs += 1;
+        const implFile = fileURLToPath(new URL(target, pathToFileURL(facade)));
+        if (!await exists(implFile)) continue; // reported by the specifier scan
+        const exported = exportedNames(await readFile(implFile, 'utf8'));
+        if (exported === null) {
+          problems.push({ file: implFile, line: 1, message: `uses \`export *\`: facade parity cannot see what it exports (list the names)` });
+          continue;
+        }
+        for (const [member, index] of uses) {
+          if (exported.has(member)) continue;
+          problems.push({
+            file: implFile,
+            line: null,
+            message: `does not export \`${member}\`, which ${path.relative(REPO_ROOT, facade)}:${lineOf(source, index)} takes from it`,
+          });
+        }
+      }
+    }
+  }
+  return { problems, pairs };
+}
+
 const files = (await Promise.all(ROOTS.map(collectSourceFiles))).flat().sort();
 const unresolved = [];
 let specifierCount = 0;
@@ -129,9 +219,15 @@ for (const miss of unresolved) {
   console.error(`  ${miss.specifier}  ->  ${miss.target}`);
 }
 
+const parity = await facadeParity(files);
+for (const p of parity.problems) {
+  console.error(`${path.relative(REPO_ROOT, p.file)}${p.line ? `:${p.line}` : ''} ${p.message}`);
+}
+
 const summary = `${specifierCount} relative specifiers and ${dataPathCount} module-relative paths across ${files.length} files`;
-if (unresolved.length > 0) {
-  console.error(`\n${unresolved.length} unresolved (${summary}).`);
+const paritySummary = `${parity.pairs} facade implementations`;
+if (unresolved.length > 0 || parity.problems.length > 0) {
+  console.error(`\n${unresolved.length} unresolved (${summary}); ${parity.problems.length} facade parity problem(s) (${paritySummary}).`);
   process.exit(1);
 }
-console.log(`OK — ${summary}, all resolve.`);
+console.log(`OK — ${summary}, all resolve; ${paritySummary}, each exports what its facade takes.`);
