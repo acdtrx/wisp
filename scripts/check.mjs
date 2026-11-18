@@ -2,8 +2,7 @@
 /**
  * `npm run check` from the repo root: every check, one after the other, each
  * with its own output. Exits 1 when any of them failed, after running them all,
- * so one run lists every problem. Builders, `scripts/release.sh` and the release
- * workflow all run this.
+ * so one run lists every problem.
  */
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
