@@ -748,7 +748,7 @@ export default async function containerRoutes(fastify) {
 
   fastify.patch('/containers/:name/mounts/:mountName', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
-      const mountName = decodeURIComponent(request.params.mountName);
+      const { mountName } = request.params;
       const body = request.body && typeof request.body === 'object' ? request.body : {};
       const { name } = request.params;
       await withContainerOperationLock(name, 'configuration change', async () => {
@@ -765,7 +765,7 @@ export default async function containerRoutes(fastify) {
   // and busy are answered here; `done` is `{ requiresRestart }`.
   fastify.delete('/containers/:name/mounts/:mountName', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
-      const mountName = decodeURIComponent(request.params.mountName);
+      const { mountName } = request.params;
       const { name } = request.params;
       const job = await startLockedContainerJob({
         name,
@@ -797,7 +797,7 @@ export default async function containerRoutes(fastify) {
     let plan = null;
     let committed = false;
     try {
-      const mountName = decodeURIComponent(request.params.mountName);
+      const { mountName } = request.params;
       assertMountNotAppManaged(await getContainerConfig(containerName), mountName);
       plan = await planMountFileUpload(containerName, mountName);
       if (!(await stageSingleMultipartFile(request, plan.tmp, { mode: plan.mode }))) {
@@ -824,7 +824,7 @@ export default async function containerRoutes(fastify) {
     const bodyWatch = watchRequestBody(request);
     let staged = true; // the finally removes it unless the job took it
     try {
-      const mountName = decodeURIComponent(request.params.mountName);
+      const { mountName } = request.params;
       // 404 / APP_CONFIG_ONLY / not a directory mount, before staging into the container dir.
       assertMountNotAppManaged(await getContainerConfig(containerName), mountName);
       await assertMountTakesZip(containerName, mountName);
@@ -866,7 +866,7 @@ export default async function containerRoutes(fastify) {
 
   fastify.get('/containers/:name/mounts/:mountName/content', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
-      const mountName = decodeURIComponent(request.params.mountName);
+      const { mountName } = request.params;
       assertMountContentReadable(await getContainerConfig(request.params.name), mountName);
       return await getMountFileTextContent(request.params.name, mountName);
     } catch (err) {
@@ -881,7 +881,7 @@ export default async function containerRoutes(fastify) {
   const MOUNT_FILE_PUT_BODY_LIMIT = 600 * 1024;
   fastify.put('/containers/:name/mounts/:mountName/content', { bodyLimit: MOUNT_FILE_PUT_BODY_LIMIT, config: { auth: 'admin' }, ...bodyWatchHooks }, async (request, reply) => {
     try {
-      const mountName = decodeURIComponent(request.params.mountName);
+      const { mountName } = request.params;
       const body = request.body;
       const content = body && typeof body === 'object' && body !== null && 'content' in body
         ? body.content
@@ -899,7 +899,7 @@ export default async function containerRoutes(fastify) {
 
   fastify.post('/containers/:name/mounts/:mountName/init', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
-      const mountName = decodeURIComponent(request.params.mountName);
+      const { mountName } = request.params;
       assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
       await initMountContent(request.params.name, mountName);
       return reply.code(204).send();
@@ -912,7 +912,7 @@ export default async function containerRoutes(fastify) {
   // app-managed and a tmpfs mount are answered here.
   fastify.delete('/containers/:name/mounts/:mountName/data', { config: { auth: 'admin' } }, async (request, reply) => {
     try {
-      const mountName = decodeURIComponent(request.params.mountName);
+      const { mountName } = request.params;
       const { name } = request.params;
       assertMountNotAppManaged(await getContainerConfig(name), mountName);
       await assertMountOperation(name, mountName, 'data');
