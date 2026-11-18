@@ -62,6 +62,23 @@ async function containerFlaggedForDigest(name, newDigest) {
   }
 }
 
+const SKIPPED = Symbol('skipped');
+
+/**
+ * One digest read of a check. A failure skips the image (reported as `skipped`), except
+ * an unreachable containerd, which ends the whole check with its error.
+ * @returns {Promise<string | null | typeof SKIPPED>}
+ */
+async function readDigestForCheck(ref, onProgress) {
+  try {
+    return await getImageDigest(ref);
+  } catch (err) {
+    if (err?.code === 'NO_CONTAINERD') throw err;
+    onProgress?.({ step: 'skipped', ref, reason: err?.message || 'digest read failed' });
+    return SKIPPED;
+  }
+}
+
 /**
  * Pull a single ref and report how many containers would now show an update badge.
  * Internal; does not update cached summary, does not write to container.json.
@@ -73,15 +90,8 @@ async function containerFlaggedForDigest(name, newDigest) {
 async function checkOneImage(ref, onProgress, position) {
   onProgress?.({ step: 'checking', ref, index: position.index, total: position.total });
 
-  let before;
-  let after;
-  try {
-    before = await getImageDigest(ref);
-  } catch (err) {
-    if (err?.code === 'NO_CONTAINERD') throw err; // containerd is gone: the sweep ends with its error
-    onProgress?.({ step: 'skipped', ref, reason: err?.message || 'digest read failed' });
-    return { changed: false, flaggedCount: 0 };
-  }
+  const before = await readDigestForCheck(ref, onProgress);
+  if (before === SKIPPED) return { changed: false, flaggedCount: 0 };
 
   try {
     await pullImage(ref, () => {});
@@ -90,13 +100,8 @@ async function checkOneImage(ref, onProgress, position) {
     return { changed: false, flaggedCount: 0 };
   }
 
-  try {
-    after = await getImageDigest(ref);
-  } catch (err) {
-    if (err?.code === 'NO_CONTAINERD') throw err; // containerd is gone: the sweep ends with its error
-    onProgress?.({ step: 'skipped', ref, reason: err?.message || 'digest read failed' });
-    return { changed: false, flaggedCount: 0 };
-  }
+  const after = await readDigestForCheck(ref, onProgress);
+  if (after === SKIPPED) return { changed: false, flaggedCount: 0 };
   if (!after || after === before) {
     onProgress?.({ step: 'unchanged', ref });
     return { changed: false, flaggedCount: 0 };
