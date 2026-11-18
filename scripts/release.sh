@@ -106,8 +106,8 @@ bump_pkg_version() {
   BUMPED+=("$pkg")
   echo "  Bumped $pkg → $VERSION"
 
-  # Keep the sibling lockfile in step. The repo root has no lockfile (no dependencies),
-  # so absence is expected rather than an error.
+  # Keep the sibling lockfile in step. Root, backend and frontend each have one; a
+  # package without one is skipped.
   local lock="${pkg%package.json}package-lock.json"
   [[ -f "$lock" ]] || return 0
   write_version "$lock"
