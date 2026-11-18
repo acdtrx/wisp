@@ -23,28 +23,27 @@ frontend/public/vendor/novnc/
     └── pako/          # Compression library used by noVNC (bundled with noVNC upstream)
 ```
 
-These are copies of the `core/` and `vendor/` directories from the upstream [noVNC GitHub repository](https://github.com/novnc/noVNC). The `frontend/public/vendor/` tree is **not** committed (see root `.gitignore`); it is created by `vendor-novnc.sh` or `ensure-novnc.js`.
+These are copies of the `core/` and `vendor/` directories from the upstream [noVNC GitHub repository](https://github.com/novnc/noVNC). The `frontend/public/vendor/` tree is **not** committed (see root `.gitignore`); it is created by `vendor-novnc.sh`.
+
+**Pinned to v1.7.0**, set in `scripts/vendor-novnc.sh` and nowhere else (settled 2026-11-18).
 
 ## Vendor Script
 
 `scripts/vendor-novnc.sh` handles populating the vendor directory:
 
 1. Takes a destination directory as argument (e.g. `frontend/public/vendor/novnc`)
-2. Checks if `core/rfb.js` and `vendor/pako` already exist — skips if so
-3. Does a shallow `git clone` of the noVNC repository to a temp directory
-4. Copies `core/` and `vendor/` to the destination
-5. Cleans up the temp directory
-6. Warns if the clone fails (network/git issues) — VNC console will not work but the app still builds
+2. Skips the fetch when the destination's `.pinned` file names the pinned tag and commit and `core/rfb.js` and `vendor/pako` are there
+3. Otherwise does a shallow `git clone` of the pinned tag to a temp directory and checks the checkout is the pinned commit
+4. Copies `core/` and `vendor/` into a staging directory, writes `.pinned`, and swaps it in for the destination, so a tree holding any other copy ends up with the pinned one
+5. Fails (exit 1, with the cause) if the clone or the commit check fails, leaving the destination as it was — the build fails with it
 
-## Prebuild Check
+## Prebuild Step
 
-`frontend/scripts/ensure-novnc.js` runs before every production build (via `npm run build`):
+The frontend's `npm run build` runs the vendor script before `vite build`, so every build goes through it — `wispctl build` on hosts, CI and the dev machine:
 
 ```
-node scripts/ensure-novnc.js && vite build
+bash ../scripts/vendor-novnc.sh public/vendor/novnc && vite build
 ```
-
-This script ensures noVNC files are present before the build starts. If they're missing, it triggers the vendor script.
 
 ## Build Configuration
 
@@ -97,10 +96,8 @@ This is registered as a separate static file route to ensure noVNC is available 
 
 To update noVNC:
 
-1. Delete `frontend/public/vendor/novnc/`
-2. Run `scripts/vendor-novnc.sh frontend/public/vendor/novnc`
-3. The script clones the latest noVNC and copies `core/` and `vendor/`
-4. Rebuild the frontend
+1. Set the new release's tag and commit in `scripts/vendor-novnc.sh`
+2. Rebuild the frontend: the script sees the tree holds another version and fetches the new one
 
 No other changes are needed — the dynamic import path remains the same.
 

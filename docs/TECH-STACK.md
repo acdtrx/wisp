@@ -149,7 +149,7 @@ alone, and nothing installs the root's packages there.
 | Markdown | marked + dompurify | ^18 / ^3 | Parses GitHub-flavored release notes (marked) and sanitizes the HTML (dompurify) before injection in the Wisp Update section. |
 | HTTP client | Native `fetch` | — | No Axios or similar; plain browser fetch API. |
 | Offline shell | Native Service Worker | — | Hand-written `public/sw.js` (~140 lines); no Workbox / `vite-plugin-pwa`. Precache list baked into `dist/sw.js` at build time by `scripts/generate-sw-precache.js` from Vite's build manifest (`build.manifest: true`). Requires a secure context (HTTPS or localhost). |
-| VNC console | noVNC | vendored | ESM source files served from `public/vendor/novnc/`. Not installed via npm. See [noVNC.md](specs/noVNC.md). |
+| VNC console | noVNC | vendored, pinned in `scripts/vendor-novnc.sh` | ESM source files served from `public/vendor/novnc/`. Not installed via npm. See [noVNC.md](specs/noVNC.md). |
 | Container console | @xterm/xterm | ^6.0 | In-browser terminal emulator for container shell sessions. |
 | Terminal layout | @xterm/addon-fit | ^0.11 | Fits the terminal to its container element; paired with resize WebSocket control messages. |
 

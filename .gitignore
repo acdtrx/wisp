@@ -5,7 +5,7 @@ node_modules/
 dist/
 build/
 
-# noVNC + pako — copy in with scripts/vendor-novnc.sh or frontend ensure-novnc (see docs/specs/noVNC.md)
+# noVNC + pako — fetched by scripts/vendor-novnc.sh, which the frontend build runs (see docs/specs/noVNC.md)
 frontend/public/vendor/
 .env
 .pids/

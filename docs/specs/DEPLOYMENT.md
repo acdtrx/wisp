@@ -164,8 +164,7 @@ Runs `sudo scripts/linux/setup/install-helpers.sh` with the current user as depl
 
 1. **Optional `config/runtime.env`** — not required; defaults apply for ports if absent
 2. **Backend:** `npm ci --omit=dev --omit=optional` in `backend/` (deterministic install from lock file)
-3. **noVNC:** `vendor-novnc.sh` → `frontend/public/vendor/novnc/`
-4. **Frontend:** `npm install && npm run build` in `frontend/`
+3. **Frontend:** `npm install && npm run build` in `frontend/` — the build first runs `vendor-novnc.sh` → `frontend/public/vendor/novnc/` (the pinned noVNC)
 
 ## Running the App
 
@@ -468,11 +467,7 @@ Steps are echoed to journald (`journalctl -u wisp-updater.service`) — Wisp doe
 
 ### `vendor-novnc.sh`
 
-See [noVNC.md](noVNC.md). Clones noVNC from GitHub and copies `core/` and `vendor/` into the frontend's public directory.
-
-### `ensure-novnc.js`
-
-Prebuild script that runs before `vite build`. Ensures noVNC is present; invokes `vendor-novnc.sh` if not.
+See [noVNC.md](noVNC.md). Fetches the pinned noVNC release from GitHub and copies `core/` and `vendor/` into the frontend's public directory; the frontend's `npm run build` runs it first.
 
 ## Config directory (`config/`)
 

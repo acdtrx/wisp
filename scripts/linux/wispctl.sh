@@ -4,7 +4,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # scripts/linux → project root
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-SCRIPTS_ROOT="$(dirname "$SCRIPT_DIR")"
 RUNTIME_ENV="$PROJECT_DIR/config/runtime.env"
 SETUP_DIR="$SCRIPT_DIR/setup"
 
@@ -84,10 +83,6 @@ cmd_build() {
   echo "  Backend deps installed"
 
   if [[ "$prebuilt" -eq 0 ]]; then
-    echo ""
-    echo "--- Vendor noVNC (core + pako) ---"
-    bash "$SCRIPTS_ROOT/vendor-novnc.sh" "$PROJECT_DIR/frontend/public/vendor/novnc"
-
     echo ""
     echo "--- Building frontend ---"
     cd "$PROJECT_DIR/frontend"
