@@ -4,6 +4,14 @@ After=network-online.target libvirtd.service virtqemud.service containerd.servic
 Wants=network-online.target
 
 [Service]
+# The start ends when the backend says it is ready (systemd-notify, sent by a
+# child of node, hence NotifyAccess=all) once it listens — after its state
+# migrations and boot work — or fails when the process exits first. So
+# `systemctl start` reports the real outcome to the updater and the installer.
+# The timeout bounds a hung start, including a long migration.
+Type=notify
+NotifyAccess=all
+TimeoutStartSec=15min
 User=WISP_USER
 WorkingDirectory=WISP_PATH/backend
 EnvironmentFile=-WISP_PATH/config/runtime.env
@@ -24,8 +32,12 @@ ExecStart=/usr/bin/node src/index.js
 # to just this one capability, and sudo needs CAP_SETUID/CAP_SETGID to elevate,
 # which breaks the wisp-netns and wisp-mount privileged helpers.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
+# A failing start retries with a growing delay (5 s up to 5 min), not every 5 s
+# for ever: a transient cause heals, a permanent one stops filling the log.
 Restart=on-failure
 RestartSec=5
+RestartSteps=6
+RestartMaxDelaySec=5min
 TimeoutStopSec=15
 
 [Install]

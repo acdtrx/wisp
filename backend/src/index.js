@@ -17,6 +17,7 @@ import { getConfigSync } from './lib/config.js';
 import { configureManagers, connectManagers, disconnectManagers } from './lib/managerBootstrap.js';
 import { checkRuntimeEnvFile } from './lib/loadRuntimeEnv.js';
 import { migrateState } from './lib/stateMigrations.js';
+import { notifySystemdReady } from './lib/systemdReady.js';
 import { DEV_LOG_TRANSPORT } from './lib/logFormat.js';
 import { startImageUpdateChecker, stopImageUpdateChecker } from './lib/containerManager/index.js';
 import {
@@ -430,6 +431,7 @@ async function main() {
   // Production serves the LAN; the dev backend is reached only through the
   // local Vite proxy, so it listens on loopback alone.
   await app.listen({ port: PORT, host: isDev ? '127.0.0.1' : '0.0.0.0' });
+  if (await notifySystemdReady()) app.log.info('ready: told systemd');
 
   startUsbMonitor();
 
@@ -504,7 +506,7 @@ process.on('uncaughtException', (err) => exitOnFatal('Uncaught exception', err))
 /** The start's own expected failures: one line naming the problem. */
 const START_FAILURE_CODES = new Set([
   'RUNTIME_ENV_INVALID', 'CONFIG_INVALID', 'PASSWORD_FILE_UNREADABLE', 'PASSWORD_FILE_UNSUPPORTED_FORMAT',
-  'DEFAULT_BRIDGE_INVALID', 'MIGRATION_SETUP', 'MIGRATION_FAILED',
+  'DEFAULT_BRIDGE_INVALID', 'MIGRATION_SETUP', 'MIGRATION_FAILED', 'SYSTEMD_NOTIFY_FAILED',
 ]);
 
 main().catch((err) => {
