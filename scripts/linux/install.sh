@@ -130,8 +130,10 @@ if [[ "$BRIDGE_CREATE" == yes ]]; then
   fi
 fi
 
-# sudo's own password, now: the root process below runs to the end unasked.
-sudo -v
+# sudo's own password, now, when the host's sudoers asks for one: the root
+# process below runs to the end unasked. A command, not `sudo -v`, which asks
+# for a password whenever any of the user's sudoers entries would.
+sudo true
 
 # --- One root process to the end ---
 LOG="$(mktemp -t wisp-install.XXXXXX.log)"
