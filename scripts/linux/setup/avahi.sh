@@ -45,8 +45,7 @@ fi
 # Set KEY=VALUE in [publish]: replace the first line naming the key there,
 # commented or not, and drop any later ones; insert it at the end of the
 # section if absent; append the section if the file has none.
-tmp="$(mktemp)"
-trap 'rm -f "$tmp"' EXIT
+tmp="$(staged_file)"
 awk -v key="$KEY" -v val="$VALUE" '
   function emit() { if (!done) { print key "=" val; done = 1 } }
   /^\[/ { if (insec) emit(); insec = ($0 ~ /^\[publish\][ \t]*$/); seen = seen || insec }

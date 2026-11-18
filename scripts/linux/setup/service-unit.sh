@@ -25,13 +25,14 @@ UNIT=/etc/systemd/system/wisp.service
 
 echo "--- wisp.service ---"
 
-if sed -e "s|WISP_USER|$DEPLOY_USER|g" -e "s|WISP_PATH|$PROJECT_ROOT|g" "$PROJECT_ROOT/systemd/linux/wisp.service" \
-  | write_if_changed "$UNIT" 0644; then
+RENDERED="$(staged_file)"
+sed -e "s|WISP_USER|$DEPLOY_USER|g" -e "s|WISP_PATH|$PROJECT_ROOT|g" "$PROJECT_ROOT/systemd/linux/wisp.service" > "$RENDERED"
+if write_if_changed "$UNIT" 0644 "$RENDERED"; then
   systemctl daemon-reload
   changed "$UNIT"
 fi
 if ! systemctl is-enabled --quiet wisp.service; then
-  systemctl enable wisp.service >/dev/null 2>&1
+  systemctl enable --quiet wisp.service
   changed "wisp.service enabled"
 fi
 step_done

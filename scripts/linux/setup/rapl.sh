@@ -44,14 +44,15 @@ if ! id -nG "$DEPLOY_USER" | tr ' ' '\n' | grep -qx "$RAPL_GROUP"; then
 fi
 
 # MODE/GROUP do not apply to sysfs files; RUN chgrp/chmods the file.
-if write_if_changed "$RAPL_RULES" 0644 <<RAPL_EOF
+RULE="$(staged_file)"
+cat > "$RULE" <<RAPL_EOF
 # Allow group $RAPL_GROUP to read Intel RAPL energy_uj (CPU power for Wisp Host Overview)
 # MODE/GROUP do not apply to sysfs files; use RUN to chgrp/chmod the file
 SUBSYSTEM=="powercap", KERNEL=="intel-rapl:0", \\
   RUN+="/usr/bin/chgrp $RAPL_GROUP /sys/%p/energy_uj", \\
   RUN+="/usr/bin/chmod g+r /sys/%p/energy_uj"
 RAPL_EOF
-then
+if write_if_changed "$RAPL_RULES" 0644 "$RULE"; then
   udevadm control --reload-rules
   udevadm trigger --action=add --subsystem-match=powercap
   changed "$RAPL_RULES"

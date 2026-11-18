@@ -32,18 +32,15 @@ HELPERS=(wisp-os-update wisp-dmidecode wisp-smartctl wisp-mount wisp-power wisp-
 
 echo "--- Privileged helpers (/usr/local/bin) ---"
 
-# install_sudoers <file> <line>: the rule written and checked by visudo only when
-# it differs; a rule visudo rejects is removed again and fails the step.
+# install_sudoers <file> <line>: the rule checked by visudo while still staged,
+# then put in place only when it differs. A rule visudo rejects never goes live,
+# and the one already in place stays.
 install_sudoers() {
-  local file="$1" line="$2"
-  if printf '%s\n' "$line" | write_if_changed "$file" 0440; then
-    if ! visudo -cq -f "$file"; then
-      rm -f "$file"
-      echo "ERROR: $file is not valid sudoers syntax — removed." >&2
-      exit 1
-    fi
-    changed "$file"
-  fi
+  local file="$1" line="$2" staged
+  staged="$(staged_file)"
+  printf '%s\n' "$line" > "$staged"
+  visudo -cqf "$staged" || fail "$file: the rule \"$line\" is not valid sudoers syntax"
+  if write_if_changed "$file" 0440 "$staged"; then changed "$file"; fi
 }
 
 # Written by atomic rename (write_if_changed): wisp-updater runs this step
@@ -51,11 +48,8 @@ install_sudoers() {
 for name in "${HELPERS[@]}"; do
   src="$PROJECT_ROOT/backend/scripts/$name"
   dest="/usr/local/bin/$name"
-  if [[ ! -f "$src" ]]; then
-    echo "ERROR: $src missing from the install tree." >&2
-    exit 1
-  fi
-  if write_if_changed "$dest" 0755 < "$src"; then changed "$dest"; fi
+  [[ -f "$src" ]] || fail "$src missing from the install tree"
+  if write_if_changed "$dest" 0755 "$src"; then changed "$dest"; fi
   install_sudoers "/etc/sudoers.d/${name//[^a-z0-9-]/}" "$DEPLOY_USER ALL=(root) NOPASSWD: $dest"
 done
 
@@ -73,13 +67,15 @@ done
 
 echo "--- wisp-updater (self-update applier, run as wisp-updater.service) ---"
 
-if write_if_changed /usr/local/bin/wisp-updater 0755 < "$PROJECT_ROOT/backend/scripts/wisp-updater"; then
+[[ -f "$PROJECT_ROOT/backend/scripts/wisp-updater" ]] || fail "backend/scripts/wisp-updater missing from the install tree"
+if write_if_changed /usr/local/bin/wisp-updater 0755 "$PROJECT_ROOT/backend/scripts/wisp-updater"; then
   changed /usr/local/bin/wisp-updater
 fi
 
 # WISP_PATH → the install dir, which the updater reads as $WISP_INSTALL_DIR.
-if sed -e "s|WISP_PATH|$PROJECT_ROOT|g" "$PROJECT_ROOT/systemd/linux/wisp-updater.service" \
-  | write_if_changed /etc/systemd/system/wisp-updater.service 0644; then
+UPDATER_UNIT="$(staged_file)"
+sed -e "s|WISP_PATH|$PROJECT_ROOT|g" "$PROJECT_ROOT/systemd/linux/wisp-updater.service" > "$UPDATER_UNIT"
+if write_if_changed /etc/systemd/system/wisp-updater.service 0644 "$UPDATER_UNIT"; then
   systemctl daemon-reload
   changed /etc/systemd/system/wisp-updater.service
 fi
