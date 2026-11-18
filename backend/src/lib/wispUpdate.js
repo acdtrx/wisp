@@ -503,7 +503,7 @@ export async function applyUpdate(stagingPath) {
   } catch {
     throw createAppError(
       'UPDATE_CHECK_UNAVAILABLE',
-      `${UPDATER_UNIT_FILE} missing — run scripts/linux/setup/install-helpers.sh`
+      `${UPDATER_UNIT_FILE} missing — run setup as root: <install-dir>/scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>`
     );
   }
 

@@ -288,7 +288,7 @@ async function ensureNetNS(name) {
   } catch {
     throw containerError(
       'CONTAINERD_ERROR',
-      `Cannot use ${CONTAINER_NETNS_DIR} without wisp-netns. Run server setup (install-helpers.sh) as root.`,
+      `Cannot use ${CONTAINER_NETNS_DIR} without wisp-netns. Run setup as root: <install-dir>/scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>.`,
       'EACCES or missing helper',
     );
   }
@@ -424,10 +424,10 @@ async function discoverIpv4InNetns(name, ifname = 'eth0', pollOpts = DEFAULT_IPV
       return { ip, fatal: false };
     } catch (err) {
       const se = `${err.stderr || ''} ${err.message || ''}`;
-      // Old wisp-netns without `ipv4` — do not poll for seconds; upgrade install-helpers.
+      // Old wisp-netns without `ipv4` — do not poll for seconds; setup installs the current one.
       if (/Usage/i.test(se)) {
         containerState.logger?.warn(
-          'wisp-netns has no "ipv4" command — re-run install-helpers.sh to persist container IPs (DHCP).',
+          'wisp-netns has no "ipv4" command — run setup again to persist container IPs (DHCP).',
         );
         return { ip: null, fatal: true };
       }
@@ -490,8 +490,8 @@ const WISP_CONTAINER_RESOLV_CONF = '/var/lib/wisp/container-resolv.conf';
 /**
  * Whether the wisp DNS forwarder (`169.254.53.53`) is reachable from a container
  * on this bridge. The stub IP lives on the host's `wisp-dns0` dummy interface —
- * declared by `scripts/linux/setup/container-dns.sh` and re-asserted by
- * `wisp.service` `ExecStartPre=+` — and the host answers ARP for it from the
+ * declared by `scripts/linux/setup/container-dns.sh` through the daemon that
+ * runs the links — and the host answers ARP for it from the
  * primary bridge (weak host model). VLAN sub-bridges (`br0-vlan10`, `eth0.100`, …)
  * carry no host address, so the host has no on-link route back to containers
  * there and the forwarder's replies would leave via the default route instead:
