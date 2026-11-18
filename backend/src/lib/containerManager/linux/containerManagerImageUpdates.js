@@ -78,6 +78,7 @@ async function checkOneImage(ref, onProgress, position) {
   try {
     before = await getImageDigest(ref);
   } catch (err) {
+    if (err?.code === 'NO_CONTAINERD') throw err; // containerd is gone: the sweep ends with its error
     onProgress?.({ step: 'skipped', ref, reason: err?.message || 'digest read failed' });
     return { changed: false, flaggedCount: 0 };
   }
@@ -92,6 +93,7 @@ async function checkOneImage(ref, onProgress, position) {
   try {
     after = await getImageDigest(ref);
   } catch (err) {
+    if (err?.code === 'NO_CONTAINERD') throw err; // containerd is gone: the sweep ends with its error
     onProgress?.({ step: 'skipped', ref, reason: err?.message || 'digest read failed' });
     return { changed: false, flaggedCount: 0 };
   }
