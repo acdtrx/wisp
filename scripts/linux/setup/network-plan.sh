@@ -286,8 +286,11 @@ if dhcp:
 
 hint = origin.rsplit('/', 1)[-1][:-len('.yaml')]
 with open(f'{out}/netplan-set.args', 'w') as f:
-    for k in sorted(MOVED & set(d)):
+    # Off the interface; dhcp4 stays, as false, so the interface keeps a
+    # definition of its own when nothing else is left in it.
+    for k in sorted((MOVED & set(d)) - {'dhcp4'}):
         f.write(f'{hint}\tethernets.{nid}.{k}=null\n')
+    f.write(f'{hint}\tethernets.{nid}.dhcp4=false\n')
     f.write(f'{hint}\tbridges.{bridge}={json.dumps(bridge_def, sort_keys=True)}\n')
 with open(f'{out}/50-wisp-dhcp-identity.conf', 'w') as f:
     f.write(dropin)
