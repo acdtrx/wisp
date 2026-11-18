@@ -25,6 +25,9 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Refuses a distro Wisp does not support, before any step runs.
+# shellcheck source=distro.sh
+source "$SETUP_DIR/distro.sh"
 
 STEP_COUNT=0
 

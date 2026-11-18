@@ -17,9 +17,9 @@ echo "--- libvirt ---"
 
 unit_exists() { systemctl cat --no-pager "$1" &>/dev/null; }
 
-# Modular daemons (virtqemud + sidecars) replace the monolithic libvirtd on
-# distros that opt in (Fedora 35+, recent Arch). Ubuntu 26.04 ships libvirt 12
-# but still packages it monolithically. virtproxyd provides the legacy
+# Modular daemons (virtqemud + sidecars) replace the monolithic libvirtd where
+# the packaging opts in. Ubuntu 26.04 ships libvirt 12 but still packages it
+# monolithically. virtproxyd provides the legacy
 # /var/run/libvirt/libvirt-sock for clients that hardcode that path
 # (libvirt-dbus, sanity.sh).
 if unit_exists virtqemud.socket; then

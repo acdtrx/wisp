@@ -3,8 +3,8 @@
 # stack, containerd 2.x, and the tools the backend and its helpers run. Run as
 # root.
 #
-# Queries first, without the package manager or its lock (dpkg-query, pacman
-# -Q): the package manager runs only for what is missing. When it does run, apt
+# Queries first, with dpkg-query, without the package manager or its lock: the
+# package manager runs only for what is missing. When it does run, apt
 # waits up to 5 min for a lock another package run holds (unattended-upgrades,
 # apt-daily) instead of failing at once.
 set -euo pipefail
@@ -40,42 +40,20 @@ node_ok() {
 # format differs between builds: Docker's containerd.io or the distro's containerd.
 containerd_ok() {
   local version major
-  if [[ "$WISP_DISTRO" == "arch" ]]; then
-    version="$(pacman -Q containerd 2>/dev/null | awk '{ print $2 }' || true)"
-  else
-    for pkg in containerd.io containerd; do
-      [[ "$(dpkg-query -W -f='${db:Status-Status}' "$pkg" 2>/dev/null)" == installed ]] || continue
-      version="$(dpkg-query -W -f='${Version}' "$pkg")"
-      break
-    done
-  fi
+  for pkg in containerd.io containerd; do
+    [[ "$(dpkg-query -W -f='${db:Status-Status}' "$pkg" 2>/dev/null)" == installed ]] || continue
+    version="$(dpkg-query -W -f='${Version}' "$pkg")"
+    break
+  done
   major="${version:-}"
   major="${major#*:}"
   major="${major%%.*}"
   [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 2 ))
 }
 
-echo "--- System packages (distro: $WISP_DISTRO) ---"
+echo "--- System packages ---"
 
-if [[ "$WISP_DISTRO" == "arch" ]]; then
-  # Node.js and containerd 2.x come from the official repos.
-  PACKAGES=(nodejs npm qemu-full libvirt libvirt-dbus edk2-ovmf swtpm avahi hwdata
-    smartmontools dmidecode cifs-utils cloud-utils cdrtools unzip rsync curl containerd)
-  missing=()
-  for p in "${PACKAGES[@]}"; do
-    pacman -Q "$p" >/dev/null 2>&1 || missing+=("$p")
-  done
-  node_ok || [[ " ${missing[*]} " == *" nodejs "* ]] || missing+=(nodejs)
-  containerd_ok || [[ " ${missing[*]} " == *" containerd "* ]] || missing+=(containerd)
-  if (( ${#missing[@]} > 0 )); then
-    pacman -Sy --needed --noconfirm "${missing[@]}"
-    changed "installed ${missing[*]}"
-  fi
-  step_done
-  exit 0
-fi
-
-# Debian / Ubuntu. Node.js 24 comes from NodeSource's apt repo and containerd 2.x
+# Node.js 24 comes from NodeSource's apt repo and containerd 2.x
 # from Docker's (containerd.io): each repo's signing key is pinned under
 # /etc/apt/keyrings, so apt verifies every package against it — nothing is
 # piped from the network into a root shell.

@@ -35,6 +35,10 @@ if [[ $EUID -eq 0 ]]; then
   exit 1
 fi
 
+# Refuses a distro Wisp does not support, before anything is copied.
+# shellcheck source=setup/distro.sh
+source "$SCRIPT_DIR/setup/distro.sh"
+
 # scripts/stage-release.sh writes release.json into every tree it stages.
 if [[ ! -f "$SOURCE_DIR/release.json" ]]; then
   echo "ERROR: $SOURCE_DIR is not a release-shaped tree (no release.json). Install from a release tarball, or push one with scripts/push.sh."

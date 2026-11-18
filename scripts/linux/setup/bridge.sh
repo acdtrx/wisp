@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Create br0 bridge on the host's primary NIC so VMs can join the main network.
-# Supports netplan (Ubuntu), NetworkManager (nmcli), and systemd-networkd (Arch). Must run as root.
+# Supports netplan (Ubuntu), NetworkManager (nmcli), and systemd-networkd. Must run as root.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -167,7 +167,7 @@ elif command -v nmcli &>/dev/null && nmcli networking 2>/dev/null | grep -q "ena
   nmcli connection down "$(nmcli -t -f NAME,DEVICE connection show --active | grep ":$PRIMARY_IFACE$" | cut -d: -f1)" 2>/dev/null || true
   nmcli connection up "$CONN_BR" 2>/dev/null || true
 elif systemctl is-active --quiet systemd-networkd 2>/dev/null; then
-  # --- systemd-networkd (Arch Linux and others) ---
+  # --- systemd-networkd ---
   echo "Using systemd-networkd. Writing network config files..."
   NETDEV_FILE="/etc/systemd/network/90-wisp-${BRIDGE_NAME}.netdev"
   BRIDGE_NET_FILE="/etc/systemd/network/90-wisp-${BRIDGE_NAME}.network"
@@ -240,7 +240,7 @@ else
   echo "  1. Create bridge $BRIDGE_NAME and add $PRIMARY_IFACE as a port using your network manager."
   echo "  2. Set WISP_DEFAULT_BRIDGE=br0 in config/runtime.env and restart Wisp."
   echo ""
-  echo "For systemd-networkd (common on Arch): enable it with 'sudo systemctl enable --now systemd-networkd',"
+  echo "For systemd-networkd: enable it with 'sudo systemctl enable --now systemd-networkd',"
   echo "  then re-run this script."
   exit 1
 fi

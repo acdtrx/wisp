@@ -1,34 +1,22 @@
-#!/usr/bin/env bash
-# Distro detection helper. Source this file; do not execute directly.
+# Sourced by setup and its steps; do not execute it. Wisp hosts run Debian or
+# Ubuntu (or a derivative that says so in ID_LIKE): any other distro is refused
+# here, before a step changes anything.
 # Exports:
-#   WISP_DISTRO   — "debian" (Ubuntu/Debian) or "arch"
 #   sys_arch()    — prints GitHub-release arch name (amd64, arm64, arm)
 
-# Detect distro from /etc/os-release
-if [[ -z "${WISP_DISTRO:-}" ]]; then
-  if [[ -f /etc/os-release ]]; then
-    _ID="$(. /etc/os-release && echo "${ID:-}")"
-    _ID_LIKE="$(. /etc/os-release && echo "${ID_LIKE:-}")"
-  else
-    _ID=""
-    _ID_LIKE=""
-  fi
-
-  case "${_ID}:${_ID_LIKE}" in
-    arch:*|*:*arch*)
-      WISP_DISTRO="arch"
-      ;;
-    ubuntu:*|debian:*|*:*debian*|*:*ubuntu*)
-      WISP_DISTRO="debian"
-      ;;
-    *)
-      echo "ERROR: Unsupported distro (ID=${_ID}, ID_LIKE=${_ID_LIKE})."
-      echo "       Wisp setup supports Debian/Ubuntu and Arch Linux."
-      exit 1
-      ;;
-  esac
-  export WISP_DISTRO
+_ID=""
+_ID_LIKE=""
+if [[ -f /etc/os-release ]]; then
+  _ID="$(. /etc/os-release && echo "${ID:-}")"
+  _ID_LIKE="$(. /etc/os-release && echo "${ID_LIKE:-}")"
 fi
+case " ${_ID} ${_ID_LIKE} " in
+  *" debian "*|*" ubuntu "*) ;;
+  *)
+    echo "ERROR: unsupported distro (ID=${_ID:-none}, ID_LIKE=${_ID_LIKE:-none}): Wisp hosts run Debian or Ubuntu." >&2
+    exit 1
+    ;;
+esac
 
 # Map uname -m to GitHub release architecture names (amd64, arm64, arm)
 sys_arch() {
