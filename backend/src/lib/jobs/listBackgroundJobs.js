@@ -3,6 +3,7 @@ import * as backupJobStore from './backupJobStore.js';
 import * as downloadJobStore from './downloadJobStore.js';
 import { containerJobStore } from './containerJobStore.js';
 import * as operationJobStore from './operationJobStore.js';
+import { imageUpdateJobStore } from './imageUpdateJobStore.js';
 
 /* Each store is independent; if one throws (corrupted in-memory state, future
  * regression, etc.) we still want to surface the others to the UI rather than
@@ -26,5 +27,6 @@ export function listBackgroundJobs() {
     ...safeList(() => downloadJobStore.listJobs()),
     ...safeList(() => containerJobStore.listJobs()),
     ...safeList(() => operationJobStore.listJobs()),
+    ...safeList(() => imageUpdateJobStore.listJobs()),
   ].sort((a, b) => b.createdAt - a.createdAt);
 }
