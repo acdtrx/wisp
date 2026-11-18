@@ -50,12 +50,24 @@
 
 ## Testing & lint
 
-- **No automated test suite** (deviation) — verification is running the real app
-  (`CODING-RULES.md` §14); macOS dev runs stub managers.
+- **Manager paths have no automated tests** (deviation) — they are verified by running
+  the real app (`CODING-RULES.md` §14); macOS dev runs stub managers (settled
+  2026-11-18).
+- **Unit tests on `node --test`**, Node's built-in runner, with no test framework: `npm
+  test` runs the `*.test.js` files beside the modules they test, for code with no
+  platform behind it, against browser stand-ins in `frontend/src/testing/`. Test files
+  never ship: the release workflow fails a staged tree that holds one (settled
+  2026-11-18).
+- `npm run check` runs every check below and the unit tests; the release workflow and
+  `scripts/release.sh` run it before anything is published or tagged.
 - `npm run check-imports` checks that every relative import and module-relative path in
-  the backend resolves; the frontend build checks the client's.
-- `npm run check-fences` enforces the backend's import fences (`CODING-RULES.md` §7): a
-  dependency-free scan, like `check-imports`, rather than ESLint.
+  the backend resolves, and that every name a platform facade takes is exported by its
+  `linux/` and `darwin/` sides; the frontend build checks the client's imports.
+- `npm run check-fences` enforces the backend's import fences (`CODING-RULES.md` §7) and
+  fails an import cycle beyond its listed exceptions: a dependency-free scan, like
+  `check-imports`, rather than ESLint.
+- A shell check runs `bash -n` over every shell script, found by its shebang or a `.sh`
+  name.
 
 ## Deployment
 
