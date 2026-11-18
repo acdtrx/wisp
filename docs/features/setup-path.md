@@ -44,6 +44,16 @@ safe to run again, ending with Wisp usable.
   for it. Applying it is setup's last change, and it keeps the host's address: the
   bridge takes over the interface's hardware address and its DHCP identity, or its
   static settings. A session that drops anyway has nothing left to lose.
+- **Setup makes the bridge on a plain Ethernet uplink, on DHCP or with a static address
+  set through the host's network tool** (settled 2026-11-18). The interface's whole
+  address configuration moves to the bridge and leaves the interface, in the tool's own
+  files, edited through the tool. Any other uplink (a bond, a VLAN, a definition that
+  matches several interfaces) is refused before anything changes: the operator makes
+  the bridge with the host's tool, and setup uses it.
+- **A bridge setup makes is checked before and after.** The new configuration is
+  validated before it goes live. Afterwards the bridge must hold the address, hardware
+  address and DHCP identity the interface had; if it does not, setup puts the host's
+  network back as it was and fails.
 - **The installer asks everything first, then works to the end unattended**: the
   password, the server name, and one confirmation that names the interface it will
   bridge. With no terminal, the answers come from its arguments and it creates the
