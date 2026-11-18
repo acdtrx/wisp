@@ -282,7 +282,7 @@ Cleared on successful `upgrade`. The cache is in-memory only — backend restart
 | Code | HTTP | Meaning |
 |------|------|---------|
 | `UPDATE_BUSY` | 409 | Another package-manager op is running (Wisp's own or external). UI surfaces as a transient warn, not an error. |
-| `UPDATE_CHECK_UNAVAILABLE` | 503 | Script missing, sudo refused, or unsupported distro. |
+| `UPDATE_CHECK_UNAVAILABLE` | 503 | Script missing, or sudo refused. |
 
 `wisp-os-update` uses apt (Wisp hosts run Debian or Ubuntu). The script is invoked via `sudo`.
 

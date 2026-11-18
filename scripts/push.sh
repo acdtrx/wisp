@@ -76,7 +76,8 @@ if [[ "$RESTART_SVC" -eq 1 ]]; then
 fi
 
 echo "--- Installing on $TARGET ---"
-if ! ssh "${SSH_OPTS[@]}" -t "$TARGET" "set -e; rm -rf /tmp/wisp-update; mkdir -p /tmp/wisp-update; tar -xzf '/tmp/$TARBALL_NAME' -C /tmp/wisp-update; cd /tmp/wisp-update/wisp; bash ./scripts/install.sh $INSTALL_FLAGS; rm -rf /tmp/wisp-update '/tmp/$TARBALL_NAME'"; then
+# The staging directory and the tarball go whatever the install's outcome.
+if ! ssh "${SSH_OPTS[@]}" -t "$TARGET" "set -e; trap 'rm -rf /tmp/wisp-update /tmp/$TARBALL_NAME' EXIT; rm -rf /tmp/wisp-update; mkdir -p /tmp/wisp-update; tar -xzf '/tmp/$TARBALL_NAME' -C /tmp/wisp-update; cd /tmp/wisp-update/wisp; bash ./scripts/install.sh $INSTALL_FLAGS"; then
   echo ""
   echo "ERROR: the install on $TARGET failed (see above)." >&2
   exit 1

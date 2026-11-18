@@ -17,7 +17,7 @@ import { getConfigSync } from './lib/config.js';
 import { configureManagers, connectManagers, disconnectManagers } from './lib/managerBootstrap.js';
 import { checkRuntimeEnvFile } from './lib/loadRuntimeEnv.js';
 import { migrateState } from './lib/stateMigrations.js';
-import { notifySystemdReady } from './lib/systemdReady.js';
+import { notifySystemdReady, takeNotifySocket } from './lib/systemdReady.js';
 import { DEV_LOG_TRANSPORT } from './lib/logFormat.js';
 import { startImageUpdateChecker, stopImageUpdateChecker } from './lib/containerManager/index.js';
 import {
@@ -371,6 +371,7 @@ let app = null;
  * boot work, and the port opens last.
  */
 async function main() {
+  takeNotifySocket();
   const log = createStartLogger();
 
   // `npm run route-access`: every route with the level the auth hook enforces

@@ -108,8 +108,30 @@ docker_apt_repo() {
   )
 }
 
-# What this run wrote of the repos, removed again when apt cannot use them.
-REPO_FILES_WRITTEN=()
+# What this run wrote of the repos, taken back when apt cannot use them: a file
+# it created is removed, one it replaced gets its earlier content back.
+REPO_FILES_CREATED=()
+REPO_FILES_REPLACED=()   # "<path>|<saved copy>"
+
+# write_repo_file <dest> <content-file>: write_if_changed, remembering what to
+# take back. Returns 0 when it wrote.
+write_repo_file() {
+  local dest="$1" src="$2" saved=""
+  if [[ -f "$dest" ]]; then
+    saved="$(staged_file)"
+    cp -p "$dest" "$saved" || fail "cannot keep a copy of $dest"
+  fi
+  write_if_changed "$dest" 0644 "$src" || return 1
+  if [[ -n "$saved" ]]; then REPO_FILES_REPLACED+=("$dest|$saved"); else REPO_FILES_CREATED+=("$dest"); fi
+}
+
+restore_repo_files() {
+  local entry
+  rm -f "${REPO_FILES_CREATED[@]}"
+  for entry in "${REPO_FILES_REPLACED[@]}"; do
+    cp -p "${entry#*|}" "${entry%%|*}"
+  done
+}
 
 # apt_repo <name> <key-url> <list-line>: the signing key under /etc/apt/keyrings
 # and the source list, each written only when missing or different. The key is
@@ -124,14 +146,11 @@ apt_repo() {
     curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 60 -o "$armored" "$key_url"
     gpg --batch --yes --dearmor -o "$dearmored" "$armored"
     gpg --batch --show-keys "$dearmored" >/dev/null 2>&1 || fail "$key_url is not a usable signing key"
-    write_if_changed "$keyring" 0644 "$dearmored"
-    REPO_FILES_WRITTEN+=("$keyring")
-    changed "$keyring"
+    if write_repo_file "$keyring" "$dearmored"; then changed "$keyring"; fi
   fi
   list="$(staged_file)"
   printf '%s\n' "$line" > "$list"
-  if write_if_changed "/etc/apt/sources.list.d/$name.list" 0644 "$list"; then
-    REPO_FILES_WRITTEN+=("/etc/apt/sources.list.d/$name.list")
+  if write_repo_file "/etc/apt/sources.list.d/$name.list" "$list"; then
     changed "/etc/apt/sources.list.d/$name.list"
   fi
 }
@@ -158,8 +177,8 @@ if (( ${#repo_packages[@]} > 0 )); then
   # A list apt cannot fetch fails every later `apt-get update` on the host, so
   # what this run wrote does not stay behind when the update fails.
   if ! "${APT[@]}" update -qq; then
-    rm -f "${REPO_FILES_WRITTEN[@]}"
-    fail "apt-get update failed with the NodeSource / Docker repos; removed what this run wrote (${REPO_FILES_WRITTEN[*]:-nothing}) so apt keeps working"
+    restore_repo_files
+    fail "apt-get update failed with the NodeSource / Docker repos; took back what this run wrote to them so apt keeps working"
   fi
   "${APT_INSTALL[@]}" "${repo_packages[@]}"
   changed "installed ${repo_packages[*]}"

@@ -107,6 +107,8 @@ DEPLOY_USER="$(stat -c %U "$INSTALL_DIR")"
 DEPLOY_OWNER="$(stat -c %U:%G "$INSTALL_DIR")"
 
 PREV_DIR="${INSTALL_DIR}.prev"
+# Inside the TimeoutStopSec (300 s) a rollback gets after a start timeout.
+ROLLBACK_START_WAIT_SEC=120
 SERVICE_UNIT=wisp
 
 # User-data and runtime scratch must survive the swap rsync.
@@ -141,8 +143,6 @@ rollback() {
   echo "step:rollback"
   # After a failed start the new backend may be cycling through
   # Restart=on-failure: stop it before the tree is restored under it.
-  # A restored tree from before migrations moved into the backend also runs
-  # them from its common-steps.sh, which needs the backend stopped.
   systemctl stop "$SERVICE_UNIT" 2>/dev/null || echo "rollback-warning: stopping $SERVICE_UNIT failed"
   if [[ "$snapshot_taken" -eq 1 && -d "$PREV_DIR" ]]; then
     # config/ and its ledger revert together: the migrations the new backend's
@@ -169,9 +169,13 @@ rollback() {
     fi
   fi
   systemctl daemon-reload || echo "rollback-warning: daemon-reload failed"
-  # Not waited for: the restored release is what ran before, there is nothing
-  # further to fall back to, and the rollback must end.
-  systemctl start --no-block "$SERVICE_UNIT" || echo "rollback-warning: starting $SERVICE_UNIT failed"
+  # The restored release is what ran before, there is nothing further to fall
+  # back to, and the rollback must end: its start gets a short wait, and a start
+  # not done by then is reported, not retried. A wait cut short leaves the start
+  # job to systemd.
+  if ! timeout "$ROLLBACK_START_WAIT_SEC" systemctl start "$SERVICE_UNIT"; then
+    echo "rollback-warning: the restored release did not start within ${ROLLBACK_START_WAIT_SEC}s (wisp.service: $(systemctl show "$SERVICE_UNIT" -p ActiveState -p SubState --value | tr '\n' ' '))"
+  fi
 }
 
 trap 'rc=$?; if [[ $rc -ne 0 ]]; then rollback; fi' EXIT
@@ -224,6 +228,7 @@ echo "step:start-service"
 # the unit's TimeoutStartSec, inside this unit's own).
 START_TS="$(date +%s)"
 if ! systemctl start "$SERVICE_UNIT"; then
+  journalctl --sync 2>/dev/null || true
   journalctl -u "$SERVICE_UNIT" --since "@$START_TS" -n 20 --no-pager -o cat 2>/dev/null | sed 's/^/  wisp: /' || true
   fail "new release did not start"
 fi

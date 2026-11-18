@@ -39,14 +39,23 @@ fi
 # shellcheck source=setup/distro.sh
 source "$SCRIPT_DIR/setup/distro.sh"
 
-# scripts/stage-release.sh writes release.json into every tree it stages.
-if [[ ! -f "$SOURCE_DIR/release.json" ]]; then
-  echo "ERROR: $SOURCE_DIR is not a release-shaped tree (no release.json). Install from a release tarball, or push one with scripts/push.sh."
+# scripts/stage-release.sh writes RELEASE into every tree it stages.
+if [[ ! -f "$SOURCE_DIR/RELEASE" ]]; then
+  echo "ERROR: $SOURCE_DIR is not a release-shaped tree (no RELEASE file). Install from a release tarball, or push one with scripts/push.sh."
   exit 1
 fi
+REL_VERSION="" REL_COMMIT="" REL_UNCOMMITTED=""
+while IFS='=' read -r key value; do
+  case "$key" in
+    version) REL_VERSION="$value" ;;
+    commit) REL_COMMIT="$value" ;;
+    uncommitted) REL_UNCOMMITTED="$value" ;;
+  esac
+done < "$SOURCE_DIR/RELEASE"
 
 echo "=== Wisp Install ==="
 echo "Source: $SOURCE_DIR"
+echo "Release: ${REL_VERSION:-unknown} (commit ${REL_COMMIT:0:12}$([[ "$REL_UNCOMMITTED" == yes ]] && echo ', staged with uncommitted changes'))"
 echo ""
 
 # --- Install directory ---

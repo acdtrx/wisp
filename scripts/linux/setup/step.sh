@@ -3,8 +3,10 @@
 # `step_done` says "in place" when there was none.
 
 STEP_CHANGED=0
-STEP_TMP_FILES=()
-trap 'rm -f "${STEP_TMP_FILES[@]}"' EXIT
+# One temp directory per step, made here in the step's own shell (staged_file
+# runs in a command substitution, a subshell) and removed when the step ends.
+STEP_TMP_DIR="$(mktemp -d -t wisp-setup.XXXXXX)" || { echo "ERROR: cannot create a temp directory" >&2; exit 1; }
+trap 'rm -rf "$STEP_TMP_DIR"' EXIT
 
 changed() {
   echo "  changed: $*"
@@ -22,14 +24,11 @@ fail() {
   exit 1
 }
 
-# staged_file: a new temp file, removed when the step ends. Render content into
-# it first (under `set -e`, so a missing template fails the step), then pass it
-# to write_if_changed.
+# staged_file: a new file in the step's temp directory, removed when the step
+# ends. Render content into it first (under `set -e`, so a missing template fails
+# the step), then pass it to write_if_changed.
 staged_file() {
-  local f
-  f="$(mktemp)" || fail "cannot create a temp file"
-  STEP_TMP_FILES+=("$f")
-  printf '%s\n' "$f"
+  mktemp "$STEP_TMP_DIR/f.XXXXXX" || fail "cannot create a temp file"
 }
 
 # write_if_changed <dest> <mode> <content-file> [owner:group, default root:root]:

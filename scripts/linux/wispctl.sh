@@ -114,8 +114,10 @@ cmd_svc_uninstall() {
 svc_run() {
   local since
   since="$(date +%s)"
+  echo "  Waiting for the backend to be ready (it runs pending state migrations first)..."
   if ! sudo systemctl "$1" "$SERVICE_UNIT"; then
     echo "ERROR: wisp.service did not start. Its log since this $1:" >&2
+    sudo journalctl --sync 2>/dev/null || true
     sudo journalctl -u "$SERVICE_UNIT" --since "@$since" -n 30 --no-pager -o cat >&2 || true
     exit 1
   fi

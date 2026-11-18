@@ -11,8 +11,9 @@
 # The files are those git tracks (the index), with the working tree's content:
 # a new file ships once it is `git add`ed, and nothing untracked or ignored
 # (config secrets, notes, logs, node_modules) ever does; from config/ only the
-# examples. Plus the frontend build output, and `release.json` naming the
-# version and commit, by which the installer knows a release-shaped tree. The
+# examples. Plus the frontend build output, and `RELEASE` naming the version
+# and the commit (marked when the staged content differed from it), by which the
+# installer knows a release-shaped tree and says what it installs. The
 # tarball holds the same files and content from any machine: no extended
 # attributes, no AppleDouble `._*` files, no `.DS_Store`, no test files; a staged
 # tree or a tarball holding one fails.
@@ -65,7 +66,10 @@ for (const dir of ['frontend/dist', 'frontend/public']) {
 NODE
 
 COMMIT="$(git rev-parse HEAD)"
-printf '{\n  "version": "%s",\n  "commit": "%s"\n}\n' "$VERSION" "$COMMIT" > "$STAGE/release.json"
+# key=value lines, so the installer reads them before Node is on the host.
+DIRTY=no
+git diff --quiet HEAD -- || DIRTY=yes
+printf 'version=%s\ncommit=%s\nuncommitted=%s\n' "$VERSION" "$COMMIT" "$DIRTY" > "$STAGE/RELEASE"
 
 test -f "$STAGE/frontend/dist/index.html" || { echo "ERROR: frontend/dist/index.html missing" >&2; exit 1; }
 # The offline shell must ship with its precache list baked in by
