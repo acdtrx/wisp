@@ -658,7 +658,7 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
       } > "$NET_PLAN_DIR/port.args"
       # Both checked by NetworkManager itself, offline: nothing is added.
       if ! timeout "$NET_CMD_SEC" nmcli --offline connection add --help >/dev/null 2>&1; then
-        net_refuse "NetworkManager $(nmcli --version 2>/dev/null | awk '{ print $NF }') is too old: setup checks the connections it adds with nmcli --offline, which NetworkManager has from 1.44."
+        net_refuse "this nmcli has no --offline, with which setup checks the connections it adds before adding them."
       fi
       for _f in bridge port; do
         mapfile -t _args < "$NET_PLAN_DIR/$_f.args"
