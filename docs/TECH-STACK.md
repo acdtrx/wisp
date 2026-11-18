@@ -57,11 +57,18 @@
   dependency, for code with no platform behind it; browser stand-ins in
   `frontend/src/testing/`. Test files never ship: the release workflow fails a staged
   tree that holds one (settled 2026-11-18).
-- **The checks are dependency-free Node scripts** in `scripts/` (`check-imports`,
-  `check-fences`, the shell check), dumb scans rather than ESLint; `npm run check` runs
-  them and the unit tests, and the release workflow and `scripts/release.sh` run it.
-  What each covers, and when to run it: `CODING-RULES.md` §14. The frontend build
-  checks the client's imports.
+- **ESLint**, a dev-only dependency of the repo root with its React hooks plugin and
+  `globals`, for correctness rules only: `no-undef`, `no-unused-vars` (rest siblings
+  ignored), `no-dupe-keys`, `react-hooks/rules-of-hooks`. No style rule;
+  `react-hooks/exhaustive-deps` stays off until the hooks that own the dependency
+  arrays exist. A hand-written scan was rejected: an undefined name needs scope
+  analysis (settled 2026-11-18).
+- **The other checks are dependency-free Node scripts** in `scripts/` (`check-imports`,
+  `check-fences`, the shell check): dumb scans for what ESLint does not see (the
+  fences, names across backend files, facade parity, cycles, shell syntax).
+  `npm run check` runs them, ESLint and the unit tests, and the release workflow and
+  `scripts/release.sh` run it. What each covers, and when to run it:
+  `CODING-RULES.md` §14. The frontend build checks the client's imports.
 
 ## Deployment
 
@@ -86,6 +93,17 @@
 Rules: `CODING-RULES.md` §3. Each line: what it is for, and what it saves.
 
 ### Inventory
+
+#### Repo root (dev only)
+
+Never on a host: the release tarball and the dev zip carry the root `package.json`
+alone, and nothing installs the root's packages there.
+
+| Component | Technology | Version | Purpose |
+|-----------|-----------|---------|---------|
+| Lint | eslint | ^10.15 | Correctness rules over `backend/` and `frontend/src/` (Testing & lint, above); flat config in `eslint.config.mjs`. |
+| Lint plugin | eslint-plugin-react-hooks | ^7.1 | `rules-of-hooks`. Version 7 brings in `@babel/core`, `hermes-parser` and `zod` for its React Compiler rules, which stay off; version 5 does not support ESLint 10. |
+| Lint globals | globals | ^17.14 | The browser and Node global names `no-undef` needs, rather than a hand-kept list. |
 
 #### Backend
 

@@ -247,9 +247,11 @@ Manager paths have no automated tests — verification is running the real thing
 checks and the unit tests below for what they cover:
 
 - Run `npm run check` at the repo root after any change to code or scripts: it must
-  pass. It runs each check below and fails if any of them fails; the release workflow
-  and `scripts/release.sh` run it too, so a failure blocks a release.
-  - `check-imports`: every relative import in the backend resolves. The backend has no
+  pass (it needs `npm ci` at the root and in `frontend/`). It runs each check below and
+  fails if any of them fails; the release workflow and `scripts/release.sh` run it too,
+  so a failure blocks a release.
+  - `check-imports`: every relative import in the backend resolves, and every name one
+    backend file imports from another is exported there. The backend has no
     build step, so nothing else validates import paths — and a *dynamic* import only
     resolves when its code path runs, so a stale one boots fine and 500s a single route
     later. It also checks module-relative paths (`resolve(__dirname, '…')`,
@@ -258,6 +260,10 @@ checks and the unit tests below for what they cover:
     `darwin/` sides.
   - `check-fences`: the import fences (§7), and no import cycle in the backend beyond
     its listed exceptions.
+  - `lint`: ESLint over `backend/` and `frontend/src/`, correctness rules only: a use
+    of an undefined name, an unused import, variable or parameter, a duplicate object
+    key, a hook called outside the rules of hooks, an `eslint-disable` that disables
+    nothing.
   - the shell check: `bash -n` over every shell script.
   - `npm test`: the unit tests, `node --test` over the `*.test.js` files beside the
     modules they test (`frontend/src/`), for code with no platform behind it: timing,

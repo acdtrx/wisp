@@ -34,9 +34,10 @@ long prose. Use plain English, not niche or trendy terminology.
   `cd backend && NODE_ENV=development npm run dev` (→ `127.0.0.1:8080`) · Frontend dev
   `cd frontend && npx vite --port 5173` (proxies `/api` + `/ws` to `:8080`) · Frontend
   build `cd frontend && npm run build` · All checks `npm run check` (imports, fences,
-  shell scripts, unit tests; needs `npm ci` in `frontend/`) · Unit tests `npm test` ·
-  Import check `npm run check-imports` · Fence lint `npm run check-fences` · Route
-  access table `npm run route-access` · Release (user-initiated) `scripts/release.sh`.
+  ESLint, shell scripts, unit tests; needs `npm ci` at the root and in `frontend/`) ·
+  Lint `npm run lint` · Unit tests `npm test` · Import check `npm run check-imports` ·
+  Fence lint `npm run check-fences` · Route access table `npm run route-access` ·
+  Release (user-initiated) `scripts/release.sh`.
   Manager paths have no automated tests: verification is CODING-RULES §14.
 - Hard constraints: a single-user manager for KVM/QEMU VMs (libvirt over DBus) and
   containerd containers on one Linux host, reached from a browser on the same network.
