@@ -60,7 +60,9 @@
  *
  * Known limits (a dumb scan, not a parser): a binding's name inside a string, as
  * an object key or as a shadowing local fails a correct facade; a template
- * literal with a `${…}` outside an import() is not read.
+ * literal with a `${…}` outside an import() is not read; export lists are read
+ * with strings left in, so a string holding `export function x` counts as an
+ * export.
  */
 import { access, readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -242,21 +244,21 @@ const rel = (abs) => path.relative(REPO_ROOT, abs);
  * Whether `file` really exports `name`, following `export … from` to the file
  * that defines it: null when it does, `{ missing: true }` when `file` has no such
  * export, or the problem one step down the chain (a re-export of a name its
- * source lacks, an `export *`).
+ * source lacks, an `export *`). `checker` names the check in that last message.
  */
-async function traceExport(tables, file, name, seen = new Set()) {
+async function traceExport(tables, file, name, checker = 'facade parity', seen = new Set()) {
   const key = `${file}#${name}`;
   if (seen.has(key) || !await exists(file)) return null; // a loop, or a missing file the specifier scan reports
   seen.add(key);
   if (!tables.has(file)) tables.set(file, await exportTable(file));
   const table = tables.get(file);
   if (table === null) {
-    return { file, line: 1, message: 'uses `export *`: facade parity cannot see what it exports (list the names)' };
+    return { file, line: 1, message: `uses \`export *\`: ${checker} cannot see what it exports (list the names)` };
   }
   const entry = table.get(name);
   if (!entry) return { missing: true };
   if (!entry.from) return null;
-  const found = await traceExport(tables, entry.from, entry.sourceName, seen);
+  const found = await traceExport(tables, entry.from, entry.sourceName, checker, seen);
   if (found?.missing) {
     return {
       file,
@@ -335,22 +337,15 @@ async function facadeParity(files, tables) {
   return { problems: [...problems.values()], pairs };
 }
 
-/** The names in an import's `{ … }`, as `[{ imported, local }]`; null when unreadable. */
-function namedList(list) {
+/**
+ * The names in a `{ … }` list, as `[{ imported, local }]`, null when unreadable:
+ * an import's or re-export's (`a as b`) or a destructuring's (`a: b`).
+ */
+function nameList(list, rename) {
+  const pattern = new RegExp(`^([\\w$]+)(?:${rename === 'as' ? '\\s+as\\s+' : '\\s*:\\s*'}([\\w$]+))?$`);
   const names = [];
   for (const part of list.split(',').map((x) => x.trim()).filter(Boolean)) {
-    const m = /^([\w$]+)(?:\s+as\s+([\w$]+))?$/.exec(part);
-    if (!m) return null;
-    names.push({ imported: m[1], local: m[2] ?? m[1] });
-  }
-  return names;
-}
-
-/** The names a `const { … } = await import(…)` destructures; null when unreadable. */
-function destructuredList(list) {
-  const names = [];
-  for (const part of list.split(',').map((x) => x.trim()).filter(Boolean)) {
-    const m = /^([\w$]+)(?:\s*:\s*([\w$]+))?$/.exec(part);
+    const m = pattern.exec(part);
     if (!m) return null;
     names.push({ imported: m[1], local: m[2] ?? m[1] });
   }
@@ -382,7 +377,7 @@ async function namedImports(files, tables) {
   const expect = async (file, source, index, target, name) => {
     count += 1;
     if (!await exists(target)) return; // reported by the specifier scan
-    const found = await traceExport(tables, target, name);
+    const found = await traceExport(tables, target, name, 'the import check');
     if (!found) return;
     const line = lineOf(source, index);
     if (found.missing) {
@@ -391,13 +386,26 @@ async function namedImports(files, tables) {
       report(found);
     }
   };
-  /** Check every `ns.member` use of namespace `ns` against `target`. */
-  const expectMembers = async (file, source, code, ns, target) => {
+  /**
+   * Check every `ns.member` use of namespace `ns` (declared at `declaredAt`)
+   * against `target`. `ns?.x`, `ns[…]` and `{ … } = ns` read names the scan cannot
+   * check, and fail; `ns` handed on whole is the one use let through.
+   */
+  const expectMembers = async (file, source, code, ns, declaredAt, target) => {
     const escaped = ns.replace(/\$/g, '\\$');
     // String contents blanked, so `'./ns.js'` is not read as a use of `ns`.
     const bare = code.replace(/(['"`])(?:\\.|(?!\1)[^\\\n])*\1/g, (q) => q[0] + ' '.repeat(q.length - 2) + q[0]);
-    for (const use of bare.matchAll(new RegExp(`(?<![\\w$.])${escaped}\\s*\\.\\s*([\\w$]+)`, 'g'))) {
-      await expect(file, source, use.index, target, use[1]);
+    for (const use of bare.matchAll(new RegExp(`(?<![\\w$.])${escaped}(?![\\w$])(\\s*\\.\\s*([\\w$]+))?`, 'g'))) {
+      if (use.index === declaredAt) continue;
+      if (use[2] !== undefined) {
+        await expect(file, source, use.index, target, use[2]);
+        continue;
+      }
+      const after = bare.slice(use.index + ns.length).trimStart();
+      const before = bare.slice(0, use.index).trimEnd();
+      if (after.startsWith('?.') || after.startsWith('[') || /\}\s*=$/.test(before)) {
+        unreadable(file, source, use.index, `\`${ns}\` read other than as \`${ns}.member\``);
+      }
     }
   };
   const unreadable = (file, source, index, what) => report({
@@ -416,19 +424,22 @@ async function namedImports(files, tables) {
       if (!RELATIVE_MODULE.test(m[3])) continue;
       const target = resolve(m[3]);
       const clause = /^(?:([\w$]+)\s*(?:,\s*|$))?(?:\{([^}]*)\}|\*\s*as\s+([\w$]+))?$/.exec(m[1].trim());
-      const names = clause && clause[2] !== undefined ? namedList(clause[2]) : [];
+      const names = clause && clause[2] !== undefined ? nameList(clause[2], 'as') : [];
       if (!clause || !m[1].trim() || names === null) {
         unreadable(file, source, m.index, `an import from ${m[3]} in a form the scan cannot read`);
         continue;
       }
       if (clause[1]) await expect(file, source, m.index, target, 'default');
       for (const { imported } of names) await expect(file, source, m.index, target, imported);
-      if (clause[3]) await expectMembers(file, source, code, clause[3], target);
+      if (clause[3]) {
+        const declaredAt = m.index + m[0].search(new RegExp(`\\b${clause[3].replace(/\$/g, '\\$')}\\b`));
+        await expectMembers(file, source, code, clause[3], declaredAt, target);
+      }
     }
 
     for (const m of code.matchAll(/(?<![\w$.])export\s*\{([^}]*)\}\s*from\s*(['"])([^'"\n]+)\2/g)) {
       if (!RELATIVE_MODULE.test(m[3])) continue;
-      const names = namedList(m[1]);
+      const names = nameList(m[1], 'as');
       if (names === null) {
         unreadable(file, source, m.index, `a re-export from ${m[3]} in a form the scan cannot read`);
         continue;
@@ -440,25 +451,28 @@ async function namedImports(files, tables) {
     for (const m of code.matchAll(/(?<![\w$.])(?:const|let)\s*\{([^}]*)\}\s*=\s*await\s+import\s*\(\s*(['"])([^'"\n]+)\2\s*\)/g)) {
       if (!RELATIVE_MODULE.test(m[3])) continue;
       destructured.add(m.index + m[0].indexOf('import'));
-      const names = destructuredList(m[1]);
+      const names = nameList(m[1], ':');
       if (names === null) {
         unreadable(file, source, m.index, `a dynamic import of ${m[3]} in a form the scan cannot read`);
         continue;
       }
       for (const { imported } of names) await expect(file, source, m.index, resolve(m[3]), imported);
     }
-    for (const m of code.matchAll(/(?<![\w$.])(?:const|let)\s+([\w$]+)\s*=\s*await\s+import\s*\(\s*(['"])([^'"\n]+)\2\s*\)/g)) {
+    for (const m of code.matchAll(/(?<![\w$.])(?:const|let)\s+([\w$]+)\s*=\s*await\s+import\s*\(\s*(['"])([^'"\n]+)\2\s*\)/dg)) {
       if (!RELATIVE_MODULE.test(m[3])) continue;
       if (isFacade && /^\.\/(?:linux|darwin)\//.test(m[3])) continue; // parity's
       destructured.add(m.index + m[0].indexOf('import'));
-      await expectMembers(file, source, code, m[1], resolve(m[3]));
+      await expectMembers(file, source, code, m[1], m.indices[1][0], resolve(m[3]));
     }
     for (const m of code.matchAll(/(?<![\w$.])import\s*\(/g)) {
       if (destructured.has(m.index)) continue;
-      const literal = /^(['"])([^'"\n]+)\1$/.exec(callArgument(code, m.index + m[0].length))?.[2];
-      if (!literal || !RELATIVE_MODULE.test(literal)) continue; // computed: check-fences' business
-      if (isFacade && /^\.\/(?:linux|darwin)\//.test(literal)) continue; // parity's
-      unreadable(file, source, m.index, `a dynamic import of ${literal} not destructured as \`const { … } = await import(…)\``);
+      const literals = argumentValues(callArgument(code, m.index + m[0].length))
+        .filter((v) => !v.isCondition)
+        .map((v) => /^(['"])([^'"\n]+)\1$/.exec(v.text)?.[2])
+        .filter((l) => l && RELATIVE_MODULE.test(l));
+      if (literals.length === 0) continue; // computed: check-fences' business
+      if (isFacade && literals.every((l) => /^\.\/(?:linux|darwin)\//.test(l))) continue; // parity's
+      unreadable(file, source, m.index, `a dynamic import of ${literals.join(' or ')} not destructured as \`const { … } = await import('…')\``);
     }
   }
   return { problems: [...problems.values()], count };
