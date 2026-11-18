@@ -319,7 +319,7 @@ export function subscribeContainerListChange(handler) {
  */
 export async function listContainers() {
   // Without the events stream nothing keeps the cache coherent — read disk each
-  // time. That caller (the migration runner) acts on every container, so it
+  // time. That caller (the start's migrations) acts on every container, so it
   // gets real state or an error, never a guessed one.
   if (!containerState.watchEvents) return fetchContainerListFromDisk({ complete: true });
   if (containerListCache === null) {

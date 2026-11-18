@@ -90,7 +90,6 @@ function getTolerantConfig() {
 function buildContext(migration, { log, changes }) {
   const migrationLog = log.child({ migration: migration.id });
   return {
-    dryRun: false,
     log: migrationLog,
     vmManager,
     containerManager,
@@ -98,9 +97,6 @@ function buildContext(migration, { log, changes }) {
     paths: { installDir: INSTALL_DIR, configDir: CONFIG_DIR, configFile: CONFIG_PATH, runtimeEnvFile: RUNTIME_ENV_PATH },
     setVMPendingRestart: vmManager.setVMPendingRestart,
     setContainerPendingRestart: containerManager.setContainerPendingRestart,
-    // 0007 hands over the config as it leaves it, for backend/scripts/migrate.mjs's
-    // dry run; nothing here reads it.
-    setRepairedConfig() {},
     recordChange(text) {
       changes.push(text);
       migrationLog.info(text);

@@ -19,6 +19,6 @@ export async function run(ctx) {
     const config = await ctx.containerManager.getContainerConfig(name);
     if (config.pendingRestart !== true) continue;
     ctx.recordChange(`${name}: pendingRestart true → { since: now }`);
-    if (!ctx.dryRun) await ctx.setContainerPendingRestart(name, true);
+    await ctx.setContainerPendingRestart(name, true);
   }
 }

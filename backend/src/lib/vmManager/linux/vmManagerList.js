@@ -214,7 +214,7 @@ export function getCachedDomainPath(name) {
 
 export async function listVMs() {
   // Without DomainEvents nothing keeps the cache coherent — read libvirt each
-  // time. That caller (the migration runner) acts on every VM, so it gets the
+  // time. That caller (the start's migrations) acts on every VM, so it gets the
   // whole list or an error, never a silently shorter one.
   if (!connectionState.watchEvents) return fetchVMListFromLibvirt({ complete: true });
   if (vmListCache === null) {

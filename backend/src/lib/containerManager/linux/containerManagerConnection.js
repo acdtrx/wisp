@@ -24,8 +24,8 @@ export const containerState = {
   logger: null,
   /** false (connect option): no containerd events stream — so no restart
    *  policy on task exits — inert network reconciler, uncached container
-   *  list. For a short-lived process (the migration runner) that must not act
-   *  alongside the backend. */
+   *  list. For the start's migrations, which must not act alongside the
+   *  backend's normal work. */
   watchEvents: true,
 };
 

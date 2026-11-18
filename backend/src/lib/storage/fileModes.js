@@ -22,13 +22,13 @@ const MODE_UNSUPPORTED_ERRORS = new Set(['EPERM', 'EROFS', 'ENOTSUP', 'EOPNOTSUP
  * Clear the group/other permission bits of a regular file or directory.
  *
  * @param {string} path
- * @param {{ type: 'file' | 'dir', dryRun?: boolean }} opts - `type` the entry must be; anything else (symlink, FIFO, the other type) is left alone
+ * @param {{ type: 'file' | 'dir' }} opts - `type` the entry must be; anything else (symlink, FIFO, the other type) is left alone
  * @returns {Promise<null | { path: string, type: 'file' | 'dir', from: number, to: number, applied: boolean, reason?: string }>}
  *   null when there is nothing to change (absent, wrong type, already owner-only);
- *   `applied: false` under `dryRun`, and with a `reason` when the change was attempted but not made
+ *   `applied: false` with a `reason` when the change was attempted but not made
  *   (the filesystem keeps its own modes, or refused the chmod)
  */
-export async function restrictToOwner(path, { type, dryRun = false }) {
+export async function restrictToOwner(path, { type }) {
   let handle;
   try {
     handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -43,7 +43,6 @@ export async function restrictToOwner(path, { type, dryRun = false }) {
     const from = st.mode & 0o7777;
     if ((from & GROUP_OTHER_BITS) === 0) return null;
     const to = from & ~GROUP_OTHER_BITS;
-    if (dryRun) return { path, type, from, to, applied: false };
     try {
       await handle.chmod(to);
     } catch (err) {

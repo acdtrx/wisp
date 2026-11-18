@@ -30,7 +30,7 @@ export async function run(ctx) {
       const mode = await ctx.containerManager.getMountFileMode(name, mount.name);
       if (mode == null || (mode & 0o077) === 0) continue;
       ctx.recordChange(`${name}: ${mount.name} mode ${octal(mode)} → ${octal(MODE)}`);
-      if (!ctx.dryRun) await ctx.containerManager.setMountFileMode(name, mount.name, MODE);
+      await ctx.containerManager.setMountFileMode(name, mount.name, MODE);
     }
   }
 }

@@ -29,6 +29,6 @@ export async function run(ctx) {
   for (const root of listConfiguredBackupRoots(settings)) {
     if (!roots.includes(root)) ctx.log.warn({ root }, 'Backup mount not mounted — its VM backups are left as they are');
   }
-  const changes = await ctx.vmManager.tightenVMBackupFileModes(roots, { dryRun: ctx.dryRun });
+  const changes = await ctx.vmManager.tightenVMBackupFileModes(roots);
   for (const line of describeModeChanges(changes)) ctx.recordChange(line);
 }

@@ -5,7 +5,7 @@
  *
  * 1. runtime.env, read raw: lines setting the retired WISP_BACKEND_PORT /
  *    WISP_FRONTEND_PORT are removed. Nothing else needs checking here: the
- *    runner loaded the file strictly except for those two keys and checked
+ *    start loaded the file strictly except for those two keys and checked
  *    every WISP_* value before any migration, so a malformed, repeated or
  *    invalid WISP_CONFIG_PATH has already stopped it and the config file
  *    below is the one the backend will read.
@@ -15,7 +15,7 @@
  *    2026-04-29) is removed, its log line naming the containers whose mounts
  *    use it as their source; a backupMountId naming no mount is cleared and
  *    schedule destinations that are neither 'local' nor the backupMountId are
- *    dropped. Anything else invalid is left for the runner's strict check.
+ *    dropped. Anything else invalid is left for the start's strict check.
  *    Nothing before this step reads the config strictly (0005 and 0006 read
  *    their paths tolerantly), and nothing in this migration does after it.
  * 3. container.json shape — what releases before 2026-11-12 repaired when the
@@ -36,11 +36,6 @@
  *    were — under the backup roots the backend lists (from the repaired config):
  *    the local path, and the backup mount when it is mounted. An unmounted
  *    backup mount is skipped (logged); its old backups keep no origin.
- *
- * Under --dry-run nothing is written; steps 3 and 4 work from the config as
- * step 2 would leave it, and the runner's strict check reads the would-be
- * runtime.env and config this migration hands it (ctx.setRepairedConfig), so a
- * dry run lists and judges what a real one would.
  *
  * Backward-compatible: the previous release ignores the removed keys, never
  * used a mount the helper refused, and writes the container and manifest shapes
@@ -74,11 +69,11 @@ async function readIfExists(path) {
   }
 }
 
-/** Step 1. Returns the text as this step leaves it, or null when there is no file. */
+/** Step 1. */
 async function repairRuntimeEnv(ctx) {
   const path = ctx.paths.runtimeEnvFile;
   const text = await readIfExists(path);
-  if (text === null) return null;
+  if (text === null) return;
   const lines = text.split('\n');
   const kept = lines.filter((line, i) => {
     const key = retiredKeyOfLine(line);
@@ -86,13 +81,11 @@ async function repairRuntimeEnv(ctx) {
     ctx.recordChange(`runtime.env line ${i + 1}: removed retired ${key}`);
     return false;
   });
-  const repaired = kept.join('\n');
-  if (kept.length !== lines.length && !ctx.dryRun) {
+  if (kept.length !== lines.length) {
     const { mode } = await stat(path);
     // Staged, synced and renamed; a crash's leftover temp file is swept at boot.
-    await writeFileAtomic(path, repaired, { mode: mode & 0o777 });
+    await writeFileAtomic(path, kept.join('\n'), { mode: mode & 0o777 });
   }
-  return repaired;
 }
 
 /** Container names by the storage mount ids their mounts use as `sourceId`. */
@@ -180,7 +173,7 @@ async function repairWispConfig(ctx) {
     }
   }
 
-  if (changed && !ctx.dryRun) await writeJsonAtomic(path, data, { mode: 0o600 });
+  if (changed) await writeJsonAtomic(path, data, { mode: 0o600 });
   return data;
 }
 
@@ -245,7 +238,6 @@ async function migrateContainerShapes(ctx) {
     const running = state === 'running' || state === 'paused';
     const flag = running && needsRestart;
     ctx.recordChange(`${name}: ${changes.join('; ')}${flag ? ' (restart required)' : ''}`);
-    if (ctx.dryRun) continue;
     // The flag rides the same write as the change it is for.
     if (flag) config.pendingRestart = { since: new Date().toISOString() };
     await cm.writeContainerConfig(name, config);
@@ -263,20 +255,18 @@ async function markBackupOrigins(ctx, config) {
   for (const b of await ctx.vmManager.listBackups(destinations)) {
     if (b.origin != null) continue;
     ctx.recordChange(`${b.path}: origin → manual`);
-    if (!ctx.dryRun) await ctx.vmManager.setVMBackupOrigin(b.path, 'manual');
+    await ctx.vmManager.setVMBackupOrigin(b.path, 'manual');
   }
   for (const b of await ctx.containerManager.listContainerBackups(destinations)) {
     if (b.origin != null) continue;
     ctx.recordChange(`${b.path}: origin → manual`);
-    if (!ctx.dryRun) await ctx.containerManager.setContainerBackupOrigin(b.path, 'manual');
+    await ctx.containerManager.setContainerBackupOrigin(b.path, 'manual');
   }
 }
 
 export async function run(ctx) {
-  const runtimeEnvText = await repairRuntimeEnv(ctx);
+  await repairRuntimeEnv(ctx);
   const config = await repairWispConfig(ctx);
-  // What the runner's strict check reads under --dry-run, in place of the files.
-  ctx.setRepairedConfig({ runtimeEnvText, configData: config });
   await migrateContainerShapes(ctx);
   await markBackupOrigins(ctx, config);
 }

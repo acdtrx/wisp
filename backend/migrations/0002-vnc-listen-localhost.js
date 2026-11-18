@@ -25,7 +25,6 @@ export async function run(ctx) {
     const from = [...new Set(stale.map((l) => l.address))].join(', ');
     const running = !ctx.vmManager.isOfflineState(vm.stateCode);
     ctx.recordChange(`${vm.name}: ${kinds} listen ${from} → ${LOCALHOST}${running ? ' (restart required)' : ''}`);
-    if (ctx.dryRun) continue;
     await ctx.vmManager.setGraphicsListen(vm.name, LOCALHOST);
     if (running) await ctx.setVMPendingRestart(vm.name, true);
   }

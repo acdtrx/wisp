@@ -3,11 +3,11 @@
  * `<root>/vms/<vmName>/<timestamp>/` directory 0700 and each regular file in
  * it 0600 — the modes createBackup gives a new backup (it holds the guest's
  * disks and cloud-init.json's password hash). Tightens existing backups left
- * at the umask default, for the state migration that runs on update.
+ * at the umask default, for the state migration that brings them up to date.
  *
  * Pure filesystem work — no libvirt — so the macOS dev stub exports it too.
- * Returns one record per entry it changed (or, under `dryRun`, would change);
- * see `restrictToOwner` for the record shape.
+ * Returns one record per entry it changed; see `restrictToOwner` for the record
+ * shape.
  */
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -27,9 +27,8 @@ async function listDir(dir) {
 
 /**
  * @param {string[]} roots - absolute backup destination roots; one that does not exist is skipped
- * @param {{ dryRun?: boolean }} [opts]
  */
-export async function tightenVMBackupFileModes(roots, { dryRun = false } = {}) {
+export async function tightenVMBackupFileModes(roots) {
   const changes = [];
   for (const root of roots) {
     const vmsRoot = join(root, VMS_BACKUP_DIRNAME);
@@ -39,11 +38,11 @@ export async function tightenVMBackupFileModes(roots, { dryRun = false } = {}) {
       for (const tsEntry of await listDir(nameDir)) {
         if (!tsEntry.isDirectory()) continue;
         const backupDir = join(nameDir, tsEntry.name);
-        const dirChange = await restrictToOwner(backupDir, { type: 'dir', dryRun });
+        const dirChange = await restrictToOwner(backupDir, { type: 'dir' });
         if (dirChange) changes.push(dirChange);
         for (const fileEntry of await listDir(backupDir)) {
           if (!fileEntry.isFile()) continue;
-          const fileChange = await restrictToOwner(join(backupDir, fileEntry.name), { type: 'file', dryRun });
+          const fileChange = await restrictToOwner(join(backupDir, fileEntry.name), { type: 'file' });
           if (fileChange) changes.push(fileChange);
         }
       }

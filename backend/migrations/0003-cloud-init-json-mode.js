@@ -39,7 +39,7 @@ export async function run(ctx) {
     const mode = st.mode & 0o7777;
     if ((mode & 0o077) === 0) continue;
     ctx.recordChange(`${entry.name}/cloud-init.json: mode ${octal(mode)} → ${octal(MODE)}`);
-    if (!ctx.dryRun) await chmod(file, MODE);
+    await chmod(file, MODE);
   }
 }
 

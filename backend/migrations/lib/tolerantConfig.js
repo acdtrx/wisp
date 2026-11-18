@@ -4,9 +4,9 @@
  * default, and nothing else in the file is looked at. Migrations may run on a
  * file an older release wrote, before 0007 repairs it for the strict reader
  * (lib/configSchema.js), so none of them reads the config strictly. The
- * migration runner hands `readTolerantConfig` to migrations as `ctx.getConfig`
- * and to the manager setup. Not a parser to trust beyond paths: an invalid file
- * still fails the runner's strict check after the migrations.
+ * start hands `readTolerantConfig` to migrations as `ctx.getConfig` and to the
+ * manager setup. Not a parser to trust beyond paths: an invalid file still
+ * fails the start's strict check after the migrations.
  */
 import { readFileSync } from 'node:fs';
 

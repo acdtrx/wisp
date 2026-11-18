@@ -1,9 +1,8 @@
 /**
  * vmManager / containerManager wiring shared by the backend's normal work
- * (`src/index.js`), its start-time migrations (`lib/stateMigrations.js`) and
- * the update-time runner (`scripts/migrate.mjs`). All configure and connect the
- * managers identically, or a migration would act on a differently configured
- * host than the app it migrates for.
+ * (`src/index.js`) and its start-time migrations (`lib/stateMigrations.js`).
+ * Both configure and connect the managers identically, or a migration would
+ * act on a differently configured host than the app it migrates for.
  */
 import { getConfigSync } from './config.js';
 import {

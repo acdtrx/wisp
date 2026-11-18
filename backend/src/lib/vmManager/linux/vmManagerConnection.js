@@ -46,9 +46,9 @@ export const connectionState = {
   /** Pino-compatible logger plumbed via connect(); null until connected. */
   logger: null,
   /** false (connect option): no DomainEvent listener, no QEMU-binary watcher,
-   *  no restart-flag clearing, inert network reconciler, uncached VM list — for a short-lived process
-   *  (the migration runner) that must not act alongside the backend. Kept
-   *  across bus reconnects. */
+   *  no restart-flag clearing, inert network reconciler, uncached VM list — for
+   *  the start's migrations, which must not act alongside the backend's normal
+   *  work. Kept across bus reconnects. */
   watchEvents: true,
 };
 
@@ -59,7 +59,7 @@ export { vmError, unwrapVariant, unwrapDict, formatVersion, generateMAC };
  * lifecycle calls (starting a large VM, undefining one with NVRAM are the slow
  * ones; a guest shutdown request returns at once anyway). dbus-next never
  * settles a call libvirtd doesn't answer, so a wedged daemon would otherwise
- * hang the route, a reconciler or the migration runner. A late answer still
+ * hang the route, a reconciler or the start's migrations. A late answer still
  * lands in libvirt; only the wait gives up.
  */
 export const LIBVIRT_CALL_TIMEOUT_MS = 30_000;
@@ -259,8 +259,9 @@ export async function connect(logger = null, opts = {}) {
   } catch (err) {
     try { bus.disconnect(); } catch { /* bus may already be closed */ }
     // A failed first connect (libvirt-dbus not up yet at boot) retries on the
-    // reconnect backoff, as a dropped bus does. Only with event watching: a
-    // pending timer would keep the one-shot migration runner alive.
+    // reconnect backoff, as a dropped bus does. Only with event watching:
+    // without it the caller (the start's migrations) connects once, and a
+    // failed connect is its warning.
     if (connectionState.watchEvents) scheduleReconnect();
     throw err;
   }

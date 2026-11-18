@@ -32,7 +32,6 @@ export async function run(ctx) {
     const uuid = randomUUID();
     seen.add(uuid);
     ctx.recordChange(`${name}: uuid ${current ? `${current} (shared) → ` : ''}${uuid}`);
-    if (ctx.dryRun) continue;
     config.uuid = uuid;
     await cm.writeContainerConfig(name, config);
   }

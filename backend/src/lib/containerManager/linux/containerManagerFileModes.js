@@ -4,11 +4,11 @@
  * container backup (timestamp directory 0700, its files 0600). New state gets
  * these modes when written (containerManagerCreate / ConfigIo / Backup); these
  * functions tighten existing state left at the umask default, for the state
- * migration that runs on update.
+ * migration that brings it up to date.
  *
  * Pure filesystem work — no containerd — so the macOS dev stub exports them
- * too. Each returns one record per entry it changed (or, under `dryRun`, would
- * change); see `restrictToOwner` for the record shape.
+ * too. Each returns one record per entry it changed; see `restrictToOwner` for
+ * the record shape.
  */
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -31,18 +31,16 @@ async function listDir(dir) {
  * kept by a delete with "keep files" (their mount data is as private) — and
  * each one's container.json. Dot-entries (restore staging, the image-meta
  * cache) are not container directories.
- *
- * @param {{ dryRun?: boolean }} [opts]
  */
-export async function tightenContainerFileModes({ dryRun = false } = {}) {
+export async function tightenContainerFileModes() {
   const root = getContainersPath();
   const changes = [];
   for (const entry of await listDir(root)) {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
     const dir = join(root, entry.name);
-    const dirChange = await restrictToOwner(dir, { type: 'dir', dryRun });
+    const dirChange = await restrictToOwner(dir, { type: 'dir' });
     if (dirChange) changes.push(dirChange);
-    const fileChange = await restrictToOwner(join(dir, 'container.json'), { type: 'file', dryRun });
+    const fileChange = await restrictToOwner(join(dir, 'container.json'), { type: 'file' });
     if (fileChange) changes.push(fileChange);
   }
   return changes;
@@ -54,9 +52,8 @@ export async function tightenContainerFileModes({ dryRun = false } = {}) {
  * regular file directly in it. A root that does not exist is skipped.
  *
  * @param {string[]} roots - absolute backup destination roots
- * @param {{ dryRun?: boolean }} [opts]
  */
-export async function tightenContainerBackupFileModes(roots, { dryRun = false } = {}) {
+export async function tightenContainerBackupFileModes(roots) {
   const changes = [];
   for (const root of roots) {
     const containersRoot = join(root, CONTAINERS_BACKUP_DIRNAME);
@@ -66,11 +63,11 @@ export async function tightenContainerBackupFileModes(roots, { dryRun = false } 
       for (const tsEntry of await listDir(nameDir)) {
         if (!tsEntry.isDirectory()) continue;
         const backupDir = join(nameDir, tsEntry.name);
-        const dirChange = await restrictToOwner(backupDir, { type: 'dir', dryRun });
+        const dirChange = await restrictToOwner(backupDir, { type: 'dir' });
         if (dirChange) changes.push(dirChange);
         for (const fileEntry of await listDir(backupDir)) {
           if (!fileEntry.isFile()) continue;
-          const fileChange = await restrictToOwner(join(backupDir, fileEntry.name), { type: 'file', dryRun });
+          const fileChange = await restrictToOwner(join(backupDir, fileEntry.name), { type: 'file' });
           if (fileChange) changes.push(fileChange);
         }
       }
