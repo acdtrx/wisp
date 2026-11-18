@@ -483,7 +483,7 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
           sect = $0; gsub(/^[ \t]*\[|\][ \t]*$/, "", sect)
           if (sect != "Match" && !(sect in section_ok)) refuse(FILENAME " has a [" sect "] section, which setup does not carry over to a bridge")
           if (sect == "Link") { if (!port_link++) print "\n[Link]" > link_out }
-          else if (sect != "Match") print "\n[" sect "]" > out
+          else if (sect != "Match") { print "\n[" sect "]" > out; out_sect = sect }
           next
         }
         {
@@ -502,7 +502,10 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
           if (sect ~ /^DHCP(v4)?$/ && key == "ClientIdentifier") next
           # What the boot waits for goes with the address; the rest of the link
           # stays on the port (which only reaches "enslaved").
-          if (sect == "Link" && key ~ /^RequiredFor(Family)?Online$/) { if (!bridge_link++) print "\n[Link]" > out; print $0 > out }
+          if (sect == "Link" && key ~ /^Required(Family)?ForOnline$/) {
+            if (out_sect != "Link") { print "\n[Link]" > out; out_sect = "Link" }
+            print $0 > out
+          }
           else if (sect == "Link") print $0 > link_out
           else print $0 > out
         }
