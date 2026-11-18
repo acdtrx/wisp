@@ -68,6 +68,19 @@ if [[ $# -ne 5 ]]; then
 fi
 SOURCE_DIR="$1" INSTALL_DIR="$2" DEPLOY_USER="$3" DEPLOY_GROUP="$4" SERVER_NAME="$5"
 
+# The install path, before anything is written there or owned by the deploy
+# user: absolute, and missing, empty, or a Wisp install already.
+[[ "$INSTALL_DIR" == /?* && "$INSTALL_DIR" != *//* && "$INSTALL_DIR" != */../* && "$INSTALL_DIR" != */.. ]] \
+  || { echo "ERROR: the install directory must be a plain absolute path: $INSTALL_DIR" >&2; exit 1; }
+if [[ -e "$INSTALL_DIR" ]]; then
+  if [[ ! -d "$INSTALL_DIR" ]]; then
+    echo "ERROR: $INSTALL_DIR exists and is not a directory." >&2; exit 1
+  elif [[ -n "$(ls -A "$INSTALL_DIR")" ]] \
+    && ! grep -qs '"name": *"wisp-backend"' "$INSTALL_DIR/backend/package.json"; then
+    echo "ERROR: $INSTALL_DIR holds something that is not a Wisp install; install into an empty or new directory." >&2; exit 1
+  fi
+fi
+
 LOCK=/run/wisp-install.lock
 exec 9> "$LOCK"
 flock -n 9 || { echo "ERROR: another Wisp install is running on this host (it holds $LOCK)." >&2; exit 1; }

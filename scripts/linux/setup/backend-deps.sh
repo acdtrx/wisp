@@ -34,7 +34,7 @@ if [[ -f "$MARKER" && "$(cat "$MARKER")" == "$WANT" ]]; then
 fi
 idle_run "$NPM_IDLE_SEC" runuser -u "$DEPLOY_USER" -- env -C "$BACKEND" npm ci --omit=dev --omit=optional --loglevel=http \
   || fail "npm ci failed in $BACKEND"
-printf '%s\n' "$WANT" > "$MARKER"
-chown "$DEPLOY_USER:" "$MARKER"
+# Written as the deploy user, in the deploy user's directory.
+printf '%s\n' "$WANT" | runuser -u "$DEPLOY_USER" -- tee "$MARKER" >/dev/null || fail "cannot write $MARKER"
 changed "backend dependencies installed (npm ci, $NODE_VERSION)"
 step_done

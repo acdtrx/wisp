@@ -71,10 +71,11 @@ echo ""
 # --- Remote install: tar is all the host needs ---
 
 echo "--- Installing on $TARGET ---"
-# The staging directory and the tarball go once the install has returned,
-# whatever its outcome. Not on a hangup: an install whose connection drops goes
-# on, copying from that directory.
-if ! ssh "${SSH_OPTS[@]}" -t "$TARGET" "rm -rf /tmp/wisp-update && mkdir -p /tmp/wisp-update && tar -xzf '/tmp/$TARBALL_NAME' -C /tmp/wisp-update || exit 1; cd /tmp/wisp-update/wisp && bash ./scripts/install.sh $REMOTE_PATH; rc=\$?; rm -rf /tmp/wisp-update '/tmp/$TARBALL_NAME'; exit \$rc"; then
+# Each push extracts into a directory of its own, so a second push never
+# touches the tree a running install copies from. The directory and the
+# tarball go once the install has returned, whatever its outcome; not on a
+# hangup: an install whose connection drops goes on, copying from there.
+if ! ssh "${SSH_OPTS[@]}" -t "$TARGET" "d=\$(mktemp -d /tmp/wisp-push.XXXXXX) && tar -xzf '/tmp/$TARBALL_NAME' -C \"\$d\" || exit 1; rm -f '/tmp/$TARBALL_NAME'; cd \"\$d/wisp\" && bash ./scripts/install.sh $REMOTE_PATH; rc=\$?; rm -rf \"\$d\"; exit \$rc"; then
   echo ""
   echo "ERROR: the install on $TARGET failed (see above)." >&2
   exit 1

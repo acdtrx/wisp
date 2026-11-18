@@ -25,6 +25,16 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
+# One setup at a time on the host, whoever runs it (the installer, the
+# updater, an operator): the second waits, then gives up.
+SETUP_LOCK=/run/wisp-setup.lock
+SETUP_LOCK_WAIT_SEC=600
+exec 8> "$SETUP_LOCK"
+if ! flock -w "$SETUP_LOCK_WAIT_SEC" 8; then
+  echo "ERROR: another run of setup holds $SETUP_LOCK; gave up after ${SETUP_LOCK_WAIT_SEC} s." >&2
+  exit 1
+fi
+
 # Before any step runs: a distro Wisp does not support, a network tool setup
 # cannot configure or an uplink that cannot be bridged is refused, and the
 # bridge is chosen — the steps that depend on it are written for it, and the
@@ -34,6 +44,11 @@ source "$SETUP_DIR/distro.sh"
 # shellcheck source=network-plan.sh
 source "$SETUP_DIR/network-plan.sh"
 
+# A stop (TERM, INT) ends the run once the step running has ended: a step that
+# undoes itself on a stop (the bridge step) finishes that first.
+CURRENT_STEP=""
+trap 'echo "setup stopped at step: ${CURRENT_STEP:-before the steps}" >&2; exit 143' TERM INT
+
 STEP_COUNT=0
 
 # run_step <name> <script> [args...]: one step, by name; the first failure ends the run.
@@ -41,6 +56,7 @@ run_step() {
   local name="$1" script="$2" rc
   shift 2
   STEP_COUNT=$((STEP_COUNT + 1))
+  CURRENT_STEP="$name"
   echo ""
   echo "step: $name"
   "$SETUP_DIR/$script" "$@"

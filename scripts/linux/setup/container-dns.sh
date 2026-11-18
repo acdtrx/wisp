@@ -42,9 +42,10 @@
 # being online, which wisp.service is ordered after: on systemd-networkd an
 # instance of its own wait-online unit waits for wisp-dns0 (netplan limits the
 # plain wait-online to its own interfaces, so RequiredForOnline in the file
-# below would not reach it there); on NetworkManager the connection's IPv4 may
-# not fail, so NetworkManager's startup — what NetworkManager-wait-online waits
-# for — ends with the address in place.
+# below would not reach it there); on NetworkManager it is a connection that
+# comes up by itself, and
+# NetworkManager's startup — what NetworkManager-wait-online waits for — ends
+# only once the devices it activates at startup are up.
 #
 # Does NOT touch systemd-resolved. Earlier Wisp versions (< 2026-04-18)
 # configured resolved with MulticastDNS=resolve — clean that up manually on
@@ -162,12 +163,15 @@ EOF
 stub_networkmanager() {
   local want have
   local settings=(connection.interface-name "$STUB_IFACE" ipv4.method manual ipv4.addresses "${STUB_IP}/32"
-    ipv4.may-fail no ipv6.method disabled connection.autoconnect yes)
-  want="$(printf '%s\n' dummy "$STUB_IFACE" manual "${STUB_IP}/32" no disabled yes)"
+    ipv6.method disabled connection.autoconnect yes)
+  # Key by key, as nmcli prints them ("key:value"), sorted.
+  want="$(printf '%s\n' connection.autoconnect:yes connection.interface-name:"$STUB_IFACE" connection.type:dummy \
+    ipv4.addresses:"${STUB_IP}/32" ipv4.method:manual ipv6.method:disabled | LC_ALL=C sort)"
   have=""
   if timeout 30 nmcli -t -f connection.id connection show "$STUB_IFACE" >/dev/null 2>&1; then
-    have="$(timeout 30 nmcli -g connection.type,connection.interface-name,ipv4.method,ipv4.addresses,ipv4.may-fail,ipv6.method,connection.autoconnect \
+    have="$(timeout 30 nmcli -t -f connection.type,connection.interface-name,ipv4.method,ipv4.addresses,ipv6.method,connection.autoconnect \
       connection show "$STUB_IFACE")" || fail "nmcli cannot read the connection $STUB_IFACE"
+    have="$(LC_ALL=C sort <<<"$have")"
   fi
   if [[ -z "$have" ]]; then
     timeout 30 nmcli connection add type dummy con-name "$STUB_IFACE" ifname "$STUB_IFACE" "${settings[@]}" >/dev/null \

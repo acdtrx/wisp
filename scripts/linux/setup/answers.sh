@@ -38,6 +38,11 @@ if [[ -n "$ANSWERS" ]]; then
   fi
 fi
 
+# The answers, the password in plain text among them, go once they are written.
+if [[ -n "$ANSWERS" ]]; then
+  rm -rf -- "$ANSWERS"
+fi
+
 for file in runtime.env wisp-config.json wisp-password; do
   path="$INSTALL_DIR/config/$file"
   [[ -f "$path" ]] || continue
