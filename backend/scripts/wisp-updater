@@ -8,10 +8,10 @@
 #
 # Steps (echoed to journald):
 #   stop-service → snapshot → swap → install-deps → common-setup
-#   → install-unit → start-service → health-check → done
-# health-check: `done` only once wisp.service is active and the local API answers.
-# The new backend runs its state migrations itself, as it starts; a failed one
-# ends that start, and the health check fails.
+#   → install-unit → start-service → done
+# start-service is the health gate: wisp.service is Type=notify, so
+# `systemctl start` returns once the new backend is ready (state migrations run,
+# listening) and fails as soon as it exits first, a failed migration included.
 #
 # On any failure after `snapshot` — an unhealthy new backend included — rolls
 # back from <install>.prev and exits non-zero.
@@ -123,48 +123,6 @@ RSYNC_EXCLUDES=(
 snapshot_taken=0
 host_setup_touched=0
 
-# How long the new backend gets to come up (boot runs container autostart and
-# the mount reconcile before it listens). Within wisp-updater.service's
-# TimeoutStartSec, with room left for the rollback.
-HEALTH_TIMEOUT_SEC=90
-# A public route that needs no session and nothing but the backend itself.
-HEALTH_PATH=/api/auth/oidc/status
-
-# The port wisp.service listens on, read as the backend reads it — by the
-# new tree's backend/scripts/wisp-port.sh, the one parser wispctl and install.sh
-# share. A tree from before that file (a downgrade) gets the backend default.
-service_port() {
-  local helper="$INSTALL_DIR/backend/scripts/wisp-port.sh"
-  if [[ ! -f "$helper" ]]; then
-    echo 8080
-    return 0
-  fi
-  # shellcheck source=/dev/null
-  source "$helper" && wisp_port "$INSTALL_DIR/config/runtime.env"
-}
-
-# Polls until the unit is active AND the local API answers — `systemctl start`
-# returns as soon as the process forks (Type=simple), and a backend that crashes
-# at boot only shows up as Restart=on-failure cycling. Polling, because the unit
-# sends no readiness signal.
-wait_for_healthy() {
-  local url port state http_err deadline=$((SECONDS + HEALTH_TIMEOUT_SEC))
-  port="$(service_port)" || return 1
-  url="http://127.0.0.1:${port}$HEALTH_PATH"
-  while :; do
-    http_err=""
-    state="$(systemctl is-active "$SERVICE_UNIT" 2>/dev/null)"
-    if [[ "$state" == active ]] && http_err="$(curl -fsS -o /dev/null --max-time 5 "$url" 2>&1)"; then
-      echo "  $SERVICE_UNIT active, $url answered"
-      return 0
-    fi
-    (( SECONDS < deadline )) || break
-    sleep 2
-  done
-  echo "error: $SERVICE_UNIT not healthy after ${HEALTH_TIMEOUT_SEC}s (state: ${state:-unknown}${http_err:+; $url: $http_err})" >&2
-  return 1
-}
-
 # Render wisp.service from the given tree's template. Shared by the update path
 # and the rollback so both write the unit the same way.
 template_service_unit() {
@@ -181,8 +139,8 @@ template_service_unit() {
 # in the journal, and the operator finishes by hand (docs/specs/UPDATES.md).
 rollback() {
   echo "step:rollback"
-  # After a failed health check the new backend is still running (or cycling
-  # through Restart=on-failure): stop it before the tree is restored under it.
+  # After a failed start the new backend may be cycling through
+  # Restart=on-failure: stop it before the tree is restored under it.
   # A restored tree from before migrations moved into the backend also runs
   # them from its common-steps.sh, which needs the backend stopped.
   systemctl stop "$SERVICE_UNIT" 2>/dev/null || echo "rollback-warning: stopping $SERVICE_UNIT failed"
@@ -211,9 +169,9 @@ rollback() {
     fi
   fi
   systemctl daemon-reload || echo "rollback-warning: daemon-reload failed"
-  # Not health-gated: the restored release is what ran before; there is nothing
+  # Not waited for: the restored release is what ran before, there is nothing
   # further to fall back to, and the rollback must end.
-  systemctl start "$SERVICE_UNIT" || echo "rollback-warning: starting $SERVICE_UNIT failed"
+  systemctl start --no-block "$SERVICE_UNIT" || echo "rollback-warning: starting $SERVICE_UNIT failed"
 }
 
 trap 'rc=$?; if [[ $rc -ne 0 ]]; then rollback; fi' EXIT
@@ -262,10 +220,12 @@ template_service_unit "$INSTALL_DIR" || fail "templating ${SERVICE_UNIT}.service
 systemctl daemon-reload || fail "daemon-reload failed"
 
 echo "step:start-service"
-systemctl start "$SERVICE_UNIT" || fail "starting $SERVICE_UNIT failed"
-
-echo "step:health-check"
-wait_for_healthy || fail "new release did not become healthy"
+# Blocks until the new backend is ready or has failed (Type=notify; bounded by
+# the unit's TimeoutStartSec, inside this unit's own).
+if ! systemctl start "$SERVICE_UNIT"; then
+  journalctl -u "$SERVICE_UNIT" -n 20 --no-pager -o cat 2>/dev/null | sed 's/^/  wisp: /' || true
+  fail "new release did not start"
+fi
 
 # Drop staging + target marker after a successful swap. <install>.prev is kept
 # until the next successful update for one-deep manual rollback.

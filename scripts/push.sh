@@ -76,7 +76,11 @@ if [[ "$RESTART_SVC" -eq 1 ]]; then
 fi
 
 echo "--- Installing on $TARGET ---"
-ssh "${SSH_OPTS[@]}" -t "$TARGET" "set -e; rm -rf /tmp/wisp-update; mkdir -p /tmp/wisp-update; tar -xzf '/tmp/$TARBALL_NAME' -C /tmp/wisp-update; cd /tmp/wisp-update/wisp; bash ./scripts/install.sh $INSTALL_FLAGS; rm -rf /tmp/wisp-update '/tmp/$TARBALL_NAME'"
+if ! ssh "${SSH_OPTS[@]}" -t "$TARGET" "set -e; rm -rf /tmp/wisp-update; mkdir -p /tmp/wisp-update; tar -xzf '/tmp/$TARBALL_NAME' -C /tmp/wisp-update; cd /tmp/wisp-update/wisp; bash ./scripts/install.sh $INSTALL_FLAGS; rm -rf /tmp/wisp-update '/tmp/$TARBALL_NAME'"; then
+  echo ""
+  echo "ERROR: the install on $TARGET failed (see above)." >&2
+  exit 1
+fi
 
 echo ""
 echo "=== Push complete ==="

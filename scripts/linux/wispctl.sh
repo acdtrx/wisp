@@ -108,10 +108,21 @@ cmd_svc_uninstall() {
   echo "  Uninstalled."
 }
 
+# svc_run <verb>: start or restart wisp.service. The unit is Type=notify, so
+# this waits until the backend is ready (its state migrations run, listening)
+# and fails when it exits first: the service's last log lines then say why.
+svc_run() {
+  if ! sudo systemctl "$1" "$SERVICE_UNIT"; then
+    echo "ERROR: wisp.service did not start. Its last log lines:" >&2
+    sudo journalctl -u "$SERVICE_UNIT" -n 30 --no-pager -o cat >&2 || true
+    exit 1
+  fi
+}
+
 cmd_svc_start() {
   echo "=== Starting systemd service ==="
-  sudo systemctl start "$SERVICE_UNIT"
-  echo "  Started."
+  svc_run start
+  echo "  Started and ready."
 }
 
 cmd_svc_stop() {
@@ -122,8 +133,8 @@ cmd_svc_stop() {
 
 cmd_svc_restart() {
   echo "=== Restarting systemd service ==="
-  sudo systemctl restart "$SERVICE_UNIT"
-  echo "  Restarted."
+  svc_run restart
+  echo "  Restarted and ready."
 }
 
 cmd_svc_logs() {

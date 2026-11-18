@@ -102,10 +102,10 @@ else
   if [[ "${ans:-n}" =~ ^[yY] ]]; then START_SVC=1; fi
 fi
 
-# Setup has rendered and enabled the unit; this (re)starts it.
+# Setup has rendered and enabled the unit; this (re)starts it and waits until
+# the backend is ready, or stops the install with the service's last log lines.
 if [[ "$START_SVC" -eq 1 ]]; then
-  sudo systemctl restart wisp
-  echo "  Service started."
+  "$WISPCTL" svc restart
 fi
 
 # --- Optional: Bridged networking (skip in non-interactive mode) ---
