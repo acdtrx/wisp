@@ -328,11 +328,11 @@ own oneshot unit started via one fixed sudo rule (like `wisp-updater`). **Revisi
 trigger:** an upgrade is ever interrupted, or OS upgrades become unattended/scheduled.
 (re-review 2026-10-16, P2)
 
-**Settings forms drop bad paths on the client.** `AppConfig.jsx` and `HostBackup.jsx`
-send `undefined` for an empty or relative path, so the field silently keeps its old value
-and the backend's 422 `INVALID_SETTINGS` (2026-11-12) never reaches the user. Fix shape:
-send the trimmed value and show the 422's message. **Revisit trigger:** someone types a
-path that doesn't save, or the next work on those forms.
+**The server display name can't be cleared from App Config.** `AppConfig.jsx` sends
+`undefined` for an empty name, so the save leaves the stored name in place, though the
+backend takes an empty name as "back to the default display name" (found in the
+known-defects work, 2026-11-18). **Revisit trigger:** someone clears the name and it
+comes back, or the next work on that form.
 
 **macOS dev backend sometimes ignores SIGTERM.** A dev backend started with plain
 `nohup node src/index.js` sometimes kept running after `kill` (seen 2026-11-12, on main's

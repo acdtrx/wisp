@@ -47,8 +47,8 @@ export default function AppConfig() {
     try {
       await save(form, () => updateSettings({
         serverName: serverName.trim() || undefined,
-        vmsPath: vmsPath.trim().startsWith('/') ? vmsPath.trim() : undefined,
-        imagePath: imagePath.trim().startsWith('/') ? imagePath.trim() : undefined,
+        vmsPath: vmsPath.trim(),
+        imagePath: imagePath.trim(),
         discoveryEnabled,
         // explicit null clears back to the default announcement
         advertisedUrl: advertisedUrl.trim() || null,

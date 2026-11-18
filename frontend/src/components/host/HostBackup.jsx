@@ -28,7 +28,7 @@ export default function HostBackup() {
     setSaving(true);
     try {
       await save({ backupLocalPath, backupMountId }, () => updateSettings({
-        backupLocalPath: backupLocalPath.trim() || undefined,
+        backupLocalPath: backupLocalPath.trim(),
         backupMountId: backupMountId ? backupMountId : null,
       }));
     } catch (err) {
