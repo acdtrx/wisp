@@ -85,6 +85,12 @@ undo_restore() (
       fi
       ;;
   esac
+  # The host's network back: its default route again, through the uplink.
+  local waited=0
+  until [[ "$(timeout 10 ip -4 route show default dev "$UPLINK" 2>/dev/null)" == default* ]]; do
+    (( waited++ < apply_sec )) || { failed=1; break; }
+    sleep 1
+  done
   (( failed == 0 )) || exit 1
   rm -rf "$UNDO_DIR"
 )
