@@ -55,6 +55,7 @@ jobs:
 
       # The gate: nothing is built, staged or published unless every check passes.
       - name: Check
+        timeout-minutes: 10
         run: npm run check
 
       - name: Build frontend

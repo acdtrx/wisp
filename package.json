@@ -6,7 +6,7 @@
   "scripts": {
     "release": "bash scripts/release.sh",
     "check": "node scripts/check.mjs",
-    "test": "node --test --test-timeout=10000 --test-force-exit 'frontend/src/**/*.test.js'",
+    "test": "node --test --test-timeout=10000 'frontend/src/**/*.test.js'",
     "check-imports": "node scripts/check-imports.mjs",
     "check-fences": "node scripts/check-fences.mjs",
     "route-access": "WISP_ROUTE_ACCESS_REPORT=1 node backend/src/index.js"
