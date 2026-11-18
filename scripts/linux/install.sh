@@ -35,8 +35,9 @@ if [[ $EUID -eq 0 ]]; then
   exit 1
 fi
 
-if [[ ! -f "$SOURCE_DIR/frontend/dist/index.html" ]]; then
-  echo "ERROR: $SOURCE_DIR is not a release-shaped tree (no frontend/dist). Install from a release tarball, or push one with scripts/push.sh."
+# scripts/stage-release.sh writes release.json into every tree it stages.
+if [[ ! -f "$SOURCE_DIR/release.json" ]]; then
+  echo "ERROR: $SOURCE_DIR is not a release-shaped tree (no release.json). Install from a release tarball, or push one with scripts/push.sh."
   exit 1
 fi
 

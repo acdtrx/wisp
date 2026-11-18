@@ -8,11 +8,14 @@
 #     directory `wisp/`), <version> from the root package.json.
 # Needs the frontend's packages installed (`npm ci` in frontend/).
 #
-# The files are git's — tracked plus untracked-but-not-ignored, so a file not
-# yet committed ships in a dev push, and nothing ignored (config secrets,
-# node_modules, logs) ever does — plus the frontend build output. The tarball is
-# the same from any machine: no extended attributes, no AppleDouble `._*` files,
-# no `.DS_Store`, no test files; a staged tree or a tarball holding one fails.
+# The files are those git tracks (the index), with the working tree's content:
+# a new file ships once it is `git add`ed, and nothing untracked or ignored
+# (config secrets, notes, logs, node_modules) ever does; from config/ only the
+# examples. Plus the frontend build output, and `release.json` naming the
+# version and commit, by which the installer knows a release-shaped tree. The
+# tarball holds the same files and content from any machine: no extended
+# attributes, no AppleDouble `._*` files, no `.DS_Store`, no test files; a staged
+# tree or a tarball holding one fails.
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
@@ -41,7 +44,7 @@ mkdir -p "$STAGE/frontend"
 cd "$ROOT"
 LIST="$(mktemp)"
 trap 'rm -f "$LIST"' EXIT
-git ls-files -z --cached --others --exclude-standard -- \
+git ls-files -z --cached -- \
   backend scripts systemd config docs package.json CHANGELOG.md LICENSE README.md AGENTS.md CLAUDE.md > "$LIST"
 node - "$STAGE" "$LIST" <<'NODE'
 const fs = require('node:fs');
@@ -51,6 +54,7 @@ const copy = (from) => fs.cpSync(from, path.join(stage, from), { preserveTimesta
 const listed = fs.readFileSync(list, 'utf8').split('\0').filter(Boolean);
 for (const file of [...new Set(listed)].sort()) {
   if (file.endsWith('.test.js') || !fs.statSync(file, { throwIfNoEntry: false })?.isFile()) continue;
+  if (file.startsWith('config/') && !file.endsWith('.example')) continue;
   copy(file);
 }
 // Build output, not in git's list: the SPA, and the public assets noVNC joins.
@@ -59,6 +63,9 @@ for (const dir of ['frontend/dist', 'frontend/public']) {
   fs.cpSync(dir, path.join(stage, dir), { recursive: true, preserveTimestamps: true, filter: (src) => !skip(src) });
 }
 NODE
+
+COMMIT="$(git rev-parse HEAD)"
+printf '{\n  "version": "%s",\n  "commit": "%s"\n}\n' "$VERSION" "$COMMIT" > "$STAGE/release.json"
 
 test -f "$STAGE/frontend/dist/index.html" || { echo "ERROR: frontend/dist/index.html missing" >&2; exit 1; }
 # The offline shell must ship with its precache list baked in by
