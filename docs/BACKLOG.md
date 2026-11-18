@@ -140,12 +140,6 @@ shutdown/restart dialog whatever the answer, and `HostStorage.jsx`'s mount toggl
 catches and drops the error, against FRONTEND-RULES, Errors. **Revisit trigger:** a
 failed power action or mount goes unnoticed, or the next work on either screen.
 
-**The backend's import graph isn't checked for cycles.** ARCHITECTURE § Repo layout
-(settled 2026-11-15) wants it acyclic, enforced by a lint; `check-fences` checks the
-fences only, and only the frontend's chunk cycles fail a build. Fix shape: a cycle check
-in `check-fences`. **Revisit trigger:** the next work on the lints, or a backend boot that
-fails on a half-initialised import.
-
 **Nothing catches a use of an undefined name.** The frontend build (Vite) and the two
 lints pass a component that calls a function no longer defined or imported; it throws
 only when the code runs. command-acks milestone 4 (2026-11-16) shipped two leftover

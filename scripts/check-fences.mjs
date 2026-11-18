@@ -14,6 +14,12 @@
  *   4. Carved modules — host, networking, mdns and storage import their own
  *      files, each other's facades and `createAppError` from lib/routeErrors.js,
  *      and nothing else of Wisp's glue.
+ *   5. No import cycles (docs/ARCHITECTURE.md, Repo layout) — over static
+ *      imports and the literal values of `import()` / `require()` calls, a
+ *      ternary's both sides included: a cycle closed by a dynamic import still
+ *      runs one module half-initialised. A reviewed cycle is one file → file
+ *      edge in CYCLE_EXCEPTIONS; an entry whose edge no longer closes a cycle
+ *      fails too, so the list only shrinks.
  *
  * A module's darwin stubs are its own files. Scripts and migrations are glue.
  * Specifiers inside comments (JSDoc type imports) are skipped: they load
@@ -69,6 +75,28 @@ const EXCEPTIONS = [
     file: 'backend/scripts/migrate.mjs',
     specifier: '<computed>',
     reason: 'loads each migration file from the migrations directory it lists',
+  },
+];
+
+/**
+ * Reviewed import-cycle edges: { from, to, reason }, repo-relative. The graph
+ * without them is acyclic; each one still closes a cycle.
+ */
+const CYCLE_EXCEPTIONS = [
+  {
+    from: `${LIB}/containerManager/linux/containerManagerLifecycle.js`,
+    to: `${LIB}/containerManager/linux/containerManagerCreate.js`,
+    reason: 'starting a container with no task builds its spec in Create, which imports Lifecycle',
+  },
+  {
+    from: `${LIB}/containerManager/linux/containerManagerLifecycle.js`,
+    to: `${LIB}/containerManager/linux/containerManagerList.js`,
+    reason: 'the boot-time autostart and resume passes list containers; List imports Lifecycle',
+  },
+  {
+    from: `${LIB}/containerManager/linux/containerManagerRestartPolicy.js`,
+    to: `${LIB}/containerManager/linux/containerManagerLifecycle.js`,
+    reason: 'a policy restart reads the task and starts the container; Lifecycle imports RestartPolicy',
   },
 ];
 
@@ -304,6 +332,81 @@ function moduleOf(rel) {
   return parts.length > 1 ? parts[0] : null;
 }
 
+/**
+ * Import cycles in `edges` (file → [{ to, line }]): one cycle per strongly
+ * connected component, as its edges `[{ from, to, line }]` in order.
+ */
+function findCycles(edges) {
+  let next = 0;
+  const index = new Map();
+  const low = new Map();
+  const stack = [];
+  const onStack = new Set();
+  const components = [];
+  const visit = (v) => {
+    index.set(v, next);
+    low.set(v, next);
+    next += 1;
+    stack.push(v);
+    onStack.add(v);
+    for (const { to } of edges.get(v) ?? []) {
+      if (!index.has(to)) {
+        visit(to);
+        low.set(v, Math.min(low.get(v), low.get(to)));
+      } else if (onStack.has(to)) {
+        low.set(v, Math.min(low.get(v), index.get(to)));
+      }
+    }
+    if (low.get(v) !== index.get(v)) return;
+    const component = [];
+    let w;
+    do {
+      w = stack.pop();
+      onStack.delete(w);
+      component.push(w);
+    } while (w !== v);
+    if (component.length > 1 || (edges.get(v) ?? []).some((e) => e.to === v)) components.push(component);
+  };
+  for (const v of [...edges.keys()].sort()) if (!index.has(v)) visit(v);
+
+  // A cycle through the component's first file: a path back to it inside the component.
+  return components.map((component) => {
+    const members = new Set(component);
+    const start = [...component].sort()[0];
+    const seen = new Set([start]);
+    const walk = (v, path) => {
+      for (const e of edges.get(v) ?? []) {
+        if (!members.has(e.to)) continue;
+        const step = [...path, { from: v, ...e }];
+        if (e.to === start) return step;
+        if (seen.has(e.to)) continue;
+        seen.add(e.to);
+        const found = walk(e.to, step);
+        if (found) return found;
+      }
+      return null;
+    };
+    return walk(start, []);
+  });
+}
+
+/** Whether `to` is reachable from `from` in `edges`. */
+function reaches(edges, from, to) {
+  const seen = new Set([from]);
+  const queue = [from];
+  while (queue.length > 0) {
+    const v = queue.shift();
+    if (v === to) return true;
+    for (const e of edges.get(v) ?? []) {
+      if (!seen.has(e.to)) {
+        seen.add(e.to);
+        queue.push(e.to);
+      }
+    }
+  }
+  return false;
+}
+
 async function main() {
   const files = (await Promise.all(ROOTS.map((r) => collect(path.join(REPO_ROOT, r))))).flat().sort();
   const rel = (abs) => path.relative(REPO_ROOT, abs).split(path.sep).join('/');
@@ -315,6 +418,9 @@ async function main() {
   }
 
   const violations = [];
+  const known = new Set(files.map(rel));
+  /** repo-relative file → [{ to, line }]: the import graph inside the scanned roots. */
+  const edges = new Map(files.map((f) => [rel(f), []]));
   let count = 0;
   for (const file of files) {
     const fileRel = rel(file);
@@ -326,6 +432,10 @@ async function main() {
       const specifier = found.prefix ? prefixTarget(file, found.specifier, rel) : found.specifier;
       count += 1;
       const line = source.slice(0, index).split('\n').length;
+      if (!found.prefix && specifier.startsWith('.')) {
+        const to = rel(path.resolve(path.dirname(file), specifier));
+        if (known.has(to)) edges.get(fileRel).push({ to, line });
+      }
       const report = (why) => {
         if (EXCEPTIONS.some((e) => e.file === fileRel && e.specifier === specifier)) return;
         violations.push(`${fileRel}:${line} ${specifier} — ${why} (CODING-RULES §7)`);
@@ -373,13 +483,32 @@ async function main() {
     }
   }
 
+  const excepted = (from, to) => CYCLE_EXCEPTIONS.some((e) => e.from === from && e.to === to);
+  for (const e of CYCLE_EXCEPTIONS) {
+    const edge = (edges.get(e.from) ?? []).find((x) => x.to === e.to);
+    if (!edge) {
+      violations.push(`${e.from} → ${e.to} — CYCLE_EXCEPTIONS lists an import that no longer exists: remove the entry`);
+    } else if (!reaches(edges, e.to, e.from)) {
+      violations.push(`${e.from}:${edge.line} → ${e.to} — CYCLE_EXCEPTIONS lists an import that no longer closes a cycle: remove the entry`);
+    }
+  }
+  const acyclic = new Map([...edges].map(([from, out]) => [from, out.filter((e) => !excepted(from, e.to))]));
+  const cycles = findCycles(acyclic);
+  for (const cycle of cycles) {
+    violations.push([
+      'import cycle — the import graph stays acyclic (ARCHITECTURE.md, Repo layout):',
+      ...cycle.map((e) => `  ${e.from}:${e.line} → ${e.to}`),
+    ].join('\n'));
+  }
+
   for (const v of violations) console.error(v);
   const summary = `${count} imports across ${files.length} files`;
+  const cycleSummary = `no import cycle outside the ${CYCLE_EXCEPTIONS.length} listed`;
   if (violations.length > 0) {
     console.error(`\n${violations.length} fence violation(s) (${summary}).`);
     process.exit(1);
   }
-  console.log(`OK — ${summary}, all inside their fences.`);
+  console.log(`OK — ${summary}, all inside their fences; ${cycleSummary}.`);
 }
 
 await main();
