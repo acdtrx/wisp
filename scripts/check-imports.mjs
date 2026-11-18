@@ -41,9 +41,21 @@
  * the ternary, or the one side of a single-platform import. Exports are read as
  * written (`export function`, `export const`, `export { … }`); a name an
  * implementation re-exports with `export { … } from` is followed to the file
- * that defines it. An implementation that uses `export *` fails, since the scan
- * cannot see what it exports, and so does a facade that imports a platform file
- * in any other form than `const name = … await import(…)`.
+ * that defines it. What the scan cannot follow fails, with file and line:
+ *   - an implementation that uses `export *`;
+ *   - in a facade, a string literal naming a file in the module's own `linux/`
+ *     or `darwin/` outside a `const name = … await import(…)` binding (another
+ *     binding form, a static import, a `require()`);
+ *   - an `import()` whose argument is not plain string literals (a computed
+ *     specifier; a ternary's condition is fine);
+ *   - a use of a binding other than `name.member` (destructuring, an alias,
+ *     `name[…]`, `name?.…`);
+ *   - a module with both a `linux/` and a `darwin/` folder whose facade binds
+ *     neither.
+ *
+ * Known limits (a dumb scan, not a parser): a binding's name inside a string, as
+ * an object key or as a shadowing local fails a correct facade; a template
+ * literal with a `${…}` outside an import() is not read.
  */
 import { access, readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -137,10 +149,10 @@ const STRING_LITERAL = /^(['"])([^'"\n]*)\1$/;
  * A facade's imports of its own platform files: any relative specifier that
  * resolves into the module's `linux/` or `darwin/` folder. `bindings`: each
  * `const name = …` statement whose `import()` calls load such files, with every
- * target of the whole statement. `stray`: the index of every other import of a
- * platform file (another binding form, a static import). `computed`: the index
- * of every `import()` whose argument is not plain string literals (a ternary's
- * condition aside), which no scan can resolve.
+ * target of the whole statement. `stray`: the index of every other string
+ * literal that resolves there (another binding form, a static import, a
+ * `require()`). `computed`: the index of every `import()` whose argument is not
+ * plain string literals (a ternary's condition aside), which no scan can resolve.
  */
 function platformImports(code, facade) {
   const moduleDir = path.dirname(facade);
@@ -154,33 +166,41 @@ function platformImports(code, facade) {
   const calls = [];
   const computed = [];
   for (const m of code.matchAll(/(?<![\w$.])import\s*\(/g)) {
-    const values = argumentValues(callArgument(code, m.index + m[0].length)).filter((v) => !v.isCondition);
+    const open = m.index + m[0].length;
+    const arg = callArgument(code, open);
+    const values = argumentValues(arg).filter((v) => !v.isCondition);
     const literals = values.map((v) => STRING_LITERAL.exec(v.text)?.[2]);
     if (literals.some((l) => l === undefined)) {
       computed.push(m.index);
       continue;
     }
     const targets = literals.map(platformTarget).filter(Boolean);
-    if (targets.length > 0) calls.push({ index: m.index, targets });
+    const argStart = code.indexOf(arg, open);
+    if (targets.length > 0) calls.push({ index: m.index, targets, argStart, argEnd: argStart + arg.length });
   }
 
   const bindings = [];
   const bound = new Set();
-  for (const m of code.matchAll(/(?<![\w$.])const\s+([\w$]+)\s*=/g)) {
+  for (const m of code.matchAll(/(?<![\w$.])const\s+([\w$]+)\s*=/dg)) {
     const end = statementEnd(code, m.index + m[0].length);
     const inside = calls.filter((c) => c.index > m.index && c.index < end);
     if (inside.length === 0) continue;
     for (const c of inside) bound.add(c.index);
     bindings.push({
       name: m[1],
-      declaredAt: m.index + m[0].indexOf(m[1]),
+      declaredAt: m.indices[1][0],
       targets: [...new Set(inside.flatMap((c) => c.targets))],
     });
   }
 
-  const stray = calls.filter((c) => !bound.has(c.index)).map((c) => c.index);
-  for (const m of code.matchAll(/(?<![\w$.])(?:import|export)\b[^;'"(]*?(['"])([^'"\n]+)\1/g)) {
-    if (platformTarget(m[2])) stray.push(m.index);
+  // Every literal naming a platform file outside a bound import() is stray.
+  const boundArgs = calls.filter((c) => bound.has(c.index));
+  const stray = [];
+  for (const m of code.matchAll(/(['"`])(\.\.?\/[^'"`\n]*)\1/g)) {
+    if (m[1] === '`' && m[2].includes('${')) continue;
+    if (!platformTarget(m[2])) continue;
+    if (boundArgs.some((c) => m.index >= c.argStart && m.index < c.argEnd)) continue;
+    stray.push(m.index);
   }
   return { bindings, stray, computed };
 }
