@@ -104,5 +104,5 @@ netplan apply
 changed "$BRIDGE created on $UPLINK"
 /usr/lib/systemd/systemd-networkd-wait-online -i "$BRIDGE:routable" --timeout=90 \
   || fail "$BRIDGE did not become routable within 90 s"
-echo "  $BRIDGE holds $(ip -4 -o addr show dev "$BRIDGE" scope global | awk '{ print $4; exit }')"
+echo "  $BRIDGE holds $(ip -4 -o addr show dev "$BRIDGE" scope global | awk '!done { print $4; done = 1 }')"
 step_done

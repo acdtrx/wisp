@@ -28,7 +28,7 @@ net_json() {
   python3 -c 'import json, sys; d = json.load(sys.stdin); v = eval(sys.argv[1]); print("" if v is None else v)' "$@"
 }
 
-UPLINK="$(ip -4 route show default 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }')"
+UPLINK="$(ip -4 route show default 2>/dev/null | awk '!done { for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); done = 1; break } }')"
 [[ -n "$UPLINK" ]] || net_refuse "this host has no IPv4 default route, so no uplink to bridge."
 
 # Which tool runs the uplink: ask the daemons.
@@ -46,7 +46,7 @@ if [[ -z "$NET_TOOL" ]] && systemctl is-active --quiet NetworkManager 2>/dev/nul
 fi
 [[ -n "$NET_TOOL" ]] || net_refuse "$UPLINK is run by none of netplan, NetworkManager or systemd-networkd."
 
-UPLINK_ADDR="$(ip -4 -o addr show dev "$UPLINK" scope global 2>/dev/null | awk '{ print $4; exit }')"
+UPLINK_ADDR="$(ip -4 -o addr show dev "$UPLINK" scope global 2>/dev/null | awk '!done { print $4; done = 1 }')"
 
 if [[ -d "/sys/class/net/$UPLINK/bridge" ]]; then
   BRIDGE="$UPLINK"
