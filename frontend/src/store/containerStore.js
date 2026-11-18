@@ -6,7 +6,7 @@ import { subscribeJobProgress, JOB_KIND } from '../api/jobProgress.js';
 import {
   errorKey, withError, withoutError, withoutErrorsOfVanished, withErrorsRenamed, withBusy, anyActionInFlight,
 } from './workloadActions.js';
-import { awaitJob } from './backgroundJobsStore.js';
+import { awaitJob, useBackgroundJobsStore } from './backgroundJobsStore.js';
 
 /** Same scheduled restart (or both none)? Compared by value — list pushes carry fresh objects. */
 function sameScheduledRestart(a, b) {
@@ -423,6 +423,14 @@ export const useContainerStore = create((set, get) => {
         }));
         return;
       }
+
+      // The tray holds every running job (and the update install reads it), so
+      // the check is shown there too; this store follows its progress itself.
+      useBackgroundJobsStore.getState().registerJob({
+        jobId: job.jobId,
+        kind: JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK,
+        title: job.title,
+      });
 
       if (imageUpdateJobClose) {
         imageUpdateJobClose();
