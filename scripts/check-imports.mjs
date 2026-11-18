@@ -49,7 +49,7 @@ import { access, readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
-import { stripComments } from './sourceScan.mjs';
+import { argumentValues, callArgument, stripComments } from './sourceScan.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
 const ROOTS = ['backend/src', 'backend/scripts', 'backend/migrations'].map((dir) => path.join(REPO_ROOT, dir));
@@ -114,18 +114,6 @@ async function collectSourceFiles(dir) {
   return found;
 }
 
-/** Index just past the matching `)` of the call whose `(` ends at `open`. */
-function callEnd(code, open) {
-  let depth = 1;
-  let j = open;
-  while (j < code.length && depth > 0) {
-    if (code[j] === '(') depth += 1;
-    else if (code[j] === ')') depth -= 1;
-    j += 1;
-  }
-  return j;
-}
-
 /** Index of the `;` that ends the statement starting at `from` (depth 0, outside
  *  strings), or the end of the code. */
 function statementEnd(code, from) {
@@ -143,22 +131,39 @@ function statementEnd(code, from) {
   return code.length;
 }
 
-const PLATFORM_TARGET = /['"](\.\/(?:linux|darwin)\/[^'"\n]+)['"]/g;
+const STRING_LITERAL = /^(['"])([^'"\n]*)\1$/;
 
 /**
- * A facade's platform imports. `bindings`: each `const name = …` statement whose
- * `import()` calls name platform files (`./linux/…`, `./darwin/…`), with every
+ * A facade's imports of its own platform files: any relative specifier that
+ * resolves into the module's `linux/` or `darwin/` folder. `bindings`: each
+ * `const name = …` statement whose `import()` calls load such files, with every
  * target of the whole statement. `stray`: the index of every other import of a
- * platform file (another binding form, a static import), which parity cannot
- * follow.
+ * platform file (another binding form, a static import). `computed`: the index
+ * of every `import()` whose argument is not plain string literals (a ternary's
+ * condition aside), which no scan can resolve.
  */
-function platformImports(code) {
+function platformImports(code, facade) {
+  const moduleDir = path.dirname(facade);
+  const platformDirs = ['linux', 'darwin'].map((d) => path.join(moduleDir, d) + path.sep);
+  const platformTarget = (specifier) => {
+    if (!specifier.startsWith('.')) return null;
+    const target = path.resolve(moduleDir, specifier);
+    return platformDirs.some((d) => target.startsWith(d)) ? target : null;
+  };
+
   const calls = [];
+  const computed = [];
   for (const m of code.matchAll(/(?<![\w$.])import\s*\(/g)) {
-    const open = m.index + m[0].length;
-    const targets = [...code.slice(open, callEnd(code, open) - 1).matchAll(PLATFORM_TARGET)].map((t) => t[1]);
+    const values = argumentValues(callArgument(code, m.index + m[0].length)).filter((v) => !v.isCondition);
+    const literals = values.map((v) => STRING_LITERAL.exec(v.text)?.[2]);
+    if (literals.some((l) => l === undefined)) {
+      computed.push(m.index);
+      continue;
+    }
+    const targets = literals.map(platformTarget).filter(Boolean);
     if (targets.length > 0) calls.push({ index: m.index, targets });
   }
+
   const bindings = [];
   const bound = new Set();
   for (const m of code.matchAll(/(?<![\w$.])const\s+([\w$]+)\s*=/g)) {
@@ -166,13 +171,18 @@ function platformImports(code) {
     const inside = calls.filter((c) => c.index > m.index && c.index < end);
     if (inside.length === 0) continue;
     for (const c of inside) bound.add(c.index);
-    bindings.push({ name: m[1], targets: [...new Set(inside.flatMap((c) => c.targets))] });
+    bindings.push({
+      name: m[1],
+      declaredAt: m.index + m[0].indexOf(m[1]),
+      targets: [...new Set(inside.flatMap((c) => c.targets))],
+    });
   }
+
   const stray = calls.filter((c) => !bound.has(c.index)).map((c) => c.index);
-  for (const m of code.matchAll(/(?<![\w$.])(?:import|export)\b[^;'"]*?(['"])(\.\/(?:linux|darwin)\/[^'"\n]+)\1/g)) {
-    if (!/^import\s*\(/.test(m[0])) stray.push(m.index);
+  for (const m of code.matchAll(/(?<![\w$.])(?:import|export)\b[^;'"(]*?(['"])([^'"\n]+)\1/g)) {
+    if (platformTarget(m[2])) stray.push(m.index);
   }
-  return { bindings, stray };
+  return { bindings, stray, computed };
 }
 
 /**
@@ -242,22 +252,37 @@ async function facadeParity(files) {
   for (const facade of facades) {
     const source = await readFile(facade, 'utf8');
     const code = stripComments(source);
-    const { bindings, stray } = platformImports(code);
+    const { bindings, stray, computed } = platformImports(code, facade);
+    const at = (index, message) => report({ file: facade, line: lineOf(source, index), message });
     for (const index of stray) {
+      at(index, 'imports a platform file in a form facade parity cannot follow: bind it as `const name = await import(…)`');
+    }
+    for (const index of computed) {
+      at(index, 'imports a computed specifier: a facade names its files as string literals');
+    }
+    const moduleDir = path.dirname(facade);
+    if (bindings.length === 0 && await exists(path.join(moduleDir, 'linux')) && await exists(path.join(moduleDir, 'darwin'))) {
       report({
         file: facade,
-        line: lineOf(source, index),
-        message: 'imports a platform file in a form facade parity cannot follow: bind it as `const name = await import(…)`',
+        line: 1,
+        message: 'has linux/ and darwin/ implementations but no `const name = await import(…)` binding parity can read',
       });
     }
-    for (const { name, targets } of bindings) {
+    for (const { name, declaredAt, targets } of bindings) {
+      // Only `name.member` can be checked: any other use (destructuring, an alias,
+      // `name[…]`, `name?.…`) reads names parity cannot see.
       const uses = new Map();
-      for (const m of code.matchAll(new RegExp(`(?<![\\w$.])${name.replace(/\$/g, '\\$')}\\.([\\w$]+)`, 'g'))) {
-        if (!uses.has(m[1])) uses.set(m[1], m.index);
+      const escaped = name.replace(/\$/g, '\\$');
+      for (const m of code.matchAll(new RegExp(`(?<![\\w$.])${escaped}(?![\\w$])(\\s*\\.\\s*([\\w$]+))?`, 'g'))) {
+        if (m.index === declaredAt) continue;
+        if (m[2] === undefined) {
+          at(m.index, `uses \`${name}\` other than as \`${name}.member\`: facade parity cannot follow it`);
+        } else if (!uses.has(m[2])) {
+          uses.set(m[2], m.index);
+        }
       }
-      for (const target of targets) {
+      for (const implFile of targets) {
         pairs += 1;
-        const implFile = fileURLToPath(new URL(target, pathToFileURL(facade)));
         if (!await exists(implFile)) continue; // reported by the specifier scan
         if (!tables.has(implFile)) tables.set(implFile, await exportTable(implFile));
         const table = tables.get(implFile);
