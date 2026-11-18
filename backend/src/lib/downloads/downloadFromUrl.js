@@ -20,7 +20,7 @@ import { Agent, fetch as undiciFetch } from 'undici';
 import { ensureImageDir } from '../paths.js';
 import { detectType } from './fileTypes.js';
 import { createAppError } from '../routeErrors.js';
-import { streamResponseToUniqueFile } from './downloadUtils.js';
+import { streamResponseToFile, streamResponseToUniqueFile } from './downloadUtils.js';
 
 const MAX_REDIRECTS = 5;
 
@@ -328,4 +328,48 @@ export async function downloadToLibrary(urlStr, onProgress) {
     size: info.size,
     modified: info.mtime.toISOString(),
   };
+}
+
+async function fetchOk(url) {
+  const res = await ssrfSafeFetch(url);
+  if (!res.ok) {
+    throw createAppError('DOWNLOAD_FAILED', `Download failed: HTTP ${res.status}`, String(res.status));
+  }
+  return res;
+}
+
+async function describeFile(destPath) {
+  const info = await stat(destPath);
+  const name = basename(destPath);
+  return {
+    name,
+    type: detectType(name),
+    size: info.size,
+    modified: info.mtime.toISOString(),
+  };
+}
+
+/**
+ * Download url to a new file at destPath with progress. onProgress(percent, loaded, totalBytes).
+ * Partial file removed on error. Returns { name, type, size, modified } on success.
+ *
+ * Uses ssrfSafeFetch (DNS-pinned, manual redirect re-validation) so even
+ * hardcoded mirror URLs cannot be redirected to private/loopback addresses by
+ * a hostile or compromised mirror.
+ */
+export async function downloadWithProgress(url, destPath, onProgress) {
+  const res = await fetchOk(url);
+  await streamResponseToFile(res, destPath, onProgress);
+  return describeFile(destPath);
+}
+
+/**
+ * Download url into dir under baseName (or the next free ` (n)` variant).
+ * Same progress, cleanup, and SSRF guarantees as downloadWithProgress.
+ * Returns { name, type, size, modified } on success.
+ */
+export async function downloadToUniqueFile(url, dir, baseName, onProgress) {
+  const res = await fetchOk(url);
+  const { destPath } = await streamResponseToUniqueFile(res, dir, baseName, onProgress);
+  return describeFile(destPath);
 }

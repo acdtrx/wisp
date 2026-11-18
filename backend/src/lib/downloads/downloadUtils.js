@@ -1,15 +1,14 @@
 /**
- * Shared download utilities: exclusive file creation, response-body → file
- * streaming with progress, and fetch-then-stream helpers.
- * Used by downloadFromUrl, downloadUbuntuCloud, downloadHaos, and wispUpdate.
+ * Shared download utilities: exclusive file creation and response-body → file
+ * streaming with progress. The fetch-then-stream helpers live with the SSRF-safe
+ * fetch in downloadFromUrl.js.
+ * Used by downloadFromUrl, downloadHaos, and wispUpdate.
  */
-import { open, unlink, stat } from 'node:fs/promises';
-import { join, basename } from 'node:path';
+import { open, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createAppError } from '../routeErrors.js';
-import { detectType } from './fileTypes.js';
-import { ssrfSafeFetch } from './downloadFromUrl.js';
 
 /**
  * Create a new empty file in dir under the first free name of `baseName`,
@@ -130,48 +129,4 @@ export async function streamResponseToUniqueFile(res, dir, baseName, onProgress)
   const loaded = await pipeBodyToFile(res.body, handle, destPath, onBytes);
   done(loaded);
   return { destPath, filename };
-}
-
-async function fetchOk(url) {
-  const res = await ssrfSafeFetch(url);
-  if (!res.ok) {
-    throw createAppError('DOWNLOAD_FAILED', `Download failed: HTTP ${res.status}`, String(res.status));
-  }
-  return res;
-}
-
-async function describeFile(destPath) {
-  const info = await stat(destPath);
-  const name = basename(destPath);
-  return {
-    name,
-    type: detectType(name),
-    size: info.size,
-    modified: info.mtime.toISOString(),
-  };
-}
-
-/**
- * Download url to a new file at destPath with progress. onProgress(percent, loaded, totalBytes).
- * Partial file removed on error. Returns { name, type, size, modified } on success.
- *
- * Uses ssrfSafeFetch (DNS-pinned, manual redirect re-validation) so even
- * hardcoded mirror URLs cannot be redirected to private/loopback addresses by
- * a hostile or compromised mirror.
- */
-export async function downloadWithProgress(url, destPath, onProgress) {
-  const res = await fetchOk(url);
-  await streamResponseToFile(res, destPath, onProgress);
-  return describeFile(destPath);
-}
-
-/**
- * Download url into dir under baseName (or the next free ` (n)` variant).
- * Same progress, cleanup, and SSRF guarantees as downloadWithProgress.
- * Returns { name, type, size, modified } on success.
- */
-export async function downloadToUniqueFile(url, dir, baseName, onProgress) {
-  const res = await fetchOk(url);
-  const { destPath } = await streamResponseToUniqueFile(res, dir, baseName, onProgress);
-  return describeFile(destPath);
 }

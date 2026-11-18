@@ -12,13 +12,13 @@ export {
   checkUrl,
   downloadToLibrary,
   ssrfSafeFetch,
+  downloadWithProgress,
 } from './downloadFromUrl.js';
 
 export {
   openUniqueFile,
   writeResponseToFile,
   streamResponseToFile,
-  downloadWithProgress,
 } from './downloadUtils.js';
 
 export { downloadAndDecompressHaos, getLatestHaosAsset } from './downloadHaos.js';
