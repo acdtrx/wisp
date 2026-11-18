@@ -49,7 +49,6 @@ import { writeFileAtomic, writeJsonAtomic } from '../src/lib/atomicJson.js';
 import { checkMountPath } from '../src/lib/configSchema.js';
 import { retiredKeyOfLine } from '../src/lib/loadRuntimeEnv.js';
 import { listBackupDestinationsWithMountCheck, listConfiguredBackupRoots } from '../src/lib/settings.js';
-import { tolerantConfig } from './lib/tolerantConfig.js';
 
 export const id = '0007-repair-config-and-records';
 export const description = 'Config cleaned of what older releases left; container.json shape; backup origins';
@@ -102,21 +101,18 @@ async function mountUsers(ctx) {
   return users;
 }
 
-/**
- * Step 2. Returns the decoded config as this step leaves it (undefined when the
- * file is missing; the raw text when it isn't valid JSON — left for the strict check).
- */
+/** Step 2. A file that is missing, not JSON or not an object is left for the strict check. */
 async function repairWispConfig(ctx) {
   const path = ctx.paths.configFile;
   const raw = await readIfExists(path);
-  if (raw === null) return undefined;
+  if (raw === null) return;
   let data;
   try {
     data = JSON.parse(raw);
   } catch {
-    return raw;
+    return;
   }
-  if (!isPlainObject(data)) return data;
+  if (!isPlainObject(data)) return;
   let changed = false;
 
   for (const key of RETIRED_CONFIG_KEYS) {
@@ -174,7 +170,6 @@ async function repairWispConfig(ctx) {
   }
 
   if (changed) await writeJsonAtomic(path, data, { mode: 0o600 });
-  return data;
 }
 
 const MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/;
@@ -244,9 +239,9 @@ async function migrateContainerShapes(ctx) {
   }
 }
 
-/** Step 4, over the backup roots of the config as step 2 left it. */
-async function markBackupOrigins(ctx, config) {
-  const settings = tolerantConfig(config);
+/** Step 4, over the backup roots of the config as step 2 has written it. */
+async function markBackupOrigins(ctx) {
+  const settings = ctx.getConfig();
   const destinations = await listBackupDestinationsWithMountCheck(settings);
   const listed = destinations.map((d) => d.path);
   for (const root of listConfiguredBackupRoots(settings)) {
@@ -266,7 +261,7 @@ async function markBackupOrigins(ctx, config) {
 
 export async function run(ctx) {
   await repairRuntimeEnv(ctx);
-  const config = await repairWispConfig(ctx);
+  await repairWispConfig(ctx);
   await migrateContainerShapes(ctx);
-  await markBackupOrigins(ctx, config);
+  await markBackupOrigins(ctx);
 }

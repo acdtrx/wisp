@@ -15,7 +15,7 @@ import { defaultConfig } from '../../src/lib/configSchema.js';
 const PATH_KEYS = ['vmsPath', 'imagePath', 'backupLocalPath', 'containersPath'];
 
 /** The tolerant view of decoded wisp-config.json data (anything, even not an object). */
-export function tolerantConfig(data) {
+function tolerantConfig(data) {
   const defaults = defaultConfig();
   const src = data !== null && typeof data === 'object' && !Array.isArray(data) ? data : {};
   const out = {};
