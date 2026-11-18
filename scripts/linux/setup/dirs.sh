@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Create /var/lib/wisp/{images,vms,backups,containers}, /mnt/wisp; set ownership. Run as root.
+# Setup step: Wisp's state directories under /var/lib/wisp and the mount root
+# /mnt/wisp, owned by the deploy user and group libvirt, mode 0775. Run as root.
 # Usage: dirs.sh <username>
 set -euo pipefail
 
@@ -8,27 +9,33 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-DEPLOY_USER="${1:-${SUDO_USER:-}}"
+DEPLOY_USER="${1:-}"
 if [[ -z "$DEPLOY_USER" ]]; then
   echo "Usage: $0 <username>"
-  echo "  Or run with sudo so SUDO_USER is set."
   exit 1
 fi
 
-echo "--- Setting permissions ---"
+SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=step.sh
+source "$SETUP_DIR/step.sh"
 
-IMAGE_DIR="/var/lib/wisp/images"
-VMS_DIR="/var/lib/wisp/vms"
-BACKUPS_DIR="/var/lib/wisp/backups"
-CONTAINERS_DIR="/var/lib/wisp/containers"
-UPDATES_DIR="/var/lib/wisp/updates"
-WISP_MOUNT_ROOT="/mnt/wisp"
-mkdir -p "$IMAGE_DIR" "$VMS_DIR" "$BACKUPS_DIR" "$CONTAINERS_DIR" "$UPDATES_DIR" "$WISP_MOUNT_ROOT"
-chown "$DEPLOY_USER:libvirt" "$IMAGE_DIR" "$VMS_DIR" "$BACKUPS_DIR" "$CONTAINERS_DIR" "$UPDATES_DIR" "$WISP_MOUNT_ROOT"
-chmod 0775 "$IMAGE_DIR" "$VMS_DIR" "$BACKUPS_DIR" "$CONTAINERS_DIR" "$UPDATES_DIR" "$WISP_MOUNT_ROOT"
-echo "  $IMAGE_DIR: created, owned by $DEPLOY_USER:libvirt"
-echo "  $VMS_DIR: created, owned by $DEPLOY_USER:libvirt"
-echo "  $BACKUPS_DIR: created, owned by $DEPLOY_USER:libvirt"
-echo "  $CONTAINERS_DIR: created, owned by $DEPLOY_USER:libvirt"
-echo "  $UPDATES_DIR: created, owned by $DEPLOY_USER:libvirt (self-update staging tarballs)"
-echo "  $WISP_MOUNT_ROOT: created, owned by $DEPLOY_USER:libvirt (child mount points are created on demand by wisp-mount)"
+echo "--- Directories ---"
+
+# images/vms/backups/containers: the backend's stores; updates: self-update
+# staging; /mnt/wisp: parent of the mount points wisp-mount creates on demand.
+for dir in /var/lib/wisp/images /var/lib/wisp/vms /var/lib/wisp/backups /var/lib/wisp/containers \
+  /var/lib/wisp/updates /mnt/wisp; do
+  if [[ ! -d "$dir" ]]; then
+    mkdir -p "$dir"
+    changed "$dir created"
+  fi
+  if [[ "$(stat -c %U:%G "$dir")" != "$DEPLOY_USER:libvirt" ]]; then
+    chown "$DEPLOY_USER:libvirt" "$dir"
+    changed "$dir owned by $DEPLOY_USER:libvirt"
+  fi
+  if [[ "$(stat -c %a "$dir")" != 775 ]]; then
+    chmod 0775 "$dir"
+    changed "$dir mode 0775"
+  fi
+done
+step_done

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Wisp install: copy app dirs, server setup, config, password, build, permissions, optional systemd and bridge.
-# Run as normal user (not root). Linux only.
+# Wisp install, from a release-shaped tree (a release tarball, or what push.sh
+# ships — scripts/stage-release.sh builds both): copy the tree, run setup,
+# config, password, backend dependencies, permissions, start, and offer the
+# bridge. Run as normal user (not root). Linux only. Hosts never build.
 #
-# Usage: ./scripts/install.sh [install-dir] [--restart-svc] [--prebuilt]
+# Usage: ./scripts/install.sh [install-dir] [--restart-svc]
 #   install-dir    — target directory (default: prompt, or /opt/wisp)
-#   --restart-svc  — auto-restart (or install+start) systemd services without prompting
-#   --prebuilt     — frontend/dist/ is already built (e.g. release tarball); skip frontend build
+#   --restart-svc  — (re)start wisp.service without prompting
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -13,31 +14,29 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 RESTART_SVC=0
-PREBUILT=0
 INSTALL_DIR=""
 
 for arg in "$@"; do
   case "$arg" in
     --restart-svc) RESTART_SVC=1 ;;
-    --prebuilt) PREBUILT=1 ;;
     -*) echo "ERROR: Unknown flag: $arg"; exit 1 ;;
     *) INSTALL_DIR="$arg" ;;
   esac
 done
 
-# Auto-detect prebuilt: source has dist but no src — release tarball shape.
-if [[ "$PREBUILT" -eq 0 && -f "$SOURCE_DIR/frontend/dist/index.html" && ! -d "$SOURCE_DIR/frontend/src" ]]; then
-  PREBUILT=1
-fi
-
 # --- Pre-flight ---
 if [[ "$(uname -s)" != "Linux" ]]; then
-  echo "ERROR: This script is for Linux only. Use package.sh to build, then run install.sh on the target server."
+  echo "ERROR: This script is for Linux only. Build a release-shaped tree with scripts/stage-release.sh (push.sh does), then run its install.sh on the target server."
   exit 1
 fi
 
 if [[ $EUID -eq 0 ]]; then
-  echo "ERROR: Do not run this script as root. Run as a normal user; the script will use sudo only when needed (install directory, setup-server.sh)."
+  echo "ERROR: Do not run this script as root. Run as a normal user; the script will use sudo only when needed (install directory, setup)."
+  exit 1
+fi
+
+if [[ ! -f "$SOURCE_DIR/frontend/dist/index.html" ]]; then
+  echo "ERROR: $SOURCE_DIR is not a release-shaped tree (no frontend/dist). Install from a release tarball, or push one with scripts/push.sh."
   exit 1
 fi
 
@@ -65,36 +64,20 @@ echo ""
 cd "$INSTALL_DIR"
 RUNTIME_ENV="$INSTALL_DIR/config/runtime.env"
 WISPCTL="$INSTALL_DIR/scripts/wispctl.sh"
-SETUP_SERVER="$INSTALL_DIR/scripts/setup-server.sh"
 SETUP_DIR="$INSTALL_DIR/scripts/linux/setup"
 
-# --- Server setup (requires root) ---
+# --- Setup (requires root): stops here, naming the step, if one fails ---
 echo ""
-echo "--- Server setup (packages, groups, libvirt) ---"
-if [[ ! -x "$SETUP_SERVER" ]]; then
-  echo "ERROR: $SETUP_SERVER not found or not executable."
-  exit 1
-fi
-sudo "$SETUP_SERVER" --skip-bridge
-
-# --- Node check ---
-if ! command -v node &>/dev/null; then
-  echo "ERROR: Node.js not found. setup-server.sh should have installed it. Please install Node.js 24+ and re-run this script."
-  exit 1
-fi
+sudo "$SETUP_DIR/common-steps.sh" "$INSTALL_DIR" "$(whoami)"
 
 # --- Config and password ---
 "$SETUP_DIR/config.sh" "$INSTALL_DIR"
 "$SETUP_DIR/password.sh" "$INSTALL_DIR"
 
-# --- Build ---
+# --- Backend dependencies (the tree ships without node_modules) ---
 echo ""
-echo "--- Build ---"
-if [[ "$PREBUILT" -eq 1 ]]; then
-  "$WISPCTL" build --prebuilt
-else
-  "$WISPCTL" build
-fi
+echo "--- Backend dependencies ---"
+(cd "$INSTALL_DIR/backend" && npm ci --omit=dev --omit=optional)
 
 # --- Permissions ---
 echo ""
@@ -103,23 +86,21 @@ echo ""
 # --- System service ---
 # The backend brings its stored state up to date itself, at every start.
 echo ""
-WISP_UNIT="/etc/systemd/system/wisp.service"
 START_SVC=0
 if [[ "$RESTART_SVC" -eq 1 ]]; then
   START_SVC=1
-elif [[ -f "$WISP_UNIT" ]]; then
-  read -r -p "Wisp systemd service is already installed. Restart it to apply this update? [Y/n] " ans || true
+elif systemctl is-active --quiet wisp; then
+  read -r -p "Wisp is running. Restart it to apply this update? [Y/n] " ans || true
   if [[ ! "${ans:-Y}" =~ ^[nN] ]]; then START_SVC=1; fi
 else
-  read -r -p "Install and start systemd service? [y/N] " ans || true
+  read -r -p "Start wisp.service now? [y/N] " ans || true
   if [[ "${ans:-n}" =~ ^[yY] ]]; then START_SVC=1; fi
 fi
 
+# Setup has rendered and enabled the unit; this (re)starts it.
 if [[ "$START_SVC" -eq 1 ]]; then
-  # Re-template the unit so unit-file changes in the repo propagate on every update.
-  "$WISPCTL" svc install
-  "$WISPCTL" svc restart
-  echo "  Service installed and started."
+  sudo systemctl restart wisp
+  echo "  Service started."
 fi
 
 # --- Optional: Bridged networking (skip in non-interactive mode) ---
@@ -163,5 +144,5 @@ echo "  Access:       http://$(hostname -f 2>/dev/null || hostname):${WISP_PORT}
 echo ""
 echo "  If you were added to libvirt/kvm groups, log out and back in (or run: newgrp libvirt)"
 echo ""
-echo "  Manage app:   $WISPCTL { build | password | local start|stop | svc start|stop|restart|logs }"
+echo "  Manage app:   $WISPCTL { password | local start|stop | svc start|stop|restart|logs }"
 echo ""

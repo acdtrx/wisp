@@ -1,21 +1,16 @@
 #!/usr/bin/env bash
-# Install or refresh Wisp privileged helpers under /usr/local/bin + sudoers.
-# Idempotent: re-copy from the project tree so upgrades pick up script changes.
+# Setup step: Wisp's privileged helpers in /usr/local/bin, each with the sudoers
+# rule that lets the deploy user run it, and wisp-updater with its unit and its
+# one sudoers rule. Run as root. Copies only what differs from the install tree;
+# the packages the helpers run (dmidecode, smartmontools, cifs-utils, rsync)
+# come from the packages step.
 #
-# Run as root.
+# Maintainer: when adding a new backend/scripts/wisp-* privileged helper, add it
+# to HELPERS below, wire the backend to prefer /usr/local/bin (see existing
+# patterns), and update docs/specs/DEPLOYMENT.md — "Privileged helpers checklist".
+#
 # Usage: install-helpers.sh <project-root> <deploy-user>
-#
-# Called from: setup-server.sh, wispctl helpers, push.sh (remote).
-#
-# Maintainer: when adding a new backend/scripts/wisp-* privileged helper, add a block
-# below, wire the backend to prefer /usr/local/bin (see existing patterns), and update
-# docs/specs/DEPLOYMENT.md — "Privileged helpers checklist".
-#
-# Why no `set -e`: a single helper's failure (commonly: dpkg lock contention
-# from unattended-upgrades) must not abort the rest. Each block tracks its
-# own outcome; the script exits non-zero only at the end if any helper
-# actually failed, so setup-server.sh's run_step still surfaces it.
-set -uo pipefail
+set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
   echo "ERROR: install-helpers.sh must run as root (e.g. sudo $0 ...)."
@@ -30,184 +25,68 @@ fi
 PROJECT_ROOT="$(cd "$1" && pwd)"
 DEPLOY_USER="$2"
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=step.sh
+source "$SETUP_DIR/step.sh"
 
-FAILED_HELPERS=()
+HELPERS=(wisp-os-update wisp-dmidecode wisp-smartctl wisp-mount wisp-power wisp-netns wisp-cni wisp-bridge wisp-nvram)
 
-# Run helper.sh for one privileged helper; on failure record and continue.
-# $1 = helper basename (for tracking + log), remaining args = full helper.sh argv.
-run_helper() {
-  local label="$1"; shift
-  if "$@"; then
-    echo "  Installed /usr/local/bin/$label."
-  else
-    local rc=$?
-    echo "  WARNING: $label install failed (exit $rc). Continuing with remaining helpers."
-    FAILED_HELPERS+=("$label")
+echo "--- Privileged helpers (/usr/local/bin) ---"
+
+# install_sudoers <file> <line>: the rule written and checked by visudo only when
+# it differs; a rule visudo rejects is removed again and fails the step.
+install_sudoers() {
+  local file="$1" line="$2"
+  if printf '%s\n' "$line" | write_if_changed "$file" 0440; then
+    if ! visudo -cq -f "$file"; then
+      rm -f "$file"
+      echo "ERROR: $file is not valid sudoers syntax — removed." >&2
+      exit 1
+    fi
+    changed "$file"
   fi
 }
 
-echo "=== Wisp privileged helpers → /usr/local/bin ==="
-echo "Project: $PROJECT_ROOT"
-echo "Deploy user: $DEPLOY_USER"
-echo ""
-
-echo "--- wisp-os-update (OS update check/upgrade, Debian/Ubuntu and Arch) ---"
-if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-os-update" ]]; then
-  run_helper wisp-os-update "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-os-update" wisp-os-update "$DEPLOY_USER"
-else
-  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-os-update)"
-fi
-echo ""
-
-echo "--- wisp-dmidecode (RAM module info) ---"
-if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-dmidecode" ]]; then
-  run_helper wisp-dmidecode "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-dmidecode" wisp-dmidecode "$DEPLOY_USER" dmidecode
-else
-  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-dmidecode)"
-fi
-echo ""
-
-echo "--- wisp-smartctl (disk SMART health) ---"
-if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-smartctl" ]]; then
-  run_helper wisp-smartctl "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-smartctl" wisp-smartctl "$DEPLOY_USER" smartmontools
-else
-  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-smartctl)"
-fi
-echo ""
-
-echo "--- wisp-mount (SMB + removable disk mount helper) ---"
-if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-mount" ]]; then
-  run_helper wisp-mount "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-mount" wisp-mount "$DEPLOY_USER" cifs-utils
-  # Remove obsolete wisp-smb (superseded by wisp-mount smb ...).
-  if [[ -f /usr/local/bin/wisp-smb ]]; then
-    rm -f /usr/local/bin/wisp-smb
-    echo "  Removed obsolete /usr/local/bin/wisp-smb."
+# Written by atomic rename (write_if_changed): wisp-updater runs this step
+# mid-update, and the running updater must keep its inode to finish.
+for name in "${HELPERS[@]}"; do
+  src="$PROJECT_ROOT/backend/scripts/$name"
+  dest="/usr/local/bin/$name"
+  if [[ ! -f "$src" ]]; then
+    echo "ERROR: $src missing from the install tree." >&2
+    exit 1
   fi
-  if [[ -f /etc/sudoers.d/wisp-smb ]]; then
-    rm -f /etc/sudoers.d/wisp-smb
-    echo "  Removed obsolete /etc/sudoers.d/wisp-smb."
+  if write_if_changed "$dest" 0755 < "$src"; then changed "$dest"; fi
+  install_sudoers "/etc/sudoers.d/${name//[^a-z0-9-]/}" "$DEPLOY_USER ALL=(root) NOPASSWD: $dest"
+done
+
+# Helpers an earlier release installed under other names.
+for obsolete in wisp-smb wisp-update; do
+  if [[ -f "/usr/local/bin/$obsolete" ]]; then
+    rm -f "/usr/local/bin/$obsolete"
+    changed "removed obsolete /usr/local/bin/$obsolete"
   fi
-else
-  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-mount)"
-fi
-echo ""
-
-echo "--- wisp-power (host shutdown / reboot) ---"
-if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-power" ]]; then
-  run_helper wisp-power "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-power" wisp-power "$DEPLOY_USER"
-else
-  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-power)"
-fi
-echo ""
-
-echo "--- wisp-netns (container network namespaces) ---"
-if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-netns" ]]; then
-  run_helper wisp-netns "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-netns" wisp-netns "$DEPLOY_USER"
-else
-  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-netns)"
-fi
-echo ""
-
-echo "--- wisp-cni (privileged CNI plugin exec for containers) ---"
-if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-cni" ]]; then
-  run_helper wisp-cni "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-cni" wisp-cni "$DEPLOY_USER"
-else
-  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-cni)"
-fi
-echo ""
-
-echo "--- wisp-bridge (host VLAN bridge netplan helper) ---"
-if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-bridge" ]]; then
-  run_helper wisp-bridge "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-bridge" wisp-bridge "$DEPLOY_USER"
-else
-  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-bridge)"
-fi
-echo ""
-
-echo "--- wisp-nvram (UEFI NVRAM file copy for backup/restore) ---"
-if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-nvram" ]]; then
-  run_helper wisp-nvram "$SETUP_DIR/helper.sh" "$PROJECT_ROOT/backend/scripts/wisp-nvram" wisp-nvram "$DEPLOY_USER"
-else
-  echo "  Skipped (not found: $PROJECT_ROOT/backend/scripts/wisp-nvram)"
-fi
-echo ""
-
-# wisp-updater install: doesn't fit the helper.sh pattern (templates a unit
-# file, custom sudoers entry restricted to the systemctl start verb). Wrapped
-# in a function so a visudo failure returns instead of exiting the whole
-# script — same isolation other helpers get from run_helper.
-install_wisp_updater() {
-  # rsync is needed by the updater script itself.
-  # shellcheck source=distro.sh
-  source "$SETUP_DIR/distro.sh"
-  pkg_install rsync || true
-
-  # Install the script via atomic rename. wisp-updater itself runs install-helpers
-  # mid-update, so the running inode must persist across the in-place refresh.
-  local TMP_DEST="/usr/local/bin/wisp-updater.new.$$"
-  cp "$PROJECT_ROOT/backend/scripts/wisp-updater" "$TMP_DEST" || return 1
-  chmod 755 "$TMP_DEST" || return 1
-  mv -f "$TMP_DEST" /usr/local/bin/wisp-updater || return 1
-  echo "  Installed /usr/local/bin/wisp-updater."
-
-  # Template + install the unit file. WISP_PATH → install dir, used by the
-  # script as $WISP_INSTALL_DIR. Idempotent.
-  sed -e "s|WISP_PATH|$PROJECT_ROOT|g" \
-    "$PROJECT_ROOT/systemd/linux/wisp-updater.service" \
-    > /etc/systemd/system/wisp-updater.service || return 1
-  chmod 644 /etc/systemd/system/wisp-updater.service || return 1
-  echo "  Installed /etc/systemd/system/wisp-updater.service."
-
-  # Sudoers: deploy user may trigger the unit, and only that. argv must match
-  # the backend's invocation exactly:
-  #   sudo -n /usr/bin/systemctl start --no-block wisp-updater.service
-  local SUDOERS_FILE=/etc/sudoers.d/wisp-updater
-  echo "$DEPLOY_USER ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block wisp-updater.service" > "$SUDOERS_FILE" || return 1
-  chmod 440 "$SUDOERS_FILE" || return 1
-  if ! visudo -c -f "$SUDOERS_FILE"; then
-    echo "  ERROR: Invalid sudoers file"
-    rm -f "$SUDOERS_FILE"
-    return 1
+  if [[ -f "/etc/sudoers.d/$obsolete" ]]; then
+    rm -f "/etc/sudoers.d/$obsolete"
+    changed "removed obsolete /etc/sudoers.d/$obsolete"
   fi
-  echo "  Configured sudo: $DEPLOY_USER may trigger wisp-updater.service."
+done
 
-  # Drop obsolete wisp-update (superseded by wisp-updater + systemd unit).
-  if [[ -f /usr/local/bin/wisp-update ]]; then
-    rm -f /usr/local/bin/wisp-update
-    echo "  Removed obsolete /usr/local/bin/wisp-update."
-  fi
-  if [[ -f /etc/sudoers.d/wisp-update ]]; then
-    rm -f /etc/sudoers.d/wisp-update
-    echo "  Removed obsolete /etc/sudoers.d/wisp-update."
-  fi
+echo "--- wisp-updater (self-update applier, run as wisp-updater.service) ---"
 
-  systemctl daemon-reload || true
-}
-
-echo "--- wisp-updater (self-update applier, runs as wisp-updater.service) ---"
-if [[ -f "$PROJECT_ROOT/backend/scripts/wisp-updater" && -f "$PROJECT_ROOT/systemd/linux/wisp-updater.service" ]]; then
-  if install_wisp_updater; then
-    : # success messages emitted inline above
-  else
-    echo "  WARNING: wisp-updater install failed. Continuing."
-    FAILED_HELPERS+=("wisp-updater")
-  fi
-else
-  echo "  Skipped (script or unit file missing)"
+if write_if_changed /usr/local/bin/wisp-updater 0755 < "$PROJECT_ROOT/backend/scripts/wisp-updater"; then
+  changed /usr/local/bin/wisp-updater
 fi
-echo ""
 
-if [[ ${#FAILED_HELPERS[@]} -gt 0 ]]; then
-  echo "=== Helpers step complete (with failures) ==="
-  echo ""
-  echo "  Failed: ${FAILED_HELPERS[*]}"
-  echo ""
-  echo "  Common cause: dpkg/apt lock contention from unattended-upgrades."
-  echo "  Wait for apt to finish (\`ps -ef | grep apt\`), then re-run:"
-  echo "    ./scripts/wispctl.sh helpers"
-  echo "  or:"
-  echo "    sudo $SETUP_DIR/install-helpers.sh $PROJECT_ROOT $DEPLOY_USER"
-  exit 1
-else
-  echo "=== Helpers step complete ==="
+# WISP_PATH → the install dir, which the updater reads as $WISP_INSTALL_DIR.
+if sed -e "s|WISP_PATH|$PROJECT_ROOT|g" "$PROJECT_ROOT/systemd/linux/wisp-updater.service" \
+  | write_if_changed /etc/systemd/system/wisp-updater.service 0644; then
+  systemctl daemon-reload
+  changed /etc/systemd/system/wisp-updater.service
 fi
+
+# The deploy user may trigger the unit, and only that: argv must match the
+# backend's invocation exactly (sudo -n /usr/bin/systemctl start --no-block wisp-updater.service).
+install_sudoers /etc/sudoers.d/wisp-updater \
+  "$DEPLOY_USER ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block wisp-updater.service"
+
+step_done

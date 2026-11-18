@@ -22,7 +22,7 @@ import { readMountTable } from '../../storage/index.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
 
-/** Prefer installed helper + sudoers path (see setup-server.sh); bundled path for dev. */
+/** Prefer installed helper + sudoers path (installed by setup's helpers step); bundled path for dev. */
 const DMIDECODE_INSTALLED = '/usr/local/bin/wisp-dmidecode';
 const DMIDECODE_BUNDLED = resolve(__dirname, '../../../../scripts/wisp-dmidecode');
 

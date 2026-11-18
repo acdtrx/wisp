@@ -543,7 +543,7 @@ async function installMdnsStubRoute(name) {
  * On the primary bridge — where wisp's DNS forwarder is reachable — use the
  * shared `/var/lib/wisp/container-resolv.conf` (single `nameserver 169.254.53.53`
  * line) so `.local` names resolve through the forwarder. On VLAN sub-bridges,
- * or when the shared file is missing (setup-server.sh never ran), fall back to
+ * or when the shared file is missing (setup never ran), fall back to
  * the host's upstream resolvers — on systemd-resolved hosts, `/etc/resolv.conf`
  * points at the stub (`127.0.0.53`) which is unreachable from a container
  * netns, so prefer `/run/systemd/resolve/resolv.conf` when present.

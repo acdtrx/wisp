@@ -34,76 +34,6 @@ is_running() {
   [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null
 }
 
-cmd_helpers() {
-  if [[ "$(uname -s)" != "Linux" ]]; then
-    echo "ERROR: Refreshing helpers is only supported on Linux."
-    exit 1
-  fi
-  echo "=== Refresh privileged helpers (/usr/local/bin) ==="
-  echo "Project: $PROJECT_DIR"
-  echo "Deploy user: $(whoami)"
-  echo ""
-  sudo "$SETUP_DIR/install-helpers.sh" "$PROJECT_DIR" "$(whoami)"
-  echo ""
-  echo "=== Helpers refreshed ==="
-}
-
-cmd_build() {
-  local prebuilt=0
-  for arg in "$@"; do
-    case "$arg" in
-      --prebuilt) prebuilt=1 ;;
-      *) echo "ERROR: unknown build flag: $arg"; exit 1 ;;
-    esac
-  done
-  # Auto-detect: a release tarball ships frontend/dist already built. Skip
-  # frontend npm install + build in that case (it's the slow part of an update).
-  if [[ "$prebuilt" -eq 0 && -f "$PROJECT_DIR/frontend/dist/index.html" && ! -d "$PROJECT_DIR/frontend/src" ]]; then
-    prebuilt=1
-  fi
-
-  echo "=== Wisp Build ==="
-  echo "Project: $PROJECT_DIR"
-  if [[ "$prebuilt" -eq 1 ]]; then
-    echo "Mode:    prebuilt (frontend dist already present — skipping frontend build)"
-  fi
-  echo ""
-  if [[ -f "$RUNTIME_ENV" ]]; then
-    echo "--- config/runtime.env (optional) ---"
-    echo "  Using $RUNTIME_ENV for overrides"
-  else
-    echo "--- config/runtime.env ---"
-    echo "  Not present (using built-in defaults for ports)"
-  fi
-
-  echo ""
-  echo "--- Installing backend ---"
-  cd "$PROJECT_DIR/backend"
-  npm ci --omit=dev --omit=optional
-  echo "  Backend deps installed"
-
-  if [[ "$prebuilt" -eq 0 ]]; then
-    echo ""
-    echo "--- Building frontend ---"
-    cd "$PROJECT_DIR/frontend"
-    npm install
-    npm run build
-    echo "  Frontend built"
-  else
-    echo ""
-    echo "--- Frontend ---"
-    echo "  Skipped (using prebuilt $PROJECT_DIR/frontend/dist)"
-  fi
-
-  echo ""
-  echo "=== Build complete ==="
-  echo ""
-  echo "Run the app:"
-  echo "  Local:  $0 local start"
-  echo "  Daemon: $0 svc install && $0 svc start"
-  echo ""
-}
-
 cmd_password() {
   if [[ "${1:-}" == "--force" ]]; then
     bash "$SETUP_DIR/password.sh" "$PROJECT_DIR" --force
@@ -169,20 +99,6 @@ cmd_tail() {
   tail -n "$lines" "$WISP_LOG" 2>/dev/null || echo "  (no logs yet)"
 }
 
-cmd_svc_install() {
-  set_env_vars
-  echo "=== Installing systemd unit ==="
-  local wisp_user
-  wisp_user="$(whoami)"
-  sed -e "s|WISP_USER|$wisp_user|g" \
-      -e "s|WISP_PATH|$PROJECT_DIR|g" \
-    "$PROJECT_DIR/systemd/linux/${SERVICE_UNIT}.service" | sudo tee "/etc/systemd/system/${SERVICE_UNIT}.service" > /dev/null
-  echo "  Installed ${SERVICE_UNIT}.service"
-  sudo systemctl daemon-reload
-  sudo systemctl enable "$SERVICE_UNIT"
-  echo "  Enabled. Run: $0 svc start"
-}
-
 cmd_svc_uninstall() {
   echo "=== Uninstalling systemd unit ==="
   sudo systemctl stop "$SERVICE_UNIT" 2>/dev/null || true
@@ -215,11 +131,6 @@ cmd_svc_logs() {
 }
 
 case "${1:-help}" in
-  helpers) cmd_helpers ;;
-  build)
-    shift
-    cmd_build "$@"
-    ;;
   password)
     cmd_password "${2:-}"
     ;;
@@ -239,25 +150,22 @@ case "${1:-help}" in
     ;;
   svc)
     case "${2:-}" in
-      install)   cmd_svc_install ;;
       uninstall) cmd_svc_uninstall ;;
       start)     cmd_svc_start ;;
       stop)      cmd_svc_stop ;;
       restart)   cmd_svc_restart ;;
       logs)      cmd_svc_logs ;;
       *)
-        echo "Usage: $0 svc {install|uninstall|start|stop|restart|logs}"
+        echo "Usage: $0 svc {uninstall|start|stop|restart|logs}"
         exit 1
         ;;
     esac
     ;;
   help|*)
-    echo "Usage: $0 {helpers|build|password|local|svc}"
+    echo "Usage: $0 {password|local|svc}"
     echo ""
-    echo "  helpers               sudo: copy wisp-* scripts to /usr/local/bin (run after upgrade)"
-    echo "  build [--prebuilt]    Install deps, vendor noVNC, build frontend (skip frontend build with --prebuilt)"
     echo "  password [--force]    Set or reset config/wisp-password"
     echo "  local start|stop|restart|status|logs|tail"
-    echo "  svc install|uninstall|start|stop|restart|logs"
+    echo "  svc uninstall|start|stop|restart|logs   (setup renders and enables the unit)"
     ;;
 esac

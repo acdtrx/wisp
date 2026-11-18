@@ -3,7 +3,6 @@
 # Exports:
 #   WISP_DISTRO   — "debian" (Ubuntu/Debian) or "arch"
 #   sys_arch()    — prints GitHub-release arch name (amd64, arm64, arm)
-#   pkg_install() — installs packages with the appropriate package manager
 
 # Detect distro from /etc/os-release
 if [[ -z "${WISP_DISTRO:-}" ]]; then
@@ -42,13 +41,4 @@ sys_arch() {
       return 1
       ;;
   esac
-}
-
-# Install packages with the distro-appropriate package manager
-pkg_install() {
-  if [[ "$WISP_DISTRO" == "arch" ]]; then
-    pacman -S --needed --noconfirm "$@"
-  else
-    apt-get install -y -qq "$@"
-  fi
 }

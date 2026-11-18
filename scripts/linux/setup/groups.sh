@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Add deploy user to libvirt, kvm, input groups; chmod /dev/kvm. Run as root.
+# Setup step: the deploy user in the libvirt, kvm and input groups. Run as root.
 # Usage: groups.sh <username>
 set -euo pipefail
 
@@ -8,22 +8,26 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-DEPLOY_USER="${1:-${SUDO_USER:-}}"
+DEPLOY_USER="${1:-}"
 if [[ -z "$DEPLOY_USER" ]]; then
   echo "Usage: $0 <username>"
-  echo "  Or run with sudo so SUDO_USER is set."
   exit 1
 fi
 
-echo "--- Configuring groups ---"
+SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=step.sh
+source "$SETUP_DIR/step.sh"
+
+echo "--- Groups ---"
 
 for group in libvirt kvm input; do
-  if getent group "$group" &>/dev/null; then
+  if ! getent group "$group" >/dev/null; then
+    echo "ERROR: group $group does not exist (the packages step installs what creates it)." >&2
+    exit 1
+  fi
+  if ! id -nG "$DEPLOY_USER" | tr ' ' '\n' | grep -qx "$group"; then
     usermod -aG "$group" "$DEPLOY_USER"
-    echo "  Added $DEPLOY_USER to $group"
-  else
-    echo "  WARN: Group $group does not exist, skipping"
+    changed "$DEPLOY_USER added to $group"
   fi
 done
-
-chmod 0660 /dev/kvm 2>/dev/null && echo "  /dev/kvm: mode 0660" || echo "  WARN: Could not chmod /dev/kvm"
+step_done

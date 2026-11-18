@@ -240,10 +240,10 @@ idle_run "$NPM_CI_IDLE_SEC" sudo -u "$DEPLOY_USER" bash -c "cd '$INSTALL_DIR/bac
   || fail "backend npm ci failed"
 
 echo "step:common-setup"
-# The setup steps the installer runs too — container DNS host config, avahi,
-# then every privileged wisp-* helper (which re-installs this script and
-# wisp-updater.service via atomic rename, so the running inode survives to
-# finish this update).
+# Setup, the step list the installer runs too: packages, users, directories,
+# libvirt, containerd, networking, the privileged wisp-* helpers (which re-install
+# this script and wisp-updater.service via atomic rename, so the running inode
+# survives to finish this update) and the units.
 #
 # Invoked by path from the freshly swapped tree, so the step list is whatever THIS
 # release ships: adding a step to common-steps.sh takes effect on the very next

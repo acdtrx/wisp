@@ -30,9 +30,10 @@ What a project facing real users or a network adds to the rules.
 
 ## Deploys `[PROJECT]`
 
-- The install and setup pipeline is `scripts/install.sh`, `scripts/setup-server.sh` and
-  `scripts/linux/setup/`; keep a manual fix on a server to active debugging (`AGENTS.md`,
-  Deployability).
+- The install and setup pipeline is `scripts/stage-release.sh` (the release-shaped
+  tarball every host installs; hosts never build), `scripts/install.sh` and setup,
+  `scripts/linux/setup/common-steps.sh` with its steps; keep a manual fix on a server to
+  active debugging (`AGENTS.md`, Deployability).
 - Cut **releases** with `scripts/release.sh` (version bumps, changelog fold, `v*` tag);
   pushing the tag to `github` runs the workflow that builds the release tarball.
 - **Self-update is a first-class path**: `wisp-updater` swaps the install atomically from

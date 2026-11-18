@@ -18,7 +18,7 @@
 # interactive apt or unattended-upgrades holds avahi back if the package ever
 # ships a changed one — the next run of this step re-applies the key either way.
 #
-# Idempotent: rewrites the file and restarts avahi-daemon only when the key is
+# Setup step: rewrites the file and restarts avahi-daemon only when the key is
 # not already set. Must run as root.
 set -euo pipefail
 
@@ -27,6 +27,10 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=step.sh
+source "$SETUP_DIR/step.sh"
+
 echo "--- avahi-daemon config ---"
 
 CONF="/etc/avahi/avahi-daemon.conf"
@@ -34,8 +38,8 @@ KEY="publish-aaaa-on-ipv4"
 VALUE="no"
 
 if [[ ! -f "$CONF" ]]; then
-  echo "  $CONF not found (avahi-daemon not installed) — skipped."
-  exit 0
+  echo "ERROR: $CONF not found (the packages step installs avahi-daemon)." >&2
+  exit 1
 fi
 
 # Set KEY=VALUE in [publish]: replace the first line naming the key there,
@@ -52,16 +56,16 @@ awk -v key="$KEY" -v val="$VALUE" '
 ' "$CONF" > "$tmp"
 
 if cmp -s "$tmp" "$CONF"; then
-  echo "  $CONF already sets $KEY=$VALUE."
+  step_done
   exit 0
 fi
 
 # Overwrite in place rather than rename, so the conffile keeps its inode,
 # owner, mode and security label.
 cat "$tmp" > "$CONF"
-echo "  Set $KEY=$VALUE in $CONF"
+changed "$KEY=$VALUE in $CONF"
 
 # Only when running: a stopped avahi picks the file up on its next start. The
 # backend re-registers everything when avahi comes back (NameOwnerChanged).
 systemctl try-restart avahi-daemon.service
-echo "  Restarted avahi-daemon (if it was running)."
+changed "avahi-daemon restarted (if it was running)"

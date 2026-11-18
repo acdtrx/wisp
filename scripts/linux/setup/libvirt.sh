@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Enable libvirt daemons (modular or monolithic) + virtlogd; disable default NAT network. Run as root.
+# Setup step: libvirt's daemons enabled and running (modular or monolithic) with
+# virtlogd, and libvirt's default NAT network off — Wisp's VMs use a host
+# bridge. Run as root.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -7,42 +9,42 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-echo "--- Enabling libvirt services ---"
+SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=step.sh
+source "$SETUP_DIR/step.sh"
+
+echo "--- libvirt ---"
 
 unit_exists() { systemctl cat "$1" &>/dev/null; }
 
 # Modular daemons (virtqemud + sidecars) replace the monolithic libvirtd on
 # distros that opt in (Fedora 35+, recent Arch). Ubuntu 26.04 ships libvirt 12
-# but still packages it monolithically, so this branch is for forward-compat
-# and non-Debian distros. virtproxyd provides the legacy
+# but still packages it monolithically. virtproxyd provides the legacy
 # /var/run/libvirt/libvirt-sock for clients that hardcode that path
 # (libvirt-dbus, sanity.sh).
 if unit_exists virtqemud.socket; then
   for sock in virtqemud.socket virtnetworkd.socket virtstoraged.socket \
               virtnodedevd.socket virtsecretd.socket virtproxyd.socket \
               virtinterfaced.socket virtnwfilterd.socket; do
-    if unit_exists "$sock"; then
-      systemctl enable --now "$sock" >/dev/null
-    fi
+    if unit_exists "$sock"; then unit_on "$sock"; fi
   done
-  echo "  libvirt modular daemons: socket-activated (virtqemud + virtnetworkd + virtstoraged + virtproxyd + ...)"
 elif unit_exists libvirtd.service; then
-  systemctl enable --now libvirtd
-  echo "  libvirtd: $(systemctl is-active libvirtd)"
+  unit_on libvirtd.service
 else
-  echo "  ERROR: neither virtqemud.socket nor libvirtd.service is installed"
+  echo "ERROR: neither virtqemud.socket nor libvirtd.service is installed" >&2
   exit 1
 fi
 
-# virtlogd persists in both monolithic and modular setups
-systemctl enable --now virtlogd
-echo "  virtlogd: $(systemctl is-active virtlogd)"
-echo "  libvirt-dbus: installed (activates on demand via D-Bus)"
+unit_on virtlogd
 
-# Prevent libvirt default (NAT) network from starting now or on reboot
+# The default NAT network neither autostarts nor runs.
 AUTOSTART_LINK="/etc/libvirt/qemu/networks/autostart/default.xml"
 if [[ -L "$AUTOSTART_LINK" ]]; then
   rm -f "$AUTOSTART_LINK"
-  echo "  Default NAT network: autostart disabled (virbr0 will not start)"
+  changed "default NAT network no longer autostarts"
 fi
-virsh net-destroy default 2>/dev/null && echo "  Default NAT network stopped (virbr0 removed)." || true
+if virsh -q net-list --name 2>/dev/null | grep -qx default; then
+  virsh net-destroy default >/dev/null
+  changed "default NAT network stopped (virbr0 removed)"
+fi
+step_done

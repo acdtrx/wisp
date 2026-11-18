@@ -12,7 +12,7 @@ import { createAppError } from '../../routeErrors.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
 
-/** Prefer installed helper + sudoers path (see setup-server.sh); bundled path for dev. */
+/** Prefer installed helper + sudoers path (installed by setup's helpers step); bundled path for dev. */
 const POWER_INSTALLED = '/usr/local/bin/wisp-power';
 const POWER_BUNDLED = resolve(__dirname, '../../../../scripts/wisp-power');
 const POWER_UNAVAILABLE = 'POWER_UNAVAILABLE';
@@ -38,7 +38,7 @@ async function getScriptPath() {
   throw createAppError(
     POWER_UNAVAILABLE,
     'wisp-power script not found or not readable',
-    'Set WISP_POWER_SCRIPT or install via setup-server.sh (helper to /usr/local/bin)'
+    'Set WISP_POWER_SCRIPT or run setup (scripts/linux/setup/common-steps.sh installs the helper to /usr/local/bin)'
   );
 }
 
