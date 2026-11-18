@@ -25,9 +25,10 @@
  *      does a listed file that left.
  *
  *   6. The backend alone runs the state migrations, at its start
- *      (CODING-RULES §16): no file outside backend/src names the runner
- *      (lib/stateMigrations.js, lib/stateMigrationLedger.js), docs and this
- *      check aside — scripts, units and migrations included.
+ *      (CODING-RULES §16): over every file git lists outside docs/ and
+ *      Markdown, comments stripped, none outside backend/src names the runner
+ *      (lib/stateMigrations.js, lib/stateMigrationLedger.js), and none but the
+ *      runner and the checks reaches for the migrations directory.
  *
  * A module's darwin stubs are its own files. Migrations are glue.
  * Specifiers inside comments (JSDoc type imports) are skipped: they load
@@ -54,6 +55,8 @@
  * cycle through an excepted edge and pass: such cycles go when the excepted
  * edges do, and the search without those edges still catches the rest.
  */
+import { execFileSync } from 'node:child_process';
+import { statSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { builtinModules } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -328,35 +331,70 @@ function reaches(edges, from, to) {
   return false;
 }
 
-/** Rule 6's name: what a file outside backend/src would write to run the migrations. */
+/**
+ * Rule 6. Running migrations takes the runner's name or the migrations
+ * directory: a second runner would load `backend/migrations/0*.js` itself and
+ * call `run()`, without naming the runner.
+ */
 const RUNNER_NAME = /stateMigration/;
-/** Not code: what describes the runner, what never ships, and other checkouts (dot-directories, .github aside). */
-const RUNNER_SCAN_SKIP = new Set(['node_modules', 'docs', 'build', 'dist', 'vendor']);
+const MIGRATIONS_DIR_REF = /backend\/migrations\b|[/'"`]migrations[/'"`]/;
+/** The files that may reference the migrations directory: the runner, and the checks that scan it. */
+const MIGRATIONS_DIR_USERS = new Set([
+  'backend/src/lib/stateMigrations.js',
+  'scripts/check-fences.mjs',
+  'scripts/check-imports.mjs',
+]);
+const SHELL_SHEBANG = /^#!\s*\S*\/(?:env\s+)?(?:bash|sh)(?:\s|$)/;
 
-async function collectAll(dir) {
-  const out = [];
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      const dotDir = entry.name.startsWith('.') && entry.name !== '.github';
-      if (!dotDir && !RUNNER_SCAN_SKIP.has(entry.name)) out.push(...await collectAll(full));
-    } else if (entry.isFile() && !entry.name.endsWith('.md')) {
-      out.push(full);
-    }
-  }
-  return out;
+/**
+ * The repo's files as git lists them — tracked plus untracked-not-ignored, so a
+ * new file counts before it is committed and nothing ignored (logs, builds,
+ * node_modules, other worktrees) does — less the docs: `docs/` and Markdown.
+ */
+function repoFiles() {
+  const listed = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+  }).split('\0').filter(Boolean);
+  return [...new Set(listed)]
+    .filter((rel) => !rel.startsWith('docs/') && !rel.endsWith('.md'))
+    .filter((rel) => {
+      try {
+        return statSync(path.join(REPO_ROOT, rel)).isFile();
+      } catch {
+        return false; // listed by git but deleted in the working tree
+      }
+    })
+    .sort();
 }
 
-/** Rule 6: every file outside backend/src (docs, this check aside) that names the runner. */
-async function runnerNamedOutsideBackend(rel) {
+/**
+ * A file's text without its comments: JavaScript through the shared stripper;
+ * shell scripts and systemd units without their `#` (and `;`) comment lines.
+ * Other files are taken whole.
+ */
+function withoutComments(rel, text) {
+  if (/\.[cm]?jsx?$/.test(rel)) return stripComments(text);
+  const lines = text.split('\n');
+  if (rel.endsWith('.sh') || rel.endsWith('.service') || SHELL_SHEBANG.test(lines[0])) {
+    return lines.map((line) => (/^\s*[#;]/.test(line) ? '' : line)).join('\n');
+  }
+  return text;
+}
+
+/** Rule 6: the files outside the runner that name it or reach for the migrations directory. */
+async function migrationsRunElsewhere() {
   const found = [];
-  for (const file of await collectAll(REPO_ROOT)) {
-    const fileRel = rel(file);
-    if (fileRel.startsWith('backend/src/') || fileRel === 'scripts/check-fences.mjs') continue;
-    const lines = (await readFile(file, 'utf8')).split('\n');
+  for (const rel of repoFiles()) {
+    if (rel === 'scripts/check-fences.mjs') continue;
+    const raw = await readFile(path.join(REPO_ROOT, rel));
+    if (raw.includes(0)) continue; // binary
+    const lines = withoutComments(rel, raw.toString('utf8')).split('\n');
     lines.forEach((text, i) => {
-      if (RUNNER_NAME.test(text)) {
-        found.push(`${fileRel}:${i + 1} — names the state-migration runner: only the backend runs migrations, at its start (CODING-RULES §16)`);
+      if (!rel.startsWith('backend/src/') && RUNNER_NAME.test(text)) {
+        found.push(`${rel}:${i + 1} — names the state-migration runner: only the backend runs migrations, at its start (CODING-RULES §16)`);
+      } else if (!MIGRATIONS_DIR_USERS.has(rel) && MIGRATIONS_DIR_REF.test(text)) {
+        found.push(`${rel}:${i + 1} — reaches for the migrations directory: only the backend's runner loads migrations (CODING-RULES §16)`);
       }
     });
   }
@@ -475,16 +513,17 @@ async function main() {
     ].join('\n'));
   }
 
-  violations.push(...await runnerNamedOutsideBackend(rel));
+  violations.push(...await migrationsRunElsewhere());
 
   for (const v of violations) console.error(v);
   const summary = `${count} imports across ${files.length} files`;
   const cycleSummary = `no import cycle outside the ${CYCLE_EXCEPTIONS.length} listed, among the ${CYCLE_GROUP.length} files listed`;
+  const runnerSummary = 'only the backend runs the state migrations';
   if (violations.length > 0) {
     console.error(`\n${violations.length} fence violation(s) (${summary}).`);
     process.exit(1);
   }
-  console.log(`OK — ${summary}, all inside their fences; ${cycleSummary}.`);
+  console.log(`OK — ${summary}, all inside their fences; ${cycleSummary}; ${runnerSummary}.`);
 }
 
 await main();
