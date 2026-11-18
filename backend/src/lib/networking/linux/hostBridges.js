@@ -62,13 +62,15 @@ export async function checkDefaultBridgeOverride() {
 }
 
 /**
- * Default bridge for new VMs: WISP_DEFAULT_BRIDGE env, or first non-virbr bridge, or virbr0.
+ * Default bridge for new VMs: WISP_DEFAULT_BRIDGE env, or the first host bridge
+ * (libvirt's virbr* last); null when the host has none — setup gives every Wisp
+ * host a bridge, so that is a host setup never finished.
  */
 export async function getDefaultBridge() {
   const envBridge = process.env.WISP_DEFAULT_BRIDGE?.trim();
   if (envBridge) return envBridge;
   const bridges = await listHostBridges();
-  return bridges.length > 0 ? bridges[0] : 'virbr0';
+  return bridges[0] ?? null;
 }
 
 /**

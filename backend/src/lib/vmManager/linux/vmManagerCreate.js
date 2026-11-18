@@ -108,9 +108,9 @@ export function getLinuxFeatures() {
  * @param {string|null} cdrom1Path
  * @param {string|null} cdrom2Path
  * @param {string|null} sdePath
- * @param {{ loaderPath?: string|null, nvramPath?: string|null, defaultBridge?: string }} [opts]
+ * @param {{ loaderPath?: string|null, nvramPath?: string|null, defaultBridge?: string|null }} [opts]
  */
-function buildDomainXML(spec, blockDisks, cdrom1Path, cdrom2Path, sdePath, { loaderPath = null, nvramPath = null, defaultBridge = 'virbr0' } = {}) {
+function buildDomainXML(spec, blockDisks, cdrom1Path, cdrom2Path, sdePath, { loaderPath = null, nvramPath = null, defaultBridge = null } = {}) {
   const name = spec.name;
   const uuid = randomUUID();
   const memoryKiB = (spec.memoryMiB || 1024) * 1024;
@@ -342,6 +342,11 @@ export async function createVM(spec, { onStep, populateVMDir } = {}) {
 
   emit('validating');
   await assertNoDomainNamed(name);
+  // Before anything is created: a NIC without a source takes the host's bridge.
+  const nicsNeedBridge = !Array.isArray(s.nics) || s.nics.length === 0 || s.nics.some((n) => !n.source);
+  if (nicsNeedBridge && !(await getDefaultBridge())) {
+    throw vmError('NO_BRIDGE', 'This host has no bridge for the VM\'s network: run setup (scripts/linux/setup/common-steps.sh), which creates one');
+  }
 
   const disk = s.disk || {};
   const disk2 = s.disk2 || {};

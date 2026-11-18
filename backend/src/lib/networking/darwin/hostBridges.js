@@ -18,7 +18,7 @@ export async function checkDefaultBridgeOverride() {
 export async function getDefaultBridge() {
   const envBridge = process.env.WISP_DEFAULT_BRIDGE?.trim();
   if (envBridge) return envBridge;
-  return 'virbr0';
+  return null;
 }
 
 export async function ipv4CidrFromProcFibTrie() {
