@@ -260,9 +260,10 @@ print('dhcp' if dhcp else 'static')
 PY
       UPLINK_MODE="$(python3 -c "$_py" "$_def" "$UPLINK_NETPLAN_ID" "$UPLINK" "$UPLINK_MAC" "$BRIDGE" "$UPLINK_CLIENT_ID" "$NETPLAN_ORIGIN" "$NET_PLAN_DIR")" \
         || { _rc=$?; (( _rc == 3 )) && net_refuse "$UPLINK_MODE."; net_fail "cannot work out the bridge for netplan: $UPLINK_MODE"; }
-      # cloud-init writes its file again at boot unless its network
-      # configuration is switched off, the way its documentation gives.
-      if grep -q 'generated from information provided by the datasource' "$NETPLAN_ORIGIN" \
+      # cloud-init writes its file (50-cloud-init.yaml, its netplan renderer's)
+      # again at boot unless its network configuration is switched off, the way
+      # its documentation gives.
+      if [[ "$NETPLAN_ORIGIN" == /etc/netplan/50-cloud-init.yaml ]] && command -v cloud-init >/dev/null \
         && ! grep -qsE 'config:[[:space:]]*disabled' /etc/cloud/cloud.cfg.d/*.cfg /etc/cloud/cloud.cfg; then
         NETPLAN_CLOUD_INIT_OFF=/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
       fi
