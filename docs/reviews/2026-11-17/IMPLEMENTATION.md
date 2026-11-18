@@ -105,12 +105,14 @@ updater would ship unnoticed.
 
 ### 2. Known defects — M in total, each S
 
+Done 2026-11-18, merged to `main` from `anchor/known-defects`. P-1 and P-3 left this phase
+for phase 7; everything else below was fixed or settled, with the outcomes that follow.
+
 Why second: cheap, and they are stability problems today.
 
-- Fix: fresh install without a bridge ends with no networking (P-1); manual upgrade paths
-  skip migrations (P-3); noVNC pinned (P-5); image-update job missing from the tray
-  (R-7); an unreachable containerd read as "name is free" or "image not local" (C-2); a
-  failed Eject shows nothing (D-8).
+- Fix: noVNC pinned (P-5); image-update job missing from the tray (R-7); an unreachable
+  containerd read as "name is free" or "image not local" (C-2); a failed Eject shows
+  nothing (D-8).
 - Confirm on the test host, then fix or dismiss: firmware read-back and the orphaned
   `VARS.fd` (V-4); a dead CIFS share freezing the backend (V-6); mDNS after a dropped
   system bus (V-10); same-named VM and container marking each other busy (D-4);
@@ -118,7 +120,6 @@ Why second: cheap, and they are stability problems today.
 - Backlog: "Host power and the SMB mount toggle swallow errors", "Settings forms drop bad
   paths on the client", "Container task-delete errors are swallowed", "A failed SMB
   connection test leaves its directory" (two entries, one defect).
-- P-1 is checked by running the installer in a throwaway VM on the test host.
 - Suspected five, reproduced 2026-11-18 (tini, libvirt 12, and a throwaway Ubuntu 26.04
   VM on it):
   - V-4: confirmed in part; left to phase 5 (observation there).
@@ -132,7 +133,7 @@ Why second: cheap, and they are stability problems today.
     malformed" to edit and remove; one named `a%41` edited and removed the mount `aA`
     (its data with it). The eight second decodes are gone; both now work.
 - Behaviour changes: a create, rename or restore answers an error when containerd cannot
-  be reached; a fresh install sets up the bridge and CNI.
+  be reached; a failed noVNC fetch fails the build.
 
 ### 3. HTTP boundary: jobs, errors, schemas — L
 
