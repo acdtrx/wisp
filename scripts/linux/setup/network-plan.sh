@@ -138,7 +138,13 @@ for path in ["/etc/cloud/cloud.cfg"] + sorted(glob.glob("/etc/cloud/cloud.cfg.d/
         state = "managed" if net["config"] != "disabled" else "off:" + path
 print(state)
 ')" || net_fail "cannot read cloud-init's configuration in /etc/cloud"
-  [[ "$_ci" == off:* ]] || net_refuse "cloud-init manages this host's network: setup does not edit what it writes. Switch its networking off with the one documented line, network: {config: disabled}, in a file under /etc/cloud/cloud.cfg.d/ (for example 99-disable-network-config.cfg), with the network's definition kept as a file of your own."
+  if [[ "$_ci" != off:* ]]; then
+    echo "ERROR: cloud-init manages this host's network, and setup does not edit what cloud-init writes." >&2
+    echo "       Switch its networking off with the one documented line, network: {config: disabled}," >&2
+    echo "       in a file under /etc/cloud/cloud.cfg.d/ (for example 99-disable-network-config.cfg)," >&2
+    echo "       keep the network's definition as a file of your own, and run this again." >&2
+    exit 1
+  fi
   unset _ci
 fi
 
