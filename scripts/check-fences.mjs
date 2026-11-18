@@ -45,13 +45,16 @@
  * Known limits (a dumb scan, not a parser): a require function re-bound to
  * another name (`const s = r`) or called through `r.call(…)` / `r.apply(…)`
  * is not followed, nor is any property access other than `<object>.name(`.
+ * A new import between two files already in CYCLE_GROUP can close another
+ * cycle through an excepted edge and pass: such cycles go when the excepted
+ * edges do, and the search without those edges still catches the rest.
  */
 import { readdir, readFile } from 'node:fs/promises';
 import { builtinModules } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { stripComments } from './stripComments.mjs';
+import { argumentValues, callArgument, stripComments } from './sourceScan.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
 const ROOTS = ['backend/src', 'backend/scripts', 'backend/migrations'];
@@ -165,62 +168,6 @@ function createRequireCalls(code) {
     }
   }
   return calls;
-}
-
-/** The text between the `(` that ends at `open` and its matching `)`. */
-function callArgument(code, open) {
-  let depth = 1;
-  let j = open;
-  while (j < code.length && depth > 0) {
-    if (code[j] === '(') depth += 1;
-    else if (code[j] === ')') depth -= 1;
-    j += 1;
-  }
-  return code.slice(open, j - 1).trim();
-}
-
-/**
- * Split a call's first argument (up to a depth-0 `,`) at its depth-0 `?` / `:`
- * (and `||`, `??`) — outside literals, templates and brackets — into
- * `[{ text, isCondition }]`: the part before each `?` is a ternary's condition,
- * the rest are the values it can take.
- */
-function argumentValues(arg) {
-  const parts = [];
-  let depth = 0;
-  let start = 0;
-  let i = 0;
-  const cut = (end, sep) => {
-    parts.push({ text: arg.slice(start, end).trim(), isCondition: sep === '?' });
-  };
-  let end = arg.length;
-  while (i < arg.length) {
-    const c = arg[i];
-    if (c === '"' || c === "'" || c === '`') {
-      let j = i + 1;
-      while (j < arg.length && arg[j] !== c) j += arg[j] === '\\' ? 2 : 1;
-      i = j + 1;
-      continue;
-    }
-    if ('([{'.includes(c)) depth += 1;
-    else if (')]}'.includes(c)) depth -= 1;
-    else if (depth === 0 && c === ',') {
-      // Only the first argument names the module (import()'s second is options).
-      end = i;
-      break;
-    } else if (depth === 0 && (c === '?' || c === ':') && arg[i + 1] !== '?' && arg[i + 1] !== '.') {
-      cut(i, c);
-      start = i + 1;
-    } else if (depth === 0 && (arg.startsWith('||', i) || arg.startsWith('??', i))) {
-      cut(i, '|');
-      start = i + 2;
-      i += 2;
-      continue;
-    }
-    i += 1;
-  }
-  cut(end, null);
-  return parts;
 }
 
 /**
