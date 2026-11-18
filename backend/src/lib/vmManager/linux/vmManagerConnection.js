@@ -223,14 +223,20 @@ function clearReconnect() {
  */
 function handleBusError(bus, err) {
   if (bus !== connectionState.bus) return;
-  connectionState.logger?.error?.({ err: err?.message || String(err) }, '[vmManager] DBus connection error, reconnecting');
+  connectionState.logger?.error?.(
+    { err: err?.message || String(err) },
+    connectionState.watchEvents ? '[vmManager] DBus connection error, reconnecting' : '[vmManager] DBus connection error',
+  );
   connectionState.bus = null;
   connectionState.connectIface = null;
   connectionState.connectProps = null;
   connectionState.domainProxyCache.clear();
   detachAllAgentSubscriptions();
   fireDisconnect();
-  scheduleReconnect();
+  // Only with event watching, as for a failed connect: without it the caller
+  // (the start's migrations) connects once, and its later calls report the
+  // missing connection.
+  if (connectionState.watchEvents) scheduleReconnect();
 }
 
 /**
