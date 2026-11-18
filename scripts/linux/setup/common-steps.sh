@@ -58,11 +58,13 @@ run_step dirs dirs.sh "$DEPLOY_USER"
 run_step libvirt libvirt.sh
 run_step containerd containerd.sh "$DEPLOY_USER"
 run_step cni cni.sh "$BRIDGE"
-run_step container-dns container-dns.sh
+run_step container-dns container-dns.sh "$NET_TOOL"
 run_step avahi avahi.sh
 run_step helpers install-helpers.sh "$PROJECT_ROOT" "$DEPLOY_USER"
 run_step rapl rapl.sh "$DEPLOY_USER"
 run_step service-unit service-unit.sh "$PROJECT_ROOT" "$DEPLOY_USER"
+run_step backend-deps backend-deps.sh "$PROJECT_ROOT" "$DEPLOY_USER"
+run_step answers answers.sh "$PROJECT_ROOT" "$DEPLOY_USER"
 run_step sanity sanity.sh
 run_step bridge bridge.sh
 echo ""
