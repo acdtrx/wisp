@@ -49,11 +49,17 @@ jobs:
           done
           echo "All package.json versions match $VERSION"
 
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # The gate: nothing is built, staged or published unless every check passes.
+      - name: Check
+        run: npm run check
+
       - name: Build frontend
         working-directory: frontend
-        run: |
-          npm ci
-          npm run build
+        run: npm run build
 
       - name: Stage release tree
         run: |

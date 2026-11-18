@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Bump version across root + backend + frontend package.json (and each sibling
-# package-lock.json, where one exists), retitle the topmost
-# CHANGELOG section, commit, and tag v<version>. CHANGELOG.md may be dirty going
+# Run `npm run check` (the release workflow's gate), then bump version across
+# root + backend + frontend package.json (and each sibling package-lock.json,
+# where one exists), retitle the topmost CHANGELOG section, commit, and tag
+# v<version>. A failing check stops it before anything changes. CHANGELOG.md may be dirty going
 # in — its contents are folded into the same release commit so a release lands as
 # a single commit. Push is left to the operator so the tag is reviewable before
 # it triggers the release workflow.
@@ -63,6 +64,16 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
   echo "ERROR: tag $TAG already exists."
   exit 1
 fi
+
+# The release workflow's own gate, run before anything changes: a failure is met
+# here, before a tag exists to push.
+echo "--- Check ---"
+if ! npm run --silent check; then
+  echo ""
+  echo "ERROR: npm run check failed; no version changed, no tag created."
+  exit 1
+fi
+echo ""
 
 # Every file the bump touches, collected so the commit stages exactly what changed.
 BUMPED=()
