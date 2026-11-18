@@ -22,7 +22,11 @@
  * persisted to container.json before the event fires — containerManager owns
  * the durable record, glue (containerMdnsReconciler) reacts only to the event.
  */
-import { containerState } from './containerManagerConnection.js';
+import {
+  containerState,
+  subscribeContainerdConnect,
+  subscribeContainerdDisconnect,
+} from './containerManagerConnection.js';
 import { subscribeContainerListChange, listContainers } from './containerManagerList.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { discoverIpv4InNetnsOnce } from './containerManagerNetwork.js';
@@ -186,10 +190,24 @@ export function subscribeContainerNetworkChange(handler) {
   return () => networkChangeHandlers.delete(handler);
 }
 
-// Module-load wiring (matches vmManagerNetwork.js pattern). The list cache
-// fires on every containerd lifecycle event + container.json write + connect/
-// disconnect — those drive the lifecycle-side of the event stream. The 60s
-// timer is the safety net for DHCP drift inside the netns.
+/* The 60 s safety probe runs only while a connection watches events: armed by
+   each connect that does, stopped by every disconnect. */
+function onContainerdConnect() {
+  if (!containerState.watchEvents || periodicTimer) return;
+  periodicTimer = setInterval(scheduleReconcile, PERIODIC_INTERVAL_MS);
+  periodicTimer.unref?.();
+}
+
+function onContainerdDisconnect() {
+  clearInterval(periodicTimer);
+  periodicTimer = null;
+}
+
+// Module-load wiring (matches vmManagerNetwork.js pattern): subscriptions only,
+// nothing runs until containerd connects. The list cache fires on every
+// containerd lifecycle event + container.json write + connect/disconnect —
+// those drive the lifecycle-side of the event stream. The 60s timer is the
+// safety net for DHCP drift inside the netns.
 subscribeContainerListChange((list) => { if (list) scheduleReconcile(list); });
-periodicTimer = setInterval(scheduleReconcile, PERIODIC_INTERVAL_MS);
-periodicTimer.unref?.();
+subscribeContainerdConnect(onContainerdConnect);
+subscribeContainerdDisconnect(onContainerdDisconnect);

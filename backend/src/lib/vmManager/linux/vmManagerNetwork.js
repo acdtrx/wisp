@@ -19,6 +19,7 @@ import {
   attachAgentSubscription,
   detachAgentSubscription,
   subscribeAgentEvent,
+  subscribeConnected,
   subscribeDisconnect,
 } from './vmManagerConnection.js';
 import { subscribeVMListChange, listVMs } from './vmManagerList.js';
@@ -130,7 +131,17 @@ function onAgentEvent(name, { state }) {
   probeAndEmit(name, 1).catch(() => { /* cannot reject: the agent call and the handlers are guarded inside */ });
 }
 
+/* The 60 s safety probe runs only while a connection watches events: armed by
+   each connect that does, stopped by every disconnect. */
+function onLibvirtConnected() {
+  if (periodicTimer) return;
+  periodicTimer = setInterval(scheduleReconcile, PERIODIC_INTERVAL_MS);
+  periodicTimer.unref?.();
+}
+
 function onLibvirtDisconnect() {
+  clearInterval(periodicTimer);
+  periodicTimer = null;
   // The connection layer detaches all AgentEvent subscriptions on disconnect,
   // so our trackedAgents iface refs are stale. Clear them along with the
   // snapshot map; the post-reconnect vmListChange will re-attach and re-emit.
@@ -156,12 +167,12 @@ export function subscribeVMNetworkChange(handler) {
   return () => networkChangeHandlers.delete(handler);
 }
 
-// Module-load wiring (matches vmManagerList.js pattern). subscribeVMListChange
-// fires on every libvirt DomainEvent (after the list-cache refresh completes),
-// so we get lifecycle-driven probes for free. The 60s timer is a safety net
-// for DHCP drift and any missed signals.
+// Module-load wiring (matches vmManagerList.js pattern): subscriptions only,
+// nothing runs until libvirt connects. subscribeVMListChange fires on every
+// libvirt DomainEvent (after the list-cache refresh completes), so we get
+// lifecycle-driven probes for free. The 60s timer is a safety net for DHCP
+// drift and any missed signals.
 subscribeVMListChange((list) => { if (list) scheduleReconcile(list); });
 subscribeAgentEvent(onAgentEvent);
+subscribeConnected(onLibvirtConnected);
 subscribeDisconnect(onLibvirtDisconnect);
-periodicTimer = setInterval(scheduleReconcile, PERIODIC_INTERVAL_MS);
-periodicTimer.unref?.();
