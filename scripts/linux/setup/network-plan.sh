@@ -114,7 +114,7 @@ if [[ -d "$JOURNAL_DIR" ]]; then
   NET_PLAN_JOURNAL="$(journal_classify)"
   case "$NET_PLAN_JOURNAL" in
     refuse*)
-      net_fail "a bridge step that did not finish left its journal in $JOURNAL_DIR, and since then ${NET_PLAN_JOURNAL#refuse changed since by someone else:} changed by someone else: setup does not undo it over that. Put those back as the journal's files/ hold them, or remove $JOURNAL_DIR once the network is as you want it, and run this again." ;;
+      net_fail "a bridge step that did not finish left its journal in $JOURNAL_DIR, and since then someone else changed${NET_PLAN_JOURNAL#refuse changed since by someone else:}: setup does not undo over that. Put each back as the step wrote it or as it was (its files/ holds the originals), or remove $JOURNAL_DIR once the network is as you want it, and run this again." ;;
   esac
   if [[ -z "${NET_PLAN_ASK:-}" ]]; then
     case "$NET_PLAN_JOURNAL" in
