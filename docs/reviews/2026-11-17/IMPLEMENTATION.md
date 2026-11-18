@@ -212,8 +212,8 @@ test host.
   V-6 as observed on 2026-11-18: while `GET /api/host/hardware` (Host Overview, MCP
   `get_host_hardware`) stats a dead CIFS share with `statfsSync`, every other request
   goes unanswered: 181 s on a Wisp (soft) mount, and on a hand-made hard mount until the
-  server came back (216 s here). The 5 s stats read only `/proc` and `/sys` (by
-  reading the code, not run).
+  server came back (216 s here). The 5 s stats' synchronous reads are only `/proc`
+  and `/sys`, and none of them stats a mount (by reading the code, not run).
   V-10 as observed on 2026-11-18: after `systemctl restart dbus` the backend logs
   "avahi-daemon went away" and "system bus error: write EPIPE", and a running
   container's `.local` name stays unresolvable (3 min watched) until the backend
