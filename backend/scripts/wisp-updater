@@ -69,19 +69,26 @@ SERVICE_UNIT=wisp
 
 # The bounds, and the stop budget they add up to. When the unit's start times
 # out, systemd sends this script TERM (KillMode=mixed: this process only) and
-# gives it TimeoutStopSec (1140 s) before SIGKILL. In that time: the step
-# running is stopped (setup gets SETUP_STOP_SEC to end the step it is in — the
-# bridge step's undo — then is killed), then the rollback: stop wisp, restore
-# the tree, the restored tree's setup, its start. Each is a hard limit
-# (timeout -k KILL_GRACE_SEC):
-#   420 + (30 + 10) + (120 + 10) + (300 + 10) + (120 + 10) = 1030 s, under 1140.
-# The frontend's give-up limit is TimeoutStartSec + TimeoutStopSec.
-SETUP_STOP_SEC=420
+# gives it TimeoutStopSec before SIGKILL. In that time: the step running is
+# stopped — setup gets SETUP_STOP_SEC, the time it takes to end when stopped
+# (BRIDGE_STOP_SEC, 680 s, in scripts/linux/setup/bridge-journal.sh: the
+# bridge step's undo; then setup kills the step and ends), any other step
+# KILL_GRACE_SEC — and is then killed; then the rollback, each part bounded:
+# stop wisp, restore the tree, the restored tree's setup, daemon-reload, the
+# start, the read of its state. A part that runs past its bound gets
+# KILL_GRACE_SEC more to die. STOP_BUDGET_SEC is the sum; the unit's
+# TimeoutStopSec (systemd/linux/wisp-updater.service) is at least that.
 KILL_GRACE_SEC=10
+SETUP_STOP_SEC=$(( 680 + KILL_GRACE_SEC ))
 STOP_WISP_SEC=30
 ROLLBACK_RESTORE_SEC=120
 ROLLBACK_SETUP_SEC=300
+DAEMON_RELOAD_SEC=30
 ROLLBACK_START_WAIT_SEC=120
+STATUS_SEC=10
+STOP_BUDGET_SEC=$(( SETUP_STOP_SEC + KILL_GRACE_SEC \
+  + STOP_WISP_SEC + ROLLBACK_RESTORE_SEC + ROLLBACK_SETUP_SEC + DAEMON_RELOAD_SEC \
+  + ROLLBACK_START_WAIT_SEC + STATUS_SEC + 6 * KILL_GRACE_SEC ))   # 1370 s
 
 # User-data and runtime scratch must survive the swap rsync.
 RSYNC_EXCLUDES=(
@@ -102,31 +109,60 @@ host_setup_touched=0
 exec 8> /run/wisp.lock
 flock -w 600 8 || fail "another install, update or setup holds /run/wisp.lock"
 
-# A step that a stop may cut short runs in the background, so a TERM reaches
-# this script at once and is passed on to that step only: it gets GRACE seconds
-# to end (setup ends the step it is in, the bridge step undoing itself), then is
-# killed. Then the script exits 143, and the EXIT trap rolls back.
+# Every command that can take long runs through run_child: in a session of its
+# own, in the background, so a TERM reaches this script at once and is passed
+# to the command's whole process group. A stop (before the rollback) gives the
+# command GRACE seconds to end, then kills its group, and the script exits 143:
+# the EXIT trap rolls back. A LIMIT (the rollback's parts) stops the command
+# the same way after LIMIT seconds: TERM, then KILL_GRACE_SEC later KILL. The
+# handler only records a stop when no command is known yet; the next command
+# is not started.
+STOPPING=0
 CHILD=""
 CHILD_GRACE=0
-run_stoppable() {
-  local rc=0
-  CHILD_GRACE="$1"; shift
-  "$@" &
-  CHILD=$!
-  wait "$CHILD" || rc=$?
-  CHILD=""
-  return "$rc"
+CHILD_STOPPER=""
+# signal_later <secs> <pgid> <TERM|KILL>: in the background, that signal to the
+# group after <secs> (a TERM followed by KILL KILL_GRACE_SEC later). Deaf to
+# TERM and INT, so a stop sent to this script's group leaves it be; cancelled by
+# USR1. Without the lock's descriptor, so one left behind holds no lock.
+signal_later() {
+  (
+    exec 8>&-
+    trap '' TERM INT
+    trap 'kill -KILL $! 2>/dev/null; exit 0' USR1
+    sleep "$1" & wait $!
+    kill -"$3" -- "-$2" 2>/dev/null
+    [[ "$3" == TERM ]] || exit 0
+    sleep "$KILL_GRACE_SEC" & wait $!
+    kill -KILL -- "-$2" 2>/dev/null
+  ) &
 }
-on_stop() {
-  if [[ -n "$CHILD" ]]; then
-    kill -TERM "$CHILD" 2>/dev/null
-    local waited=0
-    while kill -0 "$CHILD" 2>/dev/null; do
-      if (( waited++ >= CHILD_GRACE )); then kill -KILL "$CHILD" 2>/dev/null; break; fi
-      sleep 1
-    done
-  fi
-  exit 143
+stop_child() {
+  [[ -n "$CHILD" && -z "$CHILD_STOPPER" ]] || return 0
+  kill -TERM -- "-$CHILD" 2>/dev/null || kill -TERM "$CHILD" 2>/dev/null
+  signal_later "$CHILD_GRACE" "$CHILD" KILL
+  CHILD_STOPPER=$!
+}
+# run_child <limit, 0 for none> <grace on a stop> <cmd...>
+run_child() {
+  local limit="$1" pid rc limiter="" k
+  CHILD_GRACE="$2"; shift 2
+  (( STOPPING )) && exit 143
+  setsid "$@" &
+  pid=$!
+  CHILD=$pid
+  if (( limit > 0 )); then signal_later "$limit" "$pid" TERM; limiter=$!; fi
+  (( STOPPING )) && stop_child
+  # wait returns early for a signal; the command is gone once kill -0 fails.
+  while :; do
+    rc=0
+    wait "$pid" || rc=$?
+    kill -0 "$pid" 2>/dev/null || break
+  done
+  for k in $limiter $CHILD_STOPPER; do kill -USR1 "$k" 2>/dev/null; wait "$k" 2>/dev/null; done
+  CHILD="" CHILD_STOPPER=""
+  (( STOPPING )) && exit 143
+  return "$rc"
 }
 
 # Runs from the EXIT trap, so it never calls fail/exit. Every step logs its own
@@ -139,14 +175,14 @@ rollback() {
   echo "step:rollback"
   # After a failed start the new backend may be cycling through
   # Restart=on-failure: stop it before the tree is restored under it.
-  timeout -k "$KILL_GRACE_SEC" "$STOP_WISP_SEC" systemctl stop "$SERVICE_UNIT" 2>/dev/null \
+  run_child "$STOP_WISP_SEC" 0 systemctl stop "$SERVICE_UNIT" 2>/dev/null \
     || echo "rollback-warning: stopping $SERVICE_UNIT failed"
   if [[ "$snapshot_taken" -eq 1 && -d "$PREV_DIR" ]]; then
     # config/ and its ledger revert together: the migrations the new backend's
     # start ran run again at the next start of a release that ships them (they
     # are idempotent).
-    if ! timeout -k "$KILL_GRACE_SEC" "$ROLLBACK_RESTORE_SEC" rsync -a --delete "$PREV_DIR/" "$INSTALL_DIR/" \
-      || ! chown -R "$DEPLOY_OWNER" "$INSTALL_DIR"; then
+    if ! run_child "$ROLLBACK_RESTORE_SEC" 0 sh -c 'rsync -a --delete "$1/" "$2/" && chown -R "$3" "$2"' \
+      restore "$PREV_DIR" "$INSTALL_DIR" "$DEPLOY_OWNER"; then
       echo "rollback-warning: the tree was not restored from $PREV_DIR, so it is neither set up nor started. Finish by hand, as root: rsync -a --delete $PREV_DIR/ $INSTALL_DIR/; chown -R $DEPLOY_OWNER $INSTALL_DIR; $INSTALL_DIR/scripts/linux/setup/common-steps.sh $INSTALL_DIR $DEPLOY_USER; systemctl start $SERVICE_UNIT"
       return
     fi
@@ -157,40 +193,42 @@ rollback() {
       echo "step:rollback-setup"
       local old_steps="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
       if [[ -x "$old_steps" ]]; then
-        timeout -k "$KILL_GRACE_SEC" "$ROLLBACK_SETUP_SEC" "$old_steps" "$INSTALL_DIR" "$DEPLOY_USER" \
+        run_child "$ROLLBACK_SETUP_SEC" 0 "$old_steps" "$INSTALL_DIR" "$DEPLOY_USER" \
           || echo "rollback-warning: the restored tree's setup failed or ran past ${ROLLBACK_SETUP_SEC}s: wisp.service and the helpers may still be the new release's"
       else
         echo "rollback-warning: $old_steps missing: wisp.service and the helpers may still be the new release's"
       fi
     fi
   fi
-  systemctl daemon-reload || echo "rollback-warning: daemon-reload failed"
+  run_child "$DAEMON_RELOAD_SEC" 0 systemctl daemon-reload || echo "rollback-warning: daemon-reload failed"
   # The restored release is what ran before, there is nothing further to fall
   # back to, and the rollback must end: its start gets a short wait, and a start
   # not done by then is reported, not retried. A wait cut short leaves the start
   # job to systemd.
-  if ! timeout -k "$KILL_GRACE_SEC" "$ROLLBACK_START_WAIT_SEC" systemctl start "$SERVICE_UNIT"; then
-    echo "rollback-warning: the restored release did not start within ${ROLLBACK_START_WAIT_SEC}s (wisp.service: $(systemctl show "$SERVICE_UNIT" -p ActiveState -p SubState --value | tr '\n' ' '))"
+  if ! run_child "$ROLLBACK_START_WAIT_SEC" 0 systemctl start "$SERVICE_UNIT"; then
+    local state
+    state="$(run_child "$STATUS_SEC" 0 systemctl show "$SERVICE_UNIT" -p ActiveState -p SubState --value | tr '\n' ' ')"
+    echo "rollback-warning: the restored release did not start within ${ROLLBACK_START_WAIT_SEC}s (wisp.service: ${state:-unknown})"
   fi
 }
 
 # The EXIT trap first stops TERM and INT from cutting the rollback short: a
 # no-op handler, not SIG_IGN, so the commands it runs keep the default and their
-# own timeouts can still stop them.
-trap 'rc=$?; trap ":" TERM INT; if [[ $rc -ne 0 ]]; then rollback; fi' EXIT
-trap on_stop TERM INT
+# bounds can still stop them; a stop that came before is done with.
+trap 'rc=$?; trap ":" TERM INT; STOPPING=0; if [[ $rc -ne 0 ]]; then rollback; fi' EXIT
+trap 'STOPPING=1; stop_child' TERM INT
 
 echo "step:stop-service"
-timeout -k "$KILL_GRACE_SEC" "$STOP_WISP_SEC" systemctl stop "$SERVICE_UNIT" 2>/dev/null || true
+run_child "$STOP_WISP_SEC" "$KILL_GRACE_SEC" systemctl stop "$SERVICE_UNIT" 2>/dev/null || true
 
 echo "step:snapshot"
-rm -rf "$PREV_DIR"
-run_stoppable "$KILL_GRACE_SEC" rsync -a --delete "$INSTALL_DIR/" "$PREV_DIR/" || fail "snapshot rsync failed"
+run_child 0 "$KILL_GRACE_SEC" rm -rf "$PREV_DIR" || fail "cannot remove the previous snapshot $PREV_DIR"
+run_child 0 "$KILL_GRACE_SEC" rsync -a --delete "$INSTALL_DIR/" "$PREV_DIR/" || fail "snapshot rsync failed"
 snapshot_taken=1
 
 echo "step:swap"
-run_stoppable "$KILL_GRACE_SEC" rsync -a --delete "${RSYNC_EXCLUDES[@]}" "$STAGING/" "$INSTALL_DIR/" || fail "swap rsync failed"
-chown -R "$DEPLOY_OWNER" "$INSTALL_DIR" || fail "chown failed"
+run_child 0 "$KILL_GRACE_SEC" rsync -a --delete "${RSYNC_EXCLUDES[@]}" "$STAGING/" "$INSTALL_DIR/" || fail "swap rsync failed"
+run_child 0 "$KILL_GRACE_SEC" chown -R "$DEPLOY_OWNER" "$INSTALL_DIR" || fail "chown failed"
 
 echo "step:setup"
 # The install's setup, by path from the freshly swapped tree, so the step list
@@ -204,16 +242,17 @@ echo "step:setup"
 SETUP="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
 [[ -x "$SETUP" ]] || fail "missing $SETUP — releases older than v2.0.2 cannot be installed by this updater"
 host_setup_touched=1
-run_stoppable "$SETUP_STOP_SEC" "$SETUP" "$INSTALL_DIR" "$DEPLOY_USER" || fail "setup failed"
-systemctl daemon-reload || fail "daemon-reload failed"
+run_child 0 "$SETUP_STOP_SEC" "$SETUP" "$INSTALL_DIR" "$DEPLOY_USER" || fail "setup failed"
+run_child "$DAEMON_RELOAD_SEC" "$KILL_GRACE_SEC" systemctl daemon-reload || fail "daemon-reload failed"
 
 echo "step:start-service"
 # Blocks until the new backend is ready or has failed (Type=notify; bounded by
 # the unit's TimeoutStartSec, inside this unit's own).
 START_TS="$(date +%s)"
-if ! run_stoppable "$KILL_GRACE_SEC" systemctl start "$SERVICE_UNIT"; then
-  journalctl --sync 2>/dev/null || true
-  journalctl -u "$SERVICE_UNIT" --since "@$START_TS" -n 20 --no-pager -o cat 2>/dev/null | sed 's/^/  wisp: /' || true
+if ! run_child 0 "$KILL_GRACE_SEC" systemctl start "$SERVICE_UNIT"; then
+  run_child "$STATUS_SEC" "$KILL_GRACE_SEC" journalctl --sync 2>/dev/null || true
+  run_child "$STATUS_SEC" "$KILL_GRACE_SEC" journalctl -u "$SERVICE_UNIT" --since "@$START_TS" -n 20 --no-pager -o cat 2>/dev/null \
+    | sed 's/^/  wisp: /' || true
   fail "new release did not start"
 fi
 

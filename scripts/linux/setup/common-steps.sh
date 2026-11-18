@@ -59,19 +59,33 @@ if [[ -n "${WISP_CONFIRMED_BRIDGE:-}" ]]; then
 fi
 
 # A stop (TERM, INT) is passed to the step running, which ends — the bridge
-# step undoing itself — and then the run ends. Steps run in the background for
-# that, so the stop reaches this script at once.
-CURRENT_STEP=""
+# step undoing itself — and then the run ends. Each step runs in a session of
+# its own, in the background, so the stop reaches this script at once and goes
+# to the step's whole process group (apt and dpkg under the packages step
+# too). The step gets STEP_STOP_SEC to end, the longest a step takes to
+# (bridge-journal.sh: the bridge step's undo), and is then killed, its group
+# with it. The handler only records the stop when no step is known yet; the
+# step started next is stopped as soon as its pid is.
+STEP_STOP_SEC="$BRIDGE_STOP_SEC"
+STOPPING=0
 STEP_PID=""
-on_stop() {
-  if [[ -n "$STEP_PID" ]]; then
-    kill -TERM "$STEP_PID" 2>/dev/null
-    wait "$STEP_PID"
-  fi
-  echo "setup stopped at step: ${CURRENT_STEP:-before the steps}" >&2
-  exit 143
+STEP_KILLER=""
+stop_step() {
+  [[ -n "$STEP_PID" && -z "$STEP_KILLER" ]] || return 0
+  kill -TERM -- "-$STEP_PID" 2>/dev/null || kill -TERM "$STEP_PID" 2>/dev/null
+  # The KILL later, in the background: deaf to TERM and INT, so a stop sent to
+  # setup's group (the updater's) leaves it be; cancelled by USR1; without the
+  # lock's descriptor, so one left behind holds no lock.
+  (
+    exec 8>&-
+    trap '' TERM INT
+    trap 'kill -KILL $! 2>/dev/null; exit 0' USR1
+    sleep "$STEP_STOP_SEC" & wait $!
+    kill -KILL -- "-$STEP_PID" 2>/dev/null
+  ) &
+  STEP_KILLER=$!
 }
-trap on_stop TERM INT
+trap 'STOPPING=1; stop_step' TERM INT
 
 STEP_COUNT=0
 
@@ -80,14 +94,27 @@ run_step() {
   local name="$1" script="$2" rc
   shift 2
   STEP_COUNT=$((STEP_COUNT + 1))
-  CURRENT_STEP="$name"
+  (( STOPPING )) && { echo "setup stopped before step: $name" >&2; exit 143; }
   echo ""
   echo "step: $name"
-  "$SETUP_DIR/$script" "$@" &
+  setsid "$SETUP_DIR/$script" "$@" &
   STEP_PID=$!
-  rc=0
-  wait "$STEP_PID" || rc=$?
-  STEP_PID=""
+  (( STOPPING )) && stop_step
+  # wait returns early for a stop; the step is gone once kill -0 fails.
+  while :; do
+    rc=0
+    wait "$STEP_PID" || rc=$?
+    kill -0 "$STEP_PID" 2>/dev/null || break
+  done
+  if [[ -n "$STEP_KILLER" ]]; then
+    kill -USR1 "$STEP_KILLER" 2>/dev/null
+    wait "$STEP_KILLER" 2>/dev/null
+  fi
+  STEP_PID="" STEP_KILLER=""
+  if (( STOPPING )); then
+    echo "setup stopped at step: $name" >&2
+    exit 143
+  fi
   (( rc == 0 )) && return 0
   echo ""
   echo "setup failed at step: $name (exit $rc)" >&2

@@ -85,6 +85,14 @@ if (( ${#missing[@]} == 0 && need_node == 0 && need_containerd == 0 )); then
   exit 0
 fi
 
+# A package run that was stopped (a stop reaches apt and dpkg too) can leave
+# packages unpacked but not configured, which apt refuses to work past: dpkg
+# finishes them first.
+if [[ -n "$(dpkg --audit 2>/dev/null)" ]]; then
+  dpkg --configure -a || fail "dpkg --configure -a failed: the packages an interrupted package run left are not configured"
+  changed "configured the packages an interrupted package run left"
+fi
+
 if (( ${#missing[@]} > 0 )); then
   "${APT[@]}" update -qq
   "${APT_INSTALL[@]}" "${missing[@]}"

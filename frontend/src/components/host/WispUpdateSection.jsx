@@ -32,10 +32,10 @@ function formatRelativeTime(isoString) {
 
 const POLL_INTERVAL_MS = 5_000;
 const SLOW_AFTER_FAILED_POLLS = 12; // 12 × 5s = 1 min of "backend not responding"
-// For as long as the updater may run: wisp-updater.service's TimeoutStartSec
-// (30 min) and the TimeoutStopSec its rollback gets after it (19 min). A long
+// For as long as the updater may run: systemd/linux/wisp-updater.service's
+// TimeoutStartSec and the TimeoutStopSec its rollback gets after it. A long
 // state migration runs inside that window.
-const UPDATER_LIMIT_MS = (30 + 19) * 60_000;
+const UPDATER_LIMIT_MS = (1800 + 1400) * 1000;
 const MAX_TOTAL_POLLS = Math.ceil(UPDATER_LIMIT_MS / POLL_INTERVAL_MS);
 
 // Force every rendered <a> in release notes to open in a new tab. DOMPurify
@@ -215,7 +215,7 @@ export default function WispUpdateSection() {
   /* Poll /api/host every 5s. Stop when wispVersion matches the target (then
    * reload the page to pick up the new frontend bundle). Show a "may be slow"
    * note after 12 failed polls (1 min); give up once the updater's own limit
-   * (49 min) has passed.
+   * (UPDATER_LIMIT_MS) has passed.
    * Failures are EXPECTED while the backend is restarting — we count them
    * against `consecutiveFailures` only, and reset on every successful poll. */
   const pollIntervalRef = useRef(null);
