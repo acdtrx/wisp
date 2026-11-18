@@ -538,7 +538,8 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
       # NetworkManager connection netplan keeps (90-NM-<uuid>.yaml). One only
       # under /run is generated or in memory, and the undo could not bring it
       # back as it was.
-      NM_PROFILE_FILE="$(_prop GENERAL.FILENAME)"
+      _files="$(net_read nmcli -t -f UUID,FILENAME connection show)" || exit 1
+      NM_PROFILE_FILE="$(awk -F: -v u="$UPLINK_CONNECTION" '$1 == u { print $2 }' <<<"$_files")"
       case "$NM_PROFILE_FILE" in
         /etc/NetworkManager/system-connections/*) ;;
         /run/NetworkManager/system-connections/netplan-NM-"$UPLINK_CONNECTION".nmconnection)
@@ -602,7 +603,7 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
           || net_refuse "NetworkManager does not accept the $_f connection setup would add: ${_why:-nmcli --offline failed}."
       done
       unset -f _metric_of
-      unset _routes4 _routes6 _args _f
+      unset _routes4 _routes6 _args _f _files
       unset -f _prop
       unset _con _mac _p _v _metric4 _metric6
       ;;

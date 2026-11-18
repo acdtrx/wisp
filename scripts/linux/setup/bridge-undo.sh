@@ -47,7 +47,7 @@ undo_restore() (
   set +e
   # shellcheck source=/dev/null
   source "$UNDO_DIR/host.env" || exit 1
-  local_sec=90 failed=0 path state copy con
+  local apply_sec=90 failed=0 path state copy con
   if [[ "$NET_TOOL" == networkmanager ]]; then
     while IFS= read -r con; do
       [[ -n "$con" ]] || continue
@@ -69,7 +69,7 @@ undo_restore() (
   case "$NET_TOOL" in
     netplan)
       [[ ! -e "/sys/class/net/$BRIDGE" ]] || ip link delete "$BRIDGE"
-      timeout "$local_sec" netplan apply || failed=1
+      timeout "$apply_sec" netplan apply || failed=1
       ;;
     networkd)
       [[ ! -e "/sys/class/net/$BRIDGE" ]] || timeout 30 networkctl delete "$BRIDGE"
@@ -81,7 +81,7 @@ undo_restore() (
       if [[ -d /etc/netplan ]] && command -v netplan >/dev/null; then timeout 30 netplan generate || failed=1; fi
       timeout 30 nmcli connection reload || failed=1
       if [[ "$(timeout 30 nmcli -g GENERAL.STATE connection show "$UPLINK_CONNECTION" 2>/dev/null)" != activated ]]; then
-        timeout "$local_sec" nmcli --wait "$local_sec" connection up "$UPLINK_CONNECTION" >/dev/null || failed=1
+        timeout "$apply_sec" nmcli --wait "$apply_sec" connection up "$UPLINK_CONNECTION" >/dev/null || failed=1
       fi
       ;;
   esac
