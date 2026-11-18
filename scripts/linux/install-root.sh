@@ -10,8 +10,10 @@
 # Wisp, waiting until it is ready. This process follows the log until the work
 # ends; a dropped connection or Ctrl-C stops only the following. The log is
 # removed once the install has succeeded, and kept, and named, when it fails.
+# A directory push.sh made for the tree is removed when the install ends,
+# however it ends: by the work once it has started, else by this process.
 #
-# Usage: install-root.sh <source-dir> <install-dir> <user> <group> <server-name or "">
+# Usage: install-root.sh <source-dir> <install-dir> <user> <group> <server-name or ""> <push-dir or "">
 #   (with no terminal on stdin, the password, when the install has none yet, is
 #   its first line)
 set -euo pipefail
@@ -27,9 +29,9 @@ SETUP_SRC="$SCRIPT_DIR/setup"
 # --- The work, in its own session ---
 if [[ "${1:-}" == --work ]]; then
   shift
-  SOURCE_DIR="$1" INSTALL_DIR="$2" DEPLOY_USER="$3" DEPLOY_GROUP="$4" LOG="$5"
+  SOURCE_DIR="$1" INSTALL_DIR="$2" DEPLOY_USER="$3" DEPLOY_GROUP="$4" LOG="$5" REMOVE_DIR="$6"
   trap '' HUP
-  trap 'rm -rf "$WISP_INSTALL_ANSWERS"' EXIT
+  trap 'rm -rf "$WISP_INSTALL_ANSWERS" ${REMOVE_DIR:+"$REMOVE_DIR"}' EXIT
 
   echo "--- Installing the tree ---"
   "$SETUP_SRC/copy.sh" "$SOURCE_DIR" "$INSTALL_DIR"
@@ -67,11 +69,20 @@ fi
 # A hangup ends only the following of the log; this process still waits for
 # the work, so whoever waits for it (push.sh's shell) waits for the work too.
 trap '' HUP
-if [[ $# -ne 5 ]]; then
-  echo "Usage (as root, from install.sh): $0 <source-dir> <install-dir> <user> <group> <server-name or \"\">" >&2
+if [[ $# -ne 6 ]]; then
+  echo "Usage (as root, from install.sh): $0 <source-dir> <install-dir> <user> <group> <server-name or \"\"> <push-dir or \"\">" >&2
   exit 1
 fi
-SOURCE_DIR="$1" INSTALL_DIR="$2" DEPLOY_USER="$3" DEPLOY_GROUP="$4" SERVER_NAME="$5"
+SOURCE_DIR="$1" INSTALL_DIR="$2" DEPLOY_USER="$3" DEPLOY_GROUP="$4" SERVER_NAME="$5" REMOVE_DIR="$6"
+
+# The push's directory: the one above the tree, as push.sh names it; marked,
+# so push.sh leaves it to the install from here.
+if [[ -n "$REMOVE_DIR" ]]; then
+  [[ "$REMOVE_DIR" == "$(dirname "$SOURCE_DIR")" && "$REMOVE_DIR" =~ ^/tmp/wisp-push\.[A-Za-z0-9]+$ && ! -L "$REMOVE_DIR" ]] \
+    || { echo "ERROR: --remove-source is for a tree push.sh unpacked in /tmp/wisp-push.*; this one is $SOURCE_DIR." >&2; exit 1; }
+  touch "$REMOVE_DIR/.install-started"
+  trap 'rm -rf "$REMOVE_DIR"' EXIT
+fi
 
 # The install path, before anything is written there or owned by the deploy
 # user: absolute, and missing, empty, or a Wisp install already.
@@ -125,7 +136,7 @@ TERMINAL=0
 [[ -t 0 ]] && TERMINAL=1
 WISP_INSTALL_ANSWERS="$(mktemp -d -t wisp-install-answers.XXXXXX)"
 export WISP_INSTALL_ANSWERS
-trap 'rm -rf "$NET_PLAN_DIR" "$WISP_INSTALL_ANSWERS"' EXIT
+trap 'rm -rf "$NET_PLAN_DIR" "$WISP_INSTALL_ANSWERS" ${REMOVE_DIR:+"$REMOVE_DIR"}' EXIT
 
 case "$NET_PLAN_JOURNAL" in
   restore) echo "A bridge step that did not finish left its journal in $JOURNAL_DIR: the install undoes it first."; echo "" ;;
@@ -187,11 +198,12 @@ echo ""
 # The work owns the answers from here, and the lock (fd 8); it plans again.
 rm -rf "$NET_PLAN_DIR"
 trap - EXIT
-NET_PLAN_DIR="" setsid "$0" --work "$SOURCE_DIR" "$INSTALL_DIR" "$DEPLOY_USER" "$DEPLOY_GROUP" "$LOG" \
+NET_PLAN_DIR="" setsid "$0" --work "$SOURCE_DIR" "$INSTALL_DIR" "$DEPLOY_USER" "$DEPLOY_GROUP" "$LOG" "$REMOVE_DIR" \
   < /dev/null >> "$LOG" 2>&1 &
 WORK_PID=$!
-# Ctrl-C: the following stops, by the signal, so a caller's shell stops too
-# (push.sh's removes the tree the work copies from only after a normal end).
+# Ctrl-C: the following stops, by the signal, so a caller's shell stops too;
+# the work goes on, with the tree it copies from, which it removes when push.sh
+# made it.
 trap 'echo ""; echo "Stopped following. The install goes on; its log is $LOG"; trap - INT; kill -INT $$' INT
 tail -n +1 -f --pid="$WORK_PID" "$LOG"
 rc=0

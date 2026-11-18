@@ -77,12 +77,15 @@ echo ""
 # --- Remote install: tar is all the host needs ---
 
 echo "--- Installing on $TARGET ---"
-# The push's directory goes on every exit, a failed extract included. A hangup
-# does not end the remote shell, nor the install it waits for (which ignores
-# it too), so the directory goes only once the install has used it.
-if ! ssh "${SSH_OPTS[@]}" -t "$TARGET" "trap 'rm -rf $REMOTE_DIR' EXIT; trap '' HUP; tar -xzf '$REMOTE_DIR/$TARBALL_NAME' -C '$REMOTE_DIR' || exit 1; cd '$REMOTE_DIR/wisp' && bash ./scripts/install.sh $REMOTE_PATH"; then
+# Once the install has started (its root process marks the push's directory),
+# it removes the directory itself when it is done with it (--remove-source),
+# however this side ends: Ctrl-C and a dropped connection stop only the
+# following. Until then the directory is the push's, removed here when the
+# install never started.
+if ! ssh "${SSH_OPTS[@]}" -t "$TARGET" "trap '' HUP; tar -xzf '$REMOTE_DIR/$TARBALL_NAME' -C '$REMOTE_DIR' && cd '$REMOTE_DIR/wisp' && bash ./scripts/install.sh $REMOTE_PATH --remove-source"; then
+  ssh "${SSH_OPTS[@]}" "$TARGET" "[ -e '$REMOTE_DIR/.install-started' ] || rm -rf '$REMOTE_DIR'" || true
   echo ""
-  echo "ERROR: the install on $TARGET failed (see above)." >&2
+  echo "ERROR: the install on $TARGET failed or was stopped following (see above)." >&2
   exit 1
 fi
 
