@@ -40,8 +40,6 @@ if [[ "$BRIDGE_CREATE" == no ]]; then
   exit 0
 fi
 
-APPLY_WAIT_SEC=90   # the apply, and the bridge holding the uplink's address
-
 NETPLAN_DROPIN_DIR=/etc/systemd/network/10-netplan-${BRIDGE}.network.d
 NETPLAN_DROPIN=$NETPLAN_DROPIN_DIR/50-wisp-dhcp-identity.conf
 NETWORKD_NETDEV=/etc/systemd/network/00-wisp-${BRIDGE}.netdev
@@ -53,7 +51,7 @@ current_sources="$(plan_sources)" || fail "cannot read what the plan was made fr
 [[ "$current_sources" == "$(cat "$NET_PLAN_DIR/sources")" ]] \
   || fail "the network's configuration changed since setup worked out the bridge; nothing was changed. Run setup again."
 
-# applied: within APPLY_WAIT_SEC the bridge holds what the uplink held (see
+# applied: within NET_APPLY_SEC the bridge holds what the uplink held (see
 # the header) and the uplink holds nothing; there is no one event to wait on.
 # Sets WHY to what differs.
 # On DHCP the default route is compared by its gateway: its metric and source
@@ -63,23 +61,34 @@ facts_of() {
   if [[ "$UPLINK_MODE" == static ]]; then
     grep -E '^(addr[46]|route[46]|dns|domain) ' || true
   else
-    grep -E '^(addr4|route4 default|dns) ' | sed -E 's/^(route4 default via [^ ]+).*/\1/' | LC_ALL=C sort -u || true
+    grep -E '^(addr4|route4 default|dns) ' | sed -E 's/^(route4 default via [^ ]+).*/\1/' | sort -u || true
   fi
 }
+# read_now: what the bridge and the uplink hold now, into NET_PLAN_DIR/now.*.
+# Run in the background and waited for, so a stop interrupts the check at once.
+# A read that fails leaves its part empty.
+read_now() {
+  rm -f "$NET_PLAN_DIR"/now.*
+  cat "/sys/class/net/$BRIDGE/address" > "$NET_PLAN_DIR/now.mac" 2>/dev/null || true
+  { l3_state "$BRIDGE" "$NET_TOOL" 2>/dev/null | facts_of; } > "$NET_PLAN_DIR/now.have" || true
+  { l3_state "$UPLINK" "$NET_TOOL" 2>/dev/null | grep -E '^(addr[46]|route[46]) '; } > "$NET_PLAN_DIR/now.port" || true
+  if [[ "$UPLINK_MODE" == dhcp ]]; then client_id "$BRIDGE" "$NET_TOOL"; fi > "$NET_PLAN_DIR/now.cid" || true
+}
 applied() {
-  local waited=0 mac cid want have port
+  local deadline=$(( SECONDS + NET_APPLY_SEC )) mac cid want have port
   want="$(facts_of < "$NET_PLAN_DIR/uplink.state")"
   while :; do
-    mac="$(cat "/sys/class/net/$BRIDGE/address" 2>/dev/null || true)"
-    have="$(l3_state "$BRIDGE" "$NET_TOOL" 2>/dev/null | facts_of)"
-    port="$(l3_state "$UPLINK" "$NET_TOOL" 2>/dev/null | grep -E '^(addr[46]|route[46]) ' || true)"
-    cid=""
-    [[ "$UPLINK_MODE" == dhcp ]] && cid="$(client_id "$BRIDGE" "$NET_TOOL")"
+    read_now &
+    wait "$!" || true
+    mac="$(cat "$NET_PLAN_DIR/now.mac" 2>/dev/null || true)"
+    have="$(cat "$NET_PLAN_DIR/now.have" 2>/dev/null || true)"
+    port="$(cat "$NET_PLAN_DIR/now.port" 2>/dev/null || true)"
+    cid="$(cat "$NET_PLAN_DIR/now.cid" 2>/dev/null || true)"
     if [[ "$mac" == "$UPLINK_MAC" && "$have" == "$want" && -z "$port" && "$cid" == "${UPLINK_CLIENT_ID:-}" ]]; then
       return 0
     fi
-    if (( waited++ >= APPLY_WAIT_SEC )); then
-      WHY="after ${APPLY_WAIT_SEC} s"
+    if (( SECONDS >= deadline )); then
+      WHY="after ${NET_APPLY_SEC} s"
       [[ "$mac" == "$UPLINK_MAC" ]] || WHY+=", $BRIDGE has hardware address '${mac}' (was $UPLINK_MAC)"
       [[ "$cid" == "${UPLINK_CLIENT_ID:-}" ]] || WHY+=", $BRIDGE sends client identifier '${cid}' (was $UPLINK_CLIENT_ID)"
       [[ "$have" == "$want" ]] || WHY+=", $BRIDGE holds [$(echo $have)], $UPLINK held [$(echo $want)]"
@@ -113,7 +122,7 @@ apply_netplan() {
   fi
   put_file "$NETPLAN_ORIGIN" "$NET_PLAN_DIR/netplan-origin.yaml" 0600 || return 1
   apply_notice
-  timeout -k 10 "$APPLY_WAIT_SEC" netplan apply
+  timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" netplan apply
 }
 verify_netplan() { :; }
 
@@ -131,7 +140,7 @@ apply_networkd() {
   put_file "$NETWORKD_NETWORK" "$NET_PLAN_DIR/bridge.network" 0644 || return 1
   put_file "$NETWORKD_PORT_FILE" "$NET_PLAN_DIR/port.network" 0644 || return 1
   apply_notice
-  timeout -k 10 "$NET_CMD_SEC" networkctl reload
+  timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" networkctl reload
 }
 # Which file networkd now runs each link from: the bridge's and the port's.
 verify_networkd() {
@@ -139,7 +148,7 @@ verify_networkd() {
   for link in "$BRIDGE" "$UPLINK"; do
     want="$NETWORKD_NETWORK"
     [[ "$link" == "$UPLINK" ]] && want="$NETWORKD_PORT_FILE"
-    got="$(json_string "$(timeout "$NET_CMD_SEC" networkctl status "$link" --json=short 2>/dev/null)" NetworkFile || true)"
+    got="$(json_string "$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" networkctl status "$link" --json=short 2>/dev/null)" NetworkFile || true)"
     if [[ "$got" != "$want" ]]; then
       WHY="systemd-networkd runs $link from '${got}', not $want"
       return 1
@@ -157,12 +166,13 @@ verify_networkd() {
 # autoconnect priority is above the uplink connection's, and so the bridge.
 # Never a boot with neither. ---
 nm_add() {
-  local args
+  local args fp
   mapfile -t args < "$1"
   journal_conn "$2" || { WHY="cannot write the journal"; return 1; }
-  timeout -k 10 "$NET_CMD_SEC" nmcli connection add connection.uuid "$2" "${args[@]}" >/dev/null \
+  timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli connection add connection.uuid "$2" "${args[@]}" >/dev/null \
     || { WHY="NetworkManager refused the connection $2"; return 1; }
-  journal_connfp "$2" "$(nm_fingerprint "$2")" || { WHY="cannot write the journal"; return 1; }
+  fp="$(nm_fingerprint "$2")" || { WHY="NetworkManager cannot read back the connection $2"; return 1; }
+  journal_connfp "$2" "$fp" || { WHY="cannot write the journal"; return 1; }
 }
 apply_networkmanager() {
   if [[ -n "${NM_PROFILE_FILE:-}" ]]; then
@@ -173,7 +183,7 @@ apply_networkmanager() {
   nm_add "$NET_PLAN_DIR/port.args" "$NM_PORT_UUID" || return 1
   changed "NetworkManager connection ${BRIDGE}-port-${UPLINK} ($UPLINK as ${BRIDGE}'s port, with its link settings, ahead of ${UPLINK}'s own connection at boot)"
   apply_notice
-  timeout -k 10 "$APPLY_WAIT_SEC" nmcli --wait "$APPLY_WAIT_SEC" connection up "$NM_BRIDGE_UUID" >/dev/null
+  timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" nmcli --wait "$NET_APPLY_SEC" connection up "$NM_BRIDGE_UUID" >/dev/null
 }
 verify_networkmanager() { :; }
 

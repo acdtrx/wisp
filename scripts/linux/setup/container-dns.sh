@@ -64,6 +64,8 @@ fi
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=step.sh
 source "$SETUP_DIR/step.sh"
+# shellcheck source=net-state.sh
+source "$SETUP_DIR/net-state.sh"
 
 NET_TOOL="${1:-}"
 case "$NET_TOOL" in
@@ -150,7 +152,7 @@ EOF
   # there (files written before networkd ran), reload it and wait until the
   # interface has its address.
   if (( RELOAD )) || ! stub_up; then
-    timeout 30 networkctl reload || fail "networkctl reload failed"
+    timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" networkctl reload || fail "networkctl reload failed"
     /usr/lib/systemd/systemd-networkd-wait-online -i "${STUB_IFACE}:degraded" --timeout=30 >/dev/null \
       || fail "${STUB_IFACE} did not get ${STUB_IP} from systemd-networkd within 30 s"
     stub_up || fail "${STUB_IFACE} has no ${STUB_IP} after the reload"
@@ -161,30 +163,36 @@ EOF
 
 # NetworkManager: one dummy connection, connecting by itself.
 stub_networkmanager() {
-  local want have
+  local want have _has
   local settings=(connection.interface-name "$STUB_IFACE" ipv4.method manual ipv4.addresses "${STUB_IP}/32"
     ipv6.method disabled connection.autoconnect yes)
   # Key by key, as nmcli prints them ("key:value"), sorted.
   want="$(printf '%s\n' connection.autoconnect:yes connection.interface-name:"$STUB_IFACE" connection.type:dummy \
-    ipv4.addresses:"${STUB_IP}/32" ipv4.method:manual ipv6.method:disabled | LC_ALL=C sort)"
+    ipv4.addresses:"${STUB_IP}/32" ipv4.method:manual ipv6.method:disabled | sort)"
   have=""
-  if timeout 30 nmcli -t -f connection.id connection show "$STUB_IFACE" >/dev/null 2>&1; then
-    have="$(timeout 30 nmcli -t -f connection.type,connection.interface-name,ipv4.method,ipv4.addresses,ipv6.method,connection.autoconnect \
-      connection show "$STUB_IFACE")" || fail "nmcli cannot read the connection $STUB_IFACE"
-    have="$(LC_ALL=C sort <<<"$have")"
-  fi
+  _has=0; nm_has "$STUB_IFACE" || _has=$?
+  case $_has in
+    0) ;;
+    1) have=none ;;
+    *) fail "NetworkManager cannot be asked about the connection $STUB_IFACE" ;;
+  esac
   if [[ -z "$have" ]]; then
-    timeout 30 nmcli connection add type dummy con-name "$STUB_IFACE" ifname "$STUB_IFACE" "${settings[@]}" >/dev/null \
+    have="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -t -f connection.type,connection.interface-name,ipv4.method,ipv4.addresses,ipv6.method,connection.autoconnect \
+      connection show "$STUB_IFACE")" || fail "nmcli cannot read the connection $STUB_IFACE"
+    have="$(sort <<<"$have")"
+  fi
+  if [[ "$have" == none ]]; then
+    timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli connection add type dummy con-name "$STUB_IFACE" ifname "$STUB_IFACE" "${settings[@]}" >/dev/null \
       || fail "NetworkManager refused the connection $STUB_IFACE"
     changed "NetworkManager connection $STUB_IFACE (${STUB_IP}/32)"
   elif [[ "$have" != "$want" ]]; then
-    timeout 30 nmcli connection modify "$STUB_IFACE" "${settings[@]}" \
+    timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli connection modify "$STUB_IFACE" "${settings[@]}" \
       || fail "NetworkManager refused the settings of $STUB_IFACE"
     changed "NetworkManager connection $STUB_IFACE set to ${STUB_IP}/32"
     RELOAD=1
   fi
   if (( RELOAD )) || ! stub_up; then
-    timeout 60 nmcli --wait 30 connection up "$STUB_IFACE" >/dev/null \
+    timeout -k "$NET_KILL_SEC" 60 nmcli --wait 30 connection up "$STUB_IFACE" >/dev/null \
       || fail "NetworkManager did not bring up ${STUB_IFACE} within 30 s"
     stub_up || fail "${STUB_IFACE} has no ${STUB_IP} after NetworkManager brought it up"
     changed "NetworkManager brought up ${STUB_IFACE} with ${STUB_IP}"

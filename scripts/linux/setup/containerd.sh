@@ -65,9 +65,9 @@ if $NEEDS_RESTART; then
   changed "containerd restarted for the socket gid"
 fi
 
-NAMESPACES="$(timeout 30 ctr namespaces ls -q)" || fail "ctr cannot list containerd's namespaces"
+NAMESPACES="$(timeout -k 10 30 ctr namespaces ls -q)" || fail "ctr cannot list containerd's namespaces"
 if ! grep -qx wisp <<<"$NAMESPACES"; then
-  timeout 30 ctr namespaces create wisp
+  timeout -k 10 30 ctr namespaces create wisp
   changed "namespace wisp created"
 fi
 

@@ -25,7 +25,7 @@ MARKER="$BACKEND/node_modules/.wisp-installed-for"
 NPM_IDLE_SEC=600
 
 LOCK_SUM="$(sha256sum "$BACKEND/package-lock.json")" || fail "cannot read $BACKEND/package-lock.json"
-NODE_VERSION="$(timeout 10 node --version)" || fail "node does not run"
+NODE_VERSION="$(timeout -k 10 10 node --version)" || fail "node does not run"
 WANT="${LOCK_SUM%% *} node $NODE_VERSION"
 
 if [[ -f "$MARKER" && "$(cat "$MARKER")" == "$WANT" ]]; then

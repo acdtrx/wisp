@@ -1,15 +1,30 @@
-# Sourced by network-plan.sh and the bridge step; do not execute it. What an
-# interface holds at layer 3, read from the kernel and the host's tool, in one
-# canonical form: the plan records the uplink's before the bridge is made, and
-# the bridge step compares the bridge's with it afterwards. And the readers
-# both share.
+# Sourced by network-plan.sh, the bridge step and the container-dns step; do
+# not execute it. The bounds on calls of a network tool. What an interface
+# holds at layer 3, read from the kernel and the host's tool, in one canonical
+# form: the plan records the uplink's before the bridge is made, and the bridge
+# step compares the bridge's with it afterwards. And the readers both share.
 
-NET_CMD_SEC=30   # bound on every call of a network tool that is not an apply
+# Every call of a network tool is bounded (`timeout -k NET_KILL_SEC`):
+NET_CMD_SEC=30     # a call that is not an apply
+NET_APPLY_SEC=90   # an apply, and the wait after it for the address or route
+NET_KILL_SEC=10    # what a call that ran past its bound gets to die after TERM
+
+# nm_has <uuid>: 0 when NetworkManager has the connection, 1 when it has not
+# (nmcli's exit 10: not found), 2 when NetworkManager cannot be asked.
+nm_has() {
+  local rc=0
+  timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -t -f connection.uuid connection show "$1" >/dev/null 2>&1 || rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    10) return 1 ;;
+    *) return 2 ;;
+  esac
+}
 
 # first_ipv4 <dev>: the interface's first global IPv4 address, with prefix.
 first_ipv4() {
   local out
-  out="$(timeout "$NET_CMD_SEC" ip -4 -o addr show dev "$1" scope global 2>/dev/null)" || return 0
+  out="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" ip -4 -o addr show dev "$1" scope global 2>/dev/null)" || return 0
   awk '!done { print $4; done = 1 }' <<<"$out"
 }
 
@@ -24,11 +39,11 @@ client_id() {
   local out bytes b hex=""
   case "$2" in
     networkmanager)
-      out="$(timeout "$NET_CMD_SEC" nmcli -t -f DHCP4.OPTION device show "$1" 2>/dev/null)" || return 0
+      out="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -t -f DHCP4.OPTION device show "$1" 2>/dev/null)" || return 0
       sed -n 's/^DHCP4\.OPTION\[[0-9]*\]:dhcp_client_identifier = //p' <<<"$out"
       ;;
     *)
-      out="$(timeout "$NET_CMD_SEC" networkctl status "$1" --json=short 2>/dev/null)" || return 0
+      out="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" networkctl status "$1" --json=short 2>/dev/null)" || return 0
       bytes="$(json_array "$out" ClientIdentifier || true)"
       for b in ${bytes//,/ }; do hex+="$(printf '%02x:' "$b")"; done
       printf '%s' "${hex%:}"
@@ -47,13 +62,13 @@ client_id() {
 l3_state() {
   local dev="$1" tool="$2" line
   {
-    timeout "$NET_CMD_SEC" ip -4 -o addr show dev "$dev" scope global | awk '{ print "addr4 " $4 }'
-    timeout "$NET_CMD_SEC" ip -6 -o addr show dev "$dev" scope global | awk '!/ dynamic/ { print "addr6 " $4 }'
-    timeout "$NET_CMD_SEC" ip -4 route show dev "$dev" | sed -E 's/ +linkdown//; s/ +$//; s/^/route4 /'
-    timeout "$NET_CMD_SEC" ip -6 route show dev "$dev" proto static | sed -E 's/ +linkdown//; s/ +(pref medium|expires [^ ]+)//g; s/ +$//; s/^/route6 /'
+    timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" ip -4 -o addr show dev "$dev" scope global | awk '{ print "addr4 " $4 }'
+    timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" ip -6 -o addr show dev "$dev" scope global | awk '!/ dynamic/ { print "addr6 " $4 }'
+    timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" ip -4 route show dev "$dev" | sed -E 's/ +linkdown//; s/ +$//; s/^/route4 /'
+    timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" ip -6 route show dev "$dev" proto static | sed -E 's/ +linkdown//; s/ +(pref medium|expires [^ ]+)//g; s/ +$//; s/^/route6 /'
     case "$tool" in
       networkmanager)
-        timeout "$NET_CMD_SEC" nmcli -t -f IP4.DNS,IP6.DNS,IP4.DOMAIN,IP6.DOMAIN device show "$dev" | while IFS= read -r line; do
+        timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -t -f IP4.DNS,IP6.DNS,IP4.DOMAIN,IP6.DOMAIN device show "$dev" | while IFS= read -r line; do
           case "$line" in
             IP[46].DNS*) echo "dns ${line#*:}" ;;
             IP[46].DOMAIN*) echo "domain ${line#*:}" ;;
@@ -64,14 +79,14 @@ l3_state() {
         # systemd-networkd's name servers take effect through systemd-resolved;
         # without it there are none to compare.
         if systemctl is-active --quiet systemd-resolved; then
-          line="$(timeout "$NET_CMD_SEC" resolvectl dns "$dev")"
+          line="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" resolvectl dns "$dev")"
           for line in ${line#*:}; do echo "dns $line"; done
-          line="$(timeout "$NET_CMD_SEC" resolvectl domain "$dev")"
+          line="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" resolvectl domain "$dev")"
           for line in ${line#*:}; do echo "domain $line"; done
         fi
         ;;
     esac
-  } | LC_ALL=C sort
+  } | sort
 }
 
 # plan_sources: what a plan to make the bridge is made from, as checksums (and
@@ -89,8 +104,10 @@ plan_sources() {
       ;;
     networkd) xargs -d '\n' sha256sum < "$NET_PLAN_DIR/networkd-sources" ;;
     networkmanager)
-      timeout "$NET_CMD_SEC" nmcli -t connection show "$UPLINK_CONNECTION" | grep -vE '^(GENERAL|IP[46]|DHCP[46])\.|^connection\.timestamp:' | sha256sum
-      timeout "$NET_CMD_SEC" nmcli -g GENERAL.CON-UUID device show "$UPLINK"
+      local con
+      con="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -t connection show "$UPLINK_CONNECTION")" || return 1
+      grep -vE '^(GENERAL|IP[46]|DHCP[46])\.|^connection\.timestamp:' <<<"$con" | sha256sum
+      timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -g GENERAL.CON-UUID device show "$UPLINK"
       ;;
   esac
 }

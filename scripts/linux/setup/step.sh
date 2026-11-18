@@ -2,6 +2,9 @@
 # and changes only what is missing: it reports each change with `changed`, and
 # `step_done` says "in place" when there was none.
 
+# shellcheck source=install-file.sh
+source "$(dirname "${BASH_SOURCE[0]}")/install-file.sh"
+
 STEP_CHANGED=0
 # One temp directory per step, made here in the step's own shell (staged_file
 # runs in a command substitution, a subshell) and removed when the step ends.
@@ -35,19 +38,16 @@ staged_file() {
 # put <content-file>'s content at <dest> unless <dest> already has that content,
 # mode and owner. Returns 0 when it wrote, 1 when <dest> was already that; any
 # failure ends the step, and so does empty content: nothing Wisp writes this way
-# may be empty. Staged beside <dest> and renamed into place, so a process
-# running the old file (wisp-updater refreshing itself) keeps its inode.
+# may be empty. Written by install_file (install-file.sh).
 write_if_changed() {
-  local dest="$1" mode="$2" src="$3" owner="${4:-root:root}" tmp
+  local dest="$1" mode="$2" src="$3" owner="${4:-root:root}"
   [[ -s "$src" ]] || fail "refusing to write $dest: the content is empty"
   if [[ -f "$dest" ]] && cmp -s "$src" "$dest" \
     && [[ "$(stat -c '%a %U:%G' "$dest")" == "${mode#0} $owner" ]]; then
     return 1
   fi
   [[ -d "$(dirname "$dest")" ]] || fail "cannot write $dest: $(dirname "$dest") does not exist"
-  tmp="$(mktemp "${dest}.wisp-new.XXXXXX")" || fail "cannot stage $dest"
-  cp "$src" "$tmp" && chmod "$mode" "$tmp" && chown "$owner" "$tmp" && mv -f "$tmp" "$dest" \
-    || { rm -f "$tmp"; fail "cannot write $dest"; }
+  install_file "$dest" "$src" "$mode" "$owner" || fail "cannot write $dest"
   return 0
 }
 

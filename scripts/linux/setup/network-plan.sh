@@ -66,8 +66,6 @@
 # the stub's port 53. And first of all, a bridge step that died is undone
 # (bridge-journal.sh).
 
-NET_CMD_SEC=30   # bound on every read of a network tool
-
 if [[ -n "${NET_PLAN_DIR:-}" && -f "$NET_PLAN_DIR/plan.env" ]]; then
   # shellcheck source=/dev/null
   source "$NET_PLAN_DIR/plan.env"
@@ -95,7 +93,7 @@ net_fail() {
 }
 net_read() {
   local rc=0
-  timeout "$NET_CMD_SEC" "$@" || rc=$?
+  timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" "$@" || rc=$?
   (( rc == 0 )) || net_fail "'$*' failed (exit $rc)"
 }
 
@@ -113,6 +111,7 @@ fi
 if [[ -d "$JOURNAL_DIR" ]]; then
   NET_PLAN_JOURNAL="$(journal_classify)"
   case "$NET_PLAN_JOURNAL" in
+    fail*) net_fail "${NET_PLAN_JOURNAL#fail }: setup cannot tell what the bridge step that left its journal in $JOURNAL_DIR changed." ;;
     refuse*)
       net_fail "a bridge step that did not finish left its journal in $JOURNAL_DIR, and since then someone else changed${NET_PLAN_JOURNAL#refuse changed since by someone else:}: setup does not undo over that. Put each back as the step wrote it or as it was (its files/ holds the originals), or remove $JOURNAL_DIR once the network is as you want it, and run this again." ;;
   esac
@@ -212,9 +211,9 @@ while read -r _l; do
   [[ -n "$_l" ]] || continue
   _local="$(awk '{ for (i = 1; i <= NF; i++) if ($i ~ /:53$/) { print $i; exit } }' <<<"$_l")"
   case "$_local" in
-    # A wildcard bound to one device takes the port from the stub too
-    # (observed 2026-11-19: the forwarder's UDP bind then fails with
-    # EADDRINUSE); [::]:53 is IPv6 only and leaves it free.
+    # A wildcard bound to one device takes the port from the stub too (the
+    # forwarder's UDP bind then fails with EADDRINUSE); [::]:53 is IPv6 only
+    # and leaves it free.
     169.254.53.53:53 | 0.0.0.0:53 | 0.0.0.0%*:53 | '*:53' | '*%'*:53) ;;
     *) continue ;;
   esac
@@ -255,7 +254,7 @@ else
         || net_fail "cannot read netplan's status for $UPLINK"
       [[ -n "$UPLINK_NETPLAN_ID" ]] || net_refuse "netplan has no definition for the uplink $UPLINK."
       # The file the definition comes from, as netplan's parser reads it.
-      NETPLAN_ORIGIN="$(timeout "$NET_CMD_SEC" python3 -c '
+      NETPLAN_ORIGIN="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" python3 -c '
 import sys
 from netplan import Parser, State
 p = Parser(); p.load_yaml_hierarchy("/")
@@ -450,7 +449,7 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
       # the port's file and the bridge's (00-wisp-br0.network) sort before the
       # uplink's, which may match the bridge too (the same hardware address).
       for _f in "${NETWORKD_PORT_FILE##*/}" "00-wisp-${BRIDGE}.network"; do
-        (LC_ALL=C; [[ "$_f" < "${_netfile##*/}" ]]) \
+        [[ "$_f" < "${_netfile##*/}" ]] \
           || net_refuse "$UPLINK is run from $_netfile, which sorts before $_f, the file setup would write for $BRIDGE."
       done
       unset _f
@@ -660,12 +659,12 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
         }' <<<"$_con"
       } > "$NET_PLAN_DIR/port.args"
       # Both checked by NetworkManager itself, offline: nothing is added.
-      if ! timeout "$NET_CMD_SEC" nmcli --offline connection add --help >/dev/null 2>&1; then
+      if ! timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli --offline connection add --help >/dev/null 2>&1; then
         net_refuse "this nmcli has no --offline, with which setup checks the connections it adds before adding them."
       fi
       for _f in bridge port; do
         mapfile -t _args < "$NET_PLAN_DIR/$_f.args"
-        _why="$(timeout "$NET_CMD_SEC" nmcli --offline connection add "${_args[@]}" 2>&1 >/dev/null)" \
+        _why="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli --offline connection add "${_args[@]}" 2>&1 >/dev/null)" \
           || net_refuse "NetworkManager does not accept the $_f connection setup would add: ${_why:-nmcli --offline failed}."
       done
       unset -f _metric_of
