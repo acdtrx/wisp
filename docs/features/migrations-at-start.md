@@ -26,10 +26,13 @@ from everything else.
   naming the migration and the reason. The next start tries again.
 - **A start with nothing pending costs a ledger read**: no extra connection to libvirt or
   containerd.
-- **The updater learns the outcome from the service, not from a step of its own.** Its
-  health gate waits while the new backend is alive and still starting, however long its
-  migrations take, up to a ceiling inside the unit's own time limit. It fails as soon as
-  the backend exits. The fixed 90 s goes.
+- **The service says when it is ready, and systemd is the gate** (settled 2026-11-18,
+  replacing the 2026-10-16 rejection of `Type=notify`). `wisp.service` is `Type=notify`;
+  the backend sends the ready message with systemd's own `systemd-notify` once it
+  listens. `systemctl start` then waits through the migrations, returns when Wisp is
+  ready and fails when the process exits first. The updater, the installer and a
+  rollback use that, with no gate code of ours. The fixed 90 s goes.
+- **A start that keeps failing backs off**: retries go from 5 s up to 5 min.
 - **Rollback keeps its shape.** The tree and `config/`, ledger included, come back
   together; the old backend then finds nothing pending. What a migration changed outside
   `config/` is not undone, as today.

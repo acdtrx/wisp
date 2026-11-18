@@ -28,9 +28,15 @@ safe to run again, ending with Wisp usable.
   creates the interface. No unit or command of ours finishes or repairs the network.
   (`cni-dhcp.service` stays: it is the DHCP daemon container networking uses, not a
   setup step.)
+- **Supported hosts** (settled 2026-11-18): Debian and Ubuntu, with the network run by
+  netplan, NetworkManager or systemd-networkd, and an uplink that can be bridged. Setup
+  refuses any other host before it changes anything, and names what is supported. Arch
+  is dropped as a host everywhere: setup, the OS-update helper, the backend's host code
+  and the docs.
 - **A bridge is required.** Without one no VM or container has a network. Setup uses
   the bridge that carries the host's uplink if there is one; otherwise it creates `br0`
-  on the uplink interface.
+  on the uplink interface. One rule for install and update. libvirt's default NAT
+  network stays off, and the code that falls back to it goes.
 - **The bridge is chosen first and applied last.** Its name is known from the start, so
   the steps that depend on it (container networking) are written for it without waiting
   for it. Applying it is setup's last change, and it keeps the host's address: the
@@ -42,10 +48,12 @@ safe to run again, ending with Wisp usable.
   bridge without asking. If the operator declines and the host has no bridge, the
   install stops before it has changed anything, and says that Wisp needs a bridge: make
   one, or let setup make it.
-- **On update, setup creates a bridge only on a host that has none**, which a working
-  host never is.
-- **A fresh host needs only ssh and sudo.** Setup installs what the deploy itself needs
-  (`unzip` today) before it needs it.
+- **Hosts never build.** `push.sh` ships the same prebuilt tarball a release does,
+  staged by one script the release workflow shares. A fresh host needs only ssh, sudo
+  and `tar`. A manual upgrade is the new tree's installer; the "git checkout on the
+  server" path goes.
+- **With no terminal** the password is read as one line on standard input and the
+  server name comes from an argument, defaulting to the host's name.
 
 ## What it changes in the docs
 
@@ -55,9 +63,12 @@ safe to run again, ending with Wisp usable.
 - `specs/UPDATES.md`: the updater's step list; the shared-steps row becomes "setup".
 - `specs/CONTAINERS.md`, only where it describes how `wisp-dns0` and the stub address
   come to exist.
+- The single passages in other specs that name a script or command this feature
+  removes, or describe Arch as a host: `API-HOST.md`, `CONFIGURATION.md`,
+  `CONTAINERS.md`, `HOST-MONITORING.md`, `SETTINGS.md`, `STORAGE.md`, `noVNC.md`.
 - `PRODUCTION.md`, Deploys. `README.md`, the install section.
-- `BACKLOG.md`: "Setup strategy: one update-safe path" and "A push to a fresh host needs
-  `unzip` first" are removed.
+- `BACKLOG.md`: "Setup strategy: one update-safe path", "A push to a fresh host needs
+  `unzip` first" and "Arch: a custom pacman `DBPath` isn't followed" are removed.
 
 ## Constraints
 
@@ -66,8 +77,8 @@ safe to run again, ending with Wisp usable.
 - An update must not fail because another package run holds the system's package lock
   when setup has nothing to install.
 - Verified in throwaway VMs from the image the test host has (Ubuntu, netplan). The
-  NetworkManager and systemd-networkd variants are written to the same contract; say
-  plainly which of them could not be run.
+  NetworkManager and plain systemd-networkd variants are run in Ubuntu VMs adapted to
+  them, and the report says they were approximated.
 - The first release that carries this is installed by the previous updater. The builder
   says what that means for that one update before building.
 - The reasons behind today's network setup are kept, not rediscovered: the header of

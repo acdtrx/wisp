@@ -75,6 +75,13 @@ These rules are what stops this plan from doing the same.
   a network. It is set up through the host's own network tool, with no unit or command
   of ours to finish the job.
 - No database: the SQLite idea was looked at and dropped.
+- `wisp.service` is `Type=notify`, the ready message sent with `systemd-notify`:
+  `systemctl start` is the health gate. Replaces the 2026-10-16 rejection.
+- Supported hosts: Debian and Ubuntu, on netplan, NetworkManager or systemd-networkd,
+  with an uplink that can be bridged. Setup refuses anything else. Arch is dropped as a
+  host everywhere.
+- Hosts never build: a host installs the prebuilt tarball a release ships, and
+  `push.sh` ships the same one.
 
 ## Phases
 
