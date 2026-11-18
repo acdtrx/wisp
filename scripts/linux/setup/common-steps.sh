@@ -25,9 +25,14 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
-# Refuses a distro Wisp does not support, before any step runs.
+# Before any step runs: a distro Wisp does not support, a network tool setup
+# cannot configure or an uplink that cannot be bridged is refused, and the
+# bridge is chosen — the steps that depend on it are written for it, and the
+# bridge step applies it last.
 # shellcheck source=distro.sh
 source "$SETUP_DIR/distro.sh"
+# shellcheck source=network-plan.sh
+source "$SETUP_DIR/network-plan.sh"
 
 STEP_COUNT=0
 
@@ -41,31 +46,24 @@ run_step() {
   "$SETUP_DIR/$script" "$@"
   rc=$?
   (( rc == 0 )) && return 0
-  # cni.sh needs a bridge carrying the default route, and a fresh install offers
-  # that bridge only once setup is done: until the network steps choose the
-  # bridge themselves, a host with none ends this step unconfigured, as it
-  # always has, and the run goes on.
-  if [[ "$name" == cni ]]; then
-    echo "step: cni not configured (exit $rc): container networking needs a bridge — see above"
-    return 0
-  fi
   echo ""
   echo "setup failed at step: $name (exit $rc)" >&2
   exit 1
 }
 
-echo "=== Wisp setup (deploy user: $DEPLOY_USER) ==="
+echo "=== Wisp setup (deploy user: $DEPLOY_USER; network: $NET_TOOL, uplink $UPLINK, bridge $BRIDGE$([[ $BRIDGE_CREATE == yes ]] && echo ' — to be created')) ==="
 run_step packages packages.sh
 run_step groups groups.sh "$DEPLOY_USER"
 run_step dirs dirs.sh "$DEPLOY_USER"
 run_step libvirt libvirt.sh
 run_step containerd containerd.sh "$DEPLOY_USER"
-run_step cni cni.sh
+run_step cni cni.sh "$BRIDGE"
 run_step container-dns container-dns.sh
 run_step avahi avahi.sh
 run_step helpers install-helpers.sh "$PROJECT_ROOT" "$DEPLOY_USER"
 run_step rapl rapl.sh "$DEPLOY_USER"
 run_step service-unit service-unit.sh "$PROJECT_ROOT" "$DEPLOY_USER"
 run_step sanity sanity.sh
+run_step bridge bridge.sh
 echo ""
 echo "=== Wisp setup done ($STEP_COUNT steps) ==="

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Install CNI plugins and create bridge config for container networking. Run as root.
+# Setup step: container networking — the CNI plugins in /opt/cni/bin, the bridge
+# config every container joins, written for the bridge setup chose (it may be
+# applied only later, as setup's last step; nothing here waits for it), and the
+# CNI DHCP daemon its IPAM needs. Run as root.
+# Usage: cni.sh <bridge>
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -7,11 +11,19 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+BRIDGE="${1:-}"
+if [[ -z "$BRIDGE" ]]; then
+  echo "Usage: $0 <bridge>"
+  exit 1
+fi
+
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=distro.sh
 source "$SETUP_DIR/distro.sh"
+# shellcheck source=step.sh
+source "$SETUP_DIR/step.sh"
 
-echo "--- CNI plugins setup ---"
+echo "--- Container networking (CNI, bridge $BRIDGE) ---"
 
 CNI_BIN_DIR="/opt/cni/bin"
 CNI_CONF_DIR="/etc/cni/net.d"
@@ -29,85 +41,39 @@ declare -A CNI_SHA256=(
   [arm]="21416880bea0541d78afaf106373d6dbb471edb92c0114fa263494fe4aec8d3b"
 )
 
-# Install CNI plugins if not present
-if [[ ! -x "$CNI_BIN_DIR/bridge" ]]; then
-  echo "  Downloading CNI plugins ${CNI_VERSION}..."
-  mkdir -p "$CNI_BIN_DIR"
-
+# The plugins, by the version the bridge plugin reports: a bump in CNI_VERSION
+# reaches installed hosts too.
+installed="$(timeout 10 "$CNI_BIN_DIR/bridge" --version 2>/dev/null | awk 'NR == 1 { print $NF }' || true)"
+if [[ "$installed" != "$CNI_VERSION" ]]; then
   EXPECTED_SHA="${CNI_SHA256[$ARCH]:-}"
-  if [[ -z "$EXPECTED_SHA" ]]; then
-    echo "ERROR: No pinned CNI checksum for arch '$ARCH' (version $CNI_VERSION)." >&2
-    exit 1
-  fi
-
-  TMP_DIR="$(mktemp -d)"
-  TARBALL="cni-plugins-linux-${ARCH}-${CNI_VERSION}.tgz"
-  curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 60 "https://github.com/containernetworking/plugins/releases/download/${CNI_VERSION}/${TARBALL}" \
-    -o "$TMP_DIR/$TARBALL"
-  if ! echo "${EXPECTED_SHA}  $TMP_DIR/$TARBALL" | sha256sum -c - >/dev/null 2>&1; then
-    echo "ERROR: CNI plugin checksum mismatch for $TARBALL — refusing to install." >&2
-    rm -rf "$TMP_DIR"
-    exit 1
-  fi
-  tar -xzf "$TMP_DIR/$TARBALL" -C "$CNI_BIN_DIR"
-  rm -rf "$TMP_DIR"
-  echo "  CNI plugins installed to $CNI_BIN_DIR (checksum verified)"
-else
-  echo "  CNI plugins already installed."
+  [[ -n "$EXPECTED_SHA" ]] || fail "no pinned CNI checksum for arch '$ARCH' (version $CNI_VERSION)"
+  TARBALL="$(staged_file)"
+  curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 60 \
+    "https://github.com/containernetworking/plugins/releases/download/${CNI_VERSION}/cni-plugins-linux-${ARCH}-${CNI_VERSION}.tgz" \
+    -o "$TARBALL"
+  echo "${EXPECTED_SHA}  $TARBALL" | sha256sum -c - >/dev/null 2>&1 \
+    || fail "CNI plugin checksum mismatch for ${CNI_VERSION}/${ARCH} — refusing to install"
+  mkdir -p "$CNI_BIN_DIR"
+  tar -xzf "$TARBALL" -C "$CNI_BIN_DIR"
+  changed "CNI plugins ${CNI_VERSION} in $CNI_BIN_DIR (checksum verified)"
 fi
 
-# Bridge master for CNI: must be an **existing Linux bridge**. The CNI bridge plugin will
-# silently create a new orphan bridge if the name doesn't resolve to one, so we abort instead.
-# We pick the bridge that carries the default route (typically br0, which bridge.sh creates).
-#
-# Poll for up to ~30s. When bridge.sh has just run, `netplan apply` only swaps the default
-# route to br0 *after* the bridge acquires its DHCP lease — without waiting, a fresh install silently skipped the conflist + cni-dhcp.service
-# install and containers came up with no IP.
-detect_bridge_with_wait() {
-  local timeout_s=30
-  local interval_s=2
-  local elapsed=0
-  local iface
-  while :; do
-    iface="$(ip route show default 2>/dev/null | awk '/default/ { print $5; exit }')"
-    if [[ -n "$iface" ]] && [[ -d "/sys/class/net/$iface/bridge" ]]; then
-      echo "$iface"
-      return 0
-    fi
-    if (( elapsed >= timeout_s )); then
-      return 1
-    fi
-    if (( elapsed == 0 )); then
-      echo "  Waiting up to ${timeout_s}s for default route to land on a Linux bridge..." >&2
-    fi
-    sleep "$interval_s"
-    elapsed=$((elapsed + interval_s))
-  done
-}
-
-MASTER_IFACE="$(detect_bridge_with_wait || true)"
-if [[ -z "$MASTER_IFACE" ]]; then
-  echo "ERROR: default-route interface is not a Linux bridge after 30s wait." >&2
-  echo "       If bridge.sh just configured br0, its DHCP lease may not have completed yet." >&2
-  echo "       Run scripts/linux/setup/bridge.sh if br0 is missing, then re-run: sudo $0" >&2
-  exit 1
+# The legacy macvlan conflist of earlier installs.
+if [[ -e "$CNI_CONF_DIR/10-wisp-macvlan.conflist" ]]; then
+  rm -f "$CNI_CONF_DIR/10-wisp-macvlan.conflist"
+  changed "removed legacy $CNI_CONF_DIR/10-wisp-macvlan.conflist"
 fi
 
-# Remove legacy macvlan conflist from earlier installs (setup script is idempotent).
 mkdir -p "$CNI_CONF_DIR"
-rm -f "$CNI_CONF_DIR/10-wisp-macvlan.conflist"
-
-CONF_FILE="$CNI_CONF_DIR/10-wisp-bridge.conflist"
-echo "  Writing bridge config to $CONF_FILE (bridge=$MASTER_IFACE)"
-
-cat > "$CONF_FILE" <<CNIEOF
+CONFLIST="$(staged_file)"
+cat > "$CONFLIST" <<CNIEOF
 {
   "cniVersion": "1.0.0",
   "name": "wisp-bridge",
   "plugins": [
     {
       "type": "bridge",
-      "bridge": "$MASTER_IFACE",
+      "bridge": "$BRIDGE",
       "isGateway": false,
       "isDefaultGateway": false,
       "ipMasq": false,
@@ -121,11 +87,13 @@ cat > "$CONF_FILE" <<CNIEOF
   ]
 }
 CNIEOF
+if write_if_changed "$CNI_CONF_DIR/10-wisp-bridge.conflist" 0644 "$CONFLIST"; then
+  changed "$CNI_CONF_DIR/10-wisp-bridge.conflist (bridge $BRIDGE)"
+fi
 
-# Enable the CNI DHCP daemon (needed for DHCP IPAM)
-DHCP_SERVICE="/etc/systemd/system/cni-dhcp.service"
-if [[ ! -f "$DHCP_SERVICE" ]]; then
-  cat > "$DHCP_SERVICE" <<SVCEOF
+# The CNI DHCP daemon, which the bridge plugin's DHCP IPAM talks to.
+DHCP_UNIT="$(staged_file)"
+cat > "$DHCP_UNIT" <<SVCEOF
 [Unit]
 Description=CNI DHCP daemon
 After=network.target
@@ -139,10 +107,9 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 SVCEOF
+if write_if_changed /etc/systemd/system/cni-dhcp.service 0644 "$DHCP_UNIT"; then
   systemctl daemon-reload
-  systemctl enable --now cni-dhcp
-  echo "  CNI DHCP daemon enabled."
-else
-  systemctl enable --now cni-dhcp 2>/dev/null || true
-  echo "  CNI DHCP daemon already configured."
+  changed /etc/systemd/system/cni-dhcp.service
 fi
+unit_on cni-dhcp
+step_done
