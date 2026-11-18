@@ -120,9 +120,10 @@ EOF
 # The address lands with scope link (iproute2/networkd do that for 169.254/16)
 # and that is fine: the forwarder binds it explicitly, so replies to containers
 # never go through the kernel's source-address selection.
-# RequiredForOnline=no because this device is link-local by design and settles
-# at "degraded" — it must never gate network-online.target, which wisp.service
-# waits on.
+# RequiredForOnline=no: the plain wait-online does not wait for this device.
+# What waits for it is setup's systemd-networkd-wait-online@wisp-dns0:degraded
+# instance (a link-local-only device settles at "degraded"), which
+# network-online.target — and so wisp.service — is ordered after.
 [Match]
 Name=${STUB_IFACE}
 

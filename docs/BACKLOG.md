@@ -392,3 +392,24 @@ containers on a Mac.
 (settings, the password hash, the migration ledger; `PRODUCTION.md`, Backups): a host
 whose install is lost is set up again by hand. **Revisit trigger:** a host's configuration
 is lost, or has to be rebuilt by hand.
+
+**Wisp does not re-attach workload ports a network tool dropped.** Re-activating an active
+NetworkManager bridge (`nmcli connection up br0`) detaches every port NetworkManager did
+not make: each container's veth and each VM's tap leave the bridge, and those workloads
+stay off the network until they are restarted (observed 2026-11-18 on an approximated
+NetworkManager host; `nmcli device reapply` and a NetworkManager restart keep them). Setup
+never re-activates a bridge that exists. **Revisit trigger:** a workload found off its
+bridge after the host's network was re-applied.
+
+**`cni-dhcp` keeps running the old plugin binary after a CNI plugin upgrade.** The CNI step
+replaces `/opt/cni/bin` but leaves `cni-dhcp.service` running: restarting it would forget
+the leases of the running containers, which would then not be renewed. The old daemon
+keeps working until the next reboot or restart. **Revisit trigger:** a plugin upgrade
+whose DHCP daemon must run at once (a fix in `dhcp` itself).
+
+**The default bridge for VMs and containers is the first non-VLAN-style bridge, not the
+uplink's.** `getDefaultContainerParentBridge` (and through it `getDefaultBridge`) takes the
+first bridge in `/sys/class/net` whose name is not VLAN-style, so a `docker0` or another
+bridge can win over the one carrying the uplink, which setup's CNI conflist names. Belongs
+to the networking work in phase 5. **Revisit trigger:** a host with a second bridge whose
+new workloads land on it.

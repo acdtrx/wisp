@@ -192,8 +192,6 @@ print(s[sys.argv[1]].filepath)
 ' "$UPLINK_NETPLAN_ID")" || net_fail "netplan cannot parse its configuration"
       [[ "$NETPLAN_ORIGIN" == /etc/netplan/*.yaml ]] \
         || net_refuse "netplan defines $UPLINK in $NETPLAN_ORIGIN, outside /etc/netplan, where setup cannot edit it."
-      [[ "$NETPLAN_ORIGIN" != /etc/netplan/50-cloud-init.yaml ]] \
-        || net_refuse "netplan defines $UPLINK in $NETPLAN_ORIGIN, which cloud-init generated; setup does not edit cloud-init's files. With cloud-init's networking off, keep the definition under a name of your own."
       _json="$(net_read networkctl status "$UPLINK" --json=short)" || exit 1
       UPLINK_CLIENT_ID="$(_client_id_of "$_json")"
       _def="$NET_PLAN_DIR/uplink.yaml"
