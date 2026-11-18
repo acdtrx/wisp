@@ -41,7 +41,6 @@ const DEFAULTS = {
 
 export default function CloudInitSection({ vmConfig, isCreating, initialCloudInit, onCloudInitChange, busyReason }) {
   const vmName = vmConfig.name;
-  const osCategory = vmConfig.osCategory || 'linux';
 
   const [collapsed, setCollapsed] = useState(!isCreating);
   const [config, setConfig] = useState(null);

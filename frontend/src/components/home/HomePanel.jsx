@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Link as LinkIcon, FolderPlus, Check, Pencil, Lightbulb } from 'lucide-react';
-import { useHomeStore, UNGROUPED_GROUP_ID } from '../../store/homeStore.js';
+import { useHomeStore } from '../../store/homeStore.js';
 import { useBusyCommand } from '../../hooks/useBusyCommand.js';
 import AlertDialog from '../shared/AlertDialog.jsx';
 import HomeMotes from './HomeMotes.jsx';

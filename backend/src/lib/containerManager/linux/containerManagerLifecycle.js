@@ -4,7 +4,6 @@
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 
-import grpc from '@grpc/grpc-js';
 import {
   containerError, containerState, getClient, callUnary,
 } from './containerManagerConnection.js';

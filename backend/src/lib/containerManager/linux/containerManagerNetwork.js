@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { containerError, containerState } from './containerManagerConnection.js';
-import { CONTAINER_NETNS_DIR, getContainerDir, getContainerNetnsPath } from './containerPaths.js';
+import { CONTAINER_NETNS_DIR, getContainerNetnsPath } from './containerPaths.js';
 import { readContainerConfig, writeContainerConfig } from './containerManagerConfigIo.js';
 import { ipv4CidrFromProcFibTrie, isVlanLikeBridgeName } from '../../networking/index.js';
 

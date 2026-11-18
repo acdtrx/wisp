@@ -34,7 +34,6 @@ export default function JellyfinLibraryEditorModal({
   useEffect(() => {
     if (!open) return;
     setForm(library ? { label: library.label, sourceId: library.sourceId, subPath: library.subPath } : empty);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, library]);
 
   const labelError = useMemo(() => validateLabel(form.label, library), [validateLabel, form.label, library]);

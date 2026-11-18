@@ -88,7 +88,7 @@ export default function VNCConsole({ vmName, vmRunning, viewportRef, apiRef, onC
    * stale events from an old RFB clobbering a newer connection.
    */
   const sessionRef = useRef(0);
-  const [connected, setConnected] = useState(false);
+  const [, setConnected] = useState(false);
   /** Mirrors `connected` for listeners that run outside React's render (visibility / online). */
   const connectedRef = useRef(false);
   const [error, setError] = useState(null);

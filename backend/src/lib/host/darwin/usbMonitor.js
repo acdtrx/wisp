@@ -11,9 +11,8 @@ export function getDevices() {
 }
 
 /**
- * @param {() => void} callback
  * @returns {() => void} unsubscribe
  */
-export function onChange(callback) {
+export function onChange() {
   return () => {};
 }

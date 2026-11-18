@@ -78,7 +78,7 @@ export default function HostPanel() {
     try {
       await hostShutdown();
       setPowerOffOpen(false);
-    } catch (err) {
+    } catch {
       setPowerOffOpen(false);
     } finally {
       setPowerLoading(null);
@@ -90,7 +90,7 @@ export default function HostPanel() {
     try {
       await hostReboot();
       setRestartOpen(false);
-    } catch (err) {
+    } catch {
       setRestartOpen(false);
     } finally {
       setPowerLoading(null);

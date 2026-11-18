@@ -2,15 +2,9 @@
  * Disk monitor stub (macOS dev). Block-device enumeration is Linux-only.
  */
 
-let started = false;
+export function start() {}
 
-export function start() {
-  started = true;
-}
-
-export function stop() {
-  started = false;
-}
+export function stop() {}
 
 export function getDevices() {
   return [];

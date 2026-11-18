@@ -30,7 +30,6 @@ export default function HomeGroup({ group, tiles, editing, hideLabel, autoEdit, 
       setRenaming(true);
       onAutoEditConsumed?.();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEdit]);
 
   useEffect(() => {

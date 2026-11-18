@@ -4,9 +4,7 @@ import { join } from 'node:path';
 const SECTOR_BYTES = 512;
 
 let prevCpu = null;
-let prevCpuTime = 0;
 let prevCpuPerCore = null;
-let prevCpuPerCoreTime = 0;
 let prevDisk = null;
 let prevDiskTime = 0;
 let prevNet = null;
@@ -63,12 +61,9 @@ function getCpuUsage() {
   const current = parseCpuStats();
   if (!current) return 0;
 
-  const now = Date.now();
-
   /* Module-level prevCpu is safe: single event loop, no concurrent callers. */
   if (!prevCpu) {
     prevCpu = current;
-    prevCpuTime = now;
     return 0;
   }
 
@@ -76,7 +71,6 @@ function getCpuUsage() {
   const deltaIdle = current.idle - prevCpu.idle;
 
   prevCpu = current;
-  prevCpuTime = now;
 
   if (deltaTotal === 0) return 0;
   return ((deltaTotal - deltaIdle) / deltaTotal) * 100;
@@ -89,11 +83,8 @@ function getCpuPerCoreUsage() {
   const current = parseCpuPerCoreStats();
   if (!current || current.length === 0) return [];
 
-  const now = Date.now();
-
   if (!prevCpuPerCore || prevCpuPerCore.length !== current.length) {
     prevCpuPerCore = current;
-    prevCpuPerCoreTime = now;
     return new Array(current.length).fill(0);
   }
 
@@ -106,7 +97,6 @@ function getCpuPerCoreUsage() {
   });
 
   prevCpuPerCore = current;
-  prevCpuPerCoreTime = now;
 
   return perCore;
 }

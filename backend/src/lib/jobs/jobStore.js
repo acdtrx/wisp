@@ -124,7 +124,7 @@ export function createJobStore(formatResult) {
     for (const stream of job.streams) {
       try {
         stream.write(payload);
-      } catch (err) {
+      } catch {
         /* client may have disconnected */
       }
     }

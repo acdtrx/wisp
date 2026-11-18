@@ -158,7 +158,7 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
         }, withJitterMs(retryDelay));
         retryDelay = sseBackoffMs(retryDelay);
       }
-    } catch (err) {
+    } catch {
       clearTimeout(tid);
       // Treat any abort while open as a dead connection — could be the read
       // watchdog, the initial fetch timeout, or a network drop. close() flips
@@ -298,7 +298,7 @@ export function createSSE(url, onMessage, onError) {
         }, withJitterMs(retryDelay));
         retryDelay = sseBackoffMs(retryDelay);
       }
-    } catch (err) {
+    } catch {
       clearTimeout(tid);
       // Treat any abort while open as a dead connection — could be the read
       // watchdog, the initial fetch timeout, or a network drop. close() flips

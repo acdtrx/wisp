@@ -270,7 +270,7 @@ export async function connect(logger = null, opts = {}) {
 
   if (!connectionState.watchEvents) return;
 
-  connectionState.connectIface.on('DomainEvent', (domainPath, event, _detail) => {
+  connectionState.connectIface.on('DomainEvent', (domainPath, event) => {
     if (event === 5 || event === 1) {
       connectionState.prevVMStats.delete(domainPath);
       connectionState.vmStartTimes.delete(domainPath);

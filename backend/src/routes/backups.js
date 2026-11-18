@@ -33,10 +33,7 @@ import {
 import { startLockedContainerJob } from '../lib/containerJobs.js';
 import { createAppError, handleRouteError, isExpectedAppError } from '../lib/routeErrors.js';
 import { validateVMName, validateContainerName } from '../lib/validation.js';
-import {
-  acquireContainerOperationLock,
-  withContainerOperationLock,
-} from '../lib/containerOperationLock.js';
+import { acquireContainerOperationLock } from '../lib/containerOperationLock.js';
 
 // Backup directory names produced by createBackup are ISO-derived
 // (YYYY-MM-DDTHH-mm-ss). The accept-set is intentionally a bit looser to

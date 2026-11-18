@@ -36,7 +36,6 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose }) {
     setError(null);
     // parents comes fresh from the section on every open; keying the reset on
     // `open` alone avoids resetting the form while the user types.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const bridgePreview = useMemo(() => {

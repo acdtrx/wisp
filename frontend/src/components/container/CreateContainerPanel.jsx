@@ -124,10 +124,6 @@ export default function CreateContainerPanel() {
   const progressStep = row?.step ?? (creating ? 'validating' : null);
   const progressDetail = row?.detail ?? null;
 
-  const selectedLabel = selectedApp
-    ? appList.find((a) => a.id === selectedApp)?.label || selectedApp
-    : 'Generic Container';
-
   const appSelector = (
     <select
       value={selectedApp || ''}

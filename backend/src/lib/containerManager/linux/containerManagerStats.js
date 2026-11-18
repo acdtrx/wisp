@@ -3,7 +3,7 @@
  * Uses containerd Tasks.Metrics gRPC call.
  */
 import {
-  containerError, containerState, getClient, callUnary, unpackAny,
+  containerState, getClient, callUnary, unpackAny,
 } from './containerManagerConnection.js';
 import { getTaskState, containerTaskStatusToUi } from './containerManagerLifecycle.js';
 import { processUptimeMsFromProc } from './procUptime.js';

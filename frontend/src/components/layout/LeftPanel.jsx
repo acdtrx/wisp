@@ -48,7 +48,6 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
       setEditing(true);
       onAutoEditConsumed?.();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEdit]);
 
   useEffect(() => {
@@ -381,7 +380,6 @@ export default function LeftPanel() {
   useEffect(() => {
     if (organizeMode) setOrganizeMode(false);
     setSidebarOpen(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
   /* Below lg the open panel is a drawer: a layer (Escape closes it, Tab stays

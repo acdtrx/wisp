@@ -2,8 +2,6 @@
  * OCI runtime spec builder for containers.
  * Generates a linux container spec from a container.json config + image config.
  */
-import { join } from 'node:path';
-
 import { getContainerNetnsPath } from './containerPaths.js';
 import { resolveMountHostPath, TMPFS_DEFAULT_SIZE_MIB } from './containerManagerMounts.js';
 import { defaultSeccompProfile } from './containerManagerSeccomp.js';

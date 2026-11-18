@@ -31,7 +31,6 @@ const TMPFS_STATE_SIZE_MIB = 64;
 // macOS "AFP_AfpInfo write failed: No such file or directory" upload error on filesystems
 // where streams_xattr misbehaves).
 const ICON_MODEL_DEFAULT = 'TimeCapsule6,106';
-const ICON_MODEL_DISABLED = '-';
 
 /**
  * Coerce an arbitrary identifier into a NetBIOS-safe name (15 chars, [A-Za-z0-9_-]).

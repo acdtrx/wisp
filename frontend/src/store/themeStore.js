@@ -16,7 +16,7 @@ const CYCLE = ['light', 'dark', 'system'];
  * OS media query and the pre-hydration inline script both write it — so this
  * store only mirrors it and forwards writes.
  */
-export const useThemeStore = create((set) => ({
+export const useThemeStore = create(() => ({
   preference: getThemePreference(),
   effective: getEffectiveTheme(),
 

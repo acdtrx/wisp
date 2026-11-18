@@ -10,7 +10,7 @@ export { parseVMFromXML };
 export { isOfflineState } from '../linux/libvirtConstants.js';
 export const IS_DARWIN = true;
 
-export function configure(_cfg) {
+export function configure() {
   /* macOS dev stub: no on-disk VM directories. configure() kept symmetric with
      Linux so backend/src/index.js can call it unconditionally. */
 }

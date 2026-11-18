@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { subscribeTopic } from '../api/events.js';
 
-export const useStatsStore = create((set, get) => {
+export const useStatsStore = create((set) => {
   let unsubscribe = null;
 
   return {
