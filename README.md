@@ -58,10 +58,10 @@ This project was initially built with [Cursor](https://cursor.com) and more rece
 
 ## Requirements
 
-- **Linux host**: Debian or Ubuntu; setup refuses any other distro.
+- **Linux host**: Debian or Ubuntu with systemd 254 or later; setup refuses any other.
+- **Network**: a plain Ethernet uplink on DHCP or a static IPv4 address, run by netplan, NetworkManager or systemd-networkd. Setup makes the bridge (`br0`) that VMs and containers join the LAN through, or uses the one already on the uplink; it refuses what it cannot bridge (see `docs/specs/DEPLOYMENT.md`).
 - **KVM/QEMU, libvirt, containerd 2.0+** — installed by the project's setup script.
 - **Node.js 24+ LTS**.
-- Optional: a **bridge interface** (`br0`) for workloads to join your LAN.
 
 macOS is supported for backend development (no hypervisor features); production is Linux only.
 

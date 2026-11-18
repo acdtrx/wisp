@@ -286,7 +286,7 @@ Runs a single CNI plugin binary from `/opt/cni/bin` with config JSON read from a
 1. **Plugin stdin** — The backend merges top-level `cniVersion` and `name` from the `.conflist` into each `plugins[]` entry before invoking the bridge plugin (a raw plugin fragment alone is invalid).
 2. **Binaries** — `/opt/cni/bin/bridge` and `/opt/cni/bin/dhcp` exist (`scripts/linux/setup/cni.sh`).
 3. **DHCP daemon** — For `ipam.type: dhcp`, **`cni-dhcp.service`** must be active (`systemctl status cni-dhcp`). If it is down, bridge ADD fails to obtain an IP.
-4. **Bridge interface** — `bridge` must name an existing Linux bridge on the host (e.g. `br0` or a managed VLAN bridge such as `br0-vlan10`). The backend asserts `/sys/class/net/<iface>/bridge` exists before every CNI ADD; otherwise ADD is refused with `CONTAINERD_ERROR`. If the default route is not via a bridge, run `scripts/linux/setup/bridge.sh` to create `br0`, then re-run `cni.sh`.
+4. **Bridge interface** — `bridge` must name an existing Linux bridge on the host (e.g. `br0` or a managed VLAN bridge such as `br0-vlan10`). The backend asserts `/sys/class/net/<iface>/bridge` exists before every CNI ADD; otherwise ADD is refused with `CONTAINERD_ERROR`. If the default route is not via a bridge, run setup (`sudo <install-dir>/scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>`), which makes `br0` and writes the CNI configuration for it.
 5. **Sudoers** — `sudo -n /usr/local/bin/wisp-cni` succeeds as the deploy user.
 
 ### `wisp-bridge` (installed to `/usr/local/bin/`)
