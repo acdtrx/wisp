@@ -323,6 +323,11 @@ first push to a stock Ubuntu cloud image stops at `unzip: command not found` (se
 2026-11-18 in a throwaway VM). **Revisit trigger:** the next dev deploy to a new host,
 or the next work on `push.sh`.
 
+**Deleting a workload's last backup leaves its empty directory.** After the last backup of
+a VM or container is deleted, `<backup root>/vms/<name>/` or `containers/<name>/` stays
+behind, empty (seen 2026-11-18 on tini). **Revisit trigger:** empty directories piling
+up on a backup destination, or the next work on backup delete.
+
 **The server display name can't be cleared from App Config.** `AppConfig.jsx` sends
 `undefined` for an empty name, so the save leaves the stored name in place, though the
 backend takes an empty name as "back to the default display name" (found in the
