@@ -12,7 +12,7 @@ import './lib/bootRuntimeEnv.js';
 import {
   createAuthHook, createRouteAccessRegistry, checkRouteAccess, AUTH_LEVELS, checkPasswordFile,
 } from './lib/auth.js';
-import { handleUncaughtError } from './lib/routeErrors.js';
+import { createAppError, handleUncaughtError } from './lib/routeErrors.js';
 import { getConfigSync } from './lib/config.js';
 import { configureManagers, connectManagers, disconnectManagers } from './lib/managerBootstrap.js';
 import { checkRuntimeEnvFile } from './lib/loadRuntimeEnv.js';
@@ -244,7 +244,7 @@ async function buildApp(log) {
   app.setErrorHandler(handleUncaughtError);
 
   // Every route declares its access level (`config: { auth }`, lib/auth.js). The
-  // registry sees each route as it is added; start() checks the declarations
+  // registry sees each route as it is added; main() checks the declarations
   // once routing is final.
   const routeAccess = createRouteAccessRegistry();
   app.addHook('onRoute', routeAccess.onRoute);
@@ -357,7 +357,7 @@ async function checkStoredConfig() {
   getConfigSync();
   checkPasswordFile();
   const bridgeProblem = await checkDefaultBridgeOverride();
-  if (bridgeProblem) throw new Error(bridgeProblem);
+  if (bridgeProblem) throw createAppError('DEFAULT_BRIDGE_INVALID', bridgeProblem);
 }
 
 /** Set once the app is built; until then a signal has nothing to close. */
@@ -451,7 +451,8 @@ async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   if (!app) {
-    // Still migrating or checking: nothing is open yet. A migration cut short
+    // Still migrating or checking: the process exits, and the migrations'
+    // libvirt and containerd connections close with it. A migration cut short
     // runs again on the next start, whole: its ledger entry is written when it ends.
     console.error(`Received ${signal} before the server was up, exiting`);
     process.exit(0);
@@ -500,10 +501,16 @@ function exitOnFatal(kind, err) {
 process.on('unhandledRejection', (err) => exitOnFatal('Unhandled rejection', err));
 process.on('uncaughtException', (err) => exitOnFatal('Uncaught exception', err));
 
+/** The start's own expected failures: one line naming the problem. */
+const START_FAILURE_CODES = new Set([
+  'RUNTIME_ENV_INVALID', 'CONFIG_INVALID', 'PASSWORD_FILE_UNREADABLE', 'PASSWORD_FILE_UNSUPPORTED_FORMAT',
+  'DEFAULT_BRIDGE_INVALID', 'MIGRATION_SETUP', 'MIGRATION_FAILED',
+]);
+
 main().catch((err) => {
   // Fastify's logger may not have flushed by the time we exit, so use stderr
   // directly to ensure the message reaches journald.
-  console.error(`Failed to start: ${err.message}`);
-  if (!err.code) console.error(err.stack);
+  if (START_FAILURE_CODES.has(err?.code)) console.error(`Failed to start: ${err.message}`);
+  else console.error('Failed to start:', err);
   process.exit(1);
 });

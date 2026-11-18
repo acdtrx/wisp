@@ -7,8 +7,9 @@
  * never overrides one that is set.
  *
  * Strict (CODING-RULES §4), but for the lines setting the retired keys, which
- * never reach the environment: migration 0007 removes them, and the start
- * checks the file strictly once the migrations have run. Every WISP_* value is
+ * are not loaded from the file here (systemd's EnvironmentFile= may still set
+ * them; nothing reads them): migration 0007 removes them, and the start checks
+ * the file strictly once the migrations have run. Every WISP_* value is
  * checked here, so WISP_CONFIG_PATH (the config, and with it the ledger, the
  * migrations work on) never comes from a bad line.
  */
