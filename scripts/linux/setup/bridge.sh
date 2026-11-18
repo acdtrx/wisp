@@ -107,7 +107,7 @@ apply_notice() {
 # written first, and a failed one stops the step before the file changes.
 put_file() {
   journal_file "$1" "$2" || { WHY="cannot write the journal for $1"; return 1; }
-  net_install_file "$1" "$2" "$3" || { WHY="cannot write $1"; return 1; }
+  install_file "$1" "$2" "$3" || { WHY="cannot write $1"; return 1; }
   changed "$1"
 }
 
