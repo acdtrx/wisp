@@ -112,7 +112,7 @@ Corollary: an updater change is **dark-shipped**. It cannot affect the update th
 
 A start that fails is retried by systemd with a growing delay (`Restart=on-failure`, `RestartSec=5`, `RestartSteps=6`, `RestartMaxDelaySec=5min`): a transient cause heals by itself, a permanent one stops filling the log. Without `NOTIFY_SOCKET` (the macOS dev backend, `wispctl local`) the backend sends nothing.
 
-Dark-shipped like every updater edit (see above): the first update to the release that carries it is still judged by the previous updater's 90 s poll, after a `systemctl start` that already waits for the new unit's readiness.
+Dark-shipped like every updater edit (see above): the first update to the release that carries it is run by the previous updater, whose own 90 s poll follows its `systemctl start`. That start already waits for the new unit's readiness, so a long migration is waited for there and the poll then passes at once; a failed start fails it, and that updater rolls back (both observed 2026-11-18). So a migration's length is bounded only by `TimeoutStartSec`.
 
 ## Rollback
 
@@ -153,7 +153,6 @@ State an earlier release wrote — libvirt domain XML, `container.json`, config 
 - **A start with nothing pending costs a ledger read**: the migration file names and the ledger are read, and neither manager is connected for them.
 - **As the deploy user, never root.** The service runs as the deploy user, which owns the install tree and has libvirt and containerd access. A start as root that would write — a migration pending, or no ledger yet — refuses with `state migrations must run as the deploy user, not root: files they write as root would be unreadable to wisp.service` and exits 1, before anything runs.
 - **macOS dev:** the managers are stubs — migrations see no workloads.
-- **No migration may outlast the previous release's health gate** (settled 2026-11-18). An update is run by the updater of the release being left ([The updater updates itself one release late](#the-updater-updates-itself-one-release-late)), and that updater's gate judges the new backend's start, migrations included. For as long as a host can still update from a release whose gate is the fixed 90 s (see [Health-gated start](#health-gated-start)), a release may not ship a migration that can take that long together with the boot work: its start would fail that gate, and every update to it would roll back.
 
 ### Runner
 
@@ -202,7 +201,6 @@ The ledger restore lives in `wisp-updater`, so it is dark-shipped (see above): t
 - **Through the managers** — change state via `ctx.vmManager` / `ctx.containerManager` (e.g. XML edits through vmManager's XML handling), never text substitution or direct file writes into a manager's files.
 - **Log every change** via `ctx.recordChange`.
 - **Leave nothing behind in the process** — migrations run inside the backend that goes on to serve: a migration ends with no subscription, timer, listener or open handle of its own, and changes no module or manager state beyond its recorded writes (no `configure()`, no connect or disconnect, no cached value set).
-- **Short** — within the previous release's health gate (see When they run).
 - **Restart flag only on a running workload** whose change needs a restart; a stopped workload picks the change up on its next start.
 - **Deploy-user scope** — root-level host changes do not belong here; they stay in `common-steps.sh` as idempotent convergence.
 - **Never renumber or rename** a shipped id — the ledger keys on it.
