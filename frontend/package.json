@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "bash ../scripts/vendor-novnc.sh public/vendor/novnc && vite build && node scripts/check-chunk-cycles.js && node scripts/generate-sw-precache.js",
+    "build": "bash ../scripts/vendor-novnc.sh && vite build && node scripts/check-chunk-cycles.js && node scripts/generate-sw-precache.js",
     "preview": "vite preview"
   },
   "dependencies": {

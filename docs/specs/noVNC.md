@@ -31,10 +31,10 @@ These are copies of the `core/` and `vendor/` directories from the upstream [noV
 
 `scripts/vendor-novnc.sh` handles populating the vendor directory:
 
-1. Takes a destination directory as argument (e.g. `frontend/public/vendor/novnc`)
+1. Takes no argument: its target is always `frontend/public/vendor/novnc`, and one run at a time holds the lock directory `frontend/public/vendor/.novnc.lock` (a second run fails on it)
 2. Skips the fetch when the destination's `.pinned` file names the pinned tag and commit and `core/rfb.js` and `vendor/pako` are there
 3. Otherwise does a shallow `git clone` of the pinned tag to a temp directory and checks the checkout is the pinned commit
-4. Copies `core/` and `vendor/` into a staging directory, writes `.pinned`, and swaps it in for the destination, so a tree holding any other copy ends up with the pinned one
+4. Copies `core/` and `vendor/` into a staging directory beside the target, writes `.pinned`, and swaps it in by rename (the old tree moved aside, the new one moved in, the old one removed), so a tree holding any other copy ends up with the pinned one and is never half there
 5. Fails (exit 1, with the cause) if the clone or the commit check fails, leaving the destination as it was — the build fails with it
 
 ## Prebuild Step
@@ -42,7 +42,7 @@ These are copies of the `core/` and `vendor/` directories from the upstream [noV
 The frontend's `npm run build` runs the vendor script before `vite build`, so every build goes through it — `wispctl build` on hosts, CI and the dev machine:
 
 ```
-bash ../scripts/vendor-novnc.sh public/vendor/novnc && vite build
+bash ../scripts/vendor-novnc.sh && vite build
 ```
 
 ## Build Configuration
@@ -96,7 +96,7 @@ This is registered as a separate static file route to ensure noVNC is available 
 
 To update noVNC:
 
-1. Set the new release's tag and commit in `scripts/vendor-novnc.sh`
+1. Set the new release's tag and commit in `scripts/vendor-novnc.sh`, and the version in the **Pinned to** line above
 2. Rebuild the frontend: the script sees the tree holds another version and fetches the new one
 
 No other changes are needed — the dynamic import path remains the same.
