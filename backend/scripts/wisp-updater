@@ -9,8 +9,9 @@
 # Steps (echoed to journald):
 #   stop-service → snapshot → swap → install-deps → common-setup
 #   → install-unit → start-service → health-check → done
-# (common-setup ends with the state migrations — scripts/linux/setup/common-steps.sh.)
 # health-check: `done` only once wisp.service is active and the local API answers.
+# The new backend runs its state migrations itself, as it starts; a failed one
+# ends that start, and the health check fails.
 #
 # On any failure after `snapshot` — an unhealthy new backend included — rolls
 # back from <install>.prev and exits non-zero.
@@ -21,9 +22,9 @@
 # status cache (config/backup-status.json), the state-migration ledger
 # (config/migrations.json) and runtime scratch (.pids, .logs) survive the swap.
 # A rollback restores all of config/ from the snapshot, the ledger included: a
-# migration may change config/, and the ledger must revert with it, so every
-# migration this update ran runs again on the next one — safe because
-# migrations are idempotent.
+# migration the new backend ran may have changed config/, and the ledger must
+# revert with it, so every such migration runs again on the next update — safe
+# because migrations are idempotent.
 
 set -uo pipefail
 
@@ -181,8 +182,9 @@ template_service_unit() {
 rollback() {
   echo "step:rollback"
   # After a failed health check the new backend is still running (or cycling
-  # through Restart=on-failure): stop it before the tree is restored under it,
-  # and so the restored common-steps.sh can run its migrations step.
+  # through Restart=on-failure): stop it before the tree is restored under it.
+  # A restored tree from before migrations moved into the backend also runs
+  # them from its common-steps.sh, which needs the backend stopped.
   systemctl stop "$SERVICE_UNIT" 2>/dev/null || echo "rollback-warning: stopping $SERVICE_UNIT failed"
   if [[ "$snapshot_taken" -eq 1 && -d "$PREV_DIR" ]]; then
     # config/ and its ledger revert together: the migrations this update ran
@@ -237,9 +239,10 @@ idle_run "$NPM_CI_IDLE_SEC" sudo -u "$DEPLOY_USER" bash -c "cd '$INSTALL_DIR/bac
   || fail "backend npm ci failed"
 
 echo "step:common-setup"
-# The setup steps the installer runs too — container DNS host config, then every
-# privileged wisp-* helper (which re-installs this script and wisp-updater.service
-# via atomic rename, so the running inode survives to finish this update).
+# The setup steps the installer runs too — container DNS host config, avahi,
+# then every privileged wisp-* helper (which re-installs this script and
+# wisp-updater.service via atomic rename, so the running inode survives to
+# finish this update).
 #
 # Invoked by path from the freshly swapped tree, so the step list is whatever THIS
 # release ships: adding a step to common-steps.sh takes effect on the very next

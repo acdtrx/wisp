@@ -3,7 +3,7 @@
  * Enforce the backend's import fences (docs/CODING-RULES.md §7). Run with
  * `npm run check-fences` from the repo root; exits 1 on any violation.
  *
- * Rules, checked over backend/src, backend/scripts and backend/migrations:
+ * Rules 1–5, checked over backend/src and backend/migrations:
  *   1. Package fences — an external system's client library is imported only by
  *      the subsystem that owns it (PACKAGE_FENCES).
  *   2. Facades — a file outside a module that has an `index.js` facade imports
@@ -24,7 +24,12 @@
  *      edges are listed too (CYCLE_GROUP): a file joining them fails, and so
  *      does a listed file that left.
  *
- * A module's darwin stubs are its own files. Scripts and migrations are glue.
+ *   6. The backend alone runs the state migrations, at its start
+ *      (CODING-RULES §16): no file outside backend/src names the runner
+ *      (lib/stateMigrations.js, lib/stateMigrationLedger.js), docs and this
+ *      check aside — scripts, units and migrations included.
+ *
+ * A module's darwin stubs are its own files. Migrations are glue.
  * Specifiers inside comments (JSDoc type imports) are skipped: they load
  * nothing. A reviewed allowance is one line in EXCEPTIONS.
  *
@@ -57,7 +62,7 @@ import path from 'node:path';
 import { argumentValues, callArgument, stripComments } from './sourceScan.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
-const ROOTS = ['backend/src', 'backend/scripts', 'backend/migrations'];
+const ROOTS = ['backend/src', 'backend/migrations'];
 const LIB = 'backend/src/lib';
 
 /** package → directories (repo-relative, trailing slash) allowed to import it. */
@@ -79,11 +84,6 @@ const MANAGER_CARVED = ['mdns', 'networking', 'storage'];
  * Meet a new need with one added line here, flagged for review.
  */
 const EXCEPTIONS = [
-  {
-    file: 'backend/scripts/migrate.mjs',
-    specifier: '<computed>',
-    reason: 'loads each migration file from the migrations directory it lists',
-  },
   {
     file: 'backend/src/lib/stateMigrations.js',
     specifier: '<computed>',
@@ -328,6 +328,41 @@ function reaches(edges, from, to) {
   return false;
 }
 
+/** Rule 6's name: what a file outside backend/src would write to run the migrations. */
+const RUNNER_NAME = /stateMigration/;
+/** Not code: what describes the runner, what never ships, and other checkouts (dot-directories, .github aside). */
+const RUNNER_SCAN_SKIP = new Set(['node_modules', 'docs', 'build', 'dist', 'vendor']);
+
+async function collectAll(dir) {
+  const out = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const dotDir = entry.name.startsWith('.') && entry.name !== '.github';
+      if (!dotDir && !RUNNER_SCAN_SKIP.has(entry.name)) out.push(...await collectAll(full));
+    } else if (entry.isFile() && !entry.name.endsWith('.md')) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+/** Rule 6: every file outside backend/src (docs, this check aside) that names the runner. */
+async function runnerNamedOutsideBackend(rel) {
+  const found = [];
+  for (const file of await collectAll(REPO_ROOT)) {
+    const fileRel = rel(file);
+    if (fileRel.startsWith('backend/src/') || fileRel === 'scripts/check-fences.mjs') continue;
+    const lines = (await readFile(file, 'utf8')).split('\n');
+    lines.forEach((text, i) => {
+      if (RUNNER_NAME.test(text)) {
+        found.push(`${fileRel}:${i + 1} — names the state-migration runner: only the backend runs migrations, at its start (CODING-RULES §16)`);
+      }
+    });
+  }
+  return found;
+}
+
 async function main() {
   const files = (await Promise.all(ROOTS.map((r) => collect(path.join(REPO_ROOT, r))))).flat().sort();
   const rel = (abs) => path.relative(REPO_ROOT, abs).split(path.sep).join('/');
@@ -439,6 +474,8 @@ async function main() {
       ...cycle.map((e) => `  ${e.from}:${e.line} → ${e.to}`),
     ].join('\n'));
   }
+
+  violations.push(...await runnerNamedOutsideBackend(rel));
 
   for (const v of violations) console.error(v);
   const summary = `${count} imports across ${files.length} files`;
