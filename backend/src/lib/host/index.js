@@ -77,5 +77,5 @@ export const readAllDiskSmartSummaries = smartImpl.readAllDiskSmartSummaries;
 // Software overview from the platform's own profiler, where one exists (macOS dev:
 // system_profiler); null on Linux, whose OS release and kernel come from getHostInfo.
 export async function getProfilerSoftwareOverview() {
-  return softwareImpl ? softwareImpl.getDarwinSoftwareFromProfiler() : null;
+  return isLinux ? null : softwareImpl.getDarwinSoftwareFromProfiler();
 }
