@@ -281,6 +281,17 @@ container stays unpublished until its next address change, a local DNS toggle or
 restart (VMs recover on the 60 s probe). **Revisit trigger:** a workload is seen
 unpublished after avahi stalled.
 
+**The 60 s container probe never reads the IPv4 address.** `discoverIpv4InNetnsOnce`
+(`containerManagerNetwork.js`) passes `{ maxAttempts: 1, sleepMs: 0 }`, so
+`discoverIpv4InNetns`'s deadline is "now" and its loop never runs: the probe returns null,
+and an IPv4 address that changes inside a running container (a DHCP renewal handing out
+another one) is never written to `container.json` or its `.local` A record. IPv6 drift is
+picked up. Seen on tini 2026-11-18 (phase 7): an address swapped in a container's netns
+stayed unrecorded for minutes, while an added IPv6 address was recorded within a tick.
+Separately, `ipv4CidrFromProcFibTrie` found no address in that container's `fib_trie`
+layout, so the probe would fall back to the `wisp-netns` helper. **Revisit trigger:** the
+next work on container networking, or a container seen with a stale IPv4 address.
+
 **A container that exits while its lock is held keeps its run open.** The exit settle
 skips the run when a backup, app save, config PATCH or mount operation holds the
 container's operation lock, so the run keeps `endedAt: null` (and its last line unshown)
