@@ -59,6 +59,10 @@ These rules are what stops this plan from doing the same.
 
 ### 1. Safety net — S–M
 
+Done 2026-11-18, merged to `main` from `anchor/safety-net`. Beyond the list below it added
+a check of every named import between backend files, and broke a fourth cycle, in
+`downloads/`. The release workflow's gate is first observed at the next release.
+
 Why first: there is no test or lint to say a conversion broke something, and a broken
 updater would ship unnoticed.
 
