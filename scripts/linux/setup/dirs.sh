@@ -29,11 +29,14 @@ for dir in /var/lib/wisp/images /var/lib/wisp/vms /var/lib/wisp/backups /var/lib
     mkdir -p "$dir"
     changed "$dir created"
   fi
-  if [[ "$(stat -c %U:%G "$dir")" != "$DEPLOY_USER:libvirt" ]]; then
+  # On the directory itself, a symlinked one followed (-L), and only the bits
+  # this sets: chmod 0775 leaves a directory's setgid bit as it was.
+  if [[ "$(stat -L -c %U:%G "$dir")" != "$DEPLOY_USER:libvirt" ]]; then
     chown "$DEPLOY_USER:libvirt" "$dir"
     changed "$dir owned by $DEPLOY_USER:libvirt"
   fi
-  if [[ "$(stat -c %a "$dir")" != 775 ]]; then
+  mode="$(stat -L -c %a "$dir")"
+  if [[ "${mode: -3}" != 775 ]]; then
     chmod 0775 "$dir"
     changed "$dir mode 0775"
   fi

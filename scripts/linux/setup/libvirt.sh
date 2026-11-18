@@ -29,7 +29,7 @@ if unit_exists virtqemud.socket; then
     if unit_exists "$sock"; then unit_on "$sock"; fi
   done
 elif unit_exists libvirtd.service; then
-  unit_on libvirtd.service
+  unit_on libvirtd
 else
   echo "ERROR: neither virtqemud.socket nor libvirtd.service is installed" >&2
   exit 1
@@ -43,8 +43,8 @@ if [[ -L "$AUTOSTART_LINK" ]]; then
   rm -f "$AUTOSTART_LINK"
   changed "default NAT network no longer autostarts"
 fi
-if virsh -q net-list --name 2>/dev/null | grep -qx default; then
-  virsh net-destroy default >/dev/null
+if timeout 30 virsh -q net-list --name 2>/dev/null | grep -qx default; then
+  timeout 30 virsh net-destroy default >/dev/null
   changed "default NAT network stopped (virbr0 removed)"
 fi
 step_done

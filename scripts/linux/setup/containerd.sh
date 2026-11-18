@@ -65,8 +65,8 @@ if $NEEDS_RESTART; then
   changed "containerd restarted for the socket gid"
 fi
 
-if ! ctr namespaces ls -q 2>/dev/null | grep -qx wisp; then
-  ctr namespaces create wisp
+if ! timeout 30 ctr namespaces ls -q 2>/dev/null | grep -qx wisp; then
+  timeout 30 ctr namespaces create wisp
   changed "namespace wisp created"
 fi
 
