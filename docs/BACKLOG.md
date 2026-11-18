@@ -243,10 +243,6 @@ updates staged by a root-owned path).
 now respect (`-n standby`). **Revisit trigger:** disks on a host with `drivetemp` never
 reach standby.
 
-**Arch: a custom pacman `DBPath` isn't followed.** `wisp-os-update`'s scratch sync
-database assumes `/var/lib/pacman`. **Revisit trigger:** an Arch host with a custom
-`DBPath` runs Wisp.
-
 **Route errors carry the message, not a stable code.** `handleRouteError` answers
 `error: err.message`, while CODING-RULES §5 wants `error` to be the stable code and the
 message in `detail`; `specs/ERROR-HANDLING.md` describes the message form (found

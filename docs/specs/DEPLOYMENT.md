@@ -22,14 +22,7 @@ flowchart TD
 
 ## Supported Linux Distributions
 
-Wisp setup scripts support **Debian/Ubuntu** and **Arch Linux**. Distro detection is handled automatically by `scripts/linux/setup/distro.sh`, which is sourced by the scripts that install packages. Other distributions are not currently supported; `setup-server.sh` will print an error and exit if the distro is unrecognised.
-
-### Arch Linux notes
-
-- Node.js, containerd, libvirt, QEMU, and most tools are installed from the official Arch repos.
-- `swtpm` (software TPM / vTPM support) is in AUR and is **not** installed automatically. Install it manually with an AUR helper (e.g. `yay -S swtpm`) if vTPM is needed.
-- `wisp-os-update` (OS update helper) supports Arch via `pacman`. The helper detects the distro at runtime; `install-helpers.sh` installs it on Arch the same way as Debian/Ubuntu.
-- Bridged networking uses `systemd-networkd` if it is active, otherwise falls back to NetworkManager (`nmcli`). If neither is running, the error message includes instructions for enabling systemd-networkd or configuring the bridge manually.
+Wisp hosts run **Debian or Ubuntu** (or a derivative that names one of them in `ID_LIKE`). Setup and the installer check `/etc/os-release` first (`scripts/linux/setup/distro.sh`) and refuse any other distro before they change anything (settled 2026-11-18: Arch Linux hosts dropped).
 
 ## Server Prerequisites (`setup-server.sh`)
 
@@ -55,17 +48,6 @@ One-time server preparation script. Run as root with `sudo`. Safe to re-run. It 
    - `genisoimage` — fallback ISO generation
    - `qemu-utils` — disk operations (qemu-img)
 
-   **Arch Linux** — Node.js from official repos; equivalent packages:
-   - `qemu-full` — KVM hypervisor + disk tools (replaces `qemu-kvm` + `qemu-utils`)
-   - `libvirt` — libvirt daemon and CLI tools
-   - `libvirt-dbus` — DBus interface for libvirt
-   - `edk2-ovmf` — UEFI firmware (replaces `ovmf`)
-   - `swtpm` — Software TPM (AUR; prints a warning and skips if not available in official repos)
-   - `avahi` — mDNS daemon
-   - `hwdata`, `smartmontools` — same as Debian
-   - `cloud-utils` — cloud-init ISO generation (replaces `cloud-image-utils`)
-   - `cdrtools` — ISO generation (replaces `genisoimage`)
-
 3. **Runs `scripts/linux/setup/groups.sh`** — Adds deploy user to groups: `libvirt`, `kvm`, `input`; chmod `/dev/kvm`
 
 4. **Runs `scripts/linux/setup/dirs.sh`** — Creates directories with permissions:
@@ -77,11 +59,11 @@ One-time server preparation script. Run as root with `sudo`. Safe to re-run. It 
    | `/var/lib/wisp/containers` | `$USER:libvirt` | `0775` |
    | `/mnt/wisp/smb` | `$USER:libvirt` | `0775` |
 
-5. **Runs `scripts/linux/setup/libvirt.sh`** — Enables libvirt and `virtlogd`; disables libvirt default NAT network. On Debian/Ubuntu (including 26.04, which ships libvirt 12) the script enables the monolithic `libvirtd.service`. On distros that ship modular libvirt daemons (Fedora 35+, recent Arch) it socket-activates `virtqemud`, `virtnetworkd`, `virtstoraged`, `virtnodedevd`, `virtsecretd`, `virtproxyd`, `virtinterfaced`, `virtnwfilterd` instead — `virtproxyd.socket` provides the legacy `/var/run/libvirt/libvirt-sock` path that libvirt-dbus and the sanity check expect.
+5. **Runs `scripts/linux/setup/libvirt.sh`** — Enables libvirt and `virtlogd`; disables libvirt default NAT network. On Debian/Ubuntu (including 26.04, which ships libvirt 12) the script enables the monolithic `libvirtd.service`. Where the packaging ships modular libvirt daemons it socket-activates `virtqemud`, `virtnetworkd`, `virtstoraged`, `virtnodedevd`, `virtsecretd`, `virtproxyd`, `virtinterfaced`, `virtnwfilterd` instead — `virtproxyd.socket` provides the legacy `/var/run/libvirt/libvirt-sock` path that libvirt-dbus and the sanity check expect.
 
 6. **Optionally runs `scripts/linux/setup/bridge.sh`** — Bridged networking (br0). Skipped when `--skip-bridge` is passed (e.g. from `install.sh`, which offers bridge at end of install).
 
-7. **Runs `scripts/linux/setup/containerd.sh`** — Installs containerd 2.0+ (from the official Docker apt repo on Debian/Ubuntu; from the official Arch repo on Arch Linux). The Docker repo is picked from `/etc/os-release`: `linux/ubuntu` when `ID`/`ID_LIKE` names Ubuntu (derivatives such as Mint and Pop!_OS use `UBUNTU_CODENAME`), otherwise `linux/debian` with `DEBIAN_CODENAME` or `VERSION_CODENAME`. If `apt-get update` fails with the repo added, the script removes `/etc/apt/sources.list.d/docker.list` again and exits with an error, so a release Docker does not publish never leaves apt broken host-wide. It then creates a `containerd` system group, adds the deploy user to it, configures the socket `gid` in `/etc/containerd/config.toml` so the deploy user can connect, enables the service, creates the `wisp` namespace
+7. **Runs `scripts/linux/setup/containerd.sh`** — Installs containerd 2.0+ (from the official Docker apt repo). The Docker repo is picked from `/etc/os-release`: `linux/ubuntu` when `ID`/`ID_LIKE` names Ubuntu (derivatives such as Mint and Pop!_OS use `UBUNTU_CODENAME`), otherwise `linux/debian` with `DEBIAN_CODENAME` or `VERSION_CODENAME`. If `apt-get update` fails with the repo added, the script removes `/etc/apt/sources.list.d/docker.list` again and exits with an error, so a release Docker does not publish never leaves apt broken host-wide. It then creates a `containerd` system group, adds the deploy user to it, configures the socket `gid` in `/etc/containerd/config.toml` so the deploy user can connect, enables the service, creates the `wisp` namespace
 
 8. **Runs `scripts/linux/setup/cni.sh`** — Installs CNI plugins (bridge, dhcp, etc.) to `/opt/cni/bin/`, removes any legacy `10-wisp-macvlan.conflist`, and **overwrites** `/etc/cni/net.d/10-wisp-bridge.conflist` each time with the default-route Linux bridge as the `bridge` master (aborts if that interface is not an existing bridge — run `bridge.sh` first). Enables the `cni-dhcp` systemd service for DHCP IPAM.
 
@@ -320,12 +302,11 @@ When you add a new **`backend/scripts/wisp-*`** script that the app runs via **`
 
 ### `wisp-os-update` (installed to `/usr/local/bin/`)
 
-OS package update helper invoked via `sudo`. Detects the distro at runtime from `/etc/os-release` and uses the appropriate package manager:
+OS package update helper invoked via `sudo`, with apt:
 
-| Distro | `check` | `upgrade` |
-|--------|---------|-----------|
-| Debian/Ubuntu | `apt-get update` + `apt-get -s dist-upgrade` (dry-run count) | `apt-get update && apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold dist-upgrade` |
-| Arch Linux | `pacman -Sy --dbpath <scratch>` + `pacman -Qu --dbpath <scratch>` (never touches `/var/lib/pacman/sync`) | `pacman -Syu --noconfirm` |
+| `check` | `upgrade` |
+|---------|-----------|
+| `apt-get update` + `apt-get -s dist-upgrade` (dry-run count) | `apt-get update && apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold dist-upgrade` |
 
 Non-interactivity and the conffile policy are part of the OS Updates contract in [HOST-MONITORING.md](HOST-MONITORING.md#os-updates). The helper sets its own environment (`DEBIAN_FRONTEND=noninteractive`, `NEEDRESTART_MODE=a`, `UCF_FORCE_CONFFOLD=1`) because sudo's `env_reset` drops the caller's.
 
@@ -342,8 +323,7 @@ The backend invokes **`/usr/local/bin/wisp-os-update`** only. `install-helpers.s
 1. **Backend logs** — 503 responses include `detail` (often sudo/package manager stderr).
 2. **Path** — Confirm `/usr/local/bin/wisp-os-update` exists and `setup-server.sh` completed the helper step.
 3. **Privilege** — `/etc/sudoers.d/wisp-os-update` should allow: `<deploy_user> ALL=(root) NOPASSWD: /usr/local/bin/wisp-os-update`. Test: `sudo -n /usr/local/bin/wisp-os-update check`.
-4. **Package manager** — On Debian/Ubuntu, network and apt sources must work. On Arch, `pacman` must be functional and the keyring up to date.
-5. **Distro detection** — The script reads `/etc/os-release`; if the distro is unrecognised it exits 1 with an error message.
+4. **Package manager** — Network and apt sources must work.
 
 ### `wisp-mount` (installed to `/usr/local/bin/`)
 

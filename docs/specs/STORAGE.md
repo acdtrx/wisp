@@ -175,9 +175,9 @@ Mount state colour convention (shared with SMB):
 
 ## Dependencies
 
-- `cifs-utils` (apt) / `cifs-utils` (pacman) — SMB mount helper (installed automatically by `install-helpers.sh` when registering `wisp-mount`).
+- `cifs-utils` — SMB mount helper (installed by setup's packages step).
 - `exfat` kernel module — since Linux 5.7 (universal on all Wisp-target distros).
-- `ntfs3` kernel module — since Linux 5.15 (Ubuntu 22.04+, Debian 12+, Arch current, Fedora current).
+- `ntfs3` kernel module — since Linux 5.15 (Ubuntu 22.04+, Debian 12+).
 - No `ntfs-3g` dependency; do not install it.
 
 ## Error codes

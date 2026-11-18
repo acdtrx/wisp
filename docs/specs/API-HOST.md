@@ -166,7 +166,7 @@ Server-Sent Events stream of the host block-device list.
 
 ### POST /api/host/updates/check · `admin`
 
-Check for OS package updates. On Debian/Ubuntu uses `apt-get -s upgrade` dry-run (excludes phased-only packages); on Arch uses `pacman -Qu`. Requires `/usr/local/bin/wisp-os-update` (installed by server setup). One shared run: a check or package refresh started while one runs joins it (the same `jobId`).
+Check for OS package updates. Uses an `apt-get -s upgrade` dry-run (excludes phased-only packages). Requires `/usr/local/bin/wisp-os-update` (installed by server setup). One shared run: a check or package refresh started while one runs joins it (the same `jobId`).
 
 - **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ count: number }`; the package list is then in the cache (`GET /api/host/updates/packages`)
 - **409:** `UPDATE_BUSY` — an OS upgrade is running
@@ -174,7 +174,7 @@ Check for OS package updates. On Debian/Ubuntu uses `apt-get -s upgrade` dry-run
 
 ### GET /api/host/updates/packages · `read`
 
-Return the structured list of upgradable packages plus an estimated total download size. On Debian/Ubuntu uses `apt-get -s upgrade` to harvest `Inst …` lines and the `Need to get …` summary; on Arch uses `pacman -Qu` (download size cannot be computed non-interactively, so `downloadBytes` is `0`). Refreshes the cached `pendingUpdates` count and `updatesLastChecked` timestamp as a side-effect.
+Return the structured list of upgradable packages plus an estimated total download size. Uses `apt-get -s upgrade` to harvest `Inst …` lines and the `Need to get …` summary. Refreshes the cached `pendingUpdates` count and `updatesLastChecked` timestamp as a side-effect.
 
 - **200:** `{ packages: [{ name: string, from: string|null, to: string }], downloadBytes: number }` — from the cache
 - **202:** `{ jobId, title }` — with `?refresh=1`, or no cache yet: the [check job](#post-apihostupdatescheck--admin) (started or joined); read the list again once it is done
@@ -183,7 +183,7 @@ Return the structured list of upgradable packages plus an estimated total downlo
 
 ### POST /api/host/updates/upgrade · `admin`
 
-Install OS package updates. Each line apt or pacman prints is a progress event (`{ step: "upgrading", detail }`).
+Install OS package updates. Each line apt prints is a progress event (`{ step: "upgrading", detail }`).
 
 - **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ ok: true }`
 - **409:** `UPDATE_BUSY` — a check or upgrade is already running

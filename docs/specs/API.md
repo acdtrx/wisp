@@ -188,7 +188,7 @@ The persisted last-attempt status map (see [BACKUPS.md → Backup attempt status
 - `loadAvg` is [1min, 5min, 15min] from /proc/loadavg.
 - `pendingUpdates` is the count of upgradable packages from the background hourly check (or 0 if check unavailable).
 - `updatesLastChecked` is an ISO 8601 timestamp of the last successful update check (background or manual), or `null` if no check has completed since the backend started.
-- `rebootRequired` is `true` when the host has a pending reboot. `rebootReasons` is a list of short tags (Debian/Ubuntu package names, or `kernel <running> → <installed>` on Arch).
+- `rebootRequired` is `true` when the host has a pending reboot. `rebootReasons` is a list of short tags (the package names that asked for the reboot).
 - CPU and memory `allocated` values reflect running VMs only.
 
 ---

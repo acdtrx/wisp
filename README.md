@@ -35,7 +35,7 @@ The philosophy: direct flows and clear choices instead of exhaustive configurati
 - **Live host stats** via SSE: CPU, memory, disk, network I/O, thermals (per zone with thresholds), SMART disk health, RAM modules, PCI devices with live temps. Read directly from `/proc` and `/sys` — no external agent.
 - **Per-VM stats**: vCPU usage, disk/net I/O, uptime, guest hostname/IP (via qemu-guest-agent).
 - **Hybrid CPU awareness** (P-core / E-core topology) and Intel RAPL power measurement when available.
-- **OS package update checker** (runs hourly) for the host, with in-app upgrade on Debian/Ubuntu (apt) and Arch (pacman). **Host shutdown/reboot** from the UI.
+- **OS package update checker** (runs hourly) for the host, with in-app upgrade (apt). **Host shutdown/reboot** from the UI.
 
 ### Agents & automation
 
@@ -58,7 +58,7 @@ This project was initially built with [Cursor](https://cursor.com) and more rece
 
 ## Requirements
 
-- **Linux host**: Debian, Ubuntu, or Arch Linux (distro is auto-detected).
+- **Linux host**: Debian or Ubuntu; setup refuses any other distro.
 - **KVM/QEMU, libvirt, containerd 2.0+** — installed by the project's setup script.
 - **Node.js 24+ LTS**.
 - Optional: a **bridge interface** (`br0`) for workloads to join your LAN.

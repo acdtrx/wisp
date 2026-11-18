@@ -206,7 +206,7 @@ These are invoked via `child_process` where no native Node.js alternative exists
 | `xz` | Decompress HAOS `.qcow2.xz` downloads (`xz -dc`) |
 | `wisp-power` | Host shutdown/reboot (privileged helper; see CONFIGURATION) |
 | `wisp-dmidecode` | RAM module info via `dmidecode` (privileged helper; see HOST-MONITORING) |
-| `wisp-os-update` | OS package update check/upgrade — Debian/Ubuntu (apt) and Arch (pacman); distro detected at runtime (privileged helper) |
+| `wisp-os-update` | OS package update check/upgrade with apt (privileged helper) |
 | `wisp-mount` | SMB + removable-disk mount/unmount/check (privileged helper) |
 | `wisp-smartctl` | Disk SMART summary (`smartctl --json`; privileged helper) |
 | `wisp-bridge` | Managed VLAN bridges via netplan (privileged helper) |
