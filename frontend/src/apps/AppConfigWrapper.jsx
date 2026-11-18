@@ -3,11 +3,13 @@
  */
 import { useState } from 'react';
 import { Unplug } from 'lucide-react';
+import AlertDialog from '../components/shared/AlertDialog.jsx';
 import ConfirmDialog from '../components/shared/ConfirmDialog.jsx';
 import { getAppEntry } from './appRegistry.js';
 
 export default function AppConfigWrapper({ config, onSave }) {
   const [ejectOpen, setEjectOpen] = useState(false);
+  const [ejectError, setEjectError] = useState(null);
 
   const appEntry = getAppEntry(config.metadata?.app);
   if (!appEntry) return null;
@@ -18,7 +20,11 @@ export default function AppConfigWrapper({ config, onSave }) {
 
   const handleEject = async () => {
     setEjectOpen(false);
-    await onSave({ eject: true });
+    try {
+      await onSave({ eject: true });
+    } catch (err) {
+      setEjectError(err.detail || err.message || 'Eject failed');
+    }
   };
 
   return (
@@ -51,6 +57,13 @@ export default function AppConfigWrapper({ config, onSave }) {
           This cannot be undone. The container will keep its current configuration.
         </p>
       </ConfirmDialog>
+      <AlertDialog
+        open={!!ejectError}
+        title="Eject failed"
+        message={ejectError || ''}
+        tone="error"
+        onClose={() => setEjectError(null)}
+      />
     </>
   );
 }
