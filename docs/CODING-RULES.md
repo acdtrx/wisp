@@ -258,8 +258,10 @@ checks and the unit tests below for what they cover:
     `new URL('…', import.meta.url)`) land in a directory that exists, and facade
     parity: every name a platform facade takes is exported by its `linux/` and
     `darwin/` sides.
-  - `check-fences`: the import fences (§7), and no import cycle in the backend beyond
-    its listed exceptions.
+  - `check-fences`: the import fences (§7); no import cycle in the backend beyond its
+    listed exceptions; and only the backend runs the state migrations (§16): outside
+    `docs/` and Markdown, no file but those in `backend/src` names the runner, and none
+    but the runner and the checks reaches for `backend/migrations`, comments aside.
   - `lint`: ESLint over `backend/` and `frontend/src/`, correctness rules only: a use
     of an undefined name, an unused import or variable, an unused parameter after the
     last used one, a duplicate object key, a hook called outside the rules of hooks.

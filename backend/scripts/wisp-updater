@@ -187,8 +187,9 @@ rollback() {
   # them from its common-steps.sh, which needs the backend stopped.
   systemctl stop "$SERVICE_UNIT" 2>/dev/null || echo "rollback-warning: stopping $SERVICE_UNIT failed"
   if [[ "$snapshot_taken" -eq 1 && -d "$PREV_DIR" ]]; then
-    # config/ and its ledger revert together: the migrations this update ran
-    # run again on the next one (they are idempotent).
+    # config/ and its ledger revert together: the migrations the new backend's
+    # start ran run again at the next start of a release that ships them (they
+    # are idempotent).
     rsync -a --delete "$PREV_DIR/" "$INSTALL_DIR/" \
       || echo "rollback-warning: restoring the tree from $PREV_DIR failed"
     chown -R "$DEPLOY_OWNER" "$INSTALL_DIR" \

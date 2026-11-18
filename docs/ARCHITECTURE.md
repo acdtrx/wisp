@@ -235,9 +235,9 @@ consumer, and nothing has called for more).
 
 - `backend/` (the server: `src/index.js`, `src/routes/`, `src/lib/`; `scripts/` holds the
   privileged helpers and the updater; `migrations/` the state migrations, which
-  `src/lib/stateMigrations.js` runs at the start), `frontend/` (the client), `scripts/` (install, setup, push, release),
-  `systemd/` (unit templates), `config/` (examples). Each package has its own
-  `package.json`.
+  `src/lib/stateMigrations.js` runs at the start), `frontend/` (the client), `scripts/`
+  (install, setup, push, release), `systemd/` (unit templates), `config/` (examples).
+  Each package has its own `package.json`.
 - Backend subsystems are named modules under `src/lib/`, each behind a facade `index.js`,
   with platform implementations under `<module>/linux/` and `<module>/darwin/`. App glue —
   Wisp's own orchestration — stays flat at the top of `src/lib/`, and routes do HTTP
