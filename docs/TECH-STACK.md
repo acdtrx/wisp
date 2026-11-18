@@ -55,8 +55,9 @@
   2026-11-18).
 - **Unit tests on `node --test`**, Node's built-in runner, with no test framework or
   dependency, for code with no platform behind it; browser stand-ins in
-  `frontend/src/testing/`. Test files never ship: the release workflow fails a staged
-  tree that holds one (settled 2026-11-18).
+  `frontend/src/testing/`. Test files never ship: the release staging and `package.sh`
+  leave them out, and the release workflow fails a staged tree that holds one (settled
+  2026-11-18).
 - **ESLint**, a dev-only dependency of the repo root with its React hooks plugin and
   `globals`, for correctness rules only: `no-undef`, `no-unused-vars` (rest siblings
   ignored), `no-dupe-keys`, `react-hooks/rules-of-hooks`. No style rule;

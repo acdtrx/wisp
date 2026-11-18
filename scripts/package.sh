@@ -62,7 +62,8 @@ zip -r "$ZIP_PATH" \
   -x "frontend/node_modules/*" \
   -x "backend/node_modules/*" \
   -x "frontend/dist/*" \
-  -x "*.DS_Store"
+  -x "*.DS_Store" \
+  -x "*.test.js"
 
 echo ""
 echo "=== Package complete ==="

@@ -88,6 +88,7 @@ jobs:
             --exclude 'screenshots' \
             --exclude 'web' \
             --exclude '.github' \
+            --exclude '*.test.js' \
             backend/ "$STAGE/backend/"
 
           # Frontend: ship only the static-serving payload. Backend's @fastify/static

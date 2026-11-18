@@ -268,8 +268,8 @@ checks and the unit tests below for what they cover:
     reviewed line in `eslint.config.mjs`, like the lists of the other checks.
   - the shell check: `bash -n` over every shell script.
   - `npm test`: the unit tests, `node --test` over the `*.test.js` files beside the
-    modules they test (`frontend/src/`), for code with no platform behind it: timing,
-    state and stream handling. Platform code is verified by running it, below.
+    modules they test (`frontend/src/`, `backend/src/`), for code with no platform behind
+    it: timing, state and stream handling, rules such as which migrations are pending. Platform code is verified by running it, below.
 - Run the frontend build: it must pass.
 - Drive the change in the local dev stack where the platform supports it. The macOS dev
   environment runs stub managers (no libvirt/containerd): host-level pages verify locally,
