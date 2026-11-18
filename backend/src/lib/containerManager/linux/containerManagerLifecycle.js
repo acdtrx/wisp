@@ -336,7 +336,7 @@ async function waitForStop(name, timeoutMs) {
  * Finalizing is best-effort — missing/already-finalized runs are skipped.
  * Exported so containerManagerCreate can reuse the same flow before re-creating.
  * @returns {Promise<object|null>} the Tasks.Delete error when a task could not be
- *   deleted (not "no task"), so a start can name it if its own task create fails
+ *   deleted (not "no task"), so a start can name it if it then fails once its network is set up
  */
 export async function cleanupTask(name) {
   let exitCode = null;
