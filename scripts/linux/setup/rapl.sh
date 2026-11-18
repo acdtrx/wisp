@@ -38,7 +38,7 @@ if ! getent group "$RAPL_GROUP" >/dev/null; then
   groupadd "$RAPL_GROUP"
   changed "group $RAPL_GROUP created"
 fi
-if ! id -nG "$DEPLOY_USER" | tr ' ' '\n' | grep -qx "$RAPL_GROUP"; then
+if ! in_group "$DEPLOY_USER" "$RAPL_GROUP"; then
   usermod -aG "$RAPL_GROUP" "$DEPLOY_USER"
   changed "$DEPLOY_USER added to $RAPL_GROUP (wisp.service picks it up at its next start)"
 fi

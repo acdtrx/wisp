@@ -41,7 +41,7 @@ if systemctl is-active --quiet systemd-networkd 2>/dev/null; then
   esac
 fi
 if [[ -z "$NET_TOOL" ]] && systemctl is-active --quiet NetworkManager 2>/dev/null \
-  && nmcli -t -f DEVICE,STATE device 2>/dev/null | grep -q "^${UPLINK}:connected"; then
+  && grep -q "^${UPLINK}:connected" <<<"$(nmcli -t -f DEVICE,STATE device 2>/dev/null)"; then
   net_refuse "$UPLINK is run by NetworkManager; this setup does not configure such hosts yet."
 fi
 [[ -n "$NET_TOOL" ]] || net_refuse "$UPLINK is run by none of netplan, NetworkManager or systemd-networkd."

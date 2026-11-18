@@ -36,7 +36,7 @@ if ! getent group containerd >/dev/null; then
   groupadd --system containerd
   changed "system group containerd created"
 fi
-if ! id -nG "$DEPLOY_USER" | tr ' ' '\n' | grep -qx containerd; then
+if ! in_group "$DEPLOY_USER" containerd; then
   usermod -aG containerd "$DEPLOY_USER"
   changed "$DEPLOY_USER added to containerd"
 fi
@@ -65,7 +65,8 @@ if $NEEDS_RESTART; then
   changed "containerd restarted for the socket gid"
 fi
 
-if ! timeout 30 ctr namespaces ls -q 2>/dev/null | grep -qx wisp; then
+NAMESPACES="$(timeout 30 ctr namespaces ls -q)" || fail "ctr cannot list containerd's namespaces"
+if ! grep -qx wisp <<<"$NAMESPACES"; then
   timeout 30 ctr namespaces create wisp
   changed "namespace wisp created"
 fi

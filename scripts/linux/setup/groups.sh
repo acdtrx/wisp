@@ -25,7 +25,7 @@ for group in libvirt kvm input; do
     echo "ERROR: group $group does not exist (the packages step installs what creates it)." >&2
     exit 1
   fi
-  if ! id -nG "$DEPLOY_USER" | tr ' ' '\n' | grep -qx "$group"; then
+  if ! in_group "$DEPLOY_USER" "$group"; then
     usermod -aG "$group" "$DEPLOY_USER"
     changed "$DEPLOY_USER added to $group"
   fi

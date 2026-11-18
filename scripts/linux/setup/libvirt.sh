@@ -43,7 +43,8 @@ if [[ -L "$AUTOSTART_LINK" ]]; then
   rm -f "$AUTOSTART_LINK"
   changed "default NAT network no longer autostarts"
 fi
-if timeout 30 virsh -q net-list --name 2>/dev/null | grep -qx default; then
+ACTIVE_NETWORKS="$(timeout 30 virsh -q net-list --name)" || fail "virsh cannot list libvirt's networks"
+if grep -qx default <<<"$ACTIVE_NETWORKS"; then
   timeout 30 virsh net-destroy default >/dev/null
   changed "default NAT network stopped (virbr0 removed)"
 fi

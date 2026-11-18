@@ -51,6 +51,15 @@ write_if_changed() {
   return 0
 }
 
+# in_group <user> <group>: whether <user> is in <group>. Captured, then
+# matched: a `grep -q` at the end of a pipeline can exit before its writer, whose
+# SIGPIPE under `pipefail` would read as "not there".
+in_group() {
+  local groups
+  groups="$(id -nG "$1")"
+  [[ " $groups " == *" $2 "* ]]
+}
+
 # unit_on <name>: <name>'s socket, when the unit has one (the daemon starts on
 # demand and idles out behind it), else its service, enabled and active.
 unit_on() {
