@@ -33,9 +33,9 @@ function formatRelativeTime(isoString) {
 const POLL_INTERVAL_MS = 5_000;
 const SLOW_AFTER_FAILED_POLLS = 12; // 12 × 5s = 1 min of "backend not responding"
 // For as long as the updater may run: wisp-updater.service's TimeoutStartSec
-// (30 min) and the TimeoutStopSec its rollback gets after it (5 min). A long
+// (30 min) and the TimeoutStopSec its rollback gets after it (10 min). A long
 // state migration runs inside that window.
-const UPDATER_LIMIT_MS = (30 + 5) * 60_000;
+const UPDATER_LIMIT_MS = (30 + 10) * 60_000;
 const MAX_TOTAL_POLLS = Math.ceil(UPDATER_LIMIT_MS / POLL_INTERVAL_MS);
 
 // Force every rendered <a> in release notes to open in a new tab. DOMPurify

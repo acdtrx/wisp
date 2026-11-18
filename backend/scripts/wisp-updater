@@ -7,17 +7,18 @@
 #     sudo -n systemctl start --no-block wisp-updater.service
 #
 # Steps (echoed to journald):
-#   stop-service → snapshot → swap → install-deps → common-setup
-#   → install-unit → start-service → done
+#   stop-service → snapshot → swap → setup → start-service → done
+# setup is the install's setup (scripts/linux/setup/common-steps.sh from the
+# swapped tree): it carries the backend's dependencies and wisp.service too.
 # start-service is the health gate: wisp.service is Type=notify, so
 # `systemctl start` returns once the new backend is ready (state migrations run,
 # listening) and fails as soon as it exits first, a failed migration included.
 #
 # On any failure after `snapshot` — an unhealthy new backend included — rolls
 # back from <install>.prev and exits non-zero.
-# Rollback restores the tree; when the host-level setup steps had already run, it
-# also re-runs the restored (old) tree's common-steps.sh and re-templates
-# wisp.service from it, so helpers, sudoers and units match the code that runs.
+# Rollback restores the tree; when setup had already run, it also runs the
+# restored (old) tree's setup again, so helpers, sudoers, units and the backend's
+# dependencies match the code that runs.
 # User config (config/wisp-config.json, wisp-password, runtime.env), the backup
 # status cache (config/backup-status.json), the state-migration ledger
 # (config/migrations.json) and runtime scratch (.pids, .logs) survive the swap.
@@ -37,48 +38,6 @@ fail() {
   exit 1
 }
 
-# idle_run SECS cmd...: run cmd with its output passed through (to the journal),
-# killed after SECS seconds without a line of output (returns 124) — an
-# inactivity bound for a step that shows progress (CODING-RULES §6). The unit's
-# TimeoutStartSec stays the backstop for the whole update. cmd runs in a session
-# (process group) of its own, and a stall signals the whole group: sudo forwards
-# a SIGTERM, but a SIGKILL can't be forwarded, and npm's own children (install
-# scripts) must die with it.
-idle_run() {
-  local secs="$1"; shift
-  local fifo fd line r rc=0 timed_out=0 pid
-  fifo="$(mktemp -u -t wisp-updater-fifo.XXXXXX)"
-  mkfifo -m 600 "$fifo"
-  # Not a job-control shell, so the background child is no group leader and
-  # setsid execs in place: $pid is the new group's id.
-  setsid "$@" > "$fifo" 2>&1 &
-  pid=$!
-  exec {fd}< "$fifo"
-  rm -f -- "$fifo"
-  while :; do
-    IFS= read -r -t "$secs" -u "$fd" line && r=0 || r=$?
-    if (( r == 0 )); then printf '%s\n' "$line"; continue; fi
-    if (( r > 128 )); then
-      timed_out=1
-      kill -TERM -- "-$pid" 2>/dev/null
-      sleep 5
-      kill -KILL -- "-$pid" 2>/dev/null
-    elif [[ -n "$line" ]]; then
-      printf '%s\n' "$line"
-    fi
-    break
-  done
-  exec {fd}<&-
-  wait "$pid" 2>/dev/null || rc=$?
-  if (( timed_out )); then
-    echo "error: the step printed nothing for ${secs}s and was stopped" >&2
-    return 124
-  fi
-  return "$rc"
-}
-
-# npm ci logs each fetch at --loglevel=http: its progress, watched by idle_run.
-NPM_CI_IDLE_SEC=600
 
 [[ -n "$INSTALL_DIR" ]] || fail "WISP_INSTALL_DIR not set (unit file should template it)"
 [[ "$INSTALL_DIR" == /* ]] || fail "install dir must be absolute: $INSTALL_DIR"
@@ -107,7 +66,11 @@ DEPLOY_USER="$(stat -c %U "$INSTALL_DIR")"
 DEPLOY_OWNER="$(stat -c %U:%G "$INSTALL_DIR")"
 
 PREV_DIR="${INSTALL_DIR}.prev"
-# Inside the TimeoutStopSec (300 s) a rollback gets after a start timeout.
+# The rollback's bounds. A rollback after the unit's start timeout runs inside
+# its TimeoutStopSec (600 s): stopping wisp (its TimeoutStopSec, 15 s), the
+# restore, the restored tree's setup and its start must all fit, with room left.
+ROLLBACK_RESTORE_SEC=120
+ROLLBACK_SETUP_SEC=300
 ROLLBACK_START_WAIT_SEC=120
 SERVICE_UNIT=wisp
 
@@ -125,21 +88,14 @@ RSYNC_EXCLUDES=(
 snapshot_taken=0
 host_setup_touched=0
 
-# Render wisp.service from the given tree's template. Shared by the update path
-# and the rollback so both write the unit the same way.
-template_service_unit() {
-  local tree="$1" src="$1/systemd/linux/${SERVICE_UNIT}.service"
-  [[ -f "$src" ]] || { echo "error: ${SERVICE_UNIT}.service template missing in $tree" >&2; return 1; }
-  sed -e "s|WISP_USER|$DEPLOY_USER|g" \
-      -e "s|WISP_PATH|$INSTALL_DIR|g" \
-    "$src" > "/etc/systemd/system/${SERVICE_UNIT}.service"
-}
-
 # Runs from the EXIT trap, so it never calls fail/exit: every step logs its own
 # failure and the rollback carries on, ending with an attempt to start the
 # service. A rollback that cannot complete leaves its `rollback-warning:` lines
 # in the journal, and the operator finishes by hand (docs/specs/UPDATES.md).
 rollback() {
+  # Once begun the rollback ends by itself: a TERM now (the unit's start timeout)
+  # must not cut it short — systemd's SIGKILL after TimeoutStopSec is the bound.
+  trap '' TERM INT
   echo "step:rollback"
   # After a failed start the new backend may be cycling through
   # Restart=on-failure: stop it before the tree is restored under it.
@@ -148,24 +104,22 @@ rollback() {
     # config/ and its ledger revert together: the migrations the new backend's
     # start ran run again at the next start of a release that ships them (they
     # are idempotent).
-    rsync -a --delete "$PREV_DIR/" "$INSTALL_DIR/" \
+    timeout "$ROLLBACK_RESTORE_SEC" rsync -a --delete "$PREV_DIR/" "$INSTALL_DIR/" \
       || echo "rollback-warning: restoring the tree from $PREV_DIR failed"
     chown -R "$DEPLOY_OWNER" "$INSTALL_DIR" \
       || echo "rollback-warning: chown of $INSTALL_DIR failed"
     if [[ "$host_setup_touched" -eq 1 ]]; then
       # The new release's helpers, sudoers and units may already be installed;
       # put back the restored tree's own. That tree is the release that
-      # installed this updater, so it ships common-steps.sh.
-      echo "step:rollback-host-setup"
+      # installed this updater, so its setup renders wisp.service too.
+      echo "step:rollback-setup"
       local old_steps="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
       if [[ -x "$old_steps" ]]; then
-        "$old_steps" "$INSTALL_DIR" "$DEPLOY_USER" \
-          || echo "rollback-warning: restored tree's common-steps.sh failed"
+        timeout "$ROLLBACK_SETUP_SEC" "$old_steps" "$INSTALL_DIR" "$DEPLOY_USER" \
+          || echo "rollback-warning: the restored tree's setup failed or ran past ${ROLLBACK_SETUP_SEC}s"
       else
         echo "rollback-warning: $old_steps missing; helpers stay at the new release's"
       fi
-      template_service_unit "$INSTALL_DIR" \
-        || echo "rollback-warning: re-templating ${SERVICE_UNIT}.service failed"
     fi
   fi
   systemctl daemon-reload || echo "rollback-warning: daemon-reload failed"
@@ -196,31 +150,19 @@ echo "step:swap"
 rsync -a --delete "${RSYNC_EXCLUDES[@]}" "$STAGING/" "$INSTALL_DIR/" || fail "swap rsync failed"
 chown -R "$DEPLOY_OWNER" "$INSTALL_DIR" || fail "chown failed"
 
-echo "step:install-deps"
-# Tarball ships without node_modules — install runtime deps for backend.
-idle_run "$NPM_CI_IDLE_SEC" sudo -u "$DEPLOY_USER" bash -c "cd '$INSTALL_DIR/backend' && npm ci --omit=dev --omit=optional --loglevel=http" \
-  || fail "backend npm ci failed"
-
-echo "step:common-setup"
-# Setup, the step list the installer runs too: packages, users, directories,
-# libvirt, containerd, networking, the privileged wisp-* helpers (which re-install
-# this script and wisp-updater.service via atomic rename, so the running inode
-# survives to finish this update) and the units.
-#
-# Invoked by path from the freshly swapped tree, so the step list is whatever THIS
-# release ships: adding a step to common-steps.sh takes effect on the very next
-# update, with no change here. Editing THIS file, by contrast, only takes effect
-# one release later — see docs/specs/UPDATES.md.
-COMMON_STEPS="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
-[[ -x "$COMMON_STEPS" ]] \
-  || fail "missing $COMMON_STEPS — releases older than v2.0.2 cannot be installed by this updater"
+echo "step:setup"
+# The install's setup, by path from the freshly swapped tree, so the step list
+# is whatever THIS release ships: a step added to setup takes effect on the very
+# next update, with no change here. Editing THIS file, by contrast, only takes
+# effect one release later — see docs/specs/UPDATES.md. Setup installs the
+# backend's dependencies (the tree ships without node_modules), renders
+# wisp.service, and refreshes the privileged wisp-* helpers — this script and
+# wisp-updater.service among them, by atomic rename, so the running inode
+# finishes this update.
+SETUP="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
+[[ -x "$SETUP" ]] || fail "missing $SETUP — releases older than v2.0.2 cannot be installed by this updater"
 host_setup_touched=1
-"$COMMON_STEPS" "$INSTALL_DIR" "$DEPLOY_USER" || fail "common setup steps failed"
-
-echo "step:install-unit"
-# Re-template wisp.service so unit-file changes in the new release apply.
-# wisp-updater.service is handled by install-helpers above.
-template_service_unit "$INSTALL_DIR" || fail "templating ${SERVICE_UNIT}.service failed"
+"$SETUP" "$INSTALL_DIR" "$DEPLOY_USER" || fail "setup failed"
 systemctl daemon-reload || fail "daemon-reload failed"
 
 echo "step:start-service"

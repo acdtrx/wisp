@@ -77,8 +77,7 @@ unit_on() {
 # idle_run <secs> <cmd...>: cmd with its output passed through, stopped after
 # <secs> seconds without a line of output (returns 124) — an inactivity bound
 # for a step that shows progress (CODING-RULES §6). cmd runs in a session of its
-# own, and a stall signals the whole group, its children with it. (The updater
-# has its own copy until it runs no step of its own.)
+# own, and a stall signals the whole group, its children with it.
 idle_run() {
   local secs="$1"; shift
   local fifo fd line r rc=0 timed_out=0 pid
