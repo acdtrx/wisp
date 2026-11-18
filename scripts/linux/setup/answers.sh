@@ -40,7 +40,8 @@ fi
 
 # The answers, the password in plain text among them, go once they are written.
 if [[ -n "$ANSWERS" ]]; then
-  rm -rf -- "$ANSWERS"
+  rm -f "$ANSWERS/server-name" "$ANSWERS/password"
+  rmdir "$ANSWERS" || fail "cannot remove $ANSWERS"
 fi
 
 for file in runtime.env wisp-config.json wisp-password; do

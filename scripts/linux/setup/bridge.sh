@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
 # Setup step, the last: the bridge Wisp's VMs and containers join. When the
 # uplink already is a bridge there is nothing to do; otherwise `br0`, worked out
-# and checked by network-plan.sh before setup changed anything, goes live
-# through the tool that runs the uplink — netplan, systemd-networkd or
-# NetworkManager — in as few steps as the tool allows, and is applied through
-# it. Run as root.
+# and checked by network-plan.sh in this run, goes live through the tool that
+# runs the uplink — netplan, systemd-networkd or NetworkManager — in as few
+# steps as the tool allows, each one leaving a network that boots, old or new.
+# Run as root.
 #
 # The bridge keeps the host's address: it takes the uplink's hardware address
 # and its whole layer 3, static or DHCP, with its DHCP identity, so the DHCP
-# server hands it the same lease; link-level settings stay with the uplink,
-# which becomes its port with no addressing of its own. After the apply,
-# within the wait, the bridge must hold the uplink's former hardware address,
-# IPv4 addresses and default route — and on DHCP its client identifier and
-# name servers, on a static address all its routes, name servers and search
-# domains — and the uplink none of it. Otherwise, or when the step is stopped,
-# the files it changed come back from the copies it saved first
-# (bridge-undo.sh), the host's configuration is applied again, and the step
-# fails saying so. The operator's original files are kept after a success.
+# server hands it the same lease; link settings stay with the uplink, which
+# becomes its port with no addressing of its own. After the apply, within the
+# wait, the bridge must hold the uplink's former hardware address, IPv4
+# addresses and default route — and on DHCP its client identifier and name
+# servers, on a static address all its routes, name servers and search domains
+# — and the uplink none of it. Otherwise, or when the step is stopped, it undoes
+# what it did from its journal (bridge-journal.sh) and fails saying so.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -31,8 +29,8 @@ source "$SETUP_DIR/step.sh"
 source "$SETUP_DIR/network-plan.sh"
 # shellcheck source=net-state.sh
 source "$SETUP_DIR/net-state.sh"
-# shellcheck source=bridge-undo.sh
-source "$SETUP_DIR/bridge-undo.sh"
+# shellcheck source=bridge-journal.sh
+source "$SETUP_DIR/bridge-journal.sh"
 
 echo "--- Bridge ---"
 
@@ -44,16 +42,16 @@ fi
 
 APPLY_WAIT_SEC=90   # the apply, and the bridge holding the uplink's address
 
-NETPLAN_DROPIN=/etc/systemd/network/10-netplan-${BRIDGE}.network.d/50-wisp-dhcp-identity.conf
+NETPLAN_DROPIN_DIR=/etc/systemd/network/10-netplan-${BRIDGE}.network.d
+NETPLAN_DROPIN=$NETPLAN_DROPIN_DIR/50-wisp-dhcp-identity.conf
 NETWORKD_NETDEV=/etc/systemd/network/00-wisp-${BRIDGE}.netdev
 NETWORKD_NETWORK=/etc/systemd/network/00-wisp-${BRIDGE}.network
-NM_PORT="${BRIDGE}-port-${UPLINK}"
 
-# install_file <dest> <src> <mode>: <src> in place as <dest> by one rename.
-install_file() {
-  local tmp="$1.wisp-new"
-  { cp "$2" "$tmp" && chmod "$3" "$tmp" && chown root:root "$tmp" && mv -f "$tmp" "$1"; } || { rm -f "$tmp"; return 1; }
-}
+# What the plan staged from must be as it was then; otherwise the step stops
+# before any change.
+current_sources="$(plan_sources)" || fail "cannot read what the plan was made from"
+[[ "$current_sources" == "$(cat "$NET_PLAN_DIR/sources")" ]] \
+  || fail "the network's configuration changed since setup worked out the bridge; nothing was changed. Run setup again."
 
 # applied: within APPLY_WAIT_SEC the bridge holds what the uplink held (see
 # the header) and the uplink holds nothing; there is no one event to wait on.
@@ -88,37 +86,44 @@ apply_notice() {
   echo "  applying: $BRIDGE on $UPLINK (was $UPLINK_ADDR); an ssh session may pause"
 }
 
-# --- netplan: the operator's file as the plan edited and checked it in its
-# stage, put in place by one rename; for a DUID identity, before it, networkd's
-# drop-in on netplan's unit for the bridge (netplan has no IAID key). Applied
-# with `netplan apply`. ---
+# put_file <dest> <src> <mode>: journaled, then live; the journal entry is
+# written first, and a failed one stops the step before the file changes.
+put_file() {
+  journal_file "$1" "$2" || { WHY="cannot write the journal for $1"; return 1; }
+  net_install_file "$1" "$2" "$3" || { WHY="cannot write $1"; return 1; }
+  changed "$1"
+}
+
+# --- netplan: for a DUID identity, networkd's drop-in on netplan's unit for the
+# bridge (netplan has no IAID key) — harmless while no bridge exists; then the
+# operator's file as the plan edited and checked it, in one rename: the
+# switch. Applied with `netplan apply`. ---
 apply_netplan() {
-  undo_save "$NETPLAN_ORIGIN" && undo_save "$NETPLAN_DROPIN" || { WHY="cannot save the files it changes"; return 1; }
   if [[ -s "$NET_PLAN_DIR/50-wisp-dhcp-identity.conf" ]]; then
-    mkdir -p "$(dirname "$NETPLAN_DROPIN")"
-    install_file "$NETPLAN_DROPIN" "$NET_PLAN_DIR/50-wisp-dhcp-identity.conf" 0644 || { WHY="cannot write $NETPLAN_DROPIN"; return 1; }
-    changed "$NETPLAN_DROPIN"
+    journal_dir "$NETPLAN_DROPIN_DIR" || { WHY="cannot make $NETPLAN_DROPIN_DIR"; return 1; }
+    put_file "$NETPLAN_DROPIN" "$NET_PLAN_DIR/50-wisp-dhcp-identity.conf" 0644 || return 1
   fi
-  install_file "$NETPLAN_ORIGIN" "$NET_PLAN_DIR/netplan-origin.yaml" 0600 || { WHY="cannot write $NETPLAN_ORIGIN"; return 1; }
-  changed "$NETPLAN_ORIGIN: ${UPLINK}'s layer 3 moved to $BRIDGE (as checked by netplan in the plan)"
+  put_file "$NETPLAN_ORIGIN" "$NET_PLAN_DIR/netplan-origin.yaml" 0600 || return 1
   apply_notice
-  timeout "$APPLY_WAIT_SEC" netplan apply
+  timeout -k 10 "$APPLY_WAIT_SEC" netplan apply
 }
 verify_netplan() { :; }
 
-# --- systemd-networkd: the bridge's .netdev and .network, and the port file,
-# each by a rename, all sorting before the uplink's own file; applied with
-# `networkctl reload`. ---
+# --- systemd-networkd: the bridge's .netdev and .network first — a bridge with
+# no port, harmless — then the port file, the switch; applied with
+# `networkctl reload`. The uplink's own file is not changed: it is kept as the
+# original. ---
 apply_networkd() {
-  undo_save "$NETWORKD_NETDEV" && undo_save "$NETWORKD_NETWORK" && undo_save "$NETWORKD_PORT_FILE" \
-    || { WHY="cannot save the files it changes"; return 1; }
   local f
-  for f in "$NETWORKD_NETDEV:bridge.netdev" "$NETWORKD_NETWORK:bridge.network" "$NETWORKD_PORT_FILE:port.network"; do
-    install_file "${f%%:*}" "$NET_PLAN_DIR/${f#*:}" 0644 || { WHY="cannot write ${f%%:*}"; return 1; }
-    changed "${f%%:*}"
+  mapfile -t NETWORKD_UPLINK_SOURCES < "$NET_PLAN_DIR/networkd-sources"
+  for f in "${NETWORKD_UPLINK_SOURCES[@]}"; do
+    journal_file "$f" "$f" || { WHY="cannot write the journal for $f"; return 1; }
   done
+  put_file "$NETWORKD_NETDEV" "$NET_PLAN_DIR/bridge.netdev" 0644 || return 1
+  put_file "$NETWORKD_NETWORK" "$NET_PLAN_DIR/bridge.network" 0644 || return 1
+  put_file "$NETWORKD_PORT_FILE" "$NET_PLAN_DIR/port.network" 0644 || return 1
   apply_notice
-  timeout "$NET_CMD_SEC" networkctl reload
+  timeout -k 10 "$NET_CMD_SEC" networkctl reload
 }
 # Which file networkd now runs each link from: the bridge's and the port's.
 verify_networkd() {
@@ -135,52 +140,60 @@ verify_networkd() {
 }
 
 # --- NetworkManager: the bridge and port connections, checked by nmcli in the
-# plan, added not connecting by themselves and brought up; only once the
-# bridge holds the address do they connect by themselves and the uplink's own
-# connection stop doing so — so there is no moment without a connection that
-# comes up by itself. ---
-nm_add() { local args; mapfile -t args < "$1"; timeout "$NET_CMD_SEC" nmcli connection add "${args[@]}" >/dev/null; }
+# plan, added under UUIDs of their own, not connecting by themselves, and
+# brought up. The uplink's own connection is not changed: once the bridge holds
+# the address, the two connect by themselves, and the port's autoconnect
+# priority, above the uplink connection's, makes it the one NetworkManager
+# brings up on the uplink at boot. ---
+nm_add() {
+  local args
+  mapfile -t args < "$1"
+  journal_conn "$2" || { WHY="cannot write the journal"; return 1; }
+  timeout -k 10 "$NET_CMD_SEC" nmcli connection add connection.uuid "$2" "${args[@]}" >/dev/null \
+    || { WHY="NetworkManager refused the connection $2"; return 1; }
+  journal_connfp "$2" "$(nm_fingerprint "$2")" || { WHY="cannot write the journal"; return 1; }
+}
 apply_networkmanager() {
-  undo_save "$NM_PROFILE_FILE" || { WHY="cannot save $NM_PROFILE_FILE"; return 1; }
-  undo_connection "$BRIDGE" && undo_connection "$NM_PORT" || { WHY="cannot note the connections it adds"; return 1; }
-  nm_add "$NET_PLAN_DIR/bridge.args" || { WHY="NetworkManager refused the bridge connection"; return 1; }
+  if [[ -n "${NM_PROFILE_FILE:-}" ]]; then
+    journal_file "$NM_PROFILE_FILE" "$NM_PROFILE_FILE" || { WHY="cannot write the journal"; return 1; }
+  fi
+  nm_add "$NET_PLAN_DIR/bridge.args" "$NM_BRIDGE_UUID" || return 1
   changed "NetworkManager connection $BRIDGE (bridge, ${UPLINK}'s layer 3 and DHCP identity)"
-  nm_add "$NET_PLAN_DIR/port.args" || { WHY="NetworkManager refused the port connection"; return 1; }
-  changed "NetworkManager connection $NM_PORT ($UPLINK as ${BRIDGE}'s port, with its link settings)"
+  nm_add "$NET_PLAN_DIR/port.args" "$NM_PORT_UUID" || return 1
+  changed "NetworkManager connection ${BRIDGE}-port-${UPLINK} ($UPLINK as ${BRIDGE}'s port, with its link settings)"
   apply_notice
-  timeout "$APPLY_WAIT_SEC" nmcli --wait "$APPLY_WAIT_SEC" connection up "$BRIDGE" >/dev/null
+  timeout -k 10 "$APPLY_WAIT_SEC" nmcli --wait "$APPLY_WAIT_SEC" connection up "$NM_BRIDGE_UUID" >/dev/null
 }
 verify_networkmanager() {
-  timeout "$NET_CMD_SEC" nmcli connection modify "$BRIDGE" connection.autoconnect yes \
-    && timeout "$NET_CMD_SEC" nmcli connection modify "$NM_PORT" connection.autoconnect yes \
-    && timeout "$NET_CMD_SEC" nmcli connection modify "$UPLINK_CONNECTION" connection.autoconnect no \
+  timeout -k 10 "$NET_CMD_SEC" nmcli connection modify "$NM_BRIDGE_UUID" connection.autoconnect yes \
+    && timeout -k 10 "$NET_CMD_SEC" nmcli connection modify "$NM_PORT_UUID" connection.autoconnect yes \
     || { WHY="NetworkManager refused to make $BRIDGE connect by itself"; return 1; }
-  changed "NetworkManager: $BRIDGE and its port connect by themselves, ${UPLINK}'s own connection no longer does"
+  changed "NetworkManager: $BRIDGE and its port connect by themselves, the port ahead of ${UPLINK}'s own connection"
 }
 
-# undo: from the saved copies; the step fails either way.
+# undo: from the journal; the step fails either way.
 undo() {
   trap '' TERM INT
-  echo "  not applied: ${WHY:-stopped}; restoring the network's files" >&2
-  if undo_restore && [[ "$(first_ipv4 "$UPLINK")" == "$UPLINK_ADDR" ]]; then
-    fail "$BRIDGE was not applied (${WHY:-the step was stopped}). The network's files are as they were, and $UPLINK holds $UPLINK_ADDR again"
+  echo "  not applied: ${WHY:-stopped}; undoing it" >&2
+  if journal_restore; then
+    fail "$BRIDGE was not applied (${WHY:-the step was stopped}). The network is as it was, and $UPLINK holds $(first_ipv4 "$UPLINK") again"
   fi
-  fail "$BRIDGE was not applied (${WHY:-the step was stopped}). Restoring the network did not complete: the saved copies stay in $UNDO_DIR, and the next run of setup restores from them first"
+  fail "$BRIDGE was not applied (${WHY:-the step was stopped}). Undoing it did not complete: the journal stays in $JOURNAL_DIR, and the next run of setup decides from it first"
 }
 
 WHY=""
-undo_begin "$NET_TOOL" "$UPLINK" "$BRIDGE" "${UPLINK_CONNECTION:-}" || fail "cannot keep copies in $UNDO_DIR"
+journal_begin "$NET_TOOL" "$UPLINK" "$BRIDGE" "$UPLINK_ADDR" "${UPLINK_CONNECTION:--}" || fail "cannot start the journal in $JOURNAL_DIR"
 trap 'WHY="the step was stopped"; undo' TERM INT
 if "apply_$NET_TOOL" && applied && "verify_$NET_TOOL"; then
-  trap - TERM INT
-  undo_done
+  # From the check that passed to the commit, a stop waits.
+  trap '' TERM INT
+  journal_commit || fail "$BRIDGE is up, but the journal could not be committed; the next run of setup commits it"
   changed "$BRIDGE created on $UPLINK"
   if [[ "$UPLINK_MODE" == dhcp ]]; then
     echo "  $BRIDGE holds $UPLINK_ADDR, its default route and name servers, hardware address $UPLINK_MAC, client identifier $UPLINK_CLIENT_ID; $UPLINK holds no address"
   else
     echo "  $BRIDGE holds ${UPLINK}'s static addresses, routes and name servers, hardware address $UPLINK_MAC; $UPLINK holds none"
   fi
-  echo "  The original network files are kept in $KEPT_DIR."
   step_done
   exit 0
 fi

@@ -73,3 +73,18 @@ l3_state() {
     esac
   } | LC_ALL=C sort
 }
+
+# plan_sources: what a plan to make the bridge is made from, as checksums (and
+# for NetworkManager the uplink connection's settings), for the bridge step to
+# check nothing changed since. Uses the plan's NET_TOOL, NET_PLAN_DIR and
+# UPLINK_CONNECTION.
+plan_sources() {
+  case "$NET_TOOL" in
+    netplan) sha256sum /lib/netplan/* /etc/netplan/* /run/netplan/* 2>/dev/null | LC_ALL=C sort -k2 ;;
+    networkd) xargs -d '\n' sha256sum < "$NET_PLAN_DIR/networkd-sources" ;;
+    networkmanager)
+      timeout "$NET_CMD_SEC" nmcli -t connection show "$UPLINK_CONNECTION" | grep -vE '^(GENERAL|IP[46]|DHCP[46])\.|^connection\.timestamp:' | sha256sum
+      timeout "$NET_CMD_SEC" nmcli -g GENERAL.CON-UUID device show "$UPLINK"
+      ;;
+  esac
+}

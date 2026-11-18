@@ -24,8 +24,8 @@
 # included: rendered into NET_PLAN_DIR, and for netplan checked as a whole by
 # netplan itself. The plan runs once per entry point: what it found is kept in
 # NET_PLAN_DIR/plan.env, which a step sourcing this file reads instead of
-# working it out again. The process that works it out removes NET_PLAN_DIR when
-# it exits, unless it hands it on (net_plan_keep).
+# working it out again; the process that works it out removes NET_PLAN_DIR when
+# it exits. It is made under the install lock, in the run that applies it.
 #
 # Sets (and records):
 #   NET_TOOL        netplan | networkd | networkmanager
@@ -51,11 +51,20 @@
 #   NETWORKD_PORT_FILE    networkd: the file that makes the uplink a port; it
 #                         sorts before the uplink's own, so it wins the match
 #   UPLINK_CONNECTION     networkmanager: the uplink's connection (UUID)
-#   NM_PROFILE_FILE       networkmanager: the file under /etc that stores it
+#   NM_PROFILE_FILE       networkmanager: the file under /etc that stores it,
+#                         when there is one (kept as the original)
+#   NM_BRIDGE_UUID, NM_PORT_UUID  networkmanager: the connections to add
+#   NET_PLAN_DIR/sources  what the plan was made from, which the bridge step
+#                         checks is unchanged before it applies
+#   NET_PLAN_JOURNAL      what an earlier bridge step's journal was found to
+#                         be (see bridge-journal.sh), when there was one
+#
+# NET_PLAN_ASK=1 (the installer's asking phase): changes nothing, a journal
+# included — it is only classified, and the installer says what will be done.
 #
 # Also refused before any change, whatever the uplink: another DNS server on
 # the stub's port 53. And first of all, a bridge step that died is undone
-# (bridge-undo.sh).
+# (bridge-journal.sh).
 
 NET_CMD_SEC=30   # bound on every read of a network tool
 
@@ -67,8 +76,8 @@ fi
 
 # shellcheck source=net-state.sh
 source "$(dirname "${BASH_SOURCE[0]}")/net-state.sh"
-# shellcheck source=bridge-undo.sh
-source "$(dirname "${BASH_SOURCE[0]}")/bridge-undo.sh"
+# shellcheck source=bridge-journal.sh
+source "$(dirname "${BASH_SOURCE[0]}")/bridge-journal.sh"
 
 net_refuse() {
   echo "ERROR: $*" >&2
@@ -94,16 +103,33 @@ NET_PLAN_DIR="$(mktemp -d -t wisp-net-plan.XXXXXX)" || net_fail "cannot create a
 export NET_PLAN_DIR
 # A step's own temp directory (step.sh) goes too, as its trap is replaced here.
 trap 'rm -rf "$NET_PLAN_DIR" ${STEP_TMP_DIR:+"$STEP_TMP_DIR"}' EXIT
-# net_plan_keep: hand NET_PLAN_DIR to a process that outlives this one, which
-# then removes it.
-net_plan_keep() { trap - EXIT; }
 
-# A bridge step that died before it finished or undid itself left its saved
-# copies: the host goes back to how it was before anything is worked out.
-if [[ -d "$UNDO_DIR" ]]; then
-  echo "A bridge step that did not finish left its saved copies in $UNDO_DIR: restoring the network from them first." >&2
-  undo_restore || net_fail "restoring the network from $UNDO_DIR did not complete; its copies stay there for the next run."
-  echo "  The network's files are as they were before that step." >&2
+# A bridge step that died left its journal: decided on first, from what the
+# host holds now (bridge-journal.sh), before anything is worked out.
+NET_PLAN_JOURNAL=""
+if [[ -d "$JOURNAL_DIR.done" && -z "${NET_PLAN_ASK:-}" ]]; then
+  journal_cleanup
+fi
+if [[ -d "$JOURNAL_DIR" ]]; then
+  NET_PLAN_JOURNAL="$(journal_classify)"
+  case "$NET_PLAN_JOURNAL" in
+    refuse*)
+      net_fail "a bridge step that did not finish left its journal in $JOURNAL_DIR, and since then ${NET_PLAN_JOURNAL#refuse changed since by someone else:} changed by someone else: setup does not undo it over that. Put those back as the journal's files/ hold them, or remove $JOURNAL_DIR once the network is as you want it, and run this again." ;;
+  esac
+  if [[ -z "${NET_PLAN_ASK:-}" ]]; then
+    case "$NET_PLAN_JOURNAL" in
+      finished)
+        echo "A bridge step that was not recorded as done had in fact finished: committing it." >&2
+        journal_commit >&2 || net_fail "cannot commit the journal in $JOURNAL_DIR" ;;
+      untouched)
+        echo "A bridge step left a journal but changed nothing: dropping it." >&2
+        rm -rf "$JOURNAL_DIR" || net_fail "cannot remove $JOURNAL_DIR" ;;
+      restore)
+        echo "A bridge step that did not finish left its journal in $JOURNAL_DIR: undoing it first." >&2
+        journal_restore || net_fail "undoing the earlier bridge step did not complete; its journal stays in $JOURNAL_DIR for the next run."
+        echo "  The network is as it was before that step." >&2 ;;
+    esac
+  fi
 fi
 
 _route="$(net_read ip -4 route show default)" || exit 1
@@ -134,6 +160,9 @@ if [[ -z "$NET_TOOL" ]] && systemctl is-active --quiet NetworkManager; then
     100*) net_refuse "$UPLINK is up, but not through a NetworkManager profile ($_status)." ;;
   esac
 fi
+if [[ -z "$NET_TOOL" ]] && grep -qsE "^[[:space:]]*iface[[:space:]]+$UPLINK([[:space:]]|$)" /etc/network/interfaces /etc/network/interfaces.d/*; then
+  net_refuse "$UPLINK is run by ifupdown (/etc/network/interfaces), which setup does not configure."
+fi
 [[ -n "$NET_TOOL" ]] || net_refuse "$UPLINK is run by none of netplan, NetworkManager or systemd-networkd."
 
 # cloud-init managing the network: setup never edits what cloud-init writes
@@ -147,35 +176,35 @@ fi
 # switches it off that way. cloud-init's own runtime, python3 and its yaml
 # module, reads the files.
 refuse_cloud_init_network() {
-if command -v cloud-init >/dev/null && [[ ! -e /etc/cloud/cloud-init.disabled ]] \
-  && ! grep -qwE 'cloud-init=disabled|network-config=disabled' /proc/cmdline; then
-  _ci="$(python3 -c '
-import glob, sys, yaml
-state = "managed"
-for path in ["/etc/cloud/cloud.cfg"] + sorted(glob.glob("/etc/cloud/cloud.cfg.d/*.cfg")):
-    try:
-        doc = yaml.safe_load(open(path)) or {}
-    except FileNotFoundError:
-        continue
-    net = doc.get("network") if isinstance(doc, dict) else None
-    if isinstance(net, dict) and "config" in net:
-        state = "managed" if net["config"] != "disabled" else "off:" + path
-print(state)
-')" || net_fail "cannot read cloud-init's configuration in /etc/cloud"
-  if [[ "$_ci" != off:* ]]; then
-    echo "ERROR: cloud-init manages this host's network, and setup does not edit what cloud-init writes." >&2
-    echo "       Switch its networking off with the one documented line, network: {config: disabled}," >&2
-    echo "       in a file under /etc/cloud/cloud.cfg.d/ (for example 99-disable-network-config.cfg)," >&2
-    echo "       keep the network's definition as a file of your own, and run this again." >&2
-    exit 1
+  if command -v cloud-init >/dev/null && [[ ! -e /etc/cloud/cloud-init.disabled ]] \
+    && ! grep -qwE 'cloud-init=disabled|network-config=disabled' /proc/cmdline; then
+    _ci="$(python3 -c '
+  import glob, sys, yaml
+  state = "managed"
+  for path in ["/etc/cloud/cloud.cfg"] + sorted(glob.glob("/etc/cloud/cloud.cfg.d/*.cfg")):
+      try:
+          doc = yaml.safe_load(open(path)) or {}
+      except FileNotFoundError:
+          continue
+      net = doc.get("network") if isinstance(doc, dict) else None
+      if isinstance(net, dict) and "config" in net:
+          state = "managed" if net["config"] != "disabled" else "off:" + path
+  print(state)
+  ')" || net_fail "cannot read cloud-init's configuration in /etc/cloud"
+    if [[ "$_ci" != off:* ]]; then
+      echo "ERROR: cloud-init manages this host's network, and setup does not edit what cloud-init writes." >&2
+      echo "       Switch its networking off with the one documented line, network: {config: disabled}," >&2
+      echo "       in a file under /etc/cloud/cloud.cfg.d/ (for example 99-disable-network-config.cfg)," >&2
+      echo "       keep the network's definition as a file of your own, and run this again." >&2
+      exit 1
+    fi
+    unset _ci
   fi
-  unset _ci
-fi
 }
 
 # Port 53 on the stub address: Wisp's container DNS forwarder binds it, and a
 # backend that cannot fails its start. Another DNS server listening there, or
-# on every address (AdGuard Home, Pi-hole, unbound, bind9, dnsmasq), is refused
+# on every IPv4 address (AdGuard Home, Pi-hole, unbound, bind9, dnsmasq), is refused
 # before anything changes. Wisp's own backend holding it is not another.
 _listeners="$(net_read ss -Hlnup '( sport = :53 )')" || exit 1
 _listeners+=$'\n'"$(net_read ss -Hlntp '( sport = :53 )')" || exit 1
@@ -183,7 +212,7 @@ while read -r _l; do
   [[ -n "$_l" ]] || continue
   _local="$(awk '{ for (i = 1; i <= NF; i++) if ($i ~ /:53$/) { print $i; exit } }' <<<"$_l")"
   case "$_local" in
-    169.254.53.53:53 | 0.0.0.0:53 | '*:53' | '[::]:53') ;;
+    169.254.53.53:53 | 0.0.0.0:53 | '*:53') ;;
     *) continue ;;
   esac
   _pid="$(grep -o 'pid=[0-9]*' <<<"$_l" | head -n 1 | cut -d= -f2 || true)"
@@ -370,6 +399,15 @@ for name, path in sorted(files.items()):
       while IFS=$'\t' read -r _hint _kv; do
         net_read netplan set --root-dir "$_stage" --origin-hint "$_hint" "$_kv" || exit 1
       done < "$NET_PLAN_DIR/netplan-set.args"
+      # netplan set touches the origin file alone: every other file in the stage
+      # must still be its live one, so what is checked is what goes live.
+      for _d in /lib/netplan /etc/netplan /run/netplan; do
+        [[ -d "$_d" ]] || continue
+        for _f in "$_d"/*; do
+          [[ "$_f" == "$NETPLAN_ORIGIN" || ! -f "$_f" ]] && continue
+          cmp -s "$_f" "$_stage$_f" || net_fail "netplan set changed $_f in the stage, beside $NETPLAN_ORIGIN"
+        done
+      done
       net_read netplan generate --root-dir "$_stage" >/dev/null || exit 1
       _merged="$(net_read netplan get --root-dir "$_stage")" || exit 1
       _why="$(python3 -c '
@@ -441,7 +479,7 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
         /^[ \t]*\[.*\][ \t]*$/ {
           sect = $0; gsub(/^[ \t]*\[|\][ \t]*$/, "", sect)
           if (sect != "Match" && !(sect in section_ok)) refuse(FILENAME " has a [" sect "] section, which setup does not carry over to a bridge")
-          if (sect == "Link") print "\n[Link]" > link_out
+          if (sect == "Link") { if (!port_link++) print "\n[Link]" > link_out }
           else if (sect != "Match") print "\n[" sect "]" > out
           next
         }
@@ -459,7 +497,10 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
           if (sect == "Network" && key == "DHCP") dhcp = val
           if ((sect == "Network" || sect == "Address") && key == "Address" && val !~ /:/) static4 = 1
           if (sect ~ /^DHCP(v4)?$/ && key == "ClientIdentifier") next
-          if (sect == "Link") print $0 > link_out
+          # What the boot waits for goes with the address; the rest of the link
+          # stays on the port (which only reaches "enslaved").
+          if (sect == "Link" && key ~ /^RequiredFor(Family)?Online$/) { if (!bridge_link++) print "\n[Link]" > out; print $0 > out }
+          else if (sect == "Link") print $0 > link_out
           else print $0 > out
         }
         END {
@@ -512,6 +553,7 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
         fi
       } > "$NET_PLAN_DIR/port.network"
       rm -f "$NET_PLAN_DIR/port.link"
+      printf '%s\n' "${_sources[@]}" > "$NET_PLAN_DIR/networkd-sources"
       unset _sources _dropins _cid_type _identity _a _b _c _d _iaid
       ;;
 
@@ -534,20 +576,33 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
       if [[ "$(_prop connection.interface-name)" != "$UPLINK" && "${_mac,,}" != "$UPLINK_MAC" ]]; then
         net_refuse "$UPLINK's connection is not bound to $UPLINK by name or hardware address, so it applies to other interfaces too."
       fi
-      # The profile is the operator's, stored under /etc: a keyfile, or a
-      # NetworkManager connection netplan keeps (90-NM-<uuid>.yaml). One only
-      # under /run is generated or in memory, and the undo could not bring it
-      # back as it was.
-      _files="$(net_read nmcli -t -f UUID,FILENAME connection show)" || exit 1
-      NM_PROFILE_FILE="$(awk -F: -v u="$UPLINK_CONNECTION" '$1 == u { print $2 }' <<<"$_files")"
+      # The uplink's connection is never changed — a keyfile, one netplan
+      # keeps, or the default one NetworkManager makes for a wired device and
+      # holds in memory alike — so the undo has nothing of it to bring back.
+      # Where it is stored under /etc, a copy is kept as the original.
+      _files="$(net_read nmcli -t -f UUID,NAME,FILENAME connection show)" || exit 1
+      NM_PROFILE_FILE="$(awk -F: -v u="$UPLINK_CONNECTION" '$1 == u { print $3 }' <<<"$_files")"
       case "$NM_PROFILE_FILE" in
         /etc/NetworkManager/system-connections/*) ;;
         /run/NetworkManager/system-connections/netplan-NM-"$UPLINK_CONNECTION".nmconnection)
           NM_PROFILE_FILE="/etc/netplan/90-NM-$UPLINK_CONNECTION.yaml"
-          [[ -f "$NM_PROFILE_FILE" ]] || net_refuse "${UPLINK}'s connection is kept by netplan, but $NM_PROFILE_FILE does not exist."
-          ;;
-        *) net_refuse "${UPLINK}'s connection is stored in ${NM_PROFILE_FILE:-memory only}, not under /etc: it is generated or kept for this boot only." ;;
+          [[ -f "$NM_PROFILE_FILE" ]] || NM_PROFILE_FILE="" ;;
+        *) NM_PROFILE_FILE="" ;;
       esac
+      # Names setup would give its connections, already taken while no bridge
+      # is in use.
+      for _n in "$BRIDGE" "${BRIDGE}-port-${UPLINK}"; do
+        ! awk -F: -v n="$_n" '$2 == n { found = 1 } END { exit !found }' <<<"$_files" \
+          || net_refuse "a NetworkManager connection named $_n exists already, and no bridge is in use: remove it, or bring up the bridge it belongs to."
+      done
+      # The port comes up on the uplink at boot ahead of the uplink's own
+      # connection: autoconnect priority above it.
+      _prio="$(_prop connection.autoconnect-priority)"
+      [[ "$_prio" =~ ^-?[0-9]+$ ]] || _prio=0
+      (( _prio < 999 )) || net_refuse "${UPLINK}'s connection has the highest autoconnect priority (999): no port could come up ahead of it."
+      NM_PORT_PRIORITY=$(( _prio + 1 > 0 ? _prio + 1 : 0 ))
+      NM_BRIDGE_UUID="$(cat /proc/sys/kernel/random/uuid)"
+      NM_PORT_UUID="$(cat /proc/sys/kernel/random/uuid)"
       case "$(_prop ipv4.method)" in
         auto) UPLINK_MODE=dhcp ;;
         manual) UPLINK_MODE=static ;;
@@ -589,7 +644,8 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
       } > "$NET_PLAN_DIR/bridge.args"
       {
         printf '%s\n' type ethernet ifname "$UPLINK" con-name "${BRIDGE}-port-${UPLINK}" \
-          controller "$BRIDGE" port-type bridge connection.autoconnect no
+          controller "$BRIDGE" port-type bridge connection.autoconnect no \
+          connection.autoconnect-priority "$NM_PORT_PRIORITY"
         awk '/^(802-3-ethernet|ethtool)\./ {
           k = $0; sub(/:.*/, "", k); v = substr($0, length(k) + 2)
           if (v == "" || v == "--") next
@@ -597,13 +653,16 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
         }' <<<"$_con"
       } > "$NET_PLAN_DIR/port.args"
       # Both checked by NetworkManager itself, offline: nothing is added.
+      if ! timeout "$NET_CMD_SEC" nmcli --offline connection add --help >/dev/null 2>&1; then
+        net_refuse "NetworkManager $(nmcli --version 2>/dev/null | awk '{ print $NF }') is too old: setup checks the connections it adds with nmcli --offline, which NetworkManager has from 1.44."
+      fi
       for _f in bridge port; do
         mapfile -t _args < "$NET_PLAN_DIR/$_f.args"
         _why="$(timeout "$NET_CMD_SEC" nmcli --offline connection add "${_args[@]}" 2>&1 >/dev/null)" \
           || net_refuse "NetworkManager does not accept the $_f connection setup would add: ${_why:-nmcli --offline failed}."
       done
       unset -f _metric_of
-      unset _routes4 _routes6 _args _f _files
+      unset _routes4 _routes6 _args _f _files _n _prio
       unset -f _prop
       unset _con _mac _p _v _metric4 _metric6
       ;;
@@ -613,8 +672,12 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
   l3_state "$UPLINK" "$NET_TOOL" > "$NET_PLAN_DIR/uplink.state" || net_fail "cannot read what $UPLINK holds"
 fi
 
+if [[ "$BRIDGE_CREATE" == yes ]]; then
+  plan_sources > "$NET_PLAN_DIR/sources" || net_fail "cannot read what the plan was made from"
+fi
 for _var in NET_TOOL UPLINK UPLINK_ADDR BRIDGE BRIDGE_CREATE UPLINK_MAC UPLINK_MODE UPLINK_CLIENT_ID \
-    UPLINK_NETPLAN_ID NETPLAN_ORIGIN NETWORKD_PORT_FILE UPLINK_CONNECTION NM_PROFILE_FILE; do
+    UPLINK_NETPLAN_ID NETPLAN_ORIGIN NETWORKD_PORT_FILE UPLINK_CONNECTION NM_PROFILE_FILE \
+    NM_BRIDGE_UUID NM_PORT_UUID NET_PLAN_JOURNAL; do
   [[ -z "${!_var:-}" ]] || printf '%s=%q\n' "$_var" "${!_var}"
 done > "$NET_PLAN_DIR/plan.env"
 unset _route _addrs _status _netfile _json _def _py _rc _stage _merged _why _var

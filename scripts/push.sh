@@ -62,20 +62,25 @@ TARBALL="$STAGE_OUT/$TARBALL_NAME"
 
 echo ""
 
-# --- Upload ---
-echo "--- Uploading $TARBALL_NAME to $TARGET:/tmp ---"
-scp "${SSH_OPTS[@]}" "$TARBALL" "$TARGET:/tmp/$TARBALL_NAME"
+# --- Upload, into a directory of the push's own on the host ---
+REMOTE_DIR="$(ssh "${SSH_OPTS[@]}" "$TARGET" 'mktemp -d /tmp/wisp-push.XXXXXX')" \
+  || { echo "ERROR: cannot make a directory for the push on $TARGET" >&2; exit 1; }
+echo "--- Uploading $TARBALL_NAME to $TARGET:$REMOTE_DIR ---"
+if ! scp "${SSH_OPTS[@]}" "$TARBALL" "$TARGET:$REMOTE_DIR/$TARBALL_NAME"; then
+  ssh "${SSH_OPTS[@]}" "$TARGET" "rm -rf '$REMOTE_DIR'" || true
+  echo "ERROR: the upload to $TARGET failed." >&2
+  exit 1
+fi
 
 echo ""
 
 # --- Remote install: tar is all the host needs ---
 
 echo "--- Installing on $TARGET ---"
-# Each push extracts into a directory of its own, so a second push never
-# touches the tree a running install copies from. The directory and the
-# tarball go once the install has returned, whatever its outcome; not on a
-# hangup: an install whose connection drops goes on, copying from there.
-if ! ssh "${SSH_OPTS[@]}" -t "$TARGET" "d=\$(mktemp -d /tmp/wisp-push.XXXXXX) && tar -xzf '/tmp/$TARBALL_NAME' -C \"\$d\" || exit 1; rm -f '/tmp/$TARBALL_NAME'; cd \"\$d/wisp\" && bash ./scripts/install.sh $REMOTE_PATH; rc=\$?; rm -rf \"\$d\"; exit \$rc"; then
+# The push's directory goes on every exit, a failed extract included. A hangup
+# does not end the remote shell, nor the install it waits for (which ignores
+# it too), so the directory goes only once the install has used it.
+if ! ssh "${SSH_OPTS[@]}" -t "$TARGET" "trap 'rm -rf $REMOTE_DIR' EXIT; trap '' HUP; tar -xzf '$REMOTE_DIR/$TARBALL_NAME' -C '$REMOTE_DIR' || exit 1; cd '$REMOTE_DIR/wisp' && bash ./scripts/install.sh $REMOTE_PATH"; then
   echo ""
   echo "ERROR: the install on $TARGET failed (see above)." >&2
   exit 1

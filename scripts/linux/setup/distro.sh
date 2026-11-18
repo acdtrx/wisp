@@ -4,6 +4,9 @@
 # Exports:
 #   sys_arch()    — prints GitHub-release arch name (amd64, arm64, arm)
 
+# Setup parses the output of the tools it runs: one locale for all of it.
+export LC_ALL=C
+
 _ID=""
 _ID_LIKE=""
 if [[ -f /etc/os-release ]]; then

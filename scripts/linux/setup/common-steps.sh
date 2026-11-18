@@ -25,13 +25,16 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
-# One setup at a time on the host, whoever runs it (the installer, the
-# updater, an operator): the second waits, then gives up.
-SETUP_LOCK=/run/wisp-setup.lock
-SETUP_LOCK_WAIT_SEC=600
-exec 8> "$SETUP_LOCK"
-if ! flock -w "$SETUP_LOCK_WAIT_SEC" 8; then
-  echo "ERROR: another run of setup holds $SETUP_LOCK; gave up after ${SETUP_LOCK_WAIT_SEC} s." >&2
+# One lock for anything that changes the installation (/run/wisp.lock): the
+# installer's root process and the updater take it at their start and hand it
+# on (fd 8); setup run alone takes it here. The second waits, then gives up.
+WISP_LOCK=/run/wisp.lock
+WISP_LOCK_WAIT_SEC=600
+if [[ ! /proc/self/fd/8 -ef "$WISP_LOCK" ]]; then
+  exec 8> "$WISP_LOCK"
+fi
+if ! flock -w "$WISP_LOCK_WAIT_SEC" 8; then
+  echo "ERROR: another install, update or setup holds $WISP_LOCK; gave up after ${WISP_LOCK_WAIT_SEC} s." >&2
   exit 1
 fi
 
@@ -43,11 +46,32 @@ fi
 source "$SETUP_DIR/distro.sh"
 # shellcheck source=network-plan.sh
 source "$SETUP_DIR/network-plan.sh"
+# The installer asked the operator about the bridge from its own plan
+# (WISP_CONFIRMED_BRIDGE, "<bridge> on <uplink>" or "none"): this run's plan,
+# made under the lock, must be the same, or nothing is changed.
+if [[ -n "${WISP_CONFIRMED_BRIDGE:-}" ]]; then
+  _planned=none
+  [[ "$BRIDGE_CREATE" == yes ]] && _planned="$BRIDGE on $UPLINK"
+  if [[ "$_planned" != "$WISP_CONFIRMED_BRIDGE" ]]; then
+    echo "ERROR: the network changed since the install asked: it would now make ${_planned/none/no bridge}, not ${WISP_CONFIRMED_BRIDGE/none/no bridge}. Nothing was changed; run the install again." >&2
+    exit 1
+  fi
+fi
 
-# A stop (TERM, INT) ends the run once the step running has ended: a step that
-# undoes itself on a stop (the bridge step) finishes that first.
+# A stop (TERM, INT) is passed to the step running, which ends — the bridge
+# step undoing itself — and then the run ends. Steps run in the background for
+# that, so the stop reaches this script at once.
 CURRENT_STEP=""
-trap 'echo "setup stopped at step: ${CURRENT_STEP:-before the steps}" >&2; exit 143' TERM INT
+STEP_PID=""
+on_stop() {
+  if [[ -n "$STEP_PID" ]]; then
+    kill -TERM "$STEP_PID" 2>/dev/null
+    wait "$STEP_PID"
+  fi
+  echo "setup stopped at step: ${CURRENT_STEP:-before the steps}" >&2
+  exit 143
+}
+trap on_stop TERM INT
 
 STEP_COUNT=0
 
@@ -59,8 +83,11 @@ run_step() {
   CURRENT_STEP="$name"
   echo ""
   echo "step: $name"
-  "$SETUP_DIR/$script" "$@"
-  rc=$?
+  "$SETUP_DIR/$script" "$@" &
+  STEP_PID=$!
+  rc=0
+  wait "$STEP_PID" || rc=$?
+  STEP_PID=""
   (( rc == 0 )) && return 0
   echo ""
   echo "setup failed at step: $name (exit $rc)" >&2

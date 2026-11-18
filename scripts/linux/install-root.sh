@@ -29,7 +29,7 @@ if [[ "${1:-}" == --work ]]; then
   shift
   SOURCE_DIR="$1" INSTALL_DIR="$2" DEPLOY_USER="$3" DEPLOY_GROUP="$4" LOG="$5"
   trap '' HUP
-  trap 'rm -rf "$NET_PLAN_DIR" "$WISP_INSTALL_ANSWERS"' EXIT
+  trap 'rm -rf "$WISP_INSTALL_ANSWERS"' EXIT
 
   echo "--- Installing the tree ---"
   "$SETUP_SRC/copy.sh" "$SOURCE_DIR" "$INSTALL_DIR"
@@ -37,8 +37,10 @@ if [[ "${1:-}" == --work ]]; then
   SETUP_DIR="$INSTALL_DIR/scripts/linux/setup"
 
   echo ""
-  # Setup reads the plan worked out before the questions (NET_PLAN_DIR) and
-  # writes the answers (WISP_INSTALL_ANSWERS); its last change is the bridge.
+  # Setup works the plan out again, under the lock this process holds (fd 8),
+  # and stops before any change if it would bridge otherwise than the operator
+  # confirmed (WISP_CONFIRMED_BRIDGE); it writes the answers
+  # (WISP_INSTALL_ANSWERS); its last change is the bridge.
   "$SETUP_DIR/common-steps.sh" "$INSTALL_DIR" "$DEPLOY_USER"
 
   echo ""
@@ -62,6 +64,9 @@ if [[ "${1:-}" == --work ]]; then
 fi
 
 # --- In the foreground: refuse or ask, changing nothing ---
+# A hangup ends only the following of the log; this process still waits for
+# the work, so whoever waits for it (push.sh's shell) waits for the work too.
+trap '' HUP
 if [[ $# -ne 5 ]]; then
   echo "Usage (as root, from install.sh): $0 <source-dir> <install-dir> <user> <group> <server-name or \"\">" >&2
   exit 1
@@ -81,9 +86,11 @@ if [[ -e "$INSTALL_DIR" ]]; then
   fi
 fi
 
-LOCK=/run/wisp-install.lock
-exec 9> "$LOCK"
-flock -n 9 || { echo "ERROR: another Wisp install is running on this host (it holds $LOCK)." >&2; exit 1; }
+# One lock for anything that changes the installation, held to the end and
+# handed to the work and its setup (fd 8).
+LOCK=/run/wisp.lock
+exec 8> "$LOCK"
+flock -n 8 || { echo "ERROR: another install, update or setup is running on this host (it holds $LOCK)." >&2; exit 1; }
 
 # scripts/stage-release.sh writes RELEASE into every tree it stages.
 if [[ ! -f "$SOURCE_DIR/RELEASE" ]]; then
@@ -106,6 +113,9 @@ echo ""
 
 # shellcheck source=setup/distro.sh
 source "$SETUP_SRC/distro.sh"
+# The asking phase changes nothing: the plan only classifies a journal an
+# earlier bridge step left (NET_PLAN_ASK).
+NET_PLAN_ASK=1
 # shellcheck source=setup/network-plan.sh
 source "$SETUP_SRC/network-plan.sh"
 # shellcheck source=setup/install-state.sh
@@ -116,6 +126,11 @@ TERMINAL=0
 WISP_INSTALL_ANSWERS="$(mktemp -d -t wisp-install-answers.XXXXXX)"
 export WISP_INSTALL_ANSWERS
 trap 'rm -rf "$NET_PLAN_DIR" "$WISP_INSTALL_ANSWERS"' EXIT
+
+case "$NET_PLAN_JOURNAL" in
+  restore) echo "A bridge step that did not finish left its journal in $JOURNAL_DIR: the install undoes it first."; echo "" ;;
+  finished) echo "A bridge step that did not record its end had finished: the install records it."; echo "" ;;
+esac
 
 if ! has_server_name "$INSTALL_DIR"; then
   DEFAULT_NAME="$(hostname)"
@@ -143,6 +158,9 @@ if ! has_password "$INSTALL_DIR"; then
   unset PASSWORD PASSWORD2
 fi
 
+WISP_CONFIRMED_BRIDGE=none
+[[ "$BRIDGE_CREATE" == yes ]] && WISP_CONFIRMED_BRIDGE="$BRIDGE on $UPLINK"
+export WISP_CONFIRMED_BRIDGE
 if [[ "$BRIDGE_CREATE" == yes ]]; then
   if (( TERMINAL )); then
     echo ""
@@ -166,10 +184,10 @@ chmod 0640 "$LOG"
 echo ""
 echo "Installing. The log is $LOG; the install goes on if this connection drops."
 echo ""
-# The work owns the plan and the answers from here, and the lock (fd 9).
-net_plan_keep
+# The work owns the answers from here, and the lock (fd 8); it plans again.
+rm -rf "$NET_PLAN_DIR"
 trap - EXIT
-setsid "$0" --work "$SOURCE_DIR" "$INSTALL_DIR" "$DEPLOY_USER" "$DEPLOY_GROUP" "$LOG" \
+NET_PLAN_DIR="" setsid "$0" --work "$SOURCE_DIR" "$INSTALL_DIR" "$DEPLOY_USER" "$DEPLOY_GROUP" "$LOG" \
   < /dev/null >> "$LOG" 2>&1 &
 WORK_PID=$!
 # Ctrl-C: the following stops, by the signal, so a caller's shell stops too
@@ -180,7 +198,7 @@ rc=0
 wait "$WORK_PID" || rc=$?
 # The work removes these when it ends; and so does this, for a work that did
 # not get to start.
-rm -rf "$NET_PLAN_DIR" "$WISP_INSTALL_ANSWERS"
+rm -rf "$WISP_INSTALL_ANSWERS"
 if (( rc != 0 )); then
   echo "" >&2
   echo "ERROR: the install failed; its log is $LOG" >&2

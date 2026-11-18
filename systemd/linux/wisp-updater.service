@@ -12,9 +12,11 @@ StandardError=journal
 # Bounds the whole update run (stop, snapshot, swap, setup, start); typical runs
 # finish in a few minutes. A backstop only: the steps carry their own bounds
 # (setup's npm ci 10 min without output, its package lock wait 5 min), which
-# fire first. On expiry systemd SIGTERMs the unit and wisp-updater rolls back;
-# TimeoutStopSec is the time that rollback gets before systemd escalates to
-# SIGKILL, which would leave a half-restored tree: wisp-updater bounds its own
-# parts to 15 s + 120 s + 300 s + 120 s inside it.
+# fire first. On expiry systemd sends TERM to wisp-updater alone (KillMode=mixed)
+# and it rolls back; TimeoutStopSec is the time that gets before SIGKILL, which
+# would leave a half-restored tree. wisp-updater adds up its bounds inside it
+# (1030 s); a later release never lowers either value — the updater that runs
+# is the previous release's, under this file's limits.
 TimeoutStartSec=1800
-TimeoutStopSec=600
+TimeoutStopSec=1140
+KillMode=mixed

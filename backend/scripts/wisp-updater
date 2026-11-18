@@ -38,7 +38,6 @@ fail() {
   exit 1
 }
 
-
 [[ -n "$INSTALL_DIR" ]] || fail "WISP_INSTALL_DIR not set (unit file should template it)"
 [[ "$INSTALL_DIR" == /* ]] || fail "install dir must be absolute: $INSTALL_DIR"
 [[ -d "$INSTALL_DIR" ]] || fail "install dir not found: $INSTALL_DIR"
@@ -66,13 +65,23 @@ DEPLOY_USER="$(stat -c %U "$INSTALL_DIR")"
 DEPLOY_OWNER="$(stat -c %U:%G "$INSTALL_DIR")"
 
 PREV_DIR="${INSTALL_DIR}.prev"
-# The rollback's bounds. A rollback after the unit's start timeout runs inside
-# its TimeoutStopSec (600 s): stopping wisp (its TimeoutStopSec, 15 s), the
-# restore, the restored tree's setup and its start must all fit, with room left.
+SERVICE_UNIT=wisp
+
+# The bounds, and the stop budget they add up to. When the unit's start times
+# out, systemd sends this script TERM (KillMode=mixed: this process only) and
+# gives it TimeoutStopSec (1140 s) before SIGKILL. In that time: the step
+# running is stopped (setup gets SETUP_STOP_SEC to end the step it is in — the
+# bridge step's undo — then is killed), then the rollback: stop wisp, restore
+# the tree, the restored tree's setup, its start. Each is a hard limit
+# (timeout -k KILL_GRACE_SEC):
+#   420 + (30 + 10) + (120 + 10) + (300 + 10) + (120 + 10) = 1030 s, under 1140.
+# The frontend's give-up limit is TimeoutStartSec + TimeoutStopSec.
+SETUP_STOP_SEC=420
+KILL_GRACE_SEC=10
+STOP_WISP_SEC=30
 ROLLBACK_RESTORE_SEC=120
 ROLLBACK_SETUP_SEC=300
 ROLLBACK_START_WAIT_SEC=120
-SERVICE_UNIT=wisp
 
 # User-data and runtime scratch must survive the swap rsync.
 RSYNC_EXCLUDES=(
@@ -88,26 +97,59 @@ RSYNC_EXCLUDES=(
 snapshot_taken=0
 host_setup_touched=0
 
-# Runs from the EXIT trap, so it never calls fail/exit: every step logs its own
-# failure and the rollback carries on, ending with an attempt to start the
-# service. A rollback that cannot complete leaves its `rollback-warning:` lines
-# in the journal, and the operator finishes by hand (docs/specs/UPDATES.md).
+# One lock for anything that changes the installation, taken before the swap
+# and handed to setup (fd 8).
+exec 8> /run/wisp.lock
+flock -w 600 8 || fail "another install, update or setup holds /run/wisp.lock"
+
+# A step that a stop may cut short runs in the background, so a TERM reaches
+# this script at once and is passed on to that step only: it gets GRACE seconds
+# to end (setup ends the step it is in, the bridge step undoing itself), then is
+# killed. Then the script exits 143, and the EXIT trap rolls back.
+CHILD=""
+CHILD_GRACE=0
+run_stoppable() {
+  local rc=0
+  CHILD_GRACE="$1"; shift
+  "$@" &
+  CHILD=$!
+  wait "$CHILD" || rc=$?
+  CHILD=""
+  return "$rc"
+}
+on_stop() {
+  if [[ -n "$CHILD" ]]; then
+    kill -TERM "$CHILD" 2>/dev/null
+    local waited=0
+    while kill -0 "$CHILD" 2>/dev/null; do
+      if (( waited++ >= CHILD_GRACE )); then kill -KILL "$CHILD" 2>/dev/null; break; fi
+      sleep 1
+    done
+  fi
+  exit 143
+}
+
+# Runs from the EXIT trap, so it never calls fail/exit. Every step logs its own
+# failure and the rollback carries on to the start — but for the restore of the
+# tree: a tree not restored is neither set up nor started, part old and part
+# new; the rollback ends there and names the manual finish. A rollback that
+# cannot complete leaves `rollback-warning:` lines in the journal
+# (docs/specs/UPDATES.md).
 rollback() {
-  # Once begun the rollback ends by itself: a TERM now (the unit's start timeout)
-  # must not cut it short — systemd's SIGKILL after TimeoutStopSec is the bound.
-  trap '' TERM INT
   echo "step:rollback"
   # After a failed start the new backend may be cycling through
   # Restart=on-failure: stop it before the tree is restored under it.
-  systemctl stop "$SERVICE_UNIT" 2>/dev/null || echo "rollback-warning: stopping $SERVICE_UNIT failed"
+  timeout -k "$KILL_GRACE_SEC" "$STOP_WISP_SEC" systemctl stop "$SERVICE_UNIT" 2>/dev/null \
+    || echo "rollback-warning: stopping $SERVICE_UNIT failed"
   if [[ "$snapshot_taken" -eq 1 && -d "$PREV_DIR" ]]; then
     # config/ and its ledger revert together: the migrations the new backend's
     # start ran run again at the next start of a release that ships them (they
     # are idempotent).
-    timeout "$ROLLBACK_RESTORE_SEC" rsync -a --delete "$PREV_DIR/" "$INSTALL_DIR/" \
-      || echo "rollback-warning: restoring the tree from $PREV_DIR failed"
-    chown -R "$DEPLOY_OWNER" "$INSTALL_DIR" \
-      || echo "rollback-warning: chown of $INSTALL_DIR failed"
+    if ! timeout -k "$KILL_GRACE_SEC" "$ROLLBACK_RESTORE_SEC" rsync -a --delete "$PREV_DIR/" "$INSTALL_DIR/" \
+      || ! chown -R "$DEPLOY_OWNER" "$INSTALL_DIR"; then
+      echo "rollback-warning: the tree was not restored from $PREV_DIR, so it is neither set up nor started. Finish by hand, as root: rsync -a --delete $PREV_DIR/ $INSTALL_DIR/; chown -R $DEPLOY_OWNER $INSTALL_DIR; $INSTALL_DIR/scripts/linux/setup/common-steps.sh $INSTALL_DIR $DEPLOY_USER; systemctl start $SERVICE_UNIT"
+      return
+    fi
     if [[ "$host_setup_touched" -eq 1 ]]; then
       # The new release's helpers, sudoers and units may already be installed;
       # put back the restored tree's own. That tree is the release that
@@ -115,10 +157,10 @@ rollback() {
       echo "step:rollback-setup"
       local old_steps="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
       if [[ -x "$old_steps" ]]; then
-        timeout "$ROLLBACK_SETUP_SEC" "$old_steps" "$INSTALL_DIR" "$DEPLOY_USER" \
-          || echo "rollback-warning: the restored tree's setup failed or ran past ${ROLLBACK_SETUP_SEC}s"
+        timeout -k "$KILL_GRACE_SEC" "$ROLLBACK_SETUP_SEC" "$old_steps" "$INSTALL_DIR" "$DEPLOY_USER" \
+          || echo "rollback-warning: the restored tree's setup failed or ran past ${ROLLBACK_SETUP_SEC}s: wisp.service and the helpers may still be the new release's"
       else
-        echo "rollback-warning: $old_steps missing; helpers stay at the new release's"
+        echo "rollback-warning: $old_steps missing: wisp.service and the helpers may still be the new release's"
       fi
     fi
   fi
@@ -127,27 +169,27 @@ rollback() {
   # back to, and the rollback must end: its start gets a short wait, and a start
   # not done by then is reported, not retried. A wait cut short leaves the start
   # job to systemd.
-  if ! timeout "$ROLLBACK_START_WAIT_SEC" systemctl start "$SERVICE_UNIT"; then
+  if ! timeout -k "$KILL_GRACE_SEC" "$ROLLBACK_START_WAIT_SEC" systemctl start "$SERVICE_UNIT"; then
     echo "rollback-warning: the restored release did not start within ${ROLLBACK_START_WAIT_SEC}s (wisp.service: $(systemctl show "$SERVICE_UNIT" -p ActiveState -p SubState --value | tr '\n' ' '))"
   fi
 }
 
-trap 'rc=$?; if [[ $rc -ne 0 ]]; then rollback; fi' EXIT
-# systemd stops the unit with SIGTERM on TimeoutStartSec. Exit non-zero from it
-# explicitly: without this, the EXIT trap would see the status of whatever
-# command last finished and could skip the rollback of a half-applied update.
-trap 'exit 143' TERM INT
+# The EXIT trap first stops TERM and INT from cutting the rollback short: a
+# no-op handler, not SIG_IGN, so the commands it runs keep the default and their
+# own timeouts can still stop them.
+trap 'rc=$?; trap ":" TERM INT; if [[ $rc -ne 0 ]]; then rollback; fi' EXIT
+trap on_stop TERM INT
 
 echo "step:stop-service"
-systemctl stop "$SERVICE_UNIT" 2>/dev/null || true
+timeout -k "$KILL_GRACE_SEC" "$STOP_WISP_SEC" systemctl stop "$SERVICE_UNIT" 2>/dev/null || true
 
 echo "step:snapshot"
 rm -rf "$PREV_DIR"
-rsync -a --delete "$INSTALL_DIR/" "$PREV_DIR/" || fail "snapshot rsync failed"
+run_stoppable "$KILL_GRACE_SEC" rsync -a --delete "$INSTALL_DIR/" "$PREV_DIR/" || fail "snapshot rsync failed"
 snapshot_taken=1
 
 echo "step:swap"
-rsync -a --delete "${RSYNC_EXCLUDES[@]}" "$STAGING/" "$INSTALL_DIR/" || fail "swap rsync failed"
+run_stoppable "$KILL_GRACE_SEC" rsync -a --delete "${RSYNC_EXCLUDES[@]}" "$STAGING/" "$INSTALL_DIR/" || fail "swap rsync failed"
 chown -R "$DEPLOY_OWNER" "$INSTALL_DIR" || fail "chown failed"
 
 echo "step:setup"
@@ -158,18 +200,18 @@ echo "step:setup"
 # backend's dependencies (the tree ships without node_modules), renders
 # wisp.service, and refreshes the privileged wisp-* helpers — this script and
 # wisp-updater.service among them, by atomic rename, so the running inode
-# finishes this update.
+# finishes this update. It runs under the lock taken above (fd 8).
 SETUP="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
 [[ -x "$SETUP" ]] || fail "missing $SETUP — releases older than v2.0.2 cannot be installed by this updater"
 host_setup_touched=1
-"$SETUP" "$INSTALL_DIR" "$DEPLOY_USER" || fail "setup failed"
+run_stoppable "$SETUP_STOP_SEC" "$SETUP" "$INSTALL_DIR" "$DEPLOY_USER" || fail "setup failed"
 systemctl daemon-reload || fail "daemon-reload failed"
 
 echo "step:start-service"
 # Blocks until the new backend is ready or has failed (Type=notify; bounded by
 # the unit's TimeoutStartSec, inside this unit's own).
 START_TS="$(date +%s)"
-if ! systemctl start "$SERVICE_UNIT"; then
+if ! run_stoppable "$KILL_GRACE_SEC" systemctl start "$SERVICE_UNIT"; then
   journalctl --sync 2>/dev/null || true
   journalctl -u "$SERVICE_UNIT" --since "@$START_TS" -n 20 --no-pager -o cat 2>/dev/null | sed 's/^/  wisp: /' || true
   fail "new release did not start"
