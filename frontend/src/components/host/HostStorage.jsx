@@ -191,6 +191,7 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
   };
 
   const handleMountToggle = (id, mounted) => {
+    onError(null);
     setMountActionId(id);
     const p = mounted
       ? unmountMount(id).then((job) => awaitJob(JOB_KIND.MOUNT_UNMOUNT, job))
@@ -411,6 +412,7 @@ function RemovableDrivesSection({
   };
 
   const handleMountToggle = (id, mounted) => {
+    onError(null);
     setMountActionId(id);
     const p = mounted
       ? unmountMount(id).then((job) => awaitJob(JOB_KIND.MOUNT_UNMOUNT, job))
