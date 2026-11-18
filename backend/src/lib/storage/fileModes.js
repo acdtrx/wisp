@@ -23,10 +23,10 @@ const MODE_UNSUPPORTED_ERRORS = new Set(['EPERM', 'EROFS', 'ENOTSUP', 'EOPNOTSUP
  *
  * @param {string} path
  * @param {{ type: 'file' | 'dir' }} opts - `type` the entry must be; anything else (symlink, FIFO, the other type) is left alone
- * @returns {Promise<null | { path: string, type: 'file' | 'dir', from: number, to: number, applied: boolean, reason?: string }>}
+ * @returns {Promise<null | { path: string, type: 'file' | 'dir', from: number, to: number, reason?: string }>}
  *   null when there is nothing to change (absent, wrong type, already owner-only);
- *   `applied: false` with a `reason` when the change was attempted but not made
- *   (the filesystem keeps its own modes, or refused the chmod)
+ *   a `reason` when the change was attempted but not made (the filesystem keeps
+ *   its own modes, or refused the chmod)
  */
 export async function restrictToOwner(path, { type }) {
   let handle;
@@ -47,13 +47,13 @@ export async function restrictToOwner(path, { type }) {
       await handle.chmod(to);
     } catch (err) {
       if (!MODE_UNSUPPORTED_ERRORS.has(err.code)) throw err;
-      return { path, type, from, to, applied: false, reason: `chmod refused (${err.code})` };
+      return { path, type, from, to, reason: `chmod refused (${err.code})` };
     }
     const after = (await handle.stat()).mode & 0o7777;
     if ((after & GROUP_OTHER_BITS) !== 0) {
-      return { path, type, from, to, applied: false, reason: 'filesystem keeps its own modes' };
+      return { path, type, from, to, reason: 'filesystem keeps its own modes' };
     }
-    return { path, type, from, to: after, applied: true };
+    return { path, type, from, to: after };
   } finally {
     await handle.close().catch(() => { /* read-only handle; nothing left to flush */ });
   }
@@ -69,7 +69,7 @@ function formatMode(mode) {
  * `/var/lib/wisp/containers/caddy: 0755 → 0700; container.json 0644 → 0600`.
  * A change attempted but not made carries its reason.
  *
- * @param {Array<{ path: string, type: 'file' | 'dir', from: number, to: number, applied: boolean, reason?: string }>} changes
+ * @param {Array<{ path: string, type: 'file' | 'dir', from: number, to: number, reason?: string }>} changes
  * @returns {string[]}
  */
 export function describeModeChanges(changes) {
