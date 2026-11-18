@@ -14,7 +14,7 @@ import {
 } from './vmManagerConnection.js';
 import { parseVMFromXML, detectOSCategory } from './vmManagerXml.js';
 import { isVMBinaryStale, getQemuStartTimeMs } from './vmManagerProc.js';
-import { pendingRestartInForce } from './vmManagerPendingRestart.js';
+import { pendingRestartInForce } from './vmManagerPendingRestartRule.js';
 import { STATE_NAMES, isOfflineState } from './libvirtConstants.js';
 
 /* ── VM list cache (event-driven) ──────────────────────────────────── */

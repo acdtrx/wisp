@@ -26,6 +26,7 @@ import { refreshVMListCache } from './vmManagerList.js';
 import { announceVMChange } from './vmManagerChange.js';
 import { getQemuStartTimeMs } from './vmManagerProc.js';
 import { isOfflineState } from './libvirtConstants.js';
+import { pendingRestartInForce } from './vmManagerPendingRestartRule.js';
 
 /**
  * Write the flag into the inactive definition, leaving every other part of
@@ -63,19 +64,6 @@ export async function setVMPendingRestart(name, value) {
     if (err.code) throw err;
     throw vmError('LIBVIRT_ERROR', `Failed to update the restart flag of VM "${name}"`, err.message);
   }
-}
-
-/**
- * The restart-required rule: the flag still in force — `{ since }` or null.
- * `startedAt` is the QEMU process's start time (epoch ms), null when not
- * running or unreadable. A flag QEMU started after is no longer in force; a
- * stopped VM, or one whose start time can't be read, keeps its flag. Pure:
- * reads apply it, and `clearOutgrownRestartFlag` drops the stored flag.
- */
-export function pendingRestartInForce(pendingRestart, startedAt) {
-  if (!pendingRestart) return null;
-  if (startedAt == null || !(startedAt > Date.parse(pendingRestart.since))) return pendingRestart;
-  return null;
 }
 
 /**
