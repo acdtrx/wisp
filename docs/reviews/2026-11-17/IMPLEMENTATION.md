@@ -5,24 +5,33 @@ its files, lines and fix sketch, which this plan does not repeat. "Backlog:" nam
 `docs/BACKLOG.md` entries a phase resolves.
 
 Order: the safety net first, because every later phase leans on it; then known defects;
-then the areas the audit graded "strained", worst first; then the "workable" ones; docs
-last, because they should describe the result.
+then start-up, install and update (phase 7, moved up on 2026-11-18); then the areas the
+audit graded "strained", worst first; then the "workable" ones; docs last, because they
+should describe the result. Phases keep their numbers: 1, 2, 7, 3, 4, 5, 6, 8.
 
 ## Ground rules, every phase
 
 The audit's main finding is that each campaign added a better pattern beside the old one.
 These rules are what stops this plan from doing the same.
 
-1. **Convert every caller and delete the old variant.** A phase is done when the count of
+1. **Build what a build from scratch would have** (settled 2026-11-18). For each finding
+   the target is the design the rule docs would give a new project, not the smallest edit
+   to today's code. A phase lands that design whole, or leaves the finding whole to the
+   phase that owns it: no patch in between. The standing aims:
+   - one way to do each thing, across the app;
+   - an install that ends with Wisp usable;
+   - stored state that is right whenever Wisp starts, however it was started;
+   - the system's own tool before a unit, command or helper of ours.
+2. **Convert every caller and delete the old variant.** A phase is done when the count of
    the old shape is zero, and that count is one of its acceptance criteria.
-2. **A check holds the line.** Where a script can check the rule, the check lands in the
+3. **A check holds the line.** Where a script can check the rule, the check lands in the
    same phase and runs with the other lints and in CI, so the old shape cannot come back.
-3. **Same behaviour unless listed.** Each phase lists its behaviour changes. A defect met
+4. **Same behaviour unless listed.** Each phase lists its behaviour changes. A defect met
    on the way that is not listed goes to the backlog.
-4. **Verified by running.** Platform paths on the Linux test host, milestone by milestone
+5. **Verified by running.** Platform paths on the Linux test host, milestone by milestone
    (CODING-RULES §14); pure code by the unit harness from phase 1; UI through the Vite
    harness in light, dark and phone widths.
-5. **One feature doc per phase**, written when the phase starts so its file and line
+6. **One feature doc per phase**, written when the phase starts so its file and line
    references are current, agreed with the user before the build, removed when the phase
    is reviewed. Backlog entries leave in the change that resolves them.
 
@@ -31,15 +40,16 @@ These rules are what stops this plan from doing the same.
 - This session is the design session and stays on `main`.
 - Per phase: write the feature, agree it with the user, tag `anchor/<topic>`, start one
   builder (Opus 5.5, high effort) in a worktree under `.claude/worktrees/`.
-- The builder sends its open points back first; the ones that are the user's go to the
-  user.
+- The builder sends its open points back first. The design session settles them by
+  ground rule 1 and says what it settled. The user is asked only where clean designs
+  really differ, or where the answer reverses something already settled.
 - After each milestone a fresh reviewer (Opus 5.5, high effort) gets the change, the
   feature and the rules, not the builder's reasoning. Findings go back to the same
   builder: fixed or put in the backlog.
 - When the last milestone is reviewed and its criteria were observed: rebase, ff merge to
   local `main`, remove the feature doc. Nothing is pushed unless asked; no release is
   cut.
-- One phase at a time. Phase 7 touches only `scripts/` and may run beside another phase.
+- One phase at a time.
 
 ## Decisions (settled 2026-11-18)
 
@@ -54,6 +64,17 @@ These rules are what stops this plan from doing the same.
 - The Linux test host is used for the whole plan: deploys of a phase's branch, throwaway
   VMs and containers, and a throwaway VM to run the installer in. Existing workloads and
   settings stay untouched.
+- Clean design before smallest change: ground rule 1. It was added after phase 2's
+  install and upgrade fixes had been framed as patches (a restart that also migrates, a
+  command to finish networking). Those two findings, P-1 and P-3, moved to phase 7.
+- State migrations run when the backend starts, every time, before it serves; not from
+  the updater, the installer or a command. This replaces "during the update, with the
+  backend stopped" (settled 2026-10-16): a start that did not come through the updater
+  must not meet unmigrated state either.
+- The bridge is part of setup, not an optional extra: without it no VM or container has
+  a network. It is set up through the host's own network tool, with no unit or command
+  of ours to finish the job.
+- No database: the SQLite idea was looked at and dropped.
 
 ## Phases
 
@@ -190,17 +211,31 @@ same files.
 - Renames for §1 (U-6); one `formatBytes`; labels on icon buttons (U-7).
 - Backlog: "Help icons rely on `title`".
 
-### 7. Install, update, helpers — M–L
+### 7. Start-up, install and update — L
 
-May run beside another phase.
+Next after phase 2 (moved up 2026-11-18). P-1 is a live defect, and its clean fix, like
+P-3's, is a design and not a patch.
 
-- One setup path that updates also run (P-4). Backlog: "Setup strategy: one update-safe
-  path".
-- The nine helpers on one dialect, with shell rules added to CODING-RULES §12 (P-6).
-- Smaller: `sanity.sh` can fail; exec bits; one source for the version and the file list;
-  one `idle_run`; legacy cleanups expire; stale `wispctl` commands (P-7).
-- Backlog: "SMB shares without a password can't be mounted", "OS upgrade runs inside
-  wisp.service".
+- **Migrations at start (P-3).** The backend runs the pending state migrations every time
+  it starts, before it serves a request or starts a workload. A failed migration stops
+  the start and says why. The updater, the installer and `wispctl` no longer run them:
+  after an update, the health check sees the failed start and rolls back. Rule docs:
+  CODING-RULES §16, ARCHITECTURE State, PRODUCTION Deploys; spec: UPDATES, State
+  migrations.
+- **One setup path that ends usable (P-1, P-4).** Install and update run the same
+  re-runnable setup, so a step added to it reaches every host. It ends with VM and
+  container networking working. The bridge is one of its steps: found or chosen first,
+  so the steps that depend on it are written for it; applied last, through the host's
+  own network tool, in a way that keeps the host's address. Nothing of ours is left to
+  run afterwards. Backlog: "Setup strategy: one update-safe path", "A push to a fresh
+  host needs `unzip` first".
+- `DEPLOYMENT.md` as a contract for the result (P-8), and the README's install section.
+- A later feature of this phase, which may wait until after phase 6: the nine helpers on
+  one dialect, with shell rules added to CODING-RULES §12 (P-6); `sanity.sh` can fail;
+  exec bits; one source for the version and the file list; one `idle_run`; legacy
+  cleanups expire; stale `wispctl` commands (P-7). Backlog: "SMB shares without a
+  password can't be mounted", "OS upgrade runs inside wisp.service", "`release.sh` can
+  stop halfway through".
 
 ### 8. Docs and the rule sweep
 
