@@ -508,6 +508,7 @@ process.on('uncaughtException', (err) => exitOnFatal('Uncaught exception', err))
 const START_FAILURE_CODES = new Set([
   'RUNTIME_ENV_INVALID', 'CONFIG_INVALID', 'PASSWORD_FILE_UNREADABLE', 'PASSWORD_FILE_UNSUPPORTED_FORMAT',
   'DEFAULT_BRIDGE_INVALID', 'MIGRATION_SETUP', 'MIGRATION_FAILED', 'SYSTEMD_NOTIFY_FAILED',
+  'DNS_FORWARDER_UNAVAILABLE',
 ]);
 
 main().catch((err) => {

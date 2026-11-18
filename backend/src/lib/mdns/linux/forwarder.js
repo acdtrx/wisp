@@ -32,6 +32,8 @@ import net from 'node:net';
 import os from 'node:os';
 import { readFileSync } from 'node:fs';
 
+import { createAppError } from '../../routeErrors.js';
+
 const STUB_IP = '169.254.53.53';
 const PORT = 53;
 const UPSTREAM_TIMEOUT_MS = 5000;
@@ -566,24 +568,24 @@ export async function startForwarder(logger = null, { lookups, hostInterface = n
   if (!state.upstream) {
     logWarn('no IPv4 nameserver in /etc/resolv.conf; non-.local queries will fail');
   }
+  // A forwarder that cannot bind fails the start: systemd starts the backend
+  // again (wisp.service's restart backoff), and it heals once the stub address
+  // is there, where giving up would lose every container's DNS until a restart.
   try {
     await startUdp();
     await startTcp();
-    logInfo(`listening on ${STUB_IP}:${PORT} (UDP+TCP); upstream=${state.upstream?.address ?? 'none'}; ` +
-      `host name answered from ${state.hostInterface ?? 'none'}`);
   } catch (err) {
-    const msg = err?.message || String(err);
-    if (err?.code === 'EACCES') {
-      logWarn(`cannot bind ${STUB_IP}:${PORT} — need CAP_NET_BIND_SERVICE. ` +
-        'Check AmbientCapabilities in wisp.service. Container .local resolution will not work.');
-    } else if (err?.code === 'EADDRNOTAVAIL') {
-      logWarn(`${STUB_IP} is not assigned to any interface. ` +
-        'Run scripts/linux/setup/container-dns.sh (holds it on wisp-dns0), then restart wisp.');
-    } else {
-      logWarn(`failed to start: ${msg}`);
-    }
     await stopForwarder();
+    let why = err?.message || String(err);
+    if (err?.code === 'EACCES') {
+      why = 'it needs CAP_NET_BIND_SERVICE (AmbientCapabilities in wisp.service)';
+    } else if (err?.code === 'EADDRNOTAVAIL') {
+      why = `${STUB_IP} is on no interface (setup holds it on wisp-dns0: scripts/linux/setup/common-steps.sh)`;
+    }
+    throw createAppError('DNS_FORWARDER_UNAVAILABLE', `the container DNS forwarder cannot listen on ${STUB_IP}:${PORT}: ${why}`);
   }
+  logInfo(`listening on ${STUB_IP}:${PORT} (UDP+TCP); upstream=${state.upstream?.address ?? 'none'}; ` +
+    `host name answered from ${state.hostInterface ?? 'none'}`);
 }
 
 export async function stopForwarder() {
