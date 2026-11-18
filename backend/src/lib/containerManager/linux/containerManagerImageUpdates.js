@@ -73,7 +73,14 @@ async function containerFlaggedForDigest(name, newDigest) {
 async function checkOneImage(ref, onProgress, position) {
   onProgress?.({ step: 'checking', ref, index: position.index, total: position.total });
 
-  const before = await getImageDigest(ref);
+  let before;
+  let after;
+  try {
+    before = await getImageDigest(ref);
+  } catch (err) {
+    onProgress?.({ step: 'skipped', ref, reason: err?.message || 'digest read failed' });
+    return { changed: false, flaggedCount: 0 };
+  }
 
   try {
     await pullImage(ref, () => {});
@@ -82,7 +89,12 @@ async function checkOneImage(ref, onProgress, position) {
     return { changed: false, flaggedCount: 0 };
   }
 
-  const after = await getImageDigest(ref);
+  try {
+    after = await getImageDigest(ref);
+  } catch (err) {
+    onProgress?.({ step: 'skipped', ref, reason: err?.message || 'digest read failed' });
+    return { changed: false, flaggedCount: 0 };
+  }
   if (!after || after === before) {
     onProgress?.({ step: 'unchanged', ref });
     return { changed: false, flaggedCount: 0 };
