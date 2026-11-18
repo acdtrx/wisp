@@ -320,7 +320,9 @@ l3 = {"dhcp4", "dhcp6", "addresses", "routes", "routing-policy", "nameservers", 
       "accept-ra", "link-local", "dhcp4-overrides", "dhcp6-overrides"}
 left = sorted(k for k in l3 & set(port) if port[k] not in (False, None, [], {}))
 want = json.loads(wanted)
-missing = sorted(k for k in want if k not in br)
+# netplan leaves out what has its default value.
+defaults = {"dhcp-identifier": "duid"}
+missing = sorted(k for k in want if k not in br and defaults.get(k) != want[k])
 if left:
     print(nid + " still has " + ", ".join(left))
 elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower() != want["macaddress"]:
