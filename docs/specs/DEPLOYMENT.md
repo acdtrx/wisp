@@ -22,7 +22,7 @@ flowchart TD
 
 ## Supported Linux Distributions
 
-Wisp hosts run **Debian or Ubuntu** (or a derivative that names one of them in `ID_LIKE`). Setup and the installer check `/etc/os-release` first (`scripts/linux/setup/distro.sh`) and refuse any other distro before they change anything (settled 2026-11-18: Arch Linux hosts dropped).
+Wisp hosts run **Debian or Ubuntu** (or a derivative that names one of them in `ID_LIKE`) with **systemd 254 or newer** (Debian 13, Ubuntu 24.04 and later; read from `systemctl --version`, settled 2026-11-18). Setup and the installer check `/etc/os-release` first (`scripts/linux/setup/distro.sh`) and refuse any other distro before they change anything (settled 2026-11-18: Arch Linux hosts dropped).
 
 ## Server Prerequisites (`setup-server.sh`)
 
