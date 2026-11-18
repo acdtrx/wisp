@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  checkMigrationModule, ledgerEntry, migrationFileNames, parseLedger, pendingMigrations, recordRun,
+  checkMigrationModule, failureMessage, ledgerEntry, migrationFileNames, parseLedger, pendingMigrations, recordRun,
 } from './stateMigrationLedger.js';
 
 const run = async () => {};
@@ -66,6 +66,17 @@ test('a ledger that is not JSON, or has no applied array, is a setup error namin
   }
 });
 
+test('a ledger entry that is not an object with a string id is a setup error naming the file and entry', () => {
+  for (const entry of [null, 1, 'x', [], {}, { id: 3 }, { id: null }]) {
+    const text = JSON.stringify({ applied: [{ id: '0001-a', result: 'ok' }, entry] });
+    assert.throws(() => parseLedger(text, '/c/migrations.json'), (err) => {
+      assert.equal(err.code, 'MIGRATION_SETUP');
+      assert.match(err.message, /\/c\/migrations\.json: applied\[1\]/);
+      return true;
+    });
+  }
+});
+
 test('pending: every migration without an ok entry, in the order given', () => {
   const migrations = ['0001-a', '0002-b', '0003-c', '0004-d'].map((id) => ({ id }));
   const ledger = {
@@ -86,11 +97,23 @@ test('a ledger entry records ok, or error with the message', () => {
     { id: '0001-a', at: 't', result: 'ok', changes: ['x'] },
   );
   assert.deepEqual(
-    ledgerEntry('0001-a', { at: 't', changes: [], error: new Error('boom') }),
+    ledgerEntry('0001-a', { at: 't', changes: [], failed: true, error: new Error('boom') }),
     { id: '0001-a', at: 't', result: 'error', changes: [], error: 'boom' },
   );
   const raw = Object.assign(new Error('short'), { raw: 'libvirt said no' });
-  assert.equal(ledgerEntry('0001-a', { at: 't', changes: [], error: raw }).error, 'libvirt said no');
+  assert.equal(ledgerEntry('0001-a', { at: 't', changes: [], failed: true, error: raw }).error, 'libvirt said no');
+});
+
+test('a migration that threw or rejected with no reason, or a falsy one, is still a failure', () => {
+  for (const error of [undefined, null, 0, '', false]) {
+    const entry = ledgerEntry('0001-a', { at: 't', changes: [], failed: true, error });
+    assert.equal(entry.result, 'error');
+    assert.equal(typeof entry.error, 'string');
+    assert.notEqual(entry.error, '');
+  }
+  assert.equal(failureMessage(undefined), 'failed without a reason (it threw undefined)');
+  assert.equal(failureMessage(null), 'failed without a reason (it threw null)');
+  assert.equal(failureMessage('plain'), 'plain');
 });
 
 test('recording a run keeps one entry per id and the entries of other ids', () => {

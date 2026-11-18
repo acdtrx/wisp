@@ -34,7 +34,10 @@ export function checkMigrationModule(fileName, mod) {
   return { id: mod.id, description: mod.description, run: mod.run };
 }
 
-/** The ledger `{ applied: [...] }` from its file's text; `null` text (no file) is an empty ledger. */
+/**
+ * The ledger `{ applied: [...] }` from its file's text; `null` text (no file) is
+ * an empty ledger. Every entry must be an object with a string `id`.
+ */
 export function parseLedger(text, path) {
   if (text === null) return { applied: [] };
   let data;
@@ -46,6 +49,10 @@ export function parseLedger(text, path) {
   if (!data || !Array.isArray(data.applied)) {
     throw setupError(`${path} has no "applied" array — fix or remove it by hand`);
   }
+  const bad = data.applied.findIndex((e) => e === null || typeof e !== 'object' || Array.isArray(e) || typeof e.id !== 'string');
+  if (bad !== -1) {
+    throw setupError(`${path}: applied[${bad}] is not an entry with a string "id" — fix or remove it by hand`);
+  }
   return data;
 }
 
@@ -55,14 +62,26 @@ export function pendingMigrations(migrations, ledger) {
   return migrations.filter((m) => !done.has(m.id));
 }
 
-/** The ledger entry for one run: `ok`, or `error` with the error's message. */
-export function ledgerEntry(id, { at, changes, error = null }) {
+/**
+ * What a migration's failure says: the error's detail or message, or what was
+ * thrown. Failure is whether the migration threw or rejected, never the value it
+ * threw, so a rejection with no reason still fails.
+ */
+export function failureMessage(error) {
+  const text = error !== null && typeof error === 'object'
+    ? String(error.raw || error.message || error)
+    : String(error ?? '');
+  return text || `failed without a reason (it threw ${typeof error === 'string' ? '""' : String(error)})`;
+}
+
+/** The ledger entry for one run: `ok`, or `error` with the failure's message (`failed` true). */
+export function ledgerEntry(id, { at, changes, failed = false, error }) {
   return {
     id,
     at,
-    result: error ? 'error' : 'ok',
+    result: failed ? 'error' : 'ok',
     changes,
-    ...(error ? { error: String(error.raw || error.message || error) } : {}),
+    ...(failed ? { error: failureMessage(error) } : {}),
   };
 }
 

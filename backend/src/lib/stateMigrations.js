@@ -59,7 +59,12 @@ async function loadMigrations() {
   const files = migrationFileNames(entries.filter((e) => e.isFile()).map((e) => e.name));
   const migrations = [];
   for (const file of files) {
-    const mod = await import(pathToFileURL(join(MIGRATIONS_DIR, file)).href);
+    let mod;
+    try {
+      mod = await import(pathToFileURL(join(MIGRATIONS_DIR, file)).href);
+    } catch (err) {
+      throw createAppError('MIGRATION_SETUP', `${file}: cannot be loaded: ${err?.message ?? String(err)}`);
+    }
     migrations.push(checkMigrationModule(file, mod));
   }
   return migrations;
@@ -112,16 +117,18 @@ async function runPending(pending, ledger, log) {
     for (const migration of pending) {
       const changes = [];
       log.info({ migration: migration.id }, `running: ${migration.description}`);
-      let error = null;
+      let failed = false;
+      let error;
       try {
         await migration.run(buildContext(migration, { log, changes }));
       } catch (err) {
+        failed = true;
         error = err;
       }
-      const entry = ledgerEntry(migration.id, { at: new Date().toISOString(), changes, error });
+      const entry = ledgerEntry(migration.id, { at: new Date().toISOString(), changes, failed, error });
       current = recordRun(current, entry);
       await writeLedger(current);
-      if (error) {
+      if (failed) {
         log.error({ migration: migration.id, err: error }, 'migration failed — later migrations not run');
         throw createAppError('MIGRATION_FAILED', `state migration ${migration.id} failed: ${entry.error}`);
       }
@@ -134,7 +141,8 @@ async function runPending(pending, ledger, log) {
 
 /**
  * Run every pending migration. Throws MIGRATION_SETUP for a bad migration file,
- * an unreadable or malformed ledger, or a config that is not JSON, and
+ * an unreadable or malformed ledger, a config that is not JSON, or a run as root
+ * that would write, and
  * MIGRATION_FAILED for a migration that threw (recorded as `error` in the
  * ledger, so the next start runs it again).
  */
@@ -143,6 +151,15 @@ export async function migrateState(log) {
   const ledgerText = await readIfExists(LEDGER_PATH);
   const ledger = parseLedger(ledgerText, LEDGER_PATH);
   const pending = pendingMigrations(migrations, ledger);
+
+  // Whatever runs here writes the ledger and the migrations' state, which the
+  // service (the deploy user) must keep reading and writing.
+  if ((pending.length > 0 || ledgerText === null) && process.getuid?.() === 0) {
+    throw createAppError(
+      'MIGRATION_SETUP',
+      'state migrations must run as the deploy user, not root: files they write as root would be unreadable to wisp.service',
+    );
+  }
 
   if (pending.length === 0) {
     log.info({ ledger: LEDGER_PATH, shipped: migrations.length }, 'state migrations: none pending');
