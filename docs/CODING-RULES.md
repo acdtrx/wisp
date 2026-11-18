@@ -246,9 +246,9 @@ tool descriptions ([`specs/MCP.md`](specs/MCP.md)).
 Manager paths have no automated tests — verification is running the real thing, with the
 checks and the unit tests below for what they cover:
 
-- Run `npm run check` at the repo root before every commit: it must pass. It runs each
-  check below and fails if any of them fails; the release workflow and
-  `scripts/release.sh` run it too, so a failure blocks a release.
+- Run `npm run check` at the repo root after any change to code or scripts: it must
+  pass. It runs each check below and fails if any of them fails; the release workflow
+  and `scripts/release.sh` run it too, so a failure blocks a release.
   - `check-imports`: every relative import in the backend resolves. The backend has no
     build step, so nothing else validates import paths — and a *dynamic* import only
     resolves when its code path runs, so a stale one boots fine and 500s a single route

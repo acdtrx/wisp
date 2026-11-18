@@ -312,7 +312,7 @@ function ptrNameToIPv6(qname) {
  * answer — relaying it over UDP would just truncate again).
  *
  * Exported for harness-driven verification: the sockets bind an address that
- * exists only on the Linux host, and the project has no test suite.
+ * exists only on the Linux host.
  *
  * @param {Buffer} packet
  * @param {'udp'|'tcp'} transport

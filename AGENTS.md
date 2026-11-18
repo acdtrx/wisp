@@ -65,7 +65,8 @@ small, ask.
    session: settle them with the user and pass the answers on. Builder: then build,
    milestone by milestone.
 4. **A milestone is done** when each of its acceptance criteria was run and observed as
-   CODING-RULES §14 says: Wisp has no test suite. Builder: then stop and report. Design
+   CODING-RULES §14 says: manager paths have no automated tests. Builder: then stop and
+   report. Design
    session: have it reviewed, then continue the same builder with the findings and the
    next milestone. `[PROJECT]`
 
