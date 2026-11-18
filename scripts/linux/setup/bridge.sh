@@ -5,14 +5,16 @@
 # through the tool that runs the uplink — netplan, systemd-networkd or
 # NetworkManager — and applied through it. Run as root.
 #
-# The bridge keeps the host's address: it takes the uplink's hardware address,
-# its layer-3 settings and its DHCP identity, so the DHCP server hands it the
-# same lease. The uplink becomes its port, and what ran it before no longer
-# comes up by itself. After the apply the bridge must hold the uplink's former
-# IPv4 address, hardware address and client identifier within the wait; if the
-# apply fails or any of them differs, what the step wrote is removed and the
-# host's configuration applied again, so the host is back as it was, and the
-# step fails saying so. A later run starts clean.
+# The bridge keeps the host's address: it takes the uplink's hardware address
+# and its whole layer 3, static or DHCP, with its DHCP identity, so the DHCP
+# server hands it the same lease. The uplink becomes its port with no
+# addressing of its own, and what ran it before no longer applies. After the
+# apply, within the wait, the bridge must hold the uplink's former hardware
+# address and IPv4 addresses — and on DHCP its client identifier, on a static
+# address its routes and name servers too — and the uplink none. If the apply
+# fails or that does not hold, the tool's files are put back as they were and
+# the host's configuration applied again, so the host is back as it was, and
+# the step fails saying so. A later run starts clean.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -25,6 +27,8 @@ SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SETUP_DIR/step.sh"
 # shellcheck source=network-plan.sh
 source "$SETUP_DIR/network-plan.sh"
+# shellcheck source=net-state.sh
+source "$SETUP_DIR/net-state.sh"
 
 echo "--- Bridge ---"
 
@@ -37,7 +41,7 @@ fi
 APPLY_WAIT_SEC=90   # the apply, and the bridge holding the uplink's address
 CMD_SEC=30          # any other call of a network tool
 
-NETPLAN_FILE=/etc/netplan/90-wisp-bridge.yaml
+BACKUP="$NET_PLAN_DIR/backup"
 NETPLAN_DROPIN=/etc/systemd/network/10-netplan-${BRIDGE}.network.d/50-wisp-dhcp-identity.conf
 NETWORKD_NETDEV=/etc/systemd/network/10-wisp-${BRIDGE}.netdev
 NETWORKD_NETWORK=/etc/systemd/network/10-wisp-${BRIDGE}.network
@@ -61,18 +65,29 @@ client_id_now() {
   esac
 }
 
-# applied: the bridge holds the uplink's address, hardware address and client
-# identifier; waits for them up to APPLY_WAIT_SEC (no one event says all
-# three). Sets WHY to what differs.
+# applied: within APPLY_WAIT_SEC the bridge holds what the uplink held (see
+# the header) and the uplink holds nothing; there is no one event to wait on.
+# Sets WHY to what differs.
 applied() {
-  local waited=0 addr mac cid
+  local waited=0 mac cid want have port facts
+  facts='^addr4 '
+  [[ "$UPLINK_MODE" == static ]] && facts='^(addr[46]|route[46]|dns|domain) '
+  want="$(grep -E "$facts" "$NET_PLAN_DIR/uplink.state" || true)"
   while :; do
-    addr="$(ip -4 -o addr show dev "$BRIDGE" scope global 2>/dev/null | awk '!done { print $4; done = 1 }')"
     mac="$(cat "/sys/class/net/$BRIDGE/address" 2>/dev/null || true)"
-    cid="$(client_id_now)"
-    [[ "$addr" == "$UPLINK_ADDR" && "$mac" == "$UPLINK_MAC" && "$cid" == "$UPLINK_CLIENT_ID" ]] && return 0
+    have="$(l3_state "$BRIDGE" "$NET_TOOL" 2>/dev/null | grep -E "$facts" || true)"
+    port="$(l3_state "$UPLINK" "$NET_TOOL" 2>/dev/null | grep -E '^(addr[46]|route[46]) ' || true)"
+    cid=""
+    [[ "$UPLINK_MODE" == dhcp ]] && cid="$(client_id_now)"
+    if [[ "$mac" == "$UPLINK_MAC" && "$have" == "$want" && -z "$port" && "$cid" == "${UPLINK_CLIENT_ID:-}" ]]; then
+      return 0
+    fi
     if (( waited++ >= APPLY_WAIT_SEC )); then
-      WHY="after ${APPLY_WAIT_SEC} s $BRIDGE has address '${addr}' (was $UPLINK_ADDR), hardware address '${mac}' (was $UPLINK_MAC), client identifier '${cid}' (was $UPLINK_CLIENT_ID)"
+      WHY="after ${APPLY_WAIT_SEC} s"
+      [[ "$mac" == "$UPLINK_MAC" ]] || WHY+=", $BRIDGE has hardware address '${mac}' (was $UPLINK_MAC)"
+      [[ "$cid" == "${UPLINK_CLIENT_ID:-}" ]] || WHY+=", $BRIDGE sends client identifier '${cid}' (was $UPLINK_CLIENT_ID)"
+      [[ "$have" == "$want" ]] || WHY+=", $BRIDGE holds [$(echo $have)], $UPLINK held [$(echo $want)]"
+      [[ -z "$port" ]] || WHY+=", $UPLINK still holds [$(echo $port)]"
       return 1
     fi
     sleep 1
@@ -92,22 +107,41 @@ apply_notice() {
   echo "  applying: $BRIDGE on $UPLINK (was $UPLINK_ADDR); an ssh session may pause"
 }
 
-# --- netplan: Wisp's file (and for a DUID identity networkd's drop-in on
-# netplan's unit for the bridge), applied with `netplan apply` ---
+# --- netplan: the plan's `netplan set` edits (the uplink's layer 3 off the
+# file that defines it, the bridge in Wisp's own file), cloud-init's network
+# configuration switched off when it writes that file, and for a DUID identity
+# networkd's drop-in on netplan's unit for the bridge; applied with
+# `netplan apply`. /etc/netplan is kept as it was, to be put back. ---
 apply_netplan() {
-  local dropin_src="$NET_PLAN_DIR/50-wisp-dhcp-identity.conf"
+  local hint kv dropin_src="$NET_PLAN_DIR/50-wisp-dhcp-identity.conf"
+  mkdir -p "$BACKUP"
+  cp -a /etc/netplan "$BACKUP/netplan" || { WHY="cannot keep a copy of /etc/netplan"; return 1; }
+  if [[ -n "${NETPLAN_CLOUD_INIT_OFF:-}" ]]; then
+    printf '# Written by Wisp setup: cloud-init would write %s back at boot.
+network: {config: disabled}
+' \
+      "$NETPLAN_ORIGIN" > "$NETPLAN_CLOUD_INIT_OFF"
+    changed "$NETPLAN_CLOUD_INIT_OFF (cloud-init's network configuration off)"
+  fi
+  while IFS=$'\t' read -r hint kv; do
+    timeout "$CMD_SEC" netplan set --origin-hint "$hint" "$kv" || { WHY="netplan set refused ${kv%%=*}"; return 1; }
+  done < "$NET_PLAN_DIR/netplan-set.args"
+  changed "netplan: ${UPLINK}'s layer 3 off $NETPLAN_ORIGIN, $BRIDGE in /etc/netplan/90-wisp-bridge.yaml"
   if [[ -s "$dropin_src" ]]; then
     mkdir -p "$(dirname "$NETPLAN_DROPIN")"
     if write_if_changed "$NETPLAN_DROPIN" 0644 "$dropin_src"; then changed "$NETPLAN_DROPIN"; fi
   fi
-  if write_if_changed "$NETPLAN_FILE" 0600 "$NET_PLAN_DIR/90-wisp-bridge.yaml"; then changed "$NETPLAN_FILE"; fi
   apply_notice
   timeout "$APPLY_WAIT_SEC" netplan apply
 }
 verify_netplan() { :; }
 rollback_netplan() {
-  rm -f "$NETPLAN_FILE" "$NETPLAN_DROPIN"
+  if [[ -d "$BACKUP/netplan" ]]; then
+    rm -rf /etc/netplan && cp -a "$BACKUP/netplan" /etc/netplan
+  fi
+  rm -f "$NETPLAN_DROPIN"
   rmdir "$(dirname "$NETPLAN_DROPIN")" 2>/dev/null || true
+  [[ -z "${NETPLAN_CLOUD_INIT_OFF:-}" ]] || rm -f "$NETPLAN_CLOUD_INIT_OFF"
   [[ ! -e "/sys/class/net/$BRIDGE" ]] || ip link delete "$BRIDGE" || true
   timeout "$APPLY_WAIT_SEC" netplan apply || true
 }
@@ -146,7 +180,15 @@ rollback_networkd() {
 # with `nmcli connection up` ---
 # nmcli connection add, with the arguments of a plan file (one per line).
 nm_add() { local args; mapfile -t args < "$1"; timeout "$CMD_SEC" nmcli connection add "${args[@]}" >/dev/null; }
+# NetworkManager's connection files — its own, and netplan's where NM keeps
+# them there — are kept as they were, to be put back.
+NM_FILE_DIRS=(/etc/NetworkManager/system-connections /etc/netplan)
 apply_networkmanager() {
+  local dir
+  mkdir -p "$BACKUP"
+  for dir in "${NM_FILE_DIRS[@]}"; do
+    [[ ! -d "$dir" ]] || cp -a "$dir" "$BACKUP/${dir//\//_}" || { WHY="cannot keep a copy of $dir"; return 1; }
+  done
   # NetworkManager checks each connection as it is added; neither connects by
   # itself until both are there.
   nm_add "$NET_PLAN_DIR/bridge.args" || { WHY="NetworkManager refused the bridge connection"; return 1; }
@@ -162,20 +204,33 @@ apply_networkmanager() {
 }
 verify_networkmanager() { :; }
 rollback_networkmanager() {
-  local con
+  local con dir
   for con in "$BRIDGE" "$NM_PORT"; do
     if timeout "$CMD_SEC" nmcli -t -f connection.id connection show "$con" >/dev/null 2>&1; then
       timeout "$CMD_SEC" nmcli connection delete "$con" >/dev/null || true
     fi
   done
-  timeout "$CMD_SEC" nmcli connection modify "$UPLINK_CONNECTION" connection.autoconnect yes || true
+  for dir in "${NM_FILE_DIRS[@]}"; do
+    if [[ -d "$BACKUP/${dir//\//_}" ]]; then
+      rm -rf "$dir" && cp -a "$BACKUP/${dir//\//_}" "$dir"
+    fi
+  done
+  # Where NetworkManager keeps its connections in netplan, netplan renders them.
+  if [[ -d /etc/netplan ]] && command -v netplan >/dev/null; then
+    timeout "$CMD_SEC" netplan generate || true
+  fi
+  timeout "$CMD_SEC" nmcli connection reload || true
   timeout "$APPLY_WAIT_SEC" nmcli --wait "$APPLY_WAIT_SEC" connection up "$UPLINK_CONNECTION" >/dev/null || true
 }
 
 WHY=""
 if "apply_$NET_TOOL" && applied && "verify_$NET_TOOL"; then
   changed "$BRIDGE created on $UPLINK"
-  echo "  $BRIDGE holds $UPLINK_ADDR, hardware address $UPLINK_MAC, client identifier $UPLINK_CLIENT_ID"
+  if [[ "$UPLINK_MODE" == dhcp ]]; then
+    echo "  $BRIDGE holds $UPLINK_ADDR, hardware address $UPLINK_MAC, client identifier $UPLINK_CLIENT_ID; $UPLINK holds no address"
+  else
+    echo "  $BRIDGE holds ${UPLINK}'s static addresses, routes and name servers, hardware address $UPLINK_MAC; $UPLINK holds none"
+  fi
   step_done
   exit 0
 fi
@@ -184,6 +239,6 @@ WHY="${WHY:-the $NET_TOOL apply failed}"
 echo "  not applied: $WHY; rolling back" >&2
 "rollback_$NET_TOOL"
 if uplink_back; then
-  fail "$BRIDGE was not applied ($WHY). What this step wrote is removed, and $UPLINK holds $UPLINK_ADDR again"
+  fail "$BRIDGE was not applied ($WHY). The network's files are as they were, and $UPLINK holds $UPLINK_ADDR again"
 fi
-fail "$BRIDGE was not applied ($WHY). What this step wrote is removed, but $UPLINK did not get $UPLINK_ADDR back within ${APPLY_WAIT_SEC} s"
+fail "$BRIDGE was not applied ($WHY). The network's files are as they were, but $UPLINK did not get $UPLINK_ADDR back within ${APPLY_WAIT_SEC} s"
