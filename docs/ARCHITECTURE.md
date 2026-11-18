@@ -80,8 +80,9 @@ page. The service worker keeps the app shell so a launch always boots React.
   edits clear a secret they don't carry).
 - Write JSON state atomically (`writeJsonAtomic`: stage, fsync, rename); boot removes
   orphan temp files a crash left mid-rename.
-- What an earlier release wrote is brought to the current shape by state migrations during
-  the update (`CODING-RULES.md` §16).
+- What an earlier release wrote is brought to the current shape by state migrations, which
+  the backend runs at every start before anything else reads the state, and nothing else
+  runs (`CODING-RULES.md` §16).
 
 ```
 /var/lib/wisp/
@@ -169,12 +170,14 @@ consumer, and nothing has called for more).
     revoked.
   - `lib/wispUpdate.js` `subscribeWispUpdateChange(handler)` — after every self-update
     check settles (manual, hourly, failed): each rewrites the cached status.
-- **Managers are configured, not reaching out**: `lib/managerBootstrap.js` (shared by the
-  backend and the migration runner) calls each manager's `configure()` with its paths and
-  callbacks (`resolveMount`, `tryAcquireOperationLock`) before any route registers. The
-  migration runner connects with `{ watchEvents: false }`: no event subscriptions, so none
-  of the event-driven writes (restart-flag clearing, the network probe), and uncached
-  lists that are complete or throw. Reads write nothing in either process.
+- **Managers are configured, not reaching out**: `lib/managerBootstrap.js` calls each
+  manager's `configure()` with its paths and callbacks (`resolveMount`,
+  `tryAcquireOperationLock`) before any route registers. The start's state migrations
+  configure and connect them first, with the tolerant config reader and
+  `{ watchEvents: false }`: no event subscriptions or timers, so none of the event-driven
+  writes (restart-flag clearing, the network probe), and uncached lists that are complete
+  or throw. They disconnect when done, and the start connects again with events for
+  normal work. Reads write nothing in either mode.
 - **Mechanism is decoupled from trigger.** Any background or maintenance mechanism (the
   update poll, apt checks, job-TTL cleanup, reconcilers, scheduled backups) is an
   invocable unit; its triggers — boot, a schedule, events, a manual run — are wired
@@ -231,8 +234,8 @@ consumer, and nothing has called for more).
 ## Repo layout & subsystem boundaries
 
 - `backend/` (the server: `src/index.js`, `src/routes/`, `src/lib/`; `scripts/` holds the
-  privileged helpers, the updater and the migration runner; `migrations/` the state
-  migrations), `frontend/` (the client), `scripts/` (install, setup, push, release),
+  privileged helpers and the updater; `migrations/` the state migrations, which
+  `src/lib/stateMigrations.js` runs at the start), `frontend/` (the client), `scripts/` (install, setup, push, release),
   `systemd/` (unit templates), `config/` (examples). Each package has its own
   `package.json`.
 - Backend subsystems are named modules under `src/lib/`, each behind a facade `index.js`,

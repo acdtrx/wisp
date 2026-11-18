@@ -304,10 +304,13 @@ try/catch.
   - Applied: the stored data is libvirt domain XML, `container.json`, `wisp-config.json`
     and file modes; give no legacy code even to an artifact produced earlier in the same
     session. Bring what an earlier release wrote to the current shape with a **state
-    migration** during the update, with the backend stopped (settled 2026-10-16):
-    `backend/migrations/NNNN-short-name.js`, run once per host by
-    `backend/scripts/migrate.mjs`. The contract, and the authoring rules the runner
-    cannot check: [`specs/UPDATES.md`](specs/UPDATES.md) → State migrations.
+    migration**, run by the backend at every start before it reads stored state for
+    anything else, and by nothing else (settled 2026-11-18, replacing "during the
+    update, with the backend stopped", 2026-10-16: a start that did not come through
+    the updater must not meet unmigrated state either):
+    `backend/migrations/NNNN-short-name.js`, run once per host. The contract, and the
+    authoring rules the runner cannot check: [`specs/UPDATES.md`](specs/UPDATES.md) →
+    State migrations.
 - Repair data left by a past bug with a migration too, never with code in the normal
   path.
 - Run a change that touches more than one record in one transaction.
