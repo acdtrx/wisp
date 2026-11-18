@@ -15,7 +15,7 @@ source "$SETUP_DIR/step.sh"
 
 echo "--- libvirt ---"
 
-unit_exists() { systemctl cat "$1" &>/dev/null; }
+unit_exists() { systemctl cat --no-pager "$1" &>/dev/null; }
 
 # Modular daemons (virtqemud + sidecars) replace the monolithic libvirtd on
 # distros that opt in (Fedora 35+, recent Arch). Ubuntu 26.04 ships libvirt 12
