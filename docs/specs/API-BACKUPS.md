@@ -118,6 +118,7 @@ Restore a container backup under a new name. The new name must be free both on d
 - **404:** backup not found
 - **409:** `CONTAINER_EXISTS` if the new name is already in use; `CONTAINER_BUSY` while another operation holds the new name's [operation lock](CONTAINERS.md#per-container-operation-lock)
 - **422:** `INVALID_CONTAINER_NAME`, `BACKUP_INVALID` (unknown destination, invalid timestamp, or a missing/malformed manifest)
+- **503:** `NO_CONTAINERD` — containerd cannot be reached, so the new name was not checked; no job starts and nothing is written
 - **Job errors:** `BACKUP_RESTORE_FAILED` if extraction or containerd record creation fails; `BACKUP_INVALID` for an invalid `container.json` inside the archive
 
 ### POST /api/container-backups/restore-in-place · `admin`

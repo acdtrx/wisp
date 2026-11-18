@@ -399,8 +399,7 @@ export async function createContainer(spec, onStep) {
     await callUnary(getClient('containers'), 'get', { id: name });
     throw containerError('CONTAINER_EXISTS', `Container "${name}" already exists`);
   } catch (err) {
-    if (err.code === 'CONTAINER_EXISTS') throw err;
-    // NOT_FOUND is expected — continue
+    if (err.code !== 'CONTAINER_NOT_FOUND') throw err;
   }
 
   // Claim the container directory. A non-recursive mkdir refuses an existing one —

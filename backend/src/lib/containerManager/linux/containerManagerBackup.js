@@ -642,15 +642,13 @@ export async function planContainerBackupRestore(backupPath, newName) {
     await access(getContainerDir(newNameTrim));
     throw containerError('CONTAINER_EXISTS', `Container directory for "${newNameTrim}" already exists`);
   } catch (err) {
-    if (err.code === 'CONTAINER_EXISTS') throw err;
-    /* ENOENT — good */
+    if (err.code !== 'ENOENT') throw err;
   }
   try {
     await callUnary(getClient('containers'), 'get', { id: newNameTrim });
     throw containerError('CONTAINER_EXISTS', `Container "${newNameTrim}" already exists in containerd`);
   } catch (err) {
-    if (err.code === 'CONTAINER_EXISTS') throw err;
-    /* NOT_FOUND — good */
+    if (err.code !== 'CONTAINER_NOT_FOUND') throw err;
   }
 
   const { manifest, archivePath } = await readContainerBackupManifest(backupPath);

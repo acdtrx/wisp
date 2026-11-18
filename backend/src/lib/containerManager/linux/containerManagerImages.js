@@ -112,14 +112,16 @@ export async function resolveContainerImageRef(imageRef) {
 
 /**
  * Top-level manifest/index digest containerd currently holds for this reference.
- * @returns {Promise<string | null>} null when the image is not locally present.
+ * @returns {Promise<string | null>} null when the image is not locally present;
+ *   any other failure (containerd unreachable) throws.
  */
 export async function getImageDigest(imageRef) {
   try {
     const res = await callUnary(getClient('images'), 'get', { name: imageRef });
     return res.image?.target?.digest || null;
-  } catch {
-    return null;
+  } catch (err) {
+    if (err.code === 'CONTAINER_NOT_FOUND') return null;
+    throw err;
   }
 }
 

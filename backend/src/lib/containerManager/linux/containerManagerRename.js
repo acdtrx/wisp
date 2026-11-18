@@ -30,8 +30,7 @@ async function ensureNewNameFree(newName) {
       `Container directory for "${newName}" already exists`,
     );
   } catch (err) {
-    if (err.code === 'CONTAINER_EXISTS') throw err;
-    /* ENOENT — directory does not exist, good */
+    if (err.code !== 'ENOENT') throw err;
   }
 
   try {
@@ -41,8 +40,7 @@ async function ensureNewNameFree(newName) {
       `Container "${newName}" already exists in containerd`,
     );
   } catch (err) {
-    if (err.code === 'CONTAINER_EXISTS') throw err;
-    /* NOT_FOUND in containerd — expected; continue */
+    if (err.code !== 'CONTAINER_NOT_FOUND') throw err;
   }
 }
 
