@@ -2,10 +2,10 @@
 # Run `npm run check` (the release workflow's gate), then bump version across
 # root + backend + frontend package.json (and each sibling package-lock.json,
 # where one exists), retitle the topmost CHANGELOG section, commit, and tag
-# v<version>. A failing check stops it before anything changes. CHANGELOG.md may be dirty going
-# in — its contents are folded into the same release commit so a release lands as
-# a single commit. Push is left to the operator so the tag is reviewable before
-# it triggers the release workflow.
+# v<version>. A failing check stops it before anything changes. CHANGELOG.md
+# may be dirty going in — its contents are folded into the same release commit
+# so a release lands as a single commit. Push is left to the operator so the
+# tag is reviewable before it triggers the release workflow.
 #
 # Prereleases (a version with a -prerelease part) skip the CHANGELOG retitle: the
 # topmost dated section stays unreleased so the eventual stable cut folds the whole

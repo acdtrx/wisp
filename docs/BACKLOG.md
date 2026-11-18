@@ -366,6 +366,13 @@ the next work on that route.
 (`config/migrations.json`) are the only record of what an update's state migrations
 changed. **Revisit trigger:** the user asks "what did the last update change?"
 
+**`release.sh` can stop halfway through.** Its "CHANGELOG.md missing" guard and its
+"topmost section already has a release suffix" check run after the version bumps, so a
+suffixed top section stops the script with five files bumped and dirty, no commit and no
+tag (found in the safety-net milestone 3 review, 2026-11-18). Fix shape: both checks with
+the other guards, before the bumps. **Revisit trigger:** a release cut that stops there,
+or the next work on `release.sh`.
+
 **Setup strategy: one update-safe path.** The installer (`push.sh` → `install.sh` →
 `setup-server.sh`) and the self-update (`wisp-updater`) run different setup steps, so a
 step added to setup reaches new installs but not updated ones. `common-steps.sh` is the
