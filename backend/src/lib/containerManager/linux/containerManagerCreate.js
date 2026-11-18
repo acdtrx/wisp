@@ -695,7 +695,7 @@ export async function startExistingContainer(name) {
   // with "already exists"). cleanupTask also finalizes the prior log run if
   // one was still open, so the run picker shows it as ended rather than
   // perpetually "Running…".
-  await cleanupTask(name);
+  const staleTaskDeleteError = await cleanupTask(name);
 
   // Get image config. If the image was removed under us (e.g.
   // `ctr -n wisp image rm <ref>`), auto-pull it once and retry — the
@@ -795,7 +795,12 @@ export async function startExistingContainer(name) {
     ({ pid: taskPid } = await callUnary(getClient('tasks'), 'start', { containerId: name }));
   } catch (err) {
     await rollbackFailedStart(name, config.network);
-    throw err;
+    if (!staleTaskDeleteError) throw err;
+    throw containerError(
+      err.code || 'CONTAINERD_ERROR',
+      `${err.message} (the previous task could not be deleted first: ${staleTaskDeleteError.message})`,
+      err.raw || err.message,
+    );
   }
 
   // The task is running: a failed flag write is logged, not a failed start.

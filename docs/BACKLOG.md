@@ -266,11 +266,6 @@ keeps the stored one (settled 2026-11-12), so the only way to drop a password is
 the VM's cloud-init config. **Revisit trigger:** a password needs removing without
 wiping cloud-init.
 
-**Container task-delete errors are swallowed.** `cleanupTask` ignores a failed
-`Tasks.Delete`; when it was a stale CREATED task, the start then fails with "already
-exists" and rolls back, with no clearer cause. **Revisit trigger:** a start is seen
-failing with "already exists".
-
 **One rule for a container's "restart required".** Three places decide it differently:
 `updateContainerConfig` flags a mounts/devices change, the row mount `PATCH` has its own
 `layoutUnchanged` test, and the app save path ORs its mount signature with the app

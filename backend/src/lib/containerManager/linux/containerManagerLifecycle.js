@@ -335,20 +335,24 @@ async function waitForStop(name, timeoutMs) {
  * Exit status comes from Tasks.Delete (uint32; non-finite values become null).
  * Finalizing is best-effort — missing/already-finalized runs are skipped.
  * Exported so containerManagerCreate can reuse the same flow before re-creating.
+ * @returns {Promise<object|null>} the Tasks.Delete error when a task could not be
+ *   deleted (not "no task"), so a start can name it if its own task create fails
  */
 export async function cleanupTask(name) {
   let exitCode = null;
+  let deleteError = null;
   try {
     const res = await callUnary(getClient('tasks'), 'delete', { containerId: name });
     const raw = res?.exitStatus;
     if (typeof raw === 'number' && Number.isFinite(raw)) exitCode = raw;
     else if (typeof raw === 'bigint') exitCode = Number(raw);
     else if (typeof raw === 'string' && /^\d+$/.test(raw)) exitCode = parseInt(raw, 10);
-  } catch {
-    // Task may not exist (already deleted, or never created).
+  } catch (err) {
+    if (err.code !== 'CONTAINER_NOT_FOUND') deleteError = err;
   }
   try {
     const runId = await findCurrentRunId(name);
     if (runId) await finalizeRun(name, runId, { exitCode });
   } catch { /* best effort — finalization is informational */ }
+  return deleteError;
 }
