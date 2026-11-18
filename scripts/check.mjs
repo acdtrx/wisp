@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
 
 /**
- * `needs`: the package directory whose installed dependencies the check runs on.
+ * `needs`: the package directory (`.` for the repo root) whose installed
+ * dependencies the check runs on.
  * `timeoutMs`: a bound on the whole step. The test runner ends a test that runs
  * too long, but a test file whose test left a timer or stream open never exits,
  * and the run would wait for it forever.
@@ -20,6 +21,7 @@ const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
 const CHECKS = [
   { name: 'imports', command: ['node', 'scripts/check-imports.mjs'] },
   { name: 'fences', command: ['node', 'scripts/check-fences.mjs'] },
+  { name: 'lint', command: ['npm', 'run', 'lint', '--silent'], needs: '.' },
   { name: 'shell', command: ['node', 'scripts/check-shell.mjs'] },
   { name: 'test', command: ['npm', 'test', '--silent'], needs: 'frontend', timeoutMs: 120_000 },
 ];
@@ -63,7 +65,8 @@ const failed = [];
 for (const { name, command, needs, timeoutMs } of CHECKS) {
   console.log(`\n── ${name} ──`);
   if (needs && !existsSync(path.join(REPO_ROOT, needs, 'node_modules'))) {
-    console.error(`${needs}/node_modules is missing: run \`npm ci\` in ${needs}/ first.`);
+    const where = needs === '.' ? 'at the repo root' : `in ${needs}/`;
+    console.error(`${needs === '.' ? '' : `${needs}/`}node_modules is missing: run \`npm ci\` ${where} first.`);
     failed.push(name);
     continue;
   }
