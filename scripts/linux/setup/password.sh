@@ -13,6 +13,8 @@ if [[ $# -lt 1 ]]; then
 fi
 
 INSTALL_DIR="$1"
+# shellcheck source=install-state.sh
+source "$(dirname "$0")/install-state.sh"
 FORCE=0
 FROM_STDIN=0
 case "${2:-}" in
@@ -29,15 +31,15 @@ echo "--- Password (config/wisp-password) ---"
 
 mkdir -p "$CONFIG_DIR"
 
-if [[ -f "$PASSWORD_FILE" ]] && [[ "$FORCE" -eq 0 ]]; then
+if has_password "$INSTALL_DIR" && [[ "$FORCE" -eq 0 ]]; then
   echo "  Password file already exists. Skipping. Use: wispctl password --force"
   exit 0
 fi
 
 if (( FROM_STDIN )); then
   IFS= read -r PASSWORD || true
-  if [[ "${#PASSWORD}" -lt 6 || "$PASSWORD" == "changeme" ]]; then
-    echo "ERROR: the password must have at least 6 characters and not be 'changeme'." >&2
+  if ! password_ok "$PASSWORD"; then
+    echo "ERROR: the password must have $PASSWORD_RULE." >&2
     exit 1
   fi
 fi
@@ -45,12 +47,8 @@ fi
 while (( ! FROM_STDIN )); do
   read -r -s -p "Enter password: " PASSWORD
   echo ""
-  if [[ "${#PASSWORD}" -lt 6 ]]; then
-    echo "  Password must be at least 6 characters. Try again."
-    continue
-  fi
-  if [[ "$PASSWORD" == "changeme" ]]; then
-    echo "  Do not use the placeholder password 'changeme'. Choose a different password."
+  if ! password_ok "$PASSWORD"; then
+    echo "  The password needs $PASSWORD_RULE. Try again."
     continue
   fi
   read -r -s -p "Confirm password: " PASSWORD2

@@ -13,12 +13,14 @@ CONFIG_DIR="$INSTALL_DIR/config"
 CONFIG_FILE="$CONFIG_DIR/wisp-config.json"
 EXAMPLE="$CONFIG_DIR/wisp-config.json.example"
 SERVER_NAME="${2:-}"
+# shellcheck source=install-state.sh
+source "$(dirname "$0")/install-state.sh"
 
 echo "--- Server name (config/wisp-config.json) ---"
 
 mkdir -p "$CONFIG_DIR"
 
-if [[ -f "$CONFIG_FILE" ]] && grep -q '"serverName"' "$CONFIG_FILE" 2>/dev/null; then
+if has_server_name "$INSTALL_DIR"; then
   echo "  config/wisp-config.json already has serverName. Skipping."
   exit 0
 fi

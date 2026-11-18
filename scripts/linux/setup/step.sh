@@ -73,3 +73,39 @@ unit_on() {
   systemctl enable --now --quiet "$unit" || fail "cannot enable and start $unit"
   changed "$unit enabled and started"
 }
+
+# idle_run <secs> <cmd...>: cmd with its output passed through, stopped after
+# <secs> seconds without a line of output (returns 124) — an inactivity bound
+# for a step that shows progress (CODING-RULES §6). cmd runs in a session of its
+# own, and a stall signals the whole group, its children with it. (The updater
+# has its own copy until it runs no step of its own.)
+idle_run() {
+  local secs="$1"; shift
+  local fifo fd line r rc=0 timed_out=0 pid
+  fifo="$(mktemp -u "$STEP_TMP_DIR/fifo.XXXXXX")"
+  mkfifo -m 600 "$fifo"
+  setsid "$@" > "$fifo" 2>&1 &
+  pid=$!
+  exec {fd}< "$fifo"
+  rm -f -- "$fifo"
+  while :; do
+    IFS= read -r -t "$secs" -u "$fd" line && r=0 || r=$?
+    if (( r == 0 )); then printf '%s\n' "$line"; continue; fi
+    if (( r > 128 )); then
+      timed_out=1
+      kill -TERM -- "-$pid" 2>/dev/null
+      sleep 5
+      kill -KILL -- "-$pid" 2>/dev/null
+    elif [[ -n "$line" ]]; then
+      printf '%s\n' "$line"
+    fi
+    break
+  done
+  exec {fd}<&-
+  wait "$pid" 2>/dev/null || rc=$?
+  if (( timed_out )); then
+    echo "ERROR: printed nothing for ${secs} s and was stopped: $*" >&2
+    return 124
+  fi
+  return "$rc"
+}
