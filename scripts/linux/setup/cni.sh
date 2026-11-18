@@ -58,11 +58,10 @@ fi
 
 # Bridge master for CNI: must be an **existing Linux bridge**. The CNI bridge plugin will
 # silently create a new orphan bridge if the name doesn't resolve to one, so we abort instead.
-# We pick the bridge that carries the default route (typically br0, which setup-server.sh creates).
+# We pick the bridge that carries the default route (typically br0, which bridge.sh creates).
 #
-# Poll for up to ~30s. setup-server.sh runs bridge.sh immediately before this script, and
-# `netplan apply` only swaps the default route to br0 *after* the bridge acquires its DHCP
-# lease — without waiting, a fresh install silently skipped the conflist + cni-dhcp.service
+# Poll for up to ~30s. When bridge.sh has just run, `netplan apply` only swaps the default
+# route to br0 *after* the bridge acquires its DHCP lease — without waiting, a fresh install silently skipped the conflist + cni-dhcp.service
 # install and containers came up with no IP.
 detect_bridge_with_wait() {
   local timeout_s=30

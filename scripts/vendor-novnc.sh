@@ -3,8 +3,8 @@
 # Usage: bash scripts/vendor-novnc.sh   (no arguments)
 #
 # The one place the noVNC version is named (docs/specs/noVNC.md). The frontend's
-# `npm run build` runs this first, so every source build fetches through it (CI, the
-# dev machine, `wispctl build` on hosts). `novnc/.pinned` records what the tree
+# `npm run build` runs this first, so every build fetches through it (CI and the
+# dev machine, both through scripts/stage-release.sh; hosts never build). `novnc/.pinned` records what the tree
 # holds; a tree holding anything else is replaced, and a failed fetch fails the
 # build with the tree left as it was. One run at a time: a second run fails on the
 # lock directory beside the target.

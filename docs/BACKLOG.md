@@ -328,12 +328,6 @@ own oneshot unit started via one fixed sudo rule (like `wisp-updater`). **Revisi
 trigger:** an upgrade is ever interrupted, or OS upgrades become unattended/scheduled.
 (re-review 2026-10-16, P2)
 
-**A push to a fresh host needs `unzip` first.** `push.sh` unzips its upload on the host
-before `install.sh` runs, and `unzip` arrives only with the setup's packages, so a
-first push to a stock Ubuntu cloud image stops at `unzip: command not found` (seen
-2026-11-18 in a throwaway VM). **Revisit trigger:** the next dev deploy to a new host,
-or the next work on `push.sh`.
-
 **The server display name can't be cleared from App Config.** `AppConfig.jsx` sends
 `undefined` for an empty name, so the save leaves the stored name in place, though the
 backend takes an empty name as "back to the default display name" (found in the

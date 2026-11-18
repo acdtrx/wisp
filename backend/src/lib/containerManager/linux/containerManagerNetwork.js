@@ -270,7 +270,7 @@ async function ensureNetNS(name) {
     } catch (err) {
       throw containerError(
         'CONTAINERD_ERROR',
-        `Failed to create netns for "${name}" (${err.message || 'sudo or helper failed'}). Install helpers: sudo scripts/linux/setup/install-helpers.sh or ./scripts/wispctl.sh helpers`,
+        `Failed to create netns for "${name}" (${err.message || 'sudo or helper failed'}). Install the helpers: run setup (sudo scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>)`,
         err.stderr?.toString() || err.message,
       );
     }

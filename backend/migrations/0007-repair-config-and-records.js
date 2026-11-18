@@ -101,7 +101,7 @@ async function mountUsers(ctx) {
   return users;
 }
 
-/** Step 2. A file that is missing, not JSON or not an object is left for the strict check. */
+/** Step 2. A missing file or one that is not an object is left as it is; the start's strict check judges it. */
 async function repairWispConfig(ctx) {
   const path = ctx.paths.configFile;
   const raw = await readIfExists(path);

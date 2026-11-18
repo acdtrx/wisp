@@ -370,13 +370,13 @@ function repoFiles() {
 
 /**
  * A file's text without its comments: JavaScript through the shared stripper;
- * shell scripts and systemd units without their `#` (and `;`) comment lines.
+ * shell scripts, systemd units and YAML without their `#` (and `;`) comment lines.
  * Other files are taken whole.
  */
 function withoutComments(rel, text) {
   if (/\.[cm]?jsx?$/.test(rel)) return stripComments(text);
   const lines = text.split('\n');
-  if (rel.endsWith('.sh') || rel.endsWith('.service') || SHELL_SHEBANG.test(lines[0])) {
+  if (/\.(sh|service|ya?ml)$/.test(rel) || SHELL_SHEBANG.test(lines[0])) {
     return lines.map((line) => (/^\s*[#;]/.test(line) ? '' : line)).join('\n');
   }
   return text;
