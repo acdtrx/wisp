@@ -187,6 +187,9 @@ After=network-online.target libvirtd.service virtqemud.service containerd.servic
 Wants=network-online.target
 
 [Service]
+Type=notify
+NotifyAccess=all
+TimeoutStartSec=15min
 User=WISP_USER
 WorkingDirectory=WISP_PATH/backend
 EnvironmentFile=-WISP_PATH/config/runtime.env
@@ -195,11 +198,15 @@ ExecStart=/usr/bin/node src/index.js
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=on-failure
 RestartSec=5
+RestartSteps=6
+RestartMaxDelaySec=5min
 TimeoutStopSec=15
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+`Type=notify`: the start ends when the backend reports itself ready (`systemd-notify --ready`) once it listens, after its state migrations and boot work, or fails when it exits first; `systemctl start` and `restart` wait for that, bounded by `TimeoutStartSec`. A failed start is retried with a delay growing from 5 s to 5 min ([UPDATES.md → Health-gated start](UPDATES.md#health-gated-start)).
 
 `TimeoutStopSec=15` limits how long systemd waits for a clean exit after SIGTERM (default is 90s). If the process does not exit within 15 seconds, systemd sends SIGKILL.
 

@@ -16,7 +16,8 @@
   the first import, its retired keys skipped), then the pending state migrations, then the
   strict checks of the config, then the managers configured, the app and its routes
   built, the boot work (connections, mounts, container autostart), and the port opened
-  last. A start whose migrations or checks fail exits non-zero without listening.
+  last; then the backend tells systemd it is ready (`Type=notify`), which ends the start.
+  A start whose migrations or checks fail exits non-zero without listening.
   **No module reads stored state or connects when it loads**: whatever it needs is read
   by a function this order calls, so nothing has read the state before the migrations
   have brought it up to date (settled 2026-11-18).

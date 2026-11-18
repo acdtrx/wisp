@@ -154,8 +154,9 @@ source refer to them.
     `wisp-netns` helper is absent — works only with the backend as root), the privileged
     helpers `wisp-os-update`, `wisp-mount`, `wisp-power`, `wisp-dmidecode`,
     `wisp-smartctl`, `wisp-nvram`, `wisp-netns`, `wisp-cni`, `wisp-bridge`,
-    `systemctl start wisp-updater.service` (via `sudo -n`), and CNI plugins under
-    `/opt/cni/bin/`. Build-time only: `git` (noVNC vendoring). macOS dev stubs only:
+    `systemctl start wisp-updater.service` (via `sudo -n`), `systemd-notify --ready`
+    (the start's readiness, under `Type=notify`; settled 2026-11-18), and CNI plugins
+    under `/opt/cni/bin/`. Build-time only: `git` (noVNC vendoring). macOS dev stubs only:
     `system_profiler`, `vm_stat`, `sysctl`. Get the user's validation before adding
     anything else. Register a new privileged `wisp-*` helper in
     `scripts/linux/setup/install-helpers.sh` and document it per the checklist in

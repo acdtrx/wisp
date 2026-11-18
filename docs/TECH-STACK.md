@@ -213,3 +213,4 @@ These are invoked via `child_process` where no native Node.js alternative exists
 | `/opt/cni/bin/bridge` | CNI bridge plugin exec for container networking (standard CNI interface) |
 | `/opt/cni/bin/dhcp` | CNI DHCP daemon for container IP assignment |
 | `ip` | Network namespace management (`ip netns add/delete`) for containers |
+| `systemd-notify` | `--ready` once the backend listens: wisp.service is `Type=notify` (skipped without `NOTIFY_SOCKET`) |
