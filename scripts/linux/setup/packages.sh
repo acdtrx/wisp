@@ -36,10 +36,22 @@ node_ok() {
   [[ "$major" =~ ^[0-9]+$ ]] && (( major >= NODE_MAJOR_MIN ))
 }
 
+# containerd 2.x, by the package database rather than the binary's banner, whose
+# format differs between builds: Docker's containerd.io or the distro's containerd.
 containerd_ok() {
-  command -v containerd >/dev/null 2>&1 || return 1
-  local major
-  major="$(containerd --version 2>/dev/null | grep -oP ' v\K[0-9]+' | head -1 || true)"
+  local version major
+  if [[ "$WISP_DISTRO" == "arch" ]]; then
+    version="$(pacman -Q containerd 2>/dev/null | awk '{ print $2 }' || true)"
+  else
+    for pkg in containerd.io containerd; do
+      [[ "$(dpkg-query -W -f='${db:Status-Status}' "$pkg" 2>/dev/null)" == installed ]] || continue
+      version="$(dpkg-query -W -f='${Version}' "$pkg")"
+      break
+    done
+  fi
+  major="${version:-}"
+  major="${major#*:}"
+  major="${major%%.*}"
   [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 2 ))
 }
 
@@ -76,6 +88,10 @@ deb_installed() {
 }
 
 APT=(apt-get -o "DPkg::Lock::Timeout=$LOCK_WAIT_SEC")
+# As wisp-os-update installs: an upgrade this pulls in keeps a config file the
+# host edited (avahi-daemon.conf) instead of stopping at dpkg's question, which
+# no one is there to answer.
+APT_INSTALL=("${APT[@]}" -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold install -y -qq)
 
 missing=()
 for p in "${PACKAGES[@]}"; do
@@ -93,7 +109,7 @@ fi
 
 if (( ${#missing[@]} > 0 )); then
   "${APT[@]}" update -qq
-  "${APT[@]}" install -y -qq "${missing[@]}"
+  "${APT_INSTALL[@]}" "${missing[@]}"
   changed "installed ${missing[*]}"
 fi
 
@@ -114,17 +130,30 @@ docker_apt_repo() {
   )
 }
 
+# What this run wrote of the repos, removed again when apt cannot use them.
+REPO_FILES_WRITTEN=()
+
 # apt_repo <name> <key-url> <list-line>: the signing key under /etc/apt/keyrings
-# and the source list, each written only when missing or different.
+# and the source list, each written only when missing or different. The key is
+# downloaded and dearmored beside the keyring and checked before it goes in, so
+# a cut-off download never leaves a keyring that later runs would trust.
 apt_repo() {
-  local name="$1" key_url="$2" line="$3" keyring="/etc/apt/keyrings/$1.gpg"
+  local name="$1" key_url="$2" line="$3" keyring="/etc/apt/keyrings/$1.gpg" armored dearmored list
   install -m 0755 -d /etc/apt/keyrings
-  if [[ ! -f "$keyring" ]]; then
-    curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 60 "$key_url" | gpg --dearmor -o "$keyring"
-    chmod a+r "$keyring"
+  if ! gpg --batch --show-keys "$keyring" >/dev/null 2>&1; then
+    armored="$(staged_file)"
+    dearmored="$(staged_file)"
+    curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 60 -o "$armored" "$key_url"
+    gpg --batch --yes --dearmor -o "$dearmored" "$armored"
+    gpg --batch --show-keys "$dearmored" >/dev/null 2>&1 || fail "$key_url is not a usable signing key"
+    write_if_changed "$keyring" 0644 "$dearmored"
+    REPO_FILES_WRITTEN+=("$keyring")
     changed "$keyring"
   fi
-  if printf '%s\n' "$line" | write_if_changed "/etc/apt/sources.list.d/$name.list" 0644; then
+  list="$(staged_file)"
+  printf '%s\n' "$line" > "$list"
+  if write_if_changed "/etc/apt/sources.list.d/$name.list" 0644 "$list"; then
+    REPO_FILES_WRITTEN+=("/etc/apt/sources.list.d/$name.list")
     changed "/etc/apt/sources.list.d/$name.list"
   fi
 }
@@ -149,13 +178,12 @@ fi
 
 if (( ${#repo_packages[@]} > 0 )); then
   # A list apt cannot fetch fails every later `apt-get update` on the host, so
-  # Docker's does not stay behind when this one fails.
+  # what this run wrote does not stay behind when the update fails.
   if ! "${APT[@]}" update -qq; then
-    rm -f /etc/apt/sources.list.d/docker.list
-    echo "ERROR: apt-get update failed with the NodeSource / Docker repos added; removed docker.list so apt keeps working." >&2
-    exit 1
+    rm -f "${REPO_FILES_WRITTEN[@]}"
+    fail "apt-get update failed with the NodeSource / Docker repos; removed what this run wrote (${REPO_FILES_WRITTEN[*]:-nothing}) so apt keeps working"
   fi
-  "${APT[@]}" install -y -qq "${repo_packages[@]}"
+  "${APT_INSTALL[@]}" "${repo_packages[@]}"
   changed "installed ${repo_packages[*]}"
 fi
 
