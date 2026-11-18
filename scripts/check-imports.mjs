@@ -33,6 +33,11 @@
  * into a directory that was never there — but not a misspelled file name in a
  * real directory.
  *
+ * Named imports: every name one backend file imports from another is exported
+ * there, followed through re-exports (see namedImports). The Mac never loads
+ * the `linux/` files, so nothing else would catch a misnamed import in one
+ * before it fails the backend's boot on a host.
+ *
  * Facade parity: a platform facade (`lib/<module>/index.js`) binds each
  * implementation with `const impl = await import(isLinux ? './linux/x.js' :
  * './darwin/x.js')` and re-exports `impl.name`. A name one side lacks is
@@ -263,10 +268,9 @@ async function traceExport(tables, file, name, seen = new Set()) {
 }
 
 /** Facade parity violations: `[{ file, line, message }]`. */
-async function facadeParity(files) {
+async function facadeParity(files, tables) {
   const problems = new Map();
   const report = (p) => problems.set(`${p.file}:${p.line}:${p.message}`, p);
-  const tables = new Map();
   let pairs = 0;
   const facades = files.filter((f) => /\/backend\/src\/lib\/[^/]+\/index\.js$/.test(f));
   for (const facade of facades) {
@@ -331,6 +335,135 @@ async function facadeParity(files) {
   return { problems: [...problems.values()], pairs };
 }
 
+/** The names in an import's `{ … }`, as `[{ imported, local }]`; null when unreadable. */
+function namedList(list) {
+  const names = [];
+  for (const part of list.split(',').map((x) => x.trim()).filter(Boolean)) {
+    const m = /^([\w$]+)(?:\s+as\s+([\w$]+))?$/.exec(part);
+    if (!m) return null;
+    names.push({ imported: m[1], local: m[2] ?? m[1] });
+  }
+  return names;
+}
+
+/** The names a `const { … } = await import(…)` destructures; null when unreadable. */
+function destructuredList(list) {
+  const names = [];
+  for (const part of list.split(',').map((x) => x.trim()).filter(Boolean)) {
+    const m = /^([\w$]+)(?:\s*:\s*([\w$]+))?$/.exec(part);
+    if (!m) return null;
+    names.push({ imported: m[1], local: m[2] ?? m[1] });
+  }
+  return names;
+}
+
+const RELATIVE_MODULE = /^\.\.?\/.*\.m?js$/;
+
+/**
+ * Named imports between backend files, the backend having no build step and the
+ * Mac never loading the `linux/` files: each name a file takes from another must
+ * be exported there (followed through re-exports, as parity does). Read:
+ * `import { a, b as c } from './y.js'` and a default import;
+ * `export { … } from './y.js'`; `const { a, b: c } = await import('./y.js')`;
+ * and a namespace, `import * as ns from './y.js'` or
+ * `const ns = await import('./y.js')`, whose `ns.member` uses are checked. A
+ * relative import of a backend file in any other form fails, since its names
+ * cannot be checked; a facade's platform imports are parity's.
+ *
+ * Known limit: a namespace handed on whole (`{ vmManager }` in the migration
+ * context) is not followed to where its members are read.
+ */
+async function namedImports(files, tables) {
+  const problems = new Map();
+  const report = (p) => problems.set(`${p.file}:${p.line}:${p.message}`, p);
+  let count = 0;
+
+  /** Check that `target` exports `name`, for the import at `index` of `file`. */
+  const expect = async (file, source, index, target, name) => {
+    count += 1;
+    if (!await exists(target)) return; // reported by the specifier scan
+    const found = await traceExport(tables, target, name);
+    if (!found) return;
+    const line = lineOf(source, index);
+    if (found.missing) {
+      report({ file, line, message: `imports \`${name}\` from ${rel(target)}, which does not export it` });
+    } else {
+      report(found);
+    }
+  };
+  /** Check every `ns.member` use of namespace `ns` against `target`. */
+  const expectMembers = async (file, source, code, ns, target) => {
+    const escaped = ns.replace(/\$/g, '\\$');
+    // String contents blanked, so `'./ns.js'` is not read as a use of `ns`.
+    const bare = code.replace(/(['"`])(?:\\.|(?!\1)[^\\\n])*\1/g, (q) => q[0] + ' '.repeat(q.length - 2) + q[0]);
+    for (const use of bare.matchAll(new RegExp(`(?<![\\w$.])${escaped}\\s*\\.\\s*([\\w$]+)`, 'g'))) {
+      await expect(file, source, use.index, target, use[1]);
+    }
+  };
+  const unreadable = (file, source, index, what) => report({
+    file,
+    line: lineOf(source, index),
+    message: `${what}: its names cannot be checked`,
+  });
+
+  for (const file of files) {
+    const source = await readFile(file, 'utf8');
+    const code = stripComments(source);
+    const resolve = (specifier) => fileURLToPath(new URL(specifier, pathToFileURL(file)));
+    const isFacade = /\/backend\/src\/lib\/[^/]+\/index\.js$/.test(file);
+
+    for (const m of code.matchAll(/(?<![\w$.])import\s*([^'";()]*?)\s*from\s*(['"])([^'"\n]+)\2/g)) {
+      if (!RELATIVE_MODULE.test(m[3])) continue;
+      const target = resolve(m[3]);
+      const clause = /^(?:([\w$]+)\s*(?:,\s*|$))?(?:\{([^}]*)\}|\*\s*as\s+([\w$]+))?$/.exec(m[1].trim());
+      const names = clause && clause[2] !== undefined ? namedList(clause[2]) : [];
+      if (!clause || !m[1].trim() || names === null) {
+        unreadable(file, source, m.index, `an import from ${m[3]} in a form the scan cannot read`);
+        continue;
+      }
+      if (clause[1]) await expect(file, source, m.index, target, 'default');
+      for (const { imported } of names) await expect(file, source, m.index, target, imported);
+      if (clause[3]) await expectMembers(file, source, code, clause[3], target);
+    }
+
+    for (const m of code.matchAll(/(?<![\w$.])export\s*\{([^}]*)\}\s*from\s*(['"])([^'"\n]+)\2/g)) {
+      if (!RELATIVE_MODULE.test(m[3])) continue;
+      const names = namedList(m[1]);
+      if (names === null) {
+        unreadable(file, source, m.index, `a re-export from ${m[3]} in a form the scan cannot read`);
+        continue;
+      }
+      for (const { imported } of names) await expect(file, source, m.index, resolve(m[3]), imported);
+    }
+
+    const destructured = new Set();
+    for (const m of code.matchAll(/(?<![\w$.])(?:const|let)\s*\{([^}]*)\}\s*=\s*await\s+import\s*\(\s*(['"])([^'"\n]+)\2\s*\)/g)) {
+      if (!RELATIVE_MODULE.test(m[3])) continue;
+      destructured.add(m.index + m[0].indexOf('import'));
+      const names = destructuredList(m[1]);
+      if (names === null) {
+        unreadable(file, source, m.index, `a dynamic import of ${m[3]} in a form the scan cannot read`);
+        continue;
+      }
+      for (const { imported } of names) await expect(file, source, m.index, resolve(m[3]), imported);
+    }
+    for (const m of code.matchAll(/(?<![\w$.])(?:const|let)\s+([\w$]+)\s*=\s*await\s+import\s*\(\s*(['"])([^'"\n]+)\2\s*\)/g)) {
+      if (!RELATIVE_MODULE.test(m[3])) continue;
+      if (isFacade && /^\.\/(?:linux|darwin)\//.test(m[3])) continue; // parity's
+      destructured.add(m.index + m[0].indexOf('import'));
+      await expectMembers(file, source, code, m[1], resolve(m[3]));
+    }
+    for (const m of code.matchAll(/(?<![\w$.])import\s*\(/g)) {
+      if (destructured.has(m.index)) continue;
+      const literal = /^(['"])([^'"\n]+)\1$/.exec(callArgument(code, m.index + m[0].length))?.[2];
+      if (!literal || !RELATIVE_MODULE.test(literal)) continue; // computed: check-fences' business
+      if (isFacade && /^\.\/(?:linux|darwin)\//.test(literal)) continue; // parity's
+      unreadable(file, source, m.index, `a dynamic import of ${literal} not destructured as \`const { … } = await import(…)\``);
+    }
+  }
+  return { problems: [...problems.values()], count };
+}
+
 const files = (await Promise.all(ROOTS.map(collectSourceFiles))).flat().sort();
 const unresolved = [];
 let specifierCount = 0;
@@ -360,15 +493,20 @@ for (const miss of unresolved) {
   console.error(`  ${miss.specifier}  ->  ${miss.target}`);
 }
 
-const parity = await facadeParity(files);
-for (const p of parity.problems) {
+const tables = new Map();
+const parity = await facadeParity(files, tables);
+const named = await namedImports(files, tables);
+for (const p of [...parity.problems, ...named.problems]) {
   console.error(`${path.relative(REPO_ROOT, p.file)}${p.line ? `:${p.line}` : ''} ${p.message}`);
 }
 
 const summary = `${specifierCount} relative specifiers and ${dataPathCount} module-relative paths across ${files.length} files`;
 const paritySummary = `${parity.pairs} facade implementations`;
-if (unresolved.length > 0 || parity.problems.length > 0) {
-  console.error(`\n${unresolved.length} unresolved (${summary}); ${parity.problems.length} facade parity problem(s) (${paritySummary}).`);
+const namedSummary = `${named.count} imported names`;
+if (unresolved.length > 0 || parity.problems.length > 0 || named.problems.length > 0) {
+  console.error(`\n${unresolved.length} unresolved (${summary}); ${parity.problems.length} facade parity problem(s) (${paritySummary}); `
+    + `${named.problems.length} named import problem(s) (${namedSummary}).`);
   process.exit(1);
 }
-console.log(`OK — ${summary}, all resolve; ${paritySummary}, each exports what its facade takes.`);
+console.log(`OK — ${summary}, all resolve; ${paritySummary}, each exports what its facade takes; `
+  + `${namedSummary}, each exported where it is imported from.`);
