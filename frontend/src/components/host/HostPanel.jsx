@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { Server, Power, RotateCcw, Loader2 } from 'lucide-react';
 import { useStatsStore } from '../../store/statsStore.js';
+import AlertDialog from '../shared/AlertDialog.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import HostOverview from './HostOverview.jsx';
 import HostMgmt from './HostMgmt.jsx';
@@ -55,6 +56,7 @@ export default function HostPanel() {
   const [powerOffOpen, setPowerOffOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
   const [powerLoading, setPowerLoading] = useState(null);
+  const [powerError, setPowerError] = useState(null);
 
   if (!tab || !VALID_TAB_IDS.has(tab)) {
     return <Navigate to="/host/home" replace />;
@@ -78,8 +80,9 @@ export default function HostPanel() {
     try {
       await hostShutdown();
       setPowerOffOpen(false);
-    } catch {
+    } catch (err) {
       setPowerOffOpen(false);
+      setPowerError({ title: 'Power off failed', message: err.detail || err.message || 'Power off failed' });
     } finally {
       setPowerLoading(null);
     }
@@ -90,8 +93,9 @@ export default function HostPanel() {
     try {
       await hostReboot();
       setRestartOpen(false);
-    } catch {
+    } catch (err) {
       setRestartOpen(false);
+      setPowerError({ title: 'Restart failed', message: err.detail || err.message || 'Restart failed' });
     } finally {
       setPowerLoading(null);
     }
@@ -186,6 +190,13 @@ export default function HostPanel() {
         confirmLabel="Restart"
         onConfirm={handleRestart}
         onCancel={() => setRestartOpen(false)}
+      />
+      <AlertDialog
+        open={!!powerError}
+        title={powerError?.title}
+        message={powerError?.message || ''}
+        tone="error"
+        onClose={() => setPowerError(null)}
       />
     </div>
   );

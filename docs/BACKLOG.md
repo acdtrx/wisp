@@ -135,11 +135,6 @@ an MCP tool starts a job outside the operation store.
 **A GET that starts a job.** `GET /api/host/updates/packages?refresh=1` answers 202 with a
 job ack; a command belongs in a POST. **Revisit trigger:** the next work on OS updates.
 
-**Host power and the SMB mount toggle swallow errors.** `HostPanel.jsx` closes the
-shutdown/restart dialog whatever the answer, and `HostStorage.jsx`'s mount toggle
-catches and drops the error, against FRONTEND-RULES, Errors. **Revisit trigger:** a
-failed power action or mount goes unnoticed, or the next work on either screen.
-
 **A hung CIFS mount blocks Node's filesystem calls.** Listings, deletes and copies on an
 unresponsive SMB destination block the libuv thread pool and can't be timed out; running
 them as jobs contains the damage but doesn't fix it. The container mount-usage walk is one

@@ -196,8 +196,7 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
       ? unmountMount(id).then((job) => awaitJob(JOB_KIND.MOUNT_UNMOUNT, job))
       : sendAndAwaitKindChange('host-mounts', () => mountMount(id));
     p
-      /* SMB mount errors surface via the status / server state */
-      .catch(() => {})
+      .catch((err) => onError(err.detail || err.message || 'Mount toggle failed'))
       .finally(() => setMountActionId(null));
   };
 
