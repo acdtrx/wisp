@@ -17,6 +17,8 @@ SERVICE_UNIT="wisp"
 
 # shellcheck source=../../backend/scripts/wisp-port.sh
 source "$PROJECT_DIR/backend/scripts/wisp-port.sh"
+# shellcheck source=setup/service.sh
+source "$SETUP_DIR/service.sh"
 
 set_env_vars() {
   normalize_runtime_env
@@ -108,25 +110,9 @@ cmd_svc_uninstall() {
   echo "  Uninstalled."
 }
 
-# svc_run <verb>: start or restart wisp.service. The unit is Type=notify, so
-# this waits until the backend is ready (its state migrations run, listening)
-# and fails when it exits first: the service's last log lines then say why.
-svc_run() {
-  local since
-  since="$(date +%s)"
-  echo "  Waiting for the backend to be ready (it runs pending state migrations first)..."
-  if ! sudo systemctl "$1" "$SERVICE_UNIT"; then
-    echo "ERROR: wisp.service did not start. Its log since this $1:" >&2
-    sudo journalctl --sync 2>/dev/null || true
-    sudo journalctl -u "$SERVICE_UNIT" --since "@$since" -n 30 --no-pager -o cat >&2 || true
-    exit 1
-  fi
-}
-
 cmd_svc_start() {
   echo "=== Starting systemd service ==="
-  svc_run start
-  echo "  Started and ready."
+  wisp_service start sudo || exit 1
 }
 
 cmd_svc_stop() {
@@ -137,8 +123,7 @@ cmd_svc_stop() {
 
 cmd_svc_restart() {
   echo "=== Restarting systemd service ==="
-  svc_run restart
-  echo "  Restarted and ready."
+  wisp_service restart sudo || exit 1
 }
 
 cmd_svc_logs() {

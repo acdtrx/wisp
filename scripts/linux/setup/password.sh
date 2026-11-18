@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Prompt for password, hash with scrypt, write to config/wisp-password.
-# Usage: password.sh <install-dir> [--force]
-# Without --force, skips if password file already exists (install flow).
+# Usage: password.sh <install-dir> [--force | --stdin]
+#   --force  ask and replace an existing password file (wispctl password --force)
+#   --stdin  take the password as one line on stdin, unasked (the installer's root
+#            process; the installer has already checked it)
+# Without either, skips if password file already exists.
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
@@ -11,9 +14,13 @@ fi
 
 INSTALL_DIR="$1"
 FORCE=0
-if [[ "${2:-}" == "--force" ]]; then
-  FORCE=1
-fi
+FROM_STDIN=0
+case "${2:-}" in
+  --force) FORCE=1 ;;
+  --stdin) FROM_STDIN=1 ;;
+  "") ;;
+  *) echo "Usage: $0 <install-dir> [--force | --stdin]"; exit 1 ;;
+esac
 
 CONFIG_DIR="$INSTALL_DIR/config"
 PASSWORD_FILE="$CONFIG_DIR/wisp-password"
@@ -27,7 +34,15 @@ if [[ -f "$PASSWORD_FILE" ]] && [[ "$FORCE" -eq 0 ]]; then
   exit 0
 fi
 
-while true; do
+if (( FROM_STDIN )); then
+  IFS= read -r PASSWORD || true
+  if [[ "${#PASSWORD}" -lt 6 || "$PASSWORD" == "changeme" ]]; then
+    echo "ERROR: the password must have at least 6 characters and not be 'changeme'." >&2
+    exit 1
+  fi
+fi
+
+while (( ! FROM_STDIN )); do
   read -r -s -p "Enter password: " PASSWORD
   echo ""
   if [[ "${#PASSWORD}" -lt 6 ]]; then
@@ -47,14 +62,15 @@ while true; do
   break
 done
 
-node -e '
+# The password reaches node on stdin, never as an argument (visible to `ps`).
+printf '%s' "$PASSWORD" | node -e '
   const crypto = require("crypto");
   const fs = require("fs");
   const path = process.argv[1];
-  const password = process.argv[2];
+  const password = fs.readFileSync(0, "utf8");
   const salt = crypto.randomBytes(16);
   const key = crypto.scryptSync(password, salt, 64);
   const line = "scrypt:" + salt.toString("hex") + ":" + key.toString("hex") + "\n";
   fs.writeFileSync(path, line, { mode: 0o600, encoding: "utf8" });
-' "$PASSWORD_FILE" "$PASSWORD"
+' "$PASSWORD_FILE"
 echo "  Wrote hashed password to config/wisp-password"
