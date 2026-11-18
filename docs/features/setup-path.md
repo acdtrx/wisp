@@ -28,8 +28,10 @@ safe to run again, ending with Wisp usable.
   creates the interface. No unit or command of ours finishes or repairs the network.
   (`cni-dhcp.service` stays: it is the DHCP daemon container networking uses, not a
   setup step.)
-- **Supported hosts** (settled 2026-11-18): Debian and Ubuntu, with the network run by
-  netplan, NetworkManager or systemd-networkd, and an uplink that can be bridged. Setup
+- **Supported hosts** (settled 2026-11-18): Debian and Ubuntu with systemd 254 or newer
+  (Debian 13, Ubuntu 24.04 and later), with the network run by netplan, NetworkManager
+  or systemd-networkd, and an uplink that can be bridged. The systemd floor is checked
+  on the version itself; the unit's restart backoff needs it. Setup
   refuses any other host before it changes anything, and names what is supported. Arch
   is dropped as a host everywhere: setup, the OS-update helper, the backend's host code
   and the docs.

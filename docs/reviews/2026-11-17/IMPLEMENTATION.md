@@ -77,9 +77,12 @@ These rules are what stops this plan from doing the same.
 - No database: the SQLite idea was looked at and dropped.
 - `wisp.service` is `Type=notify`, the ready message sent with `systemd-notify`:
   `systemctl start` is the health gate. Replaces the 2026-10-16 rejection.
-- Supported hosts: Debian and Ubuntu, on netplan, NetworkManager or systemd-networkd,
-  with an uplink that can be bridged. Setup refuses anything else. Arch is dropped as a
-  host everywhere.
+- Supported hosts: Debian and Ubuntu with systemd 254 or newer, on netplan,
+  NetworkManager or systemd-networkd, with an uplink that can be bridged. Setup refuses
+  anything else. Arch is dropped as a host everywhere; as a guest it stays (the image
+  library's Arch download, the VM icon). A host this leaves out (Arch, Debian 12,
+  Ubuntu 22.04) that already runs Wisp cannot update: the update rolls back each time.
+  The changelog of the release that carries this must say so.
 - Hosts never build: a host installs the prebuilt tarball a release ships, and
   `push.sh` ships the same one.
 
