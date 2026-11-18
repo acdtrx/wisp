@@ -20,10 +20,10 @@ afterEach(() => {
   store.getState().deselectVM();
 });
 
-const vmUrl = (name) => (url) => url === `/api/vms/${name}`;
+const vmUrl = (name) => `/api/vms/${name}`;
 
-async function answer(match, data) {
-  (await net.next(match)).respond(jsonResponse(data));
+async function answer(url, data) {
+  (await net.nextExact(url)).respond(jsonResponse(data));
   await settle();
 }
 
@@ -44,15 +44,28 @@ async function startList() {
 
 test('an older read that answers after a newer one does not overwrite it', async () => {
   const selecting = store.getState().selectVM('a');
-  const older = await net.next(vmUrl('a'));
+  const older = await net.nextExact(vmUrl('a'));
   const refreshing = store.getState().refreshSelectedVM();
-  const newer = await net.next(vmUrl('a'));
+  const newer = await net.nextExact(vmUrl('a'));
   newer.respond(jsonResponse({ name: 'a', uuid: 'u1', state: 'running', vcpus: 2 }));
   await settle();
   older.respond(jsonResponse({ name: 'a', uuid: 'u1', state: 'running', vcpus: 1 }));
   await Promise.all([selecting, refreshing]);
   assert.equal(store.getState().vmConfig.vcpus, 2);
   assert.equal(store.getState().configLoading, false);
+});
+
+test('of two re-reads, the older answering last does not overwrite the newer', async () => {
+  await select('a', { name: 'a', uuid: 'u1', state: 'running', vcpus: 1 });
+  const first = store.getState().refreshSelectedVM();
+  const older = await net.nextExact(vmUrl('a'));
+  const second = store.getState().refreshSelectedVM();
+  const newer = await net.nextExact(vmUrl('a'));
+  newer.respond(jsonResponse({ name: 'a', uuid: 'u1', state: 'running', vcpus: 3 }));
+  await settle();
+  older.respond(jsonResponse({ name: 'a', uuid: 'u1', state: 'running', vcpus: 2 }));
+  await Promise.all([first, second]);
+  assert.equal(store.getState().vmConfig.vcpus, 3);
 });
 
 test('a list frame updates the list', async () => {

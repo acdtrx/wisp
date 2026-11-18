@@ -5,25 +5,17 @@
  * with SSE bodies it writes into chunk by chunk. Never imported by the app.
  */
 
+/** How long `next()` waits for a request before it fails the test. Real time,
+ *  so the timers the tests mock do not stop it. */
+const NEXT_REQUEST_MS = 2000;
+const realSetTimeout = globalThis.setTimeout;
+const realClearTimeout = globalThis.clearTimeout;
+
 /** Install fresh `window`, `document` and `localStorage` globals; returns them. */
 export function installBrowser() {
-  const listeners = new Map();
-  const on = (type, fn) => {
-    if (!listeners.has(type)) listeners.set(type, new Set());
-    listeners.get(type).add(fn);
-  };
-  const off = (type, fn) => listeners.get(type)?.delete(fn);
-  const window = {
-    location: { href: '', pathname: '/' },
-    addEventListener: on,
-    removeEventListener: off,
-  };
-  const document = {
-    visibilityState: 'visible',
-    cookie: '',
-    addEventListener: on,
-    removeEventListener: off,
-  };
+  const events = { addEventListener() {}, removeEventListener() {} };
+  const window = { location: { href: '', pathname: '/' }, ...events };
+  const document = { visibilityState: 'visible', cookie: '', ...events };
   const store = new Map();
   const localStorage = {
     getItem: (key) => (store.has(key) ? store.get(key) : null),
@@ -34,53 +26,57 @@ export function installBrowser() {
   for (const [name, value] of Object.entries({ window, document, localStorage })) {
     Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
   }
-  return { window, document, localStorage, listeners };
+  return { window, document, localStorage };
 }
 
 /**
  * Replace `fetch`: each call becomes a pending request the test answers with
- * `request.respond(response)` or `request.fail(error)`. An aborted request
- * rejects with an AbortError, as the platform's does.
+ * `request.respond(response)`. An aborted request rejects with an AbortError,
+ * as the platform's does.
  */
 export function installFetch() {
   const requests = [];
   const waiting = [];
-  /** A URL test: a string is a prefix, a function a predicate. */
-  const matches = (match, url) => (typeof match === 'function' ? match(url) : url.startsWith(match));
+  const prefix = (url) => ({ test: (u) => u.startsWith(url), label: `${url}…` });
+  const exact = (url) => ({ test: (u) => u === url, label: url });
 
   globalThis.fetch = (url, options = {}) => new Promise((resolve, reject) => {
-    const request = {
-      url: String(url),
-      options,
-      signal: options.signal,
-      taken: false,
-      respond: resolve,
-      fail: reject,
-    };
+    const request = { url: String(url), signal: options.signal, taken: false, respond: resolve };
     options.signal?.addEventListener('abort', () => reject(abortError()), { once: true });
     requests.push(request);
-    for (const w of [...waiting]) {
-      if (!request.taken && matches(w.match, request.url)) {
-        request.taken = true;
-        waiting.splice(waiting.indexOf(w), 1);
-        w.resolve(request);
-      }
+    const waiter = waiting.find((w) => w.match.test(request.url));
+    if (waiter) {
+      request.taken = true;
+      waiting.splice(waiting.indexOf(waiter), 1);
+      waiter.resolve(request);
     }
   });
 
+  /** The oldest matching request not taken yet; waits for one, and fails after
+   *  NEXT_REQUEST_MS naming the URL it waited for. */
+  const take = (match) => {
+    const ready = requests.find((r) => !r.taken && match.test(r.url));
+    if (ready) {
+      ready.taken = true;
+      return Promise.resolve(ready);
+    }
+    return new Promise((resolve, reject) => {
+      const waiter = { match, resolve: (request) => { realClearTimeout(timer); resolve(request); } };
+      const timer = realSetTimeout(() => {
+        waiting.splice(waiting.indexOf(waiter), 1);
+        reject(new Error(`no request to ${match.label} within ${NEXT_REQUEST_MS / 1000} s`));
+      }, NEXT_REQUEST_MS);
+      waiting.push(waiter);
+    });
+  };
+
   return {
-    requests,
-    /** Requests whose URL matches (a string is a prefix, a function a predicate). */
-    made: (match) => requests.filter((r) => matches(match, r.url)),
-    /** The oldest matching request not taken yet, waiting for one if needed. */
-    next(match) {
-      const ready = requests.find((r) => !r.taken && matches(match, r.url));
-      if (ready) {
-        ready.taken = true;
-        return Promise.resolve(ready);
-      }
-      return new Promise((resolve) => waiting.push({ match, resolve }));
-    },
+    /** Requests whose URL starts with `url`. */
+    made: (url) => requests.filter((r) => r.url.startsWith(url)),
+    /** The next request whose URL starts with `url`. */
+    next: (url) => take(prefix(url)),
+    /** The next request to exactly `url`. */
+    nextExact: (url) => take(exact(url)),
   };
 }
 

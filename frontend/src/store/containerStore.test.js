@@ -20,10 +20,10 @@ afterEach(() => {
   store.getState().deselectContainer();
 });
 
-const containerUrl = (name) => (url) => url === `/api/containers/${name}`;
+const containerUrl = (name) => `/api/containers/${name}`;
 
-async function answer(match, data) {
-  (await net.next(match)).respond(jsonResponse(data));
+async function answer(url, data) {
+  (await net.nextExact(url)).respond(jsonResponse(data));
   await settle();
 }
 
@@ -37,7 +37,7 @@ async function select(name, config) {
 /** Start the list feed: answer its list GET with `list`, then the shared events stream. */
 async function startList(list) {
   store.getState().startContainerListSSE();
-  await answer((url) => url === '/api/containers', list);
+  await answer('/api/containers', list);
   const stream = respondWithStream(await net.next('/api/events'));
   await settle();
   return stream;
@@ -47,15 +47,28 @@ const running = (name, uuid) => ({ name, uuid, state: 'running', image: 'img' })
 
 test('an older read that answers after a newer one does not overwrite it', async () => {
   const selecting = store.getState().selectContainer('a');
-  const older = await net.next(containerUrl('a'));
+  const older = await net.nextExact(containerUrl('a'));
   const refreshing = store.getState().refreshSelectedContainer();
-  const newer = await net.next(containerUrl('a'));
+  const newer = await net.nextExact(containerUrl('a'));
   newer.respond(jsonResponse({ ...running('a', 'u1'), cpuLimit: 2 }));
   await settle();
   older.respond(jsonResponse({ ...running('a', 'u1'), cpuLimit: 1 }));
   await Promise.all([selecting, refreshing]);
   assert.equal(store.getState().containerConfig.cpuLimit, 2);
   assert.equal(store.getState().loading, false);
+});
+
+test('of two re-reads, the older answering last does not overwrite the newer', async () => {
+  await select('a', { ...running('a', 'u1'), cpuLimit: 1 });
+  const first = store.getState().refreshSelectedContainer();
+  const older = await net.nextExact(containerUrl('a'));
+  const second = store.getState().refreshSelectedContainer();
+  const newer = await net.nextExact(containerUrl('a'));
+  newer.respond(jsonResponse({ ...running('a', 'u1'), cpuLimit: 3 }));
+  await settle();
+  older.respond(jsonResponse({ ...running('a', 'u1'), cpuLimit: 2 }));
+  await Promise.all([first, second]);
+  assert.equal(store.getState().containerConfig.cpuLimit, 3);
 });
 
 test('a list frame updates the list', async () => {

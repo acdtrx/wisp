@@ -75,10 +75,16 @@ test('closing stops the reconnect', async () => {
   assert.equal(net.made('/api/x').length, 1);
 });
 
-test('closing aborts the open request', async () => {
-  const { close, request } = await open();
+test('closing an open stream aborts its request and stops it, with no onError', async () => {
+  const errors = [];
+  const { close, request } = await open(() => {}, (reason) => errors.push(reason));
   close();
   assert.equal(request.signal.aborted, true);
+  await settle();
+  mock.timers.tick(60_000);
+  await settle();
+  assert.equal(net.made('/api/x').length, 1);
+  assert.deepEqual(errors, []);
 });
 
 test('a 401 logs the session out, goes to the login page and does not reconnect', async () => {
@@ -93,4 +99,16 @@ test('a 401 logs the session out, goes to the login page and does not reconnect'
   await settle();
   assert.equal(net.made('/api/x').length, 1);
   assert.deepEqual(errors, []);
+});
+
+test('a 404 stops the stream for good, with onError("not_found")', async () => {
+  const errors = [];
+  createSSE('/api/x', () => {}, (reason) => errors.push(reason));
+  const request = await net.next('/api/x');
+  request.respond(new Response(null, { status: 404 }));
+  await settle();
+  assert.deepEqual(errors, ['not_found']);
+  mock.timers.tick(120_000);
+  await settle();
+  assert.equal(net.made('/api/x').length, 1);
 });

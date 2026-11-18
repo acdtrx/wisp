@@ -65,14 +65,16 @@ test('all subscribers share one stream, opened by the first and closed by the la
 
 test('a dropped stream tells every subscriber', async () => {
   const down = [];
-  const offA = events.subscribeTopic('vms', () => {}, () => down.push('vms'));
-  const offB = events.subscribeTopic('stats', () => {}, () => down.push('stats'));
+  const offs = [
+    events.subscribeTopic('vms', () => {}, () => down.push('vms 1')),
+    events.subscribeTopic('vms', () => {}, () => down.push('vms 2')),
+    events.subscribeTopic('stats', () => {}, () => down.push('stats')),
+  ];
   const stream = await openStream();
   stream.drop();
   await settle();
-  assert.deepEqual(down.sort(), ['stats', 'vms']);
-  offA();
-  offB();
+  assert.deepEqual(down.sort(), ['stats', 'vms 1', 'vms 2']);
+  for (const off of offs) off();
 });
 
 test('a stream the server ends cleanly tells no subscriber', async () => {
@@ -105,6 +107,19 @@ test('a topic\'s last frame is kept across a drop and given to a late subscriber
   offChanges();
   offLate();
   offLateChanges();
+});
+
+test('the last unsubscribe clears the kept frames', async () => {
+  const off = events.subscribeTopic('vms', () => {});
+  const stream = await openStream();
+  stream.frame({ topic: 'vms', data: ['a'] });
+  await settle();
+  off();
+
+  const seen = [];
+  const offAgain = events.subscribeTopic('vms', (d) => seen.push(d));
+  assert.deepEqual(seen, []);
+  offAgain();
 });
 
 test('the connect frame { kind: "all" } reaches every change handler; another kind only its own', async () => {
@@ -225,4 +240,15 @@ test('a failed send ends the wait with its error', async () => {
     /refused/,
   );
   off();
+});
+
+test('the last unsubscribe releases the waiting commands with their ack', async () => {
+  const off = events.subscribeTopic('vms', () => {});
+  await openStream();
+  const wait = track(events.sendAndAwaitTopic('vms', async () => 'ack'));
+  await settle();
+  assert.equal(wait.done, false);
+  off();
+  await settle();
+  assert.deepEqual(wait, { done: true, value: 'ack' });
 });
