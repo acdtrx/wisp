@@ -62,15 +62,15 @@ export async function checkDefaultBridgeOverride() {
 }
 
 /**
- * Default bridge for new VMs: WISP_DEFAULT_BRIDGE env, or the first host bridge
- * (libvirt's virbr* last); null when the host has none — setup gives every Wisp
- * host a bridge, so that is a host setup never finished.
+ * Default bridge for new VMs: WISP_DEFAULT_BRIDGE env, or the one new
+ * containers attach to (getDefaultContainerParentBridge), so a VM and a
+ * container land on the same segment; null when the host has none — setup
+ * gives every Wisp host a bridge, so that is a host setup never finished.
  */
 export async function getDefaultBridge() {
   const envBridge = process.env.WISP_DEFAULT_BRIDGE?.trim();
   if (envBridge) return envBridge;
-  const bridges = await listHostBridges();
-  return bridges[0] ?? null;
+  return (await getDefaultContainerParentBridge()) ?? null;
 }
 
 /**

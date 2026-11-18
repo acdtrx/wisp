@@ -146,6 +146,7 @@ function mappedErrorStatus(code) {
     case 'HOME_NOT_FOUND':
       return 404;
     case 'NETWORK_BRIDGE_UNAVAILABLE':
+    case 'NETWORK_BRIDGE_NONE':
     case 'NETWORK_BRIDGE_APPLY_FAILED':
     case 'CONTAINER_MOUNT_SOURCE_NOT_MOUNTED':
     case 'CONTAINER_DEVICE_MISSING':

@@ -345,7 +345,7 @@ export async function createVM(spec, { onStep, populateVMDir } = {}) {
   // Before anything is created: a NIC without a source takes the host's bridge.
   const nicsNeedBridge = !Array.isArray(s.nics) || s.nics.length === 0 || s.nics.some((n) => !n.source);
   if (nicsNeedBridge && !(await getDefaultBridge())) {
-    throw vmError('NO_BRIDGE', 'This host has no bridge for the VM\'s network: run setup (scripts/linux/setup/common-steps.sh), which creates one');
+    throw vmError('NETWORK_BRIDGE_NONE', 'This host has no bridge for the VM\'s network: run setup (scripts/linux/setup/common-steps.sh), which creates one');
   }
 
   const disk = s.disk || {};
