@@ -298,15 +298,18 @@ app.register(containerConsoleRoutes, { prefix: '/ws' });
 // SPA static serving — only in prod; dev hits vite on :5173. /vendor/* serves
 // noVNC. The dist root has wildcard:false so unmatched paths fall through to
 // setNotFoundHandler (which returns index.html for client-side routing).
+// Dotfiles (noVNC's `.pinned` record) are build bookkeeping, never served.
 if (!isDev && existsSync(distPath)) {
   await registerPluginWithPublicRoutes(fastifyStatic, {
     root: publicVendorPath,
     prefix: '/vendor/',
     decorateReply: false,
+    dotfiles: 'ignore',
   });
   await registerPluginWithPublicRoutes(fastifyStatic, {
     root: distPath,
     wildcard: false,
+    dotfiles: 'ignore',
   });
 }
 
