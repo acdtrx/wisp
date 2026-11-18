@@ -212,7 +212,10 @@ while read -r _l; do
   [[ -n "$_l" ]] || continue
   _local="$(awk '{ for (i = 1; i <= NF; i++) if ($i ~ /:53$/) { print $i; exit } }' <<<"$_l")"
   case "$_local" in
-    169.254.53.53:53 | 0.0.0.0:53 | '*:53') ;;
+    # A wildcard bound to one device takes the port from the stub too
+    # (observed 2026-11-19: the forwarder's UDP bind then fails with
+    # EADDRINUSE); [::]:53 is IPv6 only and leaves it free.
+    169.254.53.53:53 | 0.0.0.0:53 | 0.0.0.0%*:53 | '*:53' | '*%'*:53) ;;
     *) continue ;;
   esac
   _pid="$(grep -o 'pid=[0-9]*' <<<"$_l" | head -n 1 | cut -d= -f2 || true)"
