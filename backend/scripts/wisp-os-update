@@ -11,18 +11,18 @@
 # Non-interactive by construction: nothing may prompt, because the caller is a
 # backend with no terminal and a prompt is a hang until the timeout kills the
 # package manager mid-run. Locally modified config files are always kept
-# (apt: --force-confold; pacman: writes .pacnew and never prompts).
+# (--force-confold).
 # Exit codes:
 #   0   success
-#   75  EX_TEMPFAIL — another apt/dpkg/pacman process is holding the package-manager lock
+#   75  EX_TEMPFAIL — another apt/dpkg process is holding the package-manager lock
 #   1   any other failure (privilege, missing tools, parse error, etc.)
 # Must be run with sufficient privilege (root or sudo).
-# Supports: Debian/Ubuntu (apt) and Arch Linux (pacman).
+# Wisp hosts run Debian or Ubuntu (setup refuses any other): apt.
 set -euo pipefail
 
-# Pattern matched against apt/pacman stderr to identify lock-contention errors.
+# Pattern matched against apt/dpkg stderr to identify lock-contention errors.
 # When matched, the script exits 75 so callers can distinguish "busy" from "broken".
-LOCK_PATTERN='Could not get lock|Could not open lock|Unable to (acquire|lock)|Resource temporarily unavailable|already locked|unable to lock database|could not lock database|database is locked|frontend is locked'
+LOCK_PATTERN='Could not get lock|Could not open lock|Unable to (acquire|lock)|Resource temporarily unavailable|already locked|frontend is locked'
 
 # Bounds (CODING-RULES §6; the values are contracts in docs/specs/HOST-MONITORING.md
 # § OS Updates). Every package-manager step passes its output through to stderr —
@@ -38,11 +38,8 @@ SIMULATE_TIMEOUT=60
 
 RUN_LOG="$(mktemp -t wisp-os-update-log.XXXXXX)"
 CHILD_PID=""
-SCRATCH_DB=""
 cleanup() {
   rm -f -- "$RUN_LOG"
-  # rm -r removes the `local` symlink itself, never its target.
-  if [[ -n "$SCRATCH_DB" ]]; then rm -rf -- "$SCRATCH_DB"; fi
 }
 trap cleanup EXIT
 stop_child() {
@@ -131,167 +128,74 @@ simulate_dist_upgrade() {
   printf '%s\n' "$out"
 }
 
-# Detect distro from /etc/os-release
-DISTRO="unknown"
-if [[ -f /etc/os-release ]]; then
-  _ID="$(. /etc/os-release && echo "${ID:-}")"
-  _ID_LIKE="$(. /etc/os-release && echo "${ID_LIKE:-}")"
-  case "${_ID}:${_ID_LIKE}" in
-    arch:*|*:*arch*)
-      DISTRO="arch"
-      ;;
-    ubuntu:*|debian:*|*:*debian*|*:*ubuntu*)
-      DISTRO="debian"
-      ;;
-  esac
-fi
-
-if [[ "$DISTRO" == "unknown" ]]; then
-  echo "Unsupported distro; OS updates require Debian/Ubuntu (apt) or Arch Linux (pacman)." >&2
-  exit 1
-fi
-
 CMD="${1:-}"
 
-# --- Arch: check/list against a scratch copy of the sync databases ---------
-# A bare `pacman -Sy` refreshes /var/lib/pacman/sync without upgrading, which
-# is how Arch hosts end up partially upgraded: the next `pacman -S <pkg>`
-# resolves against sync dbs newer than the installed libraries. So check/list
-# sync into a throwaway dbpath instead: the local db is symlinked in (only read
-# by -Qu), the current sync dbs are copied with their mtimes so -Sy downloads
-# only what changed, and the whole directory is removed on exit. The real sync
-# dbs are only refreshed by `upgrade` (-Syu), together with the upgrade itself.
-PACMAN_DB=/var/lib/pacman
-
-sync_scratch_db() {
-  # The scratch dbpath has its own lock file, so a running pacman would not
-  # stop this sync; check the real lock to keep the busy (75) contract and to
-  # avoid reading the local db while another pacman rewrites it.
-  if [[ -e "$PACMAN_DB/db.lck" ]]; then
-    echo "unable to lock database: $PACMAN_DB/db.lck exists (another pacman is running)" >&2
-    exit 75
-  fi
-  SCRATCH_DB="$(mktemp -d -t wisp-os-update.XXXXXX)"
-  # pacman 7+ downloads as an unprivileged DownloadUser, which must be able to
-  # traverse this directory. It holds only public repo metadata.
-  chmod 755 "$SCRATCH_DB"
-  mkdir -m 755 "$SCRATCH_DB/sync"
-  ln -s "$PACMAN_DB/local" "$SCRATCH_DB/local"
-  local f
-  for f in "$PACMAN_DB"/sync/*.db "$PACMAN_DB"/sync/*.db.sig; do
-    if [[ -f "$f" ]]; then cp -p -- "$f" "$SCRATCH_DB/sync/"; fi
-  done
-  run_step "$REFRESH_IDLE" pacman -Sy --dbpath "$SCRATCH_DB" --logfile /dev/null
-}
-
-# Emit PKG lines for packages `pacman -Syu` would upgrade. `pacman -Qu` prints
-# "name from -> to" per package (exit 1 when there are none); lines with a
-# trailing "[ignored]" are IgnorePkg entries that -Syu skips, so NF == 4 drops them.
-list_arch_upgradable() {
-  local out
-  local rc=0
-  # pacman -Qu exits 1 when nothing is upgradable; only a timeout is a failure.
-  out=$(bounded "$SIMULATE_TIMEOUT" pacman -Qu --dbpath "$SCRATCH_DB" 2>/dev/null) || rc=$?
-  # stderr (bounded's message with it) is discarded above: say it here.
-  if (( rc == 124 || rc == 137 )); then echo "wisp-os-update: pacman -Qu timed out after ${SIMULATE_TIMEOUT}s" >&2; exit 1; fi
-  echo "$out" | awk '
-    NF == 4 && $3 == "->" { printf "PKG%s%s%s%s%s%s\n", "\t", $1, "\t", $2, "\t", $4 }
-  '
-}
-
-case "$DISTRO" in
-  arch)
-    case "$CMD" in
-      check)
-        sync_scratch_db
-        list_arch_upgradable | wc -l
-        ;;
-      list)
-        sync_scratch_db
-        list_arch_upgradable
-        # No reliable non-interactive way to get total download size on Arch
-        # without pulling actual packages; 0 means "unknown" to the caller.
-        echo "TOTAL 0"
-        ;;
-      upgrade)
-        # Output passed through: the backend's inactivity bound watches it.
-        run_step 0 pacman -Syu --noconfirm
-        ;;
-      *)
-        echo "Usage: $0 check|list|upgrade" >&2
-        exit 1
-        ;;
-    esac
+# sudo's env_reset drops the caller's environment, so these are set here.
+# - DEBIAN_FRONTEND=noninteractive: debconf takes defaults instead of asking.
+# - NEEDRESTART_MODE=a: Ubuntu's needrestart restarts affected services
+#   itself instead of asking which ones to restart.
+# - UCF_FORCE_CONFFOLD=1: ucf-managed config files (e.g. sshd_config) keep
+#   the local version, matching --force-confold for dpkg conffiles below.
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export UCF_FORCE_CONFFOLD=1
+case "$CMD" in
+  check)
+    run_step "$REFRESH_IDLE" apt-get update
+    # Simulate dist-upgrade so count matches what the upgrade action would install (excludes phased-only, etc.).
+    OUT=$(simulate_dist_upgrade) || exit 1
+    SUMMARY=$(echo "$OUT" | grep -E '^[0-9]+ upgraded,' | tail -n1 || true)
+    if [[ -z "$SUMMARY" ]]; then
+      echo 0
+    else
+      # First comma-separated field is "N upgraded" (avoid matching "not upgraded" later in the line).
+      FIRST="${SUMMARY%%,*}"
+      echo "${FIRST%% upgraded}"
+    fi
     ;;
-  debian)
-    # sudo's env_reset drops the caller's environment, so these are set here.
-    # - DEBIAN_FRONTEND=noninteractive: debconf takes defaults instead of asking.
-    # - NEEDRESTART_MODE=a: Ubuntu's needrestart restarts affected services
-    #   itself instead of asking which ones to restart.
-    # - UCF_FORCE_CONFFOLD=1: ucf-managed config files (e.g. sshd_config) keep
-    #   the local version, matching --force-confold for dpkg conffiles below.
-    export DEBIAN_FRONTEND=noninteractive
-    export NEEDRESTART_MODE=a
-    export UCF_FORCE_CONFFOLD=1
-    case "$CMD" in
-      check)
-        run_step "$REFRESH_IDLE" apt-get update
-        # Simulate dist-upgrade so count matches what the upgrade action would install (excludes phased-only, etc.).
-        OUT=$(simulate_dist_upgrade) || exit 1
-        SUMMARY=$(echo "$OUT" | grep -E '^[0-9]+ upgraded,' | tail -n1 || true)
-        if [[ -z "$SUMMARY" ]]; then
-          echo 0
-        else
-          # First comma-separated field is "N upgraded" (avoid matching "not upgraded" later in the line).
-          FIRST="${SUMMARY%%,*}"
-          echo "${FIRST%% upgraded}"
-        fi
-        ;;
-      list)
-        run_step "$REFRESH_IDLE" apt-get update
-        OUT=$(simulate_dist_upgrade) || exit 1
-        # `Inst <name> [<from>] (<to> ...)` for upgrades; `Inst <name> (<to> ...)` for new pulls.
-        echo "$OUT" | awk -v OFS='\t' '
-          /^Inst / {
-            name=$2; from=""; to="";
-            if ($3 ~ /^\[/) {
-              from=$3; sub(/^\[/, "", from); sub(/\]$/, "", from);
-              to=$4;   sub(/^\(/, "", to);
-            } else {
-              to=$3;   sub(/^\(/, "", to);
-            }
-            printf "PKG%s%s%s%s%s%s\n", "\t", name, "\t", from, "\t", to;
-          }
-        '
-        # apt prints "Need to get X[.Y] (kB|MB|GB|B) of archives." — convert to bytes.
-        NEED=$(echo "$OUT" | grep -E '^Need to get ' | head -n1 || true)
-        BYTES=0
-        if [[ -n "$NEED" ]]; then
-          AMOUNT=$(echo "$NEED" | awk '{print $4}')
-          UNIT=$(echo "$NEED" | awk '{print $5}')
-          case "$UNIT" in
-            B)  BYTES=$(awk -v n="$AMOUNT" 'BEGIN{printf "%.0f", n}') ;;
-            kB) BYTES=$(awk -v n="$AMOUNT" 'BEGIN{printf "%.0f", n*1000}') ;;
-            MB) BYTES=$(awk -v n="$AMOUNT" 'BEGIN{printf "%.0f", n*1000*1000}') ;;
-            GB) BYTES=$(awk -v n="$AMOUNT" 'BEGIN{printf "%.0f", n*1000*1000*1000}') ;;
-          esac
-        fi
-        echo "TOTAL ${BYTES}"
-        ;;
-      upgrade)
-        run_step "$REFRESH_IDLE" apt-get update
-        # Output passed through: the backend's inactivity bound watches it.
-        # confdef+confold: an untouched conffile takes the package's new version,
-        # a locally modified one is kept (the new one lands as .dpkg-dist).
-        run_step 0 apt-get -y \
-          -o Dpkg::Options::=--force-confdef \
-          -o Dpkg::Options::=--force-confold \
-          dist-upgrade
-        ;;
-      *)
-        echo "Usage: $0 check|list|upgrade" >&2
-        exit 1
-        ;;
-    esac
+  list)
+    run_step "$REFRESH_IDLE" apt-get update
+    OUT=$(simulate_dist_upgrade) || exit 1
+    # `Inst <name> [<from>] (<to> ...)` for upgrades; `Inst <name> (<to> ...)` for new pulls.
+    echo "$OUT" | awk -v OFS='\t' '
+      /^Inst / {
+        name=$2; from=""; to="";
+        if ($3 ~ /^\[/) {
+          from=$3; sub(/^\[/, "", from); sub(/\]$/, "", from);
+          to=$4;   sub(/^\(/, "", to);
+        } else {
+          to=$3;   sub(/^\(/, "", to);
+        }
+        printf "PKG%s%s%s%s%s%s\n", "\t", name, "\t", from, "\t", to;
+      }
+    '
+    # apt prints "Need to get X[.Y] (kB|MB|GB|B) of archives." — convert to bytes.
+    NEED=$(echo "$OUT" | grep -E '^Need to get ' | head -n1 || true)
+    BYTES=0
+    if [[ -n "$NEED" ]]; then
+      AMOUNT=$(echo "$NEED" | awk '{print $4}')
+      UNIT=$(echo "$NEED" | awk '{print $5}')
+      case "$UNIT" in
+        B)  BYTES=$(awk -v n="$AMOUNT" 'BEGIN{printf "%.0f", n}') ;;
+        kB) BYTES=$(awk -v n="$AMOUNT" 'BEGIN{printf "%.0f", n*1000}') ;;
+        MB) BYTES=$(awk -v n="$AMOUNT" 'BEGIN{printf "%.0f", n*1000*1000}') ;;
+        GB) BYTES=$(awk -v n="$AMOUNT" 'BEGIN{printf "%.0f", n*1000*1000*1000}') ;;
+      esac
+    fi
+    echo "TOTAL ${BYTES}"
+    ;;
+  upgrade)
+    run_step "$REFRESH_IDLE" apt-get update
+    # Output passed through: the backend's inactivity bound watches it.
+    # confdef+confold: an untouched conffile takes the package's new version,
+    # a locally modified one is kept (the new one lands as .dpkg-dist).
+    run_step 0 apt-get -y \
+      -o Dpkg::Options::=--force-confdef \
+      -o Dpkg::Options::=--force-confold \
+      dist-upgrade
+    ;;
+  *)
+    echo "Usage: $0 check|list|upgrade" >&2
+    exit 1
     ;;
 esac

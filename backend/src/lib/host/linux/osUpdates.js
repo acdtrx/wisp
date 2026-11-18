@@ -67,7 +67,7 @@ async function getScriptPath() {
 
 /*
  * Bounds (CODING-RULES §6; contracts in docs/specs/HOST-MONITORING.md § OS
- * Updates): the helper passes apt/pacman's output through on stderr, and the
+ * Updates): the helper passes apt's output through on stderr, and the
  * run is stopped after this long without any of it. `list` gets 90 s — above
  * the helper's own per-step bounds (60 s each), which stop a hung step first;
  * `upgrade` 15 min, since dkms and initramfs builds can be silent for minutes.
@@ -85,7 +85,7 @@ const STDERR_KEEP = 64 * 1024;
 function runUpdateScript(scriptPath, action, { idleMs, signal, onLine } = {}) {
   return new Promise((resolve, reject) => {
     const isRoot = process.getuid && process.getuid() === 0;
-    /* stdin is /dev/null: anything in the apt/dpkg/pacman chain that reads a
+    /* stdin is /dev/null: anything in the apt/dpkg chain that reads a
      * prompt answer gets EOF instead of waiting forever. */
     const child = isRoot
       ? spawn(scriptPath, [action], { stdio: ['ignore', 'pipe', 'pipe'] })
@@ -128,7 +128,7 @@ function runUpdateScript(scriptPath, action, { idleMs, signal, onLine } = {}) {
       } else if (code === 0) {
         resolve({ stdout, stderr });
       } else if (code === 75) {
-        /* EX_TEMPFAIL: another apt/dpkg/pacman process holds the package-manager lock. */
+        /* EX_TEMPFAIL: another apt/dpkg process holds the package-manager lock. */
         reject(createAppError(BUSY, 'Another package manager operation is running on the host', stderr.trim().split('\n').slice(-5).join('\n') || 'package manager lock held by another process'));
       } else {
         reject(createAppError(UNAVAILABLE, `OS update ${action} failed (privilege or package manager error)`, stderr.trim().split('\n').slice(-20).join('\n') || `exit ${code}`));
@@ -194,7 +194,7 @@ function runListShared(signal) {
 
 /**
  * Sync package database and count upgradable packages.
- * Supports Debian/Ubuntu (apt) and Arch Linux (pacman) via wisp-os-update.
+ * Debian/Ubuntu (apt), through wisp-os-update.
  * Internally runs the same apt invocation as `listUpgradablePackages` and
  * shares an in-flight promise — concurrent check/list calls coalesce.
  * @param {AbortSignal} [signal]
