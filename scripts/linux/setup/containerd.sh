@@ -73,23 +73,10 @@ if ! grep -qx wisp <<<"$NAMESPACES"; then
   changed "namespace wisp created"
 fi
 
-# runc 1.2+ is required for per-mount idmapped mounts (used when runAsRoot is set
-# on a container with non-default mount owner UID/GID). Older runc fails at task
-# create with a confusing OCI error, so warn here; everything else still works.
-if command -v runc &>/dev/null; then
-  # Every line read, no early exit: under pipefail a reader that quits first
-  # turns runc's SIGPIPE into a failure.
-  RUNC_VER="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" runc --version 2>/dev/null | awk '/^runc version/ && !done { print $3; done = 1 }')" \
-    || fail "runc --version failed"
-  RUNC_MAJOR="$(echo "$RUNC_VER" | cut -d. -f1)"
-  RUNC_MINOR="$(echo "$RUNC_VER" | cut -d. -f2)"
-  if [[ -z "$RUNC_VER" ]] || ! [[ "$RUNC_MAJOR" =~ ^[0-9]+$ && "$RUNC_MINOR" =~ ^[0-9]+$ ]]; then
-    echo "  WARN: Could not parse runc version (got: '$RUNC_VER'). Idmapped mounts require runc >= 1.2.0."
-  elif [[ "$RUNC_MAJOR" -lt 1 ]] || { [[ "$RUNC_MAJOR" -eq 1 ]] && [[ "$RUNC_MINOR" -lt 2 ]]; }; then
-    echo "  WARN: runc $RUNC_VER is older than 1.2.0 — per-mount idmapped mounts (runAsRoot + custom owner UID/GID) will fail."
-  fi
-else
-  echo "ERROR: runc not found in PATH — containerd cannot start containers." >&2
-  exit 1
-fi
+# runc, which containerd starts containers with. Its version needs no check:
+# setup accepts containerd 2.x only, from Docker's containerd.io, which bundles
+# the runc containerd's release names (1.2.1 or newer since containerd 2.0),
+# or from the distro, whose runc beside it is newer still; per-mount idmapped
+# mounts need 1.2.
+command -v runc >/dev/null || fail "runc not found in PATH: containerd cannot start containers"
 step_done
