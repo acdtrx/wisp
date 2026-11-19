@@ -111,12 +111,15 @@ if [[ $# -ne 6 ]]; then
 fi
 SOURCE_DIR="$1" INSTALL_DIR="$2" DEPLOY_USER="$3" DEPLOY_GROUP="$4" SERVER_NAME="$5" REMOVE_DIR="$6"
 
-# The push's directory: the one above the tree, as push.sh names it; marked,
-# so push.sh leaves it to the install from here.
+# The push's directory: the one above the tree, as push.sh names it
+# (PUSH_DIR_TEMPLATE there; scripts/check-bounds.mjs keeps the two the same);
+# marked, so push.sh leaves it to the install from here.
+PUSH_DIR_PREFIX=/tmp/wisp-push.
 if [[ -n "$REMOVE_DIR" ]]; then
-  [[ "$REMOVE_DIR" == "$(dirname "$SOURCE_DIR")" && "$REMOVE_DIR" =~ ^/tmp/wisp-push\.[A-Za-z0-9]+$ && ! -L "$REMOVE_DIR" && -d "$REMOVE_DIR" \
+  [[ "$REMOVE_DIR" == "$(dirname "$SOURCE_DIR")" && "$REMOVE_DIR" == "$PUSH_DIR_PREFIX"* \
+    && "${REMOVE_DIR#"$PUSH_DIR_PREFIX"}" =~ ^[A-Za-z0-9]+$ && ! -L "$REMOVE_DIR" && -d "$REMOVE_DIR" \
     && "$(stat -c %u "$REMOVE_DIR")" == "${SUDO_UID:-}" ]] \
-    || { echo "ERROR: --remove-source is for a tree push.sh unpacked in a /tmp/wisp-push.* directory of yours; this one is $SOURCE_DIR." >&2; exit 1; }
+    || { echo "ERROR: --remove-source is for a tree push.sh unpacked in a ${PUSH_DIR_PREFIX}* directory of yours; this one is $SOURCE_DIR." >&2; exit 1; }
   # Made, never followed: a name already there (a link among them) fails.
   ( set -o noclobber; : > "$REMOVE_DIR/.install-started" ) \
     || { echo "ERROR: cannot mark $REMOVE_DIR as the install's." >&2; exit 1; }

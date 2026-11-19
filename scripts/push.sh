@@ -63,7 +63,11 @@ TARBALL="$STAGE_OUT/$TARBALL_NAME"
 echo ""
 
 # --- Upload, into a directory of the push's own on the host ---
-REMOTE_DIR="$(ssh -n "${SSH_OPTS[@]}" "$TARGET" 'mktemp -d /tmp/wisp-push.XXXXXX')" \
+# The installer accepts only a directory of this name for --remove-source
+# (scripts/linux/install-root.sh, PUSH_DIR_PREFIX; scripts/check-bounds.mjs
+# keeps the two the same).
+PUSH_DIR_TEMPLATE=/tmp/wisp-push.XXXXXX
+REMOTE_DIR="$(ssh -n "${SSH_OPTS[@]}" "$TARGET" "mktemp -d $PUSH_DIR_TEMPLATE")" \
   || { echo "ERROR: cannot make a directory for the push on $TARGET" >&2; exit 1; }
 echo "--- Uploading $TARBALL_NAME to $TARGET:$REMOTE_DIR ---"
 if ! scp "${SSH_OPTS[@]}" "$TARBALL" "$TARGET:$REMOTE_DIR/$TARBALL_NAME"; then

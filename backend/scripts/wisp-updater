@@ -80,7 +80,7 @@ SERVICE_UNIT=wisp
 # worst case from these numbers and setup's, and fails when the unit's
 # TimeoutStopSec (systemd/linux/wisp-updater.service) is below it.
 KILL_GRACE_SEC=10
-STOP_WISP_SEC=30
+STOP_WISP_SEC=40
 ROLLBACK_RESTORE_SEC=120
 ROLLBACK_SETUP_SEC=300
 DAEMON_RELOAD_SEC=30

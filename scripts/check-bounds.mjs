@@ -11,14 +11,21 @@
  *   wisp.service's TimeoutStopSec;
  * - the frontend's wait for an update, UPDATER_LIMIT_MS;
  * - the install lock's path, setup's WISP_LOCK (scripts/linux/setup/lib.sh) and
- *   the updater's, which is installed on its own and names it too.
+ *   the updater's, which is installed on its own and names it too;
+ * - the push's directory, made by scripts/push.sh (PUSH_DIR_TEMPLATE) and the
+ *   only one the installer removes for it (scripts/linux/install-root.sh,
+ *   PUSH_DIR_PREFIX);
+ * - setup's foreground calls with bounds of their own (UDEV_CALL_SEC), none
+ *   longer than a network call's, NET_CMD_SEC, past which a step's stop would
+ *   wait (scripts/linux/setup/step.sh, step_stop).
  *
  * The unit's stop budget must cover the worst case after its start times out:
  * the stopped setup ending (a setup can be stopped there, and in the rollback),
  * then the whole rollback, each part at its bound and its kill. The frontend
  * waits the unit's start timeout and its stop budget. The updater's bound on
- * stopping wisp.service covers systemd's own stop of it: TimeoutStopSec for
- * the TERM, the same again after the KILL.
+ * stopping wisp.service covers systemd's own stop of it — TimeoutStopSec for
+ * the TERM, the same again after the KILL — and WISP_STOP_MARGIN_SEC more, so
+ * that its "did not stop" never races systemd's second wait.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -52,13 +59,21 @@ function assignments(rel, names, pattern = '\\d+') {
   return found;
 }
 
+// What systemctl's stop of wisp.service takes beyond systemd's two waits (the
+// stop job queued and reported, the cgroup's last exit seen).
+const WISP_STOP_MARGIN_SEC = 10;
+
 const SETUP_STOP_SEC = setupBound('SETUP_STOP_SEC');
+const NET_CMD_SEC = setupBound('NET_CMD_SEC');
+const UDEV_CALL_SEC = setupBound('UDEV_CALL_SEC');
 const u = assignments('backend/scripts/wisp-updater', ['KILL_GRACE_SEC', 'STOP_WISP_SEC', 'ROLLBACK_RESTORE_SEC',
   'ROLLBACK_SETUP_SEC', 'DAEMON_RELOAD_SEC', 'ROLLBACK_START_WAIT_SEC', 'STATUS_SEC']);
 const unit = assignments('systemd/linux/wisp-updater.service', ['TimeoutStartSec', 'TimeoutStopSec']);
 const wisp = assignments('systemd/linux/wisp.service', ['TimeoutStopSec']);
 const updaterLock = assignments('backend/scripts/wisp-updater', ['WISP_LOCK'], '\\S+');
 const setupLock = shellValue('scripts/linux/setup/lib.sh', 'WISP_LOCK');
+const pushTemplate = assignments('scripts/push.sh', ['PUSH_DIR_TEMPLATE'], '\\S+');
+const pushPrefix = assignments('scripts/linux/install-root.sh', ['PUSH_DIR_PREFIX'], '\\S+');
 
 const FRONTEND = 'frontend/src/components/host/WispUpdateSection.jsx';
 const limit = read(FRONTEND).match(/^const UPDATER_LIMIT_MS = \((\d+) \+ (\d+)\) \* 1000;$/m);
@@ -75,8 +90,14 @@ if (problems.length === 0) {
   if (unit.TimeoutStopSec < need) {
     problems.push(`systemd/linux/wisp-updater.service: TimeoutStopSec=${unit.TimeoutStopSec} is below the worst case of a stopped update, ${need} s (setup stopped, ${stopped} s; then the rollback, ${rollback} s)`);
   }
-  if (u.STOP_WISP_SEC < 2 * wisp.TimeoutStopSec) {
-    problems.push(`backend/scripts/wisp-updater: STOP_WISP_SEC=${u.STOP_WISP_SEC} is below systemd's own stop of wisp.service, 2 × its TimeoutStopSec=${wisp.TimeoutStopSec}`);
+  if (u.STOP_WISP_SEC < 2 * wisp.TimeoutStopSec + WISP_STOP_MARGIN_SEC) {
+    problems.push(`backend/scripts/wisp-updater: STOP_WISP_SEC=${u.STOP_WISP_SEC} is below systemd's own stop of wisp.service, 2 × its TimeoutStopSec=${wisp.TimeoutStopSec}, and a margin of ${WISP_STOP_MARGIN_SEC} s`);
+  }
+  if (pushTemplate.PUSH_DIR_TEMPLATE !== `${pushPrefix.PUSH_DIR_PREFIX}XXXXXX`) {
+    problems.push(`scripts/push.sh: PUSH_DIR_TEMPLATE=${pushTemplate.PUSH_DIR_TEMPLATE} is not the installer's PUSH_DIR_PREFIX=${pushPrefix.PUSH_DIR_PREFIX} and XXXXXX (scripts/linux/install-root.sh)`);
+  }
+  if (UDEV_CALL_SEC > NET_CMD_SEC) {
+    problems.push(`scripts/linux/setup/bounds.sh: UDEV_CALL_SEC=${UDEV_CALL_SEC} is above NET_CMD_SEC=${NET_CMD_SEC}, the longest a step runs a call in the foreground`);
   }
   if (updaterLock.WISP_LOCK !== setupLock) {
     problems.push(`backend/scripts/wisp-updater: WISP_LOCK=${updaterLock.WISP_LOCK} is not setup's, ${setupLock} (scripts/linux/setup/lib.sh)`);
