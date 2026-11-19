@@ -65,7 +65,7 @@ nm_others() {
         *) net_fail "cannot read the settings of NetworkManager's connection '$n' ($uuid): $(<"$err")" ;;
       esac
     fi
-    says="$(python3 -I "$NET_SETUP_DIR/nm.py" other "$UPLINK" "$UPLINK_CONNECTION" "$UPLINK_MAC" <<<"$settings")" \
+    says="$(python3 -I "$NET_SETUP_DIR/nm.py" other "$UPLINK" "$UPLINK_CONNECTION" "$UPLINK_MAC" "${UPLINK_PERMADDR:-}" <<<"$settings")" \
       || net_fail "cannot read the settings NetworkManager returned for its connection '$n' ($uuid)"
     case "$says" in
       dependent\ *) net_refuse UPLINK_DEPENDENT "NetworkManager's $v connection '$n' ($uuid) hangs off $UPLINK (${says#dependent })." ;;
@@ -102,7 +102,7 @@ nm_refuse_settings() {
 }
 
 plan_networkmanager() {
-  local con mac files n prio routes4 routes6 metric4 metric6 v f args why flags
+  local con mac out files n prio routes4 routes6 metric4 metric6 v f args why flags
   UPLINK_CONNECTION="$(net_read nmcli -g GENERAL.CON-UUID device show "$UPLINK")" || exit 1
   [[ -n "$UPLINK_CONNECTION" ]] || refuse NM_NO_CONNECTION "NetworkManager names no connection for the uplink $UPLINK: give it one (nmcli connection add type ethernet ifname $UPLINK …) and run this again."
   con="$(net_read nmcli -t -e no connection show "$UPLINK_CONNECTION")" || exit 1
@@ -117,8 +117,15 @@ plan_networkmanager() {
     || net_refuse NM_NOT_ETHERNET "$UPLINK's connection is of type $(_prop connection.type)."
   [[ -z "$(_prop match.interface-name)" ]] \
     || refuse NM_MATCH "$UPLINK's connection matches the interfaces \"$(_prop match.interface-name)\", not $UPLINK alone: bind it to $UPLINK by name (nmcli connection modify $UPLINK_CONNECTION match.interface-name \"\" connection.interface-name $UPLINK), and run this again."
+  # NetworkManager binds a profile by the device's permanent hardware address,
+  # which a cloned current one hides.
+  out="$(net_read ip -j -d link show dev "$UPLINK")" || exit 1
+  UPLINK_PERMADDR="$(python3 -I "$NET_SETUP_DIR/nm.py" permaddr <<<"$out")" \
+    || net_fail "cannot read ${UPLINK}'s permanent hardware address"
   mac="$(_prop 802-3-ethernet.mac-address)"
-  if [[ "$(_prop connection.interface-name)" != "$UPLINK" && "${mac,,}" != "$UPLINK_MAC" ]]; then
+  mac="${mac,,}"
+  if [[ "$(_prop connection.interface-name)" != "$UPLINK" && "$mac" != "$UPLINK_MAC" \
+    && ( -z "$UPLINK_PERMADDR" || "$mac" != "$UPLINK_PERMADDR" ) ]]; then
     refuse NM_NOT_BOUND "$UPLINK's connection is not bound to $UPLINK by name or hardware address, so it applies to other interfaces too: bind it (nmcli connection modify $UPLINK_CONNECTION connection.interface-name $UPLINK), and run this again."
   fi
   # Every setting it holds goes to the bridge or stays on the port (nm.py's

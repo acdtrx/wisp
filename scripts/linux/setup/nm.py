@@ -10,11 +10,16 @@ connection's settings are what differs from the defaults.
       tab-separated, its escapes (\\: and \\\\) read
   nm.py flags
       reads `busctl get-property --json=short … Flags` on stdin; prints them
-  nm.py other <uplink> <uplink-uuid> <uplink-mac>
+  nm.py permaddr
+      reads `ip -j -d link show dev <link>` on stdin; prints the link's
+      permanent hardware address when it differs from its current one, else
+      nothing
+  nm.py other <uplink> <uplink-uuid> <uplink-mac> [<uplink-permaddr>]
       reads another connection's `busctl call --json=short … GetSettings` on
       stdin; prints `dependent <setting.property>` when it hangs off the uplink
       (a parent, or a port, naming the uplink or its connection; a connection
-      of another type bound to the uplink by name or hardware address),
+      of another type bound to the uplink by name or hardware address, its
+      current or its permanent one),
       `taker` when it is an Ethernet connection not bound to another device,
       which could take the uplink too, and nothing otherwise
   nm.py unknown
@@ -78,7 +83,10 @@ def mac_of(value):
     return ':'.join(f'{b:02x}' for b in value['data']) if value and value['data'] else ''
 
 
-def other(uplink, uplink_uuid, uplink_mac):
+def other(uplink, uplink_uuid, uplink_mac, uplink_permaddr=''):
+    # NetworkManager binds a profile by the device's permanent address; the
+    # current one differs when it is cloned.
+    macs = {uplink_mac, uplink_permaddr} - {''}
     settings = json.load(sys.stdin)['data'][0]
     for name, props in sorted(settings.items()):
         for prop in sorted(LOWER_PROPERTIES & set(props)):
@@ -94,11 +102,11 @@ def other(uplink, uplink_uuid, uplink_mac):
         # PPPoE connection) or its hardware address (a virtual link).
         if bind == uplink:
             print('dependent connection.interface-name')
-        elif mac == uplink_mac:
+        elif mac in macs:
             print('dependent 802-3-ethernet.mac-address')
         return
     match = settings.get('match', {}).get('interface-name', {}).get('data') or []
-    if bind and bind != uplink or mac and mac != uplink_mac:
+    if bind and bind != uplink or mac and mac not in macs:
         return
     # Bound elsewhere by match.interface-name: every item a plain name (no
     # pattern, no `!` or `~`), none the uplink's.
@@ -109,6 +117,10 @@ def other(uplink, uplink_uuid, uplink_mac):
 
 def path():
     print(json.load(sys.stdin)['data'][0])
+
+
+def permaddr():
+    print(json.load(sys.stdin)[0].get('permaddr', '').lower())
 
 
 def rows():
@@ -163,7 +175,8 @@ def carry(metric4, metric6, out):
         f.close()
 
 
-COMMANDS = {'path': path, 'rows': rows, 'flags': flags, 'unknown': unknown, 'carry': carry, 'other': other}
+COMMANDS = {'path': path, 'rows': rows, 'flags': flags, 'unknown': unknown, 'carry': carry, 'other': other,
+            'permaddr': permaddr}
 
 if __name__ == '__main__':
     COMMANDS[sys.argv[1]](*sys.argv[2:])

@@ -22,6 +22,8 @@
 #                         or overriding a vendor file), which becomes the port's
 #   UPLINK_CONNECTION     networkmanager: the uplink's connection (UUID), which
 #                         the bridge step deletes last
+#   UPLINK_PERMADDR       networkmanager: the uplink's permanent hardware
+#                         address, when it differs from UPLINK_MAC
 #   NM_PROFILE_FILE       networkmanager: the file that stores it, when it is
 #                         stored (kept as the original)
 #   NM_BRIDGE_UUID, NM_PORT_UUID, NM_BRIDGE_FILE, NM_PORT_FILE
@@ -33,8 +35,8 @@
 # (what the uplink holds, net-state.sh), sources (what the plan read), and the
 # tool's files for the bridge (net-<tool>.sh).
 PLAN_RECORD_VARS=(NET_TOOL UPLINK UPLINK_ADDR BRIDGE BRIDGE_CREATE UPLINK_MAC UPLINK_MTU UPLINK_MODE
-  UPLINK_NETFILE UPLINK_CLIENT_ID UPLINK_NETPLAN_ID NETPLAN_ORIGIN NETWORKD_PORT_FILE UPLINK_CONNECTION NM_PROFILE_FILE
-  NM_BRIDGE_UUID NM_PORT_UUID NM_BRIDGE_FILE NM_PORT_FILE HOST_KVM NET_PLAN_JOURNAL)
+  UPLINK_NETFILE UPLINK_CLIENT_ID UPLINK_NETPLAN_ID NETPLAN_ORIGIN NETWORKD_PORT_FILE UPLINK_CONNECTION
+  UPLINK_PERMADDR NM_PROFILE_FILE NM_BRIDGE_UUID NM_PORT_UUID NM_BRIDGE_FILE NM_PORT_FILE HOST_KVM NET_PLAN_JOURNAL)
 
 # plan_record_write <file>: the record of the variables set now, synced.
 plan_record_write() {
