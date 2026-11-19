@@ -63,11 +63,11 @@ TARBALL="$STAGE_OUT/$TARBALL_NAME"
 echo ""
 
 # --- Upload, into a directory of the push's own on the host ---
-REMOTE_DIR="$(ssh "${SSH_OPTS[@]}" "$TARGET" 'mktemp -d /tmp/wisp-push.XXXXXX')" \
+REMOTE_DIR="$(ssh -n "${SSH_OPTS[@]}" "$TARGET" 'mktemp -d /tmp/wisp-push.XXXXXX')" \
   || { echo "ERROR: cannot make a directory for the push on $TARGET" >&2; exit 1; }
 echo "--- Uploading $TARBALL_NAME to $TARGET:$REMOTE_DIR ---"
 if ! scp "${SSH_OPTS[@]}" "$TARBALL" "$TARGET:$REMOTE_DIR/$TARBALL_NAME"; then
-  ssh "${SSH_OPTS[@]}" "$TARGET" "rm -rf '$REMOTE_DIR'" || true
+  ssh -n "${SSH_OPTS[@]}" "$TARGET" "rm -rf '$REMOTE_DIR'" || true
   echo "ERROR: the upload to $TARGET failed." >&2
   exit 1
 fi
@@ -83,7 +83,7 @@ echo "--- Installing on $TARGET ---"
 # following. Until then the directory is the push's, removed here when the
 # install never started.
 if ! ssh "${SSH_OPTS[@]}" -t "$TARGET" "trap '' HUP; tar -xzf '$REMOTE_DIR/$TARBALL_NAME' -C '$REMOTE_DIR' && cd '$REMOTE_DIR/wisp' && bash ./scripts/install.sh $REMOTE_PATH --remove-source"; then
-  ssh "${SSH_OPTS[@]}" "$TARGET" "[ -e '$REMOTE_DIR/.install-started' ] || rm -rf '$REMOTE_DIR'" || true
+  ssh -n "${SSH_OPTS[@]}" "$TARGET" "[ -e '$REMOTE_DIR/.install-started' ] || rm -rf '$REMOTE_DIR'" || true
   echo ""
   echo "ERROR: the install on $TARGET failed or was stopped following (see above)." >&2
   exit 1

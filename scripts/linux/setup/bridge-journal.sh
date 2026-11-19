@@ -289,6 +289,12 @@ journal_cleanup() {
       fi
       [[ -e "$d/kept/$name" ]] && kept=$((kept + 1))
     done < "$d/journal"
+    # NetworkManager's generated connection, which no file held: its copy
+    # rendered as a stored one (the plan's) is the original kept.
+    if [[ -e "$d/uplink.nmconnection" ]]; then
+      mv -T "$d/uplink.nmconnection" "$d/kept/NetworkManager-generated-connection.nmconnection" || return 1
+    fi
+    [[ ! -e "$d/kept/NetworkManager-generated-connection.nmconnection" ]] || kept=$((kept + 1))
     sync "$d/kept" "$d/files" || return 1
     if (( kept > 0 )); then
       when="$(cat "$d/committed")" || return 1
