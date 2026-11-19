@@ -219,7 +219,7 @@ gidMappings: [{ containerID: deployGid, hostID: containerOwnerGid, size: 1 }]
 
 **Bijection rule**: idmapped mounts must be one-to-one. Two container UIDs cannot map to the same host UID through a single mount. The size:1 design sidesteps this entirely (each mount carries one entry).
 
-**Runtime requirements**: idmapped mounts require **runc ≥ 1.2.0** (per-mount `uidMappings`/`gidMappings` without a userns) and a recent kernel (≥ 5.19 in practice; ext4/xfs/btrfs/tmpfs all supported). `scripts/linux/setup/containerd.sh` warns if the installed `runc` is older. With an older runc, container task creation fails with an OCI spec error.
+**Runtime requirements**: idmapped mounts require **runc ≥ 1.2.0** (per-mount `uidMappings`/`gidMappings` without a userns) and a recent kernel (≥ 5.19 in practice; ext4/xfs/btrfs/tmpfs all supported). Every containerd setup accepts brings one: setup takes containerd 2.x only, whose `containerd.io` package bundles runc 1.2.1 or newer, and whose distro packages sit beside a newer runc still, so `scripts/linux/setup/containerd.sh` checks only that `runc` is there. With an older runc, container task creation fails with an OCI spec error.
 
 **Important: idmap is an on-disk ownership shift, not a security boundary.** The container process still runs as real host UID 0 with all capabilities (no user namespace is added). Only the inode ownership stored on the bind source is translated.
 
