@@ -27,9 +27,9 @@ BRIDGE_SETTINGS = {'ipv4', 'ipv6', 'proxy', 'hostname'}
 PORT_SETTINGS = {'802-3-ethernet', 'ethtool', 'link', 'tc', 'sriov'}
 # Of the connection setting: what names the profile and binds it, which the
 # step's own connections replace; what goes to the bridge; what stays on the
-# port.
-CONNECTION_OWN = {'id', 'uuid', 'type', 'interface-name', 'timestamp', 'autoconnect', 'autoconnect-priority',
-                  'permissions'}
+# port. Anything else set is refused — permissions among them: the bridge
+# comes up at boot for the host, never for one user's session.
+CONNECTION_OWN = {'id', 'uuid', 'type', 'interface-name', 'timestamp', 'autoconnect', 'autoconnect-priority'}
 CONNECTION_BRIDGE = {'zone', 'mdns', 'llmnr', 'dns-over-tls', 'dnssec', 'metered', 'mptcp-flags'}
 CONNECTION_PORT = {'lldp'}
 
@@ -70,7 +70,7 @@ def carry(metric4, metric6, out):
             continue
         if setting == 'connection':
             where = ('bridge' if prop in CONNECTION_BRIDGE else 'port' if prop in CONNECTION_PORT
-                     else 'own' if prop in CONNECTION_OWN - {'timestamp', 'permissions', 'type'} else None)
+                     else 'own' if prop in CONNECTION_OWN - {'timestamp', 'type'} else None)
         else:
             where = 'bridge' if setting in BRIDGE_SETTINGS else 'port' if setting in PORT_SETTINGS else None
         if where is None:

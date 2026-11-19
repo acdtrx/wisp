@@ -87,6 +87,14 @@ plan_networkmanager() {
     || refuse NM_PROFILE_LINK "${UPLINK}'s connection is stored in $NM_PROFILE_FILE, a symbolic link, which the undo of its removal would bring back as a file: make it the file itself, and run this again."
   # Exactly one definition for the uplink: any other Ethernet connection not
   # bound to another device could take it, at boot or after the step.
+  # _other_names <match.interface-name>: every item of the list a plain name
+  # (no pattern, no `!` or `~`), none the uplink's.
+  _other_names() {
+    local IFS=', ' item
+    for item in $1; do
+      [[ "$item" != *[*?[!~\\]* && "$item" != "$UPLINK" ]] || return 1
+    done
+  }
   while IFS=: read -r uuid n v f; do
     [[ "$v" == 802-3-ethernet && "$uuid" != "$UPLINK_CONNECTION" ]] || continue
     other="$(net_read nmcli -t -e no -f connection.interface-name,802-3-ethernet.mac-address,match.interface-name connection show "$uuid")" || exit 1
@@ -97,7 +105,7 @@ plan_networkmanager() {
     [[ "$other_mac" == -- ]] && other_mac=""
     [[ "$other_match" == -- ]] && other_match=""
     if [[ -n "$bind" && "$bind" != "$UPLINK" ]] || [[ -n "$other_mac" && "$other_mac" != "$UPLINK_MAC" ]] \
-      || [[ -n "$other_match" && "$other_match" != *[*?[!~]* && "$other_match" != "$UPLINK" ]]; then
+      || { [[ -n "$other_match" ]] && _other_names "$other_match"; }; then
       continue
     fi
     refuse NM_SECOND_PROFILE "NetworkManager's connection '$n' ($uuid${f:+, $f}) could take the uplink $UPLINK too: setup leaves exactly one definition for it. Bind that connection to another device or remove it, and run this again."
@@ -177,7 +185,7 @@ plan_networkmanager() {
     why="$(net_call nmcli --offline connection add "${args[@]}" 2>&1 >"$NET_PLAN_DIR/$f.nmconnection")" \
       || net_refuse NM_REJECTS "NetworkManager does not accept the $f connection setup would add: ${why:-nmcli --offline failed}."
   done
-  unset -f _metric_of _prop
+  unset -f _metric_of _prop _other_names
 }
 
 # sources_networkmanager: what the plan read, for the bridge step to check is

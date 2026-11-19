@@ -32,8 +32,9 @@ def refuse(why):
 
 
 def parse(path):
-    """[(section, key, value)], in the file's order."""
-    out, sect, pending = [], None, ''
+    """[(section, n, key, value)], in the file's order; n numbers the section's
+    headers, as two [Route] sections are two routes."""
+    out, sect, n, pending = [], None, 0, ''
     with open(path) as f:
         for raw in f:
             line = raw.rstrip('\n')
@@ -48,13 +49,14 @@ def parse(path):
                 continue
             if s.startswith('[') and s.endswith(']'):
                 sect = s[1:-1]
+                n += 1
                 continue
             if '=' not in s:
                 refuse(f'{path}: "{s}" is not a setting')
             if sect is None:
                 refuse(f'{path}: a setting outside any section')
             key, value = s.split('=', 1)
-            out.append((sect, key.strip(), value.strip()))
+            out.append((sect, n, key.strip(), value.strip()))
     return out
 
 
@@ -106,7 +108,7 @@ def takers(uplink, mac, driver, own):
         if name >= own_name:
             continue
         conds = {}
-        for sect, key, value in parse(path):
+        for sect, _, key, value in parse(path):
             if sect == 'Match':
                 conds[key] = (conds.get(key, '') + ' ' + value).strip() if value else ''
         # networkd ignores a file with no condition in [Match].
@@ -139,12 +141,24 @@ NETWORK_PORT = {'LLDP', 'EmitLLDP'}
 ONLINE = {'RequiredForOnline', 'RequiredFamilyForOnline'}
 
 
+def write_sections(path, lines):
+    """[((section, n), line)] written as sections: a header wherever the
+    section, or the instance of it, changes."""
+    with open(path, 'w') as f:
+        last = None
+        for sect, line in lines:
+            if sect != last:
+                f.write(f'\n[{sect[0]}]\n')
+                last = sect
+            f.write(line + '\n')
+
+
 def port(path, uplink, mac, out):
     body, link, match = [], [], []
     by_name = by_mac = False
     dhcp = ''
     static4 = False
-    for sect, key, value in parse(path):
+    for sect, n, key, value in parse(path):
         line = f'{key}={value}'
         if sect == 'Match':
             if key == 'Name':
@@ -163,7 +177,7 @@ def port(path, uplink, mac, out):
             refuse(f'{path} pins an IAID, which setup does not carry over')
         if sect == 'Network':
             if key in NETWORK_PORT:
-                link.append(('Network', line))
+                link.append((('Network', n), line))
                 continue
             if key not in NETWORK_MOVED:
                 refuse(f'{path} sets {key}= in [Network], which setup does not carry over to a bridge')
@@ -171,16 +185,16 @@ def port(path, uplink, mac, out):
                 dhcp = value
             if key == 'Address' and ':' not in value:
                 static4 = True
-            body.append(('Network', line))
+            body.append((('Network', n), line))
         elif sect in SECTIONS_MOVED:
             if sect == 'Address' and key == 'Address' and ':' not in value:
                 static4 = True
             # The DHCP identity is the one the uplink had, pinned by the plan.
             if sect in ('DHCP', 'DHCPv4') and key == 'ClientIdentifier':
                 continue
-            body.append((sect, line))
+            body.append(((sect, n), line))
         elif sect in SECTIONS_PORT:
-            (body if key in ONLINE else link).append((sect, line))
+            (body if key in ONLINE else link).append(((sect, n), line))
         else:
             refuse(f'{path} has a [{sect}] section, which setup does not carry over to a bridge')
     # The bridge takes the uplink's hardware address: a match on it alone would
@@ -188,16 +202,8 @@ def port(path, uplink, mac, out):
     if by_mac and not by_name:
         refuse(f'{path} matches {uplink} by its hardware address alone, which the bridge takes too')
 
-    def write(name, lines):
-        with open(os.path.join(out, name), 'w') as f:
-            last = None
-            for sect, line in lines:
-                if sect != last:
-                    f.write(f'\n[{sect}]\n')
-                    last = sect
-                f.write(line + '\n')
-    write('bridge.network.body', body)
-    write('port.link', link)
+    write_sections(os.path.join(out, 'bridge.network.body'), body)
+    write_sections(os.path.join(out, 'port.link'), link)
     with open(os.path.join(out, 'port.match'), 'w') as f:
         f.write(''.join(m + '\n' for m in match))
     if dhcp.lower() in ('yes', 'true', 'on', '1', 'ipv4', 'both'):
