@@ -92,6 +92,10 @@ if [[ "${1:-}" == --work ]]; then
   echo "  Install path: $INSTALL_DIR"
   echo "  Access:       http://$(hostname -f 2>/dev/null || hostname):${WISP_PORT}"
   echo ""
+  if [[ "${HOST_KVM:-}" == no ]]; then
+    no_kvm_statement
+    echo ""
+  fi
   # Whoever follows the log still reads it to the end.
   rm -f "$LOG"
   exit 0

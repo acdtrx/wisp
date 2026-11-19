@@ -427,3 +427,10 @@ A TOML-aware edit, or a drop-in of Wisp's own if containerd's `imports` reaches 
 would set only the socket's. **Revisit trigger:** a host whose ttrpc or debug socket
 group matters, or a containerd release whose default configuration the line edit
 misreads.
+
+**The app does not say that the host cannot run VMs.** On a host without `/dev/kvm`,
+which setup accepts (DEPLOYMENT.md, Supported hosts), only setup's and the installer's
+last lines say so; in the app a VM start fails with libvirt's error. The backend should
+report the capability (the host's API) and the UI show it where VMs are created and
+started. **Revisit trigger:** the first install on a host without KVM, or a user
+puzzled by a VM that will not start there.

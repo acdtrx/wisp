@@ -7,6 +7,14 @@
 # own, names it too; scripts/check-bounds.mjs keeps the two the same.
 WISP_LOCK=/run/wisp.lock
 
+# no_kvm_statement: what a run says last on a host without KVM (the plan's
+# HOST_KVM): setup sets up VMs and containers alike on every host, so turning
+# KVM on later needs nothing reinstalled.
+no_kvm_statement() {
+  echo "This host cannot run VMs: it has no /dev/kvm (KVM, the kernel's virtualization, is off or not there). Containers run as usual."
+  echo "To run VMs, turn on virtualization (Intel VT-x or AMD-V) in the firmware's settings — or, when this host is itself a VM, nested virtualization on its hypervisor — and reboot. Nothing needs reinstalling."
+}
+
 # refuse <CODE> <message> [<line>...]: this host is refused, before anything
 # changes. The message names what was found and what to do, further lines
 # indented below it; CODE (the error-code style of

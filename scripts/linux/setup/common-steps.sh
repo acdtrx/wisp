@@ -152,3 +152,7 @@ run_step answers answers.sh "$PROJECT_ROOT" "$DEPLOY_USER"
 run_step bridge bridge.sh
 echo ""
 echo "=== Wisp setup done ($STEP_COUNT steps) ==="
+if [[ "${HOST_KVM:-}" == no ]]; then
+  echo ""
+  no_kvm_statement
+fi

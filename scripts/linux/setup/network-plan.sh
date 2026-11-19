@@ -52,6 +52,9 @@ source "$NET_SETUP_DIR/plan-record.sh"
 
 step_begin
 refuse_no_python
+# Whether the host can run VMs: a fact setup cannot change, read once, here.
+HOST_KVM_NOW=no
+[[ -e /dev/kvm ]] && HOST_KVM_NOW=yes
 
 NET_PLAN_JOURNAL=""
 if [[ -d "$JOURNAL_DIR" ]]; then
@@ -65,6 +68,7 @@ if [[ -d "$JOURNAL_DIR" ]]; then
   case "$J_CLASS" in
     restore | finished)
       [[ "$J_CLASS" == restore ]] || BRIDGE_CREATE=no
+      HOST_KVM="$HOST_KVM_NOW"
       plan_record_write "$NET_PLAN_DIR/plan" || net_fail "cannot write the plan in $NET_PLAN_DIR"
       step_done
       exit 0 ;;
@@ -90,5 +94,6 @@ else
   plan_sources > "$NET_PLAN_DIR/sources" || net_fail "cannot read what the plan was made from"
   echo "  $NET_TOOL; $BRIDGE to be created on the uplink $UPLINK ($UPLINK_ADDR, $UPLINK_MODE)"
 fi
+HOST_KVM="$HOST_KVM_NOW"
 plan_record_write "$NET_PLAN_DIR/plan" || net_fail "cannot write the plan in $NET_PLAN_DIR"
 step_done

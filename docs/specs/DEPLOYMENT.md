@@ -7,6 +7,7 @@ Wisp runs directly on a Linux server as a single systemd service — never in a 
 (settled 2026-11-18)
 
 - **Debian or Ubuntu** (or a derivative that names one of them in `ID_LIKE`) with **systemd 254 or newer** (Debian 13, Ubuntu 24.04 and later; read from `systemctl --version`, not from the release number: the unit's restart backoff needs it). Arch Linux is dropped as a host; it stays as a guest.
+- **KVM is not required** (settled 2026-11-19, the user's ruling: a host that can run only containers is still a useful Wisp host; refusing a host without `/dev/kvm` was rejected). Setup sets up VMs and containers alike on every host, so turning KVM on later needs nothing reinstalled; on a host without `/dev/kvm` the run succeeds, and the last thing setup, the installer and the update's log say is that the host cannot run VMs, why, and how to turn virtualization on (the firmware's setting, or nested virtualization when the host is itself a VM; then a reboot). Containers need nothing of the host that setup does not install itself on a supported host, so there is no container counterpart, and no host is refused for lacking both.
 - **The network run by netplan, NetworkManager or systemd-networkd**, and an **IPv4 default route**: its interface is the uplink.
 - **A bridge on the uplink**, which every VM and container joins. When the uplink already is a bridge, setup uses it and changes nothing in the network. Otherwise setup makes `br0` on it, for one shape of uplink (settled 2026-11-18): **a plain Ethernet interface, on DHCP or with a static address set through the host's network tool, defined on its own**. For any other shape the operator makes the bridge with the host's own tool, and setup then uses it.
 
@@ -16,7 +17,6 @@ Every refusal names what was found, with its code (settled 2026-11-19: codes in 
 |---|---|---|
 | `UNSUPPORTED_DISTRO` | Another distro | Use a supported host. |
 | `SYSTEMD_TOO_OLD` | systemd older than 254 | Use a supported host. |
-| `KVM_MISSING` | No `/dev/kvm`: setup cannot turn KVM on | Turn on virtualization (VT-x or AMD-V) in the firmware; on a VM, nested virtualization on its host. |
 | `PYTHON_MISSING` | No `python3` | `apt install python3`, and run it again. |
 | `NO_DEFAULT_ROUTE` | No IPv4 default route | Give the host one. |
 | `TOOL_NONE` | The uplink run by none of the three tools | Run it with netplan, NetworkManager or systemd-networkd. |
