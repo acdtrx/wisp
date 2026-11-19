@@ -67,9 +67,10 @@ undo() {
 }
 undo_stopped() { WHY="the step was stopped"; undo; }
 
-# stub_back: the tool's apply reconfigures every link it runs, the container
-# DNS stub's too, and the backend's start follows the step: after the commit,
-# the stub is waited for until it holds its address again, up to NET_WAIT_SEC.
+# stub_back: on netplan and networkd hosts the apply can drop the container DNS
+# stub's address for a few seconds, and the backend's start follows the step:
+# after the commit, the stub is waited for until it holds its address, up to
+# NET_WAIT_SEC.
 # Not part of the bridge or its check: the bridge stays whatever the stub
 # does. Outside a section that must finish, so a stop ends the wait at once.
 stub_back() {
@@ -120,7 +121,7 @@ if (( applied )) && bridge_check "$NET_PLAN_DIR"; then
       networkmanager) how="nmcli connection up $DNS_STUB_IFACE" ;;
       *) how="networkctl reconfigure $DNS_STUB_IFACE" ;;
     esac
-    fail "$BRIDGE is in place on $UPLINK and kept, but the container DNS stub $DNS_STUB_IFACE does not hold ${DNS_STUB_IP}/32 again ${NET_WAIT_SEC} s after the apply, which reconfigured it: bring it back ($how), and run this again."
+    fail "$BRIDGE is in place on $UPLINK and kept, but the container DNS stub $DNS_STUB_IFACE did not hold ${DNS_STUB_IP}/32 in the ${NET_WAIT_SEC} s waited after the bridge was committed: bring it back ($how), and run this again."
   fi
   exit 0
 fi
