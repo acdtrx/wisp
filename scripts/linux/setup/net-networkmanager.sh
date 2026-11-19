@@ -168,7 +168,12 @@ plan_networkmanager() {
   done
   if [[ "$UPLINK_MODE" == dhcp ]]; then
     UPLINK_CLIENT_ID="$(client_id "$UPLINK" "$NET_TOOL")" || net_fail "cannot read ${UPLINK}'s DHCP lease from NetworkManager"
-    [[ -n "$UPLINK_CLIENT_ID" ]] || refuse NM_NO_CLIENT_ID "$UPLINK is on DHCP but its lease has no client identifier (the connection says ipv4.dhcp-client-id none), which the bridge must send to keep the address: let it send one (nmcli connection modify $UPLINK_CONNECTION ipv4.dhcp-client-id \"\", then nmcli device reapply $UPLINK: a new lease, maybe a new address), and run this again."
+    if [[ -z "$UPLINK_CLIENT_ID" ]]; then
+      # The bridge must send the lease's client identifier to keep the address.
+      [[ "$(_prop ipv4.dhcp-client-id)" != none ]] \
+        || refuse NM_NO_CLIENT_ID "$UPLINK is on DHCP but sends no client identifier (its connection says ipv4.dhcp-client-id none), which the bridge must send to keep the address: let it send one (nmcli connection modify $UPLINK_CONNECTION ipv4.dhcp-client-id \"\", then nmcli device reapply $UPLINK: a new lease, maybe a new address), and run this again."
+      refuse NM_NO_CLIENT_ID "$UPLINK is on DHCP but NetworkManager reports no client identifier for its lease, which the bridge must send to keep the address: renew the lease (nmcli device reapply $UPLINK) and run this again; if it still has none, make the bridge with the host's network tool (setup then uses it)."
+    fi
   fi
   # NetworkManager gives a bridge another default route metric than an
   # Ethernet interface: the metric the uplink's routes have is kept.
