@@ -4,6 +4,8 @@
 node_modules/
 dist/
 build/
+__pycache__/
+*.pyc
 
 # noVNC + pako — fetched by scripts/vendor-novnc.sh, which the frontend build runs (see docs/specs/noVNC.md)
 frontend/public/vendor/

@@ -15,8 +15,8 @@
 # and the commit (marked when the staged content differed from it), by which the
 # installer knows a release-shaped tree and says what it installs. The
 # tarball holds the same files and content from any machine: no extended
-# attributes, no AppleDouble `._*` files, no `.DS_Store`, no test files; a staged
-# tree or a tarball holding one fails.
+# attributes, no AppleDouble `._*` files, no `.DS_Store`, no test files, no Python
+# bytecode (`__pycache__/`, `*.pyc`); a staged tree or a tarball holding one fails.
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
@@ -54,7 +54,7 @@ const [stage, list] = process.argv.slice(2);
 const copy = (from) => fs.cpSync(from, path.join(stage, from), { preserveTimestamps: true });
 const listed = fs.readFileSync(list, 'utf8').split('\0').filter(Boolean);
 for (const file of [...new Set(listed)].sort()) {
-  if (file.endsWith('.test.js') || file.endsWith('_test.py') || !fs.statSync(file, { throwIfNoEntry: false })?.isFile()) continue;
+  if (file.endsWith('.test.js') || file.endsWith('_test.py') || file.endsWith('.pyc') || file.split('/').includes('__pycache__') || !fs.statSync(file, { throwIfNoEntry: false })?.isFile()) continue;
   if (file.startsWith('config/') && !file.endsWith('.example')) continue;
   copy(file);
 }
@@ -81,8 +81,9 @@ if grep -q '__WISP_BUILD_ID__\|__WISP_PRECACHE_URLS__' "$STAGE/frontend/dist/sw.
   exit 1
 fi
 
-# Unit tests run from the repo (npm test), never on a host; macOS litter never ships.
-STRAY="$(find "$STAGE" \( -name '*.test.js' -o -name '*_test.py' -o -name '._*' -o -name '.DS_Store' \) -print)"
+# Unit tests run from the repo (npm test), never on a host; macOS litter and
+# Python bytecode never ship.
+STRAY="$(find "$STAGE" \( -name '*.test.js' -o -name '*_test.py' -o -name '__pycache__' -o -name '*.pyc' -o -name '._*' -o -name '.DS_Store' \) -print)"
 if [[ -n "$STRAY" ]]; then
   echo "ERROR: the staged tree holds files that must not ship:" >&2
   echo "$STRAY" >&2
@@ -118,7 +119,7 @@ for (let off = 0; off + 512 <= buf.length;) {
   const base = name.replace(/\/$/, '').split('/').pop();
   if (type === 'x' || type === 'g') problems.push(`${name}: pax extended header (attributes or metadata)`);
   else if (!['0', '5'].includes(type)) problems.push(`${name}: entry type ${type}`);
-  if (base.startsWith('._') || base === '.DS_Store' || base.endsWith('.test.js') || base.endsWith('_test.py')) problems.push(`${name}: must not ship`);
+  if (base.startsWith('._') || base === '.DS_Store' || base.endsWith('.test.js') || base.endsWith('_test.py') || base === '__pycache__' || base.endsWith('.pyc')) problems.push(`${name}: must not ship`);
   if (type === '0') files += 1;
   off += 512 + Math.ceil(size / 512) * 512;
 }
