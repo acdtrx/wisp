@@ -122,7 +122,7 @@ What an automatic rollback restores (settled 2026-10-16):
 
 | Failure point | Restored |
 |---------------|----------|
-| `step:stop-service` (settled 2026-11-20) | Nothing to restore: a `wisp.service` that does not stop within the updater's bound fails the update before anything is changed — no snapshot, no swap. The rollback then only stops it again and starts it, as it ends every rollback (below). |
+| `step:stop-service` (settled 2026-11-20) | Nothing to restore: a `wisp.service` that does not stop within the updater's bound fails the update before anything is changed — no snapshot, no swap. The rollback then only stops it again, runs `daemon-reload` and starts it, as it begins and ends every rollback (below). |
 | Before `step:setup` (snapshot, swap) | The install tree only. Nothing host-level has changed yet. |
 | `step:setup` or later (`step:start-service` included) | The install tree, then **`step:rollback-setup`**: the restored (old) tree's own setup runs again — re-installing its backend dependencies, `wisp-*` helpers, their sudoers rules, `wisp-updater` + `wisp-updater.service`, the container-DNS host config and `wisp.service`. |
 
