@@ -37,8 +37,10 @@ step_stop() {
   STEP_HELD=1
   # Its session when setup runs it; its own children when it runs in a
   # caller's session (the installer's asking phase runs the plan).
-  pkill -TERM -s "$$" 2>/dev/null
-  pkill -TERM -P "$$" 2>/dev/null
+  # Under the step's set -e: pkill's exit 1 (nothing matched) must not end
+  # the handler before the stop's own action.
+  pkill -TERM -s "$$" 2>/dev/null || true
+  pkill -TERM -P "$$" 2>/dev/null || true
   if [[ -n "$STEP_ON_STOP" ]]; then "$STEP_ON_STOP"; fi
   exit 143
 }
@@ -157,10 +159,10 @@ step_run() {
     done
     exec {fd}<&-
     if (( idle )); then
-      kill -TERM -- "-$pid" 2>/dev/null
+      kill -TERM -- "-$pid" 2>/dev/null || true
       deadline=$(( SECONDS + STEP_RUN_GRACE_SEC ))
       while pgrep -g "$pid" >/dev/null && (( SECONDS < deadline )); do sleep 1; done
-      kill -KILL -- "-$pid" 2>/dev/null
+      kill -KILL -- "-$pid" 2>/dev/null || true
     fi
   fi
   # wait returns early for a held stop; once cmd is gone (reaped by bash), wait
