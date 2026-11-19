@@ -2,10 +2,13 @@
 by `npm run check` (python3 -m unittest). netplan.py imports yaml, netplan's
 runtime, which a machine without netplan may lack: JSON, a subset of YAML,
 stands in for it."""
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import sys
+import tempfile
 import types
 import unittest
 
@@ -39,6 +42,39 @@ class Dependents(unittest.TestCase):
                'vlans': {'eth1.10': {'id': 10, 'link': 'eth1'}},
                'bridges': {'br1': {'interfaces': ['eth1']}}}
         self.assertEqual(netplan.dependents_of(net, 'eth0'), [])
+
+
+
+def plan(definition):
+    """netplan.py plan on the uplink's definition: (exit code, what it printed)."""
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, 'uplink.yaml')
+        with open(path, 'w') as f:
+            json.dump(definition, f)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            try:
+                netplan.plan(path, 'eth0', 'eth0', '52:54:00:12:34:56', 'br0', 'mac', '/etc/netplan/50-x.yaml', d, '1500')
+                code = 0
+            except SystemExit as e:
+                code = e.code
+        return code, out.getvalue().strip()
+
+
+class Plan(unittest.TestCase):
+    def test_a_match_beyond_the_uplink_names_the_match_that_lifts_it(self):
+        code, why = plan({'match': {'driver': 'e1000'}, 'dhcp4': True})
+        self.assertEqual(code, 5)
+        self.assertIn('match eth0 alone, by its name', why)
+
+    def test_critical_names_its_remedy(self):
+        self.assertEqual(plan({'dhcp4': True, 'critical': True})[0], 5)
+
+    def test_a_key_not_carried_is_refused(self):
+        self.assertEqual(plan({'dhcp4': True, 'infiniband-mode': 'datagram'})[0], 3)
+
+    def test_dhcp_is_planned(self):
+        self.assertEqual(plan({'dhcp4': True}), (0, 'dhcp'))
 
 
 if __name__ == '__main__':

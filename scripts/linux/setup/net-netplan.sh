@@ -46,7 +46,10 @@ plan_netplan() {
   # layer-3 keys removed, and the bridge defined with them.
   mode="$(python3 -I "$NET_SETUP_DIR/netplan.py" plan "$def" "$UPLINK_NETPLAN_ID" "$UPLINK" "$UPLINK_MAC" "$BRIDGE" \
     "$DHCP_ID_KIND" "$NETPLAN_ORIGIN" "$NET_PLAN_DIR" "$UPLINK_MTU")" \
-    || { rc=$?; if (( rc == 3 )); then net_refuse NETPLAN_SETTING "$mode."; fi; net_fail "cannot work out the bridge for netplan: $mode"; }
+    || { rc=$?; case $rc in
+           3) net_refuse NETPLAN_SETTING "$mode." ;;
+           5) refuse NETPLAN_SETTING "$mode; then run this again." ;;
+         esac; net_fail "cannot work out the bridge for netplan: $mode"; }
   UPLINK_MODE="$mode"
   # For a DUID identity, the IAID: networkd's drop-in on the unit netplan
   # renders for the bridge pins it.

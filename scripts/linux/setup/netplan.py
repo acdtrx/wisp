@@ -11,7 +11,8 @@ netplan's runtime, so a netplan host has them.
       the uplink's definition checked, what moves to the bridge worked out, and
       the edits written as `netplan set` arguments into <out-dir>; prints dhcp or
       static. On DHCP the bridge's dhcp-identifier is <id-kind> (mac or duid,
-      net-uplink.sh's dhcp_identity). Exit 3 with the reason printed: refused.
+      net-uplink.sh's dhcp_identity). Exit 3 with the reason printed: refused;
+      exit 5: refused, the reason naming the edit that lifts it.
   netplan.py shared <origin> <dir>...
       prints a definition <origin> shares with another netplan file, if any
   netplan.py dependents <id>
@@ -30,9 +31,14 @@ import sys
 
 import yaml
 
-def refuse(why):
+def refuse(why, code=3):
     print(why)
-    sys.exit(3)
+    sys.exit(code)
+
+
+def refuse_match(why, uplink, mac):
+    refuse(f'{why}: match {uplink} alone, by its name (match: {{name: {uplink}}}, or the definition\'s id {uplink} '
+           f'with no match), with its hardware address {mac} if wanted', 5)
 
 
 def status_id(uplink):
@@ -79,18 +85,19 @@ def plan(def_file, nid, uplink, mac, bridge, id_kind, origin_file, out, mtu):
     if match is not None:
         by = sorted(set(match) - {'macaddress', 'name'})
         if by:
-            refuse(f'netplan definition {nid} matches by {", ".join(by)}')
+            refuse_match(f'netplan definition {nid} matches by {", ".join(by)}', uplink, mac)
         if 'macaddress' in match and str(match['macaddress']).lower() != mac:
-            refuse(f'netplan definition {nid} matches {match["macaddress"]}, not {uplink} ({mac})')
+            refuse_match(f'netplan definition {nid} matches {match["macaddress"]}, not {uplink} ({mac})', uplink, mac)
         if 'name' in match and match['name'] != uplink:
-            refuse(f'netplan definition {nid} matches the name "{match["name"]}", not {uplink} alone')
+            refuse_match(f'netplan definition {nid} matches the name "{match["name"]}", not {uplink} alone', uplink, mac)
     elif nid != uplink:
-        refuse(f'netplan definition {nid} does not name {uplink}')
+        refuse_match(f'netplan definition {nid} does not name {uplink}', uplink, mac)
     if d.get('renderer', 'networkd') != 'networkd':
         refuse(f'{uplink}\'s netplan definition names the renderer {d["renderer"]}')
 
     if d.get('critical'):
-        refuse(f'{uplink}\'s netplan definition is critical: true, which keeps its address on the interface')
+        refuse(f'{uplink}\'s netplan definition is critical: true, which keeps its address on the interface: '
+               'drop it (the bridge can carry no such key)', 5)
     other = sorted(set(d) - MOVED - COPIED - KEPT - {'critical'})
     if other:
         refuse(f'{uplink}\'s netplan definition has {", ".join(other)}, which setup does not carry over to a bridge')
