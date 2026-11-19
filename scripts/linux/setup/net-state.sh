@@ -43,6 +43,19 @@ first_ipv4() {
   awk '!done { print $4; done = 1 }' <<<"$out"
 }
 
+# networkd_lease_client_id <dev>: CLIENTID= of systemd-networkd's lease record
+# for the interface (/run/systemd/netif/leases/<ifindex>); fails when there is
+# none.
+networkd_lease_client_id() {
+  local idx line
+  idx="$(cat "/sys/class/net/$1/ifindex")" || return 1
+  [[ -r "/run/systemd/netif/leases/$idx" ]] || return 1
+  while IFS= read -r line; do
+    [[ "$line" == CLIENTID=* ]] && { printf '%s' "${line#CLIENTID=}"; return 0; }
+  done < "/run/systemd/netif/leases/$idx"
+  return 1
+}
+
 # client_id <dev> <net-tool>: the interface's DHCPv4 client identifier as hex
 # bytes, colon-separated; empty without a lease. Fails when it cannot be read.
 client_id() {
@@ -54,8 +67,16 @@ client_id() {
       ;;
     *)
       out="$(networkd_json "$1" DHCPv4Client.ClientIdentifier)" || return 1
-      for b in $out; do hex+="$(printf '%02x:' "$b")"; done
-      printf '%s' "${hex%:}"
+      if [[ -n "$out" ]]; then
+        for b in $out; do hex+="$(printf '%02x:' "$b")"; done
+        printf '%s' "${hex%:}"
+        return 0
+      fi
+      # systemd before 257 leaves it out of the JSON: its record of the
+      # lease, read only, names it (CLIENTID=, hex).
+      [[ -n "$(networkd_json "$1" DHCPv4Client.Lease)" ]] || return 0
+      out="$(networkd_lease_client_id "$1")" || return 1
+      sed -E 's/(..)/\1:/g; s/:$//' <<<"$out"
       ;;
   esac
 }

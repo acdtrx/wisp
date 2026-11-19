@@ -211,8 +211,14 @@ plan_networkmanager() {
   for f in bridge port uplink; do
     [[ -f "$NET_PLAN_DIR/$f.args" ]] || continue
     mapfile -t args < "$NET_PLAN_DIR/$f.args"
-    why="$(net_call nmcli --offline connection add "${args[@]}" 2>&1 >"$NET_PLAN_DIR/$f.nmconnection")" \
+    why="$(net_call nmcli --offline connection add "${args[@]}" 2>&1 >"$NET_PLAN_DIR/$f.nmconnection.out")" \
       || net_refuse NM_REJECTS "NetworkManager does not accept the $f connection setup would add: ${why:-nmcli --offline failed}."
+    # nmcli before 1.54 prints its warnings (a port's bridge not among the
+    # profiles, offline) on stdout, ahead of the keyfile, which starts with
+    # its first group.
+    awk 'started || /^\[/ { started = 1; print }' "$NET_PLAN_DIR/$f.nmconnection.out" > "$NET_PLAN_DIR/$f.nmconnection" \
+      && [[ -s "$NET_PLAN_DIR/$f.nmconnection" ]] \
+      || net_fail "nmcli --offline printed no keyfile for the $f connection"
   done
   unset -f _metric_of _prop
 }

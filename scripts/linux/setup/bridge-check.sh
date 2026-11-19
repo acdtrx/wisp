@@ -30,12 +30,17 @@ _read_now() {
   if state="$(l3_state "$BRIDGE" "$NET_TOOL" 2>/dev/null)"; then facts_of <<<"$state"; else echo unreadable; fi > "$dir/now.have"
   if state="$(l3_state "$UPLINK" "$NET_TOOL" 2>/dev/null)"; then grep -E '^(addr[46]|route[46]) ' <<<"$state" || true; else echo unreadable; fi > "$dir/now.port"
   if [[ "$UPLINK_MODE" == dhcp ]]; then client_id "$BRIDGE" "$NET_TOOL" 2>/dev/null || echo unreadable; fi > "$dir/now.cid"
+  # The tool's apply reconfigures every link it runs, the stub's too: the
+  # step ends only once the stub holds its address again, so the backend's
+  # start after it finds it.
+  state="$(net_call ip -4 -o addr show dev "$DNS_STUB_IFACE" 2>/dev/null || true)"
+  if [[ "$state" == *" ${DNS_STUB_IP}/32 "* ]]; then echo yes; else echo no; fi > "$dir/now.stub"
 }
 # bridge_check <dir>: <dir> holds uplink.state, the reference. Run in the
 # background and waited for, a read at a time, so a stop interrupts it at once.
 # Sets WHY to what differs.
 bridge_check() {
-  local dir="$STEP_TMP_DIR" deadline=$(( SECONDS + NET_APPLY_SEC )) mac cid want have port
+  local dir="$STEP_TMP_DIR" deadline=$(( SECONDS + NET_APPLY_SEC )) mac cid want have port stub
   want="$(facts_of < "$1/uplink.state")"
   while :; do
     _read_now &
@@ -45,7 +50,8 @@ bridge_check() {
     have="$(cat "$dir/now.have" 2>/dev/null || true)"
     port="$(cat "$dir/now.port" 2>/dev/null || true)"
     cid="$(cat "$dir/now.cid" 2>/dev/null || true)"
-    if [[ "$mac" == "$UPLINK_MAC" && "$have" == "$want" && -z "$port" && "$cid" == "${UPLINK_CLIENT_ID:-}" ]] \
+    stub="$(cat "$dir/now.stub" 2>/dev/null || true)"
+    if [[ "$mac" == "$UPLINK_MAC" && "$have" == "$want" && -z "$port" && "$cid" == "${UPLINK_CLIENT_ID:-}" && "$stub" == yes ]] \
       && "check_$NET_TOOL"; then
       rm -f "$dir"/now.*
       return 0
@@ -56,6 +62,7 @@ bridge_check() {
       [[ "$cid" == "${UPLINK_CLIENT_ID:-}" ]] || WHY+=", $BRIDGE sends client identifier '${cid}' (was $UPLINK_CLIENT_ID)"
       [[ "$have" == "$want" ]] || WHY+=", $BRIDGE holds [$(echo $have)], $UPLINK held [$(echo $want)]"
       [[ -z "$port" ]] || WHY+=", $UPLINK still holds [$(echo $port)]"
+      [[ "$stub" == yes ]] || WHY+=", $DNS_STUB_IFACE does not hold ${DNS_STUB_IP}/32"
       "check_$NET_TOOL" || WHY+=", $CHECK_WHY"
       rm -f "$dir"/now.*
       return 1

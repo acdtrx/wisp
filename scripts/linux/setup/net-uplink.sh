@@ -88,8 +88,8 @@ refuse_cloud_init_network() {
   [[ "$ci" == managed ]] || return 0
   refuse CLOUD_INIT_NETWORK "cloud-init manages this host's network, and setup does not edit what cloud-init writes." \
     "Switch its networking off with the one documented line, network: {config: disabled}, in a file" \
-    "under /etc/cloud/cloud.cfg.d/ (for example 99-disable-network-config.cfg), keep the network's" \
-    "definition as a file of your own, and run this again."
+    "under /etc/cloud/cloud.cfg.d/ (for example 99-disable-network-config.cfg), and run this again:" \
+    "the network file cloud-init wrote is then yours, and setup edits it like any other."
 }
 
 # refuse_no_python: the plan reads the tools' configuration and their JSON with

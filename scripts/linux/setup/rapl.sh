@@ -31,7 +31,8 @@ RAPL_GROUP="wisp-power"
 RAPL_RULES="/etc/udev/rules.d/99-wisp-rapl.rules"
 
 if [[ ! -e "$RAPL_ENERGY" ]]; then
-  echo "  not present (normal on VMs or non-Intel) — nothing to do"
+  echo "  not present (normal on VMs or non-Intel)"
+  step_done
   exit 0
 fi
 
