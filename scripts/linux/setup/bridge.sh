@@ -67,10 +67,10 @@ undo() {
 }
 undo_stopped() { WHY="the step was stopped"; undo; }
 
-# stub_back: on netplan and networkd hosts the apply can drop the container DNS
-# stub's address for a few seconds, and the backend's start follows the step:
-# after the commit, the stub is waited for until it holds its address, up to
-# NET_WAIT_SEC.
+# stub_back: an apply can drop the container DNS stub's address for a while
+# (netplan's, on Debian 13: about 6 s), and the backend's start follows the
+# step: after the commit, the stub is waited for until it holds its address, up
+# to NET_WAIT_SEC.
 # Not part of the bridge or its check: the bridge stays whatever the stub
 # does. Outside a section that must finish, so a stop ends the wait at once.
 stub_back() {

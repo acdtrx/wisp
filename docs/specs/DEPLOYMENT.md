@@ -216,7 +216,7 @@ Only a failed check undoes the bridge.
 
 **The container DNS stub is waited for after the commit** (settled 2026-11-20: the stub is no part of the bridge's check).
 
-- From the commit, the step waits up to 30 s for the stub to hold its address: on netplan and networkd hosts the apply can drop it for a few seconds (observed on Debian 13 with netplan: about 6 s), and the backend's start follows the step.
+- From the commit, the step waits up to 30 s for the stub to hold its address, as the backend's start follows the step: an apply can drop it for a while (observed with netplan's on Debian 13: about 6 s).
 - When it does not, the step fails saying that the bridge is in place and kept and what brings the stub back (`networkctl reconfigure wisp-dns0`, or `nmcli connection up wisp-dns0` on NetworkManager), and undoes nothing.
 - A later run's bridge-journal step that finds a step finished commits it whatever the stub holds.
 
