@@ -179,7 +179,8 @@ export WISP_INSTALL_ANSWERS
 # earlier bridge step left (--ask).
 # It runs without the lock's descriptor: nothing it leaves after a Ctrl-C
 # holds the lock.
-"$SETUP_SRC/network-plan.sh" "$NET_PLAN_DIR" --ask 8>&-
+# Nor with stdin: with no terminal it holds the password's line, unread yet.
+"$SETUP_SRC/network-plan.sh" "$NET_PLAN_DIR" --ask 8>&- </dev/null
 plan_record_read "$NET_PLAN_DIR/plan"
 
 TERMINAL=0
