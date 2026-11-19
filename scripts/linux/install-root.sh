@@ -34,10 +34,13 @@ if [[ "${1:-}" == --work ]]; then
   shift
   SOURCE_DIR="$1" INSTALL_DIR="$2" DEPLOY_USER="$3" DEPLOY_GROUP="$4" LOG="$5" REMOVE_DIR="$6"
   trap '' HUP
+  NET_PLAN_DIR=""
+  trap 'rm -rf "$WISP_INSTALL_ANSWERS" ${NET_PLAN_DIR:+"$NET_PLAN_DIR"} ${REMOVE_DIR:+"$REMOVE_DIR"}' EXIT
+  # shellcheck source=setup/lib.sh
+  source "$SETUP_SRC/lib.sh"
   # shellcheck source=setup/plan-record.sh
   source "$SETUP_SRC/plan-record.sh"
   NET_PLAN_DIR="$(mktemp -d -t wisp-net-plan.XXXXXX)"
-  trap 'rm -rf "$WISP_INSTALL_ANSWERS" "$NET_PLAN_DIR" ${REMOVE_DIR:+"$REMOVE_DIR"}' EXIT
 
   # Before any change: the plan made again from the tree to install, under the
   # lock this process holds (fd 8), as the operator was asked it.
@@ -45,22 +48,27 @@ if [[ "${1:-}" == --work ]]; then
   plan_record_read "$NET_PLAN_DIR/plan"
   if [[ "$(plan_confirmation)" != "$WISP_CONFIRMED_BRIDGE" ]]; then
     planned="$(plan_confirmation)"
-    echo "ERROR NETWORK_CHANGED_SINCE_ASKED: the network changed since the install asked: it would now make ${planned/#none/no bridge}, not ${WISP_CONFIRMED_BRIDGE/#none/no bridge}. Nothing was changed. Run the install again." >&2
-    exit 1
+    refuse NETWORK_CHANGED_SINCE_ASKED "the network changed since the install asked: it would now make ${planned/#none/no bridge}, not ${WISP_CONFIRMED_BRIDGE/#none/no bridge}. Nothing was changed. Run the install again."
   fi
   rm -rf "$NET_PLAN_DIR"
 
-  # From here on, a failure leaves the host as this says.
-  INSTALLED_STATE="Wisp is stopped, and the new tree is in place in $INSTALL_DIR. Run the install again"
   # shellcheck source=setup/service.sh
   source "$SETUP_SRC/service.sh"
+  RUNNING_BEFORE=no
   if wisp_service_installed; then
+    RUNNING_BEFORE=yes
     echo "--- Stopping Wisp ---"
-    wisp_service_stop || { echo "ERROR: wisp.service did not stop; nothing was changed. Run the install again." >&2; exit 1; }
+    if ! wisp_service_stop; then
+      echo "ERROR: wisp.service did not stop (it is $(systemctl show -p ActiveState --value wisp 2>/dev/null || echo unknown)); the install changed nothing else. Run the install again." >&2
+      exit 1
+    fi
   fi
+  # From here on, a failure leaves the host as this says.
+  if [[ "$RUNNING_BEFORE" == yes ]]; then STOPPED="Wisp is stopped"; else STOPPED="Wisp is not running"; fi
+  INSTALLED_STATE="$STOPPED, and the new tree is in place in $INSTALL_DIR. Run the install again"
   echo "--- Installing the tree ---"
   "$SETUP_SRC/copy.sh" "$SOURCE_DIR" "$INSTALL_DIR" \
-    || { echo "ERROR: the tree was not copied whole into $INSTALL_DIR; Wisp is stopped. Run the install again." >&2; exit 1; }
+    || { echo "ERROR: the tree was not copied whole into $INSTALL_DIR; $STOPPED. Run the install again." >&2; exit 1; }
   chown -R "$DEPLOY_USER:$DEPLOY_GROUP" "$INSTALL_DIR" || { echo "ERROR: cannot give $INSTALL_DIR to $DEPLOY_USER. $INSTALLED_STATE." >&2; exit 1; }
   SETUP_DIR="$INSTALL_DIR/scripts/linux/setup"
 
@@ -124,11 +132,13 @@ if [[ -e "$INSTALL_DIR" ]]; then
   fi
 fi
 
-# One lock for anything that changes the installation, held to the end and
-# handed to the work and its setup (fd 8).
-LOCK=/run/wisp.lock
-exec 8> "$LOCK"
-flock -n 8 || { echo "ERROR: another install, update or setup is running on this host (it holds $LOCK)." >&2; exit 1; }
+# One lock for anything that changes the installation (WISP_LOCK), held to the
+# end and handed to the work and its setup (fd 8). Not waited for: the operator
+# is there to run the install again.
+# shellcheck source=setup/lib.sh
+source "$SETUP_SRC/lib.sh"
+exec 8> "$WISP_LOCK"
+flock -n 8 || { echo "ERROR: another install, update or setup is running on this host (it holds $WISP_LOCK)." >&2; exit 1; }
 
 # scripts/stage-release.sh writes RELEASE into every tree it stages.
 if [[ ! -f "$SOURCE_DIR/RELEASE" ]]; then
@@ -151,17 +161,16 @@ echo ""
 
 # shellcheck source=setup/distro.sh
 source "$SETUP_SRC/distro.sh"
-# shellcheck source=setup/lib.sh
-source "$SETUP_SRC/lib.sh"
 # shellcheck source=setup/bridge-journal.sh
 source "$SETUP_SRC/bridge-journal.sh"
 # shellcheck source=setup/install-state.sh
 source "$SETUP_SRC/install-state.sh"
 
+NET_PLAN_DIR="" WISP_INSTALL_ANSWERS=""
+trap 'rm -rf ${NET_PLAN_DIR:+"$NET_PLAN_DIR"} ${WISP_INSTALL_ANSWERS:+"$WISP_INSTALL_ANSWERS"} ${REMOVE_DIR:+"$REMOVE_DIR"}' EXIT
 NET_PLAN_DIR="$(mktemp -d -t wisp-net-plan.XXXXXX)"
 WISP_INSTALL_ANSWERS="$(mktemp -d -t wisp-install-answers.XXXXXX)"
 export WISP_INSTALL_ANSWERS
-trap 'rm -rf "$NET_PLAN_DIR" "$WISP_INSTALL_ANSWERS" ${REMOVE_DIR:+"$REMOVE_DIR"}' EXIT
 # The asking phase changes nothing: the plan only classifies a journal an
 # earlier bridge step left (--ask).
 "$SETUP_SRC/network-plan.sh" "$NET_PLAN_DIR" --ask
@@ -239,6 +248,9 @@ WORK_PID=$!
 # the work goes on, with the tree it copies from, which it removes when push.sh
 # made it.
 trap 'echo ""; echo "Stopped following. The install goes on; its log is $LOG"; trap - INT; kill -INT $$' INT
+# From here this process only follows and waits: an output gone with a dropped
+# connection (a write fails) must not end it before the work.
+set +e
 tail -n +1 -f --pid="$WORK_PID" "$LOG"
 rc=0
 wait "$WORK_PID" || rc=$?

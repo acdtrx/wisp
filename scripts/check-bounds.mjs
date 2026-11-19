@@ -7,13 +7,18 @@
  * - setup's own stop bound, SETUP_STOP_SEC, from scripts/linux/setup/bounds.sh
  *   (evaluated by bash, as setup does);
  * - the updater's bounds, `NAME=<seconds>` lines in backend/scripts/wisp-updater;
- * - wisp-updater.service's TimeoutStartSec and TimeoutStopSec;
- * - the frontend's wait for an update, UPDATER_LIMIT_MS.
+ * - wisp-updater.service's TimeoutStartSec and TimeoutStopSec, and
+ *   wisp.service's TimeoutStopSec;
+ * - the frontend's wait for an update, UPDATER_LIMIT_MS;
+ * - the install lock's path, setup's WISP_LOCK (scripts/linux/setup/lib.sh) and
+ *   the updater's, which is installed on its own and names it too.
  *
  * The unit's stop budget must cover the worst case after its start times out:
  * the stopped setup ending (a setup can be stopped there, and in the rollback),
  * then the whole rollback, each part at its bound and its kill. The frontend
- * waits the unit's start timeout and its stop budget.
+ * waits the unit's start timeout and its stop budget. The updater's bound on
+ * stopping wisp.service covers systemd's own stop of it: TimeoutStopSec for
+ * the TERM, the same again after the KILL.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -24,21 +29,25 @@ const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
 const problems = [];
 
+function shellValue(rel, name) {
+  const script = `source ${rel} && printf '%s' "\${${name}}"`;
+  return execFileSync('bash', ['-c', script], { cwd: ROOT, encoding: 'utf8' });
+}
+
 function setupBound(name) {
-  const script = `source scripts/linux/setup/bounds.sh && printf '%s' "\${${name}}"`;
-  const out = execFileSync('bash', ['-c', script], { cwd: ROOT, encoding: 'utf8' });
+  const out = shellValue('scripts/linux/setup/bounds.sh', name);
   const n = Number(out);
   if (!Number.isInteger(n) || n <= 0) problems.push(`scripts/linux/setup/bounds.sh: ${name} is not a number of seconds ("${out}")`);
   return n;
 }
 
-function assignments(rel, names) {
+function assignments(rel, names, pattern = '\\d+') {
   const text = read(rel);
   const found = {};
   for (const name of names) {
-    const m = text.match(new RegExp(`^${name}=(\\d+)$`, 'm'));
-    if (!m) problems.push(`${rel}: no ${name}=<seconds> line`);
-    else found[name] = Number(m[1]);
+    const m = text.match(new RegExp(`^${name}=(${pattern})$`, 'm'));
+    if (!m) problems.push(`${rel}: no ${name}=<${pattern === '\\d+' ? 'seconds' : 'value'}> line`);
+    else found[name] = pattern === '\\d+' ? Number(m[1]) : m[1];
   }
   return found;
 }
@@ -47,6 +56,9 @@ const SETUP_STOP_SEC = setupBound('SETUP_STOP_SEC');
 const u = assignments('backend/scripts/wisp-updater', ['KILL_GRACE_SEC', 'STOP_WISP_SEC', 'ROLLBACK_RESTORE_SEC',
   'ROLLBACK_SETUP_SEC', 'DAEMON_RELOAD_SEC', 'ROLLBACK_START_WAIT_SEC', 'STATUS_SEC']);
 const unit = assignments('systemd/linux/wisp-updater.service', ['TimeoutStartSec', 'TimeoutStopSec']);
+const wisp = assignments('systemd/linux/wisp.service', ['TimeoutStopSec']);
+const updaterLock = assignments('backend/scripts/wisp-updater', ['WISP_LOCK'], '\\S+');
+const setupLock = shellValue('scripts/linux/setup/lib.sh', 'WISP_LOCK');
 
 const FRONTEND = 'frontend/src/components/host/WispUpdateSection.jsx';
 const limit = read(FRONTEND).match(/^const UPDATER_LIMIT_MS = \((\d+) \+ (\d+)\) \* 1000;$/m);
@@ -62,6 +74,12 @@ if (problems.length === 0) {
   const need = stopped + rollback;
   if (unit.TimeoutStopSec < need) {
     problems.push(`systemd/linux/wisp-updater.service: TimeoutStopSec=${unit.TimeoutStopSec} is below the worst case of a stopped update, ${need} s (setup stopped, ${stopped} s; then the rollback, ${rollback} s)`);
+  }
+  if (u.STOP_WISP_SEC < 2 * wisp.TimeoutStopSec) {
+    problems.push(`backend/scripts/wisp-updater: STOP_WISP_SEC=${u.STOP_WISP_SEC} is below systemd's own stop of wisp.service, 2 × its TimeoutStopSec=${wisp.TimeoutStopSec}`);
+  }
+  if (updaterLock.WISP_LOCK !== setupLock) {
+    problems.push(`backend/scripts/wisp-updater: WISP_LOCK=${updaterLock.WISP_LOCK} is not setup's, ${setupLock} (scripts/linux/setup/lib.sh)`);
   }
   const start = Number(limit[1]);
   const stop = Number(limit[2]);

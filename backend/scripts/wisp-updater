@@ -86,6 +86,11 @@ ROLLBACK_SETUP_SEC=300
 DAEMON_RELOAD_SEC=30
 ROLLBACK_START_WAIT_SEC=120
 STATUS_SEC=10
+# The install lock another install, update or setup holds is waited for this
+# long. Its path is setup's too (scripts/linux/setup/lib.sh, WISP_LOCK), kept
+# the same by scripts/check-bounds.mjs: this script is installed on its own.
+LOCK_WAIT_SEC=600
+WISP_LOCK=/run/wisp.lock
 
 # User-data and runtime scratch must survive the swap rsync.
 RSYNC_EXCLUDES=(
@@ -103,8 +108,8 @@ host_setup_touched=0
 
 # One lock for anything that changes the installation, taken before the swap
 # and handed to setup (fd 8).
-exec 8> /run/wisp.lock
-flock -w 600 8 || fail "another install, update or setup holds /run/wisp.lock"
+exec 8> "$WISP_LOCK"
+flock -w "$LOCK_WAIT_SEC" 8 || fail "another install, update or setup holds $WISP_LOCK; gave up after ${LOCK_WAIT_SEC} s"
 
 # Every command that can take long runs through run_child: as the leader of a
 # session of its own, in the background, so a TERM reaches this script at once
@@ -236,7 +241,9 @@ trap 'rc=$?; trap ":" TERM INT; STOPPING=0; if [[ $rc -ne 0 ]]; then rollback; f
 trap 'STOPPING=1; stop_child' TERM INT
 
 echo "step:stop-service"
-run_child "$STOP_WISP_SEC" "$KILL_GRACE_SEC" systemctl stop "$SERVICE_UNIT" 2>/dev/null || true
+# A backend that does not stop fails the update before anything is changed.
+run_child "$STOP_WISP_SEC" "$KILL_GRACE_SEC" systemctl stop "$SERVICE_UNIT" \
+  || fail "$SERVICE_UNIT did not stop within ${STOP_WISP_SEC}s; nothing was changed"
 
 echo "step:snapshot"
 run_child 0 "$KILL_GRACE_SEC" rm -rf "$PREV_DIR" || fail "cannot remove the previous snapshot $PREV_DIR"
