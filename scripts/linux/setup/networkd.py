@@ -8,7 +8,10 @@ lines, `#` and `;` comments, a trailing backslash continuing a line.
       it is, a list one item a line
   networkd.py takers <uplink> <mac> <driver> <own-file>
       prints each .network file, but <own-file>, whose [Match] could take the
-      uplink — a second definition for it
+      uplink — a second definition for it. networkd runs a link from the first
+      file, by name, that matches it: a file whose name sorts after <own-file>'s
+      (an initrd's catch-all fallback, zzzz-…) never takes the uplink, before
+      the bridge step or after, as the uplink's file keeps its name.
   networkd.py port <file> <uplink> <mac> <out-dir>
       the uplink's file split: what moves to the bridge (bridge.network.body),
       what stays on the port (port.match, port.link); prints dhcp or static.
@@ -98,8 +101,9 @@ def takers(uplink, mac, driver, own):
     facts = {'Name': uplink, 'OriginalName': uplink, 'MACAddress': mac, 'PermanentMACAddress': mac,
              'Driver': driver or None, 'Type': 'ether', 'Kind': None, 'WLANInterfaceType': None,
              'SSID': None, 'BSSID': None}
+    own_name = os.path.basename(own)
     for name, path in files().items():
-        if os.path.realpath(path) == os.path.realpath(own):
+        if name >= own_name:
             continue
         conds = {}
         for sect, key, value in parse(path):

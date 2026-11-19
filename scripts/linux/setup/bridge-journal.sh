@@ -327,6 +327,7 @@ journal_recover() {
       journal_drop || net_fail "cannot remove $JOURNAL_DIR" ;;
     restore)
       echo "  A bridge step that did not finish left its journal in $JOURNAL_DIR: undoing it."
+      trap '' TERM INT
       rc=0; journal_restore || rc=$?
       case $rc in
         0) echo "  The network is as it was before that step." ;;

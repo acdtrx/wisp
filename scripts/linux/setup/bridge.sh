@@ -41,7 +41,8 @@ fi
 # What the plan read must be as it was then; otherwise the step stops before
 # any change.
 current_sources="$(plan_sources)" || fail "cannot read what the plan was made from"
-[[ "$current_sources" == "$(cat "$NET_PLAN_DIR/sources")" ]] \
+planned_sources="$(cat "$NET_PLAN_DIR/sources")" || fail "no record of what the plan was made from in $NET_PLAN_DIR"
+[[ "$current_sources" == "$planned_sources" ]] \
   || refuse NETWORK_CHANGED_SINCE_PLAN "the network's configuration changed since setup worked out the bridge; the bridge step changed nothing. Run setup again."
 
 apply_notice() {

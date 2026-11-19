@@ -13,6 +13,7 @@
 #   UPLINK_MAC        the uplink's hardware address, which the bridge takes
 #   UPLINK_MTU        the uplink's MTU, which the bridge's definition sets
 #   UPLINK_MODE       dhcp (DHCPv4, with or without static addresses) | static
+#   UPLINK_NETFILE    netplan, networkd: the file systemd-networkd runs the uplink from
 #   UPLINK_CLIENT_ID  on DHCP, its DHCPv4 client identifier (hex bytes,
 #                     colon-separated), which the bridge sends too
 #   UPLINK_NETPLAN_ID     netplan: the uplink's definition id
@@ -31,7 +32,7 @@
 # (what the uplink holds, net-state.sh), sources (what the plan read), and the
 # tool's files for the bridge (net-<tool>.sh).
 PLAN_RECORD_VARS=(NET_TOOL UPLINK UPLINK_ADDR BRIDGE BRIDGE_CREATE UPLINK_MAC UPLINK_MTU UPLINK_MODE
-  UPLINK_CLIENT_ID UPLINK_NETPLAN_ID NETPLAN_ORIGIN NETWORKD_PORT_FILE UPLINK_CONNECTION NM_PROFILE_FILE
+  UPLINK_NETFILE UPLINK_CLIENT_ID UPLINK_NETPLAN_ID NETPLAN_ORIGIN NETWORKD_PORT_FILE UPLINK_CONNECTION NM_PROFILE_FILE
   NM_BRIDGE_UUID NM_PORT_UUID NM_BRIDGE_FILE NM_PORT_FILE NET_PLAN_JOURNAL)
 
 # plan_record_write <file>: the record of the variables set now, synced.

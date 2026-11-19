@@ -164,7 +164,9 @@ plan_sources() {
   echo "route $out"
   out="$(net_call ip -4 -o addr show dev "$UPLINK" scope global)" || return 1
   awk 'NF { print "addr " $4 }' <<<"$out"
-  echo "link $(cat "/sys/class/net/$UPLINK/address") mtu $(cat "/sys/class/net/$UPLINK/mtu")" || return 1
+  local mac mtu
+  mac="$(cat "/sys/class/net/$UPLINK/address")" && mtu="$(cat "/sys/class/net/$UPLINK/mtu")" || return 1
+  echo "link $mac mtu $mtu"
   out="$(cloud_init_network)" || return 1
   echo "cloud-init $out"
   "sources_$NET_TOOL"
