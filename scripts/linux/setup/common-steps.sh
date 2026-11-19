@@ -47,15 +47,23 @@ source "$SETUP_DIR/distro.sh"
 # shellcheck source=network-plan.sh
 source "$SETUP_DIR/network-plan.sh"
 # The installer asked the operator about the bridge from its own plan
-# (WISP_CONFIRMED_BRIDGE, "<bridge> on <uplink>" or "none"): this run's plan,
-# made under the lock, must be the same, or nothing is changed.
+# (WISP_CONFIRMED_BRIDGE, "<bridge> on <uplink> (<address>), through <tool>"
+# or "none"): this run's plan, made under the lock, must be the same, or
+# nothing more is changed. What the plan did first with an earlier step's
+# journal is said.
 if [[ -n "${WISP_CONFIRMED_BRIDGE:-}" ]]; then
   _planned=none
-  [[ "$BRIDGE_CREATE" == yes ]] && _planned="$BRIDGE on $UPLINK"
+  [[ "$BRIDGE_CREATE" == yes ]] && _planned="$BRIDGE on $UPLINK ($UPLINK_ADDR), through $NET_TOOL"
   if [[ "$_planned" != "$WISP_CONFIRMED_BRIDGE" ]]; then
-    echo "ERROR: the network changed since the install asked: it would now make ${_planned/none/no bridge}, not ${WISP_CONFIRMED_BRIDGE/none/no bridge}. Nothing was changed; run the install again." >&2
+    case "${NET_PLAN_JOURNAL:-}" in
+      restore) _done="The bridge step that had not finished was undone first; nothing else was changed." ;;
+      finished) _done="The bridge step that had finished was recorded as done first; nothing else was changed." ;;
+      *) _done="Nothing was changed." ;;
+    esac
+    echo "ERROR: the network changed since the install asked: it would now make ${_planned/none/no bridge}, not ${WISP_CONFIRMED_BRIDGE/none/no bridge}. $_done Run the install again." >&2
     exit 1
   fi
+  unset _planned _done
 fi
 
 # A stop (TERM, INT) is passed to the step running, which ends — the bridge

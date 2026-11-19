@@ -170,7 +170,7 @@ if ! has_password "$INSTALL_DIR"; then
 fi
 
 WISP_CONFIRMED_BRIDGE=none
-[[ "$BRIDGE_CREATE" == yes ]] && WISP_CONFIRMED_BRIDGE="$BRIDGE on $UPLINK"
+[[ "$BRIDGE_CREATE" == yes ]] && WISP_CONFIRMED_BRIDGE="$BRIDGE on $UPLINK ($UPLINK_ADDR), through $NET_TOOL"
 export WISP_CONFIRMED_BRIDGE
 if [[ "$BRIDGE_CREATE" == yes ]]; then
   if (( TERMINAL )); then

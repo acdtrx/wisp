@@ -89,25 +89,36 @@ l3_state() {
   } | sort
 }
 
-# plan_sources: what a plan to make the bridge is made from, as checksums (and
-# for NetworkManager the uplink connection's settings), for the bridge step to
-# check nothing changed since. Uses the plan's NET_TOOL, NET_PLAN_DIR and
+# plan_sources: what a plan to make the bridge is made from, whole, for the
+# bridge step to check nothing changed since: the default route and the
+# uplink's addresses; every file of the tool's own configuration (netplan's,
+# and systemd-networkd's, which netplan renders to and which can take a link
+# by a file that sorts first or a drop-in), by checksum; for NetworkManager
+# every connection (a br0 made since included), the uplink connection's
+# settings and the connection the uplink runs from. The container DNS stub
+# (wisp-dns0, container-dns.sh), which setup declares between the plan and the
+# bridge step, is not among them. Uses the plan's NET_TOOL, UPLINK and
 # UPLINK_CONNECTION.
 plan_sources() {
+  local out f
+  out="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" ip -4 route show default)" || return 1
+  echo "route $out"
+  out="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" ip -4 -o addr show dev "$UPLINK" scope global)" || return 1
+  awk '{ print "addr " $4 }' <<<"$out"
   case "$NET_TOOL" in
-    netplan)
-      local f
-      for f in /lib/netplan/* /etc/netplan/* /run/netplan/*; do
-        [[ -f "$f" ]] || continue
-        sha256sum "$f" || return 1
+    netplan | networkd)
+      for f in /lib/netplan /etc/netplan /run/netplan /usr/lib/systemd/network /lib/systemd/network \
+          /etc/systemd/network /run/systemd/network; do
+        [[ -d "$f" ]] || continue
+        find "$f" -type f ! -name '10-wisp-dns0.*' -print0 | sort -z | xargs -0 -r sha256sum || return 1
       done
       ;;
-    networkd) xargs -d '\n' sha256sum < "$NET_PLAN_DIR/networkd-sources" ;;
     networkmanager)
-      local con
-      con="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -t connection show "$UPLINK_CONNECTION")" || return 1
-      grep -vE '^(GENERAL|IP[46]|DHCP[46])\.|^connection\.timestamp:' <<<"$con" | sha256sum
-      timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -g GENERAL.CON-UUID device show "$UPLINK"
+      out="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -t -f UUID,NAME,TYPE connection show)" || return 1
+      awk -F: '$2 != "wisp-dns0"' <<<"$out" | sort
+      out="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -t connection show "$UPLINK_CONNECTION")" || return 1
+      grep -vE '^(GENERAL|IP[46]|DHCP[46])\.|^connection\.timestamp:' <<<"$out" | sha256sum
+      timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -g GENERAL.CON-UUID device show "$UPLINK" || return 1
       ;;
   esac
 }

@@ -42,6 +42,7 @@ staged_file() {
 write_if_changed() {
   local dest="$1" mode="$2" src="$3" owner="${4:-root:root}"
   [[ -s "$src" ]] || fail "refusing to write $dest: the content is empty"
+  rm -f -- "$dest".wisp-new.*
   if [[ -f "$dest" ]] && cmp -s "$src" "$dest" \
     && [[ "$(stat -c '%a %U:%G' "$dest")" == "${mode#0} $owner" ]]; then
     return 1

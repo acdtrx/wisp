@@ -43,17 +43,21 @@
 #     netplan:        netplan-origin.yaml (the operator's file, edited with
 #                     `netplan set` and checked whole in a stage copy of
 #                     /lib, /etc and /run/netplan), 50-wisp-dhcp-identity.conf
-#     networkd:       bridge.netdev, bridge.network, port.network
-#     networkmanager: bridge.args, port.args (nmcli arguments, one per line,
-#                     checked by `nmcli --offline`)
+#     networkd:       bridge.netdev, bridge.network, port.network (the
+#                     uplink's own file, rewritten as the port's definition)
+#     networkmanager: bridge.nmconnection, port.nmconnection (keyfiles,
+#                     rendered and checked by `nmcli --offline`)
 #   UPLINK_NETPLAN_ID     netplan: the uplink's definition id
 #   NETPLAN_ORIGIN        netplan: the file that defines it
-#   NETWORKD_PORT_FILE    networkd: the file that makes the uplink a port; it
-#                         sorts before the uplink's own, so it wins the match
-#   UPLINK_CONNECTION     networkmanager: the uplink's connection (UUID)
+#   UPLINK_MTU            the uplink's MTU, which the bridge's definition sets
+#   NETWORKD_PORT_FILE    networkd: the uplink's own file under /etc (in place,
+#                         or overriding a vendor file), which becomes the port's
+#   UPLINK_CONNECTION     networkmanager: the uplink's connection (UUID), which
+#                         the bridge step deletes last
 #   NM_PROFILE_FILE       networkmanager: the file under /etc that stores it,
 #                         when there is one (kept as the original)
-#   NM_BRIDGE_UUID, NM_PORT_UUID  networkmanager: the connections to add
+#   NM_BRIDGE_UUID, NM_PORT_UUID, NM_BRIDGE_FILE, NM_PORT_FILE
+#                         networkmanager: the connections to add, and their keyfiles
 #   NET_PLAN_DIR/sources  what the plan was made from, which the bridge step
 #                         checks is unchanged before it applies
 #   NET_PLAN_JOURNAL      what an earlier bridge step's journal was found to
@@ -111,21 +115,34 @@ fi
 if [[ -d "$JOURNAL_DIR" ]]; then
   NET_PLAN_JOURNAL="$(journal_classify)"
   case "$NET_PLAN_JOURNAL" in
-    fail*) net_fail "${NET_PLAN_JOURNAL#fail }: setup cannot tell what the bridge step that left its journal in $JOURNAL_DIR changed." ;;
-    refuse*)
-      net_fail "a bridge step that did not finish left its journal in $JOURNAL_DIR, and since then someone else changed${NET_PLAN_JOURNAL#refuse changed since by someone else:}: setup does not undo over that. Put each back as the step wrote it or as it was (its files/ holds the originals), or remove $JOURNAL_DIR once the network is as you want it, and run this again." ;;
+    fail\ *) net_fail "${NET_PLAN_JOURNAL#fail }: setup cannot tell what the bridge step that left its journal in $JOURNAL_DIR changed." ;;
+    bad\ *) net_fail "${NET_PLAN_JOURNAL#bad }. Put the network as you want it, remove $JOURNAL_DIR (its files/ holds the originals of what the step changed), and run this again." ;;
+    changed\ *)
+      net_fail "a bridge step that did not finish left its journal in $JOURNAL_DIR, and since then someone else changed ${NET_PLAN_JOURNAL#changed }: setup does not undo over that. Put each back as the step wrote it or as it was (its files/ holds the originals), or remove $JOURNAL_DIR once the network is as you want it, and run this again." ;;
   esac
-  if [[ -z "${NET_PLAN_ASK:-}" ]]; then
+  if [[ -n "${NET_PLAN_ASK:-}" ]]; then
+    # The asking phase changes nothing, so it cannot plan on a host the work
+    # will first undo or commit: it asks from the journal's own record.
+    _journal_read || true
+    case "$NET_PLAN_JOURNAL" in
+      restore)
+        NET_TOOL="$J_TOOL" UPLINK="$J_UPLINK" UPLINK_ADDR="$J_ADDR" BRIDGE="$J_BRIDGE" BRIDGE_CREATE=yes
+        return 0 ;;
+      finished)
+        NET_TOOL="$J_TOOL" UPLINK="$J_BRIDGE" UPLINK_ADDR="$J_ADDR" BRIDGE="$J_BRIDGE" BRIDGE_CREATE=no
+        return 0 ;;
+    esac
+  else
     case "$NET_PLAN_JOURNAL" in
       finished)
         echo "A bridge step that was not recorded as done had in fact finished: committing it." >&2
         journal_commit >&2 || net_fail "cannot commit the journal in $JOURNAL_DIR" ;;
       untouched)
         echo "A bridge step left a journal but changed nothing: dropping it." >&2
-        rm -rf "$JOURNAL_DIR" || net_fail "cannot remove $JOURNAL_DIR" ;;
+        journal_drop || net_fail "cannot remove $JOURNAL_DIR" ;;
       restore)
         echo "A bridge step that did not finish left its journal in $JOURNAL_DIR: undoing it first." >&2
-        journal_restore || net_fail "undoing the earlier bridge step did not complete; its journal stays in $JOURNAL_DIR for the next run."
+        journal_restore || net_fail "undoing the earlier bridge step did not complete; its journal stays in $JOURNAL_DIR for the next run (docs/specs/DEPLOYMENT.md, The bridge, says what to do at the console)."
         echo "  The network is as it was before that step." >&2 ;;
     esac
   fi
@@ -244,6 +261,7 @@ else
     || net_refuse "$BRIDGE exists but does not carry the uplink $UPLINK; Wisp would bridge $UPLINK as $BRIDGE."
   [[ -n "$UPLINK_ADDR" ]] || net_refuse "the uplink $UPLINK has no IPv4 address."
   UPLINK_MAC="$(cat "/sys/class/net/$UPLINK/address")"
+  UPLINK_MTU="$(cat "/sys/class/net/$UPLINK/mtu")"
 
   case "$NET_TOOL" in
     netplan)
@@ -276,7 +294,7 @@ import json
 import sys
 import yaml
 
-def_file, nid, uplink, mac, bridge, client_id, origin, out = sys.argv[1:9]
+def_file, nid, uplink, mac, bridge, client_id, origin, out, mtu = sys.argv[1:10]
 d = yaml.safe_load(open(def_file))
 
 def refuse(why):
@@ -329,9 +347,11 @@ if not dhcp and not has_ipv4(d.get('addresses')):
     refuse(f'{uplink} has neither DHCPv4 nor a static IPv4 address in netplan')
 
 bridge_def = {k: d[k] for k in (MOVED | COPIED) if k in d}
+# The uplink's MTU, on the bridge itself, so ports that join keep it.
 bridge_def.update({
     'interfaces': [nid],
     'macaddress': mac,
+    'mtu': int(mtu),
     'parameters': {'stp': False},
 })
 dropin = ''
@@ -367,7 +387,7 @@ with open(f'{out}/50-wisp-dhcp-identity.conf', 'w') as f:
     f.write(dropin)
 print('dhcp' if dhcp else 'static')
 PY
-      UPLINK_MODE="$(python3 -c "$_py" "$_def" "$UPLINK_NETPLAN_ID" "$UPLINK" "$UPLINK_MAC" "$BRIDGE" "$UPLINK_CLIENT_ID" "$NETPLAN_ORIGIN" "$NET_PLAN_DIR")" \
+      UPLINK_MODE="$(python3 -c "$_py" "$_def" "$UPLINK_NETPLAN_ID" "$UPLINK" "$UPLINK_MAC" "$BRIDGE" "$UPLINK_CLIENT_ID" "$NETPLAN_ORIGIN" "$NET_PLAN_DIR" "$UPLINK_MTU")" \
         || { _rc=$?; if (( _rc == 3 )); then net_refuse "$UPLINK_MODE."; fi; net_fail "cannot work out the bridge for netplan: $UPLINK_MODE"; }
       # netplan set writes the file back from its parsed state, merged lists
       # included: a definition of that file that another file defines too would
@@ -402,12 +422,20 @@ for name, path in sorted(files.items()):
         net_read netplan set --root-dir "$_stage" --origin-hint "$_hint" "$_kv" || exit 1
       done < "$NET_PLAN_DIR/netplan-set.args"
       # netplan set touches the origin file alone: every other file in the stage
-      # must still be its live one, so what is checked is what goes live.
+      # must still be its live one, and none new, so what is checked is what
+      # goes live.
       for _d in /lib/netplan /etc/netplan /run/netplan; do
-        [[ -d "$_d" ]] || continue
-        for _f in "$_d"/*; do
-          [[ "$_f" == "$NETPLAN_ORIGIN" || ! -f "$_f" ]] && continue
-          cmp -s "$_f" "$_stage$_f" || net_fail "netplan set changed $_f in the stage, beside $NETPLAN_ORIGIN"
+        for _f in "$_d"/* "$_stage$_d"/*; do
+          [[ -e "$_f" || -L "$_f" ]] || continue
+          _f="${_f#"$_stage"}"
+          [[ "$_f" == "$NETPLAN_ORIGIN" ]] && continue
+          if [[ -e "$_f" && -e "$_stage$_f" ]]; then
+            cmp -s "$_f" "$_stage$_f" || net_fail "netplan set changed $_f in the stage, beside $NETPLAN_ORIGIN"
+          elif [[ -e "$_stage$_f" ]]; then
+            net_fail "netplan set made $_f in the stage, beside $NETPLAN_ORIGIN"
+          else
+            net_fail "netplan set removed $_f in the stage, beside $NETPLAN_ORIGIN"
+          fi
         done
       done
       net_read netplan generate --root-dir "$_stage" >/dev/null || exit 1
@@ -444,30 +472,35 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
       ;;
 
     networkd)
-      NETWORKD_PORT_FILE="/etc/systemd/network/00-wisp-${BRIDGE}-port.network"
-      # networkd runs a link from the first matching file in file-name order:
-      # the port's file and the bridge's (00-wisp-br0.network) sort before the
-      # uplink's, which may match the bridge too (the same hardware address).
-      for _f in "${NETWORKD_PORT_FILE##*/}" "00-wisp-${BRIDGE}.network"; do
-        [[ "$_f" < "${_netfile##*/}" ]] \
-          || net_refuse "$UPLINK is run from $_netfile, which sorts before $_f, the file setup would write for $BRIDGE."
-      done
-      unset _f
+      # The uplink's own file becomes its definition as the bridge's port: the
+      # same name under /etc/systemd/network — in place, or, for a vendor file
+      # under /usr/lib or /lib, the networkd way of overriding it. A file under
+      # /run is generated by something else, which would write it back.
+      case "$_netfile" in
+        /etc/systemd/network/*.network) NETWORKD_PORT_FILE="$_netfile" ;;
+        /usr/lib/systemd/network/*.network | /lib/systemd/network/*.network)
+          NETWORKD_PORT_FILE="/etc/systemd/network/${_netfile##*/}" ;;
+        /run/*) net_refuse "$UPLINK is run from $_netfile, which something on this host generates: setup does not edit it." ;;
+        *) net_refuse "$UPLINK is run from $_netfile, outside systemd-networkd's own directories." ;;
+      esac
+      journal_root_ok "$NETWORKD_PORT_FILE" || net_refuse "$UPLINK is run from $_netfile, which setup cannot record to undo."
       _json="$(net_read networkctl status "$UPLINK" --json=short)" || exit 1
-      _sources=("$_netfile")
+      # A drop-in applies to whichever file has its name: left alone, it would
+      # put its settings back on the port, and moving it means editing several
+      # files whose meaning depends on their order. Folded into the file by the
+      # operator, it moves with the rest.
       _dropins="$(json_array "$_json" NetworkFileDropins || true)"
-      while [[ "$_dropins" =~ \"([^\"]+)\" ]]; do
-        _sources+=("${BASH_REMATCH[1]}")
-        _dropins="${_dropins#*\"${BASH_REMATCH[1]}\"}"
-      done
+      [[ -z "${_dropins//[[:space:]]/}" ]] \
+        || net_refuse "$UPLINK's $_netfile has drop-ins (${_dropins//\"/}): fold them into the file, which setup then carries over whole."
+      _sources=("$_netfile")
       UPLINK_CLIENT_ID="$(client_id "$UPLINK" "$NET_TOOL")"
-      # The uplink's settings in networkd's reading order (file, then
-      # drop-ins): its layer 3 moves to the bridge — [Network], [Address],
-      # [Route] and DNS settings, its DHCP ones — with the DHCP identity pinned
-      # below; its link settings ([Link]) stay with it, in the port's file.
-      # Refused, naming it: a match on anything but the uplink alone, a setting
-      # that ties the link to another device, a section of neither kind.
-      _why="$(awk -v uplink="$UPLINK" -v mac="$UPLINK_MAC" -v out="$NET_PLAN_DIR/bridge.network.body" -v link_out="$NET_PLAN_DIR/port.link" '
+      # The uplink's settings: its layer 3 moves to the bridge — [Network],
+      # [Address], [Route] and DNS settings, its DHCP ones — with the DHCP
+      # identity pinned below; its match and link settings ([Match], [Link])
+      # stay with it, in its own file, now the port's definition. Refused,
+      # naming it: a match on anything but the uplink alone, a setting that
+      # ties the link to another device, a section of neither kind.
+      _why="$(awk -v uplink="$UPLINK" -v mac="$UPLINK_MAC" -v out="$NET_PLAN_DIR/bridge.network.body" -v link_out="$NET_PLAN_DIR/port.link" -v match_out="$NET_PLAN_DIR/port.match" '
         function refuse(why) { print why; bad = 1; exit 3 }
         BEGIN {
           split("Bridge Bond VRF VLAN IPVLAN IPVTAP MACVLAN MACVTAP VXLAN Tunnel MACsec Xfrm KeepMaster " \
@@ -490,9 +523,14 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
           val = $0; sub(/^[^=]*=[ \t]*/, "", val); sub(/[ \t]+$/, "", val)
           if (sect == "") refuse(FILENAME ": a setting outside any section")
           if (sect == "Match") {
-            if (key == "Name") { if (val != uplink) refuse(FILENAME " matches the name \"" val "\", not " uplink " alone"); next }
-            if (key == "MACAddress") { if (tolower(val) != mac) refuse(FILENAME " matches " val ", not " uplink " (" mac ") alone"); next }
-            refuse(FILENAME " matches by " key)
+            if (key == "Name") { if (val != uplink) refuse(FILENAME " matches the name \"" val "\", not " uplink " alone"); by_name = 1 }
+            else if (key == "MACAddress" || key == "PermanentMACAddress") {
+              if (tolower(val) != mac) refuse(FILENAME " matches " val ", not " uplink " (" mac ") alone")
+              if (key == "MACAddress") by_mac = 1
+            }
+            else refuse(FILENAME " matches by " key)
+            print $0 > match_out
+            next
           }
           if (sect == "Network" && (key in network_tied)) refuse(FILENAME " sets " key " in [Network], which ties " uplink " to another device")
           if (key == "IAID") refuse(FILENAME " pins an IAID, which setup does not carry over")
@@ -510,6 +548,9 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
         }
         END {
           if (bad) exit 3
+          # The bridge takes the uplink'"'"'s hardware address: a match on it alone
+          # would take the bridge too.
+          if (by_mac && !by_name) { print FILENAME " matches " uplink " by its hardware address alone, which the bridge takes too"; exit 3 }
           if (dhcp ~ /^(yes|true|on|1|ipv4|both)$/) { print "dhcp"; exit 0 }
           if (static4) { print "static"; exit 0 }
           print uplink " has neither DHCPv4 nor a static IPv4 address in " FILENAME; exit 3
@@ -544,21 +585,23 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
           echo "# The DHCP identity $UPLINK had, so the DHCP server hands $BRIDGE the same lease."
           printf '[DHCPv4]\n%s' "$_identity"
         fi
+        echo ""
+        echo "# The uplink's MTU, set on the bridge itself, so ports that join keep it."
+        printf '[Link]\nMTUBytes=%s\n' "$UPLINK_MTU"
       } > "$NET_PLAN_DIR/bridge.network"
       rm -f "$NET_PLAN_DIR/bridge.network.body"
       {
         echo "# Written by Wisp setup: $UPLINK is $BRIDGE's port, with no addressing of its own;"
-        echo "# $BRIDGE holds its address. Sorts before ${_netfile##*/}, so systemd-networkd runs"
-        echo "# $UPLINK from this file."
-        printf '[Match]\nName=%s\n\n[Network]\nBridge=%s\nLinkLocalAddressing=no\nIPv6AcceptRA=no\n' "$UPLINK" "$BRIDGE"
+        echo "# $BRIDGE holds its address (00-wisp-$BRIDGE.network). What this file held before"
+        echo "# is kept in $KEPT_DIR."
+        echo "[Match]"
+        cat "$NET_PLAN_DIR/port.match"
+        printf '\n[Network]\nBridge=%s\nLinkLocalAddressing=no\nIPv6AcceptRA=no\n' "$BRIDGE"
         if [[ -s "$NET_PLAN_DIR/port.link" ]]; then
-          echo ""
-          echo "# ${UPLINK}'s link settings, from ${_sources[*]}."
           cat "$NET_PLAN_DIR/port.link"
         fi
       } > "$NET_PLAN_DIR/port.network"
-      rm -f "$NET_PLAN_DIR/port.link"
-      printf '%s\n' "${_sources[@]}" > "$NET_PLAN_DIR/networkd-sources"
+      rm -f "$NET_PLAN_DIR/port.link" "$NET_PLAN_DIR/port.match"
       unset _sources _dropins _cid_type _identity _a _b _c _d _iaid
       ;;
 
@@ -581,24 +624,36 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
       if [[ "$(_prop connection.interface-name)" != "$UPLINK" && "${_mac,,}" != "$UPLINK_MAC" ]]; then
         net_refuse "$UPLINK's connection is not bound to $UPLINK by name or hardware address, so it applies to other interfaces too."
       fi
-      # The uplink's connection is never changed — a keyfile, one netplan
-      # keeps, or the default one NetworkManager makes for a wired device and
-      # holds in memory alike — so the undo has nothing of it to bring back.
-      # Where it is stored under /etc, a copy is kept as the original.
+      # The uplink's connection is deleted as the bridge step's last change,
+      # its stored definition kept with the originals: a keyfile under /etc, or
+      # the file netplan keeps for a connection NetworkManager made. The
+      # default one NetworkManager makes for a wired device and holds in memory
+      # needs nothing kept. A definition stored anywhere else, or one netplan
+      # renders from an operator's own file, is refused.
       _files="$(net_read nmcli -t -f UUID,NAME,FILENAME connection show)" || exit 1
       NM_PROFILE_FILE="$(awk -F: -v u="$UPLINK_CONNECTION" '$1 == u { print $3 }' <<<"$_files")"
       case "$NM_PROFILE_FILE" in
         /etc/NetworkManager/system-connections/*) ;;
         /run/NetworkManager/system-connections/netplan-NM-"$UPLINK_CONNECTION".nmconnection)
           NM_PROFILE_FILE="/etc/netplan/90-NM-$UPLINK_CONNECTION.yaml"
-          [[ -f "$NM_PROFILE_FILE" ]] || NM_PROFILE_FILE="" ;;
-        *) NM_PROFILE_FILE="" ;;
+          [[ -f "$NM_PROFILE_FILE" ]] || net_refuse "${UPLINK}'s connection is rendered by netplan, but $NM_PROFILE_FILE is missing." ;;
+        /run/NetworkManager/system-connections/netplan-*)
+          net_refuse "${UPLINK}'s connection is rendered by netplan from an operator's file in /etc/netplan: setup does not change it through NetworkManager." ;;
+        "" | /run/NetworkManager/*) NM_PROFILE_FILE="" ;;
+        *) net_refuse "${UPLINK}'s connection is stored in $NM_PROFILE_FILE, where setup cannot keep it to undo its removal." ;;
       esac
-      # Names setup would give its connections, already taken while no bridge
-      # is in use.
+      [[ -z "$NM_PROFILE_FILE" ]] || journal_root_ok "$NM_PROFILE_FILE" \
+        || net_refuse "${UPLINK}'s connection is stored in $NM_PROFILE_FILE, where setup cannot keep it to undo its removal."
+      # Names setup would give its connections, and the files it would write
+      # them to, already taken while no bridge is in use.
       for _n in "$BRIDGE" "${BRIDGE}-port-${UPLINK}"; do
         ! awk -F: -v n="$_n" '$2 == n { found = 1 } END { exit !found }' <<<"$_files" \
           || net_refuse "a NetworkManager connection named $_n exists already, and no bridge is in use: remove it, or bring up the bridge it belongs to."
+      done
+      NM_BRIDGE_FILE="/etc/NetworkManager/system-connections/${BRIDGE}.nmconnection"
+      NM_PORT_FILE="/etc/NetworkManager/system-connections/${BRIDGE}-port-${UPLINK}.nmconnection"
+      for _n in "$NM_BRIDGE_FILE" "$NM_PORT_FILE"; do
+        [[ ! -e "$_n" ]] || net_refuse "$_n exists already, and no bridge is in use: remove it."
       done
       # The port comes up on the uplink at boot ahead of the uplink's own
       # connection: autoconnect priority above it.
@@ -637,8 +692,9 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
       # ethtool.* property). Both connect by themselves from the moment they
       # are added (see the bridge step).
       {
-        printf '%s\n' type bridge ifname "$BRIDGE" con-name "$BRIDGE" bridge.mac-address "$UPLINK_MAC" \
-          bridge.stp no connection.autoconnect yes connection.autoconnect-ports true
+        printf '%s\n' type bridge ifname "$BRIDGE" con-name "$BRIDGE" connection.uuid "$NM_BRIDGE_UUID" \
+          bridge.mac-address "$UPLINK_MAC" bridge.stp no connection.autoconnect yes connection.autoconnect-ports true \
+          802-3-ethernet.mtu "$UPLINK_MTU"
         awk -v m4="$_metric4" -v m6="$_metric6" '/^ipv[46]\./ {
           k = $0; sub(/:.*/, "", k); v = substr($0, length(k) + 2)
           if (v == "" || v == "--" || k == "ipv4.dhcp-client-id" || k ~ /-deprecated$/) next
@@ -649,7 +705,7 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
         [[ -z "${UPLINK_CLIENT_ID:-}" ]] || printf '%s\n' ipv4.dhcp-client-id "$UPLINK_CLIENT_ID"
       } > "$NET_PLAN_DIR/bridge.args"
       {
-        printf '%s\n' type ethernet ifname "$UPLINK" con-name "${BRIDGE}-port-${UPLINK}" \
+        printf '%s\n' type ethernet ifname "$UPLINK" con-name "${BRIDGE}-port-${UPLINK}" connection.uuid "$NM_PORT_UUID" \
           controller "$BRIDGE" port-type bridge connection.autoconnect yes \
           connection.autoconnect-priority "$NM_PORT_PRIORITY"
         awk '/^(802-3-ethernet|ethtool)\./ {
@@ -658,13 +714,14 @@ elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower
           print k; print v
         }' <<<"$_con"
       } > "$NET_PLAN_DIR/port.args"
-      # Both checked by NetworkManager itself, offline: nothing is added.
+      # Both rendered as keyfiles and checked by NetworkManager itself,
+      # offline: nothing is added.
       if ! timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli --offline connection add --help >/dev/null 2>&1; then
         net_refuse "this nmcli has no --offline, with which setup checks the connections it adds before adding them."
       fi
       for _f in bridge port; do
         mapfile -t _args < "$NET_PLAN_DIR/$_f.args"
-        _why="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli --offline connection add "${_args[@]}" 2>&1 >/dev/null)" \
+        _why="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli --offline connection add "${_args[@]}" 2>&1 >"$NET_PLAN_DIR/$_f.nmconnection")" \
           || net_refuse "NetworkManager does not accept the $_f connection setup would add: ${_why:-nmcli --offline failed}."
       done
       unset -f _metric_of
@@ -682,8 +739,8 @@ if [[ "$BRIDGE_CREATE" == yes ]]; then
   plan_sources > "$NET_PLAN_DIR/sources" || net_fail "cannot read what the plan was made from"
 fi
 for _var in NET_TOOL UPLINK UPLINK_ADDR BRIDGE BRIDGE_CREATE UPLINK_MAC UPLINK_MODE UPLINK_CLIENT_ID \
-    UPLINK_NETPLAN_ID NETPLAN_ORIGIN NETWORKD_PORT_FILE UPLINK_CONNECTION NM_PROFILE_FILE \
-    NM_BRIDGE_UUID NM_PORT_UUID NET_PLAN_JOURNAL; do
+    UPLINK_MTU UPLINK_NETPLAN_ID NETPLAN_ORIGIN NETWORKD_PORT_FILE UPLINK_CONNECTION NM_PROFILE_FILE \
+    NM_BRIDGE_UUID NM_PORT_UUID NM_BRIDGE_FILE NM_PORT_FILE NET_PLAN_JOURNAL; do
   [[ -z "${!_var:-}" ]] || printf '%s=%q\n' "$_var" "${!_var}"
 done > "$NET_PLAN_DIR/plan.env"
 unset _route _addrs _status _netfile _json _def _py _rc _stage _merged _why _var

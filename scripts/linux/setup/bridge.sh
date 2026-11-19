@@ -49,7 +49,7 @@ NETWORKD_NETWORK=/etc/systemd/network/00-wisp-${BRIDGE}.network
 # before any change.
 current_sources="$(plan_sources)" || fail "cannot read what the plan was made from"
 [[ "$current_sources" == "$(cat "$NET_PLAN_DIR/sources")" ]] \
-  || fail "the network's configuration changed since setup worked out the bridge; nothing was changed. Run setup again."
+  || fail "the network's configuration changed since setup worked out the bridge; the bridge step changed nothing. Run setup again."
 
 # applied: within NET_APPLY_SEC the bridge holds what the uplink held (see
 # the header) and the uplink holds nothing; there is no one event to wait on.
@@ -127,18 +127,14 @@ apply_netplan() {
 verify_netplan() { :; }
 
 # --- systemd-networkd: the bridge's .netdev and .network first — a bridge with
-# no port, harmless — then the port file, the switch; applied with
-# `networkctl reload`. The uplink's own file is not changed: it is kept as the
-# original. ---
+# no port, harmless — then the uplink's own file as the port's definition, the
+# switch; applied with `networkctl reload`. ---
 apply_networkd() {
-  local f
-  mapfile -t NETWORKD_UPLINK_SOURCES < "$NET_PLAN_DIR/networkd-sources"
-  for f in "${NETWORKD_UPLINK_SOURCES[@]}"; do
-    journal_file "$f" "$f" || { WHY="cannot write the journal for $f"; return 1; }
-  done
+  local mode=0644
+  [[ -e "$NETWORKD_PORT_FILE" ]] && mode="$(stat -c %a "$NETWORKD_PORT_FILE")"
   put_file "$NETWORKD_NETDEV" "$NET_PLAN_DIR/bridge.netdev" 0644 || return 1
   put_file "$NETWORKD_NETWORK" "$NET_PLAN_DIR/bridge.network" 0644 || return 1
-  put_file "$NETWORKD_PORT_FILE" "$NET_PLAN_DIR/port.network" 0644 || return 1
+  put_file "$NETWORKD_PORT_FILE" "$NET_PLAN_DIR/port.network" "$mode" || return 1
   apply_notice
   timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" networkctl reload
 }
@@ -156,41 +152,50 @@ verify_networkd() {
   done
 }
 
-# --- NetworkManager: the bridge and port connections, checked by nmcli in the
-# plan, added under UUIDs of their own, both connecting by themselves, and the
-# bridge brought up with its port. The uplink's own connection is not changed.
-# The bridge first: on its own it holds nothing (no port, no carrier), and a
-# boot then still brings the uplink up on its own connection — NetworkManager's
-# default wired one too, which it makes only while no stored connection is
-# for that device. From the port on, a boot brings up the port, whose
-# autoconnect priority is above the uplink connection's, and so the bridge.
-# Never a boot with neither. ---
-nm_add() {
-  local args fp
-  mapfile -t args < "$1"
-  journal_conn "$2" || { WHY="cannot write the journal"; return 1; }
-  timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli connection add connection.uuid "$2" "${args[@]}" >/dev/null \
-    || { WHY="NetworkManager refused the connection $2"; return 1; }
-  fp="$(nm_fingerprint "$2")" || { WHY="NetworkManager cannot read back the connection $2"; return 1; }
-  journal_connfp "$2" "$fp" || { WHY="cannot write the journal"; return 1; }
-}
+# --- NetworkManager: the bridge and port connections, rendered and checked by
+# nmcli offline in the plan, written as keyfiles and loaded together, so
+# NetworkManager never holds one without the other; then the bridge is brought
+# up with its port, whose autoconnect priority is above the uplink connection's
+# (a boot inside the step brings up the bridge). The uplink's own connection is
+# deleted after the check, as the step's last change (finish_networkmanager). ---
 apply_networkmanager() {
-  if [[ -n "${NM_PROFILE_FILE:-}" ]]; then
-    journal_file "$NM_PROFILE_FILE" "$NM_PROFILE_FILE" || { WHY="cannot write the journal"; return 1; }
-  fi
-  nm_add "$NET_PLAN_DIR/bridge.args" "$NM_BRIDGE_UUID" || return 1
-  changed "NetworkManager connection $BRIDGE (bridge, ${UPLINK}'s layer 3 and DHCP identity)"
-  nm_add "$NET_PLAN_DIR/port.args" "$NM_PORT_UUID" || return 1
-  changed "NetworkManager connection ${BRIDGE}-port-${UPLINK} ($UPLINK as ${BRIDGE}'s port, with its link settings, ahead of ${UPLINK}'s own connection at boot)"
+  put_file "$NM_BRIDGE_FILE" "$NET_PLAN_DIR/bridge.nmconnection" 0600 || return 1
+  put_file "$NM_PORT_FILE" "$NET_PLAN_DIR/port.nmconnection" 0600 || return 1
   apply_notice
+  timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli connection load "$NM_BRIDGE_FILE" "$NM_PORT_FILE" \
+    || { WHY="NetworkManager did not load $NM_BRIDGE_FILE and $NM_PORT_FILE"; return 1; }
   timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" nmcli --wait "$NET_APPLY_SEC" connection up "$NM_BRIDGE_UUID" >/dev/null
 }
-verify_networkmanager() { :; }
+# Which connection NetworkManager now runs each link from.
+verify_networkmanager() {
+  local link want got
+  for link in "$BRIDGE" "$UPLINK"; do
+    want="$NM_BRIDGE_UUID"
+    [[ "$link" == "$UPLINK" ]] && want="$NM_PORT_UUID"
+    got="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -g GENERAL.CON-UUID device show "$link" 2>/dev/null || true)"
+    if [[ "$got" != "$want" ]]; then
+      WHY="NetworkManager runs $link from the connection '${got}', not $want"
+      return 1
+    fi
+  done
+}
+finish_networkmanager() {
+  if [[ -n "${NM_PROFILE_FILE:-}" ]]; then
+    journal_file "$NM_PROFILE_FILE" - || { WHY="cannot write the journal for $NM_PROFILE_FILE"; return 1; }
+  fi
+  journal_connrm "$UPLINK_CONNECTION" || { WHY="cannot write the journal"; return 1; }
+  timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli connection delete "$UPLINK_CONNECTION" >/dev/null \
+    || { WHY="NetworkManager did not delete ${UPLINK}'s former connection $UPLINK_CONNECTION"; return 1; }
+  changed "NetworkManager connection $UPLINK_CONNECTION deleted: ${UPLINK}'s former one, now held by $BRIDGE and its port"
+}
+finish_netplan() { :; }
+finish_networkd() { :; }
 
 # undo: from the journal; the step fails either way.
 undo() {
   trap '' TERM INT
   echo "  not applied: ${WHY:-stopped}; undoing it" >&2
+  journal_undo_mark || true
   if journal_restore; then
     fail "$BRIDGE was not applied (${WHY:-the step was stopped}). The network is as it was, and $UPLINK holds $(first_ipv4 "$UPLINK") again"
   fi
@@ -203,6 +208,9 @@ trap 'WHY="the step was stopped"; undo' TERM INT
 if "apply_$NET_TOOL" && applied && "verify_$NET_TOOL"; then
   # From the check that passed to the commit, a stop waits.
   trap '' TERM INT
+  if ! "finish_$NET_TOOL"; then
+    undo
+  fi
   journal_commit || fail "$BRIDGE is up, but the journal could not be committed; the next run of setup commits it"
   changed "$BRIDGE created on $UPLINK"
   if [[ "$UPLINK_MODE" == dhcp ]]; then

@@ -71,7 +71,7 @@ SERVICE_UNIT=wisp
 # out, systemd sends this script TERM (KillMode=mixed: this process only) and
 # gives it TimeoutStopSec before SIGKILL. In that time: the step running is
 # stopped — setup gets SETUP_STOP_SEC, the time it takes to end when stopped
-# (BRIDGE_STOP_SEC, 680 s, in scripts/linux/setup/bridge-journal.sh: the
+# (BRIDGE_STOP_SEC, 600 s, in scripts/linux/setup/bridge-journal.sh: the
 # bridge step's undo; then setup kills the step and ends), any other step
 # KILL_GRACE_SEC — and is then killed; then the rollback, each part bounded:
 # stop wisp, restore the tree, the restored tree's setup, daemon-reload, the
@@ -79,7 +79,7 @@ SERVICE_UNIT=wisp
 # KILL_GRACE_SEC more to die. STOP_BUDGET_SEC is the sum; the unit's
 # TimeoutStopSec (systemd/linux/wisp-updater.service) is at least that.
 KILL_GRACE_SEC=10
-SETUP_STOP_SEC=$(( 680 + KILL_GRACE_SEC ))
+SETUP_STOP_SEC=$(( 600 + KILL_GRACE_SEC ))
 STOP_WISP_SEC=30
 ROLLBACK_RESTORE_SEC=120
 ROLLBACK_SETUP_SEC=300
@@ -88,7 +88,7 @@ ROLLBACK_START_WAIT_SEC=120
 STATUS_SEC=10
 STOP_BUDGET_SEC=$(( SETUP_STOP_SEC + KILL_GRACE_SEC \
   + STOP_WISP_SEC + ROLLBACK_RESTORE_SEC + ROLLBACK_SETUP_SEC + DAEMON_RELOAD_SEC \
-  + ROLLBACK_START_WAIT_SEC + STATUS_SEC + 6 * KILL_GRACE_SEC ))   # 1370 s
+  + ROLLBACK_START_WAIT_SEC + STATUS_SEC + 6 * KILL_GRACE_SEC ))   # 1290 s
 
 # User-data and runtime scratch must survive the swap rsync.
 RSYNC_EXCLUDES=(
