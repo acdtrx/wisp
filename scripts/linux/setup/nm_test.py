@@ -84,19 +84,5 @@ class Other(unittest.TestCase):
         self.assertEqual(other({'connection': {'type': '802-3-ethernet'}, 'match': {'interface-name': ['eth1', 'eth2']}}), '')
 
 
-def permaddr(link):
-    r = subprocess.run([sys.executable, '-I', NM, 'permaddr'], input=json.dumps([link]),
-                       capture_output=True, text=True, check=True)
-    return r.stdout.strip()
-
-
-class Permaddr(unittest.TestCase):
-    def test_the_permanent_address_when_it_differs(self):
-        self.assertEqual(permaddr({'ifname': UPLINK, 'address': MAC, 'permaddr': '52:54:00:AB:CD:EF'}), PERM)
-
-    def test_nothing_when_ip_names_none(self):
-        self.assertEqual(permaddr({'ifname': UPLINK, 'address': MAC}), '')
-
-
 if __name__ == '__main__':
     unittest.main()

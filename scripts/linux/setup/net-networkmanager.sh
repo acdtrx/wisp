@@ -117,11 +117,6 @@ plan_networkmanager() {
     || net_refuse NM_NOT_ETHERNET "$UPLINK's connection is of type $(_prop connection.type)."
   [[ -z "$(_prop match.interface-name)" ]] \
     || refuse NM_MATCH "$UPLINK's connection matches the interfaces \"$(_prop match.interface-name)\", not $UPLINK alone: bind it to $UPLINK by name (nmcli connection modify $UPLINK_CONNECTION match.interface-name \"\" connection.interface-name $UPLINK), and run this again."
-  # NetworkManager binds a profile by the device's permanent hardware address,
-  # which a cloned current one hides.
-  out="$(net_read ip -j -d link show dev "$UPLINK")" || exit 1
-  UPLINK_PERMADDR="$(python3 -I "$NET_SETUP_DIR/nm.py" permaddr <<<"$out")" \
-    || net_fail "cannot read ${UPLINK}'s permanent hardware address"
   mac="$(_prop 802-3-ethernet.mac-address)"
   mac="${mac,,}"
   if [[ "$(_prop connection.interface-name)" != "$UPLINK" && "$mac" != "$UPLINK_MAC" \

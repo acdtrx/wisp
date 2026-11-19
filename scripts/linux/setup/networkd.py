@@ -6,13 +6,13 @@ lines, `#` and `;` comments, a trailing backslash continuing a line.
       reads `networkctl status <link> --json=short` on stdin; prints the value
       at <path> (keys joined by dots), nothing when it is not there: a string as
       it is, a list one item a line
-  networkd.py takers <uplink> <mac> <driver> <own-file>
+  networkd.py takers <uplink> <mac> <permaddr> <driver> <own-file>
       prints each .network file, but <own-file>, whose [Match] could take the
       uplink — a second definition for it. networkd runs a link from the first
       file, by name, that matches it: a file whose name sorts after <own-file>'s
       (an initrd's catch-all fallback, zzzz-…) never takes the uplink, before
       the bridge step or after, as the uplink's file keeps its name.
-  networkd.py port <file> <uplink> <mac> <out-dir>
+  networkd.py port <file> <uplink> <mac> <permaddr> <out-dir>
       the uplink's file split: what moves to the bridge (bridge.network.body),
       what stays on the port (port.match, port.link); prints dhcp or static.
       Exit 3 with the reason printed: refused; exit 4: refused, a link hangs
@@ -101,11 +101,13 @@ def matches(patterns, value):
     return hit != invert
 
 
-def takers(uplink, mac, driver, own):
+def takers(uplink, mac, permaddr, driver, own):
     # What the uplink is, for each [Match] key; a key not listed here is a
     # condition on the host (Host=, Virtualization=, KernelCommandLine=, …) or
     # one setup cannot read, and is taken as met.
-    facts = {'Name': uplink, 'OriginalName': uplink, 'MACAddress': mac, 'PermanentMACAddress': mac,
+    # As networkd matches: MACAddress= the current address, PermanentMACAddress=
+    # the permanent one (permaddr, empty when they are the same).
+    facts = {'Name': uplink, 'OriginalName': uplink, 'MACAddress': mac, 'PermanentMACAddress': permaddr or mac,
              'Driver': driver or None, 'Type': 'ether', 'Kind': None, 'WLANInterfaceType': None,
              'SSID': None, 'BSSID': None}
     own_name = os.path.basename(own)
@@ -163,7 +165,7 @@ def write_sections(path, lines):
             f.write(line + '\n')
 
 
-def port(path, uplink, mac, out):
+def port(path, uplink, mac, permaddr, out):
     body, link, match = [], [], []
     by_name = by_mac = False
     dhcp = ''
@@ -176,8 +178,9 @@ def port(path, uplink, mac, out):
                     refuse_match(f'{path} matches the name "{value}", not {uplink} alone')
                 by_name = True
             elif key in ('MACAddress', 'PermanentMACAddress'):
-                if value.lower() != mac:
-                    refuse_match(f'{path} matches {value}, not {uplink} ({mac}) alone')
+                want = mac if key == 'MACAddress' else (permaddr or mac)
+                if value.lower() != want:
+                    refuse_match(f'{path} matches {key}={value}, not {uplink} ({want}) alone')
                 by_mac = by_mac or key == 'MACAddress'
             else:
                 refuse_match(f'{path} matches by {key}')

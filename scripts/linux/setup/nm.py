@@ -10,10 +10,6 @@ connection's settings are what differs from the defaults.
       tab-separated, its escapes (\\: and \\\\) read
   nm.py flags
       reads `busctl get-property --json=short … Flags` on stdin; prints them
-  nm.py permaddr
-      reads `ip -j -d link show dev <link>` on stdin; prints the link's
-      permanent hardware address when it differs from its current one, else
-      nothing
   nm.py other <uplink> <uplink-uuid> <uplink-mac> [<uplink-permaddr>]
       reads another connection's `busctl call --json=short … GetSettings` on
       stdin; prints `dependent <setting.property>` when it hangs off the uplink
@@ -119,10 +115,6 @@ def path():
     print(json.load(sys.stdin)['data'][0])
 
 
-def permaddr():
-    print(json.load(sys.stdin)[0].get('permaddr', '').lower())
-
-
 def rows():
     for line in sys.stdin.read().splitlines():
         fields, cur, esc = [], '', False
@@ -175,8 +167,7 @@ def carry(metric4, metric6, out):
         f.close()
 
 
-COMMANDS = {'path': path, 'rows': rows, 'flags': flags, 'unknown': unknown, 'carry': carry, 'other': other,
-            'permaddr': permaddr}
+COMMANDS = {'path': path, 'rows': rows, 'flags': flags, 'unknown': unknown, 'carry': carry, 'other': other}
 
 if __name__ == '__main__':
     COMMANDS[sys.argv[1]](*sys.argv[2:])

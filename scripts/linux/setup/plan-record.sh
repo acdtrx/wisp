@@ -22,8 +22,8 @@
 #                         or overriding a vendor file), which becomes the port's
 #   UPLINK_CONNECTION     networkmanager: the uplink's connection (UUID), which
 #                         the bridge step deletes last
-#   UPLINK_PERMADDR       networkmanager: the uplink's permanent hardware
-#                         address, when it differs from UPLINK_MAC
+#   UPLINK_PERMADDR       the uplink's permanent hardware address, when it
+#                         differs from UPLINK_MAC
 #   NM_PROFILE_FILE       networkmanager: the file that stores it, when it is
 #                         stored (kept as the original)
 #   NM_BRIDGE_UUID, NM_PORT_UUID, NM_BRIDGE_FILE, NM_PORT_FILE

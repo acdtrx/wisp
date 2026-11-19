@@ -18,7 +18,7 @@ networkd_bridge_file() { printf '/etc/systemd/network/00-wisp-%s.%s' "$BRIDGE" "
 networkd_takers() {
   local driver takers
   driver="$(basename "$(readlink "/sys/class/net/$UPLINK/device/driver" 2>/dev/null)" 2>/dev/null || true)"
-  takers="$(python3 -I "$NET_SETUP_DIR/networkd.py" takers "$UPLINK" "$UPLINK_MAC" "$driver" "$1")" \
+  takers="$(python3 -I "$NET_SETUP_DIR/networkd.py" takers "$UPLINK" "$UPLINK_MAC" "${UPLINK_PERMADDR:-}" "$driver" "$1")" \
     || net_fail "cannot read systemd-networkd's files"
   [[ -z "$takers" ]] \
     || refuse NETWORKD_SECOND_FILE "systemd-networkd could take the uplink $UPLINK from $(echo $takers) too, beside $1: setup leaves exactly one definition for it. Make that file match only other interfaces, or remove it, and run this again."
@@ -54,7 +54,7 @@ plan_networkd() {
   # The uplink's file, split by networkd.py's lists: its layer 3 moves to the
   # bridge, with the DHCP identity pinned below; its match, link and layer-2
   # settings stay with it, in its own file, now the port's definition.
-  mode="$(python3 -I "$NET_SETUP_DIR/networkd.py" port "$UPLINK_NETFILE" "$UPLINK" "$UPLINK_MAC" "$NET_PLAN_DIR")" \
+  mode="$(python3 -I "$NET_SETUP_DIR/networkd.py" port "$UPLINK_NETFILE" "$UPLINK" "$UPLINK_MAC" "${UPLINK_PERMADDR:-}" "$NET_PLAN_DIR")" \
     || { rc=$?; case $rc in
            3) net_refuse NETWORKD_SETTING "$mode." ;;
            4) net_refuse UPLINK_DEPENDENT "$mode." ;;

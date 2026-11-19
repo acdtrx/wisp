@@ -115,6 +115,12 @@ refuse_uplink_shape() {
   [[ -n "$UPLINK_ADDR" ]] || refuse UPLINK_NO_IPV4 "the uplink $UPLINK has no IPv4 address, which the bridge would keep: give it one, and run this again."
   UPLINK_MAC="$(cat "/sys/class/net/$UPLINK/address")"
   UPLINK_MTU="$(cat "/sys/class/net/$UPLINK/mtu")"
+  # The permanent hardware address, which a cloned current one hides: each
+  # tool matches a definition by either (link.py).
+  local out
+  out="$(net_read ip -j -d link show dev "$UPLINK")" || exit 1
+  UPLINK_PERMADDR="$(python3 -I "$NET_SETUP_DIR/link.py" permaddr <<<"$out")" \
+    || net_fail "cannot read ${UPLINK}'s permanent hardware address"
 }
 
 # uplink_client_id: UPLINK_CLIENT_ID, the uplink's DHCPv4 client identifier
