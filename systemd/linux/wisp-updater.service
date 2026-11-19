@@ -17,5 +17,5 @@ StandardError=journal
 # which scripts/check-bounds.mjs sums and checks. A later release never lowers
 # either value (docs/specs/UPDATES.md).
 TimeoutStartSec=1800
-TimeoutStopSec=2200
+TimeoutStopSec=2400
 KillMode=mixed

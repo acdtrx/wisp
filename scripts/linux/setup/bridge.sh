@@ -85,10 +85,16 @@ if (( applied )) && bridge_check "$NET_PLAN_DIR"; then
   journal_commit || fail "$BRIDGE is up, but the journal could not be committed; the next run of setup commits it"
   STEP_ON_STOP=""
   changed "$BRIDGE created on $UPLINK"
+  # What the check compared: name servers and search domains only where the
+  # tool holds them (net-state.sh, l3_state).
+  held="$(facts_of < "$NET_PLAN_DIR/uplink.state" | awk '{ print $1 }' | sort -u | tr '\n' ' ')"
+  extra=""
+  [[ " $held" != *" dns "* ]] || extra+=", name servers"
+  [[ " $held" != *" domain "* ]] || extra+=", search domains"
   if [[ "$UPLINK_MODE" == dhcp ]]; then
-    echo "  $BRIDGE holds $UPLINK_ADDR, its default route and name servers, hardware address $UPLINK_MAC, client identifier $UPLINK_CLIENT_ID; $UPLINK holds no address"
+    echo "  $BRIDGE holds $UPLINK_ADDR, its default route${extra}, hardware address $UPLINK_MAC, client identifier $UPLINK_CLIENT_ID; $UPLINK holds no address"
   else
-    echo "  $BRIDGE holds ${UPLINK}'s static addresses, routes and name servers, hardware address $UPLINK_MAC; $UPLINK holds none"
+    echo "  $BRIDGE holds ${UPLINK}'s static addresses, routes${extra}, hardware address $UPLINK_MAC; $UPLINK holds none"
   fi
   journal_cleanup || fail "$JOURNAL_KEEP_FAILED"
   step_done

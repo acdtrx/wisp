@@ -145,7 +145,6 @@ run_step rapl rapl.sh "$DEPLOY_USER"
 run_step service-unit service-unit.sh "$PROJECT_ROOT" "$DEPLOY_USER"
 run_step backend-deps backend-deps.sh "$PROJECT_ROOT" "$DEPLOY_USER"
 run_step answers answers.sh "$PROJECT_ROOT" "$DEPLOY_USER"
-run_step sanity sanity.sh
 run_step bridge bridge.sh
 echo ""
 echo "=== Wisp setup done ($STEP_COUNT steps) ==="

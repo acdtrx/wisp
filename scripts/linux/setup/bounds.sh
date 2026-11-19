@@ -19,11 +19,14 @@ NET_READ_CALLS=6
 # NetworkManager's (journal_restore, undo_networkmanager): netplan's files
 # generated, the connections reloaded, the uplink connection looked up, its
 # copy loaded, its state read, it brought up; then the wait for the uplink to
-# hold what it held before, and its last read. The bridge-journal step's
-# commit or undo is shorter.
+# hold what it held before, and its last read; and NET_LOCAL_SEC for the work
+# that is no network call (the journal's reads and syncs, install_file,
+# python, the waits' one-second sleeps). The bridge-journal step's commit or
+# undo is shorter.
+NET_LOCAL_SEC=30
 NET_CALL_BOUND=$(( NET_CMD_SEC + NET_KILL_SEC ))
 NET_APPLY_BOUND=$(( NET_APPLY_SEC + NET_KILL_SEC ))
-BRIDGE_STOP_SEC=$(( NET_APPLY_BOUND + 5 * NET_CALL_BOUND + NET_APPLY_BOUND + NET_APPLY_SEC + NET_READ_CALLS * NET_CALL_BOUND ))
+BRIDGE_STOP_SEC=$(( NET_APPLY_BOUND + 5 * NET_CALL_BOUND + NET_APPLY_BOUND + NET_APPLY_SEC + NET_READ_CALLS * NET_CALL_BOUND + NET_LOCAL_SEC ))
 
 # A stopped step gets STEP_STOP_SEC to end — the longest a step takes to, the
 # bridge step's — and its session is then killed; SETUP_STOP_SEC is how long a

@@ -7,7 +7,7 @@
 #                   the bridge (netplan has no IAID key) — harmless while no
 #                   bridge exists; then the operator's file as the plan edited
 #                   and checked it, in one rename: the switch; `netplan apply`
-#   check_netplan   nothing beyond the shared check
+#   check_netplan   networkd runs the bridge and the uplink from netplan's units
 #   finish_netplan  nothing: the switch was the last change
 #   undo_netplan    after the files are back: the bridge deleted, `netplan apply`
 
@@ -15,7 +15,7 @@
 NETPLAN_DIRS=(/lib/netplan /etc/netplan /run/netplan)
 
 plan_netplan() {
-  local status def mode rc why stage d f hint kv merged
+  local status def mode rc why stage d f hint kv merged dropins
   status="$(net_read netplan status "$UPLINK" --format json)" || exit 1
   UPLINK_NETPLAN_ID="$(python3 -I "$NET_SETUP_DIR/netplan.py" status-id "$UPLINK" <<<"$status")" \
     || net_fail "cannot read netplan's status for $UPLINK"
@@ -27,6 +27,11 @@ plan_netplan() {
     || refuse NETPLAN_OUTSIDE_ETC "netplan defines $UPLINK in $NETPLAN_ORIGIN, outside /etc/netplan, where setup cannot edit it: define it in a file of your own under /etc/netplan, and run this again."
   [[ ! -L "$NETPLAN_ORIGIN" ]] \
     || refuse NETPLAN_LINK_FILE "netplan defines $UPLINK in $NETPLAN_ORIGIN, a symbolic link, which setup would replace with a file: make it the file itself, and run this again."
+  # A networkd drop-in on the unit netplan renders for the uplink would stay
+  # with the port, its settings neither moved nor kept by setup's rule.
+  dropins="$(networkd_json "$UPLINK" NetworkFileDropins)" || net_fail "cannot read systemd-networkd's status of $UPLINK"
+  [[ -z "$dropins" ]] \
+    || refuse NETPLAN_DROPINS "systemd-networkd runs $UPLINK from netplan's $UPLINK_NETFILE with drop-ins ($(echo $dropins)): put their settings in the netplan definition, or make the bridge with netplan, and run this again."
   networkd_takers "$UPLINK_NETFILE" >/dev/null
   UPLINK_CLIENT_ID="$(client_id "$UPLINK" "$NET_TOOL")" || net_fail "cannot read ${UPLINK}'s DHCP lease from systemd-networkd"
   dhcp_identity
@@ -107,7 +112,10 @@ apply_netplan() {
   apply_notice
   net_apply netplan apply
 }
-check_netplan() { :; }
+# check_netplan: networkd runs both from the units netplan renders for them.
+check_netplan() {
+  networkd_runs_from "/run/systemd/network/10-netplan-$BRIDGE.network" "/run/systemd/network/10-netplan-$UPLINK_NETPLAN_ID.network"
+}
 
 # sources_netplan: what the plan read, for the bridge step to check is
 # unchanged: netplan's files, by checksum, the file networkd runs the uplink

@@ -53,4 +53,9 @@ if [[ $EUID -eq 0 ]]; then
   exit 1
 fi
 
+# With no terminal, sudo cannot ask for its password: it must need none.
+if [[ ! -t 0 ]] && ! sudo -n true 2>/dev/null; then
+  echo "ERROR: with no terminal, the install needs sudo without a password (sudo -n), which this user does not have. Run it from a terminal, or give this user passwordless sudo. Nothing was changed." >&2
+  exit 1
+fi
 exec sudo "$SCRIPT_DIR/install-root.sh" "$SOURCE_DIR" "$INSTALL_DIR" "$(id -un)" "$(id -gn)" "$SERVER_NAME" "$REMOVE_DIR"

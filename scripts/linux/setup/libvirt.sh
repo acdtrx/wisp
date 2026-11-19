@@ -22,7 +22,7 @@ unit_exists() { systemctl cat --no-pager "$1" &>/dev/null; }
 # the packaging opts in. Ubuntu 26.04 ships libvirt 12 but still packages it
 # monolithically. virtproxyd provides the legacy
 # /var/run/libvirt/libvirt-sock for clients that hardcode that path
-# (libvirt-dbus, sanity.sh).
+# (libvirt-dbus, and this step's check below).
 if unit_exists virtqemud.socket; then
   for sock in virtqemud.socket virtnetworkd.socket virtstoraged.socket \
               virtnodedevd.socket virtsecretd.socket virtproxyd.socket \
@@ -49,4 +49,11 @@ if grep -qx default <<<"$ACTIVE_NETWORKS"; then
   timeout -k 10 30 virsh net-destroy default >/dev/null
   changed "default NAT network stopped (virbr0 removed)"
 fi
+
+# What the backend needs of libvirt answers: virsh, the socket, and libvirt's
+# D-Bus service (libvirt-dbus starts on demand: the call activates it).
+timeout -k 10 30 virsh list --all >/dev/null || fail "libvirt does not answer (virsh list --all)"
+[[ -S /var/run/libvirt/libvirt-sock ]] || fail "libvirt's socket /var/run/libvirt/libvirt-sock is missing"
+timeout -k 10 30 busctl call --system org.libvirt /org/libvirt/QEMU org.freedesktop.DBus.Properties Get ss \
+  org.libvirt.Connect LibVersion >/dev/null || fail "libvirt's D-Bus service (libvirt-dbus) does not answer"
 step_done

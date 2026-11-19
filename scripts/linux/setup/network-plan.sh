@@ -66,6 +66,7 @@ if [[ -d "$JOURNAL_DIR" ]]; then
     restore | finished)
       [[ "$J_CLASS" == restore ]] || BRIDGE_CREATE=no
       plan_record_write "$NET_PLAN_DIR/plan" || net_fail "cannot write the plan in $NET_PLAN_DIR"
+      step_done
       exit 0 ;;
   esac
 fi
@@ -90,3 +91,4 @@ else
   echo "  $NET_TOOL; $BRIDGE to be created on the uplink $UPLINK ($UPLINK_ADDR, $UPLINK_MODE)"
 fi
 plan_record_write "$NET_PLAN_DIR/plan" || net_fail "cannot write the plan in $NET_PLAN_DIR"
+step_done

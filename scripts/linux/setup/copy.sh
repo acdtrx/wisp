@@ -20,14 +20,7 @@ fi
 
 echo "--- Installing app directories ---"
 
-INSTALL_PARENT="$(dirname "$INSTALL_DIR")"
-if [[ -d "$INSTALL_PARENT" ]] && [[ ! -w "$INSTALL_PARENT" ]]; then
-  echo "Creating $INSTALL_DIR (requires sudo)..."
-  sudo mkdir -p "$INSTALL_DIR"
-  sudo chown "$(whoami):$(id -gn)" "$INSTALL_DIR"
-else
-  mkdir -p "$INSTALL_DIR"
-fi
+mkdir -p "$INSTALL_DIR"
 
 SOURCE_REAL="$(cd "$SOURCE_DIR" && pwd -P)"
 INSTALL_REAL="$(cd "$INSTALL_DIR" && pwd -P)"

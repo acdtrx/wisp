@@ -114,11 +114,13 @@ apply_networkd() {
   apply_notice
   net_call networkctl reload
 }
-check_networkd() {
+# networkd_runs_from <bridge's file> <uplink's file>: whether systemd-networkd
+# runs the bridge and the uplink from those files (the check, on netplan too).
+networkd_runs_from() {
   local link want got
   for link in "$BRIDGE" "$UPLINK"; do
-    want="$(networkd_bridge_file network)"
-    [[ "$link" == "$UPLINK" ]] && want="$NETWORKD_PORT_FILE"
+    want="$1"
+    [[ "$link" == "$UPLINK" ]] && want="$2"
     got="$(networkd_json "$link" NetworkFile 2>/dev/null || true)"
     if [[ "$got" != "$want" ]]; then
       CHECK_WHY="systemd-networkd runs $link from '${got}', not $want"
@@ -126,6 +128,7 @@ check_networkd() {
     fi
   done
 }
+check_networkd() { networkd_runs_from "$(networkd_bridge_file network)" "$NETWORKD_PORT_FILE"; }
 finish_networkd() { :; }
 
 # undo_networkd: in journal_restore, once the files are back.

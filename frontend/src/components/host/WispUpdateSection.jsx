@@ -35,7 +35,7 @@ const SLOW_AFTER_FAILED_POLLS = 12; // 12 × 5s = 1 min of "backend not respondi
 // For as long as the updater may run: systemd/linux/wisp-updater.service's
 // TimeoutStartSec and the TimeoutStopSec its rollback gets after it. A long
 // state migration runs inside that window.
-const UPDATER_LIMIT_MS = (1800 + 2200) * 1000;
+const UPDATER_LIMIT_MS = (1800 + 2400) * 1000;
 const MAX_TOTAL_POLLS = Math.ceil(UPDATER_LIMIT_MS / POLL_INTERVAL_MS);
 
 // Force every rendered <a> in release notes to open in a new tab. DOMPurify

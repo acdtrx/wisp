@@ -29,6 +29,9 @@ if [[ -z "$_SYSTEMD" ]] || (( _SYSTEMD < 254 )); then
   refuse SYSTEMD_TOO_OLD "systemd ${_SYSTEMD:-not found} is too old: Wisp hosts need systemd 254 or newer (Debian 13, Ubuntu 24.04 and later)."
 fi
 
+# Wisp's VMs run on KVM, which setup cannot turn on.
+[[ -e /dev/kvm ]] || refuse KVM_MISSING "this host has no /dev/kvm: Wisp's VMs need KVM. Turn on virtualization (VT-x or AMD-V) in the firmware, or, on a VM, nested virtualization on its host, and run this again."
+
 # Map uname -m to GitHub release architecture names (amd64, arm64, arm)
 sys_arch() {
   case "$(uname -m)" in
