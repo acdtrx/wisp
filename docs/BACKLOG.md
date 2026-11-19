@@ -408,3 +408,22 @@ container's veth (the CNI bridge plugin's default) and each VM's tap join at 150
 above 1500 between a workload and the LAN, or the host, do not pass. Carrying the bridge's
 MTU to the CNI config and the VM's interface would. **Revisit trigger:** a workload that
 needs frames above 1500.
+
+**The container DNS stub's address and resolv path are written in setup and in the
+backend apart.** Setup declares `169.254.53.53` on `wisp-dns0` and writes
+`/var/lib/wisp/container-resolv.conf` (`scripts/linux/setup/container-dns-plan.sh`,
+`container-dns.sh`); the backend names the same address and path on its own
+(`lib/mdns/linux/forwarder.js`, `avahi.js`, `vmManager/linux/vmManagerHost.js`,
+`containerManager/linux/containerManagerNetwork.js`). A change to one that misses the
+other leaves containers resolving through an address nothing listens on. One home (the
+backend reading setup's, or a check tying them, like `check-bounds.mjs`'s lock path)
+would hold them together (found in the phase-7 setup audit, 2026-11-19). **Revisit
+trigger:** the stub's address or path is to change.
+
+**containerd's `config.toml` is edited by line.** Setup's containerd step sets the
+socket's group with `sed` on the TOML (staged and written whole since 2026-11-19), and
+the edit sets every `gid =` line, `[ttrpc]`'s and `[debug]`'s too, not only `[grpc]`'s.
+A TOML-aware edit, or a drop-in of Wisp's own if containerd's `imports` reaches one,
+would set only the socket's. **Revisit trigger:** a host whose ttrpc or debug socket
+group matters, or a containerd release whose default configuration the line edit
+misreads.
