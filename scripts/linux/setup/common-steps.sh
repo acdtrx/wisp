@@ -61,11 +61,14 @@ fi
 # A stop (TERM, INT) is passed to the step running, which ends — the bridge
 # step undoing itself — and then the run ends. Each step runs in a session of
 # its own, in the background, so the stop reaches this script at once and goes
-# to the step's whole process group (apt and dpkg under the packages step
-# too). The step gets STEP_STOP_SEC to end, the longest a step takes to
+# to the step's whole process group (apt and dpkg under the packages step too;
+# a command a step runs in a session of its own, npm ci under idle_run, gets it
+# from the step). The step gets STEP_STOP_SEC to end, the longest a step takes to
 # (bridge-journal.sh: the bridge step's undo), and is then killed, its group
 # with it. The handler only records the stop when no step is known yet; the
 # step started next is stopped as soon as its pid is.
+# shellcheck source=lib.sh
+source "$SETUP_DIR/lib.sh"
 STEP_STOP_SEC="$BRIDGE_STOP_SEC"
 STOPPING=0
 STEP_PID=""
@@ -73,17 +76,8 @@ STEP_KILLER=""
 stop_step() {
   [[ -n "$STEP_PID" && -z "$STEP_KILLER" ]] || return 0
   kill -TERM -- "-$STEP_PID" 2>/dev/null || kill -TERM "$STEP_PID" 2>/dev/null
-  # The KILL later, in the background: deaf to TERM and INT, so a stop sent to
-  # setup's group (the updater's) leaves it be; cancelled by USR1; without the
-  # lock's descriptor, so one left behind holds no lock.
-  (
-    exec 8>&-
-    trap '' TERM INT
-    trap 'kill -KILL $! 2>/dev/null; exit 0' USR1
-    sleep "$STEP_STOP_SEC" & wait $!
-    kill -KILL -- "-$STEP_PID" 2>/dev/null
-  ) &
-  STEP_KILLER=$!
+  kill_later "$STEP_STOP_SEC" "$STEP_PID"
+  STEP_KILLER="$KILLER"
 }
 trap 'STOPPING=1; stop_step' TERM INT
 

@@ -19,8 +19,8 @@
 # files then go to KEPT_DIR, named by their path.
 
 # Uses net-state.sh's bounds (NET_CMD_SEC, NET_APPLY_SEC, NET_KILL_SEC).
-# shellcheck source=install-file.sh
-source "$(dirname "${BASH_SOURCE[0]}")/install-file.sh"
+# shellcheck source=lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 JOURNAL_DIR=/var/lib/wisp/bridge-journal
 KEPT_DIR=/var/lib/wisp/network-before-bridge

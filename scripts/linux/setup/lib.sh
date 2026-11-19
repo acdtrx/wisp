@@ -1,4 +1,5 @@
-# Sourced by step.sh and bridge-journal.sh; do not execute it.
+# Sourced by step.sh, bridge-journal.sh and common-steps.sh; do not execute it.
+# Helpers they share, with no state of their own.
 
 # install_file <dest> <src> <mode> [owner:group, default root:root]: <src>'s
 # content in place as <dest>, staged beside it, synced, renamed, and the
@@ -14,3 +15,19 @@ install_file() {
 }
 # remove_file <path>: gone, and the directory synced.
 remove_file() { rm -f "$1" && sync "$(dirname "$1")"; }
+
+# kill_later <secs> <pgid>: in the background, KILL to the process group after
+# <secs>; sets KILLER to its pid, which `kill -USR1` cancels. Deaf to TERM and
+# INT, so a stop sent to the caller's own group leaves it be, and without the
+# install lock's descriptor (fd 8), so one left behind holds no lock.
+# (wisp-updater, installed on its own, has its own copy, signal_later.)
+kill_later() {
+  (
+    exec 8>&-
+    trap '' TERM INT
+    trap 'kill -KILL $! 2>/dev/null; exit 0' USR1
+    sleep "$1" & wait $!
+    kill -KILL -- "-$2" 2>/dev/null
+  ) &
+  KILLER=$!
+}
