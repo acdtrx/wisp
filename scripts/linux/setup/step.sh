@@ -9,13 +9,19 @@ source "$(dirname "${BASH_SOURCE[0]}")/bounds.sh"
 
 STEP_CHANGED=0
 
-# step_begin: the step's own temp directory (staged_file runs in a command
-# substitution, a subshell, so it is made here), removed when the step ends,
-# and the step's handler for a stop (step_stop). Every step calls it first:
-# the traps are the step's own, set by the step.
+# step_begin: the step's own temp directory, STEP_TMP_DIR — setup's, which
+# makes one for each step and removes it once the step's session is empty,
+# however the step ended (common-steps.sh, run_step); made here, and removed
+# when the step exits, only for a step run outside setup (the installer's
+# asking phase runs the plan) — and the step's handler for a stop
+# (step_stop). Every step calls it first: the traps are the step's own, set by
+# the step.
 step_begin() {
-  STEP_TMP_DIR="$(mktemp -d -t wisp-setup.XXXXXX)" || { echo "ERROR: cannot create a temp directory" >&2; exit 1; }
-  trap 'rm -rf "$STEP_TMP_DIR"' EXIT
+  if [[ -z "${STEP_TMP_DIR:-}" ]]; then
+    STEP_TMP_DIR="$(mktemp -d -t wisp-setup.XXXXXX)" || { echo "ERROR: cannot create a temp directory" >&2; exit 1; }
+    trap 'rm -rf "$STEP_TMP_DIR"' EXIT
+  fi
+  [[ -d "$STEP_TMP_DIR" ]] || { echo "ERROR: the step's temp directory $STEP_TMP_DIR is not there" >&2; exit 1; }
   STEP_HELD=0 STEP_STOP_HELD=0 STEP_ON_STOP=""
   trap step_stop TERM INT
 }

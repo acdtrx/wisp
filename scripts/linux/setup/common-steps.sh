@@ -49,10 +49,11 @@ fi
 # shellcheck source=distro.sh
 source "$SETUP_DIR/distro.sh"
 
-# The network plan's directory, the steps' to share (NET_PLAN_DIR), this
-# script's to remove.
-NET_PLAN_DIR=""
-trap 'rm -rf ${NET_PLAN_DIR:+"$NET_PLAN_DIR"}' EXIT
+# The network plan's directory, the steps' to share (NET_PLAN_DIR), and the
+# running step's own temp directory (STEP_DIR, the step's STEP_TMP_DIR): this
+# script's to remove, whatever happened to the step.
+NET_PLAN_DIR="" STEP_DIR=""
+trap 'rm -rf ${NET_PLAN_DIR:+"$NET_PLAN_DIR"} ${STEP_DIR:+"$STEP_DIR"}' EXIT
 NET_PLAN_DIR="$(mktemp -d -t wisp-net-plan.XXXXXX)" || { echo "ERROR: cannot create a temp directory" >&2; exit 1; }
 export NET_PLAN_DIR
 
@@ -98,7 +99,8 @@ trap setup_stop TERM INT
 STEP_COUNT=0
 
 # run_step <name> <script> [args...]: one step, by name, as the leader of a
-# session of its own; the first failure ends the run.
+# session of its own, with a temp directory of its own (STEP_TMP_DIR, step.sh)
+# made and removed here; the first failure ends the run.
 run_step() {
   local name="$1" script="$2" rc=0 left
   shift 2
@@ -106,7 +108,8 @@ run_step() {
   echo ""
   echo "step: $name"
   STEP_NAME="$name"
-  setsid "$SETUP_DIR/$script" "$@" 8>&- &
+  STEP_DIR="$(mktemp -d -t wisp-setup.XXXXXX)" || { echo "ERROR: cannot create a temp directory" >&2; exit 1; }
+  STEP_TMP_DIR="$STEP_DIR" setsid "$SETUP_DIR/$script" "$@" 8>&- &
   STEP_SID=$!
   # A stop never returns here (setup_stop exits): wait ends with the step.
   wait "$!" || rc=$?
@@ -118,6 +121,8 @@ run_step() {
     session_end "$!" "$NET_KILL_SEC" || exit 1
   fi
   STEP_SID=""
+  rm -rf "$STEP_DIR"
+  STEP_DIR=""
   (( rc == 0 )) && return 0
   echo ""
   echo "setup failed at step: $name (exit $rc)" >&2
