@@ -22,9 +22,17 @@
 # commits by one rename of the directory; the operator's original files then go
 # to KEPT_DIR, named by their path.
 
-# Uses net-state.sh's bounds (NET_CMD_SEC, NET_APPLY_SEC, NET_KILL_SEC).
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=net-state.sh
+source "$(dirname "${BASH_SOURCE[0]}")/net-state.sh"
+# Each tool's apply, check, finish and undo.
+# shellcheck source=net-netplan.sh
+source "$(dirname "${BASH_SOURCE[0]}")/net-netplan.sh"
+# shellcheck source=net-networkd.sh
+source "$(dirname "${BASH_SOURCE[0]}")/net-networkd.sh"
+# shellcheck source=net-networkmanager.sh
+source "$(dirname "${BASH_SOURCE[0]}")/net-networkmanager.sh"
 
 JOURNAL_DIR=/var/lib/wisp/bridge-journal
 KEPT_DIR=/var/lib/wisp/network-before-bridge
@@ -185,7 +193,7 @@ journal_restore() (
   set +e
   _journal_read || exit 1
   journal_undo_mark
-  local i copy _has state nm_files=no netplan_nm=no
+  local i copy nm_files=no netplan_nm=no
   for (( i = ${#J_FILES[@]} - 1; i >= 0; i-- )); do
     if [[ "${J_EXISTED[$i]}" == yes ]]; then
       copy="$JOURNAL_DIR/files/${J_LINES[$i]}"
@@ -200,41 +208,9 @@ journal_restore() (
   done
   for (( i = ${#J_DIRS[@]} - 1; i >= 0; i-- )); do rmdir "${J_DIRS[$i]}" 2>/dev/null; done
   case "$J_TOOL" in
-    netplan)
-      [[ ! -e "/sys/class/net/$J_BRIDGE" ]] || timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" ip link delete "$J_BRIDGE"
-      timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" netplan apply || exit 1
-      ;;
-    networkd)
-      [[ ! -e "/sys/class/net/$J_BRIDGE" ]] || timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" networkctl delete "$J_BRIDGE"
-      timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" networkctl reload \
-        && timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" networkctl reconfigure "$J_UPLINK" || exit 1
-      ;;
-    networkmanager)
-      # The step's connections go with their files, and the uplink's own comes
-      # back with its file (netplan's, generated); then it is brought up. When
-      # it is gone — NetworkManager's default wired one, held in memory, does
-      # not outlive a reboot once a stored connection is for the device — a
-      # restart of NetworkManager, with no such connection left, makes it again.
-      if [[ "$netplan_nm" == yes ]]; then
-        timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" netplan generate || exit 1
-      fi
-      if [[ "$nm_files" == yes ]]; then
-        timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli connection reload || exit 1
-      fi
-      _has=1
-      if [[ "$J_CON" != - ]]; then
-        _has=0; nm_has "$J_CON" || _has=$?
-        (( _has <= 1 )) || exit 1
-      fi
-      if (( _has == 0 )); then
-        state="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -g GENERAL.STATE connection show "$J_CON")" || exit 1
-        if [[ "$state" != activated ]]; then
-          timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" nmcli --wait "$NET_APPLY_SEC" connection up "$J_CON" >/dev/null || exit 1
-        fi
-      else
-        timeout -k "$NET_KILL_SEC" 60 systemctl restart NetworkManager || exit 1
-      fi
-      ;;
+    netplan) undo_netplan "$J_BRIDGE" || exit 1 ;;
+    networkd) undo_networkd "$J_BRIDGE" "$J_UPLINK" || exit 1 ;;
+    networkmanager) undo_networkmanager "$J_CON" "$nm_files" "$netplan_nm" || exit 1 ;;
   esac
   local deadline=$(( SECONDS + NET_APPLY_SEC ))
   until [[ "$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" ip -4 route show default dev "$J_UPLINK" 2>/dev/null)" == default* ]]; do
@@ -261,4 +237,49 @@ journal_cleanup() {
   done < "$d/journal"
   rm -rf "$d"
   (( kept == 0 )) || echo "  The original network files are kept in $KEPT_DIR."
+}
+
+# journal_recover: a bridge step that died left its journal (JOURNAL_DIR):
+# decided on first, from what the host holds now, before anything is worked
+# out. With NET_PLAN_ASK (the installer's asking phase) it changes nothing: the
+# journal is only classified, and when it will be undone or committed the plan
+# is its record, set here, and this returns 1. Sets NET_PLAN_JOURNAL.
+journal_recover() {
+  if [[ -d "$JOURNAL_DIR.done" && -z "${NET_PLAN_ASK:-}" ]]; then
+    journal_cleanup
+  fi
+  [[ -d "$JOURNAL_DIR" ]] || return 0
+  NET_PLAN_JOURNAL="$(journal_classify)"
+  case "$NET_PLAN_JOURNAL" in
+    fail\ *) net_fail "${NET_PLAN_JOURNAL#fail }: setup cannot tell what the bridge step that left its journal in $JOURNAL_DIR changed." ;;
+    bad\ *) net_fail "${NET_PLAN_JOURNAL#bad }. Put the network as you want it, remove $JOURNAL_DIR (its files/ holds the originals of what the step changed), and run this again." ;;
+    changed\ *)
+      net_fail "a bridge step that did not finish left its journal in $JOURNAL_DIR, and since then someone else changed ${NET_PLAN_JOURNAL#changed }: setup does not undo over that. Put each back as the step wrote it or as it was (its files/ holds the originals), or remove $JOURNAL_DIR once the network is as you want it, and run this again." ;;
+  esac
+  if [[ -n "${NET_PLAN_ASK:-}" ]]; then
+    # The asking phase changes nothing, so it cannot plan on a host the work
+    # will first undo or commit: it asks from the journal's own record.
+    _journal_read || true
+    case "$NET_PLAN_JOURNAL" in
+      restore)
+        NET_TOOL="$J_TOOL" UPLINK="$J_UPLINK" UPLINK_ADDR="$J_ADDR" BRIDGE="$J_BRIDGE" BRIDGE_CREATE=yes
+        return 1 ;;
+      finished)
+        NET_TOOL="$J_TOOL" UPLINK="$J_BRIDGE" UPLINK_ADDR="$J_ADDR" BRIDGE="$J_BRIDGE" BRIDGE_CREATE=no
+        return 1 ;;
+    esac
+    return 0
+  fi
+  case "$NET_PLAN_JOURNAL" in
+    finished)
+      echo "A bridge step that was not recorded as done had in fact finished: committing it." >&2
+      journal_commit >&2 || net_fail "cannot commit the journal in $JOURNAL_DIR" ;;
+    untouched)
+      echo "A bridge step left a journal but changed nothing: dropping it." >&2
+      journal_drop || net_fail "cannot remove $JOURNAL_DIR" ;;
+    restore)
+      echo "A bridge step that did not finish left its journal in $JOURNAL_DIR: undoing it first." >&2
+      journal_restore || net_fail "undoing the earlier bridge step did not complete; its journal stays in $JOURNAL_DIR for the next run (docs/specs/DEPLOYMENT.md, The bridge, says what to do at the console)."
+      echo "  The network is as it was before that step." >&2 ;;
+  esac
 }

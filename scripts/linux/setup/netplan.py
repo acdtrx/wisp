@@ -1,0 +1,184 @@
+"""The netplan plan's reads and checks, for net-netplan.sh; run as root with
+python3 -I. python3, its yaml module and netplan's own Python module are
+netplan's runtime, so a netplan host has them.
+
+  netplan.py status-id <uplink>
+      reads `netplan status --format json` on stdin; prints the id of the
+      uplink's definition, empty when netplan has none
+  netplan.py origin <id>
+      the file netplan's parser reads the definition <id> from
+  netplan.py plan <def-file> <id> <uplink> <mac> <bridge> <client-id> <origin> <out-dir> <mtu>
+      the uplink's definition checked, what moves to the bridge worked out, and
+      the edits written as `netplan set` arguments into <out-dir>; prints dhcp or
+      static. Exit 3 with the reason printed: refused.
+  netplan.py shared <origin>
+      prints a definition <origin> shares with another netplan file, if any
+  netplan.py merged <id> <bridge> <bridge-json>
+      reads the merged configuration on stdin; prints what is not as setup
+      wrote it, if anything
+"""
+import glob
+import json
+import os
+import sys
+
+import yaml
+
+NETPLAN_DIRS = ("/lib/netplan", "/etc/netplan", "/run/netplan")
+
+
+def refuse(why):
+    print(why)
+    sys.exit(3)
+
+
+def status_id(uplink):
+    print(json.load(sys.stdin).get(uplink, {}).get("id") or "")
+
+
+def origin(nid):
+    from netplan import Parser, State
+    p = Parser()
+    p.load_yaml_hierarchy("/")
+    s = State()
+    s.import_parser_results(p)
+    print(s[nid].filepath)
+
+
+# Layer 3 moves to the bridge and leaves the interface. What stays with the
+# interface: how it is matched and named, and its link settings. Copied to the
+# bridge and kept: whether the boot waits for it.
+MOVED = {'dhcp4', 'dhcp6', 'dhcp-identifier', 'dhcp4-overrides', 'dhcp6-overrides', 'accept-ra',
+         'ra-overrides', 'ipv6-privacy', 'ipv6-address-generation', 'ipv6-address-token', 'ipv6-mtu',
+         'link-local', 'addresses', 'gateway4', 'gateway6', 'routes', 'routing-policy', 'nameservers',
+         'optional-addresses'}
+COPIED = {'optional'}
+KEPT = {'match', 'set-name', 'wakeonlan', 'mtu', 'macaddress', 'emit-lldp', 'renderer',
+        'receive-checksum-offload', 'transmit-checksum-offload', 'tcp-segmentation-offload',
+        'tcp6-segmentation-offload', 'generic-segmentation-offload', 'generic-receive-offload',
+        'large-receive-offload'}
+
+
+def has_ipv4(addrs):
+    for a in addrs or []:
+        a = next(iter(a)) if isinstance(a, dict) else a
+        if ':' not in str(a):
+            return True
+    return False
+
+
+def plan(def_file, nid, uplink, mac, bridge, client_id, origin_file, out, mtu):
+    d = yaml.safe_load(open(def_file))
+    if not isinstance(d, dict):
+        refuse(f'netplan defines {uplink} ({nid}) elsewhere than "ethernets"')
+    # Who the definition applies to: the uplink alone.
+    match = d.get('match')
+    if match is not None:
+        by = sorted(set(match) - {'macaddress', 'name'})
+        if by:
+            refuse(f'netplan definition {nid} matches by {", ".join(by)}')
+        if 'macaddress' in match and str(match['macaddress']).lower() != mac:
+            refuse(f'netplan definition {nid} matches {match["macaddress"]}, not {uplink} ({mac})')
+        if 'name' in match and match['name'] != uplink:
+            refuse(f'netplan definition {nid} matches the name "{match["name"]}", not {uplink} alone')
+    elif nid != uplink:
+        refuse(f'netplan definition {nid} does not name {uplink}')
+    if d.get('renderer', 'networkd') != 'networkd':
+        refuse(f'{uplink}\'s netplan definition names the renderer {d["renderer"]}')
+
+    if d.get('critical'):
+        refuse(f'{uplink}\'s netplan definition is critical: true, which keeps its address on the interface')
+    other = sorted(set(d) - MOVED - COPIED - KEPT - {'critical'})
+    if other:
+        refuse(f'{uplink}\'s netplan definition has {", ".join(other)}, which setup does not carry over to a bridge')
+
+    dhcp = d.get('dhcp4') is True
+    if not dhcp and not has_ipv4(d.get('addresses')):
+        refuse(f'{uplink} has neither DHCPv4 nor a static IPv4 address in netplan')
+
+    bridge_def = {k: d[k] for k in (MOVED | COPIED) if k in d}
+    # The uplink's MTU, on the bridge itself, so ports that join keep it.
+    bridge_def.update({
+        'interfaces': [nid],
+        'macaddress': mac,
+        'mtu': int(mtu),
+        'parameters': {'stp': False},
+    })
+    dropin = ''
+    if dhcp:
+        cid = [int(b, 16) for b in client_id.split(':')] if client_id else []
+        if not cid:
+            refuse(f'{uplink} is on DHCP but has no lease')
+        if cid[0] == 1:
+            bridge_def['dhcp-identifier'] = 'mac'
+        elif cid[0] == 255 and len(cid) > 5:
+            # netplan has no IAID key: networkd's drop-in on netplan's unit for the
+            # bridge pins it, for DHCPv6 too — the uplink had networkd's default for
+            # its name, the same for both.
+            bridge_def['dhcp-identifier'] = 'duid'
+            iaid = int.from_bytes(bytes(cid[1:5]), 'big')
+            dropin = (
+                f'# Written by Wisp setup: {bridge} keeps the DHCP identity {uplink} had\n'
+                f'# (DUID with IAID {iaid}), so the DHCP server hands it the same lease.\n'
+                f'[DHCPv4]\nClientIdentifier=duid\nIAID={iaid}\n\n[DHCPv6]\nIAID={iaid}\n'
+            )
+        else:
+            refuse(f'{uplink}\'s DHCPv4 client identifier is of type {cid[0]}, which setup does not carry over')
+
+    hint = origin_file.rsplit('/', 1)[-1][:-len('.yaml')]
+    with open(f'{out}/netplan-set.args', 'w') as f:
+        # Off the interface; dhcp4 stays, as false, so the interface keeps a
+        # definition of its own when nothing else is left in it.
+        for k in sorted((MOVED & set(d)) - {'dhcp4'}):
+            f.write(f'{hint}\tethernets.{nid}.{k}=null\n')
+        f.write(f'{hint}\tethernets.{nid}.dhcp4=false\n')
+        f.write(f'{hint}\tbridges.{bridge}={json.dumps(bridge_def, sort_keys=True)}\n')
+    with open(f'{out}/50-wisp-dhcp-identity.conf', 'w') as f:
+        f.write(dropin)
+    print('dhcp' if dhcp else 'static')
+
+
+# netplan set writes the file back from its parsed state, merged lists
+# included: a definition of that file that another file defines too would come
+# back with that file's entries in it.
+def shared(origin_file):
+    files = {}
+    for d in NETPLAN_DIRS:
+        for f in glob.glob(d + "/*.yaml"):
+            files[os.path.basename(f)] = f
+
+    def ids(path):
+        net = (yaml.safe_load(open(path)) or {}).get("network") or {}
+        return {(k, i) for k, v in net.items() if isinstance(v, dict) for i in v}
+
+    mine = ids(origin_file)
+    for name, path in sorted(files.items()):
+        if path != origin_file:
+            both = sorted(i for _, i in mine & ids(path))
+            if both:
+                print(f"{origin_file} defines {both[0]}, which {path} defines too")
+                break
+
+
+def merged(nid, bridge, wanted):
+    net = yaml.safe_load(sys.stdin) or {}
+    net = net.get("network", net)
+    port = (net.get("ethernets") or {}).get(nid) or {}
+    br = (net.get("bridges") or {}).get(bridge) or {}
+    l3 = {"dhcp4", "dhcp6", "addresses", "routes", "routing-policy", "nameservers", "gateway4", "gateway6",
+          "accept-ra", "link-local", "dhcp4-overrides", "dhcp6-overrides"}
+    left = sorted(k for k in l3 & set(port) if port[k] not in (False, None, [], {}))
+    want = json.loads(wanted)
+    # netplan leaves out what has its default value.
+    defaults = {"dhcp-identifier": "duid"}
+    missing = sorted(k for k in want if k not in br and defaults.get(k) != want[k])
+    if left:
+        print(nid + " still has " + ", ".join(left))
+    elif missing or br.get("interfaces") != [nid] or str(br.get("macaddress")).lower() != want["macaddress"]:
+        print(bridge + " is not the bridge setup wrote (" + (", ".join(missing) or "interfaces or hardware address") + ")")
+
+
+COMMANDS = {'status-id': status_id, 'origin': origin, 'plan': plan, 'shared': shared, 'merged': merged}
+
+if __name__ == '__main__':
+    COMMANDS[sys.argv[1]](*sys.argv[2:])
