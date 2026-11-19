@@ -54,16 +54,25 @@ SUBSYSTEM=="powercap", KERNEL=="intel-rapl:0", \\
   RUN+="/usr/bin/chgrp $RAPL_GROUP /sys/%p/energy_uj", \\
   RUN+="/usr/bin/chmod g+r /sys/%p/energy_uj"
 RAPL_EOF
+rule_new=0
 if write_if_changed "$RAPL_RULES" 0644 "$RULE"; then
-  timeout -k "$NET_KILL_SEC" "$UDEV_CALL_SEC" udevadm control --reload-rules || fail "udevadm cannot reload its rules"
-  timeout -k "$NET_KILL_SEC" "$UDEV_CALL_SEC" udevadm trigger --action=add --subsystem-match=powercap \
-    || fail "udevadm cannot trigger the powercap devices"
+  rule_new=1
   changed "$RAPL_RULES"
 fi
 
-if [[ "$(stat -c %G "$RAPL_ENERGY")" != "$RAPL_GROUP" ]] || (( ( 0$(stat -c %a "$RAPL_ENERGY") & 040 ) == 0 )); then
-  chgrp "$RAPL_GROUP" "$RAPL_ENERGY"
-  chmod g+r "$RAPL_ENERGY"
-  changed "$RAPL_ENERGY readable by $RAPL_GROUP"
+# The outcome, the file's group and its group read bit, is what is checked:
+# udev applies the rule whenever it is new or the outcome is not there, so a
+# rule written by a run whose udevadm call failed is applied by the next.
+rapl_readable() {
+  [[ "$(stat -c %G "$RAPL_ENERGY")" == "$RAPL_GROUP" ]] && (( ( 0$(stat -c %a "$RAPL_ENERGY") & 040 ) != 0 ))
+}
+was_readable=1
+rapl_readable || was_readable=0
+if (( rule_new || ! was_readable )); then
+  timeout -k "$NET_KILL_SEC" "$UDEV_CALL_SEC" udevadm control --reload-rules || fail "udevadm cannot reload its rules"
+  timeout -k "$NET_KILL_SEC" "$UDEV_CALL_SEC" udevadm trigger --settle --action=add --subsystem-match=powercap \
+    || fail "udevadm cannot trigger the powercap devices"
+  rapl_readable || fail "udev reloaded its rules and applied them to the powercap devices, but $RAPL_ENERGY is not readable by group $RAPL_GROUP (group $(stat -c %G "$RAPL_ENERGY"), mode $(stat -c %a "$RAPL_ENERGY")): see $RAPL_RULES"
+  (( was_readable )) || changed "$RAPL_ENERGY readable by $RAPL_GROUP"
 fi
 step_done
