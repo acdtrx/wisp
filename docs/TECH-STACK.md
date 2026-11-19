@@ -55,8 +55,11 @@
   2026-11-18).
 - **Unit tests on `node --test`**, Node's built-in runner, with no test framework or
   dependency, for code with no platform behind it; browser stand-ins in
-  `frontend/src/testing/`. Test files never ship: `scripts/stage-release.sh` leaves them
-  out and fails a staged tree or tarball that holds one (settled 2026-11-18).
+  `frontend/src/testing/`. Setup's Python has its unit tests the same way: `unittest`,
+  the standard library's runner, over `scripts/linux/setup/*_test.py` beside the code
+  they test (`npm run check`'s `setup-python`). Test files never ship:
+  `scripts/stage-release.sh` leaves out `*.test.js` and `*_test.py` and fails a staged
+  tree or tarball that holds one (settled 2026-11-18; the Python tests 2026-11-20).
 - **ESLint**, a dev-only dependency of the repo root with its React hooks plugin and
   `globals`, for correctness rules only: `no-undef`, `no-unused-vars` (rest siblings
   ignored), `no-dupe-keys`, `react-hooks/rules-of-hooks`. No style rule;
@@ -82,6 +85,7 @@
 |-----------|-----------|---------|
 | Process manager | systemd | Single service unit (`wisp.service`) — one Node process serves both API and SPA. |
 | Deployment | scp + SSH (`scripts/push.sh`) | Stages the release-shaped tarball, uploads it to `/tmp` on the server, runs its `install.sh` over SSH |
+| Setup's parsers | Python 3 (`scripts/linux/setup/*.py`) | Setup only, as root: reads the network tools' configuration and JSON (netplan's YAML and its parser, networkd's units, `networkctl`/`busctl` JSON, `nmcli`'s rows, cloud-init's configuration) with a real parser, in the plan, before Node is installed. The standard library, plus — only where the tool that needs them is there, and installed with it — netplan's own `netplan` module and PyYAML on netplan hosts (netplan.io's dependencies), and PyYAML for cloud-init's configuration (cloud-init's dependency; read only when cloud-init is installed). `python3` is the plan's one prerequisite, refused with a remedy when missing (DEPLOYMENT.md); it ships with every supported image observed (Ubuntu 24.04 and 26.04, Debian 13). Not jq or Node: neither is on a fresh host, and Node is what the packages step installs (settled 2026-11-19). |
 | Privileged helpers | `install-helpers.sh` | Setup's helpers step: copies `/usr/local/bin/wisp-*` from `backend/scripts/` where they differ, on every install and update |
 | Packaging | tar.gz (`scripts/stage-release.sh`) | One release-shaped tarball, prebuilt frontend, for releases and dev pushes alike |
 | Releases | GitHub Releases + GitHub Actions (`.github/workflows/release.yml`) | Tag `v*` triggers a workflow that builds the frontend and publishes a tarball + SHA256 as a GitHub Release |
