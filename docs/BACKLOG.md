@@ -401,3 +401,10 @@ first bridge in `/sys/class/net` whose name is not VLAN-style, so a `docker0` or
 bridge can win over the one carrying the uplink, which setup's CNI conflist names. Belongs
 to the networking work in phase 5. **Revisit trigger:** a host with a second bridge whose
 new workloads land on it.
+
+**VMs and containers do not get the uplink's jumbo MTU.** On a host whose uplink runs at
+a jumbo MTU (9000), setup gives the bridge that MTU, so the host keeps it, but each
+container's veth (the CNI bridge plugin's default) and each VM's tap join at 1500: frames
+above 1500 between a workload and the LAN, or the host, do not pass. Carrying the bridge's
+MTU to the CNI config and the VM's interface would. **Revisit trigger:** a workload that
+needs frames above 1500.
