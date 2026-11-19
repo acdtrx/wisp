@@ -48,15 +48,25 @@ nm_connections() {
 # connection that hangs off it (the finish deletes the connection it may
 # name); a name or file setup would use, taken while no bridge is in use. Each
 # connection's settings read from NetworkManager's D-Bus interface, judged by
-# nm.py. A refusal exits: the bridge step's sources run it through
-# sources_refusals.
+# nm.py; one gone by the time it is read (a VM's tap, a container's veth,
+# which come and go) is none of the uplink's. A refusal exits: the bridge
+# step's sources run it through sources_refusals.
 nm_others() {
-  local files uuid n v f says
+  local files uuid n v f says settings has err
   files="$(nm_connections)" || net_fail "cannot list NetworkManager's connections"
+  err="$(staged_file)"
   while IFS=$'\t' read -r uuid n v f; do
     [[ -n "$uuid" && "$uuid" != "$UPLINK_CONNECTION" ]] || continue
-    says="$(nm_dbus "$uuid" GetSettings | python3 -I "$NET_SETUP_DIR/nm.py" other "$UPLINK" "$UPLINK_CONNECTION" "$UPLINK_MAC")" \
-      || net_fail "cannot read the settings of NetworkManager's connection '$n' ($uuid)"
+    if ! settings="$(nm_dbus "$uuid" GetSettings 2>"$err")"; then
+      has=0; nm_has "$uuid" || has=$?
+      case $has in
+        1) continue ;;
+        2) net_fail "NetworkManager cannot be asked about its connection '$n' ($uuid)" ;;
+        *) net_fail "cannot read the settings of NetworkManager's connection '$n' ($uuid): $(<"$err")" ;;
+      esac
+    fi
+    says="$(python3 -I "$NET_SETUP_DIR/nm.py" other "$UPLINK" "$UPLINK_CONNECTION" "$UPLINK_MAC" <<<"$settings")" \
+      || net_fail "cannot read the settings NetworkManager returned for its connection '$n' ($uuid)"
     case "$says" in
       dependent\ *) net_refuse UPLINK_DEPENDENT "NetworkManager's $v connection '$n' ($uuid) hangs off $UPLINK (${says#dependent })." ;;
       taker) refuse NM_SECOND_PROFILE "NetworkManager's connection '$n' ($uuid${f:+, $f}) could take the uplink $UPLINK too: setup leaves exactly one definition for it. Bind that connection to another device or remove it, and run this again." ;;
