@@ -13,10 +13,10 @@ connection's settings are what differs from the defaults.
   nm.py other <uplink> <uplink-uuid> <uplink-mac>
       reads another connection's `busctl call --json=short … GetSettings` on
       stdin; prints `dependent <setting.property>` when it hangs off the uplink
-      (a parent, or a port, naming the uplink or its connection; a virtual
-      link bound to the uplink's hardware address), `taker` when it is an
-      Ethernet connection not bound to another device, which could take the
-      uplink too, and nothing otherwise
+      (a parent, or a port, naming the uplink or its connection; a connection
+      of another type bound to the uplink by name or hardware address),
+      `taker` when it is an Ethernet connection not bound to another device,
+      which could take the uplink too, and nothing otherwise
   nm.py unknown
       reads `busctl call --json=short … GetSettings` on stdin; prints each
       setting the bridge step neither carries to the bridge, keeps on its port,
@@ -88,13 +88,15 @@ def other(uplink, uplink_uuid, uplink_mac):
     con = settings.get('connection', {})
     kind = con.get('type', {}).get('data')
     mac = mac_of(settings.get('802-3-ethernet', {}).get('mac-address'))
+    bind = con.get('interface-name', {}).get('data') or ''
     if kind != '802-3-ethernet':
-        # A virtual link without a parent names its lower device by its
-        # hardware address.
-        if mac == uplink_mac:
+        # One without a parent names the device it runs on by its name (a
+        # PPPoE connection) or its hardware address (a virtual link).
+        if bind == uplink:
+            print('dependent connection.interface-name')
+        elif mac == uplink_mac:
             print('dependent 802-3-ethernet.mac-address')
         return
-    bind = con.get('interface-name', {}).get('data') or ''
     match = settings.get('match', {}).get('interface-name', {}).get('data') or []
     if bind and bind != uplink or mac and mac != uplink_mac:
         return

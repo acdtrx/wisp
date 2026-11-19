@@ -46,6 +46,10 @@ class Other(unittest.TestCase):
                                 '802-3-ethernet': {'mac-address': MAC_BYTES}}),
                          'dependent 802-3-ethernet.mac-address')
 
+    def test_a_connection_of_another_type_bound_to_the_uplink_by_name_hangs_off_it(self):
+        self.assertEqual(other({'connection': {'type': 'pppoe', 'interface-name': UPLINK}, 'pppoe': {'username': 'u'}}),
+                         'dependent connection.interface-name')
+
     def test_a_link_on_another_device_is_none_of_the_uplinks(self):
         self.assertEqual(other({'connection': {'type': 'vlan'}, 'vlan': {'parent': 'eth1', 'id': 10}}), '')
         self.assertEqual(other({'connection': {'type': 'dummy', 'interface-name': 'wisp-dns0'}}), '')
