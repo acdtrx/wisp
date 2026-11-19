@@ -11,6 +11,7 @@ import sys
 import tempfile
 import types
 import unittest
+import unittest.mock
 
 try:
     import yaml  # noqa: F401
@@ -45,8 +46,9 @@ class Dependents(unittest.TestCase):
 
 
 
-def plan(definition):
-    """netplan.py plan on the uplink's definition: (exit code, what it printed)."""
+def plan_with_edits(definition):
+    """netplan.py plan on the uplink's definition: (exit code, what it printed,
+    the `netplan set` edits it wrote as {key: value})."""
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, 'uplink.yaml')
         with open(path, 'w') as f:
@@ -58,7 +60,19 @@ def plan(definition):
                 code = 0
             except SystemExit as e:
                 code = e.code
-        return code, out.getvalue().strip()
+        edits = {}
+        args = os.path.join(d, 'netplan-set.args')
+        if os.path.exists(args):
+            with open(args) as f:
+                for line in f:
+                    key, value = line.rstrip('\n').split('\t', 1)[1].split('=', 1)
+                    edits[key] = value
+        return code, out.getvalue().strip(), edits
+
+
+def plan(definition):
+    """netplan.py plan on the uplink's definition: (exit code, what it printed)."""
+    return plan_with_edits(definition)[:2]
 
 
 class Plan(unittest.TestCase):
@@ -67,8 +81,21 @@ class Plan(unittest.TestCase):
         self.assertEqual(code, 5)
         self.assertIn('match eth0 alone, by its name', why)
 
-    def test_critical_names_its_remedy(self):
-        self.assertEqual(plan({'dhcp4': True, 'critical': True})[0], 5)
+    def test_critical_moves_to_the_bridge(self):
+        code, mode, edits = plan_with_edits({'dhcp4': True, 'critical': True})
+        self.assertEqual((code, mode), (0, 'dhcp'))
+        self.assertEqual(edits['ethernets.eth0.critical'], 'null')
+        self.assertIs(json.loads(edits['bridges.br0'])['critical'], True)
+
+    def test_critical_left_on_the_port_is_not_as_setup_wrote_it(self):
+        net = {'network': {'ethernets': {'eth0': {'dhcp4': False, 'critical': True}},
+                           'bridges': {'br0': {'interfaces': ['eth0'], 'macaddress': '52:54:00:12:34:56',
+                                               'dhcp4': True, 'critical': True}}}}
+        want = {'interfaces': ['eth0'], 'macaddress': '52:54:00:12:34:56', 'dhcp4': True, 'critical': True}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), unittest.mock.patch('sys.stdin', io.StringIO(json.dumps(net))):
+            netplan.merged('eth0', 'br0', json.dumps(want))
+        self.assertEqual(out.getvalue().strip(), 'eth0 still has critical')
 
     def test_a_key_not_carried_is_refused(self):
         self.assertEqual(plan({'dhcp4': True, 'infiniband-mode': 'datagram'})[0], 3)

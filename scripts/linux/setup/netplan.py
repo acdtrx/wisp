@@ -54,13 +54,14 @@ def origin(nid):
     print(s[nid].filepath)
 
 
-# Layer 3 moves to the bridge and leaves the interface. What stays with the
+# Layer 3 moves to the bridge and leaves the interface, critical (whether
+# networkd keeps the address when it stops) with it. What stays with the
 # interface: how it is matched and named, and its link settings. Copied to the
 # bridge and kept: whether the boot waits for it.
 MOVED = {'dhcp4', 'dhcp6', 'dhcp-identifier', 'dhcp4-overrides', 'dhcp6-overrides', 'accept-ra',
          'ra-overrides', 'ipv6-privacy', 'ipv6-address-generation', 'ipv6-address-token', 'ipv6-mtu',
          'link-local', 'addresses', 'gateway4', 'gateway6', 'routes', 'routing-policy', 'nameservers',
-         'optional-addresses'}
+         'optional-addresses', 'critical'}
 COPIED = {'optional'}
 KEPT = {'match', 'set-name', 'wakeonlan', 'mtu', 'macaddress', 'emit-lldp', 'renderer',
         'receive-checksum-offload', 'transmit-checksum-offload', 'tcp-segmentation-offload',
@@ -95,10 +96,7 @@ def plan(def_file, nid, uplink, mac, bridge, id_kind, origin_file, out, mtu):
     if d.get('renderer', 'networkd') != 'networkd':
         refuse(f'{uplink}\'s netplan definition names the renderer {d["renderer"]}')
 
-    if d.get('critical'):
-        refuse(f'{uplink}\'s netplan definition is critical: true, which keeps its address on the interface: '
-               'drop it (the bridge can carry no such key)', 5)
-    other = sorted(set(d) - MOVED - COPIED - KEPT - {'critical'})
+    other = sorted(set(d) - MOVED - COPIED - KEPT)
     if other:
         refuse(f'{uplink}\'s netplan definition has {", ".join(other)}, which setup does not carry over to a bridge')
 
@@ -156,7 +154,7 @@ def merged(nid, bridge, wanted):
     port = (net.get("ethernets") or {}).get(nid) or {}
     br = (net.get("bridges") or {}).get(bridge) or {}
     l3 = {"dhcp4", "dhcp6", "addresses", "routes", "routing-policy", "nameservers", "gateway4", "gateway6",
-          "accept-ra", "link-local", "dhcp4-overrides", "dhcp6-overrides"}
+          "accept-ra", "link-local", "dhcp4-overrides", "dhcp6-overrides", "critical"}
     left = sorted(k for k in l3 & set(port) if port[k] not in (False, None, [], {}))
     want = json.loads(wanted)
     # netplan leaves out what has its default value.
