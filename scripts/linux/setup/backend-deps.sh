@@ -35,8 +35,9 @@ if [[ -f "$MARKER" && "$(cat "$MARKER")" == "$WANT" ]]; then
 fi
 step_run "$NPM_IDLE_SEC" runuser -u "$DEPLOY_USER" -- env -C "$BACKEND" npm ci --omit=dev --omit=optional --loglevel=http \
   || fail "npm ci failed in $BACKEND"
-# Written as the deploy user, in the deploy user's directory, staged and renamed.
-printf '%s\n' "$WANT" | runuser -u "$DEPLOY_USER" -- sh -c 'cat > "$1.wisp-new" && mv -f "$1.wisp-new" "$1"' marker "$MARKER" \
-  || fail "cannot write $MARKER"
+# The deploy user's, like the node_modules npm ci made.
+marker="$(staged_file)"
+printf '%s\n' "$WANT" > "$marker"
+write_if_changed "$MARKER" 0644 "$marker" "$(stat -c %U:%G "$BACKEND/node_modules")" || true
 changed "backend dependencies installed (npm ci, $NODE_VERSION)"
 step_done
