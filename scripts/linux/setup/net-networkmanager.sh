@@ -42,47 +42,25 @@ nm_connections() {
   python3 -I "$NET_SETUP_DIR/nm.py" rows <<<"$out"
 }
 
-# _other_names <match.interface-name>: every item of the list a plain name (no
-# pattern, no `!` or `~`), none the uplink's.
-_other_names() {
-  local IFS=', ' item
-  for item in $1; do
-    [[ "$item" != *[*?[!~\\]* && "$item" != "$UPLINK" ]] || return 1
-  done
-}
-
 # nm_others: the plan's refusals over connections besides the uplink's —
 # another Ethernet connection not bound to another device, which could take
-# the uplink (exactly one definition for it, at boot or after the step); a
-# VLAN or macvlan that hangs off it (the finish deletes the connection it may
-# name); a name or file setup would use, taken while no bridge is in use. A
-# refusal exits: the bridge step's sources run it through sources_refusals.
+# the uplink (exactly one definition for it, at boot or after the step); any
+# connection that hangs off it (the finish deletes the connection it may
+# name); a name or file setup would use, taken while no bridge is in use. Each
+# connection's settings read from NetworkManager's D-Bus interface, judged by
+# nm.py. A refusal exits: the bridge step's sources run it through
+# sources_refusals.
 nm_others() {
-  local files uuid n v f other bind other_mac other_match parent
+  local files uuid n v f says
   files="$(nm_connections)" || net_fail "cannot list NetworkManager's connections"
   while IFS=$'\t' read -r uuid n v f; do
     [[ -n "$uuid" && "$uuid" != "$UPLINK_CONNECTION" ]] || continue
-    case "$v" in
-      vlan | macvlan)
-        parent="$(net_read nmcli -g "$v.parent" connection show "$uuid")" || exit 1
-        [[ "$parent" != "$UPLINK" && "$parent" != "$UPLINK_CONNECTION" ]] \
-          || net_refuse UPLINK_DEPENDENT "NetworkManager's $v connection '$n' ($uuid) hangs off $UPLINK."
-        continue ;;
-      802-3-ethernet) ;;
-      *) continue ;;
+    says="$(nm_dbus "$uuid" GetSettings | python3 -I "$NET_SETUP_DIR/nm.py" other "$UPLINK" "$UPLINK_CONNECTION" "$UPLINK_MAC")" \
+      || net_fail "cannot read the settings of NetworkManager's connection '$n' ($uuid)"
+    case "$says" in
+      dependent\ *) net_refuse UPLINK_DEPENDENT "NetworkManager's $v connection '$n' ($uuid) hangs off $UPLINK (${says#dependent })." ;;
+      taker) refuse NM_SECOND_PROFILE "NetworkManager's connection '$n' ($uuid${f:+, $f}) could take the uplink $UPLINK too: setup leaves exactly one definition for it. Bind that connection to another device or remove it, and run this again." ;;
     esac
-    other="$(net_read nmcli -t -e no -f connection.interface-name,802-3-ethernet.mac-address,match.interface-name connection show "$uuid")" || exit 1
-    bind="$(awk -F: '$1 == "connection.interface-name" { print $2 }' <<<"$other")"
-    other_mac="$(awk -F: '$1 == "802-3-ethernet.mac-address" { sub(/^[^:]*:/, ""); print tolower($0) }' <<<"$other")"
-    other_match="$(awk -F: '$1 == "match.interface-name" { print $2 }' <<<"$other")"
-    [[ "$bind" == -- ]] && bind=""
-    [[ "$other_mac" == -- ]] && other_mac=""
-    [[ "$other_match" == -- ]] && other_match=""
-    if [[ -n "$bind" && "$bind" != "$UPLINK" ]] || [[ -n "$other_mac" && "$other_mac" != "$UPLINK_MAC" ]] \
-      || { [[ -n "$other_match" ]] && _other_names "$other_match"; }; then
-      continue
-    fi
-    refuse NM_SECOND_PROFILE "NetworkManager's connection '$n' ($uuid${f:+, $f}) could take the uplink $UPLINK too: setup leaves exactly one definition for it. Bind that connection to another device or remove it, and run this again."
   done <<<"$files"
   for n in "$BRIDGE" "${BRIDGE}-port-${UPLINK}"; do
     ! awk -F'\t' -v n="$n" '$2 == n { found = 1 } END { exit !found }' <<<"$files" \

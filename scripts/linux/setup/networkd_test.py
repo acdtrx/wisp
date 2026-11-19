@@ -49,8 +49,10 @@ class PortSplit(unittest.TestCase):
         self.assertEqual(rc, 3)
 
     def test_a_link_hanging_off_the_uplink_is_refused_as_such(self):
-        _, rc, _ = port('[Match]\nName=eth0\n\n[Network]\nDHCP=yes\nVLAN=eth0.10\n')
-        self.assertEqual(rc, 4)
+        for key in ('VLAN', 'MACVLAN', 'IPVLAN', 'VXLAN', 'Tunnel', 'MACsec', 'Xfrm'):
+            with self.subTest(key=key):
+                _, rc, _ = port(f'[Match]\nName=eth0\n\n[Network]\nDHCP=yes\n{key}=link0\n')
+                self.assertEqual(rc, 4)
 
 
 if __name__ == '__main__':

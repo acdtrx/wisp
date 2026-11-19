@@ -10,6 +10,13 @@ connection's settings are what differs from the defaults.
       tab-separated, its escapes (\\: and \\\\) read
   nm.py flags
       reads `busctl get-property --json=short … Flags` on stdin; prints them
+  nm.py other <uplink> <uplink-uuid> <uplink-mac>
+      reads another connection's `busctl call --json=short … GetSettings` on
+      stdin; prints `dependent <setting.property>` when it hangs off the uplink
+      (a parent, or a port, naming the uplink or its connection; a virtual
+      link bound to the uplink's hardware address), `taker` when it is an
+      Ethernet connection not bound to another device, which could take the
+      uplink too, and nothing otherwise
   nm.py unknown
       reads `busctl call --json=short … GetSettings` on stdin; prints each
       setting the bridge step neither carries to the bridge, keeps on its port,
@@ -57,6 +64,45 @@ def unknown():
             if empty(value['data']):
                 continue
             print(f'{name}.{prop}')
+
+
+# A property that names the link another one hangs off: a parent (vlan,
+# macvlan, vxlan, ip-tunnel, macsec, ipvlan, …) or a port (hsr), by interface
+# name or connection UUID. Which settings have one is NetworkManager's to grow:
+# the property names are tested, not the connection types.
+LOWER_PROPERTIES = {'parent', 'port1', 'port2'}
+PATTERN_CHARS = set('*?[!~\\')
+
+
+def mac_of(value):
+    return ':'.join(f'{b:02x}' for b in value['data']) if value and value['data'] else ''
+
+
+def other(uplink, uplink_uuid, uplink_mac):
+    settings = json.load(sys.stdin)['data'][0]
+    for name, props in sorted(settings.items()):
+        for prop in sorted(LOWER_PROPERTIES & set(props)):
+            if props[prop]['data'] in (uplink, uplink_uuid):
+                print(f'dependent {name}.{prop}')
+                return
+    con = settings.get('connection', {})
+    kind = con.get('type', {}).get('data')
+    mac = mac_of(settings.get('802-3-ethernet', {}).get('mac-address'))
+    if kind != '802-3-ethernet':
+        # A virtual link without a parent names its lower device by its
+        # hardware address.
+        if mac == uplink_mac:
+            print('dependent 802-3-ethernet.mac-address')
+        return
+    bind = con.get('interface-name', {}).get('data') or ''
+    match = settings.get('match', {}).get('interface-name', {}).get('data') or []
+    if bind and bind != uplink or mac and mac != uplink_mac:
+        return
+    # Bound elsewhere by match.interface-name: every item a plain name (no
+    # pattern, no `!` or `~`), none the uplink's.
+    if match and all(item != uplink and not PATTERN_CHARS & set(item) for item in match):
+        return
+    print('taker')
 
 
 def path():
@@ -115,7 +161,7 @@ def carry(metric4, metric6, out):
         f.close()
 
 
-COMMANDS = {'path': path, 'rows': rows, 'flags': flags, 'unknown': unknown, 'carry': carry}
+COMMANDS = {'path': path, 'rows': rows, 'flags': flags, 'unknown': unknown, 'carry': carry, 'other': other}
 
 if __name__ == '__main__':
     COMMANDS[sys.argv[1]](*sys.argv[2:])

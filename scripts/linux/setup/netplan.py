@@ -16,8 +16,9 @@ netplan's runtime, so a netplan host has them.
       prints a definition <origin> shares with another netplan file, if any
   netplan.py dependents <id>
       reads `netplan get` (the merged configuration) on stdin; prints each
-      definition that hangs off <id> (a VLAN's link) or holds it (a bond's,
-      bridge's or VRF's interfaces)
+      definition that hangs off <id> (its `link:`: a VLAN, a VXLAN tunnel, an
+      SR-IOV virtual function) or holds it (its `interfaces:`: a bond, a
+      bridge, a VRF), whatever its kind
   netplan.py merged <id> <bridge> <bridge-json>
       reads the merged configuration on stdin; prints what is not as setup
       wrote it, if anything
@@ -160,15 +161,25 @@ def merged(nid, bridge, wanted):
         print(bridge + " is not the bridge setup wrote (" + (", ".join(missing) or "interfaces or hardware address") + ")")
 
 
+# The keys that tie a definition to another are tested in every section, not
+# in a list of kinds netplan may grow.
+def dependents_of(net, nid):
+    out = []
+    for section, defs in sorted(net.items()):
+        if not isinstance(defs, dict):
+            continue
+        for name, d in sorted(defs.items()):
+            if not isinstance(d, dict) or (section, name) == ('ethernets', nid):
+                continue
+            if d.get('link') == nid or nid in (d.get('interfaces') or []):
+                out.append(f'{section}.{name}')
+    return out
+
+
 def dependents(nid):
     net = (yaml.safe_load(sys.stdin) or {}).get('network') or {}
-    for kind, d in sorted((net.get('vlans') or {}).items()):
-        if (d or {}).get('link') == nid:
-            print(f'vlans.{kind}')
-    for section in ('bonds', 'bridges', 'vrfs'):
-        for name, d in sorted((net.get(section) or {}).items()):
-            if nid in ((d or {}).get('interfaces') or []):
-                print(f'{section}.{name}')
+    for d in dependents_of(net, nid):
+        print(d)
 
 
 COMMANDS = {'status-id': status_id, 'origin': origin, 'plan': plan, 'shared': shared, 'merged': merged,

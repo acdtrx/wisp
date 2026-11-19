@@ -139,8 +139,11 @@ NETWORK_MOVED = {'Description', 'DHCP', 'Address', 'Gateway', 'DNS', 'Domains', 
                  'ConfigureWithoutCarrier', 'IgnoreCarrierLoss', 'KeepConfiguration', 'IPv6MTUBytes',
                  'IPv4ReversePathFilter', 'MulticastRouter'}
 NETWORK_PORT = {'LLDP', 'EmitLLDP'}
-# A [Network] key that hangs another link off the uplink: refused as such.
-NETWORK_DEPENDENT = {'VLAN', 'MACVLAN', 'MACVTAP', 'IPVLAN', 'IPVTAP', 'VXLAN', 'Tunnel', 'Xfrm', 'IPoIB'}
+# The [Network] keys that make another link on the uplink (systemd.network's
+# stacked netdevs): refused as such. A key that puts the uplink under another
+# device (Bond=, Bridge=, VRF=, BatmanAdvanced=) is refused as a setting.
+NETWORK_DEPENDENT = {'VLAN', 'MACVLAN', 'MACVTAP', 'IPVLAN', 'IPVTAP', 'VXLAN', 'Tunnel', 'Xfrm', 'IPoIB',
+                     'MACsec'}
 ONLINE = {'RequiredForOnline', 'RequiredFamilyForOnline'}
 
 
