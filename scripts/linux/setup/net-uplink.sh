@@ -43,7 +43,7 @@ detect_uplink() {
   UPLINK_NETFILE=""
   if systemctl is-active --quiet systemd-networkd; then
     json="$(net_read networkctl status "$UPLINK" --json=short)" || exit 1
-    UPLINK_NETFILE="$(python3 -I "$NET_SETUP_DIR/networkd.py" json NetworkFile <<<"$json")" \
+    UPLINK_NETFILE="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/networkd.py" json NetworkFile <<<"$json")" \
       || net_fail "cannot read systemd-networkd's status of $UPLINK"
     case "$UPLINK_NETFILE" in
       /run/systemd/network/10-netplan-*) NET_TOOL=netplan ;;
@@ -80,7 +80,7 @@ cloud_init_network() {
   if [[ -e /etc/cloud/cloud-init.disabled ]] || grep -qwE 'cloud-init=disabled|network-config=disabled' /proc/cmdline; then
     echo disabled; return 0
   fi
-  python3 -I "$NET_SETUP_DIR/cloud-init-network.py"
+  "${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/cloud-init-network.py"
 }
 refuse_cloud_init_network() {
   local ci
@@ -119,7 +119,7 @@ refuse_uplink_shape() {
   # tool matches a definition by either (link.py).
   local out
   out="$(net_read ip -j -d link show dev "$UPLINK")" || exit 1
-  UPLINK_PERMADDR="$(python3 -I "$NET_SETUP_DIR/link.py" permaddr <<<"$out")" \
+  UPLINK_PERMADDR="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/link.py" permaddr <<<"$out")" \
     || net_fail "cannot read ${UPLINK}'s permanent hardware address"
 }
 

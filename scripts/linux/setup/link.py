@@ -1,4 +1,4 @@
-"""What the kernel says of a link, read for net-uplink.sh; run with python3 -I.
+"""What the kernel says of a link, read for net-uplink.sh; run with lib.sh's SETUP_PYTHON.
 
   link.py permaddr
       reads `ip -j -d link show dev <link>` on stdin; prints the link's

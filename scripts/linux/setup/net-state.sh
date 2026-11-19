@@ -20,7 +20,7 @@ net_apply() { step_run 0 timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" "$@"; }
 networkd_json() {
   local out
   out="$(net_call networkctl status "$1" --json=short)" || return 1
-  python3 -I "$NET_SETUP_DIR/networkd.py" json "$2" <<<"$out"
+  "${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/networkd.py" json "$2" <<<"$out"
 }
 
 # nm_has <uuid>: 0 when NetworkManager has the connection, 1 when it has not

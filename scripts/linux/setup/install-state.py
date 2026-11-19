@@ -1,6 +1,6 @@
 """install-state.py server-name <wisp-config.json>: exit 0 when the config
 names the server (a non-empty serverName), 1 when it does not, 2 when it is not
-JSON; for install-state.sh, run with python3 -I.
+JSON; for install-state.sh, run with lib.sh's SETUP_PYTHON.
 """
 import json
 import sys

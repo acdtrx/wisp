@@ -2,12 +2,15 @@
 # it. One check for each answer an install holds, so the installer asks for
 # exactly what the steps would write.
 
+# shellcheck source=lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
 # has_server_name <install-dir>: config/wisp-config.json names the server.
 # A config that is not JSON ends the caller, naming it.
 has_server_name() {
   local file="$1/config/wisp-config.json" rc=0
   [[ -f "$file" ]] || return 1
-  python3 -I "$(dirname "${BASH_SOURCE[0]}")/install-state.py" server-name "$file" || rc=$?
+  "${SETUP_PYTHON[@]}" "$(dirname "${BASH_SOURCE[0]}")/install-state.py" server-name "$file" || rc=$?
   (( rc <= 1 )) || exit 1
   return "$rc"
 }

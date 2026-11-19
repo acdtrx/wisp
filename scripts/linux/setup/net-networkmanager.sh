@@ -22,7 +22,7 @@ nm_dbus() {
   local path out
   out="$(net_call busctl call --json=short org.freedesktop.NetworkManager /org/freedesktop/NetworkManager/Settings \
     org.freedesktop.NetworkManager.Settings GetConnectionByUuid s "$1")" || return 1
-  path="$(python3 -I "$NET_SETUP_DIR/nm.py" path <<<"$out")" || return 1
+  path="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/nm.py" path <<<"$out")" || return 1
   case "$2" in
     Flags) net_call busctl get-property --json=short org.freedesktop.NetworkManager "$path" \
       org.freedesktop.NetworkManager.Settings.Connection Flags ;;
@@ -39,7 +39,7 @@ NM_GENERATED=2
 nm_connections() {
   local out
   out="$(net_call nmcli -t -f UUID,NAME,TYPE,FILENAME connection show)" || return 1
-  python3 -I "$NET_SETUP_DIR/nm.py" rows <<<"$out"
+  "${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/nm.py" rows <<<"$out"
 }
 
 # nm_others: the plan's refusals over connections besides the uplink's —
@@ -65,7 +65,7 @@ nm_others() {
         *) net_fail "cannot read the settings of NetworkManager's connection '$n' ($uuid): $(<"$err")" ;;
       esac
     fi
-    says="$(python3 -I "$NET_SETUP_DIR/nm.py" other "$UPLINK" "$UPLINK_CONNECTION" "$UPLINK_MAC" "${UPLINK_PERMADDR:-}" <<<"$settings")" \
+    says="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/nm.py" other "$UPLINK" "$UPLINK_CONNECTION" "$UPLINK_MAC" "${UPLINK_PERMADDR:-}" <<<"$settings")" \
       || net_fail "cannot read the settings NetworkManager returned for its connection '$n' ($uuid)"
     case "$says" in
       dependent\ *) net_refuse UPLINK_DEPENDENT "NetworkManager's $v connection '$n' ($uuid) hangs off $UPLINK (${says#dependent })." ;;
@@ -125,7 +125,7 @@ plan_networkmanager() {
   fi
   # Every setting it holds goes to the bridge or stays on the port (nm.py's
   # lists); any other is refused, naming it.
-  why="$(nm_dbus "$UPLINK_CONNECTION" GetSettings | python3 -I "$NET_SETUP_DIR/nm.py" unknown)" \
+  why="$(nm_dbus "$UPLINK_CONNECTION" GetSettings | "${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/nm.py" unknown)" \
     || net_fail "cannot read the settings of ${UPLINK}'s connection from NetworkManager"
   [[ -z "$why" ]] || nm_refuse_settings $why
   # The uplink's connection is deleted as the bridge step's last change, its
@@ -145,7 +145,7 @@ plan_networkmanager() {
     /run/NetworkManager/system-connections/netplan-*)
       refuse NM_NETPLAN_OPERATOR "${UPLINK}'s connection is rendered by netplan from an operator's file in /etc/netplan, which setup does not change through NetworkManager: $NM_NETPLAN_REMEDY" ;;
     /run/NetworkManager/*)
-      flags="$(nm_dbus "$UPLINK_CONNECTION" Flags | python3 -I "$NET_SETUP_DIR/nm.py" flags)" \
+      flags="$(nm_dbus "$UPLINK_CONNECTION" Flags | "${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/nm.py" flags)" \
         || net_fail "cannot read the flags of ${UPLINK}'s connection from NetworkManager"
       (( flags & NM_GENERATED )) \
         || refuse NM_PROFILE_IN_RUN "${UPLINK}'s connection is held in $NM_PROFILE_FILE, which something writes again at every boot (an initrd's network configuration, for one), so it would come back beside the bridge: store the connection as a keyfile under /etc/NetworkManager/system-connections and stop what writes it, then run this again."
@@ -191,7 +191,7 @@ plan_networkmanager() {
   _metric_of() { awk '$1 == "default" && !done { for (i = 1; i < NF; i++) if ($i == "metric") { print $(i + 1); done = 1; break } }' <<<"$1"; }
   metric4="$(_metric_of "$routes4")"
   metric6="$(_metric_of "$routes6")"
-  python3 -I "$NET_SETUP_DIR/nm.py" carry "$metric4" "$metric6" "$NET_PLAN_DIR" <<<"$con" \
+  "${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/nm.py" carry "$metric4" "$metric6" "$NET_PLAN_DIR" <<<"$con" \
     || net_fail "cannot sort ${UPLINK}'s connection's settings"
   # The bridge connection: the uplink connection's layer 3 (bridge.carry), the
   # client identifier it sent on DHCP, exactly (NetworkManager takes it as

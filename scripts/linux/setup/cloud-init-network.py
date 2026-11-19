@@ -1,5 +1,5 @@
 """Whether cloud-init's merged configuration switches its networking off, for
-net-uplink.sh; run with python3 -I. Prints "off:<file>" for the file whose
+net-uplink.sh; run with lib.sh's SETUP_PYTHON. Prints "off:<file>" for the file whose
 `network: {config: disabled}` has the last word, else "managed". The files are
 /etc/cloud/cloud.cfg, then cloud.cfg.d/*.cfg in name order, the last word
 winning. cloud-init's own runtime, python3 and its yaml module, reads them.

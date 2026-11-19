@@ -7,6 +7,13 @@
 # own, names it too; scripts/check-bounds.mjs keeps the two the same.
 WISP_LOCK=/run/wisp.lock
 
+# SETUP_PYTHON: how setup runs its Python (the *.py beside this file) — every
+# call, "${SETUP_PYTHON[@]}" <script>. -I keeps the user's site, the PYTHON*
+# environment and the script's directory out; -B writes no bytecode, so no
+# __pycache__ lands in the install tree. A flag, not PYTHONDONTWRITEBYTECODE:
+# -I ignores the environment.
+SETUP_PYTHON=(python3 -I -B)
+
 # no_kvm_statement: what a run says last on a host without KVM (the plan's
 # HOST_KVM): setup sets up VMs and containers alike on every host, so turning
 # KVM on later needs nothing reinstalled.

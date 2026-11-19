@@ -1,5 +1,5 @@
 """The netplan plan's reads and checks, for net-netplan.sh; run as root with
-python3 -I. python3, its yaml module and netplan's own Python module are
+lib.sh's SETUP_PYTHON. python3, its yaml module and netplan's own Python module are
 netplan's runtime, so a netplan host has them.
 
   netplan.py status-id <uplink>

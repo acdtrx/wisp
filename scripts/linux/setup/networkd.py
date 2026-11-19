@@ -1,5 +1,5 @@
 """systemd-networkd's files, read for net-networkd.sh and net-netplan.sh; run as
-root with python3 -I. A file is read as networkd reads it: sections, `Key=value`
+root with lib.sh's SETUP_PYTHON. A file is read as networkd reads it: sections, `Key=value`
 lines, `#` and `;` comments, a trailing backslash continuing a line.
 
   networkd.py json <path>

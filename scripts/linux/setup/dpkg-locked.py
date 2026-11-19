@@ -1,5 +1,5 @@
 """dpkg-locked.py <secs> <cmd...>: cmd run holding dpkg's frontend lock, the
-way apt runs dpkg, for the packages step; run as root with python3 -I. dpkg
+way apt runs dpkg, for the packages step; run as root with lib.sh's SETUP_PYTHON. dpkg
 itself has no wait for a lock another package run holds (apt's
 DPkg::Lock::Timeout is apt's own): this waits up to <secs> for it, then runs
 cmd with DPKG_FRONTEND_LOCKED=1, which tells dpkg the lock is held for it.

@@ -101,7 +101,7 @@ if [[ -z "$audit" && ${#missing[@]} -eq 0 && $need_node -eq 0 && $need_container
   exit 0
 fi
 if [[ -n "$audit" ]]; then
-  step_run "$APT_IDLE_SEC" python3 -I "$SETUP_DIR/dpkg-locked.py" "$APT_LOCK_WAIT_SEC" dpkg "${CONFFILES[@]}" --configure -a \
+  step_run "$APT_IDLE_SEC" "${SETUP_PYTHON[@]}" "$SETUP_DIR/dpkg-locked.py" "$APT_LOCK_WAIT_SEC" dpkg "${CONFFILES[@]}" --configure -a \
     || fail "dpkg --configure -a failed: the packages an interrupted package run left are not configured"
   step_run "$APT_IDLE_SEC" "${APT_INSTALL[@]}" --no-remove -f \
     || fail "apt-get install -f failed: the packages an interrupted package run left are not complete"

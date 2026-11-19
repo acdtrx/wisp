@@ -1,5 +1,5 @@
 """NetworkManager's answers, read for net-networkmanager.sh; run with
-python3 -I. The settings come from NetworkManager's D-Bus interface, where a
+lib.sh's SETUP_PYTHON. The settings come from NetworkManager's D-Bus interface, where a
 connection's settings are what differs from the defaults.
 
   nm.py path

@@ -17,11 +17,11 @@ NETPLAN_DIRS=(/lib/netplan /etc/netplan /run/netplan)
 plan_netplan() {
   local status def mode rc why stage d f hint kv merged dropins
   status="$(net_read netplan status "$UPLINK" --format json)" || exit 1
-  UPLINK_NETPLAN_ID="$(python3 -I "$NET_SETUP_DIR/netplan.py" status-id "$UPLINK" <<<"$status")" \
+  UPLINK_NETPLAN_ID="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" status-id "$UPLINK" <<<"$status")" \
     || net_fail "cannot read netplan's status for $UPLINK"
   [[ -n "$UPLINK_NETPLAN_ID" ]] || refuse NETPLAN_NO_DEFINITION "netplan has no definition for the uplink $UPLINK: define it in a file of your own under /etc/netplan, and run this again."
   # The file the definition comes from, as netplan's parser reads it.
-  NETPLAN_ORIGIN="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" python3 -I "$NET_SETUP_DIR/netplan.py" origin "$UPLINK_NETPLAN_ID")" \
+  NETPLAN_ORIGIN="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" "${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" origin "$UPLINK_NETPLAN_ID")" \
     || net_fail "netplan cannot parse its configuration"
   [[ "$NETPLAN_ORIGIN" == /etc/netplan/*.yaml ]] \
     || refuse NETPLAN_OUTSIDE_ETC "netplan defines $UPLINK in $NETPLAN_ORIGIN, outside /etc/netplan, where setup cannot edit it: define it in a file of your own under /etc/netplan, and run this again."
@@ -35,7 +35,7 @@ plan_netplan() {
   networkd_takers "$UPLINK_NETFILE" >/dev/null
   uplink_client_id
   dhcp_identity
-  why="$(net_read netplan get | python3 -I "$NET_SETUP_DIR/netplan.py" dependents "$UPLINK_NETPLAN_ID")" \
+  why="$(net_read netplan get | "${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" dependents "$UPLINK_NETPLAN_ID")" \
     || net_fail "cannot read netplan's configuration"
   [[ -z "$why" ]] || net_refuse UPLINK_DEPENDENT "netplan's $(echo $why) hangs off or holds $UPLINK's definition."
   def="$NET_PLAN_DIR/uplink.yaml"
@@ -44,7 +44,7 @@ plan_netplan() {
   # edits written as `netplan set` arguments (one per line: the origin hint, a
   # tab, key=value), all in the operator's file that defines the uplink: its
   # layer-3 keys removed, and the bridge defined with them.
-  mode="$(python3 -I "$NET_SETUP_DIR/netplan.py" plan "$def" "$UPLINK_NETPLAN_ID" "$UPLINK" "$UPLINK_MAC" "$BRIDGE" \
+  mode="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" plan "$def" "$UPLINK_NETPLAN_ID" "$UPLINK" "$UPLINK_MAC" "$BRIDGE" \
     "$DHCP_ID_KIND" "$NETPLAN_ORIGIN" "$NET_PLAN_DIR" "$UPLINK_MTU")" \
     || { rc=$?; case $rc in
            3) net_refuse NETPLAN_SETTING "$mode." ;;
@@ -63,7 +63,7 @@ plan_netplan() {
       } > "$NET_PLAN_DIR/50-wisp-dhcp-identity.conf"
     fi
   fi
-  why="$(python3 -I "$NET_SETUP_DIR/netplan.py" shared "$NETPLAN_ORIGIN" "${NETPLAN_DIRS[@]}")" || net_fail "cannot read netplan's files"
+  why="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" shared "$NETPLAN_ORIGIN" "${NETPLAN_DIRS[@]}")" || net_fail "cannot read netplan's files"
   [[ -z "$why" ]] || net_refuse NETPLAN_SHARED "$why; setup would write that definition back merged."
   # The edits made in a staged copy of /etc/netplan, generated, and the merged
   # definitions read back: the interface must keep no layer 3, the bridge must
@@ -95,7 +95,7 @@ plan_netplan() {
   done
   net_read netplan generate --root-dir "$stage" >/dev/null || exit 1
   merged="$(net_read netplan get --root-dir "$stage")" || exit 1
-  why="$(python3 -I "$NET_SETUP_DIR/netplan.py" merged "$UPLINK_NETPLAN_ID" "$BRIDGE" \
+  why="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" merged "$UPLINK_NETPLAN_ID" "$BRIDGE" \
     "$(awk -F'\t' -v k="bridges.$BRIDGE=" 'index($2, k) == 1 { print substr($2, length(k) + 1) }' "$NET_PLAN_DIR/netplan-set.args")" <<<"$merged")" \
     || net_fail "cannot read the staged netplan configuration back"
   [[ -z "$why" ]] || net_refuse NETPLAN_MERGED "with setup's edits, netplan's merged configuration is not what setup wrote: $why."
