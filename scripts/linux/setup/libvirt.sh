@@ -44,16 +44,16 @@ if [[ -L "$AUTOSTART_LINK" ]]; then
   rm -f "$AUTOSTART_LINK"
   changed "default NAT network no longer autostarts"
 fi
-ACTIVE_NETWORKS="$(timeout -k 10 30 virsh -q net-list --name)" || fail "virsh cannot list libvirt's networks"
+ACTIVE_NETWORKS="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" virsh -q net-list --name)" || fail "virsh cannot list libvirt's networks"
 if grep -qx default <<<"$ACTIVE_NETWORKS"; then
-  timeout -k 10 30 virsh net-destroy default >/dev/null
+  timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" virsh net-destroy default >/dev/null || fail "virsh cannot stop the default NAT network"
   changed "default NAT network stopped (virbr0 removed)"
 fi
 
 # What the backend needs of libvirt answers: virsh, the socket, and libvirt's
 # D-Bus service (libvirt-dbus starts on demand: the call activates it).
-timeout -k 10 30 virsh list --all >/dev/null || fail "libvirt does not answer (virsh list --all)"
+timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" virsh list --all >/dev/null || fail "libvirt does not answer (virsh list --all)"
 [[ -S /var/run/libvirt/libvirt-sock ]] || fail "libvirt's socket /var/run/libvirt/libvirt-sock is missing"
-timeout -k 10 30 busctl call --system org.libvirt /org/libvirt/QEMU org.freedesktop.DBus.Properties Get ss \
+timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" busctl call --system org.libvirt /org/libvirt/QEMU org.freedesktop.DBus.Properties Get ss \
   org.libvirt.Connect LibVersion >/dev/null || fail "libvirt's D-Bus service (libvirt-dbus) does not answer"
 step_done

@@ -77,7 +77,7 @@ fi
 UPDATER_UNIT="$(staged_file)"
 sed -e "s|WISP_PATH|$PROJECT_ROOT|g" "$PROJECT_ROOT/systemd/linux/wisp-updater.service" > "$UPDATER_UNIT"
 if write_if_changed /etc/systemd/system/wisp-updater.service 0644 "$UPDATER_UNIT"; then
-  systemctl daemon-reload
+  systemd_call daemon-reload
   changed /etc/systemd/system/wisp-updater.service
 fi
 

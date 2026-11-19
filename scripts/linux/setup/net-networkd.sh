@@ -104,8 +104,7 @@ sources_networkd() {
   file="$(networkd_json "$UPLINK" NetworkFile)" || return 1
   dropins="$(networkd_json "$UPLINK" NetworkFileDropins)" || return 1
   echo "runs-from $file $dropins"
-  # A refusal now is a change since the plan: it is part of what is compared.
-  ( networkd_takers "$UPLINK_NETFILE" ) 2>&1 || true
+  sources_refusals networkd_takers "$UPLINK_NETFILE" || return 1
 }
 
 apply_networkd() {

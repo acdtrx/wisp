@@ -47,6 +47,11 @@ def unknown():
         if name in BRIDGE_SETTINGS or name in PORT_SETTINGS:
             continue
         for prop, value in sorted(props.items()):
+            # Off, the step's connections (which connect by themselves) would
+            # not carry it: refused.
+            if name == 'connection' and prop == 'autoconnect' and value['data'] is False:
+                print(f'{name}.{prop}')
+                continue
             if name == 'connection' and prop in CONNECTION_OWN | CONNECTION_BRIDGE | CONNECTION_PORT:
                 continue
             if empty(value['data']):

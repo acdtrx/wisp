@@ -5,7 +5,7 @@
 #
 # Queries first, with dpkg-query and dpkg --audit, without the package manager
 # or its lock: the package manager runs only for what is missing. When it does
-# run, apt and dpkg wait up to LOCK_WAIT_SEC for a lock another package run
+# run, apt and dpkg wait up to APT_LOCK_WAIT_SEC for a lock another package run
 # holds (unattended-upgrades, apt-daily) instead of failing at once, and keep a
 # config file the host edited (avahi-daemon.conf) instead of stopping at
 # dpkg's question, which no one is there to answer. apt, dpkg and the downloads
@@ -33,7 +33,7 @@ export NEEDRESTART_MODE=a
 export NEEDRESTART_SUSPEND=1
 
 NODE_MAJOR_MIN=24
-LOCK_WAIT_SEC=300
+APT_LOCK_WAIT_SEC=300
 APT_IDLE_SEC=600
 
 node_ok() {
@@ -72,7 +72,7 @@ deb_installed() {
   [[ "$(dpkg-query -W -f='${db:Status-Status}' "$1" 2>/dev/null)" == installed ]]
 }
 
-APT=(apt-get -o "DPkg::Lock::Timeout=$LOCK_WAIT_SEC")
+APT=(apt-get -o "DPkg::Lock::Timeout=$APT_LOCK_WAIT_SEC")
 # As wisp-os-update installs.
 CONFFILES=(--force-confdef --force-confold)
 APT_INSTALL=("${APT[@]}" -o "Dpkg::Options::=${CONFFILES[0]}" -o "Dpkg::Options::=${CONFFILES[1]}" install -y -q)
@@ -101,7 +101,7 @@ if [[ -z "$audit" && ${#missing[@]} -eq 0 && $need_node -eq 0 && $need_container
   exit 0
 fi
 if [[ -n "$audit" ]]; then
-  step_run "$APT_IDLE_SEC" python3 -I "$SETUP_DIR/dpkg-locked.py" "$LOCK_WAIT_SEC" dpkg "${CONFFILES[@]}" --configure -a \
+  step_run "$APT_IDLE_SEC" python3 -I "$SETUP_DIR/dpkg-locked.py" "$APT_LOCK_WAIT_SEC" dpkg "${CONFFILES[@]}" --configure -a \
     || fail "dpkg --configure -a failed: the packages an interrupted package run left are not configured"
   step_run "$APT_IDLE_SEC" "${APT_INSTALL[@]}" --no-remove -f \
     || fail "apt-get install -f failed: the packages an interrupted package run left are not complete"
@@ -150,9 +150,9 @@ write_repo_file() {
 
 restore_repo_files() {
   local entry
-  rm -f "${REPO_FILES_CREATED[@]}"
+  for entry in "${REPO_FILES_CREATED[@]}"; do remove_file "$entry" || fail "cannot remove $entry"; done
   for entry in "${REPO_FILES_REPLACED[@]}"; do
-    cp -p "${entry#*|}" "${entry%%|*}"
+    install_file "${entry%%|*}" "${entry#*|}" 0644 || fail "cannot put back ${entry%%|*}"
   done
 }
 

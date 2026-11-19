@@ -44,7 +44,7 @@ STAGED="$(staged_file)"
 if [[ -f "$CONFIG" ]]; then
   cp "$CONFIG" "$STAGED"
 else
-  timeout -k 10 30 containerd config default > "$STAGED" || fail "containerd cannot print its default configuration"
+  timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" containerd config default > "$STAGED" || fail "containerd cannot print its default configuration"
 fi
 if grep -qE '^\s*gid\s*=' "$STAGED"; then
   sed -i "s/^\(\s*gid\s*=\s*\).*/\1${CTD_GID}/" "$STAGED"
@@ -67,9 +67,9 @@ if $NEEDS_RESTART; then
   changed "containerd restarted for the socket gid"
 fi
 
-NAMESPACES="$(timeout -k 10 30 ctr namespaces ls -q)" || fail "ctr cannot list containerd's namespaces"
+NAMESPACES="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" ctr namespaces ls -q)" || fail "ctr cannot list containerd's namespaces"
 if ! grep -qx wisp <<<"$NAMESPACES"; then
-  timeout -k 10 30 ctr namespaces create wisp
+  timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" ctr namespaces create wisp || fail "ctr cannot create the namespace wisp"
   changed "namespace wisp created"
 fi
 
@@ -79,7 +79,8 @@ fi
 if command -v runc &>/dev/null; then
   # Every line read, no early exit: under pipefail a reader that quits first
   # turns runc's SIGPIPE into a failure.
-  RUNC_VER="$(runc --version 2>/dev/null | awk '/^runc version/ && !done { print $3; done = 1 }')"
+  RUNC_VER="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" runc --version 2>/dev/null | awk '/^runc version/ && !done { print $3; done = 1 }')" \
+    || fail "runc --version failed"
   RUNC_MAJOR="$(echo "$RUNC_VER" | cut -d. -f1)"
   RUNC_MINOR="$(echo "$RUNC_VER" | cut -d. -f2)"
   if [[ -z "$RUNC_VER" ]] || ! [[ "$RUNC_MAJOR" =~ ^[0-9]+$ && "$RUNC_MINOR" =~ ^[0-9]+$ ]]; then

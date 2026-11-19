@@ -45,7 +45,7 @@ declare -A CNI_SHA256=(
 # The plugins, by the version the bridge plugin reports: a bump in CNI_VERSION
 # reaches installed hosts too.
 # (The plugins print it on stderr.)
-installed="$(timeout -k 10 10 "$CNI_BIN_DIR/bridge" --version 2>&1 | awk 'NR == 1 { print $NF }' || true)"
+installed="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" "$CNI_BIN_DIR/bridge" --version 2>&1 | awk 'NR == 1 { print $NF }' || true)"
 if [[ "$installed" != "$CNI_VERSION" ]]; then
   EXPECTED_SHA="${CNI_SHA256[$ARCH]:-}"
   [[ -n "$EXPECTED_SHA" ]] || fail "no pinned CNI checksum for arch '$ARCH' (version $CNI_VERSION)"
@@ -120,7 +120,7 @@ RestartSec=5
 WantedBy=multi-user.target
 SVCEOF
 if write_if_changed /etc/systemd/system/cni-dhcp.service 0644 "$DHCP_UNIT"; then
-  systemctl daemon-reload
+  systemd_call daemon-reload
   changed /etc/systemd/system/cni-dhcp.service
 fi
 unit_on cni-dhcp

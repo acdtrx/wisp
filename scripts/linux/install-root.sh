@@ -44,7 +44,7 @@ if [[ "${1:-}" == --work ]]; then
 
   # Before any change: the plan made again from the tree to install, under the
   # lock this process holds (fd 8), as the operator was asked it.
-  "$SETUP_SRC/network-plan.sh" "$NET_PLAN_DIR" --ask
+  "$SETUP_SRC/network-plan.sh" "$NET_PLAN_DIR" --ask 8>&-
   plan_record_read "$NET_PLAN_DIR/plan"
   if [[ "$(plan_confirmation)" != "$WISP_CONFIRMED_BRIDGE" ]]; then
     planned="$(plan_confirmation)"
@@ -173,7 +173,9 @@ WISP_INSTALL_ANSWERS="$(mktemp -d -t wisp-install-answers.XXXXXX)"
 export WISP_INSTALL_ANSWERS
 # The asking phase changes nothing: the plan only classifies a journal an
 # earlier bridge step left (--ask).
-"$SETUP_SRC/network-plan.sh" "$NET_PLAN_DIR" --ask
+# It runs without the lock's descriptor: nothing it leaves after a Ctrl-C
+# holds the lock.
+"$SETUP_SRC/network-plan.sh" "$NET_PLAN_DIR" --ask 8>&-
 plan_record_read "$NET_PLAN_DIR/plan"
 
 TERMINAL=0

@@ -82,7 +82,7 @@ if (( applied )) && bridge_check "$NET_PLAN_DIR"; then
   if ! "finish_$NET_TOOL"; then
     undo
   fi
-  journal_commit || fail "$BRIDGE is up, but the journal could not be committed; the next run of setup commits it"
+  journal_commit || fail "$BRIDGE is up, but the journal could not be committed; the next run of setup decides from it first"
   STEP_ON_STOP=""
   changed "$BRIDGE created on $UPLINK"
   # What the check compared: name servers and search domains only where the

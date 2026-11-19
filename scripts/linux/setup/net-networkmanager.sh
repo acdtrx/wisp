@@ -56,8 +56,7 @@ _other_names() {
 # the uplink (exactly one definition for it, at boot or after the step); a
 # VLAN or macvlan that hangs off it (the finish deletes the connection it may
 # name); a name or file setup would use, taken while no bridge is in use. A
-# refusal exits: the bridge step's sources run it in a subshell, a refusal
-# now being a change since the plan.
+# refusal exits: the bridge step's sources run it through sources_refusals.
 nm_others() {
   local files uuid n v f other bind other_mac other_match parent
   files="$(nm_connections)" || net_fail "cannot list NetworkManager's connections"
@@ -230,7 +229,7 @@ sources_networkmanager() {
   out="$(net_call nmcli -t -e no connection show "$UPLINK_CONNECTION")" || return 1
   grep -vE '^(GENERAL|IP[46]|DHCP[46])\.|^connection\.timestamp:' <<<"$out" | sha256sum
   net_call nmcli -g GENERAL.CON-UUID device show "$UPLINK" || return 1
-  ( nm_others ) 2>&1 || true
+  sources_refusals nm_others || return 1
 }
 
 apply_networkmanager() {

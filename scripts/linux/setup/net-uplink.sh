@@ -2,7 +2,7 @@
 # tool that runs it, asked of the daemons, and the refusals every tool shares.
 # Changes nothing.
 
-# The container DNS stub's refusal, and its names, which plan_sources leaves out.
+# The container DNS stub's refusal, and its names.
 # shellcheck source=container-dns-plan.sh
 source "$(dirname "${BASH_SOURCE[0]}")/container-dns-plan.sh"
 
@@ -158,6 +158,16 @@ dhcp_identity_networkd() {
 # and MTU, cloud-init's say over the network, and what the tool's plan read
 # (sources_<tool>). The container DNS stub, which setup declares between the
 # plan and the bridge step, is not among them.
+# sources_refusals <cmd...>: what a check of the plan's says now, for the
+# sources: its refusal (ERROR CODE: …) is part of the text compared, a
+# refusal now being a change since the plan; its failure (net_fail's
+# "ERROR: …") fails the read.
+sources_refusals() {
+  local out
+  out="$( ( "$@" ) 2>&1 )" || true
+  if grep -q '^ERROR: ' <<<"$out"; then printf '%s\n' "$out" >&2; return 1; fi
+  printf '%s\n' "$out"
+}
 plan_sources() {
   local out
   out="$(net_call ip -4 route show default)" || return 1

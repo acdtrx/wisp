@@ -130,8 +130,7 @@ CHILD_STOPPER=""
 # later; SELF-TERM, a TERM to the leader alone, for a command that bounds
 # itself). Deaf to TERM and INT, so a stop sent to this script leaves it be;
 # cancelled by USR1. Without the lock's descriptor, so one left behind holds no
-# lock. (Setup's own copy, kill_later, is in scripts/linux/setup/lib.sh: this
-# script is installed on its own.)
+# lock.
 signal_later() {
   (
     exec 8>&-

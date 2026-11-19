@@ -32,7 +32,7 @@ if [[ -z "$SERVER_NAME" ]]; then
 fi
 
 if [[ ! -f "$CONFIG_FILE" && ! -f "$EXAMPLE" ]]; then
-  echo "ERROR: $EXAMPLE not found."
+  echo "ERROR: $EXAMPLE not found." >&2
   exit 1
 fi
 
@@ -44,11 +44,20 @@ node -e '
   const data = JSON.parse(fs.readFileSync(fs.existsSync(path) ? path : example, "utf8"));
   data.serverName = serverName;
   delete data._comment;
-  const tmp = path + ".wisp-new";
-  const fd = fs.openSync(tmp, "w", 0o600);
-  fs.writeSync(fd, JSON.stringify(data, null, 2));
-  fs.fsyncSync(fd);
-  fs.closeSync(fd);
-  fs.renameSync(tmp, path);
+  const dir = require("path").dirname(path);
+  const tmp = `${dir}/.${require("path").basename(path)}.wisp-new.${process.pid}`;
+  try {
+    const fd = fs.openSync(tmp, "wx", 0o600);
+    fs.writeSync(fd, JSON.stringify(data, null, 2));
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fs.renameSync(tmp, path);
+  } catch (err) {
+    try { fs.unlinkSync(tmp); } catch { /* not made, or gone with the rename */ }
+    throw err;
+  }
+  const dfd = fs.openSync(dir, "r");
+  fs.fsyncSync(dfd);
+  fs.closeSync(dfd);
 ' "$CONFIG_FILE" "$EXAMPLE" "$SERVER_NAME"
 echo "  Wrote serverName to config/wisp-config.json"

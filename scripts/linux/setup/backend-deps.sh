@@ -26,7 +26,7 @@ MARKER="$BACKEND/node_modules/.wisp-installed-for"
 NPM_IDLE_SEC=600
 
 LOCK_SUM="$(sha256sum "$BACKEND/package-lock.json")" || fail "cannot read $BACKEND/package-lock.json"
-NODE_VERSION="$(timeout -k 10 10 node --version)" || fail "node does not run"
+NODE_VERSION="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" node --version)" || fail "node does not run"
 WANT="${LOCK_SUM%% *} node $NODE_VERSION"
 
 if [[ -f "$MARKER" && "$(cat "$MARKER")" == "$WANT" ]]; then
@@ -35,7 +35,8 @@ if [[ -f "$MARKER" && "$(cat "$MARKER")" == "$WANT" ]]; then
 fi
 step_run "$NPM_IDLE_SEC" runuser -u "$DEPLOY_USER" -- env -C "$BACKEND" npm ci --omit=dev --omit=optional --loglevel=http \
   || fail "npm ci failed in $BACKEND"
-# Written as the deploy user, in the deploy user's directory.
-printf '%s\n' "$WANT" | runuser -u "$DEPLOY_USER" -- tee "$MARKER" >/dev/null || fail "cannot write $MARKER"
+# Written as the deploy user, in the deploy user's directory, staged and renamed.
+printf '%s\n' "$WANT" | runuser -u "$DEPLOY_USER" -- sh -c 'cat > "$1.wisp-new" && mv -f "$1.wisp-new" "$1"' marker "$MARKER" \
+  || fail "cannot write $MARKER"
 changed "backend dependencies installed (npm ci, $NODE_VERSION)"
 step_done

@@ -325,7 +325,7 @@ journal_recover() {
       echo "  A bridge step that was not recorded as done had in fact finished: completing and committing it."
       WHY=""
       "finish_$NET_TOOL" || net_fail "${WHY:-its finish failed}; the journal stays in $JOURNAL_DIR for the next run"
-      journal_commit || net_fail "$BRIDGE is up, but the journal could not be committed; the next run of setup commits it"
+      journal_commit || net_fail "$BRIDGE is up, but the journal could not be committed; the next run of setup decides from it first"
       journal_cleanup || net_fail "$JOURNAL_KEEP_FAILED"
       echo "  $BRIDGE is on $UPLINK, committed."
       step_release ;;

@@ -92,7 +92,7 @@ l3_state() {
     *)
       # systemd-networkd's name servers take effect through systemd-resolved;
       # without it there are none to compare.
-      if systemctl is-active --quiet systemd-resolved; then
+      if net_call systemctl is-active --quiet systemd-resolved; then
         out="$(net_call resolvectl dns "$dev")" || return 1
         for line in ${out#*:}; do facts+="dns $line"$'\n'; done
         out="$(net_call resolvectl domain "$dev")" || return 1

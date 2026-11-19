@@ -63,7 +63,7 @@ export NET_PLAN_DIR
 # SETUP_STOP_SEC of a stop, whoever sent it. The handler does the whole stop
 # and exits, so it never returns into a wait; the step is found as setup's one
 # background job, which holds even when the stop comes as the step starts.
-STEP_NAME=""
+STEP_NAME="" STEP_SID=""
 # session_end <sid> <secs>: until the session <sid> leads is empty — no event
 # says so: checked once a second — with KILL to what is left of it after
 # <secs>; past NET_KILL_SEC more, what outlived the KILL is named.
@@ -81,7 +81,9 @@ session_end() {
 setup_stop() {
   local pid
   trap '' TERM INT
+  # The running step, or the session of one whose leftovers run_step ends.
   pid="$(jobs -p)"
+  pid="${pid:-$STEP_SID}"
   if [[ -n "$pid" ]]; then
     kill -TERM "$pid" 2>/dev/null
     session_end "$pid" "$STEP_STOP_SEC" || true
@@ -105,6 +107,7 @@ run_step() {
   echo "step: $name"
   STEP_NAME="$name"
   setsid "$SETUP_DIR/$script" "$@" 8>&- &
+  STEP_SID=$!
   # A stop never returns here (setup_stop exits): wait ends with the step.
   wait "$!" || rc=$?
   # What the step started ends with it: a process it left behind is ended.
@@ -114,6 +117,7 @@ run_step() {
     pkill -TERM -s "$!" 2>/dev/null
     session_end "$!" "$NET_KILL_SEC" || exit 1
   fi
+  STEP_SID=""
   (( rc == 0 )) && return 0
   echo ""
   echo "setup failed at step: $name (exit $rc)" >&2

@@ -4,6 +4,8 @@
 
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=bounds.sh
+source "$(dirname "${BASH_SOURCE[0]}")/bounds.sh"
 
 STEP_CHANGED=0
 
@@ -18,7 +20,9 @@ step_begin() {
   trap step_stop TERM INT
 }
 
-# step_stop: a stop (TERM, INT), which setup sends to the step alone — the step
+# step_stop: a stop — TERM, which setup sends to the step alone (a step
+# started in the background ignores INT, which bash cannot trap then; INT
+# reaches a step run at a terminal) — the step
 # knows which of what it runs may be cut short. TERM to the rest of the step's
 # session (the command it waits for, what that started), then STEP_ON_STOP when
 # the step set one (the bridge step's undo), then exit 143; setup waits until
@@ -31,7 +35,10 @@ step_stop() {
   # From here a further stop only waits: the undo's tools keep their own
   # signals' defaults (an ignored TERM would be theirs too).
   STEP_HELD=1
+  # Its session when setup runs it; its own children when it runs in a
+  # caller's session (the installer's asking phase runs the plan).
   pkill -TERM -s "$$" 2>/dev/null
+  pkill -TERM -P "$$" 2>/dev/null
   if [[ -n "$STEP_ON_STOP" ]]; then "$STEP_ON_STOP"; fi
   exit 143
 }
@@ -95,6 +102,12 @@ in_group() {
   [[ " $groups " == *" $2 "* ]]
 }
 
+# systemd_call <args...>: systemctl, for a call that changes systemd's state
+# and starts nothing (daemon-reload, enable), bounded; a failure ends the step.
+systemd_call() {
+  step_run 0 timeout -k "$NET_KILL_SEC" "$SYSTEMD_CALL_SEC" systemctl "$@" || fail "systemctl $* failed"
+}
+
 # unit_on <name>: <name>'s socket, when the unit has one (the daemon starts on
 # demand and idles out behind it), else its service, enabled and active.
 unit_on() {
@@ -138,7 +151,8 @@ step_run() {
       IFS= read -r -t "$secs" -u "$fd" line && r=0 || r=$?
       if (( r == 0 )); then printf '%s\n' "$line"; continue; fi
       if [[ -n "$line" ]]; then printf '%s\n' "$line"; fi
-      (( r > 128 )) && idle=1
+      # Quiet, but done: a process it left holds the output open.
+      (( r > 128 )) && kill -0 "$pid" 2>/dev/null && idle=1
       break
     done
     exec {fd}<&-
