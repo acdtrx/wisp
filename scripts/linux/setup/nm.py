@@ -5,6 +5,9 @@ connection's settings are what differs from the defaults.
   nm.py path
       reads `busctl call --json=short … GetConnectionByUuid` on stdin; prints
       the connection's object path
+  nm.py rows
+      reads nmcli's terse tabular output on stdin; prints each row's fields
+      tab-separated, its escapes (\\: and \\\\) read
   nm.py flags
       reads `busctl get-property --json=short … Flags` on stdin; prints them
   nm.py unknown
@@ -55,6 +58,23 @@ def path():
     print(json.load(sys.stdin)['data'][0])
 
 
+def rows():
+    for line in sys.stdin.read().splitlines():
+        fields, cur, esc = [], '', False
+        for ch in line:
+            if esc:
+                cur, esc = cur + ch, False
+            elif ch == '\\':
+                esc = True
+            elif ch == ':':
+                fields.append(cur)
+                cur = ''
+            else:
+                cur += ch
+        fields.append(cur)
+        print('\t'.join(fields))
+
+
 def flags():
     print(json.load(sys.stdin)['data'])
 
@@ -90,7 +110,7 @@ def carry(metric4, metric6, out):
         f.close()
 
 
-COMMANDS = {'path': path, 'flags': flags, 'unknown': unknown, 'carry': carry}
+COMMANDS = {'path': path, 'rows': rows, 'flags': flags, 'unknown': unknown, 'carry': carry}
 
 if __name__ == '__main__':
     COMMANDS[sys.argv[1]](*sys.argv[2:])

@@ -307,11 +307,16 @@ journal_cleanup() {
 # bridge-journal step). Prints what it did. A commit or an undo must finish: a
 # stop waits for it (step_hold).
 journal_recover() {
-  local rc
+  local rc p
   if [[ -d "$JOURNAL_DIR.done" ]]; then
     journal_cleanup || net_fail "$JOURNAL_KEEP_FAILED"
   fi
   [[ -d "$JOURNAL_DIR" ]] || return 0
+  # A stage the step left beside a file it records (cut short between stage
+  # and rename) is setup's own, never live: removed first.
+  if _journal_read; then
+    for p in "${J_FILES[@]}"; do staged_leftovers_remove "$p" || net_fail "cannot remove a stage of $p"; done
+  fi
   journal_classify
   journal_refuse_class
   case "$J_CLASS" in

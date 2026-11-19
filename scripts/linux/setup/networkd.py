@@ -15,7 +15,8 @@ lines, `#` and `;` comments, a trailing backslash continuing a line.
   networkd.py port <file> <uplink> <mac> <out-dir>
       the uplink's file split: what moves to the bridge (bridge.network.body),
       what stays on the port (port.match, port.link); prints dhcp or static.
-      Exit 3 with the reason printed: refused.
+      Exit 3 with the reason printed: refused; exit 4: refused, a link hangs
+      off the uplink.
 """
 import fnmatch
 import json
@@ -138,6 +139,8 @@ NETWORK_MOVED = {'Description', 'DHCP', 'Address', 'Gateway', 'DNS', 'Domains', 
                  'ConfigureWithoutCarrier', 'IgnoreCarrierLoss', 'KeepConfiguration', 'IPv6MTUBytes',
                  'IPv4ReversePathFilter', 'MulticastRouter'}
 NETWORK_PORT = {'LLDP', 'EmitLLDP'}
+# A [Network] key that hangs another link off the uplink: refused as such.
+NETWORK_DEPENDENT = {'VLAN', 'MACVLAN', 'MACVTAP', 'IPVLAN', 'IPVTAP', 'VXLAN', 'Tunnel', 'Xfrm', 'IPoIB'}
 ONLINE = {'RequiredForOnline', 'RequiredFamilyForOnline'}
 
 
@@ -179,6 +182,9 @@ def port(path, uplink, mac, out):
             if key in NETWORK_PORT:
                 link.append((('Network', n), line))
                 continue
+            if key in NETWORK_DEPENDENT:
+                print(f'{path} hangs {value} off {uplink} ({key}=)')
+                sys.exit(4)
             if key not in NETWORK_MOVED:
                 refuse(f'{path} sets {key}= in [Network], which setup does not carry over to a bridge')
             if key == 'DHCP':

@@ -30,11 +30,16 @@ refuse() {
 # rename) is removed first: under the install lock, only setup makes them.
 install_file() {
   local tmp
-  rm -f -- "$1".wisp-new.* || return 1
-  tmp="$(mktemp "$1.wisp-new.XXXXXX")" || return 1
+  staged_leftovers_remove "$1" || return 1
+  tmp="$(mktemp "$(dirname "$1")/.$(basename "$1").wisp-new.XXXXXX")" || return 1
   { cp "$2" "$tmp" && chmod "$3" "$tmp" && chown "${4:-root:root}" "$tmp" && sync "$tmp" \
     && mv -f "$tmp" "$1" && sync "$(dirname "$1")"; } || { rm -f "$tmp"; return 1; }
 }
+# staged_leftovers_remove <dest>: the stages of <dest> a cut-short
+# install_file left. A stage is a hidden file beside it, a name each tool skips:
+# NetworkManager ignores hidden files in system-connections, netplan reads only
+# *.yaml, networkd only its unit suffixes.
+staged_leftovers_remove() { rm -f -- "$(dirname "$1")/.$(basename "$1")".wisp-new.*; }
 # remove_file <path>: gone, and the directory synced — when the directory is
 # still there: an undo run again after it removed the directory too succeeds.
 remove_file() { rm -f "$1" && { [[ ! -d "$(dirname "$1")" ]] || sync "$(dirname "$1")"; }; }

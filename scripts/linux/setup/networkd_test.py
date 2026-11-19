@@ -45,8 +45,12 @@ class PortSplit(unittest.TestCase):
         self.assertEqual(out['port.match'], 'Name=eth0\n')
 
     def test_a_setting_not_carried_is_refused(self):
-        _, rc, _ = port('[Match]\nName=eth0\n\n[Network]\nDHCP=yes\nVLAN=eth0.10\n')
+        _, rc, _ = port('[Match]\nName=eth0\n\n[Network]\nDHCP=yes\nBond=bond0\n')
         self.assertEqual(rc, 3)
+
+    def test_a_link_hanging_off_the_uplink_is_refused_as_such(self):
+        _, rc, _ = port('[Match]\nName=eth0\n\n[Network]\nDHCP=yes\nVLAN=eth0.10\n')
+        self.assertEqual(rc, 4)
 
 
 if __name__ == '__main__':

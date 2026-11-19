@@ -55,7 +55,10 @@ plan_networkd() {
   # bridge, with the DHCP identity pinned below; its match, link and layer-2
   # settings stay with it, in its own file, now the port's definition.
   mode="$(python3 -I "$NET_SETUP_DIR/networkd.py" port "$UPLINK_NETFILE" "$UPLINK" "$UPLINK_MAC" "$NET_PLAN_DIR")" \
-    || { rc=$?; if (( rc == 3 )); then net_refuse NETWORKD_SETTING "$mode."; fi; net_fail "cannot read $UPLINK_NETFILE: $mode"; }
+    || { rc=$?; case $rc in
+           3) net_refuse NETWORKD_SETTING "$mode." ;;
+           4) net_refuse UPLINK_DEPENDENT "$mode." ;;
+         esac; net_fail "cannot read $UPLINK_NETFILE: $mode"; }
   UPLINK_MODE="$mode"
   identity=""
   if [[ "$UPLINK_MODE" == dhcp ]]; then

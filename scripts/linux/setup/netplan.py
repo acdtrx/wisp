@@ -14,6 +14,10 @@ netplan's runtime, so a netplan host has them.
       net-uplink.sh's dhcp_identity). Exit 3 with the reason printed: refused.
   netplan.py shared <origin> <dir>...
       prints a definition <origin> shares with another netplan file, if any
+  netplan.py dependents <id>
+      reads `netplan get` (the merged configuration) on stdin; prints each
+      definition that hangs off <id> (a VLAN's link) or holds it (a bond's,
+      bridge's or VRF's interfaces)
   netplan.py merged <id> <bridge> <bridge-json>
       reads the merged configuration on stdin; prints what is not as setup
       wrote it, if anything
@@ -156,7 +160,19 @@ def merged(nid, bridge, wanted):
         print(bridge + " is not the bridge setup wrote (" + (", ".join(missing) or "interfaces or hardware address") + ")")
 
 
-COMMANDS = {'status-id': status_id, 'origin': origin, 'plan': plan, 'shared': shared, 'merged': merged}
+def dependents(nid):
+    net = (yaml.safe_load(sys.stdin) or {}).get('network') or {}
+    for kind, d in sorted((net.get('vlans') or {}).items()):
+        if (d or {}).get('link') == nid:
+            print(f'vlans.{kind}')
+    for section in ('bonds', 'bridges', 'vrfs'):
+        for name, d in sorted((net.get(section) or {}).items()):
+            if nid in ((d or {}).get('interfaces') or []):
+                print(f'{section}.{name}')
+
+
+COMMANDS = {'status-id': status_id, 'origin': origin, 'plan': plan, 'shared': shared, 'merged': merged,
+            'dependents': dependents}
 
 if __name__ == '__main__':
     COMMANDS[sys.argv[1]](*sys.argv[2:])

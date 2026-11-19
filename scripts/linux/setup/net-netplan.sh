@@ -35,6 +35,9 @@ plan_netplan() {
   networkd_takers "$UPLINK_NETFILE" >/dev/null
   UPLINK_CLIENT_ID="$(client_id "$UPLINK" "$NET_TOOL")" || net_fail "cannot read ${UPLINK}'s DHCP lease from systemd-networkd"
   dhcp_identity
+  why="$(net_read netplan get | python3 -I "$NET_SETUP_DIR/netplan.py" dependents "$UPLINK_NETPLAN_ID")" \
+    || net_fail "cannot read netplan's configuration"
+  [[ -z "$why" ]] || net_refuse UPLINK_DEPENDENT "netplan's $(echo $why) hangs off or holds $UPLINK's definition."
   def="$NET_PLAN_DIR/uplink.yaml"
   net_read netplan get "ethernets.$UPLINK_NETPLAN_ID" > "$def" || exit 1
   # The uplink's definition, checked; what moves to the bridge worked out; the
