@@ -8,14 +8,41 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 STEP_CHANGED=0
 
 # step_begin: the step's own temp directory (staged_file runs in a command
-# substitution, a subshell, so it is made here), removed when the step ends;
-# a stop (TERM, INT) ends the step at once, through its EXIT trap. A step that
-# must not be cut short sets its own TERM and INT traps after this. Every step
-# calls it first: the traps are the step's own, set by the step.
+# substitution, a subshell, so it is made here), removed when the step ends,
+# and the step's handler for a stop (step_stop). Every step calls it first:
+# the traps are the step's own, set by the step.
 step_begin() {
   STEP_TMP_DIR="$(mktemp -d -t wisp-setup.XXXXXX)" || { echo "ERROR: cannot create a temp directory" >&2; exit 1; }
   trap 'rm -rf "$STEP_TMP_DIR"' EXIT
-  trap 'exit 143' TERM INT
+  STEP_HELD=0 STEP_STOP_HELD=0 STEP_ON_STOP=""
+  trap step_stop TERM INT
+}
+
+# step_stop: a stop (TERM, INT), which setup sends to the step alone — the step
+# knows which of what it runs may be cut short. TERM to the rest of the step's
+# session (the command it waits for, what that started), then STEP_ON_STOP when
+# the step set one (the bridge step's undo), then exit 143; setup waits until
+# the session is empty. A step runs no foreground command that can outlast
+# NET_CMD_SEC (anything longer goes through step_run), so a stop is acted on
+# within that. Inside a section that must finish (step_hold), the stop waits
+# for step_release.
+step_stop() {
+  if (( STEP_HELD )); then STEP_STOP_HELD=1; return 0; fi
+  # From here a further stop only waits: the undo's tools keep their own
+  # signals' defaults (an ignored TERM would be theirs too).
+  STEP_HELD=1
+  pkill -TERM -s "$$" 2>/dev/null
+  if [[ -n "$STEP_ON_STOP" ]]; then "$STEP_ON_STOP"; fi
+  exit 143
+}
+# step_hold, step_release: a section that must finish (the bridge's apply
+# call, its finish and undo, the journal's restore). A stop meanwhile waits:
+# the tools the section runs run to their end, each under its own bound, and
+# step_release then acts on it.
+step_hold() { STEP_HELD=1; }
+step_release() {
+  STEP_HELD=0
+  if (( STEP_STOP_HELD )); then STEP_STOP_HELD=0; step_stop; fi
 }
 
 changed() {
@@ -78,67 +105,57 @@ unit_on() {
   if systemctl is-enabled --quiet "$unit" 2>/dev/null && systemctl is-active --quiet "$unit"; then
     return 0
   fi
-  systemctl enable --now --quiet "$unit" || fail "cannot enable and start $unit"
+  step_run 0 systemctl enable --now --quiet "$unit" || fail "cannot enable and start $unit"
   changed "$unit enabled and started"
 }
 
-# idle_run <secs> <cmd...>: cmd with its output passed through, stopped after
-# <secs> seconds without a line of output (returns 124) — an inactivity bound
-# for a step that shows progress (CODING-RULES §6). cmd runs in a process group
-# of its own inside the step's session, so a stall, or a stop of the step (TERM,
-# INT; returns 143), stops the whole group, its children with it — TERM, and
-# KILL IDLE_RUN_GRACE_SEC later — while a stop of the step's session still
-# reaches it. The caller's TERM and INT traps are put back as they were.
-IDLE_RUN_GRACE_SEC=10
-idle_run() {
+# step_run <idle-secs> <cmd...>: cmd in the background, waited for, so a stop
+# of the step is acted on at once (step_stop) — how a step runs anything that
+# can outlast NET_CMD_SEC. With <idle-secs> above 0, cmd's output is passed
+# through and cmd is stopped after that many seconds without a line, returning
+# 124: the inactivity bound for a command that shows progress (CODING-RULES
+# §6); cmd runs in a process group of its own inside the step's session, which
+# gets TERM, and KILL STEP_RUN_GRACE_SEC later. With 0, cmd carries its own
+# bound (its `timeout`, or the systemd job's). Returns cmd's exit status.
+STEP_RUN_GRACE_SEC=10
+step_run() {
   local secs="$1"; shift
-  local fifo fd line r rc=0 why="" pid killer="" saved_traps
-  saved_traps="$(trap -p TERM INT)"
-  fifo="$(mktemp -u "$STEP_TMP_DIR/fifo.XXXXXX")"
-  mkfifo -m 600 "$fifo" || fail "cannot make a fifo in $STEP_TMP_DIR"
-  IDLE_RUN_STOPPED=0
-  trap 'IDLE_RUN_STOPPED=1' TERM INT
-  set -m
-  "$@" > "$fifo" 2>&1 &
-  pid=$!
-  set +m
-  exec {fd}< "$fifo"
-  rm -f -- "$fifo"
-  while :; do
-    IFS= read -r -t "$secs" -u "$fd" line && r=0 || r=$?
-    if (( IDLE_RUN_STOPPED )); then why=stopped; break; fi
-    if (( r == 0 )); then printf '%s\n' "$line"; continue; fi
-    if (( r > 128 )); then why=idle; break; fi
-    [[ -n "$line" ]] && printf '%s\n' "$line"
-    break
-  done
-  exec {fd}<&-
-  # wait returns early for a signal; the group is done once none of it is left.
-  while :; do
-    if [[ -z "$why" ]] && (( IDLE_RUN_STOPPED )); then why=stopped; fi
-    if [[ -n "$why" && -z "$killer" ]]; then
+  local fifo fd line r pid rc=0 idle=0 deadline
+  if (( secs == 0 )); then
+    "$@" &
+    pid=$!
+  else
+    fifo="$(mktemp -u "$STEP_TMP_DIR/fifo.XXXXXX")"
+    mkfifo -m 600 "$fifo" || fail "cannot make a fifo in $STEP_TMP_DIR"
+    set -m
+    "$@" > "$fifo" 2>&1 &
+    pid=$!
+    set +m
+    exec {fd}< "$fifo"
+    rm -f -- "$fifo"
+    # A held stop does not end the read: bash runs the handler and reads on.
+    while :; do
+      IFS= read -r -t "$secs" -u "$fd" line && r=0 || r=$?
+      if (( r == 0 )); then printf '%s\n' "$line"; continue; fi
+      if [[ -n "$line" ]]; then printf '%s\n' "$line"; fi
+      (( r > 128 )) && idle=1
+      break
+    done
+    exec {fd}<&-
+    if (( idle )); then
       kill -TERM -- "-$pid" 2>/dev/null
-      (
-        exec 8>&-
-        trap '' TERM INT
-        trap 'kill -KILL $! 2>/dev/null; exit 0' USR1
-        sleep "$IDLE_RUN_GRACE_SEC" & wait $!
-        kill -KILL -- "-$pid" 2>/dev/null
-      ) &
-      killer=$!
+      deadline=$(( SECONDS + STEP_RUN_GRACE_SEC ))
+      while pgrep -g "$pid" >/dev/null && (( SECONDS < deadline )); do sleep 1; done
+      kill -KILL -- "-$pid" 2>/dev/null
     fi
-    rc=0
-    wait "$pid" 2>/dev/null || rc=$?
-    kill -0 "$pid" 2>/dev/null && continue
-    pgrep -g "$pid" >/dev/null || break
-    sleep 1
-  done
-  if [[ -n "$killer" ]]; then kill -USR1 "$killer" 2>/dev/null; wait "$killer" 2>/dev/null; fi
-  trap - TERM INT
-  eval "$saved_traps"
-  case "$why" in
-    idle) echo "ERROR: printed nothing for ${secs} s and was stopped: $*" >&2; return 124 ;;
-    stopped) echo "  stopped: $*" >&2; return 143 ;;
-  esac
+  fi
+  # wait returns early for a held stop; once cmd is gone (reaped by bash), wait
+  # gives its status.
+  while kill -0 "$pid" 2>/dev/null; do wait "$pid" 2>/dev/null || true; done
+  wait "$pid" 2>/dev/null || rc=$?
+  if (( idle )); then
+    echo "ERROR: printed nothing for ${secs} s and was stopped: $*" >&2
+    return 124
+  fi
   return "$rc"
 }

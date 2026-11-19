@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
-# Setup step: the system packages Wisp needs — Node.js 24+, the QEMU/KVM/libvirt
-# stack, containerd 2.x, and the tools the backend and its helpers run. Run as
-# root.
+# Setup step: the system packages Wisp needs — Node.js (NODE_MAJOR_MIN or
+# newer), the QEMU/KVM/libvirt stack, containerd 2.x, and the tools the backend
+# and its helpers run. Run as root.
 #
 # Queries first, with dpkg-query and dpkg --audit, without the package manager
 # or its lock: the package manager runs only for what is missing. When it does
 # run, apt and dpkg wait up to LOCK_WAIT_SEC for a lock another package run
 # holds (unattended-upgrades, apt-daily) instead of failing at once, and keep a
 # config file the host edited (avahi-daemon.conf) instead of stopping at
-# dpkg's question, which no one is there to answer.
+# dpkg's question, which no one is there to answer. apt, dpkg and the downloads
+# run through step_run, stopped after APT_IDLE_SEC without a line of output
+# (apt prints each package it fetches, unpacks and sets up): longer than the
+# lock wait, during which apt says it waits once.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -31,6 +34,7 @@ export NEEDRESTART_SUSPEND=1
 
 NODE_MAJOR_MIN=24
 LOCK_WAIT_SEC=300
+APT_IDLE_SEC=600
 
 node_ok() {
   command -v node >/dev/null 2>&1 || return 1
@@ -56,7 +60,7 @@ containerd_ok() {
 
 echo "--- System packages ---"
 
-# Node.js 24 comes from NodeSource's apt repo and containerd 2.x
+# Node.js comes from NodeSource's apt repo and containerd 2.x
 # from Docker's (containerd.io): each repo's signing key is pinned under
 # /etc/apt/keyrings, so apt verifies every package against it — nothing is
 # piped from the network into a root shell.
@@ -71,7 +75,7 @@ deb_installed() {
 APT=(apt-get -o "DPkg::Lock::Timeout=$LOCK_WAIT_SEC")
 # As wisp-os-update installs.
 CONFFILES=(--force-confdef --force-confold)
-APT_INSTALL=("${APT[@]}" -o "Dpkg::Options::=${CONFFILES[0]}" -o "Dpkg::Options::=${CONFFILES[1]}" install -y -qq)
+APT_INSTALL=("${APT[@]}" -o "Dpkg::Options::=${CONFFILES[0]}" -o "Dpkg::Options::=${CONFFILES[1]}" install -y -q)
 
 missing=()
 for p in "${PACKAGES[@]}"; do
@@ -97,16 +101,16 @@ if [[ -z "$audit" && ${#missing[@]} -eq 0 && $need_node -eq 0 && $need_container
   exit 0
 fi
 if [[ -n "$audit" ]]; then
-  python3 -I "$SETUP_DIR/dpkg-locked.py" "$LOCK_WAIT_SEC" dpkg "${CONFFILES[@]}" --configure -a \
+  step_run "$APT_IDLE_SEC" python3 -I "$SETUP_DIR/dpkg-locked.py" "$LOCK_WAIT_SEC" dpkg "${CONFFILES[@]}" --configure -a \
     || fail "dpkg --configure -a failed: the packages an interrupted package run left are not configured"
-  "${APT_INSTALL[@]}" --no-remove -f \
+  step_run "$APT_IDLE_SEC" "${APT_INSTALL[@]}" --no-remove -f \
     || fail "apt-get install -f failed: the packages an interrupted package run left are not complete"
   changed "completed the packages an interrupted package run left"
 fi
 
 if (( ${#missing[@]} > 0 )); then
-  "${APT[@]}" update -qq
-  "${APT_INSTALL[@]}" "${missing[@]}"
+  step_run "$APT_IDLE_SEC" "${APT[@]}" update -q || fail "apt-get update failed"
+  step_run "$APT_IDLE_SEC" "${APT_INSTALL[@]}" "${missing[@]}" || fail "apt-get could not install ${missing[*]}"
   changed "installed ${missing[*]}"
 fi
 
@@ -162,8 +166,10 @@ apt_repo() {
   if ! gpg --batch --show-keys "$keyring" >/dev/null 2>&1; then
     armored="$(staged_file)"
     dearmored="$(staged_file)"
-    curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 60 -o "$armored" "$key_url"
-    gpg --batch --yes --dearmor -o "$dearmored" "$armored"
+    # curl's own bound: under 1 KiB/s for 60 s.
+    step_run 0 curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 60 -o "$armored" "$key_url" \
+      || fail "cannot download $key_url"
+    gpg --batch --yes --dearmor -o "$dearmored" "$armored" || fail "$key_url is not a signing key gpg can read"
     gpg --batch --show-keys "$dearmored" >/dev/null 2>&1 || fail "$key_url is not a usable signing key"
     if write_repo_file "$keyring" "$dearmored"; then changed "$keyring"; fi
   fi
@@ -177,7 +183,7 @@ apt_repo() {
 repo_packages=()
 if (( need_node )); then
   apt_repo nodesource https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-    "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main"
+    "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_MAJOR_MIN}.x nodistro main"
   repo_packages+=(nodejs)
 fi
 if (( need_containerd )); then
@@ -195,11 +201,11 @@ fi
 if (( ${#repo_packages[@]} > 0 )); then
   # A list apt cannot fetch fails every later `apt-get update` on the host, so
   # what this run wrote does not stay behind when the update fails.
-  if ! "${APT[@]}" update -qq; then
+  if ! step_run "$APT_IDLE_SEC" "${APT[@]}" update -q; then
     restore_repo_files
     fail "apt-get update failed with the NodeSource / Docker repos; took back what this run wrote to them so apt keeps working"
   fi
-  "${APT_INSTALL[@]}" "${repo_packages[@]}"
+  step_run "$APT_IDLE_SEC" "${APT_INSTALL[@]}" "${repo_packages[@]}" || fail "apt-get could not install ${repo_packages[*]}"
   changed "installed ${repo_packages[*]}"
 fi
 

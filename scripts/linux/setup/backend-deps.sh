@@ -22,7 +22,7 @@ echo "--- Backend dependencies ---"
 BACKEND="$1/backend"
 DEPLOY_USER="$2"
 MARKER="$BACKEND/node_modules/.wisp-installed-for"
-# npm ci logs each fetch at --loglevel=http: its progress, watched by idle_run.
+# npm ci logs each fetch at --loglevel=http: its progress, watched by step_run.
 NPM_IDLE_SEC=600
 
 LOCK_SUM="$(sha256sum "$BACKEND/package-lock.json")" || fail "cannot read $BACKEND/package-lock.json"
@@ -33,7 +33,7 @@ if [[ -f "$MARKER" && "$(cat "$MARKER")" == "$WANT" ]]; then
   step_done
   exit 0
 fi
-idle_run "$NPM_IDLE_SEC" runuser -u "$DEPLOY_USER" -- env -C "$BACKEND" npm ci --omit=dev --omit=optional --loglevel=http \
+step_run "$NPM_IDLE_SEC" runuser -u "$DEPLOY_USER" -- env -C "$BACKEND" npm ci --omit=dev --omit=optional --loglevel=http \
   || fail "npm ci failed in $BACKEND"
 # Written as the deploy user, in the deploy user's directory.
 printf '%s\n' "$WANT" | runuser -u "$DEPLOY_USER" -- tee "$MARKER" >/dev/null || fail "cannot write $MARKER"

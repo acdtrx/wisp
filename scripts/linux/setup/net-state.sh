@@ -11,6 +11,9 @@ NET_SETUP_DIR="${NET_SETUP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 
 # net_call <cmd...>: a call of a network tool, bounded.
 net_call() { timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" "$@"; }
+# net_apply <cmd...>: an apply, bounded by NET_APPLY_SEC, in a step only: run
+# through step_run (step.sh), as it can outlast NET_CMD_SEC.
+net_apply() { step_run 0 timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" "$@"; }
 
 # networkd_json <link> <path>: one value of `networkctl status <link> --json=short`
 # (a list one item a line), read with a JSON parser.

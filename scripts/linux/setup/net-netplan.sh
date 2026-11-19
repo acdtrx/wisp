@@ -105,7 +105,7 @@ apply_netplan() {
   fi
   put_file "$NETPLAN_ORIGIN" "$NET_PLAN_DIR/netplan-origin.yaml" 0600 || return 1
   apply_notice
-  timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" netplan apply
+  net_apply netplan apply
 }
 check_netplan() { :; }
 
@@ -131,5 +131,5 @@ finish_netplan() { :; }
 # undo_netplan: in journal_restore, once the files are back.
 undo_netplan() {
   [[ ! -e "/sys/class/net/$BRIDGE" ]] || net_call ip link delete "$BRIDGE" || return 1
-  timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" netplan apply
+  net_apply netplan apply
 }

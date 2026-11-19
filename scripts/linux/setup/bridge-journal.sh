@@ -215,31 +215,29 @@ journal_drop() {
 
 # journal_restore: the host back as it was, in reverse of the step, stopping at
 # the first part that fails (the rest stays as the step wrote it); then the tool
-# applies it, and the uplink's default route comes back. Deaf to TERM and INT:
-# an undo is never cut short by a stop (the session's KILL past setup's bound
-# is the end of it). Marks the journal first, so an undo cut short is undone
-# again. Drops the journal when every part succeeded, returning 0, or
-# RESTORED_STORED when NetworkManager's generated connection came back as a
-# stored one; otherwise keeps the journal and returns 1. Prints what it did
-# beyond putting files back.
-RESTORED_STORED=3
-journal_restore() (
-  set +e
-  trap '' TERM INT
-  _journal_read || exit 1
-  plan_record_read "$JOURNAL_DIR/plan" || exit 1
+# applies it, and the uplink is waited for until it holds what it held before
+# (uplink_back). Called inside a section that must finish (step_hold): an undo
+# is never cut short by a stop (the session's KILL past setup's bound is the
+# end of it). Marks the journal first, so an undo cut short is undone again.
+# Drops the journal and returns 0 once the files and connections are back;
+# RESTORE_OUTCOME then says what the host holds, as checked. Otherwise keeps
+# the journal and returns 1.
+journal_restore() {
+  local i copy dir nm_files=no netplan_nm=no addr
+  RESTORE_STORED="" RESTORE_OUTCOME=""
+  _journal_read || return 1
+  plan_record_read "$JOURNAL_DIR/plan" || return 1
   journal_undo_mark
-  local i copy dir nm_files=no netplan_nm=no rc=0
   for (( i = ${#J_FILES[@]} - 1; i >= 0; i-- )); do
     if [[ "${J_EXISTED[$i]}" == yes ]]; then
       copy="$JOURNAL_DIR/files/${J_LINES[$i]}"
       if [[ "$(_sha "${J_FILES[$i]}")" != "${J_ORIG[$i]}" ]]; then
         dir="$(dirname "${J_FILES[$i]}")"
-        [[ -d "$dir" ]] || mkdir -p "$dir" || exit 1
-        install_file "${J_FILES[$i]}" "$copy" "$(stat -c %a "$copy")" "$(stat -c %U:%G "$copy")" || exit 1
+        [[ -d "$dir" ]] || mkdir -p "$dir" || return 1
+        install_file "${J_FILES[$i]}" "$copy" "$(stat -c %a "$copy")" "$(stat -c %U:%G "$copy")" || return 1
       fi
     else
-      remove_file "${J_FILES[$i]}" || exit 1
+      remove_file "${J_FILES[$i]}" || return 1
     fi
     case "${J_FILES[$i]}" in
       /etc/NetworkManager/*) nm_files=yes ;;
@@ -248,19 +246,22 @@ journal_restore() (
   done
   for (( i = ${#J_DIRS[@]} - 1; i >= 0; i-- )); do rmdir "${J_DIRS[$i]}" 2>/dev/null || true; done
   case "$NET_TOOL" in
-    netplan) undo_netplan || exit 1 ;;
-    networkd) undo_networkd || exit 1 ;;
-    networkmanager) undo_networkmanager "$nm_files" "$netplan_nm" || rc=$?
-      (( rc == 0 || rc == RESTORED_STORED )) || exit 1 ;;
+    netplan) undo_netplan || return 1 ;;
+    networkd) undo_networkd || return 1 ;;
+    networkmanager) undo_networkmanager "$nm_files" "$netplan_nm" || return 1 ;;
   esac
-  local deadline=$(( SECONDS + NET_APPLY_SEC ))
-  until [[ "$(net_call ip -4 route show default dev "$UPLINK" 2>/dev/null)" == default* ]]; do
-    (( SECONDS < deadline )) || exit 1
-    sleep 1
-  done
-  rm -rf "$JOURNAL_DIR" || exit 1
-  exit "$rc"
-)
+  RESTORE_OUTCOME="The network's files and connections are back as they were"
+  if [[ -n "$RESTORE_STORED" ]]; then
+    RESTORE_OUTCOME+=", but for ${UPLINK}'s connection: NetworkManager had generated it, and it is now a stored connection with its settings, $RESTORE_STORED"
+  fi
+  if uplink_back "$JOURNAL_DIR"; then
+    addr="$(awk '$1 == "addr4" && !done { print $2; done = 1 }' <<<"$UPLINK_HOLDS")"
+    RESTORE_OUTCOME+="; $UPLINK holds the addresses, routes and name servers it held before${addr:+ ($addr)}"
+  else
+    RESTORE_OUTCOME+="; but $UPLINK holds [$(echo $UPLINK_HOLDS)] after ${NET_APPLY_SEC} s, where it held [$(echo $UPLINK_HELD)] before"
+  fi
+  rm -rf "$JOURNAL_DIR" || return 1
+}
 
 # journal_commit: the step succeeded. The commit's time recorded, then one
 # rename commits it; journal_cleanup then keeps the operator's originals.
@@ -303,8 +304,8 @@ journal_cleanup() {
 
 # journal_recover: a bridge step that died left its journal: decided on, from
 # what the host holds now, before setup works out anything else (the
-# bridge-journal step). Prints what it did. A commit or an undo is deaf to TERM
-# and INT.
+# bridge-journal step). Prints what it did. A commit or an undo must finish: a
+# stop waits for it (step_hold).
 journal_recover() {
   local rc
   if [[ -d "$JOURNAL_DIR.done" ]]; then
@@ -315,25 +316,23 @@ journal_recover() {
   journal_refuse_class
   case "$J_CLASS" in
     finished)
-      trap '' TERM INT
+      step_hold
       echo "  A bridge step that was not recorded as done had in fact finished: completing and committing it."
       WHY=""
       "finish_$NET_TOOL" || net_fail "${WHY:-its finish failed}; the journal stays in $JOURNAL_DIR for the next run"
       journal_commit || net_fail "$BRIDGE is up, but the journal could not be committed; the next run of setup commits it"
       journal_cleanup || net_fail "$JOURNAL_KEEP_FAILED"
-      echo "  $BRIDGE is on $UPLINK, committed." ;;
+      echo "  $BRIDGE is on $UPLINK, committed."
+      step_release ;;
     untouched)
       echo "  A bridge step left a journal but changed nothing: dropping it."
       journal_drop || net_fail "cannot remove $JOURNAL_DIR" ;;
     restore)
       echo "  A bridge step that did not finish left its journal in $JOURNAL_DIR: undoing it."
-      trap '' TERM INT
-      rc=0; journal_restore || rc=$?
-      case $rc in
-        0) echo "  The network is as it was before that step." ;;
-        "$RESTORED_STORED") echo "  The network is as it was before that step, but for ${UPLINK}'s connection, now stored (above)." ;;
-        *) net_fail "undoing the earlier bridge step did not complete; its journal stays in $JOURNAL_DIR for the next run (docs/specs/DEPLOYMENT.md, The bridge, says what to do at the console)." ;;
-      esac ;;
+      step_hold
+      journal_restore || net_fail "undoing the earlier bridge step did not complete; its journal stays in $JOURNAL_DIR for the next run (docs/specs/DEPLOYMENT.md, The bridge, says what to do at the console)."
+      echo "  $RESTORE_OUTCOME."
+      step_release ;;
   esac
   changed "bridge journal: $J_CLASS"
 }

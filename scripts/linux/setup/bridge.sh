@@ -57,29 +57,33 @@ put_file() {
   changed "$1"
 }
 
-# undo: from the journal; the step fails either way.
+# undo: from the journal, inside a section that must finish; the step fails
+# either way, saying what was checked.
 undo() {
-  local rc=0
-  trap '' TERM INT
+  step_hold
   echo "  not applied: ${WHY:-stopped}; undoing it" >&2
-  journal_restore || rc=$?
-  case $rc in
-    0) fail "$BRIDGE was not applied (${WHY:-the step was stopped}). The network is as it was, and $UPLINK holds $(first_ipv4 "$UPLINK") again" ;;
-    "$RESTORED_STORED") fail "$BRIDGE was not applied (${WHY:-the step was stopped}). The network is as it was, but for ${UPLINK}'s connection, now stored (above), and $UPLINK holds $(first_ipv4 "$UPLINK") again" ;;
-  esac
-  fail "$BRIDGE was not applied (${WHY:-the step was stopped}). Undoing it did not complete: the journal stays in $JOURNAL_DIR, and the next run of setup decides from it first"
+  journal_restore || fail "$BRIDGE was not applied (${WHY:-the step was stopped}). Undoing it did not complete: the journal stays in $JOURNAL_DIR, and the next run of setup decides from it first"
+  fail "$BRIDGE was not applied (${WHY:-the step was stopped}). $RESTORE_OUTCOME"
 }
+undo_stopped() { WHY="the step was stopped"; undo; }
 
 WHY=""
 journal_begin "$NET_PLAN_DIR" || fail "cannot start the journal in $JOURNAL_DIR"
-trap 'WHY="the step was stopped"; undo' TERM INT
-if "apply_$NET_TOOL" && bridge_check "$NET_PLAN_DIR"; then
+# From the first change a stop undoes; the apply call in flight runs to its
+# end first.
+STEP_ON_STOP=undo_stopped
+step_hold
+applied=0
+"apply_$NET_TOOL" && applied=1
+step_release
+if (( applied )) && bridge_check "$NET_PLAN_DIR"; then
   # From the check that passed to the commit, a stop waits.
-  trap '' TERM INT
+  step_hold
   if ! "finish_$NET_TOOL"; then
     undo
   fi
   journal_commit || fail "$BRIDGE is up, but the journal could not be committed; the next run of setup commits it"
+  STEP_ON_STOP=""
   changed "$BRIDGE created on $UPLINK"
   if [[ "$UPLINK_MODE" == dhcp ]]; then
     echo "  $BRIDGE holds $UPLINK_ADDR, its default route and name servers, hardware address $UPLINK_MAC, client identifier $UPLINK_CLIENT_ID; $UPLINK holds no address"
@@ -88,6 +92,8 @@ if "apply_$NET_TOOL" && bridge_check "$NET_PLAN_DIR"; then
   fi
   journal_cleanup || fail "$JOURNAL_KEEP_FAILED"
   step_done
+  # A stop that waited for the commit ends the step now, its work done.
+  step_release
   exit 0
 fi
 WHY="${WHY:-the $NET_TOOL apply failed}"

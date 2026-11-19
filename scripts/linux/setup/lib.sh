@@ -2,6 +2,11 @@
 # they share, with no state of their own. Nothing here sets a trap of its
 # caller's.
 
+# The one lock for anything that changes the installation: install, update and
+# setup each hold it for their whole run (fd 8). wisp-updater, installed on its
+# own, names it too; scripts/check-bounds.mjs keeps the two the same.
+WISP_LOCK=/run/wisp.lock
+
 # refuse <CODE> <message> [<line>...]: this host is refused, before anything
 # changes. The message names what was found and what to do, further lines
 # indented below it; CODE (the error-code style of
@@ -33,46 +38,3 @@ install_file() {
 # remove_file <path>: gone, and the directory synced — when the directory is
 # still there: an undo run again after it removed the directory too succeeds.
 remove_file() { rm -f "$1" && { [[ ! -d "$(dirname "$1")" ]] || sync "$(dirname "$1")"; }; }
-
-# Processes are stopped by session: a step, and each command a caller bounds,
-# runs as the leader of a session of its own (`setsid cmd &`, its pid the
-# session's id), and every process it starts stays in that session — `timeout`
-# among them, which moves to a process group of its own, out of reach of a
-# signal to the group.
-#
-# session_signal <signal> <sid>: to every process of the session.
-session_signal() { pkill "-$1" -s "$2" 2>/dev/null || true; }
-# session_wait <pid>: until the session that pid leads is empty — its leader
-# reaped (it is a child of the caller) and every process it started gone.
-# There is no event for that: checked once a second, bounded by whoever stops
-# the session (kill_later).
-session_wait() {
-  while :; do
-    wait "$1" 2>/dev/null
-    kill -0 "$1" 2>/dev/null && continue
-    pgrep -s "$1" >/dev/null || return 0
-    sleep 1
-  done
-}
-
-# kill_later <secs> <sid>: in the background, KILL to the session after
-# <secs>; sets KILLER to its pid, which `kill -USR1` cancels. Deaf to TERM and
-# INT, so a stop sent to the caller leaves it be, and without the install
-# lock's descriptor (fd 8), so one left behind holds no lock. (wisp-updater,
-# installed on its own, has its own copy, signal_later.)
-kill_later() {
-  (
-    exec 8>&-
-    trap '' TERM INT
-    trap 'kill -KILL $! 2>/dev/null; exit 0' USR1
-    sleep "$1" & wait $!
-    pkill -KILL -s "$2" 2>/dev/null
-  ) &
-  KILLER=$!
-}
-# kill_later_cancel: the KILLER kill_later started, cancelled and reaped.
-kill_later_cancel() {
-  kill -USR1 "$KILLER" 2>/dev/null
-  wait "$KILLER" 2>/dev/null
-  return 0
-}

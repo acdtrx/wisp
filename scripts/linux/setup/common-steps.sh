@@ -32,16 +32,16 @@ source "$SETUP_DIR/bounds.sh"
 # shellcheck source=plan-record.sh
 source "$SETUP_DIR/plan-record.sh"
 
-# One lock for anything that changes the installation (/run/wisp.lock): the
+# One lock for anything that changes the installation (WISP_LOCK, lib.sh): the
 # installer's root process and the updater take it at their start and hand it
-# on (fd 8); setup run alone takes it here. The second waits, then gives up.
-WISP_LOCK=/run/wisp.lock
-WISP_LOCK_WAIT_SEC=600
+# on (fd 8); setup run alone takes it here, waiting up to LOCK_WAIT_SEC. Setup
+# holds it; the steps do not need it and run without the descriptor, so
+# nothing a step starts (dpkg's maintainer scripts, npm) can hold the lock.
 if [[ ! /proc/self/fd/8 -ef "$WISP_LOCK" ]]; then
   exec 8> "$WISP_LOCK"
 fi
-if ! flock -w "$WISP_LOCK_WAIT_SEC" 8; then
-  echo "ERROR: another install, update or setup holds $WISP_LOCK; gave up after ${WISP_LOCK_WAIT_SEC} s." >&2
+if ! flock -w "$LOCK_WAIT_SEC" 8; then
+  echo "ERROR: another install, update or setup holds $WISP_LOCK; gave up after ${LOCK_WAIT_SEC} s." >&2
   exit 1
 fi
 
@@ -51,56 +51,69 @@ source "$SETUP_DIR/distro.sh"
 
 # The network plan's directory, the steps' to share (NET_PLAN_DIR), this
 # script's to remove.
+NET_PLAN_DIR=""
+trap 'rm -rf ${NET_PLAN_DIR:+"$NET_PLAN_DIR"}' EXIT
 NET_PLAN_DIR="$(mktemp -d -t wisp-net-plan.XXXXXX)" || { echo "ERROR: cannot create a temp directory" >&2; exit 1; }
 export NET_PLAN_DIR
-trap 'rm -rf "$NET_PLAN_DIR"' EXIT
 
-# A stop (TERM, INT) is passed to the step running, which ends — the bridge
-# step undoing itself — and then the run ends. Each step runs as the leader of
-# a session of its own (lib.sh), in the background, so the stop reaches this
-# script at once and goes to every process of the step's session. The step gets
-# STEP_STOP_SEC to end (bounds.sh), and its session is then killed: setup ends
-# within SETUP_STOP_SEC of a stop, whoever sent it. The handler only records the
-# stop when no step is known yet; the step started next is stopped as soon as
-# its pid is.
-STOPPING=0
-STEP_PID=""
-STEP_KILLER=""
-stop_step() {
-  [[ -n "$STEP_PID" && -z "$STEP_KILLER" ]] || return 0
-  session_signal TERM "$STEP_PID"
-  kill_later "$STEP_STOP_SEC" "$STEP_PID"
-  STEP_KILLER="$KILLER"
+# A stop (TERM, INT) goes to the running step's leader alone: the step knows
+# which of what it runs may be cut short, ends it, and exits (step.sh,
+# step_stop). Setup waits until the step's session is empty, and at
+# STEP_STOP_SEC (bounds.sh) KILLs what is left of it: it ends within
+# SETUP_STOP_SEC of a stop, whoever sent it. The handler does the whole stop
+# and exits, so it never returns into a wait; the step is found as setup's one
+# background job, which holds even when the stop comes as the step starts.
+STEP_NAME=""
+# session_end <sid> <secs>: until the session <sid> leads is empty — no event
+# says so: checked once a second — with KILL to what is left of it after
+# <secs>; past NET_KILL_SEC more, what outlived the KILL is named.
+session_end() {
+  local deadline=$(( SECONDS + $2 ))
+  while kill -0 "$1" 2>/dev/null || pgrep -s "$1" >/dev/null; do
+    if (( SECONDS >= deadline + NET_KILL_SEC )); then
+      echo "ERROR: step $STEP_NAME left processes that outlived KILL: $(pgrep -d ' ' -s "$1")" >&2
+      return 1
+    fi
+    if (( SECONDS >= deadline )); then pkill -KILL -s "$1" 2>/dev/null; fi
+    sleep 1
+  done
 }
-trap 'STOPPING=1; stop_step' TERM INT
+setup_stop() {
+  local pid
+  trap '' TERM INT
+  pid="$(jobs -p)"
+  if [[ -n "$pid" ]]; then
+    kill -TERM "$pid" 2>/dev/null
+    session_end "$pid" "$STEP_STOP_SEC" || true
+    echo "setup stopped at step: $STEP_NAME" >&2
+  else
+    echo "setup stopped${STEP_NAME:+ after step: $STEP_NAME}" >&2
+  fi
+  exit 143
+}
+trap setup_stop TERM INT
 
 STEP_COUNT=0
 
-# run_step <name> <script> [args...]: one step, by name; the first failure ends the run.
+# run_step <name> <script> [args...]: one step, by name, as the leader of a
+# session of its own; the first failure ends the run.
 run_step() {
-  local name="$1" script="$2" rc
+  local name="$1" script="$2" rc=0 left
   shift 2
   STEP_COUNT=$((STEP_COUNT + 1))
-  (( STOPPING )) && { echo "setup stopped before step: $name" >&2; exit 143; }
   echo ""
   echo "step: $name"
-  setsid "$SETUP_DIR/$script" "$@" &
-  STEP_PID=$!
-  (( STOPPING )) && stop_step
-  # wait returns early for a stop; the step is gone once kill -0 fails.
-  while :; do
-    rc=0
-    wait "$STEP_PID" || rc=$?
-    kill -0 "$STEP_PID" 2>/dev/null || break
-  done
-  if (( STOPPING )); then
-    # What the step started ends with it, within its bound.
-    session_wait "$STEP_PID"
-    [[ -z "$STEP_KILLER" ]] || { KILLER="$STEP_KILLER"; kill_later_cancel; }
-    echo "setup stopped at step: $name" >&2
-    exit 143
+  STEP_NAME="$name"
+  setsid "$SETUP_DIR/$script" "$@" 8>&- &
+  # A stop never returns here (setup_stop exits): wait ends with the step.
+  wait "$!" || rc=$?
+  # What the step started ends with it: a process it left behind is ended.
+  left="$(pgrep -d ' ' -s "$!" || true)"
+  if [[ -n "$left" ]]; then
+    echo "  ended what step $name left running: $(ps -o comm= -p "${left// /,}" | tr '\n' ' ')" >&2
+    pkill -TERM -s "$!" 2>/dev/null
+    session_end "$!" "$NET_KILL_SEC" || exit 1
   fi
-  STEP_PID="" STEP_KILLER=""
   (( rc == 0 )) && return 0
   echo ""
   echo "setup failed at step: $name (exit $rc)" >&2
@@ -125,7 +138,7 @@ run_step dirs dirs.sh "$DEPLOY_USER"
 run_step libvirt libvirt.sh
 run_step containerd containerd.sh "$DEPLOY_USER"
 run_step cni cni.sh "$BRIDGE"
-run_step container-dns container-dns.sh "$NET_TOOL"
+run_step container-dns container-dns.sh "$NET_TOOL" "$BRIDGE"
 run_step avahi avahi.sh
 run_step helpers install-helpers.sh "$PROJECT_ROOT" "$DEPLOY_USER"
 run_step rapl rapl.sh "$DEPLOY_USER"

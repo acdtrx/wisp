@@ -41,8 +41,8 @@ ASK="${2:-}"
 # The plan parses the output of the tools it runs: one locale for all of it.
 export LC_ALL=C
 NET_SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=lib.sh
-source "$NET_SETUP_DIR/lib.sh"
+# shellcheck source=step.sh
+source "$NET_SETUP_DIR/step.sh"
 # shellcheck source=bridge-journal.sh
 source "$NET_SETUP_DIR/bridge-journal.sh"
 # shellcheck source=net-uplink.sh
@@ -50,6 +50,7 @@ source "$NET_SETUP_DIR/net-uplink.sh"
 # shellcheck source=plan-record.sh
 source "$NET_SETUP_DIR/plan-record.sh"
 
+step_begin
 refuse_no_python
 
 NET_PLAN_JOURNAL=""

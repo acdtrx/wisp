@@ -206,7 +206,7 @@ apply_networkmanager() {
   apply_notice
   net_call nmcli connection load "$NM_BRIDGE_FILE" "$NM_PORT_FILE" \
     || { WHY="NetworkManager did not load $NM_BRIDGE_FILE and $NM_PORT_FILE"; return 1; }
-  timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" nmcli --wait "$NET_APPLY_SEC" connection up "$NM_BRIDGE_UUID" >/dev/null
+  net_apply nmcli --wait "$NET_APPLY_SEC" connection up "$NM_BRIDGE_UUID" >/dev/null
 }
 check_networkmanager() {
   local link want got
@@ -251,9 +251,10 @@ finish_networkmanager() {
 # (netplan's, generated); then it is brought up. The default connection
 # NetworkManager had generated, which the step deleted, comes back as the stored
 # connection rendered from it in the plan (uplink.nmconnection) — what
-# NetworkManager itself makes of it once an operator edits it.
+# NetworkManager itself makes of it once an operator edits it; RESTORE_STORED
+# names it, also when an earlier undo of this journal loaded it.
 undo_networkmanager() {
-  local has state stored restored=0
+  local has state stored="/etc/NetworkManager/system-connections/$UPLINK_CONNECTION.nmconnection"
   if [[ "$2" == yes ]]; then
     net_call netplan generate || return 1
   fi
@@ -264,15 +265,15 @@ undo_networkmanager() {
   (( has <= 1 )) || return 1
   if (( has == 1 )); then
     [[ -s "$JOURNAL_DIR/uplink.nmconnection" ]] || return 1
-    stored="/etc/NetworkManager/system-connections/$UPLINK_CONNECTION.nmconnection"
     install_file "$stored" "$JOURNAL_DIR/uplink.nmconnection" 0600 || return 1
     net_call nmcli connection load "$stored" || return 1
-    echo "  NetworkManager's generated connection for $UPLINK, which the step had deleted, is back as a stored connection with its settings: $stored."
-    restored=$RESTORED_STORED
+    RESTORE_STORED="$stored"
+  elif [[ -z "${NM_PROFILE_FILE:-}" && -s "$JOURNAL_DIR/uplink.nmconnection" ]] \
+    && cmp -s "$stored" "$JOURNAL_DIR/uplink.nmconnection"; then
+    RESTORE_STORED="$stored"
   fi
   state="$(net_call nmcli -g GENERAL.STATE connection show "$UPLINK_CONNECTION")" || return 1
   if [[ "$state" != activated ]]; then
-    timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" nmcli --wait "$NET_APPLY_SEC" connection up "$UPLINK_CONNECTION" >/dev/null || return 1
+    net_apply nmcli --wait "$NET_APPLY_SEC" connection up "$UPLINK_CONNECTION" >/dev/null || return 1
   fi
-  return "$restored"
 }

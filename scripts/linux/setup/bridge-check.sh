@@ -7,6 +7,9 @@
 # the tool runs each from the definition the step wrote (check_<tool>). There
 # is no one event to wait on. Uses the plan's record.
 
+# The reads go to the step's temp directory (step.sh), never to the plan's or
+# the journal's: the asking phase changes nothing on the host.
+
 # facts_of: the facts compared, from l3_state's lines. On DHCP the default
 # route is compared by its gateway: its metric and source are the lease's and
 # the tool's, and an uplink may carry the same route twice (once from the
@@ -18,10 +21,10 @@ facts_of() {
     grep -E '^(addr4|route4 default|dns) ' | sed -E 's/^(route4 default via [^ ]+).*/\1/' | sort -u || true
   fi
 }
-# _read_now <dir>: what the bridge and the uplink hold now, into <dir>/now.*;
-# a part that cannot be read (the bridge not there yet) is marked so.
+# _read_now: what the bridge and the uplink hold now, into the step's
+# now.*; a part that cannot be read (the bridge not there yet) is marked so.
 _read_now() {
-  local dir="$1" state
+  local dir="$STEP_TMP_DIR" state
   rm -f "$dir"/now.*
   cat "/sys/class/net/$BRIDGE/address" > "$dir/now.mac" 2>/dev/null || echo unreadable > "$dir/now.mac"
   if state="$(l3_state "$BRIDGE" "$NET_TOOL" 2>/dev/null)"; then facts_of <<<"$state"; else echo unreadable; fi > "$dir/now.have"
@@ -32,11 +35,12 @@ _read_now() {
 # background and waited for, a read at a time, so a stop interrupts it at once.
 # Sets WHY to what differs.
 bridge_check() {
-  local dir="$1" deadline=$(( SECONDS + NET_APPLY_SEC )) mac cid want have port
-  want="$(facts_of < "$dir/uplink.state")"
+  local dir="$STEP_TMP_DIR" deadline=$(( SECONDS + NET_APPLY_SEC )) mac cid want have port
+  want="$(facts_of < "$1/uplink.state")"
   while :; do
-    _read_now "$dir" &
-    wait "$!" || true
+    _read_now &
+    # A held stop returns wait early: wait again while the read runs.
+    while kill -0 "$!" 2>/dev/null; do wait "$!" 2>/dev/null || true; done
     mac="$(cat "$dir/now.mac" 2>/dev/null || true)"
     have="$(cat "$dir/now.have" 2>/dev/null || true)"
     port="$(cat "$dir/now.port" 2>/dev/null || true)"
@@ -56,6 +60,25 @@ bridge_check() {
       rm -f "$dir"/now.*
       return 1
     fi
+    sleep 1
+  done
+}
+
+# uplink_back <dir>: after an undo, whether the uplink holds again what it
+# held before (<dir>/uplink.state, the check's reference), waited for as the
+# check waits. Sets UPLINK_HOLDS to what it holds, and UPLINK_HELD to what it
+# held, for the message.
+uplink_back() {
+  local deadline=$(( SECONDS + NET_APPLY_SEC )) state
+  UPLINK_HELD="$(facts_of < "$1/uplink.state")"
+  while :; do
+    ( if state="$(l3_state "$UPLINK" "$NET_TOOL" 2>/dev/null)"; then facts_of <<<"$state"; else echo unreadable; fi \
+      > "$STEP_TMP_DIR/now.uplink" ) &
+    while kill -0 "$!" 2>/dev/null; do wait "$!" 2>/dev/null || true; done
+    UPLINK_HOLDS="$(cat "$STEP_TMP_DIR/now.uplink" 2>/dev/null || true)"
+    rm -f "$STEP_TMP_DIR/now.uplink"
+    [[ "$UPLINK_HOLDS" != "$UPLINK_HELD" ]] || return 0
+    (( SECONDS < deadline )) || return 1
     sleep 1
   done
 }

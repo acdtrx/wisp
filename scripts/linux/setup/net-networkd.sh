@@ -112,7 +112,7 @@ apply_networkd() {
   put_file "$(networkd_bridge_file network)" "$NET_PLAN_DIR/bridge.network" 0644 || return 1
   put_file "$NETWORKD_PORT_FILE" "$NET_PLAN_DIR/port.network" "$mode" || return 1
   apply_notice
-  timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" networkctl reload
+  net_call networkctl reload
 }
 check_networkd() {
   local link want got
