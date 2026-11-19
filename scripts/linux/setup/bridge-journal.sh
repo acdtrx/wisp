@@ -316,6 +316,7 @@ journal_recover() {
   local rc p
   if [[ -d "$JOURNAL_DIR.done" ]]; then
     journal_cleanup || net_fail "$JOURNAL_KEEP_FAILED"
+    changed "the originals of an earlier bridge step kept"
   fi
   [[ -d "$JOURNAL_DIR" ]] || return 0
   # A stage the step left beside a file it records (cut short between stage
