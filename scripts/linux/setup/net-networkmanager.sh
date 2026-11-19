@@ -205,11 +205,9 @@ plan_networkmanager() {
   if [[ -z "$NM_PROFILE_FILE" ]]; then
     { printf '%s\n' type ethernet; cat "$NET_PLAN_DIR/copy.carry"; } > "$NET_PLAN_DIR/uplink.args"
   fi
-  # Each rendered as a keyfile and checked by NetworkManager itself, offline:
+  # Each rendered as a keyfile and checked by NetworkManager itself, offline
+  # (nmcli --offline, NetworkManager 1.40 and later: every supported host's):
   # nothing is added.
-  if ! net_call nmcli --offline connection add --help >/dev/null 2>&1; then
-    net_refuse NM_NO_OFFLINE "this nmcli has no --offline, with which setup checks the connections it adds before adding them."
-  fi
   for f in bridge port uplink; do
     [[ -f "$NET_PLAN_DIR/$f.args" ]] || continue
     mapfile -t args < "$NET_PLAN_DIR/$f.args"
