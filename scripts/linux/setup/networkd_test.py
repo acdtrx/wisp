@@ -44,6 +44,14 @@ class PortSplit(unittest.TestCase):
         self.assertEqual(out['bridge.network.body'], '\n[Link]\nRequiredForOnline=routable\n\n[Network]\nDHCP=yes\n')
         self.assertEqual(out['port.match'], 'Name=eth0\n')
 
+    def test_a_match_by_more_than_the_name_is_refused_as_such(self):
+        for text in ('[Match]\nName=eth*\n\n[Network]\nDHCP=yes\n',
+                     '[Match]\nDriver=e1000\n\n[Network]\nDHCP=yes\n',
+                     '[Match]\nMACAddress=52:54:00:12:34:56\n\n[Network]\nDHCP=yes\n'):
+            with self.subTest(text=text):
+                _, rc, _ = port(text)
+                self.assertEqual(rc, 5)
+
     def test_a_setting_not_carried_is_refused(self):
         _, rc, _ = port('[Match]\nName=eth0\n\n[Network]\nDHCP=yes\nBond=bond0\n')
         self.assertEqual(rc, 3)

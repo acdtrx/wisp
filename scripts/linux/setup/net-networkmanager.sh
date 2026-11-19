@@ -72,6 +72,25 @@ nm_others() {
   done
 }
 
+# The remedy for a connection netplan renders that setup cannot keep.
+NM_NETPLAN_REMEDY="store it as a keyfile under /etc/NetworkManager/system-connections, or let netplan run the uplink (renderer: networkd), and run this again."
+
+# nm_refuse_settings <setting.property>...: the uplink's connection sets what
+# setup neither carries to the bridge nor keeps on the port (nm.py unknown).
+# Autoconnect off and permissions have a direct remedy, named when they are
+# all there is; anything else is the bridge the operator makes.
+nm_refuse_settings() {
+  local s fix="" what=()
+  for s in "$@"; do
+    case "$s" in
+      connection.autoconnect) fix+=" connection.autoconnect yes"; what+=("autoconnect off (it would not come up by itself)") ;;
+      connection.permissions) fix+=' connection.permissions ""'; what+=("permissions (it would come up for those users alone)") ;;
+      *) net_refuse NM_SETTING "$UPLINK's connection sets $*, which setup does not carry over to a bridge." ;;
+    esac
+  done
+  refuse NM_SETTING "$UPLINK's connection sets $(IFS=,; echo "${what[*]}" | sed 's/,/, /g'), which the bridge cannot carry: the bridge comes up at boot for the host. Lift it (nmcli connection modify $UPLINK_CONNECTION$fix), and run this again."
+}
+
 plan_networkmanager() {
   local con mac files n prio routes4 routes6 metric4 metric6 v f args why flags
   UPLINK_CONNECTION="$(net_read nmcli -g GENERAL.CON-UUID device show "$UPLINK")" || exit 1
@@ -87,16 +106,16 @@ plan_networkmanager() {
   [[ "$(_prop connection.type)" == 802-3-ethernet ]] \
     || net_refuse NM_NOT_ETHERNET "$UPLINK's connection is of type $(_prop connection.type)."
   [[ -z "$(_prop match.interface-name)" ]] \
-    || net_refuse NM_MATCH "$UPLINK's connection matches the interfaces \"$(_prop match.interface-name)\", not $UPLINK alone."
+    || refuse NM_MATCH "$UPLINK's connection matches the interfaces \"$(_prop match.interface-name)\", not $UPLINK alone: bind it to $UPLINK by name (nmcli connection modify $UPLINK_CONNECTION match.interface-name \"\" connection.interface-name $UPLINK), and run this again."
   mac="$(_prop 802-3-ethernet.mac-address)"
   if [[ "$(_prop connection.interface-name)" != "$UPLINK" && "${mac,,}" != "$UPLINK_MAC" ]]; then
-    net_refuse NM_NOT_BOUND "$UPLINK's connection is not bound to $UPLINK by name or hardware address, so it applies to other interfaces too."
+    refuse NM_NOT_BOUND "$UPLINK's connection is not bound to $UPLINK by name or hardware address, so it applies to other interfaces too: bind it (nmcli connection modify $UPLINK_CONNECTION connection.interface-name $UPLINK), and run this again."
   fi
   # Every setting it holds goes to the bridge or stays on the port (nm.py's
   # lists); any other is refused, naming it.
   why="$(nm_dbus "$UPLINK_CONNECTION" GetSettings | python3 -I "$NET_SETUP_DIR/nm.py" unknown)" \
     || net_fail "cannot read the settings of ${UPLINK}'s connection from NetworkManager"
-  [[ -z "$why" ]] || net_refuse NM_SETTING "$UPLINK's connection sets $(echo $why), which setup does not carry over to a bridge."
+  [[ -z "$why" ]] || nm_refuse_settings $why
   # The uplink's connection is deleted as the bridge step's last change, its
   # definition kept to undo that: a keyfile under /etc, the file netplan keeps
   # for a connection NetworkManager made, or — for the default one
@@ -110,19 +129,19 @@ plan_networkmanager() {
     /etc/NetworkManager/system-connections/*) ;;
     /run/NetworkManager/system-connections/netplan-NM-"$UPLINK_CONNECTION".nmconnection)
       NM_PROFILE_FILE="/etc/netplan/90-NM-$UPLINK_CONNECTION.yaml"
-      [[ -f "$NM_PROFILE_FILE" ]] || net_refuse NM_NETPLAN_MISSING "${UPLINK}'s connection is rendered by netplan, but $NM_PROFILE_FILE is missing." ;;
+      [[ -f "$NM_PROFILE_FILE" ]] || refuse NM_NETPLAN_MISSING "${UPLINK}'s connection is rendered by netplan, but $NM_PROFILE_FILE is missing, so setup cannot keep it to undo its removal: $NM_NETPLAN_REMEDY" ;;
     /run/NetworkManager/system-connections/netplan-*)
-      net_refuse NM_NETPLAN_OPERATOR "${UPLINK}'s connection is rendered by netplan from an operator's file in /etc/netplan: setup does not change it through NetworkManager." ;;
+      refuse NM_NETPLAN_OPERATOR "${UPLINK}'s connection is rendered by netplan from an operator's file in /etc/netplan, which setup does not change through NetworkManager: $NM_NETPLAN_REMEDY" ;;
     /run/NetworkManager/*)
       flags="$(nm_dbus "$UPLINK_CONNECTION" Flags | python3 -I "$NET_SETUP_DIR/nm.py" flags)" \
         || net_fail "cannot read the flags of ${UPLINK}'s connection from NetworkManager"
       (( flags & NM_GENERATED )) \
         || refuse NM_PROFILE_IN_RUN "${UPLINK}'s connection is held in $NM_PROFILE_FILE, which something writes again at every boot (an initrd's network configuration, for one), so it would come back beside the bridge: store the connection as a keyfile under /etc/NetworkManager/system-connections and stop what writes it, then run this again."
       NM_PROFILE_FILE="" ;;
-    *) net_refuse NM_PROFILE_STORE "${UPLINK}'s connection is stored in ${NM_PROFILE_FILE:-no file}, where setup cannot keep it to undo its removal." ;;
+    *) refuse NM_PROFILE_STORE "${UPLINK}'s connection is stored in ${NM_PROFILE_FILE:-no file}, where setup cannot keep it to undo its removal: store it as a keyfile under /etc/NetworkManager/system-connections, and run this again." ;;
   esac
   [[ -z "$NM_PROFILE_FILE" ]] || journal_root_ok "$NM_PROFILE_FILE" \
-    || net_refuse NM_PROFILE_STORE "${UPLINK}'s connection is stored in $NM_PROFILE_FILE, where setup cannot keep it to undo its removal."
+    || refuse NM_PROFILE_STORE "${UPLINK}'s connection is stored in $NM_PROFILE_FILE, where setup cannot keep it to undo its removal: store it as a keyfile under /etc/NetworkManager/system-connections, and run this again."
   [[ ! -L "$NM_PROFILE_FILE" ]] \
     || refuse NM_PROFILE_LINK "${UPLINK}'s connection is stored in $NM_PROFILE_FILE, a symbolic link, which the undo of its removal would bring back as a file: make it the file itself, and run this again."
   nm_others

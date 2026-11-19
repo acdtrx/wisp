@@ -16,7 +16,7 @@ lines, `#` and `;` comments, a trailing backslash continuing a line.
       the uplink's file split: what moves to the bridge (bridge.network.body),
       what stays on the port (port.match, port.link); prints dhcp or static.
       Exit 3 with the reason printed: refused; exit 4: refused, a link hangs
-      off the uplink.
+      off the uplink; exit 5: refused, for how its [Match] matches.
 """
 import fnmatch
 import json
@@ -27,9 +27,13 @@ DIRS = ("/etc/systemd/network", "/run/systemd/network", "/usr/local/lib/systemd/
         "/usr/lib/systemd/network", "/lib/systemd/network")
 
 
-def refuse(why):
+def refuse(why, code=3):
     print(why)
-    sys.exit(3)
+    sys.exit(code)
+
+
+def refuse_match(why):
+    refuse(why, 5)
 
 
 def parse(path):
@@ -169,14 +173,14 @@ def port(path, uplink, mac, out):
         if sect == 'Match':
             if key == 'Name':
                 if value != uplink:
-                    refuse(f'{path} matches the name "{value}", not {uplink} alone')
+                    refuse_match(f'{path} matches the name "{value}", not {uplink} alone')
                 by_name = True
             elif key in ('MACAddress', 'PermanentMACAddress'):
                 if value.lower() != mac:
-                    refuse(f'{path} matches {value}, not {uplink} ({mac}) alone')
+                    refuse_match(f'{path} matches {value}, not {uplink} ({mac}) alone')
                 by_mac = by_mac or key == 'MACAddress'
             else:
-                refuse(f'{path} matches by {key}')
+                refuse_match(f'{path} matches by {key}')
             match.append(line)
             continue
         if key == 'IAID':
@@ -209,7 +213,7 @@ def port(path, uplink, mac, out):
     # The bridge takes the uplink's hardware address: a match on it alone would
     # take the bridge too.
     if by_mac and not by_name:
-        refuse(f'{path} matches {uplink} by its hardware address alone, which the bridge takes too')
+        refuse_match(f'{path} matches {uplink} by its hardware address alone, which the bridge takes too')
 
     write_sections(os.path.join(out, 'bridge.network.body'), body)
     write_sections(os.path.join(out, 'port.link'), link)

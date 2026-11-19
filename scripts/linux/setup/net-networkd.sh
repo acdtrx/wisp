@@ -58,6 +58,7 @@ plan_networkd() {
     || { rc=$?; case $rc in
            3) net_refuse NETWORKD_SETTING "$mode." ;;
            4) net_refuse UPLINK_DEPENDENT "$mode." ;;
+           5) refuse NETWORKD_SETTING "$mode: match $UPLINK by Name=$UPLINK in its [Match] (with MACAddress=$UPLINK_MAC, if wanted), and run this again." ;;
          esac; net_fail "cannot read $UPLINK_NETFILE: $mode"; }
   UPLINK_MODE="$mode"
   identity=""
