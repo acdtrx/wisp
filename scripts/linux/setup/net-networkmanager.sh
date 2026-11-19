@@ -83,6 +83,8 @@ plan_networkmanager() {
   esac
   [[ -z "$NM_PROFILE_FILE" ]] || journal_root_ok "$NM_PROFILE_FILE" \
     || net_refuse NM_PROFILE_STORE "${UPLINK}'s connection is stored in $NM_PROFILE_FILE, where setup cannot keep it to undo its removal."
+  [[ ! -L "$NM_PROFILE_FILE" ]] \
+    || refuse NM_PROFILE_LINK "${UPLINK}'s connection is stored in $NM_PROFILE_FILE, a symbolic link, which the undo of its removal would bring back as a file: make it the file itself, and run this again."
   # Exactly one definition for the uplink: any other Ethernet connection not
   # bound to another device could take it, at boot or after the step.
   while IFS=: read -r uuid n v f; do

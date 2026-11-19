@@ -3,9 +3,13 @@
 # exactly what the steps would write.
 
 # has_server_name <install-dir>: config/wisp-config.json names the server.
+# A config that is not JSON ends the caller, naming it.
 has_server_name() {
-  local file="$1/config/wisp-config.json"
-  [[ -f "$file" ]] && grep -qE '"serverName"[[:space:]]*:[[:space:]]*"[^"]' "$file"
+  local file="$1/config/wisp-config.json" rc=0
+  [[ -f "$file" ]] || return 1
+  python3 -I "$(dirname "${BASH_SOURCE[0]}")/install-state.py" server-name "$file" || rc=$?
+  (( rc <= 1 )) || exit 1
+  return "$rc"
 }
 
 # has_password <install-dir>: config/wisp-password holds a password.
