@@ -24,6 +24,7 @@ const CHECKS = [
   { name: 'lint', command: ['npm', 'run', 'lint', '--silent'], needs: '.' },
   { name: 'shell', command: ['node', 'scripts/check-shell.mjs'] },
   { name: 'bounds', command: ['node', 'scripts/check-bounds.mjs'] },
+  { name: 'refusals', command: ['node', 'scripts/check-refusals.mjs'] },
   { name: 'test', command: ['npm', 'test', '--silent'], needs: 'frontend', timeoutMs: 120_000 },
 ];
 

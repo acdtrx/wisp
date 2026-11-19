@@ -199,7 +199,7 @@ journal_classify() {
 # the host cannot be read, failed), naming what to do.
 journal_refuse_class() {
   case "$J_CLASS" in
-    fail\ *) net_fail "${J_CLASS#fail }: setup cannot tell what the bridge step that left its journal in $JOURNAL_DIR changed." ;;
+    fail\ *) refuse JOURNAL_UNREADABLE "${J_CLASS#fail }: setup cannot tell what the bridge step that left its journal in $JOURNAL_DIR changed. Make it answer (for NetworkManager: systemctl status NetworkManager), and run this again." ;;
     bad\ *) refuse JOURNAL_NOT_SETUPS "${J_CLASS#bad }. Put the network as you want it, remove $JOURNAL_DIR (its files/ holds the originals of what the step changed), and run this again." ;;
     changed\ *) refuse JOURNAL_CHANGED "a bridge step that did not finish left its journal in $JOURNAL_DIR, and since then someone else changed${J_CLASS#changed}: setup does not undo over that. Put each back as the step wrote it or as it was (its files/ holds the originals), or remove $JOURNAL_DIR once the network is as you want it, and run this again." ;;
   esac
