@@ -67,28 +67,25 @@ DEPLOY_OWNER="$(stat -c %U:%G "$INSTALL_DIR")"
 PREV_DIR="${INSTALL_DIR}.prev"
 SERVICE_UNIT=wisp
 
-# The bounds, and the stop budget they add up to. When the unit's start times
-# out, systemd sends this script TERM (KillMode=mixed: this process only) and
-# gives it TimeoutStopSec before SIGKILL. In that time: the step running is
-# stopped — setup gets SETUP_STOP_SEC, the time it takes to end when stopped
-# (BRIDGE_STOP_SEC, 600 s, in scripts/linux/setup/bridge-journal.sh: the
-# bridge step's undo; then setup kills the step and ends), any other step
-# KILL_GRACE_SEC — and is then killed; then the rollback, each part bounded:
-# stop wisp, restore the tree, the restored tree's setup, daemon-reload, the
-# start, the read of its state. A part that runs past its bound gets
-# KILL_GRACE_SEC more to die. STOP_BUDGET_SEC is the sum; the unit's
-# TimeoutStopSec (systemd/linux/wisp-updater.service) is at least that.
+# The bounds. Each layer owns its own: the updater bounds what it runs itself;
+# setup bounds its own steps and ends within its own stop bound once sent a TERM
+# (scripts/linux/setup/bounds.sh), so the updater sends setup a TERM and waits,
+# and never kills it. When the unit's start times out, systemd sends this script
+# TERM (KillMode=mixed: this process only) and gives it TimeoutStopSec before
+# SIGKILL: the stopped setup ending, then the rollback, each of its parts
+# bounded here — stop wisp, restore the tree, the restored tree's setup (past
+# its limit, a TERM, and setup's own stop bound again), daemon-reload, the
+# start, the read of its state; a part that runs past its bound gets
+# KILL_GRACE_SEC more to die. scripts/check-bounds.mjs (npm run check) sums the
+# worst case from these numbers and setup's, and fails when the unit's
+# TimeoutStopSec (systemd/linux/wisp-updater.service) is below it.
 KILL_GRACE_SEC=10
-SETUP_STOP_SEC=$(( 600 + KILL_GRACE_SEC ))
 STOP_WISP_SEC=30
 ROLLBACK_RESTORE_SEC=120
 ROLLBACK_SETUP_SEC=300
 DAEMON_RELOAD_SEC=30
 ROLLBACK_START_WAIT_SEC=120
 STATUS_SEC=10
-STOP_BUDGET_SEC=$(( SETUP_STOP_SEC + KILL_GRACE_SEC \
-  + STOP_WISP_SEC + ROLLBACK_RESTORE_SEC + ROLLBACK_SETUP_SEC + DAEMON_RELOAD_SEC \
-  + ROLLBACK_START_WAIT_SEC + STATUS_SEC + 6 * KILL_GRACE_SEC ))   # 1290 s
 
 # User-data and runtime scratch must survive the swap rsync.
 RSYNC_EXCLUDES=(
@@ -109,55 +106,75 @@ host_setup_touched=0
 exec 8> /run/wisp.lock
 flock -w 600 8 || fail "another install, update or setup holds /run/wisp.lock"
 
-# Every command that can take long runs through run_child: in a session of its
-# own, in the background, so a TERM reaches this script at once and is passed
-# to the command's whole process group. A stop (before the rollback) gives the
-# command GRACE seconds to end, then kills its group, and the script exits 143:
-# the EXIT trap rolls back. A LIMIT (the rollback's parts) stops the command
-# the same way after LIMIT seconds: TERM, then KILL_GRACE_SEC later KILL. The
-# handler only records a stop when no command is known yet; the next command
-# is not started.
+# Every command that can take long runs through run_child: as the leader of a
+# session of its own, in the background, so a TERM reaches this script at once
+# and is passed on. A command that bounds itself (setup) is sent TERM alone and
+# waited for. Any other is sent TERM in its whole session — timeout's process
+# group too — given GRACE seconds to end, then its session is killed, and the
+# wait lasts until the session is empty. A stop (before the rollback) then
+# exits 143: the EXIT trap rolls back. A LIMIT (the rollback's parts) stops the
+# command the same way after LIMIT seconds. The handler only records a stop
+# when no command is known yet; the next command is not started.
 STOPPING=0
 CHILD=""
 CHILD_GRACE=0
+CHILD_OWN_BOUND=0
 CHILD_STOPPER=""
-# signal_later <secs> <pgid> <TERM|KILL>: in the background, that signal to the
-# group after <secs> (a TERM followed by KILL KILL_GRACE_SEC later). Deaf to
-# TERM and INT, so a stop sent to this script's group leaves it be; cancelled by
-# USR1. Without the lock's descriptor, so one left behind holds no lock.
+# signal_later <secs> <sid> <TERM|KILL|SELF-TERM>: in the background, that
+# signal to the session after <secs> (a TERM followed by KILL KILL_GRACE_SEC
+# later; SELF-TERM, a TERM to the leader alone, for a command that bounds
+# itself). Deaf to TERM and INT, so a stop sent to this script leaves it be;
+# cancelled by USR1. Without the lock's descriptor, so one left behind holds no
+# lock. (Setup's own copy, kill_later, is in scripts/linux/setup/lib.sh: this
+# script is installed on its own.)
 signal_later() {
   (
     exec 8>&-
     trap '' TERM INT
     trap 'kill -KILL $! 2>/dev/null; exit 0' USR1
     sleep "$1" & wait $!
-    kill -"$3" -- "-$2" 2>/dev/null
-    [[ "$3" == TERM ]] || exit 0
+    case "$3" in
+      SELF-TERM) kill -TERM "$2" 2>/dev/null; exit 0 ;;
+      KILL) pkill -KILL -s "$2" 2>/dev/null; exit 0 ;;
+    esac
+    pkill -TERM -s "$2" 2>/dev/null
     sleep "$KILL_GRACE_SEC" & wait $!
-    kill -KILL -- "-$2" 2>/dev/null
+    pkill -KILL -s "$2" 2>/dev/null
   ) &
 }
 stop_child() {
   [[ -n "$CHILD" && -z "$CHILD_STOPPER" ]] || return 0
-  kill -TERM -- "-$CHILD" 2>/dev/null || kill -TERM "$CHILD" 2>/dev/null
+  if (( CHILD_OWN_BOUND )); then
+    kill -TERM "$CHILD" 2>/dev/null
+    return 0
+  fi
+  pkill -TERM -s "$CHILD" 2>/dev/null
   signal_later "$CHILD_GRACE" "$CHILD" KILL
   CHILD_STOPPER=$!
 }
-# run_child <limit, 0 for none> <grace on a stop> <cmd...>
+# run_child <limit, 0 for none> <grace on a stop, or own-bound> <cmd...>
 run_child() {
   local limit="$1" pid rc limiter="" k
-  CHILD_GRACE="$2"; shift 2
+  CHILD_OWN_BOUND=0 CHILD_GRACE="$2"
+  [[ "$2" != own-bound ]] || CHILD_OWN_BOUND=1 CHILD_GRACE=0
+  shift 2
   (( STOPPING )) && exit 143
   setsid "$@" &
   pid=$!
   CHILD=$pid
-  if (( limit > 0 )); then signal_later "$limit" "$pid" TERM; limiter=$!; fi
+  if (( limit > 0 )); then
+    if (( CHILD_OWN_BOUND )); then signal_later "$limit" "$pid" SELF-TERM; else signal_later "$limit" "$pid" TERM; fi
+    limiter=$!
+  fi
   (( STOPPING )) && stop_child
-  # wait returns early for a signal; the command is gone once kill -0 fails.
+  # wait returns early for a signal; the command is gone once kill -0 fails,
+  # and what it started once its session is empty.
   while :; do
     rc=0
     wait "$pid" || rc=$?
-    kill -0 "$pid" 2>/dev/null || break
+    kill -0 "$pid" 2>/dev/null && continue
+    pgrep -s "$pid" >/dev/null || break
+    sleep 1
   done
   for k in $limiter $CHILD_STOPPER; do kill -USR1 "$k" 2>/dev/null; wait "$k" 2>/dev/null; done
   CHILD="" CHILD_STOPPER=""
@@ -193,7 +210,7 @@ rollback() {
       echo "step:rollback-setup"
       local old_steps="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
       if [[ -x "$old_steps" ]]; then
-        run_child "$ROLLBACK_SETUP_SEC" 0 "$old_steps" "$INSTALL_DIR" "$DEPLOY_USER" \
+        run_child "$ROLLBACK_SETUP_SEC" own-bound "$old_steps" "$INSTALL_DIR" "$DEPLOY_USER" \
           || echo "rollback-warning: the restored tree's setup failed or ran past ${ROLLBACK_SETUP_SEC}s: wisp.service and the helpers may still be the new release's"
       else
         echo "rollback-warning: $old_steps missing: wisp.service and the helpers may still be the new release's"
@@ -242,7 +259,7 @@ echo "step:setup"
 SETUP="$INSTALL_DIR/scripts/linux/setup/common-steps.sh"
 [[ -x "$SETUP" ]] || fail "missing $SETUP — releases older than v2.0.2 cannot be installed by this updater"
 host_setup_touched=1
-run_child 0 "$SETUP_STOP_SEC" "$SETUP" "$INSTALL_DIR" "$DEPLOY_USER" || fail "setup failed"
+run_child 0 own-bound "$SETUP" "$INSTALL_DIR" "$DEPLOY_USER" || fail "setup failed"
 run_child "$DAEMON_RELOAD_SEC" "$KILL_GRACE_SEC" systemctl daemon-reload || fail "daemon-reload failed"
 
 echo "step:start-service"

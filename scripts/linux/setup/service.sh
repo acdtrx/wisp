@@ -16,3 +16,13 @@ wisp_service() {
   fi
   echo "  Ready."
 }
+
+# wisp_service_installed: whether this host has wisp.service (an install over a
+# running install stops it first; a first install has none).
+wisp_service_installed() {
+  [[ "$(systemctl show -p LoadState --value wisp 2>/dev/null)" == loaded ]]
+}
+# wisp_service_stop: stopped, within the unit's own stop bound (TimeoutStopSec).
+wisp_service_stop() {
+  systemctl stop wisp
+}

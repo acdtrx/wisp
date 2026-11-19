@@ -5,9 +5,12 @@
 # the release, the host refused or accepted (distro, network plan — the bridge
 # worked out and checked), then the questions. Then the work runs to the end in
 # a process of its own, in a session of its own, ignoring the hangup and
-# writing only to a log: copy the tree, run setup (whose last change applies
-# the bridge, after the backend's dependencies and the answers), and start
-# Wisp, waiting until it is ready. This process follows the log until the work
+# writing only to a log, in the updater's order: the plan made again and
+# compared with what the operator confirmed, before any change; then Wisp
+# stopped (an install over a running one), the tree replaced, setup run (whose
+# last change applies the bridge, after the backend's dependencies and the
+# answers), and Wisp started, waiting until it is ready. The install has no
+# rollback: a failed setup says what state it left. This process follows the log until the work
 # ends; a dropped connection or Ctrl-C stops only the following. The log is
 # removed once the install has succeeded, and kept, and named, when it fails.
 # A directory push.sh made for the tree is removed when the install ends,
@@ -31,25 +34,46 @@ if [[ "${1:-}" == --work ]]; then
   shift
   SOURCE_DIR="$1" INSTALL_DIR="$2" DEPLOY_USER="$3" DEPLOY_GROUP="$4" LOG="$5" REMOVE_DIR="$6"
   trap '' HUP
-  trap 'rm -rf "$WISP_INSTALL_ANSWERS" ${REMOVE_DIR:+"$REMOVE_DIR"}' EXIT
+  # shellcheck source=setup/plan-record.sh
+  source "$SETUP_SRC/plan-record.sh"
+  NET_PLAN_DIR="$(mktemp -d -t wisp-net-plan.XXXXXX)"
+  trap 'rm -rf "$WISP_INSTALL_ANSWERS" "$NET_PLAN_DIR" ${REMOVE_DIR:+"$REMOVE_DIR"}' EXIT
 
+  # Before any change: the plan made again from the tree to install, under the
+  # lock this process holds (fd 8), as the operator was asked it.
+  "$SETUP_SRC/network-plan.sh" "$NET_PLAN_DIR" --ask
+  plan_record_read "$NET_PLAN_DIR/plan"
+  if [[ "$(plan_confirmation)" != "$WISP_CONFIRMED_BRIDGE" ]]; then
+    planned="$(plan_confirmation)"
+    echo "ERROR NETWORK_CHANGED_SINCE_ASKED: the network changed since the install asked: it would now make ${planned/#none/no bridge}, not ${WISP_CONFIRMED_BRIDGE/#none/no bridge}. Nothing was changed. Run the install again." >&2
+    exit 1
+  fi
+  rm -rf "$NET_PLAN_DIR"
+
+  # From here on, a failure leaves the host as this says.
+  INSTALLED_STATE="Wisp is stopped, and the new tree is in place in $INSTALL_DIR. Run the install again"
+  # shellcheck source=setup/service.sh
+  source "$SETUP_SRC/service.sh"
+  if wisp_service_installed; then
+    echo "--- Stopping Wisp ---"
+    wisp_service_stop || { echo "ERROR: wisp.service did not stop; nothing was changed. Run the install again." >&2; exit 1; }
+  fi
   echo "--- Installing the tree ---"
-  "$SETUP_SRC/copy.sh" "$SOURCE_DIR" "$INSTALL_DIR"
-  chown -R "$DEPLOY_USER:$DEPLOY_GROUP" "$INSTALL_DIR"
+  "$SETUP_SRC/copy.sh" "$SOURCE_DIR" "$INSTALL_DIR" \
+    || { echo "ERROR: the tree was not copied whole into $INSTALL_DIR; Wisp is stopped. Run the install again." >&2; exit 1; }
+  chown -R "$DEPLOY_USER:$DEPLOY_GROUP" "$INSTALL_DIR" || { echo "ERROR: cannot give $INSTALL_DIR to $DEPLOY_USER. $INSTALLED_STATE." >&2; exit 1; }
   SETUP_DIR="$INSTALL_DIR/scripts/linux/setup"
 
   echo ""
-  # Setup works the plan out again, under the lock this process holds (fd 8),
-  # and stops before any change if it would bridge otherwise than the operator
-  # confirmed (WISP_CONFIRMED_BRIDGE); it writes the answers
-  # (WISP_INSTALL_ANSWERS); its last change is the bridge.
-  "$SETUP_DIR/common-steps.sh" "$INSTALL_DIR" "$DEPLOY_USER"
+  # Setup plans again, under the lock, and stops before any change if it would
+  # bridge otherwise than the operator confirmed (WISP_CONFIRMED_BRIDGE); it
+  # writes the answers (WISP_INSTALL_ANSWERS); its last change is the bridge.
+  "$SETUP_DIR/common-steps.sh" "$INSTALL_DIR" "$DEPLOY_USER" \
+    || { echo "" >&2; echo "ERROR: setup failed (above). $INSTALLED_STATE." >&2; exit 1; }
 
   echo ""
   echo "--- Starting Wisp ---"
-  # shellcheck source=setup/service.sh
-  source "$SETUP_DIR/service.sh"
-  wisp_service restart
+  wisp_service start || { echo "ERROR: Wisp did not start (above). The new tree is in place in $INSTALL_DIR and set up. Fix what its log says, then start it: sudo systemctl start wisp" >&2; exit 1; }
 
   # shellcheck source=../../backend/scripts/wisp-port.sh
   source "$INSTALL_DIR/backend/scripts/wisp-port.sh"
@@ -78,9 +102,12 @@ SOURCE_DIR="$1" INSTALL_DIR="$2" DEPLOY_USER="$3" DEPLOY_GROUP="$4" SERVER_NAME=
 # The push's directory: the one above the tree, as push.sh names it; marked,
 # so push.sh leaves it to the install from here.
 if [[ -n "$REMOVE_DIR" ]]; then
-  [[ "$REMOVE_DIR" == "$(dirname "$SOURCE_DIR")" && "$REMOVE_DIR" =~ ^/tmp/wisp-push\.[A-Za-z0-9]+$ && ! -L "$REMOVE_DIR" ]] \
-    || { echo "ERROR: --remove-source is for a tree push.sh unpacked in /tmp/wisp-push.*; this one is $SOURCE_DIR." >&2; exit 1; }
-  touch "$REMOVE_DIR/.install-started"
+  [[ "$REMOVE_DIR" == "$(dirname "$SOURCE_DIR")" && "$REMOVE_DIR" =~ ^/tmp/wisp-push\.[A-Za-z0-9]+$ && ! -L "$REMOVE_DIR" && -d "$REMOVE_DIR" \
+    && "$(stat -c %u "$REMOVE_DIR")" == "${SUDO_UID:-}" ]] \
+    || { echo "ERROR: --remove-source is for a tree push.sh unpacked in a /tmp/wisp-push.* directory of yours; this one is $SOURCE_DIR." >&2; exit 1; }
+  # Made, never followed: a name already there (a link among them) fails.
+  ( set -o noclobber; : > "$REMOVE_DIR/.install-started" ) \
+    || { echo "ERROR: cannot mark $REMOVE_DIR as the install's." >&2; exit 1; }
   trap 'rm -rf "$REMOVE_DIR"' EXIT
 fi
 
@@ -124,21 +151,26 @@ echo ""
 
 # shellcheck source=setup/distro.sh
 source "$SETUP_SRC/distro.sh"
-# The asking phase changes nothing: the plan only classifies a journal an
-# earlier bridge step left (NET_PLAN_ASK).
-NET_PLAN_ASK=1
-# shellcheck source=setup/network-plan.sh
-source "$SETUP_SRC/network-plan.sh"
+# shellcheck source=setup/lib.sh
+source "$SETUP_SRC/lib.sh"
+# shellcheck source=setup/bridge-journal.sh
+source "$SETUP_SRC/bridge-journal.sh"
 # shellcheck source=setup/install-state.sh
 source "$SETUP_SRC/install-state.sh"
 
-TERMINAL=0
-[[ -t 0 ]] && TERMINAL=1
+NET_PLAN_DIR="$(mktemp -d -t wisp-net-plan.XXXXXX)"
 WISP_INSTALL_ANSWERS="$(mktemp -d -t wisp-install-answers.XXXXXX)"
 export WISP_INSTALL_ANSWERS
 trap 'rm -rf "$NET_PLAN_DIR" "$WISP_INSTALL_ANSWERS" ${REMOVE_DIR:+"$REMOVE_DIR"}' EXIT
+# The asking phase changes nothing: the plan only classifies a journal an
+# earlier bridge step left (--ask).
+"$SETUP_SRC/network-plan.sh" "$NET_PLAN_DIR" --ask
+plan_record_read "$NET_PLAN_DIR/plan"
 
-case "$NET_PLAN_JOURNAL" in
+TERMINAL=0
+[[ -t 0 ]] && TERMINAL=1
+
+case "${NET_PLAN_JOURNAL:-}" in
   restore) echo "A bridge step that did not finish left its journal in $JOURNAL_DIR: the install undoes it first."; echo "" ;;
   finished) echo "A bridge step that did not record its end had finished: the install records it."; echo "" ;;
 esac
@@ -169,8 +201,7 @@ if ! has_password "$INSTALL_DIR"; then
   unset PASSWORD PASSWORD2
 fi
 
-WISP_CONFIRMED_BRIDGE=none
-[[ "$BRIDGE_CREATE" == yes ]] && WISP_CONFIRMED_BRIDGE="$BRIDGE on $UPLINK ($UPLINK_ADDR), through $NET_TOOL"
+WISP_CONFIRMED_BRIDGE="$(plan_confirmation)"
 export WISP_CONFIRMED_BRIDGE
 if [[ "$BRIDGE_CREATE" == yes ]]; then
   if (( TERMINAL )); then
@@ -179,6 +210,9 @@ if [[ "$BRIDGE_CREATE" == yes ]]; then
     read -r -p "Create $BRIDGE on $UPLINK ($UPLINK_ADDR), keeping its address? The connection may pause while it is applied. [Y/n] " ans || ans=n
     if [[ "${ans:-Y}" =~ ^[nN] ]]; then
       echo "Wisp needs a bridge: make one on $UPLINK with the host's network tool, or let setup make it. Nothing was changed."
+      if [[ "${NET_PLAN_JOURNAL:-}" == restore ]]; then
+        echo "An earlier bridge step's unfinished changes are still in place (its journal is $JOURNAL_DIR): the next install or setup undoes them first."
+      fi
       exit 1
     fi
   else
@@ -198,7 +232,7 @@ echo ""
 # The work owns the answers from here, and the lock (fd 8); it plans again.
 rm -rf "$NET_PLAN_DIR"
 trap - EXIT
-NET_PLAN_DIR="" setsid "$0" --work "$SOURCE_DIR" "$INSTALL_DIR" "$DEPLOY_USER" "$DEPLOY_GROUP" "$LOG" "$REMOVE_DIR" \
+setsid "$0" --work "$SOURCE_DIR" "$INSTALL_DIR" "$DEPLOY_USER" "$DEPLOY_GROUP" "$LOG" "$REMOVE_DIR" \
   < /dev/null >> "$LOG" 2>&1 &
 WORK_PID=$!
 # Ctrl-C: the following stops, by the signal, so a caller's shell stops too;

@@ -27,6 +27,7 @@ DEPLOY_USER="$2"
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=step.sh
 source "$SETUP_DIR/step.sh"
+step_begin
 
 HELPERS=(wisp-os-update wisp-dmidecode wisp-smartctl wisp-mount wisp-power wisp-netns wisp-cni wisp-bridge wisp-nvram)
 

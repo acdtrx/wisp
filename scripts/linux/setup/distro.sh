@@ -6,6 +6,8 @@
 
 # Setup parses the output of the tools it runs: one locale for all of it.
 export LC_ALL=C
+# shellcheck source=lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 _ID=""
 _ID_LIKE=""
@@ -15,10 +17,7 @@ if [[ -f /etc/os-release ]]; then
 fi
 case " ${_ID} ${_ID_LIKE} " in
   *" debian "*|*" ubuntu "*) ;;
-  *)
-    echo "ERROR: unsupported distro (ID=${_ID:-none}, ID_LIKE=${_ID_LIKE:-none}): Wisp hosts run Debian or Ubuntu." >&2
-    exit 1
-    ;;
+  *) refuse UNSUPPORTED_DISTRO "unsupported distro (ID=${_ID:-none}, ID_LIKE=${_ID_LIKE:-none}): Wisp hosts run Debian or Ubuntu." ;;
 esac
 
 # systemd 254 or newer (Debian 13, Ubuntu 24.04 and later): wisp.service's
@@ -27,8 +26,7 @@ esac
 _SYSTEMD="$(systemctl --version 2>/dev/null | awk 'NR == 1 { print $2 }')"
 _SYSTEMD="${_SYSTEMD%%[!0-9]*}"
 if [[ -z "$_SYSTEMD" ]] || (( _SYSTEMD < 254 )); then
-  echo "ERROR: systemd ${_SYSTEMD:-not found} is too old: Wisp hosts need systemd 254 or newer (Debian 13, Ubuntu 24.04 and later)." >&2
-  exit 1
+  refuse SYSTEMD_TOO_OLD "systemd ${_SYSTEMD:-not found} is too old: Wisp hosts need systemd 254 or newer (Debian 13, Ubuntu 24.04 and later)."
 fi
 
 # Map uname -m to GitHub release architecture names (amd64, arm64, arm)

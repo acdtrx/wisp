@@ -6,10 +6,17 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 STEP_CHANGED=0
-# One temp directory per step, made here in the step's own shell (staged_file
-# runs in a command substitution, a subshell) and removed when the step ends.
-STEP_TMP_DIR="$(mktemp -d -t wisp-setup.XXXXXX)" || { echo "ERROR: cannot create a temp directory" >&2; exit 1; }
-trap 'rm -rf "$STEP_TMP_DIR"' EXIT
+
+# step_begin: the step's own temp directory (staged_file runs in a command
+# substitution, a subshell, so it is made here), removed when the step ends;
+# a stop (TERM, INT) ends the step at once, through its EXIT trap. A step that
+# must not be cut short sets its own TERM and INT traps after this. Every step
+# calls it first: the traps are the step's own, set by the step.
+step_begin() {
+  STEP_TMP_DIR="$(mktemp -d -t wisp-setup.XXXXXX)" || { echo "ERROR: cannot create a temp directory" >&2; exit 1; }
+  trap 'rm -rf "$STEP_TMP_DIR"' EXIT
+  trap 'exit 143' TERM INT
+}
 
 changed() {
   echo "  changed: $*"
@@ -77,19 +84,24 @@ unit_on() {
 
 # idle_run <secs> <cmd...>: cmd with its output passed through, stopped after
 # <secs> seconds without a line of output (returns 124) — an inactivity bound
-# for a step that shows progress (CODING-RULES §6). cmd runs in a session of its
-# own, so a stall, or a stop of the step (TERM, INT; returns 143), stops the
-# whole group, its children with it: TERM, and KILL IDLE_RUN_GRACE_SEC later.
+# for a step that shows progress (CODING-RULES §6). cmd runs in a process group
+# of its own inside the step's session, so a stall, or a stop of the step (TERM,
+# INT; returns 143), stops the whole group, its children with it — TERM, and
+# KILL IDLE_RUN_GRACE_SEC later — while a stop of the step's session still
+# reaches it. The caller's TERM and INT traps are put back as they were.
 IDLE_RUN_GRACE_SEC=10
 idle_run() {
   local secs="$1"; shift
-  local fifo fd line r rc=0 why="" pid signalled=0
+  local fifo fd line r rc=0 why="" pid killer="" saved_traps
+  saved_traps="$(trap -p TERM INT)"
   fifo="$(mktemp -u "$STEP_TMP_DIR/fifo.XXXXXX")"
-  mkfifo -m 600 "$fifo"
+  mkfifo -m 600 "$fifo" || fail "cannot make a fifo in $STEP_TMP_DIR"
   IDLE_RUN_STOPPED=0
   trap 'IDLE_RUN_STOPPED=1' TERM INT
-  setsid "$@" > "$fifo" 2>&1 &
+  set -m
+  "$@" > "$fifo" 2>&1 &
   pid=$!
+  set +m
   exec {fd}< "$fifo"
   rm -f -- "$fifo"
   while :; do
@@ -101,20 +113,29 @@ idle_run() {
     break
   done
   exec {fd}<&-
-  # wait returns early for a signal; cmd is gone once kill -0 fails.
+  # wait returns early for a signal; the group is done once none of it is left.
   while :; do
     if [[ -z "$why" ]] && (( IDLE_RUN_STOPPED )); then why=stopped; fi
-    if [[ -n "$why" ]] && (( ! signalled )); then
+    if [[ -n "$why" && -z "$killer" ]]; then
       kill -TERM -- "-$pid" 2>/dev/null
-      kill_later "$IDLE_RUN_GRACE_SEC" "$pid"
-      signalled=1
+      (
+        exec 8>&-
+        trap '' TERM INT
+        trap 'kill -KILL $! 2>/dev/null; exit 0' USR1
+        sleep "$IDLE_RUN_GRACE_SEC" & wait $!
+        kill -KILL -- "-$pid" 2>/dev/null
+      ) &
+      killer=$!
     fi
     rc=0
     wait "$pid" 2>/dev/null || rc=$?
-    kill -0 "$pid" 2>/dev/null || break
+    kill -0 "$pid" 2>/dev/null && continue
+    pgrep -g "$pid" >/dev/null || break
+    sleep 1
   done
-  if (( signalled )); then kill -USR1 "$KILLER" 2>/dev/null; wait "$KILLER" 2>/dev/null; fi
+  if [[ -n "$killer" ]]; then kill -USR1 "$killer" 2>/dev/null; wait "$killer" 2>/dev/null; fi
   trap - TERM INT
+  eval "$saved_traps"
   case "$why" in
     idle) echo "ERROR: printed nothing for ${secs} s and was stopped: $*" >&2; return 124 ;;
     stopped) echo "  stopped: $*" >&2; return 143 ;;

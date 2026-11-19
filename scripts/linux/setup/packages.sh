@@ -3,10 +3,12 @@
 # stack, containerd 2.x, and the tools the backend and its helpers run. Run as
 # root.
 #
-# Queries first, with dpkg-query, without the package manager or its lock: the
-# package manager runs only for what is missing. When it does run, apt
-# waits up to 5 min for a lock another package run holds (unattended-upgrades,
-# apt-daily) instead of failing at once.
+# Queries first, with dpkg-query and dpkg --audit, without the package manager
+# or its lock: the package manager runs only for what is missing. When it does
+# run, apt and dpkg wait up to LOCK_WAIT_SEC for a lock another package run
+# holds (unattended-upgrades, apt-daily) instead of failing at once, and keep a
+# config file the host edited (avahi-daemon.conf) instead of stopping at
+# dpkg's question, which no one is there to answer.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -19,6 +21,7 @@ SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SETUP_DIR/distro.sh"
 # shellcheck source=step.sh
 source "$SETUP_DIR/step.sh"
+step_begin
 
 # Suppress interactive prompts during installs: debconf menus, and Ubuntu's
 # `needrestart` asking which services to restart (the usual hang).
@@ -66,10 +69,9 @@ deb_installed() {
 }
 
 APT=(apt-get -o "DPkg::Lock::Timeout=$LOCK_WAIT_SEC")
-# As wisp-os-update installs: an upgrade this pulls in keeps a config file the
-# host edited (avahi-daemon.conf) instead of stopping at dpkg's question, which
-# no one is there to answer.
-APT_INSTALL=("${APT[@]}" -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold install -y -qq)
+# As wisp-os-update installs.
+CONFFILES=(--force-confdef --force-confold)
+APT_INSTALL=("${APT[@]}" -o "Dpkg::Options::=${CONFFILES[0]}" -o "Dpkg::Options::=${CONFFILES[1]}" install -y -qq)
 
 missing=()
 for p in "${PACKAGES[@]}"; do
@@ -80,18 +82,25 @@ need_containerd=0
 node_ok || need_node=1
 containerd_ok || need_containerd=1
 
-if (( ${#missing[@]} == 0 && need_node == 0 && need_containerd == 0 )); then
+# A package run that was stopped (a stop reaches apt and dpkg too) leaves
+# packages unpacked but not configured, or half installed, which dpkg --audit
+# names (without the lock), and apt refuses to work past: dpkg configures what
+# it left, waiting for the lock as apt does (dpkg-locked.py), then apt
+# completes it (install -f), removing nothing.
+# dpkg --audit is a check: exit 1 when it found something, 2 when it failed.
+audit_rc=0
+audit="$(dpkg --audit)" || audit_rc=$?
+(( audit_rc <= 1 )) || fail "dpkg --audit failed (exit $audit_rc)"
+(( audit_rc == 0 )) || audit="${audit:-dpkg --audit found a problem}"
+if [[ -z "$audit" && ${#missing[@]} -eq 0 && $need_node -eq 0 && $need_containerd -eq 0 ]]; then
   step_done
   exit 0
 fi
-
-# A package run that was stopped (a stop reaches apt and dpkg too) can leave
-# packages unpacked but not configured, or some of an upgrade's packages
-# without the rest, which apt refuses to work past: dpkg configures what it
-# left, then apt completes what it left (install -f).
-if [[ -n "$(dpkg --audit 2>/dev/null)" ]] || ! "${APT[@]}" check -qq >/dev/null 2>&1; then
-  dpkg --configure -a || fail "dpkg --configure -a failed: the packages an interrupted package run left are not configured"
-  "${APT_INSTALL[@]}" -f || fail "apt-get install -f failed: the packages an interrupted package run left are not complete"
+if [[ -n "$audit" ]]; then
+  python3 -I "$SETUP_DIR/dpkg-locked.py" "$LOCK_WAIT_SEC" dpkg "${CONFFILES[@]}" --configure -a \
+    || fail "dpkg --configure -a failed: the packages an interrupted package run left are not configured"
+  "${APT_INSTALL[@]}" --no-remove -f \
+    || fail "apt-get install -f failed: the packages an interrupted package run left are not complete"
   changed "completed the packages an interrupted package run left"
 fi
 

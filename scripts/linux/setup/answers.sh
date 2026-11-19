@@ -17,6 +17,7 @@ fi
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=step.sh
 source "$SETUP_DIR/step.sh"
+step_begin
 # shellcheck source=install-state.sh
 source "$SETUP_DIR/install-state.sh"
 

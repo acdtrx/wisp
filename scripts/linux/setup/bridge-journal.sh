@@ -1,32 +1,50 @@
-# Sourced by the bridge step and network-plan.sh, as root; do not execute it.
-# The bridge step's journal: what it changes, written and synced before each
-# change, so the change can be undone — by the step itself when its apply or
-# the check after it fails or it is stopped, or by a later run when the step
-# died. A later run reads it first and decides from what the host holds now,
-# changing nothing while it decides (journal_classify): an earlier run that in
-# fact finished is committed, one that changed nothing is dropped, one caught
-# half way or in its undo is undone, and one whose files or connections were
-# changed since by someone else is refused. The journal is data: read, never
-# sourced.
+# Sourced by the bridge step, the bridge-journal step and the network plan, as
+# root; do not execute it. The bridge step's journal: what it changes, written
+# and synced before each change, so the change can be undone — by the step
+# itself when its apply or the check after it fails or it is stopped, or by a
+# later run when the step died. A later run decides from it first, from what the
+# host holds now (journal_classify), in this order:
+#   1. changed     a file or connection is neither as it was nor as the step
+#                  left it: someone else changed it since. Refused.
+#   2. restore     the journal says an undo had begun: undone again.
+#   3. untouched   nothing the step recorded is changed: dropped.
+#   4. finished    every change of the apply is as the step made it, and the
+#                  bridge passes the step's own check now, waited for as in the
+#                  step: committed, the step's finish completed first.
+#   5. restore     anything else: undone.
 #
-# One entry per line, tab-separated, in the order of the apply:
-#   host <net-tool> <uplink> <bridge> <uplink IPv4 address> <uplink connection or ->
-#   file <path> <existed: yes|no> <sha256 of the original or -> <sha256 of what the step writes, - for none>
-#        (its original, when it existed, kept as files/<n>, n its line number)
-#   dir  <path>      a directory the step made
-#   connrm <uuid>    the uplink's NetworkManager connection, which the step deletes
-#   undo             an undo has begun: the run is undone, whatever it reached
+# The journal directory, JOURNAL_DIR:
+#   plan       the plan's record (plan-record.sh), uplink.state, the check's
+#              reference, and (NetworkManager) uplink.nmconnection, the
+#              generated uplink connection rendered as a stored one — copied
+#              in before the first change, as data, never sourced
+#   journal    one entry per line, tab-separated, in the order of the step:
+#     file <path> <existed: yes|no> <sha256 of the original or -> <sha256 of what the step writes, - for none>
+#          (its original, when it existed, kept as files/<n>, n its line number)
+#     dir <path>      a directory the step made
+#     finish          what follows is the step's finish, made once its check
+#                     passed (NetworkManager: the uplink's own connection deleted)
+#     connrm <uuid>   the uplink's NetworkManager connection, which the step deletes
+#     undo            an undo has begun: the run is undone, whatever it reached
+#   kept/      at the commit, the originals, named by their path, before they
+#              go to KEPT_DIR whole
 # Every path is under one of JOURNAL_ROOTS; the plan refuses a source outside
 # them. An entry is synced before its change, so a last line cut short (a power
 # loss, a full disk) is a change that never happened, and is dropped. A success
-# commits by one rename of the directory; the operator's original files then go
-# to KEPT_DIR, named by their path.
+# commits by one rename of the directory; the operator's originals then go to a
+# directory of their own under KEPT_DIR, one per commit, by renames only.
 
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck source=net-state.sh
 source "$(dirname "${BASH_SOURCE[0]}")/net-state.sh"
-# Each tool's apply, check, finish and undo.
+# shellcheck source=plan-record.sh
+source "$(dirname "${BASH_SOURCE[0]}")/plan-record.sh"
+# shellcheck source=net-uplink.sh
+source "$(dirname "${BASH_SOURCE[0]}")/net-uplink.sh"
+# shellcheck source=bridge-check.sh
+source "$(dirname "${BASH_SOURCE[0]}")/bridge-check.sh"
+# Each tool's plan, apply, check, finish and undo.
 # shellcheck source=net-netplan.sh
 source "$(dirname "${BASH_SOURCE[0]}")/net-netplan.sh"
 # shellcheck source=net-networkd.sh
@@ -39,21 +57,6 @@ KEPT_DIR=/var/lib/wisp/network-before-bridge
 # Where the bridge step may change a file: each tool's own configuration.
 JOURNAL_ROOTS=(/etc/netplan /etc/systemd/network /etc/NetworkManager/system-connections)
 
-# How long a stopped bridge step can take to end, worst case, every bound run
-# out (a call's bound is its limit and NET_KILL_SEC to die): the apply call in
-# flight when the stop comes, which ends first (bridge.sh; the check between
-# applies stops at once), then the longest undo, NetworkManager's
-# (journal_restore): netplan's files generated, the connections reloaded, the
-# uplink connection looked up and its state read, it brought up, or
-# NetworkManager restarted, then the wait for the default route and its last
-# read; then the address read for the message. Setup gives a stopped step this
-# long (common-steps.sh), the updater gives setup this and its own reaction
-# (wisp-updater).
-_call=$(( NET_CMD_SEC + NET_KILL_SEC ))
-_apply=$(( NET_APPLY_SEC + NET_KILL_SEC ))
-BRIDGE_STOP_SEC=$(( _apply + (4 * _call + _apply + (60 + NET_KILL_SEC) + NET_APPLY_SEC + _call) + _call ))
-unset _call _apply
-
 # journal_root_ok <path>: whether the step may record (and change) <path>.
 journal_root_ok() {
   local r
@@ -64,7 +67,13 @@ journal_root_ok() {
   return 1
 }
 
-_sha() { [[ -e "$1" ]] && sha256sum "$1" | cut -d' ' -f1 || echo -; }
+# _sha <path>: its checksum, - when it does not exist.
+_sha() {
+  local out
+  [[ -e "$1" ]] || { echo -; return 0; }
+  out="$(sha256sum -- "$1")" || return 1
+  echo "${out%% *}"
+}
 # _journal_add <entry>: appended and synced. A line an earlier write left cut
 # short is taken off first, so the entry starts a line of its own.
 _journal_add() {
@@ -76,25 +85,36 @@ _journal_add() {
   printf '%s\n' "$1" >> "$f" && sync "$f"
 }
 
-# journal_begin <net-tool> <uplink> <bridge> <uplink-addr> <uplink-connection or ->
+# journal_begin <plan-dir>: before the first change. The plan and the check's
+# reference go in first, the journal last: a journal directory without its
+# journal file recorded no change.
 journal_begin() {
+  local f
   [[ ! -e "$JOURNAL_DIR" ]] || return 1
-  mkdir -p "$JOURNAL_DIR/files" && chmod 700 "$JOURNAL_DIR" && sync "$(dirname "$JOURNAL_DIR")" \
-    && _journal_add "host"$'\t'"$1"$'\t'"$2"$'\t'"$3"$'\t'"$4"$'\t'"${5:--}"
+  mkdir -p "$KEPT_DIR" && chmod 700 "$KEPT_DIR" || return 1
+  mkdir -p "$JOURNAL_DIR/files" "$JOURNAL_DIR/kept" && chmod 700 "$JOURNAL_DIR" || return 1
+  for f in plan uplink.state uplink.nmconnection; do
+    [[ -e "$1/$f" ]] || continue
+    cp "$1/$f" "$JOURNAL_DIR/$f" && sync "$JOURNAL_DIR/$f" || return 1
+  done
+  sync "$JOURNAL_DIR" "$(dirname "$JOURNAL_DIR")" && : > "$JOURNAL_DIR/journal" && sync "$JOURNAL_DIR/journal" "$JOURNAL_DIR"
 }
 # journal_file <path> <file it will hold, or - when it is removed>: before the
 # step changes <path>.
 journal_file() {
-  local n
+  local n orig wrote=-
   journal_root_ok "$1" || return 1
+  if [[ "$2" != - ]]; then wrote="$(_sha "$2")" || return 1; fi
   # Its line number: the complete lines so far, and this one (a line cut short
   # is taken off as this entry is added).
-  n="$(( $(wc -l < "$JOURNAL_DIR/journal") + 1 ))" || return 1
+  n="$(wc -l < "$JOURNAL_DIR/journal")" || return 1
+  n=$(( n + 1 ))
   if [[ -e "$1" ]]; then
-    cp -a "$1" "$JOURNAL_DIR/files/$n" && sync "$JOURNAL_DIR/files/$n" \
-      && _journal_add "file"$'\t'"$1"$'\t'yes$'\t'"$(_sha "$1")"$'\t'"$(_sha "$2")"
+    orig="$(_sha "$1")" || return 1
+    cp -a "$1" "$JOURNAL_DIR/files/$n" && sync "$JOURNAL_DIR/files/$n" "$JOURNAL_DIR/files" \
+      && _journal_add "file"$'\t'"$1"$'\t'yes$'\t'"$orig"$'\t'"$wrote"
   else
-    _journal_add "file"$'\t'"$1"$'\t'no$'\t'-$'\t'"$(_sha "$2")"
+    _journal_add "file"$'\t'"$1"$'\t'no$'\t'-$'\t'"$wrote"
   fi
 }
 # journal_dir <path>: before the step makes it (and only when it does not exist).
@@ -102,102 +122,122 @@ journal_dir() {
   journal_root_ok "$1" || return 1
   [[ -d "$1" ]] || { _journal_add "dir"$'\t'"$1" && mkdir -p "$1"; }
 }
+journal_finish() { _journal_add finish; }
 journal_connrm() { _journal_add "connrm"$'\t'"$1"; }
 # journal_undo_mark: before an undo begins. A failed write does not stop the
 # undo: it only leaves the next run to decide without it.
 journal_undo_mark() { [[ -d "$JOURNAL_DIR" ]] && _journal_add undo; }
 
-# _journal_read: the journal's entries into arrays. A last line cut short is
-# dropped; an empty or missing journal reads as no entries (J_TOOL empty).
-# Fails, naming the line, on anything else it does not expect.
+# _journal_read: the journal's entries into arrays; J_FILE_FINISH[i] and
+# J_CONNRM are the finish's. A last line cut short is dropped; a missing
+# journal reads as no entries (J_NONE=yes). Fails, naming the line in J_BAD, on
+# anything else it does not expect.
 _journal_read() {
-  J_TOOL="" J_UPLINK="" J_BRIDGE="" J_ADDR="" J_CON="" J_UNDO=no J_BAD=""
-  J_FILES=() J_EXISTED=() J_ORIG=() J_WROTE=() J_LINES=() J_DIRS=() J_CONNRM=()
-  local f="$JOURNAL_DIR/journal" n=0 total kind a b c d e line
-  [[ -s "$f" ]] || return 0
-  total="$(grep -c '' "$f")"
+  J_NONE=no J_UNDO=no J_FINISH=no J_BAD=""
+  J_FILES=() J_EXISTED=() J_ORIG=() J_WROTE=() J_LINES=() J_FILE_FINISH=() J_DIRS=() J_CONNRM=()
+  local f="$JOURNAL_DIR/journal" n=0 total kind a b c d line
+  [[ -e "$f" ]] || { J_NONE=yes; return 0; }
+  total="$(grep -c '' "$f")" || total=0
   # A last line without its newline was cut short: its change never happened.
-  [[ "$(tail -c 1 "$f" | od -An -c | tr -d ' ')" == '\n' ]] || total=$(( total - 1 ))
+  [[ ! -s "$f" || "$(tail -c 1 "$f" | od -An -c | tr -d ' ')" == '\n' ]] || total=$(( total - 1 ))
   while (( n < total )) && IFS= read -r line; do
     n=$((n + 1))
-    IFS=$'\t' read -r kind a b c d e <<<"$line"
+    IFS=$'\t' read -r kind a b c d <<<"$line"
     case "$kind" in
-      host)
-        [[ $n -eq 1 && "$a" =~ ^(netplan|networkd|networkmanager)$ && "$b" =~ ^[A-Za-z0-9._-]+$ && "$c" =~ ^[A-Za-z0-9._-]+$ ]] || { J_BAD="line $n"; return 1; }
-        J_TOOL="$a" J_UPLINK="$b" J_BRIDGE="$c" J_ADDR="$d" J_CON="$e" ;;
       file)
-        [[ -n "$J_TOOL" ]] && journal_root_ok "$a" && [[ "$b" =~ ^(yes|no)$ && "$c" =~ ^([0-9a-f]{64}|-)$ && "$d" =~ ^([0-9a-f]{64}|-)$ ]] || { J_BAD="line $n"; return 1; }
-        J_FILES+=("$a") J_EXISTED+=("$b") J_ORIG+=("$c") J_WROTE+=("$d") J_LINES+=("$n") ;;
-      dir) [[ -n "$J_TOOL" ]] && journal_root_ok "$a" || { J_BAD="line $n"; return 1; }; J_DIRS+=("$a") ;;
-      connrm) [[ -n "$J_TOOL" && "$a" =~ ^[0-9a-f-]{36}$ ]] || { J_BAD="line $n"; return 1; }; J_CONNRM+=("$a") ;;
-      undo) [[ -n "$J_TOOL" ]] || { J_BAD="line $n"; return 1; }; J_UNDO=yes ;;
+        journal_root_ok "$a" && [[ "$b" =~ ^(yes|no)$ && "$c" =~ ^([0-9a-f]{64}|-)$ && "$d" =~ ^([0-9a-f]{64}|-)$ ]] || { J_BAD="line $n"; return 1; }
+        J_FILES+=("$a") J_EXISTED+=("$b") J_ORIG+=("$c") J_WROTE+=("$d") J_LINES+=("$n") J_FILE_FINISH+=("$J_FINISH") ;;
+      dir) journal_root_ok "$a" && [[ "$J_FINISH" == no ]] || { J_BAD="line $n"; return 1; }; J_DIRS+=("$a") ;;
+      finish) [[ "$J_FINISH" == no ]] || { J_BAD="line $n"; return 1; }; J_FINISH=yes ;;
+      connrm) [[ "$J_FINISH" == yes && "$a" =~ ^[0-9a-f-]{36}$ ]] || { J_BAD="line $n"; return 1; }; J_CONNRM+=("$a") ;;
+      undo) J_UNDO=yes ;;
       *) J_BAD="line $n"; return 1 ;;
     esac
   done < "$f"
 }
+_journal_has_file() {
+  local p
+  for p in "${J_FILES[@]}"; do [[ "$p" == "$1" ]] && return 0; done
+  return 1
+}
 
-# journal_classify: prints one of
-#   finished           every entry is as the step wrote it, the uplink is the bridge's
-#                      port, and (NetworkManager) the step reached its last change
-#   untouched          nothing the step recorded is changed (or nothing was recorded)
-#   restore            caught half way, or in its undo
-#   changed <paths>    changed since by someone else
-#   bad <why>          not a journal setup wrote
-#   fail <why>         the host could not be read
+# journal_classify: J_CLASS, one of finished, untouched, restore,
+# "changed <paths>", "bad <why>" (not a journal setup wrote), "fail <why>" (the
+# host could not be read); with the journal's plan read (plan-record.sh), as the
+# commit and the undo need it.
 journal_classify() {
-  _journal_read || { echo "bad $JOURNAL_DIR/journal is not a journal setup wrote (at its ${J_BAD:-start})"; return; }
-  [[ -n "$J_TOOL" ]] || { echo untouched; return; }
-  local i cur w=0 o=0 n=0 why="" uuid _has master
+  J_CLASS=""
+  _journal_read || { J_CLASS="bad $JOURNAL_DIR/journal is not a journal setup wrote (at its ${J_BAD:-start})"; return 0; }
+  if [[ "$J_NONE" == yes ]]; then J_CLASS=untouched; return 0; fi
+  plan_record_read "$JOURNAL_DIR/plan" 2>/dev/null \
+    || { J_CLASS="bad $JOURNAL_DIR/plan is not a plan setup wrote"; return 0; }
+  local i cur uuid has o=0 n=0 why="" apply=0 apply_w=0
   for i in "${!J_FILES[@]}"; do
-    cur="$(_sha "${J_FILES[$i]}")"
-    if [[ "$cur" == "${J_WROTE[$i]}" ]]; then w=$((w + 1))
+    cur="$(_sha "${J_FILES[$i]}")" || { J_CLASS="fail cannot read ${J_FILES[$i]}"; return 0; }
+    [[ "${J_FILE_FINISH[$i]}" == yes ]] || apply=$((apply + 1))
+    if [[ "$cur" == "${J_WROTE[$i]}" ]]; then
+      [[ "${J_FILE_FINISH[$i]}" == yes ]] || apply_w=$((apply_w + 1))
     elif [[ "$cur" == "${J_ORIG[$i]}" ]]; then o=$((o + 1))
     else n=$((n + 1)); why+=" ${J_FILES[$i]}"
     fi
   done
   for uuid in "${J_CONNRM[@]}"; do
-    _has=0; nm_has "$uuid" || _has=$?
-    case $_has in
+    has=0; nm_has "$uuid" || has=$?
+    case $has in
       0) o=$((o + 1)) ;;
-      1) w=$((w + 1)) ;;
-      *) echo "fail NetworkManager cannot be asked about the connection $uuid"; return ;;
+      1) ;;
+      *) J_CLASS="fail NetworkManager cannot be asked about the connection $uuid"; return 0 ;;
     esac
   done
-  if (( n > 0 )); then echo "changed$why"; return; fi
-  if [[ "$J_UNDO" == yes ]]; then echo restore; return; fi
-  local total=$(( ${#J_FILES[@]} + ${#J_CONNRM[@]} ))
-  master="$(basename "$(readlink "/sys/class/net/$J_UPLINK/master" 2>/dev/null)" 2>/dev/null || true)"
-  if (( o == total )); then echo untouched
-  # On NetworkManager the step's last change, made only once its check passed,
-  # is deleting the uplink's former connection: without it, not finished.
-  elif (( w == total )) && [[ "$master" == "$J_BRIDGE" ]] \
-    && [[ "$J_TOOL" != networkmanager || ${#J_CONNRM[@]} -gt 0 ]]; then echo finished
-  else echo restore
-  fi
+  if (( n > 0 )); then J_CLASS="changed$why"; return 0; fi
+  if [[ "$J_UNDO" == yes ]]; then J_CLASS=restore; return 0; fi
+  if (( o == ${#J_FILES[@]} + ${#J_CONNRM[@]} )); then J_CLASS=untouched; return 0; fi
+  if (( apply > 0 && apply_w == apply )) && bridge_check "$JOURNAL_DIR"; then J_CLASS=finished; return 0; fi
+  J_CLASS=restore
+}
+# journal_refuse_class: a journal setup cannot decide on is refused (or, when
+# the host cannot be read, failed), naming what to do.
+journal_refuse_class() {
+  case "$J_CLASS" in
+    fail\ *) net_fail "${J_CLASS#fail }: setup cannot tell what the bridge step that left its journal in $JOURNAL_DIR changed." ;;
+    bad\ *) refuse JOURNAL_NOT_SETUPS "${J_CLASS#bad }. Put the network as you want it, remove $JOURNAL_DIR (its files/ holds the originals of what the step changed), and run this again." ;;
+    changed\ *) refuse JOURNAL_CHANGED "a bridge step that did not finish left its journal in $JOURNAL_DIR, and since then someone else changed${J_CLASS#changed}: setup does not undo over that. Put each back as the step wrote it or as it was (its files/ holds the originals), or remove $JOURNAL_DIR once the network is as you want it, and run this again." ;;
+  esac
 }
 
 # journal_drop: an untouched journal goes, with the directories it made.
 journal_drop() {
   local i
   _journal_read || return 1
-  for (( i = ${#J_DIRS[@]} - 1; i >= 0; i-- )); do rmdir "${J_DIRS[$i]}" 2>/dev/null; done
+  for (( i = ${#J_DIRS[@]} - 1; i >= 0; i-- )); do rmdir "${J_DIRS[$i]}" 2>/dev/null || true; done
   rm -rf "$JOURNAL_DIR"
 }
 
-# journal_restore: the host back as it was, in reverse of the apply, stopping
-# at the first part that fails (the rest stays as the step wrote it); then the
-# tool applies it, and the uplink's default route comes back. Marks the journal
-# first, so an undo cut short is undone again. Drops the journal when every part
-# succeeded; otherwise keeps it and returns non-zero.
+# journal_restore: the host back as it was, in reverse of the step, stopping at
+# the first part that fails (the rest stays as the step wrote it); then the tool
+# applies it, and the uplink's default route comes back. Deaf to TERM and INT:
+# an undo is never cut short by a stop (the session's KILL past setup's bound
+# is the end of it). Marks the journal first, so an undo cut short is undone
+# again. Drops the journal when every part succeeded, returning 0, or
+# RESTORED_STORED when NetworkManager's generated connection came back as a
+# stored one; otherwise keeps the journal and returns 1. Prints what it did
+# beyond putting files back.
+RESTORED_STORED=3
 journal_restore() (
   set +e
+  trap '' TERM INT
   _journal_read || exit 1
+  plan_record_read "$JOURNAL_DIR/plan" || exit 1
   journal_undo_mark
-  local i copy nm_files=no netplan_nm=no
+  local i copy dir nm_files=no netplan_nm=no rc=0
   for (( i = ${#J_FILES[@]} - 1; i >= 0; i-- )); do
     if [[ "${J_EXISTED[$i]}" == yes ]]; then
       copy="$JOURNAL_DIR/files/${J_LINES[$i]}"
-      [[ "$(_sha "${J_FILES[$i]}")" == "${J_ORIG[$i]}" ]] || install_file "${J_FILES[$i]}" "$copy" "$(stat -c %a "$copy")" || exit 1
+      if [[ "$(_sha "${J_FILES[$i]}")" != "${J_ORIG[$i]}" ]]; then
+        dir="$(dirname "${J_FILES[$i]}")"
+        [[ -d "$dir" ]] || mkdir -p "$dir" || exit 1
+        install_file "${J_FILES[$i]}" "$copy" "$(stat -c %a "$copy")" "$(stat -c %U:%G "$copy")" || exit 1
+      fi
     else
       remove_file "${J_FILES[$i]}" || exit 1
     fi
@@ -206,80 +246,93 @@ journal_restore() (
       /etc/netplan/90-NM-*) nm_files=yes netplan_nm=yes ;;
     esac
   done
-  for (( i = ${#J_DIRS[@]} - 1; i >= 0; i-- )); do rmdir "${J_DIRS[$i]}" 2>/dev/null; done
-  case "$J_TOOL" in
-    netplan) undo_netplan "$J_BRIDGE" || exit 1 ;;
-    networkd) undo_networkd "$J_BRIDGE" "$J_UPLINK" || exit 1 ;;
-    networkmanager) undo_networkmanager "$J_CON" "$nm_files" "$netplan_nm" || exit 1 ;;
+  for (( i = ${#J_DIRS[@]} - 1; i >= 0; i-- )); do rmdir "${J_DIRS[$i]}" 2>/dev/null || true; done
+  case "$NET_TOOL" in
+    netplan) undo_netplan || exit 1 ;;
+    networkd) undo_networkd || exit 1 ;;
+    networkmanager) undo_networkmanager "$nm_files" "$netplan_nm" || rc=$?
+      (( rc == 0 || rc == RESTORED_STORED )) || exit 1 ;;
   esac
   local deadline=$(( SECONDS + NET_APPLY_SEC ))
-  until [[ "$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" ip -4 route show default dev "$J_UPLINK" 2>/dev/null)" == default* ]]; do
+  until [[ "$(net_call ip -4 route show default dev "$UPLINK" 2>/dev/null)" == default* ]]; do
     (( SECONDS < deadline )) || exit 1
     sleep 1
   done
-  rm -rf "$JOURNAL_DIR"
+  rm -rf "$JOURNAL_DIR" || exit 1
+  exit "$rc"
 )
 
-# journal_commit: the step succeeded. One rename commits it; then the
-# operator's originals are kept and the journal goes. Prints what was kept.
+# journal_commit: the step succeeded. The commit's time recorded, then one
+# rename commits it; journal_cleanup then keeps the operator's originals.
 journal_commit() {
-  mv -T "$JOURNAL_DIR" "$JOURNAL_DIR.done" && sync /var/lib/wisp && journal_cleanup
+  date -u +%Y-%m-%dT%H%M%SZ > "$JOURNAL_DIR/committed" && sync "$JOURNAL_DIR/committed" "$JOURNAL_DIR" \
+    && mv -T "$JOURNAL_DIR" "$JOURNAL_DIR.done" && sync "$(dirname "$JOURNAL_DIR")"
 }
-# journal_cleanup: after a commit (this run's or one that died after it).
+JOURNAL_KEEP_FAILED="the bridge is committed, but its originals could not be kept: they stay in $JOURNAL_DIR.done/files (is /var/lib/wisp full?), and the next run of setup keeps them"
+# journal_cleanup: after a commit, this run's or one that died after it. Each
+# original moves (a rename: no space needed) to kept/ under its path's name,
+# then kept/ to a directory of its own under KEPT_DIR, named by the commit's
+# time; the journal goes only once all of that succeeded. A cleanup that fails
+# leaves the journal for the next run's to finish, and returns non-zero. Prints
+# where the originals are.
 journal_cleanup() {
-  local d="$JOURNAL_DIR.done" kind a b c d2 n=0 kept=0
+  local d="$JOURNAL_DIR.done" kind a b c e n=0 kept=0 name dest when
   [[ -d "$d" ]] || return 0
-  mkdir -p "$KEPT_DIR" && chmod 700 "$KEPT_DIR"
-  while IFS=$'\t' read -r kind a b c d2; do
-    n=$((n + 1))
-    [[ "$kind" == file && "$b" == yes && -f "$d/files/$n" ]] || continue
-    cp -a "$d/files/$n" "$KEPT_DIR/$(printf '%s' "${a#/}" | tr '/' '%')" && kept=$((kept + 1))
-  done < "$d/journal"
+  if [[ -d "$d/kept" ]]; then
+    while IFS=$'\t' read -r kind a b c e; do
+      n=$((n + 1))
+      [[ "$kind" == file && "$b" == yes ]] || continue
+      name="$(printf '%s' "${a#/}" | tr '/' '%')"
+      if [[ -e "$d/files/$n" ]]; then
+        mv -T "$d/files/$n" "$d/kept/$name" || return 1
+      fi
+      [[ -e "$d/kept/$name" ]] && kept=$((kept + 1))
+    done < "$d/journal"
+    sync "$d/kept" "$d/files" || return 1
+    if (( kept > 0 )); then
+      when="$(cat "$d/committed")" || return 1
+      dest="$KEPT_DIR/$when"
+      n=1
+      while [[ -e "$dest" ]]; do n=$((n + 1)); dest="$KEPT_DIR/$when-$n"; done
+      mv -T "$d/kept" "$dest" && sync "$KEPT_DIR" || return 1
+      echo "  The original network files are kept in $dest."
+    fi
+  fi
   rm -rf "$d"
-  (( kept == 0 )) || echo "  The original network files are kept in $KEPT_DIR."
 }
 
-# journal_recover: a bridge step that died left its journal (JOURNAL_DIR):
-# decided on first, from what the host holds now, before anything is worked
-# out. With NET_PLAN_ASK (the installer's asking phase) it changes nothing: the
-# journal is only classified, and when it will be undone or committed the plan
-# is its record, set here, and this returns 1. Sets NET_PLAN_JOURNAL.
+# journal_recover: a bridge step that died left its journal: decided on, from
+# what the host holds now, before setup works out anything else (the
+# bridge-journal step). Prints what it did. A commit or an undo is deaf to TERM
+# and INT.
 journal_recover() {
-  if [[ -d "$JOURNAL_DIR.done" && -z "${NET_PLAN_ASK:-}" ]]; then
-    journal_cleanup
+  local rc
+  if [[ -d "$JOURNAL_DIR.done" ]]; then
+    journal_cleanup || net_fail "$JOURNAL_KEEP_FAILED"
   fi
   [[ -d "$JOURNAL_DIR" ]] || return 0
-  NET_PLAN_JOURNAL="$(journal_classify)"
-  case "$NET_PLAN_JOURNAL" in
-    fail\ *) net_fail "${NET_PLAN_JOURNAL#fail }: setup cannot tell what the bridge step that left its journal in $JOURNAL_DIR changed." ;;
-    bad\ *) net_fail "${NET_PLAN_JOURNAL#bad }. Put the network as you want it, remove $JOURNAL_DIR (its files/ holds the originals of what the step changed), and run this again." ;;
-    changed\ *)
-      net_fail "a bridge step that did not finish left its journal in $JOURNAL_DIR, and since then someone else changed ${NET_PLAN_JOURNAL#changed }: setup does not undo over that. Put each back as the step wrote it or as it was (its files/ holds the originals), or remove $JOURNAL_DIR once the network is as you want it, and run this again." ;;
-  esac
-  if [[ -n "${NET_PLAN_ASK:-}" ]]; then
-    # The asking phase changes nothing, so it cannot plan on a host the work
-    # will first undo or commit: it asks from the journal's own record.
-    _journal_read || true
-    case "$NET_PLAN_JOURNAL" in
-      restore)
-        NET_TOOL="$J_TOOL" UPLINK="$J_UPLINK" UPLINK_ADDR="$J_ADDR" BRIDGE="$J_BRIDGE" BRIDGE_CREATE=yes
-        return 1 ;;
-      finished)
-        NET_TOOL="$J_TOOL" UPLINK="$J_BRIDGE" UPLINK_ADDR="$J_ADDR" BRIDGE="$J_BRIDGE" BRIDGE_CREATE=no
-        return 1 ;;
-    esac
-    return 0
-  fi
-  case "$NET_PLAN_JOURNAL" in
+  journal_classify
+  journal_refuse_class
+  case "$J_CLASS" in
     finished)
-      echo "A bridge step that was not recorded as done had in fact finished: committing it." >&2
-      journal_commit >&2 || net_fail "cannot commit the journal in $JOURNAL_DIR" ;;
+      trap '' TERM INT
+      echo "  A bridge step that was not recorded as done had in fact finished: completing and committing it."
+      WHY=""
+      "finish_$NET_TOOL" || net_fail "${WHY:-its finish failed}; the journal stays in $JOURNAL_DIR for the next run"
+      journal_commit || net_fail "$BRIDGE is up, but the journal could not be committed; the next run of setup commits it"
+      journal_cleanup || net_fail "$JOURNAL_KEEP_FAILED"
+      echo "  $BRIDGE is on $UPLINK, committed." ;;
     untouched)
-      echo "A bridge step left a journal but changed nothing: dropping it." >&2
+      echo "  A bridge step left a journal but changed nothing: dropping it."
       journal_drop || net_fail "cannot remove $JOURNAL_DIR" ;;
     restore)
-      echo "A bridge step that did not finish left its journal in $JOURNAL_DIR: undoing it first." >&2
-      journal_restore || net_fail "undoing the earlier bridge step did not complete; its journal stays in $JOURNAL_DIR for the next run (docs/specs/DEPLOYMENT.md, The bridge, says what to do at the console)."
-      echo "  The network is as it was before that step." >&2 ;;
+      echo "  A bridge step that did not finish left its journal in $JOURNAL_DIR: undoing it."
+      rc=0; journal_restore || rc=$?
+      case $rc in
+        0) echo "  The network is as it was before that step." ;;
+        "$RESTORED_STORED") echo "  The network is as it was before that step, but for ${UPLINK}'s connection, now stored (above)." ;;
+        *) net_fail "undoing the earlier bridge step did not complete; its journal stays in $JOURNAL_DIR for the next run (docs/specs/DEPLOYMENT.md, The bridge, says what to do at the console)." ;;
+      esac ;;
   esac
+  changed "bridge journal: $J_CLASS"
 }

@@ -47,10 +47,7 @@
 # NetworkManager's startup — what NetworkManager-wait-online waits for — ends
 # only once the devices it activates at startup are up.
 #
-# Does NOT touch systemd-resolved. Earlier Wisp versions (< 2026-04-18)
-# configured resolved with MulticastDNS=resolve — clean that up manually on
-# upgrade: remove /etc/systemd/resolved.conf.d/wisp-mdns.conf and restart
-# systemd-resolved. See docs/specs/CONTAINERS.md for the full cleanup list.
+# Does not touch systemd-resolved.
 #
 # Must run as root.
 # Usage: container-dns.sh <netplan|networkd|networkmanager>   (network-plan.sh's NET_TOOL)
@@ -64,8 +61,11 @@ fi
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=step.sh
 source "$SETUP_DIR/step.sh"
+step_begin
 # shellcheck source=net-state.sh
 source "$SETUP_DIR/net-state.sh"
+# shellcheck source=container-dns-plan.sh
+source "$SETUP_DIR/container-dns-plan.sh"
 
 NET_TOOL="${1:-}"
 case "$NET_TOOL" in
@@ -75,17 +75,15 @@ esac
 
 echo "--- Container DNS (stub IP + resolv.conf, through $NET_TOOL) ---"
 
-STUB_IP="169.254.53.53"
-STUB_IFACE="wisp-dns0"
+STUB_IP="$DNS_STUB_IP"
+STUB_IFACE="$DNS_STUB_IFACE"
 RESOLV_OUT="/var/lib/wisp/container-resolv.conf"
 NETWORKD_DIR="/etc/systemd/network"
 OLD_DROPIN_NAME="wisp-mdns-stub.conf"
 RELOAD=0
 
-# 1. Remove the previous design's drop-ins: a `[Network] Address=` snippet on
-#    br0's own .network unit. Wisp wrote those (v2.0.1/v2.0.2) and they are the
-#    direct cause of failure mode (2) above, so clearing them is corrective
-#    repair of our own bad state, not a migration.
+# 1. No `[Network] Address=` drop-in for the stub on br0's own .network unit:
+#    failure mode (2) above.
 shopt -s nullglob
 for stale in "$NETWORKD_DIR"/*.network.d/"$OLD_DROPIN_NAME"; do
   rm -f "$stale"
@@ -152,9 +150,10 @@ EOF
   # there (files written before networkd ran), reload it and wait until the
   # interface has its address.
   if (( RELOAD )) || ! stub_up; then
-    timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" networkctl reload || fail "networkctl reload failed"
-    /usr/lib/systemd/systemd-networkd-wait-online -i "${STUB_IFACE}:degraded" --timeout=30 >/dev/null \
-      || fail "${STUB_IFACE} did not get ${STUB_IP} from systemd-networkd within 30 s"
+    net_call networkctl reload || fail "networkctl reload failed"
+    timeout -k "$NET_KILL_SEC" "$(( NET_WAIT_SEC + NET_CMD_SEC ))" \
+      /usr/lib/systemd/systemd-networkd-wait-online -i "${STUB_IFACE}:degraded" --timeout="$NET_WAIT_SEC" >/dev/null \
+      || fail "${STUB_IFACE} did not get ${STUB_IP} from systemd-networkd within $NET_WAIT_SEC s"
     stub_up || fail "${STUB_IFACE} has no ${STUB_IP} after the reload"
     changed "systemd-networkd brought up ${STUB_IFACE} with ${STUB_IP}"
   fi
@@ -177,23 +176,23 @@ stub_networkmanager() {
     *) fail "NetworkManager cannot be asked about the connection $STUB_IFACE" ;;
   esac
   if [[ -z "$have" ]]; then
-    have="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -t -f connection.type,connection.interface-name,ipv4.method,ipv4.addresses,ipv6.method,connection.autoconnect \
+    have="$(net_call nmcli -t -f connection.type,connection.interface-name,ipv4.method,ipv4.addresses,ipv6.method,connection.autoconnect \
       connection show "$STUB_IFACE")" || fail "nmcli cannot read the connection $STUB_IFACE"
     have="$(sort <<<"$have")"
   fi
   if [[ "$have" == none ]]; then
-    timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli connection add type dummy con-name "$STUB_IFACE" ifname "$STUB_IFACE" "${settings[@]}" >/dev/null \
+    net_call nmcli connection add type dummy con-name "$STUB_IFACE" ifname "$STUB_IFACE" "${settings[@]}" >/dev/null \
       || fail "NetworkManager refused the connection $STUB_IFACE"
     changed "NetworkManager connection $STUB_IFACE (${STUB_IP}/32)"
   elif [[ "$have" != "$want" ]]; then
-    timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli connection modify "$STUB_IFACE" "${settings[@]}" \
+    net_call nmcli connection modify "$STUB_IFACE" "${settings[@]}" \
       || fail "NetworkManager refused the settings of $STUB_IFACE"
     changed "NetworkManager connection $STUB_IFACE set to ${STUB_IP}/32"
     RELOAD=1
   fi
   if (( RELOAD )) || ! stub_up; then
-    timeout -k "$NET_KILL_SEC" 60 nmcli --wait 30 connection up "$STUB_IFACE" >/dev/null \
-      || fail "NetworkManager did not bring up ${STUB_IFACE} within 30 s"
+    timeout -k "$NET_KILL_SEC" "$(( NET_WAIT_SEC + NET_CMD_SEC ))" nmcli --wait "$NET_WAIT_SEC" connection up "$STUB_IFACE" >/dev/null \
+      || fail "NetworkManager did not bring up ${STUB_IFACE} within $NET_WAIT_SEC s"
     stub_up || fail "${STUB_IFACE} has no ${STUB_IP} after NetworkManager brought it up"
     changed "NetworkManager brought up ${STUB_IFACE} with ${STUB_IP}"
   fi
@@ -204,9 +203,8 @@ case "$NET_TOOL" in
   networkmanager) stub_networkmanager ;;
 esac
 
-# Corrective repair of Wisp's own earlier state: a copy of the stub IP left on
-# br0 would answer alongside wisp-dns0 and can leave br0 on a lone link-local
-# address. Nothing to do when br0 does not exist.
+# No copy of the stub IP on br0: it would answer alongside wisp-dns0 and can
+# leave br0 on a lone link-local address. Nothing to do when br0 does not exist.
 BR0_ADDRS="$(ip -4 addr show dev br0 2>/dev/null || true)"
 if [[ "$BR0_ADDRS" == *"${STUB_IP}/32"* ]]; then
   ip addr del "${STUB_IP}/32" dev br0

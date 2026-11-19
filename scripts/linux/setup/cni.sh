@@ -22,6 +22,7 @@ SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SETUP_DIR/distro.sh"
 # shellcheck source=step.sh
 source "$SETUP_DIR/step.sh"
+step_begin
 
 echo "--- Container networking (CNI, bridge $BRIDGE) ---"
 

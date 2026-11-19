@@ -20,6 +20,7 @@ DEPLOY_USER="$2"
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=step.sh
 source "$SETUP_DIR/step.sh"
+step_begin
 
 UNIT=/etc/systemd/system/wisp.service
 

@@ -7,11 +7,12 @@ netplan's runtime, so a netplan host has them.
       uplink's definition, empty when netplan has none
   netplan.py origin <id>
       the file netplan's parser reads the definition <id> from
-  netplan.py plan <def-file> <id> <uplink> <mac> <bridge> <client-id> <origin> <out-dir> <mtu>
+  netplan.py plan <def-file> <id> <uplink> <mac> <bridge> <id-kind> <origin> <out-dir> <mtu>
       the uplink's definition checked, what moves to the bridge worked out, and
       the edits written as `netplan set` arguments into <out-dir>; prints dhcp or
-      static. Exit 3 with the reason printed: refused.
-  netplan.py shared <origin>
+      static. On DHCP the bridge's dhcp-identifier is <id-kind> (mac or duid,
+      net-uplink.sh's dhcp_identity). Exit 3 with the reason printed: refused.
+  netplan.py shared <origin> <dir>...
       prints a definition <origin> shares with another netplan file, if any
   netplan.py merged <id> <bridge> <bridge-json>
       reads the merged configuration on stdin; prints what is not as setup
@@ -23,9 +24,6 @@ import os
 import sys
 
 import yaml
-
-NETPLAN_DIRS = ("/lib/netplan", "/etc/netplan", "/run/netplan")
-
 
 def refuse(why):
     print(why)
@@ -67,7 +65,7 @@ def has_ipv4(addrs):
     return False
 
 
-def plan(def_file, nid, uplink, mac, bridge, client_id, origin_file, out, mtu):
+def plan(def_file, nid, uplink, mac, bridge, id_kind, origin_file, out, mtu):
     d = yaml.safe_load(open(def_file))
     if not isinstance(d, dict):
         refuse(f'netplan defines {uplink} ({nid}) elsewhere than "ethernets"')
@@ -104,26 +102,8 @@ def plan(def_file, nid, uplink, mac, bridge, client_id, origin_file, out, mtu):
         'mtu': int(mtu),
         'parameters': {'stp': False},
     })
-    dropin = ''
-    if dhcp:
-        cid = [int(b, 16) for b in client_id.split(':')] if client_id else []
-        if not cid:
-            refuse(f'{uplink} is on DHCP but has no lease')
-        if cid[0] == 1:
-            bridge_def['dhcp-identifier'] = 'mac'
-        elif cid[0] == 255 and len(cid) > 5:
-            # netplan has no IAID key: networkd's drop-in on netplan's unit for the
-            # bridge pins it, for DHCPv6 too — the uplink had networkd's default for
-            # its name, the same for both.
-            bridge_def['dhcp-identifier'] = 'duid'
-            iaid = int.from_bytes(bytes(cid[1:5]), 'big')
-            dropin = (
-                f'# Written by Wisp setup: {bridge} keeps the DHCP identity {uplink} had\n'
-                f'# (DUID with IAID {iaid}), so the DHCP server hands it the same lease.\n'
-                f'[DHCPv4]\nClientIdentifier=duid\nIAID={iaid}\n\n[DHCPv6]\nIAID={iaid}\n'
-            )
-        else:
-            refuse(f'{uplink}\'s DHCPv4 client identifier is of type {cid[0]}, which setup does not carry over')
+    if dhcp and id_kind:
+        bridge_def['dhcp-identifier'] = id_kind
 
     hint = origin_file.rsplit('/', 1)[-1][:-len('.yaml')]
     with open(f'{out}/netplan-set.args', 'w') as f:
@@ -133,17 +113,15 @@ def plan(def_file, nid, uplink, mac, bridge, client_id, origin_file, out, mtu):
             f.write(f'{hint}\tethernets.{nid}.{k}=null\n')
         f.write(f'{hint}\tethernets.{nid}.dhcp4=false\n')
         f.write(f'{hint}\tbridges.{bridge}={json.dumps(bridge_def, sort_keys=True)}\n')
-    with open(f'{out}/50-wisp-dhcp-identity.conf', 'w') as f:
-        f.write(dropin)
     print('dhcp' if dhcp else 'static')
 
 
 # netplan set writes the file back from its parsed state, merged lists
 # included: a definition of that file that another file defines too would come
 # back with that file's entries in it.
-def shared(origin_file):
+def shared(origin_file, *dirs):
     files = {}
-    for d in NETPLAN_DIRS:
+    for d in dirs:
         for f in glob.glob(d + "/*.yaml"):
             files[os.path.basename(f)] = f
 

@@ -25,6 +25,13 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib.sh
+source "$SETUP_DIR/lib.sh"
+# shellcheck source=bounds.sh
+source "$SETUP_DIR/bounds.sh"
+# shellcheck source=plan-record.sh
+source "$SETUP_DIR/plan-record.sh"
+
 # One lock for anything that changes the installation (/run/wisp.lock): the
 # installer's root process and the updater take it at their start and hand it
 # on (fd 8); setup run alone takes it here. The second waits, then gives up.
@@ -38,52 +45,30 @@ if ! flock -w "$WISP_LOCK_WAIT_SEC" 8; then
   exit 1
 fi
 
-# Before any step runs: a distro Wisp does not support, a network tool setup
-# cannot configure or an uplink that cannot be bridged is refused, and the
-# bridge is chosen — the steps that depend on it are written for it, and the
-# bridge step applies it last.
+# Before any step runs: a distro Wisp does not support is refused.
 # shellcheck source=distro.sh
 source "$SETUP_DIR/distro.sh"
-# shellcheck source=network-plan.sh
-source "$SETUP_DIR/network-plan.sh"
-# The installer asked the operator about the bridge from its own plan
-# (WISP_CONFIRMED_BRIDGE, "<bridge> on <uplink> (<address>), through <tool>"
-# or "none"): this run's plan, made under the lock, must be the same, or
-# nothing more is changed. What the plan did first with an earlier step's
-# journal is said.
-if [[ -n "${WISP_CONFIRMED_BRIDGE:-}" ]]; then
-  _planned=none
-  [[ "$BRIDGE_CREATE" == yes ]] && _planned="$BRIDGE on $UPLINK ($UPLINK_ADDR), through $NET_TOOL"
-  if [[ "$_planned" != "$WISP_CONFIRMED_BRIDGE" ]]; then
-    case "${NET_PLAN_JOURNAL:-}" in
-      restore) _done="The bridge step that had not finished was undone first; nothing else was changed." ;;
-      finished) _done="The bridge step that had finished was recorded as done first; nothing else was changed." ;;
-      *) _done="Nothing was changed." ;;
-    esac
-    echo "ERROR: the network changed since the install asked: it would now make ${_planned/none/no bridge}, not ${WISP_CONFIRMED_BRIDGE/none/no bridge}. $_done Run the install again." >&2
-    exit 1
-  fi
-  unset _planned _done
-fi
+
+# The network plan's directory, the steps' to share (NET_PLAN_DIR), this
+# script's to remove.
+NET_PLAN_DIR="$(mktemp -d -t wisp-net-plan.XXXXXX)" || { echo "ERROR: cannot create a temp directory" >&2; exit 1; }
+export NET_PLAN_DIR
+trap 'rm -rf "$NET_PLAN_DIR"' EXIT
 
 # A stop (TERM, INT) is passed to the step running, which ends — the bridge
-# step undoing itself — and then the run ends. Each step runs in a session of
-# its own, in the background, so the stop reaches this script at once and goes
-# to the step's whole process group (apt and dpkg under the packages step too;
-# a command a step runs in a session of its own, npm ci under idle_run, gets it
-# from the step). The step gets STEP_STOP_SEC to end, the longest a step takes to
-# (bridge-journal.sh: the bridge step's undo), and is then killed, its group
-# with it. The handler only records the stop when no step is known yet; the
-# step started next is stopped as soon as its pid is.
-# shellcheck source=lib.sh
-source "$SETUP_DIR/lib.sh"
-STEP_STOP_SEC="$BRIDGE_STOP_SEC"
+# step undoing itself — and then the run ends. Each step runs as the leader of
+# a session of its own (lib.sh), in the background, so the stop reaches this
+# script at once and goes to every process of the step's session. The step gets
+# STEP_STOP_SEC to end (bounds.sh), and its session is then killed: setup ends
+# within SETUP_STOP_SEC of a stop, whoever sent it. The handler only records the
+# stop when no step is known yet; the step started next is stopped as soon as
+# its pid is.
 STOPPING=0
 STEP_PID=""
 STEP_KILLER=""
 stop_step() {
   [[ -n "$STEP_PID" && -z "$STEP_KILLER" ]] || return 0
-  kill -TERM -- "-$STEP_PID" 2>/dev/null || kill -TERM "$STEP_PID" 2>/dev/null
+  session_signal TERM "$STEP_PID"
   kill_later "$STEP_STOP_SEC" "$STEP_PID"
   STEP_KILLER="$KILLER"
 }
@@ -108,22 +93,32 @@ run_step() {
     wait "$STEP_PID" || rc=$?
     kill -0 "$STEP_PID" 2>/dev/null || break
   done
-  if [[ -n "$STEP_KILLER" ]]; then
-    kill -USR1 "$STEP_KILLER" 2>/dev/null
-    wait "$STEP_KILLER" 2>/dev/null
-  fi
-  STEP_PID="" STEP_KILLER=""
   if (( STOPPING )); then
+    # What the step started ends with it, within its bound.
+    session_wait "$STEP_PID"
+    [[ -z "$STEP_KILLER" ]] || { KILLER="$STEP_KILLER"; kill_later_cancel; }
     echo "setup stopped at step: $name" >&2
     exit 143
   fi
+  STEP_PID="" STEP_KILLER=""
   (( rc == 0 )) && return 0
   echo ""
   echo "setup failed at step: $name (exit $rc)" >&2
   exit 1
 }
 
-echo "=== Wisp setup (deploy user: $DEPLOY_USER; network: $NET_TOOL, uplink $UPLINK, bridge $BRIDGE$([[ $BRIDGE_CREATE == yes ]] && echo ' — to be created')) ==="
+echo "=== Wisp setup (deploy user: $DEPLOY_USER) ==="
+run_step bridge-journal bridge-recover.sh
+run_step network-plan network-plan.sh "$NET_PLAN_DIR"
+plan_record_read "$NET_PLAN_DIR/plan" || exit 1
+# The installer asked the operator about the bridge from its own plan
+# (WISP_CONFIRMED_BRIDGE, plan_confirmation's): this run's plan, made under the
+# lock, must be the same, or nothing more is changed.
+if [[ -n "${WISP_CONFIRMED_BRIDGE:-}" && "$(plan_confirmation)" != "$WISP_CONFIRMED_BRIDGE" ]]; then
+  _planned="$(plan_confirmation)"
+  refuse NETWORK_CHANGED_SINCE_ASKED "the network changed since the install asked: it would now make ${_planned/#none/no bridge}, not ${WISP_CONFIRMED_BRIDGE/#none/no bridge}. Setup changed nothing after the bridge-journal step above. Run the install again."
+fi
+
 run_step packages packages.sh
 run_step groups groups.sh "$DEPLOY_USER"
 run_step dirs dirs.sh "$DEPLOY_USER"

@@ -23,6 +23,7 @@ const CHECKS = [
   { name: 'fences', command: ['node', 'scripts/check-fences.mjs'] },
   { name: 'lint', command: ['npm', 'run', 'lint', '--silent'], needs: '.' },
   { name: 'shell', command: ['node', 'scripts/check-shell.mjs'] },
+  { name: 'bounds', command: ['node', 'scripts/check-bounds.mjs'] },
   { name: 'test', command: ['npm', 'test', '--silent'], needs: 'frontend', timeoutMs: 120_000 },
 ];
 

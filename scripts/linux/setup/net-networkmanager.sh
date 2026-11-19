@@ -11,13 +11,32 @@
 #   finish_networkmanager  the uplink's own connection deleted, its stored
 #                          definition kept with the originals: the last change
 #   undo_networkmanager    after the files are back: the connections reloaded and
-#                          the uplink's own brought up
+#                          the uplink's own brought up (a generated one loaded
+#                          back as a stored copy)
+
+# nm_dbus <uuid> <method-or-property>: the connection's Flags or GetSettings,
+# from NetworkManager's D-Bus interface, as busctl's JSON.
+nm_dbus() {
+  local path out
+  out="$(net_call busctl call --json=short org.freedesktop.NetworkManager /org/freedesktop/NetworkManager/Settings \
+    org.freedesktop.NetworkManager.Settings GetConnectionByUuid s "$1")" || return 1
+  path="$(python3 -I "$NET_SETUP_DIR/nm.py" path <<<"$out")" || return 1
+  case "$2" in
+    Flags) net_call busctl get-property --json=short org.freedesktop.NetworkManager "$path" \
+      org.freedesktop.NetworkManager.Settings.Connection Flags ;;
+    *) net_call busctl call --json=short org.freedesktop.NetworkManager "$path" \
+      org.freedesktop.NetworkManager.Settings.Connection "$2" ;;
+  esac
+}
+# NetworkManager's flag for a connection it generated itself (the default wired
+# one), which it holds in memory, under /run.
+NM_GENERATED=2
 
 plan_networkmanager() {
-  local con mac files n prio routes4 routes6 metric4 metric6 p v f args why
+  local con mac files n prio routes4 routes6 metric4 metric6 v f args why flags uuid other bind other_mac other_match
   UPLINK_CONNECTION="$(net_read nmcli -g GENERAL.CON-UUID device show "$UPLINK")" || exit 1
-  [[ -n "$UPLINK_CONNECTION" ]] || net_refuse "NetworkManager names no connection for the uplink $UPLINK."
-  con="$(net_read nmcli -t connection show "$UPLINK_CONNECTION")" || exit 1
+  [[ -n "$UPLINK_CONNECTION" ]] || refuse NM_NO_CONNECTION "NetworkManager names no connection for the uplink $UPLINK: give it one (nmcli connection add type ethernet ifname $UPLINK …) and run this again."
+  con="$(net_read nmcli -t -e no connection show "$UPLINK_CONNECTION")" || exit 1
   # One property of the uplink's connection; empty when unset.
   _prop() {
     local v
@@ -26,64 +45,91 @@ plan_networkmanager() {
     printf '%s' "$v"
   }
   [[ "$(_prop connection.type)" == 802-3-ethernet ]] \
-    || net_refuse "$UPLINK's connection is of type $(_prop connection.type)."
+    || net_refuse NM_NOT_ETHERNET "$UPLINK's connection is of type $(_prop connection.type)."
   [[ -z "$(_prop match.interface-name)" ]] \
-    || net_refuse "$UPLINK's connection matches the interfaces \"$(_prop match.interface-name)\", not $UPLINK alone."
+    || net_refuse NM_MATCH "$UPLINK's connection matches the interfaces \"$(_prop match.interface-name)\", not $UPLINK alone."
   mac="$(_prop 802-3-ethernet.mac-address)"
   if [[ "$(_prop connection.interface-name)" != "$UPLINK" && "${mac,,}" != "$UPLINK_MAC" ]]; then
-    net_refuse "$UPLINK's connection is not bound to $UPLINK by name or hardware address, so it applies to other interfaces too."
+    net_refuse NM_NOT_BOUND "$UPLINK's connection is not bound to $UPLINK by name or hardware address, so it applies to other interfaces too."
   fi
+  # Every setting it holds goes to the bridge or stays on the port (nm.py's
+  # lists); any other is refused, naming it.
+  why="$(nm_dbus "$UPLINK_CONNECTION" GetSettings | python3 -I "$NET_SETUP_DIR/nm.py" unknown)" \
+    || net_fail "cannot read the settings of ${UPLINK}'s connection from NetworkManager"
+  [[ -z "$why" ]] || net_refuse NM_SETTING "$UPLINK's connection sets $(echo $why), which setup does not carry over to a bridge."
   # The uplink's connection is deleted as the bridge step's last change, its
-  # stored definition kept with the originals: a keyfile under /etc, or the
-  # file netplan keeps for a connection NetworkManager made. The default one
-  # NetworkManager makes for a wired device and holds in memory needs nothing
-  # kept. A definition stored anywhere else, or one netplan renders from an
-  # operator's own file, is refused.
-  files="$(net_read nmcli -t -f UUID,NAME,FILENAME connection show)" || exit 1
-  NM_PROFILE_FILE="$(awk -F: -v u="$UPLINK_CONNECTION" '$1 == u { print $3 }' <<<"$files")"
+  # definition kept to undo that: a keyfile under /etc, the file netplan keeps
+  # for a connection NetworkManager made, or — for the default one
+  # NetworkManager generates for a wired device and holds in memory — a copy
+  # rendered here. One stored anywhere else, one under /run that something
+  # writes there again at every boot (an initrd's), and one netplan renders
+  # from an operator's own file are refused.
+  files="$(net_read nmcli -t -f UUID,NAME,TYPE,FILENAME connection show)" || exit 1
+  NM_PROFILE_FILE="$(awk -F: -v u="$UPLINK_CONNECTION" '$1 == u { print $4 }' <<<"$files")"
   case "$NM_PROFILE_FILE" in
     /etc/NetworkManager/system-connections/*) ;;
     /run/NetworkManager/system-connections/netplan-NM-"$UPLINK_CONNECTION".nmconnection)
       NM_PROFILE_FILE="/etc/netplan/90-NM-$UPLINK_CONNECTION.yaml"
-      [[ -f "$NM_PROFILE_FILE" ]] || net_refuse "${UPLINK}'s connection is rendered by netplan, but $NM_PROFILE_FILE is missing." ;;
+      [[ -f "$NM_PROFILE_FILE" ]] || net_refuse NM_NETPLAN_MISSING "${UPLINK}'s connection is rendered by netplan, but $NM_PROFILE_FILE is missing." ;;
     /run/NetworkManager/system-connections/netplan-*)
-      net_refuse "${UPLINK}'s connection is rendered by netplan from an operator's file in /etc/netplan: setup does not change it through NetworkManager." ;;
-    "" | /run/NetworkManager/*) NM_PROFILE_FILE="" ;;
-    *) net_refuse "${UPLINK}'s connection is stored in $NM_PROFILE_FILE, where setup cannot keep it to undo its removal." ;;
+      net_refuse NM_NETPLAN_OPERATOR "${UPLINK}'s connection is rendered by netplan from an operator's file in /etc/netplan: setup does not change it through NetworkManager." ;;
+    /run/NetworkManager/*)
+      flags="$(nm_dbus "$UPLINK_CONNECTION" Flags | python3 -I "$NET_SETUP_DIR/nm.py" flags)" \
+        || net_fail "cannot read the flags of ${UPLINK}'s connection from NetworkManager"
+      (( flags & NM_GENERATED )) \
+        || refuse NM_PROFILE_IN_RUN "${UPLINK}'s connection is held in $NM_PROFILE_FILE, which something writes again at every boot (an initrd's network configuration, for one), so it would come back beside the bridge: store the connection as a keyfile under /etc/NetworkManager/system-connections and stop what writes it, then run this again."
+      NM_PROFILE_FILE="" ;;
+    *) net_refuse NM_PROFILE_STORE "${UPLINK}'s connection is stored in ${NM_PROFILE_FILE:-no file}, where setup cannot keep it to undo its removal." ;;
   esac
   [[ -z "$NM_PROFILE_FILE" ]] || journal_root_ok "$NM_PROFILE_FILE" \
-    || net_refuse "${UPLINK}'s connection is stored in $NM_PROFILE_FILE, where setup cannot keep it to undo its removal."
+    || net_refuse NM_PROFILE_STORE "${UPLINK}'s connection is stored in $NM_PROFILE_FILE, where setup cannot keep it to undo its removal."
+  # Exactly one definition for the uplink: any other Ethernet connection not
+  # bound to another device could take it, at boot or after the step.
+  while IFS=: read -r uuid n v f; do
+    [[ "$v" == 802-3-ethernet && "$uuid" != "$UPLINK_CONNECTION" ]] || continue
+    other="$(net_read nmcli -t -e no -f connection.interface-name,802-3-ethernet.mac-address,match.interface-name connection show "$uuid")" || exit 1
+    bind="$(awk -F: '$1 == "connection.interface-name" { print $2 }' <<<"$other")"
+    other_mac="$(awk -F: '$1 == "802-3-ethernet.mac-address" { sub(/^[^:]*:/, ""); print tolower($0) }' <<<"$other")"
+    other_match="$(awk -F: '$1 == "match.interface-name" { print $2 }' <<<"$other")"
+    [[ "$bind" == -- ]] && bind=""
+    [[ "$other_mac" == -- ]] && other_mac=""
+    [[ "$other_match" == -- ]] && other_match=""
+    if [[ -n "$bind" && "$bind" != "$UPLINK" ]] || [[ -n "$other_mac" && "$other_mac" != "$UPLINK_MAC" ]] \
+      || [[ -n "$other_match" && "$other_match" != *[*?[!~]* && "$other_match" != "$UPLINK" ]]; then
+      continue
+    fi
+    refuse NM_SECOND_PROFILE "NetworkManager's connection '$n' ($uuid${f:+, $f}) could take the uplink $UPLINK too: setup leaves exactly one definition for it. Bind that connection to another device or remove it, and run this again."
+  done <<<"$files"
   # Names setup would give its connections, and the files it would write them
   # to, already taken while no bridge is in use.
   for n in "$BRIDGE" "${BRIDGE}-port-${UPLINK}"; do
     ! awk -F: -v n="$n" '$2 == n { found = 1 } END { exit !found }' <<<"$files" \
-      || net_refuse "a NetworkManager connection named $n exists already, and no bridge is in use: remove it, or bring up the bridge it belongs to."
+      || refuse NM_NAME_TAKEN "a NetworkManager connection named $n exists already, and no bridge is in use: remove it, or bring up the bridge it belongs to, and run this again."
   done
   NM_BRIDGE_FILE="/etc/NetworkManager/system-connections/${BRIDGE}.nmconnection"
   NM_PORT_FILE="/etc/NetworkManager/system-connections/${BRIDGE}-port-${UPLINK}.nmconnection"
   for n in "$NM_BRIDGE_FILE" "$NM_PORT_FILE"; do
-    [[ ! -e "$n" ]] || net_refuse "$n exists already, and no bridge is in use: remove it."
+    [[ ! -e "$n" ]] || refuse NM_NAME_TAKEN "$n exists already, and no bridge is in use: remove it, and run this again."
   done
   # The port comes up on the uplink at boot ahead of the uplink's own
   # connection: autoconnect priority above it.
   prio="$(_prop connection.autoconnect-priority)"
   [[ "$prio" =~ ^-?[0-9]+$ ]] || prio=0
-  (( prio < 999 )) || net_refuse "${UPLINK}'s connection has the highest autoconnect priority (999): no port could come up ahead of it."
+  (( prio < 999 )) || refuse NM_PRIORITY "${UPLINK}'s connection has the highest autoconnect priority (999), so no port could come up ahead of it: lower it, and run this again."
   NM_PORT_PRIORITY=$(( prio + 1 > 0 ? prio + 1 : 0 ))
   NM_BRIDGE_UUID="$(cat /proc/sys/kernel/random/uuid)"
   NM_PORT_UUID="$(cat /proc/sys/kernel/random/uuid)"
   case "$(_prop ipv4.method)" in
     auto) UPLINK_MODE=dhcp ;;
     manual) UPLINK_MODE=static ;;
-    *) net_refuse "$UPLINK's connection has IPv4 method '$(_prop ipv4.method)': neither DHCP nor a static address." ;;
+    *) refuse NM_IPV4_METHOD "$UPLINK's connection has IPv4 method '$(_prop ipv4.method)': give it DHCP (auto) or a static address (manual), and run this again." ;;
   esac
-  for p in 802-1x.eap connection.master connection.controller; do
-    v="$(_prop "$p")"
-    [[ -z "$v" ]] || net_refuse "$UPLINK's connection sets $p ($v), which setup does not carry over to a bridge."
+  for v in 802-1x.eap connection.master connection.controller; do
+    [[ -z "$(_prop "$v")" ]] || net_refuse NM_SETTING "$UPLINK's connection sets $v ($(_prop "$v")), which setup does not carry over to a bridge."
   done
   if [[ "$UPLINK_MODE" == dhcp ]]; then
-    UPLINK_CLIENT_ID="$(client_id "$UPLINK" "$NET_TOOL")"
-    [[ -n "$UPLINK_CLIENT_ID" ]] || net_refuse "$UPLINK is on DHCP but NetworkManager reports no client identifier for its lease."
+    UPLINK_CLIENT_ID="$(client_id "$UPLINK" "$NET_TOOL")" || net_fail "cannot read ${UPLINK}'s DHCP lease from NetworkManager"
+    [[ -n "$UPLINK_CLIENT_ID" ]] || refuse NM_NO_CLIENT_ID "$UPLINK is on DHCP but NetworkManager reports no client identifier for its lease, which the bridge must send to keep the address: renew the lease (nmcli device reapply $UPLINK), and run this again."
   fi
   # NetworkManager gives a bridge another default route metric than an
   # Ethernet interface: the metric the uplink's routes have is kept.
@@ -92,54 +138,63 @@ plan_networkmanager() {
   _metric_of() { awk '$1 == "default" && !done { for (i = 1; i < NF; i++) if ($i == "metric") { print $(i + 1); done = 1; break } }' <<<"$1"; }
   metric4="$(_metric_of "$routes4")"
   metric6="$(_metric_of "$routes6")"
-  # The bridge connection: the uplink connection's whole layer 3 — every ipv4.*
-  # and ipv6.* property it holds, static addresses, routes, name servers and
-  # DHCP settings alike — its route metrics, the client identifier it sent on
-  # DHCP, exactly (NM takes it as bytes), and its hardware address. The port
-  # connection: no addressing of its own, and the uplink connection's link
-  # settings (every 802-3-ethernet.* and ethtool.* property). Both connect by
-  # themselves from the moment they are added (see the bridge step).
+  python3 -I "$NET_SETUP_DIR/nm.py" carry "$metric4" "$metric6" "$NET_PLAN_DIR" <<<"$con" \
+    || net_fail "cannot sort ${UPLINK}'s connection's settings"
+  # The bridge connection: the uplink connection's layer 3 (bridge.carry), the
+  # client identifier it sent on DHCP, exactly (NetworkManager takes it as
+  # bytes), and its hardware address and MTU. The port connection: no
+  # addressing of its own, and the uplink connection's link settings
+  # (port.carry). Both connect by themselves from the moment they are added
+  # (see the bridge step).
   {
     printf '%s\n' type bridge ifname "$BRIDGE" con-name "$BRIDGE" connection.uuid "$NM_BRIDGE_UUID" \
       bridge.mac-address "$UPLINK_MAC" bridge.stp no connection.autoconnect yes connection.autoconnect-ports true \
       802-3-ethernet.mtu "$UPLINK_MTU"
-    awk -v m4="$metric4" -v m6="$metric6" '/^ipv[46]\./ {
-      k = $0; sub(/:.*/, "", k); v = substr($0, length(k) + 2)
-      if (v == "" || v == "--" || k == "ipv4.dhcp-client-id" || k ~ /-deprecated$/) next
-      if (k == "ipv4.route-metric" && v == "-1" && m4 != "") v = m4
-      if (k == "ipv6.route-metric" && v == "-1" && m6 != "") v = m6
-      print k; print v
-    }' <<<"$con"
+    cat "$NET_PLAN_DIR/bridge.carry"
     [[ -z "${UPLINK_CLIENT_ID:-}" ]] || printf '%s\n' ipv4.dhcp-client-id "$UPLINK_CLIENT_ID"
   } > "$NET_PLAN_DIR/bridge.args"
   {
     printf '%s\n' type ethernet ifname "$UPLINK" con-name "${BRIDGE}-port-${UPLINK}" connection.uuid "$NM_PORT_UUID" \
       controller "$BRIDGE" port-type bridge connection.autoconnect yes \
       connection.autoconnect-priority "$NM_PORT_PRIORITY"
-    awk '/^(802-3-ethernet|ethtool)\./ {
-      k = $0; sub(/:.*/, "", k); v = substr($0, length(k) + 2)
-      if (v == "" || v == "--") next
-      print k; print v
-    }' <<<"$con"
+    cat "$NET_PLAN_DIR/port.carry"
   } > "$NET_PLAN_DIR/port.args"
-  # Both rendered as keyfiles and checked by NetworkManager itself, offline:
-  # nothing is added.
-  if ! timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli --offline connection add --help >/dev/null 2>&1; then
-    net_refuse "this nmcli has no --offline, with which setup checks the connections it adds before adding them."
+  # The generated default connection, rendered as a stored one: what the undo
+  # of its deletion loads back.
+  if [[ -z "$NM_PROFILE_FILE" ]]; then
+    { printf '%s\n' type ethernet; cat "$NET_PLAN_DIR/copy.carry"; } > "$NET_PLAN_DIR/uplink.args"
   fi
-  for f in bridge port; do
+  # Each rendered as a keyfile and checked by NetworkManager itself, offline:
+  # nothing is added.
+  if ! net_call nmcli --offline connection add --help >/dev/null 2>&1; then
+    net_refuse NM_NO_OFFLINE "this nmcli has no --offline, with which setup checks the connections it adds before adding them."
+  fi
+  for f in bridge port uplink; do
+    [[ -f "$NET_PLAN_DIR/$f.args" ]] || continue
     mapfile -t args < "$NET_PLAN_DIR/$f.args"
-    why="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli --offline connection add "${args[@]}" 2>&1 >"$NET_PLAN_DIR/$f.nmconnection")" \
-      || net_refuse "NetworkManager does not accept the $f connection setup would add: ${why:-nmcli --offline failed}."
+    why="$(net_call nmcli --offline connection add "${args[@]}" 2>&1 >"$NET_PLAN_DIR/$f.nmconnection")" \
+      || net_refuse NM_REJECTS "NetworkManager does not accept the $f connection setup would add: ${why:-nmcli --offline failed}."
   done
   unset -f _metric_of _prop
+}
+
+# sources_networkmanager: what the plan read, for the bridge step to check is
+# unchanged: every connection but the stub's (a br0 made since included), the
+# uplink connection's settings, and the connection the uplink runs from.
+sources_networkmanager() {
+  local out
+  out="$(net_call nmcli -t -f UUID,NAME,TYPE,FILENAME connection show)" || return 1
+  awk -F: -v stub="$DNS_STUB_IFACE" '$2 != stub' <<<"$out" | sort
+  out="$(net_call nmcli -t -e no connection show "$UPLINK_CONNECTION")" || return 1
+  grep -vE '^(GENERAL|IP[46]|DHCP[46])\.|^connection\.timestamp:' <<<"$out" | sha256sum
+  net_call nmcli -g GENERAL.CON-UUID device show "$UPLINK" || return 1
 }
 
 apply_networkmanager() {
   put_file "$NM_BRIDGE_FILE" "$NET_PLAN_DIR/bridge.nmconnection" 0600 || return 1
   put_file "$NM_PORT_FILE" "$NET_PLAN_DIR/port.nmconnection" 0600 || return 1
   apply_notice
-  timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli connection load "$NM_BRIDGE_FILE" "$NM_PORT_FILE" \
+  net_call nmcli connection load "$NM_BRIDGE_FILE" "$NM_PORT_FILE" \
     || { WHY="NetworkManager did not load $NM_BRIDGE_FILE and $NM_PORT_FILE"; return 1; }
   timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" nmcli --wait "$NET_APPLY_SEC" connection up "$NM_BRIDGE_UUID" >/dev/null
 }
@@ -148,49 +203,66 @@ check_networkmanager() {
   for link in "$BRIDGE" "$UPLINK"; do
     want="$NM_BRIDGE_UUID"
     [[ "$link" == "$UPLINK" ]] && want="$NM_PORT_UUID"
-    got="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -g GENERAL.CON-UUID device show "$link" 2>/dev/null || true)"
+    got="$(net_call nmcli -g GENERAL.CON-UUID device show "$link" 2>/dev/null || true)"
     if [[ "$got" != "$want" ]]; then
-      WHY="NetworkManager runs $link from the connection '${got}', not $want"
+      CHECK_WHY="NetworkManager runs $link from the connection '${got}', not $want"
       return 1
     fi
   done
 }
+# finish_networkmanager: the step's last change, by the step once its check
+# passed, or by a later run that found the step finished but for this. What is
+# journalled already is not again; a connection already gone is not deleted.
 finish_networkmanager() {
-  if [[ -n "${NM_PROFILE_FILE:-}" ]]; then
+  local has
+  _journal_read || { WHY="cannot read the journal"; return 1; }
+  if [[ "$J_FINISH" == no ]]; then
+    journal_finish || { WHY="cannot write the journal"; return 1; }
+  fi
+  if [[ -n "${NM_PROFILE_FILE:-}" ]] && ! _journal_has_file "$NM_PROFILE_FILE"; then
     journal_file "$NM_PROFILE_FILE" - || { WHY="cannot write the journal for $NM_PROFILE_FILE"; return 1; }
   fi
-  journal_connrm "$UPLINK_CONNECTION" || { WHY="cannot write the journal"; return 1; }
-  timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli connection delete "$UPLINK_CONNECTION" >/dev/null \
-    || { WHY="NetworkManager did not delete ${UPLINK}'s former connection $UPLINK_CONNECTION"; return 1; }
+  if (( ${#J_CONNRM[@]} == 0 )); then
+    journal_connrm "$UPLINK_CONNECTION" || { WHY="cannot write the journal"; return 1; }
+  fi
+  has=0; nm_has "$UPLINK_CONNECTION" || has=$?
+  case $has in
+    0) net_call nmcli connection delete "$UPLINK_CONNECTION" >/dev/null \
+         || { WHY="NetworkManager did not delete ${UPLINK}'s former connection $UPLINK_CONNECTION"; return 1; } ;;
+    1) ;;
+    *) WHY="NetworkManager cannot be asked about ${UPLINK}'s former connection $UPLINK_CONNECTION"; return 1 ;;
+  esac
   changed "NetworkManager connection $UPLINK_CONNECTION deleted: ${UPLINK}'s former one, now held by $BRIDGE and its port"
 }
 
-# undo_networkmanager <connection or -> <nm files restored: yes|no> <netplan's
-# 90-NM file restored: yes|no>: runs in journal_restore's subshell. The step's
+# undo_networkmanager <nm files restored: yes|no> <netplan's 90-NM file
+# restored: yes|no>: in journal_restore, once the files are back. The step's
 # connections go with their files, and the uplink's own comes back with its file
-# (netplan's, generated); then it is brought up. When it is gone —
-# NetworkManager's default wired one, held in memory, does not outlive a reboot
-# once a stored connection is for the device — a restart of NetworkManager, with
-# no such connection left, makes it again.
+# (netplan's, generated); then it is brought up. The default connection
+# NetworkManager had generated, which the step deleted, comes back as the stored
+# connection rendered from it in the plan (uplink.nmconnection) — what
+# NetworkManager itself makes of it once an operator edits it.
 undo_networkmanager() {
-  local con="$1" has state
-  if [[ "$3" == yes ]]; then
-    timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" netplan generate || return 1
-  fi
+  local has state stored restored=0
   if [[ "$2" == yes ]]; then
-    timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli connection reload || return 1
+    net_call netplan generate || return 1
   fi
-  has=1
-  if [[ "$con" != - ]]; then
-    has=0; nm_has "$con" || has=$?
-    (( has <= 1 )) || return 1
+  if [[ "$1" == yes ]]; then
+    net_call nmcli connection reload || return 1
   fi
-  if (( has == 0 )); then
-    state="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -g GENERAL.STATE connection show "$con")" || return 1
-    if [[ "$state" != activated ]]; then
-      timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" nmcli --wait "$NET_APPLY_SEC" connection up "$con" >/dev/null || return 1
-    fi
-  else
-    timeout -k "$NET_KILL_SEC" 60 systemctl restart NetworkManager || return 1
+  has=0; nm_has "$UPLINK_CONNECTION" || has=$?
+  (( has <= 1 )) || return 1
+  if (( has == 1 )); then
+    [[ -s "$JOURNAL_DIR/uplink.nmconnection" ]] || return 1
+    stored="/etc/NetworkManager/system-connections/$UPLINK_CONNECTION.nmconnection"
+    install_file "$stored" "$JOURNAL_DIR/uplink.nmconnection" 0600 || return 1
+    net_call nmcli connection load "$stored" || return 1
+    echo "  NetworkManager's generated connection for $UPLINK, which the step had deleted, is back as a stored connection with its settings: $stored."
+    restored=$RESTORED_STORED
   fi
+  state="$(net_call nmcli -g GENERAL.STATE connection show "$UPLINK_CONNECTION")" || return 1
+  if [[ "$state" != activated ]]; then
+    timeout -k "$NET_KILL_SEC" "$NET_APPLY_SEC" nmcli --wait "$NET_APPLY_SEC" connection up "$UPLINK_CONNECTION" >/dev/null || return 1
+  fi
+  return "$restored"
 }

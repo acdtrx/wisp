@@ -25,12 +25,12 @@ fi
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=step.sh
 source "$SETUP_DIR/step.sh"
-# shellcheck source=network-plan.sh
-source "$SETUP_DIR/network-plan.sh"
 # shellcheck source=bridge-journal.sh
 source "$SETUP_DIR/bridge-journal.sh"
+step_begin
 
 echo "--- Bridge ---"
+plan_record_read "$NET_PLAN_DIR/plan" || fail "no network plan in $NET_PLAN_DIR"
 
 if [[ "$BRIDGE_CREATE" == no ]]; then
   echo "  $BRIDGE carries the uplink"
@@ -38,59 +38,11 @@ if [[ "$BRIDGE_CREATE" == no ]]; then
   exit 0
 fi
 
-# What the plan staged from must be as it was then; otherwise the step stops
-# before any change.
+# What the plan read must be as it was then; otherwise the step stops before
+# any change.
 current_sources="$(plan_sources)" || fail "cannot read what the plan was made from"
 [[ "$current_sources" == "$(cat "$NET_PLAN_DIR/sources")" ]] \
-  || fail "the network's configuration changed since setup worked out the bridge; the bridge step changed nothing. Run setup again."
-
-# applied: within NET_APPLY_SEC the bridge holds what the uplink held (see
-# the header) and the uplink holds nothing; there is no one event to wait on.
-# Sets WHY to what differs.
-# On DHCP the default route is compared by its gateway: its metric and source
-# are the lease's and the tool's, and an uplink may carry the same route twice
-# (once from the initramfs).
-facts_of() {
-  if [[ "$UPLINK_MODE" == static ]]; then
-    grep -E '^(addr[46]|route[46]|dns|domain) ' || true
-  else
-    grep -E '^(addr4|route4 default|dns) ' | sed -E 's/^(route4 default via [^ ]+).*/\1/' | sort -u || true
-  fi
-}
-# read_now: what the bridge and the uplink hold now, into NET_PLAN_DIR/now.*.
-# Run in the background and waited for, so a stop interrupts the check at once.
-# A read that fails leaves its part empty.
-read_now() {
-  rm -f "$NET_PLAN_DIR"/now.*
-  cat "/sys/class/net/$BRIDGE/address" > "$NET_PLAN_DIR/now.mac" 2>/dev/null || true
-  { l3_state "$BRIDGE" "$NET_TOOL" 2>/dev/null | facts_of; } > "$NET_PLAN_DIR/now.have" || true
-  { l3_state "$UPLINK" "$NET_TOOL" 2>/dev/null | grep -E '^(addr[46]|route[46]) '; } > "$NET_PLAN_DIR/now.port" || true
-  if [[ "$UPLINK_MODE" == dhcp ]]; then client_id "$BRIDGE" "$NET_TOOL"; fi > "$NET_PLAN_DIR/now.cid" || true
-}
-applied() {
-  local deadline=$(( SECONDS + NET_APPLY_SEC )) mac cid want have port
-  want="$(facts_of < "$NET_PLAN_DIR/uplink.state")"
-  while :; do
-    read_now &
-    wait "$!" || true
-    mac="$(cat "$NET_PLAN_DIR/now.mac" 2>/dev/null || true)"
-    have="$(cat "$NET_PLAN_DIR/now.have" 2>/dev/null || true)"
-    port="$(cat "$NET_PLAN_DIR/now.port" 2>/dev/null || true)"
-    cid="$(cat "$NET_PLAN_DIR/now.cid" 2>/dev/null || true)"
-    if [[ "$mac" == "$UPLINK_MAC" && "$have" == "$want" && -z "$port" && "$cid" == "${UPLINK_CLIENT_ID:-}" ]]; then
-      return 0
-    fi
-    if (( SECONDS >= deadline )); then
-      WHY="after ${NET_APPLY_SEC} s"
-      [[ "$mac" == "$UPLINK_MAC" ]] || WHY+=", $BRIDGE has hardware address '${mac}' (was $UPLINK_MAC)"
-      [[ "$cid" == "${UPLINK_CLIENT_ID:-}" ]] || WHY+=", $BRIDGE sends client identifier '${cid}' (was $UPLINK_CLIENT_ID)"
-      [[ "$have" == "$want" ]] || WHY+=", $BRIDGE holds [$(echo $have)], $UPLINK held [$(echo $want)]"
-      [[ -z "$port" ]] || WHY+=", $UPLINK still holds [$(echo $port)]"
-      return 1
-    fi
-    sleep 1
-  done
-}
+  || refuse NETWORK_CHANGED_SINCE_PLAN "the network's configuration changed since setup worked out the bridge; the bridge step changed nothing. Run setup again."
 
 apply_notice() {
   echo "  applying: $BRIDGE on $UPLINK (was $UPLINK_ADDR); an ssh session may pause"
@@ -106,19 +58,21 @@ put_file() {
 
 # undo: from the journal; the step fails either way.
 undo() {
+  local rc=0
   trap '' TERM INT
   echo "  not applied: ${WHY:-stopped}; undoing it" >&2
-  journal_undo_mark || true
-  if journal_restore; then
-    fail "$BRIDGE was not applied (${WHY:-the step was stopped}). The network is as it was, and $UPLINK holds $(first_ipv4 "$UPLINK") again"
-  fi
+  journal_restore || rc=$?
+  case $rc in
+    0) fail "$BRIDGE was not applied (${WHY:-the step was stopped}). The network is as it was, and $UPLINK holds $(first_ipv4 "$UPLINK") again" ;;
+    "$RESTORED_STORED") fail "$BRIDGE was not applied (${WHY:-the step was stopped}). The network is as it was, but for ${UPLINK}'s connection, now stored (above), and $UPLINK holds $(first_ipv4 "$UPLINK") again" ;;
+  esac
   fail "$BRIDGE was not applied (${WHY:-the step was stopped}). Undoing it did not complete: the journal stays in $JOURNAL_DIR, and the next run of setup decides from it first"
 }
 
 WHY=""
-journal_begin "$NET_TOOL" "$UPLINK" "$BRIDGE" "$UPLINK_ADDR" "${UPLINK_CONNECTION:--}" || fail "cannot start the journal in $JOURNAL_DIR"
+journal_begin "$NET_PLAN_DIR" || fail "cannot start the journal in $JOURNAL_DIR"
 trap 'WHY="the step was stopped"; undo' TERM INT
-if "apply_$NET_TOOL" && applied && "check_$NET_TOOL"; then
+if "apply_$NET_TOOL" && bridge_check "$NET_PLAN_DIR"; then
   # From the check that passed to the commit, a stop waits.
   trap '' TERM INT
   if ! "finish_$NET_TOOL"; then
@@ -131,6 +85,7 @@ if "apply_$NET_TOOL" && applied && "check_$NET_TOOL"; then
   else
     echo "  $BRIDGE holds ${UPLINK}'s static addresses, routes and name servers, hardware address $UPLINK_MAC; $UPLINK holds none"
   fi
+  journal_cleanup || fail "$JOURNAL_KEEP_FAILED"
   step_done
   exit 0
 fi

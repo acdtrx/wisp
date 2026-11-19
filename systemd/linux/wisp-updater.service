@@ -14,8 +14,9 @@ StandardError=journal
 # (setup's npm ci 10 min without output, its package lock wait 5 min), which
 # fire first. On expiry systemd sends TERM to wisp-updater alone (KillMode=mixed)
 # and it rolls back; TimeoutStopSec is the time that gets before SIGKILL, which
-# would leave a half-restored tree: at least wisp-updater's STOP_BUDGET_SEC. A
-# later release never lowers either value (docs/specs/UPDATES.md).
+# would leave a half-restored tree: at least the worst case of a stopped update,
+# which scripts/check-bounds.mjs sums and checks. A later release never lowers
+# either value (docs/specs/UPDATES.md).
 TimeoutStartSec=1800
-TimeoutStopSec=1400
+TimeoutStopSec=1900
 KillMode=mixed
