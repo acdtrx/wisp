@@ -33,7 +33,7 @@ plan_netplan() {
   [[ -z "$dropins" ]] \
     || refuse NETPLAN_DROPINS "systemd-networkd runs $UPLINK from netplan's $UPLINK_NETFILE with drop-ins ($(echo $dropins)): put their settings in the netplan definition, or make the bridge with netplan, and run this again."
   networkd_takers "$UPLINK_NETFILE" >/dev/null
-  UPLINK_CLIENT_ID="$(client_id "$UPLINK" "$NET_TOOL")" || net_fail "cannot read ${UPLINK}'s DHCP lease from systemd-networkd"
+  uplink_client_id
   dhcp_identity
   why="$(net_read netplan get | python3 -I "$NET_SETUP_DIR/netplan.py" dependents "$UPLINK_NETPLAN_ID")" \
     || net_fail "cannot read netplan's configuration"

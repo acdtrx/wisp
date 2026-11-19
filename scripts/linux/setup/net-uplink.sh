@@ -117,6 +117,18 @@ refuse_uplink_shape() {
   UPLINK_MTU="$(cat "/sys/class/net/$UPLINK/mtu")"
 }
 
+# uplink_client_id: UPLINK_CLIENT_ID, the uplink's DHCPv4 client identifier
+# (net-state.sh, client_id), empty without a lease.
+uplink_client_id() {
+  local rc=0
+  UPLINK_CLIENT_ID="$(client_id "$UPLINK" "$NET_TOOL")" || rc=$?
+  case $rc in
+    0) ;;
+    2) refuse DHCP_LEASE_RECORD "systemd-networkd holds a DHCP lease on $UPLINK, but its record of the lease (/run/systemd/netif/leases/$(cat "/sys/class/net/$UPLINK/ifindex" 2>/dev/null || echo '<ifindex>')) names no client identifier, which setup reads there on systemd $SYSTEMD_VERSION (networkctl's JSON has it from 257 on): renew the lease (networkctl renew $UPLINK), and run this again." ;;
+    *) net_fail "cannot read ${UPLINK}'s DHCP lease from $NET_TOOL" ;;
+  esac
+}
+
 # dhcp_identity: the DHCP identity the uplink's lease shows (UPLINK_CLIENT_ID),
 # which the bridge must send to get the same lease, in the terms netplan and
 # systemd-networkd set it: DHCP_ID_KIND mac (a type-1 client identifier: the

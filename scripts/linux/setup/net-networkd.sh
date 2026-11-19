@@ -50,7 +50,7 @@ plan_networkd() {
   [[ -z "$dropins" ]] \
     || refuse NETWORKD_DROPINS "$UPLINK's $UPLINK_NETFILE has drop-ins ($(echo $dropins)): fold them into the file, which setup then carries over whole, and run this again."
   networkd_takers "$UPLINK_NETFILE" >/dev/null
-  UPLINK_CLIENT_ID="$(client_id "$UPLINK" "$NET_TOOL")" || net_fail "cannot read ${UPLINK}'s DHCP lease from systemd-networkd"
+  uplink_client_id
   # The uplink's file, split by networkd.py's lists: its layer 3 moves to the
   # bridge, with the DHCP identity pinned below; its match, link and layer-2
   # settings stay with it, in its own file, now the port's definition.

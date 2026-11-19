@@ -145,7 +145,7 @@ plan_networkmanager() {
     [[ -z "$(_prop "$v")" ]] || net_refuse NM_SETTING "$UPLINK's connection sets $v ($(_prop "$v")), which setup does not carry over to a bridge."
   done
   if [[ "$UPLINK_MODE" == dhcp ]]; then
-    UPLINK_CLIENT_ID="$(client_id "$UPLINK" "$NET_TOOL")" || net_fail "cannot read ${UPLINK}'s DHCP lease from NetworkManager"
+    uplink_client_id
     if [[ -z "$UPLINK_CLIENT_ID" ]]; then
       # The bridge must send the lease's client identifier to keep the address.
       [[ "$(_prop ipv4.dhcp-client-id)" != none ]] \

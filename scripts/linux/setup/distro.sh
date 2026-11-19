@@ -22,12 +22,14 @@ esac
 
 # systemd 254 or newer (Debian 13, Ubuntu 24.04 and later): wisp.service's
 # restart backoff (RestartSteps, RestartMaxDelaySec) needs it. Read from systemd
-# itself, not from the distro's release number.
-_SYSTEMD="$(systemctl --version 2>/dev/null | awk 'NR == 1 { print $2 }')"
-_SYSTEMD="${_SYSTEMD%%[!0-9]*}"
-if [[ -z "$_SYSTEMD" ]] || (( _SYSTEMD < 254 )); then
-  refuse SYSTEMD_TOO_OLD "systemd ${_SYSTEMD:-not found} is too old: Wisp hosts need systemd 254 or newer (Debian 13, Ubuntu 24.04 and later)."
+# itself, not from the distro's release number, once: SYSTEMD_VERSION, which
+# the steps setup runs inherit (net-state.sh, client_id, reads by it).
+SYSTEMD_VERSION="$(systemctl --version 2>/dev/null | awk 'NR == 1 { print $2 }')"
+SYSTEMD_VERSION="${SYSTEMD_VERSION%%[!0-9]*}"
+if [[ -z "$SYSTEMD_VERSION" ]] || (( SYSTEMD_VERSION < 254 )); then
+  refuse SYSTEMD_TOO_OLD "systemd ${SYSTEMD_VERSION:-not found} is too old: Wisp hosts need systemd 254 or newer (Debian 13, Ubuntu 24.04 and later)."
 fi
+export SYSTEMD_VERSION
 
 # Map uname -m to GitHub release architecture names (amd64, arm64, arm)
 sys_arch() {
