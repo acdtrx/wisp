@@ -434,3 +434,21 @@ last lines say so; in the app a VM start fails with libvirt's error. The backend
 report the capability (the host's API) and the UI show it where VMs are created and
 started. **Revisit trigger:** the first install on a host without KVM, or a user
 puzzled by a VM that will not start there.
+
+**VLAN bridges are netplan's only, and other hosts get no clean "unavailable".**
+`wisp-bridge` (Host Mgmt's VLAN bridges, `lib/networking/linux/managedBridges.js`)
+writes `/etc/netplan/91-wisp-vlan__*.yaml` (a VLAN with `link:` the parent bridge, no
+`renderer:`) and runs `netplan apply`; the backend offers every bridge with a non-VLAN
+member as a parent whatever tool runs the host. Read, not run (2026-11-20): on a
+systemd-networkd host and a Debian NetworkManager host (no netplan) the create fails with
+`NETWORK_BRIDGE_APPLY_FAILED`, detail "netplan is required"; on Ubuntu with
+NetworkManager (netplan installed, renderer NetworkManager) Wisp's `br0` is a keyfile,
+not a netplan definition, so netplan should reject the `link:` (an undefined interface)
+and `netplan apply` fail — leaving the file behind (the helper removes nothing on a
+failure), which then fails every later `netplan generate`, the boot's included, so the
+connections Ubuntu stores as `90-NM-*.yaml` (the `wisp-dns0` stub among them) are not
+rendered, until the bridge is deleted in the UI. The backend should report the feature
+unavailable off netplan-run hosts (or the helper make the VLAN through the host's tool),
+and the helper should take back its file when the apply fails. **Revisit trigger:** a
+VLAN bridge wanted on a NetworkManager or networkd host, or before the next release that
+ships setup's NetworkManager and networkd bridges.
