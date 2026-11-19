@@ -119,8 +119,9 @@ plan_networkmanager() {
     || refuse NM_MATCH "$UPLINK's connection matches the interfaces \"$(_prop match.interface-name)\", not $UPLINK alone: bind it to $UPLINK by name (nmcli connection modify $UPLINK_CONNECTION match.interface-name \"\" connection.interface-name $UPLINK), and run this again."
   mac="$(_prop 802-3-ethernet.mac-address)"
   mac="${mac,,}"
-  if [[ "$(_prop connection.interface-name)" != "$UPLINK" && "$mac" != "$UPLINK_MAC" \
-    && ( -z "$UPLINK_PERMADDR" || "$mac" != "$UPLINK_PERMADDR" ) ]]; then
+  # NetworkManager matches 802-3-ethernet.mac-address against the device's
+  # permanent address only.
+  if [[ "$(_prop connection.interface-name)" != "$UPLINK" && "$mac" != "${UPLINK_PERMADDR:-$UPLINK_MAC}" ]]; then
     refuse NM_NOT_BOUND "$UPLINK's connection is not bound to $UPLINK by name or hardware address, so it applies to other interfaces too: bind it (nmcli connection modify $UPLINK_CONNECTION connection.interface-name $UPLINK), and run this again."
   fi
   # Every setting it holds goes to the bridge or stays on the port (nm.py's

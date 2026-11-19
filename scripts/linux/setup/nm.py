@@ -16,8 +16,9 @@ connection's settings are what differs from the defaults.
       (a parent, or a port, naming the uplink or its connection; a connection
       of another type bound to the uplink by name or hardware address, its
       current or its permanent one),
-      `taker` when it is an Ethernet connection not bound to another device,
-      which could take the uplink too, and nothing otherwise
+      `taker` when it is an Ethernet connection not bound to another device
+      (by hardware address: against the uplink's permanent one), which could
+      take the uplink too, and nothing otherwise
   nm.py unknown
       reads `busctl call --json=short … GetSettings` on stdin; prints each
       setting the bridge step neither carries to the bridge, keeps on its port,
@@ -80,9 +81,11 @@ def mac_of(value):
 
 
 def other(uplink, uplink_uuid, uplink_mac, uplink_permaddr=''):
-    # NetworkManager binds a profile by the device's permanent address; the
-    # current one differs when it is cloned.
-    macs = {uplink_mac, uplink_permaddr} - {''}
+    # NetworkManager matches an Ethernet profile's mac-address against the
+    # device's permanent address only, the current one when the kernel names no
+    # other; a link of another type is taken as bound by either.
+    perm = uplink_permaddr or uplink_mac
+    macs = {uplink_mac, perm}
     settings = json.load(sys.stdin)['data'][0]
     for name, props in sorted(settings.items()):
         for prop in sorted(LOWER_PROPERTIES & set(props)):
@@ -102,7 +105,7 @@ def other(uplink, uplink_uuid, uplink_mac, uplink_permaddr=''):
             print('dependent 802-3-ethernet.mac-address')
         return
     match = settings.get('match', {}).get('interface-name', {}).get('data') or []
-    if bind and bind != uplink or mac and mac not in macs:
+    if bind and bind != uplink or mac and mac != perm:
         return
     # Bound elsewhere by match.interface-name: every item a plain name (no
     # pattern, no `!` or `~`), none the uplink's.

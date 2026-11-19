@@ -71,8 +71,14 @@ class Other(unittest.TestCase):
         self.assertEqual(other({'connection': {'type': 'vlan'}, 'vlan': {'id': 10},
                                 '802-3-ethernet': {'mac-address': PERM_BYTES}}, PERM),
                          'dependent 802-3-ethernet.mac-address')
+
+    def test_an_ethernet_connection_bound_to_the_cloned_current_address_is_not_a_taker(self):
         self.assertEqual(other({'connection': {'type': '802-3-ethernet'}, '802-3-ethernet': {'mac-address': MAC_BYTES}},
-                               PERM), 'taker')
+                               PERM), '')
+
+    def test_with_no_permanent_address_the_current_one_binds(self):
+        self.assertEqual(other({'connection': {'type': '802-3-ethernet'}, '802-3-ethernet': {'mac-address': MAC_BYTES}}),
+                         'taker')
 
     def test_no_permanent_address_matches_no_unbound_hardware_address(self):
         self.assertEqual(other({'connection': {'type': 'vlan'}, 'vlan': {'id': 10}}), '')
