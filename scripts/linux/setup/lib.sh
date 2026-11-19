@@ -15,8 +15,9 @@ install_file() {
   { cp "$2" "$tmp" && chmod "$3" "$tmp" && chown "${4:-root:root}" "$tmp" && sync "$tmp" \
     && mv -f "$tmp" "$1" && sync "$(dirname "$1")"; } || { rm -f "$tmp"; return 1; }
 }
-# remove_file <path>: gone, and the directory synced.
-remove_file() { rm -f "$1" && sync "$(dirname "$1")"; }
+# remove_file <path>: gone, and the directory synced — when the directory is
+# still there: an undo run again after it removed the directory too succeeds.
+remove_file() { rm -f "$1" && { [[ ! -d "$(dirname "$1")" ]] || sync "$(dirname "$1")"; }; }
 
 # kill_later <secs> <pgid>: in the background, KILL to the process group after
 # <secs>; sets KILLER to its pid, which `kill -USR1` cancels. Deaf to TERM and
