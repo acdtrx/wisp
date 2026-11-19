@@ -64,18 +64,23 @@ export NET_PLAN_DIR
 # SETUP_STOP_SEC of a stop, whoever sent it. The handler does the whole stop
 # and exits, so it never returns into a wait; the step is found as setup's one
 # background job, which holds even when the stop comes as the step starts.
-STEP_NAME="" STEP_SID=""
-# session_end <sid> <secs>: until the session <sid> leads is empty — no event
-# says so: checked once a second — with KILL to what is left of it after
-# <secs>; past NET_KILL_SEC more, what outlived the KILL is named.
+STEP_NAME="" STEP_SID="" STEP_DEADLINE=""
+# session_end <sid>: until the session <sid> leads is empty — no event says
+# so: checked once a second. Once its leader is gone, what is left of it gets
+# TERM; at STEP_DEADLINE (in SECONDS), KILL; past NET_KILL_SEC more, what
+# outlived the KILL is named.
 session_end() {
-  local deadline=$(( SECONDS + $2 ))
+  local termed=0
   while kill -0 "$1" 2>/dev/null || pgrep -s "$1" >/dev/null; do
-    if (( SECONDS >= deadline + NET_KILL_SEC )); then
+    if (( SECONDS >= STEP_DEADLINE + NET_KILL_SEC )); then
       echo "ERROR: step $STEP_NAME left processes that outlived KILL: $(pgrep -d ' ' -s "$1")" >&2
       return 1
     fi
-    if (( SECONDS >= deadline )); then pkill -KILL -s "$1" 2>/dev/null; fi
+    if (( ! termed )) && ! kill -0 "$1" 2>/dev/null; then
+      pkill -TERM -s "$1" 2>/dev/null
+      termed=1
+    fi
+    if (( SECONDS >= STEP_DEADLINE )); then pkill -KILL -s "$1" 2>/dev/null; fi
     sleep 1
   done
 }
@@ -86,8 +91,14 @@ setup_stop() {
   pid="$(jobs -p)"
   pid="${pid:-$STEP_SID}"
   if [[ -n "$pid" ]]; then
-    kill -TERM "$pid" 2>/dev/null
-    session_end "$pid" "$STEP_STOP_SEC" || true
+    # A step's leftovers being ended keep their deadline; a step running gets
+    # STEP_STOP_SEC from now. When its leader is already gone (the stop came
+    # between its exit and the wait's return), session_end TERMs what it left.
+    if [[ -z "$STEP_DEADLINE" ]]; then
+      STEP_DEADLINE=$(( SECONDS + STEP_STOP_SEC ))
+      kill -TERM "$pid" 2>/dev/null
+    fi
+    session_end "$pid" || true
     echo "setup stopped at step: $STEP_NAME" >&2
   else
     echo "setup stopped${STEP_NAME:+ after step: $STEP_NAME}" >&2
@@ -114,13 +125,13 @@ run_step() {
   # A stop never returns here (setup_stop exits): wait ends with the step.
   wait "$!" || rc=$?
   # What the step started ends with it: a process it left behind is ended.
-  left="$(pgrep -d ' ' -s "$!" || true)"
+  left="$(pgrep -d ' ' -s "$STEP_SID" || true)"
   if [[ -n "$left" ]]; then
     echo "  ended what step $name left running: $(ps -o comm= -p "${left// /,}" | tr '\n' ' ')" >&2
-    pkill -TERM -s "$!" 2>/dev/null
-    session_end "$!" "$NET_KILL_SEC" || exit 1
+    STEP_DEADLINE=$(( SECONDS + NET_KILL_SEC ))
+    session_end "$STEP_SID" || exit 1
   fi
-  STEP_SID=""
+  STEP_SID="" STEP_DEADLINE=""
   rm -rf "$STEP_DIR"
   STEP_DIR=""
   (( rc == 0 )) && return 0
