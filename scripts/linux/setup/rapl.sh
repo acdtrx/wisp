@@ -70,8 +70,10 @@ was_readable=1
 rapl_readable || was_readable=0
 if (( rule_new || ! was_readable )); then
   timeout -k "$NET_KILL_SEC" "$UDEV_CALL_SEC" udevadm control --reload-rules || fail "udevadm cannot reload its rules"
-  timeout -k "$NET_KILL_SEC" "$UDEV_CALL_SEC" udevadm trigger --settle --action=add --subsystem-match=powercap \
-    || fail "udevadm cannot trigger the powercap devices"
+  rc=0
+  timeout -k "$NET_KILL_SEC" "$UDEV_CALL_SEC" udevadm trigger --settle --action=add --subsystem-match=powercap || rc=$?
+  (( rc != 124 && rc != 137 )) || fail "udev did not finish handling the powercap devices' events within ${UDEV_CALL_SEC} s"
+  (( rc == 0 )) || fail "udevadm cannot trigger the powercap devices"
   rapl_readable || fail "udev reloaded its rules and applied them to the powercap devices, but $RAPL_ENERGY is not readable by group $RAPL_GROUP (group $(stat -c %G "$RAPL_ENERGY"), mode $(stat -c %a "$RAPL_ENERGY")): see $RAPL_RULES"
   (( was_readable )) || changed "$RAPL_ENERGY readable by $RAPL_GROUP"
 fi
