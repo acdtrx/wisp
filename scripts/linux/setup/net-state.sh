@@ -91,9 +91,12 @@ l3_state() {
 
 # plan_sources: what a plan to make the bridge is made from, whole, for the
 # bridge step to check nothing changed since: the default route and the
-# uplink's addresses; every file of the tool's own configuration (netplan's,
-# and systemd-networkd's, which netplan renders to and which can take a link
-# by a file that sorts first or a drop-in), by checksum; for NetworkManager
+# uplink's addresses; every file of the host's own configuration of the tool
+# (netplan's, and systemd-networkd's under /etc and /run, which netplan renders
+# to and which can take a link by a file that sorts first or a drop-in), by
+# checksum, and the file networkd runs the uplink from, wherever it is —
+# vendor files under /usr/lib change with the packages setup installs, and
+# matter only when one runs the uplink; for NetworkManager
 # every connection (a br0 made since included), the uplink connection's
 # settings and the connection the uplink runs from. The container DNS stub
 # (wisp-dns0, container-dns.sh), which setup declares between the plan and the
@@ -107,11 +110,14 @@ plan_sources() {
   awk '{ print "addr " $4 }' <<<"$out"
   case "$NET_TOOL" in
     netplan | networkd)
-      for f in /lib/netplan /etc/netplan /run/netplan /usr/lib/systemd/network /lib/systemd/network \
-          /etc/systemd/network /run/systemd/network; do
+      for f in /lib/netplan /etc/netplan /run/netplan /etc/systemd/network /run/systemd/network; do
         [[ -d "$f" ]] || continue
         find "$f" -type f ! -name '10-wisp-dns0.*' -print0 | sort -z | xargs -0 -r sha256sum || return 1
       done
+      out="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" networkctl status "$UPLINK" --json=short)" || return 1
+      f="$(json_string "$out" NetworkFile || true)"
+      echo "runs-from $f $(json_array "$out" NetworkFileDropins || true)"
+      [[ -z "$f" ]] || sha256sum "$f" || return 1
       ;;
     networkmanager)
       out="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" nmcli -t -f UUID,NAME,TYPE connection show)" || return 1
