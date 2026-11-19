@@ -26,12 +26,6 @@ echo "--- containerd ---"
 CONFIG=/etc/containerd/config.toml
 NEEDS_RESTART=false
 
-if [[ ! -f "$CONFIG" ]]; then
-  mkdir -p /etc/containerd
-  containerd config default > "$CONFIG"
-  changed "$CONFIG generated"
-fi
-
 # containerd reads [grpc].gid and chowns its socket to it on startup.
 if ! getent group containerd >/dev/null; then
   groupadd --system containerd
@@ -41,28 +35,35 @@ if ! in_group "$DEPLOY_USER" containerd; then
   usermod -aG containerd "$DEPLOY_USER"
   changed "$DEPLOY_USER added to containerd"
 fi
-
 CTD_GID="$(getent group containerd | cut -d: -f3)"
-if grep -qE '^\s*gid\s*=' "$CONFIG"; then
-  CURRENT_GID="$(grep -m1 -E '^\s*gid\s*=' "$CONFIG" | sed 's/.*=\s*//' | tr -d ' ')"
-  if [[ "$CURRENT_GID" != "$CTD_GID" ]]; then
-    sed -i "s/^\(\s*gid\s*=\s*\).*/\1${CTD_GID}/" "$CONFIG"
-    changed "socket gid $CTD_GID in $CONFIG"
-    NEEDS_RESTART=true
-  fi
+
+# The configuration, worked out in a staged copy (containerd's default when
+# there is none) and written by write_if_changed. The gid is set by a line
+# edit: docs/BACKLOG.md, "containerd's config.toml edited by line".
+STAGED="$(staged_file)"
+if [[ -f "$CONFIG" ]]; then
+  cp "$CONFIG" "$STAGED"
 else
-  if grep -q '^\[grpc\]' "$CONFIG"; then
-    sed -i "/^\[grpc\]/a\\  gid = ${CTD_GID}" "$CONFIG"
-  else
-    printf '\n[grpc]\n  gid = %s\n' "$CTD_GID" >> "$CONFIG"
-  fi
-  changed "socket gid $CTD_GID in $CONFIG"
+  timeout -k 10 30 containerd config default > "$STAGED" || fail "containerd cannot print its default configuration"
+fi
+if grep -qE '^\s*gid\s*=' "$STAGED"; then
+  sed -i "s/^\(\s*gid\s*=\s*\).*/\1${CTD_GID}/" "$STAGED"
+elif grep -q '^\[grpc\]' "$STAGED"; then
+  sed -i "/^\[grpc\]/a\\  gid = ${CTD_GID}" "$STAGED"
+else
+  printf '\n[grpc]\n  gid = %s\n' "$CTD_GID" >> "$STAGED"
+fi
+mkdir -p /etc/containerd
+mode=0644 owner=root:root
+if [[ -f "$CONFIG" ]]; then mode="$(stat -c %a "$CONFIG")" owner="$(stat -c %U:%G "$CONFIG")"; fi
+if write_if_changed "$CONFIG" "$mode" "$STAGED" "$owner"; then
+  changed "$CONFIG (socket gid $CTD_GID)"
   NEEDS_RESTART=true
 fi
 
 unit_on containerd
 if $NEEDS_RESTART; then
-  systemctl restart containerd
+  step_run 0 systemctl restart containerd || fail "containerd did not restart"
   changed "containerd restarted for the socket gid"
 fi
 

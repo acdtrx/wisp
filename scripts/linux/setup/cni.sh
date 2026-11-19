@@ -50,13 +50,23 @@ if [[ "$installed" != "$CNI_VERSION" ]]; then
   EXPECTED_SHA="${CNI_SHA256[$ARCH]:-}"
   [[ -n "$EXPECTED_SHA" ]] || fail "no pinned CNI checksum for arch '$ARCH' (version $CNI_VERSION)"
   TARBALL="$(staged_file)"
-  curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 60 \
+  # curl's own bound: under 1 KiB/s for 60 s.
+  step_run 0 curl -fsSL --connect-timeout 10 --speed-limit 1024 --speed-time 60 \
     "https://github.com/containernetworking/plugins/releases/download/${CNI_VERSION}/cni-plugins-linux-${ARCH}-${CNI_VERSION}.tgz" \
-    -o "$TARBALL"
+    -o "$TARBALL" || fail "cannot download the CNI plugins ${CNI_VERSION}"
   echo "${EXPECTED_SHA}  $TARBALL" | sha256sum -c - >/dev/null 2>&1 \
     || fail "CNI plugin checksum mismatch for ${CNI_VERSION}/${ARCH} — refusing to install"
-  mkdir -p "$CNI_BIN_DIR"
-  tar -xzf "$TARBALL" -C "$CNI_BIN_DIR"
+  # Unpacked beside the step, then each plugin put in place by install_file;
+  # the bridge plugin last, as its version is what the check above reads.
+  UNPACKED="$STEP_TMP_DIR/cni"
+  mkdir -p "$UNPACKED" "$CNI_BIN_DIR"
+  tar -xzf "$TARBALL" -C "$UNPACKED" || fail "cannot unpack the CNI plugins"
+  for plugin in "$UNPACKED"/*; do
+    [[ -f "$plugin" && "${plugin##*/}" != bridge ]] || continue
+    install_file "$CNI_BIN_DIR/${plugin##*/}" "$plugin" 0755 || fail "cannot write $CNI_BIN_DIR/${plugin##*/}"
+  done
+  [[ -f "$UNPACKED/bridge" ]] || fail "the CNI plugins ${CNI_VERSION} hold no bridge plugin"
+  install_file "$CNI_BIN_DIR/bridge" "$UNPACKED/bridge" 0755 || fail "cannot write $CNI_BIN_DIR/bridge"
   changed "CNI plugins ${CNI_VERSION} in $CNI_BIN_DIR (checksum verified)"
 fi
 

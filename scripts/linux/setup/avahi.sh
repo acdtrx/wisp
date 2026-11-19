@@ -55,17 +55,15 @@ awk -v key="$KEY" -v val="$VALUE" '
   END { if (!seen) print "\n[publish]"; emit() }
 ' "$CONF" > "$tmp"
 
-if cmp -s "$tmp" "$CONF"; then
+# Staged and renamed, with the file's own mode and owner; nothing when it holds
+# the key already.
+if ! write_if_changed "$CONF" "$(stat -c %a "$CONF")" "$tmp" "$(stat -c %U:%G "$CONF")"; then
   step_done
   exit 0
 fi
-
-# Overwrite in place rather than rename, so the conffile keeps its inode,
-# owner, mode and security label.
-cat "$tmp" > "$CONF"
 changed "$KEY=$VALUE in $CONF"
 
 # Only when running: a stopped avahi picks the file up on its next start. The
 # backend re-registers everything when avahi comes back (NameOwnerChanged).
-systemctl try-restart avahi-daemon.service
+step_run 0 systemctl try-restart avahi-daemon.service || fail "avahi-daemon did not restart"
 changed "avahi-daemon restarted (if it was running)"
