@@ -67,6 +67,21 @@ undo() {
 }
 undo_stopped() { WHY="the step was stopped"; undo; }
 
+# stub_back: the tool's apply reconfigures every link it runs, the container
+# DNS stub's too, and the backend's start follows the step: after the commit,
+# the stub is waited for until it holds its address again, up to NET_WAIT_SEC.
+# Not part of the bridge or its check: the bridge stays whatever the stub
+# does. Outside a section that must finish, so a stop ends the wait at once.
+stub_back() {
+  local deadline=$(( SECONDS + NET_WAIT_SEC )) addrs
+  while :; do
+    addrs="$(net_call ip -4 -o addr show dev "$DNS_STUB_IFACE" 2>/dev/null || true)"
+    [[ "$addrs" != *" ${DNS_STUB_IP}/32 "* ]] || return 0
+    (( SECONDS < deadline )) || return 1
+    sleep 1
+  done
+}
+
 WHY=""
 journal_begin "$NET_PLAN_DIR" || fail "cannot start the journal in $JOURNAL_DIR"
 # From the first change a stop undoes; the apply call in flight runs to its
@@ -100,6 +115,13 @@ if (( applied )) && bridge_check "$NET_PLAN_DIR"; then
   step_done
   # A stop that waited for the commit ends the step now, its work done.
   step_release
+  if ! stub_back; then
+    case "$NET_TOOL" in
+      networkmanager) how="nmcli connection up $DNS_STUB_IFACE" ;;
+      *) how="networkctl reconfigure $DNS_STUB_IFACE" ;;
+    esac
+    fail "$BRIDGE is in place on $UPLINK and kept, but the container DNS stub $DNS_STUB_IFACE does not hold ${DNS_STUB_IP}/32 again ${NET_WAIT_SEC} s after the apply, which reconfigured it: bring it back ($how), and run this again."
+  fi
   exit 0
 fi
 WHY="${WHY:-the $NET_TOOL apply failed}"

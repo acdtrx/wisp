@@ -7,7 +7,9 @@
 NET_CMD_SEC=30     # a call that is not an apply
 NET_APPLY_SEC=90   # an apply, and the wait after it for the address or route
 NET_KILL_SEC=10    # what a call that ran past its bound gets to die after TERM
-NET_WAIT_SEC=30    # the wait for an interface a step declares (the DNS stub)
+NET_WAIT_SEC=30    # the wait for the DNS stub's address: in its step, and in the
+                   # bridge step after the commit (outside the stop bound: a
+                   # stop ends that wait at once)
 
 # The most calls one read of an interface's state makes (net-state.sh,
 # l3_state: four of `ip`, whether systemd-resolved runs, two of its).
