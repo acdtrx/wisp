@@ -31,21 +31,24 @@ if [[ -z "$SERVER_NAME" ]]; then
   SERVER_NAME="${SERVER_NAME:-$DEFAULT_NAME}"
 fi
 
-if [[ ! -f "$CONFIG_FILE" ]]; then
-  if [[ ! -f "$EXAMPLE" ]]; then
-    echo "ERROR: $EXAMPLE not found."
-    exit 1
-  fi
-  cp "$EXAMPLE" "$CONFIG_FILE"
+if [[ ! -f "$CONFIG_FILE" && ! -f "$EXAMPLE" ]]; then
+  echo "ERROR: $EXAMPLE not found."
+  exit 1
 fi
 
+# From the file, or the example when there is none; written whole, staged
+# beside it, synced and renamed, so a power loss leaves the old file or the new.
 node -e '
   const fs = require("fs");
-  const path = process.argv[1];
-  const serverName = process.argv[2];
-  const data = JSON.parse(fs.readFileSync(path, "utf8"));
+  const [path, example, serverName] = process.argv.slice(1);
+  const data = JSON.parse(fs.readFileSync(fs.existsSync(path) ? path : example, "utf8"));
   data.serverName = serverName;
   delete data._comment;
-  fs.writeFileSync(path, JSON.stringify(data, null, 2));
-' "$CONFIG_FILE" "$SERVER_NAME"
+  const tmp = path + ".wisp-new";
+  const fd = fs.openSync(tmp, "w", 0o600);
+  fs.writeSync(fd, JSON.stringify(data, null, 2));
+  fs.fsyncSync(fd);
+  fs.closeSync(fd);
+  fs.renameSync(tmp, path);
+' "$CONFIG_FILE" "$EXAMPLE" "$SERVER_NAME"
 echo "  Wrote serverName to config/wisp-config.json"

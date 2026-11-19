@@ -69,6 +69,12 @@ printf '%s' "$PASSWORD" | node -e '
   const salt = crypto.randomBytes(16);
   const key = crypto.scryptSync(password, salt, 64);
   const line = "scrypt:" + salt.toString("hex") + ":" + key.toString("hex") + "\n";
-  fs.writeFileSync(path, line, { mode: 0o600, encoding: "utf8" });
+  // Staged beside it, synced and renamed: a power loss leaves the old hash or the new.
+  const tmp = path + ".wisp-new";
+  const fd = fs.openSync(tmp, "w", 0o600);
+  fs.writeSync(fd, line);
+  fs.fsyncSync(fd);
+  fs.closeSync(fd);
+  fs.renameSync(tmp, path);
 ' "$PASSWORD_FILE"
 echo "  Wrote hashed password to config/wisp-password"
