@@ -55,8 +55,9 @@ SUBSYSTEM=="powercap", KERNEL=="intel-rapl:0", \\
   RUN+="/usr/bin/chmod g+r /sys/%p/energy_uj"
 RAPL_EOF
 if write_if_changed "$RAPL_RULES" 0644 "$RULE"; then
-  udevadm control --reload-rules
-  udevadm trigger --action=add --subsystem-match=powercap
+  timeout -k "$NET_KILL_SEC" "$UDEV_CALL_SEC" udevadm control --reload-rules || fail "udevadm cannot reload its rules"
+  timeout -k "$NET_KILL_SEC" "$UDEV_CALL_SEC" udevadm trigger --action=add --subsystem-match=powercap \
+    || fail "udevadm cannot trigger the powercap devices"
   changed "$RAPL_RULES"
 fi
 

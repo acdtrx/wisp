@@ -38,6 +38,10 @@ SETUP_STOP_SEC=$(( STEP_STOP_SEC + NET_KILL_SEC ))
 # A call that changes systemd's state and starts nothing (daemon-reload,
 # enable).
 SYSTEMD_CALL_SEC=60
+# A call of udevadm that returns once udev has it (its rules reloaded, an
+# event triggered without waiting for it): in the foreground, so no longer
+# than NET_CMD_SEC.
+UDEV_CALL_SEC=15
 
 # Setup run alone waits this long for the install lock (lib.sh, WISP_LOCK)
 # that another install, update or setup holds.
