@@ -51,7 +51,8 @@ NETWORKD_JSON_CLIENT_ID_SINCE=257
 
 # networkd_lease_client_id <dev>: CLIENTID= of systemd-networkd's lease record
 # for the interface (/run/systemd/netif/leases/<ifindex>), hex. Returns 2 when
-# the record or its CLIENTID= is missing, 1 when the interface cannot be read.
+# the record is missing, 3 when it has no CLIENTID=, 1 when the interface
+# cannot be read.
 networkd_lease_client_id() {
   local idx line
   idx="$(cat "/sys/class/net/$1/ifindex")" || return 1
@@ -59,13 +60,14 @@ networkd_lease_client_id() {
   while IFS= read -r line; do
     [[ "$line" == CLIENTID=* ]] && { printf '%s' "${line#CLIENTID=}"; return 0; }
   done < "/run/systemd/netif/leases/$idx"
-  return 2
+  return 3
 }
 
 # client_id <dev> <net-tool>: the interface's DHCPv4 client identifier as hex
-# bytes, colon-separated; empty without a lease. Returns 2 when systemd-networkd
-# holds a lease but its record of it names no client identifier (before
-# systemd 257), 1 when it cannot be read.
+# bytes, colon-separated; empty without a lease. When systemd-networkd holds a
+# lease and its record of it is read (before systemd 257): returns 2 when the
+# record is missing, 3 when it names no client identifier. Returns 1 when it
+# cannot be read.
 client_id() {
   local out b hex=""
   case "$2" in

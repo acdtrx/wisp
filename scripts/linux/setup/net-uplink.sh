@@ -120,11 +120,15 @@ refuse_uplink_shape() {
 # uplink_client_id: UPLINK_CLIENT_ID, the uplink's DHCPv4 client identifier
 # (net-state.sh, client_id), empty without a lease.
 uplink_client_id() {
-  local rc=0
+  local rc=0 record what
   UPLINK_CLIENT_ID="$(client_id "$UPLINK" "$NET_TOOL")" || rc=$?
   case $rc in
     0) ;;
-    2) refuse DHCP_LEASE_RECORD "systemd-networkd holds a DHCP lease on $UPLINK, but its record of the lease (/run/systemd/netif/leases/$(cat "/sys/class/net/$UPLINK/ifindex" 2>/dev/null || echo '<ifindex>')) names no client identifier, which setup reads there on systemd $SYSTEMD_VERSION (networkctl's JSON has it from 257 on): renew the lease (networkctl renew $UPLINK), and run this again." ;;
+    2|3)
+      record="/run/systemd/netif/leases/$(cat "/sys/class/net/$UPLINK/ifindex" 2>/dev/null || echo '<ifindex>')"
+      what="its record of the lease ($record) is missing"
+      (( rc == 2 )) || what="its record of the lease ($record) has no CLIENTID="
+      refuse DHCP_LEASE_RECORD "systemd-networkd holds a DHCP lease on $UPLINK, but $what: setup reads the client identifier there on systemd $SYSTEMD_VERSION (networkctl's JSON has it from 257 on). Renew the lease (networkctl renew $UPLINK), and run this again." ;;
     *) net_fail "cannot read ${UPLINK}'s DHCP lease from $NET_TOOL" ;;
   esac
 }
