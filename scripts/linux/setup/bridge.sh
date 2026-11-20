@@ -227,7 +227,9 @@ undo() {
   undo_fail "$BRIDGE was not applied ($WHY). $outcome."
 }
 # undo_fail <message>: the undo's end: exit 1, or 143 when the step was
-# stopped, as every stopped step ends (step_stop).
+# stopped, as every stopped step ends (step_stop). The two differ only for the
+# step run on its own: under setup, run_step makes any non-zero exit of a step
+# setup's 1, and a stopped setup exits 143 from its own handler (setup_stop).
 UNDO_STATUS=1
 undo_fail() {
   echo "ERROR: $*" >&2
