@@ -147,6 +147,17 @@ Why second: cheap, and they are stability problems today.
 
 ### 3. HTTP boundary: jobs, errors, schemas — L
 
+Done 2026-11-20, merged to `main` from `anchor/http-boundary`. Beyond the list below: the
+job list is a topic on the event stream; one lock rule for VMs and containers;
+`wisp-password` stays in `<install>/config/` and `WISP_CONFIG_PATH` is for development
+and tests only; the SSRF guard and the OIDC checks were tightened. One criterion was not
+met: a VM's `.local` name does not follow a rename, because it is the guest's hostname;
+the user then proposed to stop publishing VM names (`docs/features/remove-vm-local-dns.md`).
+Not run on the test host, whose limits forbid them: an OS upgrade, a bridge create or
+delete, a host mount unmount or delete, a self-update, and a valid call of the other
+command routes that change the host. Unit tests only: a job refused during shutdown, an
+OIDC issuer that redirects. Not run at all: a real identity provider over TLS.
+
 Why here: routes and jobs are the two backend areas graded "strained", and this is where
 a new command has six steps that fail silently when missed (R-9). About the size of
 command acks.
