@@ -163,7 +163,7 @@ Afterwards the host has:
   - on a static address its addresses, routes, gateways, name servers and search domains.
 - The uplink becomes its port with no addressing of its own. Its link settings (MTU, offloads, wake-on-LAN) stay on it.
 - The bridge's definition sets the uplink's MTU on the bridge itself, so a port that joins at another MTU does not lower it (settled 2026-11-19).
-- The bridge keeps the IPv4 address. Addresses the host gets by DHCPv6 or from router advertisements can change:
+- The bridge keeps the IPv4 address. Addresses the host gets by DHCPv6 or from router advertisements can change (settled 2026-11-19):
   - the DHCPv6 identity is pinned only on netplan and networkd hosts whose DHCPv4 client identifier is a DUID (networkd's IAID, derived from the uplink's name, which the bridge would not have);
   - with a client identifier from the hardware address, and on NetworkManager, the bridge's DHCPv6 identity is its own.
 
