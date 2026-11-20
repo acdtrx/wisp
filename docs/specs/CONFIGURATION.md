@@ -1,6 +1,6 @@
 # Configuration
 
-Wisp uses **`config/`** at the project (install) root for persistent data: optional process overrides (`config/runtime.env`), application settings (`config/wisp-config.json`), and the login secret (`config/wisp-password`). The backend loads `config/runtime.env` when present; **port and other settings have built-in defaults** if the file is missing.
+Wisp uses **`config/`** at the project (install) root for persistent data: optional process overrides (`config/runtime.env`), application settings (`config/wisp-config.json`), and the login secret (`config/wisp-password`); `WISP_CONFIG_PATH` moves the settings file, and with it the login secret and the migration ledger ([Password Storage](#password-storage)). The backend loads `config/runtime.env` when present; **port and other settings have built-in defaults** if the file is missing.
 
 ## Deployment (install.sh)
 
@@ -22,7 +22,7 @@ If this file exists, the backend parses `KEY=value` lines (comments and blank li
 | `WISP_SMARTCTL_SCRIPT` | (unset) | Path to `wisp-smartctl` helper for disk SMART. If unset: `/usr/local/bin/wisp-smartctl`, then bundled `backend/scripts/wisp-smartctl`. Same sudoers pattern as `wisp-dmidecode`. |
 | `WISP_NETNS_SCRIPT` | (unset) | Path to `wisp-netns` helper (`add`/`delete` + `ip netns`). If unset: `/usr/local/bin/wisp-netns` (installed by setup's helpers step, which also grants the deploy user `sudo -n`); with no helper, netns add/delete fall back to plain `ip netns` (works only when the backend runs as root). |
 | `WISP_CNI_SCRIPT` | (unset) | Path to `wisp-cni` helper (runs a CNI plugin with config file). If unset: `/usr/local/bin/wisp-cni`; with no helper the plugin under `/opt/cni/bin` is executed directly. Same sudoers pattern as `wisp-netns`. |
-| `WISP_CONFIG_PATH` | (unset) | Override path for `wisp-config.json`; default `<project>/config/wisp-config.json`. Absolute. |
+| `WISP_CONFIG_PATH` | (unset) | Override path for `wisp-config.json`; default `<project>/config/wisp-config.json`. Absolute. Its directory holds `wisp-password` and the migration ledger too ([Password Storage](#password-storage)); `runtime.env` and `backup-status.json` stay in `<project>/config/`. No Wisp tool writes this key. |
 | `WISP_CONTAINERD_SOCK` | `/run/containerd/containerd.sock` | containerd's gRPC socket. Absolute. |
 | `WISP_CNI_BIN_DIR` | `/opt/cni/bin` | CNI plugin directory. Absolute. |
 | `WISP_CNI_CONF_DIR` | `/etc/cni/net.d` | CNI network config directory. Absolute. |
@@ -160,7 +160,9 @@ Entries may be IPv4/IPv6 addresses, CIDR subnets, or the named ranges `loopback`
 
 ## Password Storage
 
-Login uses **`config/wisp-password`** (mode `0600`): scrypt hash written by `install.sh` / `wispctl password` / change-password in the UI. JWT signing requires this file; run `wispctl password` if the backend reports no password configured. A file that exists but can't be read, or isn't in the `scrypt:salt:hash` form, fails startup. It is read on each use, so `wispctl password` applies without a restart.
+Login uses **`wisp-password`** (mode `0600`): scrypt hash written by `install.sh` / `wispctl password` / change-password in the UI.
+
+**Beside the config file** (settled 2026-11-20): `wisp-password` lives in the directory of `wisp-config.json`, wherever `WISP_CONFIG_PATH` puts it — `config/` by default — as the migration ledger does: one rule for where configuration lives. Everything that reads or writes it follows the rule: the backend (from the config path it resolves), and setup's password step, `wispctl password` and the installer's checks, which take `WISP_CONFIG_PATH` the way the backend does — from the environment when set there, else from `config/runtime.env` (`wisp_config_dir`, `scripts/linux/setup/lib.sh`). Releases before it kept the file in `config/` whatever `WISP_CONFIG_PATH` said; migration `0010-password-beside-config` moves it ([UPDATES.md → Shipped migrations](UPDATES.md#shipped-migrations)). JWT signing requires this file; run `wispctl password` if the backend reports no password configured. A file that exists but can't be read, or isn't in the `scrypt:salt:hash` form, fails startup. It is read on each use, so `wispctl password` applies without a restart.
 
 ## Filesystem Paths
 

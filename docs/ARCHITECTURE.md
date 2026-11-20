@@ -63,7 +63,8 @@ page. The service worker keeps the app shell so a launch always boots React.
 - Persistent state lives in three places; write runtime state nowhere else:
   - **`config/`** at the install root: `wisp-config.json` (application settings, API
     token hashes), `wisp-password` (the scrypt hash the session secret derives from),
-    `migrations.json` (the migration ledger) and the optional `runtime.env`. The updater
+    `migrations.json` (the migration ledger) and the optional `runtime.env`;
+    `WISP_CONFIG_PATH` moves the first three to the configured file's directory. The updater
     preserves them across a swap ([`specs/UPDATES.md`](specs/UPDATES.md)).
   - **libvirt's domain definitions**: a VM's configuration *is* its domain XML, with
     Wisp's own settings in its `wisp:prefs` metadata.

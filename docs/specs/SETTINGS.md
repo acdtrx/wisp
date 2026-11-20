@@ -95,7 +95,7 @@ The Host → App Config tab includes a password change form:
 
 1. User enters current password and new password
 2. Backend verifies current password
-3. On success, writes new password to `config/wisp-password` (mode `0600`)
+3. On success, writes new password to `wisp-password`, beside the config file (mode `0600`)
 4. Changing the password invalidates all existing JWT tokens (the signing secret is derived from the password)
 
 ## Host Information

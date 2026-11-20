@@ -24,14 +24,14 @@ Wisp uses single-user JWT authentication carried in **HttpOnly cookies**. There 
 
 ## Password Storage
 
-**`config/wisp-password`** (mode `0600`) holds a **scrypt hash** in the form `scrypt:<salt_hex>:<key_hex>` (written by install, `wispctl password`, and change-password).
+**`wisp-password`** (mode `0600`), beside the config file — `config/` unless `WISP_CONFIG_PATH` puts it elsewhere ([CONFIGURATION.md → Password Storage](CONFIGURATION.md#password-storage)) — holds a **scrypt hash** in the form `scrypt:<salt_hex>:<key_hex>` (written by install, `wispctl password`, and change-password).
 
 If the file is missing, JWT signing fails until a password is set (`wispctl password` or install). There is no `WISP_PASSWORD` env fallback. If the file exists but is not in the expected scrypt form, or can't be read, the backend refuses to start (settled 2026-11-12) — run `wispctl password` to repair. The file is read on each use, not cached, so `wispctl password` applies without a restart; one broken while Wisp runs answers 503 (`PASSWORD_FILE_UNSUPPORTED_FORMAT` / `PASSWORD_FILE_UNREADABLE`).
 
 ### Password change
 
 - `POST /api/auth/change-password` with `{ currentPassword, newPassword }`
-- On success, writes a new **scrypt hash** to `config/wisp-password` with mode `0600`
+- On success, writes a new **scrypt hash** to `wisp-password` with mode `0600`
 - Returns 204 (no content). Changing the password invalidates all existing tokens because the signing secret is derived from the password (or the new hash).
 - A wrong `currentPassword` returns **422 `INVALID_PASSWORD`**, shown inline in the form, and counts against the per-IP failed-attempt window (§ Login Rate Limiting); once it is exhausted the route answers **429** `RATE_LIMITED` before checking. Not 401: the session is valid, and a 401 would log every tab out (see § Frontend handling).
 

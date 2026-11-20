@@ -452,5 +452,5 @@ See [noVNC.md](noVNC.md). Fetches the pinned noVNC release from GitHub and copie
 | `runtime.env` | No | Optional active overrides |
 | `wisp-config.json.example` | Yes | Application settings template |
 | `wisp-config.json` | No | Settings (UI) |
-| `wisp-password` | No | Scrypt hash for login / JWT secret |
+| `wisp-password` | No | Scrypt hash for login / JWT secret; beside `wisp-config.json`, so `WISP_CONFIG_PATH` moves it ([CONFIGURATION.md → Password Storage](CONFIGURATION.md#password-storage)) |
 | `migrations.json` | No | State-migration ledger — which migration ids ran on this host ([UPDATES.md](UPDATES.md#ledger-configmigrationsjson)) |
