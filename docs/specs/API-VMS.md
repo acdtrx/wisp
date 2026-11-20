@@ -123,7 +123,7 @@ Update VM configuration.
 
 - **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `machineType`, `firmware`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `localDns`, `autostart`. Schema is **`additionalProperties: false`**; with Fastify's default Ajv `removeAdditional: true`, unknown keys are silently stripped before reaching `updateVMConfig`. `videoDriver` and `graphicsType` take the values listed under create; any other → **400** `VALIDATION_FAILED`.
 - **204:** saved; the VM's new state reaches clients as `{ kind: "vm", id: <name> }` on the [`changes`](API.md#changes-topic-payload) topic, under the new name after a rename. When the VM is running and the patch changed its domain definition (anything but icon, local DNS and autostart), its `pendingRestart` flag is set
-- **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running; `VM_EXISTS` / `VM_DIR_EXISTS` when the new name belongs to another VM or `<vmsPath>/<name>/` already exists (the rename reserves that directory first, so a concurrent rename or create to the same name gets this, see [VM-MANAGEMENT.md → Renaming](VM-MANAGEMENT.md#renaming)); `VM_BUSY` while another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock) — every PATCH takes it, rename or not
+- **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running; `VM_EXISTS` / `VM_DIR_EXISTS` when the new name belongs to another VM or `<vmsPath>/<name>/` already exists (the rename reserves that directory first, so a concurrent rename or create to the same name gets this, see [VM-MANAGEMENT.md → Renaming](VM-MANAGEMENT.md#renaming)); `VM_BUSY` while another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock) — every PATCH takes it, rename or not, and a rename also takes the new name's (`VM_BUSY` while a job holds that name)
 - **422:** `{ error, detail }` — `INVALID_VM_NAME` on rename to an invalid name; VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
 
 `localDns` is supported in PATCH and controls VM mDNS registration behavior.
@@ -155,6 +155,7 @@ Raw libvirt domain XML (for debugging/inspection).
 Graceful shutdown (ACPI).
 
 - **204:** shutdown requested; the state change arrives on the `vms` topic
+- **409:** `VM_BUSY` — another operation on this VM holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock). The stop holds it only while the request is sent, so a force stop is accepted while the guest shuts down.
 
 ### POST /api/vms/:name/force-stop · `admin`
 
@@ -167,14 +168,17 @@ Immediate force stop (destroy).
 ### POST /api/vms/:name/reboot · `admin`
 
 - **204:** reboot requested
+- **409:** `VM_BUSY` — as for stop
 
 ### POST /api/vms/:name/suspend · `admin`
 
 - **204:** suspended; the state change arrives on the `vms` topic
+- **409:** `VM_BUSY` — as for stop
 
 ### POST /api/vms/:name/resume · `admin`
 
 - **204:** resumed; the state change arrives on the `vms` topic
+- **409:** `VM_BUSY` — as for stop
 
 ---
 

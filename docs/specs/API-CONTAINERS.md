@@ -6,7 +6,7 @@ Containers, their mounts, services, logs, images and app config. Shared contract
 
 Routes with a `:name` path parameter validate it via `validateContainerName` (length 1–63, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..`/`/`/`\`, no surrounding whitespace); failures return 422 `INVALID_CONTAINER_NAME`.
 
-Start, stop, restart, kill, delete, `PATCH`, the mount and service row routes, backup and restore take the container's [operation lock](CONTAINERS.md#per-container-operation-lock): while another of them (or the restart policy's start) runs on the same container they answer **409** `CONTAINER_BUSY`, the message naming the running operation.
+Every command on a container takes its [operation lock](CONTAINERS.md#per-container-operation-lock) (settled 2026-11-20) — start, stop, restart, kill, delete, `PATCH`, eject, the mount and service row routes, the mount content routes (file and zip upload, content `PUT`, init, data delete), backup and restore: while another of them (or the restart policy's start) runs on the same container they answer **409** `CONTAINER_BUSY`, the message naming the running operation. A kill during a stop is the exception: it makes the stop immediate ([kill](#post-apicontainersnamekill--admin)).
 
 ### GET /api/containers · `read`
 
@@ -131,13 +131,19 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 **`services`:** Not editable via PATCH — returns **422** `CONFIG_ERROR`. Use the row-scoped service endpoints (`POST` / `PATCH` / `DELETE` `/api/containers/:name/services[/:port]`) below.
 
-**`appConfig`:** (app containers only) Structured config for the app. Validated by the app module; on success, regenerates derived env, mounts, and mount files. Sets `pendingRestart` (`{ since }`) if the container is running and the change can't be live-reloaded. Sending `envPatch` or `mounts` on an app container → **422** `APP_CONFIG_ONLY`.
+**`appConfig`:** (app containers only) Structured config for the app, **sent alone** (settled 2026-11-20): a body with `appConfig` and any other key answers **400** `VALIDATION_FAILED` naming the other keys, before anything is written. Validated by the app module; on success, regenerates derived env, mounts, and mount files. Sets `pendingRestart` (`{ since }`) if the container is running and the change can't be live-reloaded. On a generic container → **422** `CONFIG_ERROR`. Sending `envPatch` or `mounts` on an app container → **422** `APP_CONFIG_ONLY`.
 
-**`eject: true`:** (app containers only) Removes `app`, `appConfig`, and `pendingRestart` from the config. Generated env vars and mounts are preserved as-is and become directly editable. One-way operation.
+**`eject`:** not a PATCH field (settled 2026-11-20) — **400** `VALIDATION_FAILED` naming it; eject is [its own command](#post-apicontainersnameeject--admin).
 
-**204:** saved; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic, under the new name after a rename. A change the running process can't pick up (or an `appConfig` change the app can't live-reload) sets `pendingRestart`.
+**204:** saved; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic, under the new name after a rename (the section assignment, the last backup attempt and the `.local` name follow it — [CONTAINERS.md → Rename](CONTAINERS.md#rename)). A change the running process can't pick up (or an `appConfig` change the app can't live-reload) sets `pendingRestart`.
 
 **422:** `APP_RELOAD_FAILED` — the app's reload command exited non-zero. The persisted config and mount file contents are rolled back to the previous (accepted) state, matching what the running app kept serving; check `detail` for stderr.
+
+### POST /api/containers/:name/eject · `admin`
+
+Turn an app container into a generic one (settled 2026-11-20: its own command, no longer a `PATCH` field). Removes `app` and `appConfig` from the config; the generated env vars, mounts and files are kept as they are and become directly editable, and the mounts the app declared secret keep a stored `secret: true`. One-way. On a generic container it changes nothing.
+
+**204:** ejected; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_BUSY`
 
 ### DELETE /api/containers/:name · `admin`
 
@@ -165,9 +171,9 @@ Restart a container (stop + start).
 
 ### POST /api/containers/:name/kill · `admin`
 
-Kill a container (SIGKILL). Same scheduled-restart handling as Stop.
+Kill a container (SIGKILL). Same scheduled-restart handling as Stop. While a stop job waits out its grace period, the kill makes that stop immediate (settled 2026-11-20): the stop job kills the task at once and ends as it would, and the kill answers 204 without taking the lock the stop holds.
 
-**204:** killed (or the scheduled restart cancelled); the state arrives on the `containers` topic | **409:** `CONTAINER_NOT_RUNNING` — not running and nothing scheduled
+**204:** killed (or the scheduled restart cancelled, or a running stop made immediate); the state arrives on the `containers` topic | **409:** `CONTAINER_NOT_RUNNING` — not running and nothing scheduled; `CONTAINER_BUSY` — another operation than a stop holds the lock
 
 ### GET /api/containers/:name/stats · `read`
 
@@ -232,13 +238,13 @@ The file part is streamed as it arrives — for a **file** mount into a temp fil
 
 Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an existing file.
 
-**204:** written; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **422:** `APP_CONFIG_ONLY` (app-managed mount — see GET content below). Works on secret mounts (write-only).
+**204:** written; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **409:** `CONTAINER_BUSY` — the upload holds the lock from its first byte to the replace | **422:** `APP_CONFIG_ONLY` (app-managed mount — see GET content below). Works on secret mounts (write-only).
 
 ### POST /api/containers/:name/mounts/:mountName/zip · `admin`
 
 Multipart: one file part. Mount must have **`type: "directory"`** (Local, not storage-sourced). Once the upload is received and its entry paths pass the zip-slip check (**`unzip -Z1`**), the extract is a [job](API.md#job-routes): it clears `files/<mountName>/` and extracts the zip with the system **`unzip`** binary, holding the container's operation lock.
 
-**202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name, mount }` | **409:** `CONTAINER_BUSY` | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged) | **Job errors:** `CONTAINER_ZIP_EXTRACT_TIMEOUT` (the extract made no progress for its bound), `CONTAINER_ZIP_INVALID` (unzip failed)
+**202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name, mount }` | **409:** `CONTAINER_BUSY` — the upload holds the lock while it stages into the container directory, the extract job from its start | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged) | **Job errors:** `CONTAINER_ZIP_EXTRACT_TIMEOUT` (the extract made no progress for its bound), `CONTAINER_ZIP_INVALID` (unzip failed)
 
 ### GET /api/containers/:name/mounts/:mountName/content · `admin`
 
@@ -256,13 +262,13 @@ Multipart: one file part. Mount must have **`type: "directory"`** (Local, not st
 
 Works on secret mounts (write-only); `{ "content": "" }` clears one.
 
-**204:** written; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **413:** `PAYLOAD_TOO_LARGE` — request body too large | **422:** same family as GET for type/size/encoding, plus `APP_CONFIG_ONLY` for app-managed mounts (an app container's files are regenerated from `appConfig` on every save — configure the app, or eject it first)
+**204:** written; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **409:** `CONTAINER_BUSY` | **413:** `PAYLOAD_TOO_LARGE` — request body too large | **422:** same family as GET for type/size/encoding, plus `APP_CONFIG_ONLY` for app-managed mounts (an app container's files are regenerated from `appConfig` on every save — configure the app, or eject it first)
 
 ### POST /api/containers/:name/mounts/:mountName/init · `admin`
 
 Create an empty file (0 bytes) or empty directory according to the mount **`type`** (still supported for API clients; the UI relies on automatic creation when saving mounts or starting).
 
-**204:** created; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
+**204:** created; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **409:** `CONTAINER_BUSY` | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
 
 ### DELETE /api/containers/:name/mounts/:mountName/data · `admin`
 

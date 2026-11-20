@@ -242,7 +242,16 @@ consumer, and nothing has called for more).
 - Backend subsystems are named modules under `src/lib/`, each behind a facade `index.js`,
   with platform implementations under `<module>/linux/` and `<module>/darwin/`. App glue —
   Wisp's own orchestration — stays flat at the top of `src/lib/`, and routes do HTTP
-  concerns and call the facades and the glue. The fences between them are CODING-RULES
+  concerns and call the facades and the glue. **Every command that changes a workload is
+  one purpose-named function of its side's operation module** (`lib/vmOperations.js`,
+  `lib/containerOperations.js`; settled 2026-11-20), with its lock and its follow-ups:
+  the routes, the MCP tools and the scheduler call the same function, and no route takes
+  an operation lock itself (a lint: `npm run check-fences`). A job's lock is the job
+  starter's; an instant command's, the lock wrapper's, inside the operation. The
+  follow-ups outside the workload's own record (its section assignment, its last backup
+  attempt, its `.local` name) are written once for both sides
+  (`lib/workloadFollowUps.js`), and every backup runs through one orchestration
+  (`lib/workloadBackup.js`). The fences between them are CODING-RULES
   §7: one caller per external system, and managers free of Wisp glue. The import graph
   stays acyclic, enforced by a lint (settled 2026-11-15: restored from the template).
 - `frontend/src/`: `api/` (the fetch wrappers and the SSE client), `store/` (one Zustand
@@ -285,8 +294,11 @@ consumer, and nothing has called for more).
   there) and announces each ([`specs/IMAGE-LIBRARY.md`](specs/IMAGE-LIBRARY.md)).
 - `mcp` — the MCP endpoint: tools over the same facades and glue as the routes, secrets
   masked ([`specs/MCP.md`](specs/MCP.md)).
-- App glue — auth and API tokens, settings, cloud-init, backups (scheduler, retention,
-  destinations), the job store and its starter (`lib/jobs`: every job, whatever starts
+- App glue — the workload operations (`lib/vmOperations.js`, `lib/containerOperations.js`:
+  every command on a VM or a container, its lock and its follow-ups; the follow-ups in
+  `lib/workloadFollowUps.js`), auth and API tokens, settings, cloud-init, backups (the
+  one orchestration `lib/workloadBackup.js`, scheduler, retention, destinations, the
+  attempt status), the job store and its starter (`lib/jobs`: every job, whatever starts
   it), operation locks, the update checks' jobs and their hourly trigger
   (`lib/updateChecks.js`), the mDNS reconcilers, LAN discovery, the home page and
   self-update.

@@ -136,14 +136,16 @@ source refer to them.
     its timeouts). Add a new operation as a new purpose-named facade export.
   - Applied — the lint is `npm run check-fences` (`scripts/check-fences.mjs`): the
     package fences, the facades (a module with an `index.js` is imported only through
-    it), strict managers and carved modules. A reviewed allowance is one line in its
-    `EXCEPTIONS`.
+    it), strict managers and carved modules, and routes that take no operation lock (a
+    workload command's lock is its operation module's, ARCHITECTURE.md, Repo layout). A
+    reviewed allowance is one line in its `EXCEPTIONS`.
   - Applied — **strict managers**: give vmManager and containerManager **zero Wisp-glue
     imports**: stdlib, their own internals, and the carved cross-cutting modules
     (`mdns/`, `networking/`, `storage/`) only. Change them only for **generic
     libvirt/containerd functionality**; put Wisp-specific orchestration (cloud-init flow,
-    mDNS hooks, section assignments, cleanup rollbacks) in routes or in app-glue files,
-    kept flat at `lib/` top level so each manager stays independently extractable. Each
+    mDNS hooks, section assignments, cleanup rollbacks) in app-glue files (a workload
+    command's in its side's operation module), kept flat at `lib/` top level so each
+    manager stays independently extractable. Each
     manager owns its private error factory, validators and path helpers; give a generic
     primitive options rather than a Wisp-specific twin (`attachISO` / `ejectISO` carry
     `{ createIfMissing }` / `{ removeSlot }`, so cloud-init's slot rides the public
@@ -273,8 +275,9 @@ checks and the unit tests below for what they cover:
     `new URL('…', import.meta.url)`) land in a directory that exists, and facade
     parity: every name a platform facade takes is exported by its `linux/` and
     `darwin/` sides.
-  - `check-fences`: the import fences (§7); no import cycle in the backend beyond its
-    listed exceptions; and only the backend runs the state migrations (§16): outside
+  - `check-fences`: the import fences (§7), no route importing an operation lock
+    among them; no import cycle in the backend beyond its listed exceptions; and only
+    the backend runs the state migrations (§16): outside
     `docs/` and Markdown, no file but those in `backend/src` names the runner, and none
     but the runner and the checks reaches for `backend/migrations`, comments aside.
   - `lint`: ESLint over `backend/` and `frontend/src/`, correctness rules only: a use

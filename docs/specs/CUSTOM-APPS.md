@@ -83,12 +83,16 @@ Body gains optional fields: `app` (string, validated against registry) and `appC
 
 ### PATCH /api/containers/:name — Update
 
-The route reads `config.metadata?.app` and dispatches:
+The route sends the body to one of the container's operations (`lib/containerOperations.js`):
 
-- `{ appConfig }` on an app container → `containerApps.applyAppConfig(name, appConfig)`. Validates via app module, regenerates derived config, persists new `metadata.appConfig` + `env`/`mounts`/`devices`, writes mount file contents, attempts live reload if running.
-- `{ envPatch }` / `{ env }` / `{ mounts }` on an app container → rejected with `APP_CONFIG_ONLY` (422), as is `{ devices }` sent alongside `appConfig`. Enforced at the route layer. `{ devices }` on its own is accepted — the Devices section is shown on every container — but an app module that derives devices (Jellyfin's GPU toggle) replaces them on its next `appConfig` save.
-- `{ eject: true }` on an app container → `containerApps.eject(name)`. Clears `metadata.app`/`metadata.appConfig`. Env, mounts, devices, files all preserved; the mounts the app declared secret get a stored `secret: true` first.
-- Anything else → straight through to `containerManager.updateContainerConfig`.
+- `{ appConfig }`, **alone** → the app config save: `containerApps.applyAppConfig(name, appConfig)` under the container's lock. Validates via app module, regenerates derived config, persists new `metadata.appConfig` + `env`/`mounts`/`devices`, writes mount file contents, attempts live reload if running. `appConfig` with any other key (`devices` included) → **400** `VALIDATION_FAILED` naming the other keys (settled 2026-11-20); on a generic container → **422** `CONFIG_ERROR`.
+- `{ envPatch }` / `{ env }` / `{ mounts }` on an app container → rejected with `APP_CONFIG_ONLY` (422) by the configuration update, before anything is written. `{ devices }` on its own is accepted — the Devices section is shown on every container — but an app module that derives devices (Jellyfin's GPU toggle) replaces them on its next `appConfig` save.
+- `eject` → **400** `VALIDATION_FAILED`: eject is its own command (below).
+- Anything else → the configuration update: `containerManager.updateContainerConfig`, then its follow-ups (a removed mount's data, the `.local` name, a rename's section and backup status).
+
+### POST /api/containers/:name/eject — Eject
+
+`containerApps.eject(name)` under the container's lock (settled 2026-11-20: its own command, no longer a `PATCH` field). Clears `metadata.app`/`metadata.appConfig`. Env, mounts, devices, files all preserved; the mounts the app declared secret get a stored `secret: true` first. A generic container is left as it is.
 
 ### Mount content routes
 

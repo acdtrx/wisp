@@ -6,7 +6,7 @@ VM and container backups: lists, restore, delete. Shared contracts (access level
 
 ### POST /api/vms/:name/backup · `admin`
 
-Start a backup job (kind `vm-backup`), on `GET /api/jobs/:jobId/progress`. It holds the VM's [operation lock](BACKUPS.md#per-vm-operation-lock) for the whole job; the attempt is recorded before `done`.
+Start a backup job (kind `vm-backup`), on `GET /api/jobs/:jobId/progress`. It holds the VM's [operation lock](BACKUPS.md#per-vm-operation-lock) for the whole job; the attempt is recorded before `done` or the job's `error` — a record `{ at, ok, origin, destinationIds, timestamp? }`, a failure's with its error body (`error`, the code, and `detail`), pushed on the [`backups` topic](API.md#backups-topic-payload) ([BACKUPS.md → Backup attempt status](BACKUPS.md#backup-attempt-status)).
 
 - **Body:** `{ destinationIds?: ["local", "<mountId>"] }` (defaults to `["local"]`)
 - **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted (resolved by the shared `lib/backupDestinations.js` helper). Any other id returns **422** `BACKUP_DEST_UNKNOWN`.
@@ -65,7 +65,7 @@ Delete a backup.
 Start a container backup job (kind `container-backup`), on `GET /api/jobs/:jobId/progress`. Mirrors `POST /api/vms/:name/backup` — same body shape, same destination resolution (shared `lib/backupDestinations.js` helper), same SMB auto-mount behavior. The container does **not** need to be stopped: a running container is paused (cgroup freezer) for the duration of the archive and resumed automatically; stopped/created containers are archived cold. Manual backups record `origin: "manual"` in the manifest. Details in [BACKUPS.md → Container Backups](BACKUPS.md#container-backups).
 
 - **Body:** `{ destinationIds?: ["local", "<mountId>"] }` (defaults to `["local"]`)
-- **202:** `{ jobId: string, title: string }` — a [job](API.md#job-routes); `title` is `Backup <name>`; `done` result: `{ timestamp }` — the last destination's backup folder name. The attempt is recorded before `done`.
+- **202:** `{ jobId: string, title: string }` — a [job](API.md#job-routes); `title` is `Backup <name>`; `done` result: `{ timestamp }` — the last destination's backup folder name. The attempt is recorded before `done` or `error`, as for a VM.
 - **404:** `CONTAINER_NOT_FOUND` (checked under the lock before the job is created)
 - **409:** `CONTAINER_TASK_TRANSIENT` (task is `pausing`/`unknown` — retry shortly), `CONTAINER_BUSY` (a backup or another locked operation on this container is running — the job holds the [operation lock](CONTAINERS.md#per-container-operation-lock) until it settles)
 - **422:** `BACKUP_DEST_UNKNOWN` / `BACKUP_DEST_NONE` — unknown destination id, or nothing resolved
@@ -114,7 +114,7 @@ Restore a container backup under a new name. The new name must be free both on d
 Restore a backup **over the live container it was taken from** (same name, same MAC and DHCP lease; the containerd record is kept, or recreated if missing). The container must be stopped. Runs as a background job (kind `container-restore`, title `Restore <name>`) on `GET /api/jobs/:jobId/progress`, holding the container's [operation lock](CONTAINERS.md#per-container-operation-lock) for the whole job, the safety backup included. Progress steps: `safety-*` (the safety backup), `extracting`, `swapping`, `registering`. `safetyBackup` (default `true`) archives the current state to the same destination first (its progress steps are prefixed `safety-` and mapped to 0–45% of the bar), then restores. Semantics in [BACKUPS.md → Restoring a container in place](BACKUPS.md#restoring-a-container-in-place).
 
 - **Body:** `{ destinationId: string, name: string, timestamp: string, safetyBackup?: boolean }`
-- **202:** `{ jobId: string, title: string }` — a [job](API.md#job-routes); `done` result: `{ name, image }`. The safety backup's attempt is recorded inside the job.
+- **202:** `{ jobId: string, title: string }` — a [job](API.md#job-routes); `done` result: `{ name, image }`. The safety backup runs through the same orchestration as any backup, and its attempt is recorded inside the job.
 - **404:** `CONTAINER_NOT_FOUND` (workload deleted — restore as new instead; checked under the lock before the job is created)
 - **409:** `CONTAINER_MUST_BE_STOPPED`, `CONTAINER_BUSY` (a backup, restore or other locked operation on this container is running; the job holds the [operation lock](CONTAINERS.md#per-container-operation-lock) until it settles)
 - **422 / 503:** destination errors as for `POST /api/containers/:name/backup`

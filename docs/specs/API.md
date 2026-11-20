@@ -152,9 +152,11 @@ The persisted last-attempt status map (see [BACKUPS.md → Backup attempt status
 ```json
 {
   "vms": { "ubuntu-server": { "at": "2026-07-14T03:00:12.000Z", "ok": true, "origin": "manual", "destinationIds": ["local"], "timestamp": "2026-07-14T03-00-05" } },
-  "containers": { "caddy": { "at": "2026-07-14T03:00:41.000Z", "ok": false, "origin": "scheduled", "destinationIds": ["local"], "error": "Backup destination not writable" } }
+  "containers": { "caddy": { "at": "2026-07-14T03:00:41.000Z", "ok": false, "origin": "scheduled", "destinationIds": ["local"], "error": "BACKUP_DEST_NOT_WRITABLE", "detail": "Backup destination not writable: …" } }
 }
 ```
+
+A failed attempt carries the failure's [error body](ERROR-HANDLING.md#the-error-body): `error` is its code, `detail` its text (settled 2026-11-20).
 
 #### `stats` topic payload
 

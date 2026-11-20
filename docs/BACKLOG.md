@@ -87,10 +87,6 @@ before the guest releases the device; `GET /usb` then still lists it, and nothin
 for libvirt's `DeviceRemoved` to send a second `vm` frame. **Revisit trigger:** a detached
 USB device seen still listed until a reload.
 
-**A VM rename doesn't move its sidebar section.** `renameWorkloadAssignment` is called only
-by the container PATCH route, so a renamed VM drops back to Main. **Revisit trigger:** the
-next work on VM rename, or a user notices the VM leaving its section.
-
 **A disk bus change off VirtIO always fails.** `updateDiskBus` rewrites `<target bus>` but
 keeps the disk's `<address type='pci'>`, so libvirt refuses SATA, SCSI or IDE with
 "Invalid address type 'pci' for the disk … with the bus type 'sata'" (500). Seen on tini
@@ -269,10 +265,6 @@ Kill answer 200 `{ ok, restartCancelled }`, while API-CONTAINERS has Stop as a 2
 and Kill as 204. Each needs the code or the spec settled with the user. **Revisit
 trigger:** the next work on VM NICs, host mounts or container lifecycle.
 
-**Deleting a VM leaves its `backup-status.json` entry.** Container deletes prune theirs
-(`forgetBackupStatus`, 2026-11-12); VM deletes don't. **Revisit trigger:** a stale VM
-entry confuses the backups view, or the next work on VM delete.
-
 **Help icons rely on `title`.** `HelpIcon.jsx` shows its text only as a `title` tooltip,
 which never appears on touch (found in the 2026-11-12 rules audit). **Revisit trigger:**
 help text is needed on a phone or tablet.
@@ -283,6 +275,13 @@ help text is needed on a phone or tablet.
 container stays unpublished until its next address change, a local DNS toggle or a
 restart (VMs recover on the 60 s probe). **Revisit trigger:** a workload is seen
 unpublished after avahi stalled.
+
+**A VM and a container of the same name share one mDNS entry.** Both reconcilers register
+and deregister under the bare workload name (`registerAddress(name, …)` in
+`lib/mdns/linux/avahi.js`), so a VM `web` stopping, renamed or deleted withdraws a
+container `web`'s `.local` record too, and the two would claim the same host name anyway
+(found 2026-11-20, while writing the delete follow-ups). **Revisit trigger:** a VM and a
+container are given the same name, or the next work on mDNS publishing.
 
 **The 60 s container probe never reads the IPv4 address.** `discoverIpv4InNetnsOnce`
 (`containerManagerNetwork.js`) passes `{ maxAttempts: 1, sleepMs: 0 }`, so
