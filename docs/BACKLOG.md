@@ -430,8 +430,9 @@ puzzled by a VM that will not start there.
 **A VLAN bridge whose `netplan apply` fails leaves its file behind.** `wisp-bridge` (Host
 Mgmt's VLAN bridges, `lib/networking/linux/managedBridges.js`) writes
 `/etc/netplan/91-wisp-vlan__*.yaml` and runs `netplan apply`; when the apply fails, the
-helper removes nothing, so the file stays and fails every later `netplan generate`, the
-boot's included, until the bridge is deleted in the UI. The helper should take back its file when the apply
+helper removes nothing, so the file stays and fails every later `netplan generate` — the
+boot's, and setup's container-dns step's, which renders the container DNS stub — until
+the bridge is deleted in the UI. The helper should take back its file when the apply
 fails. **Revisit trigger:** a VLAN bridge create that fails at its apply.
 
 **The installer's follower can miss the install's last lines.** The work removes its

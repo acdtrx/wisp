@@ -59,7 +59,7 @@ When a refusal comes:
 | `JOURNAL_OTHER_RELEASE` | A journal, or a committed one whose originals are still to be kept, written by another release of Wisp: its format version is not this setup's | Run that release's setup; or recover at the console as that release's DEPLOYMENT.md says (The bridge, when an undo does not complete). For a committed one, keep its originals as that release's DEPLOYMENT.md says (The bridge, the originals are kept), and remove it. |
 | `JOURNAL_UNREADABLE` | A file the journal records cannot be read | Make it readable. |
 | `NETWORK_CHANGED_SINCE_ASKED` | The install's own plan, made again under the lock, would make another bridge — on another uplink or address — than the operator confirmed. Found by the install before it changes anything, or, when the network changes in between, by setup after its bridge-journal step (which it says it ran). | Run the install again. |
-| `NETWORK_CHANGED_SINCE_PLAN` | Something changed what the plan read — the default route, the uplink's addresses, hardware address or MTU, cloud-init's configuration, netplan's files, another definition that could take the uplink — while setup ran. | Run setup again. |
+| `NETWORK_CHANGED_SINCE_PLAN` | Something changed what the plan read — the default route, the uplink's addresses, hardware address or MTU, cloud-init's configuration, netplan's files (the container DNS stub's own aside, which setup writes in between), another definition that could take the uplink — while setup ran. | Run setup again. |
 
 ## Install
 
@@ -135,7 +135,7 @@ Afterwards the host has:
 - the install's answers, with `config/` secrets at 0600;
 - the bridge, made last.
 
-**The container DNS stub** (`wisp-dns0`, `169.254.53.53/32`) is declared in systemd-networkd's own files, beside those netplan renders, so it exists at every boot before Wisp starts, with nothing of Wisp's creating it; `wisp.service` has no `ExecStartPre`. [CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns).
+**The container DNS stub** (`wisp-dns0`, `169.254.53.53/32`) is a netplan definition in a file of Wisp's own, `/etc/netplan/90-wisp-dns0.yaml`, so it exists at every boot before Wisp starts, with nothing of Wisp's creating it; `wisp.service` has no `ExecStartPre` (settled 2026-11-20). The step applies it with `netplan generate` and `networkctl reload`, never `netplan apply`. A host that holds its former declaration, systemd-networkd's own `10-wisp-dns0.netdev` and `.network` and their wait-online instance, has them taken back once by the same step. [CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns).
 
 ## The bridge
 

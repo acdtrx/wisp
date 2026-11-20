@@ -1,12 +1,14 @@
 # Sourced by the network plan (bridge-plan.sh) and the container-dns step, as
-# root; do not execute it. The container DNS
-# stub's refusal, made before anything changes: Wisp's container DNS forwarder
-# binds port 53 on the stub address (container-dns.sh), and a backend that
-# cannot fails its start.
+# root; do not execute it. The container DNS stub's names, and its refusal,
+# made before anything changes: Wisp's container DNS forwarder binds port 53 on
+# the stub address (container-dns.sh), and a backend that cannot fails its
+# start.
 
-# The stub: one home for its interface and address.
+# The stub: one home for its interface, its address and the netplan file of
+# Wisp's own that declares it.
 DNS_STUB_IFACE=wisp-dns0
 DNS_STUB_IP=169.254.53.53
+DNS_STUB_NETPLAN_FILE=/etc/netplan/90-wisp-dns0.yaml
 
 # refuse_dns_port: another DNS server listening there, or on every IPv4 address
 # (AdGuard Home, Pi-hole, unbound, bind9, dnsmasq), is refused. Wisp's own
