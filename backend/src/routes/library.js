@@ -178,7 +178,7 @@ export default async function libraryRoutes(fastify) {
         kind: BACKGROUND_JOB_KIND.LIBRARY_DOWNLOAD,
         title: TITLE_LIBRARY_UBUNTU_CLOUD,
         log: request.log,
-        run: (report) => downloadUbuntuCloudToLibrary(reportPercent(report)),
+        run: (report) => downloadUbuntuCloudToLibrary(reportPercent(report), { log: request.log }),
       });
       return reply.code(202).send(job);
     },

@@ -49,34 +49,46 @@ function extractLtsProducts(products) {
   return entries;
 }
 
+/** The newest LTS the release stream lists, or null when it lists none; throws when the lookup fails. */
 async function fetchLatestLtsFromSimplestreams() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SIMPLESTREAMS_TIMEOUT_MS);
   try {
     const res = await ssrfSafeFetch(SIMPLESTREAMS_URL, { signal: controller.signal, maxBodyBytes: SIMPLESTREAMS_MAX_BYTES });
-    if (!res.ok) return null;
+    if (!res.ok) throw new Error(`the release stream answered HTTP ${res.status}`);
     const data = await res.json();
     return extractLtsProducts(data.products)[0] ?? null;
-  } catch {
-    return null;
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function resolveLatestLts() {
-  const latest = await fetchLatestLtsFromSimplestreams();
-  if (latest) return buildImageUrl(latest.codename, latest.version);
+/**
+ * The newest LTS's image, or the known fallback when the stream cannot say:
+ * the download still works, and the warn line says why it is the fallback.
+ */
+async function resolveLatestLts(log) {
   const fb = FALLBACK_LTS[0];
+  try {
+    const latest = await fetchLatestLtsFromSimplestreams();
+    if (latest) return buildImageUrl(latest.codename, latest.version);
+    log.warn({ url: SIMPLESTREAMS_URL, fallback: fb.version }, 'Ubuntu release stream lists no LTS: downloading the fallback release');
+  } catch (err) {
+    log.warn(
+      { url: SIMPLESTREAMS_URL, fallback: fb.version, err: err?.message, code: err?.code, raw: err?.raw },
+      'Ubuntu release stream lookup failed: downloading the fallback release',
+    );
+  }
   return buildImageUrl(fb.codename, fb.version);
 }
 
 /**
- * Download the image to the library. onProgress(percent, loaded, total).
+ * Download the image to the library. onProgress(percent, loaded, total);
+ * `log` records a fallback to the known release.
  * Returns { name, type, size, modified }.
  */
-export async function downloadUbuntuCloudImage(onProgress) {
-  const { url, filename } = await resolveLatestLts();
+export async function downloadUbuntuCloudImage(onProgress, { log }) {
+  const { url, filename } = await resolveLatestLts(log);
   const dir = await ensureImageDir();
   return downloadToUniqueFile(url, dir, filename, onProgress);
 }
