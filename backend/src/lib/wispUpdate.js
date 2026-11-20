@@ -49,6 +49,8 @@ const TARGET_FILE = join(STAGING_ROOT, 'target');
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // hourly
 const INITIAL_DELAY_MS = 30_000;
 const HTTP_TIMEOUT_MS = 30_000;
+/** A release, or a page of releases with their notes: a few hundred KB. */
+const GITHUB_JSON_MAX_BYTES = 8 * 1024 * 1024;
 
 /* Releases fetched per beta check. The newest release is always in the first
  * page, so this only has to cover "the highest version isn't the newest by
@@ -197,6 +199,7 @@ async function fetchGithubJson(url, signal) {
         'X-GitHub-Api-Version': '2022-11-28',
       },
       signal: requestSignal,
+      maxBodyBytes: GITHUB_JSON_MAX_BYTES,
     });
   } catch (err) {
     if (deadline.aborted) {
