@@ -143,6 +143,14 @@ scoped streams staying few enough. Behind an HTTP/2 proxy it can't happen. **Rev
 trigger:** a request seen stalled in DevTools ("Stalled"/"Queueing") with two tabs open
 over plain HTTP.
 
+**The backups panel shows a backup's age in the browser's time zone.** A backup's
+timestamp is its folder name, in UTC (`2026-07-14T03-00-05`); `backupTsToIso` in
+`frontend/src/components/backups/BackupsPanel.jsx` turns it into an ISO string with no
+`Z`, which the browser reads as local time, so in UTC+2 a backup made just now shows "2h
+ago" in its row while the header's last attempt says "just now" (seen on tini,
+2026-11-20, phase 4's milestone 1 check). **Revisit trigger:** phase 6's work on the
+backups panel, or a user reading a wrong age.
+
 **Split CONTAINERS.md and UI.md by area.** Like API.md (split 2026-11-15), both are large
 enough that an agent reading one for a single area loads all of it: `specs/CONTAINERS.md`
 is about 129 KB, `specs/UI.md` about 78 KB. Shape: a shared core file plus one file per
