@@ -114,7 +114,7 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
       if (!res.ok || !res.body) {
         const err = errorFromBody(await res.json().catch(() => null), res.status);
         if (isSessionLost(err)) {
-          leaveForLogin();
+          leaveForLogin(err);
           return;
         }
         throw err;
@@ -257,7 +257,7 @@ export function createSSE(url, onMessage, onError) {
       if (!res.ok || !res.body) {
         const err = errorFromBody(await res.json().catch(() => null), res.status);
         if (isSessionLost(err)) {
-          leaveForLogin();
+          leaveForLogin(err);
           return;
         }
         throw err;

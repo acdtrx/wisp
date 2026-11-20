@@ -1,4 +1,4 @@
-import { ApiError, errorFromBody, isSessionLost } from './errors.js';
+import { ApiError, errorFromBody, errorText, isSessionLost } from './errors.js';
 
 // Cookie-based session — the JWT lives in an HttpOnly cookie (`wisp_session`)
 // the backend sets on /api/auth/login. JS never reads or stores it. The
@@ -111,7 +111,19 @@ function timeoutError(timeoutMs) {
 }
 
 /** The session is gone: tell the other tabs and go sign in. */
-export function leaveForLogin() {
+/** Where the login page finds why a lost session brought the user there (this tab only). */
+export const LOGIN_NOTICE_KEY = 'wisp_login_notice';
+
+/**
+ * The session is gone (`err` is the lost-session error): tell the other tabs,
+ * leave the login page the error's text, and go there.
+ */
+export function leaveForLogin(err) {
+  try {
+    sessionStorage.setItem(LOGIN_NOTICE_KEY, errorText(err));
+  } catch {
+    /* no storage: the login page shows no reason */
+  }
   broadcastLogout();
   window.location.href = '/login';
 }
@@ -146,7 +158,7 @@ export async function api(path, options = {}) {
     const data = await res.json().catch(() => null);
     if (deadline.aborted && !callerSignal?.aborted) throw timeoutError(timeoutMs);
     const err = errorFromBody(data, res.status);
-    if (isSessionLost(err)) leaveForLogin();
+    if (isSessionLost(err)) leaveForLogin(err);
     throw err;
   }
 

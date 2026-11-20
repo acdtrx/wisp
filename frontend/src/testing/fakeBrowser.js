@@ -11,22 +11,28 @@ const NEXT_REQUEST_MS = 2000;
 const realSetTimeout = globalThis.setTimeout;
 const realClearTimeout = globalThis.clearTimeout;
 
-/** Install fresh `window`, `document` and `localStorage` globals; returns them. */
-export function installBrowser() {
-  const events = { addEventListener() {}, removeEventListener() {} };
-  const window = { location: { href: '', pathname: '/' }, ...events };
-  const document = { visibilityState: 'visible', cookie: '', ...events };
+/** A Storage stand-in over a Map. */
+function fakeStorage() {
   const store = new Map();
-  const localStorage = {
+  return {
     getItem: (key) => (store.has(key) ? store.get(key) : null),
     setItem: (key, value) => store.set(key, String(value)),
     removeItem: (key) => store.delete(key),
   };
+}
+
+/** Install fresh `window`, `document`, `localStorage` and `sessionStorage` globals; returns them. */
+export function installBrowser() {
+  const events = { addEventListener() {}, removeEventListener() {} };
+  const window = { location: { href: '', pathname: '/' }, ...events };
+  const document = { visibilityState: 'visible', cookie: '', ...events };
+  const localStorage = fakeStorage();
+  const sessionStorage = fakeStorage();
   // defineProperty: Node may already own a read-only `localStorage` global.
-  for (const [name, value] of Object.entries({ window, document, localStorage })) {
+  for (const [name, value] of Object.entries({ window, document, localStorage, sessionStorage })) {
     Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
   }
-  return { window, document, localStorage };
+  return { window, document, localStorage, sessionStorage };
 }
 
 /**

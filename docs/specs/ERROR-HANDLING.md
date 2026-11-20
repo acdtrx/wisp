@@ -392,7 +392,9 @@ The frontend API client (`api()` in `api/client.js`) recognises a lost session b
 code (`AUTH_REQUIRED`, `AUTH_INVALID`). On one:
 
 1. Write the `wisp_logout` localStorage signal so other tabs bounce too
-2. Redirect to `/login`
+2. Leave the error's text (`errorText`) for the login page, which shows it once, so the
+   user sees why they are signing in again
+3. Redirect to `/login`
 
 This is automatic and applies to all API calls, handling session expiry and password
 changes from another device. Because it logs every tab out, the backend sends 401 only

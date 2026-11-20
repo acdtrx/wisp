@@ -6,12 +6,13 @@ import { installBrowser, installFetch, jsonResponse, settle } from '../testing/f
 let browser;
 let net;
 let api;
+let LOGIN_NOTICE_KEY;
 let ApiError;
 
 beforeEach(async () => {
   browser = installBrowser();
   net = installFetch();
-  ({ api } = await import('./client.js'));
+  ({ api, LOGIN_NOTICE_KEY } = await import('./client.js'));
   ({ ApiError } = await import('./errors.js'));
 });
 
@@ -51,6 +52,7 @@ for (const code of ['AUTH_REQUIRED', 'AUTH_INVALID']) {
     assert.equal(err.status, 401);
     assert.match(browser.localStorage.getItem('wisp_logout'), /^expired:\d+$/);
     assert.equal(browser.window.location.href, '/login');
+    assert.equal(browser.sessionStorage.getItem(LOGIN_NOTICE_KEY), 'Sign in again');
   });
 }
 

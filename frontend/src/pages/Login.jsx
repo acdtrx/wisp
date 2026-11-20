@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { LogIn } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { getOidcStatus, OIDC_LOGIN_URL } from '../api/auth';
+import { LOGIN_NOTICE_KEY } from '../api/client';
 import FullScreenSpinner from '../components/shared/FullScreenSpinner.jsx';
 import WispGlyph from '../components/shared/WispGlyph.jsx';
 import { autoFocusField } from '../lib/focus.js';
@@ -17,6 +18,16 @@ const SSO_NOTICES = {
   signedout: 'You are signed out.',
 };
 
+function takeSessionNotice() {
+  try {
+    const notice = sessionStorage.getItem(LOGIN_NOTICE_KEY);
+    sessionStorage.removeItem(LOGIN_NOTICE_KEY);
+    return notice;
+  } catch {
+    return null;
+  }
+}
+
 export default function Login() {
   const [password, setPassword] = useState('');
   const { login, loading, error } = useAuthStore();
@@ -27,6 +38,9 @@ export default function Login() {
   const [checking, setChecking] = useState(true);
   const [oidcEnabled, setOidcEnabled] = useState(false);
   const [ssoNotice, setSsoNotice] = useState(null);
+  // Why a lost session brought the user here, left by the client that saw it;
+  // read once, so a reload of the login page shows it no more.
+  const [sessionNotice] = useState(takeSessionNotice);
 
   useEffect(() => {
     const sso = new URLSearchParams(window.location.search).get('sso');
@@ -68,6 +82,12 @@ export default function Login() {
             <h1 className="font-display text-2xl font-semibold text-text-primary">Wisp</h1>
             <p className="mt-1 text-sm text-text-secondary">Sign in to manage your server</p>
           </div>
+
+          {sessionNotice && !ssoNotice && (
+            <p className="mb-4 rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-text-secondary">
+              {sessionNotice}
+            </p>
+          )}
 
           {ssoNotice && (
             <p className="mb-4 rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-text-secondary">

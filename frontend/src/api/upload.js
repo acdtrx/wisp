@@ -73,7 +73,7 @@ export function postMultipartFile(url, file, options = {}) {
         /* Error body not JSON — errorFromBody names the status */
       }
       const err = errorFromBody(data, xhr.status);
-      if (isSessionLost(err)) leaveForLogin();
+      if (isSessionLost(err)) leaveForLogin(err);
       reject(err);
     });
 

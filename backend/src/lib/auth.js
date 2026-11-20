@@ -320,10 +320,10 @@ export function createAuthHook() {
     const cookies = parseCookieHeader(request.headers?.cookie);
     const token = cookies[SESSION_COOKIE] || null;
 
-    if (!token) throw createAppError('AUTH_REQUIRED', 'No session: sign in');
+    if (!token) throw createAppError('AUTH_REQUIRED', 'You are not signed in');
 
     const payload = verifyJWT(token);
-    if (!payload) throw createAppError('AUTH_INVALID', 'The session is invalid or has expired: sign in again');
+    if (!payload) throw createAppError('AUTH_INVALID', 'Your session has expired or is no longer valid: sign in again');
 
     // Double-submit CSRF: state-changing requests must echo the wisp_csrf
     // cookie value back as X-CSRF-Token. SameSite=Lax already stops most
