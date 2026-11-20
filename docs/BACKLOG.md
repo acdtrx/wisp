@@ -14,6 +14,21 @@ since 2026-11-20 (`wisp_config_dir`, `lib.sh`), the settings file in setup does 
 (found while moving the password, 2026-11-20). No Wisp tool writes the key. **Revisit
 trigger:** a host that sets `WISP_CONFIG_PATH` by hand and reinstalls.
 
+**The cloud-init edit falls back to the VM name as the hostname.** Opening the editor on
+a VM with no saved hostname fills `hostname: vmName`
+(`frontend/src/components/sections/CloudInitSection.jsx`, `startEditing`), but a VM
+name may hold `.` or `_` or run to 128 characters, which the hostname schema (an RFC
+1123 label, at most 63) refuses, so saving answers 400 until the user edits the field
+(found 2026-11-20, with the 128-character VM names). **Revisit trigger:** a VM named
+with a dot, an underscore or past 63 characters gets cloud-init.
+
+**The test module mocks use `namedExports`, deprecated after Node 24.** Four test files
+(`backend/src/lib/containerOperations.test.js`, `vmOperations.test.js`,
+`containerBackupScheduler.test.js`, `cloudInit.test.js`) mock modules with
+`mock.module(…, { namedExports })`, which later Node releases replace with `exports`
+(found 2026-11-20). **Revisit trigger:** the runtime moves past Node 24, or the option
+warns or breaks in the test run.
+
 **Other wraps pass an inner Wisp error's message as its raw cause.** The five wraps of a
 Wisp error go through `wrapAppError` and the managers' twins since 2026-11-20; other
 sites still hand an inner error's `message` to the outer one's raw, e.g.
@@ -292,13 +307,11 @@ reads (`containerManagerLogs.js`, four sites) code a file read failure on the ru
 route lets the same failure through uncoded, as `INTERNAL_ERROR`: one failure, two codes.
 **Revisit trigger:** phase 5's work on containerManager, or a client that branches on it.
 
-**Specs that disagree with the code, found in the error sweep.** Two statements in the
-specs no longer match what the routes do (found 2026-11-20, while naming each error's
-code): API-HOST says `POST /api/host/mounts/:id/mount`
-answers 422 for a disk mount, but the route mounts disks; CONTAINERS.md says Stop and
-Kill answer 200 `{ ok, restartCancelled }`, while API-CONTAINERS has Stop as a 202 job
-and Kill as 204. Each needs the code or the spec settled with the user. **Revisit
-trigger:** the next work on host mounts or container lifecycle.
+**A spec that disagrees with the code, found in the error sweep.** CONTAINERS.md says
+Stop and Kill answer 200 `{ ok, restartCancelled }`, while API-CONTAINERS has Stop as a
+202 job and Kill as 204 (found 2026-11-20, while naming each error's code). It needs the
+code or the spec settled with the user. **Revisit trigger:** the next work on container
+lifecycle.
 
 **Help icons rely on `title`.** `HelpIcon.jsx` shows its text only as a `title` tooltip,
 which never appears on touch (found in the 2026-11-12 rules audit). **Revisit trigger:**

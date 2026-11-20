@@ -380,6 +380,7 @@ List configured mounts (SMB + disk). SMB passwords are never returned; SMB entri
 Append one mount. **Body:** `{ type: "smb" | "disk", label?, mountPath, autoMount?, ...type-specific }`. **`id`** optional (server generates a UUID if omitted). Paths must be absolute. For `type: "smb"`, `share` is required. For `type: "disk"`, `uuid` is required; `fsType` must be one of `ext4`, `btrfs`, `vfat`, `exfat`, `ntfs3`.
 
 - **201:** `{ id }` — the new mount's id; the mount arrives on the stream (`settings` and `host-mounts`)
+- **400:** `VALIDATION_FAILED` — a missing `type` or `mountPath`, a `type` other than `smb` / `disk`, a value of the wrong type, or an unknown key
 - **409:** `MOUNT_DUPLICATE` — id already exists
 - **422:** `MOUNT_INVALID` — missing/invalid fields
 
@@ -408,14 +409,16 @@ Test an SMB connection for a saved mount or ad hoc credentials.
 - **Body:** `{ id?: string, share?: string, username?: string, password?: string }`
 - If `id` is provided, the referenced mount (must be `type: "smb"`) supplies `share`/`username`/`password`, and any of those fields present in the body overrides the stored value — the edit form sends its unsaved share/username and omits `password` when the field is empty, so the test uses the stored password. Without `id`, the provided `share`/`username`/`password` are used as-is.
 - **200:** `{ ok: true }`
+- **400:** `VALIDATION_FAILED` — a value of the wrong type, or an unknown key
 - **404:** `MOUNT_NOT_FOUND` — SMB mount not found (when using `id`)
 
 ### POST /api/host/mounts/:id/mount · `admin`
 
-Mount an SMB share by settings id. Disk mounts are mounted automatically on device insertion and this endpoint currently returns **422** for `type: "disk"` — dedicated support lands with the disk monitor work.
+Mount a configured mount by settings id: an SMB share, or a removable disk (by its `uuid`, with its `fsType` and `readOnly`). Disks with `autoMount` are also mounted on device insertion.
 
 - **204:** mounted; the status arrives on `host-mounts`
-- **503:** `SMB_MOUNT_UNAVAILABLE` — mount unavailable (platform/helper error)
+- **404:** `MOUNT_NOT_FOUND`
+- **503:** `SMB_MOUNT_UNAVAILABLE` — the share could not be mounted (platform/helper error); `DISK_MOUNT_UNAVAILABLE` — the disk could not be mounted
 
 ### POST /api/host/mounts/:id/unmount · `admin`
 
