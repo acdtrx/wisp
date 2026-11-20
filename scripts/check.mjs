@@ -27,6 +27,8 @@ const CHECKS = [
   { name: 'refusals', command: ['node', 'scripts/check-refusals.mjs'] },
   { name: 'error-codes', command: ['node', 'scripts/check-error-codes.mjs'] },
   { name: 'error-messages', command: ['node', 'scripts/check-error-messages.mjs'] },
+  // The route report: every route's access level and schemas.
+  { name: 'routes', command: ['node', 'scripts/check-routes.mjs'], needs: ['backend'], timeoutMs: 60_000 },
   // Setup's Python, which reads the network tools' files: its unit tests.
   { name: 'setup-python', command: ['python3', '-I', '-B', '-m', 'unittest', 'discover', '-s', 'scripts/linux/setup', '-p', '*_test.py'], timeoutMs: 60_000 },
   { name: 'test', command: ['npm', 'test', '--silent'], needs: ['frontend', 'backend'], timeoutMs: 120_000 },
