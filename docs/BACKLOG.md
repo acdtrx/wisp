@@ -116,19 +116,6 @@ is about 129 KB, `specs/UI.md` about 78 KB. Shape: a shared core file plus one f
 area, content moved unchanged, links fixed across the docs. **Revisit trigger:** the next
 feature that works in either spec.
 
-**Six job progress streams.** Job routes report on `GET /api/jobs/:jobId/progress`, while
-VM create and backup, container create and backup, the image-update check and library
-downloads keep their own job stores and progress routes (found in the 2026-11-15 command
-inventory). **Revisit trigger:** a new job kind needs one of the older stores, or the
-next work on the jobs tray.
-
-**MCP's `get_job` reads only the operation job store.** Jobs from the other stores
-(create, backup, download, image-update) can't be read through MCP. **Revisit trigger:**
-an MCP tool starts a job outside the operation store.
-
-**A GET that starts a job.** `GET /api/host/updates/packages?refresh=1` answers 202 with a
-job ack; a command belongs in a POST. **Revisit trigger:** the next work on OS updates.
-
 **A hung CIFS mount blocks Node's filesystem calls.** Listings, deletes and copies on an
 unresponsive SMB destination block the libuv thread pool and can't be timed out; running
 them as jobs contains the damage but doesn't fix it. The container mount-usage walk is one

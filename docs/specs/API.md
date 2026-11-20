@@ -42,9 +42,13 @@ The new state reaches every client through the [events stream](#events-stream-ss
 
 ## Background jobs
 
-In-memory job registry (server process only; no persistence across restart). Used to restore the jobs tray after a full page reload and for server logging. Progress for each job uses its kind's SSE endpoint: the per-feature ones (`/vms/create-progress`, `/vms/backup-progress`, `/library/download-progress`, `/containers/create-progress`, …), or `GET /api/jobs/:jobId/progress` for the [job routes](#job-routes).
+In-memory job registry (server process only; no persistence across restart) (settled 2026-11-20: one store, one starter, one progress route). Every job, whatever started it (a route, an MCP tool, the scheduler, an hourly check), is started by the one starter, lives in the one store, is listed by `GET /api/jobs` and streams on `GET /api/jobs/:jobId/progress`; MCP's `get_job` reads the same store.
 
-### GET /api/background-jobs · `read`
+**A job says what it acts on.** A job on a VM or a container carries a `subject`, `{ "type": "vm" | "container", "name" }`, and holds that workload's operation lock from its start to its end ([BACKUPS.md → Per-VM operation lock](BACKUPS.md#per-vm-operation-lock), [CONTAINERS.md → Per-container operation lock](CONTAINERS.md#per-container-operation-lock)). A job that creates a workload has the name it creates as its subject. While the lock is held, starting such a job answers the busy error (`VM_BUSY`, `CONTAINER_BUSY`) at once; no job is created. The lock is released when the job ends, before its last event. A workload is busy while a running job has it as its subject: clients read busy from the subject, never from a title.
+
+**Shared runs.** The OS update check and the image update check run once at a time: a start while one runs, from any trigger, answers the running job's `{ jobId, title }`.
+
+### GET /api/jobs · `read`
 
 - **200:**
 
@@ -53,34 +57,37 @@ In-memory job registry (server process only; no persistence across restart). Use
   "jobs": [
     {
       "jobId": "string",
-      "kind": "vm-create | container-create | container-image-update-check | backup | container-backup | container-restore | library-download | vm-start | vm-force-stop | vm-delete | vm-restore | os-update-check | os-upgrade | network-bridge-create | network-bridge-delete | mount-unmount | mount-delete | self-update | container-start | container-stop | container-restart | container-delete | container-mount-delete | container-mount-data-delete | container-image-delete | container-restore-new | container-zip-extract | container-deploy | container-image-update | container-image-check",
+      "kind": "vm-create | vm-backup | vm-start | vm-force-stop | vm-delete | vm-restore | container-create | container-backup | container-restore | container-restore-new | container-start | container-stop | container-restart | container-delete | container-mount-delete | container-mount-data-delete | container-zip-extract | container-deploy | container-image-update | container-image-update-check | container-image-delete | library-download | os-update-check | os-upgrade | network-bridge-create | network-bridge-delete | mount-unmount | mount-delete | self-update",
       "title": "string",
-      "done": false,
+      "subject": { "type": "vm | container", "name": "string" },
+      "status": "running | done | error",
       "createdAt": 1730000000000
     }
   ]
 }
 ```
 
-`done` is true after the job completed or failed (until the in-memory TTL removes it). `title` is computed on the server (same rules as the UI: e.g. `Create <name>`, `Backup <name>`, truncated URLs for library downloads).
+Newest first. `subject` is `null` for a job on no workload. `title` is computed on the server (e.g. `Create <name>`, `Backup <name>`, a truncated URL for a library download). A finished job is listed until it expires (below).
 
-**Job store contract** (`lib/jobs/jobStore.js`, shared by every job kind):
+**Job store contract** (`lib/jobs/`, every kind):
 
 - **Retention:** a finished (completed or failed) job stays fetchable — listed here, its progress SSE replaying to the terminal event — for **5 minutes after it finished**, however long it ran; then it is removed (404 on its progress SSE). The sweep re-arms for the next expiry while finished jobs remain.
+- **Progress events** keep `step`, with `percent` and `detail` where they apply, plus each kind's own fields (`currentFile`, `destinationId`, `ref`, …).
 - **Progress volume:** byte-driven progress (backup gzip / tar streams, library downloads, `qemu-img convert`) is emitted once per integer percent change — at most ~101 events per stream, whatever the size.
 - **Replay to a late or reconnecting stream:** live subscribers get every event, but the store keeps only the latest of consecutive events with the same `step` (progress ticks of one step replace each other). A stream that connects mid-job receives one event per step transition — the latest progress of each, plus milestones such as `destination-done` — then the live tail.
-- **Stream end:** the terminal event (`done` or `error`) is the last event of every progress SSE — the server ends the response right after it. A stream opened on an already-finished job gets the replay (ending with the terminal event) and is ended; it is never held open until the job expires. Clients stop on the terminal event and do not reconnect.
-- **Error event:** `{ step: "error", error, detail }` — the [error body](ERROR-HANDLING.md#the-error-body): `error` the code (e.g. `VM_ALREADY_RUNNING`, `UPDATE_BUSY`), `detail` the message.
+- **Stream end:** the terminal event is the last event of every progress SSE — the server ends the response right after it. A stream opened on an already-finished job gets the replay (ending with the terminal event) and is ended; it is never held open until the job expires. Clients stop on the terminal event and do not reconnect.
+- **Done event:** `{ "step": "done", "result": … }` — the job's result as its own key, listed per job route in the area specs.
+- **Error event:** `{ "step": "error", "error", "detail" }` — the [error body](ERROR-HANDLING.md#the-error-body): `error` the code (e.g. `VM_ALREADY_RUNNING`, `UPDATE_BUSY`), `detail` the message.
 
 ### Job routes
 
-(settled 2026-11-13.) A command that can outlast a short request (45 s, above) runs as a server job (FRONTEND-RULES, Data: the client is an observer): its route checks what it can at once — a bad request, a missing resource, a conflict answer with their usual status — then starts the job and answers **202** `{ jobId, title }`. The job runs to completion whether or not a client follows it. Its progress, and its result as the `done` event's payload, arrive on `GET /api/jobs/:jobId/progress`; a failure is the `error` event, carrying the code the synchronous route would have answered with. The routes: VM start, force-stop and delete; VM restore as new; the OS update check, package refresh and upgrade; network-bridge create and delete; mount unmount and delete; the Wisp update install; container start, stop, restart and delete; container mount delete and mount-data delete; image delete; container restore as new; the zip extract after its upload. Each lists its `done` payload below. The MCP tools that start jobs return the same `{ jobId, title }` ([MCP.md](MCP.md)).
+(settled 2026-11-13.) A command that can outlast a short request (45 s, above) runs as a server job (FRONTEND-RULES, Data: the client is an observer): its route checks what it can at once — a bad request, a missing resource, a conflict answer with their usual status — then starts the job and answers **202** `{ jobId, title }`. The job runs to completion whether or not a client follows it. Its progress, and its result as the `done` event's `result`, arrive on `GET /api/jobs/:jobId/progress`; a failure is the `error` event, carrying the code the synchronous route would have answered with. Each job route lists its `done` result in its area spec. The MCP tools that start jobs return the same `{ jobId, title }` ([MCP.md](MCP.md)).
 
 ### GET /api/jobs/:jobId/progress · `read`
 
-The progress SSE of a job started by a [job route](#job-routes) (the job store contract above).
+The progress SSE of every job (the job store contract above).
 
-- **200:** `text/event-stream` — progress events, then `done` (the route's result) or `error`
+- **200:** `text/event-stream` — progress events, then `done` or `error`
 - **404:** `JOB_NOT_FOUND` — unknown job (never started, or expired)
 
 ---

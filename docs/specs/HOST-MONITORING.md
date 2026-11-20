@@ -243,15 +243,15 @@ When `/usr/local/bin/wisp-os-update` is installed:
 
 | Endpoint | Action |
 |----------|--------|
-| `POST /api/host/updates/check` | A job ([API.md → Job routes](API.md#job-routes)) whose result is `{ count }` of upgradable packages. Internally runs the `list` op; a check or package refresh started while one runs joins the same job, so concurrent calls coalesce. Updates the cached count, package list, and `updatesLastChecked` timestamp. |
-| `GET /api/host/updates/packages` | Returns `{ packages: [{ name, from, to }], downloadBytes, cached, lastCheckedAt }`. **Serves the in-memory cache by default** (instant). Pass `?refresh=1` to force a fresh `wisp-os-update list` invocation: it answers with the check job (started or joined), and the list is read again once it is done; so does a call with no cache yet. Used by the Software tab "View packages" details modal. |
+| `POST /api/host/updates/check` | A job ([API.md → Job routes](API.md#job-routes)) whose result is `{ count }` of upgradable packages, and the one route that starts the check (settled 2026-11-20). Internally runs the `list` op. A shared job: a start while one runs, from any trigger (this route, the hourly check), joins it, so concurrent calls coalesce. Updates the cached count, package list, and `updatesLastChecked` timestamp. |
+| `GET /api/host/updates/packages` | Returns `{ packages: [{ name, from, to }], downloadBytes, checkedAt }` from the in-memory cache (instant): what the last check (or upgrade) left, `checkedAt` its time, `{ packages: [], downloadBytes: 0, checkedAt: null }` before any. It starts no job. Used by the Software tab "View packages" details modal; its refresh runs the check (`POST /api/host/updates/check`) and reads the list again once that job is done. |
 | `POST /api/host/updates/upgrade` | A job that runs `wisp-os-update upgrade`, its output lines as progress, with result `{ ok: true }` on success; resets cached count and package list. |
 
 The `upgrade` action runs `apt-get dist-upgrade -y` (not plain `upgrade`) so kept-back packages that require installing or removing dependencies — kernel-meta ABI jumps, transitional packages — are applied too. The `check`/`list` actions simulate with `apt-get -s dist-upgrade` so the count and package list match exactly what the Upgrade button will do.
 
 **Non-interactive, local config kept (settled 2026-10-16).** The upgrade runs with no terminal, so nothing in the package-manager chain may prompt — a prompt is a hang until the inactivity bound (below) kills apt/dpkg mid-run. The backend closes the helper's stdin, and the helper (not the caller: sudo's `env_reset` drops the environment) sets `DEBIAN_FRONTEND=noninteractive` and `NEEDRESTART_MODE=a` (Ubuntu's needrestart restarts affected services itself instead of asking). Automatic restarts are the user's explicit choice: an upgrade that touches a library or Node itself can restart `wisp.service` once dpkg has finished, so the upgrade job may end in an error (its stream lost) while the backend comes back on the new packages — accepted over `NEEDRESTART_MODE=l` (list only, never restart), which would leave updated services running old code until someone restarts them by hand. Config files: a locally modified file is **kept** and the package's new version is left beside it — dpkg conffiles via `--force-confdef --force-confold` (new file as `.dpkg-dist`) and ucf-managed files such as `sshd_config` via `UCF_FORCE_CONFFOLD=1`. Unmodified config files take the new version. Rejected: taking the maintainer's version (`--force-confnew`) — an unattended button press must not silently replace a host's tuned config.
 
-**Timeouts (settled 2026-11-13, CODING-RULES §6).** On inactivity, no total bound, except where noted. `list` (and `check`): the helper stops an index refresh after **60 s** without output, and bounds the simulated upgrade at a fixed **60 s**, so a step that hangs is killed rather than orphaned holding the lock; the backend stops the helper after **90 s** without its output, which each step's bound ends inside. `upgrade`: stopped after **15 min** without output from apt. A stopped run fails, saying it printed nothing for that long. The check (with the package refresh, one shared run) and the upgrade run as server jobs; each upgrade output line is the job's progress.
+**Timeouts (settled 2026-11-13, CODING-RULES §6).** On inactivity, no total bound, except where noted. `list` (and `check`): the helper stops an index refresh after **60 s** without output, and bounds the simulated upgrade at a fixed **60 s**, so a step that hangs is killed rather than orphaned holding the lock; the backend stops the helper after **90 s** without its output, which each step's bound ends inside. `upgrade`: stopped after **15 min** without output from apt. A stopped run fails, saying it printed nothing for that long. The check (one shared run) and the upgrade run as server jobs; each upgrade output line is the job's progress.
 
 ### Concurrency and lock contention
 
@@ -263,11 +263,9 @@ apt/dpkg serialize their work via lock files, so only one package-manager op can
 ### Caching
 
 `getCachedPackages()` keeps the most recent `list` result in memory across calls. It is populated by:
-- The background hourly checker (which now uses the `list` op, primed ~30s after backend boot).
-- Any successful `check` (same apt invocation produces both count + list).
-- Any non-cached `GET /packages?refresh=1`.
+- Any successful `check` (same apt invocation produces both count + list), the hourly one included (~30s after backend boot).
 
-Cleared on successful `upgrade`. The cache is in-memory only — backend restart loses it; the next background tick repopulates within 30s.
+Emptied on successful `upgrade` (its time becomes `checkedAt`). The cache is in-memory only — backend restart loses it; the next background tick repopulates within 30s.
 
 ### Stats SSE fields
 
@@ -286,4 +284,4 @@ Cleared on successful `upgrade`. The cache is in-memory only — backend restart
 
 `wisp-os-update` uses apt (Wisp hosts run Debian or Ubuntu). The script is invoked via `sudo`.
 
-A **background hourly check** runs automatically (first check after 30s delay). It uses the `list` op so the package cache is primed for free. If a user-triggered op is already in flight when the timer fires, the background tick is skipped — the running op's result populates the same caches.
+A **background hourly check** runs automatically (first check after 30s delay), armed only where the platform can check (not on the macOS dev stub). Its trigger lives in app glue (`lib/updateChecks.js`, with the image update check's), and it starts the same shared `os-update-check` job as the route, through the job starter: it is in the tray and in `GET /api/jobs`. It uses the `list` op so the package cache is primed for free. If a check is already running when the timer fires, the tick joins it; while an upgrade runs, the tick is refused (`UPDATE_BUSY`, logged) — the running op's result populates the same caches.

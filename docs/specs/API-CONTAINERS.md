@@ -20,7 +20,7 @@ Live updates arrive on the `containers` topic of `GET /api/events` (see [Events 
 
 ### POST /api/containers · `admin`
 
-Create a new container (async job with image pull). The container is **defined in containerd but not started** (no task, no CNI setup yet) so mounts and settings can be configured before **Start**.
+Create a new container: a [job](API.md#job-routes) with the image pull, on `GET /api/jobs/:jobId/progress`. Its subject is the new name, whose [operation lock](CONTAINERS.md#per-container-operation-lock) it holds for the whole job. The container is **defined in containerd but not started** (no task, no CNI setup yet) so mounts and settings can be configured before **Start**.
 
 **Body:** `{ name, image, iconId?, app?, appConfig? }`
 
@@ -30,15 +30,13 @@ Optional `app` is an app registry ID (e.g. `"caddy-reverse-proxy"`) — creates 
 
 On create, the server writes defaults in `container.json` (empty `mounts`, bridge `network` with a generated MAC and the default container parent bridge, `localDns: true`, etc.). Use **PATCH** to change command, resources, env, mounts, and network before starting.
 
-**202:** `{ jobId: "uuid", title: string }` — `title` is e.g. `Create <name>` | **409:** `CONTAINER_EXISTS` — the name is taken in containerd or on disk | **422:** `INVALID_CONTAINER_NAME` | **503:** `NO_CONTAINERD` — containerd cannot be reached, so the name was not checked and nothing was created
+**202:** `{ jobId: "uuid", title: string }` — `title` is e.g. `Create <name>`; `done` result: `{ name }` | **409:** `CONTAINER_EXISTS` — the name is taken in containerd or on disk; `CONTAINER_BUSY` while another job holds that name's lock | **422:** `INVALID_CONTAINER_NAME` | **503:** `NO_CONTAINERD` — containerd cannot be reached, so the name was not checked and nothing was created
 
-### GET /api/containers/create-progress/:jobId · `read`
-
-SSE stream for container creation progress. Events: `{ step: "validating"|"using-local"|"pulling"|"pulled"|"creating"|"created"|"done"|"error", ... }`
+Progress events: `{ step: "validating"|"using-local"|"pulling"|"pulled"|"creating"|"created", ... }`, then `done` or `error`.
 
 The `using-local` step replaces `pulling`/`pulled` when the exact literal `image` in the request body already exists in containerd's `wisp` namespace (e.g. an operator pre-loaded it with `ctr -n wisp image import`, or the Create Container form's picker selected it verbatim). In that case the backend skips ref normalization and the Transfer pull entirely, so the sequence is `validating` → `using-local` → `creating` → `created` → `done`. For registry-named refs (`nginx:latest` etc.) the sequence is unchanged: `validating` → `pulling` → `pulled` → `creating` → `created` → `done`.
 
-`created` (`{ step, name, imageDigest }`) means the containerd definition exists; it is not terminal — an app container still writes its config files after it, and a failure there rolls the container back and ends the job with `error`. The terminal `{ step: "done", name }` comes only from job completion.
+`created` (`{ step, name, imageDigest }`) means the containerd definition exists; it is not terminal — an app container still writes its config files after it, and a failure there rolls the container back and ends the job with `error`. The terminal `{ step: "done", result: { name } }` comes only from job completion.
 
 ### GET /api/containers/images · `read`
 
@@ -52,7 +50,7 @@ List OCI images in the containerd `wisp` namespace (same store used when creatin
 
 Remove an image from containerd. Query parameter **`ref`** (required): the image's name exactly as `GET /api/containers/images` lists it (e.g. `docker.io/library/nginx:latest`, or a local-only `myapp:v1`). It is not normalized — a short ref only deletes an image listed under that literal name.
 
-**202:** `{ jobId, title }` — a [job](API.md#job-routes) (the delete waits for containerd's garbage collection, up to 2 min); `done`: `{ ref }`
+**202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress` (the delete waits for containerd's garbage collection, up to 2 min); `done` result: `{ ref }`
 
 **404:** `CONTAINER_IMAGE_NOT_FOUND`
 
@@ -66,23 +64,19 @@ Remove an image from containerd. Query parameter **`ref`** (required): the image
 
 Start an image update check in the background. **Body:** `{ ref?: string }` — when `ref` is omitted (or empty) a bulk check runs over every image in the library; when `ref` is given, only that image is checked.
 
-For each image, the current top-level digest is recorded, the image is re-pulled via the Transfer service (idempotent), and the new digest is compared. Nothing is written to `container.json`: `updateAvailable` is derived per running/paused container from its stored `imageDigest` vs. the library digest. The check ends by refreshing the image-meta sidecar and the container list (pushed on the `containers` SSE topic) before the job's `done` event, so the badge is visible when the job completes. The hourly sweep and MCP `check_image_updates` run the same check. See CONTAINERS.md → *Image updates*.
+For each image, the current top-level digest is recorded, the image is re-pulled via the Transfer service (idempotent), and the new digest is compared. Nothing is written to `container.json`: `updateAvailable` is derived per running/paused container from its stored `imageDigest` vs. the library digest. The check ends by refreshing the image-meta sidecar and the container list (pushed on the `containers` SSE topic) before the job's `done` event, so the badge is visible when the job completes. The hourly sweep and MCP `check_image_updates` start the same job kind (`container-image-update-check`). See CONTAINERS.md → *Image updates*.
 
-**202:** `{ jobId, title }` — a [job](API.md#job-routes). Subscribe to `GET /api/containers/images/check-updates/:jobId` for progress.
+**202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`. **Shared** ([API.md → Background jobs](API.md#background-jobs)): while a check runs, whatever its scope (a single image or all of them) and whatever started it, a start answers the running job's `{ jobId, title }` and starts nothing — a single-image check sent during a bulk one joins the bulk one.
 
-### GET /api/containers/images/check-updates/:jobId · `read`
-
-SSE stream for the check-updates job. Events:
+Events:
 
 - `{ step: "checking", ref, index, total }` — check is starting on this image (bulk: index within total; single: 1/1).
 - `{ step: "unchanged", ref }` — digest did not change.
 - `{ step: "updated", ref, oldDigest, newDigest }` — the registry returned new content; layers were downloaded.
-- `{ step: "skipped", ref, reason }` — pull failed (local-only ref, unreachable registry, auth required, etc.); the sweep continues.
+- `{ step: "skipped", ref, error, detail }` — pull failed (local-only ref, unreachable registry, auth required, etc.); `error` and `detail` are the [error body](ERROR-HANDLING.md#the-error-body) of the failure; the sweep continues.
 - `{ step: "flagged-container", name }` — this running/paused container now reads `updateAvailable: true`.
-- `{ step: "done", checked, updated, flaggedContainers, lastCheckedAt }` — terminal.
+- `{ step: "done", result: { checked, updated, flaggedContainers, lastCheckedAt } }` — terminal.
 - `{ step: "error", error, detail }` — terminal; unexpected failure (e.g. containerd disconnected mid-sweep). Single-image failures use `skipped` instead.
-
-**404:** `JOB_NOT_FOUND` — job not found / expired (TTL 5 min after terminal).
 
 ### GET /api/containers/images/update-status · `read`
 
@@ -149,25 +143,25 @@ Rules: a brand-new key with `secret: true` requires an explicit `value` (otherwi
 
 Delete a container. Query param: `deleteFiles` (default `true`). With `deleteFiles=false` the container directory keeps only `files/` (mount data) — `container.json`, run logs and the rest are removed, so the container disappears from the list. Creating a container with the same name then fails with **409** `CONTAINER_EXISTS` until that directory is moved or removed.
 
-**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_BUSY`
+**202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_BUSY`
 
 ### POST /api/containers/:name/start · `admin`
 
 Start a stopped container.
 
-**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_ALREADY_RUNNING`, `CONTAINER_BUSY`
+**202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_ALREADY_RUNNING`, `CONTAINER_BUSY`
 
 ### POST /api/containers/:name/stop · `admin`
 
 Stop a running container (SIGTERM + grace period). On a stopped container with a restart-policy restart scheduled, cancels that restart.
 
-**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name, restartCancelled: boolean }` — `restartCancelled: true` when a scheduled restart was cancelled | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_NOT_RUNNING` (not running and nothing scheduled), `CONTAINER_BUSY`
+**202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name, restartCancelled: boolean }` — `restartCancelled: true` when a scheduled restart was cancelled | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_NOT_RUNNING` (not running and nothing scheduled), `CONTAINER_BUSY`
 
 ### POST /api/containers/:name/restart · `admin`
 
 Restart a container (stop + start).
 
-**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_BUSY`
+**202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }` | **404:** `CONTAINER_NOT_FOUND` | **409:** `CONTAINER_BUSY`
 
 ### POST /api/containers/:name/kill · `admin`
 
@@ -222,7 +216,7 @@ Update one mount by its current storage **`name`** (URL segment). **Body:** opti
 
 Remove one mount and delete its `files/<mountName>` backing store (tmpfs has no backing store; its row is removed config-only).
 
-**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **409:** `CONTAINER_BUSY` | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
+**202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ requiresRestart: boolean }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **409:** `CONTAINER_BUSY` | **422:** `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
 
 ### Mount backing store (`files/<mountName>`)
 
@@ -244,7 +238,7 @@ Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an exis
 
 Multipart: one file part. Mount must have **`type: "directory"`** (Local, not storage-sourced). Once the upload is received and its entry paths pass the zip-slip check (**`unzip -Z1`**), the extract is a [job](API.md#job-routes): it clears `files/<mountName>/` and extracts the zip with the system **`unzip`** binary, holding the container's operation lock.
 
-**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name, mount }` | **409:** `CONTAINER_BUSY` | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged) | **Job errors:** `CONTAINER_ZIP_EXTRACT_TIMEOUT` (the extract made no progress for its bound), `CONTAINER_ZIP_INVALID` (unzip failed)
+**202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name, mount }` | **409:** `CONTAINER_BUSY` | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged) | **Job errors:** `CONTAINER_ZIP_EXTRACT_TIMEOUT` (the extract made no progress for its bound), `CONTAINER_ZIP_INVALID` (unzip failed)
 
 ### GET /api/containers/:name/mounts/:mountName/content · `admin`
 
@@ -274,7 +268,7 @@ Create an empty file (0 bytes) or empty directory according to the mount **`type
 
 Remove the backing file or directory tree for that mount. The mount row remains in `container.json` until **DELETE** `/mounts/:mountName` or **PATCH** replaces **`mounts`**.
 
-**202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name, mount }` | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** `CONTAINER_MOUNT_TYPE_MISMATCH` (tmpfs), `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
+**202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name, mount }` — the job holds the container's [operation lock](CONTAINERS.md#per-container-operation-lock) | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **409:** `CONTAINER_BUSY` | **422:** `CONTAINER_MOUNT_TYPE_MISMATCH` (tmpfs), `APP_CONFIG_ONLY` on an app container's mount (see CUSTOM-APPS.md § Mount content routes)
 
 ### POST /api/containers/:name/services · `admin`
 

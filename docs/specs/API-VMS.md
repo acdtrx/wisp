@@ -36,7 +36,7 @@ List all VMs with summary info.
 
 ### POST /api/vms · `admin`
 
-Create a new VM. Returns a job ID; monitor progress via SSE.
+Create a new VM. A [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; its subject is the new name, whose [operation lock](BACKUPS.md#per-vm-operation-lock) it holds for the whole job.
 
 - **Body:**
 
@@ -102,18 +102,12 @@ Create a new VM. Returns a job ID; monitor progress via SSE.
 - **`cloudInit.enabled`:** Optional; default is on. If `false`, cloud-init is skipped during create (no seed ISO, no `sde`, no `cloud-init.json`).
 
 - **202:** `{ jobId: string, title: string }` — `title` is the display label for the background job (e.g. `Create <name>`)
-- **409:** `{ error, detail }` — `VM_EXISTS` when a VM with that name is defined; `VM_DIR_EXISTS` when `<vmsPath>/<name>/` already exists (e.g. left by *Delete VM, keep disks*); `detail` says so, the path redacted (`<path>`). Checked before the job starts; nothing is created.
+- **Progress events:** `{ step, ... }` — `step` includes `validating`, `copying` (may include `percent`), `resizing`, `creating-disk`, `cloudinit`, `defining`.
+- **`done` result:** `{ name }` — the new VM's name
+- **409:** `{ error, detail }` — `VM_EXISTS` when a VM with that name is defined; `VM_DIR_EXISTS` when `<vmsPath>/<name>/` already exists (e.g. left by *Delete VM, keep disks*); `detail` says so, the path redacted (`<path>`); `VM_BUSY` while another job holds that name's lock (e.g. a create or restore as new to the same name). Checked before the job starts; nothing is created.
 - **422:** `{ error, detail }` — `INVALID_VM_NAME` when name fails `validateVMName`; VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
 
 The body schema is **`additionalProperties: false`**. With Fastify's default Ajv (`removeAdditional: true`), unknown keys are silently stripped before the handler runs — they never reach `createVM`. Only schema-level violations (wrong type, missing required field) return HTTP 400 `VALIDATION_FAILED`.
-
-### GET /api/vms/create-progress/:jobId · `read`
-
-SSE stream for VM creation progress (see [ERROR-HANDLING.md](ERROR-HANDLING.md) for job SSE shapes).
-
-- **Progress events:** `{ step, ... }` — `step` includes `validating`, `copying` (may include `percent`), `resizing`, `creating-disk`, `cloudinit`, `defining`. The only `done` is the job completion's `{ step: "done", name }`.
-- **Completion (from job store):** `{ step: "done", name: "<vmName>" }`
-- **Failure (terminal):** `{ step: "error", error: string, detail: string }` — then the stream closes.
 
 ### GET /api/vms/:name · `read`
 
@@ -139,7 +133,7 @@ Update VM configuration.
 Delete a VM.
 
 - **Query:** `?deleteDisks=true|false` — whether to also delete disk images and VM directory
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name }`
+- **202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }`
 - **404:** `VM_NOT_FOUND`
 - **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 
@@ -151,7 +145,7 @@ Raw libvirt domain XML (for debugging/inspection).
 
 ### POST /api/vms/:name/start · `admin`
 
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name }`
+- **202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }`
 - **404:** `VM_NOT_FOUND`
 - **409:** `VM_ALREADY_RUNNING`; `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 - **Job errors:** `LIBVIRT_ERROR`
@@ -166,8 +160,8 @@ Graceful shutdown (ACPI).
 
 Immediate force stop (destroy).
 
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name }`
-- **404:** `VM_NOT_FOUND` | **409:** `VM_NOT_RUNNING`
+- **202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }`
+- **404:** `VM_NOT_FOUND` | **409:** `VM_NOT_RUNNING`; `VM_BUSY` — another operation on this VM holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 - **Job errors:** `LIBVIRT_ERROR`
 
 ### POST /api/vms/:name/reboot · `admin`

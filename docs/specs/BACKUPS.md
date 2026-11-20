@@ -104,9 +104,9 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
 ## Creating a Backup
 
 1. Client sends `POST /api/vms/:name/backup` with `destinationIds` (e.g. `["local"]` or `["local", "<backupMountId>"]`); defaults to `["local"]` when omitted. Only `local` and the single configured `backupMountId` are accepted — any other id returns 422 `BACKUP_DEST_UNKNOWN`.
-2. Backend refuses a VM that is not stopped with **409** `VM_MUST_BE_OFFLINE` in the request itself — no job is created and no attempt is recorded (vmManager's `createBackup` re-checks inside the job, covering a VM started in between)
-3. Backend resolves paths from `backupLocalPath` and, when requested, the mount referenced by `backupMountId` (with mount check / auto-mount for SMB)
-4. The VM's [operation lock](#per-vm-operation-lock) is taken (**409** `VM_BUSY` if another locked operation on this VM — start, backup, delete, an edit — is running) and a background job is created (returns `jobId`)
+2. The VM's [operation lock](#per-vm-operation-lock) is taken by the job starter (**409** `VM_BUSY` if another locked operation on this VM — start, backup, delete, an edit — is running)
+3. Under the lock, before any job exists, the backend refuses a missing VM (**404** `VM_NOT_FOUND`) and one that is not stopped (**409** `VM_MUST_BE_OFFLINE`) in the request itself — no job is created and no attempt is recorded (vmManager's `createBackup` re-checks inside the job), and resolves paths from `backupLocalPath` and, when requested, the mount referenced by `backupMountId` (with mount check / auto-mount for SMB). A refusal releases the lock.
+4. The background job (kind `vm-backup`, subject the VM) is created (returns `jobId`) and holds the lock until it ends
 5. For each destination path, in order:
    - Create backup directory `<dest>/vms/<vmName>/<timestamp>/` — exclusively: if that directory already exists (a second backup within the same second) the destination fails with `BACKUP_EXISTS` rather than writing into another run's backup
    - Save domain XML
@@ -114,7 +114,7 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
    - Copy NVRAM file (if present)
    - Copy cloud-init config (if present — absent means the VM has no cloud-init; any other read failure fails the backup). The seed ISO is not copied ([Cloud-init seed ISO](#cloud-init-seed-iso))
    - Write manifest.json — **last**; its presence is what makes the directory a complete backup
-6. Progress is reported via SSE — see [Progress Tracking](#progress-tracking)
+6. The attempt is recorded ([Backup attempt status](#backup-attempt-status)); then the job ends with `done`, result `{ timestamp }`. Progress is reported via SSE — see [Progress Tracking](#progress-tracking)
 
 **Failure cleanup:** any error while writing a destination's backup (disk full, SMB share dropped, unreadable source) removes the directory that run created and fails the job; destinations already finished stay complete and listed. If even the removal fails (destination gone), the leftover directory has no `manifest.json` and is never listed or restorable.
 
@@ -130,7 +130,7 @@ A configured network backup path that is not mounted is omitted from the scan (s
 
 `POST /api/backups/restore` with `{ destinationId, vmName, timestamp, newVmName }` — `(destinationId, vmName, timestamp)` are typically copied from a list row:
 
-0. Refuse with **409** if `newVmName` is taken — `VM_EXISTS` (a libvirt domain) or `VM_DIR_EXISTS` (`<vmsPath>/<newVmName>/` already exists, e.g. kept by *Delete VM, keep disks*). The restore never writes into a directory it did not create.
+0. Refuse with **409** if `newVmName` is taken — `VM_EXISTS` (a libvirt domain) or `VM_DIR_EXISTS` (`<vmsPath>/<newVmName>/` already exists, e.g. kept by *Delete VM, keep disks*) — or `VM_BUSY` while another job holds that name's [lock](#per-vm-operation-lock). The restore never writes into a directory it did not create. Steps 0–3 run in the request, under the new name's lock, before the job (kind `vm-restore`) exists; steps 4–6 are the job, which holds the lock until it ends with `done`, result `{ name }`.
 1. Read `manifest.json` and `domain.xml` from the backup (both required — a directory without a manifest is incomplete, 422 `BACKUP_INVALID`)
 2. Build the domain XML to define: new name, new UUID, new MAC addresses, and **path updates** so every file reference under the original VM directory (including block disks, CD-ROM paths such as cloud-init, UEFI NVRAM, and optional loader paths under that directory) points at `<vmsPath>/<newVmName>/`. The original directory is matched both as **`manifest.vmBasePath`** and as `<vmsPath>/<backed-up name>` (they differ when `vmsPath` runs through a symlink — `vmBasePath` is realpath'd, the XML is not); older backups without either fall back to the first disk's directory. Every disk is mapped to `<vmsPath>/<newVmName>/<its file name>`, wherever it lived (e.g. a library image attached directly).
 3. **Validate** that XML and the payload files ([Archive validation (VM backups)](#archive-validation-vm-backups)) — before anything is written
@@ -163,7 +163,7 @@ Where it can fail: if a backup was produced under one `vmsPath` and you later mo
 
 ## Restoring a container in place
 
-A container backup can also be restored **over the live container it was taken from** — same name, identity preserved — via `POST /api/container-backups/restore-in-place`. VMs have no restore-in-place ([Scope](#scope-settled-2026-10-16)). It runs as a background job (kind `container-restore`, title `Restore <name>`) streaming progress over `/api/containers/backup-progress/:jobId`, and accepts `safetyBackup` (default `true`): the job first takes a normal manual-origin backup of the *current* state to the same destination (progress steps prefixed `safety-`, mapped to 0–45% of the job's bar), then restores (45–100%). If the safety backup fails, the job aborts before touching the live container. The job holds the container's [operation lock](CONTAINERS.md#per-container-operation-lock) from creation to settle: the request is rejected with **409** `CONTAINER_BUSY` while a backup, another restore, a start or any other locked operation on the container is running, and nothing else can start, edit or back it up while the files are replaced.
+A container backup can also be restored **over the live container it was taken from** — same name, identity preserved — via `POST /api/container-backups/restore-in-place`. VMs have no restore-in-place ([Scope](#scope-settled-2026-10-16)). It runs as a background job (kind `container-restore`, title `Restore <name>`) streaming progress over `GET /api/jobs/:jobId/progress`, and accepts `safetyBackup` (default `true`): the job first takes a normal manual-origin backup of the *current* state to the same destination (progress steps prefixed `safety-`, mapped to 0–45% of the job's bar), then restores (45–100%). If the safety backup fails, the job aborts before touching the live container. The job holds the container's [operation lock](CONTAINERS.md#per-container-operation-lock) from creation to settle, and the container's existence and stopped state are checked under it before the job exists: the request is rejected with **409** `CONTAINER_BUSY` while a backup, another restore, a start or any other locked operation on the container is running, and nothing else can start, edit or back it up while the files are replaced.
 
 `restoreContainerBackupInPlace` (containerManager): the target is the backup's manifest name, must still exist on disk (404 `CONTAINER_NOT_FOUND`), and must be stopped (409 `CONTAINER_MUST_BE_STOPPED` — the directory is swapped out from under any rootfs mounts, so pausing is not enough; a lingering STOPPED task record is cleaned up like backup does). The archive is extracted to a staging dir and validated (single top-level dir matching the name, parsable `container.json`, mounts/devices per *Archive validation* below) *before* the live directory is moved aside and the staged one renamed in; a failed swap rolls the old directory back. Then:
 
@@ -182,7 +182,7 @@ The on-disk backup tree only records successes (a failed backup removes its part
 }
 ```
 
-Recorded on every completion of a manual backup (both route handlers), a scheduled backup (the scheduler), and the safety backup inside a container restore-in-place job. It is a last-outcome cache, not history — safe to delete, self-healing. Deleting a container drops its entry *(settled 2026-11-12)*, so a deleted workload's failed last attempt doesn't linger in the panel.
+Recorded on every completion of a manual backup (both route handlers), a scheduled backup (the scheduler), and the safety backup inside a container restore-in-place job — always inside the job, before its `done`. It is a last-outcome cache, not history — safe to delete, self-healing. Deleting a container drops its entry *(settled 2026-11-12)*, so a deleted workload's failed last attempt doesn't linger in the panel.
 
 The map is pushed on the **`backups` topic of `GET /api/events`**: a snapshot on connect, then a frame after every attempt record and every backup delete/prune (`notifyBackupsChanged`). The frontend's Backups panel uses each frame both for the status badges and as its cue to refetch the backup lists — there is no polling.
 
@@ -196,12 +196,12 @@ The map is pushed on the **`backups` topic of `GET /api/events`**: a snapshot on
 
 ## Progress Tracking
 
-Backup creation and container restore-in-place run as background jobs with SSE-based progress streaming (restore-as-new is a synchronous request):
+Backup creation, container restore-in-place and restore as new (VM and container) run as background jobs with SSE-based progress streaming, like every job ([API.md → Background jobs](API.md#background-jobs)):
 
-- **Job store** manages job state (pending, running, complete, failed)
-- **SSE stream** at `/api/vms/backup-progress/:jobId` (VMs) or `/api/containers/backup-progress/:jobId` (containers) pushes events
+- **The one job store** keeps each job's state (`running`, `done`, `error`); the one starter creates it
+- **SSE stream** at `GET /api/jobs/:jobId/progress`, for every kind, pushes events
 - Events include: step name, percent complete, current file being processed
-- The terminal event is `done` (emitted only by the job store on job completion) or `error`; the frontend closes the stream on either
+- The terminal event is `{ step: "done", result }` (emitted only by the job store on job completion; a backup's result is `{ timestamp }`, a restore's is listed in [API-BACKUPS.md](API-BACKUPS.md)) or `error`; the frontend closes the stream on either
 - **Multi-destination backups** (VM and container, manual and scheduled — one shared runner, `backupToEachDestination` in `lib/backupDestinations.js`): each destination owns an equal slice of the job's 0–100% bar, `currentFile` is prefixed with the destination label (`Local: Copying disk0.qcow2`), and a finished destination emits `{ step: "destination-done", destinationId, percent, currentFile }` — never `done`; managers emit no `done` of their own. A later destination's failure therefore still reaches the client as the job's `error` (message prefixed with that destination's label).
 - Byte-driven progress (disk gzip, container tar) is emitted once per integer percent change, and a stream that (re)connects mid-job replays a short history — see [API.md → Job store contract](API.md#background-jobs).
 
@@ -211,9 +211,12 @@ Backup creation and container restore-in-place run as background jobs with SSE-b
 
 | Operation | Route | Held for |
 |---|---|---|
-| Backup | `POST /api/vms/:name/backup` | the whole background job |
-| Start | `POST /api/vms/:name/start` | the call |
-| Delete | `DELETE /api/vms/:name` | the call |
+| Create (the new name) | `POST /api/vms` | the whole job |
+| Restore as new (the new name) | `POST /api/backups/restore` | the whole job |
+| Backup | `POST /api/vms/:name/backup` | the whole job |
+| Start | `POST /api/vms/:name/start` | the whole job |
+| Force stop | `POST /api/vms/:name/force-stop` | the whole job |
+| Delete | `DELETE /api/vms/:name` | the whole job |
 | Any config edit, rename included | `PATCH /api/vms/:name` | the call |
 | Disk attach (new or existing image) | `POST /api/vms/:name/disks` | the call |
 | Disk detach | `DELETE /api/vms/:name/disks/:slot` | the call |
@@ -223,9 +226,9 @@ Backup creation and container restore-in-place run as background jobs with SSE-b
 | USB attach / detach | `POST /api/vms/:name/usb`, `DELETE /api/vms/:name/usb/:id` | the call |
 | Cloud-init save / remove | `PUT` / `DELETE /api/vms/:name/cloudinit` | the call |
 
-This closes e.g. a Start landing while a backup reads the disks, two backups of one VM interleaving, a delete under a running backup, a rename moving the VM directory out from under a backup reading it, or a disk / NIC / cloud-init edit changing the definition or files a backup is copying. **Every PATCH locks**, not only a rename: each one redefines the domain from its XML, and a field-by-field split (icon and Local DNS are metadata-only) would be one more rule to keep right for no gain — the lock is uncontended outside a backup. **CD-ROM and USB changes lock in every VM state**: on a running VM they hot-plug, but with `LIVE + CONFIG` so the persistent definition changes too; and the only long holder, backup, needs a stopped VM, so a running VM never actually waits on it. The other lifecycle actions (stop, force-stop, reboot, suspend, resume) don't take it — they apply to a running VM and change no definition or disk file. Create and restore-as-new take no lock (there is no VM by that name yet); the name is reserved by their exclusive directory creation, and a rename reserves its target the same way ([VM-MANAGEMENT.md → Renaming](VM-MANAGEMENT.md#renaming)). Not covered: the state migrations, which run at the backend's start before anything else does ([UPDATES.md → State migrations](UPDATES.md#state-migrations)).
+This closes e.g. a Start landing while a backup reads the disks, two backups of one VM interleaving, a delete under a running backup, a rename moving the VM directory out from under a backup reading it, or a disk / NIC / cloud-init edit changing the definition or files a backup is copying. **Every PATCH locks**, not only a rename: each one redefines the domain from its XML, and a field-by-field split (icon and Local DNS are metadata-only) would be one more rule to keep right for no gain — the lock is uncontended outside a backup. **CD-ROM and USB changes lock in every VM state**: on a running VM they hot-plug, but with `LIVE + CONFIG` so the persistent definition changes too; and the only long holder, backup, needs a stopped VM, so a running VM never actually waits on it. A job takes the lock through the job starter, before its checks run, and holds it until the job ends (released before its last event, so an action taken on `done` never meets a stale `VM_BUSY`). The other lifecycle actions (stop, reboot, suspend, resume) don't take it — they apply to a running VM and change no definition or disk file. *(settled 2026-11-20)* A job that creates a workload holds the lock of the name it creates: create and restore as new hold the new name's lock for the whole job, so nothing starts, edits or backs up that name while its directory is populated; their exclusive directory creation still reserves the name on disk, and a rename reserves its target the same way ([VM-MANAGEMENT.md → Renaming](VM-MANAGEMENT.md#renaming)). Force stop is a job holding the lock too (settled 2026-11-20, ending its exemption of 2026-10-16). Not covered: the state migrations, which run at the backend's start before anything else does ([UPDATES.md → State migrations](UPDATES.md#state-migrations)).
 
-The frontend mirrors it from the background-jobs list: while a `backup` job for the VM runs, Start, Delete and every editor on the VM page that would hit a guarded route are disabled ([UI.md → VM Overview Panel](UI.md#vm-overview-panel)); a 409 that still gets through (another tab, the API) surfaces as that action's error. Rejected: deriving busy state from the job store's titles — start, delete and the edits are not jobs, so they would have nothing to hold.
+The frontend mirrors it from the jobs list (`GET /api/jobs`): while any running job has the VM as its `subject` — a backup, a start, a force stop, a delete, … — Start, Delete and every editor on the VM page that would hit a guarded route are disabled, the job's title the reason ([UI.md → VM Overview Panel](UI.md#vm-overview-panel)); a 409 that still gets through (another tab, the API, an edit holding the lock for its call) surfaces as that action's error. *(settled 2026-11-20)* Busy is read from the job's subject, never from its title: no code, on the server or in the client, compares a job's title.
 
 ## Container Backups
 
@@ -262,7 +265,7 @@ Owner-only like every backup: directory `0700`, both files `0600` ([Backup file 
 
 ### Creating a container backup
 
-`POST /api/containers/:name/backup` with `{ destinationIds }` — same body shape as the VM backup route; both routes resolve ids via the shared `lib/backupDestinations.js` helper (`'local'` → `backupLocalPath`; the configured `backupMountId` → its mount path, auto-mounting SMB; unknown ids → 422 `BACKUP_DEST_UNKNOWN`, mount failure → 503 `BACKUP_MOUNT_FAILED`). The job holds the container's [operation lock](CONTAINERS.md#per-container-operation-lock) until it settles: a second backup, or any other locked operation (start, stop, edit, restore, …), of the same container meanwhile returns **409** `CONTAINER_BUSY`, and the backup itself is refused with it while one of those runs.
+`POST /api/containers/:name/backup` with `{ destinationIds }` — same body shape as the VM backup route; both routes resolve ids via the shared `lib/backupDestinations.js` helper (`'local'` → `backupLocalPath`; the configured `backupMountId` → its mount path, auto-mounting SMB; unknown ids → 422 `BACKUP_DEST_UNKNOWN`, mount failure → 503 `BACKUP_MOUNT_FAILED`). The job holds the container's [operation lock](CONTAINERS.md#per-container-operation-lock) until it settles: a second backup, or any other locked operation (start, stop, edit, restore, …), of the same container meanwhile returns **409** `CONTAINER_BUSY`, and the backup itself is refused with it while one of those runs. A missing container is refused under the lock, before the job exists, with **404** `CONTAINER_NOT_FOUND`.
 
 The task state decides how the archive is taken (`freezeForBackup` in `containerManagerBackup.js`):
 
@@ -274,13 +277,13 @@ The task state decides how the archive is taken (`freezeForBackup` in `container
 
 The backup directory `<dest>/containers/<name>/<timestamp>/` is created **exclusively**, as for VMs: if it already exists (a second backup of the container within the same second) that destination fails with **409** `BACKUP_EXISTS` rather than writing into — or, on a later failure, removing — another run's backup. The pause happens as late as possible (after destination validation and dir creation) so the frozen window covers only measure + tar. If the archive or the manifest write fails, the partial backup dir is removed. The job spawns `tar -cf - <containerDir>`, pipes its stdout through Node's `createGzip()` and a bytes-counter `Transform` (driving percent against the pre-walked source size), then writes to `data.tar.gz`. After the archive is finalized, the manifest is written.
 
-Progress steps are `pausing → measuring → archiving → resuming → manifest` (the pause/resume steps are skipped for cold archives), then `destination-done` per destination; the terminal `done` comes only from job completion (see [Progress Tracking](#progress-tracking)). Events are emitted via the shared `backupJobStore` — same SSE consumer (`backgroundJobsStore` on the frontend, top-bar progress + modal mirror) as VM backups, just routed via `/api/containers/backup-progress/:jobId` and `JOB_KIND.CONTAINER_BACKUP`.
+Progress steps are `pausing → measuring → archiving → resuming → manifest` (the pause/resume steps are skipped for cold archives), then `destination-done` per destination; the terminal `done` comes only from job completion (see [Progress Tracking](#progress-tracking)). Events go through the one job store, on the one progress route — the same SSE consumer (`backgroundJobsStore` on the frontend, top-bar progress + modal mirror) as VM backups, kind `container-backup`.
 
 **Crash recovery:** if the backend dies mid-archive, the container stays frozen until the next backend boot, where `resumeStalePausedContainersAtBackendBoot` resumes any paused wisp-managed task (Wisp exposes no user-facing pause, so a paused task at boot can only be an interrupted backup). Runs before the autostart pass.
 
 ### Scheduled backups
 
-A daily scheduler (`lib/containerBackupScheduler.js`, app-glue — started/stopped from `index.js` alongside the update checkers) backs up every container whose `container.json` has **`autoBackup: true`** (toggle in the container's General section; default `false`).
+A daily scheduler (`lib/containerBackupScheduler.js`, app-glue — started/stopped from `index.js` alongside the hourly update checks) backs up every container whose `container.json` has **`autoBackup: true`** (toggle in the container's General section; default `false`).
 
 **Configuration** lives in `settings.backupSchedule` (**Host → Host Mgmt → Backup Scheduler**):
 
@@ -294,7 +297,7 @@ A daily scheduler (`lib/containerBackupScheduler.js`, app-glue — started/stopp
 
 **Firing semantics:** a 60-second tick fires when the configured time is crossed between two ticks (`target ∈ (lastTick, now]`), at most once per boundary. There is **no missed-window catch-up** — the server is assumed to run 24/7; if the backend was down (or the scheduler disabled) at the configured time, that day is skipped. The tick baseline is set at boot, so booting *after* today's time does not fire. A clock-backwards jump re-baselines instead of double-firing.
 
-**Run:** the run is `runScheduledBackups({ trigger })`, exported for manual invocation (ARCHITECTURE.md, Backend: events — mechanism decoupled from trigger) — it uses `settings.backupSchedule`'s destinations and retention whether or not the schedule is enabled; the tick is one trigger. At most one run is in flight whatever triggered it (a second call returns `false` and logs the skip), and every run logs its trigger and the backed-up / failed / skipped counts. Containers are processed **sequentially** (at most one container frozen at a time), each as a `CONTAINER_BACKUP` job in the shared `backupJobStore` — visible in `GET /api/background-jobs`, streamable via the normal progress SSE, and picked up by the frontend's page-load job rehydration (an already-open tab doesn't learn of a scheduler-started job until reload). A container whose [operation lock](CONTAINERS.md#per-container-operation-lock) is held (a manual backup, a start, a restore, …) is skipped (logged, counted as skipped); each scheduled backup holds the lock for its job. Destination resolution failure (e.g. unreachable SMB share) aborts the run with a warning — containers are never left paused because a destination was missing. Per-container failures are logged and the run continues.
+**Run:** the run is `runScheduledBackups({ trigger })`, exported for manual invocation (ARCHITECTURE.md, Backend: events — mechanism decoupled from trigger) — it uses `settings.backupSchedule`'s destinations and retention whether or not the schedule is enabled; the tick is one trigger. At most one run is in flight whatever triggered it (a second call returns `false` and logs the skip), and every run logs its trigger and the backed-up / failed / skipped counts. Containers are processed **sequentially** (at most one container frozen at a time), each a `container-backup` job started through the job starter — visible in `GET /api/jobs`, streamable on `GET /api/jobs/:jobId/progress`, and picked up by the frontend's page-load job rehydration (an already-open tab doesn't learn of a scheduler-started job until reload). A container whose [operation lock](CONTAINERS.md#per-container-operation-lock) is held (a manual backup, a start, a restore, …) is skipped (logged, counted as skipped); each scheduled backup holds the lock for its job. Destination resolution failure (e.g. unreachable SMB share) aborts the run with a warning — containers are never left paused because a destination was missing. Per-container failures are logged and the run continues.
 
 **Retention (GFS-lite, scheduled backups only):** after each successful backup, per container and per destination (`lib/backupRetention.js`):
 

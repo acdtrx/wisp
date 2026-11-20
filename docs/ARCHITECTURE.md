@@ -286,5 +286,7 @@ consumer, and nothing has called for more).
 - `mcp` — the MCP endpoint: tools over the same facades and glue as the routes, secrets
   masked ([`specs/MCP.md`](specs/MCP.md)).
 - App glue — auth and API tokens, settings, cloud-init, backups (scheduler, retention,
-  destinations), job stores, operation locks, the mDNS reconcilers, LAN discovery, the
-  home page and self-update.
+  destinations), the job store and its starter (`lib/jobs`: every job, whatever starts
+  it), operation locks, the update checks' jobs and their hourly trigger
+  (`lib/updateChecks.js`), the mDNS reconcilers, LAN discovery, the home page and
+  self-update.

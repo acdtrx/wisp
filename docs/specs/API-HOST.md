@@ -65,7 +65,7 @@ List Wisp-managed VLAN bridge definitions and eligible parent bridges.
 Create a managed VLAN bridge using netplan through the privileged `wisp-bridge` helper.
 
 - **Body:** `{ "baseBridge": "br0", "vlanId": 10 }`
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ "name": "br0-vlan10", "baseBridge": "br0", "vlanId": 10, "vlanInterface": "br0.10", "present": true }`
+- **202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ "name": "br0-vlan10", "baseBridge": "br0", "vlanId": 10, "vlanInterface": "br0.10", "present": true }`
 - **409:** `NETWORK_BRIDGE_EXISTS` — bridge already exists
 - **422:** `INVALID_NETWORK_BRIDGE_NAME`, `INVALID_NETWORK_BRIDGE_PARENT`, `INVALID_VLAN_ID`
 - **503:** `NETWORK_BRIDGE_UNAVAILABLE` — not supported on this platform
@@ -75,7 +75,7 @@ Create a managed VLAN bridge using netplan through the privileged `wisp-bridge` 
 
 Delete a managed VLAN bridge by name (removes Wisp netplan file, tears down live bridge/vlan interfaces, and reapplies netplan).
 
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name }`
+- **202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }`
 - **404:** `NETWORK_BRIDGE_NOT_FOUND` — managed bridge not found
 - **409:** `NETWORK_BRIDGE_IN_USE` — bridge is referenced by VM/container config
 - **Job errors:** `NETWORK_BRIDGE_UNAVAILABLE` — helper missing; `NETWORK_BRIDGE_APPLY_FAILED` — privilege failure, or `netplan apply` failed
@@ -166,26 +166,23 @@ Server-Sent Events stream of the host block-device list.
 
 ### POST /api/host/updates/check · `admin`
 
-Check for OS package updates. Uses an `apt-get -s upgrade` dry-run (excludes phased-only packages). Requires `/usr/local/bin/wisp-os-update` (installed by server setup). One shared run: a check or package refresh started while one runs joins it (the same `jobId`).
+Check for OS package updates. Uses an `apt-get -s upgrade` dry-run (excludes phased-only packages). Requires `/usr/local/bin/wisp-os-update` (installed by server setup). The one route that starts the check (settled 2026-11-20). One **shared** run ([API.md → Background jobs](API.md#background-jobs)): a start while a check runs, from this route, MCP or the hourly check, answers the running job's `{ jobId, title }` (the same `jobId`).
 
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ count: number }`; the package list is then in the cache (`GET /api/host/updates/packages`)
+- **202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ count: number }`; the package list is then read from `GET /api/host/updates/packages`
 - **409:** `UPDATE_BUSY` — an OS upgrade is running
 - **Job errors:** `UPDATE_BUSY` — the package manager is locked; `UPDATE_CHECK_UNAVAILABLE` — update script not configured, or a step stopped (see [HOST-MONITORING.md](HOST-MONITORING.md))
 
 ### GET /api/host/updates/packages · `read`
 
-Return the structured list of upgradable packages plus an estimated total download size. Uses `apt-get -s upgrade` to harvest `Inst …` lines and the `Need to get …` summary. Refreshes the cached `pendingUpdates` count and `updatesLastChecked` timestamp as a side-effect.
+What the last [check](#post-apihostupdatescheck--admin) (or upgrade) found: the structured list of upgradable packages plus an estimated total download size, harvested by the check from `apt-get -s upgrade`'s `Inst …` lines and its `Need to get …` summary. It only reads: it starts no job (settled 2026-11-20 — a read token can no longer start one).
 
-- **200:** `{ packages: [{ name: string, from: string|null, to: string }], downloadBytes: number }` — from the cache
-- **202:** `{ jobId, title }` — with `?refresh=1`, or no cache yet: the [check job](#post-apihostupdatescheck--admin) (started or joined); read the list again once it is done
-- **409:** `UPDATE_BUSY` — a refresh, or no cache yet, while an OS upgrade runs
-- **503:** `UPDATE_CHECK_UNAVAILABLE` — update script not configured
+- **200:** `{ packages: [{ name: string, from: string|null, to: string }], downloadBytes: number, checkedAt: string | null }` — `checkedAt` is the ISO 8601 time of the check the list comes from; before any check `{ packages: [], downloadBytes: 0, checkedAt: null }`
 
 ### POST /api/host/updates/upgrade · `admin`
 
 Install OS package updates. Each line apt prints is a progress event (`{ step: "upgrading", detail }`).
 
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ ok: true }`
+- **202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ ok: true }`
 - **409:** `UPDATE_BUSY` — a check or upgrade is already running
 - **Job errors:** `UPDATE_BUSY` — the package manager is locked; `UPDATE_CHECK_UNAVAILABLE` — update script not configured, the upgrade failed, or it printed nothing for its inactivity bound
 
@@ -204,9 +201,9 @@ Force an immediate self-update check. Which release is considered follows `updat
 
 ### POST /api/updates/install · `admin`
 
-A [job](API.md#job-routes): downloads + verifies + extracts the new release tarball (progress `{ step, percent? }`), writes the staging path to `/var/lib/wisp/updates/target`, reports `{ step: "restarting" }`, triggers `wisp-updater.service` via `sudo -n systemctl start --no-block` and ends with `done`: `{ targetVersion }`. The job's stream may end before `done` as the backend stops. The updater is a separate `Type=oneshot` systemd unit — it stops the backend as part of its first real step; the UI detects completion by polling `GET /api/host` for `wispVersion === targetVersion`. Updater progress is in journald (`journalctl -u wisp-updater.service`). `?force=1` overrides the active-jobs guard.
+A [job](API.md#job-routes): downloads + verifies + extracts the new release tarball (progress `{ step, percent? }`), writes the staging path to `/var/lib/wisp/updates/target`, reports `{ step: "restarting" }`, triggers `wisp-updater.service` via `sudo -n systemctl start --no-block` and ends with `done`, result `{ targetVersion }`. The job's stream may end before `done` as the backend stops. The updater is a separate `Type=oneshot` systemd unit — it stops the backend as part of its first real step; the UI detects completion by polling `GET /api/host` for `wispVersion === targetVersion`. Updater progress is in journald (`journalctl -u wisp-updater.service`). `?force=1` overrides the active-jobs guard.
 
-- **202:** `{ jobId, title }`
+- **202:** `{ jobId, title }` — a job on `GET /api/jobs/:jobId/progress`
 - **409:** `UPDATE_NOT_AVAILABLE` — no update available; `UPDATE_JOBS_ACTIVE` — other background jobs are running and `force=1` was not supplied; or `UPDATE_INSTALL_IN_PROGRESS` — an install is already in flight (not bypassed by `force`)
 - **Job errors:** download / verify / extract / unit-trigger failure
 
@@ -395,7 +392,7 @@ Update one mount by **`id`**. **Body:** partial fields (`label`, `mountPath`, `a
 
 Remove one mount from settings, unmounting it first. If it was **`backupMountId`**, that field is cleared.
 
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ mounts }` — the mounts after removal | **404:** `MOUNT_NOT_FOUND` | **409:** `MOUNT_IN_USE` — in use by a container
+- **202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ mounts }` — the mounts after removal | **404:** `MOUNT_NOT_FOUND` | **409:** `MOUNT_IN_USE` — in use by a container
 
 ### GET /api/host/mounts/status · `read`
 
@@ -423,4 +420,4 @@ Mount an SMB share by settings id. Disk mounts are mounted automatically on devi
 
 Unmount a mount by settings id.
 
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ id }` | **404:** `MOUNT_NOT_FOUND` | **409:** `MOUNT_NOT_MOUNTED`
+- **202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ id }` | **404:** `MOUNT_NOT_FOUND` | **409:** `MOUNT_NOT_MOUNTED`

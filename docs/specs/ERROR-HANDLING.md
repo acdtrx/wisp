@@ -361,11 +361,11 @@ answers **422** `INVALID_FILENAME`.
 
 - The one handler logs a 5xx at `error` with the whole error, and a 4xx that has a raw
   cause at `warn` with it. Other 4xx are not logged.
-- Background job failures are logged by the job store at **warn** (`Background job
-  failed` with the code, the message and the raw cause). The job's own failure path adds
-  a `log.error()` with the full error/stack only for unexpected failures — not for codes
-  that map to 4xx (`isExpectedAppError` in `lib/appErrors.js`, e.g. a
-  `VM_MUST_BE_OFFLINE` or `VM_BUSY` that a race let past the route's pre-check).
+- Background job failures are logged by the job starter as `Background job failed`:
+  at **warn** with the code, the message and the raw cause for codes that map to 4xx
+  (`isExpectedAppError` in `lib/appErrors.js`, e.g. a `VM_MUST_BE_OFFLINE` that a race
+  let past the pre-check), at **error** with the full error/stack for unexpected
+  failures.
 - A failed MCP tool call is logged at `warn` with the tool, the code and the raw cause.
 - DBus connection errors are logged and trigger automatic reconnection with backoff (see
   VM-MANAGEMENT.md); stream write errors (disk full, name collision) fail the job — never

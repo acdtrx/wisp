@@ -57,10 +57,12 @@ Check if a URL is reachable (HEAD request).
 
 ### POST /api/library/download · `admin`
 
-Start downloading a file from a URL. Returns job ID.
+Start downloading a file from a URL: a [job](API.md#job-routes) (kind `library-download`) on `GET /api/jobs/:jobId/progress`.
 
 - **Body:** `{ url: string }`
 - **202:** `{ jobId: string, title: string }` — a job; `title` matches the truncated URL display rule used in the UI. The finished download is announced like an upload
+- **Progress events:** `{ step: "progress", percent, loaded, total }` while downloading (`loaded` and `total` are `null` for the three named images below); the HAOS flow then sends one `{ step: "decompressing" }` when the download is complete and xz decompression starts (no percent — xz reports none, so the UI shows an indeterminate "Uncompressing…" until `done`).
+- **`done` result:** `{ name, type, size, modified }` — the same shape as a library file row
 - **422:** `INVALID_URL` — invalid URL (only HTTP/HTTPS allowed)
 
 ### POST /api/library/download-ubuntu-cloud · `admin`
@@ -80,11 +82,3 @@ Download latest Arch Linux x86_64 cloud image (qcow2) from the pkgbuild mirror.
 Download Home Assistant OS image.
 
 - **202:** `{ jobId: string, title: string }` — like `POST /api/library/download`
-
-### GET /api/library/download-progress/:jobId · `read`
-
-SSE stream for download progress.
-
-- **Progress events:** `{ step: "progress", percent, loaded, total }` while downloading; the HAOS flow then sends one `{ step: "decompressing" }` when the download is complete and xz decompression starts (no percent — xz reports none, so the UI shows an indeterminate "Uncompressing…" until `done`).
-- **Completion (from job store):** `{ step: "done", name, type, size, modified }` — same flattened shape as a successful library file row (no nested `result` object).
-- **Failure (terminal):** `{ step: "error", error: string, detail: string }`
