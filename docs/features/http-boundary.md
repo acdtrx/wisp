@@ -59,8 +59,11 @@ what each becomes.
 - **One kind per operation.** The image update check is one kind, whether started from the
   UI or through MCP.
 - **Every job is in the tray and readable through MCP**: `get_job` reads the one store.
-- **`POST /api/host/updates/packages/refresh` starts the package check.** The `GET` only
-  reads what the last check found. A read token can no longer start a job.
+- **`POST /api/host/updates/check` starts the package check**, as it does today, and is
+  the one route that does (settled 2026-11-20: the feature first named a second route,
+  `…/packages/refresh`, for what this one already did). `GET /api/host/updates/packages`
+  only reads what the last check found, with `checkedAt` (`null` before any check). A
+  read token can no longer start a job.
 - **The client follows a job one way**: `awaitJob`. A component that shows a job's
   progress reads that job's row from the store. `registerJob` with callbacks and the raw
   subscriptions go.
@@ -78,9 +81,14 @@ what each becomes.
   Today the VM side does none of these but one, and neither side removes the section
   assignment.
 - **The lock is taken in one place per kind of command**: by the job starter for a job,
-  and by one wrapper for an instant command. No route takes a lock itself. Every command
-  that changes a workload takes its lock; the builder lists the ones that take none today
-  (mount file upload, content write, mount data delete among them) as open points.
+  and by one wrapper for an instant command. No route takes a lock itself.
+- **One rule for VMs and containers** (settled 2026-11-20): every command that changes a
+  workload's state, definition, config or files takes its lock, for the call or for the
+  whole job. A job that creates a workload holds the lock of the name it creates. This
+  ends the exemptions settled on 2026-10-16 (a VM's stop, force-stop, reboot, suspend and
+  resume; create and restore as new; a container's mount content commands). A VM's stop
+  holds the lock only while the request is sent: a force-stop stays possible while a
+  shutdown is pending.
 
 ### Schemas
 
@@ -92,7 +100,8 @@ what each becomes.
 - **One declaration form** for every route, and one module for the schemas more than one
   route file uses (the job ack, the error body, a workload name).
 - **MCP tool arguments are validated** against each tool's own input schema, unknown keys
-  refused, with the same error shape.
+  refused, with the same error shape. `ajv` becomes a direct dependency of the backend
+  for it, at the major version Fastify uses (agreed 2026-11-20).
 - **A route without its schemas fails `npm run check`**, through the route report that
   already checks each route's access level.
 - **`routes/containers.js` and `routes/library.js` are rewritten** to this standard, and
@@ -100,9 +109,12 @@ what each becomes.
 
 ### Outbound requests
 
-- The two `fetch` calls outside `lib/downloads` (GitHub keys for cloud-init, OIDC
-  discovery) go through its SSRF-safe fetch. `npm run check` fails a `fetch` or an
-  `undici` import anywhere else in the backend.
+- `lib/downloads` is the one home for outbound requests, with two fetches (settled
+  2026-11-20). One is for URLs that come from user input and refuses private and loopback
+  addresses: the GitHub keys for cloud-init use it. The other is for an endpoint only the
+  operator sets, the OIDC issuer, and allows them, so an identity provider on the LAN
+  keeps working. `npm run check` fails a `fetch` or an `undici` import anywhere else in
+  the backend.
 
 ## What it changes in the docs
 
@@ -110,7 +122,7 @@ what each becomes.
   channels.
 - `specs/API.md`: the error body, Background jobs, Job routes.
 - `specs/API-VMS.md`, `API-CONTAINERS.md`, `API-BACKUPS.md`, `API-LIBRARY.md`,
-  `API-HOST.md`: the progress routes removed, the package refresh, and each route's
+  `API-HOST.md`: the progress routes removed, the package check, and each route's
   answer where a response schema changes it.
 - `specs/BACKUPS.md`: Progress Tracking and the operation lock's "the frontend mirrors
   it" passage. `specs/MCP.md`: `get_job`, tool errors, argument validation.
@@ -164,8 +176,8 @@ Acceptance, on the test host unless said otherwise:
 - While a VM backup runs: the VM page's changing controls are disabled, those of a
   container with the same name are not, and a start sent with `curl` answers 409 with the
   busy code. After a page reload the tray shows the job with its progress.
-- `GET /api/host/updates/packages` with a read token starts no job. The refresh `POST`
-  starts one.
+- `GET /api/host/updates/packages` with a read token starts no job.
+  `POST /api/host/updates/check` starts one.
 - No job is created outside the starter, and the client has no `registerJob` callback, no
   raw progress subscription and no comparison of a job's title.
 
