@@ -152,7 +152,8 @@ job list is a topic on the event stream; one lock rule for VMs and containers;
 `wisp-password` stays in `<install>/config/` and `WISP_CONFIG_PATH` is for development
 and tests only; the SSRF guard and the OIDC checks were tightened. One criterion was not
 met: a VM's `.local` name does not follow a rename, because it is the guest's hostname;
-the user then proposed to stop publishing VM names (`docs/features/remove-vm-local-dns.md`).
+the user then proposed to stop publishing VM names, which was built and merged on
+2026-11-20 from `anchor/remove-vm-local-dns` (migration `0011` removes the stored setting).
 Not run on the test host, whose limits forbid them: an OS upgrade, a bridge create or
 delete, a host mount unmount or delete, a self-update, and a valid call of the other
 command routes that change the host. Unit tests only: a job refused during shutdown, an
@@ -242,6 +243,11 @@ test host.
   restarts.
 - Needs two rulings first, brought with this phase's feature: what "strict manager"
   covers (C-5, V-8) and whether old backup shapes stay readable (V-9).
+  For V-9, seen 2026-11-20: a VM restored from a backup made before migration `0011`
+  comes back with the retired `wisp:localDns` child in its definition, unread.
+  For V-1, seen 2026-11-20: a define of a transient running domain makes it persistent
+  (`removeVMPref`, and every other define site); Wisp creates none, so the one define
+  helper decides what a transient domain gets.
 - Backlog: "VM restart-flag clear can revert a concurrent define", "A disk bus change off
   VirtIO always fails", "One rule for a container's restart required", "A timed-out avahi
   registration is never retried", and the main-thread half of "A hung CIFS mount blocks
