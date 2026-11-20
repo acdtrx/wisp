@@ -10,7 +10,7 @@ import { validateVMName } from './vmManagerValidation.js';
 import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
 import {
-  parseVMFromXML, parseDomainRaw, buildXml, setWispIcon, setWispPendingRestart, domainDefinitionSignature,
+  parseVMFromXML, parseDomainRaw, buildXml, setWispIcon, setWispPendingRestart, removeWispPref, domainDefinitionSignature,
   domainNameFromParsed,
 } from './vmManagerXml.js';
 import { getWindowsFeatures, getWindowsClock, getLinuxFeatures, createOwnVMDir } from './vmManagerCreate.js';
@@ -317,6 +317,26 @@ export async function updateVMConfig(name, changes) {
   }
 
   return { ok: true, requiresRestart, name: effectiveName };
+}
+
+/**
+ * Remove one Wisp pref (`wisp:<key>`) from the VM's saved definition, leaving
+ * the rest of the XML as libvirt returned it: for a state migration retiring
+ * a pref. Metadata only, so a running VM needs no restart. Defines only when
+ * the pref is there. Returns `{ changed }`.
+ */
+export async function removeVMPref(name, key) {
+  if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
+  const domPath = await resolveDomain(name);
+  const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true }));
+  if (!parsed.domain) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
+  if (!removeWispPref(parsed.domain, key)) return { changed: false };
+  try {
+    await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
+  } catch (err) {
+    throw vmError('LIBVIRT_ERROR', `Failed to remove the ${key} pref of VM "${name}"`, err.message);
+  }
+  return { changed: true };
 }
 
 /**

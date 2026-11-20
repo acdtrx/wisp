@@ -4,7 +4,11 @@
 import { setVmManagerPaths } from './vmManagerPaths.js';
 import { announcingVMChange, announcingVMBackupDeleted } from './vmManagerChange.js';
 import { deleteBackup as deleteBackupImpl } from './vmManagerBackup.js';
-import { updateVMConfig as updateVMConfigImpl, setGraphicsListen as setGraphicsListenImpl } from './vmManagerConfig.js';
+import {
+  updateVMConfig as updateVMConfigImpl,
+  setGraphicsListen as setGraphicsListenImpl,
+  removeVMPref as removeVMPrefImpl,
+} from './vmManagerConfig.js';
 import { setVMPendingRestart as setVMPendingRestartImpl } from './vmManagerPendingRestart.js';
 import { attachUSBDevice as attachUSBDeviceImpl, detachUSBDevice as detachUSBDeviceImpl } from './vmManagerUsb.js';
 import {
@@ -64,6 +68,11 @@ export const updateVMConfig = announcingVMChange(updateVMConfigImpl, (_args, res
 export { getGraphicsListen } from './vmManagerConfig.js';
 export const setGraphicsListen = announcingVMChange(
   setGraphicsListenImpl,
+  ([name], result) => (result.changed ? name : null),
+);
+
+export const removeVMPref = announcingVMChange(
+  removeVMPrefImpl,
   ([name], result) => (result.changed ? name : null),
 );
 

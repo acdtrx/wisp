@@ -92,6 +92,20 @@ export function setWispIcon(dom, iconId) {
   pruneWispPrefs(dom);
 }
 
+/**
+ * Remove the `wisp:<key>` pref from a parsed domain (mutates dom), dropping
+ * wisp:prefs and an emptied <metadata> once no pref is left. Returns whether
+ * the domain had it.
+ */
+export function removeWispPref(dom, key) {
+  const prefs = dom?.metadata?.[WISP_PREFS_KEY];
+  const child = `wisp:${key}`;
+  if (!prefs || typeof prefs !== 'object' || !Object.hasOwn(prefs, child)) return false;
+  delete prefs[child];
+  pruneWispPrefs(dom);
+  return true;
+}
+
 /** The restart-required flag of a parsed domain: `{ since }` (ISO time) or null. */
 export function getWispPendingRestart(dom) {
   return parseWispPrefs(dom).pendingRestart;

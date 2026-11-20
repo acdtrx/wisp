@@ -163,6 +163,10 @@ export async function getGraphicsListen() {
   throw noConn();
 }
 
+export async function removeVMPref() {
+  throw noConn();
+}
+
 export async function setGraphicsListen() {
   throw noConn();
 }
