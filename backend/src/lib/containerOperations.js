@@ -548,11 +548,13 @@ export function startContainerRestoreJob({ name, destinationId, timestamp, safet
     },
     log,
     run: async (report) => {
+      // Every field the event carries passes through (destination-done's
+      // destinationId among them); only the step and the percent are mapped.
       const scaled = (base, span, stepPrefix = '') => (ev) => {
         report({
+          ...ev,
           step: `${stepPrefix}${ev.step}`,
           percent: ev.percent != null ? Math.min(100, Math.round(base + (ev.percent / 100) * span)) : undefined,
-          currentFile: ev.currentFile,
         });
       };
       if (safetyBackup) {
