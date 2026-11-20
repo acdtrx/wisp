@@ -46,7 +46,10 @@ mockModule('./sections.js', ['renameWorkloadAssignment', 'removeWorkloadAssignme
 mockModule('./vmMdnsReconciler.js', ['publishVm', 'unpublishVm']);
 mockModule('./containerMdnsReconciler.js', ['publishContainer', 'unpublishContainer']);
 
-const { editContainerConfig, startContainerDeployJob, startContainerZipExtractJob } = await import('./containerOperations.js');
+const {
+  editContainerConfig, killContainerNow, startContainerDeleteJob, startContainerDeployJob, startContainerStopJob,
+  startContainerZipExtractJob,
+} = await import('./containerOperations.js');
 const { tryAcquireContainerOperationLock } = await import('./containerOperationLock.js');
 const { listJobs, readJob, whenJobEnds } = await import('./jobs/index.js');
 
@@ -185,4 +188,48 @@ test('a deploy whose settings fail keeps their code and says the container exist
   assert.equal(detail, 'Container "d" was created but its settings could not be applied; it exists in stopped state '
     + "(fix it, then start_container): cpuLimit exceeds the host's 4 cores");
   assert.equal(names().includes('startContainer'), false);
+});
+
+test('a delete is followed by its follow-ups: the .local name, the backup status and the section assignment go', async () => {
+  const { jobId } = await startContainerDeleteJob({ name: 'gone', log });
+  assert.equal(await whenJobEnds(jobId), 'done');
+  assert.deepEqual(calls, [
+    ['assertContainerState', 'gone', 'exists'],
+    ['deleteContainer', 'gone', true],
+    ['unpublishContainer', 'gone'],
+    ['forgetBackupStatus', { type: 'container', name: 'gone' }],
+    ['removeWorkloadAssignment', 'container', 'gone'],
+  ]);
+});
+
+test('a kill during a stop cuts its grace period short: it answers at once, and only the stop acts on the task', async () => {
+  impl.stopContainer = (_name, { graceSignal }) => new Promise((resolve) => {
+    graceSignal.addEventListener('abort', () => {
+      calls.push(['grace cut short']);
+      resolve({ restartCancelled: false });
+    });
+  });
+  const { jobId } = await startContainerStopJob({ name: 's', log });
+  assert.equal(await killContainerNow('s'), undefined);
+  assert.equal(await whenJobEnds(jobId), 'done');
+  assert.deepEqual(names(), ['assertContainerState', 'stopContainer', 'grace cut short']);
+  assert.equal(names().includes('killContainer'), false);
+  assertUnlocked('s');
+});
+
+test('a kill before the stop has registered its grace period answers CONTAINER_BUSY', async () => {
+  const checked = Promise.withResolvers();
+  impl.assertContainerState = () => checked.promise;
+  impl.stopContainer = async () => ({ restartCancelled: false });
+  const stopping = startContainerStopJob({ name: 's', log });
+  await assert.rejects(killContainerNow('s'), (err) => err.code === 'CONTAINER_BUSY');
+  checked.resolve();
+  assert.equal(await whenJobEnds((await stopping).jobId), 'done');
+  assert.equal(names().includes('killContainer'), false);
+});
+
+test('a kill with no stop running takes the lock and kills', async () => {
+  await killContainerNow('k');
+  assert.deepEqual(calls, [['killContainer', 'k']]);
+  assertUnlocked('k');
 });

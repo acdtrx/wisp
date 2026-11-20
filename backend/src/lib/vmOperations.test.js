@@ -37,7 +37,8 @@ mockModule('./sections.js', ['renameWorkloadAssignment', 'removeWorkloadAssignme
 mockModule('./vmMdnsReconciler.js', ['publishVm', 'unpublishVm']);
 mockModule('./containerMdnsReconciler.js', ['publishContainer', 'unpublishContainer']);
 
-const { editVmConfig } = await import('./vmOperations.js');
+const { editVmConfig, startVmDeleteJob } = await import('./vmOperations.js');
+const { whenJobEnds } = await import('./jobs/index.js');
 const { acquireVmOperationLock } = await import('./vmOperationLock.js');
 
 const log = { debug() {}, info() {}, warn() {}, error() {}, child() { return log; } };
@@ -94,4 +95,16 @@ test('a rename alone is one manager call and its follow-ups', async () => {
 test('an edit without a rename is one manager call under the name, then its follow-ups', async () => {
   await editVmConfig({ name: 'a', changes: { name: 'a', localDns: false }, log });
   assert.deepEqual(calls, [['updateVMConfig', 'a', { localDns: false }], ['unpublishVm', 'a']]);
+});
+
+test('a delete is followed by its follow-ups: the .local name, the backup status and the section assignment go', async () => {
+  const { jobId } = await startVmDeleteJob({ name: 'gone', deleteDisks: true, log });
+  assert.equal(await whenJobEnds(jobId), 'done');
+  assert.deepEqual(calls, [
+    ['assertVMState', 'gone', 'exists'],
+    ['deleteVM', 'gone', true],
+    ['unpublishVm', 'gone'],
+    ['forgetBackupStatus', { type: 'vm', name: 'gone' }],
+    ['removeWorkloadAssignment', 'vm', 'gone'],
+  ]);
 });
