@@ -225,6 +225,15 @@ In projects with a web UI: `FRONTEND-RULES.md`.
 - Make every async function return a Promise. Throw errors as structured objects (§5).
 - Prefer `const` over `let`; `let` only when reassignment is genuinely needed; never `var`.
 
+### Shell
+
+- A script that handles a stop runs nothing in the foreground that can outlast the time it
+  has to act on one: bash runs a trap only once the foreground command has ended.
+  - Applied: a setup step runs nothing in the foreground that can outlast a network
+    call's bound (`NET_CMD_SEC`); apt, dpkg, npm, downloads, applies, service starts and
+    the bridge's check run in the background and are waited for (`step_run`), and those
+    that show progress are stopped after a time without it.
+
 ## 13. Prompts and Model-Facing Text
 
 Applied: Wisp's model-facing text is the MCP server's `initialize` instructions and its

@@ -13,8 +13,7 @@ Wisp runs directly on a Linux server as a single systemd service — never in a 
   - On a host without `/dev/kvm` the run succeeds, and setup's last lines say that the host cannot run VMs, why, and how to turn virtualization on (the firmware's setting, or nested virtualization when the host is itself a VM; then a reboot). The installer ends with them too; in the update's log they close setup's part, before the updater's `step:start-service` and `step:done`.
   - Containers need nothing of the host that setup does not install itself on a supported host, so there is no container counterpart, and no host is refused for lacking both.
 - **The network run by netplan**, rendered by systemd-networkd, and an **IPv4 default route**: its interface is the uplink (settled 2026-11-20).
-  - It holds whether setup makes the bridge or finds one: a host whose uplink netplan, rendered by systemd-networkd, does not run is refused before anything changes, bridge or not, with one code (`UPLINK_NOT_NETPLAN`, settled 2026-11-20). The message names what runs the uplink where setup can tell: NetworkManager (Ubuntu Desktop's runs it through netplan), a systemd-networkd file of its own, ifupdown.
-  - A host an earlier release bridged with NetworkManager or with systemd-networkd's own files is refused the same way: its next update rolls back, and it stays on its release until netplan, rendered by systemd-networkd, runs its network (settled 2026-11-20).
+  - A host whose uplink it does not run is refused before anything changes, whether setup makes the bridge or finds one (`UPLINK_NOT_NETPLAN`). On a host Wisp runs on already, a host an earlier release bridged with NetworkManager or systemd-networkd's own files among them, an update then rolls back and a manual upgrade stops: Wisp stays on its release until netplan runs the network (settled 2026-11-20).
   - Server installs of both distributions run their network with netplan. ifupdown, which Debian's own installer sets up, is the next tool to support ([BACKLOG.md](../BACKLOG.md)).
   - netplan brings `python3`, which the plan reads the network's configuration with: setup has no prerequisite of its own.
   - Rejected: making the bridge through NetworkManager and plain systemd-networkd too, which had grown to half of setup and most of its refusals, for hosts Wisp does not target.
@@ -22,30 +21,26 @@ Wisp runs directly on a Linux server as a single systemd service — never in a 
 
 **Every refusal names what was found, with its code** (settled 2026-11-19). The codes are in the style of [ERROR-HANDLING.md](ERROR-HANDLING.md)'s, so the row below is found by its code; `npm run check` keeps the codes the scripts print and this table's rows in step.
 
-When a refusal comes:
-
-- The plan's refusals come before the installer changes anything.
-- In setup they come before any step after `network-plan`, its first.
-- The table's last two rows can come later, after setup's earlier steps but before the bridge step changes anything.
+A refusal comes before anything changes: the install's before it changes anything, setup's before its second step, except `NETWORK_CHANGED_SINCE_PLAN`, which the bridge step makes before its first change (settled 2026-11-20).
 
 | Id | Refused | What the operator does |
 |---|---|---|
 | `UNSUPPORTED_DISTRO` | Another distro | Use a supported host. |
 | `SYSTEMD_TOO_OLD` | systemd older than 254 | Use a supported host. |
 | `NO_DEFAULT_ROUTE` | No IPv4 default route | Give the host one. |
-| `UPLINK_NOT_NETPLAN` | netplan, rendered by systemd-networkd, does not run the uplink (systemd-networkd does not run it from netplan's unit, or netplan is not installed). The message names what does, where setup can tell. | Run the uplink with netplan, rendered by systemd-networkd (renderer networkd). |
+| `UPLINK_NOT_NETPLAN` | netplan, rendered by systemd-networkd, does not run the uplink; the message names what does, where setup can tell (NetworkManager, a systemd-networkd file of its own, ifupdown) | Run the uplink with netplan, rendered by systemd-networkd (renderer networkd). |
 | `CLOUD_INIT_NETWORK` | When setup has to make the bridge: cloud-init still manages the network (installed, not switched off, and its configuration does not say `network: {config: disabled}`); a host whose uplink already is a bridge is not refused for it | Add the one documented line `network: {config: disabled}` in a file under `/etc/cloud/cloud.cfg.d/`. Nothing else: the netplan file cloud-init wrote is then the operator's, and setup edits it like any other (settled 2026-11-18). |
 | `UPLINK_BOND`, `UPLINK_WIFI`, `UPLINK_VLAN`, `UPLINK_NOT_ETHERNET` | The uplink is a bond, Wi-Fi, a VLAN, or not a physical Ethernet interface (a tunnel) | Make the bridge with netplan. |
 | `UPLINK_DEPENDENT` | A netplan definition hangs off the uplink, whatever its kind (its `link:` is the uplink's: a VLAN, a tunnel, an SR-IOV function), or holds it in its `interfaces:` (a bond, a VRF; a bridge is `NETPLAN_NOT_APPLIED`) | Make the bridge with netplan. |
 | `UPLINK_NO_IPV4` | The uplink has no IPv4 address | Give it one. |
 | `BRIDGE_NAME_TAKEN` | A `br0` that exists but does not carry the uplink | Remove it, or make it the bridge on the uplink with netplan. |
 | `DHCP_NO_LEASE` | The uplink is on DHCP but has no lease | Let it get one (`networkctl renew <uplink>`). |
-| `DHCP_LEASE_RECORD` | On systemd before 257: the uplink holds a DHCP lease, but systemd-networkd's record of it (`/run/systemd/netif/leases/<ifindex>`) is missing or names no client identifier (see [The bridge](#the-bridge)) | Renew the lease (`networkctl renew <uplink>`), and run it again. |
+| `DHCP_LEASE_RECORD` | On systemd before 257: the uplink holds a DHCP lease, but systemd-networkd's record of it is missing or names no client identifier (see [The bridge](#the-bridge)) | Renew the lease (`networkctl renew <uplink>`). |
 | `DHCP_CLIENT_ID_TYPE` | The lease's client identifier is neither the hardware address (type 1) nor a DUID (type 255) | Make the bridge with netplan. |
 | `DNS_PORT_TAKEN` | Another DNS server on port 53 of `169.254.53.53` or of every IPv4 address (`0.0.0.0`, `*`, or a wildcard bound to one device) | Bind it to the addresses it serves. `[::]:53` (IPv6 only) is no conflict. |
 | `NETPLAN_REJECTED` | netplan rejects the host's own configuration (`netplan generate` fails on it); the message quotes netplan's error | Correct it, so that `netplan generate` accepts it. |
-| `NETPLAN_DNS_STUB` | netplan accepts the host's own configuration, but rejects it with the container DNS stub's file (below) added: a definition of `wisp-dns0` of the operator's of another kind, a netplan without `dummy-devices`; the message quotes netplan's error. Or a device `wisp-dns0` that is not a dummy exists already, which systemd-networkd would keep. | Remove that definition or device, or use a netplan that has `dummy-devices`. |
-| `NETPLAN_NOT_APPLIED` | What netplan's configuration says about the uplink's bridge is not what is live, either way: it defines a bridge holding the uplink, which is not live (the default route is on the uplink itself); or systemd-networkd runs the uplink's bridge from netplan's unit, while netplan's configuration does not define it, so it is gone at the next boot | Apply netplan's configuration (`netplan apply`), or first put back the original kept under `/var/lib/wisp/network-before-bridge`. |
+| `NETPLAN_DNS_STUB` | netplan rejects the host's configuration once the container DNS stub's file (below) is added (a `wisp-dns0` of the operator's of another kind, a netplan without `dummy-devices`), or a device `wisp-dns0` that is not a dummy exists; the message quotes netplan's error | Remove that definition or device, or use a netplan that has `dummy-devices`. |
+| `NETPLAN_NOT_APPLIED` | netplan's configuration and the live network disagree on the uplink's bridge: one is defined but not live, or live but not defined, so gone at the next boot | Apply netplan's configuration (`netplan apply`), or first put back the original kept under `/var/lib/wisp/network-before-bridge`. |
 | `NETPLAN_NO_DEFINITION` | netplan has no definition for the uplink | Define the uplink in a file of your own under `/etc/netplan`. |
 | `NETPLAN_OUTSIDE_ETC` | netplan reads the uplink's definition from a file outside `/etc/netplan` (`/lib/netplan`, `/run/netplan`) | Define the uplink in a file of your own under `/etc/netplan`. |
 | `NETPLAN_LINK_FILE` | That file is a symbolic link, which the step would replace with a file | Make it the file itself. |
@@ -53,9 +48,9 @@ When a refusal comes:
 | `NETPLAN_SHARED` | The definition's file shares a definition with another netplan file, which `netplan set` would write back merged | Make the bridge with netplan. |
 | `NETPLAN_MERGED` | With setup's edits, netplan rejects the configuration it accepts without them (the message quotes netplan's error), or its merged configuration is not what setup wrote (another file adds to the uplink or the bridge) | Make the bridge with netplan. |
 | `NETPLAN_DROPINS` | systemd-networkd runs the uplink from netplan's unit with drop-ins (`<unit>.d/*.conf`) | Put their settings in the netplan definition. |
-| `NETWORKD_SECOND_FILE` | Another `.network` file, beside the one netplan renders, could take the uplink (settled 2026-11-19: exactly one definition, before as well as after). systemd-networkd runs a link from the first file by name that matches it, so a file whose name sorts after netplan's never takes it (an initrd's `zzzz-` catch-all) | Make it match only other interfaces, or remove it. |
-| `NETWORK_CHANGED_SINCE_ASKED` | The install's own plan, made again under the lock, would make another bridge — on another uplink or address — than the operator confirmed. Found by the install before it changes anything, or, when the network changes in between, by setup after its network plan, before any other step. | Run the install again. |
-| `NETWORK_CHANGED_SINCE_PLAN` | Something changed what the plan read — the default route, the uplink's addresses, hardware address or MTU, cloud-init's configuration, netplan's files (the container DNS stub's own aside, which setup writes in between), another definition that could take the uplink — while setup ran. | Run setup again. |
+| `NETWORKD_SECOND_FILE` | Another `.network` file than netplan's could take the uplink (settled 2026-11-19: exactly one definition, before as well as after); one whose name sorts after netplan's, such as an initrd's `zzzz-` catch-all, never does and is no conflict | Make it match only other interfaces, or remove it. |
+| `NETWORK_CHANGED_SINCE_ASKED` | The network changed after the install asked: the plan would make another bridge, on another uplink or address, than the operator confirmed | Run the install again. |
+| `NETWORK_CHANGED_SINCE_PLAN` | Something the plan read changed while setup ran: the default route, the uplink's addresses, hardware address or MTU, cloud-init's configuration, netplan's files, another definition that could take the uplink | Run setup again. |
 
 ## Install
 
@@ -106,13 +101,7 @@ The one list of steps the install and every update run, by path from the install
 - A step that fails stops the run with a non-zero exit and its name.
 - The first step, `network-plan`, changes nothing: it works out the plan and makes the refusals above.
 
-**A stop** (TERM, INT) (settled 2026-11-19: each layer owns its bound, and the step stops itself; this replaced setup's TERM to the step's whole session):
-
-- It goes to the running step alone, which knows what of its work may be cut short: it stops what it runs and ends.
-- A section that must finish runs to its end first, each tool in it under its own bound: the bridge step's apply call in flight, and its undo.
-- Setup waits until the step's session is empty, kills what is left of it at its step stop bound, and ends. So setup ends within its own stop bound of a stop, whoever sent it.
-- So that a stop is acted on at once, a step runs nothing in the foreground that can outlast a network call's bound: apt, dpkg, npm, downloads, applies and service starts run in the background and are waited for, and those that show progress are stopped after a time without it.
-- The steps run without the install lock's descriptor: setup holds the lock, and nothing a step starts can.
+**A stop** (TERM, INT) ends setup within its stop bound, whoever sent it; the bridge step's apply and its undo are never cut short (settled 2026-11-20).
 
 Afterwards the host has:
 
@@ -132,11 +121,11 @@ Afterwards the host has:
 
 **The container DNS stub** (`wisp-dns0`, `169.254.53.53/32`) is a netplan definition in a file of Wisp's own, `/etc/netplan/90-wisp-dns0.yaml`, so it exists at every boot before Wisp starts, with nothing of Wisp's creating it; `wisp.service` has no `ExecStartPre` (settled 2026-11-20).
 
-- The plan renders the file and has netplan check it in a staged copy of netplan's directories, with the bridge's edits when it makes the bridge, before anything changes (`NETPLAN_DNS_STUB`). The step installs what was checked, and runs `netplan generate` when the file is new or changed, the former files go, or the device is missing; never `netplan apply`.
-- The step decides from the host what brings the device to its settings, `169.254.53.53/32` alone as the kernel holds it, so a run cut short is finished by the next (settled 2026-11-20). A missing device gets a reload of systemd-networkd, the only one, as it reconfigures every link netplan renders, the bridge's DHCP lease dropped and taken again among it (observed on systemd 255). One netplan's unit runs without its settings gets `networkctl reconfigure wisp-dns0`. One another file runs (the former ones, deleted or not) keeps running with its settings, and gets a reload without them. Each ends holding them, or fails.
+- netplan checks the file with the host's configuration before it goes live (`NETPLAN_DNS_STUB`).
+- Setup renders it with `netplan generate`, never `netplan apply`, and reloads systemd-networkd only when nothing less brings the device to its settings: a reload reconfigures every link netplan renders, the bridge's DHCP lease among them.
 - The former declaration, systemd-networkd's own `10-wisp-dns0.netdev` and `.network`, is taken back by the same step.
 
-[CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns).
+Why the stub is declared so, on a device of its own: [CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns).
 
 ## The bridge
 
@@ -150,7 +139,7 @@ Afterwards the host has:
 - The uplink becomes its port with no addressing of its own. Its link settings (MTU, offloads, wake-on-LAN) stay on it.
 - The bridge's definition sets the uplink's MTU on the bridge itself, so a port that joins at another MTU does not lower it (settled 2026-11-19).
 - The bridge's definition names its renderer, networkd, on itself, whatever its file's, so systemd-networkd runs it (settled 2026-11-20).
-- The bridge keeps the IPv4 address. Addresses the host gets by DHCPv6 or from router advertisements can change (settled 2026-11-19):
+- The bridge keeps the IPv4 address and the addresses configured for the uplink. Addresses the host gets by DHCPv6 or from router advertisements can change (settled 2026-11-20):
   - the DHCPv6 identity is pinned only when the DHCPv4 client identifier is a DUID (networkd's IAID, derived from the uplink's name, which the bridge would not have);
   - with a client identifier from the hardware address, the bridge's DHCPv6 identity is its own.
 
@@ -164,48 +153,36 @@ Afterwards the host has:
 **Only netplan's documented configuration** (settled 2026-11-20).
 
 - The operator's file that defines the uplink is edited with `netplan set`, which rewrites it whole: comments and key order are not kept.
-- netplan checks it as a whole in a staged copy of `/lib`, `/etc` and `/run/netplan`; what was checked goes live by one rename.
+- netplan checks the whole configuration with the edits; what it checked goes live by one rename.
 - For a DUID identity, a systemd-networkd drop-in on netplan's unit for the bridge pins the IAID, which netplan has no key for.
-- A file is staged under a hidden name beside its destination, which neither netplan nor systemd-networkd reads.
 
 **One read of a tool's internal state** (settled 2026-11-20).
 
 - Before systemd 257, `networkctl status --json` leaves out the DHCPv4 client identifier the bridge must send. On those hosts (Ubuntu 24.04 has systemd 255) the plan and the bridge's check read it, read only, from systemd-networkd's record of the lease, `/run/systemd/netif/leases/<ifindex>` (`CLIENTID=`). From 257 on they read it from the JSON.
-- Which one is chosen by the systemd version `systemctl --version` reports, read once, with the supported-host check; never by the value missing from the JSON.
 - A lease whose record or `CLIENTID=` is missing is refused (`DHCP_LEASE_RECORD`).
 - Rejected: raising the floor to systemd 257, which drops Ubuntu 24.04; parsing `networkctl status`'s text, which is no more an interface than the record.
 
-**Checked before, verified after, undone on failure.** Every change leaves a network that boots, old or new. The step's check, within 90 s after the apply:
-
-- The bridge must hold the uplink's hardware address, IPv4 addresses, the IPv6 addresses configured for it (not those it learned) and default route (settled 2026-11-20: on DHCP too); on DHCP also its client identifier and name servers; on a static address all its routes, name servers and search domains. Name servers and search domains are compared when systemd-resolved runs, which holds them.
-- The uplink must hold none of it.
-- systemd-networkd must run each from the unit netplan renders for it.
-
-Only a failed check undoes the bridge, and so does a stop.
+**Checked before, verified after, undone on failure.** Every change leaves a network that boots, old or new. Within 90 s after the apply, the bridge holds the uplink's hardware address and layer 3, and the uplink none of it; the uplink is the bridge's port, and the bridge has carrier (settled 2026-11-20). A failed apply or check undoes the bridge, and so does a stop.
 
 **The original is kept before the first change** (settled 2026-11-20).
 
-- The operator's netplan file the plan edits is copied into a directory of its own under `/var/lib/wisp/network-before-bridge`, named by the step's UTC time, the file under its own path in it (`<time>/etc/netplan/<file>`). The directory is made under a hidden name and renamed into place, so none is ever seen half made; the step says where. When it cannot be kept, the step changes nothing.
+- The operator's netplan file the plan edits is copied to `/var/lib/wisp/network-before-bridge/<the step's UTC time>/etc/netplan/<file>`, never seen half made; the step says where. When it cannot be kept, the step changes nothing.
 - After a bridge that passed its check, it stays. After an undo, it goes.
 
-**The undo**, on a failed apply or check, or a stop, never cut short: the kept original put back by one rename, the DUID drop-in removed (and its directory, when the step made it), `ip link delete br0`, `netplan apply`, then the wait for the uplink to hold what it held before. The step fails saying whether it does. When the undo does not complete, the kept original stays, and the message names it.
+**The undo**, never cut short: the kept original goes back and is applied, and the step fails saying whether the uplink holds again what it held. When the undo does not complete, the original stays kept, and the message names it. A step that fails before it switches the operator's file takes back only what it wrote (settled 2026-11-20).
 
 **The container DNS stub is waited for after the check** (settled 2026-11-20: the stub is no part of the bridge's check).
 
-- From the check that passed, the step waits up to 30 s for the stub to hold its address, as the backend's start follows the step: an apply can drop it for a while (observed with netplan's on Debian 13: about 6 s).
+- From the check that passed, the step waits up to 30 s for the stub to hold its address, which an apply can drop for a while ([CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns)), as the backend's start follows the step.
 - When it does not, the step fails saying that the bridge is in place and kept and what brings the stub back (`networkctl reconfigure wisp-dns0`), and undoes nothing.
 
-**A step that died** (a power cut, a kill) is not recovered (settled 2026-11-20). The next run plans from the host as it finds it:
-
-- an uplink that is a bridge is used;
-- one that is not gets its bridge;
-- one that is not, while netplan's configuration already defines `br0` on it (the step died after its switch, before its apply), is refused (`NETPLAN_NOT_APPLIED`): setup applies nothing it did not check.
+**A step that died** (a power cut, a kill) is not recovered (settled 2026-11-20). The next run plans from the host as it finds it: an uplink that is a bridge is used, one that is not gets its bridge.
 
 A host left unreachable is fixed at the console, as root, from the newest directory under `/var/lib/wisp/network-before-bridge`:
 
 1. `cp -a /var/lib/wisp/network-before-bridge/<newest>/etc/netplan/<file> /etc/netplan/`
 2. `rm -f /etc/systemd/network/10-netplan-br0.network.d/50-wisp-dhcp-identity.conf`
-3. `ip link delete br0`
+3. `ip link delete br0 2>/dev/null || true` (it may be gone already)
 4. `netplan apply`
 
 The next run of setup then makes the bridge again.
