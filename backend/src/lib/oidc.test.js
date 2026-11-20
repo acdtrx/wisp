@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { createServer } from 'node:http';
 
-import { beginLogin, completeLogin } from './oidc.js';
+import { beginLogin, completeLogin, discoveryFromDocument } from './oidc.js';
 
 const CLIENT_ID = 'wisp-client';
 const CLIENT_SECRET = 'wisp-secret';
@@ -64,6 +64,14 @@ before(async () => {
         stub.hits.token += 1;
         stub.tokenRequest = { authorization: req.headers.authorization, form: new URLSearchParams(raw) };
         json(res, stub.tokenAnswer.status, stub.tokenAnswer.body);
+      } else if (req.url === '/liar/.well-known/openid-configuration') {
+        // Another issuer's document, served at this one's discovery URL.
+        json(res, 200, {
+          issuer,
+          authorization_endpoint: `${issuer}/authorize`,
+          token_endpoint: `${issuer}/token`,
+          jwks_uri: `${issuer}/jwks`,
+        });
       } else if (req.url === '/huge/.well-known/openid-configuration') {
         json(res, 200, { issuer: `${base}/huge`, padding: 'x'.repeat(2 * 1024 * 1024) });
       } else if (req.url === '/moved/.well-known/openid-configuration') {
@@ -180,6 +188,45 @@ test('a discovery that redirects or is missing fails, the redirect not followed'
     { code: 'OIDC_DISCOVERY_FAILED' },
   );
   assert.equal(stub.hits.discovery, discoveries);
+});
+
+test('a discovery that names another issuer fails, and no login starts', async () => {
+  await assert.rejects(
+    beginLogin({ issuer: `${base}/liar`, clientId: CLIENT_ID, redirectUri: REDIRECT_URI }),
+    (err) => err.code === 'OIDC_DISCOVERY_FAILED' && /another issuer/.test(err.message),
+  );
+});
+
+/*
+ * The downgrade check is the document's, so it is tested on documents: an
+ * https stub issuer would need a certificate the operator fetch trusts, a
+ * trust override that tests TLS, not the rule.
+ */
+test('under an https issuer, an endpoint that is not https fails the discovery', () => {
+  const secure = 'https://idp.example';
+  const doc = {
+    issuer: secure,
+    authorization_endpoint: 'https://login.idp.example/authorize',
+    token_endpoint: 'https://api.idp.example/token',
+    jwks_uri: 'https://keys.idp-cdn.example/jwks',
+  };
+  // Endpoints on other hosts, as real providers have them.
+  assert.equal(discoveryFromDocument(doc, `${secure}/`).tokenEndpoint, 'https://api.idp.example/token');
+  for (const name of ['authorization_endpoint', 'token_endpoint', 'jwks_uri']) {
+    assert.throws(
+      () => discoveryFromDocument({ ...doc, [name]: doc[name].replace('https:', 'http:') }, secure),
+      (err) => err.code === 'OIDC_DISCOVERY_FAILED' && err.message.includes(name),
+      name,
+    );
+    assert.throws(() => discoveryFromDocument({ ...doc, [name]: 'not a url' }, secure), { code: 'OIDC_DISCOVERY_FAILED' }, name);
+  }
+  // An http issuer on the LAN may name http endpoints, never another scheme.
+  const lan = { issuer: 'http://idp.lan', authorization_endpoint: 'http://idp.lan/a', token_endpoint: 'http://idp.lan/t', jwks_uri: 'https://idp.lan/k' };
+  assert.equal(discoveryFromDocument(lan, 'http://idp.lan').jwksUri, 'https://idp.lan/k');
+  assert.throws(() => discoveryFromDocument({ ...lan, jwks_uri: 'file:///etc/keys' }, 'http://idp.lan'), { code: 'OIDC_DISCOVERY_FAILED' });
+  // No issuer, or another one.
+  assert.throws(() => discoveryFromDocument({ ...doc, issuer: undefined }, secure), { code: 'OIDC_DISCOVERY_FAILED' });
+  assert.throws(() => discoveryFromDocument({ ...doc, issuer: 'https://evil.example' }, secure), { code: 'OIDC_DISCOVERY_FAILED' });
 });
 
 test('a discovery past the size bound fails, its body not read whole', async () => {

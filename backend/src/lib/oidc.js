@@ -74,21 +74,36 @@ function normalizeIssuer(issuer) {
   return issuer.replace(/\/+$/, '');
 }
 
-async function discover(issuer) {
-  const key = normalizeIssuer(issuer);
-  const cached = discoveryCache.get(key);
-  if (cached && Date.now() - cached.at < DISCOVERY_TTL_MS) return cached.doc;
+const DISCOVERY_ENDPOINTS = ['authorization_endpoint', 'token_endpoint', 'jwks_uri'];
 
-  const url = `${key}/.well-known/openid-configuration`;
-  const { ok, status, body } = await fetchJson(url);
-  if (!ok || !body) {
-    throw createAppError('OIDC_DISCOVERY_FAILED', `OIDC discovery failed (${status}) at ${url}`);
+/**
+ * The parts of a discovery document `body` Wisp uses, for the configured
+ * `issuer`, or OIDC_DISCOVERY_FAILED. The document names where the client
+ * secret is sent and whose keys sign the ID token, so it must be the issuer's
+ * own: its `issuer` is the configured one (OIDC Discovery 4.3). Its endpoints
+ * may be on other hosts, but under an `https` issuer each is `https`: no
+ * endpoint downgrades the exchange to plain HTTP.
+ */
+export function discoveryFromDocument(body, issuer) {
+  if (typeof body.issuer !== 'string' || normalizeIssuer(body.issuer) !== normalizeIssuer(issuer)) {
+    throw createAppError('OIDC_DISCOVERY_FAILED', `OIDC discovery names another issuer: ${body.issuer}`);
   }
-  if (!body.authorization_endpoint || !body.token_endpoint || !body.jwks_uri) {
-    throw createAppError('OIDC_DISCOVERY_FAILED', 'OIDC discovery document is missing required endpoints');
+  const secure = new URL(issuer).protocol === 'https:';
+  for (const name of DISCOVERY_ENDPOINTS) {
+    let url;
+    try {
+      url = new URL(body[name]);
+    } catch {
+      throw createAppError('OIDC_DISCOVERY_FAILED', `OIDC discovery has no usable ${name}`);
+    }
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      throw createAppError('OIDC_DISCOVERY_FAILED', `OIDC discovery's ${name} is not an http or https URL`);
+    }
+    if (secure && url.protocol !== 'https:') {
+      throw createAppError('OIDC_DISCOVERY_FAILED', `OIDC discovery's ${name} is not https under an https issuer: ${url.href}`);
+    }
   }
-  const doc = {
-    issuer: body.issuer || key,
+  return {
     authorizationEndpoint: body.authorization_endpoint,
     tokenEndpoint: body.token_endpoint,
     jwksUri: body.jwks_uri,
@@ -96,6 +111,19 @@ async function discover(issuer) {
       ? body.token_endpoint_auth_methods_supported
       : null,
   };
+}
+
+async function discover(issuer) {
+  const key = normalizeIssuer(issuer);
+  const cached = discoveryCache.get(key);
+  if (cached && Date.now() - cached.at < DISCOVERY_TTL_MS) return cached.doc;
+
+  const url = `${key}/.well-known/openid-configuration`;
+  const { ok, status, body } = await fetchJson(url);
+  if (!ok || !body || typeof body !== 'object') {
+    throw createAppError('OIDC_DISCOVERY_FAILED', `OIDC discovery failed (${status}) at ${url}`);
+  }
+  const doc = discoveryFromDocument(body, key);
   discoveryCache.set(key, { at: Date.now(), doc });
   return doc;
 }
