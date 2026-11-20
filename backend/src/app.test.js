@@ -122,6 +122,21 @@ test('a body that fails its schema answers 400 VALIDATION_FAILED naming the fiel
   assert.match(res.json().detail, /^body\/updateChannel /);
 });
 
+test('a container PATCH refuses eject, and appConfig sent with other keys, naming them', async () => {
+  const patch = (payload) => app.inject({
+    method: 'PATCH', url: '/api/containers/web', headers: bearer(ADMIN_TOKEN), payload,
+  });
+  const eject = await patch({ eject: true });
+  assert.equal(eject.statusCode, 400);
+  assert.equal(eject.json().error, 'VALIDATION_FAILED');
+  assert.match(eject.json().detail, /^body\/eject .*POST \/api\/containers\/:name\/eject/);
+
+  const mixed = await patch({ appConfig: { hosts: [] }, iconId: 'box', name: 'web2' });
+  assert.equal(mixed.statusCode, 400);
+  assert.equal(mixed.json().error, 'VALIDATION_FAILED');
+  assert.match(mixed.json().detail, /^body\/iconId, body\/name cannot be sent with body\/appConfig/);
+});
+
 test('malformed JSON, a body too large and an unsupported type answer their codes', async () => {
   const json = { ...bearer(ADMIN_TOKEN), 'content-type': 'application/json' };
   const malformed = await app.inject({ method: 'PATCH', url: '/api/settings', headers: json, payload: '{"serverName":' });

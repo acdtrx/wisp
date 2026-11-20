@@ -280,18 +280,24 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Update ────────────────────────────────────────────────────────
-  // An app container's appConfig save goes to its app module, which
-  // regenerates the env, mounts and files from it. Any other body is a
-  // configuration update, a rename included (a body `name` other than the
-  // URL's runs first, the rest applies under the new name).
+  // An appConfig save stands alone: the app module regenerates the env,
+  // mounts and files from it. Any other body is a configuration update, a
+  // rename included (a body `name` other than the URL's runs first, the rest
+  // applies under the new name). Eject is its own command (POST …/eject).
   fastify.patch('/containers/:name', { config: { auth: 'admin' } }, async (request, reply) => {
     const body = request.body && typeof request.body === 'object' ? request.body : {};
     const { name } = request.params;
-    if (body.eject === true) {
-      await ejectContainerApp(name);
-      return reply.code(204).send();
+    if ('eject' in body) {
+      throw createAppError('VALIDATION_FAILED', 'body/eject is not a PATCH field: eject an app with POST /api/containers/:name/eject');
     }
     if ('appConfig' in body) {
+      const others = Object.keys(body).filter((key) => key !== 'appConfig');
+      if (others.length > 0) {
+        throw createAppError(
+          'VALIDATION_FAILED',
+          `${others.map((key) => `body/${key}`).join(', ')} cannot be sent with body/appConfig: an appConfig save stands alone`,
+        );
+      }
       await saveContainerAppConfig(name, () => body.appConfig);
       return reply.code(204).send();
     }
@@ -299,6 +305,12 @@ export default async function containerRoutes(fastify) {
     // the name in effect is the one the client sent.
     if ('name' in body) validateContainerName(body.name);
     await editContainerConfig({ name, changes: body, log: request.log });
+    return reply.code(204).send();
+  });
+
+  // An app container becomes a generic one; instant, like the other edits.
+  fastify.post('/containers/:name/eject', { config: { auth: 'admin' } }, async (request, reply) => {
+    await ejectContainerApp(request.params.name);
     return reply.code(204).send();
   });
 

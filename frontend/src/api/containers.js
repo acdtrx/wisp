@@ -43,6 +43,11 @@ export function updateContainer(name, changes) {
   return api(`/api/containers/${encodeURIComponent(name)}`, { method: 'PATCH', body: changes });
 }
 
+/** Turn an app container into a generic one (instant; the change arrives on the `changes` topic). */
+export function ejectContainerApp(name) {
+  return api(`/api/containers/${encodeURIComponent(name)}/eject`, { method: 'POST' });
+}
+
 /** On-demand host-side disk usage of each bind mount (can take seconds for large data dirs). */
 export function getContainerMountUsage(name) {
   return api(`/api/containers/${encodeURIComponent(name)}/mounts/usage`);

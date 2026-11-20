@@ -8,7 +8,7 @@ import ConfirmDialog from '../components/shared/ConfirmDialog.jsx';
 import { getAppEntry } from './appRegistry.js';
 import { errorText } from '../api/errors.js';
 
-export default function AppConfigWrapper({ config, onSave }) {
+export default function AppConfigWrapper({ config, onSave, onEject }) {
   const [ejectOpen, setEjectOpen] = useState(false);
   const [ejectError, setEjectError] = useState(null);
 
@@ -22,7 +22,7 @@ export default function AppConfigWrapper({ config, onSave }) {
   const handleEject = async () => {
     setEjectOpen(false);
     try {
-      await onSave({ eject: true });
+      await onEject();
     } catch (err) {
       setEjectError(errorText(err));
     }

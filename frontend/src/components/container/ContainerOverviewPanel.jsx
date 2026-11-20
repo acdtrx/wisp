@@ -10,7 +10,7 @@ import { useContainerStore, runContainerCommand } from '../../store/containerSto
 import {
   useBackgroundJobsStore, useWorkloadBusy, useWorkloadBackup, workloadBusyReason,
 } from '../../store/backgroundJobsStore.js';
-import { updateContainer } from '../../api/containers.js';
+import { updateContainer, ejectContainerApp } from '../../api/containers.js';
 import { startContainerBackup } from '../../api/backups.js';
 import { getSettings } from '../../api/settings.js';
 import { JOB_KIND } from '../../api/jobs.js';
@@ -332,7 +332,11 @@ export default function ContainerOverviewPanel() {
         <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
           <ContainerGeneralSection config={config} onSave={handleSectionSave} />
           {config.metadata?.app && getAppEntry(config.metadata.app) ? (
-            <AppConfigWrapper config={config} onSave={handleSectionSave} />
+            <AppConfigWrapper
+              config={config}
+              onSave={handleSectionSave}
+              onEject={() => runContainerCommand(name, () => ejectContainerApp(name))}
+            />
           ) : (
             <>
               <ContainerEnvSection config={config} onSave={handleSectionSave} />
