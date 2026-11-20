@@ -33,7 +33,7 @@ mockModule('./containerManager/index.js', [
   'addContainerService', 'updateContainerService', 'removeContainerService', 'planMountFileUpload',
   'commitMountFileUpload', 'assertMountTakesZip', 'planMountZipExtract', 'extractMountZip', 'assertMountOperation',
   'initMountContent', 'deleteMountData', 'deleteRemovedMountData', 'putMountFileTextContent', 'createContainerBackup',
-  'planContainerBackupRestore', 'restoreContainerBackup', 'restoreContainerBackupInPlace', 'pullImage',
+  'planContainerBackupRestore', 'restoreContainerBackup', 'restoreContainerBackupInPlace', 'resolveContainerBackupDir', 'pullImage',
   'getImageDigest', 'resolveContainerImageRef',
 ]);
 mockModule('./containerApps/index.js', [

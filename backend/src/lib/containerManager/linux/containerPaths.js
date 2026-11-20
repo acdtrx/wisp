@@ -6,8 +6,10 @@
  * (getRawMounts) so containerManager carries no Wisp policy dependencies
  * (precondition for eventual lib extraction).
  */
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { access, mkdir } from 'node:fs/promises';
+
+import { containerError } from '../containerManagerShared.js';
 
 let containersPath = null;
 let resolveMountFn = null;
@@ -34,24 +36,40 @@ export function getContainersPath() {
   return containersPath;
 }
 
+/**
+ * `root` joined with `segments` (a name, a timestamp, a file name), checked
+ * to stay below `root`: a segment that is absolute, holds a separator that
+ * climbs out, or is `..` is refused (PATH_NOT_ALLOWED). Every path this
+ * manager builds from a name it was given goes through here, so a caller
+ * that skips the route's schema (the scheduler, MCP) cannot leave the root.
+ */
+export function pathUnder(root, ...segments) {
+  const base = resolve(root);
+  const full = resolve(base, ...segments);
+  if (!full.startsWith(base + sep)) {
+    throw containerError('PATH_NOT_ALLOWED', `"${segments.join('/')}" would leave its directory`);
+  }
+  return full;
+}
+
 export function getContainerDir(name) {
-  return join(getContainersPath(), name);
+  return pathUnder(getContainersPath(), name);
 }
 
 export function getContainerFilesDir(name) {
-  return join(getContainersPath(), name, 'files');
+  return join(getContainerDir(name), 'files');
 }
 
 export function getContainerRunsDir(name) {
-  return join(getContainersPath(), name, 'runs');
+  return join(getContainerDir(name), 'runs');
 }
 
 export function getRunLogPath(name, runId) {
-  return join(getContainerRunsDir(name), `${runId}.log`);
+  return pathUnder(getContainerRunsDir(name), `${runId}.log`);
 }
 
 export function getRunMetaPath(name, runId) {
-  return join(getContainerRunsDir(name), `${runId}.json`);
+  return pathUnder(getContainerRunsDir(name), `${runId}.json`);
 }
 
 /** Subdirectory under each backup root that holds container backups
@@ -66,7 +84,7 @@ export const CONTAINER_NETNS_DIR = '/var/run/netns';
 
 /** Path to the bind mount `ip netns` creates (`ip netns add <name>`). Used by CNI and OCI `linux.namespaces`. */
 export function getContainerNetnsPath(name) {
-  return join(CONTAINER_NETNS_DIR, name);
+  return pathUnder(CONTAINER_NETNS_DIR, name);
 }
 
 export async function ensureContainersDir() {

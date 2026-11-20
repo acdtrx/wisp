@@ -51,6 +51,7 @@ import {
   planContainerBackupRestore,
   restoreContainerBackup,
   restoreContainerBackupInPlace,
+  resolveContainerBackupDir,
   pullImage,
   getImageDigest,
   resolveContainerImageRef,
@@ -535,6 +536,7 @@ export function startContainerBackupJob({ name, origin, destinationIds, afterEac
  */
 export function startContainerRestoreJob({ name, destinationId, timestamp, safetyBackup, log }) {
   let dest;
+  let backupPath;
   return startJob({
     kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE,
     title: titleForContainerRestore(name),
@@ -549,6 +551,7 @@ export function startContainerRestoreJob({ name, destinationId, timestamp, safet
         throw createAppError('CONTAINER_MUST_BE_STOPPED', `Container "${name}" must be stopped to restore in place`);
       }
       [dest] = await resolveBackupDestinations([destinationId]);
+      backupPath = await resolveContainerBackupDir(dest.path, name, timestamp);
     },
     log,
     run: async (report) => {
@@ -570,7 +573,6 @@ export function startContainerRestoreJob({ name, destinationId, timestamp, safet
           report: scaled(0, 45, 'safety-'),
         });
       }
-      const backupPath = join(dest.path, 'containers', name, timestamp);
       return restoreContainerBackupInPlace(backupPath, {
         onProgress: scaled(safetyBackup ? 45 : 0, safetyBackup ? 55 : 100),
       });

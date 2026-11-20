@@ -67,6 +67,7 @@ export {
   planContainerBackupRestore,
   restoreContainerBackup,
   restoreContainerBackupInPlace,
+  resolveContainerBackupDir,
   setContainerBackupOrigin,
 } from './containerManagerBackup.js';
 

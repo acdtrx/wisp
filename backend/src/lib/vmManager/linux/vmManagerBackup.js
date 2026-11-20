@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError, generateMAC } from './vmManagerConnection.js';
 import { wrapVmError } from '../vmManagerShared.js';
 import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
-import { getVMBasePath, VMS_BACKUP_DIRNAME } from './vmManagerPaths.js';
+import { getVMBasePath, pathUnder, VMS_BACKUP_DIRNAME } from './vmManagerPaths.js';
 import { isOfflineState } from './libvirtConstants.js';
 import { copyNvram } from './vmManagerNvram.js';
 import { assertVMNameAvailable, createOwnVMDir, removeOwnVMDir } from './vmManagerCreate.js';
@@ -263,9 +263,9 @@ export async function createBackup(vmName, destinationPath, { onProgress, origin
 
   const timestamp = backupTimestamp();
   // Layout: <dest>/vms/<vmName>/<timestamp>/ (see VMS_BACKUP_DIRNAME).
-  const vmBackupsDir = join(destinationPath, VMS_BACKUP_DIRNAME, vmName);
+  const vmBackupsDir = pathUnder(destinationPath, VMS_BACKUP_DIRNAME, vmName);
   await mkdir(vmBackupsDir, { recursive: true });
-  const backupDir = join(vmBackupsDir, timestamp);
+  const backupDir = pathUnder(vmBackupsDir, timestamp);
   // Non-recursive so this run provably owns the directory: the failure
   // cleanup below removes it, and must never remove a backup another run wrote.
   try {
@@ -559,7 +559,7 @@ export async function listBackups(destinations, vmName = null) {
  * @returns {Promise<string>} absolute backup directory
  */
 export async function resolveVmBackupDir(rootPath, vmName, timestamp) {
-  const dir = join(rootPath, VMS_BACKUP_DIRNAME, vmName, timestamp);
+  const dir = pathUnder(rootPath, VMS_BACKUP_DIRNAME, vmName, timestamp);
   try {
     await access(dir, constants.R_OK);
   } catch {

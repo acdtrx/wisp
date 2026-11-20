@@ -1,6 +1,7 @@
 /**
  * macOS dev stub: no containerd.
  */
+import { containerError } from '../containerManagerShared.js';
 import { setContainerManagerConfig } from '../linux/containerPaths.js';
 import { setOperationLockAcquirer } from '../linux/containerOperationGuard.js';
 
@@ -18,14 +19,7 @@ export { tightenContainerFileModes, tightenContainerBackupFileModes } from '../l
 
 export const IS_DARWIN = true;
 
-export function containerError(code, message, raw) {
-  const err = new Error(message);
-  err.code = code;
-  if (raw) err.raw = raw;
-  // The mark every Wisp error factory sets (lib/appErrors.js, which this module cannot reach).
-  Object.defineProperty(err, Symbol.for('wisp.error'), { value: true });
-  return err;
-}
+export { containerError };
 
 const containerState = {
   clients: null,
@@ -175,6 +169,10 @@ export async function restoreContainerBackupInPlace() {
 }
 
 export async function deleteContainerBackup() {
+  throw noContainerd();
+}
+
+export async function resolveContainerBackupDir() {
   throw noContainerd();
 }
 

@@ -11,7 +11,9 @@
  * `lib/paths.js` — routes resolve+validate before handing absolute paths to
  * vmManager.
  */
-import { join } from 'node:path';
+import { resolve, sep } from 'node:path';
+
+import { vmError } from '../vmManagerShared.js';
 
 /** Subdirectory under each backup root that holds VM backups
  * (`<root>/vms/<vmName>/<timestamp>/`), beside container backups under `containers/`. */
@@ -37,7 +39,23 @@ export function getVmsPath() {
   return vmsPath;
 }
 
+/**
+ * `root` joined with `segments` (a name, a timestamp, a file name), checked
+ * to stay below `root`: a segment that is absolute, holds a separator that
+ * climbs out, or is `..` is refused (PATH_NOT_ALLOWED). Every path this
+ * manager builds from a name it was given goes through here, so a caller
+ * that skips the route's schema (the scheduler, MCP) cannot leave the root.
+ */
+export function pathUnder(root, ...segments) {
+  const base = resolve(root);
+  const full = resolve(base, ...segments);
+  if (!full.startsWith(base + sep)) {
+    throw vmError('PATH_NOT_ALLOWED', `"${segments.join('/')}" would leave its directory`);
+  }
+  return full;
+}
+
 export function getVMBasePath(name) {
   requireConfigured();
-  return join(vmsPath, name);
+  return pathUnder(vmsPath, name);
 }

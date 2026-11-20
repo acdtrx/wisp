@@ -39,7 +39,7 @@ import { createGzip } from 'node:zlib';
 
 import { containerError, containerState, getClient, callUnary, packAny } from './containerManagerConnection.js';
 import {
-  CONTAINERS_BACKUP_DIRNAME, getContainerDir, getContainerFilesDir, getContainersPath,
+  CONTAINERS_BACKUP_DIRNAME, getContainerDir, getContainerFilesDir, getContainersPath, pathUnder,
 } from './containerPaths.js';
 import {
   getTaskState, normalizeTaskStatus, cleanupTask, pauseContainer, resumeContainer,
@@ -266,9 +266,9 @@ export async function createContainerBackup(name, destinationPath, { onProgress,
   const containersRoot = getContainersPath();
 
   const timestamp = backupTimestamp();
-  const containerBackupsDir = join(destinationPath, CONTAINERS_BACKUP_DIRNAME, name);
+  const containerBackupsDir = pathUnder(destinationPath, CONTAINERS_BACKUP_DIRNAME, name);
   await mkdir(containerBackupsDir, { recursive: true });
-  const backupDir = join(containerBackupsDir, timestamp);
+  const backupDir = pathUnder(containerBackupsDir, timestamp);
   // Non-recursive so this run provably owns the directory: the failure
   // cleanup below removes it, and must never remove (or write into) a backup
   // another run made in the same second.
@@ -443,6 +443,23 @@ export async function setContainerBackupOrigin(backupPath, origin) {
   }
   manifest.origin = origin;
   await writeJsonAtomic(manifestPath, manifest, { mode: BACKUP_FILE_MODE });
+}
+
+/**
+ * Resolve `(rootPath, name, timestamp)` to the absolute backup directory
+ * `<root>/containers/<name>/<ts>/`. Throws BACKUP_NOT_FOUND if it does not
+ * exist. Callers use this before restoring or deleting so the layout stays
+ * inside containerManager.
+ * @returns {Promise<string>} absolute backup directory
+ */
+export async function resolveContainerBackupDir(rootPath, name, timestamp) {
+  const dir = pathUnder(rootPath, CONTAINERS_BACKUP_DIRNAME, name, timestamp);
+  try {
+    await access(dir, constants.R_OK);
+  } catch {
+    throw containerError('BACKUP_NOT_FOUND', `Backup not found for ${name} @ ${timestamp}`);
+  }
+  return dir;
 }
 
 /**

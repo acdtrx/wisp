@@ -1,5 +1,3 @@
-import { join } from 'node:path';
-
 import {
   listBackups,
   deleteBackup,
@@ -8,6 +6,7 @@ import {
 import {
   listContainerBackups,
   deleteContainerBackup,
+  resolveContainerBackupDir,
 } from '../lib/containerManager/index.js';
 import { getSettings, listConfiguredBackupRoots, listBackupDestinationsWithMountCheck } from '../lib/settings.js';
 import { startVmRestoreJob } from '../lib/vmOperations.js';
@@ -215,10 +214,7 @@ export default async function backupsRoutes(fastify) {
       const { destinationId, name, timestamp, newName } = request.body;
       const settings = await getSettings();
       const root = resolveBackupRoot(settings, destinationId);
-      // Containers live under <root>/containers/<name>/<timestamp>/. The
-      // route knows the layout because it owns the API contract; the
-      // container manager keeps generic "absolute path in" semantics.
-      const backupPath = join(root, 'containers', name, timestamp);
+      const backupPath = await resolveContainerBackupDir(root, name, timestamp);
       const job = await startContainerRestoreAsNewJob({ backupPath, newName, log: request.log });
       return reply.code(202).send(job);
     },
@@ -273,7 +269,7 @@ export default async function backupsRoutes(fastify) {
       const { destinationId, name, timestamp } = request.body;
       const settings = await getSettings();
       const root = resolveBackupRoot(settings, destinationId);
-      const backupPath = join(root, 'containers', name, timestamp);
+      const backupPath = await resolveContainerBackupDir(root, name, timestamp);
       const roots = listConfiguredBackupRoots(settings);
       await deleteContainerBackup(backupPath, roots);
       return reply.code(204).send();
