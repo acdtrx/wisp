@@ -43,7 +43,8 @@ Scoped bearer tokens for non-interactive clients (coding agents, scripts). All t
 
 - **Body:** `{ label: string (1–64), scope: "read" | "admin" }`
 - **201:** `{ id, label, scope, createdAt, token }` — `token` (`wisp_<scope>_<random>`) is shown only in this response
-- **422:** `{ error, detail }` — `TOKEN_INVALID` (bad label/scope)
+- **400:** `VALIDATION_FAILED` — a label of 0 or over 64 characters, a scope other than `read` / `admin`, or an unknown key (the body's schema)
+- **422:** `TOKEN_INVALID` — a label of whitespace only
 
 #### DELETE /api/auth/tokens/:id · `session`
 

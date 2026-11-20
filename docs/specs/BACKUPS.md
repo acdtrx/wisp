@@ -194,7 +194,7 @@ The map is pushed on the **`backups` topic of `GET /api/events`**: a snapshot on
 
 `DELETE /api/backups` with `{ destinationId, vmName, timestamp }`:
 
-- The route resolves `destinationId` to a configured destination root (rejecting unknown ids), validates `vmName` (`validateVMName`) and `timestamp` (`^[A-Za-z0-9][A-Za-z0-9._-]*$`, max 64 — the leading alphanumeric makes `.` / `..` impossible), then constructs the absolute path server-side. The client never sends a path. Invalid input is **422 before anything touches disk**.
+- The route resolves `destinationId` to a configured destination root (rejecting unknown ids), the body's schema checks `vmName` (the [name rules](ERROR-HANDLING.md#name-validation)) and `timestamp` (`^[A-Za-z0-9][A-Za-z0-9._-]*$`, max 64 — the leading alphanumeric makes `.` / `..` impossible), then it constructs the absolute path server-side. The client never sends a path. Invalid input is refused before anything touches disk: **400** `VALIDATION_FAILED` for a malformed name or timestamp, **422** `BACKUP_INVALID` for an unknown destination.
 - The manager (`deleteBackup` / `deleteContainerBackup`) independently refuses (422 `BACKUP_INVALID`) a resolved target outside every configured destination root, or equal to a destination root itself or its `vms/` / `containers/` sub-root — defense in depth that holds regardless of the route's validation.
 - The entire backup directory is removed.
 

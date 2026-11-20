@@ -53,7 +53,8 @@ Rename a file.
 Check if a URL is reachable (HEAD request).
 
 - **Query:** `?url=https://...`
-- **200:** `{ ok: boolean, contentLength: number | null, error?: string, status?: number }`
+- **200:** `{ ok: true, contentLength }` when the URL answers 2xx — `contentLength` the answer's `Content-Length`, `null` without a usable one; else `{ ok: false, error, detail, status? }`, the [error body](ERROR-HANDLING.md#the-error-body) of why not (settled 2026-11-20: a key named `error` holds a code in every body): `INVALID_URL` (not `http`/`https`), `SSRF_BLOCKED` (a private or loopback address), `DNS_FAILED`, `DOWNLOAD_FAILED` (an answer other than 2xx, its `status` with it, or no answer at all). An unreachable URL is the check's result, not an error answer.
+- **400:** `VALIDATION_FAILED` — no `url`, or another key
 
 ### POST /api/library/download · `admin`
 

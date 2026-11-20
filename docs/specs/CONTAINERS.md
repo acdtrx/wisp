@@ -40,13 +40,13 @@ Consequences:
 
 ## Name validation
 
-Every `/api/containers/:name/*` route runs a `preHandler` that calls `validateContainerName(request.params.name)`. The validator (in `backend/src/lib/validation.js`) requires:
+A container name is checked by one schema (`containerNameSchema` in `backend/src/lib/validation.js`; [ERROR-HANDLING.md → Name validation](ERROR-HANDLING.md#name-validation)) wherever one arrives: every `/api/containers/:name/*` path, a create's or a rename's body, a container backup's and restore's names, the console WebSocket and the MCP tools' `name` argument. It requires:
 
 - length 1–63
-- regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`
-- rejects `..`, `/`, `\`
+- a leading letter or digit, then letters, digits, `.`, `_`, `-`
+- no `..`, `/` or `\`; used as sent, never trimmed
 
-Failures map to HTTP 422 (`INVALID_CONTAINER_NAME`). This guards path-derived helpers (`getContainerDir(name)`, run-log streams, mount file paths) against traversal.
+A name that breaks it answers **400** `VALIDATION_FAILED` (settled 2026-11-20: a schema-shape refusal, no longer 422). The container manager checks a name it is given again (**422** `INVALID_CONTAINER_NAME`) for callers that reach it without the schema. This guards path-derived helpers (`getContainerDir(name)`, run-log streams, mount file paths) against traversal.
 
 ## Data Model
 
@@ -120,7 +120,7 @@ Alongside each log file, the backend writes a JSON sidecar with run metadata:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `type` | string | `bridge` — container is attached as a veth port on a host Linux bridge (LAN DHCP). The only value: PATCH rejects any other with **422** `CONFIG_ERROR` *(settled 2026-11-12)*. |
+| `type` | string | `bridge` — container is attached as a veth port on a host Linux bridge (LAN DHCP). The only value: PATCH refuses any other, **400** `VALIDATION_FAILED` (its body's schema; *settled 2026-11-12*). |
 | `interface` | string | Host Linux bridge used as the parent for the container's veth pair (e.g. `br0` or a VLAN sub-bridge `br0-vlan10`). Required at start; a setup-time probe rejects anything that is not an existing Linux bridge. At **create**, defaults to the first bridge whose name is not VLAN-style (`br0-vlanN` / `iface.VID`); if none, the first listed bridge. |
 | `ip` | string \| omitted | Set by the backend after a successful CNI **ADD** (IPv4 with mask, e.g. `192.168.1.50/24`). Not writable via PATCH while the task is running (ignored in the merge). |
 | `ip6` | string \| omitted | Set by the backend when the running container's netns holds a global-scope IPv6 (with prefix, e.g. `fdc0:…:ad5f/64`). Kernel SLAAC from the LAN's router advertisements — nothing in the CNI/DHCP layer requests IPv6; the address is observed from `/proc/<taskPid>/net/if_inet6` by the 60 s network probe (GUA preferred over ULA; link-local/tentative/deprecated/temporary skipped). Absent on LANs without an IPv6 prefix. Not user-writable. |
@@ -318,7 +318,7 @@ The facade is `backend/src/lib/containerManager/index.js` (picks `linux/index.js
 | `containerManagerImages.js` | `listContainerImages()`, `deleteContainerImage()` (containerd Images service; deletes by the exact listed name; blocked if any Wisp container references the image), `resolveContainerImageRef()` (the ref a container stores: exact local name, else normalized) |
 | `containerManagerOciSize.js` | `compressedBlobSizeForImageName()` — sums compressed config + layer sizes from the resolved Linux image manifest (not the top-level manifest blob size) |
 | `containerManagerConfig.js` | `updateContainerConfig()` |
-| `containerValidation.js` | `validateContainerName()` — the manager's own copy of the name rule (routes validate first via `lib/validation.js`), so containerManager carries no Wisp-glue import |
+| `containerValidation.js` | `validateContainerName()` — the manager's own copy of the name rule (routes and MCP tools check first with the schema in `lib/validation.js`), so containerManager carries no Wisp-glue import |
 | `atomicJson.js` | `writeJsonAtomic()` — private copy of the temp-file + rename write, same tmp suffix as `lib/atomicJson.js` so the boot janitor finds leftovers |
 | `containerManagerConfigIo.js` | `readContainerConfig()`, `writeContainerConfig()`, `subscribeContainerConfigWrite()`, `notifyContainerConfigWrite()` — single owner of `container.json` reads/writes. Every mutation fans out a config-write notification; the container list cache subscribes and refreshes accordingly. |
 | `containerManagerStats.js` | `getContainerStats()` — calls containerd `Tasks.Metrics`; the `Any` payload is decoded via the registered `io.containerd.cgroups.v{1,2}.Metrics` proto types (loaded by `containerManagerConnection.js` from `protos/containerd/cgroups/`) to extract CPU usec and memory usage |
@@ -505,7 +505,7 @@ A container's name is its containerd container ID, the directory key under `cont
 **Preconditions:**
 
 - Container must be **stopped** (no running/paused task). Returns **409** `CONTAINER_MUST_BE_STOPPED` otherwise. The user is expected to stop the container manually first; the rename does not auto-stop. The General section's Name input is correspondingly disabled when the container is `running`, `paused`, or `pausing` (matching the same gating used on `network.mac` / `network.interface`).
-- New name must pass `validateContainerName` (1–63 chars, regex `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`, no `..` / path separators).
+- New name must pass the [name rules](#name-validation) (1–63 chars, no `..` / path separators).
 - New name must not already exist as a containerd container or as a directory under `containersPath`. Returns **409** `CONTAINER_EXISTS` otherwise.
 
 **Order of operations** (in `containerManagerRename.js`):

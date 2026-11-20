@@ -154,7 +154,7 @@ Each code a client can receive, with its status.
 
 | Code | Status | Meaning |
 |------|--------|---------|
-| `VALIDATION_FAILED` | 400 | The request fails its schema; the detail names the part and the field |
+| `VALIDATION_FAILED` | 400 | The request, or an MCP tool's arguments, fails its schema; the detail names the part and the field ([Request validation](#request-validation)) |
 | `MALFORMED_JSON` | 400 | The JSON body is malformed or empty, or holds a forbidden `__proto__` key |
 | `MALFORMED_URL` | 400 | The URL's percent-encoding is malformed |
 | `MALFORMED_MULTIPART` | 400 | The multipart body was cut short, or has a forbidden field name |
@@ -233,7 +233,7 @@ Each code a client can receive, with its status.
 | `DISK_IMAGE_UNSAFE` | 422 | The disk image has a backing file or data file outside the allowed roots |
 | `USB_ATTACH_FAILED` | 422 | The USB device could not be attached |
 | `USB_DETACH_FAILED` | 422 | The USB device could not be detached |
-| `INVALID_VM_NAME` | 422 | The VM name breaks the [name rules](#vm-name-validation) |
+| `INVALID_VM_NAME` | 422 | A VM name that reached the VM manager breaks the [name rules](#name-validation) |
 | `PATH_NOT_ALLOWED` | 422 | The path resolves outside the image library and the VM's directory |
 | `BACKUP_INVALID` | 422 | The backup archive or manifest fails validation |
 | `BACKUP_DEST_UNKNOWN` | 422 | An unknown backup destination id |
@@ -257,7 +257,7 @@ Each code a client can receive, with its status.
 | `UNKNOWN_APP_TYPE` | 422 | No app type by that name |
 | `INVALID_CONTAINER_IMAGE_REF` | 422 | The image reference is malformed |
 | `IMAGE_PULL_FAILED` | 422 | The image could not be pulled |
-| `INVALID_CONTAINER_NAME` | 422 | The container name breaks the name rules |
+| `INVALID_CONTAINER_NAME` | 422 | A container name that reached the container manager breaks the [name rules](#name-validation) |
 | `INVALID_CONTAINER_MAC` | 422 | The MAC address is malformed |
 | `INVALID_CONTAINER_MOUNTS` | 422 | A mount's shape is invalid |
 | `INVALID_CONTAINER_SERVICE` | 422 | An mDNS service's shape is invalid |
@@ -341,12 +341,40 @@ before the port opens.
 | `SYSTEMD_NOTIFY_FAILED` | — | The start: the readiness message could not be sent |
 | `DNS_FORWARDER_UNAVAILABLE` | — | The start: the containers' DNS forwarder could not bind |
 
-## Validation Errors
+## Request validation
 
-### VM name validation
+Input is checked at the boundary by one validator, JSON Schema with ajv
+(`lib/schemaValidation.js`; settled 2026-11-20): every route's params, querystring and
+body, and every MCP tool's arguments. What it refuses answers **400** `VALIDATION_FAILED`,
+the detail naming the part and the first field that fails (above).
 
-VM names are validated before route handlers execute (via a `preHandler` hook). Invalid
-names receive a 422 response with code `INVALID_VM_NAME`.
+- **Unknown keys are refused**, never dropped: every object a route or a tool accepts says
+  which keys it takes, and a route that declares no querystring or no body takes none
+  (`querystring: unknown key "x"`, `body: unknown key "x"`). A bodiless command accepts an
+  empty object or no body.
+- **A JSON body is not coerced**: `"22"` is not a number, `"true"` not a boolean. A
+  querystring and path params arrive as strings and are coerced to the type their schema
+  names (`?deleteFiles=false` is `false`, `/services/80` is `80`); a value that does not
+  convert is refused.
+- **A default fills a key left out** where the schema gives one (`safetyBackup`, a disk's
+  `bus`, the stats `intervalMs`).
+- The schema says the shape: required keys, types, enums, lengths, ranges, patterns. A
+  route's own 4xx codes are for what a schema cannot say (a name of whitespace only, a
+  duplicate, an id that names nothing, a path outside the allowed roots).
+- `npm run check` fails a route that lacks a schema it needs (the route report,
+  `routeSchemaProblems` in `routes/schemas.js`): params for each URL param, a response
+  schema for a success, and every accepted object saying whether it takes other keys.
+
+### Name validation
+
+A VM or container name is a path segment: letters, digits, dots, hyphens and
+underscores, a leading letter or digit, no `..`, at most 128 characters for a VM and 63
+for a container, and used as sent, never trimmed (`vmNameSchema`, `containerNameSchema`
+in `lib/validation.js`). The same schema checks a name in a URL, a body (a create, a
+rename, a backup's and a restore's names) and an MCP tool's arguments, so a name that
+breaks it is **400** `VALIDATION_FAILED`. The managers check a name they are given again
+(`INVALID_VM_NAME`, `INVALID_CONTAINER_NAME`, 422), for callers that reach them without a
+schema.
 
 ### Path policy for VM disks / ISOs
 
@@ -356,7 +384,7 @@ outside the image library or the VM's per-VM directory returns **422 PATH_NOT_AL
 
 ### Filename validation
 
-Library file operations validate filenames: no path separators (`/`, `\`), no `..`, no
+The library validates the file names it is given (`lib/library`, where the path is built): no path separators (`/`, `\`), no `..`, no
 leading dots, and the filename must equal its `basename()`; a name that breaks them
 answers **422** `INVALID_FILENAME`.
 

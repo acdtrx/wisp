@@ -4,6 +4,8 @@ VMs, their stats stream, disks, CD-ROMs, USB passthrough and cloud-init. Shared 
 
 ## Virtual Machines
 
+A `:name` in the path that breaks the [name rules](ERROR-HANDLING.md#name-validation) answers **400** `VALIDATION_FAILED`, before anything is read.
+
 ### GET /api/vms · `read`
 
 List all VMs with summary info.
@@ -22,11 +24,15 @@ List all VMs with summary info.
     "osCategory": "linux",
     "iconId": null,
     "localDns": false,
+    "guestAgent": true,
     "pendingRestart": null,
+    "startedAt": 1730000000000,
     "staleBinary": false
   }
 ]
 ```
+
+`startedAt` is when QEMU started (epoch ms), `null` while the VM is off; `staleBinary` is `true` when the running QEMU's binary was replaced on disk since it started (a restart picks up the new one). The same rows are the `vms` topic's array.
 
 - `pendingRestart` is `{ since }` (ISO time the change was saved) while a saved definition change awaits a restart of the VM, else `null` — set by a `PATCH` that changed a running VM's definition (or by a state migration), persisted in the domain's `wisp:prefs` metadata, and dropped once the VM's QEMU process is seen to have started after `since`. A guest reboot keeps the process, so it doesn't clear it. See [VM-MANAGEMENT.md → Restart-required flag](VM-MANAGEMENT.md#restart-required-flag).
 
@@ -105,15 +111,13 @@ Create a new VM. A [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; 
 - **Progress events:** `{ step, ... }` — `step` includes `validating`, `copying` (may include `percent`), `resizing`, `creating-disk`, `cloudinit`, `defining`.
 - **`done` result:** `{ name }` — the new VM's name
 - **409:** `{ error, detail }` — `VM_EXISTS` when a VM with that name is defined; `VM_DIR_EXISTS` when `<vmsPath>/<name>/` already exists (e.g. left by *Delete VM, keep disks*); `detail` says so, the path redacted (`<path>`); `VM_BUSY` while another job holds that name's lock (e.g. a create or restore as new to the same name). Checked before the job starts; nothing is created.
-- **422:** `{ error, detail }` — `INVALID_VM_NAME` when name fails `validateVMName`; VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
-
-The body schema is **`additionalProperties: false`**. With Fastify's default Ajv (`removeAdditional: true`), unknown keys are silently stripped before the handler runs — they never reach `createVM`. Only schema-level violations (wrong type, missing required field) return HTTP 400 `VALIDATION_FAILED`.
+- **400:** `VALIDATION_FAILED` — the body fails its schema: a name that breaks the [name rules](ERROR-HANDLING.md#name-validation), a wrong type, a missing `name`, or an unknown key at any level (in `nics[]`, `disk`, `disk2` and `cloudInit` too). A NIC takes no VLAN (`vlan` is an unknown key): use a VLAN-specific bridge (for example `br0-vlan22`) instead
 
 ### GET /api/vms/:name · `read`
 
 Full VM configuration parsed from domain XML.
 
-- **200:** Full VM config object (name, uuid, state, vcpus, memoryMiB, disks, nics, firmware, …, `pendingRestart`) — `pendingRestart` as on the list payload
+- **200:** Full VM config object, read from the VM's saved (inactive) definition: `name`, `uuid`, `state`, `stateCode`, `autostart`, `vcpus`, `memoryMiB`, `osType`, `osCategory`, `arch`, `machineType`, `firmware`, `cpuMode`, `cpuTopology`, `cpuFeatures`, `nestedVirt`, `bootOrder`, `bootMenu`, `disks[]` (`slot`, `device`, `bus`, `source`, `driverType`, `readonly`, `sizeGiB`), `nics[]` (`type`, `mac`, `source`, `model`, `target`), `graphics` (`type`, `port`, `listen`, `autoport`), `videoModel`, `features` (`hyperv`), `memBalloon`, `guestAgent`, `vtpm`, `virtioRng`, `iconId`, `localDns`, `pendingRestart` — `pendingRestart` as on the list payload. USB attachments are `GET /api/vms/:name/usb`.
 
 Each `disks[]` entry may include **`sizeGiB`** (integer, virtual size in GiB, rounded) for **`device: "disk"`** entries with a file `source`, when `qemu-img info` succeeds. Omitted if the image is missing or size read fails.
 
@@ -121,10 +125,10 @@ Each `disks[]` entry may include **`sizeGiB`** (integer, virtual size in GiB, ro
 
 Update VM configuration.
 
-- **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `machineType`, `firmware`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `localDns`, `autostart`. Schema is **`additionalProperties: false`**; with Fastify's default Ajv `removeAdditional: true`, unknown keys are silently stripped before reaching `updateVMConfig`. `videoDriver` and `graphicsType` take the values listed under create; any other → **400** `VALIDATION_FAILED`.
+- **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `machineType`, `firmware`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `localDns`, `autostart`. Any other key, here or in a `nics[]` entry, is refused: **400** `VALIDATION_FAILED` naming it. `videoDriver` and `graphicsType` take the values listed under create; any other → **400** `VALIDATION_FAILED`, as is a `name` that breaks the [name rules](ERROR-HANDLING.md#name-validation).
 - **204:** saved; the VM's new state reaches clients as `{ kind: "vm", id: <name> }` on the [`changes`](API.md#changes-topic-payload) topic, under the new name after a rename. When the VM is running and the patch changed its domain definition (anything but icon, local DNS and autostart), its `pendingRestart` flag is set
 - **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running; `VM_EXISTS` / `VM_DIR_EXISTS` when the new name belongs to another VM or `<vmsPath>/<name>/` already exists (the rename reserves that directory first, so a concurrent rename or create to the same name gets this, see [VM-MANAGEMENT.md → Renaming](VM-MANAGEMENT.md#renaming)); `VM_BUSY` while another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock) — every PATCH takes it, rename or not, and a rename also takes the new name's (`VM_BUSY` while a job holds that name)
-- **422:** `{ error, detail }` — `INVALID_VM_NAME` on rename to an invalid name; VM VLAN input is rejected on bridge NICs; use a VLAN-specific bridge (for example `br0-vlan22`) instead
+- A NIC takes no VLAN: `vlan` in a `nics[]` entry is an unknown key, **400** `VALIDATION_FAILED`; use a VLAN-specific bridge (for example `br0-vlan22`) instead
 
 `localDns` is supported in PATCH and controls VM mDNS registration behavior.
 
@@ -290,11 +294,11 @@ Attach a USB device to the VM. Hot-plug when running, persistent config when sto
 
 ### DELETE /api/vms/:name/usb/:id · `admin`
 
-Detach a USB device. `id` format: `vendorId:productId` (e.g. `046d:c077`). Both must be 4 hex digits.
+Detach a USB device. `id` format: `vendorId:productId` (e.g. `046d:c077`). Both must be 4 hex digits; any other `id` is **400** `VALIDATION_FAILED`.
 
 - **204:** done; the VM's new state reaches clients as `{ kind: "vm", id }` on the `changes` topic
 - **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
-- **422:** `{ error, detail }` — `INVALID_USB_ID`: invalid USB ID format; `USB_DETACH_FAILED`: device not found
+- **422:** `{ error, detail }` — `USB_DETACH_FAILED`: device not found
 
 ---
 

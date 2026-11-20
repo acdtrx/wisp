@@ -17,8 +17,15 @@
   callers), **`@grpc/grpc-js`** + proto-loader + protobufjs (containerd's gRPC API — sole
   caller `lib/containerManager/linux/`), **`fast-xml-parser`** (libvirt domain XML, never
   regex).
-- **Fastify 5.** **Schema validation: JSON Schema with ajv**, which ships inside Fastify
-  and checks every route's input. Routes throw, and one error handler answers every
+- **Fastify 5.** **Schema validation: JSON Schema with ajv**, the one validator for every
+  route's input and every MCP tool's arguments (`lib/schemaValidation.js`; settled
+  2026-11-20). Two compilers, chosen by request part: JSON bodies (and tool arguments) are
+  not coerced, the querystring and params, which arrive as strings, are coerced to their
+  schema's type; both refuse unknown keys (`removeAdditional: false`,
+  `additionalProperties: false` on every accepted object) and are strict, so a schema ajv
+  cannot read as written — a union type, an unknown keyword — fails at boot. A route that
+  declares no querystring or body takes none, and `npm run check` fails a route without
+  the schemas it needs (the route report). Routes throw, and one error handler answers every
   failure, validation errors included, with the failure shape and the status the one
   table of codes gives it (CODING-RULES §5). Route **response schemas are
   authoritative** for serialized output: add a new response field to the route schema in
@@ -123,6 +130,7 @@ alone, and nothing installs the root's packages there.
 |-----------|-----------|---------|---------|
 | Runtime | Node.js | 24+ LTS | Server runtime. Optional `config/runtime.env` parsed in-process; `--watch` for dev mode. |
 | Framework | Fastify | ^5.8 | HTTP server with built-in JSON schema validation, low overhead, plugin system. |
+| Schema validation | ajv | ^8.20 | The validator of every route's input and every MCP tool's arguments: two instances (JSON bodies uncoerced, string parts coerced), strict, unknown keys refused. At Fastify's major (its own compiler bundles ajv 8): one validator for the routes' and the tools' schemas, rather than Fastify's single coercing instance and a hand-written argument check per tool. |
 | CORS | @fastify/cors | ^11.2 | Cross-origin support for development mode only. |
 | File uploads | @fastify/multipart | ^10.0 | Streaming multipart uploads (50GB limit). |
 | Static files | @fastify/static | ^10.1 | Serves the prebuilt SPA (`frontend/dist/`) and `/vendor/` (noVNC). |

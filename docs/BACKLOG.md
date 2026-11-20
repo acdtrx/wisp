@@ -292,14 +292,13 @@ reads (`containerManagerLogs.js`, four sites) code a file read failure on the ru
 route lets the same failure through uncoded, as `INTERNAL_ERROR`: one failure, two codes.
 **Revisit trigger:** phase 5's work on containerManager, or a client that branches on it.
 
-**Specs that disagree with the code, found in the error sweep.** Three statements in the
+**Specs that disagree with the code, found in the error sweep.** Two statements in the
 specs no longer match what the routes do (found 2026-11-20, while naming each error's
-code): API-VMS says a VLAN on a bridge NIC is refused with 422, but no VM code refuses it
-(create keeps `vlan`, PATCH strips it); API-HOST says `POST /api/host/mounts/:id/mount`
+code): API-HOST says `POST /api/host/mounts/:id/mount`
 answers 422 for a disk mount, but the route mounts disks; CONTAINERS.md says Stop and
 Kill answer 200 `{ ok, restartCancelled }`, while API-CONTAINERS has Stop as a 202 job
 and Kill as 204. Each needs the code or the spec settled with the user. **Revisit
-trigger:** the next work on VM NICs, host mounts or container lifecycle.
+trigger:** the next work on host mounts or container lifecycle.
 
 **Help icons rely on `title`.** `HelpIcon.jsx` shows its text only as a `title` tooltip,
 which never appears on touch (found in the 2026-11-12 rules audit). **Revisit trigger:**
@@ -379,11 +378,6 @@ shutdown step that waits on a darwin stub. **Revisit trigger:** it gets in the w
 work or a script that restarts the dev backend.
 
 **SMB shares without a password can't be mounted.** With no password in the credentials file, `mount.cifs` prompts on stdin; the helper never answers, so the mount waits until the helper's mount bound kills it (seen 2026-11-13). A guest share probably can't be mounted at all. Fix shape: pass `guest` (or an explicit empty `password=`) when no password is set. **Revisit trigger:** someone adds a guest share, or the next work on SMB mounts.
-
-**`PATCH /api/containers/:name` has no body schema.** CODING-RULES §9 wants request
-validation at the boundary; the manager validates fields piecemeal instead (found in the
-2026-11-12 repairs inventory). **Revisit trigger:** a malformed PATCH body is stored, or
-the next work on that route.
 
 **Migration history in the UI.** The journal (`journalctl -u wisp-updater`) and the ledger
 (`config/migrations.json`) are the only record of what an update's state migrations

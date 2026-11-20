@@ -179,8 +179,14 @@ In projects with a web UI: `FRONTEND-RULES.md`.
 - Validate and sanitise all user input at the **API boundary** with the one
   schema-validation mechanism named in `TECH-STACK.md`, not ad-hoc checks. Internal
   library functions may assume valid input.
+  - Applied: every route declares the params, querystring and body it takes, and every MCP
+    tool its `inputSchema`; one validator checks them (`lib/schemaValidation.js`), unknown
+    keys refused and JSON never coerced, before the handler runs. A shape the schema can say
+    is not checked again by hand; a handler keeps only what a schema cannot say. `npm run
+    check` fails a route that lacks a schema it needs (the route report).
   - Applied: allow workload names of alphanumerics, hyphens, underscores and dots; reject
-    traversal, empty and over-length names.
+    traversal, empty and over-length names — one schema per kind (`lib/validation.js`),
+    used by the routes and the MCP tools alike.
   - Applied: `lib/paths.js` is the **API-input security gate** for host paths: in routes,
     resolve and validate user-supplied paths there (`resolveLibraryPath`,
     `assertPathInsideAllowedRoots`) before passing absolute paths to the managers, which

@@ -29,6 +29,8 @@ Credentials:
 
 **Errors (settled 2026-11-20).** Every error answers `{ "error": "<CODE>", "detail": "<message>" }`: `error` is the stable code, always present, and `detail` the human-readable message. The status follows from the code, through the one table. The framework's own refusals answer the same way: a request that fails its schema is **400** `VALIDATION_FAILED` (`detail` naming the part and the field, `body/<field> …`), malformed JSON **400** `BAD_REQUEST`, an unknown route **404** `ROUTE_NOT_FOUND`, a body too large **413** `PAYLOAD_TOO_LARGE`, an unsupported content type **415** `UNSUPPORTED_MEDIA_TYPE`, a missing or expired session **401** `AUTH_REQUIRED` / `AUTH_INVALID`. The same body is a job's error event, a stream's error frame and an MCP tool error. Every code, its status and its meaning: [ERROR-HANDLING.md](ERROR-HANDLING.md#codes).
 
+**Input is checked against the route's schema (settled 2026-11-20).** Every route declares the params, querystring and body it takes. A key the schema does not list, in a body or a querystring, is refused: **400** `VALIDATION_FAILED`, `detail` naming it (`body: unknown key "x"`, `body/nics/0: unknown key "vlan"`); a route that declares no querystring or no body takes none (a bodiless command still accepts an empty `{}`). A JSON body is not coerced: a string where a number or a boolean is wanted is refused. A querystring and path params arrive as strings and are coerced to the type their schema names (`?deleteFiles=false`, `/services/80`). Every refusal of the input's shape — a missing or unknown key, a wrong type, a value out of range, a name that breaks the [name rules](ERROR-HANDLING.md#name-validation) — is that 400; a route's own 4xx codes (a 422 such as `SECTION_INVALID`) are for what a schema cannot say (a name of whitespace only, a duplicate, an id that names nothing). The MCP tools check their arguments the same way ([MCP.md](MCP.md)).
+
 **Short requests (settled 2026-11-13).** The web client gives up on a REST call after **45 s**, over the request and reading its body. Every route answers within that: an operation that can outlast it is a [job route](#job-routes), which answers 202 at once and reports through the job's stream.
 
 **Command responses (settled 2026-11-15; ARCHITECTURE § Transport).** A state-changing request (`POST` / `PUT` / `PATCH` / `DELETE`) answers with an ack, never its result:
@@ -227,15 +229,14 @@ VNC console WebSocket proxy. Bridges the browser's noVNC client to QEMU's VNC se
 - **Auth:** `session` — `wisp_session` cookie on the upgrade handshake (sent automatically same-origin); bearer API tokens get 403. `Origin` allow-list enforced.
 - **Protocol:** Binary frames — bidirectional TCP-to-WebSocket bridge
 - **Connection flow:**
-  1. Global auth hook validates the session cookie before the upgrade completes
-  2. Validate VM name
-  3. Read VNC port from domain XML
-  4. Open TCP connection to `127.0.0.1:<port>`
-  5. Pipe data bidirectionally between WebSocket and TCP socket
-- **Rejected before the upgrade:** HTTP `401` (no/invalid session — browsers report it as close `1006`), `403` (bearer token)
+  1. Global auth hook validates the session cookie, and the route's schema the VM name, before the upgrade completes
+  2. Read VNC port from domain XML
+  3. Open TCP connection to `127.0.0.1:<port>`
+  4. Pipe data bidirectionally between WebSocket and TCP socket
+- **Rejected before the upgrade:** HTTP `401` (no/invalid session — browsers report it as close `1006`), `403` (bearer token), `400` `VALIDATION_FAILED` (a VM name that breaks the name rules)
 - **Close codes:**
   - `1008` — Origin not allowed, or all consoles closed after a password change
-  - `4000` — `invalid name` (VM name) or `vnc unavailable` (no VNC port yet / libvirt error)
+  - `4000` — `vnc unavailable` (no VNC port yet / libvirt error)
   - `1011` — TCP connection error
 
 ### WS /ws/container-console/:name · `session`
@@ -243,19 +244,18 @@ VNC console WebSocket proxy. Bridges the browser's noVNC client to QEMU's VNC se
 Interactive shell in a **running** container. Uses containerd `Tasks.Exec` with a PTY (`/bin/sh`); I/O is bridged over WebSocket.
 
 - **Auth:** `session` — `wisp_session` cookie on the upgrade handshake (same as VNC console); bearer API tokens get 403
-- **Query:** `cols` and `rows` (optional, defaults 80×24) — initial PTY size; client may send further resize messages after connect
+- **Query:** `cols` and `rows` (optional integers 1–4096, defaults 80×24) — initial PTY size; client may send further resize messages after connect
 - **Protocol:**
   - **Binary frames** — terminal input (client → server) and output (server → client)
   - **Text frames** — JSON control only: `{ "type": "resize", "cols": number, "rows": number }` (client → server)
 - **Connection flow:**
-  1. Global auth hook validates the session cookie before the upgrade completes
-  2. Validate container name
-  3. Ensure the container task is running; create a unique exec session with named pipes + `Tasks.Exec` / `Tasks.Start`
-  4. Bridge WebSocket ↔ FIFO streams; forward `resize` to `Tasks.ResizePty`
-  5. On close, kill the exec process and remove temp FIFO directory
-- **Rejected before the upgrade:** HTTP `401` (no/invalid session — browsers report it as close `1006`), `403` (bearer token)
+  1. Global auth hook validates the session cookie, and the route's schema the container name and the PTY size, before the upgrade completes
+  2. Ensure the container task is running; create a unique exec session with named pipes + `Tasks.Exec` / `Tasks.Start`
+  3. Bridge WebSocket ↔ FIFO streams; forward `resize` to `Tasks.ResizePty`
+  4. On close, kill the exec process and remove temp FIFO directory
+- **Rejected before the upgrade:** HTTP `401` (no/invalid session — browsers report it as close `1006`), `403` (bearer token), `400` `VALIDATION_FAILED` (a container name that breaks the name rules, a PTY size out of range)
 - **Close codes:**
   - `1000` — the shell exited (exec stdout ended); reason `session ended`
   - `1008` — Origin not allowed, or all consoles closed after a password change
-  - `4000` — Invalid container name, container not running, or exec failed
+  - `4000` — Container not running, or exec failed
   - `1011` — Stream/proxy error

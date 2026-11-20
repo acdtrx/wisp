@@ -49,20 +49,17 @@ What stays because it is not snapshot-specific: deleting a VM still succeeds whe
 
 ## Name validation
 
-VM names go through `validateVMName(name)` (in `backend/src/lib/validation.js`):
+A VM name must meet:
 
 - length 1–128
 - regex `^[a-zA-Z0-9][a-zA-Z0-9._-]*$` — must start with a letter or digit (same shape as container names), so `.`, `..` and `.foo` are impossible and the per-VM directory `<vmsPath>/<name>/` is always a child of `vmsPath`, never `vmsPath` itself (settled 2026-10-16: a VM named `.` resolved its per-VM directory to `vmsPath` itself, so removing that directory — delete-with-disks, a failed operation's rollback — would `rm -rf` every VM's files)
 - rejects `..`, `/`, `\`
 - rejects leading/trailing whitespace instead of trimming it — every caller uses the name verbatim, so a silently-trimmed validation would vouch for a different string than the one used. (UI forms trim their own input before sending.)
 
-It is enforced in three places:
+It is enforced in two layers:
 
-1. The `vmsRoutes` `preHandler` (every `/vms/:name/...` route) — for the path parameter.
-2. `POST /vms` and `PATCH /vms/:name` route handlers — for `body.name`, before any background job is created or the manager is called.
-3. `createVM`, `restoreBackup` (restore as new), and `updateVMConfig` (rename branch) — defense in depth so library callers get the same guarantee.
-
-Failures map to HTTP 422 (`INVALID_VM_NAME`).
+1. At the boundary, by one schema (`vmNameSchema` in `backend/src/lib/validation.js`; [ERROR-HANDLING.md → Name validation](ERROR-HANDLING.md#name-validation)) wherever a VM name arrives: every `/vms/:name/...` path, `POST /vms` and `PATCH /vms/:name` bodies, the backup routes' names, the VNC WebSocket and the MCP `get_vm` argument — before any background job is created or the manager is called. A name that breaks it answers **400** `VALIDATION_FAILED` (settled 2026-11-20: a schema-shape refusal, no longer 422).
+2. `createVM`, `restoreBackup` (restore as new), and `updateVMConfig` (rename branch) — defense in depth so library callers get the same guarantee: **422** `INVALID_VM_NAME`.
 
 A domain whose name predates the leading-alphanumeric rule (e.g. `_test`) fails the `:name` check on every route; it must be renamed outside Wisp (e.g. `virsh domrename`) to be managed again.
 
@@ -117,7 +114,7 @@ Rejected: probing with `qemu-img info` and accepting whatever qcow2/raw it repor
 
 A VM can be renamed when it is stopped (rename is the `name` field in `PATCH /api/vms/:name`). The rename (`editVmConfig`, `lib/vmOperations.js`) holds the VM's [operation lock](BACKUPS.md#per-vm-operation-lock) and the new name's for the whole rename, its follow-ups included, as a container rename does. The rename is a step of its own, as a container's is *(settled 2026-11-20)*: the rename, then its follow-ups (below), then the rest of the patch under the new name — a failure of the rest answers its error, while the rename and its follow-ups stand.
 
-1. Pre-check: VM offline; the new name passes `validateVMName`; no other VM already uses it.
+1. Pre-check: VM offline; the new name passes the name rules; no other VM already uses it.
 2. **Infer the source dir.** `findActualVmDir` walks every absolute path in the parsed domain XML (disk `<source file>`, NVRAM, loader) and picks the deepest directory under `<vmsPath>/`. This may not equal `<vmsPath>/<oldName>/` — legacy state from a pre-fix rename can leave files in a directory whose name no longer matches the libvirt domain name. The rename converges that state by moving from the *actual* dir, not the *expected* one.
 3. **Reserve the target name** — create `<vmsPath>/<newName>/` exclusively (`createOwnVMDir`, the same call create and restore-as-new use); an existing path is **409 `VM_DIR_EXISTS`**, atomically. *(settled 2026-10-16)* The old "target dir doesn't exist" check raced: two renames to one name, or a create / restore-as-new of that name, could both pass it, and `rename(2)` onto the other side's still-empty directory replaces it — the create then wrote into, and on failure rolled back (`rm -rf`), the renamed VM's files. With the reservation each contender's own exclusive mkdir decides, so exactly one wins. The rename also holds the target name's lock *(settled 2026-11-20, replacing "rejected: create and restore don't hold a lock under the name they create")*: they do since then, so the lock keeps every other command off the name while the VM moves to it; the reservation stays, as the on-disk check — it refuses a directory that exists without a VM (a kept one) and holds whatever the locks don't see.
 4. **`iface.Rename(newName, 0)`** — libvirt updates the domain's `<name>` element.

@@ -46,7 +46,7 @@ Create a section.
 
 - **Body:** `{ "name": "string (1–64)" }`
 - **201:** `{ id }` — the new section's id; the section arrives on the `sections` topic.
-- **422 (`SECTION_INVALID`):** Empty / too-long name.
+- **400 (`VALIDATION_FAILED`):** An empty or too-long name, or an unknown key (the body's schema). **422 (`SECTION_INVALID`):** A name of whitespace only.
 - **409 (`SECTION_DUPLICATE`):** Case-insensitive name collision.
 
 ### PATCH /api/sections/:id · `admin`
@@ -56,7 +56,7 @@ Rename a section. The `main` section cannot be renamed.
 - **Body:** `{ "name": "string (1–64)" }`
 - **204:** Renamed.
 - **404 (`SECTION_NOT_FOUND`):** No section with that id.
-- **422 (`SECTION_INVALID`):** Empty name or attempted Main rename.
+- **400 (`VALIDATION_FAILED`):** An empty or too-long name, or an unknown key. **422 (`SECTION_INVALID`):** A name of whitespace only, or an attempted Main rename.
 - **409 (`SECTION_DUPLICATE`):** Case-insensitive name collision.
 
 ### DELETE /api/sections/:id · `admin`
@@ -72,7 +72,7 @@ Replace the persisted ordering of user-defined sections. The body must list ever
 
 - **Body:** `{ "ids": ["<section-id>", "<section-id>", …] }`
 - **204:** Reordered; the next envelope has `order` reassigned to the array index.
-- **422 (`SECTION_INVALID`):** `ids` is not an array, or doesn't list every section exactly once.
+- **400 (`VALIDATION_FAILED`):** `ids` is not an array of strings. **422 (`SECTION_INVALID`):** `ids` doesn't list every section exactly once.
 - **404 (`SECTION_NOT_FOUND`):** An id in `ids` doesn't match any section.
 
 ### PUT /api/sections/assign · `admin`
@@ -83,7 +83,7 @@ Move a workload to a section.
 - `sectionId === null` (or `"main"`) drops the explicit assignment — the workload returns to Main.
 - **204:** Assigned.
 - **404 (`SECTION_NOT_FOUND`):** Target sectionId doesn't exist.
-- **422 (`SECTION_INVALID`):** Bad `type` or empty `name`.
+- **400 (`VALIDATION_FAILED`):** A `type` other than `vm` / `container`, an empty or too-long `name`, or an unknown key. **422 (`SECTION_INVALID`):** A `name` of whitespace only.
 
 The workload itself isn't validated — assignments are pure metadata, so referencing an unknown VM/container name is a no-op (the entry is ignored on the next list read).
 
@@ -154,7 +154,7 @@ Return the current envelope.
 Create a group.
 
 - **Body:** `{ "name": "string (1–64)" }`
-- **201:** `{ id }` — the new group's id. **422 (`HOME_INVALID`):** empty/too-long name. **409 (`HOME_DUPLICATE`):** case-insensitive name collision.
+- **201:** `{ id }` — the new group's id. **400 (`VALIDATION_FAILED`):** an empty or too-long name, or an unknown key. **422 (`HOME_INVALID`):** a name of whitespace only. **409 (`HOME_DUPLICATE`):** case-insensitive name collision.
 
 ### PATCH /api/homepage/groups/:id · `admin`
 
@@ -173,7 +173,7 @@ Delete a group. Its tiles fall back to Ungrouped on the next derivation.
 Replace the group ordering. The body must list every existing group id exactly once (Ungrouped is implicit and never appears).
 
 - **Body:** `{ "ids": ["<group-id>", …] }`
-- **204:** Reordered. **422 (`HOME_INVALID`)** / **404 (`HOME_NOT_FOUND`).**
+- **204:** Reordered. **400 (`VALIDATION_FAILED`):** `ids` is not an array of strings. **422 (`HOME_INVALID`):** `ids` doesn't list every group exactly once. **404 (`HOME_NOT_FOUND`).**
 
 ### PUT /api/homepage/tiles/assign · `admin`
 
@@ -181,7 +181,7 @@ Place a tile in a group, optionally at an index. Moving a tile within its curren
 
 - **Body:** `{ "tileId": "string", "groupId": "string | null", "index": "integer | null" }`
 - `groupId` of `null` (or `"ungrouped"`) drops the placement — the tile returns to Ungrouped. `index` omitted appends.
-- **204:** Placed. **404 (`HOME_NOT_FOUND`):** unknown `groupId`. **422 (`HOME_INVALID`):** missing `tileId` or negative `index`.
+- **204:** Placed. **404 (`HOME_NOT_FOUND`):** unknown `groupId`. **400 (`VALIDATION_FAILED`):** a missing or empty `tileId`, a negative or non-integer `index`, or an unknown key.
 - The tile itself is not validated — placements are pure metadata, and an id that no longer derives is ignored on the next read.
 
 ### PUT /api/homepage/tiles/override · `admin`
@@ -189,7 +189,7 @@ Place a tile in a group, optionally at an index. Moving a tile within its curren
 Set or clear a tile's overrides. An omitted field is left untouched; `null` clears one. An override left empty is deleted outright, so the config never accumulates husks.
 
 - **Body:** `{ "tileId": "string", "hidden": "boolean | null", "name": "string | null", "iconId": "string | null" }`
-- **204:** Saved. **422 (`HOME_INVALID`).**
+- **204:** Saved. **400 (`VALIDATION_FAILED`):** a missing `tileId`, a value of the wrong type, a name over 64 characters, or an unknown key. **422 (`HOME_INVALID`):** a name of whitespace only.
 
 ### POST /api/homepage/manual-tiles · `admin`
 
@@ -197,13 +197,13 @@ Add a manual link.
 
 - **Body:** `{ "name": "string (1–64)", "url": "string", "iconId": "string | null" }`
 - `url` must be an absolute `http`/`https` URL — anything else (a bare hostname, `javascript:`, `data:`) is rejected at the boundary, since tiles render as links the user clicks.
-- **201:** `{ id }` — the new link's id. **422 (`HOME_INVALID`).**
+- **201:** `{ id }` — the new link's id. **400 (`VALIDATION_FAILED`):** a missing, empty or too-long field, or an unknown key. **422 (`HOME_INVALID`):** a name of whitespace only, or a `url` that is not an absolute `http`/`https` URL.
 
 ### PATCH /api/homepage/manual-tiles/:id · `admin`
 
 Update a manual link (any subset of `name` / `url` / `iconId`).
 
-- **204:** Saved. **404 (`HOME_NOT_FOUND`)** / **422 (`HOME_INVALID`).**
+- **204:** Saved. **404 (`HOME_NOT_FOUND`)**; **400** / **422** as for the create.
 
 ### DELETE /api/homepage/manual-tiles/:id · `admin`
 

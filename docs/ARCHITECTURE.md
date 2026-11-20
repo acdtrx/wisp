@@ -290,9 +290,10 @@ consumer, and nothing has called for more).
   imports the managers.
 - `mdns` — Avahi publishing and browsing, and the in-process DNS forwarder that answers
   containers' `.local` queries.
-- `library` — the image library's files: it owns every write to the library directory
-  (upload, rename, delete, and the downloads, through `downloads`, that land a file
-  there) and announces each ([`specs/IMAGE-LIBRARY.md`](specs/IMAGE-LIBRARY.md)).
+- `library` — the image library's files: it owns the listing and every write to the
+  library directory (upload, rename, delete, and the downloads, through `downloads`, that
+  land a file there), checks the file names it is given and refuses to touch a file a VM
+  uses, and announces each write ([`specs/IMAGE-LIBRARY.md`](specs/IMAGE-LIBRARY.md)).
 - `mcp` — the MCP endpoint: tools over the same facades and glue as the routes, secrets
   masked ([`specs/MCP.md`](specs/MCP.md)).
 - App glue — the workload operations (`lib/vmOperations.js`, `lib/containerOperations.js`:
