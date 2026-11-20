@@ -13,20 +13,16 @@
  * waits for the next day. State (`lastTickAt`) is in-memory only — nothing
  * new is persisted, so the self-updater needs no changes.
  *
- * Jobs are registered in the shared backupJobStore (same kind/title as
- * manual container backups), so scheduled runs surface in
- * GET /api/background-jobs, the per-job SSE progress endpoint, and the
- * frontend's page-load job rehydration. Each container's backup holds its
- * operation lock (lib/containerOperationLock.js); a container busy with
- * another operation (a manual backup, a start, a restore, …) is skipped for
- * this run.
+ * Each container's backup is a job started through the one job starter
+ * (same kind and title as a manual container backup), so scheduled runs are
+ * listed and followed like any other job. The job holds the container's
+ * operation lock; a container busy with another operation (a manual backup,
+ * a start, a restore, …) is skipped for this run.
  *
  * The run itself is `runScheduledBackups({ trigger })`, invocable on its own
  * (ARCHITECTURE.md, Backend: events); the minute tick is one trigger. Every run logs its
  * trigger, and at most one runs at a time whatever triggered it.
  */
-import { randomBytes } from 'node:crypto';
-
 import { getSettings, getRawMounts, listConfiguredBackupRoots } from './settings.js';
 import { resolveBackupDestinations, backupToEachDestination } from './backupDestinations.js';
 import { computeScheduledBackupPruneList } from './backupRetention.js';
@@ -37,10 +33,8 @@ import {
   listContainerBackups,
   deleteContainerBackup,
 } from './containerManager/index.js';
-import { backupJobStore, BACKGROUND_JOB_KIND, titleForContainerBackup } from './jobs/index.js';
+import { startJob, BACKGROUND_JOB_KIND, titleForContainerBackup } from './jobs/index.js';
 import { recordBackupAttempt } from './backupStatus.js';
-import { isExpectedAppError } from './appErrors.js';
-import { tryAcquireContainerOperationLock } from './containerOperationLock.js';
 
 const TICK_MS = 60 * 1000;
 
@@ -154,50 +148,51 @@ async function backupAutoBackupContainers(trigger) {
   let failed = 0;
   let skipped = 0;
 
+  const destinationIds = destinations.map((d) => d.id);
   for (const name of names) {
-    const title = titleForContainerBackup(name);
-    const releaseLock = tryAcquireContainerOperationLock(name, 'backup');
-    if (!releaseLock) {
-      log?.warn({ container: name }, 'Backup scheduler: another operation on the container is in progress, skipping container');
+    // Settles with the backup's outcome: the containers are backed up one at a time.
+    const ended = Promise.withResolvers();
+    try {
+      await startJob({
+        kind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP,
+        title: titleForContainerBackup(name),
+        subject: { type: 'container', name },
+        log,
+        run: async (report) => {
+          let ok = false;
+          try {
+            let lastResult;
+            try {
+              lastResult = await backupToEachDestination(destinations, {
+                push: report,
+                backupOne: (dest, onProgress) => createContainerBackup(name, dest.path, { origin: 'scheduled', onProgress }),
+                afterEach: (dest) => pruneScheduledBackups(name, dest, allowedRoots),
+              });
+            } catch (err) {
+              await recordBackupAttempt({
+                kind: 'container', name, ok: false, origin: 'scheduled', destinationIds, error: err?.message,
+              });
+              throw err;
+            }
+            await recordBackupAttempt({
+              kind: 'container', name, ok: true, origin: 'scheduled', destinationIds, timestamp: lastResult?.timestamp,
+            });
+            ok = true;
+            // The backup folder name only: its host path stays on the server.
+            return { timestamp: lastResult?.timestamp };
+          } finally {
+            ended.resolve(ok);
+          }
+        },
+      });
+    } catch (err) {
+      if (err?.code !== 'CONTAINER_BUSY') throw err;
+      log.warn({ container: name }, 'Backup scheduler: another operation on the container is in progress, skipping container');
       skipped += 1;
       continue;
     }
-
-    const jobId = randomBytes(12).toString('hex');
-    backupJobStore.createJob(jobId, { kind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP, title, log });
-    log?.info({ jobId, container: name }, 'Backup scheduler: container backup started');
-    try {
-      const lastResult = await backupToEachDestination(destinations, {
-        push: (ev) => backupJobStore.pushEvent(jobId, ev),
-        backupOne: (dest, onProgress) => createContainerBackup(name, dest.path, { origin: 'scheduled', onProgress }),
-        afterEach: (dest) => pruneScheduledBackups(name, dest, allowedRoots),
-      });
-      releaseLock();
-      backupJobStore.completeJob(jobId, lastResult);
-      backedUp += 1;
-      await recordBackupAttempt({
-        kind: 'container',
-        name,
-        ok: true,
-        origin: 'scheduled',
-        destinationIds: destinations.map((d) => d.id),
-        timestamp: lastResult?.timestamp,
-      });
-    } catch (err) {
-      releaseLock();
-      backupJobStore.failJob(jobId, err);
-      failed += 1;
-      if (!isExpectedAppError(err)) log?.error({ err, container: name, jobId }, 'Backup scheduler: container backup failed');
-      await recordBackupAttempt({
-        kind: 'container',
-        name,
-        ok: false,
-        origin: 'scheduled',
-        destinationIds: destinations.map((d) => d.id),
-        error: err?.message,
-      });
-      /* Continue with the remaining containers. */
-    }
+    if (await ended.promise) backedUp += 1;
+    else failed += 1;
   }
   log?.info({ trigger, backedUp, failed, skipped }, 'Backup scheduler: run finished');
 }

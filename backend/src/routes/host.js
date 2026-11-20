@@ -14,11 +14,9 @@ import {
   deleteManagedNetworkBridge,
 } from '../lib/networking/index.js';
 import {
-  checkForUpdates,
   performUpgrade,
   isUpdateOperationInProgress,
-  isUpgradeInProgress,
-  listUpgradablePackages,
+  getCachedPackages,
   getHostHardwareInfo,
   hostShutdown,
   hostReboot,
@@ -33,42 +31,18 @@ import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/storage/index.js';
 import { getCurrentVersion } from '../lib/wispUpdate.js';
 import {
-  operationJobStore,
+  startJob,
+  isJobRunning,
   BACKGROUND_JOB_KIND,
-  TITLE_OS_UPDATE_CHECK,
   TITLE_OS_UPGRADE,
   titleForBridgeCreate,
   titleForBridgeDelete,
 } from '../lib/jobs/index.js';
+import { isOsUpgradeRunning, startOsUpdateCheckJob } from '../lib/updateChecks.js';
 
 const JOB_ACCEPTED = {
   202: { type: 'object', properties: { jobId: { type: 'string' }, title: { type: 'string' } } },
 };
-
-/** An upgrade runs, or its job was started and has not reached it yet. */
-function upgradeRunning() {
-  return isUpgradeInProgress() || operationJobStore.findRunningJob(BACKGROUND_JOB_KIND.OS_UPGRADE, TITLE_OS_UPGRADE) != null;
-}
-
-/**
- * The OS update check as a job: one shared run — a check or package refresh
- * started while one runs joins it (the same job id). Its `done` payload is the
- * count; the packages are then served from the cache (GET /host/updates/packages).
- * Refused with UPDATE_BUSY while an upgrade runs.
- */
-function startOsUpdateCheckJob(log) {
-  if (upgradeRunning()) {
-    throw createAppError('UPDATE_BUSY', 'An OS upgrade is in progress on the host', 'Wait for the upgrade to finish before checking again');
-  }
-  const running = operationJobStore.findRunningJob(BACKGROUND_JOB_KIND.OS_UPDATE_CHECK, TITLE_OS_UPDATE_CHECK);
-  if (running) return { jobId: running.jobId, title: running.title };
-  return operationJobStore.startOperationJob({
-    kind: BACKGROUND_JOB_KIND.OS_UPDATE_CHECK,
-    title: TITLE_OS_UPDATE_CHECK,
-    log,
-    run: () => checkForUpdates(),
-  });
-}
 
 function getOsRelease() {
   try {
@@ -143,25 +117,22 @@ export default async function hostRoutes(fastify) {
     },
   });
 
-  // A job (it refreshes the package index): 202 with the job id; the count
-  // arrives as the job's `done` payload.
+  // A job (it refreshes the package index), shared with a check already
+  // running: 202 with the job id; the count arrives as the job's result.
   fastify.post('/host/updates/check', {
     config: { auth: 'admin' },
     schema: { response: JOB_ACCEPTED },
-    handler: async (request, reply) => reply.code(202).send(startOsUpdateCheckJob(request.log)),
+    handler: async (request, reply) => reply.code(202).send(await startOsUpdateCheckJob(request.log)),
   });
 
+  // What the last check found; it starts none (POST /host/updates/check does).
   fastify.get('/host/updates/packages', {
     config: { auth: 'read' },
     schema: {
-      querystring: {
-        type: 'object',
-        properties: { refresh: { type: ['string', 'number', 'boolean'] } },
-      },
       response: {
-        ...JOB_ACCEPTED,
         200: {
           type: 'object',
+          required: ['packages', 'downloadBytes', 'checkedAt'],
           properties: {
             packages: {
               type: 'array',
@@ -175,23 +146,12 @@ export default async function hostRoutes(fastify) {
               },
             },
             downloadBytes: { type: 'number' },
-            cached: { type: 'boolean' },
-            lastCheckedAt: { type: ['string', 'null'] },
+            checkedAt: { type: ['string', 'null'] },
           },
         },
       },
     },
-    handler: async (request, reply) => {
-      /* Default: serve the cache (instant; populated by the background hourly
-       * check or any prior run). ?refresh=1 starts — or joins — the shared check
-       * job and answers 202 with its id; read the list once it is done. With no
-       * cache yet, the same. */
-      const refresh = request.query?.refresh;
-      const wantFresh = refresh === '1' || refresh === 1 || refresh === true || refresh === 'true';
-      const cached = wantFresh ? null : await listUpgradablePackages(undefined, { useCache: true, cacheOnly: true });
-      if (!cached) return reply.code(202).send(startOsUpdateCheckJob(request.log));
-      return cached;
-    },
+    handler: async () => getCachedPackages() ?? { packages: [], downloadBytes: 0, checkedAt: null },
   });
 
   // A job: an upgrade runs as long as it keeps printing (no total bound). A
@@ -201,13 +161,14 @@ export default async function hostRoutes(fastify) {
     config: { auth: 'admin' },
     schema: { response: JOB_ACCEPTED },
     handler: async (request, reply) => {
-      if (isUpdateOperationInProgress() || upgradeRunning()
-        || operationJobStore.findRunningJob(BACKGROUND_JOB_KIND.OS_UPDATE_CHECK, TITLE_OS_UPDATE_CHECK)) {
-        throw createAppError('UPDATE_BUSY', 'Another OS update check or upgrade is in progress: wait for it to finish');
-      }
-      const job = operationJobStore.startOperationJob({
+      const job = await startJob({
         kind: BACKGROUND_JOB_KIND.OS_UPGRADE,
         title: TITLE_OS_UPGRADE,
+        check: () => {
+          if (isUpdateOperationInProgress() || isOsUpgradeRunning() || isJobRunning(BACKGROUND_JOB_KIND.OS_UPDATE_CHECK)) {
+            throw createAppError('UPDATE_BUSY', 'Another OS update check or upgrade is in progress: wait for it to finish');
+          }
+        },
         log: request.log,
         run: (report) => performUpgrade(undefined, { onLine: (line) => report({ step: 'upgrading', detail: line }) }),
       });
@@ -287,7 +248,7 @@ export default async function hostRoutes(fastify) {
     // the job's `done` payload.
     handler: async (request, reply) => {
       const plan = await planManagedNetworkBridgeCreate(request.body);
-      const job = operationJobStore.startOperationJob({
+      const job = await startJob({
         kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_CREATE,
         title: titleForBridgeCreate(`${plan.baseBridge} VLAN ${plan.vlanId}`),
         log: request.log,
@@ -316,7 +277,7 @@ export default async function hostRoutes(fastify) {
     // in use are answered here.
     handler: async (request, reply) => {
       const target = await planManagedNetworkBridgeDelete(request.params.name, { assertNotInUse: assertBridgeNotInUse });
-      const job = operationJobStore.startOperationJob({
+      const job = await startJob({
         kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_DELETE,
         title: titleForBridgeDelete(target.bridgeName),
         log: request.log,

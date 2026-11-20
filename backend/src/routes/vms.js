@@ -1,5 +1,3 @@
-import { randomBytes } from 'node:crypto';
-
 import {
   listVMs,
   getVMConfig,
@@ -30,12 +28,10 @@ import {
   isOfflineState,
 } from '../lib/vmManager/index.js';
 import {
-  createJobStore,
-  backupJobStore,
-  operationJobStore,
+  startJob,
   BACKGROUND_JOB_KIND,
   titleForVmCreate,
-  titleForBackup,
+  titleForVmBackup,
   titleForVmStart,
   titleForVmForceStop,
   titleForVmDelete,
@@ -45,10 +41,10 @@ import { generateCloudInit } from '../lib/cloudInit.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { resolveBackupDestinations, backupToEachDestination } from '../lib/backupDestinations.js';
 import { recordBackupAttempt } from '../lib/backupStatus.js';
-import { acquireVmOperationLock, withVmOperationLock } from '../lib/vmOperationLock.js';
+import { withVmOperationLock } from '../lib/vmOperationLock.js';
 import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { resolveLibraryPath, assertPathInsideAllowedRoots } from '../lib/paths.js';
-import { createAppError, isExpectedAppError } from '../lib/appErrors.js';
+import { createAppError } from '../lib/appErrors.js';
 import { validateVMName } from '../lib/validation.js';
 
 /** The values Wisp writes into `<video><model type>` and `<graphics type>` (API-VMS.md). */
@@ -204,79 +200,43 @@ export default async function vmsRoutes(fastify) {
           await assertPathInsideAllowedRoots(dspec.sourcePath, spec.name);
         }
       }
-      // Name must be free in libvirt and on disk before any artifact is built:
-      // cloud-init would otherwise write into an existing VM's directory.
-      await assertVMNameAvailable(spec.name);
-      const jobId = randomBytes(12).toString('hex');
       const vmName = spec.name;
-      const title = titleForVmCreate(vmName);
-      createJobStore.createJob(jobId, {
-        kind: BACKGROUND_JOB_KIND.VM_CREATE,
-        title,
-        log: request.log,
-      });
-      request.log.info(
-        { jobId, kind: BACKGROUND_JOB_KIND.VM_CREATE, title },
-        'Background job started',
-      );
       const wantsCloudInit = !!(
         spec.cloudInit
         && spec.osType !== 'Windows'
         && spec.cloudInit.enabled !== false
       );
-      (async () => {
-        try {
-          // The cloud-init seed ISO + cloud-init.json are built into the VM
-          // directory createVM has just created, so they share its rollback:
-          // any create failure removes the directory and everything in it.
-          const result = await createVM(spec, {
+      const job = await startJob({
+        kind: BACKGROUND_JOB_KIND.VM_CREATE,
+        title: titleForVmCreate(vmName),
+        subject: { type: 'vm', name: vmName },
+        // Name must be free in libvirt and on disk before any artifact is built:
+        // cloud-init would otherwise write into an existing VM's directory.
+        check: () => assertVMNameAvailable(vmName),
+        log: request.log,
+        // The cloud-init seed ISO + cloud-init.json are built into the VM
+        // directory createVM has just created, so they share its rollback:
+        // any create failure removes the directory and everything in it.
+        run: async (report) => {
+          await createVM(spec, {
             onStep(step, data) {
-              createJobStore.pushEvent(jobId, { step, ...data });
+              report({ step, ...data });
             },
             populateVMDir: wantsCloudInit
               ? async () => {
-                createJobStore.pushEvent(jobId, { step: 'cloudinit' });
+                report({ step: 'cloudinit' });
                 await generateCloudInit(vmName, spec.cloudInit);
               }
               : undefined,
           });
-          createJobStore.completeJob(jobId, result);
-        } catch (err) {
-          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background create-VM job failed');
-          try {
-            createJobStore.failJob(jobId, err);
-          } catch (failErr) {
-            request.log.error({ err: failErr, jobId }, 'failJob failed');
-          }
-        }
-      })();
-      return reply.code(202).send({ jobId, title });
-    },
-  });
-
-  // GET /vms/create-progress/:jobId — SSE stream for create progress
-  fastify.get('/vms/create-progress/:jobId', {
-    config: { auth: 'read' },
-    schema: { hide: true },
-    handler: async (request, reply) => {
-      const { jobId } = request.params;
-      const job = createJobStore.getJob(jobId);
-      if (!job) {
-        throw createAppError('JOB_NOT_FOUND', `No job with id "${jobId}": it never started, or ended more than 5 minutes ago`);
-      }
-      setupSSE(reply);
-      const ok = createJobStore.registerStream(jobId, reply.raw);
-      if (!ok) {
-        reply.raw.end();
-        return;
-      }
-      onSSEClose(reply, () => {
-        createJobStore.unregisterStream(jobId, reply.raw);
+          return { name: vmName };
+        },
       });
+      return reply.code(202).send(job);
     },
   });
 
-  // POST /vms/:name/backup — start backup job; returns jobId; progress via GET /vms/backup-progress/:jobId
+  // POST /vms/:name/backup — a backup job; progress on GET /jobs/:jobId/progress
   fastify.post('/vms/:name/backup', {
     config: { auth: 'admin' },
     schema: {
@@ -305,77 +265,43 @@ export default async function vmsRoutes(fastify) {
     handler: async (request, reply) => {
       const { name } = request.params;
       const body = request.body || {};
-
-      /* Fail fast in the request (the manager re-checks inside the job). */
-      const vm = (await listVMs()).find((v) => v.name === name);
-      if (!vm) throw createAppError('VM_NOT_FOUND', `VM "${name}" not found`);
-      if (!isOfflineState(vm.stateCode)) {
-        throw createAppError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to create a backup`);
-      }
-
-      const settings = await getSettings();
-      const rawMounts = await getRawMounts();
-      const destinations = await resolveBackupDestinations(settings, rawMounts, body.destinationIds);
-      // Acquired with no await before createJob, so the lock and the job
-      // appear together; released when the job settles.
-      const releaseLock = acquireVmOperationLock(name, 'backup');
-      const jobId = randomBytes(12).toString('hex');
-      const title = titleForBackup(name);
-      backupJobStore.createJob(jobId, {
-        kind: BACKGROUND_JOB_KIND.BACKUP,
-        title,
+      let destinations;
+      const job = await startJob({
+        kind: BACKGROUND_JOB_KIND.VM_BACKUP,
+        title: titleForVmBackup(name),
+        subject: { type: 'vm', name },
+        // Fail fast in the request (the manager re-checks inside the job).
+        check: async () => {
+          const vm = (await listVMs()).find((v) => v.name === name);
+          if (!vm) throw createAppError('VM_NOT_FOUND', `VM "${name}" not found`);
+          if (!isOfflineState(vm.stateCode)) {
+            throw createAppError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to create a backup`);
+          }
+          destinations = await resolveBackupDestinations(await getSettings(), await getRawMounts(), body.destinationIds);
+        },
         log: request.log,
-      });
-      request.log.info(
-        { jobId, kind: BACKGROUND_JOB_KIND.BACKUP, title },
-        'Background job started',
-      );
-      const destinationIds = destinations.map((d) => d.id);
-      backupToEachDestination(destinations, {
-        push: (ev) => backupJobStore.pushEvent(jobId, ev),
-        backupOne: (dest, onProgress) => createBackup(name, dest.path, { onProgress }),
-      }).then(
-        async (lastResult) => {
-          // Free the VM before announcing completion, so an action the
-          // client takes on `done` never meets a stale VM_BUSY.
-          releaseLock();
-          backupJobStore.completeJob(jobId, lastResult);
+        run: async (report) => {
+          const destinationIds = destinations.map((d) => d.id);
+          let lastResult;
+          try {
+            lastResult = await backupToEachDestination(destinations, {
+              push: report,
+              backupOne: (dest, onProgress) => createBackup(name, dest.path, { onProgress }),
+            });
+          } catch (err) {
+            await recordBackupAttempt({
+              kind: 'vm', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
+            });
+            throw err;
+          }
           await recordBackupAttempt({
             kind: 'vm', name, ok: true, origin: 'manual', destinationIds, timestamp: lastResult?.timestamp,
           });
+          // The backup folder name only: its host path stays on the server.
+          return { timestamp: lastResult?.timestamp };
         },
-        async (err) => {
-          releaseLock();
-          backupJobStore.failJob(jobId, err);
-          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background backup job failed');
-          await recordBackupAttempt({
-            kind: 'vm', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
-          });
-        },
-      );
-      return reply.code(202).send({ jobId, title });
-    },
-  });
-
-  // GET /vms/backup-progress/:jobId — SSE stream for backup progress
-  fastify.get('/vms/backup-progress/:jobId', {
-    config: { auth: 'read' },
-    schema: { hide: true },
-    handler: async (request, reply) => {
-      const { jobId } = request.params;
-      const job = backupJobStore.getJob(jobId);
-      if (!job) {
-        throw createAppError('JOB_NOT_FOUND', `No job with id "${jobId}": it never started, or ended more than 5 minutes ago`);
-      }
-      setupSSE(reply);
-      const ok = backupJobStore.registerStream(jobId, reply.raw);
-      if (!ok) {
-        reply.raw.end();
-        return;
-      }
-      onSSEClose(reply, () => {
-        backupJobStore.unregisterStream(jobId, reply.raw);
       });
+      return reply.code(202).send(job);
     },
   });
 
@@ -417,24 +343,15 @@ export default async function vmsRoutes(fastify) {
     handler: async (request, reply) => {
       const { name } = request.params;
       const deleteDisks = request.query.deleteDisks === 'true';
-      const release = acquireVmOperationLock(name, 'delete');
-      try {
-        await assertVMState(name, 'exists');
-      } catch (err) {
-        release();
-        throw err;
-      }
-      const job = operationJobStore.startOperationJob({
+      const job = await startJob({
         kind: BACKGROUND_JOB_KIND.VM_DELETE,
         title: titleForVmDelete(name),
+        subject: { type: 'vm', name },
+        check: () => assertVMState(name, 'exists'),
         log: request.log,
         run: async () => {
-          try {
-            await deleteVM(name, deleteDisks);
-            return { name };
-          } finally {
-            release();
-          }
+          await deleteVM(name, deleteDisks);
+          return { name };
         },
       });
       return reply.code(202).send(job);
@@ -442,17 +359,18 @@ export default async function vmsRoutes(fastify) {
   });
 
   // Lifecycle actions — all POST /vms/:name/<action>
-  // Only start takes the per-VM operation lock: the other actions apply to a
-  // running VM and change no definition or disk file, while every locked
-  // operation that holds the lock for long (backup) requires a stopped one.
   // Start and force-stop are jobs — starting a large VM, or waiting for QEMU
   // to exit, can outlast a short request: the POST answers 202 with the job
-  // id, the outcome arrives over the job's stream. The others answer at once.
+  // id, the outcome arrives over the job's stream. Each holds the VM's
+  // operation lock for the job. Stop, reboot, suspend and resume answer at
+  // once and take no lock: they apply to a running VM and change no
+  // definition or disk file, while every operation that holds the lock for
+  // long (backup) requires a stopped one.
   const lifecycleJobs = [
-    { path: 'start', kind: BACKGROUND_JOB_KIND.VM_START, title: titleForVmStart, lock: 'start', check: 'start', fn: startVM },
+    { path: 'start', kind: BACKGROUND_JOB_KIND.VM_START, title: titleForVmStart, check: 'start', fn: startVM },
     { path: 'force-stop', kind: BACKGROUND_JOB_KIND.VM_FORCE_STOP, title: titleForVmForceStop, check: 'running', fn: forceStopVM },
   ];
-  for (const { path, kind, title, lock, check, fn } of lifecycleJobs) {
+  for (const { path, kind, title, check, fn } of lifecycleJobs) {
     fastify.post(`/vms/:name/${path}`, {
       config: { auth: 'admin' },
       schema: {
@@ -464,24 +382,15 @@ export default async function vmsRoutes(fastify) {
       },
       handler: async (request, reply) => {
         const { name } = request.params;
-        const release = lock ? acquireVmOperationLock(name, lock) : () => {};
-        try {
-          await assertVMState(name, check); // not found, already running / not running: answered here
-        } catch (err) {
-          release();
-          throw err;
-        }
-        const job = operationJobStore.startOperationJob({
+        const job = await startJob({
           kind,
           title: title(name),
+          subject: { type: 'vm', name },
+          check: () => assertVMState(name, check), // not found, already running / not running: answered here
           log: request.log,
           run: async () => {
-            try {
-              await fn(name);
-              return { name };
-            } finally {
-              release();
-            }
+            await fn(name);
+            return { name };
           },
         });
         return reply.code(202).send(job);

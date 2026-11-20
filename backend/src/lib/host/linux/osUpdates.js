@@ -28,6 +28,9 @@ let inflightRead = null;
 /** In-flight upgrade op. Mutually exclusive with reads — apt holds the dpkg lock. */
 let inflightUpgrade = null;
 
+/** The OS update check runs on this platform (the hourly trigger arms only where it does). */
+export const supportsOsUpdateChecks = true;
+
 export function getPendingUpdatesCount() {
   return cachedUpdateCount;
 }
@@ -36,13 +39,17 @@ export function getLastCheckedAt() {
   return cachedLastCheckedAt;
 }
 
-/** Read-only snapshot of the cached package list, or null if never fetched. */
+/**
+ * The package list the last check (or upgrade) left, with when it ran; null
+ * before any.
+ * @returns {{ packages: Array<{ name: string, from: string|null, to: string }>, downloadBytes: number, checkedAt: string } | null}
+ */
 export function getCachedPackages() {
   if (cachedPackages == null) return null;
   return {
     packages: cachedPackages,
     downloadBytes: cachedDownloadBytes,
-    lastCheckedAt: cachedPackagesAt,
+    checkedAt: cachedPackagesAt,
   };
 }
 
@@ -139,8 +146,7 @@ function runUpdateScript(scriptPath, action, { idleMs, signal, onLine } = {}) {
 
 /**
  * Run the `list` op against wisp-os-update and parse its structured output.
- * Always exposed via `runListShared` (which adds caching + dedup); never call
- * directly except from there.
+ * Called only through `runListShared` (which adds caching + dedup).
  */
 async function runListOp(signal) {
   const scriptPath = await getScriptPath();
@@ -162,7 +168,7 @@ async function runListOp(signal) {
 }
 
 /**
- * Shared driver for both `checkForUpdates` and `listUpgradablePackages`.
+ * The driver of `checkForUpdates`.
  * - If an upgrade is in flight, throws UPDATE_BUSY (apt is exclusively locked).
  * - If a read is already in flight, returns the same promise (dedup).
  * - Otherwise spawns one subprocess and updates all caches on success.
@@ -193,10 +199,9 @@ function runListShared(signal) {
 }
 
 /**
- * Sync package database and count upgradable packages.
- * Debian/Ubuntu (apt), through wisp-os-update.
- * Internally runs the same apt invocation as `listUpgradablePackages` and
- * shares an in-flight promise — concurrent check/list calls coalesce.
+ * Sync package database, list the upgradable packages into the cache
+ * (`getCachedPackages`) and count them. Debian/Ubuntu (apt), through
+ * wisp-os-update. Concurrent calls share one in-flight run.
  * @param {AbortSignal} [signal]
  * @returns { Promise<{ count: number }> }
  * @throws {{ code: 'UPDATE_CHECK_UNAVAILABLE' | 'UPDATE_BUSY', message: string, detail?: string }}
@@ -238,105 +243,4 @@ export function performUpgrade(signal, { onLine } = {}) {
     });
   inflightUpgrade = promise;
   return promise;
-}
-
-/**
- * Return the upgradable-package list. By default serves the cached list
- * (populated by the background hourly check or any prior call) so the UI's
- * "View packages" modal opens instantly. Pass `{ useCache: false }` to force
- * a fresh apt invocation; `{ cacheOnly: true }` answers null instead of
- * running one when there is no cache yet.
- * @param {AbortSignal} [signal]
- * @param { { useCache?: boolean, cacheOnly?: boolean } } [opts]
- * @returns { Promise<{ packages: Array<{ name: string, from: string|null, to: string }>, downloadBytes: number, cached: boolean, lastCheckedAt: string|null }> }
- * @throws {{ code: 'UPDATE_CHECK_UNAVAILABLE' | 'UPDATE_BUSY', message: string, detail?: string }}
- */
-export async function listUpgradablePackages(signal, { useCache = true, cacheOnly = false } = {}) {
-  if (cacheOnly && cachedPackages == null) return null;
-  if (useCache && cachedPackages != null) {
-    return {
-      packages: cachedPackages,
-      downloadBytes: cachedDownloadBytes,
-      cached: true,
-      lastCheckedAt: cachedPackagesAt,
-    };
-  }
-  const result = await runListShared(signal);
-  return {
-    packages: result.packages,
-    downloadBytes: result.downloadBytes,
-    cached: false,
-    lastCheckedAt: cachedPackagesAt,
-  };
-}
-
-const INITIAL_DELAY_MS = 30_000;
-const INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-
-let intervalId = null;
-let initialTimeoutId = null;
-
-/** AbortController for the in-flight background subprocess (must be killed on SIGTERM). */
-let activeBackgroundCheckAbort = null;
-
-/**
- * Start background hourly update check. First check after INITIAL_DELAY_MS.
- * Uses the `list` op so the package cache is primed for the UI's
- * "View packages" modal — same apt cost as a count-only check.
- * Safe to call multiple times; only starts once.
- * @param { { warn: (o: object, msg: string) => void } } [log] - Optional logger for warnings
- */
-export function startUpdateChecker(log) {
-  if (intervalId != null) return;
-
-  function runCheck() {
-    /* If a user-triggered op is already running, skip this tick — its result
-     * will populate the same caches the background op would have. */
-    if (inflightRead || inflightUpgrade) return;
-
-    const ac = new AbortController();
-    activeBackgroundCheckAbort = ac;
-    runListShared(ac.signal)
-      .catch((err) => {
-        if (err?.name === 'AbortError' || err?.code === 'ABORT_ERR') return;
-        if (err?.code === BUSY) {
-          if (log) log.warn({ detail: err.detail }, 'Background update check skipped — package manager busy');
-          return;
-        }
-        if (log) log.warn({ err }, 'Background update check failed');
-      })
-      .finally(() => {
-        if (activeBackgroundCheckAbort === ac) {
-          activeBackgroundCheckAbort = null;
-        }
-      });
-  }
-
-  initialTimeoutId = setTimeout(() => {
-    initialTimeoutId = null;
-    runCheck();
-  }, INITIAL_DELAY_MS);
-  intervalId = setInterval(runCheck, INTERVAL_MS);
-}
-
-/**
- * Clear background timers and abort any running wisp-os-update list so the process can exit on SIGTERM.
- */
-export function stopUpdateChecker() {
-  if (initialTimeoutId != null) {
-    clearTimeout(initialTimeoutId);
-    initialTimeoutId = null;
-  }
-  if (intervalId != null) {
-    clearInterval(intervalId);
-    intervalId = null;
-  }
-  if (activeBackgroundCheckAbort != null) {
-    try {
-      activeBackgroundCheckAbort.abort();
-    } catch {
-      // AbortController.abort is synchronous; ignore edge cases
-    }
-    activeBackgroundCheckAbort = null;
-  }
 }

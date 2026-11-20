@@ -1,25 +1,36 @@
 import { createAppError } from '../lib/appErrors.js';
-import { listBackgroundJobs, operationJobStore } from '../lib/jobs/index.js';
+import { hasJob, listJobs, registerJobStream, unregisterJobStream } from '../lib/jobs/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 
-export default async function backgroundJobsRoutes(fastify) {
-  fastify.get('/background-jobs', {
+const SUBJECT = {
+  type: ['object', 'null'],
+  required: ['type', 'name'],
+  properties: {
+    type: { type: 'string', enum: ['vm', 'container'] },
+    name: { type: 'string' },
+  },
+};
+
+export default async function jobsRoutes(fastify) {
+  fastify.get('/jobs', {
     config: { auth: 'read' },
     schema: {
       response: {
         200: {
           type: 'object',
+          required: ['jobs'],
           properties: {
             jobs: {
               type: 'array',
               items: {
                 type: 'object',
-                required: ['jobId', 'kind', 'title', 'done', 'createdAt'],
+                required: ['jobId', 'kind', 'title', 'subject', 'status', 'createdAt'],
                 properties: {
                   jobId: { type: 'string' },
                   kind: { type: 'string' },
                   title: { type: 'string' },
-                  done: { type: 'boolean' },
+                  subject: SUBJECT,
+                  status: { type: 'string', enum: ['running', 'done', 'error'] },
                   createdAt: { type: 'number' },
                 },
               },
@@ -28,26 +39,21 @@ export default async function backgroundJobsRoutes(fastify) {
         },
       },
     },
-    handler: async () => {
-      return { jobs: listBackgroundJobs() };
-    },
+    handler: async () => ({ jobs: listJobs() }),
   });
 
-  // SSE: an operation job's progress and result (replayed to a late subscriber).
+  // SSE: every job's progress and its terminal event (replayed to a late subscriber).
   fastify.get('/jobs/:jobId/progress', {
     config: { auth: 'read' },
     schema: { hide: true },
     handler: async (request, reply) => {
       const { jobId } = request.params;
-      if (!operationJobStore.getJob(jobId)) {
+      if (!hasJob(jobId)) {
         throw createAppError('JOB_NOT_FOUND', `No job with id "${jobId}": it never started, or ended more than 5 minutes ago`);
       }
       setupSSE(reply);
-      if (!operationJobStore.registerStream(jobId, reply.raw)) {
-        reply.raw.end();
-        return;
-      }
-      onSSEClose(reply, () => operationJobStore.unregisterStream(jobId, reply.raw));
+      registerJobStream(jobId, reply.raw);
+      onSSEClose(reply, () => unregisterJobStream(jobId, reply.raw));
     },
   });
 }

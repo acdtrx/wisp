@@ -60,8 +60,7 @@ export const resolveContainerImageRef = impl.resolveContainerImageRef;
 export const checkAllImagesForUpdates = impl.checkAllImagesForUpdates;
 export const checkSingleImageForUpdates = impl.checkSingleImageForUpdates;
 export const getImageUpdateStatus = impl.getImageUpdateStatus;
-export const startImageUpdateChecker = impl.startImageUpdateChecker;
-export const stopImageUpdateChecker = impl.stopImageUpdateChecker;
+export const supportsImageUpdateChecks = impl.supportsImageUpdateChecks;
 
 export const updateContainerConfig = impl.updateContainerConfig;
 export const setContainerPendingRestart = impl.setContainerPendingRestart;

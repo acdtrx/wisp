@@ -13,7 +13,6 @@ import { checkRuntimeEnvFile } from './lib/loadRuntimeEnv.js';
 import { migrateState } from './lib/stateMigrations.js';
 import { notifySystemdReady, takeNotifySocket } from './lib/systemdReady.js';
 import { DEV_LOG_TRANSPORT } from './lib/logFormat.js';
-import { startImageUpdateChecker, stopImageUpdateChecker } from './lib/containerManager/index.js';
 import {
   startAutostartContainersAtBackendBoot,
   resumeStalePausedContainersAtBackendBoot,
@@ -24,7 +23,8 @@ import {
 } from './lib/containerBackupScheduler.js';
 import { ensureMounts, installMountHotplugHandlers, startAutoMountRetry } from './lib/mountsAutoMount.js';
 import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
-import { startUpdateChecker, stopUpdateChecker, start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
+import { start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
+import { startHourlyUpdateChecks, stopHourlyUpdateChecks } from './lib/updateChecks.js';
 import { startUpdateChecker as startWispUpdateChecker, stopUpdateChecker as stopWispUpdateChecker } from './lib/wispUpdate.js';
 import { closeAllSSE } from './lib/sse.js';
 import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/storage/index.js';
@@ -184,8 +184,7 @@ async function main() {
 
   startUsbMonitor();
 
-  startUpdateChecker(app.log);
-  startImageUpdateChecker(app.log);
+  startHourlyUpdateChecks(app.log);
   startWispUpdateChecker(app.log);
   startContainerBackupScheduler(app.log);
 }
@@ -224,8 +223,7 @@ async function shutdown(signal) {
   }
   stopUsbMonitor();
   stopDiskMonitor();
-  stopUpdateChecker();
-  stopImageUpdateChecker();
+  stopHourlyUpdateChecks();
   stopWispUpdateChecker();
   stopContainerBackupScheduler();
   stopVmMdnsReconciler();

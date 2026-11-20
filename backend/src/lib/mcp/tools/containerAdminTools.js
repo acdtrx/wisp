@@ -19,9 +19,6 @@ import {
   pullImage,
   getImageDigest,
   resolveContainerImageRef,
-  listContainers,
-  checkAllImagesForUpdates,
-  getImageUpdateStatus,
 } from '../../containerManager/index.js';
 import {
   getAppModule,
@@ -31,13 +28,13 @@ import {
 import { validateContainerName } from '../../validation.js';
 import { createAppError } from '../../appErrors.js';
 import { withContainerOperationLock } from '../../containerOperationLock.js';
-import { startContainerLifecycleJob, startLockedContainerJob } from '../../containerJobs.js';
+import { startContainerLifecycleJob } from '../../containerJobs.js';
+import { startImageUpdateCheckJob } from '../../updateChecks.js';
 import {
-  operationJobStore,
+  startJob,
   BACKGROUND_JOB_KIND,
   titleForContainerDeploy,
   titleForContainerImageUpdate,
-  TITLE_IMAGE_UPDATE_CHECK_ALL,
 } from '../../jobs/index.js';
 
 const JOB_NOTE = 'A job: returns { jobId, title } at once; read it with get_job until it is done.';
@@ -45,9 +42,9 @@ const JOB_NOTE = 'A job: returns { jobId, title } at once; read it with get_job 
 const RESTART_POLICIES = ['never', 'on-failure', 'unless-stopped', 'always'];
 
 /* tools/call arguments arrive unvalidated (inputSchema is advisory to the
-   client), so every handler re-validates what it uses. Operations on an
-   existing container hold its operation lock like the REST routes do — a
-   busy container answers CONTAINER_BUSY. */
+   client), so every handler re-validates what it uses. Operations on a
+   container hold its operation lock like the REST routes do — a busy
+   container answers CONTAINER_BUSY. */
 
 function buildEnv(env, secretEnv) {
   const out = {};
@@ -138,12 +135,11 @@ export const containerAdminTools = [
 
       // The new name's operation lock is held for the whole job (taken, or
       // busy, answers at once), so nothing starts or edits it mid-deploy.
-      return startLockedContainerJob({
-        name,
-        operation: 'deploy',
-        check: () => assertContainerNameAvailable(name),
+      return startJob({
         kind: BACKGROUND_JOB_KIND.CONTAINER_DEPLOY,
         title: titleForContainerDeploy(name),
+        subject: { type: 'container', name },
+        check: () => assertContainerNameAvailable(name),
         log,
         run: async (report) => {
           await createContainer({ name, image: image.trim(), env }, report);
@@ -193,12 +189,10 @@ export const containerAdminTools = [
       // The container's operation lock is held for the whole job, pull
       // included: busy answers at once, and nothing changes the container
       // between the pull and the restart.
-      return startLockedContainerJob({
-        name,
-        operation: 'image update',
-        check: async () => {},
+      return startJob({
         kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_UPDATE,
         title: titleForContainerImageUpdate(name),
+        subject: { type: 'container', name },
         log,
         run: async (report) => {
           report({ step: 'pulling', detail: ref });
@@ -349,24 +343,11 @@ export const containerAdminTools = [
     name: 'check_image_updates',
     title: 'Check for image updates',
     description:
-      'Run the image-update digest check now (otherwise hourly) and report which containers have a ' +
-      'newer image available. Apply one with update_container_image. ' + JOB_NOTE,
+      'Run the image update digest check now (otherwise hourly); while a check runs, this returns that job. ' +
+      'Its result counts the images checked and updated and the containers flagged; list_images then shows ' +
+      'which containers have a newer image. Apply one with update_container_image. ' + JOB_NOTE,
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     scope: 'admin',
-    handler: async (_args, { log } = {}) => operationJobStore.startOperationJob({
-      kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_CHECK,
-      title: TITLE_IMAGE_UPDATE_CHECK_ALL,
-      log,
-      run: async (report) => {
-        await checkAllImagesForUpdates(report);
-        const containers = await listContainers();
-        return {
-          lastCheck: getImageUpdateStatus(),
-          updatesAvailable: containers
-            .filter((c) => c.updateAvailable === true)
-            .map((c) => ({ container: c.name, image: c.image })),
-        };
-      },
-    }),
+    handler: async (_args, { log } = {}) => startImageUpdateCheckJob({ log }),
   },
 ];

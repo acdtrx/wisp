@@ -78,7 +78,7 @@ export async function resolveBackupDestinations(settings, rawMounts, destination
  * @template T
  * @param {Array<{ id: string, path: string, label: string }>} destinations - from resolveBackupDestinations
  * @param {object} opts
- * @param {(event: object) => void} opts.push - job event sink (e.g. `(ev) => backupJobStore.pushEvent(jobId, ev)`)
+ * @param {(event: object) => void} opts.push - job event sink (the job's `report`)
  * @param {(dest: { id: string, path: string, label: string },
  *          onProgress: (ev: { step: string, percent?: number, currentFile?: string }) => void) => Promise<T>} opts.backupOne
  * @param {(dest: { id: string, path: string, label: string }) => Promise<void>} [opts.afterEach] - runs after a destination finished (e.g. retention pruning)

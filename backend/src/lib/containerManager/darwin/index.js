@@ -212,13 +212,12 @@ export async function checkSingleImageForUpdates() {
   throw noContainerd();
 }
 
+/** No containerd here: the hourly image check stays off; a manual one answers the stub's empty result. */
+export const supportsImageUpdateChecks = false;
+
 export function getImageUpdateStatus() {
   return { lastCheckedAt: null, imagesChecked: 0, imagesUpdated: 0 };
 }
-
-export function startImageUpdateChecker() {}
-
-export function stopImageUpdateChecker() {}
 
 export async function updateContainerConfig() {
   throw noContainerd();

@@ -1,10 +1,10 @@
 /**
- * Container operations that run as server jobs (Wisp glue, like
- * containerOperationLock.js): shared by the REST routes and the MCP tools so
- * both answer the same checks the same way. Each starter checks synchronously
- * — the container's operation lock (409 CONTAINER_BUSY), not found, already
- * running / not running — and throws those; only the work runs in the job,
- * which holds the lock until it ends. Returns `{ jobId, title }`.
+ * Container operations that run as server jobs (Wisp glue): shared by the
+ * REST routes and the MCP tools so both answer the same checks the same way.
+ * The job starter holds the container's operation lock for the job's life
+ * (busy is a 409 CONTAINER_BUSY at once); not found and already running / not
+ * running are checked under it, before the job exists. Each returns
+ * `{ jobId, title }`.
  */
 import {
   assertContainerState,
@@ -13,43 +13,16 @@ import {
   restartContainer,
   deleteContainer,
 } from './containerManager/index.js';
-import { acquireContainerOperationLock } from './containerOperationLock.js';
 import { unpublishContainer } from './containerMdnsReconciler.js';
 import { forgetBackupStatus } from './backupStatus.js';
 import {
-  operationJobStore,
+  startJob,
   BACKGROUND_JOB_KIND,
   titleForContainerStart,
   titleForContainerStop,
   titleForContainerRestart,
   titleForContainerDelete,
 } from './jobs/index.js';
-
-/**
- * Take `name`'s operation lock, run the synchronous `check`, then start the
- * job; `run` gets the progress reporter and runs under the lock.
- */
-export async function startLockedContainerJob({ name, operation, check, kind, title, log, run }) {
-  const release = acquireContainerOperationLock(name, operation);
-  try {
-    await check();
-  } catch (err) {
-    release();
-    throw err;
-  }
-  return operationJobStore.startOperationJob({
-    kind,
-    title,
-    log,
-    run: async (report) => {
-      try {
-        return await run(report);
-      } finally {
-        release();
-      }
-    },
-  });
-}
 
 const LIFECYCLE = {
   start: { kind: BACKGROUND_JOB_KIND.CONTAINER_START, title: titleForContainerStart, check: 'start' },
@@ -60,16 +33,15 @@ const LIFECYCLE = {
 /**
  * Start, stop or restart `name` as a job. `done`: `{ name }`, and for a stop
  * `restartCancelled` (a pending restart-policy restart it cancelled).
- * @param {{ name: string, action: 'start' | 'stop' | 'restart', log?: object }} opts
+ * @param {{ name: string, action: 'start' | 'stop' | 'restart', log: object }} opts
  */
 export function startContainerLifecycleJob({ name, action, log }) {
   const spec = LIFECYCLE[action];
-  return startLockedContainerJob({
-    name,
-    operation: action,
-    check: () => assertContainerState(name, spec.check),
+  return startJob({
     kind: spec.kind,
     title: spec.title(name),
+    subject: { type: 'container', name },
+    check: () => assertContainerState(name, spec.check),
     log,
     run: async () => {
       if (action === 'start') await startContainer(name);
@@ -82,12 +54,11 @@ export function startContainerLifecycleJob({ name, action, log }) {
 
 /** Delete `name` (and its files unless `deleteFiles` is false) as a job. `done`: `{ name }`. */
 export function startContainerDeleteJob({ name, deleteFiles = true, log }) {
-  return startLockedContainerJob({
-    name,
-    operation: 'delete',
-    check: () => assertContainerState(name, 'exists'),
+  return startJob({
     kind: BACKGROUND_JOB_KIND.CONTAINER_DELETE,
     title: titleForContainerDelete(name),
+    subject: { type: 'container', name },
+    check: () => assertContainerState(name, 'exists'),
     log,
     run: async () => {
       // Drop the mDNS A-record before tearing down the container so the name

@@ -2,13 +2,14 @@
  * Per-VM operation lock (Wisp glue — vmManager stays policy-free, CODING-RULES §7).
  *
  * Every operation that reads, writes, moves or replaces a VM's definition or
- * disk files — start, backup, delete, PATCH (rename or any other edit), disk
+ * disk files — create and restore as new (on the name they create), start,
+ * force stop, backup, delete, PATCH (rename or any other edit), disk
  * attach / detach / resize / bus, CD-ROM attach / eject, USB attach / detach,
  * cloud-init save / disable — takes this lock, so at most one of them runs
  * per VM at a time. A second one is refused with 409 `VM_BUSY` instead of
- * queueing: the caller retries once the running operation (visible as a
- * background job for backup) finishes. The list lives in
- * docs/specs/BACKUPS.md → Per-VM operation lock.
+ * queueing: the caller retries once the running operation finishes. A job
+ * takes it through the job starter (lib/jobs), for the job's life. The list
+ * lives in docs/specs/BACKUPS.md → Per-VM operation lock.
  *
  * In-memory only: a backend restart ends every operation that held a lock.
  * Acquire is synchronous, so a route that acquires before its first `await`
@@ -17,8 +18,8 @@
 import { createAppError } from './appErrors.js';
 
 /**
- * @typedef {'start' | 'backup' | 'delete' | 'rename' | 'config edit' | 'disk change'
- *   | 'CD-ROM change' | 'USB change' | 'cloud-init change'} VmOperation
+ * @typedef {'create' | 'restore' | 'start' | 'force stop' | 'backup' | 'delete' | 'rename'
+ *   | 'config edit' | 'disk change' | 'CD-ROM change' | 'USB change' | 'cloud-init change'} VmOperation
  */
 
 /** @type {Map<string, VmOperation>} VM name → operation label holding the lock */

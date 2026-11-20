@@ -96,7 +96,7 @@ export const containerTools = [
     title: 'OCI images',
     description:
       'OCI images in the wisp containerd namespace (name, digest, size) plus which containers have a ' +
-      'newer image digest available and when the hourly update check last ran.',
+      'newer image digest available and when the image update check last ran.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     scope: 'read',
     handler: async () => {

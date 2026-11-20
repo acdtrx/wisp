@@ -1,25 +1,22 @@
 /**
- * Jobs module facade. Bundles the in-memory background-job stores, the kind +
- * title constants/helpers, and the cross-area listing aggregator.
- *
- * Consumers import named groups (`createJobStore`, `backupJobStore`, ...) as
- * namespaces — same shape that routes used before the carve-out.
+ * Jobs module facade: the one job store and its starter, the job kinds and
+ * the job titles.
  */
-export * as createJobStore from './createJobStore.js';
-export * as backupJobStore from './backupJobStore.js';
-export * as downloadJobStore from './downloadJobStore.js';
-export * as operationJobStore from './operationJobStore.js';
-
-export { containerJobStore } from './containerJobStore.js';
-export { imageUpdateJobStore } from './imageUpdateJobStore.js';
-
-export { listBackgroundJobs } from './listBackgroundJobs.js';
+export {
+  startJob,
+  isJobRunning,
+  listJobs,
+  readJob,
+  hasJob,
+  registerJobStream,
+  unregisterJobStream,
+} from './jobStore.js';
 
 export { BACKGROUND_JOB_KIND } from './backgroundJobKinds.js';
 export {
   titleForLibraryDownloadUrl,
   titleForVmCreate,
-  titleForBackup,
+  titleForVmBackup,
   titleForContainerCreate,
   titleForContainerBackup,
   titleForContainerRestore,

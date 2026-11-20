@@ -2,12 +2,14 @@
  * Per-container operation lock (Wisp glue — containerManager stays policy-free,
  * CODING-RULES §7). The container counterpart of `vmOperationLock.js`.
  *
- * Start, stop, kill, restart, delete, rename, backup, restore and every edit
- * that writes container.json each read, move or replace the container's task,
- * netns, snapshot, directory or config, so at most one of them runs per
- * container at a time. A second one is refused with 409 `CONTAINER_BUSY`
- * naming the running operation instead of queueing: the caller retries once
- * it finishes (backup and restore are visible as background jobs).
+ * Create, deploy and restore as new (on the name they create), start, stop,
+ * kill, restart, delete, rename, backup, restore, a mount's data delete or zip
+ * extract and every edit that writes container.json each read, move or
+ * replace the container's task, netns, snapshot, directory or config, so at
+ * most one of them runs per container at a time. A second one is refused with
+ * 409 `CONTAINER_BUSY` naming the running operation instead of queueing: the
+ * caller retries once it finishes. A job takes it through the job starter
+ * (lib/jobs), for the job's life.
  *
  * The restart policy and the backend-start autostart pass live inside
  * containerManager, which can't import this module; they take the same lock

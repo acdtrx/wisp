@@ -6,10 +6,8 @@
  * containers — it's derived at read time from (`container.imageDigest` != current library digest)
  * + (task RUNNING/PAUSED). This module just reports how many containers WOULD now show the flag
  * so the UI can surface counts. Every check ends by refreshing the image-meta sidecar (the
- * library digests `updateAvailable` is derived from) and the container list cache, so the
- * REST job, the hourly sweep and MCP all surface the result the same way.
- *
- * Mirrors the `osUpdates` background-check pattern.
+ * library digests `updateAvailable` is derived from) and the container list cache, so
+ * every caller surfaces the result the same way.
  */
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
@@ -24,6 +22,9 @@ import { getTaskState, normalizeTaskStatus } from './containerManagerLifecycle.j
 import { refreshContainerListCache } from './containerManagerList.js';
 
 export { getImageDigest };
+
+/** The image update check runs on this platform (the hourly trigger arms only where it does). */
+export const supportsImageUpdateChecks = true;
 
 /** Cached summary — returned by GET /api/containers/images/update-status. */
 let lastCheckedAt = null;
@@ -65,8 +66,9 @@ async function containerFlaggedForDigest(name, newDigest) {
 const SKIPPED = Symbol('skipped');
 
 /**
- * One digest read of a check. A failure skips the image (reported as `skipped`), except
- * an unreachable containerd, which ends the whole check with its error.
+ * One digest read of a check. A failure skips the image (reported as `skipped`, with
+ * the error as its `cause`), except an unreachable containerd, which ends the whole
+ * check with its error.
  * @returns {Promise<string | null | typeof SKIPPED>}
  */
 async function readDigestForCheck(ref, onProgress) {
@@ -74,7 +76,7 @@ async function readDigestForCheck(ref, onProgress) {
     return await getImageDigest(ref);
   } catch (err) {
     if (err?.code === 'NO_CONTAINERD') throw err;
-    onProgress?.({ step: 'skipped', ref, reason: err?.message || 'digest read failed' });
+    onProgress?.({ step: 'skipped', ref, cause: err });
     return SKIPPED;
   }
 }
@@ -96,7 +98,7 @@ async function checkOneImage(ref, onProgress, position) {
   try {
     await pullImage(ref, () => {});
   } catch (err) {
-    onProgress?.({ step: 'skipped', ref, reason: err?.message || 'pull failed' });
+    onProgress?.({ step: 'skipped', ref, cause: err });
     return { changed: false, flaggedCount: 0 };
   }
 
@@ -192,53 +194,4 @@ export async function checkSingleImageForUpdates(ref, onProgress, signal) {
     flaggedContainers: res.flaggedCount,
     lastCheckedAt,
   };
-}
-
-const INITIAL_DELAY_MS = 60_000;
-const INTERVAL_MS = 60 * 60 * 1000;
-
-let intervalId = null;
-let initialTimeoutId = null;
-
-/** AbortController for the in-flight background sweep — cancelled on SIGTERM. */
-let activeBackgroundCheckAbort = null;
-
-export function startImageUpdateChecker(log) {
-  if (intervalId != null) return;
-
-  function runCheck() {
-    const ac = new AbortController();
-    activeBackgroundCheckAbort = ac;
-    checkAllImagesForUpdates(() => {}, ac.signal)
-      .catch((err) => {
-        if (err?.name === 'AbortError') return;
-        if (log) log.warn({ err: err?.message || String(err) }, 'Background image update check failed');
-      })
-      .finally(() => {
-        if (activeBackgroundCheckAbort === ac) activeBackgroundCheckAbort = null;
-      });
-  }
-
-  initialTimeoutId = setTimeout(() => {
-    initialTimeoutId = null;
-    runCheck();
-  }, INITIAL_DELAY_MS);
-  intervalId = setInterval(runCheck, INTERVAL_MS);
-}
-
-export function stopImageUpdateChecker() {
-  if (initialTimeoutId != null) {
-    clearTimeout(initialTimeoutId);
-    initialTimeoutId = null;
-  }
-  if (intervalId != null) {
-    clearInterval(intervalId);
-    intervalId = null;
-  }
-  if (activeBackgroundCheckAbort != null) {
-    try {
-      activeBackgroundCheckAbort.abort();
-    } catch { /* sync; ignore */ }
-    activeBackgroundCheckAbort = null;
-  }
 }

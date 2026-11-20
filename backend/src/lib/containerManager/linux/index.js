@@ -87,8 +87,7 @@ export {
   checkAllImagesForUpdates,
   checkSingleImageForUpdates,
   getImageUpdateStatus,
-  startImageUpdateChecker,
-  stopImageUpdateChecker,
+  supportsImageUpdateChecks,
 } from './containerManagerImageUpdates.js';
 
 export { updateContainerConfig } from './containerManagerConfig.js';

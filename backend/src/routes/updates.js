@@ -5,14 +5,8 @@ import {
   applyUpdate,
   claimUpdateInstall,
 } from '../lib/wispUpdate.js';
-import {
-  listBackgroundJobs, operationJobStore, BACKGROUND_JOB_KIND, titleForSelfUpdate,
-} from '../lib/jobs/index.js';
+import { listJobs, startJob, BACKGROUND_JOB_KIND, titleForSelfUpdate } from '../lib/jobs/index.js';
 import { createAppError } from '../lib/appErrors.js';
-
-function activeOtherJobs() {
-  return listBackgroundJobs().filter((j) => !j.done);
-}
 
 const STATUS_RESPONSE = {
   type: 'object',
@@ -84,7 +78,7 @@ export default async function updatesRoutes(fastify) {
       }
       const force = request.query?.force === '1' || request.query?.force === 'true';
       if (!force) {
-        const others = activeOtherJobs();
+        const others = listJobs().filter((j) => j.status === 'running');
         if (others.length > 0) {
           throw createAppError(
             'UPDATE_JOBS_ACTIVE',
@@ -107,7 +101,7 @@ export default async function updatesRoutes(fastify) {
        * progress (download percent, verify, extract) and its `done` — sent just
        * before the restart — arrive over its stream; the client then waits for
        * Wisp to come back on the new version. */
-      const job = operationJobStore.startOperationJob({
+      const job = await startJob({
         kind: BACKGROUND_JOB_KIND.SELF_UPDATE,
         title: titleForSelfUpdate(status.latest),
         log: request.log,

@@ -1,6 +1,6 @@
 /**
  * Host introspection module facade — hardware/GPU enumeration, power control,
- * USB monitor, /proc stats, reboot-required signal, OS-update checker, and
+ * USB monitor, /proc stats, reboot-required signal, OS updates, and
  * disk SMART summaries. Linux uses sysfs/proc plus a few sudo helpers
  * (wisp-dmidecode, wisp-power, wisp-os-update, wisp-smartctl); macOS is
  * dev-only stubs (system_profiler for hardware, /proc absent so stats are
@@ -59,6 +59,7 @@ export const getHostStats = statsImpl.getHostStats;
 export const getRebootSignal = rebootImpl.getRebootSignal;
 
 // OS updates
+export const supportsOsUpdateChecks = updatesImpl.supportsOsUpdateChecks;
 export const getPendingUpdatesCount = updatesImpl.getPendingUpdatesCount;
 export const getLastCheckedAt = updatesImpl.getLastCheckedAt;
 export const isUpdateOperationInProgress = updatesImpl.isOperationInProgress;
@@ -66,9 +67,6 @@ export const isUpgradeInProgress = updatesImpl.isUpgradeInProgress;
 export const getCachedPackages = updatesImpl.getCachedPackages;
 export const checkForUpdates = updatesImpl.checkForUpdates;
 export const performUpgrade = updatesImpl.performUpgrade;
-export const listUpgradablePackages = updatesImpl.listUpgradablePackages;
-export const startUpdateChecker = updatesImpl.startUpdateChecker;
-export const stopUpdateChecker = updatesImpl.stopUpdateChecker;
 
 // Disk SMART summaries
 export const readDiskSmartSummary = smartImpl.readDiskSmartSummary;

@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 
 import {
@@ -23,17 +22,14 @@ import { getSettings, getRawMounts, listConfiguredBackupRoots, listBackupDestina
 import { resolveBackupDestinations } from '../lib/backupDestinations.js';
 import { recordBackupAttempt } from '../lib/backupStatus.js';
 import {
-  backupJobStore,
-  operationJobStore,
+  startJob,
   BACKGROUND_JOB_KIND,
   titleForContainerRestore,
   titleForVmRestore,
   titleForContainerRestoreAsNew,
 } from '../lib/jobs/index.js';
-import { startLockedContainerJob } from '../lib/containerJobs.js';
-import { createAppError, isExpectedAppError } from '../lib/appErrors.js';
+import { createAppError } from '../lib/appErrors.js';
 import { validateVMName, validateContainerName } from '../lib/validation.js';
-import { acquireContainerOperationLock } from '../lib/containerOperationLock.js';
 
 // Backup directory names produced by createBackup are ISO-derived
 // (YYYY-MM-DDTHH-mm-ss). The accept-set is intentionally a bit looser to
@@ -79,57 +75,43 @@ function stripPath(row) {
 }
 
 /**
- * Run a container in-place restore as a background job in the shared
- * backupJobStore: optional safety backup of the current state first (0–45% of
- * the bar), then the restore itself (45–100%). The safety phase's step names
- * are prefixed `safety-` so they read as the safety backup. The manager emits
- * no `done` progress event; only the job store's completion does.
+ * A container in-place restore, run inside its job: an optional safety backup
+ * of the current state first (0–45% of the bar), then the restore itself
+ * (45–100%). The safety phase's step names are prefixed `safety-` so they read
+ * as the safety backup. Resolves the restore's result.
  *
  * @param {object} opts
- * @param {string} opts.jobId
  * @param {string} opts.name - container name
  * @param {{ id: string, path: string }} opts.dest - resolved destination (safety backup target)
  * @param {boolean} opts.safetyBackup
  * @param {(onProgress: (ev: object) => void) => Promise<object>} opts.runSafetyBackup
  * @param {(onProgress: (ev: object) => void) => Promise<object>} opts.runRestore
- * @param {() => void} opts.releaseLock - the container's operation lock, held for the job; released before the job settles
- * @param {import('fastify').FastifyBaseLogger} opts.log
- * @returns {Promise<void>} settles (never rejects) once the job completed or failed
+ * @param {(event: object) => void} opts.report - the job's progress reporter
  */
-function startContainerRestoreInPlaceJob({ jobId, name, dest, safetyBackup, runSafetyBackup, runRestore, releaseLock, log }) {
+async function restoreContainerInPlace({ name, dest, safetyBackup, runSafetyBackup, runRestore, report }) {
   const scaledProgress = (base, span, stepPrefix = '') => (ev) => {
-    backupJobStore.pushEvent(jobId, {
+    report({
       step: `${stepPrefix}${ev.step}`,
       percent: ev.percent != null ? Math.min(100, Math.round(base + (ev.percent / 100) * span)) : undefined,
       currentFile: ev.currentFile,
     });
   };
 
-  return (async () => {
-    if (safetyBackup) {
-      try {
-        const res = await runSafetyBackup(scaledProgress(0, 45, 'safety-'));
-        await recordBackupAttempt({
-          kind: 'container', name, ok: true, origin: 'manual', destinationIds: [dest.id], timestamp: res?.timestamp,
-        });
-      } catch (err) {
-        await recordBackupAttempt({
-          kind: 'container', name, ok: false, origin: 'manual', destinationIds: [dest.id], error: err?.message,
-        });
-        /* Safety backup failed — abort before touching the live workload. */
-        throw err;
-      }
+  if (safetyBackup) {
+    try {
+      const res = await runSafetyBackup(scaledProgress(0, 45, 'safety-'));
+      await recordBackupAttempt({
+        kind: 'container', name, ok: true, origin: 'manual', destinationIds: [dest.id], timestamp: res?.timestamp,
+      });
+    } catch (err) {
+      await recordBackupAttempt({
+        kind: 'container', name, ok: false, origin: 'manual', destinationIds: [dest.id], error: err?.message,
+      });
+      /* Safety backup failed — abort before touching the live workload. */
+      throw err;
     }
-    const result = await runRestore(scaledProgress(safetyBackup ? 45 : 0, safetyBackup ? 55 : 100));
-    // Free the container before announcing completion, so a Start the client
-    // sends on `done` never meets a stale CONTAINER_BUSY.
-    releaseLock();
-    backupJobStore.completeJob(jobId, result);
-  })().catch((err) => {
-    releaseLock();
-    backupJobStore.failJob(jobId, err);
-    if (!isExpectedAppError(err)) log.error({ err, jobId }, 'Background restore-in-place job failed');
-  });
+  }
+  return runRestore(scaledProgress(safetyBackup ? 45 : 0, safetyBackup ? 55 : 100));
 }
 
 export default async function backupsRoutes(fastify) {
@@ -202,14 +184,20 @@ export default async function backupsRoutes(fastify) {
       const settings = await getSettings();
       const root = resolveBackupRoot(settings, destinationId);
       const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
-      // A CD-ROM may keep a source outside the new VM directory only under
-      // the paths an attach would accept (the image library).
-      const plan = await planBackupRestore(backupPath, newVmName, {
-        isExternalSourceAllowed: (absPath) => isPathInsideAllowedRoots(absPath, newVmName),
-      });
-      const job = operationJobStore.startOperationJob({
+      let plan;
+      // The new VM's name is held for the restore, so nothing creates, starts
+      // or edits it while its directory is being populated.
+      const job = await startJob({
         kind: BACKGROUND_JOB_KIND.VM_RESTORE,
         title: titleForVmRestore(newVmName),
+        subject: { type: 'vm', name: newVmName },
+        // A CD-ROM may keep a source outside the new VM directory only under
+        // the paths an attach would accept (the image library).
+        check: async () => {
+          plan = await planBackupRestore(backupPath, newVmName, {
+            isExternalSourceAllowed: (absPath) => isPathInsideAllowedRoots(absPath, newVmName),
+          });
+        },
         log: request.log,
         // Backups don't hold the cloud-init seed ISO; rebuild it from the
         // restored cloud-init.json before the domain is defined.
@@ -331,12 +319,11 @@ export default async function backupsRoutes(fastify) {
       let plan;
       // The new container's name is held for the restore, so nothing starts
       // or edits it while its directory is being populated.
-      const job = await startLockedContainerJob({
-        name: newName,
-        operation: 'restore',
-        check: async () => { plan = await planContainerBackupRestore(backupPath, newName); },
+      const job = await startJob({
         kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE_AS_NEW,
         title: titleForContainerRestoreAsNew(newName),
+        subject: { type: 'container', name: newName },
+        check: async () => { plan = await planContainerBackupRestore(backupPath, newName); },
         log: request.log,
         run: () => restoreContainerBackup(plan),
       });
@@ -345,8 +332,8 @@ export default async function backupsRoutes(fastify) {
   });
 
   // POST /container-backups/restore-in-place — restore a backup over the live
-  // container it was taken from (same name/MAC/lease). Background job with an
-  // optional safety backup first; progress via /containers/backup-progress/:jobId.
+  // container it was taken from (same name/MAC/lease). One job, its optional
+  // safety backup first; `done` is `{ name, image }`.
   fastify.post('/container-backups/restore-in-place', {
     config: { auth: 'admin' },
     schema: {
@@ -381,36 +368,33 @@ export default async function backupsRoutes(fastify) {
       const [dest] = await resolveBackupDestinations(settings, rawMounts, [destinationId]);
       const backupPath = join(dest.path, 'containers', name, timestamp);
 
-      /* Fail fast in the request (the manager re-checks inside the job). */
-      const container = (await listContainers()).find((c) => c.name === name);
-      if (!container) {
-        throw createAppError('CONTAINER_NOT_FOUND', `Container "${name}" not found — restore the backup as a new container instead`);
-      }
-      if (container.state !== 'stopped' && container.state !== 'created') {
-        throw createAppError('CONTAINER_MUST_BE_STOPPED', `Container "${name}" must be stopped to restore in place`);
-      }
-
-      const title = titleForContainerRestore(name);
       // Held for the whole job (safety backup included): no start, backup,
       // edit or second restore of the container while its files are replaced.
-      // Acquired with no await before createJob, so the lock and the job
-      // appear together.
-      const releaseLock = acquireContainerOperationLock(name, 'restore');
-
-      const jobId = randomBytes(12).toString('hex');
-      backupJobStore.createJob(jobId, { kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE, title, log: request.log });
-      request.log.info({ jobId, kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE, title }, 'Background job started');
-      startContainerRestoreInPlaceJob({
-        jobId,
-        name,
-        dest,
-        safetyBackup,
-        runSafetyBackup: (onProgress) => createContainerBackup(name, dest.path, { origin: 'manual', onProgress }),
-        runRestore: (onProgress) => restoreContainerBackupInPlace(backupPath, { onProgress }),
-        releaseLock,
+      const job = await startJob({
+        kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE,
+        title: titleForContainerRestore(name),
+        subject: { type: 'container', name },
+        // Fail fast in the request (the manager re-checks inside the job).
+        check: async () => {
+          const container = (await listContainers()).find((c) => c.name === name);
+          if (!container) {
+            throw createAppError('CONTAINER_NOT_FOUND', `Container "${name}" not found — restore the backup as a new container instead`);
+          }
+          if (container.state !== 'stopped' && container.state !== 'created') {
+            throw createAppError('CONTAINER_MUST_BE_STOPPED', `Container "${name}" must be stopped to restore in place`);
+          }
+        },
         log: request.log,
+        run: (report) => restoreContainerInPlace({
+          name,
+          dest,
+          safetyBackup,
+          runSafetyBackup: (onProgress) => createContainerBackup(name, dest.path, { origin: 'manual', onProgress }),
+          runRestore: (onProgress) => restoreContainerBackupInPlace(backupPath, { onProgress }),
+          report,
+        }),
       });
-      return reply.code(202).send({ jobId, title });
+      return reply.code(202).send(job);
     },
   });
 

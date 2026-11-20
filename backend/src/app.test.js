@@ -173,3 +173,52 @@ test('an admin tool called with a read token answers SCOPE_INSUFFICIENT', async 
   });
   assert.equal(res.json().result.structuredContent.error, 'SCOPE_INSUFFICIENT');
 });
+
+// The image update check runs on either platform's stub or unconnected manager:
+// it ends done (macOS) or failed (Linux, no containerd), a job on no workload.
+test('GET /api/jobs lists a started job with its row', async () => {
+  const start = await app.inject({ method: 'POST', url: '/api/containers/images/check-updates', headers: bearer(ADMIN_TOKEN), payload: {} });
+  assert.equal(start.statusCode, 202);
+  const { jobId, title } = start.json();
+  const res = await app.inject({ method: 'GET', url: '/api/jobs', headers: bearer(READ_TOKEN) });
+  assert.equal(res.statusCode, 200);
+  const row = res.json().jobs.find((j) => j.jobId === jobId);
+  assert.deepEqual(Object.keys(row).sort(), ['createdAt', 'jobId', 'kind', 'status', 'subject', 'title']);
+  assert.equal(row.kind, 'container-image-update-check');
+  assert.equal(row.title, title);
+  assert.equal(row.subject, null);
+  assert.ok(['running', 'done', 'error'].includes(row.status));
+  assert.equal(typeof row.createdAt, 'number');
+});
+
+test('the progress stream of an unknown job answers 404 JOB_NOT_FOUND', async () => {
+  const res = await app.inject({ method: 'GET', url: '/api/jobs/no-such-job/progress', headers: bearer(READ_TOKEN) });
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.json().error, 'JOB_NOT_FOUND');
+});
+
+test('the old job list and per-feature progress routes are gone', async () => {
+  for (const url of [
+    '/api/background-jobs',
+    '/api/vms/create-progress/x',
+    '/api/vms/backup-progress/x',
+    '/api/containers/create-progress/x',
+    '/api/containers/backup-progress/x',
+    '/api/library/download-progress/x',
+    '/api/containers/images/check-updates/x',
+  ]) {
+    const res = await app.inject({ method: 'GET', url, headers: bearer(READ_TOKEN) });
+    assert.equal(res.statusCode, 404, url);
+    assert.equal(res.json().error, 'ROUTE_NOT_FOUND', url);
+  }
+});
+
+// No check has run in this process, on either platform: the list is the empty one.
+test('GET /api/host/updates/packages with a read token reads the last check and starts no job', async () => {
+  const jobs = async () => (await app.inject({ method: 'GET', url: '/api/jobs', headers: bearer(READ_TOKEN) })).json().jobs.map((j) => j.jobId);
+  const before = await jobs();
+  const res = await app.inject({ method: 'GET', url: '/api/host/updates/packages', headers: bearer(READ_TOKEN) });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json(), { packages: [], downloadBytes: 0, checkedAt: null });
+  assert.deepEqual(await jobs(), before);
+});

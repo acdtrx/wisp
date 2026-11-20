@@ -29,7 +29,7 @@ import sectionsRoutes from './routes/sections.js';
 import homepageRoutes from './routes/homepage.js';
 import backupsRoutes from './routes/backups.js';
 import containerRoutes from './routes/containers.js';
-import backgroundJobsRoutes from './routes/backgroundJobs.js';
+import jobsRoutes from './routes/jobs.js';
 import updatesRoutes from './routes/updates.js';
 import mcpRoutes from './routes/mcp.js';
 
@@ -234,7 +234,7 @@ export async function buildApp(log) {
   app.register(homepageRoutes, { prefix: '/api' });
   app.register(backupsRoutes, { prefix: '/api' });
   app.register(containerRoutes, { prefix: '/api' });
-  app.register(backgroundJobsRoutes, { prefix: '/api' });
+  app.register(jobsRoutes, { prefix: '/api' });
   app.register(updatesRoutes, { prefix: '/api' });
   app.register(mcpRoutes); // /mcp — bearer-token-only MCP endpoint (see docs/specs/MCP.md)
   app.register(consoleRoutes, { prefix: '/ws' });

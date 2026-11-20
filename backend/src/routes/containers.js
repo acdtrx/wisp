@@ -1,14 +1,14 @@
 /**
- * Container API routes: CRUD, lifecycle, mount content, stats SSE, logs SSE, create progress SSE.
+ * Container API routes: CRUD, lifecycle, mount content, stats SSE, logs SSE.
  */
-import { randomUUID, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
 import {
-  getContainerDir,
+  getContainerDir, assertContainerState,
   listContainers, getContainerConfig, getContainerMountUsage, assertContainerNameAvailable, createContainer, renameContainer,
   createContainerBackup,
   killContainer,
@@ -21,24 +21,20 @@ import {
   initMountContent, assertMountOperation, deleteMountData, deleteRemovedMountData,
   getMountFileTextContent, putMountFileTextContent,
   listContainerImages, assertContainerImageDeletable, deleteContainerImage,
-  checkAllImagesForUpdates, checkSingleImageForUpdates, getImageUpdateStatus,
+  getImageUpdateStatus,
 } from '../lib/containerManager/index.js';
 import {
-  containerJobStore,
-  imageUpdateJobStore,
-  backupJobStore,
+  startJob,
   BACKGROUND_JOB_KIND,
   titleForContainerCreate,
   titleForContainerBackup,
-  TITLE_IMAGE_UPDATE_CHECK_ALL,
-  titleForImageUpdateCheckSingle,
-  operationJobStore,
   titleForContainerMountDelete,
   titleForContainerMountDataDelete,
   titleForContainerImageDelete,
   titleForZipExtract,
 } from '../lib/jobs/index.js';
-import { startContainerLifecycleJob, startContainerDeleteJob, startLockedContainerJob } from '../lib/containerJobs.js';
+import { startContainerLifecycleJob, startContainerDeleteJob } from '../lib/containerJobs.js';
+import { startImageUpdateCheckJob } from '../lib/updateChecks.js';
 import { watchRequestBody, bodyWatchHooks } from '../lib/requestBodyWatch.js';
 import { getSettings, getRawMounts } from '../lib/settings.js';
 import { renameWorkloadAssignment } from '../lib/sections.js';
@@ -46,7 +42,7 @@ import { publishContainer, unpublishContainer } from '../lib/containerMdnsReconc
 import { resolveBackupDestinations, backupToEachDestination } from '../lib/backupDestinations.js';
 import { recordBackupAttempt } from '../lib/backupStatus.js';
 import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
-import { createAppError, isExpectedAppError } from '../lib/appErrors.js';
+import { createAppError } from '../lib/appErrors.js';
 import { validateContainerName } from '../lib/validation.js';
 import {
   acquireContainerOperationLock,
@@ -183,39 +179,19 @@ export default async function containerRoutes(fastify) {
       throw createAppError('UNKNOWN_APP_TYPE', `App "${spec.app}" is not a known app type`);
     }
 
-    await assertContainerNameAvailable(spec.name); // a taken name is a 409 here, not a failed job
-
-    const jobId = randomUUID();
-    const title = titleForContainerCreate(spec.name.trim());
-    containerJobStore.createJob(jobId, {
+    const newName = spec.name.trim();
+    const job = await startJob({
       kind: BACKGROUND_JOB_KIND.CONTAINER_CREATE,
-      title,
+      title: titleForContainerCreate(newName),
+      subject: { type: 'container', name: newName },
+      check: () => assertContainerNameAvailable(spec.name), // a taken name is a 409 here, not a failed job
       log: request.log,
+      run: async (report) => {
+        await (spec.app ? createAppContainer(spec, report) : createContainer(spec, report));
+        return { name: newName };
+      },
     });
-    request.log.info(
-      { jobId, kind: BACKGROUND_JOB_KIND.CONTAINER_CREATE, title },
-      'Background job started',
-    );
-
-    const createPromise = spec.app
-      ? createAppContainer(spec, (ev) => containerJobStore.pushEvent(jobId, ev))
-      : createContainer(spec, (ev) => containerJobStore.pushEvent(jobId, ev));
-    createPromise
-      .then((result) => containerJobStore.completeJob(jobId, result))
-      .catch((err) => containerJobStore.failJob(jobId, err));
-
-    return reply.code(202).send({ jobId, title });
-  });
-
-  // ── Create progress SSE ───────────────────────────────────────────
-  fastify.get('/containers/create-progress/:jobId', { config: { auth: 'read' } }, async (request, reply) => {
-    const { jobId } = request.params;
-    const job = containerJobStore.getJob(jobId);
-    if (!job) throw createAppError('JOB_NOT_FOUND', `No job with id "${jobId}": it never started, or ended more than 5 minutes ago`);
-
-    setupSSE(reply);
-    containerJobStore.registerStream(jobId, reply.raw);
-    onSSEClose(reply, () => containerJobStore.unregisterStream(jobId, reply.raw));
+    return reply.code(202).send(job);
   });
 
   // ── OCI images (containerd) — before /containers/:name ────────────
@@ -262,7 +238,7 @@ export default async function containerRoutes(fastify) {
         throw createAppError('VALIDATION_FAILED', 'querystring/ref is required');
       }
       const imageName = await assertContainerImageDeletable(ref);
-      const job = operationJobStore.startOperationJob({
+      const job = await startJob({
         kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_DELETE,
         title: titleForContainerImageDelete(imageName),
         log: request.log,
@@ -276,43 +252,13 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── OCI image update check ────────────────────────────────────────
+  // A shared job: a check already running, whatever its scope, is joined.
   fastify.post('/containers/images/check-updates', { config: { auth: 'admin' } }, async (request, reply) => {
     const ref = typeof request.body?.ref === 'string' && request.body.ref.trim()
       ? request.body.ref.trim()
       : null;
-
-    const jobId = randomUUID();
-    const title = ref ? titleForImageUpdateCheckSingle(ref) : TITLE_IMAGE_UPDATE_CHECK_ALL;
-    imageUpdateJobStore.createJob(jobId, {
-      kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK,
-      title,
-      log: request.log,
-    });
-    request.log.info(
-      { jobId, kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK, title, ref: ref || 'all' },
-      'Background job started',
-    );
-
-    const runner = ref
-      ? checkSingleImageForUpdates(ref, (ev) => imageUpdateJobStore.pushEvent(jobId, ev))
-      : checkAllImagesForUpdates((ev) => imageUpdateJobStore.pushEvent(jobId, ev));
-
     // The check itself refreshes the image-meta sidecar and the list cache.
-    runner
-      .then((result) => imageUpdateJobStore.completeJob(jobId, result))
-      .catch((err) => imageUpdateJobStore.failJob(jobId, err));
-
-    return reply.code(202).send({ jobId, title });
-  });
-
-  fastify.get('/containers/images/check-updates/:jobId', { config: { auth: 'read' } }, async (request, reply) => {
-    const { jobId } = request.params;
-    const job = imageUpdateJobStore.getJob(jobId);
-    if (!job) throw createAppError('JOB_NOT_FOUND', `No job with id "${jobId}": it never started, or ended more than 5 minutes ago`);
-
-    setupSSE(reply);
-    imageUpdateJobStore.registerStream(jobId, reply.raw);
-    onSSEClose(reply, () => imageUpdateJobStore.unregisterStream(jobId, reply.raw));
+    return reply.code(202).send(await startImageUpdateCheckJob({ ref, log: request.log }));
   });
 
   fastify.get('/containers/images/update-status', { config: { auth: 'read' } }, async () => {
@@ -473,7 +419,7 @@ export default async function containerRoutes(fastify) {
     return reply.code(204).send();
   });
 
-  // ── Backup (start) + progress SSE ────────────────────────────────
+  // ── Backup ───────────────────────────────────────────────────────
   // Mirrors POST /vms/:name/backup. Works on running containers too — the
   // task is paused for the duration of the archive and resumed (enforced
   // inside createContainerBackup → freezeForBackup). Body shape:
@@ -501,70 +447,40 @@ export default async function containerRoutes(fastify) {
     handler: async (request, reply) => {
       const { name } = request.params;
       const body = request.body || {};
-      const settings = await getSettings();
-      const rawMounts = await getRawMounts();
-      const destinations = await resolveBackupDestinations(settings, rawMounts, body.destinationIds);
-
-      const title = titleForContainerBackup(name);
+      let destinations;
       // The operation lock keeps a second backup (its pause/resume around the
-      // archive) and every other operation off the container for the whole
-      // job. Acquired with no await before createJob, so the lock and the job
-      // appear together; released when the job settles.
-      const releaseLock = acquireContainerOperationLock(name, 'backup');
-
-      const jobId = randomBytes(12).toString('hex');
-      backupJobStore.createJob(jobId, {
+      // archive) and every other operation off the container for the whole job.
+      const job = await startJob({
         kind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP,
-        title,
+        title: titleForContainerBackup(name),
+        subject: { type: 'container', name },
+        check: async () => {
+          await assertContainerState(name, 'exists');
+          destinations = await resolveBackupDestinations(await getSettings(), await getRawMounts(), body.destinationIds);
+        },
         log: request.log,
+        run: async (report) => {
+          const destinationIds = destinations.map((d) => d.id);
+          let lastResult;
+          try {
+            lastResult = await backupToEachDestination(destinations, {
+              push: report,
+              backupOne: (dest, onProgress) => createContainerBackup(name, dest.path, { origin: 'manual', onProgress }),
+            });
+          } catch (err) {
+            await recordBackupAttempt({
+              kind: 'container', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
+            });
+            throw err;
+          }
+          await recordBackupAttempt({
+            kind: 'container', name, ok: true, origin: 'manual', destinationIds, timestamp: lastResult?.timestamp,
+          });
+          // The backup folder name only: its host path stays on the server.
+          return { timestamp: lastResult?.timestamp };
+        },
       });
-      request.log.info(
-        { jobId, kind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP, title },
-        'Background job started',
-      );
-      const destinationIds = destinations.map((d) => d.id);
-      (async () => {
-        const lastResult = await backupToEachDestination(destinations, {
-          push: (ev) => backupJobStore.pushEvent(jobId, ev),
-          backupOne: (dest, onProgress) => createContainerBackup(name, dest.path, { origin: 'manual', onProgress }),
-        });
-        // Free the container before announcing completion, so an action the
-        // client takes on `done` never meets a stale CONTAINER_BUSY.
-        releaseLock();
-        backupJobStore.completeJob(jobId, lastResult);
-        await recordBackupAttempt({
-          kind: 'container', name, ok: true, origin: 'manual', destinationIds, timestamp: lastResult?.timestamp,
-        });
-      })().catch(async (err) => {
-        releaseLock();
-        backupJobStore.failJob(jobId, err);
-        if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background container backup failed');
-        await recordBackupAttempt({
-          kind: 'container', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
-        });
-      });
-      return reply.code(202).send({ jobId, title });
-    },
-  });
-
-  fastify.get('/containers/backup-progress/:jobId', {
-    config: { auth: 'read' },
-    schema: { hide: true },
-    handler: async (request, reply) => {
-      const { jobId } = request.params;
-      const job = backupJobStore.getJob(jobId);
-      if (!job) {
-        throw createAppError('JOB_NOT_FOUND', `No job with id "${jobId}": it never started, or ended more than 5 minutes ago`);
-      }
-      setupSSE(reply);
-      const ok = backupJobStore.registerStream(jobId, reply.raw);
-      if (!ok) {
-        reply.raw.end();
-        return;
-      }
-      onSSEClose(reply, () => {
-        backupJobStore.unregisterStream(jobId, reply.raw);
-      });
+      return reply.code(202).send(job);
     },
   });
 
@@ -691,15 +607,14 @@ export default async function containerRoutes(fastify) {
   fastify.delete('/containers/:name/mounts/:mountName', { config: { auth: 'admin' } }, async (request, reply) => {
     const { mountName } = request.params;
     const { name } = request.params;
-    const job = await startLockedContainerJob({
-      name,
-      operation: 'configuration change',
+    const job = await startJob({
+      kind: BACKGROUND_JOB_KIND.CONTAINER_MOUNT_DELETE,
+      title: titleForContainerMountDelete(name, mountName),
+      subject: { type: 'container', name },
       check: async () => {
         assertMountNotAppManaged(await getContainerConfig(name), mountName);
         await assertMountOperation(name, mountName, 'remove');
       },
-      kind: BACKGROUND_JOB_KIND.CONTAINER_MOUNT_DELETE,
-      title: titleForContainerMountDelete(name, mountName),
       log: request.log,
       run: () => removeContainerMount(name, mountName),
     });
@@ -754,15 +669,14 @@ export default async function containerRoutes(fastify) {
       // Checked again under the lock the job then holds, so no edit can move
       // the mount between the check and the extract.
       let plan;
-      const job = await startLockedContainerJob({
-        name: containerName,
-        operation: 'zip extract',
+      const job = await startJob({
+        kind: BACKGROUND_JOB_KIND.CONTAINER_ZIP_EXTRACT,
+        title: titleForZipExtract(containerName, mountName),
+        subject: { type: 'container', name: containerName },
         check: async () => {
           assertMountNotAppManaged(await getContainerConfig(containerName), mountName);
           plan = await planMountZipExtract(containerName, mountName, stagingPath);
         },
-        kind: BACKGROUND_JOB_KIND.CONTAINER_ZIP_EXTRACT,
-        title: titleForZipExtract(containerName, mountName),
         log: request.log,
         run: async () => {
           try {
@@ -814,15 +728,18 @@ export default async function containerRoutes(fastify) {
   });
 
   // A job: a large data directory takes a while to delete. Not found,
-  // app-managed and a tmpfs mount are answered here.
+  // app-managed, a tmpfs mount and busy are answered here.
   fastify.delete('/containers/:name/mounts/:mountName/data', { config: { auth: 'admin' } }, async (request, reply) => {
     const { mountName } = request.params;
     const { name } = request.params;
-    assertMountNotAppManaged(await getContainerConfig(name), mountName);
-    await assertMountOperation(name, mountName, 'data');
-    const job = operationJobStore.startOperationJob({
+    const job = await startJob({
       kind: BACKGROUND_JOB_KIND.CONTAINER_MOUNT_DATA_DELETE,
       title: titleForContainerMountDataDelete(name, mountName),
+      subject: { type: 'container', name },
+      check: async () => {
+        assertMountNotAppManaged(await getContainerConfig(name), mountName);
+        await assertMountOperation(name, mountName, 'data');
+      },
       log: request.log,
       run: async () => {
         await deleteMountData(name, mountName);

@@ -1,8 +1,7 @@
 import { readdir, stat, access } from 'node:fs/promises';
 import { join, basename } from 'node:path';
-import { randomBytes } from 'node:crypto';
 import {
-  downloadJobStore,
+  startJob,
   BACKGROUND_JOB_KIND,
   titleForLibraryDownloadUrl,
   TITLE_LIBRARY_ARCH_CLOUD,
@@ -21,8 +20,7 @@ import {
 } from '../lib/library/index.js';
 import { ensureImageDir, getImagePath } from '../lib/paths.js';
 import { findVMsUsingImage } from '../lib/vmManager/index.js';
-import { onSSEClose, setupSSE } from '../lib/sse.js';
-import { createAppError, isAppError, isExpectedAppError } from '../lib/appErrors.js';
+import { createAppError, isAppError } from '../lib/appErrors.js';
 import { watchRequestBody } from '../lib/requestBodyWatch.js';
 
 function validateFilename(name) {
@@ -221,7 +219,7 @@ export default async function libraryRoutes(fastify) {
     },
   });
 
-  // POST /library/download — start URL download (returns jobId), progress via SSE
+  // POST /library/download — a URL download job
   fastify.post('/library/download', {
     config: { auth: 'admin' },
     schema: {
@@ -249,38 +247,19 @@ export default async function libraryRoutes(fastify) {
       if (!isAllowedUrl(url)) {
         throw createAppError('INVALID_URL', 'Only HTTP and HTTPS URLs are allowed');
       }
-      const jobId = randomBytes(12).toString('hex');
-      const title = titleForLibraryDownloadUrl(url);
-      downloadJobStore.createJob(jobId, {
+      const job = await startJob({
         kind: BACKGROUND_JOB_KIND.LIBRARY_DOWNLOAD,
-        title,
+        title: titleForLibraryDownloadUrl(url),
         log: request.log,
+        run: (report) => downloadUrlToLibrary(url, (percent, loaded, total) => {
+          report({ step: 'progress', percent, loaded, total });
+        }),
       });
-      request.log.info(
-        { jobId, kind: BACKGROUND_JOB_KIND.LIBRARY_DOWNLOAD, title },
-        'Background job started',
-      );
-      (async () => {
-        try {
-          const result = await downloadUrlToLibrary(url, (percent, loaded, total) => {
-            downloadJobStore.pushEvent(jobId, { step: 'progress', percent, loaded, total });
-          });
-          downloadJobStore.completeJob(jobId, result);
-        } catch (err) {
-          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background download job failed');
-          try {
-            downloadJobStore.failJob(jobId, err);
-          } catch (failErr) {
-            /* failJob threw — job may already be finalized */
-            request.log.error({ err: failErr, jobId }, 'failJob failed');
-          }
-        }
-      })();
-      return reply.code(202).send({ jobId, title });
+      return reply.code(202).send(job);
     },
   });
 
-  // POST /library/download-ubuntu-cloud — start Ubuntu Server LTS cloud image download (returns jobId)
+  // POST /library/download-ubuntu-cloud — a job downloading the Ubuntu Server LTS cloud image
   fastify.post('/library/download-ubuntu-cloud', {
     config: { auth: 'admin' },
     schema: {
@@ -295,38 +274,19 @@ export default async function libraryRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      const jobId = randomBytes(12).toString('hex');
-      const title = TITLE_LIBRARY_UBUNTU_CLOUD;
-      downloadJobStore.createJob(jobId, {
+      const job = await startJob({
         kind: BACKGROUND_JOB_KIND.LIBRARY_DOWNLOAD,
-        title,
+        title: TITLE_LIBRARY_UBUNTU_CLOUD,
         log: request.log,
+        run: (report) => downloadUbuntuCloudToLibrary((percent) => {
+          report({ step: 'progress', percent, loaded: null, total: null });
+        }),
       });
-      request.log.info(
-        { jobId, kind: BACKGROUND_JOB_KIND.LIBRARY_DOWNLOAD, title },
-        'Background job started',
-      );
-      (async () => {
-        try {
-          const result = await downloadUbuntuCloudToLibrary((percent) => {
-            downloadJobStore.pushEvent(jobId, { step: 'progress', percent, loaded: null, total: null });
-          });
-          downloadJobStore.completeJob(jobId, result);
-        } catch (err) {
-          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background download-ubuntu-cloud job failed');
-          try {
-            downloadJobStore.failJob(jobId, err);
-          } catch (failErr) {
-            /* failJob threw — job may already be finalized */
-            request.log.error({ err: failErr, jobId }, 'failJob failed');
-          }
-        }
-      })();
-      return reply.code(202).send({ jobId, title });
+      return reply.code(202).send(job);
     },
   });
 
-  // POST /library/download-arch-cloud — start Arch Linux cloud image download (returns jobId)
+  // POST /library/download-arch-cloud — a job downloading the Arch Linux cloud image
   fastify.post('/library/download-arch-cloud', {
     config: { auth: 'admin' },
     schema: {
@@ -341,37 +301,19 @@ export default async function libraryRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      const jobId = randomBytes(12).toString('hex');
-      const title = TITLE_LIBRARY_ARCH_CLOUD;
-      downloadJobStore.createJob(jobId, {
+      const job = await startJob({
         kind: BACKGROUND_JOB_KIND.LIBRARY_DOWNLOAD,
-        title,
+        title: TITLE_LIBRARY_ARCH_CLOUD,
         log: request.log,
+        run: (report) => downloadArchCloudToLibrary((percent) => {
+          report({ step: 'progress', percent, loaded: null, total: null });
+        }),
       });
-      request.log.info(
-        { jobId, kind: BACKGROUND_JOB_KIND.LIBRARY_DOWNLOAD, title },
-        'Background job started',
-      );
-      (async () => {
-        try {
-          const result = await downloadArchCloudToLibrary((percent) => {
-            downloadJobStore.pushEvent(jobId, { step: 'progress', percent, loaded: null, total: null });
-          });
-          downloadJobStore.completeJob(jobId, result);
-        } catch (err) {
-          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background download-arch-cloud job failed');
-          try {
-            downloadJobStore.failJob(jobId, err);
-          } catch (failErr) {
-            request.log.error({ err: failErr, jobId }, 'failJob failed');
-          }
-        }
-      })();
-      return reply.code(202).send({ jobId, title });
+      return reply.code(202).send(job);
     },
   });
 
-  // POST /library/download-haos — start Home Assistant OS download (returns jobId)
+  // POST /library/download-haos — a job downloading Home Assistant OS
   fastify.post('/library/download-haos', {
     config: { auth: 'admin' },
     schema: {
@@ -386,61 +328,20 @@ export default async function libraryRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      const jobId = randomBytes(12).toString('hex');
-      const title = TITLE_LIBRARY_HAOS;
-      downloadJobStore.createJob(jobId, {
+      const job = await startJob({
         kind: BACKGROUND_JOB_KIND.LIBRARY_DOWNLOAD,
-        title,
+        title: TITLE_LIBRARY_HAOS,
         log: request.log,
+        run: (report) => downloadHaosToLibrary({
+          onProgress: (percent) => {
+            report({ step: 'progress', percent, loaded: null, total: null });
+          },
+          onDecompressing: () => {
+            report({ step: 'decompressing' });
+          },
+        }),
       });
-      request.log.info(
-        { jobId, kind: BACKGROUND_JOB_KIND.LIBRARY_DOWNLOAD, title },
-        'Background job started',
-      );
-      (async () => {
-        try {
-          const result = await downloadHaosToLibrary({
-            onProgress: (percent) => {
-              downloadJobStore.pushEvent(jobId, { step: 'progress', percent, loaded: null, total: null });
-            },
-            onDecompressing: () => {
-              downloadJobStore.pushEvent(jobId, { step: 'decompressing' });
-            },
-          });
-          downloadJobStore.completeJob(jobId, result);
-        } catch (err) {
-          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background download-haos job failed');
-          try {
-            downloadJobStore.failJob(jobId, err);
-          } catch (failErr) {
-            /* failJob threw — job may already be finalized */
-            request.log.error({ err: failErr, jobId }, 'failJob failed');
-          }
-        }
-      })();
-      return reply.code(202).send({ jobId, title });
-    },
-  });
-
-  // GET /library/download-progress/:jobId — SSE stream for download progress
-  fastify.get('/library/download-progress/:jobId', {
-    config: { auth: 'read' },
-    schema: { hide: true },
-    handler: async (request, reply) => {
-      const { jobId } = request.params;
-      const job = downloadJobStore.getJob(jobId);
-      if (!job) {
-        throw createAppError('JOB_NOT_FOUND', `No job with id "${jobId}": it never started, or ended more than 5 minutes ago`);
-      }
-      setupSSE(reply);
-      const ok = downloadJobStore.registerStream(jobId, reply.raw);
-      if (!ok) {
-        reply.raw.end();
-        return;
-      }
-      onSSEClose(reply, () => {
-        downloadJobStore.unregisterStream(jobId, reply.raw);
-      });
+      return reply.code(202).send(job);
     },
   });
 
