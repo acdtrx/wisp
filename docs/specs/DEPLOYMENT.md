@@ -100,8 +100,9 @@ The one list of steps the install and every update run, by path from the install
 - Every step checks first and changes only what is missing: a second run reports every step in place, starts no package manager and changes no file it owns.
 - A step that fails stops the run with a non-zero exit and its name.
 - The first step, `network-plan`, changes nothing: it works out the plan and makes the refusals above.
+- The steps run without the install lock's descriptor: setup holds the lock, so a process a step leaves behind cannot keep updates locked.
 
-**A stop** (TERM, INT) ends setup within its stop bound, whoever sent it; the bridge step's apply and its undo are never cut short (settled 2026-11-20).
+**A stop** (TERM, INT) ends setup within its stop bound, whoever sent it; the bridge step's apply and its undo are never cut short (settled 2026-11-19: each step stops itself, knowing what of its work may be cut short; this replaced setup's TERM to the step's whole session).
 
 Afterwards the host has:
 
@@ -123,6 +124,7 @@ Afterwards the host has:
 
 - netplan checks the file with the host's configuration before it goes live (`NETPLAN_DNS_STUB`).
 - Setup renders it with `netplan generate`, never `netplan apply`, and reloads systemd-networkd only when nothing less brings the device to its settings: a reload reconfigures every link netplan renders, the bridge's DHCP lease among them.
+- What the device needs is decided from what the host holds, never from what the run wrote, so a run cut short is finished by the next (settled 2026-11-20).
 - The former declaration, systemd-networkd's own `10-wisp-dns0.netdev` and `.network`, is taken back by the same step.
 
 Why the stub is declared so, on a device of its own: [CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns).
@@ -159,10 +161,18 @@ Why the stub is declared so, on a device of its own: [CONTAINERS.md → Local DN
 **One read of a tool's internal state** (settled 2026-11-20).
 
 - Before systemd 257, `networkctl status --json` leaves out the DHCPv4 client identifier the bridge must send. On those hosts (Ubuntu 24.04 has systemd 255) the plan and the bridge's check read it, read only, from systemd-networkd's record of the lease, `/run/systemd/netif/leases/<ifindex>` (`CLIENTID=`). From 257 on they read it from the JSON.
+- Which one is read is chosen by the systemd version (`systemctl --version`, read once with the supported-host check), never by a value missing from the JSON.
 - A lease whose record or `CLIENTID=` is missing is refused (`DHCP_LEASE_RECORD`).
 - Rejected: raising the floor to systemd 257, which drops Ubuntu 24.04; parsing `networkctl status`'s text, which is no more an interface than the record.
 
-**Checked before, verified after, undone on failure.** Every change leaves a network that boots, old or new. Within 90 s after the apply, the bridge holds the uplink's hardware address and layer 3, and the uplink none of it; the uplink is the bridge's port, and the bridge has carrier (settled 2026-11-20). A failed apply or check undoes the bridge, and so does a stop.
+**Checked before, verified after, undone on failure.** Every change leaves a network that boots, old or new. Within 90 s after the apply the step checks, against what the uplink held (settled 2026-11-20):
+
+- the bridge holds the uplink's hardware address, its IPv4 addresses and the IPv6 addresses its netplan definition lists, never one the host learned;
+- on DHCP, also its default route's gateway, its name servers, and the client identifier it sends; on a static address, also its IPv4 routes, the IPv6 routes set for it, its name servers and search domains (name servers and search domains only where systemd-resolved runs, which holds them);
+- the uplink holds none of those addresses, no IPv4 route and no IPv6 route set for it, is the bridge's port, and the bridge has carrier;
+- systemd-networkd runs each from the unit netplan renders for it.
+
+A failed apply or check undoes the bridge, and so does a stop.
 
 **The original is kept before the first change** (settled 2026-11-20).
 
@@ -176,7 +186,10 @@ Why the stub is declared so, on a device of its own: [CONTAINERS.md → Local DN
 - From the check that passed, the step waits up to 30 s for the stub to hold its address, which an apply can drop for a while ([CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns)), as the backend's start follows the step.
 - When it does not, the step fails saying that the bridge is in place and kept and what brings the stub back (`networkctl reconfigure wisp-dns0`), and undoes nothing.
 
-**A step that died** (a power cut, a kill) is not recovered (settled 2026-11-20). The next run plans from the host as it finds it: an uplink that is a bridge is used, one that is not gets its bridge.
+**A step that died** (a power cut, a kill) is not recovered (settled 2026-11-20). The next run plans from the host as it finds it: an uplink that is a bridge is used, one that is not gets its bridge. Two states between them are refused (`NETPLAN_NOT_APPLIED`), as setup applies nothing it did not check; its row says what brings each back:
+
+- killed after its switch, before `netplan apply` finished: `br0` can be defined but not live;
+- killed in its undo, after the original went back, before `br0` was deleted: `br0` is live but not defined.
 
 A host left unreachable is fixed at the console, as root, from the newest directory under `/var/lib/wisp/network-before-bridge`:
 
