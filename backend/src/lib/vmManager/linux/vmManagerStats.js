@@ -100,19 +100,42 @@ subscribeAgentEvent((name) => { invalidateGuestInfo(name); });
 /**
  * libvirt-dbus emits AgentEvent on each domain's own object, so a listener is
  * attached to every running VM and detached once it leaves the running set,
- * in step with the VM list. On a disconnect (list null) the connection layer
- * has already dropped them all.
+ * in step with the VM list. One pass at a time, each attach awaited: an
+ * attach checks, awaits the domain's proxy, then records its listener, so two
+ * passes at once could attach one VM twice, or land an attach after the pass
+ * that detached it. A list that arrives meanwhile is applied after the pass,
+ * the newest only. On a disconnect (list null) the connection layer has
+ * already dropped every listener.
  */
-function listenToRunningAgents(list) {
-  if (!list) return;
+let pendingAgentList = null;
+let agentPassRunning = false;
+
+async function applyAgentListeners(list) {
   const running = new Map(list.filter((vm) => vm.stateCode === 1).map((vm) => [vm.domainPath, vm.name]));
   for (const path of [...connectionState.agentSubscriptions.keys()]) {
     if (!running.has(path)) detachAgentSubscription(path);
   }
-  for (const [path, name] of running) attachAgentSubscription(path, name);
+  for (const [path, name] of running) await attachAgentSubscription(path, name);
 }
 
-subscribeVMListChange(listenToRunningAgents);
+async function listenToRunningAgents(list) {
+  pendingAgentList = list;
+  if (!list || agentPassRunning) return;
+  agentPassRunning = true;
+  try {
+    while (pendingAgentList) {
+      const next = pendingAgentList;
+      pendingAgentList = null;
+      await applyAgentListeners(next);
+    }
+  } catch (err) {
+    connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] guest-agent listener pass failed');
+  } finally {
+    agentPassRunning = false;
+  }
+}
+
+subscribeVMListChange((list) => { listenToRunningAgents(list); });
 
 /**
  * Fetch guest-agent IP + hostname for a VM in one libvirt round-trip.
