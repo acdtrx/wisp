@@ -210,11 +210,15 @@ In projects with a web UI: `FRONTEND-RULES.md`.
   - Applied: every URL from user input goes through `ssrfSafeFetch` (`lib/downloads`):
     the library's download URLs and the GitHub keys lookup, and with them the public
     sources whose redirects Wisp does not control (the image mirrors, GitHub Releases).
-    The one exception is an endpoint only the operator sets, the OIDC issuer and the
+    One exception is an endpoint only the operator sets, the OIDC issuer and the
     endpoints its discovery names, fetched with `fetchOperatorEndpoint`, which allows
     private and loopback addresses so an identity provider on the LAN works, and follows
     no redirect (settled 2026-11-20). Setting the issuer is a session-only route
     ([`specs/AUTH.md`](specs/AUTH.md)), so no request can aim it.
+    The other exception is a container image reference: user input, but pulled by
+    containerd, not Wisp, from whatever registry it names, private and loopback ones
+    included, because a registry on the LAN (or beside Wisp on the host) is a use Wisp
+    supports by design (settled 2026-11-20).
 - Never put auth tokens in URLs (`?token=...`): they get logged. Use cookies or
   `Authorization` headers.
 - Never log secrets, tokens, credentials or whole request bodies.
