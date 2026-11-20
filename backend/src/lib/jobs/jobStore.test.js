@@ -340,8 +340,7 @@ test('an interruptible job cut ends cancelled, logged at info without a stack, a
   assert.equal(countJobsThatMustFinish(), before);
   const stream = fakeStream();
   registerJobStream(jobId, stream);
-  assert.ok(cancelInterruptibleJobs() >= 1);
-  await settle();
+  assert.ok(await cancelInterruptibleJobs() >= 1);
   assert.deepEqual(stream.events.at(-1), { step: 'cancelled' });
   assert.equal(stream.ended, true);
   const job = readJob(jobId);
@@ -352,6 +351,26 @@ test('an interruptible job cut ends cancelled, logged at info without a stack, a
   assert.equal(countJobsThatMustFinish(), before);
   mustFinish.resolve({});
   await settle();
+});
+
+test('a cancel writes the terminal event to a registered stream, then ends it, before it settles', async () => {
+  const { jobId } = await startJob({
+    kind: 'os-update-check', title: 'Check for OS updates', shared: true, interruptible: true, log: fakeLog(),
+    run: (_report, signal) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    }),
+  });
+  let endedAtCancelled = null;
+  const stream = fakeStream((event) => {
+    if (event.step === 'cancelled') endedAtCancelled = stream.ended;
+  });
+  registerJobStream(jobId, stream);
+  const cancelling = cancelInterruptibleJobs();
+  assert.equal(stream.ended, false, 'the stream stays open until the job has ended');
+  await cancelling;
+  assert.equal(endedAtCancelled, false, 'the cancelled event is written before the stream ends');
+  assert.equal(stream.ended, true);
+  assert.equal(readJob(jobId).status, 'cancelled');
 });
 
 test('the store announces each list change — create, end, expiry — and no progress event', async (t) => {

@@ -213,6 +213,10 @@ async function shutdown(signal) {
     console.error(`Shutdown did not finish within ${SHUTDOWN_DEADLINE_MS / 1000} s, exiting`);
     process.exit(1);
   }, SHUTDOWN_DEADLINE_MS).unref();
+  // The update checks first, while their streams are open: a client following
+  // one gets its `cancelled`, not a stream that closed on a job that is gone.
+  // A run slow to honour its signal is bounded by the deadline above.
+  await cancelInterruptibleJobs();
   closeAllSSE();
   if (unsubscribeMountHotplug) {
     try { unsubscribeMountHotplug(); } catch { /* no-op */ }
@@ -225,7 +229,6 @@ async function shutdown(signal) {
   stopUsbMonitor();
   stopDiskMonitor();
   stopHourlyUpdateChecks();
-  cancelInterruptibleJobs(); // the update checks: their apt subprocess or pull loop ends with the process
   stopWispUpdateChecker();
   stopContainerBackupScheduler();
   stopVmMdnsReconciler();

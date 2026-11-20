@@ -92,18 +92,21 @@ export function countJobsThatMustFinish() {
 
 /**
  * Cut every running interruptible job (shutdown): its run's signal aborts,
- * and a run that then rejects ends the job `cancelled`.
- * @returns {number} jobs cut
+ * and a run that then rejects ends the job `cancelled`. Settles once every
+ * job cut has ended: its terminal event written to its streams, and those
+ * ended.
+ * @returns {Promise<number>} jobs cut
  */
-export function cancelInterruptibleJobs() {
-  let cut = 0;
+export async function cancelInterruptibleJobs() {
+  const ends = [];
   for (const job of jobs.values()) {
     if (job.status === 'running' && job.abort && !job.abort.signal.aborted) {
       job.abort.abort();
-      cut += 1;
+      ends.push(job.ended.promise);
     }
   }
-  return cut;
+  await Promise.all(ends);
+  return ends.length;
 }
 
 function ackOf(jobId, job) {
