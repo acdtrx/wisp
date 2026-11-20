@@ -160,6 +160,26 @@ test('an ID token with another nonce, issuer or audience, or a bad signature, is
   }
 });
 
+test('an ID token without exp, or for several audiences without azp being this client, is refused', async () => {
+  const withoutExp = (nonce) => {
+    const { exp: _exp, ...claims } = validClaims(nonce);
+    return claims;
+  };
+  const several = [CLIENT_ID, 'another-client'];
+  const cases = [
+    { claimsFor: withoutExp, message: /expiry/ },
+    { claimsFor: (nonce) => ({ ...validClaims(nonce), exp: 'tomorrow' }), message: /expiry/ },
+    { claimsFor: (nonce) => ({ ...validClaims(nonce), aud: several }), message: /azp/ },
+    { claimsFor: (nonce) => ({ ...validClaims(nonce), aud: several, azp: 'another-client' }), message: /azp/ },
+    { claimsFor: (nonce) => ({ ...validClaims(nonce), azp: 'another-client' }), message: /azp/ },
+  ];
+  for (const { message, ...opts } of cases) {
+    await assert.rejects(login(opts), (err) => err.code === 'OIDC_TOKEN_INVALID' && message.test(err.message));
+  }
+  const { result } = await login({ claimsFor: (nonce) => ({ ...validClaims(nonce), aud: several, azp: CLIENT_ID }) });
+  assert.equal(result.claims.sub, 'user-1');
+});
+
 test('an unknown kid fetches the JWKS again, once', async () => {
   const jwksBefore = stub.hits.jwks;
   stub.jwks = [key1.jwk, key2.jwk];

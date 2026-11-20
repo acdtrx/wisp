@@ -6,7 +6,8 @@
  * the password-derived secret). Access control is delegated to the identity
  * provider (restrict the Wisp OIDC client to your own user/group there); Wisp
  * accepts any subject that authenticates, but still fully validates the ID
- * token (issuer, audience, expiry, nonce, and JWKS signature).
+ * token (issuer, audience and authorized party, expiry, nonce, and JWKS
+ * signature).
  *
  * No third-party OIDC/JWT library — discovery, JWKS and the token exchange go
  * through the operator fetch of lib/downloads (the issuer may be on the LAN),
@@ -219,8 +220,16 @@ async function verifyIdToken(idToken, { issuer, clientId, nonce, jwksUri }) {
   if (!aud.includes(clientId)) {
     throw createAppError('OIDC_TOKEN_INVALID', 'ID token audience mismatch');
   }
+  // OIDC Core 3.1.3.7: a token for several audiences names the one it was
+  // issued to, which must be us; an azp present is checked the same way.
+  if ((aud.length > 1 || claims.azp !== undefined) && claims.azp !== clientId) {
+    throw createAppError('OIDC_TOKEN_INVALID', 'ID token authorized party (azp) is not this client');
+  }
   const now = Math.floor(Date.now() / 1000);
-  if (typeof claims.exp === 'number' && claims.exp + CLOCK_SKEW_SECONDS < now) {
+  if (typeof claims.exp !== 'number') {
+    throw createAppError('OIDC_TOKEN_INVALID', 'ID token has no expiry (exp)');
+  }
+  if (claims.exp + CLOCK_SKEW_SECONDS < now) {
     throw createAppError('OIDC_TOKEN_INVALID', 'ID token has expired');
   }
   if (typeof claims.nbf === 'number' && claims.nbf - CLOCK_SKEW_SECONDS > now) {
