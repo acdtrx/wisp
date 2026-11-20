@@ -265,7 +265,11 @@ export default async function authRoutes(fastify) {
   // PKCE + state + nonce) and 302 the browser to it. On any failure — including
   // an unreachable provider — bounce back to /login?sso=error so the password
   // form (and its "try SSO again" button) is shown instead of a dead end.
+  // GET only, here and on the callback: Fastify's automatic HEAD runs the GET
+  // handler, so a HEAD (a link checker, a prefetch) would start a login or
+  // complete one, the state consumed and the session cookies set.
   fastify.get('/oidc/login', {
+    exposeHeadRoute: false,
     config: { auth: 'public', answers: 'redirect' },
     errorHandler: redirectOidcFailure,
     handler: async (request, reply) => {
@@ -299,6 +303,7 @@ export default async function authRoutes(fastify) {
   // control is delegated to the provider (restrict the client to your user
   // there); any subject that authenticates is the single Wisp user.
   fastify.get('/oidc/callback', {
+    exposeHeadRoute: false,
     config: { auth: 'public', answers: 'redirect' },
     errorHandler: redirectOidcFailure,
     schema: {

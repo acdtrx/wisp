@@ -78,3 +78,5 @@ Provider redirect target. Validates the one-time `state`, exchanges `code` for t
 - **302 (success):** `Location: /` + `Set-Cookie: wisp_session=…; HttpOnly`, `Set-Cookie: wisp_csrf=…`
 - **302 (cancelled):** `Location: /login?sso=cancelled` when the provider returns `error=access_denied`
 - **302 (failure):** `Location: /login?sso=error` for any other provider error, invalid/expired state, token-exchange failure, or ID-token validation failure
+
+Both SSO routes are **GET only (settled 2026-11-20)**: neither has the automatic `HEAD` route the others get, so a `HEAD` (a link checker, a prefetch) answers **404** `ROUTE_NOT_FOUND` and never starts a login, consumes a `state` or sets the session cookies. Fastify would answer one by running the GET handler.
