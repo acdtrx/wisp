@@ -11,6 +11,7 @@ export {
   listJobs,
   readJob,
   hasJob,
+  whenJobEnds,
   registerJobStream,
   unregisterJobStream,
 } from './jobStore.js';

@@ -6,7 +6,7 @@ import { acquireVmOperationLock } from '../vmOperationLock.js';
 import { acquireContainerOperationLock } from '../containerOperationLock.js';
 import {
   startJob, listJobs, readJob, isJobRunning, hasJob, registerJobStream,
-  countJobsThatMustFinish, cancelInterruptibleJobs, subscribeJobsChange, sweepExpiredJobs,
+  countJobsThatMustFinish, cancelInterruptibleJobs, subscribeJobsChange, sweepExpiredJobs, whenJobEnds,
 } from './jobStore.js';
 
 /** A logger that records each line as `[level, fields, message]`. */
@@ -389,4 +389,23 @@ test('a list change handler that throws is logged and the start still answers', 
   assert.ok(hasJob(ack.jobId));
   assert.ok(log.lines.some(([level, , message]) => level === 'warn' && message === 'Job list change handler failed'));
   await settle();
+});
+
+test('whenJobEnds settles with the end status, at once for an ended job, and null for an unknown one', async () => {
+  const run = deferred();
+  const { jobId } = await startJob({
+    kind: 'container-backup', title: 'Backup w1', subject: { type: 'container', name: 'w1' }, log: fakeLog(), run: () => run.promise,
+  });
+  let ended = null;
+  const waiting = whenJobEnds(jobId).then((status) => { ended = status; });
+  await settle();
+  assert.equal(ended, null, 'still running');
+  run.reject(createAppError('BACKUP_EXISTS', 'exists'));
+  await waiting;
+  assert.equal(ended, 'error');
+  assert.equal(await whenJobEnds(jobId), 'error');
+
+  const done = await startJob({ kind: 'vm-start', title: 'Start w2', subject: { type: 'vm', name: 'w2' }, log: fakeLog(), run: async () => null });
+  assert.equal(await whenJobEnds(done.jobId), 'done');
+  assert.equal(await whenJobEnds('no-such-job'), null);
 });

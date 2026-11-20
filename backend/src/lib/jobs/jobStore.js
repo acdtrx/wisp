@@ -143,6 +143,7 @@ function pushEvent(job, event) {
 function finishJob(job, status, event) {
   job.status = status;
   job.finishedAt = Date.now();
+  job.ended.resolve(status);
   pushEvent(job, event);
   const streams = job.streams;
   job.streams = [];
@@ -308,6 +309,7 @@ export async function startJob({
     createdAt: Date.now(),
     finishedAt: null,
     abort: interruptible ? new AbortController() : null,
+    ended: Promise.withResolvers(),
     log,
   };
   jobs.set(jobId, job);
@@ -377,6 +379,17 @@ export function readJob(jobId) {
   if (job.status === 'done') return { ...row, result: last.result };
   if (job.status === 'cancelled') return row;
   return { ...row, error: last.error, detail: last.detail };
+}
+
+/**
+ * Settles with the job's end status (`done`, `error`, `cancelled`) once it
+ * has ended, at once for an ended job; with null for an unknown or expired
+ * job. For a caller that runs jobs one after another (the backup scheduler).
+ * @returns {Promise<JobStatus | null>}
+ */
+export function whenJobEnds(jobId) {
+  const job = jobs.get(jobId);
+  return job ? job.ended.promise : Promise.resolve(null);
 }
 
 export function hasJob(jobId) {
