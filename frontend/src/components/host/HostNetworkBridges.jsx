@@ -22,6 +22,7 @@ import {
   deleteManagedNetworkBridge,
 } from '../../api/host.js';
 import { errorText } from '../../api/errors.js';
+import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 export default function HostNetworkBridges({ onError }) {
   const [loading, setLoading] = useState(true);
@@ -59,7 +60,7 @@ export default function HostNetworkBridges({ onError }) {
   }, [refresh]);
   /* A bridge create or delete from any tab (announced when its job settles), or a
    * reconnect, re-reads the list. */
-  useKindChanges('network-bridges', refresh);
+  useKindChanges(CHANGE_KIND.NETWORK_BRIDGES, refresh);
 
   const onDelete = async (name) => {
     setDeletingName(name);

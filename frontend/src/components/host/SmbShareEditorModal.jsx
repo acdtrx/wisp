@@ -13,6 +13,7 @@ import { sendAndAwaitKindChange } from '../../api/events.js';
 import { addMount, patchMount, checkMountConnection } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
+import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 const FORM_ID = 'smb-share-editor-form';
 
@@ -103,7 +104,7 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
     try {
       if (!isEdit) {
         /* Saved once the settings store holds it: the mount list is read from there. */
-        await sendAndAwaitKindChange('settings', () => addMount({
+        await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => addMount({
           id: form.id,
           type: 'smb',
           label: form.label.trim(),
@@ -122,7 +123,7 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
          * "keep what's on file" (the backend never returns the stored value). */
         const newPw = form.password.trim();
         if (newPw !== '') patch.password = newPw;
-        if (Object.keys(patch).length > 0) await sendAndAwaitKindChange('settings', () => patchMount(form.id, patch));
+        if (Object.keys(patch).length > 0) await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => patchMount(form.id, patch));
       }
       await onSaved?.();
       onClose();

@@ -129,6 +129,11 @@ test('connect opens once; a scoped stream\'s disconnect closes the request and c
   assert.equal(store.getState().extra, 1);
 });
 
+test('a store over a topic that is not on the wire is refused when it is made', async () => {
+  const { topicSource } = await import(`./streamStore.js?test=${loaded}`);
+  assert.throws(() => topicSource('vmz'), /Unknown events topic: vmz/);
+});
+
 test('a topic store keeps its data when it disconnects: the next connect is answered with the current frame', async () => {
   const { createStreamStore: make, topicSource } = await import(`./streamStore.js?test=${loaded}`);
   const { TOPIC } = await import('../../../shared/wireNames.js');

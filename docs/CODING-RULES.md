@@ -311,9 +311,11 @@ checks and the unit tests below for what they cover:
     the backend runs the state migrations (§16): outside
     `docs/` and Markdown, no file but those in `backend/src` names the runner, and none
     but the runner and the checks reaches for `backend/migrations`, comments aside.
-  - `lint`: ESLint over `backend/`, `frontend/src/` and `shared/`, correctness rules only: a use
-    of an undefined name, an unused import or variable, an unused parameter after the
-    last used one, a duplicate object key, a hook called outside the rules of hooks.
+  - `lint`: ESLint over `backend/`, `frontend/src/` and `shared/`, correctness rules
+    only: a use of an undefined name, an unused import or variable, an unused parameter
+    after the last used one, a duplicate object key, a hook called outside the rules of
+    hooks, and a topic, change kind or job kind written as a string outside
+    `shared/wireNames.js` (selectors built from it in `eslint.config.mjs`).
     Inline ESLint comments (`eslint-disable`, `/* global */`) are not honoured, and
     one left in the code fails the check: an allowance, if one is ever needed, is a
     reviewed line in `eslint.config.mjs`, like the lists of the other checks.

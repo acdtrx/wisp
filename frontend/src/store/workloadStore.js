@@ -1,4 +1,6 @@
-import { sendAndAwaitChange, sendAndAwaitTopic, subscribeChanges } from '../api/events.js';
+import {
+  assertChangeKind, assertTopic, sendAndAwaitChange, sendAndAwaitTopic, subscribeChanges,
+} from '../api/events.js';
 import { errorText } from '../api/errors.js';
 import { CHANGE_KIND } from '../../../shared/wireNames.js';
 import { awaitJob } from './backgroundJobsStore.js';
@@ -60,6 +62,8 @@ function listShowsLeft(name, state) {
  *   — state and actions only one kind has
  */
 export function createWorkloadStore(spec) {
+  assertTopic(spec.listTopic);
+  assertChangeKind(spec.changeKind);
   /* The selection the stats stream is open for: its state is carried into that
    * workload's config. */
   let statsFor = null;

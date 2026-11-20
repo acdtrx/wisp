@@ -7,6 +7,7 @@ import { getCloudInit, updateCloudInit, deleteCloudInit, fetchGithubKeys } from 
 import { runVMCommand } from '../../store/vmStore.js';
 import { useChanges } from '../../hooks/useChanges.js';
 import { errorText } from '../../api/errors.js';
+import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 /** API returns `{ enabled: false }` when no cloud-init.json exists. */
 function isBareCloudInitPlaceholder(data) {
@@ -95,7 +96,7 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
   }, [vmName, isCreating]);
 
   useEffect(() => { loadConfig(); }, [loadConfig]);
-  useChanges('vm', isCreating ? null : vmName, loadConfig);
+  useChanges(CHANGE_KIND.VM, isCreating ? null : vmName, loadConfig);
 
   // In create mode, keep hostname prefilled with VM name when name changes (until user edits hostname)
   useEffect(() => {

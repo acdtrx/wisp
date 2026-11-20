@@ -47,6 +47,7 @@ import { runContainerCommand } from '../../store/containerStore.js';
 import { useChanges, useKindChanges } from '../../hooks/useChanges.js';
 import LoadHint from '../shared/LoadHint.jsx';
 import { errorText } from '../../api/errors.js';
+import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 const addBtn =
   'inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150';
@@ -127,9 +128,9 @@ export default function ContainerMountsSection({ config }) {
   /* Phones: row actions live in a strip that expands under the row text on tap. */
   const [expandedName, setExpandedName] = useState(null);
 
-  // The parent containerStore replaces `containerConfig` (and therefore `config.mounts`) on
-  // every SSE/refresh tick — even when mount content is unchanged — so depending on the array
-  // reference would re-run the usage fetch every tick. Use a content-hashed key instead.
+  // The config (and therefore `config.mounts`) is a new object on every re-read and list
+  // update, even when the mounts are unchanged, so depending on the array reference would
+  // re-run the usage fetch each time. Use a content-hashed key instead.
   const mountsKey = useMemo(() => JSON.stringify(config.mounts || []), [config.mounts]);
   const rows = useMemo(() => rowsFromServerMounts(config.mounts), [mountsKey]);
 
@@ -143,7 +144,7 @@ export default function ContainerMountsSection({ config }) {
    * not a live feed (sizing walks the data dir and can take seconds for large trees), and no
    * command waits for it. Best-effort: on failure the Size column just shows em-dashes. */
   const [usageCue, setUsageCue] = useState(0);
-  useChanges('container', config.name, () => { setUsageCue((n) => n + 1); });
+  useChanges(CHANGE_KIND.CONTAINER, config.name, () => { setUsageCue((n) => n + 1); });
   useEffect(() => {
     let cancelled = false;
     if (!config.name || (config.mounts || []).length === 0) {
@@ -180,7 +181,7 @@ export default function ContainerMountsSection({ config }) {
       });
   }, []);
   /* A host mount or unmount (any tab, the auto-mount too) changes the status. */
-  useKindChanges('host-mounts', refreshStorageStatus);
+  useKindChanges(CHANGE_KIND.HOST_MOUNTS, refreshStorageStatus);
 
   useEffect(() => {
     if (!settings) {

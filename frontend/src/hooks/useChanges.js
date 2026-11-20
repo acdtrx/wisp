@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { subscribeChanges } from '../api/events.js';
+import { CHANGE_KIND } from '../../../shared/wireNames.js';
 
 /**
  * Re-read what a view shows when the `changes` topic names its record (`kind`,
@@ -21,7 +22,7 @@ export function useChanges(kind, id, refetch) {
   useEffect(() => {
     if (!id) return undefined;
     return subscribeChanges([kind], (change) => {
-      if (change.kind === 'all' || change.id === id) return refetchRef.current();
+      if (change.kind === CHANGE_KIND.ALL || change.id === id) return refetchRef.current();
       return undefined;
     });
   }, [kind, id]);

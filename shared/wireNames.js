@@ -1,9 +1,9 @@
 /**
  * The names the backend and the frontend must agree on, on the wire
  * (docs/specs/API.md): the events stream's topics, the `changes` topic's
- * kinds and the job kinds. Both sides import them from here, and
- * `npm run check` (scripts/check-wire-names.mjs) fails one written as a bare
- * string elsewhere. This folder holds nothing else.
+ * kinds and the job kinds. Both sides import them from here, and ESLint
+ * (eslint.config.mjs) refuses one written as a bare string elsewhere. This
+ * folder holds nothing else.
  */
 
 /** The topics of `GET /api/events` (API.md, Events stream). */

@@ -1,4 +1,5 @@
 import { openStream } from './sse.js';
+import { CHANGE_KIND, TOPIC } from '../../../shared/wireNames.js';
 
 /**
  * Topic subscriptions over the single always-on `/api/events` SSE stream.
@@ -19,13 +20,24 @@ import { openStream } from './sse.js';
  * next push.
  */
 
+const TOPICS = new Set(Object.values(TOPIC));
+const CHANGE_KINDS = new Set(Object.values(CHANGE_KIND));
+
+/** A name the code passes in (a variable no lint sees) is checked against the wire's
+ *  names, so a typo fails the first time it runs instead of waiting for frames that
+ *  never come. */
+export function assertTopic(topic) {
+  if (!TOPICS.has(topic)) throw new Error(`Unknown events topic: ${topic}`);
+}
+
+export function assertChangeKind(kind) {
+  if (!CHANGE_KINDS.has(kind) || kind === CHANGE_KIND.ALL) throw new Error(`Unknown change kind: ${kind}`);
+}
+
 /** topic -> Set<{ onData, onStreamDown }> */
 const topicHandlers = new Map();
 /** topic -> last payload seen — replayed to late subscribers */
 const lastFrames = new Map();
-/** `changes` frames are cues to GET, not state: a late subscriber GETs on mount
- *  instead, so replaying the last cue would only repeat that GET. */
-const CHANGES_TOPIC = 'changes';
 /** Commands waiting for a frame: { topic, matches(data), release } */
 const frameWaiters = new Set();
 let closeFn = null;
@@ -45,7 +57,9 @@ function releaseFrameWaiters(frame, rereads = []) {
 
 function dispatch(frame) {
   if (!frame || typeof frame.topic !== 'string' || !('data' in frame)) return;
-  if (frame.topic !== CHANGES_TOPIC) lastFrames.set(frame.topic, frame.data);
+  /* `changes` frames are cues to GET, not state: a late subscriber GETs on mount
+   * instead, so replaying the last cue would only repeat that GET. */
+  if (frame.topic !== TOPIC.CHANGES) lastFrames.set(frame.topic, frame.data);
   const handlers = topicHandlers.get(frame.topic);
   /* A handler that starts a re-read returns its promise: a command waiting on this
    * frame waits for those to settle too. A re-read shows its own failure in its view
@@ -87,8 +101,7 @@ function hasSubscribers() {
 /**
  * Attach a handler to one topic on the shared events stream.
  *
- * @param {string} topic — `stats` | `vms` | `containers` | `sections` | `home` |
- *   `discovery` | `backups` | `changes` (prefer `subscribeChanges` for the last)
+ * @param {string} topic — a `TOPIC` (prefer `subscribeChanges` for `TOPIC.CHANGES`)
  * @param {(data: any) => void} onData — called per frame; error frames arrive here
  *   too, carrying the topic's usual `{ error, detail, code? }` shape.
  * @param {(refusal?: import('./errors.js').ApiError) => void} [onStreamDown] — called
@@ -98,6 +111,7 @@ function hasSubscribers() {
  * @returns {() => void} unsubscribe
  */
 export function subscribeTopic(topic, onData, onStreamDown) {
+  assertTopic(topic);
   const handler = { onData, onStreamDown };
   let handlers = topicHandlers.get(topic);
   if (!handlers) {
@@ -142,7 +156,7 @@ export function reconnectEvents() {
  * while the stream was down. The caller GETs what it shows, on mount as well: no
  * frame is replayed to a late subscriber.
  *
- * @param {string[]} kinds — e.g. `['settings']`
+ * @param {string[]} kinds — `CHANGE_KIND`s, e.g. `[CHANGE_KIND.SETTINGS]`
  * @param {(change: { kind: string, id?: string }) => (Promise<unknown> | void)} onChange —
  *   return the promise of a re-read it starts, so a command waiting on the frame
  *   waits for it to settle too (`sendAndAwaitChange`); the re-read shows its own
@@ -150,10 +164,11 @@ export function reconnectEvents() {
  * @returns {() => void} unsubscribe
  */
 export function subscribeChanges(kinds, onChange) {
+  kinds.forEach(assertChangeKind);
   const wanted = new Set(kinds);
-  return subscribeTopic(CHANGES_TOPIC, (change) => {
+  return subscribeTopic(TOPIC.CHANGES, (change) => {
     if (!change || typeof change.kind !== 'string') return;
-    if (change.kind === 'all' || wanted.has(change.kind)) return onChange(change);
+    if (change.kind === CHANGE_KIND.ALL || wanted.has(change.kind)) return onChange(change);
     return undefined;
   });
 }
@@ -216,6 +231,7 @@ async function sendAndAwaitFrame(topic, matches, send) {
  * @returns {Promise<T>}
  */
 export function sendAndAwaitTopic(topic, send, matches = () => true) {
+  assertTopic(topic);
   return sendAndAwaitFrame(topic, matches, send);
 }
 
@@ -233,9 +249,10 @@ export function sendAndAwaitTopic(topic, send, matches = () => true) {
  * @returns {Promise<T>}
  */
 export function sendAndAwaitChange(kind, id, send) {
+  assertChangeKind(kind);
   return sendAndAwaitFrame(
-    CHANGES_TOPIC,
-    (change) => change?.kind === 'all' || (change?.kind === kind && change?.id === id),
+    TOPIC.CHANGES,
+    (change) => change?.kind === CHANGE_KIND.ALL || (change?.kind === kind && change?.id === id),
     send,
   );
 }
@@ -250,9 +267,10 @@ export function sendAndAwaitChange(kind, id, send) {
  * @returns {Promise<T>}
  */
 export function sendAndAwaitKindChange(kind, send) {
+  assertChangeKind(kind);
   return sendAndAwaitFrame(
-    CHANGES_TOPIC,
-    (change) => change?.kind === 'all' || (change?.kind === kind && change?.id === undefined),
+    TOPIC.CHANGES,
+    (change) => change?.kind === CHANGE_KIND.ALL || (change?.kind === kind && change?.id === undefined),
     send,
   );
 }

@@ -14,6 +14,7 @@ import { sendAndAwaitKindChange } from '../../api/events.js';
 import { addMount, patchMount } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
+import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 const FORM_ID = 'removable-drive-editor-form';
 
@@ -92,7 +93,7 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
     try {
       if (!isEdit) {
         /* Saved once the settings store holds it: the mount list is read from there. */
-        await sendAndAwaitKindChange('settings', () => addMount({
+        await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => addMount({
           id: form.id,
           type: 'disk',
           label: form.label.trim(),
@@ -108,7 +109,7 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
         if (trimmedPath !== (drive.mountPath || '').trim()) patch.mountPath = trimmedPath;
         if (form.autoMount !== (drive.autoMount !== false)) patch.autoMount = form.autoMount;
         if (form.readOnly !== (drive.readOnly === true)) patch.readOnly = form.readOnly;
-        if (Object.keys(patch).length > 0) await sendAndAwaitKindChange('settings', () => patchMount(form.id, patch));
+        if (Object.keys(patch).length > 0) await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => patchMount(form.id, patch));
       }
       await onSaved?.();
       onClose();

@@ -2,7 +2,7 @@ import { test, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installBrowser, installFetch, jsonResponse, respondWithStream, settle } from '../testing/fakeBrowser.js';
-import { TOPIC } from '../../../shared/wireNames.js';
+import { CHANGE_KIND, TOPIC } from '../../../shared/wireNames.js';
 
 let net;
 let events;
@@ -41,13 +41,13 @@ function track(promise) {
 test('all subscribers share one stream, opened by the first and closed by the last', async () => {
   const vms = [];
   const stats = [];
-  const offVms = events.subscribeTopic('vms', (d) => vms.push(d));
-  const offStats = events.subscribeTopic('stats', (d) => stats.push(d));
-  const offChanges = events.subscribeChanges(['vm'], () => {});
+  const offVms = events.subscribeTopic(TOPIC.VMS, (d) => vms.push(d));
+  const offStats = events.subscribeTopic(TOPIC.STATS, (d) => stats.push(d));
+  const offChanges = events.subscribeChanges([CHANGE_KIND.VM], () => {});
   const stream = await openStream();
   assert.equal(net.made('/api/events').length, 1);
 
-  stream.frame({ topic: 'vms', data: ['a'] });
+  stream.frame({ topic: TOPIC.VMS, data: ['a'] });
   await settle();
   assert.deepEqual(vms, [['a']]);
   assert.deepEqual(stats, []);
@@ -59,7 +59,7 @@ test('all subscribers share one stream, opened by the first and closed by the la
   offChanges();
   assert.equal(request.signal.aborted, true);
 
-  const offAgain = events.subscribeTopic('vms', () => {});
+  const offAgain = events.subscribeTopic(TOPIC.VMS, () => {});
   assert.equal(net.made('/api/events').length, 2);
   offAgain();
 });
@@ -67,9 +67,9 @@ test('all subscribers share one stream, opened by the first and closed by the la
 test('a dropped stream tells every subscriber', async () => {
   const down = [];
   const offs = [
-    events.subscribeTopic('vms', () => {}, () => down.push('vms 1')),
-    events.subscribeTopic('vms', () => {}, () => down.push('vms 2')),
-    events.subscribeTopic('stats', () => {}, () => down.push('stats')),
+    events.subscribeTopic(TOPIC.VMS, () => {}, () => down.push('vms 1')),
+    events.subscribeTopic(TOPIC.VMS, () => {}, () => down.push('vms 2')),
+    events.subscribeTopic(TOPIC.STATS, () => {}, () => down.push('stats')),
   ];
   const stream = await openStream();
   stream.drop();
@@ -80,7 +80,7 @@ test('a dropped stream tells every subscriber', async () => {
 
 test('a stream the server ends cleanly tells no subscriber', async () => {
   const down = [];
-  const off = events.subscribeTopic('stats', () => {}, () => down.push('stats'));
+  const off = events.subscribeTopic(TOPIC.STATS, () => {}, () => down.push('stats'));
   const stream = await openStream();
   stream.end();
   await settle();
@@ -89,20 +89,20 @@ test('a stream the server ends cleanly tells no subscriber', async () => {
 });
 
 test('a topic\'s last frame is kept across a drop and given to a late subscriber, except on changes', async () => {
-  const off = events.subscribeTopic('vms', () => {});
-  const offChanges = events.subscribeChanges(['vm'], () => {});
+  const off = events.subscribeTopic(TOPIC.VMS, () => {});
+  const offChanges = events.subscribeChanges([CHANGE_KIND.VM], () => {});
   const stream = await openStream();
-  stream.frame({ topic: 'vms', data: ['a'] });
-  stream.frame({ topic: 'changes', data: { kind: 'vm', id: 'a' } });
+  stream.frame({ topic: TOPIC.VMS, data: ['a'] });
+  stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.VM, id: 'a' } });
   await settle();
   stream.drop();
   await settle();
 
   const late = [];
-  const offLate = events.subscribeTopic('vms', (d) => late.push(d));
+  const offLate = events.subscribeTopic(TOPIC.VMS, (d) => late.push(d));
   assert.deepEqual(late, [['a']]);
   const lateChanges = [];
-  const offLateChanges = events.subscribeChanges(['vm'], (c) => lateChanges.push(c));
+  const offLateChanges = events.subscribeChanges([CHANGE_KIND.VM], (c) => lateChanges.push(c));
   assert.deepEqual(lateChanges, []);
   off();
   offChanges();
@@ -111,25 +111,25 @@ test('a topic\'s last frame is kept across a drop and given to a late subscriber
 });
 
 test('the last unsubscribe clears the kept frames', async () => {
-  const off = events.subscribeTopic('vms', () => {});
+  const off = events.subscribeTopic(TOPIC.VMS, () => {});
   const stream = await openStream();
-  stream.frame({ topic: 'vms', data: ['a'] });
+  stream.frame({ topic: TOPIC.VMS, data: ['a'] });
   await settle();
   off();
 
   const seen = [];
-  const offAgain = events.subscribeTopic('vms', (d) => seen.push(d));
+  const offAgain = events.subscribeTopic(TOPIC.VMS, (d) => seen.push(d));
   assert.deepEqual(seen, []);
   offAgain();
 });
 
 test('the connect frame { kind: "all" } reaches every change handler; another kind only its own', async () => {
   const seen = [];
-  const offVm = events.subscribeChanges(['vm'], (c) => seen.push(['vm', c.kind]));
-  const offSettings = events.subscribeChanges(['settings'], (c) => seen.push(['settings', c.kind]));
+  const offVm = events.subscribeChanges([CHANGE_KIND.VM], (c) => seen.push(['vm', c.kind]));
+  const offSettings = events.subscribeChanges([CHANGE_KIND.SETTINGS], (c) => seen.push(['settings', c.kind]));
   const stream = await openStream();
-  stream.frame({ topic: 'changes', data: { kind: 'all' } });
-  stream.frame({ topic: 'changes', data: { kind: 'vm', id: 'a' } });
+  stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.ALL } });
+  stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.VM, id: 'a' } });
   await settle();
   assert.deepEqual(seen, [['vm', 'all'], ['settings', 'all'], ['vm', 'vm']]);
   offVm();
@@ -137,26 +137,26 @@ test('the connect frame { kind: "all" } reaches every change handler; another ki
 });
 
 test('sendAndAwaitTopic ends on the topic\'s next matching frame, with the ack', async () => {
-  const off = events.subscribeTopic('vms', () => {});
+  const off = events.subscribeTopic(TOPIC.VMS, () => {});
   const stream = await openStream();
-  const wait = track(events.sendAndAwaitTopic('vms', async () => 'ack', (list) => list.includes('b')));
+  const wait = track(events.sendAndAwaitTopic(TOPIC.VMS, async () => 'ack', (list) => list.includes('b')));
   await settle();
-  stream.frame({ topic: 'stats', data: {} });
-  stream.frame({ topic: 'vms', data: ['a'] });
+  stream.frame({ topic: TOPIC.STATS, data: {} });
+  stream.frame({ topic: TOPIC.VMS, data: ['a'] });
   await settle();
   assert.equal(wait.done, false);
-  stream.frame({ topic: 'vms', data: ['a', 'b'] });
+  stream.frame({ topic: TOPIC.VMS, data: ['a', 'b'] });
   await settle();
   assert.deepEqual(wait, { done: true, value: 'ack' });
   off();
 });
 
 test('a frame that arrives before the ack still ends the wait', async () => {
-  const off = events.subscribeTopic('vms', () => {});
+  const off = events.subscribeTopic(TOPIC.VMS, () => {});
   const stream = await openStream();
   let ack;
-  const wait = track(events.sendAndAwaitTopic('vms', () => new Promise((resolve) => { ack = resolve; })));
-  stream.frame({ topic: 'vms', data: [] });
+  const wait = track(events.sendAndAwaitTopic(TOPIC.VMS, () => new Promise((resolve) => { ack = resolve; })));
+  stream.frame({ topic: TOPIC.VMS, data: [] });
   await settle();
   assert.equal(wait.done, false);
   ack('ack');
@@ -166,22 +166,22 @@ test('a frame that arrives before the ack still ends the wait', async () => {
 });
 
 test('sendAndAwaitChange ends on a change naming its kind and id, or on { kind: "all" }', async () => {
-  const off = events.subscribeChanges(['vm'], () => {});
+  const off = events.subscribeChanges([CHANGE_KIND.VM], () => {});
   const stream = await openStream();
 
-  const named = track(events.sendAndAwaitChange('vm', 'a', async () => 'ack'));
+  const named = track(events.sendAndAwaitChange(CHANGE_KIND.VM, 'a', async () => 'ack'));
   await settle();
-  stream.frame({ topic: 'changes', data: { kind: 'vm', id: 'b' } });
-  stream.frame({ topic: 'changes', data: { kind: 'container', id: 'a' } });
+  stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.VM, id: 'b' } });
+  stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.CONTAINER, id: 'a' } });
   await settle();
   assert.equal(named.done, false);
-  stream.frame({ topic: 'changes', data: { kind: 'vm', id: 'a' } });
+  stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.VM, id: 'a' } });
   await settle();
   assert.deepEqual(named, { done: true, value: 'ack' });
 
-  const all = track(events.sendAndAwaitChange('vm', 'a', async () => 'ack'));
+  const all = track(events.sendAndAwaitChange(CHANGE_KIND.VM, 'a', async () => 'ack'));
   await settle();
-  stream.frame({ topic: 'changes', data: { kind: 'all' } });
+  stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.ALL } });
   await settle();
   assert.equal(all.done, true);
   off();
@@ -189,11 +189,11 @@ test('sendAndAwaitChange ends on a change naming its kind and id, or on { kind: 
 
 test('sendAndAwaitChange waits for the re-reads the change starts', async () => {
   let finishRead;
-  const off = events.subscribeChanges(['vm'], () => new Promise((resolve) => { finishRead = resolve; }));
+  const off = events.subscribeChanges([CHANGE_KIND.VM], () => new Promise((resolve) => { finishRead = resolve; }));
   const stream = await openStream();
-  const wait = track(events.sendAndAwaitChange('vm', 'a', async () => 'ack'));
+  const wait = track(events.sendAndAwaitChange(CHANGE_KIND.VM, 'a', async () => 'ack'));
   await settle();
-  stream.frame({ topic: 'changes', data: { kind: 'vm', id: 'a' } });
+  stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.VM, id: 'a' } });
   await settle();
   assert.equal(wait.done, false);
   finishRead();
@@ -203,11 +203,11 @@ test('sendAndAwaitChange waits for the re-reads the change starts', async () => 
 });
 
 test('both waits end with the ack after 30 s without a frame', async () => {
-  const off = events.subscribeTopic('vms', () => {});
-  const offChanges = events.subscribeChanges(['vm'], () => {});
+  const off = events.subscribeTopic(TOPIC.VMS, () => {});
+  const offChanges = events.subscribeChanges([CHANGE_KIND.VM], () => {});
   await openStream();
-  const topic = track(events.sendAndAwaitTopic('vms', async () => 'topic-ack'));
-  const change = track(events.sendAndAwaitChange('vm', 'a', async () => 'change-ack'));
+  const topic = track(events.sendAndAwaitTopic(TOPIC.VMS, async () => 'topic-ack'));
+  const change = track(events.sendAndAwaitChange(CHANGE_KIND.VM, 'a', async () => 'change-ack'));
   await settle();
   mock.timers.tick(29_999);
   await settle();
@@ -227,26 +227,26 @@ test('with no stream open, both only send', async () => {
     sent += 1;
     return 'ack';
   };
-  assert.equal(await events.sendAndAwaitTopic('vms', send), 'ack');
-  assert.equal(await events.sendAndAwaitChange('vm', 'a', send), 'ack');
+  assert.equal(await events.sendAndAwaitTopic(TOPIC.VMS, send), 'ack');
+  assert.equal(await events.sendAndAwaitChange(CHANGE_KIND.VM, 'a', send), 'ack');
   assert.equal(sent, 2);
   assert.equal(net.made('/api/events').length, 0);
 });
 
 test('a failed send ends the wait with its error', async () => {
-  const off = events.subscribeTopic('vms', () => {});
+  const off = events.subscribeTopic(TOPIC.VMS, () => {});
   await openStream();
   await assert.rejects(
-    events.sendAndAwaitTopic('vms', async () => { throw new Error('refused'); }),
+    events.sendAndAwaitTopic(TOPIC.VMS, async () => { throw new Error('refused'); }),
     /refused/,
   );
   off();
 });
 
 test('the last unsubscribe releases the waiting commands with their ack', async () => {
-  const off = events.subscribeTopic('vms', () => {});
+  const off = events.subscribeTopic(TOPIC.VMS, () => {});
   await openStream();
-  const wait = track(events.sendAndAwaitTopic('vms', async () => 'ack'));
+  const wait = track(events.sendAndAwaitTopic(TOPIC.VMS, async () => 'ack'));
   await settle();
   assert.equal(wait.done, false);
   off();
@@ -258,7 +258,7 @@ test('the last unsubscribe releases the waiting commands with their ack', async 
 
 test('a stream Wisp refuses ends: every subscriber, and a late one, is told why; no reconnect', async () => {
   const down = [];
-  const off = events.subscribeTopic('stats', () => {}, (err) => down.push(err));
+  const off = events.subscribeTopic(TOPIC.STATS, () => {}, (err) => down.push(err));
   const request = await net.next('/api/events');
   request.respond(jsonResponse({ error: 'SCOPE_INSUFFICIENT', detail: 'This route needs an admin token' }, 403));
   await settle();
@@ -267,7 +267,7 @@ test('a stream Wisp refuses ends: every subscriber, and a late one, is told why;
     { code: 'SCOPE_INSUFFICIENT', status: 403, detail: 'This route needs an admin token' });
 
   const late = [];
-  const offLate = events.subscribeTopic('vms', () => {}, (err) => late.push(err));
+  const offLate = events.subscribeTopic(TOPIC.VMS, () => {}, (err) => late.push(err));
   assert.equal(late.length, 1);
   assert.equal(late[0].code, 'SCOPE_INSUFFICIENT');
 
@@ -275,13 +275,13 @@ test('a stream Wisp refuses ends: every subscriber, and a late one, is told why;
   await settle();
   assert.equal(net.made('/api/events').length, 1);
 
-  const ack = await events.sendAndAwaitTopic('vms', async () => 'ack');
+  const ack = await events.sendAndAwaitTopic(TOPIC.VMS, async () => 'ack');
   assert.equal(ack, 'ack');
 
   off();
   offLate();
   const again = [];
-  const offAgain = events.subscribeTopic('stats', () => {}, (err) => again.push(err));
+  const offAgain = events.subscribeTopic(TOPIC.STATS, () => {}, (err) => again.push(err));
   assert.deepEqual(again, []);
   assert.equal(net.made('/api/events').length, 2);
   offAgain();
@@ -289,7 +289,7 @@ test('a stream Wisp refuses ends: every subscriber, and a late one, is told why;
 
 test('a 4xx that is not Wisp\'s (a proxy\'s page) is a lost connection: subscribers told with no error, then a reconnect', async () => {
   const down = [];
-  const off = events.subscribeTopic('stats', () => {}, (err) => down.push(err));
+  const off = events.subscribeTopic(TOPIC.STATS, () => {}, (err) => down.push(err));
   const request = await net.next('/api/events');
   request.respond(new Response('<html>403 Forbidden</html>', { status: 403, headers: { 'content-type': 'text/html' } }));
   await settle();
@@ -298,6 +298,16 @@ test('a 4xx that is not Wisp\'s (a proxy\'s page) is a lost connection: subscrib
   await settle();
   assert.equal(net.made('/api/events').length, 2);
   off();
+});
+
+test('a topic or change kind that is not on the wire is refused when the code runs', () => {
+  assert.throws(() => events.subscribeTopic('vmz', () => {}), /Unknown events topic: vmz/);
+  const topicNotKind = TOPIC.VMS; // a topic where a change kind goes: only the run-time check sees it
+  assert.throws(() => events.subscribeChanges([CHANGE_KIND.VM, topicNotKind], () => {}), /Unknown change kind: vms/);
+  assert.throws(() => events.sendAndAwaitTopic('changez', async () => {}), /Unknown events topic/);
+  assert.throws(() => events.sendAndAwaitChange('vmm', 'a', async () => {}), /Unknown change kind/);
+  assert.throws(() => events.sendAndAwaitKindChange(CHANGE_KIND.ALL, async () => {}), /Unknown change kind: all/);
+  assert.equal(net.made('/api/events').length, 0);
 });
 
 test('reconnectEvents opens the stream anew after a refusal: the subscribers get its frames', async () => {

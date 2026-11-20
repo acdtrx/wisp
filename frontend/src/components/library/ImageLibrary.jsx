@@ -33,6 +33,7 @@ import {
 import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
 import { focusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
+import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 const FILTERS_PAGE = [
   { key: 'all', label: 'All' },
@@ -396,9 +397,9 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   /* An image pulled, updated or deleted — by any tab, a container create or
    * the update check — or a reconnect re-reads the list. */
   const rereadList = useCallback(() => fetchFiles(), [fetchFiles]);
-  useKindChanges('images', rereadList);
+  useKindChanges(CHANGE_KIND.IMAGES, rereadList);
   /* A library file uploaded, renamed, deleted or downloaded — by any tab — too. */
-  useKindChanges('library', rereadList);
+  useKindChanges(CHANGE_KIND.LIBRARY, rereadList);
 
   /** Fetch cached update-check status once on mount so the "Checked X ago" line is populated. */
   useEffect(() => {
@@ -411,7 +412,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     setUploadError(null);
     try {
       /* Done once the list holds the file: it arrives on the `library` cue. */
-      await sendAndAwaitKindChange('library', () => uploadFile(file, setUploadProgress));
+      await sendAndAwaitKindChange(CHANGE_KIND.LIBRARY, () => uploadFile(file, setUploadProgress));
     } catch (err) {
       setUploadError(errorText(err));
     } finally {
@@ -433,7 +434,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
         /* The removal reaches the list on the `images` cue. */
         await awaitJob((await deleteContainerImage(deleteTarget.ref)).jobId);
       } else {
-        await sendAndAwaitKindChange('library', () => deleteFile(deleteTarget.name));
+        await sendAndAwaitKindChange(CHANGE_KIND.LIBRARY, () => deleteFile(deleteTarget.name));
       }
       setDeleteTarget(null);
     } catch (err) {
@@ -444,7 +445,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
 
   const handleRename = async (oldName, newName) => {
     try {
-      await sendAndAwaitKindChange('library', () => renameFile(oldName, newName));
+      await sendAndAwaitKindChange(CHANGE_KIND.LIBRARY, () => renameFile(oldName, newName));
     } catch (err) {
       setError(errorText(err));
     }

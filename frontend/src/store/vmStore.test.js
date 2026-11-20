@@ -2,7 +2,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installBrowser, installFetch, jsonResponse, respondWithStream, settle } from '../testing/fakeBrowser.js';
-import { TOPIC } from '../../../shared/wireNames.js';
+import { CHANGE_KIND, TOPIC } from '../../../shared/wireNames.js';
 
 let net;
 let store;
@@ -146,4 +146,10 @@ test("an action's error is cleared when the next action on that VM begins", asyn
   assert.equal(store.getState().errors['action:a'], undefined);
   (await net.nextExact('/api/vms/a/reboot')).respond(new Response(null, { status: 204 }));
   assert.equal(await next, true);
+});
+
+test('a workload store over a name that is not on the wire is refused when it is made', async () => {
+  const { createWorkloadStore } = await import('./workloadStore.js');
+  assert.throws(() => createWorkloadStore({ listTopic: 'vmz', changeKind: CHANGE_KIND.VM }), /Unknown events topic: vmz/);
+  assert.throws(() => createWorkloadStore({ listTopic: TOPIC.VMS, changeKind: 'vmz' }), /Unknown change kind: vmz/);
 });

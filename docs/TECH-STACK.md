@@ -89,7 +89,10 @@
   analysis (settled 2026-11-18).
 - **The other checks are dependency-free Node scripts** in `scripts/` (`check-imports`,
   `check-fences`, the shell check): dumb scans for what ESLint does not see (the
-  fences, names across backend files, facade parity, cycles, shell syntax).
+  fences, names across backend files, facade parity, cycles, shell syntax). ESLint
+  covers `shared/` too, and holds the wire's names: `no-restricted-syntax` selectors
+  built from `shared/wireNames.js` refuse a topic, change kind or job kind written as
+  a string.
   `npm run check` runs them, ESLint and the unit tests, and the release workflow and
   `scripts/release.sh` run it. What each covers, and when to run it:
   `CODING-RULES.md` §14. The frontend build checks the client's imports.

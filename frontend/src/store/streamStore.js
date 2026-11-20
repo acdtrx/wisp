@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import { errorText } from '../api/errors.js';
-import { reconnectEvents, subscribeTopic } from '../api/events.js';
+import { assertTopic, reconnectEvents, subscribeTopic } from '../api/events.js';
 import { openStream } from '../api/sse.js';
 
 /** A stream's error frame: Wisp's error body `{ error, detail }` in place of the payload. */
@@ -15,6 +15,7 @@ export function isErrorFrame(frame) {
  * keeps its data: the next connect is answered with the topic's current frame.
  */
 export function topicSource(topic) {
+  assertTopic(topic);
   return {
     open: ({ onFrame, onDown }) => subscribeTopic(topic, onFrame, onDown),
     retry: () => reconnectEvents(),

@@ -18,7 +18,9 @@ holds the UI library's rules.
     drop keeping both, a refusal shown in the data's place. Every stream goes
     through the one client, `openStream` (`api/sse.js`), a job's progress too (it
     ends at the terminal frame). The VM and container stores are one base
-    (`store/workloadStore.js`) with a spec each.
+    (`store/workloadStore.js`) with a spec each. The wire's names (topics, change
+    kinds, job kinds) come from `shared/wireNames.js`, never a bare string (ESLint),
+    and the functions that take one refuse a name not in it.
   - Applied (settled 2026-11-15): a command's control stays busy until the stream brings
     its new state (its topic's next frame, or the `changes` reference and the re-read it
     triggers), so a section or modal closes onto fresh data; a command error ends it at
