@@ -1,5 +1,7 @@
 /**
- * Container API routes: CRUD, lifecycle, mount content, stats SSE, logs SSE.
+ * Container API routes: the list and the detail, every command on a container
+ * (each one an operation of lib/containerOperations.js), mounts, services,
+ * run logs, images and the stats and logs streams.
  */
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
@@ -46,13 +48,207 @@ import { startImageUpdateCheckJob } from '../lib/updateChecks.js';
 import { watchRequestBody, bodyWatchHooks } from '../lib/requestBodyWatch.js';
 import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { createAppError } from '../lib/appErrors.js';
-import { validateContainerName } from '../lib/validation.js';
+import { containerNameSchema } from '../lib/validation.js';
 import {
   isKnownApp,
   maskContainerConfigSecrets,
   assertMountContentReadable,
 } from '../lib/containerApps/index.js';
-import { jobAckSchema } from './schemas.js';
+import {
+  backupBodySchema, containerParamsSchema, jobAckSchema, noContentSchema, runIdSchema,
+} from './schemas.js';
+
+/* ── Schemas ──────────────────────────────────────────────────────────── */
+
+const nameParams = containerParamsSchema();
+const mountParams = containerParamsSchema({ mountName: { type: 'string', minLength: 1 } });
+const servicePortSchema = { type: 'integer', minimum: 1, maximum: 65535 };
+const serviceParams = containerParamsSchema({ port: servicePortSchema });
+
+const restartPolicySchema = { type: 'string', enum: ['never', 'on-failure', 'unless-stopped', 'always'] };
+const iconIdSchema = { type: ['string', 'null'] };
+/** An app's own configuration: its app module validates it (docs/specs/CUSTOM-APPS.md). */
+const appConfigSchema = { type: 'object', additionalProperties: true };
+
+/** A mount entry: the name is a path segment and the semantic rules are the manager's (CONTAINERS.md, Mount entry). */
+const mountFields = {
+  type: { type: 'string', enum: ['file', 'directory', 'tmpfs'] },
+  name: { type: 'string', minLength: 1 },
+  containerPath: { type: 'string', minLength: 1 },
+  readonly: { type: 'boolean' },
+  sourceId: { type: ['string', 'null'] },
+  subPath: { type: 'string' },
+  containerOwnerUid: { type: 'integer', minimum: 0, maximum: 65535 },
+  containerOwnerGid: { type: 'integer', minimum: 0, maximum: 65535 },
+  sizeMiB: { type: 'integer', minimum: 1 },
+  secret: { type: 'boolean' },
+};
+const mountBodySchema = {
+  type: 'object',
+  required: ['type', 'name', 'containerPath'],
+  properties: mountFields,
+  additionalProperties: false,
+};
+
+const serviceTxtSchema = { type: 'object', additionalProperties: { type: 'string' } };
+
+/** One entry of an env delta: an upsert (`{ value?, secret? }`) or `null`, a removal. */
+const envPatchEntrySchema = {
+  type: ['object', 'null'],
+  properties: {
+    value: { type: 'string' },
+    secret: { type: 'boolean' },
+  },
+  additionalProperties: false,
+};
+
+/**
+ * A container configuration update (API-CONTAINERS.md, PATCH): each field the
+ * container's record takes from a client. An `appConfig` save stands alone;
+ * environment variables change through `envPatch` only.
+ */
+const containerPatchSchema = {
+  type: 'object',
+  properties: {
+    name: containerNameSchema,
+    image: { type: 'string', minLength: 1 },
+    command: { type: ['array', 'null'], items: { type: 'string' } },
+    cpuLimit: { type: ['number', 'null'], exclusiveMinimum: 0 },
+    memoryLimitMiB: { type: ['integer', 'null'], minimum: 1 },
+    restartPolicy: restartPolicySchema,
+    autostart: { type: 'boolean' },
+    autoBackup: { type: 'boolean' },
+    runAsRoot: { type: 'boolean' },
+    localDns: { type: 'boolean' },
+    iconId: iconIdSchema,
+    network: {
+      type: 'object',
+      properties: {
+        type: { type: 'string', enum: ['bridge'] },
+        mac: { type: 'string' },
+        interface: { type: ['string', 'null'] },
+      },
+      additionalProperties: false,
+    },
+    envPatch: { type: 'object', additionalProperties: envPatchEntrySchema },
+    mounts: { type: 'array', items: mountBodySchema },
+    mountRenames: { type: 'object', additionalProperties: { type: 'string', minLength: 1 } },
+    devices: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['type', 'device'],
+        properties: {
+          type: { type: 'string', enum: ['gpu'] },
+          device: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+    },
+    appConfig: appConfigSchema,
+  },
+  additionalProperties: false,
+};
+
+/** GET /containers rows: what the sidebar and the Backups panel render. */
+const containerListItemSchema = {
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    uuid: { type: ['string', 'null'] },
+    type: { type: 'string' },
+    image: { type: 'string' },
+    state: { type: 'string' },
+    iconId: { type: ['string', 'null'] },
+    autoBackup: { type: 'boolean' },
+    updateAvailable: { type: 'boolean' },
+    scheduledRestart: {
+      type: ['object', 'null'],
+      properties: { attempt: { type: 'integer' }, at: { type: 'number' } },
+    },
+    pendingRestart: {
+      type: ['object', 'null'],
+      properties: { since: { type: 'string' } },
+    },
+  },
+};
+
+/**
+ * GET /containers/:name: the container's record with its secrets masked
+ * (env values and secret file mounts), plus its live state.
+ */
+const containerDetailSchema = {
+  type: 'object',
+  properties: {
+    ...containerListItemSchema.properties,
+    command: { type: ['array', 'null'], items: { type: 'string' } },
+    exposedPorts: { type: 'array', items: { type: 'string' } },
+    cpuLimit: { type: ['number', 'null'] },
+    memoryLimitMiB: { type: ['number', 'null'] },
+    restartPolicy: { type: 'string' },
+    autostart: { type: 'boolean' },
+    localDns: { type: 'boolean' },
+    runAsRoot: { type: 'boolean' },
+    createdAt: { type: 'string' },
+    imageDigest: { type: 'string' },
+    imagePulledAt: { type: 'string' },
+    env: {
+      type: 'object',
+      additionalProperties: {
+        type: 'object',
+        properties: {
+          value: { type: ['string', 'null'] },
+          secret: { type: 'boolean' },
+          isSet: { type: 'boolean' },
+        },
+      },
+    },
+    mounts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          ...mountFields,
+          isSet: { type: 'boolean' },
+          sizeBytes: { type: ['number', 'null'] },
+        },
+      },
+    },
+    devices: {
+      type: 'array',
+      items: { type: 'object', properties: { type: { type: 'string' }, device: { type: 'string' } } },
+    },
+    services: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { port: { type: 'integer' }, type: { type: 'string' }, txt: serviceTxtSchema },
+      },
+    },
+    network: {
+      type: 'object',
+      properties: {
+        type: { type: 'string' },
+        mac: { type: 'string' },
+        interface: { type: 'string' },
+        ip: { type: 'string' },
+        ip6: { type: 'string' },
+      },
+    },
+    metadata: {
+      type: 'object',
+      properties: { app: { type: 'string' }, appConfig: appConfigSchema },
+      additionalProperties: true,
+    },
+    mdnsHostname: { type: ['string', 'null'] },
+    pid: { type: 'integer' },
+    uptime: { type: 'number' },
+  },
+};
+
+const imageRefSchema = { type: 'string', minLength: 1, pattern: '\\S' };
+
+/* ── Multipart staging ────────────────────────────────────────────────── */
 
 /**
  * Stream the request's single file part to `stagingPath` while iterating the
@@ -62,9 +258,7 @@ import { jobAckSchema } from './schemas.js';
  * The file must be consumed as it arrives. busboy finishes the multipart body
  * only after every file stream has been read to its end, and @fastify/multipart
  * >= 10.1 ends the parts iterator only when busboy finishes — so holding a file
- * part unread while looking for more parts never completes (10.0 ended the
- * iterator on the request's 'close', which only came once the whole body fit in
- * stream buffers, so it worked for small files only).
+ * part unread while looking for more parts never completes.
  *
  * Staging, rather than streaming straight into the mount, keeps rejections
  * deterministic: fields are ignored, a second file part is drained and answers
@@ -93,10 +287,7 @@ async function stageSingleMultipartFile(request, stagingPath, { mode = 0o600, wh
     throw err;
   }
   if (extraFiles) {
-    throw createAppError(
-      'BAD_MULTIPART_TOO_MANY_FILES',
-      'Only one file upload is allowed per request',
-    );
+    throw createAppError('BAD_MULTIPART_TOO_MANY_FILES', 'Only one file upload is allowed per request');
   }
   if (!staged) throw createAppError('UPLOAD_NO_FILE', `The request must include a ${what} upload`);
 }
@@ -105,69 +296,41 @@ function uploadTooLargeError() {
   return createAppError('UPLOAD_TOO_LARGE', 'File too large', 'Upload exceeded the configured size limit');
 }
 
-export default async function containerRoutes(fastify) {
-  fastify.addHook('preHandler', async (request) => {
-    const name = request.params?.name;
-    if (name === undefined) return;
-    validateContainerName(name);
-  });
+/* ── Routes ───────────────────────────────────────────────────────────── */
 
-  // ── List ──────────────────────────────────────────────────────────
+export default async function containerRoutes(fastify) {
   fastify.get('/containers', {
     config: { auth: 'read' },
-    schema: {
-      response: {
-        200: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              name: { type: 'string' },
-              uuid: { type: ['string', 'null'] },
-              type: { type: 'string' },
-              image: { type: 'string' },
-              state: { type: 'string' },
-              iconId: { type: ['string', 'null'] },
-              autoBackup: { type: 'boolean' },
-              updateAvailable: { type: 'boolean' },
-              scheduledRestart: {
-                type: ['object', 'null'],
-                properties: {
-                  attempt: { type: 'integer' },
-                  at: { type: 'number' },
-                },
-              },
-              pendingRestart: {
-                type: ['object', 'null'],
-                properties: {
-                  since: { type: 'string' },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
+    schema: { response: { 200: { type: 'array', items: containerListItemSchema } } },
     handler: async () => listContainers(),
   });
 
-  // ── Create ────────────────────────────────────────────────────────
-  fastify.post('/containers', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
-    // Only the create contract's fields reach the manager: its spec also takes
-    // env / mounts / devices / metadata, which app creation fills in itself.
-    const { name, image, iconId, app, appConfig } = request.body && typeof request.body === 'object' ? request.body : {};
-    const spec = { name, image, iconId, app, appConfig };
-    if (!spec.name || !spec.image) {
-      throw createAppError('VALIDATION_FAILED', 'body/name and body/image are required');
-    }
-    // The name is validated as sent, never trimmed: the name created is the one sent.
-    validateContainerName(spec.name);
-    if (spec.app && !isKnownApp(spec.app)) {
-      throw createAppError('UNKNOWN_APP_TYPE', `App "${spec.app}" is not a known app type`);
-    }
-
-    const job = await startContainerCreateJob({ spec, log: request.log });
-    return reply.code(202).send(job);
+  // A job, the image pull included. Only the create contract's fields reach
+  // the operation: app creation fills in env, mounts and metadata itself.
+  fastify.post('/containers', {
+    config: { auth: 'admin' },
+    schema: {
+      body: {
+        type: 'object',
+        required: ['name', 'image'],
+        properties: {
+          name: containerNameSchema,
+          image: imageRefSchema,
+          iconId: iconIdSchema,
+          app: { type: 'string', minLength: 1 },
+          appConfig: appConfigSchema,
+        },
+        additionalProperties: false,
+      },
+      response: { 202: jobAckSchema },
+    },
+    handler: async (request, reply) => {
+      const spec = request.body;
+      if (spec.app !== undefined && !isKnownApp(spec.app)) {
+        throw createAppError('UNKNOWN_APP_TYPE', `App "${spec.app}" is not a known app type`);
+      }
+      return reply.code(202).send(await startContainerCreateJob({ spec, log: request.log }));
+    },
   });
 
   // ── OCI images (containerd) — before /containers/:name ────────────
@@ -183,37 +346,30 @@ export default async function containerRoutes(fastify) {
               name: { type: 'string' },
               digest: { type: 'string' },
               size: { type: 'number' },
-              updated: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+              updated: { type: ['string', 'null'] },
             },
           },
         },
       },
     },
-    handler: async () => {
-      return await listContainerImages();
-    },
+    handler: async () => listContainerImages(),
   });
 
+  // A job: the delete waits for containerd's garbage collection. In use and
+  // not found are answered here.
   fastify.delete('/containers/images', {
     config: { auth: 'admin' },
     schema: {
       querystring: {
         type: 'object',
         required: ['ref'],
-        properties: {
-          ref: { type: 'string', minLength: 1 },
-        },
+        properties: { ref: imageRefSchema },
+        additionalProperties: false,
       },
       response: { 202: jobAckSchema },
     },
-    // A job: the delete waits for containerd's garbage collection. In use and
-    // not found are answered here.
     handler: async (request, reply) => {
-      const ref = request.query.ref;
-      if (!ref || typeof ref !== 'string' || !ref.trim()) {
-        throw createAppError('VALIDATION_FAILED', 'querystring/ref is required');
-      }
-      const imageName = await assertContainerImageDeletable(ref);
+      const imageName = await assertContainerImageDeletable(request.query.ref);
       const job = await startJob({
         kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_DELETE,
         title: titleForContainerImageDelete(imageName),
@@ -227,32 +383,56 @@ export default async function containerRoutes(fastify) {
     },
   });
 
-  // ── OCI image update check ────────────────────────────────────────
   // A shared job: a running check that covers this one is joined (every
-  // image covers one image; one image never covers every image).
-  fastify.post('/containers/images/check-updates', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
-    const ref = typeof request.body?.ref === 'string' && request.body.ref.trim()
-      ? request.body.ref.trim()
-      : null;
-    // The check itself refreshes the image-meta sidecar and the list cache.
-    return reply.code(202).send(await startImageUpdateCheckJob({ ref, log: request.log }));
+  // image covers one image; one image never covers every image). No body, or
+  // an empty `ref`, checks every image.
+  fastify.post('/containers/images/check-updates', {
+    config: { auth: 'admin' },
+    schema: {
+      body: {
+        type: 'object',
+        nullable: true,
+        properties: { ref: { type: 'string' } },
+        additionalProperties: false,
+      },
+      response: { 202: jobAckSchema },
+    },
+    handler: async (request, reply) => {
+      const ref = request.body?.ref?.trim() || null;
+      return reply.code(202).send(await startImageUpdateCheckJob({ ref, log: request.log }));
+    },
   });
 
-  fastify.get('/containers/images/update-status', { config: { auth: 'read' } }, async () => {
-    return getImageUpdateStatus();
+  fastify.get('/containers/images/update-status', {
+    config: { auth: 'read' },
+    schema: {
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            lastCheckedAt: { type: ['string', 'null'] },
+            imagesChecked: { type: 'integer' },
+            imagesUpdated: { type: 'integer' },
+          },
+        },
+      },
+    },
+    handler: async () => getImageUpdateStatus(),
   });
 
-  // ── Get single ────────────────────────────────────────────────────
-  fastify.get('/containers/:name', { config: { auth: 'read' } }, async (request) => {
-    return await maskContainerConfigSecrets(await getContainerConfig(request.params.name));
+  // ── One container ─────────────────────────────────────────────────
+  fastify.get('/containers/:name', {
+    config: { auth: 'read' },
+    schema: { params: nameParams, response: { 200: containerDetailSchema } },
+    handler: async (request) => maskContainerConfigSecrets(await getContainerConfig(request.params.name)),
   });
 
-  // ── Mount disk usage ──────────────────────────────────────────────
   // On-demand snapshot: sizes each mount's host-side bind source (sum of
   // file sizes). Can take seconds for large data directories.
   fastify.get('/containers/:name/mounts/usage', {
     config: { auth: 'read' },
     schema: {
+      params: nameParams,
       response: {
         200: {
           type: 'object',
@@ -277,55 +457,66 @@ export default async function containerRoutes(fastify) {
         },
       },
     },
-  }, async (request) => {
-    return await getContainerMountUsage(request.params.name);
+    handler: async (request) => getContainerMountUsage(request.params.name),
   });
 
-  // ── Update ────────────────────────────────────────────────────────
   // An appConfig save stands alone: the app module regenerates the env,
   // mounts and files from it. Any other body is a configuration update, a
   // rename included (a body `name` other than the URL's runs first, the rest
-  // applies under the new name). Eject is its own command (POST …/eject).
-  fastify.patch('/containers/:name', { config: { auth: 'admin' } }, async (request, reply) => {
-    const body = request.body && typeof request.body === 'object' ? request.body : {};
-    const { name } = request.params;
-    if ('eject' in body) {
-      throw createAppError('VALIDATION_FAILED', 'body/eject is not a PATCH field: eject an app with POST /api/containers/:name/eject');
-    }
-    if ('appConfig' in body) {
-      const others = Object.keys(body).filter((key) => key !== 'appConfig');
-      if (others.length > 0) {
-        throw createAppError(
-          'VALIDATION_FAILED',
-          `${others.map((key) => `body/${key}`).join(', ')} cannot be sent with body/appConfig: an appConfig save stands alone`,
-        );
+  // applies under the new name).
+  fastify.patch('/containers/:name', {
+    config: { auth: 'admin' },
+    schema: { params: nameParams, body: containerPatchSchema, response: { 204: noContentSchema } },
+    handler: async (request, reply) => {
+      const body = request.body;
+      const { name } = request.params;
+      if ('appConfig' in body) {
+        const others = Object.keys(body).filter((key) => key !== 'appConfig');
+        if (others.length > 0) {
+          throw createAppError(
+            'VALIDATION_FAILED',
+            `${others.map((key) => `body/${key}`).join(', ')} cannot be sent with body/appConfig: an appConfig save stands alone`,
+          );
+        }
+        await saveContainerAppConfig(name, () => body.appConfig);
+        return reply.code(204).send();
       }
-      await saveContainerAppConfig(name, () => body.appConfig);
+      await editContainerConfig({ name, changes: body, log: request.log });
       return reply.code(204).send();
-    }
-    // A body name is validated as sent, never trimmed or skipped when empty:
-    // the name in effect is the one the client sent.
-    if ('name' in body) validateContainerName(body.name);
-    await editContainerConfig({ name, changes: body, log: request.log });
-    return reply.code(204).send();
+    },
   });
 
   // An app container becomes a generic one; instant, like the other edits.
-  fastify.post('/containers/:name/eject', { config: { auth: 'admin' } }, async (request, reply) => {
-    await ejectContainerApp(request.params.name);
-    return reply.code(204).send();
+  fastify.post('/containers/:name/eject', {
+    config: { auth: 'admin' },
+    schema: { params: nameParams, response: { 204: noContentSchema } },
+    handler: async (request, reply) => {
+      await ejectContainerApp(request.params.name);
+      return reply.code(204).send();
+    },
   });
 
-  // ── Delete ────────────────────────────────────────────────────────
   // A job (stopping the task and removing the snapshot and files take a
   // while); a missing or busy container is answered here.
-  fastify.delete('/containers/:name', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
-    const deleteFiles = request.query.deleteFiles !== 'false';
-    const job = await startContainerDeleteJob({ name: request.params.name, deleteFiles, log: request.log });
-    return reply.code(202).send(job);
+  fastify.delete('/containers/:name', {
+    config: { auth: 'admin' },
+    schema: {
+      params: nameParams,
+      querystring: {
+        type: 'object',
+        properties: { deleteFiles: { type: 'boolean', default: true } },
+        additionalProperties: false,
+      },
+      response: { 202: jobAckSchema },
+    },
+    handler: async (request, reply) => {
+      const job = await startContainerDeleteJob({
+        name: request.params.name, deleteFiles: request.query.deleteFiles, log: request.log,
+      });
+      return reply.code(202).send(job);
+    },
   });
 
-  // ── Lifecycle ─────────────────────────────────────────────────────
   // Start, stop and restart are jobs; not found, busy and already running /
   // not running are answered here. Kill answers at once.
   const lifecycleJobs = [
@@ -334,159 +525,198 @@ export default async function containerRoutes(fastify) {
     { path: 'restart', start: startContainerRestartJob },
   ];
   for (const { path, start } of lifecycleJobs) {
-    fastify.post(`/containers/:name/${path}`, { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
-      const job = await start({ name: request.params.name, log: request.log });
-      return reply.code(202).send(job);
+    fastify.post(`/containers/:name/${path}`, {
+      config: { auth: 'admin' },
+      schema: { params: nameParams, response: { 202: jobAckSchema } },
+      handler: async (request, reply) => {
+        return reply.code(202).send(await start({ name: request.params.name, log: request.log }));
+      },
     });
   }
 
-  fastify.post('/containers/:name/kill', { config: { auth: 'admin' } }, async (request, reply) => {
-    await killContainerNow(request.params.name);
-    return reply.code(204).send();
+  fastify.post('/containers/:name/kill', {
+    config: { auth: 'admin' },
+    schema: { params: nameParams, response: { 204: noContentSchema } },
+    handler: async (request, reply) => {
+      await killContainerNow(request.params.name);
+      return reply.code(204).send();
+    },
   });
 
-  // ── Backup ───────────────────────────────────────────────────────
-  // Mirrors POST /vms/:name/backup. Works on running containers too — the
-  // task is paused for the duration of the archive and resumed (enforced
-  // inside createContainerBackup → freezeForBackup). Body shape:
-  // { destinationIds: ["local"] | ["local", "<backupMountId>"] }.
+  // Works on running containers too: the task is paused for the archive and
+  // resumed (createContainerBackup → freezeForBackup).
   fastify.post('/containers/:name/backup', {
     config: { auth: 'admin' },
-    schema: {
-      body: {
-        type: 'object',
-        properties: {
-          destinationIds: { type: 'array', items: { type: 'string' } },
-        },
-        additionalProperties: false,
-      },
-      response: {
-        202: jobAckSchema,
-      },
-    },
+    schema: { params: nameParams, body: backupBodySchema, response: { 202: jobAckSchema } },
     handler: async (request, reply) => {
       const job = await startContainerBackupJob({
-        name: request.params.name, origin: 'manual', destinationIds: request.body?.destinationIds, log: request.log,
+        name: request.params.name, origin: 'manual', destinationIds: request.body.destinationIds, log: request.log,
       });
       return reply.code(202).send(job);
     },
   });
 
   // ── Stats SSE ─────────────────────────────────────────────────────
-  fastify.get('/containers/:name/stats', { config: { auth: 'read' } }, async (request, reply) => {
-    const { name } = request.params;
-    setupSSE(reply);
-    const intervalMs = Math.max(2000, Math.min(60000, parseInt(request.query.intervalMs, 10) || 3000));
+  fastify.get('/containers/:name/stats', {
+    config: { auth: 'read', answers: 'sse' },
+    schema: {
+      params: nameParams,
+      querystring: {
+        type: 'object',
+        properties: { intervalMs: { type: 'integer', minimum: 2000, maximum: 60000, default: 3000 } },
+        additionalProperties: false,
+      },
+    },
+    handler: async (request, reply) => {
+      const { name } = request.params;
+      setupSSE(reply);
 
-    const send = async () => {
+      const send = async () => {
+        try {
+          const config = await getContainerConfig(name);
+          const stats = await getContainerStats(name);
+          // `mdnsHostname` and `ip` arrive after start (the Avahi registration
+          // and the DHCP lease), so the stream carries them rather than the
+          // detail the client fetched when it selected the container.
+          const payload = {
+            ...stats,
+            memoryLimitMiB: config.memoryLimitMiB || 0,
+            mdnsHostname: config.mdnsHostname || null,
+            ip: config.network?.ip || null,
+          };
+          reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+        } catch (err) {
+          writeSSEError(reply.raw, err);
+        }
+      };
+
+      await send();
+      const timer = setInterval(send, request.query.intervalMs);
+      onSSEClose(reply, () => clearInterval(timer));
+    },
+  });
+
+  // ── Runs and logs ─────────────────────────────────────────────────
+  fastify.get('/containers/:name/runs', {
+    config: { auth: 'read' },
+    schema: {
+      params: nameParams,
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            runs: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  runId: { type: 'string' },
+                  startedAt: { type: ['string', 'null'] },
+                  endedAt: { type: ['string', 'null'] },
+                  exitCode: { type: ['number', 'null'] },
+                  imageDigest: { type: ['string', 'null'] },
+                  logSizeBytes: { type: 'integer' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    handler: async (request) => ({ runs: await listContainerRuns(request.params.name) }),
+  });
+
+  // History (tail) and live-appended lines of one run, the newest (the
+  // ongoing one, if any) by default. First event `{ type: "history", lines,
+  // runId }`, then `{ type: "line", line }`; the tail starts at the byte
+  // offset the history ended at, so every line arrives exactly once.
+  fastify.get('/containers/:name/logs', {
+    config: { auth: 'read', answers: 'sse' },
+    schema: {
+      params: nameParams,
+      querystring: {
+        type: 'object',
+        properties: { runId: runIdSchema },
+        additionalProperties: false,
+      },
+    },
+    handler: async (request, reply) => {
+      const { name } = request.params;
+      const runId = await resolveRunId(name, request.query.runId ?? null);
+
+      setupSSE(reply);
+
+      if (!runId) {
+        reply.raw.write(`data: ${JSON.stringify({ type: 'history', lines: [], runId: null })}\n\n`);
+        return;
+      }
+
+      let history;
       try {
-        const config = await getContainerConfig(name);
-        const stats = await getContainerStats(name);
-        // `mdnsHostname` and `ip` both arrive *after* start — Avahi registration and the
-        // CNI address land once the task is up — so they can't ride the container config
-        // snapshot the client fetched when it selected the workload. getContainerConfig
-        // re-reads them live on every tick (registered hostname from Avahi, IP from
-        // container.json), which is exactly what this stream is for. Mirrors the VM stats
-        // payload, which has carried `mdnsHostname`/`guestIp` all along.
-        const payload = {
-          ...stats,
-          memoryLimitMiB: config.memoryLimitMiB || 0,
-          mdnsHostname: config.mdnsHostname || null,
-          ip: config.network?.ip || null,
-        };
-        reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+        history = await readRunLogHistory(name, runId, 500);
       } catch (err) {
         writeSSEError(reply.raw, err);
+        reply.raw.end();
+        return;
       }
-    };
+      reply.raw.write(`data: ${JSON.stringify({ type: 'history', lines: history.lines, runId })}\n\n`);
 
-    await send();
-    const timer = setInterval(send, intervalMs);
-    onSSEClose(reply, () => clearInterval(timer));
+      const handle = streamContainerRunLogs(name, runId, history.offset, (line) => {
+        try {
+          reply.raw.write(`data: ${JSON.stringify({ type: 'line', line })}\n\n`);
+        } catch { /* client disconnected */ }
+      });
+
+      onSSEClose(reply, () => handle.stop());
+    },
   });
 
-  // ── List runs ────────────────────────────────────────────────────
-  fastify.get('/containers/:name/runs', { config: { auth: 'read' } }, async (request) => {
-    const runs = await listContainerRuns(request.params.name);
-    return { runs };
-  });
-
-  // ── Logs SSE ──────────────────────────────────────────────────────
-  //
-  // Streams history (tail) and live-appended lines for one run. `runId`
-  // defaults to the newest run (ongoing one if any). Completed runs are read
-  // from disk and tailed with no new output — still useful for filtering and
-  // scrolling. Initial event: { type: "history", lines, runId }. Subsequent
-  // events: { type: "line", line }. The tail starts at the byte offset the
-  // history ended at, so every line arrives exactly once.
-  fastify.get('/containers/:name/logs', { config: { auth: 'read' } }, async (request, reply) => {
-    const { name } = request.params;
-    const requestedRunId = typeof request.query.runId === 'string' ? request.query.runId : null;
-
-    const runId = await resolveRunId(name, requestedRunId);
-
-    setupSSE(reply);
-
-    if (!runId) {
-      reply.raw.write(`data: ${JSON.stringify({ type: 'history', lines: [], runId: null })}\n\n`);
-      return;
-    }
-
-    let history;
-    try {
-      history = await readRunLogHistory(name, runId, 500);
-    } catch (err) {
-      writeSSEError(reply.raw, err);
-      reply.raw.end();
-      return;
-    }
-    reply.raw.write(`data: ${JSON.stringify({ type: 'history', lines: history.lines, runId })}\n\n`);
-
-    const handle = streamContainerRunLogs(name, runId, history.offset, (line) => {
-      try {
-        reply.raw.write(`data: ${JSON.stringify({ type: 'line', line })}\n\n`);
-      } catch { /* client disconnected */ }
-    });
-
-    onSSEClose(reply, () => handle.stop());
-  });
-
-  // ── Run log download ─────────────────────────────────────────────
-  fastify.get('/containers/:name/runs/:runId/log', { config: { auth: 'read' } }, async (request, reply) => {
-    const { name, runId: reqRunId } = request.params;
-    if (!/^[a-zA-Z0-9._-]+$/.test(reqRunId)) {
-      throw createAppError('VALIDATION_FAILED', 'params/runId must be alphanumeric (._- allowed)');
-    }
-    const runId = await resolveRunId(name, reqRunId);
-    const filename = encodeURIComponent(`${name}-${runId}.log`);
-    reply
-      .header('Content-Type', 'text/plain; charset=utf-8')
-      .header('Content-Disposition', `attachment; filename*=UTF-8''${filename}`);
-    return reply.send(createRunLogReadStream(name, runId));
+  fastify.get('/containers/:name/runs/:runId/log', {
+    config: { auth: 'read', answers: 'download' },
+    schema: { params: containerParamsSchema({ runId: runIdSchema }) },
+    handler: async (request, reply) => {
+      const { name } = request.params;
+      const runId = await resolveRunId(name, request.params.runId);
+      const filename = encodeURIComponent(`${name}-${runId}.log`);
+      reply
+        .header('Content-Type', 'text/plain; charset=utf-8')
+        .header('Content-Disposition', `attachment; filename*=UTF-8''${filename}`);
+      return reply.send(createRunLogReadStream(name, runId));
+    },
   });
 
   // ── Mount definitions (row-scoped) ──────────────────────────────
-  fastify.post('/containers/:name/mounts', { config: { auth: 'admin' } }, async (request, reply) => {
-    const body = request.body;
-    if (!body || typeof body !== 'object') {
-      throw createAppError('VALIDATION_FAILED', 'body must be an object with type, name, containerPath and readonly');
-    }
-    await addContainerMountRow(request.params.name, body);
-    return reply.code(204).send();
+  fastify.post('/containers/:name/mounts', {
+    config: { auth: 'admin' },
+    schema: { params: nameParams, body: mountBodySchema, response: { 204: noContentSchema } },
+    handler: async (request, reply) => {
+      await addContainerMountRow(request.params.name, request.body);
+      return reply.code(204).send();
+    },
   });
 
-  fastify.patch('/containers/:name/mounts/:mountName', { config: { auth: 'admin' } }, async (request, reply) => {
-    const body = request.body && typeof request.body === 'object' ? request.body : {};
-    await editContainerMountRow(request.params.name, request.params.mountName, body);
-    return reply.code(204).send();
+  fastify.patch('/containers/:name/mounts/:mountName', {
+    config: { auth: 'admin' },
+    schema: {
+      params: mountParams,
+      body: { type: 'object', properties: mountFields, additionalProperties: false },
+      response: { 204: noContentSchema },
+    },
+    handler: async (request, reply) => {
+      await editContainerMountRow(request.params.name, request.params.mountName, request.body);
+      return reply.code(204).send();
+    },
   });
 
   // A job: removing a Local mount deletes its data. Not found, app-managed
   // and busy are answered here; `done` is `{ requiresRestart }`.
-  fastify.delete('/containers/:name/mounts/:mountName', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
-    const { name, mountName } = request.params;
-    const job = await startContainerMountDeleteJob({ name, mountName, log: request.log });
-    return reply.code(202).send(job);
+  fastify.delete('/containers/:name/mounts/:mountName', {
+    config: { auth: 'admin' },
+    schema: { params: mountParams, response: { 202: jobAckSchema } },
+    handler: async (request, reply) => {
+      const { name, mountName } = request.params;
+      return reply.code(202).send(await startContainerMountDeleteJob({ name, mountName, log: request.log }));
+    },
   });
 
   // ── Mount backing store (files/<mountName>) ───────────────────────
@@ -494,103 +724,156 @@ export default async function containerRoutes(fastify) {
   // over it once the whole body is read (lib/containerOperations.js): the
   // reply comes right after the upload, and every rejection leaves the mount
   // as it was.
-  fastify.post('/containers/:name/mounts/:mountName/file', { config: { auth: 'admin' } }, async (request, reply) => {
-    const { name, mountName } = request.params;
-    const bodyWatch = watchRequestBody(request);
-    try {
-      await writeContainerMountFile({
-        name,
-        mountName,
-        stage: async (tmpPath, mode) => {
-          await stageSingleMultipartFile(request, tmpPath, { mode });
-          bodyWatch.stop();
-        },
-      });
-      return reply.code(204).send();
-    } finally {
-      bodyWatch.stop();
-    }
+  fastify.post('/containers/:name/mounts/:mountName/file', {
+    config: { auth: 'admin' },
+    schema: { params: mountParams, response: { 204: noContentSchema } },
+    handler: async (request, reply) => {
+      const { name, mountName } = request.params;
+      const bodyWatch = watchRequestBody(request);
+      try {
+        await writeContainerMountFile({
+          name,
+          mountName,
+          stage: async (tmpPath, mode) => {
+            await stageSingleMultipartFile(request, tmpPath, { mode });
+            bodyWatch.stop();
+          },
+        });
+        return reply.code(204).send();
+      } finally {
+        bodyWatch.stop();
+      }
+    },
   });
 
   // The upload is received here; the extract that follows is a job (202).
   // Not found, app-managed, a mount that takes no zip, an invalid or unsafe
   // archive and busy are answered here.
-  fastify.post('/containers/:name/mounts/:mountName/zip', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
-    const { name, mountName } = request.params;
-    const bodyWatch = watchRequestBody(request);
-    try {
-      const job = await startContainerZipExtractJob({
-        name,
-        mountName,
-        stage: async (stagingPath) => {
-          await stageSingleMultipartFile(request, stagingPath, { what: 'zip' });
-          bodyWatch.stop();
-        },
-        log: request.log,
-      });
-      return reply.code(202).send(job);
-    } finally {
-      bodyWatch.stop();
-    }
+  fastify.post('/containers/:name/mounts/:mountName/zip', {
+    config: { auth: 'admin' },
+    schema: { params: mountParams, response: { 202: jobAckSchema } },
+    handler: async (request, reply) => {
+      const { name, mountName } = request.params;
+      const bodyWatch = watchRequestBody(request);
+      try {
+        const job = await startContainerZipExtractJob({
+          name,
+          mountName,
+          stage: async (stagingPath) => {
+            await stageSingleMultipartFile(request, stagingPath, { what: 'zip' });
+            bodyWatch.stop();
+          },
+          log: request.log,
+        });
+        return reply.code(202).send(job);
+      } finally {
+        bodyWatch.stop();
+      }
+    },
   });
 
-  fastify.get('/containers/:name/mounts/:mountName/content', { config: { auth: 'admin' } }, async (request) => {
-    const { mountName } = request.params;
-    assertMountContentReadable(await getContainerConfig(request.params.name), mountName);
-    return await getMountFileTextContent(request.params.name, mountName);
+  fastify.get('/containers/:name/mounts/:mountName/content', {
+    config: { auth: 'admin' },
+    schema: {
+      params: mountParams,
+      response: { 200: { type: 'object', properties: { content: { type: 'string' } } } },
+    },
+    handler: async (request) => {
+      const { name, mountName } = request.params;
+      assertMountContentReadable(await getContainerConfig(name), mountName);
+      return getMountFileTextContent(name, mountName);
+    },
   });
 
-  // Per-route bodyLimit so a 50 MB JSON payload is rejected before reaching
-  // the handler. The library's putMountFileTextContent does its own UTF-8
-  // byte-length check at MOUNT_FILE_CONTENT_MAX_BYTES (512 KiB); the route
-  // limit allows a small headroom for the JSON wrapper around `content`.
+  // The route's body limit refuses a 50 MB JSON payload before the handler;
+  // the content itself is capped at MOUNT_FILE_CONTENT_MAX_BYTES (512 KiB) by
+  // the manager, and the limit leaves headroom for the JSON around it.
   const MOUNT_FILE_PUT_BODY_LIMIT = 600 * 1024;
-  fastify.put('/containers/:name/mounts/:mountName/content', { bodyLimit: MOUNT_FILE_PUT_BODY_LIMIT, config: { auth: 'admin' }, ...bodyWatchHooks }, async (request, reply) => {
-    const { mountName } = request.params;
-    const body = request.body;
-    const content = body && typeof body === 'object' && body !== null && 'content' in body
-      ? body.content
-      : undefined;
-    if (typeof content !== 'string') {
-      throw createAppError('VALIDATION_FAILED', 'body/content must be a string');
-    }
-    await putContainerMountContent(request.params.name, mountName, content);
-    return reply.code(204).send();
+  fastify.put('/containers/:name/mounts/:mountName/content', {
+    bodyLimit: MOUNT_FILE_PUT_BODY_LIMIT,
+    ...bodyWatchHooks,
+    config: { auth: 'admin' },
+    schema: {
+      params: mountParams,
+      body: {
+        type: 'object',
+        required: ['content'],
+        properties: { content: { type: 'string' } },
+        additionalProperties: false,
+      },
+      response: { 204: noContentSchema },
+    },
+    handler: async (request, reply) => {
+      const { name, mountName } = request.params;
+      await putContainerMountContent(name, mountName, request.body.content);
+      return reply.code(204).send();
+    },
   });
 
-  fastify.post('/containers/:name/mounts/:mountName/init', { config: { auth: 'admin' } }, async (request, reply) => {
-    await initContainerMountContent(request.params.name, request.params.mountName);
-    return reply.code(204).send();
+  fastify.post('/containers/:name/mounts/:mountName/init', {
+    config: { auth: 'admin' },
+    schema: { params: mountParams, response: { 204: noContentSchema } },
+    handler: async (request, reply) => {
+      await initContainerMountContent(request.params.name, request.params.mountName);
+      return reply.code(204).send();
+    },
   });
 
   // A job: a large data directory takes a while to delete. Not found,
   // app-managed, a tmpfs mount and busy are answered here.
-  fastify.delete('/containers/:name/mounts/:mountName/data', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
-    const { name, mountName } = request.params;
-    const job = await startContainerMountDataDeleteJob({ name, mountName, log: request.log });
-    return reply.code(202).send(job);
+  fastify.delete('/containers/:name/mounts/:mountName/data', {
+    config: { auth: 'admin' },
+    schema: { params: mountParams, response: { 202: jobAckSchema } },
+    handler: async (request, reply) => {
+      const { name, mountName } = request.params;
+      return reply.code(202).send(await startContainerMountDataDeleteJob({ name, mountName, log: request.log }));
+    },
   });
 
   // ── mDNS service advertisements (row-scoped, keyed by port) ─────
-  fastify.post('/containers/:name/services', { config: { auth: 'admin' } }, async (request, reply) => {
-    const body = request.body;
-    if (!body || typeof body !== 'object') {
-      throw createAppError('VALIDATION_FAILED', 'body must be an object with port, type and an optional txt');
-    }
-    await addContainerServiceRow(request.params.name, body);
-    return reply.code(204).send();
+  fastify.post('/containers/:name/services', {
+    config: { auth: 'admin' },
+    schema: {
+      params: nameParams,
+      body: {
+        type: 'object',
+        required: ['port', 'type'],
+        properties: { port: servicePortSchema, type: { type: 'string' }, txt: serviceTxtSchema },
+        additionalProperties: false,
+      },
+      response: { 204: noContentSchema },
+    },
+    handler: async (request, reply) => {
+      await addContainerServiceRow(request.params.name, request.body);
+      return reply.code(204).send();
+    },
   });
 
-  fastify.patch('/containers/:name/services/:port', { config: { auth: 'admin' } }, async (request, reply) => {
-    const body = request.body && typeof request.body === 'object' ? request.body : {};
-    const { name, port } = request.params;
-    await editContainerServiceRow(name, port, body);
-    return reply.code(204).send();
+  fastify.patch('/containers/:name/services/:port', {
+    config: { auth: 'admin' },
+    schema: {
+      params: serviceParams,
+      body: {
+        type: 'object',
+        properties: { type: { type: 'string' }, txt: serviceTxtSchema },
+        additionalProperties: false,
+      },
+      response: { 204: noContentSchema },
+    },
+    handler: async (request, reply) => {
+      const { name, port } = request.params;
+      await editContainerServiceRow(name, port, request.body);
+      return reply.code(204).send();
+    },
   });
 
-  fastify.delete('/containers/:name/services/:port', { config: { auth: 'admin' } }, async (request, reply) => {
-    const { name, port } = request.params;
-    await removeContainerServiceRow(name, port);
-    return reply.code(204).send();
+  fastify.delete('/containers/:name/services/:port', {
+    config: { auth: 'admin' },
+    schema: { params: serviceParams, response: { 204: noContentSchema } },
+    handler: async (request, reply) => {
+      const { name, port } = request.params;
+      await removeContainerServiceRow(name, port);
+      return reply.code(204).send();
+    },
   });
 }

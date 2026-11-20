@@ -39,7 +39,7 @@ import {
   titleForBridgeDelete,
 } from '../lib/jobs/index.js';
 import { isOsUpgradeRunning, startOsUpdateCheckJob } from '../lib/updateChecks.js';
-import { jobAckSchema } from './schemas.js';
+import { jobAckSchema, noContentSchema } from './schemas.js';
 
 function getOsRelease() {
   try {
@@ -237,6 +237,7 @@ export default async function hostRoutes(fastify) {
           baseBridge: { type: 'string', minLength: 1 },
           vlanId: { type: 'number' },
         },
+        additionalProperties: false,
       },
       response: { 202: jobAckSchema },
     },
@@ -267,6 +268,7 @@ export default async function hostRoutes(fastify) {
         properties: {
           name: { type: 'string', minLength: 1 },
         },
+        additionalProperties: false,
       },
       response: { 202: jobAckSchema },
     },
@@ -393,8 +395,7 @@ export default async function hostRoutes(fastify) {
 
   // GET /host/disks/stream — SSE: removable/fixed block-device list with mount state.
   fastify.get('/host/disks/stream', {
-    config: { auth: 'read' },
-    schema: { hide: true },
+    config: { auth: 'read', answers: 'sse' },
     handler: async (request, reply) => {
       setupSSE(reply);
 
@@ -419,8 +420,7 @@ export default async function hostRoutes(fastify) {
 
   // GET /host/usb/stream — SSE: host USB device list (push on hotplug; initial snapshot immediately)
   fastify.get('/host/usb/stream', {
-    config: { auth: 'read' },
-    schema: { hide: true },
+    config: { auth: 'read', answers: 'sse' },
     handler: async (request, reply) => {
       setupSSE(reply);
 
@@ -589,7 +589,7 @@ export default async function hostRoutes(fastify) {
   fastify.post('/host/power/shutdown', {
     config: { auth: 'admin' },
     schema: {
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       await hostShutdown();
@@ -600,7 +600,7 @@ export default async function hostRoutes(fastify) {
   fastify.post('/host/power/restart', {
     config: { auth: 'admin' },
     schema: {
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       await hostReboot();

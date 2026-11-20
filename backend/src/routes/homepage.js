@@ -10,6 +10,7 @@ import {
   removeManualTile,
 } from '../lib/homepage.js';
 import { buildHomeEnvelope } from '../lib/homeTiles.js';
+import { createdIdSchema, idParamsSchema, noContentSchema } from './schemas.js';
 
 const tileSchema = {
   type: 'object',
@@ -64,13 +65,6 @@ const responseSchema = {
 };
 
 const nameProperty = { type: 'string', minLength: 1, maxLength: 64 };
-const idParams = { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] };
-
-/** The ack of a create: the new record's id. The record itself arrives on the topic. */
-const createdSchema = {
-  type: 'object',
-  properties: { id: { type: 'string' } },
-};
 
 /**
  * Home page routes. A write answers with an ack (204, or `201 { id }` for a
@@ -96,7 +90,7 @@ export default async function homepageRoutes(fastify) {
         properties: { name: nameProperty },
         additionalProperties: false,
       },
-      response: { 201: createdSchema },
+      response: { 201: createdIdSchema },
     },
     handler: async (request, reply) => {
       const id = await createHomeGroup(request.body.name);
@@ -107,14 +101,14 @@ export default async function homepageRoutes(fastify) {
   fastify.patch('/homepage/groups/:id', {
     config: { auth: 'admin' },
     schema: {
-      params: idParams,
+      params: idParamsSchema,
       body: {
         type: 'object',
         required: ['name'],
         properties: { name: nameProperty },
         additionalProperties: false,
       },
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       await renameHomeGroup(request.params.id, request.body.name);
@@ -124,7 +118,7 @@ export default async function homepageRoutes(fastify) {
 
   fastify.delete('/homepage/groups/:id', {
     config: { auth: 'admin' },
-    schema: { params: idParams, response: { 204: { type: 'null' } } },
+    schema: { params: idParamsSchema, response: { 204: noContentSchema } },
     handler: async (request, reply) => {
       await deleteHomeGroup(request.params.id);
       reply.code(204).send();
@@ -140,7 +134,7 @@ export default async function homepageRoutes(fastify) {
         properties: { ids: { type: 'array', items: { type: 'string' } } },
         additionalProperties: false,
       },
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       await reorderHomeGroups(request.body.ids);
@@ -161,7 +155,7 @@ export default async function homepageRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       const { tileId, groupId, index } = request.body;
@@ -184,7 +178,7 @@ export default async function homepageRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       await setTileOverride(request.body);
@@ -205,7 +199,7 @@ export default async function homepageRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: { 201: createdSchema },
+      response: { 201: createdIdSchema },
     },
     handler: async (request, reply) => {
       const id = await addManualTile(request.body);
@@ -216,7 +210,7 @@ export default async function homepageRoutes(fastify) {
   fastify.patch('/homepage/manual-tiles/:id', {
     config: { auth: 'admin' },
     schema: {
-      params: idParams,
+      params: idParamsSchema,
       body: {
         type: 'object',
         properties: {
@@ -226,7 +220,7 @@ export default async function homepageRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       await updateManualTile(request.params.id, request.body);
@@ -236,7 +230,7 @@ export default async function homepageRoutes(fastify) {
 
   fastify.delete('/homepage/manual-tiles/:id', {
     config: { auth: 'admin' },
-    schema: { params: idParams, response: { 204: { type: 'null' } } },
+    schema: { params: idParamsSchema, response: { 204: noContentSchema } },
     handler: async (request, reply) => {
       await removeManualTile(request.params.id);
       reply.code(204).send();

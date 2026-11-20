@@ -36,8 +36,15 @@ export default async function jobsRoutes(fastify) {
 
   // SSE: every job's progress and its terminal event (replayed to a late subscriber).
   fastify.get('/jobs/:jobId/progress', {
-    config: { auth: 'read' },
-    schema: { hide: true },
+    config: { auth: 'read', answers: 'sse' },
+    schema: {
+      params: {
+        type: 'object',
+        required: ['jobId'],
+        properties: { jobId: { type: 'string', minLength: 1 } },
+        additionalProperties: false,
+      },
+    },
     handler: async (request, reply) => {
       const { jobId } = request.params;
       if (!hasJob(jobId)) {

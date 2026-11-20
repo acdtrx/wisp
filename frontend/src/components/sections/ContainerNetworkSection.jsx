@@ -298,9 +298,8 @@ export default function ContainerNetworkSection({
         const trimmed = interfaceDraft.trim();
         networkChanges.interface = trimmed || null;
       }
-      if (Object.keys(networkChanges).length > 0) {
-        changes.network = { ...net, ...networkChanges };
-      }
+      // The server merges these onto the stored network: only what changed is sent.
+      if (Object.keys(networkChanges).length > 0) changes.network = networkChanges;
       await onSave(changes);
       setOriginalMac(macDraft.trim());
       setOriginalInterface(interfaceDraft.trim());

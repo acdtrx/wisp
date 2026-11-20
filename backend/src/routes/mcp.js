@@ -8,16 +8,22 @@ import { createAppError } from '../lib/appErrors.js';
 import { handleMcpMessage } from '../lib/mcp/mcpServer.js';
 
 export default async function mcpRoutes(fastify) {
-  fastify.post('/mcp', { schema: { hide: true }, config: { auth: 'mcp' } }, async (request, reply) => {
-    const { status, body } = await handleMcpMessage(request.body, {
-      scope: request.user?.scope,
-      log: request.log,
-    });
-    if (body === null) {
-      reply.code(status).send();
-      return;
-    }
-    reply.code(status).type('application/json').send(body);
+  // The body is a JSON-RPC message, which the MCP server checks and answers
+  // in JSON-RPC's own terms (an invalid request is a JSON-RPC error, not a 400).
+  fastify.post('/mcp', {
+    config: { auth: 'mcp', answers: 'mcp' },
+    schema: { body: {} },
+    handler: async (request, reply) => {
+      const { status, body } = await handleMcpMessage(request.body, {
+        scope: request.user?.scope,
+        log: request.log,
+      });
+      if (body === null) {
+        reply.code(status).send();
+        return;
+      }
+      reply.code(status).type('application/json').send(body);
+    },
   });
 
   // No SSE stream (GET) and no session teardown (DELETE) — stateless mode.
@@ -25,6 +31,6 @@ export default async function mcpRoutes(fastify) {
     reply.header('Allow', 'POST');
     throw createAppError('METHOD_NOT_ALLOWED', 'The Wisp MCP endpoint is stateless: send JSON-RPC messages with POST');
   };
-  fastify.get('/mcp', { schema: { hide: true }, config: { auth: 'mcp' } }, methodNotAllowed);
-  fastify.delete('/mcp', { schema: { hide: true }, config: { auth: 'mcp' } }, methodNotAllowed);
+  fastify.get('/mcp', { config: { auth: 'mcp', answers: 'mcp' }, handler: methodNotAllowed });
+  fastify.delete('/mcp', { config: { auth: 'mcp', answers: 'mcp' }, handler: methodNotAllowed });
 }

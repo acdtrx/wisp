@@ -1,7 +1,7 @@
 import { getSettings, updateSettings, updateOidcSettings } from '../lib/settings.js';
 import { createAppError } from '../lib/appErrors.js';
 import { refreshWispAnnouncement } from '../lib/wispDiscovery.js';
-import { mountResponseSchema } from './mounts.js';
+import { mountResponseSchema, noContentSchema } from './schemas.js';
 
 const backupScheduleSchema = {
   type: 'object',
@@ -70,14 +70,13 @@ export default async function settingsRoutes(fastify) {
           discoveryEnabled: { type: 'boolean' },
           advertisedUrl: { type: ['string', 'null'] },
           updateChannel: { type: 'string', enum: ['stable', 'beta'] },
-          // Declared only so the handler sees it and refuses it: Fastify's ajv
-          // strips undeclared keys silently, which would answer 204 to a token
-          // that tried to repoint SSO. OIDC goes through PATCH /settings/oidc.
+          // Declared so the refusal names where OIDC is set (PATCH /settings/oidc,
+          // a session only) rather than answering an unknown key.
           oidc: {},
         },
         additionalProperties: false,
       },
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       const body = request.body || {};
@@ -123,7 +122,7 @@ export default async function settingsRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       await updateOidcSettings(request.body || {});

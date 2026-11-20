@@ -104,16 +104,28 @@ const FRAMEWORK_CODES = {
   FST_ERR_NOT_FOUND: 'ROUTE_NOT_FOUND',
 };
 
-/** `body/vlanId must be number`; an unknown key is named. */
-function validationMessage(err) {
-  const part = err.validationContext || 'request';
-  const first = Array.isArray(err.validation) ? err.validation[0] : null;
-  if (!first) return `${part}: ${err.message}`;
+/** `body/vlanId must be number` from one ajv error of `part`; an unknown key is named. */
+function schemaErrorMessage(part, first) {
   const where = `${part}${first.instancePath || ''}`;
   if (first.keyword === 'additionalProperties' && first.params?.additionalProperty) {
     return `${where}: unknown key "${first.params.additionalProperty}"`;
   }
   return `${where} ${first.message}`;
+}
+
+function validationMessage(err) {
+  const part = err.validationContext || 'request';
+  const first = Array.isArray(err.validation) ? err.validation[0] : null;
+  return first ? schemaErrorMessage(part, first) : `${part}: ${err.message}`;
+}
+
+/**
+ * The VALIDATION_FAILED error for input that failed its schema outside a
+ * route (an MCP tool's arguments): `part` names the input, as `body` does on
+ * HTTP; `failure` is the validator's first finding, worded from Wisp's schema.
+ */
+export function schemaValidationError(part, failure) {
+  return createAppError('VALIDATION_FAILED', schemaErrorMessage(part, failure));
 }
 
 /**

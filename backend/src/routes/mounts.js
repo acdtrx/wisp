@@ -13,30 +13,9 @@ import {
 import { findContainersUsingStorageMount } from '../lib/containerManager/index.js';
 import { asAppError, createAppError } from '../lib/appErrors.js';
 import { startJob, BACKGROUND_JOB_KIND, titleForUnmount, titleForMountDelete } from '../lib/jobs/index.js';
-import { jobAckSchema } from './schemas.js';
-
-/* Response schema deliberately omits `password`: the field never leaves the
- * server. `mountForApi` (settings.js) replaces it with `hasPassword: boolean`
- * so the UI can render a "saved" affordance without holding a secret-shaped
- * placeholder string. Declaring the schema here means Fastify strips any
- * stray `password` even if a future change leaks it back into the model.
- * Shared with `GET/PATCH /api/settings`, which return the same mount list. */
-export const mountResponseSchema = {
-  type: 'object',
-  properties: {
-    id: { type: 'string' },
-    type: { type: 'string' },
-    label: { type: 'string' },
-    mountPath: { type: 'string' },
-    autoMount: { type: 'boolean' },
-    share: { type: 'string' },
-    username: { type: 'string' },
-    hasPassword: { type: 'boolean' },
-    uuid: { type: 'string' },
-    fsType: { type: 'string' },
-    readOnly: { type: 'boolean' },
-  },
-};
+import {
+  createdIdSchema, idParamsSchema, jobAckSchema, mountResponseSchema, noContentSchema,
+} from './schemas.js';
 
 export default async function mountsRoutes(fastify) {
   fastify.get('/host/mounts', {
@@ -71,7 +50,7 @@ export default async function mountsRoutes(fastify) {
         required: ['type', 'mountPath'],
         additionalProperties: false,
       },
-      response: { 201: { type: 'object', properties: { id: { type: 'string' } } } },
+      response: { 201: createdIdSchema },
     },
     handler: async (request, reply) => {
       const result = await addMount(request.body || {});
@@ -95,7 +74,7 @@ export default async function mountsRoutes(fastify) {
   fastify.patch('/host/mounts/:id', {
     config: { auth: 'admin' },
     schema: {
-      params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      params: idParamsSchema,
       body: {
         type: 'object',
         properties: {
@@ -110,7 +89,7 @@ export default async function mountsRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       await updateMount(request.params.id, request.body || {});
@@ -124,7 +103,7 @@ export default async function mountsRoutes(fastify) {
   fastify.delete('/host/mounts/:id', {
     config: { auth: 'admin' },
     schema: {
-      params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      params: idParamsSchema,
       response: { 202: jobAckSchema },
     },
     handler: async (request, reply) => {
@@ -253,8 +232,8 @@ export default async function mountsRoutes(fastify) {
   fastify.post('/host/mounts/:id/mount', {
     config: { auth: 'admin' },
     schema: {
-      params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
-      response: { 204: { type: 'null' } },
+      params: idParamsSchema,
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       const mounts = await getRawMounts();
@@ -287,7 +266,7 @@ export default async function mountsRoutes(fastify) {
   fastify.post('/host/mounts/:id/unmount', {
     config: { auth: 'admin' },
     schema: {
-      params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      params: idParamsSchema,
       response: { 202: jobAckSchema },
     },
     handler: async (request, reply) => {

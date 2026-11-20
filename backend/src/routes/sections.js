@@ -7,6 +7,7 @@ import {
   reorderSections,
   getAssignments,
 } from '../lib/sections.js';
+import { createdIdSchema, idParamsSchema, noContentSchema } from './schemas.js';
 
 const sectionSchema = {
   type: 'object',
@@ -36,12 +37,6 @@ export async function buildSectionsEnvelope() {
   return { sections, assignments };
 }
 
-/** The ack of a create: the new record's id. The record itself arrives on the topic. */
-const createdSchema = {
-  type: 'object',
-  properties: { id: { type: 'string' } },
-};
-
 export default async function sectionsRoutes(fastify) {
   fastify.get('/sections', {
     config: { auth: 'read' },
@@ -58,7 +53,7 @@ export default async function sectionsRoutes(fastify) {
         properties: { name: { type: 'string', minLength: 1, maxLength: 64 } },
         additionalProperties: false,
       },
-      response: { 201: createdSchema },
+      response: { 201: createdIdSchema },
     },
     handler: async (request, reply) => {
       const id = await createSection(request.body.name);
@@ -69,14 +64,14 @@ export default async function sectionsRoutes(fastify) {
   fastify.patch('/sections/:id', {
     config: { auth: 'admin' },
     schema: {
-      params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      params: idParamsSchema,
       body: {
         type: 'object',
         required: ['name'],
         properties: { name: { type: 'string', minLength: 1, maxLength: 64 } },
         additionalProperties: false,
       },
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       await renameSection(request.params.id, request.body.name);
@@ -87,8 +82,8 @@ export default async function sectionsRoutes(fastify) {
   fastify.delete('/sections/:id', {
     config: { auth: 'admin' },
     schema: {
-      params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
-      response: { 204: { type: 'null' } },
+      params: idParamsSchema,
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       await deleteSection(request.params.id);
@@ -107,7 +102,7 @@ export default async function sectionsRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       await reorderSections(request.body.ids);
@@ -128,7 +123,7 @@ export default async function sectionsRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       const { type, name, sectionId } = request.body;

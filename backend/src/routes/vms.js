@@ -29,19 +29,147 @@ import {
 import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { resolveLibraryPath, assertPathInsideAllowedRoots } from '../lib/paths.js';
 import { createAppError } from '../lib/appErrors.js';
-import { validateVMName } from '../lib/validation.js';
-import { jobAckSchema } from './schemas.js';
+import { vmNameSchema } from '../lib/validation.js';
+import {
+  backupBodySchema, cloudInitSchema, jobAckSchema, noContentSchema, vmParamsSchema,
+} from './schemas.js';
 
 /** The values Wisp writes into `<video><model type>` and `<graphics type>` (API-VMS.md). */
 const VIDEO_DRIVERS = ['virtio', 'qxl', 'vga'];
 const GRAPHICS_TYPES = ['vnc', 'spice'];
 
-export default async function vmsRoutes(fastify) {
-  fastify.addHook('preHandler', async (request) => {
-    const name = request.params?.name;
-    if (name !== undefined) validateVMName(name);
-  });
+/** A NIC of a create or an edit; `source` and `mac` are left out for the defaults. */
+const nicSchema = {
+  type: 'object',
+  properties: {
+    type: { type: 'string' },
+    source: { type: 'string' },
+    model: { type: 'string' },
+    mac: { type: 'string' },
+  },
+  additionalProperties: false,
+};
 
+/** A create's disk: none, a new one of `sizeGB`, or a copy of `sourcePath`, grown to `resizeGB`. */
+const createDiskSchema = {
+  type: 'object',
+  properties: {
+    type: { type: 'string', enum: ['none', 'new', 'existing'] },
+    sizeGB: { type: 'integer' },
+    bus: { type: 'string' },
+    sourcePath: { type: 'string' },
+    resizeGB: { type: 'number' },
+  },
+  additionalProperties: false,
+};
+
+const diskSlotParam = { slot: { type: 'string', minLength: 1 } };
+
+const pendingRestartSchema = { type: ['object', 'null'], properties: { since: { type: 'string' } } };
+
+/** GET /vms rows, the `vms` topic's array too. */
+const vmListItemSchema = {
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    uuid: { type: 'string' },
+    state: { type: 'string' },
+    stateCode: { type: 'integer' },
+    vcpus: { type: 'integer' },
+    memoryMiB: { type: 'integer' },
+    osCategory: { type: 'string' },
+    iconId: { type: ['string', 'null'] },
+    localDns: { type: 'boolean' },
+    guestAgent: { type: 'boolean' },
+    pendingRestart: pendingRestartSchema,
+    startedAt: { type: ['number', 'null'] },
+    staleBinary: { type: 'boolean' },
+  },
+};
+
+/** GET /vms/:name: the VM's saved configuration (its inactive domain XML) and its state. */
+const vmDetailSchema = {
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    uuid: { type: 'string' },
+    state: { type: 'string' },
+    stateCode: { type: 'integer' },
+    autostart: { type: 'boolean' },
+    vcpus: { type: 'integer' },
+    memoryMiB: { type: 'integer' },
+    osType: { type: 'string' },
+    osCategory: { type: 'string' },
+    arch: { type: ['string', 'null'] },
+    machineType: { type: ['string', 'null'] },
+    firmware: { type: 'string' },
+    cpuMode: { type: ['string', 'null'] },
+    cpuTopology: {
+      type: ['object', 'null'],
+      properties: {
+        sockets: { type: 'integer' },
+        dies: { type: 'integer' },
+        cores: { type: 'integer' },
+        threads: { type: 'integer' },
+      },
+    },
+    cpuFeatures: {
+      type: 'array',
+      items: { type: 'object', properties: { name: { type: 'string' }, policy: { type: 'string' } } },
+    },
+    nestedVirt: { type: 'boolean' },
+    bootOrder: { type: 'array', items: { type: 'string' } },
+    bootMenu: { type: 'boolean' },
+    disks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          slot: { type: ['string', 'null'] },
+          device: { type: 'string' },
+          bus: { type: ['string', 'null'] },
+          source: { type: ['string', 'null'] },
+          driverType: { type: ['string', 'null'] },
+          readonly: { type: 'boolean' },
+          sizeGiB: { type: 'integer' },
+        },
+      },
+    },
+    nics: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          type: { type: ['string', 'null'] },
+          mac: { type: ['string', 'null'] },
+          source: { type: ['string', 'null'] },
+          model: { type: ['string', 'null'] },
+          target: { type: ['string', 'null'] },
+        },
+      },
+    },
+    graphics: {
+      type: ['object', 'null'],
+      properties: {
+        type: { type: ['string', 'null'] },
+        port: { type: ['integer', 'null'] },
+        listen: { type: ['string', 'null'] },
+        autoport: { type: ['string', 'null'] },
+      },
+    },
+    videoModel: { type: ['string', 'null'] },
+    features: { type: 'object', properties: { hyperv: { type: 'boolean' } } },
+    memBalloon: { type: 'boolean' },
+    guestAgent: { type: 'boolean' },
+    vtpm: { type: 'boolean' },
+    virtioRng: { type: 'boolean' },
+    iconId: { type: ['string', 'null'] },
+    localDns: { type: 'boolean' },
+    pendingRestart: pendingRestartSchema,
+  },
+};
+
+export default async function vmsRoutes(fastify) {
   // GET /vms — list all VMs
   fastify.get('/vms', {
     config: { auth: 'read' },
@@ -49,25 +177,7 @@ export default async function vmsRoutes(fastify) {
       response: {
         200: {
           type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              name: { type: 'string' },
-              uuid: { type: 'string' },
-              state: { type: 'string' },
-              stateCode: { type: 'integer' },
-              vcpus: { type: 'integer' },
-              memoryMiB: { type: 'integer' },
-              osCategory: { type: 'string' },
-              autostart: { type: 'boolean' },
-              iconId: { type: ['string', 'null'] },
-              localDns: { type: 'boolean' },
-              pendingRestart: {
-                type: ['object', 'null'],
-                properties: { since: { type: 'string' } },
-              },
-            },
-          },
+          items: vmListItemSchema,
         },
       },
     },
@@ -82,7 +192,7 @@ export default async function vmsRoutes(fastify) {
         type: 'object',
         required: ['name'],
         properties: {
-          name: { type: 'string', minLength: 1, maxLength: 128 },
+          name: vmNameSchema,
           template: { type: 'string' },
           osType: { type: 'string' },
           osVariant: { type: 'string' },
@@ -102,56 +212,12 @@ export default async function vmsRoutes(fastify) {
           vtpm: { type: 'boolean' },
           virtioRng: { type: 'boolean' },
           nestedVirt: { type: 'boolean' },
-          nics: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                type: { type: 'string' },
-                source: { type: 'string' },
-                model: { type: 'string' },
-                mac: { type: 'string' },
-              },
-            },
-          },
-          disk: {
-            type: 'object',
-            properties: {
-              type: { type: 'string', enum: ['none', 'new', 'existing'] },
-              sizeGB: { type: 'integer' },
-              bus: { type: 'string' },
-              sourcePath: { type: 'string' },
-              resizeGB: { type: 'number' },
-            },
-          },
-          disk2: {
-            type: 'object',
-            properties: {
-              type: { type: 'string', enum: ['none', 'new', 'existing'] },
-              sizeGB: { type: 'integer' },
-              bus: { type: 'string' },
-              sourcePath: { type: 'string' },
-              resizeGB: { type: 'number' },
-            },
-          },
+          nics: { type: 'array', items: nicSchema },
+          disk: createDiskSchema,
+          disk2: createDiskSchema,
           cdrom1Path: { type: 'string' },
           cdrom2Path: { type: 'string' },
-          cloudInit: {
-            type: 'object',
-            properties: {
-              enabled: { type: 'boolean' },
-              // RFC 1123 hostname label
-              hostname: { type: 'string', maxLength: 63, pattern: '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$' },
-              username: { type: 'string', maxLength: 32, pattern: '^[a-z][a-z0-9_-]{0,31}$' },
-              password: { type: 'string', maxLength: 256, pattern: '^[^\\r\\n]*$' },
-              sshKey: { type: 'string', maxLength: 16384 },
-              growPartition: { type: 'boolean' },
-              packageUpgrade: { type: 'boolean' },
-              installQemuGuestAgent: { type: 'boolean' },
-              installAvahiDaemon: { type: 'boolean' },
-            },
-            additionalProperties: false,
-          },
+          cloudInit: cloudInitSchema,
         },
         additionalProperties: false,
       },
@@ -161,7 +227,6 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       const spec = request.body;
-      validateVMName(spec?.name);
       /* Resolve library-relative paths to absolute and run the security check
          here, in Wisp glue, before vmManager touches them. vmManager itself
          is policy-agnostic about which host paths are "allowed". */
@@ -188,18 +253,8 @@ export default async function vmsRoutes(fastify) {
   fastify.post('/vms/:name/backup', {
     config: { auth: 'admin' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name'],
-        properties: { name: { type: 'string' } },
-      },
-      body: {
-        type: 'object',
-        properties: {
-          destinationIds: { type: 'array', items: { type: 'string' } },
-        },
-        additionalProperties: false,
-      },
+      params: vmParamsSchema(),
+      body: backupBodySchema,
       response: {
         202: jobAckSchema,
       },
@@ -216,11 +271,8 @@ export default async function vmsRoutes(fastify) {
   fastify.get('/vms/:name', {
     config: { auth: 'read' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name'],
-        properties: { name: { type: 'string' } },
-      },
+      params: vmParamsSchema(),
+      response: { 200: vmDetailSchema },
     },
     handler: async (request) => {
       return await getVMConfig(request.params.name);
@@ -231,11 +283,7 @@ export default async function vmsRoutes(fastify) {
   fastify.delete('/vms/:name', {
     config: { auth: 'admin' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name'],
-        properties: { name: { type: 'string' } },
-      },
+      params: vmParamsSchema(),
       querystring: {
         type: 'object',
         properties: {
@@ -268,11 +316,7 @@ export default async function vmsRoutes(fastify) {
     fastify.post(`/vms/:name/${path}`, {
       config: { auth: 'admin' },
       schema: {
-        params: {
-          type: 'object',
-          required: ['name'],
-          properties: { name: { type: 'string' } },
-        },
+        params: vmParamsSchema(),
         response: { 202: jobAckSchema },
       },
       handler: async (request, reply) => {
@@ -293,11 +337,8 @@ export default async function vmsRoutes(fastify) {
     fastify.post(`/vms/:name/${path}`, {
       config: { auth: 'admin' },
       schema: {
-        params: {
-          type: 'object',
-          required: ['name'],
-          properties: { name: { type: 'string' } },
-        },
+        params: vmParamsSchema(),
+        response: { 204: noContentSchema },
       },
       handler: async (request, reply) => {
         await send(request.params.name);
@@ -310,15 +351,11 @@ export default async function vmsRoutes(fastify) {
   fastify.patch('/vms/:name', {
     config: { auth: 'admin' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name'],
-        properties: { name: { type: 'string' } },
-      },
+      params: vmParamsSchema(),
       body: {
         type: 'object',
         properties: {
-          name: { type: 'string', minLength: 1, maxLength: 128 },
+          name: vmNameSchema,
           memoryMiB: { type: 'integer', minimum: 128 },
           vcpus: { type: 'integer', minimum: 1 },
           cpuMode: { type: 'string' },
@@ -328,19 +365,7 @@ export default async function vmsRoutes(fastify) {
           bootOrder: { type: 'array', items: { type: 'string' } },
           bootMenu: { type: 'boolean' },
           osType: { type: 'string' },
-          nics: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                type: { type: 'string' },
-                source: { type: 'string' },
-                model: { type: 'string' },
-                mac: { type: 'string' },
-              },
-              additionalProperties: false,
-            },
-          },
+          nics: { type: 'array', items: nicSchema },
           videoDriver: { type: 'string', enum: VIDEO_DRIVERS },
           graphicsType: { type: 'string', enum: GRAPHICS_TYPES },
           memBalloon: { type: 'boolean' },
@@ -353,9 +378,9 @@ export default async function vmsRoutes(fastify) {
         },
         additionalProperties: false,
       },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
-      if (request.body.name !== undefined) validateVMName(request.body.name);
       await editVmConfig({ name: request.params.name, changes: request.body, log: request.log });
       reply.code(204).send();
     },
@@ -365,11 +390,8 @@ export default async function vmsRoutes(fastify) {
   fastify.get('/vms/:name/xml', {
     config: { auth: 'read' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name'],
-        properties: { name: { type: 'string' } },
-      },
+      params: vmParamsSchema(),
+      response: { 200: { type: 'object', properties: { xml: { type: 'string' } } } },
     },
     handler: async (request) => {
       const xml = await getVMXML(request.params.name);
@@ -381,11 +403,7 @@ export default async function vmsRoutes(fastify) {
   fastify.post('/vms/:name/disks', {
     config: { auth: 'admin' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name'],
-        properties: { name: { type: 'string' } },
-      },
+      params: vmParamsSchema(),
       body: {
         type: 'object',
         required: ['slot'],
@@ -397,6 +415,7 @@ export default async function vmsRoutes(fastify) {
         },
         additionalProperties: false,
       },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       const { slot, path, sizeGB, bus } = request.body;
@@ -424,14 +443,8 @@ export default async function vmsRoutes(fastify) {
   fastify.delete('/vms/:name/disks/:slot', {
     config: { auth: 'admin' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name', 'slot'],
-        properties: {
-          name: { type: 'string' },
-          slot: { type: 'string' },
-        },
-      },
+      params: vmParamsSchema(diskSlotParam),
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       const { name, slot } = request.params;
@@ -444,14 +457,7 @@ export default async function vmsRoutes(fastify) {
   fastify.post('/vms/:name/disks/:slot/resize', {
     config: { auth: 'admin' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name', 'slot'],
-        properties: {
-          name: { type: 'string' },
-          slot: { type: 'string' },
-        },
-      },
+      params: vmParamsSchema(diskSlotParam),
       body: {
         type: 'object',
         required: ['sizeGB'],
@@ -460,6 +466,7 @@ export default async function vmsRoutes(fastify) {
         },
         additionalProperties: false,
       },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       const { name, slot } = request.params;
@@ -472,14 +479,7 @@ export default async function vmsRoutes(fastify) {
   fastify.post('/vms/:name/disks/:slot/bus', {
     config: { auth: 'admin' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name', 'slot'],
-        properties: {
-          name: { type: 'string' },
-          slot: { type: 'string' },
-        },
-      },
+      params: vmParamsSchema(diskSlotParam),
       body: {
         type: 'object',
         required: ['bus'],
@@ -488,6 +488,7 @@ export default async function vmsRoutes(fastify) {
         },
         additionalProperties: false,
       },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       const { name, slot } = request.params;
@@ -500,14 +501,7 @@ export default async function vmsRoutes(fastify) {
   fastify.post('/vms/:name/cdrom/:slot', {
     config: { auth: 'admin' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name', 'slot'],
-        properties: {
-          name: { type: 'string' },
-          slot: { type: 'string' },
-        },
-      },
+      params: vmParamsSchema(diskSlotParam),
       body: {
         type: 'object',
         required: ['path'],
@@ -516,6 +510,7 @@ export default async function vmsRoutes(fastify) {
         },
         additionalProperties: false,
       },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       const { name, slot } = request.params;
@@ -530,14 +525,8 @@ export default async function vmsRoutes(fastify) {
   fastify.delete('/vms/:name/cdrom/:slot', {
     config: { auth: 'admin' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name', 'slot'],
-        properties: {
-          name: { type: 'string' },
-          slot: { type: 'string' },
-        },
-      },
+      params: vmParamsSchema(diskSlotParam),
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       const { name, slot } = request.params;
@@ -550,11 +539,7 @@ export default async function vmsRoutes(fastify) {
   fastify.get('/vms/:name/usb', {
     config: { auth: 'read' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name'],
-        properties: { name: { type: 'string' } },
-      },
+      params: vmParamsSchema(),
       response: {
         200: {
           type: 'array',
@@ -577,11 +562,7 @@ export default async function vmsRoutes(fastify) {
   fastify.post('/vms/:name/usb', {
     config: { auth: 'admin' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name'],
-        properties: { name: { type: 'string' } },
-      },
+      params: vmParamsSchema(),
       body: {
         type: 'object',
         required: ['vendorId', 'productId'],
@@ -591,6 +572,7 @@ export default async function vmsRoutes(fastify) {
         },
         additionalProperties: false,
       },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       const { name } = request.params;
@@ -604,23 +586,11 @@ export default async function vmsRoutes(fastify) {
   fastify.delete('/vms/:name/usb/:id', {
     config: { auth: 'admin' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['name', 'id'],
-        properties: {
-          name: { type: 'string' },
-          id: { type: 'string' },
-        },
-      },
+      params: vmParamsSchema({ id: { type: 'string', pattern: '^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$' } }),
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       const [vendorId, productId] = request.params.id.split(':');
-      if (!vendorId || !productId) {
-        throw createAppError('INVALID_USB_ID', 'Invalid USB device ID format, expected vendorId:productId');
-      }
-      if (!/^[0-9a-fA-F]{4}$/.test(vendorId) || !/^[0-9a-fA-F]{4}$/.test(productId)) {
-        throw createAppError('INVALID_USB_ID', 'Invalid USB device ID format');
-      }
       const { name } = request.params;
       await detachVmUsb(name, vendorId, productId);
       reply.code(204).send();
@@ -629,8 +599,8 @@ export default async function vmsRoutes(fastify) {
 
   // GET /vms/:name/stats — SSE endpoint
   fastify.get('/vms/:name/stats', {
-    config: { auth: 'read' },
-    schema: { hide: true },
+    config: { auth: 'read', answers: 'sse' },
+    schema: { params: vmParamsSchema() },
     handler: async (request, reply) => {
       const { name } = request.params;
 

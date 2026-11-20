@@ -9,7 +9,7 @@ import {
   countJobsThatMustFinish, startJob, BACKGROUND_JOB_KIND, titleForSelfUpdate,
 } from '../lib/jobs/index.js';
 import { createAppError } from '../lib/appErrors.js';
-import { jobAckSchema } from './schemas.js';
+import { jobAckSchema, noContentSchema } from './schemas.js';
 
 const STATUS_RESPONSE = {
   type: 'object',
@@ -36,7 +36,7 @@ export default async function updatesRoutes(fastify) {
   // check answers its error (503) and is announced too: it records lastError.
   fastify.post('/updates/check', {
     config: { auth: 'admin' },
-    schema: { response: { 204: { type: 'null' } } },
+    schema: { response: { 204: noContentSchema } },
     handler: async (request, reply) => {
       await checkForUpdate();
       return reply.code(204).send();
@@ -59,7 +59,8 @@ export default async function updatesRoutes(fastify) {
     schema: {
       querystring: {
         type: 'object',
-        properties: { force: { type: 'string' } },
+        properties: { force: { type: 'string', enum: ['1', 'true'] } },
+        additionalProperties: false,
       },
       response: {
         202: jobAckSchema,
@@ -73,7 +74,7 @@ export default async function updatesRoutes(fastify) {
           status.latest ? `No update available: already on ${status.current}` : 'No update available: run a check first',
         );
       }
-      const force = request.query?.force === '1' || request.query?.force === 'true';
+      const force = request.query.force !== undefined;
       let releaseInstall;
 
       /* A job: download, verify and extract, then hand off to the privileged

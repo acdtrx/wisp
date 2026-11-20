@@ -112,12 +112,13 @@ test('a session write without the right X-CSRF-Token answers 403 CSRF_FAILED; wi
   assert.equal(res.json().error, 'VALIDATION_FAILED');
 });
 
-test('a container name with surrounding whitespace is refused, never trimmed', async () => {
+test('a container name with surrounding whitespace is refused by its schema, never trimmed', async () => {
   const res = await app.inject({
     method: 'POST', url: '/api/containers', headers: bearer(ADMIN_TOKEN), payload: { name: ' web ', image: 'nginx:1.27' },
   });
-  assert.equal(res.statusCode, 422);
-  assert.deepEqual(res.json(), { error: 'INVALID_CONTAINER_NAME', detail: 'Container name cannot start or end with whitespace' });
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.json().error, 'VALIDATION_FAILED');
+  assert.match(res.json().detail, /^body\/name must match pattern/);
 });
 
 test('the sixth bad token from one address answers 429 RATE_LIMITED', async () => {
@@ -177,8 +178,7 @@ test('a container PATCH refuses eject, and appConfig sent with other keys, namin
   });
   const eject = await patch({ eject: true });
   assert.equal(eject.statusCode, 400);
-  assert.equal(eject.json().error, 'VALIDATION_FAILED');
-  assert.match(eject.json().detail, /^body\/eject .*POST \/api\/containers\/:name\/eject/);
+  assert.deepEqual(eject.json(), { error: 'VALIDATION_FAILED', detail: 'body: unknown key "eject"' });
 
   const mixed = await patch({ appConfig: { hosts: [] }, iconId: 'box', name: 'web2' });
   assert.equal(mixed.statusCode, 400);
@@ -295,4 +295,82 @@ test('GET /api/host/updates/packages with a read token reads the last check and 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.json(), { packages: [], downloadBytes: 0, checkedAt: null });
   assert.deepEqual(await jobs(), before);
+});
+
+/* ── Schemas at the boundary ─────────────────────────────────────────── */
+
+const admin = bearer(ADMIN_TOKEN);
+
+test('an unknown body key answers 400 VALIDATION_FAILED naming the key, nested ones with their path', async () => {
+  const top = await app.inject({ method: 'PATCH', url: '/api/settings', headers: admin, payload: { serverName: 'x', bogus: 1 } });
+  assert.equal(top.statusCode, 400);
+  assert.deepEqual(top.json(), { error: 'VALIDATION_FAILED', detail: 'body: unknown key "bogus"' });
+  const nested = await app.inject({
+    method: 'PATCH', url: '/api/vms/web', headers: admin, payload: { nics: [{ type: 'bridge', vlan: 22 }] },
+  });
+  assert.deepEqual(nested.json(), { error: 'VALIDATION_FAILED', detail: 'body/nics/0: unknown key "vlan"' });
+});
+
+test('a command that declares no body refuses a key in one, and takes none or an empty one', async () => {
+  const res = await app.inject({ method: 'POST', url: '/api/containers/web/kill', headers: admin, payload: { force: true } });
+  assert.deepEqual(res.json(), { error: 'VALIDATION_FAILED', detail: 'body: unknown key "force"' });
+  for (const payload of [undefined, {}]) {
+    const ok = await app.inject({ method: 'POST', url: '/api/containers/web/kill', headers: admin, payload });
+    assert.notEqual(ok.json().error, 'VALIDATION_FAILED');
+  }
+});
+
+test('an unknown querystring key answers 400 naming it, on a route with a querystring and on one without', async () => {
+  for (const url of ['/api/library?type=iso&bogus=1', '/api/vms?bogus=1']) {
+    const res = await app.inject({ method: 'GET', url, headers: bearer(READ_TOKEN) });
+    assert.equal(res.statusCode, 400, url);
+    assert.deepEqual(res.json(), { error: 'VALIDATION_FAILED', detail: 'querystring: unknown key "bogus"' }, url);
+  }
+});
+
+test('a JSON body is not coerced: a string where a number is wanted answers 400', async () => {
+  const res = await app.inject({
+    method: 'POST', url: '/api/host/network-bridges', headers: admin, payload: { baseBridge: 'br0', vlanId: '22' },
+  });
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.json(), { error: 'VALIDATION_FAILED', detail: 'body/vlanId must be number' });
+});
+
+test('params and querystrings are coerced to the type their schema names', async () => {
+  const port = await app.inject({ method: 'DELETE', url: '/api/containers/web/services/80', headers: admin });
+  assert.notEqual(port.json().error, 'VALIDATION_FAILED');
+  const notPort = await app.inject({ method: 'DELETE', url: '/api/containers/web/services/http', headers: admin });
+  assert.deepEqual(notPort.json(), { error: 'VALIDATION_FAILED', detail: 'params/port must be integer' });
+  const low = await app.inject({ method: 'GET', url: '/api/containers/web/stats?intervalMs=1000', headers: bearer(READ_TOKEN) });
+  assert.deepEqual(low.json(), { error: 'VALIDATION_FAILED', detail: 'querystring/intervalMs must be >= 2000' });
+});
+
+test('a workload name is checked by its schema in the URL: no `..`, a leading letter or digit', async () => {
+  for (const url of ['/api/vms/a..b', '/api/containers/.hidden']) {
+    const res = await app.inject({ method: 'GET', url, headers: bearer(READ_TOKEN) });
+    assert.equal(res.statusCode, 400, url);
+    assert.equal(res.json().error, 'VALIDATION_FAILED', url);
+    assert.match(res.json().detail, /^params\/name must match pattern/, url);
+  }
+});
+
+test('a malformed run id answers the same on the run-log download and the logs stream', async () => {
+  const download = await app.inject({ method: 'GET', url: '/api/containers/web/runs/not-a-run/log', headers: bearer(READ_TOKEN) });
+  const stream = await app.inject({ method: 'GET', url: '/api/containers/web/logs?runId=not-a-run', headers: bearer(READ_TOKEN) });
+  for (const [res, part] of [[download, 'params'], [stream, 'querystring']]) {
+    assert.equal(res.statusCode, 400, part);
+    assert.equal(res.json().error, 'VALIDATION_FAILED', part);
+    assert.match(res.json().detail, new RegExp(`^${part}/runId must match pattern`), part);
+  }
+});
+
+test('a multipart upload passes the boundary: its route declares no JSON body', async () => {
+  const boundary = 'wisp-test-boundary';
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/containers/web/mounts/conf/file',
+    headers: { ...admin, 'content-type': `multipart/form-data; boundary=${boundary}` },
+    payload: `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.txt"\r\nContent-Type: text/plain\r\n\r\nhello\r\n--${boundary}--\r\n`,
+  });
+  assert.notEqual(res.json().error, 'VALIDATION_FAILED');
 });

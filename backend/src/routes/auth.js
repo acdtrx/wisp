@@ -11,6 +11,7 @@ import { beginLogin, completeLogin } from '../lib/oidc.js';
 import { listApiTokens, createApiToken, revokeApiToken, API_TOKEN_SCOPES } from '../lib/apiTokens.js';
 import { isAuthRateLimited, recordFailedAuthAttempt, AUTH_RATE_WINDOW_SECONDS } from '../lib/loginRateLimit.js';
 import { asAppError, createAppError } from '../lib/appErrors.js';
+import { idParamsSchema, noContentSchema } from './schemas.js';
 
 const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback';
 
@@ -99,7 +100,7 @@ export default async function authRoutes(fastify) {
   fastify.post('/logout', {
     config: { auth: 'session' },
     schema: {
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       clearSessionCookies(reply, request);
@@ -120,7 +121,7 @@ export default async function authRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        204: { type: 'null' },
+        204: noContentSchema,
       },
     },
     handler: async (request, reply) => {
@@ -216,12 +217,8 @@ export default async function authRoutes(fastify) {
   fastify.delete('/tokens/:id', {
     config: { auth: 'session' },
     schema: {
-      params: {
-        type: 'object',
-        required: ['id'],
-        properties: { id: { type: 'string', minLength: 1 } },
-      },
-      response: { 204: { type: 'null' } },
+      params: idParamsSchema,
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       await revokeApiToken(request.params.id);
@@ -254,7 +251,7 @@ export default async function authRoutes(fastify) {
   // an unreachable provider — bounce back to /login?sso=error so the password
   // form (and its "try SSO again" button) is shown instead of a dead end.
   fastify.get('/oidc/login', {
-    config: { auth: 'public' },
+    config: { auth: 'public', answers: 'redirect' },
     handler: async (request, reply) => {
       const config = await getRawOidcConfig();
       if (!config.enabled) {
@@ -286,7 +283,7 @@ export default async function authRoutes(fastify) {
   // control is delegated to the provider (restrict the client to your user
   // there); any subject that authenticates is the single Wisp user.
   fastify.get('/oidc/callback', {
-    config: { auth: 'public' },
+    config: { auth: 'public', answers: 'redirect' },
     schema: {
       querystring: {
         type: 'object',

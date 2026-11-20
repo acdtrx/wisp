@@ -15,6 +15,8 @@ import fastifyWebsocket from '@fastify/websocket';
 import { createAuthHook, createRouteAccessRegistry } from './lib/auth.js';
 import { createAppError, handleRequestError } from './lib/appErrors.js';
 import { getConfigSync } from './lib/config.js';
+import { compileRouteValidator } from './lib/schemaValidation.js';
+import { completeRouteSchema } from './routes/schemas.js';
 import authRoutes from './routes/auth.js';
 import hostRoutes from './routes/host.js';
 import eventsRoutes from './routes/events.js';
@@ -187,21 +189,30 @@ export async function buildApp(log) {
   // parsing) land here too: one handler answers every error.
   app.setErrorHandler(handleRequestError);
 
-  // Every route declares its access level (`config: { auth }`, lib/auth.js). The
-  // registry sees each route as it is added; main() checks the declarations
-  // once routing is final.
+  // Input is checked by one validator: JSON bodies uncoerced, the string parts
+  // (querystring, params) coerced, unknown keys refused (lib/schemaValidation.js).
+  app.setValidatorCompiler(compileRouteValidator);
+
+  // Every route declares its access level (`config: { auth }`, lib/auth.js) and
+  // its schemas. The registry sees each route as it is added, before the hooks
+  // below change it; main() checks the access levels once routing is final, and
+  // the route report (`npm run route-access`, run by `npm run check`) the schemas.
   const routeAccess = createRouteAccessRegistry();
   app.addHook('onRoute', routeAccess.onRoute);
 
   // Third-party plugins that add routes of their own (the CORS preflight, static
   // assets) can't carry a per-route declaration, so the routes such a plugin
-  // registers while it loads are marked public. Pending plugins are flushed first
-  // so the window holds only that plugin's routes; a route it added later would
-  // stay undeclared and fail closed.
+  // registers while it loads are marked public, and as the plugin's. Pending
+  // plugins are flushed first so the window holds only that plugin's routes; a
+  // route it added later would stay undeclared and fail closed.
   let markingPluginRoutesPublic = false;
   app.addHook('onRoute', (routeOptions) => {
-    if (markingPluginRoutesPublic) routeOptions.config = { ...routeOptions.config, auth: 'public' };
+    if (markingPluginRoutesPublic) routeOptions.config = { ...routeOptions.config, auth: 'public', pluginRoute: true };
   });
+
+  // What every route of Wisp's own gets: an undeclared querystring or body
+  // takes nothing, and every error answers the one error body.
+  app.addHook('onRoute', completeRouteSchema);
   async function registerPluginWithPublicRoutes(plugin, opts) {
     await app.after();
     markingPluginRoutesPublic = true;

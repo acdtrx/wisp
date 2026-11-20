@@ -67,8 +67,7 @@ export function latestGatherSender(sendTopic, topic, gather, logFailure) {
  */
 export default async function eventsRoutes(fastify) {
   fastify.get('/events', {
-    config: { auth: 'read' },
-    schema: { hide: true },
+    config: { auth: 'read', answers: 'sse' },
     handler: async (request, reply) => {
       setupSSE(reply);
 

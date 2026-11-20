@@ -5,6 +5,7 @@ import Fastify from 'fastify';
 // First project import: runtime.env must be in process.env before config.js loads.
 import './lib/bootRuntimeEnv.js';
 import { buildApp } from './app.js';
+import { routeSchemaProblems, routeSchemaSummary } from './routes/schemas.js';
 import { checkRouteAccess, AUTH_LEVELS, checkPasswordFile } from './lib/auth.js';
 import { createAppError } from './lib/appErrors.js';
 import { getConfigSync } from './lib/config.js';
@@ -70,30 +71,46 @@ function createStartLogger() {
 
 /**
  * `npm run route-access`: print every route with the level the auth hook
- * enforces for it, then exit without listening. Exits 1 when a route lacks a
- * valid declaration.
+ * enforces for it and the schemas it declares, then exit without listening.
+ * Exits 1 when a route lacks a valid access declaration or a schema it needs
+ * (routes/schemas.js, `routeSchemaProblems`). The HEAD mirror of a GET shares
+ * its GET's line; the routes a third-party plugin adds are counted, not listed.
  */
 function printRouteAccessReport(routes) {
   const rows = new Map();
   for (const route of routes) {
-    const key = `${route.url}\0${route.auth}\0${route.declared}`;
+    const key = `${route.url}\0${route.auth}\0${route.declared}\0${route.method === 'HEAD' ? 'GET' : route.method}`;
     if (!rows.has(key)) rows.set(key, { ...route, methods: [] });
-    rows.get(key).methods.push(...route.method.split(','));
+    const row = rows.get(key);
+    row.methods.push(...route.method.split(','));
+    if (route.method !== 'HEAD') Object.assign(row, { declaredSchema: route.declaredSchema, config: route.config, websocket: route.websocket });
   }
-  const sorted = [...rows.values()].sort((a, b) => a.url.localeCompare(b.url));
+  const sorted = [...rows.values()].sort((a, b) => a.url.localeCompare(b.url) || a.method.localeCompare(b.method));
   const counts = Object.fromEntries(AUTH_LEVELS.map((level) => [level, 0]));
   let undeclared = 0;
+  let lackingSchemas = 0;
+  let pluginRoutes = 0;
   for (const row of sorted) {
     const methods = [...new Set(row.methods)].join(',');
-    const level = row.declared ? row.auth : `${row.auth} (UNDECLARED)`;
-    console.log(`${level.padEnd(18)} ${methods.padEnd(20)} ${row.url}`);
     const endpoints = new Set(row.methods.filter((m) => m !== 'HEAD')).size || 1;
+    // The static files and the CORS preflight: public by construction, one line in the summary.
+    if (row.config?.pluginRoute) {
+      counts.public += endpoints;
+      pluginRoutes += endpoints;
+      continue;
+    }
+    const level = row.declared ? row.auth : `${row.auth} (UNDECLARED)`;
+    console.log(`${level.padEnd(18)} ${methods.padEnd(14)} ${routeSchemaSummary(row).padEnd(40)} ${row.url}`);
+    const problems = routeSchemaProblems(row);
+    for (const problem of problems) console.log(`${''.padEnd(18)} SCHEMA: ${problem}`);
     if (row.declared) counts[row.auth] += endpoints;
     else undeclared += endpoints;
+    if (problems.length > 0) lackingSchemas += endpoints;
   }
   const summary = AUTH_LEVELS.map((level) => `${level} ${counts[level]}`).join(', ');
-  console.log(`\nEndpoints (HEAD mirrors of GET not counted): ${summary}, undeclared ${undeclared}`);
-  return undeclared > 0 ? 1 : 0;
+  console.log(`\n${pluginRoutes} plugin routes (static files, CORS preflight) not listed: public, no schema check.`);
+  console.log(`Endpoints (HEAD mirrors of GET not counted): ${summary}, undeclared ${undeclared}; lacking a schema ${lackingSchemas}`);
+  return undeclared > 0 || lackingSchemas > 0 ? 1 : 0;
 }
 
 /**

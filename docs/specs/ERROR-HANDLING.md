@@ -234,7 +234,6 @@ Each code a client can receive, with its status.
 | `USB_ATTACH_FAILED` | 422 | The USB device could not be attached |
 | `USB_DETACH_FAILED` | 422 | The USB device could not be detached |
 | `INVALID_VM_NAME` | 422 | The VM name breaks the [name rules](#vm-name-validation) |
-| `INVALID_USB_ID` | 422 | The USB device id is malformed |
 | `PATH_NOT_ALLOWED` | 422 | The path resolves outside the image library and the VM's directory |
 | `BACKUP_INVALID` | 422 | The backup archive or manifest fails validation |
 | `BACKUP_DEST_UNKNOWN` | 422 | An unknown backup destination id |

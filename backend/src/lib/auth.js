@@ -180,19 +180,21 @@ export function routeAuthLevel(routeConfig) {
 
 /**
  * Collects every registered route through an `onRoute` hook so the declared
- * levels can be checked once routing is final (`app.ready()`). The route
- * options object is kept by reference and its config read at listing time:
- * hooks that run after this one may still set it.
+ * levels and schemas can be checked once routing is final (`app.ready()`).
+ * The route options object is kept by reference and its config read at
+ * listing time: hooks that run after this one may still set it. The schema
+ * is the one the route declared, taken before the app's own `onRoute` hooks
+ * complete it (routes/schemas.js).
  */
 export function createRouteAccessRegistry() {
   const routes = [];
   return {
     onRoute(routeOptions) {
       const method = [].concat(routeOptions.method).join(',');
-      routes.push({ method, url: routeOptions.url, routeOptions });
+      routes.push({ method, url: routeOptions.url, routeOptions, declaredSchema: routeOptions.schema });
     },
     list() {
-      return routes.map(({ method, url, routeOptions }) => {
+      return routes.map(({ method, url, routeOptions, declaredSchema }) => {
         const declared = routeOptions.config?.auth;
         return {
           method,
@@ -200,6 +202,9 @@ export function createRouteAccessRegistry() {
           auth: routeAuthLevel(routeOptions.config),
           declared: isDeclaredAuthLevel(declared),
           declaredValue: declared,
+          declaredSchema,
+          config: routeOptions.config,
+          websocket: routeOptions.websocket === true,
         };
       });
     },

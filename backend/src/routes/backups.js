@@ -13,30 +13,25 @@ import { getSettings, listConfiguredBackupRoots, listBackupDestinationsWithMount
 import { startVmRestoreJob } from '../lib/vmOperations.js';
 import { startContainerRestoreJob, startContainerRestoreAsNewJob } from '../lib/containerOperations.js';
 import { createAppError } from '../lib/appErrors.js';
-import { validateVMName, validateContainerName } from '../lib/validation.js';
-import { jobAckSchema } from './schemas.js';
+import { containerNameSchema, vmNameSchema } from '../lib/validation.js';
+import { jobAckSchema, noContentSchema } from './schemas.js';
 
-// Backup directory names produced by createBackup are ISO-derived
-// (YYYY-MM-DDTHH-mm-ss). The accept-set is intentionally a bit looser to
-// keep older folder formats listable/deletable. The character class blocks
-// `/`, `\`, NUL, etc.; the leading alphanumeric is what blocks `.` and `..`,
-// so the timestamp is always a single child segment and server-side path
-// construction cannot resolve to (or above) the destination root.
-const TIMESTAMP_REGEX = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const TIMESTAMP_MAX_LEN = 64;
+/*
+ * A backup's folder name. Those createBackup writes are ISO-derived
+ * (YYYY-MM-DDTHH-mm-ss); the accept-set is a bit looser to keep older folder
+ * formats listable and deletable. The character class blocks `/`, `\`, NUL
+ * and the like; the leading alphanumeric blocks `.` and `..`, so the
+ * timestamp is always a single child segment and the path built from it
+ * cannot resolve to (or above) the destination root.
+ */
+const timestampSchema = { type: 'string', maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$' };
 
-function assertSafeTimestamp(ts) {
-  if (typeof ts !== 'string' || !ts || ts.length > TIMESTAMP_MAX_LEN || !TIMESTAMP_REGEX.test(ts)) {
-    throw createAppError('BACKUP_INVALID', 'Invalid backup timestamp');
-  }
-}
+/** `local` or the backup mount's id. */
+const destinationIdSchema = { type: 'string', minLength: 1 };
 
 // Map a client-supplied `destinationId` ('local' | <mountId>) to the absolute
 // root path the backup lives under. Anything else is rejected.
 function resolveBackupRoot(settings, destinationId) {
-  if (typeof destinationId !== 'string' || !destinationId) {
-    throw createAppError('BACKUP_INVALID', 'Invalid destinationId');
-  }
   if (destinationId === 'local') {
     if (!settings.backupLocalPath) {
       throw createAppError('BACKUP_DEST_NOT_FOUND', 'No local backup destination configured');
@@ -66,7 +61,7 @@ export default async function backupsRoutes(fastify) {
     schema: {
       querystring: {
         type: 'object',
-        properties: { vmName: { type: 'string' } },
+        properties: { vmName: vmNameSchema },
         additionalProperties: false,
       },
       response: {
@@ -89,8 +84,7 @@ export default async function backupsRoutes(fastify) {
     handler: async (request) => {
       const settings = await getSettings();
       const destinations = await listBackupDestinationsWithMountCheck(settings);
-      const vmName = request.query?.vmName ?? null;
-      const list = await listBackups(destinations, vmName || undefined);
+      const list = await listBackups(destinations, request.query.vmName);
       return list.map(stripPath);
     },
   });
@@ -103,10 +97,10 @@ export default async function backupsRoutes(fastify) {
         type: 'object',
         required: ['destinationId', 'vmName', 'timestamp', 'newVmName'],
         properties: {
-          destinationId: { type: 'string' },
-          vmName: { type: 'string' },
-          timestamp: { type: 'string' },
-          newVmName: { type: 'string' },
+          destinationId: destinationIdSchema,
+          vmName: vmNameSchema,
+          timestamp: timestampSchema,
+          newVmName: vmNameSchema,
         },
         additionalProperties: false,
       },
@@ -120,9 +114,6 @@ export default async function backupsRoutes(fastify) {
     // stream.
     handler: async (request, reply) => {
       const { destinationId, vmName, timestamp, newVmName } = request.body;
-      validateVMName(vmName);
-      validateVMName(newVmName);
-      assertSafeTimestamp(timestamp);
       const settings = await getSettings();
       const root = resolveBackupRoot(settings, destinationId);
       const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
@@ -139,18 +130,16 @@ export default async function backupsRoutes(fastify) {
         type: 'object',
         required: ['destinationId', 'vmName', 'timestamp'],
         properties: {
-          destinationId: { type: 'string' },
-          vmName: { type: 'string' },
-          timestamp: { type: 'string' },
+          destinationId: destinationIdSchema,
+          vmName: vmNameSchema,
+          timestamp: timestampSchema,
         },
         additionalProperties: false,
       },
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
       const { destinationId, vmName, timestamp } = request.body;
-      validateVMName(vmName);
-      assertSafeTimestamp(timestamp);
       const settings = await getSettings();
       const root = resolveBackupRoot(settings, destinationId);
       const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
@@ -170,7 +159,7 @@ export default async function backupsRoutes(fastify) {
     schema: {
       querystring: {
         type: 'object',
-        properties: { containerName: { type: 'string' } },
+        properties: { containerName: containerNameSchema },
         additionalProperties: false,
       },
       response: {
@@ -194,8 +183,7 @@ export default async function backupsRoutes(fastify) {
     handler: async (request) => {
       const settings = await getSettings();
       const destinations = await listBackupDestinationsWithMountCheck(settings);
-      const containerName = request.query?.containerName ?? null;
-      const list = await listContainerBackups(destinations, containerName || undefined);
+      const list = await listContainerBackups(destinations, request.query.containerName);
       return list.map(stripPath);
     },
   });
@@ -207,10 +195,10 @@ export default async function backupsRoutes(fastify) {
         type: 'object',
         required: ['destinationId', 'name', 'timestamp', 'newName'],
         properties: {
-          destinationId: { type: 'string' },
-          name: { type: 'string' },
-          timestamp: { type: 'string' },
-          newName: { type: 'string' },
+          destinationId: destinationIdSchema,
+          name: containerNameSchema,
+          timestamp: timestampSchema,
+          newName: containerNameSchema,
         },
         additionalProperties: false,
       },
@@ -223,9 +211,6 @@ export default async function backupsRoutes(fastify) {
     // `done` is `{ name, sourceName, image }`.
     handler: async (request, reply) => {
       const { destinationId, name, timestamp, newName } = request.body;
-      validateContainerName(name);
-      validateContainerName(newName);
-      assertSafeTimestamp(timestamp);
       const settings = await getSettings();
       const root = resolveBackupRoot(settings, destinationId);
       // Containers live under <root>/containers/<name>/<timestamp>/. The
@@ -247,9 +232,9 @@ export default async function backupsRoutes(fastify) {
         type: 'object',
         required: ['destinationId', 'name', 'timestamp'],
         properties: {
-          destinationId: { type: 'string' },
-          name: { type: 'string' },
-          timestamp: { type: 'string' },
+          destinationId: destinationIdSchema,
+          name: containerNameSchema,
+          timestamp: timestampSchema,
           safetyBackup: { type: 'boolean', default: true },
         },
         additionalProperties: false,
@@ -259,10 +244,7 @@ export default async function backupsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      const { destinationId, name, timestamp, safetyBackup = true } = request.body;
-      validateContainerName(name);
-      assertSafeTimestamp(timestamp);
-
+      const { destinationId, name, timestamp, safetyBackup } = request.body;
       const job = await startContainerRestoreJob({
         name, destinationId, timestamp, safetyBackup, log: request.log,
       });
@@ -277,18 +259,16 @@ export default async function backupsRoutes(fastify) {
         type: 'object',
         required: ['destinationId', 'name', 'timestamp'],
         properties: {
-          destinationId: { type: 'string' },
-          name: { type: 'string' },
-          timestamp: { type: 'string' },
+          destinationId: destinationIdSchema,
+          name: containerNameSchema,
+          timestamp: timestampSchema,
         },
         additionalProperties: false,
       },
-      response: { 204: { type: 'null' } },
+      response: { 204: noContentSchema },
     },
     handler: async (request, reply) => {
-      const { destinationId, name, timestamp } = request.body || {};
-      validateContainerName(name);
-      assertSafeTimestamp(timestamp);
+      const { destinationId, name, timestamp } = request.body;
       const settings = await getSettings();
       const root = resolveBackupRoot(settings, destinationId);
       const backupPath = join(root, 'containers', name, timestamp);
