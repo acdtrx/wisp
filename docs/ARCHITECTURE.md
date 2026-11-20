@@ -146,7 +146,8 @@ consumer, and nothing has called for more).
   record again, not its state. A write that changed nothing still fires, and one
   change can fire twice (cloud-init's own cue after vmManager's).
   - `vmManager.subscribeVMChange(handler)` — `(name)` after each successful config,
-    disk, CD-ROM, USB, graphics-listen or restart-flag write through the facade,
+    disk, CD-ROM, USB, graphics-listen, restart-flag or Wisp-pref write through the
+    facade,
     hot-plug included (libvirt sends no `DomainEvent` for it), under the new name after
     a rename.
     Create, delete and restore don't fire: the VM list carries them. Out-of-band
