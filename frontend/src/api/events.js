@@ -29,6 +29,9 @@ const CHANGES_TOPIC = 'changes';
 /** Commands waiting for a frame: { topic, matches(data), release } */
 const frameWaiters = new Set();
 let closeFn = null;
+/** The ApiError Wisp refused the shared stream with, which ended it; kept until the
+ *  last subscriber leaves, so a late subscriber is told too. */
+let refusal = null;
 
 /** Release the waiters a frame satisfies (every waiter when `frame` is null), with
  *  the re-reads the frame's handlers started. */
@@ -62,9 +65,15 @@ function dispatch(frame) {
   releaseFrameWaiters(frame, rereads);
 }
 
-function streamDown() {
+/** The connection dropped (no `err`: createSSE reconnects), or Wisp refused the
+ *  stream (`err`: it has ended, and no frame will come). */
+function streamDown(err) {
+  if (err) {
+    refusal = err;
+    releaseFrameWaiters(null);
+  }
   for (const handlers of topicHandlers.values()) {
-    for (const handler of handlers) handler.onStreamDown?.();
+    for (const handler of handlers) handler.onStreamDown?.(err);
   }
 }
 
@@ -82,8 +91,10 @@ function hasSubscribers() {
  *   `discovery` | `backups` | `changes` (prefer `subscribeChanges` for the last)
  * @param {(data: any) => void} onData — called per frame; error frames arrive here
  *   too, carrying the topic's usual `{ error, detail, code? }` shape.
- * @param {() => void} [onStreamDown] — called when the shared connection drops
- *   (before createSSE's backoff reconnect).
+ * @param {(refusal?: import('./errors.js').ApiError) => void} [onStreamDown] — called
+ *   with nothing when the shared connection drops (before createSSE's backoff
+ *   reconnect); with the ApiError when Wisp refused the stream, which ended it (on
+ *   subscribing too, while that refusal stands).
  * @returns {() => void} unsubscribe
  */
 export function subscribeTopic(topic, onData, onStreamDown) {
@@ -96,6 +107,7 @@ export function subscribeTopic(topic, onData, onStreamDown) {
   handlers.add(handler);
 
   if (lastFrames.has(topic)) onData(lastFrames.get(topic));
+  if (refusal) onStreamDown?.(refusal);
   if (!closeFn) closeFn = createSSE('/api/events', dispatch, streamDown);
 
   return function unsubscribe() {
@@ -104,6 +116,7 @@ export function subscribeTopic(topic, onData, onStreamDown) {
       closeFn();
       closeFn = null;
       lastFrames.clear(); // next connect (e.g. after re-login) starts from server snapshots
+      refusal = null; // and asks again
       releaseFrameWaiters(null); // no stream, no frame to wait for
     }
   };
@@ -140,7 +153,7 @@ export function subscribeChanges(kinds, onChange) {
 const FRAME_WAIT_MS = 30_000;
 
 async function sendAndAwaitFrame(topic, matches, send) {
-  if (!closeFn) return send();
+  if (!closeFn || refusal) return send();
   let release;
   const frame = new Promise((resolve) => { release = resolve; });
   const waiter = { topic, matches, release };
@@ -179,7 +192,8 @@ async function sendAndAwaitFrame(topic, matches, send) {
  * the client holds the new state, so a quick second click can't act on the old one.
  * The first frame of the topic that `matches` ends the wait — by default any frame,
  * a reconnect snapshot included — and so does 30 s without one. An error from the
- * command ends it at once. With no stream open there is no frame to wait for.
+ * command ends it at once. With no stream open, or one Wisp refused, there is no
+ * frame to wait for.
  *
  * @template T
  * @param {string} topic

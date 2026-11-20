@@ -1,7 +1,7 @@
 import { test, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { installBrowser, installFetch, respondWithStream, settle } from '../testing/fakeBrowser.js';
+import { installBrowser, installFetch, jsonResponse, respondWithStream, settle } from '../testing/fakeBrowser.js';
 
 let net;
 let events;
@@ -251,4 +251,50 @@ test('the last unsubscribe releases the waiting commands with their ack', async 
   off();
   await settle();
   assert.deepEqual(wait, { done: true, value: 'ack' });
+});
+
+/* ── A stream Wisp refuses ends, and says so ────────────────────────── */
+
+test('a stream Wisp refuses ends: every subscriber, and a late one, is told why; no reconnect', async () => {
+  const down = [];
+  const off = events.subscribeTopic('stats', () => {}, (err) => down.push(err));
+  const request = await net.next('/api/events');
+  request.respond(jsonResponse({ error: 'SCOPE_INSUFFICIENT', detail: 'This route needs an admin token' }, 403));
+  await settle();
+  assert.equal(down.length, 1);
+  assert.deepEqual({ code: down[0].code, status: down[0].status, detail: down[0].detail },
+    { code: 'SCOPE_INSUFFICIENT', status: 403, detail: 'This route needs an admin token' });
+
+  const late = [];
+  const offLate = events.subscribeTopic('vms', () => {}, (err) => late.push(err));
+  assert.equal(late.length, 1);
+  assert.equal(late[0].code, 'SCOPE_INSUFFICIENT');
+
+  mock.timers.tick(120_000);
+  await settle();
+  assert.equal(net.made('/api/events').length, 1);
+
+  const ack = await events.sendAndAwaitTopic('vms', async () => 'ack');
+  assert.equal(ack, 'ack');
+
+  off();
+  offLate();
+  const again = [];
+  const offAgain = events.subscribeTopic('stats', () => {}, (err) => again.push(err));
+  assert.deepEqual(again, []);
+  assert.equal(net.made('/api/events').length, 2);
+  offAgain();
+});
+
+test('a 4xx that is not Wisp\'s (a proxy\'s page) is a lost connection: subscribers told with no error, then a reconnect', async () => {
+  const down = [];
+  const off = events.subscribeTopic('stats', () => {}, (err) => down.push(err));
+  const request = await net.next('/api/events');
+  request.respond(new Response('<html>403 Forbidden</html>', { status: 403, headers: { 'content-type': 'text/html' } }));
+  await settle();
+  assert.deepEqual(down, [undefined]);
+  mock.timers.tick(1100);
+  await settle();
+  assert.equal(net.made('/api/events').length, 2);
+  off();
 });

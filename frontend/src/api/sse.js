@@ -50,15 +50,25 @@ function withJitterMs(baseMs) {
   return Math.round(baseMs * 0.95 + jitter);
 }
 
+/** Wisp's error body, `{ error: <code>, detail }`: an answer Wisp gave. A 4xx
+ *  without it (a proxy's 401 or 403, an HTML page) is not Wisp's. */
+function isWispErrorBody(body) {
+  return typeof body?.error === 'string' && body.error !== '' && typeof body.detail === 'string';
+}
+
 /**
- * What a stream's failed answer means, one rule for both stream clients: a
- * lost session leaves for the login page; any other 4xx ends the stream with
- * its error, since asking again gets the same refusal; a 5xx, or an answer
- * with no body, is retried like a lost connection.
+ * What a stream's failed answer means, one rule for both stream clients
+ * (docs/specs/ERROR-HANDLING.md, Stream refusals): a lost session leaves for
+ * the login page; any other 4xx carrying Wisp's error body ends the stream
+ * with its error, since asking Wisp again gets the same refusal; a 5xx, an
+ * answer that is not Wisp's (a proxy's page), or one with no body is retried
+ * like a lost connection.
  * @returns {Promise<{ err: import('./errors.js').ApiError, end: 'session' | 'refused' | 'retry' }>}
  */
 async function failedAnswer(res) {
-  const err = errorFromBody(await res.json().catch(() => null), res.status);
+  const body = await res.json().catch(() => null);
+  const err = errorFromBody(body, res.status);
+  if (!isWispErrorBody(body)) return { err, end: 'retry' };
   if (isSessionLost(err)) return { err, end: 'session' };
   return { err, end: res.status >= 400 && res.status < 500 ? 'refused' : 'retry' };
 }
@@ -69,13 +79,13 @@ const JOB_TERMINAL_STEPS = new Set(['done', 'error', 'cancelled']);
 /**
  * One-shot job progress SSE. Auth flows via the wisp_session cookie (sent
  * automatically by the browser on same-origin fetches with credentials).
- * Reconnects with backoff after a lost connection or a 5xx, and the server
- * replays the job's events, until its terminal event (`done`, `error` or
- * `cancelled`) or a refusal (`failedAnswer`).
+ * Reconnects with backoff after a lost connection, a 5xx or an answer that is
+ * not Wisp's, and the server replays the job's events, until its terminal
+ * event (`done`, `error` or `cancelled`) or Wisp's refusal (`failedAnswer`).
  *
  * @param {(ev: object) => void} onMessage
- * @param {(err: import('./errors.js').ApiError) => void} [onRefused] — a 4xx ended the stream; a 404
- *   means the server no longer knows the job (it expired, or never existed)
+ * @param {(err: import('./errors.js').ApiError) => void} [onRefused] — Wisp refused the stream with a 4xx,
+ *   which ended it; a 404 means the server no longer knows the job (it expired, or never existed)
  */
 export function createJobSSE(url, onMessage, onRefused) {
   let closed = false;
@@ -221,9 +231,10 @@ export function createJobSSE(url, onMessage, onRefused) {
 
 /**
  * Live-data SSE: reconnects with backoff until closed. A lost session sends
- * the user to sign in; any other 4xx (the stream's subject is gone, the request
- * is refused) stops it for good and calls `onError(err)`, an ApiError. A lost
- * connection or a 5xx calls `onError()`, with no error, and retries.
+ * the user to sign in; any other 4xx with Wisp's error body (the stream's
+ * subject is gone, the request is refused) stops it for good and calls
+ * `onError(err)`, an ApiError. A lost connection, a 5xx or an answer that is
+ * not Wisp's calls `onError()`, with no error, and retries.
  * @param {(err?: import('./errors.js').ApiError) => void} [onError]
  */
 export function createSSE(url, onMessage, onError) {

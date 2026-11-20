@@ -10,6 +10,8 @@ export const useStatsStore = create((set) => {
     connected: false,
     /** The last gather's error, until a good frame clears it. */
     lastError: null,
+    /** Why Wisp refused the events stream, which then ended (errorText); null while it runs. */
+    refusal: null,
 
     connect: () => {
       if (unsubscribe) return;
@@ -26,7 +28,11 @@ export const useStatsStore = create((set) => {
           }
           set({ stats: data, connected: true, lastError: null });
         },
-        () => set({ connected: false }),
+        // A refused stream sends no more frames: drop the stats it can no longer
+        // keep current, and say why instead.
+        (refused) => set(refused
+          ? { stats: null, connected: false, lastError: null, refusal: errorText(refused) }
+          : { connected: false }),
       );
     },
 
@@ -35,7 +41,7 @@ export const useStatsStore = create((set) => {
         unsubscribe();
         unsubscribe = null;
       }
-      set({ stats: null, connected: false, lastError: null });
+      set({ stats: null, connected: false, lastError: null, refusal: null });
     },
   };
 });

@@ -137,6 +137,29 @@ test('a 5xx is retried like a lost connection: onError with no error, then a rec
   close();
 });
 
+test('a 4xx that is not Wisp\'s answer is retried like a lost connection, never a login or an end', async () => {
+  for (const [i, [status, response]] of [
+    [401, new Response('<html>401 Authorization Required</html>', { status: 401, headers: { 'content-type': 'text/html' } })],
+    [403, jsonResponse({ message: 'Forbidden' }, 403)],
+    [403, jsonResponse({ error: 'Forbidden' }, 403)],
+    [404, new Response('', { status: 404 })],
+  ].entries()) {
+    const errors = [];
+    const url = `/api/proxy${i}-${status}`;
+    const close = createSSE(url, () => {}, (err) => errors.push(err));
+    const request = await net.next(url);
+    request.respond(response);
+    await settle();
+    assert.deepEqual(errors, [undefined], url);
+    assert.equal(browser.window.location.href, '', url);
+    assert.equal(browser.localStorage.getItem('wisp_logout'), null, url);
+    mock.timers.tick(1100);
+    await settle();
+    assert.equal(net.made(url).length, 2, url);
+    close();
+  }
+});
+
 /* ── The job progress stream: the same rule ─────────────────────────── */
 
 test('a job stream refused with a 4xx ends, its ApiError to onRefused; no reconnect', async () => {
@@ -163,6 +186,19 @@ test('a job stream answered a 5xx reconnects, and is not refused', async () => {
   mock.timers.tick(1100);
   await settle();
   assert.equal(net.made('/api/jobs/j2/progress').length, 2);
+  assert.deepEqual(refused, []);
+  close();
+});
+
+test('a job stream answered a proxy\'s 403 page reconnects, and is not refused', async () => {
+  const refused = [];
+  const close = createJobSSE('/api/jobs/j3/progress', () => {}, (err) => refused.push(err));
+  const request = await net.next('/api/jobs/j3/progress');
+  request.respond(new Response('<html>403</html>', { status: 403, headers: { 'content-type': 'text/html' } }));
+  await settle();
+  mock.timers.tick(1100);
+  await settle();
+  assert.equal(net.made('/api/jobs/j3/progress').length, 2);
   assert.deepEqual(refused, []);
   close();
 });

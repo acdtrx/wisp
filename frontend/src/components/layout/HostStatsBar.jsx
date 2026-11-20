@@ -5,7 +5,7 @@ import StatPill from '../shared/StatPill.jsx';
 import { formatDecimal } from '../../utils/formatters.js';
 
 export default function HostStatsBar({ embedded = false }) {
-  const { stats, connected, lastError, connect, disconnect } = useStatsStore();
+  const { stats, connected, lastError, refusal, connect, disconnect } = useStatsStore();
 
   useEffect(() => {
     connect();
@@ -13,13 +13,18 @@ export default function HostStatsBar({ embedded = false }) {
   }, [connect, disconnect]);
 
   if (!stats) {
-    const loader = (
+    // The events stream's state shows here: connecting, or ended because Wisp refused it.
+    const loader = refusal ? (
+      <span className="min-w-0 truncate text-xs text-status-stopped" title={refusal} role="alert">
+        Live updates stopped: {refusal}
+      </span>
+    ) : (
       <span className="text-xs text-text-muted whitespace-nowrap">
         {lastError ? 'Stats unavailable' : connected ? 'Loading stats…' : 'Connecting…'}
       </span>
     );
     if (embedded) {
-      return <div className="flex items-center">{loader}</div>;
+      return <div className="flex min-w-0 items-center">{loader}</div>;
     }
     return (
       <div className="flex h-11 items-center border-b border-surface-border bg-surface-card px-4">

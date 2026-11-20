@@ -175,7 +175,7 @@ test('a dropped progress stream reconnects and replays; the wait goes on', async
 
 test('a 404 on the progress stream rejects awaitJob with JOB_GONE', async () => {
   const { outcome, request } = await awaitAck('g1');
-  request.respond(new Response(null, { status: 404 }));
+  request.respond(new Response(JSON.stringify({ error: 'JOB_NOT_FOUND', detail: 'No job with id "g1"' }), { status: 404 }));
   await settle();
 
   const { error } = await outcome;

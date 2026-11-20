@@ -466,10 +466,15 @@ progress area, with a red indicator.
 ### Stream refusals
 
 A stream (the events stream, a scoped stream, a job's progress) whose request is answered
-with a 4xx that is not a lost session ends there: the stream client hands the caller the
-ApiError and does not ask again, since asking again gets the same refusal. Only a lost
-connection or a 5xx reconnects (settled 2026-11-20). A job's progress stream answering
-404 is `JOB_GONE` to a wait; another refusal is the wait's error.
+with a 4xx carrying Wisp's error body (`{ error, detail }`) that is not a lost session
+ends there: Wisp said no, so the stream client hands the caller the ApiError and does not
+ask again, since asking again gets the same refusal. A 4xx without that body (a proxy's
+401 or 403, an HTML page) is not Wisp's answer: it reconnects with backoff, as a lost
+connection or a 5xx does. A lost session (`AUTH_REQUIRED`, `AUTH_INVALID`) goes to the
+login page (settled 2026-11-20). A job's progress stream answering 404 is `JOB_GONE` to a
+wait; another refusal is the wait's error. The events stream never ends silently: when
+Wisp refuses it, the top bar's host stats show the refusal where they show the stream
+connecting, until the page subscribes afresh.
 
 ### Stream error frames
 
