@@ -184,6 +184,20 @@ function malformedResponse() {
   return checkFailure('Malformed GitHub API response', 'Malformed GitHub API response');
 }
 
+/* In this fetch, DOWNLOAD_FAILED is only the body's size bound tripping: the
+ * guard and the network fail with other codes, or none. */
+function overSizeBound(err) {
+  return err?.code === 'DOWNLOAD_FAILED';
+}
+
+function answerTooLarge(err) {
+  return checkFailure(
+    'GitHub API answer too large',
+    `GitHub Releases answered more than its ${GITHUB_JSON_MAX_BYTES}-byte bound`,
+    err.message,
+  );
+}
+
 /** GET a GitHub API endpoint. Returns null on 404 — the repo has no releases. */
 async function fetchGithubJson(url, signal) {
   /* One deadline over the request and its (small) JSON body. */
@@ -202,6 +216,7 @@ async function fetchGithubJson(url, signal) {
       maxBodyBytes: GITHUB_JSON_MAX_BYTES,
     });
   } catch (err) {
+    if (overSizeBound(err)) throw answerTooLarge(err);
     if (deadline.aborted) {
       throw checkFailure('GitHub API timed out', 'GitHub Releases did not answer in time', err.message);
     }
@@ -216,6 +231,7 @@ async function fetchGithubJson(url, signal) {
   try {
     data = await res.json();
   } catch (err) {
+    if (overSizeBound(err)) throw answerTooLarge(err);
     if (deadline.aborted) {
       throw checkFailure('GitHub API timed out', 'GitHub Releases did not answer in time', err.message);
     }

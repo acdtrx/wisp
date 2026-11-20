@@ -42,7 +42,13 @@ function decodeJwtSegment(seg) {
   return JSON.parse(Buffer.from(seg, 'base64url').toString('utf8'));
 }
 
-async function fetchJson(url, options = {}) {
+/**
+ * GET (or `options.method`) a provider endpoint and parse its JSON answer.
+ * `failureCode` is the step's code (discovery, JWKS, token exchange), thrown
+ * when the answer passes MAX_BODY_BYTES: the provider was reached, so the
+ * step failed, not the connection.
+ */
+async function fetchJson(url, failureCode, options = {}) {
   let res;
   let text;
   try {
@@ -53,6 +59,10 @@ async function fetchJson(url, options = {}) {
     });
     text = await res.text();
   } catch (err) {
+    // In the operator fetch, DOWNLOAD_FAILED is only the size bound tripping.
+    if (err?.code === 'DOWNLOAD_FAILED') {
+      throw wrapAppError(failureCode, `The identity provider answered more than ${MAX_BODY_BYTES} bytes at ${url}`, err);
+    }
     throw wrapAppError('OIDC_PROVIDER_UNREACHABLE', 'Could not reach identity provider', err);
   }
   let body = null;
@@ -120,7 +130,7 @@ async function discover(issuer) {
   if (cached && Date.now() - cached.at < DISCOVERY_TTL_MS) return cached.doc;
 
   const url = `${key}/.well-known/openid-configuration`;
-  const { ok, status, body } = await fetchJson(url);
+  const { ok, status, body } = await fetchJson(url, 'OIDC_DISCOVERY_FAILED');
   if (!ok || !body || typeof body !== 'object') {
     throw createAppError('OIDC_DISCOVERY_FAILED', `OIDC discovery failed (${status}) at ${url}`);
   }
@@ -136,7 +146,7 @@ const jwksCache = new Map(); // jwksUri -> { at, keys }
 async function loadJwks(jwksUri, { force = false } = {}) {
   const cached = jwksCache.get(jwksUri);
   if (!force && cached && Date.now() - cached.at < JWKS_TTL_MS) return cached.keys;
-  const { ok, status, body } = await fetchJson(jwksUri);
+  const { ok, status, body } = await fetchJson(jwksUri, 'OIDC_JWKS_FAILED');
   if (!ok || !body || !Array.isArray(body.keys)) {
     throw createAppError('OIDC_JWKS_FAILED', `Could not fetch signing keys (${status})`);
   }
@@ -334,7 +344,7 @@ export async function completeLogin({ issuer, clientId, clientSecret, state, cod
     body.set('client_secret', clientSecret);
   }
 
-  const { ok, status, body: tokenBody } = await fetchJson(doc.tokenEndpoint, {
+  const { ok, status, body: tokenBody } = await fetchJson(doc.tokenEndpoint, 'OIDC_TOKEN_EXCHANGE_FAILED', {
     method: 'POST',
     headers,
     body: body.toString(),

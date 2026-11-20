@@ -74,6 +74,12 @@ before(async () => {
         });
       } else if (req.url === '/huge/.well-known/openid-configuration') {
         json(res, 200, { issuer: `${base}/huge`, padding: 'x'.repeat(2 * 1024 * 1024) });
+      } else if (req.url === '/chunked/.well-known/openid-configuration') {
+        // No declared length: the bound trips as the body is read.
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.write(`{"issuer":"${base}/chunked","padding":"`);
+        for (let i = 0; i < 32; i++) res.write('x'.repeat(64 * 1024));
+        res.end('"}');
       } else if (req.url === '/moved/.well-known/openid-configuration') {
         res.writeHead(302, { location: '/idp/.well-known/openid-configuration' });
         res.end();
@@ -249,11 +255,26 @@ test('under an https issuer, an endpoint that is not https fails the discovery',
   assert.throws(() => discoveryFromDocument({ ...doc, issuer: 'https://evil.example' }, secure), { code: 'OIDC_DISCOVERY_FAILED' });
 });
 
-test('a discovery past the size bound fails, its body not read whole', async () => {
-  await assert.rejects(
-    beginLogin({ issuer: `${base}/huge`, clientId: CLIENT_ID, redirectUri: REDIRECT_URI }),
-    (err) => err.code === 'OIDC_PROVIDER_UNREACHABLE' && /larger than 1048576 bytes/.test(err.message),
-  );
+const overBound = (code) => (err) => err.code === code
+  && /answered more than 1048576 bytes/.test(err.message) && /larger than 1048576 bytes/.test(err.message);
+
+test('a discovery past the size bound fails the discovery, declared or read, its body not read whole', async () => {
+  for (const name of ['huge', 'chunked']) {
+    await assert.rejects(
+      beginLogin({ issuer: `${base}/${name}`, clientId: CLIENT_ID, redirectUri: REDIRECT_URI }),
+      overBound('OIDC_DISCOVERY_FAILED'),
+      name,
+    );
+  }
+});
+
+test('a token answer past the size bound fails the exchange', async () => {
+  const { authorizationUrl } = await beginLogin({ issuer, clientId: CLIENT_ID, redirectUri: REDIRECT_URI });
+  stub.tokenAnswer = { status: 200, body: { id_token: 'x'.repeat(2 * 1024 * 1024) } };
+  await assert.rejects(completeLogin({
+    issuer, clientId: CLIENT_ID, clientSecret: CLIENT_SECRET,
+    state: new URL(authorizationUrl).searchParams.get('state'), code: 'code-1',
+  }), overBound('OIDC_TOKEN_EXCHANGE_FAILED'));
 });
 
 test('an issuer that does not answer is unreachable', async () => {
