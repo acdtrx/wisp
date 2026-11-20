@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import * as containerApi from '../api/containers.js';
-import { createSSE } from '../api/sse.js';
+import { openStream } from '../api/sse.js';
 import { sendAndAwaitChange, sendAndAwaitTopic, subscribeChanges, subscribeTopic } from '../api/events.js';
 import {
   errorKey, withError, withoutError, withoutErrorsOfVanished, withErrorsRenamed, withBusy, anyActionInFlight,
@@ -83,7 +83,7 @@ export const useContainerStore = create((set, get) => {
   function startStatsSSE(name, intervalMs = 3000) {
     stopStatsSSE();
     const q = Math.max(2000, Math.min(60000, intervalMs));
-    statsCloseFn = createSSE(
+    statsCloseFn = openStream(
       `/api/containers/${encodeURIComponent(name)}/stats?intervalMs=${q}`,
       (data) => {
         set((state) => {
@@ -95,9 +95,11 @@ export const useContainerStore = create((set, get) => {
           return next;
         });
       },
-      () => {
-        /* The stream dropped (createSSE reconnects) or was refused (it ended): clear stale stats */
-        set({ containerStats: null });
+      {
+        onDown: () => {
+          /* The stream dropped (openStream reconnects) or was refused (it ended): clear stale stats */
+          set({ containerStats: null });
+        },
       },
     );
   }

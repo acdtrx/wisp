@@ -1,4 +1,4 @@
-import { createSSE } from './sse.js';
+import { openStream } from './sse.js';
 
 /**
  * Topic subscriptions over the single always-on `/api/events` SSE stream.
@@ -12,7 +12,7 @@ import { createSSE } from './sse.js';
  *
  * One shared connection lives while at least one topic subscriber is attached:
  * the first `subscribeTopic` opens it, the last unsubscribe closes it.
- * Reconnect/backoff/dead-TCP detection all come from `createSSE`; on every
+ * Reconnect/backoff/dead-TCP detection all come from `openStream`; on every
  * (re)connect the server replays a snapshot of each topic. The last frame per
  * topic (except `changes`) is cached here so a subscriber attaching mid-stream
  * (a remounting component) is seeded immediately instead of waiting for the
@@ -65,7 +65,7 @@ function dispatch(frame) {
   releaseFrameWaiters(frame, rereads);
 }
 
-/** The connection dropped (no `err`: createSSE reconnects), or Wisp refused the
+/** The connection dropped (no `err`: openStream reconnects), or Wisp refused the
  *  stream (`err`: it has ended, and no frame will come). */
 function streamDown(err) {
   if (err) {
@@ -92,7 +92,7 @@ function hasSubscribers() {
  * @param {(data: any) => void} onData — called per frame; error frames arrive here
  *   too, carrying the topic's usual `{ error, detail, code? }` shape.
  * @param {(refusal?: import('./errors.js').ApiError) => void} [onStreamDown] — called
- *   with nothing when the shared connection drops (before createSSE's backoff
+ *   with nothing when the shared connection drops (before openStream's backoff
  *   reconnect); with the ApiError when Wisp refused the stream, which ended it (on
  *   subscribing too, while that refusal stands).
  * @returns {() => void} unsubscribe
@@ -108,7 +108,7 @@ export function subscribeTopic(topic, onData, onStreamDown) {
 
   if (lastFrames.has(topic)) onData(lastFrames.get(topic));
   if (refusal) onStreamDown?.(refusal);
-  if (!closeFn) closeFn = createSSE('/api/events', dispatch, streamDown);
+  if (!closeFn) closeFn = openStream('/api/events', dispatch, { onDown: streamDown });
 
   return function unsubscribe() {
     handlers.delete(handler);

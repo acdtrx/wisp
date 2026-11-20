@@ -2,18 +2,20 @@ import { test, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installBrowser, installFetch, jsonResponse, respondWithStream, settle } from '../testing/fakeBrowser.js';
+import { TOPIC } from '../../../shared/wireNames.js';
 
 let browser;
 let net;
-let createSSE;
-let createJobSSE;
+let openStream;
+let isTerminalJobEvent;
 let ApiError;
 
 beforeEach(async () => {
   browser = installBrowser();
   net = installFetch();
   mock.timers.enable({ apis: ['setTimeout', 'Date'] });
-  ({ createSSE, createJobSSE } = await import('./sse.js'));
+  ({ openStream } = await import('./sse.js'));
+  ({ isTerminalJobEvent } = await import('./jobs.js'));
   ({ ApiError } = await import('./errors.js'));
 });
 
@@ -21,9 +23,9 @@ afterEach(() => {
   mock.timers.reset();
 });
 
-/** Open a createSSE stream and answer its first request. */
-async function open(onMessage = () => {}, onError = () => {}) {
-  const close = createSSE('/api/x', onMessage, onError);
+/** Open a stream and answer its first request. */
+async function open(onFrame = () => {}, onDown = () => {}) {
+  const close = openStream('/api/x', onFrame, { onDown });
   const request = await net.next('/api/x');
   const stream = respondWithStream(request);
   await settle();
@@ -39,11 +41,11 @@ test('a frame split across chunks is delivered whole, once', async () => {
   stream.send('"data":[1]}\n');
   stream.send('\ndata: {"b":2}\n\n');
   await settle();
-  assert.deepEqual(messages, [{ topic: 'vms', data: [1] }, { b: 2 }]);
+  assert.deepEqual(messages, [{ topic: TOPIC.VMS, data: [1] }, { b: 2 }]);
   close();
 });
 
-test('a stream the server ends reconnects after the backoff, without onError', async () => {
+test('a stream the server ends reconnects after the backoff, without onDown', async () => {
   const errors = [];
   const { close, stream } = await open(() => {}, (reason) => errors.push(reason));
   stream.end();
@@ -56,7 +58,7 @@ test('a stream the server ends reconnects after the backoff, without onError', a
   close();
 });
 
-test('a broken connection calls onError, then reconnects', async () => {
+test('a broken connection calls onDown, then reconnects', async () => {
   const errors = [];
   const { close, stream } = await open(() => {}, (reason) => errors.push(reason));
   stream.drop();
@@ -78,7 +80,7 @@ test('closing stops the reconnect', async () => {
   assert.equal(net.made('/api/x').length, 1);
 });
 
-test('closing an open stream aborts its request and stops it, with no onError', async () => {
+test('closing an open stream aborts its request and stops it, with no onDown', async () => {
   const errors = [];
   const { close, request } = await open(() => {}, (reason) => errors.push(reason));
   close();
@@ -92,7 +94,7 @@ test('closing an open stream aborts its request and stops it, with no onError', 
 
 test('a lost session logs out, goes to the login page and does not reconnect', async () => {
   const errors = [];
-  createSSE('/api/x', () => {}, (reason) => errors.push(reason));
+  openStream('/api/x', () => {}, { onDown: (reason) => errors.push(reason) });
   const request = await net.next('/api/x');
   request.respond(jsonResponse({ error: 'AUTH_INVALID', detail: 'Session expired' }, 401));
   await settle();
@@ -104,13 +106,13 @@ test('a lost session logs out, goes to the login page and does not reconnect', a
   assert.deepEqual(errors, []);
 });
 
-test('a 4xx stops the stream for good, its ApiError to onError: a 404 and a 400 alike', async () => {
+test('a 4xx stops the stream for good, its ApiError to onDown: a 404 and a 400 alike', async () => {
   for (const [status, body] of [
     [404, { error: 'CONTAINER_RUN_NOT_FOUND', detail: 'No such run' }],
     [400, { error: 'VALIDATION_FAILED', detail: 'querystring/runId must match pattern' }],
   ]) {
     const errors = [];
-    const close = createSSE(`/api/x${status}`, () => {}, (err) => errors.push(err));
+    const close = openStream(`/api/x${status}`, () => {}, { onDown: (err) => errors.push(err) });
     const request = await net.next(`/api/x${status}`);
     request.respond(jsonResponse(body, status));
     await settle();
@@ -124,9 +126,9 @@ test('a 4xx stops the stream for good, its ApiError to onError: a 404 and a 400 
   }
 });
 
-test('a 5xx is retried like a lost connection: onError with no error, then a reconnect', async () => {
+test('a 5xx is retried like a lost connection: onDown with no error, then a reconnect', async () => {
   const errors = [];
-  const close = createSSE('/api/x', () => {}, (err) => errors.push(err));
+  const close = openStream('/api/x', () => {}, { onDown: (err) => errors.push(err) });
   const request = await net.next('/api/x');
   request.respond(jsonResponse({ error: 'LIBVIRT_ERROR', detail: 'Failed' }, 500));
   await settle();
@@ -146,7 +148,7 @@ test('a 4xx that is not Wisp\'s answer is retried like a lost connection, never 
   ].entries()) {
     const errors = [];
     const url = `/api/proxy${i}-${status}`;
-    const close = createSSE(url, () => {}, (err) => errors.push(err));
+    const close = openStream(url, () => {}, { onDown: (err) => errors.push(err) });
     const request = await net.next(url);
     request.respond(response);
     await settle();
@@ -160,11 +162,27 @@ test('a 4xx that is not Wisp\'s answer is retried like a lost connection, never 
   }
 });
 
-/* ── The job progress stream: the same rule ─────────────────────────── */
+/* ── A stream that ends at a terminal frame (job progress): the same rule ── */
 
-test('a job stream refused with a 4xx ends, its ApiError to onRefused; no reconnect', async () => {
+
+test('a frame endsAt matches is delivered and ends the stream: no reconnect', async () => {
+  const frames = [];
+  const downs = [];
+  openStream('/api/jobs/j0/progress', (f) => frames.push(f), { onDown: (e) => downs.push(e), endsAt: isTerminalJobEvent });
+  const stream = respondWithStream(await net.next('/api/jobs/j0/progress'));
+  await settle();
+  stream.send('data: {"step":"copy","percent":50}\n\ndata: {"step":"done","result":1}\n\ndata: {"step":"late"}\n\n');
+  await settle();
+  assert.deepEqual(frames, [{ step: 'copy', percent: 50 }, { step: 'done', result: 1 }]);
+  mock.timers.tick(120_000);
+  await settle();
+  assert.equal(net.made('/api/jobs/j0/progress').length, 1);
+  assert.deepEqual(downs, []);
+});
+
+test('a job stream refused with a 4xx ends, its ApiError to onDown; no reconnect', async () => {
   const refused = [];
-  createJobSSE('/api/jobs/j1/progress', () => {}, (err) => refused.push(err));
+  openStream('/api/jobs/j1/progress', () => {}, { onDown: (err) => err && refused.push(err), endsAt: isTerminalJobEvent });
   const request = await net.next('/api/jobs/j1/progress');
   request.respond(jsonResponse({ error: 'VALIDATION_FAILED', detail: 'params/jobId must match' }, 400));
   await settle();
@@ -179,7 +197,7 @@ test('a job stream refused with a 4xx ends, its ApiError to onRefused; no reconn
 
 test('a job stream answered a 5xx reconnects, and is not refused', async () => {
   const refused = [];
-  const close = createJobSSE('/api/jobs/j2/progress', () => {}, (err) => refused.push(err));
+  const close = openStream('/api/jobs/j2/progress', () => {}, { onDown: (err) => err && refused.push(err), endsAt: isTerminalJobEvent });
   const request = await net.next('/api/jobs/j2/progress');
   request.respond(jsonResponse({ error: 'INTERNAL_ERROR', detail: 'boom' }, 500));
   await settle();
@@ -192,7 +210,7 @@ test('a job stream answered a 5xx reconnects, and is not refused', async () => {
 
 test('a job stream answered a proxy\'s 403 page reconnects, and is not refused', async () => {
   const refused = [];
-  const close = createJobSSE('/api/jobs/j3/progress', () => {}, (err) => refused.push(err));
+  const close = openStream('/api/jobs/j3/progress', () => {}, { onDown: (err) => err && refused.push(err), endsAt: isTerminalJobEvent });
   const request = await net.next('/api/jobs/j3/progress');
   request.respond(new Response('<html>403</html>', { status: 403, headers: { 'content-type': 'text/html' } }));
   await settle();

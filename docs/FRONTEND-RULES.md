@@ -12,8 +12,8 @@ holds the UI library's rules.
   - Applied: per-viewer presentation is not server state: keep the theme per device
     (Wisp's design, Theme activation and persistence).
   - Applied: keep one Zustand store per subsystem, mirroring the established `vmStore`
-    patterns; take live data through `createSSE` / `createJobSSE` and the `/api/events`
-    topic singleton.
+    patterns; take live data through the one stream client, `openStream` (`api/sse.js`;
+    a job's progress ends at its terminal frame), and the `/api/events` topic singleton.
   - Applied (settled 2026-11-15): a command's control stays busy until the stream brings
     its new state (its topic's next frame, or the `changes` reference and the re-read it
     triggers), so a section or modal closes onto fresh data; a command error ends it at

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import * as vmApi from '../api/vms.js';
-import { createSSE } from '../api/sse.js';
+import { openStream } from '../api/sse.js';
 import { sendAndAwaitChange, sendAndAwaitTopic, subscribeChanges, subscribeTopic } from '../api/events.js';
 import { awaitJob } from './backgroundJobsStore.js';
 import {
@@ -76,7 +76,7 @@ export const useVmStore = create((set, get) => {
 
   function startStatsSSE(name) {
     stopStatsSSE();
-    statsCloseFn = createSSE(
+    statsCloseFn = openStream(
       `/api/vms/${encodeURIComponent(name)}/stats`,
       (data) => {
         set((state) => {
@@ -87,7 +87,7 @@ export const useVmStore = create((set, get) => {
           return next;
         });
       },
-      () => set({ vmStats: null }),
+      { onDown: () => set({ vmStats: null }) },
     );
   }
 

@@ -1,7 +1,7 @@
 import { leaveForLogin } from './client.js';
 import { errorFromBody, isSessionLost } from './errors.js';
 
-/** Long-lived SSE (`createSSE`): reconnect delays */
+/** Reconnect delays */
 const SSE_INITIAL_RETRY_MS = 1000;
 const SSE_MAX_RETRY_MS = 30000;
 /** Max time to wait for response headers/body on a single fetch attempt */
@@ -57,7 +57,7 @@ function isWispErrorBody(body) {
 }
 
 /**
- * What a stream's failed answer means, one rule for both stream clients
+ * What a stream's failed answer means
  * (docs/specs/ERROR-HANDLING.md, Stream refusals): a lost session leaves for
  * the login page; any other 4xx carrying Wisp's error body ends the stream
  * with its error, since asking Wisp again gets the same refusal; a 5xx, an
@@ -73,25 +73,32 @@ async function failedAnswer(res) {
   return { err, end: res.status >= 400 && res.status < 500 ? 'refused' : 'retry' };
 }
 
-/** A job's last event: the stream ends after it. */
-const JOB_TERMINAL_STEPS = new Set(['done', 'error', 'cancelled']);
-
 /**
- * One-shot job progress SSE. Auth flows via the wisp_session cookie (sent
- * automatically by the browser on same-origin fetches with credentials).
- * Reconnects with backoff after a lost connection, a 5xx or an answer that is
- * not Wisp's, and the server replays the job's events, until its terminal
- * event (`done`, `error` or `cancelled`) or Wisp's refusal (`failedAnswer`).
+ * The one SSE client, for the events stream, the scoped streams and job
+ * progress alike. Auth flows via the wisp_session cookie (sent by the browser
+ * on same-origin fetches with credentials). It reconnects with backoff after a
+ * lost connection, a 5xx or an answer that is not Wisp's, until it is closed,
+ * Wisp refuses it (`failedAnswer`), or a frame `endsAt` matches: that frame is
+ * the stream's last (a job's terminal event; the server ends the response
+ * after it). A lost session sends the user to sign in.
  *
- * @param {(ev: object) => void} onMessage
- * @param {(err: import('./errors.js').ApiError) => void} [onRefused] — Wisp refused the stream with a 4xx,
- *   which ended it; a 404 means the server no longer knows the job (it expired, or never existed)
+ * @param {string} url
+ * @param {(frame: any) => void} onFrame - each `data:` frame, parsed
+ * @param {{
+ *   onDown?: (refusal?: import('./errors.js').ApiError) => void,
+ *   endsAt?: (frame: any) => boolean,
+ * }} [options] - `onDown()` with nothing: the connection dropped, and the
+ *   client reconnects; `onDown(err)`: Wisp refused the stream with a 4xx, which
+ *   ended it (a 404: its subject is gone)
+ * @returns {() => void} close
  */
-export function createJobSSE(url, onMessage, onRefused) {
+export function openStream(url, onFrame, { onDown, endsAt } = {}) {
   let closed = false;
   let retryTimer = null;
   let retryDelay = SSE_INITIAL_RETRY_MS;
   let controller = null;
+  /** When the stream last proved it was alive. Seeded at each connect so an
+   *  in-flight fetch that hasn't answered yet still counts fresh. */
   let lastByteAt = Date.now();
   /** Reassigned once the listeners are attached, below. Terminal paths detach through it. */
   let detachResync = () => {};
@@ -139,9 +146,10 @@ export function createJobSSE(url, onMessage, onRefused) {
           leaveForLogin(err);
           return;
         }
+        // Refused: asking again gets the same answer. Stop, and say why.
         if (end === 'refused') {
           finish();
-          onRefused?.(err);
+          onDown?.(err);
           return;
         }
         throw err;
@@ -163,17 +171,17 @@ export function createJobSSE(url, onMessage, onRefused) {
         buffer = lines.pop() ?? '';
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              onMessage(data);
-              if (JOB_TERMINAL_STEPS.has(data.step)) {
-                finish();
-                return;
-              }
-            } catch {
-              /* Ignore malformed SSE message */
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const frame = JSON.parse(line.slice(6));
+            onFrame(frame);
+            if (endsAt?.(frame)) {
+              finish();
+              return;
             }
+          } catch {
+            /* A malformed frame, or one its handler throws on, is skipped: one bad
+             * frame never drops the stream. */
           }
         }
       }
@@ -191,6 +199,7 @@ export function createJobSSE(url, onMessage, onRefused) {
       // watchdog, the initial fetch timeout, or a network drop. close() flips
       // `closed` before aborting, so user-initiated teardowns short-circuit here.
       if (closed) return;
+      onDown?.();
       retryTimer = setTimeout(() => {
         retryTimer = null;
         retryDelay = sseBackoffMs(retryDelay);
@@ -202,149 +211,8 @@ export function createJobSSE(url, onMessage, onRefused) {
     }
   }
 
-  /** Same contract as createSSE's resync: the server replays buffered events on
-   *  reconnect, so a job backgrounded mid-run catches up instead of freezing its bar. */
-  function resync() {
-    if (closed) return;
-    if (retryTimer) {
-      clearRetry();
-      retryDelay = SSE_INITIAL_RETRY_MS;
-      connect();
-      return;
-    }
-    if (Date.now() - lastByteAt < SSE_STALE_MS) return;
-    retryDelay = SSE_INITIAL_RETRY_MS;
-    controller?.abort();
-  }
-
-  connect();
-  detachResync = onResumeOrReconnect(resync);
-
-  return function close() {
-    finish();
-    if (controller) {
-      controller.abort();
-      controller = null;
-    }
-  };
-}
-
-/**
- * Live-data SSE: reconnects with backoff until closed. A lost session sends
- * the user to sign in; any other 4xx with Wisp's error body (the stream's
- * subject is gone, the request is refused) stops it for good and calls
- * `onError(err)`, an ApiError. A lost connection, a 5xx or an answer that is
- * not Wisp's calls `onError()`, with no error, and retries.
- * @param {(err?: import('./errors.js').ApiError) => void} [onError]
- */
-export function createSSE(url, onMessage, onError) {
-  let retryDelay = SSE_INITIAL_RETRY_MS;
-  let retryTimer = null;
-  let closed = false;
-  let controller = null;
-  /** Monotonic-enough marker for "when did this stream last prove it was alive". Seeded
-   *  at each connect so an in-flight fetch that hasn't answered yet still counts fresh. */
-  let lastByteAt = Date.now();
-
-  function clearRetry() {
-    if (retryTimer) {
-      clearTimeout(retryTimer);
-      retryTimer = null;
-    }
-  }
-
-  async function connect() {
-    if (closed) return;
-
-    lastByteAt = Date.now();
-    const myController = new AbortController();
-    controller = myController;
-    const tid = setTimeout(() => myController.abort(), SSE_FETCH_TIMEOUT_MS);
-    let watchdog = null;
-    const armWatchdog = () => {
-      lastByteAt = Date.now();
-      if (watchdog) clearTimeout(watchdog);
-      watchdog = setTimeout(() => myController.abort(), SSE_READ_IDLE_MS);
-    };
-    const clearWatchdog = () => {
-      if (watchdog) { clearTimeout(watchdog); watchdog = null; }
-    };
-
-    try {
-      const res = await fetch(url, { signal: myController.signal, credentials: 'include' });
-      clearTimeout(tid);
-
-      if (!res.ok || !res.body) {
-        const { err, end } = await failedAnswer(res);
-        if (end === 'session') {
-          leaveForLogin(err);
-          return;
-        }
-        // Refused (a deleted workload's logs, a bad query): asking again gets
-        // the same answer. Stop, as job streams do, and say why.
-        if (end === 'refused') {
-          closed = true;
-          clearRetry();
-          detachResync();
-          onError?.(err);
-          return;
-        }
-        throw err;
-      }
-
-      retryDelay = SSE_INITIAL_RETRY_MS;
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      armWatchdog();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        armWatchdog();
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              onMessage(data);
-            } catch {
-              /* Ignore malformed SSE message */
-            }
-          }
-        }
-      }
-
-      if (!closed) {
-        retryTimer = setTimeout(() => {
-          retryTimer = null;
-          connect();
-        }, withJitterMs(retryDelay));
-        retryDelay = sseBackoffMs(retryDelay);
-      }
-    } catch {
-      clearTimeout(tid);
-      // Treat any abort while open as a dead connection — could be the read
-      // watchdog, the initial fetch timeout, or a network drop. close() flips
-      // `closed` before aborting, so user-initiated teardowns short-circuit here.
-      if (closed) return;
-      if (onError) onError();
-      retryTimer = setTimeout(() => {
-        retryTimer = null;
-        retryDelay = sseBackoffMs(retryDelay);
-        connect();
-      }, withJitterMs(retryDelay));
-    } finally {
-      clearTimeout(tid);
-      clearWatchdog();
-    }
-  }
-
-  /** Called when the app is foregrounded or the network returns — see onResumeOrReconnect. */
+  /** Called when the app is foregrounded or the network returns — see onResumeOrReconnect.
+   *  A job's stream catches up too: the server replays its events on reconnect. */
   function resync() {
     if (closed) return;
     if (retryTimer) {
@@ -362,12 +230,10 @@ export function createSSE(url, onMessage, onError) {
   }
 
   connect();
-  const detachResync = onResumeOrReconnect(resync);
+  detachResync = onResumeOrReconnect(resync);
 
   return function close() {
-    closed = true;
-    detachResync();
-    clearRetry();
+    finish();
     if (controller) {
       controller.abort();
       controller = null;

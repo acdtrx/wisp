@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ArrowDown, Circle, Download, Eraser, MapPin, RefreshCw, Search } from 'lucide-react';
-import { createSSE } from '../../api/sse.js';
+import { openStream } from '../../api/sse.js';
 import { listContainerRuns } from '../../api/containers.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { randomId } from '../../utils/randomId.js';
@@ -123,7 +123,7 @@ export default function ContainerLogsSection({ containerName }) {
     if (!selectedRunId) return undefined;
 
     const q = `?runId=${encodeURIComponent(selectedRunId)}`;
-    closeSseRef.current = createSSE(
+    closeSseRef.current = openStream(
       `/api/containers/${encodeURIComponent(containerName)}/logs${q}`,
       (data) => {
         if (data && data.error) {
@@ -143,11 +143,13 @@ export default function ContainerLogsSection({ containerName }) {
           });
         }
       },
-      (err) => {
-        // An error: the stream was refused (the run is gone, a bad query) and has ended.
-        // None: the connection dropped, and createSSE reconnects.
-        setStreamState('error');
-        setStreamError(err ? errorText(err) : 'The log stream was interrupted — reconnecting…');
+      {
+        onDown: (err) => {
+          // An error: the stream was refused (the run is gone, a bad query) and has ended.
+          // None: the connection dropped, and openStream reconnects.
+          setStreamState('error');
+          setStreamError(err ? errorText(err) : 'The log stream was interrupted — reconnecting…');
+        },
       },
     );
 

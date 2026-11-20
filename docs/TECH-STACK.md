@@ -47,9 +47,9 @@
   the session secret derives from it), scoped bearer API tokens (read/admin) and the
   `/mcp` endpoint for agents. Contract: [specs/AUTH.md](specs/AUTH.md).
 - **No database**: state is libvirt domain XML and JSON files (`ARCHITECTURE.md`, State).
-- **SSE** for server→client updates. The client reads it through the custom fetch-based
-  `createSSE`: native `EventSource` was evaluated and rejected — it can't observe
-  keepalive comments (no dead-TCP watchdog) nor distinguish 401s.
+- **SSE** for server→client updates. The client reads it through its own fetch-based
+  stream client, one for every stream: native `EventSource` was evaluated and rejected
+  — it can't observe keepalive comments (no dead-TCP watchdog) nor distinguish 401s.
 
 ## Client
 
