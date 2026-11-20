@@ -171,7 +171,7 @@ Restart a container (stop + start).
 
 ### POST /api/containers/:name/kill · `admin`
 
-Kill a container (SIGKILL). Same scheduled-restart handling as Stop. While a stop job waits out its grace period, the kill makes that stop immediate (settled 2026-11-20): the stop job kills the task at once and ends as it would, and the kill answers 204 without taking the lock the stop holds.
+Kill a container (SIGKILL). Same scheduled-restart handling as Stop. While a stop job waits out its grace period, the kill makes that stop immediate (settled 2026-11-20): the stop job kills the task at once and ends as it would, and the kill answers 204 without taking the lock the stop holds. That 204 comes before the task is dead: the stop job ends it within moments, and its end arrives on the `containers` topic. In the short window after the stop job takes the lock and before it has registered its grace period (while it checks the container's state), a kill answers `CONTAINER_BUSY`.
 
 **204:** killed (or the scheduled restart cancelled, or a running stop made immediate); the state arrives on the `containers` topic | **409:** `CONTAINER_NOT_RUNNING` — not running and nothing scheduled; `CONTAINER_BUSY` — another operation than a stop holds the lock
 
