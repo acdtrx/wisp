@@ -215,7 +215,8 @@ refuse_netplan_not_applied() {
       || net_fail "cannot read netplan's configuration"
     [[ -z "$defined" ]] || return 0
     refuse NETPLAN_NOT_APPLIED "systemd-networkd runs the bridge $BRIDGE from netplan's $UPLINK_NETFILE, but netplan's configuration does not define $BRIDGE: it is gone at the next boot." \
-      "${remedy[@]}"
+      "Bring the network to netplan's configuration (netplan apply, then ip link delete $BRIDGE, which netplan apply" \
+      "leaves in place), and run this again: setup then makes the bridge."
   fi
   [[ -n "$UPLINK_NETPLAN_ID" ]] || return 0
   UPLINK_DEPENDENTS="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" dependents "$UPLINK_NETPLAN_ID" <<<"$config")" \

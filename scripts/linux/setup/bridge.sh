@@ -88,8 +88,10 @@ apply_bridge() {
       mkdir -p "$DROPIN_DIR" || { WHY="cannot make $DROPIN_DIR"; return 1; }
       DROPIN_DIR_MADE=1
     fi
-    install_file "$DROPIN" "$NET_PLAN_DIR/50-wisp-dhcp-identity.conf" 0644 || { WHY="cannot write $DROPIN"; return 1; }
-    changed "$DROPIN"
+    if ! cmp -s "$DROPIN" "$NET_PLAN_DIR/50-wisp-dhcp-identity.conf"; then
+      install_file "$DROPIN" "$NET_PLAN_DIR/50-wisp-dhcp-identity.conf" 0644 || { WHY="cannot write $DROPIN"; return 1; }
+      changed "$DROPIN"
+    fi
   elif [[ -e "$DROPIN" ]]; then
     # One an earlier step left would pin another identity on the bridge.
     remove_file "$DROPIN" || { WHY="cannot remove $DROPIN"; return 1; }
