@@ -1,5 +1,5 @@
 import { API_TIMEOUT_MS, leaveForLogin, readCsrfToken } from './client.js';
-import { ApiError, errorFromBody, isSessionLost } from './errors.js';
+import { ApiError, CLIENT_CODES, errorFromBody, isSessionLost } from './errors.js';
 
 /*
  * CODING-RULES §6: no total cap while sending — a large file on a slow link
@@ -77,11 +77,11 @@ export function postMultipartFile(url, file, options = {}) {
       reject(err);
     });
 
-    xhr.addEventListener('error', () => reject(new ApiError({ code: 'UPLOAD_FAILED', detail: 'Upload failed' })));
+    xhr.addEventListener('error', () => reject(new ApiError({ code: CLIENT_CODES.UPLOAD_FAILED, detail: 'Upload failed' })));
     xhr.addEventListener('abort', () => {
-      if (stalled) reject(new ApiError({ code: 'UPLOAD_STALLED', detail: `Upload stalled: no progress for ${UPLOAD_IDLE_MS / 1000} s` }));
-      else if (replyTimedOut) reject(new ApiError({ code: 'TIMEOUT', detail: 'The server did not answer after the upload' }));
-      else reject(new ApiError({ code: 'UPLOAD_CANCELLED', detail: 'Upload cancelled' }));
+      if (stalled) reject(new ApiError({ code: CLIENT_CODES.UPLOAD_STALLED, detail: `Upload stalled: no progress for ${UPLOAD_IDLE_MS / 1000} s` }));
+      else if (replyTimedOut) reject(new ApiError({ code: CLIENT_CODES.TIMEOUT, detail: 'The server did not answer after the upload' }));
+      else reject(new ApiError({ code: CLIENT_CODES.UPLOAD_CANCELLED, detail: 'Upload cancelled' }));
     });
 
     armIdle();

@@ -8,7 +8,7 @@ import { JOB_KIND } from '../../api/jobProgress.js';
 import { createContainer } from '../../api/containers.js';
 import ContainerGeneralSection from '../sections/ContainerGeneralSection.jsx';
 import { getAppList } from '../../apps/appRegistry.js';
-import { errorText } from '../../api/errors.js';
+import { CLIENT_CODES, errorText } from '../../api/errors.js';
 
 const STEP_LABELS = {
   validating: 'Validating…',
@@ -97,7 +97,7 @@ export default function CreateContainerPanel() {
           }
           if (ev.step === 'error') {
             setCreateError(errorText(ev));
-            setCreateDetail(ev.error === 'CONNECTION_LOST' ? CONNECTION_LOST_DETAIL : null);
+            setCreateDetail(ev.error === CLIENT_CODES.CONNECTION_LOST ? CONNECTION_LOST_DETAIL : null);
             setCreating(false);
             setCreateJobId(null);
           }

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { subscribeJobProgress } from '../api/jobProgress.js';
 import { fetchBackgroundJobs } from '../api/backgroundJobs.js';
-import { ApiError } from '../api/errors.js';
+import { ApiError, CLIENT_CODES } from '../api/errors.js';
 
 /** Same TTL as the server's job store, measured the same way: from completion.
  *  A finished row leaves the tray once it has been finished this long. */
@@ -148,7 +148,7 @@ export const useBackgroundJobsStore = create((set, get) => ({
           get().dismissJob(jobId);
           return;
         }
-        const lost = { step: 'error', error: 'CONNECTION_LOST', detail: 'Connection lost' };
+        const lost = { step: 'error', error: CLIENT_CODES.CONNECTION_LOST, detail: 'Connection lost' };
         set((s) => {
           const cur = s.jobs[jobId];
           if (!cur) return s;
@@ -210,7 +210,7 @@ export function awaitJob(kind, { jobId, title }) {
     const settle = (row) => {
       if (!row) {
         // Dismissed, or unknown to the server (it restarted, or the job expired).
-        reject(new ApiError({ code: 'JOB_GONE', detail: 'The job is no longer followed' }));
+        reject(new ApiError({ code: CLIENT_CODES.JOB_GONE, detail: 'The job is no longer followed' }));
         return true;
       }
       if (row.status === 'done') {

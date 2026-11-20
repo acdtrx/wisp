@@ -5,6 +5,27 @@
  * deadline, a stream that ended) are ApiErrors with their own code and no
  * status. Branch on `code`, show through `errorText`: never on message text.
  */
+/**
+ * The codes the client gives the errors it makes itself, never sent by the
+ * server (docs/specs/ERROR-HANDLING.md, Client codes).
+ */
+export const CLIENT_CODES = Object.freeze({
+  /** A REST call or an upload's reply past its deadline. */
+  TIMEOUT: 'TIMEOUT',
+  /** An error answer that is not the error body (a proxy's page, an empty body). */
+  REQUEST_FAILED: 'REQUEST_FAILED',
+  /** The browser could not send the upload. */
+  UPLOAD_FAILED: 'UPLOAD_FAILED',
+  /** The upload made no progress for its idle bound. */
+  UPLOAD_STALLED: 'UPLOAD_STALLED',
+  /** The upload was cancelled. */
+  UPLOAD_CANCELLED: 'UPLOAD_CANCELLED',
+  /** A job's progress stream ended before the job did. */
+  CONNECTION_LOST: 'CONNECTION_LOST',
+  /** The job is no longer followed (its row left the store). */
+  JOB_GONE: 'JOB_GONE',
+});
+
 export class ApiError extends Error {
   /** @param {{ status?: number | null, code: string, detail?: string }} fields */
   constructor({ status = null, code, detail = '' }) {
@@ -21,7 +42,7 @@ export function errorFromBody(body, status) {
   if (body && typeof body.error === 'string' && body.error) {
     return new ApiError({ status, code: body.error, detail: typeof body.detail === 'string' ? body.detail : '' });
   }
-  return new ApiError({ status, code: 'REQUEST_FAILED', detail: `Request failed (${status})` });
+  return new ApiError({ status, code: CLIENT_CODES.REQUEST_FAILED, detail: `Request failed (${status})` });
 }
 
 const SESSION_LOST_CODES = new Set(['AUTH_REQUIRED', 'AUTH_INVALID']);

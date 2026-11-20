@@ -1,4 +1,4 @@
-import { ApiError, errorFromBody, errorText, isSessionLost } from './errors.js';
+import { ApiError, CLIENT_CODES, errorFromBody, errorText, isSessionLost } from './errors.js';
 
 // Cookie-based session — the JWT lives in an HttpOnly cookie (`wisp_session`)
 // the backend sets on /api/auth/login. JS never reads or stores it. The
@@ -107,7 +107,7 @@ export function anySignal(signals) {
 
 /** The error for a call that hit its own deadline (not the caller's abort). */
 function timeoutError(timeoutMs) {
-  return new ApiError({ code: 'TIMEOUT', detail: `Wisp did not answer within ${Math.round(timeoutMs / 1000)} s` });
+  return new ApiError({ code: CLIENT_CODES.TIMEOUT, detail: `Wisp did not answer within ${Math.round(timeoutMs / 1000)} s` });
 }
 
 /** The session is gone: tell the other tabs and go sign in. */

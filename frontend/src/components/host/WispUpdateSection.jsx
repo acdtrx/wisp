@@ -18,7 +18,7 @@ import {
   checkForWispUpdate,
   installWispUpdate,
 } from '../../api/updates.js';
-import { errorText } from '../../api/errors.js';
+import { CLIENT_CODES, errorText } from '../../api/errors.js';
 
 function formatRelativeTime(isoString) {
   if (!isoString) return null;
@@ -200,7 +200,7 @@ export default function WispUpdateSection() {
       try {
         await awaitJob(JOB_KIND.SELF_UPDATE, job);
       } catch (err) {
-        const streamEnded = err.code === 'CONNECTION_LOST' || err.code === 'JOB_GONE';
+        const streamEnded = err.code === CLIENT_CODES.CONNECTION_LOST || err.code === CLIENT_CODES.JOB_GONE;
         if (!(streamEnded && handedOver)) throw err;
       } finally {
         unsubscribe();
