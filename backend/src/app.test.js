@@ -379,7 +379,7 @@ test('a workload name is checked by its schema in the URL: no `..`, a leading le
 test('a section assignment takes a name by its kind\'s workload-name schema', async () => {
   const assign = (payload) => app.inject({ method: 'PUT', url: '/api/sections/assign', headers: admin, payload });
   const vm = await assign({ type: 'vm', name: 'v'.repeat(128), sectionId: null });
-  assert.notEqual(vm.json()?.error, 'VALIDATION_FAILED');
+  assert.equal(vm.statusCode, 204);
   const longVm = await assign({ type: 'vm', name: 'v'.repeat(129), sectionId: null });
   assert.deepEqual(longVm.json(), { error: 'VALIDATION_FAILED', detail: 'body/name must NOT have more than 128 characters' });
   const container = await assign({ type: 'container', name: 'c'.repeat(64), sectionId: null });

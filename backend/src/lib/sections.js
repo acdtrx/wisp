@@ -168,10 +168,12 @@ export async function assignWorkload({ type, name, sectionId }) {
   if (!VALID_TYPES.has(type)) {
     throw createAppError('SECTION_INVALID', `type must be "vm" or "container"`);
   }
-  const wname = validName(name);
-  if (!wname) {
+  // The name was checked at the boundary by its kind's workload-name schema
+  // (128 characters for a VM): the 64-character limit of section names is not it.
+  if (typeof name !== 'string' || !name) {
     throw createAppError('SECTION_INVALID', 'workload name is required');
   }
+  const wname = name;
   return commitSections((fromFile) => {
     const sections = fromFile.sections || [];
     const assign = { ...(fromFile.assignments || {}) };
