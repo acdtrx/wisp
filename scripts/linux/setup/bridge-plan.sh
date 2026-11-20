@@ -41,16 +41,13 @@ net_read() {
   (( rc == 0 )) || net_fail "'$*' failed (exit $rc)"
 }
 
-# The remedy of every host whose uplink netplan does not run.
-TOOL_REMEDY="Setup makes and uses Wisp's bridge only where netplan runs the network (renderer networkd): run the uplink with netplan, and run this again."
-
 # detect_uplink: UPLINK, the default route's interface, and its UPLINK_ADDR;
-# refused unless netplan runs it: systemd-networkd runs it from the unit netplan
-# renders for it (UPLINK_NETFILE). Asked of the daemons, in that order, before
-# any Python runs: netplan brings python3 with it, a host without netplan may
-# have none.
+# refused unless netplan, rendered by systemd-networkd, runs it: netplan is
+# installed and networkd runs the uplink from the unit netplan renders for it
+# (UPLINK_NETFILE). No Python runs before netplan is known to be there: netplan
+# brings python3 with it, a host without netplan may have none.
 detect_uplink() {
-  local route addrs status
+  local route addrs
   route="$(net_read ip -4 route show default)" || exit 1
   UPLINK="$(awk '!done { for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); done = 1; break } }' <<<"$route")"
   [[ -n "$UPLINK" ]] || refuse NO_DEFAULT_ROUTE "this host has no IPv4 default route, so no uplink to bridge: give it one, and run this again."
@@ -60,24 +57,37 @@ detect_uplink() {
   UPLINK_NETFILE=""
   if command -v netplan >/dev/null && systemctl is-active --quiet systemd-networkd; then
     UPLINK_NETFILE="$(networkd_json "$UPLINK" NetworkFile)" || net_fail "cannot read systemd-networkd's status of $UPLINK"
+    [[ "$UPLINK_NETFILE" != /run/systemd/network/10-netplan-* ]] || return 0
   fi
-  case "$UPLINK_NETFILE" in
-    /run/systemd/network/10-netplan-*) return 0 ;;
-    ?*) refuse TOOL_NETWORKD "systemd-networkd runs $UPLINK from $UPLINK_NETFILE, not from netplan's configuration." "$TOOL_REMEDY" ;;
-  esac
-  if grep -qsE "^[[:space:]]*iface[[:space:]]+$UPLINK([[:space:]]|$)" /etc/network/interfaces /etc/network/interfaces.d/*; then
-    refuse TOOL_IFUPDOWN "$UPLINK is run by ifupdown (/etc/network/interfaces)." "$TOOL_REMEDY"
+  refuse UPLINK_NOT_NETPLAN "netplan, rendered by systemd-networkd, does not run the uplink $UPLINK: $(uplink_runner)." \
+    "Wisp runs where netplan runs the network, rendered by systemd-networkd. Nothing in the network was changed." \
+    "Run the uplink with netplan, rendered by systemd-networkd (renderer networkd), and run this again." \
+    "On a host Wisp runs on already, an update stops here and rolls back: Wisp stays on its current release" \
+    "until netplan (renderer networkd) runs this host's network."
+}
+# uplink_runner: what runs the uplink, as far as setup can tell, for the
+# refusal's message only.
+uplink_runner() {
+  local state
+  if [[ -n "$UPLINK_NETFILE" ]]; then
+    echo "systemd-networkd runs it from $UPLINK_NETFILE, a file of its own"
+    return 0
   fi
   # NetworkManager runs it when it reports the device connected through one of
-  # its profiles ("100 (connected)"); a device it does not know fails the read.
+  # its profiles ("100 (connected)"), netplan's among them.
   if systemctl is-active --quiet NetworkManager; then
-    status="$(net_call nmcli -g GENERAL.STATE device show "$UPLINK" 2>/dev/null || true)"
-    [[ "$status" != "100 (connected)" ]] || refuse TOOL_NETWORKMANAGER "$UPLINK is run by NetworkManager." "$TOOL_REMEDY"
+    state="$(net_call nmcli -g GENERAL.STATE device show "$UPLINK" 2>/dev/null || true)"
+    [[ "$state" != "100 (connected)" ]] || { echo "NetworkManager runs it"; return 0; }
+  fi
+  if grep -qsE "^[[:space:]]*iface[[:space:]]+$UPLINK([[:space:]]|$)" /etc/network/interfaces /etc/network/interfaces.d/*; then
+    echo "ifupdown runs it (/etc/network/interfaces)"
+    return 0
   fi
   if systemctl is-active --quiet systemd-networkd && ! command -v netplan >/dev/null; then
-    refuse TOOL_NETWORKD "systemd-networkd runs this host's network, and netplan is not installed." "$TOOL_REMEDY"
+    echo "systemd-networkd runs this host's network, and netplan is not installed"
+    return 0
   fi
-  refuse TOOL_NONE "$UPLINK is run by none of netplan, systemd-networkd, ifupdown and NetworkManager." "$TOOL_REMEDY"
+  echo "setup cannot tell what runs it"
 }
 
 # cloud-init managing the network: setup never edits what cloud-init writes

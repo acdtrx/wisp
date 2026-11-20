@@ -13,7 +13,8 @@ Wisp runs directly on a Linux server as a single systemd service — never in a 
   - On a host without `/dev/kvm` the run succeeds, and setup's last lines say that the host cannot run VMs, why, and how to turn virtualization on (the firmware's setting, or nested virtualization when the host is itself a VM; then a reboot). The installer ends with them too; in the update's log they close setup's part, before the updater's `step:start-service` and `step:done`.
   - Containers need nothing of the host that setup does not install itself on a supported host, so there is no container counterpart, and no host is refused for lacking both.
 - **The network run by netplan**, rendered by systemd-networkd, and an **IPv4 default route**: its interface is the uplink (settled 2026-11-20).
-  - It holds whether setup makes the bridge or finds one: a host whose uplink another tool runs is refused before anything changes, bridge or not — systemd-networkd from files of its own (`TOOL_NETWORKD`), ifupdown (`TOOL_IFUPDOWN`), NetworkManager (`TOOL_NETWORKMANAGER`), anything else (`TOOL_NONE`).
+  - It holds whether setup makes the bridge or finds one: a host whose uplink netplan, rendered by systemd-networkd, does not run is refused before anything changes, bridge or not, with one code (`UPLINK_NOT_NETPLAN`, settled 2026-11-20). The message names what runs the uplink where setup can tell: NetworkManager (Ubuntu Desktop's runs it through netplan), a systemd-networkd file of its own, ifupdown.
+  - A host an earlier release bridged with NetworkManager or with systemd-networkd's own files is refused the same way: its next update rolls back, and it stays on its release until netplan, rendered by systemd-networkd, runs its network (settled 2026-11-20).
   - Server installs of both distributions run their network with netplan. ifupdown, which Debian's own installer sets up, is the next tool to support ([BACKLOG.md](../BACKLOG.md)).
   - netplan brings `python3`, which the plan reads the network's configuration with: setup has no prerequisite of its own.
   - Rejected: making the bridge through NetworkManager and plain systemd-networkd too, which had grown to half of setup and most of its refusals, for hosts Wisp does not target.
@@ -32,10 +33,7 @@ When a refusal comes:
 | `UNSUPPORTED_DISTRO` | Another distro | Use a supported host. |
 | `SYSTEMD_TOO_OLD` | systemd older than 254 | Use a supported host. |
 | `NO_DEFAULT_ROUTE` | No IPv4 default route | Give the host one. |
-| `TOOL_NETWORKD` | systemd-networkd runs the uplink from a file that is not netplan's, or runs the network with netplan not installed | Run the uplink with netplan. |
-| `TOOL_IFUPDOWN` | The uplink run by ifupdown (`/etc/network/interfaces`) | Run the uplink with netplan. |
-| `TOOL_NETWORKMANAGER` | The uplink run by NetworkManager | Run the uplink with netplan. |
-| `TOOL_NONE` | The uplink run by none of these | Run the uplink with netplan. |
+| `UPLINK_NOT_NETPLAN` | netplan, rendered by systemd-networkd, does not run the uplink (systemd-networkd does not run it from netplan's unit, or netplan is not installed). The message names what does, where setup can tell. | Run the uplink with netplan, rendered by systemd-networkd (renderer networkd). |
 | `CLOUD_INIT_NETWORK` | When setup has to make the bridge: cloud-init still manages the network (installed, not switched off, and its configuration does not say `network: {config: disabled}`); a host whose uplink already is a bridge is not refused for it | Add the one documented line `network: {config: disabled}` in a file under `/etc/cloud/cloud.cfg.d/`. Nothing else: the netplan file cloud-init wrote is then the operator's, and setup edits it like any other (settled 2026-11-18). |
 | `UPLINK_BOND`, `UPLINK_WIFI`, `UPLINK_VLAN`, `UPLINK_NOT_ETHERNET` | The uplink is a bond, Wi-Fi, a VLAN, or not a physical Ethernet interface (a tunnel) | Make the bridge with netplan. |
 | `UPLINK_DEPENDENT` | A netplan definition hangs off the uplink, whatever its kind (its `link:` is the uplink's: a VLAN, a tunnel, an SR-IOV function), or holds it in its `interfaces:` (a bond, bridge or VRF) | Make the bridge with netplan. |
