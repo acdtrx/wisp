@@ -237,7 +237,7 @@ async function execCNI(plugin, command, containerID, netns, config) {
     const detail = `${se} ${sx} ${err.message || ''}`.trim();
     throw containerError(
       'CONTAINERD_ERROR',
-      `CNI ${command} failed for "${containerID}": ${detail || err.message}`,
+      `CNI ${command} failed for "${containerID}"`,
       detail || err.message,
     );
   } finally {
@@ -270,7 +270,7 @@ async function ensureNetNS(name) {
     } catch (err) {
       throw containerError(
         'CONTAINERD_ERROR',
-        `Failed to create netns for "${name}" (${err.message || 'sudo or helper failed'}). Install the helpers: run setup (sudo scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>)`,
+        `Failed to create netns for "${name}". Install the helpers: run setup (sudo scripts/linux/setup/common-steps.sh <install-dir> <deploy-user>)`,
         err.stderr?.toString() || err.message,
       );
     }

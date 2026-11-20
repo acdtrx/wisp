@@ -246,7 +246,7 @@ export async function copyAndConvert(srcPath, dstPath, onProgress, { srcFormat }
       watchdog.stop();
       rlErr.close();
       if (rlOut) rlOut.close();
-      reject(createAppError('CONVERT_FAILED', `Failed to run qemu-img convert: ${err.message}`, err.message));
+      reject(createAppError('CONVERT_FAILED', 'Failed to run qemu-img convert', err.message));
     });
 
     proc.on('close', (code, signal) => {

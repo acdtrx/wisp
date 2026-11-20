@@ -229,7 +229,7 @@ export async function rmdirMountpoint(mountPath) {
     await runHelper(['rmdir', mountPath], { timeout: 5000 });
   } catch (err) {
     /* rmdir is best-effort — log via thrown error only if caller wants it, otherwise swallow */
-    throw createAppError(UNAVAILABLE, `rmdir failed: ${sanitizeStderr(err.stderr || err.message)}`);
+    throw createAppError(UNAVAILABLE, `Failed to remove mount point ${mountPath}`, sanitizeStderr(err.stderr || err.message));
   }
 }
 

@@ -668,6 +668,11 @@ async function rollbackFailedStart(name, networkConfig) {
   try { await deregisterServicesForContainer(name); } catch { /* best-effort — nothing may be registered */ }
 }
 
+/** A failure's whole text, message then raw cause, for the raw cause of the error that wraps it. */
+function failureText(err) {
+  return err.raw ? `${err.message}: ${err.raw}` : err.message;
+}
+
 /**
  * Start an existing (stopped) container by creating a new task.
  * Called from containerManagerLifecycle when no task exists.
@@ -754,8 +759,8 @@ export async function startExistingContainer(name) {
     } catch { /* best-effort */ }
     throw containerError(
       'CONTAINER_NETWORK_SETUP_FAILED',
-      `Network setup failed for "${name}": ${err.message}`,
-      err.raw || err.message,
+      `Network setup failed for "${name}"`,
+      failureText(err),
     );
   }
 
@@ -798,8 +803,8 @@ export async function startExistingContainer(name) {
     if (!staleTaskDeleteError) throw err;
     throw containerError(
       err.code || 'CONTAINERD_ERROR',
-      `${err.message} (the previous task could not be deleted first: ${staleTaskDeleteError.message})`,
-      err.raw || err.message,
+      `Container "${name}" failed to start, and its previous task could not be deleted first`,
+      `${failureText(err)}; deleting the previous task: ${failureText(staleTaskDeleteError)}`,
     );
   }
 

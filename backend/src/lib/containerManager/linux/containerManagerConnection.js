@@ -132,13 +132,13 @@ export function callUnary(client, method, request = {}, { deadlineMs = DEFAULT_D
         } else if (err.code === grpc.status.DEADLINE_EXCEEDED) {
           reject(containerError('CONTAINERD_ERROR', `containerd did not answer ${method} within ${Math.round(deadlineMs / 1000)} s`, err.message));
         } else if (err.code === grpc.status.NOT_FOUND) {
-          reject(containerError('CONTAINER_NOT_FOUND', err.details || err.message, err.message));
+          reject(containerError('CONTAINER_NOT_FOUND', `containerd ${method}: no such object`, err.message));
         } else if (err.code === grpc.status.ALREADY_EXISTS) {
-          reject(containerError('CONTAINER_EXISTS', err.details || err.message, err.message));
+          reject(containerError('CONTAINER_EXISTS', `containerd ${method}: the object already exists`, err.message));
         } else if (err.code === grpc.status.UNAVAILABLE) {
           reject(containerError('NO_CONTAINERD', 'containerd is not reachable', err.message));
         } else {
-          reject(containerError('CONTAINERD_ERROR', err.details || err.message, err.message));
+          reject(containerError('CONTAINERD_ERROR', `containerd ${method} failed`, err.message));
         }
       } else {
         resolve(response);
@@ -259,7 +259,7 @@ export function collectStream(stream) {
       } else if (err.code === grpc.status.UNAVAILABLE) {
         reject(containerError('NO_CONTAINERD', 'containerd is not reachable', err.message));
       } else {
-        reject(containerError('CONTAINERD_ERROR', err.details || err.message, err.message));
+        reject(containerError('CONTAINERD_ERROR', 'containerd stream failed', err.message));
       }
     });
   });

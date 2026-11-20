@@ -520,7 +520,7 @@ async function extractArchiveToStaging(archivePath) {
     await untarGzipTo(archivePath, stagingDir);
   } catch (err) {
     await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
-    throw containerError('BACKUP_RESTORE_FAILED', `Failed to extract backup: ${err.message}`);
+    throw containerError('BACKUP_RESTORE_FAILED', 'Failed to extract backup', err.message);
   }
 
   let extractedTop;
@@ -533,7 +533,7 @@ async function extractArchiveToStaging(archivePath) {
     extractedTop = dirs[0].name;
   } catch (err) {
     await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
-    throw containerError('BACKUP_INVALID', `Unexpected archive layout: ${err.message}`);
+    throw containerError('BACKUP_INVALID', 'Unexpected archive layout', err.message);
   }
   // The archive carries the source directory's mode, which may be wider
   // (0755); the restored one is a live container directory.
@@ -541,7 +541,7 @@ async function extractArchiveToStaging(archivePath) {
     await chmod(join(stagingDir, extractedTop), CONTAINER_DIR_MODE);
   } catch (err) {
     await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
-    throw containerError('BACKUP_RESTORE_FAILED', `Failed to set the restored directory's mode: ${err.message}`);
+    throw containerError('BACKUP_RESTORE_FAILED', "Failed to set the restored directory's mode", err.message);
   }
   return { stagingDir, extractedTop };
 }
@@ -567,7 +567,7 @@ function validateRestoredConfig(config) {
     config.mounts = validateAndNormalizeMounts(config.mounts ?? [], null);
     config.devices = validateAndNormalizeDevices(config.devices);
   } catch (err) {
-    throw containerError('BACKUP_INVALID', `Backup container.json failed validation: ${err.message}`);
+    throw containerError('BACKUP_INVALID', 'Backup container.json failed validation', err.message);
   }
 }
 
@@ -674,7 +674,7 @@ export async function restoreContainerBackup({ newName: newNameTrim, manifest, a
     await rename(join(stagingDir, extractedTop), finalDir);
   } catch (err) {
     await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
-    throw containerError('BACKUP_RESTORE_FAILED', `Failed to place restored container directory: ${err.message}`);
+    throw containerError('BACKUP_RESTORE_FAILED', `Failed to place the restored directory of container "${newNameTrim}"`, err.message);
   }
   await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
 
@@ -685,7 +685,7 @@ export async function restoreContainerBackup({ newName: newNameTrim, manifest, a
   } catch (err) {
     /* Roll back the directory placement so the user can retry cleanly. */
     await rm(finalDir, { recursive: true, force: true }).catch(() => {});
-    throw containerError('BACKUP_INVALID', `Backup container.json missing or invalid: ${err.message}`);
+    throw containerError('BACKUP_INVALID', 'Backup container.json missing or invalid', err.message);
   }
   try {
     validateRestoredConfig(config);
@@ -796,7 +796,7 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
     config = JSON.parse(await readFile(join(stagingDir, extractedTop, 'container.json'), 'utf8'));
   } catch (err) {
     await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
-    throw containerError('BACKUP_INVALID', `Backup container.json missing or invalid: ${err.message}`);
+    throw containerError('BACKUP_INVALID', 'Backup container.json missing or invalid', err.message);
   }
   try {
     validateRestoredConfig(config);
@@ -816,7 +816,7 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
     await rename(finalDir, oldDir);
   } catch (err) {
     await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
-    throw containerError('BACKUP_RESTORE_FAILED', `Failed to move current container directory aside: ${err.message}`);
+    throw containerError('BACKUP_RESTORE_FAILED', `Failed to move the current directory of container "${name}" aside`, err.message);
   }
   try {
     await rename(join(stagingDir, extractedTop), finalDir);
@@ -825,7 +825,7 @@ export async function restoreContainerBackupInPlace(backupPath, { onProgress } =
       /* rollback failed too — oldDir still holds the pre-restore data for manual recovery */
     });
     await rm(stagingDir, { recursive: true, force: true }).catch(() => {});
-    throw containerError('BACKUP_RESTORE_FAILED', `Failed to place restored container directory: ${err.message}`);
+    throw containerError('BACKUP_RESTORE_FAILED', `Failed to place the restored directory of container "${name}"`, err.message);
   }
   await rm(oldDir, { recursive: true, force: true }).catch(() => {});
   await rm(stagingDir, { recursive: true, force: true }).catch(() => {});

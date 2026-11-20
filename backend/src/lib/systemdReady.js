@@ -38,7 +38,7 @@ export async function notifySystemdReady() {
       env: { ...process.env, NOTIFY_SOCKET: notifySocket },
     });
   } catch (err) {
-    throw createAppError('SYSTEMD_NOTIFY_FAILED', `systemd-notify --ready failed: ${err.stderr?.trim() || err.message}`);
+    throw createAppError('SYSTEMD_NOTIFY_FAILED', 'systemd-notify --ready failed', err.stderr?.trim() || err.message);
   }
   return true;
 }

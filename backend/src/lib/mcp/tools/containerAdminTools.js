@@ -152,8 +152,8 @@ export const containerAdminTools = [
           } catch (err) {
             throw createAppError(
               err.code || 'CONTAINERD_ERROR',
-              `Container "${name}" was created but failed to start: ${err.message}. It exists in stopped state — check get_container_logs, or fix and start_container.`,
-              err.raw ?? err.message,
+              `Container "${name}" was created but failed to start; it exists in stopped state (check get_container_logs, or fix and start_container)`,
+              err.raw ? `${err.message}: ${err.raw}` : err.message,
             );
           }
           return await maskContainerConfigSecrets(await getContainerConfig(name));

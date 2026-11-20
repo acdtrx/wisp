@@ -84,7 +84,8 @@ source refer to them.
     `{ step: 'error', error, detail }`, stream error frames and MCP tool errors. A new
     code goes in the table and in
     [`specs/ERROR-HANDLING.md`](specs/ERROR-HANDLING.md#codes) in the same change;
-    `npm run check` fails otherwise.
+    `npm run check` fails otherwise, and when an error factory's message carries another
+    error's text (`scripts/check-error-messages.mjs`).
 - Prefer inspecting state up front and choosing the right path once, rather than
   try/catch/retry as control flow.
 - Comment every silent `catch {}` block with why the error is intentionally swallowed.

@@ -34,7 +34,7 @@ function readPasswordFile() {
   try {
     raw = readFileSync(PASSWORD_FILE, 'utf8').trim();
   } catch (err) {
-    throw createAppError('PASSWORD_FILE_UNREADABLE', `wisp-password can't be read: ${err.message}`);
+    throw createAppError('PASSWORD_FILE_UNREADABLE', "wisp-password can't be read", err.message);
   }
   if (!raw) return null;
   if (!raw.startsWith('scrypt:')) {

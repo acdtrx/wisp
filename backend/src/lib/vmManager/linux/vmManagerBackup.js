@@ -848,7 +848,7 @@ async function copyBackupPayload(backupPath, payload, destBase) {
     try {
       await inspectDiskImage(disk.newPath, { format: disk.format });
     } catch (err) {
-      throw vmError('BACKUP_INVALID', `Backup disk ${disk.logicalName} can't be restored: ${err.message}`, err.raw);
+      throw vmError('BACKUP_INVALID', `Backup disk ${disk.logicalName} can't be restored`, err.raw ? `${err.message}: ${err.raw}` : err.message);
     }
   }
 

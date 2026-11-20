@@ -41,7 +41,7 @@ async function readIfExists(path) {
     return await readFile(path, 'utf8');
   } catch (err) {
     if (err.code === 'ENOENT') return null;
-    throw createAppError('MIGRATION_SETUP', `cannot read ${path}: ${err.message}`);
+    throw createAppError('MIGRATION_SETUP', `cannot read ${path}`, err.message);
   }
 }
 
@@ -54,7 +54,7 @@ async function loadMigrations() {
   try {
     entries = await readdir(MIGRATIONS_DIR, { withFileTypes: true });
   } catch (err) {
-    throw createAppError('MIGRATION_SETUP', `cannot read migrations directory ${MIGRATIONS_DIR}: ${err.message}`);
+    throw createAppError('MIGRATION_SETUP', `cannot read migrations directory ${MIGRATIONS_DIR}`, err.message);
   }
   const files = migrationFileNames(entries.filter((e) => e.isFile()).map((e) => e.name));
   const migrations = [];
@@ -63,7 +63,7 @@ async function loadMigrations() {
     try {
       mod = await import(pathToFileURL(join(MIGRATIONS_DIR, file)).href);
     } catch (err) {
-      throw createAppError('MIGRATION_SETUP', `${file}: cannot be loaded: ${err?.message ?? String(err)}`);
+      throw createAppError('MIGRATION_SETUP', `${file}: cannot be loaded`, err?.message ?? String(err));
     }
     migrations.push(checkMigrationModule(file, mod));
   }
@@ -172,7 +172,7 @@ export async function migrateState(log) {
   try {
     getTolerantConfig();
   } catch (err) {
-    throw createAppError('MIGRATION_SETUP', err.message);
+    throw createAppError('MIGRATION_SETUP', `${CONFIG_PATH} can't be read for the migrations`, err.message);
   }
   await runPending(pending, ledger, log);
 }

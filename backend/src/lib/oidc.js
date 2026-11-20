@@ -45,7 +45,7 @@ async function fetchJson(url, options = {}) {
       headers: { Accept: 'application/json', ...(options.headers || {}) },
     });
   } catch (err) {
-    throw createAppError('OIDC_PROVIDER_UNREACHABLE', `Could not reach identity provider: ${err.message}`);
+    throw createAppError('OIDC_PROVIDER_UNREACHABLE', 'Could not reach identity provider', err.message);
   }
   const text = await res.text();
   let body = null;

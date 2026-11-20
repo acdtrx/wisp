@@ -9,8 +9,8 @@ import { createAppError } from './appErrors.js';
 const MIGRATION_FILE_RE = /^\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.js$/;
 
 /** A bad migration file or ledger: nothing runs, and the start fails. */
-function setupError(message) {
-  return createAppError('MIGRATION_SETUP', message);
+function setupError(message, raw) {
+  return createAppError('MIGRATION_SETUP', message, raw);
 }
 
 /**
@@ -44,7 +44,7 @@ export function parseLedger(text, path) {
   try {
     data = JSON.parse(text);
   } catch (err) {
-    throw setupError(`${path} is not valid JSON (${err.message}) — fix or remove it by hand`);
+    throw setupError(`${path} is not valid JSON — fix or remove it by hand`, err.message);
   }
   if (!data || !Array.isArray(data.applied)) {
     throw setupError(`${path} has no "applied" array — fix or remove it by hand`);

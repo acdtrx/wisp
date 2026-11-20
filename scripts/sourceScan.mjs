@@ -1,6 +1,6 @@
 /**
  * Shared pieces of the dependency-free source scans (check-imports.mjs,
- * check-fences.mjs): the comment stripper, aware of strings, templates and
+ * check-fences.mjs, check-error-messages.mjs): the comment stripper, aware of strings, templates and
  * regex literals, so a `//` or `/*` inside one is not taken for a comment; and
  * the reading of a call's argument.
  *
