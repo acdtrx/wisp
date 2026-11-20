@@ -9,13 +9,17 @@
  * previous one. A reconnecting stream gets one event per step transition (the
  * latest progress of each), not one per progress tick.
  *
- * Stream end: the terminal event (`done` / `error`) is the last thing a
+ * Stream end: the terminal event (`done` / `error` / `cancelled`) is the last thing a
  * stream receives — the store ends every connected stream right after it, and
  * a stream registering on a finished job gets the replay and is ended without
  * joining the fan-out list. Keepalives are the SSE layer's (lib/sse.js).
  *
  * Expiry: a finished job stays fetchable for JOB_TTL_MS measured from its
  * end, then the sweep removes it.
+ *
+ * List changes: `subscribeJobsChange` handlers run when the list `listJobs`
+ * answers changes — a job created, a job ended, finished jobs expired —
+ * never on a progress event (progress stays on each job's stream).
  */
 import { randomUUID } from 'node:crypto';
 
@@ -29,20 +33,42 @@ const KNOWN_KINDS = new Set(Object.values(BACKGROUND_JOB_KIND));
 
 /**
  * @typedef {{ type: 'vm' | 'container', name: string }} JobSubject
- * @typedef {'running' | 'done' | 'error'} JobStatus
+ * @typedef {'running' | 'done' | 'error' | 'cancelled'} JobStatus
+ * @typedef {{ jobId: string, kind: string, title: string, subject: JobSubject | null }} JobAck
  */
 
 /** Insertion order is creation order: the listing reads it backwards. */
 const jobs = new Map();
+
+const jobsChangeHandlers = new Set();
+
+/** Run `handler()` after every change of the job list (header). Returns its unsubscribe. */
+export function subscribeJobsChange(handler) {
+  jobsChangeHandlers.add(handler);
+  return () => jobsChangeHandlers.delete(handler);
+}
+
+/** A handler that throws is logged and skipped: announcing never fails the change it announces. */
+function announceJobsChange(log) {
+  for (const handler of jobsChangeHandlers) {
+    try {
+      handler();
+    } catch (err) {
+      log.warn({ err }, 'Job list change handler failed');
+    }
+  }
+}
 
 function sameSubject(a, b) {
   if (!a || !b) return a === b;
   return a.type === b.type && a.name === b.name;
 }
 
-function runningJobOf(kind, subject) {
+/** A running job a shared start joins: same kind and subject, and a scope covering the start's (null covers every scope). */
+function runningJobCovering(kind, subject, scope) {
   for (const [jobId, job] of jobs) {
-    if (job.status === 'running' && job.kind === kind && sameSubject(job.subject, subject)) return { jobId, job };
+    if (job.status === 'running' && job.kind === kind && sameSubject(job.subject, subject)
+      && (job.scope === null || job.scope === scope)) return { jobId, job };
   }
   return null;
 }
@@ -53,6 +79,35 @@ export function isJobRunning(kind, subject) {
     if (job.status === 'running' && job.kind === kind && (subject === undefined || sameSubject(job.subject, subject))) return true;
   }
   return false;
+}
+
+/** Running jobs that must finish: every running job but the interruptible ones. */
+export function countJobsThatMustFinish() {
+  let count = 0;
+  for (const job of jobs.values()) {
+    if (job.status === 'running' && !job.abort) count += 1;
+  }
+  return count;
+}
+
+/**
+ * Cut every running interruptible job (shutdown): its run's signal aborts,
+ * and a run that then rejects ends the job `cancelled`.
+ * @returns {number} jobs cut
+ */
+export function cancelInterruptibleJobs() {
+  let cut = 0;
+  for (const job of jobs.values()) {
+    if (job.status === 'running' && job.abort && !job.abort.signal.aborted) {
+      job.abort.abort();
+      cut += 1;
+    }
+  }
+  return cut;
+}
+
+function ackOf(jobId, job) {
+  return { jobId, kind: job.kind, title: job.title, subject: job.subject };
 }
 
 function writeEvent(stream, event) {
@@ -93,6 +148,7 @@ function finishJob(job, status, event) {
   job.streams = [];
   for (const stream of streams) endStream(stream);
   scheduleSweep();
+  announceJobsChange(job.log);
 }
 
 /** Pending sweep; armed for the earliest finished job's expiry while any finished job remains. */
@@ -107,15 +163,18 @@ let sweepTimer = null;
  */
 export function sweepExpiredJobs(trigger = 'manual') {
   const now = Date.now();
+  let lastRemoved = null;
   let removed = 0;
   for (const [jobId, job] of jobs) {
     if (job.status !== 'running' && now - job.finishedAt >= JOB_TTL_MS) {
       jobs.delete(jobId);
       removed += 1;
+      lastRemoved = job;
       job.log.debug({ jobId, kind: job.kind, title: job.title, trigger }, 'Background job expired');
     }
   }
   scheduleSweep({ reschedule: true });
+  if (lastRemoved) announceJobsChange(lastRemoved.log);
   return removed;
 }
 
@@ -151,59 +210,90 @@ function acquireSubjectLock(subject, label) {
     : acquireContainerOperationLock(subject.name, label);
 }
 
+const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
+
+/** Throw on a malformed start, before the starter takes anything. */
+function assertStartArgs({ kind, title, subject, scope, check, log, run }) {
+  if (!KNOWN_KINDS.has(kind)) throw new Error(`Unknown job kind "${kind}"`);
+  const subjectKind = SUBJECT_KINDS[kind];
+  if (subjectKind ? subject?.type !== subjectKind.type || !subject.name : subject) {
+    throw new Error(`A "${kind}" job ${subjectKind ? `acts on a ${subjectKind.type}` : 'has no subject'}`);
+  }
+  if (typeof title !== 'string' || !title) throw new Error(`A "${kind}" job needs a title`);
+  if (scope !== null && typeof scope !== 'string') throw new Error(`A "${kind}" job's scope is a string`);
+  if (check !== undefined && typeof check !== 'function') throw new Error(`A "${kind}" job's check is a function`);
+  if (typeof run !== 'function') throw new Error(`A "${kind}" job needs a run`);
+  if (!LOG_LEVELS.every((level) => typeof log?.[level] === 'function')) throw new Error(`A "${kind}" job needs a logger`);
+}
+
 /**
- * Start a job and answer its `{ jobId, title }` — the only way a job is created.
+ * Start a job and answer its ack `{ jobId, kind, title, subject }` — the only
+ * way a job is created.
+ *
+ * The claim is decided in one synchronous step, so two starts in one tick
+ * never both pass: a job with a subject claims its workload's operation lock
+ * first (held: the busy error, `VM_BUSY` / `CONTAINER_BUSY`, and no job); a
+ * job without one is claimed by its registration, right after its check.
  *
  * - `subject`: the workload a job of a subject kind acts on (SUBJECT_KINDS),
- *   absent for any other kind. Its operation lock is taken first, under the
- *   kind's label: held, the busy error (`VM_BUSY` / `CONTAINER_BUSY`) is thrown
- *   and no job is created. The lock is released when `run` settles, before the
- *   terminal event, so an action taken on `done` never meets a stale busy.
- * - `check()`: runs under the lock before the job exists; what it throws is
- *   thrown to the caller (the lock released), never a failed job.
- * - `shared`: while a job of this kind (and subject) runs, answer its ack and
- *   start nothing.
- * - `run(report)`: `report(event)` pushes a progress event; the resolved value
- *   is the job's `result` (`{ step: 'done', result }`) and must hold only what
- *   a client may see — no host paths. A rejection fails the job with its error
- *   body.
+ *   absent for any other kind. The lock is taken under the kind's label and
+ *   released when `run` settles, before the terminal event, so an action
+ *   taken on `done` never meets a stale busy.
+ * - `check()`: runs after the claim, before the job exists; what it throws is
+ *   thrown to the caller (the lock released), never a failed job. Under a
+ *   subject's lock it may be async; without a subject it must be synchronous,
+ *   since nothing holds the claim across an await.
+ * - `shared`: while a running job of this kind (and subject) covers the
+ *   start, answer that job's ack and start nothing. `scope` narrows what a
+ *   job covers: a job with no scope covers every start of its kind, one with
+ *   a scope only the starts of that scope.
+ * - `interruptible`: the job need not finish — `cancelInterruptibleJobs`
+ *   (shutdown) aborts its run's `signal`, and a run that then rejects ends
+ *   it `cancelled`. Other jobs must finish and get no signal.
+ * - `run(report, signal)`: `report(event)` pushes a progress event; the
+ *   resolved value is the job's `result` (`{ step: 'done', result }`) and
+ *   must hold only what a client may see — no host paths. A rejection fails
+ *   the job with its error body.
  *
  * @param {object} opts
  * @param {string} opts.kind - a BACKGROUND_JOB_KIND value
  * @param {string} opts.title
  * @param {JobSubject} [opts.subject]
  * @param {boolean} [opts.shared]
+ * @param {string | null} [opts.scope]
+ * @param {boolean} [opts.interruptible]
  * @param {() => Promise<void> | void} [opts.check]
  * @param {import('fastify').FastifyBaseLogger} opts.log
- * @param {(report: (event: object) => void) => Promise<unknown>} opts.run
- * @returns {Promise<{ jobId: string, title: string }>}
+ * @param {(report: (event: object) => void, signal?: AbortSignal) => Promise<unknown>} opts.run
+ * @returns {Promise<JobAck>}
  */
-export async function startJob({ kind, title, subject = null, shared = false, check, log, run }) {
-  if (!KNOWN_KINDS.has(kind)) throw new Error(`Unknown job kind "${kind}"`);
-  const subjectKind = SUBJECT_KINDS[kind];
-  if (subjectKind ? subject?.type !== subjectKind.type || !subject.name : subject) {
-    throw new Error(`A "${kind}" job ${subjectKind ? `acts on a ${subjectKind.type}` : 'has no subject'}`);
+export async function startJob({
+  kind, title, subject = null, shared = false, scope = null, interruptible = false, check, log, run,
+}) {
+  assertStartArgs({ kind, title, subject, scope, check, log, run });
+
+  if (shared) {
+    const running = runningJobCovering(kind, subject, scope);
+    if (running) return ackOf(running.jobId, running.job);
   }
 
-  const joinRunning = () => {
-    const running = shared ? runningJobOf(kind, subject) : null;
-    return running ? { jobId: running.jobId, title: running.job.title } : null;
-  };
-  const joined = joinRunning();
-  if (joined) return joined;
-
-  const release = subject ? acquireSubjectLock(subject, subjectKind.lock) : () => {};
-  try {
-    await check?.();
-  } catch (err) {
-    release();
-    throw err;
-  }
-  // Another start of a shared kind may have created its job while `check` ran.
-  const overtaken = joinRunning();
-  if (overtaken) {
-    release();
-    return overtaken;
+  const release = subject ? acquireSubjectLock(subject, SUBJECT_KINDS[kind].lock) : () => {};
+  if (check) {
+    try {
+      // Awaited only when pending: an await of nothing would still yield, and
+      // open the gap between a subjectless job's check and its registration.
+      const pending = check();
+      if (pending) {
+        if (!subject) {
+          Promise.resolve(pending).catch(() => { /* refused below: its outcome has no reader */ });
+          throw new Error(`A "${kind}" job without a subject needs a synchronous check`);
+        }
+        await pending;
+      }
+    } catch (err) {
+      release();
+      throw err;
+    }
   }
 
   const jobId = randomUUID();
@@ -211,11 +301,13 @@ export async function startJob({ kind, title, subject = null, shared = false, ch
     kind,
     title,
     subject: subject ? { type: subject.type, name: subject.name } : null,
+    scope,
     status: /** @type {JobStatus} */ ('running'),
     events: [],
     streams: [],
     createdAt: Date.now(),
     finishedAt: null,
+    abort: interruptible ? new AbortController() : null,
     log,
   };
   jobs.set(jobId, job);
@@ -226,7 +318,7 @@ export async function startJob({ kind, title, subject = null, shared = false, ch
     if (job.status === 'running') pushEvent(job, event);
   };
   Promise.resolve()
-    .then(() => run(report))
+    .then(() => run(report, job.abort?.signal))
     .then(
       (result) => {
         release();
@@ -235,6 +327,11 @@ export async function startJob({ kind, title, subject = null, shared = false, ch
       },
       (err) => {
         release();
+        if (job.abort?.signal.aborted) {
+          log.info(logFields, 'Background job cancelled');
+          finishJob(job, 'cancelled', { step: 'cancelled' });
+          return;
+        }
         const body = errorBody(err);
         if (isExpectedAppError(err)) {
           log.warn({ ...logFields, code: body.error, err: err.message, raw: err.raw }, 'Background job failed');
@@ -244,7 +341,8 @@ export async function startJob({ kind, title, subject = null, shared = false, ch
         finishJob(job, 'error', { step: 'error', ...body });
       },
     );
-  return { jobId, title };
+  announceJobsChange(log);
+  return ackOf(jobId, job);
 }
 
 /**
@@ -264,8 +362,9 @@ export function listJobs() {
 
 /**
  * One job as MCP's `get_job` answers it: its row, plus the latest progress
- * event while it runs, its `result` once done, or its `error` and `detail`.
- * Null for an unknown or expired job.
+ * event while it runs, its `result` once done, or its `error` and `detail`
+ * once failed; a cancelled job is its row alone. Null for an unknown or
+ * expired job.
  */
 export function readJob(jobId) {
   const job = jobs.get(jobId);
@@ -276,6 +375,7 @@ export function readJob(jobId) {
   const last = job.events[job.events.length - 1] ?? null;
   if (job.status === 'running') return { ...row, progress: last };
   if (job.status === 'done') return { ...row, result: last.result };
+  if (job.status === 'cancelled') return row;
   return { ...row, error: last.error, detail: last.detail };
 }
 

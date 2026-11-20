@@ -133,7 +133,7 @@ Update VM configuration.
 Delete a VM.
 
 - **Query:** `?deleteDisks=true|false` — whether to also delete disk images and VM directory
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }`
+- **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }`
 - **404:** `VM_NOT_FOUND`
 - **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 
@@ -145,7 +145,7 @@ Raw libvirt domain XML (for debugging/inspection).
 
 ### POST /api/vms/:name/start · `admin`
 
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }`
+- **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }`
 - **404:** `VM_NOT_FOUND`
 - **409:** `VM_ALREADY_RUNNING`; `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 - **Job errors:** `LIBVIRT_ERROR`
@@ -160,7 +160,7 @@ Graceful shutdown (ACPI).
 
 Immediate force stop (destroy).
 
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }`
+- **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name }`
 - **404:** `VM_NOT_FOUND` | **409:** `VM_NOT_RUNNING`; `VM_BUSY` — another operation on this VM holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
 - **Job errors:** `LIBVIRT_ERROR`
 

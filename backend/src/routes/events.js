@@ -16,6 +16,7 @@ import { subscribeApiTokensChange } from '../lib/apiTokens.js';
 import { subscribeNetworkBridgesChange } from '../lib/networking/index.js';
 import { subscribeLibraryChange } from '../lib/library/index.js';
 import { subscribeWispUpdateChange } from '../lib/wispUpdate.js';
+import { listJobs, subscribeJobsChange } from '../lib/jobs/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { buildSectionsEnvelope } from './sections.js';
 
@@ -47,7 +48,7 @@ export function latestGatherSender(sendTopic, topic, gather, logFailure) {
 /**
  * GET /events — the single always-on SSE stream. Multiplexes every topic the
  * app needs continuously (host stats, VM list, container list, sections,
- * discovered peers, backups, change references) as
+ * discovered peers, backups, the job list, change references) as
  * `data: {"topic": <name>, "data": <payload>}` frames.
  *
  * One stream instead of five: browsers cap plain-HTTP/1.1 connections at 6
@@ -112,6 +113,13 @@ export default async function eventsRoutes(fastify) {
         sendTopic('discovery', getDiscoveredPeers());
       }
 
+      /* The job list, as GET /api/jobs answers it: a frame per list change
+       * (a job created, ended, expired), never per progress event — a job's
+       * progress stays on its own stream. */
+      function sendJobs() {
+        sendTopic('jobs', { jobs: listJobs() });
+      }
+
       /* Per-workload last-backup-attempt map. Fires on every backup-shaped
        * change (attempt recorded, backup deleted/pruned) — consumers also use
        * the frame as their cue to refetch the backup lists. */
@@ -130,6 +138,7 @@ export default async function eventsRoutes(fastify) {
         sendStats(), sendVMs(), sendContainers(), sendSections(), sendBackups(), sendHome(),
       ]);
       sendDiscovery();
+      sendJobs();
       sendChange({ kind: 'all' });
 
       const statsTimer = setInterval(sendStats, HOST_STATS_INTERVAL_MS);
@@ -139,6 +148,7 @@ export default async function eventsRoutes(fastify) {
         subscribeSectionsChange(() => { sendSections(); }),
         subscribeHomepageChange(() => { sendHome(); }),
         subscribeDiscoveredPeersChange(() => { sendDiscovery(); }),
+        subscribeJobsChange(() => { sendJobs(); }),
         subscribeBackupEvents(() => { sendBackups(); }),
         subscribeSettingsChange(() => { sendChange({ kind: 'settings' }); }),
         subscribeVMChange((name) => { sendChange({ kind: 'vm', id: name }); }),

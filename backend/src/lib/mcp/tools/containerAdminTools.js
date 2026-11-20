@@ -6,8 +6,8 @@
  *
  * Deploy, image update, the lifecycle and the image check are jobs, as on the
  * REST API: the tool checks what it can at once (those errors return
- * immediately), starts the job and returns `{ jobId, title }`; `get_job` reads
- * it to the end.
+ * immediately), starts the job and returns its ack
+ * `{ jobId, kind, title, subject }`; `get_job` reads it to the end.
  */
 import {
   assertContainerNameAvailable,
@@ -37,7 +37,7 @@ import {
   titleForContainerImageUpdate,
 } from '../../jobs/index.js';
 
-const JOB_NOTE = 'A job: returns { jobId, title } at once; read it with get_job until it is done.';
+const JOB_NOTE = 'A job: returns { jobId, kind, title, subject } at once; read it with get_job until it is done.';
 
 const RESTART_POLICIES = ['never', 'on-failure', 'unless-stopped', 'always'];
 

@@ -98,6 +98,15 @@ test('a read token on an admin route answers 403 SCOPE_INSUFFICIENT', async () =
   assert.equal(res.json().error, 'SCOPE_INSUFFICIENT');
 });
 
+test('a read token cannot start the OS package check: 403 SCOPE_INSUFFICIENT, and no job', async () => {
+  const jobs = async () => (await app.inject({ method: 'GET', url: '/api/jobs', headers: bearer(READ_TOKEN) })).json().jobs.map((j) => j.jobId);
+  const before = await jobs();
+  const res = await app.inject({ method: 'POST', url: '/api/host/updates/check', headers: bearer(READ_TOKEN) });
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.json().error, 'SCOPE_INSUFFICIENT');
+  assert.deepEqual(await jobs(), before);
+});
+
 test('a token on a session route answers 403 SESSION_REQUIRED', async () => {
   const res = await app.inject({ method: 'PATCH', url: '/api/settings/oidc', headers: bearer(ADMIN_TOKEN), payload: {} });
   assert.equal(res.statusCode, 403);
@@ -180,6 +189,7 @@ test('GET /api/jobs lists a started job with its row', async () => {
   const start = await app.inject({ method: 'POST', url: '/api/containers/images/check-updates', headers: bearer(ADMIN_TOKEN), payload: {} });
   assert.equal(start.statusCode, 202);
   const { jobId, title } = start.json();
+  assert.deepEqual(start.json(), { jobId, kind: 'container-image-update-check', title, subject: null });
   const res = await app.inject({ method: 'GET', url: '/api/jobs', headers: bearer(READ_TOKEN) });
   assert.equal(res.statusCode, 200);
   const row = res.json().jobs.find((j) => j.jobId === jobId);

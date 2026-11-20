@@ -6,6 +6,7 @@ import { acquireVmOperationLock } from '../vmOperationLock.js';
 import { acquireContainerOperationLock } from '../containerOperationLock.js';
 import {
   startJob, listJobs, readJob, isJobRunning, hasJob, registerJobStream,
+  countJobsThatMustFinish, cancelInterruptibleJobs, subscribeJobsChange, sweepExpiredJobs,
 } from './jobStore.js';
 
 /** A logger that records each line as `[level, fields, message]`. */
@@ -46,9 +47,8 @@ test('a job is created with its row, and its result is the done event', async ()
   const ack = await startJob({
     kind: 'vm-start', title: 'Start a1', subject: { type: 'vm', name: 'a1' }, log, run: async () => ({ name: 'a1' }),
   });
-  assert.equal(typeof ack.jobId, 'string');
   assert.match(ack.jobId, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-  assert.equal(ack.title, 'Start a1');
+  assert.deepEqual(ack, { jobId: ack.jobId, kind: 'vm-start', title: 'Start a1', subject: { type: 'vm', name: 'a1' } });
   assert.ok(hasJob(ack.jobId));
   await settle();
   const [row] = rowsFor('a1');
@@ -232,4 +232,161 @@ test('a kind and its subject must match', async () => {
     /has no subject/,
   );
   await assert.rejects(startJob({ kind: 'backup', title: 't', log: fakeLog(), run: async () => ({}) }), /Unknown job kind/);
+});
+
+test('a start with bad arguments throws before it takes a lock or creates a row', async () => {
+  const before = listJobs().length;
+  const start = (opts) => startJob({
+    kind: 'vm-backup', title: 'Backup a8', subject: { type: 'vm', name: 'a8' }, log: fakeLog(), run: async () => ({}), ...opts,
+  });
+  await assert.rejects(start({ log: undefined }), /needs a logger/);
+  await assert.rejects(start({ log: { info() {} } }), /needs a logger/);
+  await assert.rejects(start({ run: undefined }), /needs a run/);
+  await assert.rejects(start({ title: '' }), /needs a title/);
+  await assert.rejects(start({ check: 'exists' }), /check is a function/);
+  assert.equal(listJobs().length, before);
+  acquireVmOperationLock('a8', 'start')();
+});
+
+test('two starts in one tick: the second answers its refusal, and one job exists', async () => {
+  const run = deferred();
+  const start = () => startJob({
+    kind: 'os-upgrade', title: 'Install OS updates', log: fakeLog(),
+    check: () => {
+      if (isJobRunning('os-upgrade')) throw createAppError('UPDATE_BUSY', 'An OS upgrade is already in progress');
+    },
+    run: () => run.promise,
+  });
+  const [first, second] = await Promise.allSettled([start(), start()]);
+  assert.equal(first.status, 'fulfilled');
+  assert.equal(second.status, 'rejected');
+  assert.equal(second.reason.code, 'UPDATE_BUSY');
+  assert.equal(listJobs().filter((j) => j.kind === 'os-upgrade' && j.status === 'running').length, 1);
+  run.resolve({ ok: true });
+  await settle();
+});
+
+test('a job without a subject is refused an async check: nothing holds its claim across an await', async () => {
+  const before = listJobs().length;
+  await assert.rejects(
+    startJob({ kind: 'os-upgrade', title: 't', log: fakeLog(), check: async () => {}, run: async () => ({}) }),
+    /needs a synchronous check/,
+  );
+  assert.equal(listJobs().length, before);
+});
+
+test('two shared starts in one tick, each past its check, end with one job and both answer its ack', async () => {
+  const run = deferred();
+  let checks = 0;
+  let runs = 0;
+  const start = () => startJob({
+    kind: 'os-update-check', title: 'Check for OS updates', shared: true, log: fakeLog(),
+    check: () => { checks += 1; },
+    run: () => { runs += 1; return run.promise; },
+  });
+  const [a, b] = await Promise.all([start(), start()]);
+  assert.deepEqual(b, a);
+  assert.deepEqual(a, { jobId: a.jobId, kind: 'os-update-check', title: 'Check for OS updates', subject: null });
+  assert.equal(checks, 1);
+  await settle();
+  assert.equal(runs, 1);
+  assert.equal(listJobs().filter((j) => j.kind === 'os-update-check' && j.status === 'running').length, 1);
+  run.resolve({ count: 0 });
+  await settle();
+});
+
+test('a shared start joins only a running job that covers its scope', async () => {
+  const runs = [];
+  const start = (ref) => startJob({
+    kind: 'container-image-update-check', title: ref ? `Check ${ref}` : 'Check OCI image updates',
+    shared: true, scope: ref, log: fakeLog(),
+    run: () => { const d = deferred(); runs.push(d); return d.promise; },
+  });
+  // One image first: a check of every image does not join it, a check of that image does.
+  const one = await start('nginx:1');
+  const all = await start(null);
+  assert.notEqual(all.jobId, one.jobId);
+  assert.equal((await start('nginx:1')).jobId, one.jobId);
+  // Every image running: a check of any one image joins it.
+  for (const d of runs) d.resolve({});
+  await settle();
+  const every = await start(null);
+  assert.equal((await start('redis:7')).jobId, every.jobId);
+  assert.equal((await start(null)).jobId, every.jobId);
+  // One image running alone: another image starts its own.
+  for (const d of runs) d.resolve({});
+  await settle();
+  const first = await start('nginx:1');
+  assert.notEqual((await start('redis:7')).jobId, first.jobId);
+  for (const d of runs) d.resolve({});
+  await settle();
+});
+
+test('an interruptible job cut ends cancelled, logged at info without a stack, and is not counted as must-finish', async () => {
+  const log = fakeLog();
+  const mustFinish = deferred();
+  await startJob({ kind: 'library-download', title: 'must finish', log: fakeLog(), run: (_report, signal) => {
+    assert.equal(signal, undefined);
+    return mustFinish.promise;
+  } });
+  const before = countJobsThatMustFinish();
+  const { jobId } = await startJob({
+    kind: 'os-update-check', title: 'Check for OS updates', shared: true, interruptible: true, log,
+    run: (_report, signal) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    }),
+  });
+  await settle();
+  assert.equal(countJobsThatMustFinish(), before);
+  const stream = fakeStream();
+  registerJobStream(jobId, stream);
+  assert.ok(cancelInterruptibleJobs() >= 1);
+  await settle();
+  assert.deepEqual(stream.events.at(-1), { step: 'cancelled' });
+  assert.equal(stream.ended, true);
+  const job = readJob(jobId);
+  assert.equal(job.status, 'cancelled');
+  assert.equal('error' in job, false);
+  assert.deepEqual(log.lines.at(-1), ['info', { jobId, kind: 'os-update-check', title: 'Check for OS updates', subject: null }, 'Background job cancelled']);
+  // The job that must finish was not cut.
+  assert.equal(countJobsThatMustFinish(), before);
+  mustFinish.resolve({});
+  await settle();
+});
+
+test('the store announces each list change — create, end, expiry — and no progress event', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  let changes = 0;
+  const unsubscribe = subscribeJobsChange(() => { changes += 1; });
+  const run = deferred();
+  let report;
+  await startJob({
+    kind: 'container-backup', title: 'Backup c9', subject: { type: 'container', name: 'c9' }, log: fakeLog(),
+    run: (r) => { report = r; return run.promise; },
+  });
+  assert.equal(changes, 1);
+  await settle();
+  report({ step: 'archiving', percent: 10 });
+  report({ step: 'archiving', percent: 20 });
+  assert.equal(changes, 1);
+  run.resolve({ timestamp: 't9' });
+  await settle();
+  assert.equal(changes, 2);
+  assert.equal(sweepExpiredJobs(), 0);
+  assert.equal(changes, 2);
+  t.mock.timers.tick(5 * 60 * 1000);
+  assert.ok(sweepExpiredJobs() >= 1);
+  assert.equal(changes, 3);
+  assert.equal(rowsFor('c9').length, 0);
+  unsubscribe();
+});
+
+test('a list change handler that throws is logged and the start still answers', async () => {
+  const log = fakeLog();
+  const unsubscribe = subscribeJobsChange(() => { throw new Error('handler broke'); });
+  const ack = await startJob({ kind: 'library-download', title: 'x', log, run: async () => ({}) });
+  unsubscribe();
+  assert.ok(hasJob(ack.jobId));
+  assert.ok(log.lines.some(([level, , message]) => level === 'warn' && message === 'Job list change handler failed'));
+  await settle();
 });

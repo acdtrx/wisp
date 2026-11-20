@@ -190,7 +190,7 @@ consumer, and nothing has called for more).
 
 - **One multiplexed SSE stream per tab, `/api/events`**, carries every always-on feed as
   `{ topic, data }` frames: `stats` (sampled every 5 s), and the event-driven `vms`,
-  `containers`, `sections`, `discovery`, `home`, `backups` and `changes` (references to
+  `containers`, `sections`, `discovery`, `home`, `backups`, `jobs` and `changes` (references to
   saved records no other topic carries, which a client showing them GETs again). One
   connection, not one per feed, because browsers cap plain HTTP/1.1 at 6 connections per
   origin: a new always-on feed is a new topic, never a new endpoint

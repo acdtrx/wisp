@@ -22,6 +22,7 @@ import { ensureImageDir, getImagePath } from '../lib/paths.js';
 import { findVMsUsingImage } from '../lib/vmManager/index.js';
 import { createAppError, isAppError } from '../lib/appErrors.js';
 import { watchRequestBody } from '../lib/requestBodyWatch.js';
+import { jobAckSchema } from './schemas.js';
 
 function validateFilename(name) {
   if (!name || typeof name !== 'string') return false;
@@ -230,13 +231,7 @@ export default async function libraryRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        202: {
-          type: 'object',
-          properties: {
-            jobId: { type: 'string' },
-            title: { type: 'string' },
-          },
-        },
+        202: jobAckSchema,
       },
     },
     handler: async (request, reply) => {
@@ -264,13 +259,7 @@ export default async function libraryRoutes(fastify) {
     config: { auth: 'admin' },
     schema: {
       response: {
-        202: {
-          type: 'object',
-          properties: {
-            jobId: { type: 'string' },
-            title: { type: 'string' },
-          },
-        },
+        202: jobAckSchema,
       },
     },
     handler: async (request, reply) => {
@@ -291,13 +280,7 @@ export default async function libraryRoutes(fastify) {
     config: { auth: 'admin' },
     schema: {
       response: {
-        202: {
-          type: 'object',
-          properties: {
-            jobId: { type: 'string' },
-            title: { type: 'string' },
-          },
-        },
+        202: jobAckSchema,
       },
     },
     handler: async (request, reply) => {
@@ -318,13 +301,7 @@ export default async function libraryRoutes(fastify) {
     config: { auth: 'admin' },
     schema: {
       response: {
-        202: {
-          type: 'object',
-          properties: {
-            jobId: { type: 'string' },
-            title: { type: 'string' },
-          },
-        },
+        202: jobAckSchema,
       },
     },
     handler: async (request, reply) => {

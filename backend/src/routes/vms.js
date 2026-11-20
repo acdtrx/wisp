@@ -46,6 +46,7 @@ import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { resolveLibraryPath, assertPathInsideAllowedRoots } from '../lib/paths.js';
 import { createAppError } from '../lib/appErrors.js';
 import { validateVMName } from '../lib/validation.js';
+import { jobAckSchema } from './schemas.js';
 
 /** The values Wisp writes into `<video><model type>` and `<graphics type>` (API-VMS.md). */
 const VIDEO_DRIVERS = ['virtio', 'qxl', 'vga'];
@@ -171,13 +172,7 @@ export default async function vmsRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        202: {
-          type: 'object',
-          properties: {
-            jobId: { type: 'string' },
-            title: { type: 'string' },
-          },
-        },
+        202: jobAckSchema,
       },
     },
     handler: async (request, reply) => {
@@ -253,13 +248,7 @@ export default async function vmsRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        202: {
-          type: 'object',
-          properties: {
-            jobId: { type: 'string' },
-            title: { type: 'string' },
-          },
-        },
+        202: jobAckSchema,
       },
     },
     handler: async (request, reply) => {
@@ -336,6 +325,7 @@ export default async function vmsRoutes(fastify) {
         },
         additionalProperties: false,
       },
+      response: { 202: jobAckSchema },
     },
     // A job: undefining and deleting disk files can take a while. A missing VM
     // (404) or a busy one (409) is refused here; the outcome arrives over the
@@ -379,6 +369,7 @@ export default async function vmsRoutes(fastify) {
           required: ['name'],
           properties: { name: { type: 'string' } },
         },
+        response: { 202: jobAckSchema },
       },
       handler: async (request, reply) => {
         const { name } = request.params;

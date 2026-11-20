@@ -13,10 +13,7 @@ import {
 import { findContainersUsingStorageMount } from '../lib/containerManager/index.js';
 import { asAppError, createAppError } from '../lib/appErrors.js';
 import { startJob, BACKGROUND_JOB_KIND, titleForUnmount, titleForMountDelete } from '../lib/jobs/index.js';
-
-const JOB_ACCEPTED = {
-  202: { type: 'object', properties: { jobId: { type: 'string' }, title: { type: 'string' } } },
-};
+import { jobAckSchema } from './schemas.js';
 
 /* Response schema deliberately omits `password`: the field never leaves the
  * server. `mountForApi` (settings.js) replaces it with `hasPassword: boolean`
@@ -128,7 +125,7 @@ export default async function mountsRoutes(fastify) {
     config: { auth: 'admin' },
     schema: {
       params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
-      response: JOB_ACCEPTED,
+      response: { 202: jobAckSchema },
     },
     handler: async (request, reply) => {
       const mounts = await getRawMounts();
@@ -291,7 +288,7 @@ export default async function mountsRoutes(fastify) {
     config: { auth: 'admin' },
     schema: {
       params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
-      response: JOB_ACCEPTED,
+      response: { 202: jobAckSchema },
     },
     handler: async (request, reply) => {
       const mounts = await getRawMounts();

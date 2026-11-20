@@ -5,8 +5,11 @@ import {
   applyUpdate,
   claimUpdateInstall,
 } from '../lib/wispUpdate.js';
-import { listJobs, startJob, BACKGROUND_JOB_KIND, titleForSelfUpdate } from '../lib/jobs/index.js';
+import {
+  countJobsThatMustFinish, startJob, BACKGROUND_JOB_KIND, titleForSelfUpdate,
+} from '../lib/jobs/index.js';
 import { createAppError } from '../lib/appErrors.js';
+import { jobAckSchema } from './schemas.js';
 
 const STATUS_RESPONSE = {
   type: 'object',
@@ -41,9 +44,9 @@ export default async function updatesRoutes(fastify) {
   });
 
   /**
-   * Check the install can start (an update available, no other jobs unless
-   * forced, no install in flight), claim it and answer 202 with a job. The
-   * job downloads, verifies and extracts the release, then triggers
+   * Check the install can start (an update available, no install in flight,
+   * no other job that must finish unless forced), claim it and answer 202
+   * with a job. The job downloads, verifies and extracts the release, then triggers
    * wisp-updater.service. The updater is a separate systemd unit — it runs in
    * its own cgroup, with its own stdio, and stops this backend as its first
    * real step. The UI polls GET /api/host wispVersion to detect completion;
@@ -59,13 +62,7 @@ export default async function updatesRoutes(fastify) {
         properties: { force: { type: 'string' } },
       },
       response: {
-        202: {
-          type: 'object',
-          properties: {
-            jobId: { type: 'string' },
-            title: { type: 'string' },
-          },
-        },
+        202: jobAckSchema,
       },
     },
     handler: async (request, reply) => {
@@ -77,24 +74,7 @@ export default async function updatesRoutes(fastify) {
         );
       }
       const force = request.query?.force === '1' || request.query?.force === 'true';
-      if (!force) {
-        const others = listJobs().filter((j) => j.status === 'running');
-        if (others.length > 0) {
-          throw createAppError(
-            'UPDATE_JOBS_ACTIVE',
-            `${others.length} other background job(s) are running: pass force=1 to install anyway`,
-          );
-        }
-      }
-
-      // Claimed before the first await; `force` doesn't bypass it.
-      const releaseInstall = claimUpdateInstall();
-      if (!releaseInstall) {
-        throw createAppError(
-          'UPDATE_INSTALL_IN_PROGRESS',
-          'An update install is already in progress: wait for Wisp to restart on the new version',
-        );
-      }
+      let releaseInstall;
 
       /* A job: download, verify and extract, then hand off to the privileged
        * helper, which stops this backend as its first real step. The job's
@@ -104,6 +84,26 @@ export default async function updatesRoutes(fastify) {
       const job = await startJob({
         kind: BACKGROUND_JOB_KIND.SELF_UPDATE,
         title: titleForSelfUpdate(status.latest),
+        // Claimed and counted in the starter's synchronous step; `force`
+        // skips the count, never the claim. Interruptible jobs (the update
+        // checks) are not counted: the restart cuts them.
+        check: () => {
+          releaseInstall = claimUpdateInstall();
+          if (!releaseInstall) {
+            throw createAppError(
+              'UPDATE_INSTALL_IN_PROGRESS',
+              'An update install is already in progress: wait for Wisp to restart on the new version',
+            );
+          }
+          const running = countJobsThatMustFinish();
+          if (!force && running > 0) {
+            releaseInstall();
+            throw createAppError(
+              'UPDATE_JOBS_ACTIVE',
+              `${running} other background job(s) are running: pass force=1 to install anyway`,
+            );
+          }
+        },
         log: request.log,
         run: async (report) => {
           try {

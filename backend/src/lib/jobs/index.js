@@ -5,6 +5,9 @@
 export {
   startJob,
   isJobRunning,
+  countJobsThatMustFinish,
+  cancelInterruptibleJobs,
+  subscribeJobsChange,
   listJobs,
   readJob,
   hasJob,

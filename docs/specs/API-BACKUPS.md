@@ -46,7 +46,7 @@ List all backups across configured destinations. The backup is identified by the
 Restore a backup as a new VM — the only VM restore; there is no VM restore-in-place ([BACKUPS.md → Scope](BACKUPS.md#scope-settled-2026-10-16)).
 
 - **Body:** `{ destinationId: string, vmName: string, timestamp: string, newVmName: string }` — `(destinationId, vmName, timestamp)` are typically copied from a `GET /api/backups` row.
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes) (kind `vm-restore`) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name: string }`. The job's subject is `newVmName`, whose [operation lock](BACKUPS.md#per-vm-operation-lock) it holds for the whole job. The checks below, the archive's validation included, answer at once; the copy's failures are job errors (`BACKUP_RESTORE_FAILED`).
+- **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) (kind `vm-restore`) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name: string }`. The job's subject is `newVmName`, whose [operation lock](BACKUPS.md#per-vm-operation-lock) it holds for the whole job. The checks below, the archive's validation included, answer at once; the copy's failures are job errors (`BACKUP_RESTORE_FAILED`).
 - **404:** `BACKUP_NOT_FOUND` — backup not found
 - **409:** `VM_EXISTS` / `VM_DIR_EXISTS` when `newVmName` is taken in libvirt or on disk (same rule as `POST /api/vms`); `VM_BUSY` while another job holds `newVmName`'s lock
 - **422:** `BACKUP_INVALID` for an unknown `destinationId` or an invalid `timestamp`; `INVALID_VM_NAME` for an invalid `vmName`/`newVmName`; `BACKUP_INVALID` when the backup's `domain.xml` or payload fails [validation](BACKUPS.md#archive-validation-vm-backups) (the message names the rule) or a restored disk has a backing file
@@ -102,7 +102,7 @@ List all container backups across currently-usable destinations. Container backu
 Restore a container backup under a new name. The new name must be free both on disk and in containerd. Image is re-pulled if missing locally; MAC address is regenerated; section assignment is **not** carried over (storage assignments live in `wisp-config.json`, not in the backup).
 
 - **Body:** `{ destinationId: string, name: string, timestamp: string, newName: string }`
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes) (kind `container-restore-new`) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name: string, sourceName: string, image: string | null }` — `sourceName` is the original container name from the manifest, useful when the user picked a backup whose folder name no longer matches. The job holds the new name's operation lock.
+- **202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) (kind `container-restore-new`) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name: string, sourceName: string, image: string | null }` — `sourceName` is the original container name from the manifest, useful when the user picked a backup whose folder name no longer matches. The job holds the new name's operation lock.
 - **404:** `BACKUP_NOT_FOUND` — backup not found
 - **409:** `CONTAINER_EXISTS` if the new name is already in use; `CONTAINER_BUSY` while another operation holds the new name's [operation lock](CONTAINERS.md#per-container-operation-lock)
 - **422:** `INVALID_CONTAINER_NAME`, `BACKUP_INVALID` (unknown destination, invalid timestamp, or a missing/malformed manifest)

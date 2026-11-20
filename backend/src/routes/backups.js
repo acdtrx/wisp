@@ -30,6 +30,7 @@ import {
 } from '../lib/jobs/index.js';
 import { createAppError } from '../lib/appErrors.js';
 import { validateVMName, validateContainerName } from '../lib/validation.js';
+import { jobAckSchema } from './schemas.js';
 
 // Backup directory names produced by createBackup are ISO-derived
 // (YYYY-MM-DDTHH-mm-ss). The accept-set is intentionally a bit looser to
@@ -166,10 +167,7 @@ export default async function backupsRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        202: {
-          type: 'object',
-          properties: { jobId: { type: 'string' }, title: { type: 'string' } },
-        },
+        202: jobAckSchema,
       },
     },
     // A job: restoring copies (and gunzips) every disk. The request is checked
@@ -296,10 +294,7 @@ export default async function backupsRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        202: {
-          type: 'object',
-          properties: { jobId: { type: 'string' }, title: { type: 'string' } },
-        },
+        202: jobAckSchema,
       },
     },
     // A job: the archive is extracted and the image pulled. The request is
@@ -349,13 +344,7 @@ export default async function backupsRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        202: {
-          type: 'object',
-          properties: {
-            jobId: { type: 'string' },
-            title: { type: 'string' },
-          },
-        },
+        202: jobAckSchema,
       },
     },
     handler: async (request, reply) => {

@@ -35,7 +35,7 @@ Credentials:
 
 - **`204`**, no body: an instant command (a settings save, a rename, a disk attach).
 - **`201 { id }`**: a create that assigns the new record's id (a section, a home-page group or manual tile, a host mount). The new record itself arrives on the stream.
-- **`202 { jobId, title }`**: a [job route](#job-routes).
+- **`202 { jobId, kind, title, subject }`**: a [job route](#job-routes).
 - An error that kept the command from starting answers as any error does (above).
 
 The new state reaches every client through the [events stream](#events-stream-sse): on the topic that carries the record, or as a reference on the [`changes`](#changes-topic-payload) topic, after which a client showing that record GETs it. Exceptions that answer with their result: requests that change no state (`POST /api/host/mounts/check`), a secret shown once (`POST /api/auth/tokens`), and the auth routes (login, logout, change-password). The [MCP endpoint](MCP.md) has no stream and is exempt.
@@ -46,7 +46,13 @@ In-memory job registry (server process only; no persistence across restart) (set
 
 **A job says what it acts on.** A job on a VM or a container carries a `subject`, `{ "type": "vm" | "container", "name" }`, and holds that workload's operation lock from its start to its end ([BACKUPS.md → Per-VM operation lock](BACKUPS.md#per-vm-operation-lock), [CONTAINERS.md → Per-container operation lock](CONTAINERS.md#per-container-operation-lock)). A job that creates a workload has the name it creates as its subject. While the lock is held, starting such a job answers the busy error (`VM_BUSY`, `CONTAINER_BUSY`) at once; no job is created. The lock is released when the job ends, before its last event. A workload is busy while a running job has it as its subject: clients read busy from the subject, never from a title.
 
-**Shared runs.** The OS update check and the image update check run once at a time: a start while one runs, from any trigger, answers the running job's `{ jobId, title }`.
+**The ack names the job (settled 2026-11-20).** A start answers `{ "jobId", "kind", "title", "subject" }` — the fields of the job's [`GET /api/jobs`](#get-apijobs--read) row that never change, `subject` `{ type, name }` or `null` — as a job route's 202 body and as a job-starting MCP tool's result. A start that joins a running job (below) answers that job's ack. Clients take the kind and the subject from the ack, never supply their own.
+
+**Refusals are answers (settled 2026-11-20).** What keeps a job from starting — the busy lock, a missing resource, a conflict such as `UPDATE_BUSY` — answers the start with its error at once; it never becomes a failed job. The decisive test and the claim it protects are one step: of two starts arriving together, the second answers its refusal (e.g. 409), never a second job or a failed one.
+
+**Shared runs, by scope (settled 2026-11-20).** The OS update check and the image update check are shared: a start, from any trigger, while a running job of the same kind *covers* it answers that job's ack and starts nothing. The OS check always covers another. An image check of every image covers a check of one image; a check of one image covers only a check of that image. So a check of every image started while a check of one image runs is its own job: image check runs then take turns — a run waits for the one before it to end, so two runs never pull the same image at once.
+
+**Jobs that may be cut (settled 2026-11-20).** A job must finish, except the interruptible ones: the OS update check and the image update check. A shutdown (a restart, a self-update) cuts a running interruptible job: it ends with status `cancelled` and the terminal event `{ "step": "cancelled" }` — not a failure, no error body; the next hourly check runs again. The self-update's `UPDATE_JOBS_ACTIVE` refusal counts only running jobs that must finish.
 
 ### GET /api/jobs · `read`
 
@@ -60,34 +66,35 @@ In-memory job registry (server process only; no persistence across restart) (set
       "kind": "vm-create | vm-backup | vm-start | vm-force-stop | vm-delete | vm-restore | container-create | container-backup | container-restore | container-restore-new | container-start | container-stop | container-restart | container-delete | container-mount-delete | container-mount-data-delete | container-zip-extract | container-deploy | container-image-update | container-image-update-check | container-image-delete | library-download | os-update-check | os-upgrade | network-bridge-create | network-bridge-delete | mount-unmount | mount-delete | self-update",
       "title": "string",
       "subject": { "type": "vm | container", "name": "string" },
-      "status": "running | done | error",
+      "status": "running | done | error | cancelled",
       "createdAt": 1730000000000
     }
   ]
 }
 ```
 
-Newest first. `subject` is `null` for a job on no workload. `title` is computed on the server (e.g. `Create <name>`, `Backup <name>`, a truncated URL for a library download). A finished job is listed until it expires (below).
+Newest first. `subject` is `null` for a job on no workload. `title` is computed on the server (e.g. `Create <name>`, `Backup <name>`; for a library download its URL's origin and path — no userinfo, query or fragment — truncated). A finished job is listed until it expires (below). The same list is the [`jobs` topic](#get-apievents--read) of the events stream, pushed on every change.
 
 **Job store contract** (`lib/jobs/`, every kind):
 
-- **Retention:** a finished (completed or failed) job stays fetchable — listed here, its progress SSE replaying to the terminal event — for **5 minutes after it finished**, however long it ran; then it is removed (404 on its progress SSE). The sweep re-arms for the next expiry while finished jobs remain.
+- **Retention:** a finished (completed, failed or cancelled) job stays fetchable — listed here, its progress SSE replaying to the terminal event — for **5 minutes after it finished**, however long it ran; then it is removed (404 on its progress SSE). The sweep re-arms for the next expiry while finished jobs remain.
 - **Progress events** keep `step`, with `percent` and `detail` where they apply, plus each kind's own fields (`currentFile`, `destinationId`, `ref`, …).
 - **Progress volume:** byte-driven progress (backup gzip / tar streams, library downloads, `qemu-img convert`) is emitted once per integer percent change — at most ~101 events per stream, whatever the size.
 - **Replay to a late or reconnecting stream:** live subscribers get every event, but the store keeps only the latest of consecutive events with the same `step` (progress ticks of one step replace each other). A stream that connects mid-job receives one event per step transition — the latest progress of each, plus milestones such as `destination-done` — then the live tail.
 - **Stream end:** the terminal event is the last event of every progress SSE — the server ends the response right after it. A stream opened on an already-finished job gets the replay (ending with the terminal event) and is ended; it is never held open until the job expires. Clients stop on the terminal event and do not reconnect.
 - **Done event:** `{ "step": "done", "result": … }` — the job's result as its own key, listed per job route in the area specs.
 - **Error event:** `{ "step": "error", "error", "detail" }` — the [error body](ERROR-HANDLING.md#the-error-body): `error` the code (e.g. `VM_ALREADY_RUNNING`, `UPDATE_BUSY`), `detail` the message.
+- **Cancelled event:** `{ "step": "cancelled" }` — an interruptible job cut (above). Clients treat it as an end with no error text.
 
 ### Job routes
 
-(settled 2026-11-13.) A command that can outlast a short request (45 s, above) runs as a server job (FRONTEND-RULES, Data: the client is an observer): its route checks what it can at once — a bad request, a missing resource, a conflict answer with their usual status — then starts the job and answers **202** `{ jobId, title }`. The job runs to completion whether or not a client follows it. Its progress, and its result as the `done` event's `result`, arrive on `GET /api/jobs/:jobId/progress`; a failure is the `error` event, carrying the code the synchronous route would have answered with. Each job route lists its `done` result in its area spec. The MCP tools that start jobs return the same `{ jobId, title }` ([MCP.md](MCP.md)).
+(settled 2026-11-13.) A command that can outlast a short request (45 s, above) runs as a server job (FRONTEND-RULES, Data: the client is an observer): its route checks what it can at once — a bad request, a missing resource, a conflict answer with their usual status — then starts the job and answers **202** with the job's [ack](#background-jobs) `{ jobId, kind, title, subject }`. The job runs to completion whether or not a client follows it. Its progress, and its result as the `done` event's `result`, arrive on `GET /api/jobs/:jobId/progress`; a failure is the `error` event, carrying the code the synchronous route would have answered with. Each job route lists its `done` result in its area spec. The MCP tools that start jobs return the same ack ([MCP.md](MCP.md)).
 
 ### GET /api/jobs/:jobId/progress · `read`
 
 The progress SSE of every job (the job store contract above).
 
-- **200:** `text/event-stream` — progress events, then `done` or `error`
+- **200:** `text/event-stream` — progress events, then `done`, `error` or `cancelled`
 - **404:** `JOB_NOT_FOUND` — unknown job (never started, or expired)
 
 ---
@@ -113,11 +120,12 @@ Every topic sends a snapshot frame on connect (and after every client reconnect)
 | `home` | The `{ tiles, groups }` envelope (see [Home page](API-WORKSPACE.md#home-page)) | On every VM list change, container list change (which includes `container.json` writes, so app-config edits land here), and homepage write |
 | `discovery` | Sorted peer array (see [Discovery](API-HOST.md#discovery)) | On mDNS browse events (peer appeared/left, avahi restart) |
 | `backups` | Per-workload last-backup-attempt map (below) | After every backup attempt (manual or scheduled, success or failure) and every backup delete/prune — consumers also use the frame as the cue to refetch the backup lists |
+| `jobs` | Same body as `GET /api/jobs` (`{ jobs: [rows] }`) | When the list changes: a job created, a job's status changed (done, error, cancelled), finished jobs expired — never on a progress event, which stays on the job's [progress stream](#get-apijobsjobidprogress--read) (settled 2026-11-20) |
 | `changes` | A reference to a changed record (below) | After every saved change no other topic carries in full |
 
 No topic uses a polling timer except the sampled `stats` metrics.
 
-Every topic except `discovery` (an in-memory list that can't fail) may carry an error frame instead of its payload — the error body `{ error, detail }` when that topic's gather fails (e.g. `stats` when a host read throws). Clients ignore error frames and keep the last good payload; nothing renders the error object as data.
+Every topic except `discovery` and `jobs` (in-memory lists that can't fail) may carry an error frame instead of its payload — the error body `{ error, detail }` when that topic's gather fails (e.g. `stats` when a host read throws). Clients ignore error frames and keep the last good payload; nothing renders the error object as data.
 
 #### `changes` topic payload
 

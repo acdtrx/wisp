@@ -25,6 +25,7 @@ import { ensureMounts, installMountHotplugHandlers, startAutoMountRetry } from '
 import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
 import { start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
 import { startHourlyUpdateChecks, stopHourlyUpdateChecks } from './lib/updateChecks.js';
+import { cancelInterruptibleJobs } from './lib/jobs/index.js';
 import { startUpdateChecker as startWispUpdateChecker, stopUpdateChecker as stopWispUpdateChecker } from './lib/wispUpdate.js';
 import { closeAllSSE } from './lib/sse.js';
 import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/storage/index.js';
@@ -224,6 +225,7 @@ async function shutdown(signal) {
   stopUsbMonitor();
   stopDiskMonitor();
   stopHourlyUpdateChecks();
+  cancelInterruptibleJobs(); // the update checks: their apt subprocess or pull loop ends with the process
   stopWispUpdateChecker();
   stopContainerBackupScheduler();
   stopVmMdnsReconciler();
@@ -260,7 +262,7 @@ const START_FAILURE_CODES = new Set([
 main().catch((err) => {
   // Fastify's logger may not have flushed by the time we exit, so use stderr
   // directly to ensure the message reaches journald.
-  if (START_FAILURE_CODES.has(err?.code)) console.error(`Failed to start: ${err.message}`);
+  if (START_FAILURE_CODES.has(err?.code)) console.error(`Failed to start: ${err.message}${err.raw ? `: ${err.raw}` : ''}`);
   else console.error('Failed to start:', err);
   process.exit(1);
 });

@@ -1,13 +1,17 @@
 /**
- * Display titles for background jobs — mirrors frontend rules (ImageLibrary URL truncation, etc.).
+ * Display titles for background jobs. A title is shown to every client and
+ * logged, so it never carries a secret.
  */
 
-/** Same rule as frontend ImageLibrary: length > 56 → first 53 chars + ellipsis. */
+/**
+ * The URL's origin and path — no userinfo, query or fragment, where a
+ * credential or a signed token travels — cut to 56 characters.
+ * @param {string} url - an http(s) URL (isAllowedUrl)
+ */
 export function titleForLibraryDownloadUrl(url) {
-  if (url.length > 56) {
-    return `${url.slice(0, 53)}…`;
-  }
-  return url;
+  const { origin, pathname } = new URL(url);
+  const shown = origin + pathname;
+  return shown.length > 56 ? `${shown.slice(0, 53)}…` : shown;
 }
 
 export function titleForVmCreate(name) {

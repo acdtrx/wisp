@@ -1,15 +1,7 @@
 import { createAppError } from '../lib/appErrors.js';
 import { hasJob, listJobs, registerJobStream, unregisterJobStream } from '../lib/jobs/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
-
-const SUBJECT = {
-  type: ['object', 'null'],
-  required: ['type', 'name'],
-  properties: {
-    type: { type: 'string', enum: ['vm', 'container'] },
-    name: { type: 'string' },
-  },
-};
+import { jobSubjectSchema } from './schemas.js';
 
 export default async function jobsRoutes(fastify) {
   fastify.get('/jobs', {
@@ -29,8 +21,8 @@ export default async function jobsRoutes(fastify) {
                   jobId: { type: 'string' },
                   kind: { type: 'string' },
                   title: { type: 'string' },
-                  subject: SUBJECT,
-                  status: { type: 'string', enum: ['running', 'done', 'error'] },
+                  subject: jobSubjectSchema,
+                  status: { type: 'string', enum: ['running', 'done', 'error', 'cancelled'] },
                   createdAt: { type: 'number' },
                 },
               },

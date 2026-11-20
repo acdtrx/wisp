@@ -216,7 +216,7 @@ Each code a client can receive, with its status.
 | `HOME_DUPLICATE` | 409 | A home-page group or tile like it exists |
 | `UPDATE_BUSY` | 409 | An OS update check or upgrade runs, or the package manager is locked |
 | `UPDATE_NOT_AVAILABLE` | 409 | No Wisp update is available to install |
-| `UPDATE_JOBS_ACTIVE` | 409 | Other jobs run; the Wisp update install waits for them unless forced |
+| `UPDATE_JOBS_ACTIVE` | 409 | Other jobs that must finish run; the Wisp update install waits for them unless forced |
 | `UPDATE_INSTALL_IN_PROGRESS` | 409 | A Wisp update install was already started |
 | `INVALID_REQUEST` | 422 | The request is well-formed but its values contradict each other or the state |
 | `PARSE_ERROR` | 422 | A definition or file could not be parsed |
@@ -395,8 +395,7 @@ The client gives the errors it makes itself codes of its own, never sent by the 
 | `UPLOAD_FAILED` | The browser could not send the upload |
 | `UPLOAD_STALLED` | The upload made no progress for its idle bound |
 | `UPLOAD_CANCELLED` | The upload was cancelled |
-| `CONNECTION_LOST` | A job's progress stream ended before the job did |
-| `JOB_GONE` | The job is no longer followed (its row left the store) |
+| `JOB_GONE` | The job a wait follows is gone: its progress stream answers 404 (it expired, or never existed). A dropped stream reconnects and replays instead |
 
 ### Error bar
 

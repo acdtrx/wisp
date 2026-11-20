@@ -3,8 +3,8 @@
  * REST routes and the MCP tools so both answer the same checks the same way.
  * The job starter holds the container's operation lock for the job's life
  * (busy is a 409 CONTAINER_BUSY at once); not found and already running / not
- * running are checked under it, before the job exists. Each returns
- * `{ jobId, title }`.
+ * running are checked under it, before the job exists. Each returns the
+ * job's ack.
  */
 import {
   assertContainerState,

@@ -41,7 +41,6 @@ const TICK_MS = 60 * 1000;
 let intervalId = null;
 let lastTickAt = null;
 let runInFlight = false;
-let logger = null;
 
 /** Most recent Date before-or-at `now` with the schedule's HH:MM (host-local). */
 function latestTargetAt(now, time) {
@@ -52,7 +51,7 @@ function latestTargetAt(now, time) {
   return target;
 }
 
-async function tick() {
+async function tick(log) {
   const now = new Date();
   /* Clock moved backwards (NTP step, DST weirdness) — re-baseline instead of
    * firing on a boundary we may already have served. */
@@ -67,7 +66,7 @@ async function tick() {
   try {
     schedule = (await getSettings()).backupSchedule;
   } catch (err) {
-    logger?.warn({ err }, 'Backup scheduler: failed to read settings');
+    log.warn({ err }, 'Backup scheduler: failed to read settings');
     return;
   }
   if (!schedule?.enabled) return;
@@ -77,9 +76,9 @@ async function tick() {
   if (!prev || target <= prev || target > now) return;
 
   try {
-    await runScheduledBackups({ trigger: 'schedule' });
+    await runScheduledBackups({ trigger: 'schedule', log });
   } catch (err) {
-    logger?.error({ err }, 'Backup scheduler: run failed');
+    log.error({ err }, 'Backup scheduler: run failed');
   }
 }
 
@@ -89,25 +88,24 @@ async function tick() {
  * on demand. Uses `settings.backupSchedule` (destinations, retention) whether
  * or not the schedule is enabled. Returns false when skipped because a run is
  * already in flight.
- * @param {{ trigger?: string }} [opts] - what invoked the run, for the log
+ * @param {{ trigger?: string, log: import('fastify').FastifyBaseLogger }} opts - `trigger`: what invoked the run, for the log
  * @returns {Promise<boolean>}
  */
-export async function runScheduledBackups({ trigger = 'manual' } = {}) {
+export async function runScheduledBackups({ trigger = 'manual', log }) {
   if (runInFlight) {
-    logger?.warn({ trigger }, 'Backup scheduler: previous run still in flight, skipping');
+    log.warn({ trigger }, 'Backup scheduler: previous run still in flight, skipping');
     return false;
   }
   runInFlight = true;
   try {
-    await backupAutoBackupContainers(trigger);
+    await backupAutoBackupContainers(trigger, log);
     return true;
   } finally {
     runInFlight = false;
   }
 }
 
-async function backupAutoBackupContainers(trigger) {
-  const log = logger;
+async function backupAutoBackupContainers(trigger, log) {
   const settings = await getSettings();
   const schedule = settings.backupSchedule || {};
   const rawMounts = await getRawMounts();
@@ -118,7 +116,7 @@ async function backupAutoBackupContainers(trigger) {
   } catch (err) {
     /* Destination trouble (unmountable share, nothing configured) aborts the
      * whole run — containers stay untouched; next boundary is tomorrow. */
-    log?.warn({ trigger, err: err.message, detail: err.raw }, 'Backup scheduler: no usable destination, skipping run');
+    log.warn({ trigger, err: err.message, detail: err.raw }, 'Backup scheduler: no usable destination, skipping run');
     return;
   }
 
@@ -126,7 +124,7 @@ async function backupAutoBackupContainers(trigger) {
   try {
     list = await listContainers();
   } catch (err) {
-    log?.warn({ trigger, err }, 'Backup scheduler: listContainers failed, skipping run');
+    log.warn({ trigger, err }, 'Backup scheduler: listContainers failed, skipping run');
     return;
   }
 
@@ -138,10 +136,10 @@ async function backupAutoBackupContainers(trigger) {
     } catch { /* container dir may be mid-delete — skip it this run */ }
   }
   if (names.length === 0) {
-    log?.info({ trigger }, 'Backup scheduler: fired, no containers with Auto Backup enabled');
+    log.info({ trigger }, 'Backup scheduler: fired, no containers with Auto Backup enabled');
     return;
   }
-  log?.info({ trigger, containers: names, destinations: destinations.map((d) => d.id) }, 'Backup scheduler: run started');
+  log.info({ trigger, containers: names, destinations: destinations.map((d) => d.id) }, 'Backup scheduler: run started');
 
   const allowedRoots = listConfiguredBackupRoots(settings);
   let backedUp = 0;
@@ -166,7 +164,7 @@ async function backupAutoBackupContainers(trigger) {
               lastResult = await backupToEachDestination(destinations, {
                 push: report,
                 backupOne: (dest, onProgress) => createContainerBackup(name, dest.path, { origin: 'scheduled', onProgress }),
-                afterEach: (dest) => pruneScheduledBackups(name, dest, allowedRoots),
+                afterEach: (dest) => pruneScheduledBackups(name, dest, allowedRoots, log),
               });
             } catch (err) {
               await recordBackupAttempt({
@@ -194,16 +192,15 @@ async function backupAutoBackupContainers(trigger) {
     if (await ended.promise) backedUp += 1;
     else failed += 1;
   }
-  log?.info({ trigger, backedUp, failed, skipped }, 'Backup scheduler: run finished');
+  log.info({ trigger, backedUp, failed, skipped }, 'Backup scheduler: run finished');
 }
 
-async function pruneScheduledBackups(name, dest, allowedRoots) {
-  const log = logger;
+async function pruneScheduledBackups(name, dest, allowedRoots, log) {
   let rows;
   try {
     rows = await listContainerBackups([dest], name);
   } catch (err) {
-    log?.warn({ err, container: name, destination: dest.id }, 'Backup scheduler: retention listing failed');
+    log.warn({ err, container: name, destination: dest.id }, 'Backup scheduler: retention listing failed');
     return;
   }
   const schedule = (await getSettings()).backupSchedule;
@@ -214,12 +211,12 @@ async function pruneScheduledBackups(name, dest, allowedRoots) {
   for (const row of toDelete) {
     try {
       await deleteContainerBackup(row.path, allowedRoots);
-      log?.info(
+      log.info(
         { container: name, destination: dest.id, timestamp: row.timestamp },
         'Backup scheduler: pruned scheduled backup',
       );
     } catch (err) {
-      log?.warn({ err, container: name, timestamp: row.timestamp }, 'Backup scheduler: prune failed');
+      log.warn({ err, container: name, timestamp: row.timestamp }, 'Backup scheduler: prune failed');
     }
   }
 }
@@ -227,10 +224,9 @@ async function pruneScheduledBackups(name, dest, allowedRoots) {
 /** Idempotent. Baseline is "now": a boot after today's boundary does not fire. */
 export function startContainerBackupScheduler(log) {
   if (intervalId != null) return;
-  logger = log;
   lastTickAt = new Date();
   intervalId = setInterval(() => {
-    tick().catch((err) => logger?.error({ err }, 'Backup scheduler: tick failed'));
+    tick(log).catch((err) => log.error({ err }, 'Backup scheduler: tick failed'));
   }, TICK_MS);
   intervalId.unref?.();
 }
@@ -241,5 +237,4 @@ export function stopContainerBackupScheduler() {
     clearInterval(intervalId);
     intervalId = null;
   }
-  logger = null;
 }

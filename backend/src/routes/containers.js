@@ -58,6 +58,7 @@ import {
   assertMountListNotAppManaged,
   assertMountContentReadable,
 } from '../lib/containerApps/index.js';
+import { jobAckSchema } from './schemas.js';
 
 /** Staging file for one mount upload: inside the container dir, so on the same disk as the mount data (not a tmpfs /tmp). */
 function mountUploadStagingPath(containerName) {
@@ -115,11 +116,6 @@ function uploadTooLargeError() {
   return createAppError('UPLOAD_TOO_LARGE', 'File too large', 'Upload exceeded the configured size limit');
 }
 
-const JOB_ACCEPTED_BODY = {
-  type: 'object',
-  properties: { jobId: { type: 'string' }, title: { type: 'string' } },
-};
-
 export default async function containerRoutes(fastify) {
   fastify.addHook('preHandler', async (request) => {
     const name = request.params?.name;
@@ -167,7 +163,7 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Create ────────────────────────────────────────────────────────
-  fastify.post('/containers', { config: { auth: 'admin' } }, async (request, reply) => {
+  fastify.post('/containers', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
     // Only the create contract's fields reach the manager: its spec also takes
     // env / mounts / devices / metadata, which app creation fills in itself.
     const { name, image, iconId, app, appConfig } = request.body && typeof request.body === 'object' ? request.body : {};
@@ -228,7 +224,7 @@ export default async function containerRoutes(fastify) {
           ref: { type: 'string', minLength: 1 },
         },
       },
-      response: { 202: JOB_ACCEPTED_BODY },
+      response: { 202: jobAckSchema },
     },
     // A job: the delete waits for containerd's garbage collection. In use and
     // not found are answered here.
@@ -252,8 +248,9 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── OCI image update check ────────────────────────────────────────
-  // A shared job: a check already running, whatever its scope, is joined.
-  fastify.post('/containers/images/check-updates', { config: { auth: 'admin' } }, async (request, reply) => {
+  // A shared job: a running check that covers this one is joined (every
+  // image covers one image; one image never covers every image).
+  fastify.post('/containers/images/check-updates', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
     const ref = typeof request.body?.ref === 'string' && request.body.ref.trim()
       ? request.body.ref.trim()
       : null;
@@ -396,7 +393,7 @@ export default async function containerRoutes(fastify) {
   // ── Delete ────────────────────────────────────────────────────────
   // A job (stopping the task and removing the snapshot and files take a
   // while); a missing or busy container is answered here.
-  fastify.delete('/containers/:name', { config: { auth: 'admin' } }, async (request, reply) => {
+  fastify.delete('/containers/:name', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
     const deleteFiles = request.query.deleteFiles !== 'false';
     const job = await startContainerDeleteJob({ name: request.params.name, deleteFiles, log: request.log });
     return reply.code(202).send(job);
@@ -407,7 +404,7 @@ export default async function containerRoutes(fastify) {
   // lock; not found, busy and already running / not running are answered
   // here. Kill answers at once.
   for (const action of ['start', 'stop', 'restart']) {
-    fastify.post(`/containers/:name/${action}`, { config: { auth: 'admin' } }, async (request, reply) => {
+    fastify.post(`/containers/:name/${action}`, { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
       const job = await startContainerLifecycleJob({ name: request.params.name, action, log: request.log });
       return reply.code(202).send(job);
     });
@@ -435,13 +432,7 @@ export default async function containerRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        202: {
-          type: 'object',
-          properties: {
-            jobId: { type: 'string' },
-            title: { type: 'string' },
-          },
-        },
+        202: jobAckSchema,
       },
     },
     handler: async (request, reply) => {
@@ -604,7 +595,7 @@ export default async function containerRoutes(fastify) {
 
   // A job: removing a Local mount deletes its data. Not found, app-managed
   // and busy are answered here; `done` is `{ requiresRestart }`.
-  fastify.delete('/containers/:name/mounts/:mountName', { config: { auth: 'admin' } }, async (request, reply) => {
+  fastify.delete('/containers/:name/mounts/:mountName', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
     const { mountName } = request.params;
     const { name } = request.params;
     const job = await startJob({
@@ -652,7 +643,7 @@ export default async function containerRoutes(fastify) {
   // The upload is received here; the extract that follows is a job (202).
   // Not found, app-managed, a mount that takes no zip, an invalid or unsafe
   // archive and busy are answered here. The job owns the staged zip.
-  fastify.post('/containers/:name/mounts/:mountName/zip', { config: { auth: 'admin' } }, async (request, reply) => {
+  fastify.post('/containers/:name/mounts/:mountName/zip', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
     const containerName = request.params.name;
     const stagingPath = mountUploadStagingPath(containerName);
     const bodyWatch = watchRequestBody(request);
@@ -729,7 +720,7 @@ export default async function containerRoutes(fastify) {
 
   // A job: a large data directory takes a while to delete. Not found,
   // app-managed, a tmpfs mount and busy are answered here.
-  fastify.delete('/containers/:name/mounts/:mountName/data', { config: { auth: 'admin' } }, async (request, reply) => {
+  fastify.delete('/containers/:name/mounts/:mountName/data', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
     const { mountName } = request.params;
     const { name } = request.params;
     const job = await startJob({

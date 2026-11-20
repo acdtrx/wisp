@@ -39,10 +39,7 @@ import {
   titleForBridgeDelete,
 } from '../lib/jobs/index.js';
 import { isOsUpgradeRunning, startOsUpdateCheckJob } from '../lib/updateChecks.js';
-
-const JOB_ACCEPTED = {
-  202: { type: 'object', properties: { jobId: { type: 'string' }, title: { type: 'string' } } },
-};
+import { jobAckSchema } from './schemas.js';
 
 function getOsRelease() {
   try {
@@ -118,10 +115,10 @@ export default async function hostRoutes(fastify) {
   });
 
   // A job (it refreshes the package index), shared with a check already
-  // running: 202 with the job id; the count arrives as the job's result.
+  // running: 202 with its ack; the count arrives as the job's result.
   fastify.post('/host/updates/check', {
     config: { auth: 'admin' },
-    schema: { response: JOB_ACCEPTED },
+    schema: { response: { 202: jobAckSchema } },
     handler: async (request, reply) => reply.code(202).send(await startOsUpdateCheckJob(request.log)),
   });
 
@@ -159,7 +156,7 @@ export default async function hostRoutes(fastify) {
   // each output line as progress, arrive over the job's stream.
   fastify.post('/host/updates/upgrade', {
     config: { auth: 'admin' },
-    schema: { response: JOB_ACCEPTED },
+    schema: { response: { 202: jobAckSchema } },
     handler: async (request, reply) => {
       const job = await startJob({
         kind: BACKGROUND_JOB_KIND.OS_UPGRADE,
@@ -241,7 +238,7 @@ export default async function hostRoutes(fastify) {
           vlanId: { type: 'number' },
         },
       },
-      response: JOB_ACCEPTED,
+      response: { 202: jobAckSchema },
     },
     // A job: applying netplan can take a while. The request is checked here
     // (format, VLAN range, parent, an existing bridge); the created bridge is
@@ -271,7 +268,7 @@ export default async function hostRoutes(fastify) {
           name: { type: 'string', minLength: 1 },
         },
       },
-      response: JOB_ACCEPTED,
+      response: { 202: jobAckSchema },
     },
     // A job, like create: removing the bridge applies netplan. Not found and
     // in use are answered here.
