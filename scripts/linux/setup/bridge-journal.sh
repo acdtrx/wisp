@@ -228,7 +228,7 @@ journal_classify() {
 # the host cannot be read, failed), naming what to do.
 journal_refuse_class() {
   case "$J_CLASS" in
-    other\ *) refuse JOURNAL_OTHER_RELEASE "${J_CLASS#other }. Run that release's setup, which decides on it; or recover the network at the console from the journal's lines (docs/specs/DEPLOYMENT.md, The bridge: when an undo does not complete); and run this again." ;;
+    other\ *) refuse JOURNAL_OTHER_RELEASE "${J_CLASS#other }. Run that release's setup, which decides on it; or recover the network at the console as that release's docs/specs/DEPLOYMENT.md says (The bridge: when an undo does not complete); and run this again." ;;
     fail\ *) refuse JOURNAL_UNREADABLE "${J_CLASS#fail }: setup cannot tell what the bridge step that left its journal in $JOURNAL_DIR changed. Make it answer (for NetworkManager: systemctl status NetworkManager), and run this again." ;;
     bad\ *) refuse JOURNAL_NOT_SETUPS "${J_CLASS#bad }. Put the network as you want it, remove $JOURNAL_DIR (its files/ holds the originals of what the step changed), and run this again." ;;
     changed\ *) refuse JOURNAL_CHANGED "a bridge step that did not finish left its journal in $JOURNAL_DIR, and since then someone else changed${J_CLASS#changed}: setup does not undo over that. Put each back as the step wrote it or as it was (its files/ holds the originals), or remove $JOURNAL_DIR once the network is as you want it, and run this again." ;;
@@ -242,7 +242,7 @@ journal_refuse_class() {
 journal_refuse_done_format() {
   _journal_format "$JOURNAL_DIR.done"
   case "$J_FORMAT" in
-    other\ *) refuse JOURNAL_OTHER_RELEASE "${J_FORMAT#other }. Its bridge is committed, and only its originals (in files/ and kept/) are left to keep: run that release's setup, or move them where you want them and remove $JOURNAL_DIR.done, and run this again." ;;
+    other\ *) refuse JOURNAL_OTHER_RELEASE "${J_FORMAT#other }. Its bridge is committed, and only its originals are left to keep: run that release's setup, which keeps them; or keep them as that release's docs/specs/DEPLOYMENT.md says (The bridge: the originals are kept), remove $JOURNAL_DIR.done, and run this again." ;;
     bad\ *) refuse JOURNAL_NOT_SETUPS "${J_FORMAT#bad }. Move what it holds where you want it, remove $JOURNAL_DIR.done, and run this again." ;;
     fail\ *) net_fail "${J_FORMAT#fail }" ;;
   esac
