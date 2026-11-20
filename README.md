@@ -96,7 +96,7 @@ After install, a single systemd service runs the app: `wisp.service`. Default po
 
 Wisp is a **single-password** control plane with **full access to libvirt, host storage, and optional SMB credentials**. Run it only on hosts and networks you trust, protect the login and `config/` directory, and treat anything in this category as security-sensitive when reporting.
 
-Authentication: one password per host (scrypt-hashed in `wisp-password`, beside the config file: `config/` by default), 24-hour JWT sessions.
+Authentication: one password per host (scrypt-hashed in `config/wisp-password`), 24-hour JWT sessions.
 
 ## Documentation
 

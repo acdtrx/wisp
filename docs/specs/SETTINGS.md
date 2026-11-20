@@ -95,7 +95,7 @@ The Host → App Config tab includes a password change form:
 
 1. User enters current password and new password
 2. Backend verifies current password
-3. On success, writes new password to `wisp-password`, beside the config file (mode `0600`)
+3. On success, writes new password to `config/wisp-password` (mode `0600`)
 4. Changing the password invalidates all existing JWT tokens (the signing secret is derived from the password)
 
 ## Host Information
@@ -146,7 +146,7 @@ Safety rules:
 
 ## Settings Storage
 
-Settings are stored in `config/wisp-config.json` by default (or at `WISP_CONFIG_PATH` if set).
+Settings are stored in `config/wisp-config.json` (`WISP_CONFIG_PATH` moves it in development and tests only: an installed Wisp refuses the key, [CONFIGURATION.md → Password Storage](CONFIGURATION.md#password-storage)).
 
 The backend reads config synchronously (for path resolution during startup) and asynchronously (for full settings API). The settings module is the single writer; the config module is for sync consumers.
 

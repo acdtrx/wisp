@@ -129,7 +129,7 @@ login page posts with a bare `fetch`, never through the shared client.
 Login rate limiting: 5 failed attempts per IP within a 60-second window. The map is swept
 every 60 s for expired entries and capped at 10 000 distinct IPs.
 
-A `wisp-password` that exists but isn't in the expected `scrypt:salt:hash` shape,
+A `config/wisp-password` that exists but isn't in the expected `scrypt:salt:hash` shape,
 or can't be read, stops the backend at startup (settled 2026-11-12,
 [CONFIGURATION.md](CONFIGURATION.md#password-storage)). The file is read on each use, so
 one broken while Wisp runs answers 503: `PASSWORD_FILE_UNSUPPORTED_FORMAT` for the shape,
@@ -303,9 +303,9 @@ Each code a client can receive, with its status.
 | `GITHUB_KEYS_UNAVAILABLE` | 502 | GitHub could not be asked for the user's keys |
 | `NO_CONNECTION` | 503 | libvirt is not connected |
 | `NO_CONTAINERD` | 503 | containerd is not reachable |
-| `NO_PASSWORD_CONFIGURED` | 503 | `wisp-password` is missing |
-| `PASSWORD_FILE_UNSUPPORTED_FORMAT` | 503 | `wisp-password` is not in the `scrypt:salt:hash` shape |
-| `PASSWORD_FILE_UNREADABLE` | 503 | `wisp-password` cannot be read |
+| `NO_PASSWORD_CONFIGURED` | 503 | `config/wisp-password` is missing |
+| `PASSWORD_FILE_UNSUPPORTED_FORMAT` | 503 | `config/wisp-password` is not in the `scrypt:salt:hash` shape |
+| `PASSWORD_FILE_UNREADABLE` | 503 | `config/wisp-password` cannot be read |
 | `BACKUP_DEST_NOT_FOUND` | 503 | The backup destination's path does not exist |
 | `BACKUP_DEST_NOT_WRITABLE` | 503 | The backup destination cannot be written |
 | `BACKUP_MOUNT_FAILED` | 503 | The backup destination's mount could not be mounted |

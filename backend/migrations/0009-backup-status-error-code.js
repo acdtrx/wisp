@@ -17,13 +17,9 @@
  *
  * Backward-compatible: the previous release passes a record through as it is
  * and its UI shows only that the last attempt failed. A rollback restores the
- * install's config/, this file with it. The ledger lives beside
- * wisp-config.json: it is restored too while that file is in config/, so this
- * runs again at the next start of the newer release; when WISP_CONFIG_PATH
- * puts it elsewhere it is not, it keeps this migration's `ok`, and the
- * records in the old shape — those the rollback restored, and those the
- * restored release writes — stay so until each workload's next attempt
- * replaces them.
+ * install's config/, this file with it, and the ledger, which an installed
+ * Wisp keeps there too (it refuses WISP_CONFIG_PATH), so this runs again at
+ * the next start of the newer release.
  */
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
