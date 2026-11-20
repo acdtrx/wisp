@@ -81,7 +81,7 @@ import {
   titleForZipExtract,
 } from './jobs/index.js';
 import { withContainerOperationLock } from './containerOperationLock.js';
-import { createAppError } from './appErrors.js';
+import { createAppError, wrapAppError } from './appErrors.js';
 import { resolveBackupDestinations } from './backupDestinations.js';
 import { startWorkloadBackupJob, backUpWorkload } from './workloadBackup.js';
 import { followWorkloadConfigUpdate, followWorkloadDelete, followWorkloadRename } from './workloadFollowUps.js';
@@ -153,10 +153,10 @@ export function startContainerDeployJob({ name, image, env, changes, log }) {
       try {
         await startContainer(name);
       } catch (err) {
-        throw createAppError(
+        throw wrapAppError(
           err.code || 'CONTAINERD_ERROR',
           `Container "${name}" was created but failed to start; it exists in stopped state (check get_container_logs, or fix and start_container)`,
-          err.raw ? `${err.message}: ${err.raw}` : err.message,
+          err,
         );
       }
       return await maskContainerConfigSecrets(await getContainerConfig(name));

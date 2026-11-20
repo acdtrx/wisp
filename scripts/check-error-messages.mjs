@@ -8,8 +8,9 @@
  * aside) carries another error's text.
  *
  * The factories: createAppError, vmError, containerError, networkingError,
- * asAppError (their message argument is the second) and setupError (the
- * first). In the message argument's code — outside its string literals, inside
+ * asAppError, the wrap helpers wrapAppError, wrapVmError and
+ * wrapContainerError (their message argument is the second) and setupError
+ * (the first). In the message argument's code — outside its string literals, inside
  * a template's `${…}` — it flags:
  * - a `.message`, `.details` (a gRPC error's), `.stderr` or `.stdout`, or a
  *   bare `stderr` / `stdout`;
@@ -26,8 +27,10 @@
  * message variable built in another file or passed in as a parameter, and a
  * factory under another name (a wrapper that forwards its argument to one of
  * the factories is checked only at that call). A Wisp error's own message
- * wrapped in another's is flagged all the same: the scan cannot tell it from
- * a tool's, so a wrapping error carries the inner one's text in its raw cause.
+ * written into another's is flagged all the same: the scan cannot tell it
+ * from a tool's. A wrapping error takes the inner one through a wrap helper,
+ * which alone joins a Wisp error's message to the outer one, and passes any
+ * other error's text as the raw cause.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -45,6 +48,9 @@ const FACTORIES = {
   containerError: 1,
   networkingError: 1,
   asAppError: 1,
+  wrapAppError: 1,
+  wrapVmError: 1,
+  wrapContainerError: 1,
   setupError: 0,
 };
 

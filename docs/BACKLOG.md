@@ -14,6 +14,14 @@ since 2026-11-20 (`wisp_config_dir`, `lib.sh`), the settings file in setup does 
 (found while moving the password, 2026-11-20). No Wisp tool writes the key. **Revisit
 trigger:** a host that sets `WISP_CONFIG_PATH` by hand and reinstalls.
 
+**Other wraps pass an inner Wisp error's message as its raw cause.** The five wraps of a
+Wisp error go through `wrapAppError` and the managers' twins since 2026-11-20; other
+sites still hand an inner error's `message` to the outer one's raw, e.g.
+`copyBackupPayload`'s copy failure in `vmManagerBackup.js`, whose inner is often the
+pipeline's own `BACKUP_RESTORE_FAILED`. The detail is right but the inner Wisp message
+is redacted like a tool's (found while fixing the five, 2026-11-20). **Revisit trigger:**
+a detail whose redacted cause hides a path or name the operator needed.
+
 **Sidebar: manual within-section workload ordering.** A third sort mode alongside
 alphabetical and online-first; the order lives on the section assignments so it is the
 single ordering shared by every consumer. **Revisit trigger:** the existing sorts

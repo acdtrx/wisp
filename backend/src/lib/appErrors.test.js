@@ -5,7 +5,9 @@ import { Readable } from 'node:stream';
 
 import Fastify from 'fastify';
 
-import { createAppError, errorBody, errorStatus, handleRequestError, isExpectedAppError, redactCause } from './appErrors.js';
+import {
+  createAppError, errorBody, errorStatus, handleRequestError, isExpectedAppError, redactCause, wrapAppError,
+} from './appErrors.js';
 import { ERROR_STATUS } from './errorCodes.js';
 
 test('an app error becomes { error: code, detail: message }', () => {
@@ -56,6 +58,38 @@ test("the message, Wisp's own text, is shown whole; only the cause is redacted",
 
 test('an error with no code is all cause, redacted', () => {
   assert.deepEqual(errorBody(new Error('cannot read /var/lib/wisp/secret')), { error: 'INTERNAL_ERROR', detail: 'cannot read <path>' });
+});
+
+test('a wrapped Wisp error keeps its message whole after the outer one; only its cause is redacted', () => {
+  const inner = createAppError('DISK_IMAGE_UNSAFE', 'Disk image /srv/vms/web/disk.qcow2 has a backing file (/srv/base.qcow2)', 'flatten it at /srv/x');
+  const err = wrapAppError('BACKUP_INVALID', "Backup disk vda can't be restored", inner);
+  assert.equal(err.message, "Backup disk vda can't be restored: Disk image /srv/vms/web/disk.qcow2 has a backing file (/srv/base.qcow2)");
+  assert.deepEqual(errorBody(err), {
+    error: 'BACKUP_INVALID',
+    detail: "Backup disk vda can't be restored: Disk image /srv/vms/web/disk.qcow2 has a backing file (/srv/base.qcow2): flatten it at <path>",
+  });
+});
+
+test('a wrapped error that is not Wisp\'s is all cause, redacted', () => {
+  const errno = Object.assign(new Error("EACCES: permission denied, rename '/srv/a' -> '/srv/b'"), { code: 'EACCES' });
+  assert.deepEqual(errorBody(wrapAppError('CONFIG_ERROR', 'Failed to move the directory', errno)), {
+    error: 'CONFIG_ERROR',
+    detail: "Failed to move the directory: EACCES: permission denied, rename '<path>' -> '<path>'",
+  });
+});
+
+test('several wrapped errors join with "; " in the message and in the cause', () => {
+  const a = createAppError('CONTAINERD_ERROR', 'containerd tasks.create failed', 'already exists');
+  const b = createAppError('CONTAINERD_ERROR', 'containerd tasks.delete failed', 'deadline exceeded');
+  assert.equal(errorBody(wrapAppError('CONTAINERD_ERROR', 'Start failed', a, b)).detail,
+    'Start failed: containerd tasks.create failed; containerd tasks.delete failed: already exists; deadline exceeded');
+});
+
+test('an app error carries the mark the managers\' wrap helpers read, out of sight', () => {
+  const err = createAppError('VM_NOT_FOUND', 'VM "web" not found');
+  assert.equal(err[Symbol.for('wisp.error')], true);
+  assert.deepEqual(Object.keys(err), ['code']);
+  assert.equal(JSON.stringify({ ...err }), '{"code":"VM_NOT_FOUND"}');
 });
 
 test('the detail is capped at 500 characters', () => {

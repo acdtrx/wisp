@@ -21,7 +21,7 @@
 import { rename as fsRename, access } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
 
-import { vmError } from './vmManagerConnection.js';
+import { wrapVmError } from '../vmManagerShared.js';
 
 function startsWithDir(filePath, dir) {
   if (typeof filePath !== 'string') return false;
@@ -148,7 +148,7 @@ export async function moveVmDirectory(oldDir, newDir) {
     await fsRename(oldDir, newDir);
   } catch (err) {
     if (err && err.code === 'ENOENT') return false;
-    throw vmError('CONFIG_ERROR', `Failed to move the directory of VM "${basename(oldDir)}" to "${basename(newDir)}"`, err.message);
+    throw wrapVmError('CONFIG_ERROR', `Failed to move the directory of VM "${basename(oldDir)}" to "${basename(newDir)}"`, err);
   }
   return true;
 }

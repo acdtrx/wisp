@@ -85,7 +85,8 @@ source refer to them.
     code goes in the table and in
     [`specs/ERROR-HANDLING.md`](specs/ERROR-HANDLING.md#codes) in the same change;
     `npm run check` fails otherwise, and when an error factory's message carries another
-    error's text (`scripts/check-error-messages.mjs`).
+    error's text (`scripts/check-error-messages.mjs`): a wrapping error takes the inner one
+    through `wrapAppError` (`lib/appErrors.js`) or its manager's twin.
 - Prefer inspecting state up front and choosing the right path once, rather than
   try/catch/retry as control flow.
 - Comment every silent `catch {}` block with why the error is intentionally swallowed.

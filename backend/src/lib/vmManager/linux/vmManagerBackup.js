@@ -17,6 +17,7 @@ import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError, generateMAC } from './vmManagerConnection.js';
+import { wrapVmError } from '../vmManagerShared.js';
 import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
 import { getVMBasePath, VMS_BACKUP_DIRNAME } from './vmManagerPaths.js';
 import { isOfflineState } from './libvirtConstants.js';
@@ -848,7 +849,7 @@ async function copyBackupPayload(backupPath, payload, destBase) {
     try {
       await inspectDiskImage(disk.newPath, { format: disk.format });
     } catch (err) {
-      throw vmError('BACKUP_INVALID', `Backup disk ${disk.logicalName} can't be restored`, err.raw ? `${err.message}: ${err.raw}` : err.message);
+      throw wrapVmError('BACKUP_INVALID', `Backup disk ${disk.logicalName} can't be restored`, err);
     }
   }
 

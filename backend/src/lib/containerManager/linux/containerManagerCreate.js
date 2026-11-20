@@ -9,7 +9,7 @@ import { randomBytes, randomUUID, createHash } from 'node:crypto';
 
 import {
   containerError, containerState, getClient, callUnary, callStream, callBidi, collectStream, STREAM_DEADLINE_MS,
-  packAny, packProtoAny, unpackAny,
+  packAny, packProtoAny, unpackAny, isWispError, wrapContainerError,
 } from './containerManagerConnection.js';
 
 /**
@@ -668,11 +668,6 @@ async function rollbackFailedStart(name, networkConfig) {
   try { await deregisterServicesForContainer(name); } catch { /* best-effort — nothing may be registered */ }
 }
 
-/** A failure's whole text, message then raw cause, for the raw cause of the error that wraps it. */
-function failureText(err) {
-  return err.raw ? `${err.message}: ${err.raw}` : err.message;
-}
-
 /**
  * Start an existing (stopped) container by creating a new task.
  * Called from containerManagerLifecycle when no task exists.
@@ -757,11 +752,7 @@ export async function startExistingContainer(name) {
     try {
       await callUnary(getClient('snapshots'), 'remove', { snapshotter: SNAPSHOTTER, key: name }, { deadlineMs: SNAPSHOT_REMOVE_DEADLINE_MS });
     } catch { /* best-effort */ }
-    throw containerError(
-      'CONTAINER_NETWORK_SETUP_FAILED',
-      `Network setup failed for "${name}"`,
-      failureText(err),
-    );
+    throw wrapContainerError('CONTAINER_NETWORK_SETUP_FAILED', `Network setup failed for "${name}"`, err);
   }
 
   let runConfig;
@@ -801,10 +792,11 @@ export async function startExistingContainer(name) {
   } catch (err) {
     await rollbackFailedStart(name, config.network);
     if (!staleTaskDeleteError) throw err;
-    throw containerError(
-      err.code || 'CONTAINERD_ERROR',
+    throw wrapContainerError(
+      isWispError(err) ? err.code : 'CONTAINERD_ERROR',
       `Container "${name}" failed to start, and its previous task could not be deleted first`,
-      `${failureText(err)}; deleting the previous task: ${failureText(staleTaskDeleteError)}`,
+      err,
+      staleTaskDeleteError,
     );
   }
 

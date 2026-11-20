@@ -9,6 +9,14 @@
 import { ERROR_STATUS } from './errorCodes.js';
 
 /**
+ * The mark of an error a Wisp factory built, its message Wisp's own words:
+ * createAppError's, and those of the managers' and the networking module's
+ * private factories, which cannot import this module and set the same
+ * registry symbol. Not enumerable: neither the log nor a body shows it.
+ */
+const WISP_ERROR = Symbol.for('wisp.error');
+
+/**
  * A structured error: `code` from the table, `message` for the reader, and an
  * optional `raw` cause (toolchain stderr, a daemon's message) that the detail
  * carries after the message.
@@ -17,7 +25,30 @@ export function createAppError(code, message, raw) {
   const err = new Error(message);
   err.code = code;
   if (raw) err.raw = raw;
+  Object.defineProperty(err, WISP_ERROR, { value: true });
   return err;
+}
+
+/**
+ * The error that says `message` about the failures `inners`
+ * (docs/specs/ERROR-HANDLING.md → The error body): an app error's message is
+ * Wisp's words, so it joins the outer message whole, and its raw cause is the
+ * raw cause; any other error's text is all cause. Several inners join with
+ * `; ` in each part. The one way to wrap an error in glue; the managers,
+ * which cannot import this module, have their twins beside their factories.
+ */
+export function wrapAppError(code, message, ...inners) {
+  const messages = [];
+  const raws = [];
+  for (const inner of inners) {
+    if (isAppError(inner)) {
+      messages.push(inner.message);
+      if (inner.raw) raws.push(inner.raw);
+    } else {
+      raws.push(inner?.message || String(inner));
+    }
+  }
+  return createAppError(code, messages.length ? `${message}: ${messages.join('; ')}` : message, raws.join('; '));
 }
 
 /** The HTTP status of a code; 500 for a code the table does not hold. */

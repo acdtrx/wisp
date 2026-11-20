@@ -19,7 +19,11 @@ Every error a client receives is
   error's raw cause when it has one that the message does not already say (`Failed to
   resize disk: qemu-img: …`). The cause is redacted (below); the message is not. An error
   with no code (a bug, a failure nothing turned into a code) has no message of Wisp's:
-  its whole text is cause, redacted. There is no third key.
+  its whole text is cause, redacted. There is no third key. A Wisp error wrapped by
+  another (`wrapAppError` in `lib/appErrors.js`, or a manager's twin beside its private
+  factory) keeps its message as Wisp's, so the detail reads `<outer message>: <inner
+  message>: <inner cause, redacted>`, and an inner error that is not Wisp's is all cause,
+  `<outer message>: <its text, redacted>` (settled 2026-11-20).
 
 **Every channel** sends this body:
 
