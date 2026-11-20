@@ -1,9 +1,5 @@
 import { api } from './client.js';
 
-export function listVMs() {
-  return api('/api/vms');
-}
-
 export function createVM(spec) {
   return api('/api/vms', { method: 'POST', body: spec });
 }

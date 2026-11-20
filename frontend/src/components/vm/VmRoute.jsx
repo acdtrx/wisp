@@ -11,9 +11,9 @@ export default function VmRoute() {
   const navigate = useNavigate();
   const decodedName = name ? decodeURIComponent(name) : '';
 
-  const selectVM = useVmStore((s) => s.selectVM);
-  const deselectVM = useVmStore((s) => s.deselectVM);
-  const deselectContainer = useContainerStore((s) => s.deselectContainer);
+  const selectVM = useVmStore((s) => s.select);
+  const deselectVM = useVmStore((s) => s.deselect);
+  const deselectContainer = useContainerStore((s) => s.deselect);
   const renamedSelection = useVmStore((s) => s.renamedSelection);
   const clearRenamedSelection = useVmStore((s) => s.clearRenamedSelection);
 

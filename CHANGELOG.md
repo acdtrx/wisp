@@ -27,6 +27,9 @@
 - **A VM with a long name can be assigned to a section** (names up to 128 characters).
 - **noVNC is pinned**, and a failed fetch of it fails the build.
 - **A failing or refused live feed shows, instead of going quiet** — the sidebar's sections, the job tray and the backups panel say when their feed fails, keeping what they showed. A refused events stream empties the workload list, the sections, the home page and the tray and shows the refusal in each, as it already did in the top bar; the list's Retry reconnects the stream.
+- **The VM General section waits for the VM's settings** like the other sections, so Auto Start no longer reads as off while the page loads.
+- **A workload's error bar clears when its next action begins**, as the error-handling spec says; an action that fails again shows its new error.
+- **The open VM page no longer closes on an empty VM list**, which is what an unreachable libvirt answers; the container page already stayed open.
 
 ## 2026-11-17
 

@@ -42,6 +42,7 @@ import { useBackupsStore } from '../../store/backupsStore.js';
 /* Same stopped set as the VM Overview. `shutdown` is a guest shutdown still in
  * progress (qemu holds the disks) — the backend refuses a backup then. */
 const VM_STOPPED_STATES = ['shutoff', 'nostate'];
+const NO_WORKLOADS = [];
 
 /** Backup dir timestamps are ISO with `:` swapped to `-` (2026-05-08T06-30-00). */
 function backupTsToIso(ts) {
@@ -133,8 +134,8 @@ function groupStatusLine(group, scheduleEnabled) {
 }
 
 export default function BackupsPanel() {
-  const vms = useVmStore((s) => s.vms);
-  const containers = useContainerStore((s) => s.containers);
+  const vms = useVmStore((s) => s.data) ?? NO_WORKLOADS;
+  const containers = useContainerStore((s) => s.data) ?? NO_WORKLOADS;
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
 
   const [vmBackups, setVmBackups] = useState([]);

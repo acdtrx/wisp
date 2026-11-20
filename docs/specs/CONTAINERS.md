@@ -615,11 +615,10 @@ The HTTP server listens **after** these steps, so hosts with mounts configured m
 
 ### Store
 
-`containerStore.js` (Zustand) mirrors `vmStore.js`:
+The client's container state works as the VM's does:
 
-- `containers` list from SSE, `selectedContainer`, `containerConfig`, `containerStats`
-- SSE: `startContainerListSSE()`, per-container stats SSE
-- Actions: `startContainer()`, `stopContainer()`, `restartContainer()`, `killContainer()`, `deleteContainer()`
+- The container list arrives on the `containers` topic; the open container's config is read when it is opened and again when the `changes` topic names it, and its stats come from its own scoped stream.
+- Actions: start, stop, restart, kill and delete.
 
 ### Components
 

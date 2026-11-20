@@ -13,9 +13,9 @@ export default function ContainerRoute() {
   const navigate = useNavigate();
   const decodedName = name ? decodeURIComponent(name) : '';
 
-  const selectContainer = useContainerStore((s) => s.selectContainer);
-  const deselectContainer = useContainerStore((s) => s.deselectContainer);
-  const deselectVM = useVmStore((s) => s.deselectVM);
+  const selectContainer = useContainerStore((s) => s.select);
+  const deselectContainer = useContainerStore((s) => s.deselect);
+  const deselectVM = useVmStore((s) => s.deselect);
   const renamedSelection = useContainerStore((s) => s.renamedSelection);
   const clearRenamedSelection = useContainerStore((s) => s.clearRenamedSelection);
 

@@ -5,7 +5,7 @@ import {
   Trash2, Loader2, Code2, X, Archive,
 } from 'lucide-react';
 
-import { useVmStore, runVMCommand } from '../../store/vmStore.js';
+import { useVmStore, useVmStatsStore, runVMCommand } from '../../store/vmStore.js';
 import { getVmIcon, getDefaultIconId } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
 import { updateVM } from '../../api/vms.js';
@@ -24,6 +24,7 @@ import AdvancedSection from '../sections/AdvancedSection.jsx';
 import VmNetworkInterfacesSection from '../sections/VmNetworkInterfacesSection.jsx';
 import CloudInitSection from '../sections/CloudInitSection.jsx';
 import { errorText } from '../../api/errors.js';
+import { liveData } from '../../store/streamStore.js';
 
 const ConsolePanel = lazy(() => import('../console/ConsolePanel.jsx'));
 
@@ -78,11 +79,11 @@ function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default
 }
 
 export default function OverviewPanel() {
-  const vmConfig = useVmStore((s) => s.vmConfig);
-  const vmStats = useVmStore((s) => s.vmStats);
+  const vmConfig = useVmStore((s) => s.config);
+  const vmStats = useVmStatsStore(liveData);
   const configLoading = useVmStore((s) => s.configLoading);
-  const actionLoading = useVmStore((s) => s.actions[s.selectedVM] ?? null);
-  const selectedVM = useVmStore((s) => s.selectedVM);
+  const actionLoading = useVmStore((s) => s.actions[s.selected] ?? null);
+  const selectedVM = useVmStore((s) => s.selected);
   const errors = useVmStore((s) => s.errors);
   const dismissError = useVmStore((s) => s.dismissError);
   const reportActionError = useVmStore((s) => s.reportActionError);
@@ -172,7 +173,7 @@ export default function OverviewPanel() {
 
   /* The banner: this VM's action and refresh errors, and the list's. */
   const bannerErrors = Object.values(errors).filter(
-    (e) => (e.vm === name && (e.owner === 'action' || e.owner === 'refresh')) || e.owner === 'list',
+    (e) => e.vm === name && (e.owner === 'action' || e.owner === 'refresh'),
   );
 
   const handleDelete = async () => {
@@ -366,17 +367,17 @@ export default function OverviewPanel() {
         )}
 
         {/* Sections */}
-        <GeneralSection
-          vmConfig={vmConfig}
-          isCreating={false}
-          onSave={handleSectionSave}
-          busyReason={busyHint}
-        />
-
         {configLoading ? (
-          <SectionSkeleton count={4} />
+          <SectionSkeleton count={5} />
         ) : (
           <>
+            <GeneralSection
+              vmConfig={vmConfig}
+              isCreating={false}
+              onSave={handleSectionSave}
+              busyReason={busyHint}
+            />
+
             <DisksSection
               vmConfig={vmConfig}
               busyReason={busyHint}

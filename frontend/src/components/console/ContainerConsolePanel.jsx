@@ -11,7 +11,7 @@ export default function ContainerConsolePanel({ containerName }) {
   const consoleApiRef = useRef(null);
   const prevStateRef = useRef(undefined);
 
-  const state = useContainerStore((s) => s.containerConfig?.state);
+  const state = useContainerStore((s) => s.config?.state);
   const isRunning = state === RUNNING_STATE;
 
   const handleConnect = useCallback(() => setConsoleConnected(true), []);

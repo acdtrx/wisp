@@ -1,10 +1,12 @@
-import { useVmStore } from '../../store/vmStore.js';
+import { useVmStore, useVmStatsStore } from '../../store/vmStore.js';
 import StatPill from '../shared/StatPill.jsx';
 import { formatDecimal, formatUptimeMs } from '../../utils/formatters.js';
+import { liveData } from '../../store/streamStore.js';
 
 export default function VMStatsBar() {
-  const vmStats = useVmStore((s) => s.vmStats);
-  const vmConfig = useVmStore((s) => s.vmConfig);
+  /* Live stats only: none while the stream is down or its gather failed. */
+  const vmStats = useVmStatsStore(liveData);
+  const vmConfig = useVmStore((s) => s.config);
 
   if (!vmConfig) return null;
 

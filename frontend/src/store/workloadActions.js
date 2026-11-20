@@ -5,10 +5,9 @@
  * Busy and errors are kept apart. `actions[name]` is the action in flight on workload
  * `name` ('start', 'delete', …), nothing else. `errors` holds what the detail view
  * shows, each until the user dismisses it, keyed by owner and workload: an `action`'s
- * failure (a new action's failure replaces it; a success leaves it), a failed
- * `refresh` of the config, the `select` read that left no config (the error page),
- * and the `list` (no workload). An entry is `{ owner, vm, message }`, `vm` naming the
- * workload.
+ * failure (cleared when the next action on that workload begins), a failed `refresh`
+ * of the config, and the `select` read that left no config (the error page). An entry
+ * is `{ owner, vm, message }`, `vm` naming the workload.
  */
 
 export function errorKey(owner, vm) {

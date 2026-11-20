@@ -96,13 +96,6 @@ VM is gone. Predates command-acks (found in its milestone 3 review, 2026-11-16).
 **Revisit trigger:** the next work on the VM detail page, or a user left on a spinner after
 a delete.
 
-**The VM General section renders the list seed while the config loads.** On the VM
-detail page `GeneralSection` sits outside the `configLoading` skeleton (`OverviewPanel.jsx`),
-so until the select's `getVM` lands it shows the list item as the config: Auto Start
-reads as off whatever it is. Predates command-acks (found in its milestone 3 review,
-2026-11-16). **Revisit trigger:** the next work on the VM detail page, or a user
-seeing that toggle flip on load.
-
 **A stale `vms` frame can undo a same-tab VM rename.** After a rename, the renaming tab
 follows it at once (`followRename`, then `navigate`, in `OverviewPanel.jsx`). A `vms`
 frame whose list was computed before libvirt's rename, arriving after that, shows the old
@@ -110,6 +103,16 @@ name and not the new, and `migrateSelectionIfRenamed` follows the uuid back to t
 the user lands on "not found" for a VM that exists under the new one. It needs a server
 list refresh that spans the rename: plausible, rare (found in the command-acks milestone 3
 review, 2026-11-16). **Revisit trigger:** a rename seen to land on "not found".
+
+**A workload list answers an empty list when its manager is down.** Outside the start's
+migrations, `listVMs` answers `[]` while libvirt is not connected
+(`fetchVMListFromLibvirt`), and `listContainers` answers `[]` when the containers
+directory cannot be read, so the `vms` and `containers` topics send a good, empty frame
+for "unknown" and the sidebar shows no workloads rather than an error. The client no
+longer reads an empty frame as "everything was deleted" (found 2026-11-20, phase 4).
+It belongs with phase 5's "strict manager" ruling (C-5, V-8): a list that cannot be read
+fails. **Revisit trigger:** phase 5, or a user seeing an empty sidebar while libvirt or
+containerd is down.
 
 **A VM rename navigates even after the user moved on.** `handleSectionSave` in
 `OverviewPanel.jsx` navigates to the renamed VM once the save resolves, even if the user

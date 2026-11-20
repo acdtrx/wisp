@@ -1,10 +1,12 @@
-import { useContainerStore } from '../../store/containerStore.js';
+import { useContainerStore, useContainerStatsStore } from '../../store/containerStore.js';
 import StatPill from '../shared/StatPill.jsx';
 import { formatDecimal, formatUptimeMs, formatLanIpHost } from '../../utils/formatters.js';
+import { liveData } from '../../store/streamStore.js';
 
 export default function ContainerStatsBar() {
-  const stats = useContainerStore((s) => s.containerStats);
-  const config = useContainerStore((s) => s.containerConfig);
+  /* Live stats only: none while the stream is down or its gather failed. */
+  const stats = useContainerStatsStore(liveData);
+  const config = useContainerStore((s) => s.config);
 
   if (!config) return null;
 
@@ -29,10 +31,9 @@ export default function ContainerStatsBar() {
      so `config` — a snapshot taken when the workload was selected — never shows them on a
      container the user just started. Once the stats stream has produced a real frame it is
      authoritative for both; config only seeds the paint before the first frame lands (and
-     covers error frames, which carry no fields). */
-  const live = stats && !stats.error ? stats : null;
-  const ip = live ? live.ip : config.network?.ip;
-  const mdnsHostname = live ? live.mdnsHostname : config.mdnsHostname;
+     covers a failed gather, which carries no fields). */
+  const ip = stats ? stats.ip : config.network?.ip;
+  const mdnsHostname = stats ? stats.mdnsHostname : config.mdnsHostname;
 
   /* The pb-safe wrapper carries the border and background so the card colour fills the
      iOS home-indicator strip, while the scroll row it wraps stays clear of the system

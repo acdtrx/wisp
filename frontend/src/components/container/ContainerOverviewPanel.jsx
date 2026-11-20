@@ -13,7 +13,7 @@ import {
 import { updateContainer, ejectContainerApp } from '../../api/containers.js';
 import { startContainerBackup } from '../../api/backups.js';
 import { getSettings } from '../../api/settings.js';
-import { JOB_KIND } from '../../api/jobs.js';
+import { JOB_KIND } from '../../../../shared/wireNames.js';
 import { getVmIcon, getDefaultContainerIconId } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
@@ -54,10 +54,10 @@ function ActionButton({ icon: Icon, label, onClick, disabled, variant = 'default
 }
 
 export default function ContainerOverviewPanel() {
-  const config = useContainerStore((s) => s.containerConfig);
-  const loading = useContainerStore((s) => s.loading);
-  const actionLoading = useContainerStore((s) => s.actions[s.selectedContainer] ?? null);
-  const selectedContainer = useContainerStore((s) => s.selectedContainer);
+  const config = useContainerStore((s) => s.config);
+  const loading = useContainerStore((s) => s.configLoading);
+  const actionLoading = useContainerStore((s) => s.actions[s.selected] ?? null);
+  const selectedContainer = useContainerStore((s) => s.selected);
   const errors = useContainerStore((s) => s.errors);
   const dismissError = useContainerStore((s) => s.dismissError);
   const reportActionError = useContainerStore((s) => s.reportActionError);
@@ -150,7 +150,7 @@ export default function ContainerOverviewPanel() {
 
   /* The banner: this container's action and refresh errors, and the list's. */
   const bannerErrors = Object.values(errors).filter(
-    (e) => (e.vm === name && (e.owner === 'action' || e.owner === 'refresh')) || e.owner === 'list',
+    (e) => e.vm === name && (e.owner === 'action' || e.owner === 'refresh'),
   );
 
   const handleDelete = async () => {

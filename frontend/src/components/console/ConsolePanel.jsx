@@ -11,7 +11,7 @@ export default function ConsolePanel({ vmName }) {
   const consoleApiRef = useRef(null);
   const prevVmStateRef = useRef(undefined);
 
-  const vmState = useVmStore((s) => s.vmConfig?.state);
+  const vmState = useVmStore((s) => s.config?.state);
 
   const handleConnect = useCallback(() => setConsoleConnected(true), []);
   const handleDisconnect = useCallback(() => setConsoleConnected(false), []);

@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, ArrowLeft } from 'lucide-react';
 
-import { useContainerStore } from '../../store/containerStore.js';
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
 import { createContainer } from '../../api/containers.js';
 import ContainerGeneralSection from '../sections/ContainerGeneralSection.jsx';
@@ -22,7 +21,6 @@ const STEP_LABELS = {
 
 export default function CreateContainerPanel() {
   const navigate = useNavigate();
-  const fetchContainers = useContainerStore((s) => s.fetchContainers);
 
   const [selectedApp, setSelectedApp] = useState(null);
   const [form, setForm] = useState({
@@ -80,7 +78,6 @@ export default function CreateContainerPanel() {
       await awaitJob(jobId);
       setCreating(false);
       setCreateJobId(null);
-      fetchContainers();
       if (mountedRef.current) navigate(`/container/${encodeURIComponent(spec.name)}/overview`);
     } catch (err) {
       setCreateError(errorText(err));

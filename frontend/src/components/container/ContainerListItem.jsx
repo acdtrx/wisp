@@ -15,7 +15,7 @@ function shortImage(image) {
 }
 
 export default function ContainerListItem({ container }) {
-  const selectedContainer = useContainerStore((s) => s.selectedContainer);
+  const selectedContainer = useContainerStore((s) => s.selected);
   const startContainer = useContainerStore((s) => s.startContainer);
   const stopContainer = useContainerStore((s) => s.stopContainer);
   const restartContainer = useContainerStore((s) => s.restartContainer);

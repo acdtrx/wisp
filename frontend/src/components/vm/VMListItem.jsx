@@ -19,7 +19,7 @@ const STATE_ICON_COLOR = {
 };
 
 export default function VMListItem({ vm }) {
-  const selectedVM = useVmStore((s) => s.selectedVM);
+  const selectedVM = useVmStore((s) => s.selected);
   const startVM = useVmStore((s) => s.startVM);
   const stopVM = useVmStore((s) => s.stopVM);
   const rebootVM = useVmStore((s) => s.rebootVM);

@@ -1,10 +1,6 @@
 import { api } from './client.js';
 import { postMultipartFile } from './upload.js';
 
-export function listContainers() {
-  return api('/api/containers');
-}
-
 /** OCI images in containerd (wisp namespace). */
 export function listContainerImages() {
   return api('/api/containers/images');

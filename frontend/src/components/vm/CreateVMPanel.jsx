@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 
-import { useVmStore } from '../../store/vmStore.js';
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
 import { createVM, getHostBridges } from '../../api/vms.js';
 import GeneralSection from '../sections/GeneralSection.jsx';
@@ -54,7 +53,6 @@ const defaultForm = () => ({
 
 export default function CreateVMPanel() {
   const navigate = useNavigate();
-  const fetchVMs = useVmStore((s) => s.fetchVMs);
 
   const [form, setForm] = useState(defaultForm);
   const [bridges, setBridges] = useState([]);
@@ -212,7 +210,6 @@ export default function CreateVMPanel() {
       const result = await awaitJob(jobId);
       setCreating(false);
       setCreateJobId(null);
-      fetchVMs();
       if (mountedRef.current) navigate(`/vm/${encodeURIComponent(result.name)}/overview`);
     } catch (err) {
       setCreateError(errorText(err));

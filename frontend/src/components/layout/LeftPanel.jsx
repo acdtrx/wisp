@@ -27,6 +27,7 @@ const FILTER_OPTIONS = [
 ];
 
 const DRAG_MIME = 'application/x-wisp-workload';
+const NO_WORKLOADS = [];
 
 /**
  * Compact "logs-marker" style section header: thin rule with a small label.
@@ -314,22 +315,20 @@ function CreateSectionGhost({ onCreateAndAssign }) {
 }
 
 export default function LeftPanel() {
-  const vms = useVmStore((s) => s.vms);
-  const startVMListSSE = useVmStore((s) => s.startVMListSSE);
-  const stopVMListSSE = useVmStore((s) => s.stopVMListSSE);
-  const containers = useContainerStore((s) => s.containers);
-  const vmsLoaded = useVmStore((s) => s.listLoaded);
-  const containersLoaded = useContainerStore((s) => s.listLoaded);
-  const vmListError = useVmStore((s) => s.listError);
-  const containerListError = useContainerStore((s) => s.listError);
-  const listsLoaded = vmsLoaded && containersLoaded;
+  const vmList = useVmStore((s) => s.data);
+  const connectVMs = useVmStore((s) => s.connect);
+  const disconnectVMs = useVmStore((s) => s.disconnect);
+  const containerList = useContainerStore((s) => s.data);
+  const vms = vmList ?? NO_WORKLOADS;
+  const containers = containerList ?? NO_WORKLOADS;
+  const vmListError = useVmStore((s) => s.error);
+  const containerListError = useContainerStore((s) => s.error);
+  const listsLoaded = vmList != null && containerList != null;
   const listError = vmListError || containerListError;
-  const retryLists = () => {
-    useVmStore.getState().fetchVMs();
-    useContainerStore.getState().fetchContainers();
-  };
-  const startContainerListSSE = useContainerStore((s) => s.startContainerListSSE);
-  const stopContainerListSSE = useContainerStore((s) => s.stopContainerListSSE);
+  /* Both lists are topics of the one events stream: reconnecting it asks for both. */
+  const retryLists = () => useVmStore.getState().retry();
+  const connectContainers = useContainerStore((s) => s.connect);
+  const disconnectContainers = useContainerStore((s) => s.disconnect);
   const listFilter = useUiStore((s) => s.listFilter);
   const setListFilter = useUiStore((s) => s.setListFilter);
   const organizeMode = useUiStore((s) => s.organizeMode);
@@ -362,14 +361,14 @@ export default function LeftPanel() {
   const [sectionsBusy, runSectionsCommand] = useBusyCommand();
 
   useEffect(() => {
-    startVMListSSE();
-    return () => stopVMListSSE();
-  }, [startVMListSSE, stopVMListSSE]);
+    connectVMs();
+    return () => disconnectVMs();
+  }, [connectVMs, disconnectVMs]);
 
   useEffect(() => {
-    startContainerListSSE();
-    return () => stopContainerListSSE();
-  }, [startContainerListSSE, stopContainerListSSE]);
+    connectContainers();
+    return () => disconnectContainers();
+  }, [connectContainers, disconnectContainers]);
 
   useEffect(() => {
     connectSections();
