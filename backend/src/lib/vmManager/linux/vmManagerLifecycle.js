@@ -7,35 +7,30 @@ import {
   resolveDomain,
   getDomainState,
   getDomainObjAndIface,
-  unwrapVariant,
   vmError,
   subscribeDomainStopped,
 } from './vmManagerConnection.js';
 import { isOfflineState } from './libvirtConstants.js';
+import { getCachedVMName } from './vmManagerList.js';
 
 const vmStoppedHandlers = new Set();
 
 /**
  * Subscribe to VM stops: `handler(name)` once libvirt reports that a VM's QEMU
  * process ended (shut down, force stopped, crashed), whoever stopped it; by
- * then libvirt has removed the VM's tap devices. Only fires with event
- * watching; no replay. Returns an unsubscribe function.
+ * then libvirt has removed the VM's tap devices. Fires for every stop; `name`
+ * is the cached list's, null when the list does not know the domain. Only
+ * fires with event watching; no replay. Returns an unsubscribe function.
  */
 export function subscribeVMStopped(handler) {
   vmStoppedHandlers.add(handler);
   return () => vmStoppedHandlers.delete(handler);
 }
 
-async function announceVMStopped(domainPath) {
-  let name;
-  try {
-    const { props } = await getDomainObjAndIface(domainPath);
-    name = String(unwrapVariant(await props.Get('org.libvirt.Domain', 'Name')));
-  } catch (err) {
-    // Gone with its process (a transient domain), or libvirt unreachable.
-    connectionState.logger?.warn?.({ domainPath, err: err?.message || err }, '[vmManager] stopped domain could not be named');
-    return;
-  }
+// Named from the list, not read from libvirt: the domain may already be gone
+// (a transient one, or a running VM's delete undefining it right after).
+function announceVMStopped(domainPath) {
+  const name = getCachedVMName(domainPath);
   for (const handler of vmStoppedHandlers) {
     try {
       handler(name);
@@ -45,7 +40,7 @@ async function announceVMStopped(domainPath) {
   }
 }
 
-subscribeDomainStopped((domainPath) => { announceVMStopped(domainPath); });
+subscribeDomainStopped(announceVMStopped);
 
 /**
  * The checks a lifecycle call makes first, alone and quick, for a caller that

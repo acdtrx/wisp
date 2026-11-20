@@ -137,7 +137,8 @@ consumer, and nothing has called for more).
     `containerManager.subscribeContainerNetnsRemoved(handler)` — `(name)` after Wisp
     deleted a container's netns, its veth with it — and
     `vmManager.subscribeVMStopped(handler)` — `(name)` after libvirt reported that a
-    VM's QEMU process ended, its taps removed. On each, `lib/mdnsProbeRecovery.js`
+    VM's QEMU process ended, its taps removed, for every stop (`name` null when the
+    VM list does not know the domain). On each, `lib/mdnsProbeRecovery.js`
     re-publishes every entry group still probing, since avahi 0.8 strands a group
     probing on a removed interface. The macOS stubs never fire.
 - **Record change cues** feed the `changes` topic (Transport). Unlike the surfaces

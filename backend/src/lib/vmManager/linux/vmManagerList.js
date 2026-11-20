@@ -200,6 +200,17 @@ export function getCachedDomainPath(name) {
   return vmListCache.find((v) => v.name === name)?.domainPath;
 }
 
+/**
+ * The name of the VM whose libvirt-dbus domain path is `domainPath`, from the
+ * cached list, or null when the cache is not populated or holds no such VM.
+ * For an event that carries only the path and may arrive after the domain is
+ * gone.
+ */
+export function getCachedVMName(domainPath) {
+  if (!vmListCache) return null;
+  return vmListCache.find((v) => v.domainPath === domainPath)?.name ?? null;
+}
+
 /* ── Public API ─────────────────────────────────────────────────────── */
 
 export async function listVMs() {
