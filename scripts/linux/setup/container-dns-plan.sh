@@ -57,7 +57,17 @@ dns_stub_wait() {
 # network at all. <stage> is a copy of netplan's directories with the stub's
 # file in place (bridge-plan.sh, netplan_stage).
 refuse_dns_stub() {
-  local out rc=0
+  local out rc=0 kind
+  # A device of that name already there of another kind (an operator's, left
+  # in the kernel after its definition went) is not taken over: systemd-networkd
+  # keeps a device that exists, and the stub would never get its address.
+  if [[ -e "/sys/class/net/$DNS_STUB_IFACE" ]]; then
+    out="$(net_read ip -j -d link show dev "$DNS_STUB_IFACE")" || exit 1
+    kind="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/link.py" kind <<<"$out")" || net_fail "cannot read the kind of $DNS_STUB_IFACE"
+    [[ "$kind" == dummy ]] \
+      || refuse NETPLAN_DNS_STUB "a device $DNS_STUB_IFACE of kind ${kind:-physical} exists, where Wisp's container DNS stub is a dummy device of that name." \
+        "Nothing was changed. Remove it (ip link delete $DNS_STUB_IFACE) and any definition of it of your own, and run this again."
+  fi
   out="$(net_call netplan generate --root-dir "$1" 2>&1)" || rc=$?
   (( rc != 0 )) || return 0
   (( rc != 124 && rc != 137 )) || net_fail "'netplan generate --root-dir $1' did not finish (exit $rc)"

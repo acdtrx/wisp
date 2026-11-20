@@ -27,3 +27,17 @@ class Permaddr(unittest.TestCase):
 
 
 
+
+
+def kind(link):
+    r = subprocess.run([sys.executable, '-I', LINK, 'kind'], input=json.dumps([link]),
+                       capture_output=True, text=True, check=True)
+    return r.stdout.strip()
+
+
+class Kind(unittest.TestCase):
+    def test_the_kind_ip_names(self):
+        self.assertEqual(kind({'ifname': 'wisp-dns0', 'linkinfo': {'info_kind': 'bridge'}}), 'bridge')
+
+    def test_empty_for_a_physical_link(self):
+        self.assertEqual(kind({'ifname': UPLINK, 'address': MAC}), '')
