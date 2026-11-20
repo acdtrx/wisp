@@ -14,7 +14,8 @@
 #   5. restore     anything else: undone.
 #
 # The journal directory, JOURNAL_DIR:
-#   version    its format, JOURNAL_FORMAT — the first file written in it
+#   version    its format, JOURNAL_FORMAT — the first file written in it, absent
+#              or whole: the one thing every release's journal shares
 #   plan       the plan's record (plan-record.sh), uplink.state, the check's
 #              reference, and (NetworkManager) uplink.nmconnection, the
 #              generated uplink connection rendered as a stored one — copied
@@ -139,13 +140,19 @@ journal_connrm() { _journal_add "connrm"$'\t'"$1"; }
 # undo: it only leaves the next run to decide without it.
 journal_undo_mark() { [[ -d "$JOURNAL_DIR" ]] && _journal_add undo; }
 
-# _journal_format <dir>, a directory holding a journal: J_FORMAT empty when it
-# is in this release's format; else "other <why>" (another release of Wisp
-# wrote it), "bad <why>" (setup did not) or "fail <why>" (it cannot be read).
+# _journal_format <dir>: J_FORMAT empty when the journal directory is in this
+# release's format, or holds neither a version nor a journal (a begin cut short
+# before its version); else "other <why>" (its version is another release's,
+# whatever else it holds: a later format may keep its entries under another
+# name), "bad <why>" (setup did not write it: a journal without a version) or
+# "fail <why>" (it cannot be read).
 _journal_format() {
   local v
   J_FORMAT=""
-  [[ -e "$1/version" ]] || { J_FORMAT="bad $1 holds a journal but no version: not one setup wrote"; return 0; }
+  if [[ ! -e "$1/version" ]]; then
+    [[ ! -e "$1/journal" ]] || J_FORMAT="bad $1 holds a journal but no version: not one setup wrote"
+    return 0
+  fi
   v="$(cat "$1/version")" || { J_FORMAT="fail cannot read $1/version"; return 0; }
   [[ "$v" != "$JOURNAL_FORMAT" ]] || return 0
   if [[ "$v" =~ ^[1-9][0-9]*$ ]]; then
@@ -156,18 +163,18 @@ _journal_format() {
 }
 
 # _journal_read: the journal's entries into arrays; J_FILE_FINISH[i] and
-# J_CONNRM are the finish's. A last line cut short is dropped; a missing
-# journal reads as no entries (J_NONE=yes), whatever else the directory holds
-# (a begin cut short). Fails on a journal in another format (J_FORMAT,
-# _journal_format), and, naming the line in J_BAD, on anything else it does not
-# expect.
+# J_CONNRM are the finish's. The version first: another release's, or a
+# journal without one, fails (J_FORMAT, _journal_format). Then a missing
+# journal reads as no entries (J_NONE=yes): a begin cut short. A last line cut
+# short is dropped; anything else it does not expect fails, naming the line in
+# J_BAD.
 _journal_read() {
   J_NONE=no J_UNDO=no J_FINISH=no J_BAD="" J_FORMAT=""
   J_FILES=() J_EXISTED=() J_ORIG=() J_WROTE=() J_LINES=() J_FILE_FINISH=() J_DIRS=() J_CONNRM=()
   local f="$JOURNAL_DIR/journal" n=0 total kind a b c d line
-  [[ -e "$f" ]] || { J_NONE=yes; return 0; }
   _journal_format "$JOURNAL_DIR"
   [[ -z "$J_FORMAT" ]] || return 1
+  [[ -e "$f" ]] || { J_NONE=yes; return 0; }
   total="$(grep -c '' "$f")" || total=0
   # A last line without its newline was cut short: its change never happened.
   [[ ! -s "$f" || "$(tail -c 1 "$f" | od -An -c | tr -d ' ')" == '\n' ]] || total=$(( total - 1 ))
