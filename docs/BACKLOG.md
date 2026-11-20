@@ -241,6 +241,18 @@ wiping cloud-init.
 module's hook (found 2026-11-12). **Revisit trigger:** the response and the badge are
 seen disagreeing again, or the next change to any of the three.
 
+**Container sections take no busy reason.** While a job holds a container, its header
+actions are disabled with the job's title as the reason, but its sections (mounts, env,
+services, devices) keep their Save enabled and meet a 409 `CONTAINER_BUSY` instead; the VM
+page's sections take the reason (found 2026-11-20, in milestone 2's fixes). **Revisit
+trigger:** the next work on the container detail sections, or a user meeting that 409.
+
+**A self-update whose backend never comes back waits for ever.** Once the install job
+reports `restarting`, the page waits for its stream to end in `JOB_GONE` after the
+restart; a backend that never returns leaves the wait unsettled, so the "stuck" note
+never shows (existing behaviour, noted 2026-11-20). **Revisit trigger:** an update seen
+hanging on the page.
+
 **A run log that cannot be read answers `CONTAINERD_ERROR`.** containerManager's log
 reads (`containerManagerLogs.js`, four sites) code a file read failure on the run log
 (`EACCES`, `EIO`) as `CONTAINERD_ERROR`, a containerd fault it is not (seen on tini,
