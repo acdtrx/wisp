@@ -5,7 +5,6 @@
   "body": [
     {
       "iconId": null,
-      "localDns": false,
       "memoryMiB": 8192,
       "name": "vm-a",
       "osCategory": "linux",
@@ -22,7 +21,6 @@
     },
     {
       "iconId": "debian",
-      "localDns": false,
       "memoryMiB": 2048,
       "name": "vm-b",
       "osCategory": "linux",

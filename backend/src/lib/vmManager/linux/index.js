@@ -40,11 +40,8 @@ export {
   getRunningVMAllocations,
   getVMConfig,
   findVMsUsingImage,
-  getCachedLocalDns,
   subscribeVMListChange,
 } from './vmManagerList.js';
-
-export { subscribeVMNetworkChange } from './vmManagerNetwork.js';
 
 export { subscribeVMChange } from './vmManagerChange.js';
 

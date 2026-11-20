@@ -20,9 +20,7 @@ export const listHostFirmware = impl.listHostFirmware;
 export const listVMs = impl.listVMs;
 export const getVMConfig = impl.getVMConfig;
 export const findVMsUsingImage = impl.findVMsUsingImage;
-export const getCachedLocalDns = impl.getCachedLocalDns;
 export const subscribeVMListChange = impl.subscribeVMListChange;
-export const subscribeVMNetworkChange = impl.subscribeVMNetworkChange;
 export const subscribeVMChange = impl.subscribeVMChange;
 export const getGuestNetwork = impl.getGuestNetwork;
 

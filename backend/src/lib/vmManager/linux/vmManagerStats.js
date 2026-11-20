@@ -1,15 +1,29 @@
 /**
  * VM stats, raw XML, VNC port; guest agent (IP, hostname).
- *
- * Note: this file is intentionally side-effect-free w.r.t. mDNS publishing.
- * Local-DNS registration is owned by lib/vmMdnsReconciler.js, driven by the
- * vmManager.subscribeVMNetworkChange event, not by SSE/UI activity.
  */
-import { connectionState, resolveDomain, getDomainXML, getDomainObjAndIface, unwrapVariant, unwrapDict, vmError, subscribeAgentEvent } from './vmManagerConnection.js';
+import {
+  connectionState,
+  resolveDomain,
+  getDomainXML,
+  getDomainObjAndIface,
+  unwrapVariant,
+  unwrapDict,
+  vmError,
+  subscribeAgentEvent,
+  attachAgentSubscription,
+  detachAgentSubscription,
+} from './vmManagerConnection.js';
 import { parseVMFromXML } from './vmManagerXml.js';
 import { STATE_NAMES, VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT, VM_STATS_MASK } from './libvirtConstants.js';
-import { getCachedLocalDns, getCachedStaleBinary, getCachedVcpus, getCachedGuestAgent, getCachedStateCode, getCachedDomainPath, getCachedStartedAt } from './vmManagerList.js';
-import { getRegisteredHostname } from '../../mdns/index.js';
+import {
+  subscribeVMListChange,
+  getCachedStaleBinary,
+  getCachedVcpus,
+  getCachedGuestAgent,
+  getCachedStateCode,
+  getCachedDomainPath,
+  getCachedStartedAt,
+} from './vmManagerList.js';
 
 function parseInterfaceAddresses(raw, unwrapVariantFn) {
   const ifaces = Array.isArray(raw) ? raw : [];
@@ -84,11 +98,29 @@ function invalidateGuestInfo(name) {
 subscribeAgentEvent((name) => { invalidateGuestInfo(name); });
 
 /**
+ * libvirt-dbus emits AgentEvent on each domain's own object, so a listener is
+ * attached to every running VM and detached once it leaves the running set,
+ * in step with the VM list. On a disconnect (list null) the connection layer
+ * has already dropped them all.
+ */
+function listenToRunningAgents(list) {
+  if (!list) return;
+  const running = new Map(list.filter((vm) => vm.stateCode === 1).map((vm) => [vm.domainPath, vm.name]));
+  for (const path of [...connectionState.agentSubscriptions.keys()]) {
+    if (!running.has(path)) detachAgentSubscription(path);
+  }
+  for (const [path, name] of running) attachAgentSubscription(path, name);
+}
+
+subscribeVMListChange(listenToRunningAgents);
+
+/**
  * Fetch guest-agent IP + hostname for a VM in one libvirt round-trip.
  * Returns `{ ip, hostname }` with either field possibly null. Exposed on the
- * vmManager facade so glue (e.g. vmMdnsReconciler) can read current network
- * state without touching libvirt ifaces. Returns `{ ip: null, hostname: null }`
- * if the domain can't be resolved or the agent is not configured/responding.
+ * vmManager facade so glue (the deployment overview, MCP's get_vm) can read
+ * current network state without touching libvirt ifaces. Returns
+ * `{ ip: null, hostname: null }` if the domain can't be resolved or the agent
+ * is not configured/responding.
  */
 export async function getGuestNetwork(name) {
   let path;
@@ -126,7 +158,6 @@ export async function getVMStats(name) {
   const stateCode = cachedState ?? 1;
 
   const cachedVcpus = getCachedVcpus(name);
-  const localDns = getCachedLocalDns(name) ?? false;
   const now = Date.now();
   const prev = connectionState.prevVMStats.get(path);
 
@@ -236,7 +267,6 @@ export async function getVMStats(name) {
     guestIp: guestIp ?? undefined,
     guestHostname: guestHostname ?? undefined,
     guestAgent: guestAgent ?? undefined,
-    mdnsHostname: localDns === true ? (getRegisteredHostname(name) ?? undefined) : undefined,
     staleBinary,
   };
 }

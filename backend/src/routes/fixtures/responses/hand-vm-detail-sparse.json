@@ -55,7 +55,6 @@
     "graphics": null,
     "guestAgent": true,
     "iconId": null,
-    "localDns": false,
     "machineType": null,
     "memBalloon": true,
     "memoryMiB": 2048,

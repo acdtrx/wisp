@@ -6,9 +6,9 @@
  * `withVmOperationLock`, for the call. No route takes a lock itself
  * (docs/specs/BACKUPS.md → Per-VM operation lock).
  *
- * The follow-ups outside the VM's own record — its section assignment, its
- * last backup attempt and its `.local` name — are lib/workloadFollowUps.js's,
- * the same as a container's.
+ * The follow-ups outside the VM's own record — its section assignment and its
+ * last backup attempt — are lib/workloadFollowUps.js's, the same as a
+ * container's.
  */
 import {
   assertVMNameAvailable,
@@ -52,7 +52,7 @@ import { isPathInsideAllowedRoots } from './paths.js';
 import { withVmOperationLock } from './vmOperationLock.js';
 import { createAppError } from './appErrors.js';
 import { startWorkloadBackupJob } from './workloadBackup.js';
-import { followWorkloadConfigUpdate, followWorkloadDelete, followWorkloadRename } from './workloadFollowUps.js';
+import { followWorkloadDelete, followWorkloadRename } from './workloadFollowUps.js';
 
 const vm = (name) => ({ type: 'vm', name });
 
@@ -231,7 +231,6 @@ export async function editVmConfig({ name, changes, log }) {
       if (Object.keys(rest).length === 0) return;
     }
     await updateVMConfig(current, rest);
-    await followWorkloadConfigUpdate({ type: 'vm', name: current, localDns: rest.localDns, log });
   };
   if (!renameTo) {
     await withVmOperationLock(name, 'config edit', apply);

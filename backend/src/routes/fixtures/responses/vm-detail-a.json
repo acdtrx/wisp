@@ -57,7 +57,6 @@
     },
     "guestAgent": true,
     "iconId": null,
-    "localDns": false,
     "machineType": "pc-q35-9.2",
     "memBalloon": true,
     "memoryMiB": 8192,

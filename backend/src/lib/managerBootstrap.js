@@ -51,7 +51,7 @@ export function configureManagers({ getConfig = getConfigSync } = {}) {
  *
  * `watchEvents: false` connects without the managers' event-driven machinery —
  * no libvirt DomainEvent / containerd events subscription, so no container
- * restart policy, no network reconcilers, no list caches, and none of the
+ * restart policy, no network reconciler, no list caches, and none of the
  * event-driven writes (clearing outgrown restart-required flags, the network
  * probe). For the migrations, before the start connects for normal work: one
  * actor per concern, and every write they make is one they record.

@@ -47,15 +47,14 @@ export function domainNameFromParsed(dom) {
 /** Extract Wisp prefs from domain metadata (wisp:prefs). */
 function parseWispPrefs(dom) {
   const metadata = dom?.metadata;
-  const none = { iconId: null, localDns: false, pendingRestart: null };
+  const none = { iconId: null, pendingRestart: null };
   if (!metadata || typeof metadata !== 'object') return none;
   const prefs = metadata[WISP_PREFS_KEY];
   if (!prefs || typeof prefs !== 'object') return none;
   const iconText = wispPrefText(prefs, 'wisp:icon');
-  const localDns = wispPrefText(prefs, 'wisp:localDns').toLowerCase() === 'true';
   const since = wispPrefText(prefs, 'wisp:pendingRestart');
   const pendingRestart = since ? { since } : null;
-  return { iconId: iconText || null, localDns, pendingRestart };
+  return { iconId: iconText || null, pendingRestart };
 }
 
 /**
@@ -81,19 +80,15 @@ function pruneWispPrefs(dom) {
 }
 
 /**
- * Set or clear the icon and local-DNS prefs on a parsed domain object (mutates dom).
- * iconId: string to store, or null/'' to clear
- * localDns: boolean to store (any other value clears it)
- * Other wisp:prefs children (pendingRestart) are left as they are.
+ * Set or clear the icon pref on a parsed domain object (mutates dom): a string
+ * to store, or null/'' to clear. Other wisp:prefs children are left as they are.
  */
-export function setWispMetadata(dom, { iconId, localDns }) {
+export function setWispIcon(dom, iconId) {
   if (!dom) return;
   const prefs = ensureWispPrefs(dom);
   const nextIcon = iconId == null || iconId === '' ? null : String(iconId).trim();
   if (nextIcon) prefs['wisp:icon'] = nextIcon;
   else delete prefs['wisp:icon'];
-  if (localDns === true || localDns === false) prefs['wisp:localDns'] = localDns ? 'true' : 'false';
-  else delete prefs['wisp:localDns'];
   pruneWispPrefs(dom);
 }
 
@@ -300,7 +295,6 @@ export function parseVMFromXML(xmlString) {
     nestedVirt,
     _hostdevs: hostdevs,
     iconId: prefs.iconId,
-    localDns: prefs.localDns,
     pendingRestart: prefs.pendingRestart,
   };
 }

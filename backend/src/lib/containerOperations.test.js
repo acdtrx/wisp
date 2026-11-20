@@ -43,7 +43,6 @@ mockModule('./containerApps/index.js', [
 mockModule('./backupDestinations.js', ['resolveBackupDestinations', 'backupToEachDestination']);
 mockModule('./backupStatus.js', ['recordBackupAttempt', 'moveBackupStatus', 'forgetBackupStatus']);
 mockModule('./sections.js', ['renameWorkloadAssignment', 'removeWorkloadAssignment']);
-mockModule('./vmMdnsReconciler.js', ['publishVm', 'unpublishVm']);
 mockModule('./containerMdnsReconciler.js', ['publishContainer', 'unpublishContainer']);
 
 const {

@@ -10,7 +10,7 @@ import { validateVMName } from './vmManagerValidation.js';
 import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
 import {
-  parseVMFromXML, parseDomainRaw, buildXml, setWispMetadata, setWispPendingRestart, domainDefinitionSignature,
+  parseVMFromXML, parseDomainRaw, buildXml, setWispIcon, setWispPendingRestart, domainDefinitionSignature,
   domainNameFromParsed,
 } from './vmManagerXml.js';
 import { getWindowsFeatures, getWindowsClock, getLinuxFeatures, createOwnVMDir } from './vmManagerCreate.js';
@@ -283,12 +283,7 @@ export async function updateVMConfig(name, changes) {
     }
   }
 
-  if (patch.iconId !== undefined || patch.localDns !== undefined) {
-    setWispMetadata(dom, {
-      iconId: patch.iconId !== undefined ? (patch.iconId || null) : current.iconId,
-      localDns: patch.localDns !== undefined ? (patch.localDns === true) : current.localDns,
-    });
-  }
+  if (patch.iconId !== undefined) setWispIcon(dom, patch.iconId || null);
 
   const requiresRestart = isRunning && domainDefinitionSignature(parsed) !== baselineSignature;
   if (requiresRestart) setWispPendingRestart(dom, new Date().toISOString());
@@ -305,7 +300,7 @@ export async function updateVMConfig(name, changes) {
   } catch (err) {
     throw vmError('LIBVIRT_ERROR', `Failed to update VM "${effectiveName}" configuration`, err.message);
   }
-  /* The list carries the name, sizing, icon, Local DNS and the restart flag; libvirt's
+  /* The list carries the name, sizing, icon and the restart flag; libvirt's
    * DEFINED events are unreliable, so refresh it here as create and delete do. */
   refreshVMListCache();
 
@@ -320,9 +315,6 @@ export async function updateVMConfig(name, changes) {
       connectionState.logger?.warn?.({ err: err.message }, '[vmManager] Failed to set autostart');
     }
   }
-
-  // The .local name is Wisp glue's (lib/vmOperations.js), after this returns:
-  // a localDns change is metadata, so no DomainEvent follows it.
 
   return { ok: true, requiresRestart, name: effectiveName };
 }

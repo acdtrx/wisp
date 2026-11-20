@@ -123,18 +123,16 @@ consumer, and nothing has called for more).
 - **Events are push, not pull**: subscribe-and-replay surfaces on each facade — they fire
   only on change, replay the current state to a new subscriber, and keep platform
   plumbing private. A new event surface follows the same pattern.
-- **Manager network events** feed the app glue that publishes `.local` names, and the
-  triggers of avahi's stuck-probe recovery:
-  - `vmManager.subscribeVMNetworkChange(handler)` — `(name, snapshot)`, with
-    `{ stateCode, ip, hostname }` while running and `null` when stopped.
+- **Manager network events** feed the app glue that publishes containers' `.local`
+  names, and the triggers of avahi's stuck-probe recovery. Wisp publishes no name for a
+  VM: the guest announces its own.
   - `containerManager.subscribeContainerNetworkChange(handler)` — `(name, snapshot)`,
     with `{ state, ip, ip6 }` while running on a bridge and `null` when stopped or
     removed. The manager writes new addresses into `container.json` before firing: it
-    owns the durable record, the glue only reacts.
-  - Both network-change events replay on subscribe, so glue that starts after the
-    managers still catches up. The macOS stubs never fire.
-  - Every A-record registration lives in the reconcilers
-    (`lib/{vm,container}MdnsReconciler.js`); the managers make none.
+    owns the durable record, the glue only reacts. It replays on subscribe, so glue
+    that starts after the manager still catches up. The macOS stub never fires.
+  - Every A-record registration lives in the reconciler
+    (`lib/containerMdnsReconciler.js`); the managers make none.
   - The interfaces Wisp removes, with no replay:
     `containerManager.subscribeContainerNetnsRemoved(handler)` — `(name)` after Wisp
     deleted a container's netns, its veth with it — and
@@ -262,8 +260,8 @@ consumer, and nothing has called for more).
   the routes, the MCP tools and the scheduler call the same function, and no route takes
   an operation lock itself (a lint: `npm run check-fences`). A job's lock is the job
   starter's; an instant command's, the lock wrapper's, inside the operation. The
-  follow-ups outside the workload's own record (its section assignment, its last backup
-  attempt, its `.local` name) are written once for both sides
+  follow-ups outside the workload's own record (its section assignment and its last
+  backup attempt, both sides'; a container's `.local` name) are written once
   (`lib/workloadFollowUps.js`), and every backup runs through one orchestration
   (`lib/workloadBackup.js`). The fences between them are CODING-RULES
   §7: one caller per external system, and managers free of Wisp glue. The import graph
@@ -322,5 +320,5 @@ consumer, and nothing has called for more).
   one orchestration `lib/workloadBackup.js`, scheduler, retention, destinations, the
   attempt status), the job store and its starter (`lib/jobs`: every job, whatever starts
   it), operation locks, the update checks' jobs and their hourly trigger
-  (`lib/updateChecks.js`), the mDNS reconcilers, LAN discovery, the home page and
-  self-update.
+  (`lib/updateChecks.js`), the container mDNS reconciler and the stuck-probe recovery's
+  triggers (`lib/mdnsProbeRecovery.js`), LAN discovery, the home page and self-update.

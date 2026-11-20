@@ -64,7 +64,6 @@
     },
     "guestAgent": true,
     "iconId": "debian",
-    "localDns": false,
     "machineType": "pc-q35-9.2",
     "memBalloon": true,
     "memoryMiB": 2048,

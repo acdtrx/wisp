@@ -65,7 +65,6 @@ async function fetchVMListFromLibvirt({ complete = false } = {}) {
         memoryMiB: config.memoryMiB,
         osCategory: detectOSCategory(config),
         iconId: config.iconId ?? null,
-        localDns: config.localDns ?? false,
         pendingRestart,
         startedAt,
         guestAgent: !!config.guestAgent,
@@ -134,15 +133,6 @@ subscribeDisconnect(invalidateVMListCache);
 export function subscribeVMListChange(handler) {
   listChangeHandlers.add(handler);
   return () => listChangeHandlers.delete(handler);
-}
-
-/**
- * Read localDns for a VM from the cached list (avoids an extra inactive XML fetch in stats).
- * Returns undefined if the cache is not populated or the VM is not found.
- */
-export function getCachedLocalDns(name) {
-  if (!vmListCache) return undefined;
-  return vmListCache.find((v) => v.name === name)?.localDns;
 }
 
 /**

@@ -203,8 +203,8 @@ function onContainerdDisconnect() {
   periodicTimer = null;
 }
 
-// Module-load wiring (matches vmManagerNetwork.js pattern): subscriptions only,
-// nothing runs until containerd connects. The list cache fires on every
+// Module-load wiring: subscriptions only, nothing runs until containerd
+// connects. The list cache fires on every
 // containerd lifecycle event + container.json write + connect/disconnect —
 // those drive the lifecycle-side of the event stream. The 60s timer is the
 // safety net for DHCP drift inside the netns.

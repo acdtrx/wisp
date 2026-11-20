@@ -34,7 +34,6 @@ mockModule('./paths.js', ['isPathInsideAllowedRoots']);
 mockModule('./backupDestinations.js', ['resolveBackupDestinations', 'backupToEachDestination']);
 mockModule('./backupStatus.js', ['recordBackupAttempt', 'moveBackupStatus', 'forgetBackupStatus']);
 mockModule('./sections.js', ['renameWorkloadAssignment', 'removeWorkloadAssignment']);
-mockModule('./vmMdnsReconciler.js', ['publishVm', 'unpublishVm']);
 mockModule('./containerMdnsReconciler.js', ['publishContainer', 'unpublishContainer']);
 
 const { editVmConfig, startVmDeleteJob } = await import('./vmOperations.js');
@@ -58,15 +57,12 @@ beforeEach(() => {
 });
 
 test('a rename sent with other changes renames, then its follow-ups, then the rest under the new name', async () => {
-  await editVmConfig({ name: 'a', changes: { name: 'b', firmware: 'uefi', localDns: true }, log });
+  await editVmConfig({ name: 'a', changes: { name: 'b', firmware: 'uefi' }, log });
   assert.deepEqual(calls, [
     ['updateVMConfig', 'a', { name: 'b' }],
     ['renameWorkloadAssignment', 'vm', 'a', 'b'],
     ['moveBackupStatus', { type: 'vm', from: 'a', to: 'b' }],
-    ['unpublishVm', 'a'],
-    ['publishVm', 'b'],
-    ['updateVMConfig', 'b', { firmware: 'uefi', localDns: true }],
-    ['publishVm', 'b'],
+    ['updateVMConfig', 'b', { firmware: 'uefi' }],
   ]);
   assertUnlocked('a', 'b');
 });
@@ -80,30 +76,27 @@ test('a rename whose other changes fail answers their error, the rename and its 
     editVmConfig({ name: 'a', changes: { name: 'b', firmware: 'uefi' }, log }),
     (err) => err.code === 'LIBVIRT_ERROR',
   );
-  assert.deepEqual(names(), [
-    'updateVMConfig', 'renameWorkloadAssignment', 'moveBackupStatus', 'unpublishVm', 'publishVm', 'updateVMConfig',
-  ]);
+  assert.deepEqual(names(), ['updateVMConfig', 'renameWorkloadAssignment', 'moveBackupStatus', 'updateVMConfig']);
   assert.deepEqual(calls.at(-1), ['updateVMConfig', 'b', { firmware: 'uefi' }]);
   assertUnlocked('a', 'b');
 });
 
 test('a rename alone is one manager call and its follow-ups', async () => {
   await editVmConfig({ name: 'a', changes: { name: 'b' }, log });
-  assert.deepEqual(names(), ['updateVMConfig', 'renameWorkloadAssignment', 'moveBackupStatus', 'unpublishVm', 'publishVm']);
+  assert.deepEqual(names(), ['updateVMConfig', 'renameWorkloadAssignment', 'moveBackupStatus']);
 });
 
-test('an edit without a rename is one manager call under the name, then its follow-ups', async () => {
-  await editVmConfig({ name: 'a', changes: { name: 'a', localDns: false }, log });
-  assert.deepEqual(calls, [['updateVMConfig', 'a', { localDns: false }], ['unpublishVm', 'a']]);
+test('an edit without a rename is one manager call under the name, with no follow-ups', async () => {
+  await editVmConfig({ name: 'a', changes: { name: 'a', firmware: 'uefi' }, log });
+  assert.deepEqual(calls, [['updateVMConfig', 'a', { firmware: 'uefi' }]]);
 });
 
-test('a delete is followed by its follow-ups: the .local name, the backup status and the section assignment go', async () => {
+test('a delete is followed by its follow-ups: the backup status and the section assignment go', async () => {
   const { jobId } = await startVmDeleteJob({ name: 'gone', deleteDisks: true, log });
   assert.equal(await whenJobEnds(jobId), 'done');
   assert.deepEqual(calls, [
     ['assertVMState', 'gone', 'exists'],
     ['deleteVM', 'gone', true],
-    ['unpublishVm', 'gone'],
     ['forgetBackupStatus', { type: 'vm', name: 'gone' }],
     ['removeWorkloadAssignment', 'vm', 'gone'],
   ]);

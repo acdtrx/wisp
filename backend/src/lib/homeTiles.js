@@ -114,7 +114,6 @@ function buildWorkloadIndex(deployment) {
       iconId: vm.iconId ?? null,
     };
     add(vm.name, workload);
-    if (vm.localDns) add(`${vm.name}.local`, workload);
     add(net.hostname, workload);
     add(net.ip, workload);
   }

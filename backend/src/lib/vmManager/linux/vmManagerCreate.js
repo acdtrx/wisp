@@ -248,13 +248,6 @@ function buildDomainXML(spec, blockDisks, cdrom1Path, cdrom2Path, sdePath, { loa
     ...(isWindows ? { clock: getWindowsClock() } : {}),
     devices,
   };
-  dom.metadata = {
-    'wisp:prefs': {
-      '@_xmlns:wisp': 'https://wisp.local/app',
-      'wisp:localDns': spec.localDns === false ? 'false' : 'true',
-    },
-  };
-
   return buildXml({ domain: dom });
 }
 

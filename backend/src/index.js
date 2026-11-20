@@ -32,7 +32,6 @@ import { closeAllSSE } from './lib/sse.js';
 import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/storage/index.js';
 import { connect as connectMdns, disconnect as disconnectMdns } from './lib/mdns/index.js';
 import { checkDefaultBridgeOverride, getDefaultContainerParentBridge } from './lib/networking/index.js';
-import { startVmMdnsReconciler, stopVmMdnsReconciler } from './lib/vmMdnsReconciler.js';
 import { startContainerMdnsReconciler, stopContainerMdnsReconciler } from './lib/containerMdnsReconciler.js';
 import { startMdnsProbeRecovery, stopMdnsProbeRecovery } from './lib/mdnsProbeRecovery.js';
 import { startWispDiscovery, stopWispDiscovery } from './lib/wispDiscovery.js';
@@ -195,11 +194,10 @@ async function main() {
   await resumeStalePausedContainersAtBackendBoot(app.log);
   await startAutostartContainersAtBackendBoot(app.log);
 
-  // mDNS reconcilers subscribe to vm/containerManager.subscribeVMNetworkChange /
-  // subscribeContainerNetworkChange. Both managers replay current snapshots to
-  // any new subscriber, so boot-time registration happens automatically once
-  // these start — no separate warm-up loop needed.
-  startVmMdnsReconciler(app.log);
+  // The container mDNS reconciler subscribes to
+  // containerManager.subscribeContainerNetworkChange, which replays current
+  // snapshots to a new subscriber, so boot-time registration happens once it
+  // starts — no separate warm-up loop needed.
   startContainerMdnsReconciler(app.log);
   startMdnsProbeRecovery();
 
@@ -263,7 +261,6 @@ async function shutdown(signal) {
   }
   stopUsbMonitor();
   stopDiskMonitor();
-  stopVmMdnsReconciler();
   stopContainerMdnsReconciler();
   stopMdnsProbeRecovery();
   await stopWispDiscovery(); // needs the live bus — before disconnectMdns

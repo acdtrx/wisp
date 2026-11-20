@@ -48,7 +48,7 @@ export const connectionState = {
   /** Pino-compatible logger plumbed via connect(); null until connected. */
   logger: null,
   /** false (connect option): no DomainEvent listener, no QEMU-binary watcher,
-   *  no restart-flag clearing, inert network reconciler, uncached VM list — for
+   *  no restart-flag clearing, no guest-agent listeners, uncached VM list — for
    *  the start's migrations, which must not act alongside the backend's normal
    *  work. Kept across bus reconnects. */
   watchEvents: true,
@@ -379,7 +379,7 @@ export async function getDomainXML(path, { inactive = false } = {}) {
 
 /**
  * Attach an AgentEvent listener to a per-domain DBus proxy. Idempotent: calling twice
- * for the same path replaces the prior subscription. Used by vmManagerNetwork
+ * for the same path replaces the prior subscription. Used by vmManagerStats
  * to react to qemu-ga connect/disconnect without polling.
  */
 export async function attachAgentSubscription(domainPath, vmName) {

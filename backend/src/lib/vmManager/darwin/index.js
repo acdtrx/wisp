@@ -71,15 +71,7 @@ export async function listHostFirmware() {
   return [];
 }
 
-export function getCachedLocalDns() {
-  return undefined;
-}
-
 export function subscribeVMListChange() {
-  return () => {};
-}
-
-export function subscribeVMNetworkChange() {
   return () => {};
 }
 

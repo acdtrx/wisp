@@ -85,7 +85,7 @@ import { withContainerOperationLock } from './containerOperationLock.js';
 import { createAppError, isAppError, wrapAppError } from './appErrors.js';
 import { resolveBackupDestinations } from './backupDestinations.js';
 import { startWorkloadBackupJob, backUpWorkload } from './workloadBackup.js';
-import { followWorkloadConfigUpdate, followWorkloadDelete, followWorkloadRename } from './workloadFollowUps.js';
+import { followContainerConfigUpdate, followWorkloadDelete, followWorkloadRename } from './workloadFollowUps.js';
 
 const container = (name) => ({ type: 'container', name });
 
@@ -108,7 +108,7 @@ async function applyContainerConfigChanges({ name, changes, log }) {
       await deleteRemovedMountData(name, mountName);
     }
   }
-  await followWorkloadConfigUpdate({ type: 'container', name, localDns: changes.localDns, log });
+  await followContainerConfigUpdate({ name, localDns: changes.localDns, log });
 }
 
 // ── Create ──────────────────────────────────────────────────────────

@@ -39,7 +39,6 @@ mockModule('./settings.js', ['getSettings', 'listConfiguredBackupRoots']);
 mockModule('./backupDestinations.js', ['resolveBackupDestinations', 'backupToEachDestination']);
 mockModule('./backupStatus.js', ['recordBackupAttempt', 'moveBackupStatus', 'forgetBackupStatus']);
 mockModule('./sections.js', ['renameWorkloadAssignment', 'removeWorkloadAssignment']);
-mockModule('./vmMdnsReconciler.js', ['publishVm', 'unpublishVm']);
 mockModule('./containerMdnsReconciler.js', ['publishContainer', 'unpublishContainer']);
 
 const { runScheduledBackups } = await import('./containerBackupScheduler.js');

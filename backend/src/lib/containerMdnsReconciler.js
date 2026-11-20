@@ -9,10 +9,10 @@
  * timeout (~5s on macOS), so the AAAA rides along whenever the netns has a
  * global IPv6.
  *
- * Mirrors `vmMdnsReconciler.js` — same single-flat-file shape, no platform
- * split, no own polling, no own writes. The container's configuration update,
- * rename and delete call `publishContainer` / `unpublishContainer` directly
- * (lib/workloadFollowUps.js) — those are metadata flips, not network changes.
+ * A single flat file: no platform split, no own polling, no own writes. The
+ * container's configuration update, rename and delete call `publishContainer`
+ * / `unpublishContainer` directly (lib/workloadFollowUps.js) — those are
+ * metadata flips, not network changes.
  *
  * Every operation for one container — event handling and the direct calls —
  * runs on that container's promise chain, one at a time in arrival order.

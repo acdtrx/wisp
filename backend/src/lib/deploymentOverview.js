@@ -123,7 +123,6 @@ export async function buildDeploymentOverview() {
     osCategory: vm.osCategory ?? null,
     ip: net.ip ?? null,
     guestHostname: net.hostname ?? null,
-    mdnsName: vm.localDns ? `${vm.name}.local` : null,
   }));
 
   return {

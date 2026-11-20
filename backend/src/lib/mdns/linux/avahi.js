@@ -446,14 +446,10 @@ export async function disconnect() {
   state.browseDispatchInstalled = false;
 }
 
-export async function registerAddress(key, preferredName, ipOrCidr, ip6OrCidr = null) {
+export async function registerAddress(key, preferredName, ip4OrCidr, ip6OrCidr) {
   const host = sanitizeHostname(preferredName);
-  // Classify by literal, not by parameter position — a caller whose only
-  // address is IPv6 (e.g. a VM guest agent reporting v6 first) may pass it in
-  // the third slot; both records land under the same name either way.
-  const given = [stripCidr(ipOrCidr), stripCidr(ip6OrCidr)].filter(Boolean);
-  const ip4 = given.find((a) => !a.includes(':')) || null;
-  const ip6 = given.find((a) => a.includes(':')) || null;
+  const ip4 = stripCidr(ip4OrCidr) || null;
+  const ip6 = stripCidr(ip6OrCidr) || null;
   if (!key || !host || (!ip4 && !ip6)) return null;
 
   const current = state.entries.get(key);
