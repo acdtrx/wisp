@@ -61,13 +61,15 @@ KEPT="" KEPT_STAGE="" DROPIN_DIR_MADE=0 WHY=""
 # and renamed into place, so no half-made one is ever seen; a stage a step cut
 # short left goes first.
 keep_original() {
-  local when n=1
+  local when name n=1
   mkdir -p "$KEPT_ROOT" && chmod 700 "$KEPT_ROOT" || return 1
   rm -rf -- "$KEPT_ROOT"/.*.wisp-new
   when="$(date -u +%Y-%m-%dT%H%M%SZ)"
-  KEPT="$KEPT_ROOT/$when"
-  while [[ -e "$KEPT" ]]; do n=$((n + 1)); KEPT="$KEPT_ROOT/$when-$n"; done
-  KEPT_STAGE="$KEPT_ROOT/.$(basename "$KEPT").wisp-new"
+  name="$when"
+  while [[ -e "$KEPT_ROOT/$name" ]]; do n=$((n + 1)); name="$when-$n"; done
+  # Named only once it is free: drop_kept removes KEPT.
+  KEPT="$KEPT_ROOT/$name"
+  KEPT_STAGE="$KEPT_ROOT/.$name.wisp-new"
   mkdir -p "$KEPT_STAGE$(dirname "$NETPLAN_ORIGIN")" \
     && cp -a "$NETPLAN_ORIGIN" "$KEPT_STAGE$NETPLAN_ORIGIN" \
     && sync "$KEPT_STAGE$NETPLAN_ORIGIN" "$KEPT_STAGE$(dirname "$NETPLAN_ORIGIN")" "$KEPT_STAGE/etc" "$KEPT_STAGE" \
