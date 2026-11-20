@@ -9,7 +9,6 @@
 #   BRIDGE_CREATE     yes when the bridge step must create BRIDGE on UPLINK
 # and, when it must:
 #   UPLINK_MAC        the uplink's hardware address, which the bridge takes
-#   UPLINK_MTU        the uplink's MTU, which the bridge's definition sets
 #   UPLINK_MODE       dhcp (DHCPv4, with or without static addresses) | static
 #   UPLINK_NETFILE    the unit netplan renders for the uplink, which
 #                     systemd-networkd runs it from
@@ -24,7 +23,7 @@
 # (container-dns-plan.sh, DNS_STUB_PLANNED); and when the bridge is to be made,
 # uplink.state (what the uplink holds, net-state.sh), sources (what the plan
 # read), and the bridge's files (bridge-plan.sh, plan_bridge).
-PLAN_RECORD_VARS=(UPLINK UPLINK_ADDR BRIDGE BRIDGE_CREATE UPLINK_MAC UPLINK_MTU UPLINK_MODE UPLINK_NETFILE
+PLAN_RECORD_VARS=(UPLINK UPLINK_ADDR BRIDGE BRIDGE_CREATE UPLINK_MAC UPLINK_MODE UPLINK_NETFILE
   UPLINK_CLIENT_ID UPLINK_NETPLAN_ID NETPLAN_ORIGIN UPLINK_PERMADDR HOST_KVM)
 
 # plan_record_write <file>: the record of the variables set now.
