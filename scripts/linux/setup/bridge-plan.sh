@@ -206,22 +206,35 @@ uplink_netplan_id() {
   UPLINK_NETPLAN_ID="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" status-id "$UPLINK" <<<"$status")" \
     || net_fail "cannot read netplan's status for $UPLINK"
 }
-# refuse_bridge_not_applied: refused when netplan's configuration already
-# defines BRIDGE holding the uplink's definition while the uplink is not
-# BRIDGE's port: the configuration is not live, as a bridge step cut short
-# after its switch leaves it. Setup applies nothing it did not check: the
-# operator brings it up, or puts back the original kept before the switch.
-refuse_bridge_not_applied() {
-  local holders master
+# refuse_netplan_not_applied: refused when what netplan's configuration says
+# about the uplink's bridge is not what is live, either way: the uplink is a
+# bridge systemd-networkd runs from a unit netplan rendered, which netplan's
+# configuration does not define, so it is gone at the next boot; or the uplink
+# is not a bridge, while netplan's configuration defines a bridge holding it.
+# Setup works from a configuration that is live: applying another is the
+# operator's. Reads netplan's configuration once for the plan, and sets
+# UPLINK_DEPENDENTS: each definition that hangs off or holds the uplink's
+# (netplan.py dependents).
+refuse_netplan_not_applied() {
+  local config defined bridges
+  local remedy=("Apply netplan's configuration (netplan apply), or first put back the original kept under"
+    "/var/lib/wisp/network-before-bridge (docs/specs/DEPLOYMENT.md, The bridge), and run this again.")
+  config="$(net_read netplan get)" || exit 1
+  UPLINK_DEPENDENTS=""
+  if [[ "$BRIDGE_CREATE" == no ]]; then
+    defined="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" defines "bridges.$BRIDGE" <<<"$config")" \
+      || net_fail "cannot read netplan's configuration"
+    [[ -z "$defined" ]] || return 0
+    refuse NETPLAN_NOT_APPLIED "systemd-networkd runs the bridge $BRIDGE from netplan's $UPLINK_NETFILE, but netplan's configuration does not define $BRIDGE: it is gone at the next boot." \
+      "${remedy[@]}"
+  fi
   [[ -n "$UPLINK_NETPLAN_ID" ]] || return 0
-  holders="$(net_read netplan get | "${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" dependents "$UPLINK_NETPLAN_ID")" \
+  UPLINK_DEPENDENTS="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" dependents "$UPLINK_NETPLAN_ID" <<<"$config")" \
     || net_fail "cannot read netplan's configuration"
-  grep -qxF "bridges.$BRIDGE" <<<"$holders" || return 0
-  master="$(readlink "/sys/class/net/$UPLINK/master" 2>/dev/null || true)"
-  [[ "${master##*/}" != "$BRIDGE" ]] || return 0
-  refuse BRIDGE_NOT_APPLIED "netplan's configuration defines $BRIDGE on the uplink $UPLINK, but it is not live, as a bridge step cut short after its switch leaves it." \
-    "Bring it up with netplan apply (setup then uses it), or put back the original kept under" \
-    "/var/lib/wisp/network-before-bridge (docs/specs/DEPLOYMENT.md, The bridge), and run this again."
+  bridges="$(sed -n 's/^bridges\.//p' <<<"$UPLINK_DEPENDENTS")"
+  [[ -z "$bridges" ]] \
+    || refuse NETPLAN_NOT_APPLIED "netplan's configuration defines the bridge $(echo $bridges) on the uplink $UPLINK, but it is not live: the default route is on $UPLINK itself." \
+      "${remedy[@]}"
 }
 
 # netplan_stage <dir>: a copy of netplan's directories in <dir>, with the
@@ -245,7 +258,8 @@ netplan_stage() {
 # directory as netplan-origin.yaml, the file the bridge step puts in place. For
 # a DUID identity, also networkd's drop-in on the unit netplan renders for the
 # bridge (netplan has no IAID key): 50-wisp-dhcp-identity.conf. Reads
-# UPLINK_NETPLAN_ID (uplink_netplan_id).
+# UPLINK_NETPLAN_ID (uplink_netplan_id) and UPLINK_DEPENDENTS
+# (refuse_netplan_not_applied).
 plan_bridge() {
   local def mode rc why stage f hint kv merged dropins d
   [[ -n "$UPLINK_NETPLAN_ID" ]] || refuse NETPLAN_NO_DEFINITION "netplan has no definition for the uplink $UPLINK: define it in a file of your own under /etc/netplan, and run this again."
@@ -264,9 +278,7 @@ plan_bridge() {
   networkd_takers "$UPLINK_NETFILE" >/dev/null
   uplink_client_id
   dhcp_identity
-  why="$(net_read netplan get | "${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" dependents "$UPLINK_NETPLAN_ID")" \
-    || net_fail "cannot read netplan's configuration"
-  [[ -z "$why" ]] || net_refuse UPLINK_DEPENDENT "netplan's $(echo $why) hangs off or holds $UPLINK's definition."
+  [[ -z "$UPLINK_DEPENDENTS" ]] || net_refuse UPLINK_DEPENDENT "netplan's $(echo $UPLINK_DEPENDENTS) hangs off or holds $UPLINK's definition."
   def="$NET_PLAN_DIR/uplink.yaml"
   net_read netplan get "ethernets.$UPLINK_NETPLAN_ID" > "$def" || exit 1
   # The uplink's definition, checked; what moves to the bridge worked out; the

@@ -45,6 +45,21 @@ class Dependents(unittest.TestCase):
         self.assertEqual(netplan.dependents_of(net, 'eth0'), [])
 
 
+class Defines(unittest.TestCase):
+    def defines(self, net, key):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), unittest.mock.patch('sys.stdin', io.StringIO(json.dumps(net))):
+            netplan.defines(key)
+        return out.getvalue().strip()
+
+    def test_a_bridge_defined_is_named(self):
+        net = {'network': {'bridges': {'br0': {'interfaces': ['eth0']}}}}
+        self.assertEqual(self.defines(net, 'bridges.br0'), 'bridges.br0')
+
+    def test_a_bridge_not_defined_is_not(self):
+        net = {'network': {'version': 2, 'ethernets': {'br0': {'dhcp4': True}}}}
+        self.assertEqual(self.defines(net, 'bridges.br0'), '')
+
 
 def plan_with_edits(definition):
     """netplan.py plan on the uplink's definition: (exit code, what it printed,

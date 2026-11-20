@@ -20,6 +20,9 @@ netplan's runtime, so a netplan host has them.
       definition that hangs off <id> (its `link:`: a VLAN, a VXLAN tunnel, an
       SR-IOV virtual function) or holds it (its `interfaces:`: a bond, a
       bridge, a VRF), whatever its kind
+  netplan.py defines <section>.<id>
+      reads the merged configuration on stdin; prints <section>.<id> when it
+      defines it
   netplan.py merged <id> <bridge> <bridge-json>
       reads the merged configuration on stdin; prints what is not as setup
       wrote it, if anything
@@ -190,8 +193,15 @@ def dependents(nid):
         print(d)
 
 
+def defines(key):
+    section, nid = key.split('.', 1)
+    net = (yaml.safe_load(sys.stdin) or {}).get('network') or {}
+    if nid in (net.get(section) or {}):
+        print(key)
+
+
 COMMANDS = {'status-id': status_id, 'origin': origin, 'plan': plan, 'shared': shared, 'merged': merged,
-            'dependents': dependents}
+            'dependents': dependents, 'defines': defines}
 
 if __name__ == '__main__':
     COMMANDS[sys.argv[1]](*sys.argv[2:])

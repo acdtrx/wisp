@@ -6,14 +6,10 @@
 # A Wisp host needs a bridge: without one no VM or container has a network.
 # The bridge is the one carrying the uplink (the default route's interface), or
 # else `br0`, which the bridge step, setup's last change, makes on the uplink
-# through netplan. Either way netplan must run the uplink. Another DNS server on
-# the container DNS stub's port 53 is refused too, and so is a configuration
+# through netplan. Either way netplan must run the uplink, and what its
+# configuration says about the bridge must be what is live. Another DNS server
+# on the container DNS stub's port 53 is refused too, and so is a configuration
 # netplan rejects with the stub's definition in it.
-#
-# A bridge step that died is not recovered: the plan works from the host as it
-# finds it. An uplink that is a bridge is used; one that is not gets its
-# bridge, unless netplan's configuration already defines it (a step cut short
-# after its switch), which is refused.
 #
 # Usage: network-plan.sh <plan-dir>
 #   Writes the plan's record and the bridge's configuration, worked out and
@@ -54,13 +50,14 @@ rm -rf "$NET_PLAN_DIR/stub-stage"
 if [[ -d "/sys/class/net/$UPLINK/bridge" ]]; then
   BRIDGE="$UPLINK"
   BRIDGE_CREATE=no
+  refuse_netplan_not_applied
   echo "  netplan; the uplink $UPLINK is a bridge, which Wisp uses"
 else
   BRIDGE=br0
   BRIDGE_CREATE=yes
   # What follows matters only when setup makes the bridge.
   uplink_netplan_id
-  refuse_bridge_not_applied
+  refuse_netplan_not_applied
   refuse_uplink_shape
   plan_bridge
   # What the uplink holds now, which the bridge must hold after: the check's

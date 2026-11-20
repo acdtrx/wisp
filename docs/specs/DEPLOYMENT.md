@@ -36,7 +36,7 @@ When a refusal comes:
 | `UPLINK_NOT_NETPLAN` | netplan, rendered by systemd-networkd, does not run the uplink (systemd-networkd does not run it from netplan's unit, or netplan is not installed). The message names what does, where setup can tell. | Run the uplink with netplan, rendered by systemd-networkd (renderer networkd). |
 | `CLOUD_INIT_NETWORK` | When setup has to make the bridge: cloud-init still manages the network (installed, not switched off, and its configuration does not say `network: {config: disabled}`); a host whose uplink already is a bridge is not refused for it | Add the one documented line `network: {config: disabled}` in a file under `/etc/cloud/cloud.cfg.d/`. Nothing else: the netplan file cloud-init wrote is then the operator's, and setup edits it like any other (settled 2026-11-18). |
 | `UPLINK_BOND`, `UPLINK_WIFI`, `UPLINK_VLAN`, `UPLINK_NOT_ETHERNET` | The uplink is a bond, Wi-Fi, a VLAN, or not a physical Ethernet interface (a tunnel) | Make the bridge with netplan. |
-| `UPLINK_DEPENDENT` | A netplan definition hangs off the uplink, whatever its kind (its `link:` is the uplink's: a VLAN, a tunnel, an SR-IOV function), or holds it in its `interfaces:` (a bond, bridge or VRF) | Make the bridge with netplan. |
+| `UPLINK_DEPENDENT` | A netplan definition hangs off the uplink, whatever its kind (its `link:` is the uplink's: a VLAN, a tunnel, an SR-IOV function), or holds it in its `interfaces:` (a bond, a VRF; a bridge is `NETPLAN_NOT_APPLIED`) | Make the bridge with netplan. |
 | `UPLINK_NO_IPV4` | The uplink has no IPv4 address | Give it one. |
 | `BRIDGE_NAME_TAKEN` | A `br0` that exists but does not carry the uplink | Remove it, or make it the bridge on the uplink with netplan. |
 | `DHCP_NO_LEASE` | The uplink is on DHCP but has no lease | Let it get one (`networkctl renew <uplink>`). |
@@ -44,7 +44,7 @@ When a refusal comes:
 | `DHCP_CLIENT_ID_TYPE` | The lease's client identifier is neither the hardware address (type 1) nor a DUID (type 255) | Make the bridge with netplan. |
 | `DNS_PORT_TAKEN` | Another DNS server on port 53 of `169.254.53.53` or of every IPv4 address (`0.0.0.0`, `*`, or a wildcard bound to one device) | Bind it to the addresses it serves. `[::]:53` (IPv6 only) is no conflict. |
 | `NETPLAN_DNS_STUB` | netplan rejects its configuration with the container DNS stub's file (below) added, checked in a staged copy before the file goes live: a definition of `wisp-dns0` of the operator's of another kind, a netplan without `dummy-devices`; the message names netplan's error. Or a device `wisp-dns0` that is not a dummy exists already, which systemd-networkd would keep. | Remove that definition or device, or use a netplan that has `dummy-devices`. |
-| `BRIDGE_NOT_APPLIED` | The uplink is not a bridge, yet netplan's configuration defines `br0` holding its definition, and the uplink is not `br0`'s port: the configuration is not live, as a bridge step cut short after its switch leaves it (see [The bridge](#the-bridge)) | Bring it up with `netplan apply`, and setup uses it; or put back the original kept under `/var/lib/wisp/network-before-bridge`. |
+| `NETPLAN_NOT_APPLIED` | What netplan's configuration says about the uplink's bridge is not what is live, either way: it defines a bridge holding the uplink, which is not live (the default route is on the uplink itself); or systemd-networkd runs the uplink's bridge from netplan's unit, while netplan's configuration does not define it, so it is gone at the next boot | Apply netplan's configuration (`netplan apply`), or first put back the original kept under `/var/lib/wisp/network-before-bridge`. |
 | `NETPLAN_NO_DEFINITION` | netplan has no definition for the uplink | Define the uplink in a file of your own under `/etc/netplan`. |
 | `NETPLAN_OUTSIDE_ETC` | netplan reads the uplink's definition from a file outside `/etc/netplan` (`/lib/netplan`, `/run/netplan`) | Define the uplink in a file of your own under `/etc/netplan`. |
 | `NETPLAN_LINK_FILE` | That file is a symbolic link, which the step would replace with a file | Make it the file itself. |
@@ -198,7 +198,7 @@ Only a failed check undoes the bridge, and so does a stop.
 
 - an uplink that is a bridge is used;
 - one that is not gets its bridge;
-- one that is not, while netplan's configuration already defines `br0` on it (the step died after its switch, before its apply), is refused (`BRIDGE_NOT_APPLIED`): setup applies nothing it did not check.
+- one that is not, while netplan's configuration already defines `br0` on it (the step died after its switch, before its apply), is refused (`NETPLAN_NOT_APPLIED`): setup applies nothing it did not check.
 
 A host left unreachable is fixed at the console, as root, from the newest directory under `/var/lib/wisp/network-before-bridge`:
 
