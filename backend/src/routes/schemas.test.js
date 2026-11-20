@@ -102,3 +102,65 @@ test('openOnPurpose opens an object that says nothing of other keys, keeps a typ
   assert.equal(validate({ m: { k: 'v' }, any: [1, 'x'] }), null);
   assert.equal(validate({ m: { k: 1 } })?.instancePath, '/m/k');
 });
+
+/* ── The check descends into every keyword that holds a schema ──────── */
+
+const OPEN = { type: 'object', properties: { b: { type: 'string' } } };
+const unlisted = (path) => `body${path} takes unlisted keys and is not marked openOnPurpose`;
+
+test('an open object under if, then, else or not fails, named by its keyword', () => {
+  const body = { ...closed(), if: OPEN, then: OPEN, else: OPEN };
+  assert.deepEqual(problems({ body }), [unlisted('/if'), unlisted('/then'), unlisted('/else')]);
+  assert.deepEqual(problems({ body: { ...closed(), not: OPEN } }), [unlisted('/not')]);
+});
+
+test('an open object in allOf, anyOf or oneOf fails, named by its branch', () => {
+  for (const key of ['allOf', 'anyOf', 'oneOf']) {
+    assert.deepEqual(problems({ body: { [key]: [closed(), OPEN] } }), [unlisted(`/${key}[1]`)], key);
+  }
+});
+
+test('an open object under patternProperties, dependentSchemas, dependencies or $defs fails', () => {
+  const map = (key) => openOnPurpose({ type: 'object', [key]: { '^x': OPEN } });
+  assert.deepEqual(problems({ body: map('patternProperties') }), [unlisted('/patternProperties/^x')]);
+  assert.deepEqual(problems({ body: map('dependentSchemas') }), [unlisted('/dependentSchemas/^x')]);
+  assert.deepEqual(problems({ body: map('$defs') }), [unlisted('/$defs/^x')]);
+  // `dependencies` holds key lists as well as schemas: only a schema is checked.
+  const deps = openOnPurpose({ type: 'object', dependencies: { a: ['b'], c: OPEN } });
+  assert.deepEqual(problems({ body: deps }), [unlisted('/dependencies/c')]);
+});
+
+test('an open object under prefixItems, items, additionalItems or contains fails', () => {
+  const list = (key) => closed({ l: { type: 'array', items: { type: 'string' }, [key]: key === 'prefixItems' ? [OPEN] : OPEN } });
+  assert.deepEqual(problems({ body: list('prefixItems') }), [unlisted('/l/prefixItems[0]')]);
+  assert.deepEqual(problems({ body: list('additionalItems') }), [unlisted('/l/additionalItems')]);
+  assert.deepEqual(problems({ body: list('contains') }), [unlisted('/l/contains')]);
+  assert.deepEqual(problems({ body: closed({ l: { type: 'array', items: OPEN } }) }), [unlisted('/l/[]')]);
+});
+
+test('an array that does not say its items fails, unless marked open on purpose', () => {
+  assert.deepEqual(problems({ body: closed({ l: { type: 'array' } }) }), ['body/l does not say its items and is not marked openOnPurpose']);
+  assert.deepEqual(problems({ response: { 200: { type: ['array', 'null'] } } }), ['response 200 does not say its items and is not marked openOnPurpose']);
+  assert.deepEqual(problems({ body: closed({ l: { type: 'array', prefixItems: [{ type: 'string' }] } }) }),
+    ['body/l does not say its items and is not marked openOnPurpose']);
+  assert.deepEqual(problems({ body: closed({ l: openOnPurpose({ type: 'array' }) }) }), []);
+  assert.deepEqual(problems({ body: closed({ l: { type: 'array', items: { type: 'string' } } }) }), []);
+});
+
+test('a sub-schema of true says nothing of its value and fails', () => {
+  assert.deepEqual(problems({ body: closed({ l: { type: 'array', items: true } }) }), ['body/l/[] has no type']);
+});
+
+test('a local $ref is followed and its target checked; one the check cannot follow fails', () => {
+  const body = { ...closed({ a: { $ref: '#/$defs/open' }, b: { $ref: '#/$defs/fine' } }), $defs: { open: OPEN, fine: closed() } };
+  assert.deepEqual(problems({ body }), [unlisted('/a/$ref(#/$defs/open)'), unlisted('/$defs/open')]);
+  assert.deepEqual(problems({ body: closed({ a: { $ref: 'shared#/thing' } }) }), ['body/a has a $ref the check cannot follow: shared#/thing']);
+  assert.deepEqual(problems({ body: closed({ a: { $ref: '#/$defs/missing' } }) }), ['body/a has a $ref the check cannot follow: #/$defs/missing']);
+  // A $ref back to the root is followed once, not forever.
+  assert.deepEqual(problems({ body: closed({ self: { $ref: '#' } }) }), []);
+});
+
+test('propertyNames and the unevaluated keywords are descended into too', () => {
+  const body = openOnPurpose({ type: 'object', propertyNames: { maxLength: 3 }, unevaluatedProperties: OPEN });
+  assert.deepEqual(problems({ body }), ['body/propertyNames has no type', unlisted('/unevaluatedProperties')]);
+});

@@ -115,7 +115,8 @@ export default async function sectionsRoutes(fastify) {
   fastify.put('/sections/assign', {
     config: { auth: 'admin' },
     schema: {
-      // The name is checked by its kind's workload-name schema.
+      // The name is checked by its kind's workload-name schema. The branches
+      // test and narrow keys of the body, which closes it: open on purpose.
       body: {
         type: 'object',
         required: ['type', 'name'],
@@ -125,9 +126,9 @@ export default async function sectionsRoutes(fastify) {
           sectionId: { type: ['string', 'null'] },
         },
         additionalProperties: false,
-        if: { type: 'object', properties: { type: { const: 'container' } } },
-        then: { type: 'object', properties: { name: containerNameSchema } },
-        else: { type: 'object', properties: { name: vmNameSchema } },
+        if: openOnPurpose({ type: 'object', properties: { type: { const: 'container' } } }),
+        then: openOnPurpose({ type: 'object', properties: { name: containerNameSchema } }),
+        else: openOnPurpose({ type: 'object', properties: { name: vmNameSchema } }),
       },
       response: { 204: noContentSchema },
     },

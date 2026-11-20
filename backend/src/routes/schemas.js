@@ -181,20 +181,66 @@ function urlParams(url) {
 }
 
 /** Keywords that constrain a value without naming its `type`. */
-const TYPELESS_CONSTRAINTS = ['enum', 'const', 'anyOf', 'oneOf', 'allOf', 'not', '$ref'];
+const TYPELESS_CONSTRAINTS = ['enum', 'const', 'anyOf', 'oneOf', 'allOf', 'not', 'if', '$ref'];
+
+/** Keywords whose value is one schema, an array of schemas, or a map of name → schema. */
+const ONE_SCHEMA = ['additionalProperties', 'additionalItems', 'contains', 'propertyNames', 'if', 'then', 'else', 'not',
+  'unevaluatedProperties', 'unevaluatedItems'];
+const SCHEMA_LISTS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'];
+const SCHEMA_MAPS = ['properties', 'patternProperties', 'dependentSchemas', 'dependencies', '$defs', 'definitions'];
+
+/** The schema a local `$ref` (`#/…`, a JSON pointer into `root`) names; undefined for any other. */
+function resolveLocalRef(root, ref) {
+  if (ref === '#') return root;
+  if (!ref.startsWith('#/')) return undefined;
+  let node = root;
+  for (const token of ref.slice(2).split('/')) {
+    const key = decodeURIComponent(token).replaceAll('~1', '/').replaceAll('~0', '~');
+    if (!node || typeof node !== 'object' || !Object.hasOwn(node, key)) return undefined;
+    node = node[key];
+  }
+  return node;
+}
+
+/** Each sub-schema of `schema`, with the path the report names it by. */
+function subSchemas(schema, path) {
+  const subs = [];
+  for (const key of SCHEMA_MAPS) {
+    // `properties` keeps its plain path (`/name`); `dependencies` lists names as well as schemas.
+    const prefix = key === 'properties' ? path : `${path}/${key}`;
+    for (const [name, sub] of Object.entries(schema[key] ?? {})) {
+      if (!Array.isArray(sub)) subs.push([sub, `${prefix}/${name}`]);
+    }
+  }
+  for (const key of ONE_SCHEMA) {
+    const sub = schema[key];
+    // A boolean `additionalProperties` is the object's own rule, checked above.
+    if (sub === undefined || (key === 'additionalProperties' && typeof sub === 'boolean')) continue;
+    subs.push([sub, key === 'additionalProperties' ? `${path}/*` : `${path}/${key}`]);
+  }
+  if (Array.isArray(schema.items)) schema.items.forEach((sub, i) => subs.push([sub, `${path}/[${i}]`]));
+  else if (schema.items !== undefined) subs.push([schema.items, `${path}/[]`]);
+  for (const key of SCHEMA_LISTS) {
+    for (const [i, sub] of (schema[key] ?? []).entries()) subs.push([sub, `${path}/${key}[${i}]`]);
+  }
+  return subs;
+}
 
 /**
- * What is wrong with each object in `schema`, by its path: an object that takes
- * keys it does not list (`additionalProperties` other than `false`), or lists
- * none (`properties` missing), unless it is marked open on purpose
- * (`openOnPurpose`); a schema that lists `properties` without
- * `type: 'object'`; a schema that says nothing at all of its value. A marked
- * schema's own listed properties are still checked.
+ * What is wrong with each schema in `schema`, by its path, descending into every
+ * keyword that holds a schema and into the local `$ref`s it uses: an object
+ * that takes keys it does not list (`additionalProperties` other than `false`),
+ * or lists none (`properties` missing), and an array that does not say its
+ * `items`, unless marked open on purpose (`openOnPurpose`); a schema that lists
+ * `properties` without `type: 'object'`; a schema that says nothing at all of
+ * its value (`true` included); a `$ref` the check cannot follow. A marked
+ * schema's own sub-schemas are still checked.
  */
-function objectProblems(schema, path) {
+function objectProblems(schema, path, root = schema, followed = new Set()) {
+  const at = path || '/';
+  if (schema === true) return [`${at} has no type`];
   if (!schema || typeof schema !== 'object') return [];
   const found = [];
-  const at = path || '/';
   const types = [].concat(schema.type ?? []);
   const open = schema[OPEN_ON_PURPOSE] === true;
   if (types.length === 0 && !open) {
@@ -205,13 +251,16 @@ function objectProblems(schema, path) {
     if (schema.additionalProperties !== false) found.push(`${at} takes unlisted keys and is not marked openOnPurpose`);
     else if (!schema.properties) found.push(`${at} lists no properties`);
   }
-  for (const [key, sub] of Object.entries(schema.properties ?? {})) found.push(...objectProblems(sub, `${path}/${key}`));
-  if (typeof schema.additionalProperties === 'object') found.push(...objectProblems(schema.additionalProperties, `${path}/*`));
-  for (const [i, sub] of [].concat(schema.items ?? []).entries()) {
-    found.push(...objectProblems(sub, Array.isArray(schema.items) ? `${path}/[${i}]` : `${path}/[]`));
+  if (types.includes('array') && !open && schema.items === undefined) {
+    found.push(`${at} does not say its items and is not marked openOnPurpose`);
   }
-  for (const key of ['anyOf', 'oneOf', 'allOf']) {
-    for (const [i, sub] of (schema[key] ?? []).entries()) found.push(...objectProblems(sub, `${path}/${key}[${i}]`));
+  for (const [sub, subPath] of subSchemas(schema, path)) found.push(...objectProblems(sub, subPath, root, followed));
+  if (typeof schema.$ref === 'string') {
+    const target = resolveLocalRef(root, schema.$ref);
+    if (target === undefined) found.push(`${at} has a $ref the check cannot follow: ${schema.$ref}`);
+    else if (!followed.has(schema.$ref)) {
+      found.push(...objectProblems(target, `${path}/$ref(${schema.$ref})`, root, new Set([...followed, schema.$ref])));
+    }
   }
   return found;
 }
