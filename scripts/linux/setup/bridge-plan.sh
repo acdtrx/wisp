@@ -161,28 +161,17 @@ uplink_client_id() {
 # systemd-networkd set it: DHCP_ID_KIND mac (a type-1 client identifier: the
 # hardware address, which the bridge takes) or duid (type 255: networkd's
 # DUID, with DHCP_IAID, the IAID networkd derived from the uplink's name, which
-# the bridge would not). Anything else sets DHCP_ID_REFUSAL instead, which
-# refuse_dhcp_identity refuses once the uplink is known to be on DHCP.
+# the bridge would not). Empty for any other, which plan_bridge refuses once
+# the uplink is known to be on DHCP.
 dhcp_identity() {
-  local type a b c d bytes
-  DHCP_ID_KIND="" DHCP_IAID="" DHCP_ID_REFUSAL=""
-  type="${UPLINK_CLIENT_ID%%:*}"
+  local bytes
+  DHCP_ID_KIND="" DHCP_IAID=""
   IFS=: read -r -a bytes <<<"$UPLINK_CLIENT_ID"
-  case "$type" in
-    01) DHCP_ID_KIND=mac ;;
-    ff)
-      if (( ${#bytes[@]} > 5 )); then
-        a="${bytes[1]}" b="${bytes[2]}" c="${bytes[3]}" d="${bytes[4]}"
-        DHCP_ID_KIND=duid DHCP_IAID=$((16#$a$b$c$d))
-      else
-        DHCP_ID_REFUSAL="DHCP_CLIENT_ID_TYPE $UPLINK's DHCPv4 client identifier $UPLINK_CLIENT_ID is too short for a DUID, which setup does not carry over: make the bridge on $UPLINK with netplan, and run this again (setup then uses it)."
-      fi ;;
-    "") DHCP_ID_REFUSAL="DHCP_NO_LEASE $UPLINK is on DHCP but has no lease, whose identity the bridge must keep: let it get one (networkctl renew $UPLINK), and run this again." ;;
-    *) DHCP_ID_REFUSAL="DHCP_CLIENT_ID_TYPE $UPLINK's DHCPv4 client identifier is of type 0x$type, which setup does not carry over: make the bridge on $UPLINK with netplan, and run this again (setup then uses it)." ;;
-  esac
-}
-refuse_dhcp_identity() {
-  [[ -z "$DHCP_ID_REFUSAL" ]] || refuse "${DHCP_ID_REFUSAL%% *}" "${DHCP_ID_REFUSAL#* }"
+  if [[ "${bytes[0]:-}" == 01 ]]; then
+    DHCP_ID_KIND=mac
+  elif [[ "${bytes[0]:-}" == ff ]] && (( ${#bytes[@]} > 5 )); then
+    DHCP_ID_KIND=duid DHCP_IAID=$((16#${bytes[1]}${bytes[2]}${bytes[3]}${bytes[4]}))
+  fi
 }
 
 # networkd_takers <own-file>: refused when another .network file, beside the
@@ -317,7 +306,10 @@ plan_bridge() {
   # For a DUID identity, the IAID: networkd's drop-in on the unit netplan
   # renders for the bridge pins it.
   if [[ "$UPLINK_MODE" == dhcp ]]; then
-    refuse_dhcp_identity
+    [[ -n "$UPLINK_CLIENT_ID" ]] \
+      || refuse DHCP_NO_LEASE "$UPLINK is on DHCP but has no lease, whose identity the bridge must keep: let it get one (networkctl renew $UPLINK), and run this again."
+    [[ -n "$DHCP_ID_KIND" ]] \
+      || refuse DHCP_CLIENT_ID_TYPE "$UPLINK's DHCPv4 client identifier $UPLINK_CLIENT_ID is neither its hardware address (type 01) nor a DUID (type ff), which setup does not carry over: make the bridge on $UPLINK with netplan, and run this again (setup then uses it)."
     if [[ -n "$DHCP_IAID" ]]; then
       {
         echo "# Written by Wisp setup: $BRIDGE keeps the DHCP identity $UPLINK had"

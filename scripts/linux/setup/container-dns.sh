@@ -14,25 +14,10 @@
 # route and ARP for it on the bridge segment, and Linux's weak host model means
 # the host answers that ARP from br0 even though the address lives elsewhere.
 #
-# Why a dedicated interface rather than br0 — two failure modes, both observed:
-#
-#   1. Runtime-only on br0: any systemd-networkd restart (an unattended systemd
-#      upgrade is enough) re-applied br0's .network and flushed the address.
-#      wisp's socket stays bound to the vanished IP, so `ss` still reports it
-#      listening while every container DNS query black-holes. Silent and total.
-#
-#   2. Declared on br0 (a drop-in on its .network unit): networkd then applies
-#      the static address immediately on reconfigure while the DHCP lease takes
-#      a round-trip, so br0 briefly has ONLY the link-local. avahi published
-#      `<host>.local -> 169.254.53.53` in that window, then re-announced with the
-#      real address, hit a name conflict and renamed the host to `<host>-2`.
-#      That broke every consumer of the host's .local name. Worse than (1).
-#
-# On its own interface the address is independent of br0's lifecycle — DHCP
-# renewals and carrier flaps cannot touch it — and avahi never sees br0 without
-# a routable address. Nor can it go on the bridge's netplan definition: an
-# `addresses:` entry alongside `dhcp4: true` on a bridge sends networkd into a
-# reconcile loop (docs/specs/CONTAINERS.md, Local DNS).
+# On a device of its own, never on the bridge, whether at runtime or declared
+# with it: there a networkd reconfigure or a DHCP round-trip removes it or
+# leaves the bridge on it alone, and avahi then renames the host
+# (docs/specs/CONTAINERS.md, Local DNS).
 #
 # Declared, not made: the dummy device and its address are a netplan definition
 # in a file of Wisp's own (DNS_STUB_NETPLAN_FILE), rendered to
@@ -41,8 +26,8 @@
 # is part of the network being online, which wisp.service is ordered after:
 # the definition is not optional, so netplan's wait-online waits for it.
 # Rendered with `netplan generate`, never `netplan apply`, and brought to its
-# settings with the least systemd-networkd call the host needs (below). A host
-# that holds the former declaration, systemd-networkd's own files, has them
+# settings with the least systemd-networkd call the host needs (below). The
+# stub declared in systemd-networkd's own files, as a host may hold it, is
 # taken back.
 #
 # Does not touch systemd-resolved.
@@ -70,22 +55,20 @@ BRIDGE="${1:-}"
 
 echo "--- Container DNS (stub IP + resolv.conf) ---"
 
-STUB_IP="$DNS_STUB_IP"
-STUB_IFACE="$DNS_STUB_IFACE"
 RESOLV_OUT="/var/lib/wisp/container-resolv.conf"
 NETWORKD_DIR="/etc/systemd/network"
-OLD_DROPIN_NAME="wisp-mdns-stub.conf"
-# The former declaration, taken back.
-FORMER_FILES=("$NETWORKD_DIR/10-${STUB_IFACE}.netdev" "$NETWORKD_DIR/10-${STUB_IFACE}.network")
-NETPLAN_STUB_UNIT="/run/systemd/network/10-netplan-${STUB_IFACE}.network"
+BRIDGE_DROPIN_NAME="wisp-mdns-stub.conf"
+# The stub declared in systemd-networkd's own files.
+NETWORKD_FILES=("$NETWORKD_DIR/10-${DNS_STUB_IFACE}.netdev" "$NETWORKD_DIR/10-${DNS_STUB_IFACE}.network")
+NETPLAN_STUB_UNIT="/run/systemd/network/10-netplan-${DNS_STUB_IFACE}.network"
 
-# 1. No `[Network] Address=` drop-in for the stub on br0's own .network unit:
-#    failure mode (2) above. The address it put on the bridge goes below;
+# 1. No drop-in declaring the stub's address on the bridge's own unit, as a
+#    host may hold. The address it put on the bridge goes below;
 #    systemd-networkd forgets the drop-in at its next reload or boot.
 shopt -s nullglob
-for stale in "$NETWORKD_DIR"/*.network.d/"$OLD_DROPIN_NAME"; do
+for stale in "$NETWORKD_DIR"/*.network.d/"$BRIDGE_DROPIN_NAME"; do
   rm -f "$stale"
-  changed "removed stale drop-in $stale (the stub IP no longer lives on the bridge)"
+  changed "removed $stale (the stub's address is on ${DNS_STUB_IFACE}, never on the bridge)"
 done
 shopt -u nullglob
 
@@ -97,8 +80,8 @@ shopt -u nullglob
 #    backend binds the address when it starts, so the step ends with it there.
 
 # The stub's file as the network plan rendered and checked it; netplan renders
-# its units to /run when the file is new or changed, when the former files go,
-# and when the device is missing.
+# its units to /run when the file is new or changed, when systemd-networkd's
+# own files go, and when the device is missing.
 yaml="$NET_PLAN_DIR/$DNS_STUB_PLANNED"
 [[ -s "$yaml" ]] || fail "no container DNS stub definition in the network plan ($yaml)"
 GENERATE=0
@@ -106,54 +89,54 @@ if write_if_changed "$DNS_STUB_NETPLAN_FILE" 0600 "$yaml"; then
   changed "$DNS_STUB_NETPLAN_FILE"
   GENERATE=1
 fi
-for f in "${FORMER_FILES[@]}"; do
+for f in "${NETWORKD_FILES[@]}"; do
   [[ ! -e "$f" ]] || GENERATE=1
 done
-[[ -e "/sys/class/net/$STUB_IFACE" ]] || GENERATE=1
+[[ -e "/sys/class/net/$DNS_STUB_IFACE" ]] || GENERATE=1
 if (( GENERATE )); then
   step_run 0 timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" netplan generate || fail "netplan generate failed"
 fi
-for f in "${FORMER_FILES[@]}"; do
+for f in "${NETWORKD_FILES[@]}"; do
   [[ -e "$f" ]] || continue
   remove_file "$f" || fail "cannot remove $f"
-  changed "removed $f (the stub is netplan's now)"
+  changed "removed $f (the stub is netplan's)"
 done
 
 # What brings the device to its settings is decided from the host, never from
 # what this run wrote, so a run cut short is finished by the next. A reload of
 # systemd-networkd reconfigures every link it runs from netplan's units, the
-# bridge among them (observed: br0's DHCP lease dropped and taken again), so it
-# is the last resort: a missing device, or one that runs from another file
-# (the former ones, deleted or not) without its settings. A device that holds
-# them from another file keeps running; systemd-networkd runs it from netplan's
-# unit from its next reload or boot. Each path ends with the device holding
-# them, or fails.
+# bridge among them, whose DHCP lease it drops and takes again, so it is the
+# last resort: a missing device, or one that runs from another file
+# (systemd-networkd's own, deleted or not) without its settings. A device that
+# holds them from another file keeps running; systemd-networkd runs it from
+# netplan's unit from its next reload or boot. Each path ends with the device
+# holding them, or fails.
 how=""
-if [[ ! -e "/sys/class/net/$STUB_IFACE" ]]; then
+if [[ ! -e "/sys/class/net/$DNS_STUB_IFACE" ]]; then
   net_call networkctl reload || fail "networkctl reload failed"
   how="systemd-networkd reloaded"
 elif ! dns_stub_holds; then
-  runs_from="$(networkd_json "$STUB_IFACE" NetworkFile)" || fail "cannot read systemd-networkd's status of $STUB_IFACE"
+  runs_from="$(networkd_json "$DNS_STUB_IFACE" NetworkFile)" || fail "cannot read systemd-networkd's status of $DNS_STUB_IFACE"
   if [[ "$runs_from" == "$NETPLAN_STUB_UNIT" ]]; then
-    net_call networkctl reconfigure "$STUB_IFACE" || fail "networkctl reconfigure $STUB_IFACE failed"
-    how="$STUB_IFACE reconfigured"
+    net_call networkctl reconfigure "$DNS_STUB_IFACE" || fail "networkctl reconfigure $DNS_STUB_IFACE failed"
+    how="$DNS_STUB_IFACE reconfigured"
   else
     net_call networkctl reload || fail "networkctl reload failed"
-    how="systemd-networkd reloaded ($STUB_IFACE ran from '${runs_from}')"
+    how="systemd-networkd reloaded ($DNS_STUB_IFACE ran from '${runs_from}')"
   fi
 fi
 if [[ -n "$how" ]]; then
-  dns_stub_wait || fail "${STUB_IFACE} does not hold ${STUB_IP}/32 alone ${NET_WAIT_SEC} s after: $how"
-  changed "$how: ${STUB_IFACE} holds ${STUB_IP}/32"
+  dns_stub_wait || fail "${DNS_STUB_IFACE} does not hold ${DNS_STUB_IP}/32 alone ${NET_WAIT_SEC} s after: $how"
+  changed "$how: ${DNS_STUB_IFACE} holds ${DNS_STUB_IP}/32"
 fi
 
-# No copy of the stub IP on the bridge, where an earlier release held it: it
-# would answer alongside wisp-dns0 and can leave the bridge on a lone
-# link-local address. Nothing to do when the bridge does not exist yet.
+# No copy of the stub IP on the bridge, as a host may hold: it would answer
+# alongside wisp-dns0 and can leave the bridge on a lone link-local address.
+# Nothing to do when the bridge does not exist yet.
 BRIDGE_ADDRS="$(net_call ip -4 addr show dev "$BRIDGE" 2>/dev/null || true)"
-if [[ "$BRIDGE_ADDRS" == *"${STUB_IP}/32"* ]]; then
-  net_call ip addr del "${STUB_IP}/32" dev "$BRIDGE" || fail "cannot remove ${STUB_IP}/32 from $BRIDGE"
-  changed "removed ${STUB_IP}/32 from $BRIDGE (now on ${STUB_IFACE})"
+if [[ "$BRIDGE_ADDRS" == *"${DNS_STUB_IP}/32"* ]]; then
+  net_call ip addr del "${DNS_STUB_IP}/32" dev "$BRIDGE" || fail "cannot remove ${DNS_STUB_IP}/32 from $BRIDGE"
+  changed "removed ${DNS_STUB_IP}/32 from $BRIDGE (now on ${DNS_STUB_IFACE})"
 fi
 
 # 3. A ready-to-bind-mount resolv.conf for containers. The backend's
@@ -162,7 +145,7 @@ fi
 RESOLV="$(staged_file)"
 cat > "$RESOLV" <<EOF
 # Generated by Wisp container-dns.sh — bind-mounted into containers on the bridge.
-nameserver ${STUB_IP}
+nameserver ${DNS_STUB_IP}
 options edns0
 EOF
 mkdir -p /var/lib/wisp

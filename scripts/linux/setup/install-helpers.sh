@@ -54,7 +54,7 @@ for name in "${HELPERS[@]}"; do
   install_sudoers "/etc/sudoers.d/${name//[^a-z0-9-]/}" "$DEPLOY_USER ALL=(root) NOPASSWD: $dest"
 done
 
-# Helpers an earlier release installed under other names.
+# Helpers by names no Wisp runs, as a host may hold.
 for obsolete in wisp-smb wisp-update; do
   if [[ -f "/usr/local/bin/$obsolete" ]]; then
     rm -f "/usr/local/bin/$obsolete"

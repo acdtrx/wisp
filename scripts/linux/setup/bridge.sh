@@ -12,12 +12,12 @@
 # and its whole layer 3, static or DHCP, with its DHCP identity, so the DHCP
 # server hands it the same lease; link settings stay with the uplink, which
 # becomes its port with no addressing of its own. After the apply, within
-# NET_APPLY_SEC, the bridge must hold the uplink's former hardware address, IPv4
-# addresses, configured IPv6 addresses and default route — and on DHCP its client identifier and name
-# servers, on a static address all its routes, name servers and search domains
-# — the uplink none of it, the uplink must be its port and the bridge have
-# carrier, and systemd-networkd must run each from the unit netplan renders for
-# it. Otherwise, or when the step is stopped, it puts the kept original back,
+# NET_APPLY_SEC, the bridge must hold the uplink's hardware address, IPv4
+# addresses, configured IPv6 addresses and default route — and on DHCP its
+# client identifier and name servers, on a static address all its routes, name
+# servers and search domains — the uplink none of it, the uplink must be its
+# port and the bridge have carrier, and systemd-networkd must run each from the
+# unit netplan renders for it. Otherwise, or when the step is stopped, it puts the kept original back,
 # applies it, and fails saying so; failing before its switch, it takes back
 # only what it wrote.
 set -euo pipefail
@@ -104,9 +104,8 @@ apply_bridge() {
 
 # facts_of: the facts compared, from l3_state's lines: on DHCP too, every
 # configured address of either family. On DHCP the default route is compared
-# by its gateway: systemd-networkd sets its metric and
-# source per link, and an uplink may carry the same route twice (once from the
-# initramfs).
+# by its gateway: systemd-networkd sets its metric and source per link, and an
+# uplink may carry the same route twice (once from the initramfs).
 facts_of() {
   if [[ "$UPLINK_MODE" == static ]]; then
     grep -E '^(addr[46]|route[46]|dns|domain) ' || true
@@ -148,8 +147,8 @@ bridge_check() {
     mac="$(now mac)" master="$(now master)" carrier="$(now carrier)"
     have="$(now have)" port="$(now port)" cid="$(now cid)"
     bunit="$(now bridge-unit)" uunit="$(now uplink-unit)"
-    if [[ "$mac" == "$UPLINK_MAC" && "$master" == "$BRIDGE" && "$carrier" == 1 && "$have" == "$want" && -z "$port" && "$cid" == "${UPLINK_CLIENT_ID:-}" \
-      && "$bunit" == "$bridge_unit" && "$uunit" == "$UPLINK_NETFILE" ]]; then
+    if [[ "$master" == "$BRIDGE" && "$carrier" == 1 && "$mac" == "$UPLINK_MAC" && "$cid" == "${UPLINK_CLIENT_ID:-}" \
+      && "$have" == "$want" && -z "$port" && "$bunit" == "$bridge_unit" && "$uunit" == "$UPLINK_NETFILE" ]]; then
       rm -f "$STEP_TMP_DIR"/now.*
       return 0
     fi
@@ -252,24 +251,14 @@ step_release
 if (( applied )) && bridge_check; then
   STEP_ON_STOP=""
   changed "$BRIDGE created on $UPLINK"
-  # What the check compared: name servers and search domains only where
-  # systemd-resolved holds them (net-state.sh, l3_state).
-  held="$(facts_of < "$NET_PLAN_DIR/uplink.state" | awk '{ print $1 }' | sort -u | tr '\n' ' ')"
-  extra=""
-  [[ " $held" != *" dns "* ]] || extra+=", name servers"
-  [[ " $held" != *" domain "* ]] || extra+=", search domains"
-  if [[ "$UPLINK_MODE" == dhcp ]]; then
-    echo "  $BRIDGE holds $UPLINK_ADDR, its default route${extra}, hardware address $UPLINK_MAC, client identifier $UPLINK_CLIENT_ID; $UPLINK holds no address"
-  else
-    echo "  $BRIDGE holds ${UPLINK}'s static addresses, routes${extra}, hardware address $UPLINK_MAC; $UPLINK holds none"
-  fi
+  echo "  $BRIDGE holds what $UPLINK held ($UPLINK_ADDR, $UPLINK_MODE) with its hardware address $UPLINK_MAC; $UPLINK is its port and holds no address"
   echo "  The original network file stays kept in $KEPT."
   step_done
-  # An apply can drop the container DNS stub's address for a while (netplan's,
-  # on Debian 13: about 6 s), and the backend's start follows the step: the
-  # stub is waited for until it holds its settings. Not part of the bridge or
-  # its check: the bridge stays whatever the stub does. Outside a section that
-  # must finish, so a stop ends the wait at once.
+  # An apply can drop the container DNS stub's address for a while
+  # (docs/specs/CONTAINERS.md, Local DNS), and the backend's start follows the
+  # step: the stub is waited for until it holds its settings. Not part of the
+  # bridge or its check: the bridge stays whatever the stub does. Outside a
+  # section that must finish, so a stop ends the wait after its read in flight.
   dns_stub_wait || fail "$BRIDGE is in place on $UPLINK and kept, but the container DNS stub $DNS_STUB_IFACE did not hold ${DNS_STUB_IP}/32 alone in the ${NET_WAIT_SEC} s waited after the bridge was made: bring it back (networkctl reconfigure $DNS_STUB_IFACE), and run this again."
   exit 0
 fi

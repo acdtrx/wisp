@@ -70,10 +70,10 @@ if [[ "$installed" != "$CNI_VERSION" ]]; then
   changed "CNI plugins ${CNI_VERSION} in $CNI_BIN_DIR (checksum verified)"
 fi
 
-# The legacy macvlan conflist of earlier installs.
+# A macvlan conflist, as a host may hold: Wisp's containers join the bridge.
 if [[ -e "$CNI_CONF_DIR/10-wisp-macvlan.conflist" ]]; then
   rm -f "$CNI_CONF_DIR/10-wisp-macvlan.conflist"
-  changed "removed legacy $CNI_CONF_DIR/10-wisp-macvlan.conflist"
+  changed "removed $CNI_CONF_DIR/10-wisp-macvlan.conflist"
 fi
 
 mkdir -p "$CNI_CONF_DIR"

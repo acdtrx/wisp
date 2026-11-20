@@ -3,14 +3,10 @@
 #
 # Why: avahi 0.8 renames the host to `<host>-2` when an address is withdrawn
 # while it is still probing its host name — the kernel loops its own probe back,
-# avahi no longer recognises it as its own, and counts it as a rival claim
-# (avahi#117, unfixed upstream). The usual trigger is IPv6 link-local
-# withdrawal: unattended-upgrades restarting avahi-daemon and systemd-networkd in
-# the same second (needrestart after a library upgrade), or a reboot. The
-# conflict was observed on the IPv4 probe, which by default also carries the
-# host's AAAA records. With them off IPv4, restarting both (observed 2026-10-23
-# on an Ubuntu 24.04 guest) went from a conflict on the first try to none in
-# ten. AAAA records are still published over IPv6.
+# and avahi counts it as a rival claim (avahi#117). The conflict comes on the
+# IPv4 probe, which by default also carries the host's AAAA records; with them
+# off IPv4 it does not (docs/specs/CONTAINERS.md, Local DNS). AAAA records are
+# still published over IPv6.
 #
 # avahi has no drop-in directory, so the one key is set in place in
 # avahi-daemon.conf and the rest of the file stays the distro's. The file is a
