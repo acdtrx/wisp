@@ -1,6 +1,5 @@
 import { create } from 'zustand';
-import { subscribeJobProgress } from '../api/jobProgress.js';
-import { fetchBackgroundJobs } from '../api/backgroundJobs.js';
+import { JOB_KIND, listJobs, streamJobProgress } from '../api/jobs.js';
 import { ApiError, CLIENT_CODES } from '../api/errors.js';
 
 /** Same TTL as the server's job store, measured the same way: from completion.
@@ -8,18 +7,22 @@ import { ApiError, CLIENT_CODES } from '../api/errors.js';
 const DONE_UI_TTL_MS = 5 * 60 * 1000;
 
 /**
+ * @typedef {{ type: 'vm' | 'container', name: string }} JobSubject
+ *
  * @typedef {Object} BackgroundJobRow
  * @property {string} jobId
- * @property {string} kind
+ * @property {string} kind - a JOB_KIND, or a kind this client does not know (shown by its title)
  * @property {string} title
+ * @property {JobSubject | null} subject - the workload the job acts on
  * @property {string | null} step
  * @property {number | null} percent
  * @property {string | null} detail
+ * @property {Record<string, object>} events - the latest event of each step, with the kind's own fields
  * @property {'running' | 'done' | 'error'} status
  * @property {ApiError | null} error - the job's error event (`code`, `detail`), or why its stream ended
- * @property {object | null} [result] - the `done` event (the job's result)
+ * @property {unknown} result - the job's result, from its `done` event
  * @property {number} startedAt
- * @property {number | null} [finishedAt]
+ * @property {number | null} finishedAt - set by the terminal event (or the stream's end), never by hydration
  */
 
 function applyEvent(row, ev) {
@@ -33,25 +36,28 @@ function applyEvent(row, ev) {
     next.status = 'error';
     next.error = new ApiError({ code: ev.error, detail: ev.detail });
     next.finishedAt = Date.now();
-  }
-  if (ev.step === 'done') {
+  } else if (ev.step === 'done') {
     next.status = 'done';
-    next.result = ev;
+    next.result = ev.result;
     next.finishedAt = Date.now();
+  } else if (ev.step) {
+    next.events = { ...row.events, [ev.step]: ev };
   }
   return next;
 }
 
 export const useBackgroundJobsStore = create((set, get) => ({
-  /** Loading the server's running jobs (after a reload) failed: the tray may miss some. */
+  /** Loading the server's jobs (after a reload) failed: the tray may miss some. */
   hydrateFailed: false,
 
-  /** Register the server's jobs (after a page load); `hydrateFailed` says whether that worked. */
+  /** Add the server's jobs (after a page load); `hydrateFailed` says whether that worked. */
   hydrate: async () => {
     try {
-      const { jobs } = await fetchBackgroundJobs();
+      const { jobs } = await listJobs();
       for (const j of jobs) {
-        get().registerJob({ jobId: j.jobId, kind: j.kind, title: j.title, startedAt: j.createdAt });
+        get().addJob({
+          jobId: j.jobId, kind: j.kind, title: j.title, subject: j.subject, status: j.status, startedAt: j.createdAt,
+        });
       }
       set({ hydrateFailed: false });
     } catch {
@@ -95,15 +101,14 @@ export const useBackgroundJobsStore = create((set, get) => ({
   },
 
   /**
-   * Start global SSE for this job if not already active. Idempotent per jobId.
-   * @param {{ jobId: string, kind: string, title: string, onTerminal?: (ev: object) => void, startedAt?: number }} opts
+   * Add a job's row and follow its progress stream, with what the caller knows
+   * of it. Idempotent per jobId: a job already followed keeps its row.
+   * Returns the jobId, for `awaitJob`.
+   * @param {{ jobId: string, kind: string, title: string, subject?: JobSubject | null, status?: 'running' | 'done' | 'error', startedAt?: number }} job
+   * @returns {string}
    */
-  registerJob: (opts) => {
-    const { jobId, kind, title, onTerminal, startedAt } = opts;
-    if (!jobId) return;
-
-    const { closeFns } = get();
-    if (closeFns[jobId]) return;
+  addJob: ({ jobId, kind, title, subject = null, status = 'running', startedAt }) => {
+    if (!jobId || get().jobs[jobId]) return jobId;
 
     set((s) => ({
       jobs: {
@@ -112,19 +117,26 @@ export const useBackgroundJobsStore = create((set, get) => ({
           jobId,
           kind,
           title,
+          subject,
           step: null,
           percent: null,
           detail: null,
-          status: 'running',
+          events: {},
+          status,
           error: null,
+          result: null,
           startedAt: startedAt ?? Date.now(),
           finishedAt: null,
         },
       },
     }));
 
-    const close = subscribeJobProgress(
-      kind,
+    const forgetStream = () => set((s) => {
+      const { [jobId]: _c, ...rest } = s.closeFns;
+      return { closeFns: rest };
+    });
+
+    const close = streamJobProgress(
       jobId,
       (ev) => {
         set((s) => {
@@ -135,11 +147,7 @@ export const useBackgroundJobsStore = create((set, get) => ({
 
         if (ev.step === 'done' || ev.step === 'error') {
           close();
-          set((s) => {
-            const { [jobId]: _c, ...rest } = s.closeFns;
-            return { closeFns: rest };
-          });
-          onTerminal?.(ev);
+          forgetStream();
           get().schedulePrune();
         }
       },
@@ -148,34 +156,29 @@ export const useBackgroundJobsStore = create((set, get) => ({
           get().dismissJob(jobId);
           return;
         }
-        const lost = { step: 'error', error: CLIENT_CODES.CONNECTION_LOST, detail: 'Connection lost' };
         set((s) => {
           const cur = s.jobs[jobId];
-          if (!cur) return s;
-          if (cur.status !== 'running') return s;
+          if (!cur || cur.status !== 'running') return s;
           return {
             jobs: {
               ...s.jobs,
               [jobId]: {
                 ...cur,
                 status: 'error',
-                error: new ApiError({ code: lost.error, detail: lost.detail }),
+                error: new ApiError({ code: CLIENT_CODES.CONNECTION_LOST, detail: 'Connection lost' }),
                 step: 'error',
                 finishedAt: Date.now(),
               },
             },
           };
         });
-        set((s) => {
-          const { [jobId]: _c, ...rest } = s.closeFns;
-          return { closeFns: rest };
-        });
-        onTerminal?.(lost);
+        forgetStream();
         get().schedulePrune();
       },
     );
 
     set((s) => ({ closeFns: { ...s.closeFns, [jobId]: close } }));
+    return jobId;
   },
 
   dismissJob: (jobId) => {
@@ -193,28 +196,27 @@ export const useBackgroundJobsStore = create((set, get) => ({
 }));
 
 /**
- * Follow a job the server accepted (the `{ jobId, title }` its route answered):
- * show it in the tray, and resolve with its `done` event or reject with its
- * error, an ApiError as `api()` throws (`code` is CONNECTION_LOST or JOB_GONE
- * when the stream, not the job, ended it). The job runs on the
- * server whether or not anyone follows it; this works whether or not the tray
- * already holds the job (the tray's hydration may have registered it first).
- * @param {string} kind - a JOB_KIND
- * @param {{ jobId: string, title: string }} accepted
- * @returns {Promise<object>}
+ * Wait for a job whose row was added (`addJob`): resolve with its result, or
+ * reject with its error, an ApiError as `api()` throws (`code` is
+ * CONNECTION_LOST or JOB_GONE when the stream, not the job, ended it, or the
+ * row is not in the store). The job runs on the server whether or not anyone
+ * waits for it.
+ * @param {string} jobId
+ * @returns {Promise<unknown>}
  */
-export function awaitJob(kind, { jobId, title }) {
+export function awaitJob(jobId) {
   const store = useBackgroundJobsStore;
-  store.getState().registerJob({ jobId, kind, title });
   return new Promise((resolve, reject) => {
     const settle = (row) => {
       if (!row) {
-        // Dismissed, or unknown to the server (it restarted, or the job expired).
+        // Never added, dismissed, or unknown to the server (it restarted, or the job expired).
         reject(new ApiError({ code: CLIENT_CODES.JOB_GONE, detail: 'The job is no longer followed' }));
         return true;
       }
+      // A finished row hydrated after a reload settles once its replay brings the terminal event.
+      if (row.finishedAt == null) return false;
       if (row.status === 'done') {
-        resolve(row.result ?? {});
+        resolve(row.result);
         return true;
       }
       if (row.status === 'error') {
@@ -228,4 +230,50 @@ export function awaitJob(kind, { jobId, title }) {
       if (settle(state.jobs[jobId])) unsubscribe();
     });
   });
+}
+
+/**
+ * The running job that holds a workload (its subject), or null: while it runs,
+ * the server refuses the workload's other operations with its busy error.
+ * @param {Record<string, BackgroundJobRow>} jobs
+ * @param {JobSubject} subject
+ * @returns {BackgroundJobRow | null}
+ */
+export function workloadBusyJob(jobs, { type, name }) {
+  if (!name) return null;
+  return Object.values(jobs).find(
+    (j) => j.status === 'running' && j.subject?.type === type && j.subject?.name === name,
+  ) ?? null;
+}
+
+/** `workloadBusyJob` for a component: re-renders when that workload's busy job changes. */
+export function useWorkloadBusy({ type, name }) {
+  return useBackgroundJobsStore((s) => workloadBusyJob(s.jobs, { type, name }));
+}
+
+/** The kinds that back a workload up or restore it in place: what the backup surfaces follow. */
+const BACKUP_KINDS = new Set([JOB_KIND.VM_BACKUP, JOB_KIND.CONTAINER_BACKUP, JOB_KIND.CONTAINER_RESTORE]);
+
+/**
+ * The running backup or restore-in-place job of a workload, or null. Narrower
+ * than busy: a start or a delete holds the workload but is no backup.
+ * @param {Record<string, BackgroundJobRow>} jobs
+ * @param {JobSubject} subject
+ * @returns {BackgroundJobRow | null}
+ */
+export function workloadBackupJob(jobs, { type, name }) {
+  if (!name) return null;
+  return Object.values(jobs).find(
+    (j) => j.status === 'running' && BACKUP_KINDS.has(j.kind) && j.subject?.type === type && j.subject?.name === name,
+  ) ?? null;
+}
+
+/** `workloadBackupJob` for a component. */
+export function useWorkloadBackup({ type, name }) {
+  return useBackgroundJobsStore((s) => workloadBackupJob(s.jobs, { type, name }));
+}
+
+/** The reason a busy workload's controls are disabled, naming the job that holds it. */
+export function workloadBusyReason(job) {
+  return job ? `Unavailable while “${job.title}” runs` : undefined;
 }

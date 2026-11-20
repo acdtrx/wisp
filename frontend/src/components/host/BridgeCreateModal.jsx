@@ -9,8 +9,8 @@ import {
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { createManagedNetworkBridge } from '../../api/host.js';
-import { JOB_KIND } from '../../api/jobProgress.js';
-import { awaitJob } from '../../store/backgroundJobsStore.js';
+import { JOB_KIND } from '../../api/jobs.js';
+import { awaitJob, useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
 
@@ -52,7 +52,9 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose }) {
     setSubmitting(true);
     setError(null);
     try {
-      await awaitJob(JOB_KIND.NETWORK_BRIDGE_CREATE, await createManagedNetworkBridge(baseBridge, Number(vlanId)));
+      await awaitJob(useBackgroundJobsStore.getState().addJob({
+        ...await createManagedNetworkBridge(baseBridge, Number(vlanId)), kind: JOB_KIND.NETWORK_BRIDGE_CREATE,
+      }));
       onClose();
     } catch (err) {
       setError(errorText(err));

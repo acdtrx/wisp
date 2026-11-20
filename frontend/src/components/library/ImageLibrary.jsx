@@ -14,7 +14,7 @@ import {
 } from '../../api/library.js';
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
-import { JOB_KIND } from '../../api/jobProgress.js';
+import { JOB_KIND } from '../../api/jobs.js';
 import { listContainerImages, deleteContainerImage } from '../../api/containers.js';
 import { useKindChanges } from '../../hooks/useChanges.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
@@ -276,9 +276,14 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     if (pickerKind === 'container') return FILTERS_PICKER_CONTAINER;
     return FILTERS_PICKER;
   }, [isPageLike, pickerKind]);
-  const registerJob = useBackgroundJobsStore((s) => s.registerJob);
+  const addJob = useBackgroundJobsStore((s) => s.addJob);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
   const imageUpdateCheck = useContainerStore((s) => s.imageUpdateCheck);
+  /* The check's progress is its job row's: the latest `checking` and `skipped` events. */
+  const checkEvents = imageUpdateCheck.jobId ? bgJobs[imageUpdateCheck.jobId]?.events : null;
+  const checking = checkEvents?.checking ?? null;
+  const skipped = checkEvents?.skipped ?? null;
+  const checkState = { running: imageUpdateCheck.running, currentRef: checking?.ref ?? null };
   const startImageUpdateCheck = useContainerStore((s) => s.startImageUpdateCheck);
   const refreshImageUpdateStatus = useContainerStore((s) => s.refreshImageUpdateStatus);
 
@@ -428,7 +433,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     try {
       if (deleteTarget.kind === 'oci') {
         /* The removal reaches the list on the `images` cue. */
-        await awaitJob(JOB_KIND.CONTAINER_IMAGE_DELETE, await deleteContainerImage(deleteTarget.ref));
+        await awaitJob(addJob({ ...await deleteContainerImage(deleteTarget.ref), kind: JOB_KIND.CONTAINER_IMAGE_DELETE }));
       } else {
         await sendAndAwaitKindChange('library', () => deleteFile(deleteTarget.name));
       }
@@ -467,27 +472,15 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     if (!url) return;
     setUrlDownloadError(null);
     try {
-      const { jobId, title } = await startDownloadFromUrl(url);
+      const jobId = addJob({ ...await startDownloadFromUrl(url), kind: JOB_KIND.LIBRARY_DOWNLOAD });
       setUrlJobId(jobId);
-      registerJob({
-        jobId,
-        kind: JOB_KIND.LIBRARY_DOWNLOAD,
-        title,
-        onTerminal: (data) => {
-          if (data.step === 'done') {
-            setUrlJobId(null);
-            setUrlModalOpen(false);
-            setUrlInput('');
-            setUrlCheckResult(null);
-          }
-          if (data.step === 'error') {
-            setUrlDownloadError(errorText(data));
-            setUrlJobId(null);
-          }
-        },
-      });
+      await awaitJob(jobId);
+      setUrlModalOpen(false);
+      setUrlInput('');
+      setUrlCheckResult(null);
     } catch (err) {
       setUrlDownloadError(errorText(err));
+    } finally {
       setUrlJobId(null);
     }
   };
@@ -500,26 +493,21 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     setUrlJobId(null);
   };
 
-  const runPresetDownload = (jobId, label) => {
+  /* Only the download still shown applies its outcome: a newer one ignores it. */
+  const runPresetDownload = async (accepted) => {
     setPresetError(null);
+    const jobId = addJob({ ...accepted, kind: JOB_KIND.LIBRARY_DOWNLOAD });
     setPresetJobId(jobId);
-    registerJob({
-      jobId,
-      kind: JOB_KIND.LIBRARY_DOWNLOAD,
-      title: label,
-      onTerminal: (data) => {
-        setPresetJobId((current) => {
-          if (current !== jobId) return current;
-          if (data.step === 'done') {
-            return null;
-          }
-          if (data.step === 'error') {
-            queueMicrotask(() => setPresetError(errorText(data)));
-            return null;
-          }
-          return current;
-        });
-      },
+    let error = null;
+    try {
+      await awaitJob(jobId);
+    } catch (err) {
+      error = errorText(err);
+    }
+    setPresetJobId((current) => {
+      if (current !== jobId) return current;
+      if (error) queueMicrotask(() => setPresetError(error));
+      return null;
     });
   };
 
@@ -530,8 +518,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       else if (presetId === 'arch') result = await startDownloadArchCloud();
       else if (presetId === 'haos') result = await startDownloadHaos();
       else return;
-      const { jobId, title } = result;
-      runPresetDownload(jobId, title);
+      await runPresetDownload(result);
     } catch (err) {
       setPresetError(errorText(err));
     }
@@ -648,10 +635,9 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
                 {imageUpdateCheck.running ? (
                   <>
                     Checking
-                    {imageUpdateCheck.currentRef ? ` ${shortDigest(imageUpdateCheck.currentRef)}` : '…'}
-                    {imageUpdateCheck.progress
-                      ? ` (${imageUpdateCheck.progress.index}/${imageUpdateCheck.progress.total})`
-                      : ''}
+                    {checking ? ` ${shortDigest(checking.ref)}` : '…'}
+                    {checking?.total ? ` (${checking.index}/${checking.total})` : ''}
+                    {skipped ? ` · skipped ${shortDigest(skipped.ref)}: ${errorText(skipped)}` : ''}
                   </>
                 ) : imageUpdateCheck.lastCheckedAt ? (
                   <>
@@ -700,7 +686,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
                       onSelect={onSelect}
                       onDelete={(r) => setDeleteTarget({ kind: 'oci', ref: r.name })}
                       onCheckUpdate={(r) => startImageUpdateCheck(r.name)}
-                      checkState={imageUpdateCheck}
+                      checkState={checkState}
                     />
                   ))}
                 </tbody>
@@ -743,7 +729,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
                         onSelect={onSelect}
                         onDelete={(r) => setDeleteTarget({ kind: 'oci', ref: r.name })}
                         onCheckUpdate={(r) => startImageUpdateCheck(r.name)}
-                        checkState={imageUpdateCheck}
+                        checkState={checkState}
                       />
                     ),
                   )}

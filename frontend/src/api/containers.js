@@ -18,7 +18,7 @@ export function deleteContainerImage(ref) {
 
 /**
  * Start an image update check (bulk when no ref, single image when ref given).
- * Returns { jobId, title } — subscribe via JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK.
+ * A job: answers { jobId, title } (follow with awaitJob); a check started while one runs answers the running one.
  */
 export function checkContainerImageUpdates(ref = null) {
   return api('/api/containers/images/check-updates', {

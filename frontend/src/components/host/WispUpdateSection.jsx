@@ -7,7 +7,7 @@ import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
-import { JOB_KIND } from '../../api/jobProgress.js';
+import { JOB_KIND } from '../../api/jobs.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { getHostInfo } from '../../api/host.js';
 import { updateSettings } from '../../api/settings.js';
@@ -73,6 +73,13 @@ export default function WispUpdateSection() {
   /* Set once the install job hands over to the updater: from then on the
    * backend restarts, and the version poll below waits for it. */
   const [restarting, setRestarting] = useState(false);
+  const [installJobId, setInstallJobId] = useState(null);
+  /* The install job's row: once its step was `restarting`, the handover happened. */
+  const installStep = useBackgroundJobsStore((s) => (installJobId ? s.jobs[installJobId]?.step : null));
+  const handedOverRef = useRef(false);
+  useEffect(() => {
+    if (installStep === 'restarting') handedOverRef.current = true;
+  }, [installStep]);
   const [installSlow, setInstallSlow] = useState(false);
   const [installStuck, setInstallStuck] = useState(false);
   const [error, setError] = useState(null);
@@ -192,18 +199,16 @@ export default function WispUpdateSection() {
        * before its result arrives: after `restarting`, that too means the
        * handover happened. Before it, a lost stream is a failure to show.
        * Completion is detected below by polling /api/host wispVersion === target. */
-      const job = await installWispUpdate({ force: confirmForce });
-      let handedOver = false;
-      const unsubscribe = useBackgroundJobsStore.subscribe((state) => {
-        if (state.jobs[job.jobId]?.step === 'restarting') handedOver = true;
+      handedOverRef.current = false;
+      const jobId = useBackgroundJobsStore.getState().addJob({
+        ...await installWispUpdate({ force: confirmForce }), kind: JOB_KIND.SELF_UPDATE,
       });
+      setInstallJobId(jobId);
       try {
-        await awaitJob(JOB_KIND.SELF_UPDATE, job);
+        await awaitJob(jobId);
       } catch (err) {
         const streamEnded = err.code === CLIENT_CODES.CONNECTION_LOST || err.code === CLIENT_CODES.JOB_GONE;
-        if (!(streamEnded && handedOver)) throw err;
-      } finally {
-        unsubscribe();
+        if (!(streamEnded && handedOverRef.current)) throw err;
       }
       setRestarting(true);
     } catch (err) {

@@ -4,9 +4,10 @@ import UpdateCard from './UpdateCard.jsx';
 import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
 import { checkForUpdates, performUpgrade, listUpgradablePackages } from '../../api/host.js';
-import { JOB_KIND } from '../../api/jobProgress.js';
-import { awaitJob } from '../../store/backgroundJobsStore.js';
+import { JOB_KIND } from '../../api/jobs.js';
+import { awaitJob, useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { errorText } from '../../api/errors.js';
+import { formatRelativeTime } from '../../utils/formatters.js';
 
 function formatBytes(b) {
   if (!b || b <= 0) return null;
@@ -26,6 +27,11 @@ function isBusyError(err) {
 }
 
 const BUSY_MESSAGE = 'Another package manager operation is running on the host. Try again in a moment.';
+
+/** Run the package check (or join the one running) and resolve with its result, `{ count }`. */
+async function runPackageCheck() {
+  return awaitJob(useBackgroundJobsStore.getState().addJob({ ...await checkForUpdates(), kind: JOB_KIND.OS_UPDATE_CHECK }));
+}
 
 export default function OsUpdateSection({ onRequestRestart }) {
   const stats = useStatsStore((s) => s.stats);
@@ -48,7 +54,6 @@ export default function OsUpdateSection({ onRequestRestart }) {
   const [packagesError, setPackagesError] = useState(null);
   const [packages, setPackages] = useState(null);
   const [downloadBytes, setDownloadBytes] = useState(0);
-  const [packagesCached, setPackagesCached] = useState(false);
   const [packagesAt, setPackagesAt] = useState(null);
 
   const handleCheckUpdates = useCallback(async () => {
@@ -57,8 +62,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
     setUpgradeSuccess(false);
     setChecking(true);
     try {
-      const data = await awaitJob(JOB_KIND.OS_UPDATE_CHECK, await checkForUpdates());
-      const newCount = data.count ?? 0;
+      const { count: newCount } = await runPackageCheck();
       /* Invalidate the locally-rendered package list only if the count
        * actually changed — otherwise the cached list is still accurate and
        * the modal can keep opening instantly. The backend cache is updated
@@ -85,12 +89,12 @@ export default function OsUpdateSection({ onRequestRestart }) {
     setUpgradeSuccess(false);
     setUpgrading(true);
     try {
-      await awaitJob(JOB_KIND.OS_UPGRADE, await performUpgrade());
+      await awaitJob(useBackgroundJobsStore.getState().addJob({ ...await performUpgrade(), kind: JOB_KIND.OS_UPGRADE }));
       setUpgradeSuccess(true);
       setManualCount(0);
       setPackages([]);
       setDownloadBytes(0);
-      setPackagesCached(false);
+      setPackagesAt(null);
     } catch (err) {
       if (isBusyError(err)) {
         setBusyMessage(`${BUSY_MESSAGE} (${errorText(err)})`);
@@ -106,18 +110,11 @@ export default function OsUpdateSection({ onRequestRestart }) {
     setPackagesError(null);
     setPackagesLoading(true);
     try {
-      /* A refresh, or no cache yet, answers with the shared check job: follow
-       * it, then read the list it left in the cache. */
-      let data = await listUpgradablePackages({ refresh });
-      if (data?.jobId) {
-        await awaitJob(JOB_KIND.OS_UPDATE_CHECK, data);
-        data = await listUpgradablePackages();
-        if (data?.jobId) throw new Error('The package list is not available yet');
-      }
-      setPackages(data.packages ?? []);
-      setDownloadBytes(data.downloadBytes ?? 0);
-      setPackagesCached(!!data.cached);
-      setPackagesAt(data.lastCheckedAt ?? null);
+      if (refresh) await runPackageCheck();
+      const data = await listUpgradablePackages();
+      setPackages(data.packages);
+      setDownloadBytes(data.downloadBytes);
+      setPackagesAt(data.checkedAt);
     } catch (err) {
       if (isBusyError(err)) {
         setPackagesError(BUSY_MESSAGE);
@@ -131,9 +128,8 @@ export default function OsUpdateSection({ onRequestRestart }) {
 
   const openDetails = useCallback(() => {
     setDetailsOpen(true);
-    /* Lazy-load on first open or after upgrade clears the list. The backend
-     * serves its cache by default, so this resolves instantly when a recent
-     * background check (or any prior call) populated it. */
+    /* Lazy-load on first open or after upgrade clears the list: the backend
+     * answers with what the last check (hourly, or any trigger) found. */
     if (packages == null && !packagesLoading) fetchPackages();
   }, [packages, packagesLoading, fetchPackages]);
 
@@ -170,16 +166,13 @@ export default function OsUpdateSection({ onRequestRestart }) {
 
   const description = 'Install pending OS package updates.';
 
-  /* Compose the modal subtitle: package count + size, plus a hint when
-   * we're showing cached data so the user knows they can refresh. */
+  /* Compose the modal subtitle: package count + size, and when the check
+   * the list comes from ran, so the user knows when to refresh. */
   let modalSubtitle = null;
   if (packages != null) {
     const parts = [`${packages.length} package${packages.length !== 1 ? 's' : ''}`];
     if (downloadBytes > 0) parts.push(`${formatBytes(downloadBytes)} to download`);
-    if (packagesCached && packagesAt) {
-      const ageMin = Math.max(0, Math.floor((Date.now() - new Date(packagesAt).getTime()) / 60000));
-      parts.push(ageMin < 1 ? 'cached · just now' : `cached · ${ageMin}m ago`);
-    }
+    parts.push(packagesAt ? `checked ${formatRelativeTime(packagesAt)}` : 'not checked yet');
     modalSubtitle = parts.join(' · ');
   }
 

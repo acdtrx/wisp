@@ -1,5 +1,5 @@
 import {
-  useState, useMemo, useEffect, lazy, Suspense,
+  useState, useEffect, lazy, Suspense,
 } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -7,11 +7,13 @@ import {
 } from 'lucide-react';
 
 import { useContainerStore, runContainerCommand } from '../../store/containerStore.js';
-import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
+import {
+  useBackgroundJobsStore, useWorkloadBusy, useWorkloadBackup, workloadBusyReason,
+} from '../../store/backgroundJobsStore.js';
 import { updateContainer } from '../../api/containers.js';
 import { startContainerBackup } from '../../api/backups.js';
 import { getSettings } from '../../api/settings.js';
-import { JOB_KIND } from '../../api/jobProgress.js';
+import { JOB_KIND } from '../../api/jobs.js';
 import { getVmIcon, getDefaultContainerIconId } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
@@ -64,7 +66,7 @@ export default function ContainerOverviewPanel() {
   const killContainer = useContainerStore((s) => s.killContainer);
   const restartContainer = useContainerStore((s) => s.restartContainer);
   const deleteContainer = useContainerStore((s) => s.deleteContainer);
-  const registerJob = useBackgroundJobsStore((s) => s.registerJob);
+  const addJob = useBackgroundJobsStore((s) => s.addJob);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
 
   const { tab } = useParams();
@@ -81,35 +83,12 @@ export default function ContainerOverviewPanel() {
   const [backupError, setBackupError] = useState(null);
 
   const containerName = config?.name ?? '';
-  const backupTitleForContainer = useMemo(
-    () => (containerName ? `Backup ${containerName}` : ''),
-    [containerName],
-  );
-  const backupRunningJob = useMemo(
-    () => (backupTitleForContainer
-      ? Object.values(bgJobs).find(
-        (j) => j.kind === JOB_KIND.CONTAINER_BACKUP
-          && j.title === backupTitleForContainer
-          && j.status === 'running',
-      )
-      : undefined),
-    [bgJobs, backupTitleForContainer],
-  );
-  const backupInProgress = !!backupRunningJob;
-  const restoreInProgress = useMemo(
-    () => !!containerName && Object.values(bgJobs).some(
-      (j) => j.kind === JOB_KIND.CONTAINER_RESTORE
-        && j.title === `Restore ${containerName}`
-        && j.status === 'running',
-    ),
-    [bgJobs, containerName],
-  );
-  // A backup or restore job holds the backend's per-container operation lock
+  // A job on this container holds the backend's per-container operation lock
   // (every lifecycle action, delete and edit → 409 CONTAINER_BUSY), so it
   // blocks the conflicting actions here.
-  const busyHint = backupInProgress
-    ? 'Unavailable while a backup is in progress'
-    : restoreInProgress ? 'Unavailable while a restore is in progress' : null;
+  const busyJob = useWorkloadBusy({ type: 'container', name: containerName });
+  const busyHint = workloadBusyReason(busyJob) ?? null;
+  const backupJob = useWorkloadBackup({ type: 'container', name: containerName });
 
   // Auto-clear backupJobId once the job ends, but ONLY while the modal is
   // closed. Clearing while it is open would blank `progress` and revert the
@@ -180,12 +159,7 @@ export default function ContainerOverviewPanel() {
   const handleOpenBackup = () => {
     setBackupModalOpen(true);
     setBackupError(null);
-    const existing = Object.values(bgJobs).find(
-      (j) => j.kind === JOB_KIND.CONTAINER_BACKUP
-        && j.title === backupTitleForContainer
-        && j.status === 'running',
-    );
-    setBackupJobId(existing ? existing.jobId : null);
+    setBackupJobId(backupJob?.kind === JOB_KIND.CONTAINER_BACKUP ? backupJob.jobId : null);
     setBackupSelectedIds(['local']);
     getSettings().then((s) => {
       const dests = [{ id: 'local', label: 'Local', path: s.backupLocalPath || '/var/lib/wisp/backups' }];
@@ -300,10 +274,10 @@ export default function ContainerOverviewPanel() {
           <div className="mx-0.5 h-4 w-px shrink-0 bg-surface-border" />
           <ActionButton
             icon={Archive}
-            label={backupInProgress ? 'Backup in progress' : busyHint || 'Backup'}
+            label={busyHint || 'Backup'}
             onClick={handleOpenBackup}
             disabled={!!busyHint || state === 'pausing' || state === 'unknown'}
-            loading={backupInProgress}
+            loading={!!backupJob}
           />
           <ActionButton
             icon={Trash2}
@@ -422,21 +396,17 @@ export default function ContainerOverviewPanel() {
               : null
           }
           error={
-            backupJobId && bgJobs[backupJobId]?.status === 'error'
+            backupJobId && bgJobs[backupJobId]?.error
               ? errorText(bgJobs[backupJobId].error)
               : backupError
           }
           onStart={async () => {
             setBackupError(null);
             try {
-              const { jobId, title } = await startContainerBackup(name, { destinationIds: backupSelectedIds });
-              registerJob({
-                jobId,
-                kind: JOB_KIND.CONTAINER_BACKUP,
-                title,
-              });
+              const accepted = await startContainerBackup(name, { destinationIds: backupSelectedIds });
+              addJob({ ...accepted, kind: JOB_KIND.CONTAINER_BACKUP, subject: { type: 'container', name } });
               /* Close the modal once the job is queued — progress is shown in
-               * the top-bar via backgroundJobsStore, and the toolbar Backup
+               * the jobs tray, and the toolbar Backup
                * button is disabled while a backup runs (so the user can't
                * reopen this modal mid-backup anyway). */
               setBackupModalOpen(false);

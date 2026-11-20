@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2, ArrowLeft } from 'lucide-react';
 
 import { useContainerStore } from '../../store/containerStore.js';
-import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
-import { JOB_KIND } from '../../api/jobProgress.js';
+import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
+import { JOB_KIND } from '../../api/jobs.js';
 import { createContainer } from '../../api/containers.js';
 import ContainerGeneralSection from '../sections/ContainerGeneralSection.jsx';
 import { getAppList } from '../../apps/appRegistry.js';
@@ -27,8 +27,7 @@ const CONNECTION_LOST_DETAIL =
 export default function CreateContainerPanel() {
   const navigate = useNavigate();
   const fetchContainers = useContainerStore((s) => s.fetchContainers);
-  const registerJob = useBackgroundJobsStore((s) => s.registerJob);
-  const jobs = useBackgroundJobsStore((s) => s.jobs);
+  const addJob = useBackgroundJobsStore((s) => s.addJob);
 
   const [selectedApp, setSelectedApp] = useState(null);
   const [form, setForm] = useState({
@@ -38,10 +37,11 @@ export default function CreateContainerPanel() {
 
   const [creating, setCreating] = useState(false);
   const [createJobId, setCreateJobId] = useState(null);
+  const row = useBackgroundJobsStore((s) => (createJobId ? s.jobs[createJobId] : null));
   const [createError, setCreateError] = useState(null);
   const [createDetail, setCreateDetail] = useState(null);
 
-  /* The create job outlives this panel (it keeps running in the background-jobs
+  /* The create job outlives this panel (it keeps running in the jobs
    * tray), so its completion only opens the new workload while the user is
    * still here — never yanks them away from wherever they went meanwhile. */
   const mountedRef = useRef(false);
@@ -82,29 +82,18 @@ export default function CreateContainerPanel() {
     if (selectedApp) spec.app = selectedApp;
 
     try {
-      const { jobId, title } = await createContainer(spec);
-      setCreateJobId(jobId);
-      registerJob({
-        jobId,
-        kind: JOB_KIND.CONTAINER_CREATE,
-        title,
-        onTerminal: (ev) => {
-          if (ev.step === 'done') {
-            setCreating(false);
-            setCreateJobId(null);
-            fetchContainers();
-            if (mountedRef.current) navigate(`/container/${encodeURIComponent(spec.name)}/overview`);
-          }
-          if (ev.step === 'error') {
-            setCreateError(errorText(ev));
-            setCreateDetail(ev.error === CLIENT_CODES.CONNECTION_LOST ? CONNECTION_LOST_DETAIL : null);
-            setCreating(false);
-            setCreateJobId(null);
-          }
-        },
+      const jobId = addJob({
+        ...await createContainer(spec), kind: JOB_KIND.CONTAINER_CREATE, subject: { type: 'container', name: spec.name },
       });
+      setCreateJobId(jobId);
+      await awaitJob(jobId);
+      setCreating(false);
+      setCreateJobId(null);
+      fetchContainers();
+      if (mountedRef.current) navigate(`/container/${encodeURIComponent(spec.name)}/overview`);
     } catch (err) {
       setCreateError(errorText(err));
+      setCreateDetail(err.code === CLIENT_CODES.CONNECTION_LOST ? CONNECTION_LOST_DETAIL : null);
       setCreating(false);
       setCreateJobId(null);
     }
@@ -118,7 +107,6 @@ export default function CreateContainerPanel() {
 
   const canCreate = form.name.trim() && form.image.trim() && !creating;
 
-  const row = createJobId ? jobs[createJobId] : null;
   const progressStep = row?.step ?? (creating ? 'validating' : null);
   const progressDetail = row?.detail ?? null;
 

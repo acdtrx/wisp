@@ -31,8 +31,8 @@ import { useSettingsStore } from '../../store/settingsStore.js';
 import { useKindChanges } from '../../hooks/useChanges.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
 import { useDiskStore } from '../../store/diskStore.js';
-import { awaitJob } from '../../store/backgroundJobsStore.js';
-import { JOB_KIND } from '../../api/jobProgress.js';
+import { awaitJob, useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
+import { JOB_KIND } from '../../api/jobs.js';
 import {
   deleteMount,
   getMountStatus,
@@ -183,7 +183,7 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
     setDeletingId(row.id);
     try {
       /* The removal reaches the list and the status on their cues. */
-      await awaitJob(JOB_KIND.MOUNT_DELETE, await deleteMount(row.id));
+      await awaitJob(useBackgroundJobsStore.getState().addJob({ ...await deleteMount(row.id), kind: JOB_KIND.MOUNT_DELETE }));
     } catch (err) {
       onError(errorText(err));
     } finally {
@@ -195,7 +195,7 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
     onError(null);
     setMountActionId(id);
     const p = mounted
-      ? unmountMount(id).then((job) => awaitJob(JOB_KIND.MOUNT_UNMOUNT, job))
+      ? unmountMount(id).then((job) => awaitJob(useBackgroundJobsStore.getState().addJob({ ...job, kind: JOB_KIND.MOUNT_UNMOUNT })))
       : sendAndAwaitKindChange('host-mounts', () => mountMount(id));
     p
       .catch((err) => onError(errorText(err)))
@@ -404,7 +404,7 @@ function RemovableDrivesSection({
     setDeletingId(row.id);
     try {
       /* The removal reaches the list and the status on their cues. */
-      await awaitJob(JOB_KIND.MOUNT_DELETE, await deleteMount(row.id));
+      await awaitJob(useBackgroundJobsStore.getState().addJob({ ...await deleteMount(row.id), kind: JOB_KIND.MOUNT_DELETE }));
     } catch (err) {
       onError(errorText(err));
     } finally {
@@ -416,7 +416,7 @@ function RemovableDrivesSection({
     onError(null);
     setMountActionId(id);
     const p = mounted
-      ? unmountMount(id).then((job) => awaitJob(JOB_KIND.MOUNT_UNMOUNT, job))
+      ? unmountMount(id).then((job) => awaitJob(useBackgroundJobsStore.getState().addJob({ ...job, kind: JOB_KIND.MOUNT_UNMOUNT })))
       : sendAndAwaitKindChange('host-mounts', () => mountMount(id));
     p
       .catch((err) => onError(errorText(err)))

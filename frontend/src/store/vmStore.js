@@ -2,11 +2,11 @@ import { create } from 'zustand';
 import * as vmApi from '../api/vms.js';
 import { createSSE } from '../api/sse.js';
 import { sendAndAwaitChange, sendAndAwaitTopic, subscribeChanges, subscribeTopic } from '../api/events.js';
-import { awaitJob } from './backgroundJobsStore.js';
+import { awaitJob, useBackgroundJobsStore } from './backgroundJobsStore.js';
 import {
   errorKey, withError, withoutError, withoutErrorsOfVanished, withErrorsRenamed, withBusy, anyActionInFlight,
 } from './workloadActions.js';
-import { JOB_KIND } from '../api/jobProgress.js';
+import { JOB_KIND } from '../api/jobs.js';
 import { errorText } from '../api/errors.js';
 
 /**
@@ -343,7 +343,9 @@ export const useVmStore = create((set, get) => {
     },
 
     startVM: async (name) => {
-      return get().withAction(name, 'start', async () => awaitJob(JOB_KIND.VM_START, await vmApi.startVM(name)));
+      return get().withAction(name, 'start', async () => awaitJob(useBackgroundJobsStore.getState().addJob({
+        ...await vmApi.startVM(name), kind: JOB_KIND.VM_START, subject: { type: 'vm', name },
+      })));
     },
     /* Suspend and resume stay busy until a `vms` frame shows the VM out of the state it
      * was in (suspend: no longer running; resume: no longer paused).
@@ -353,7 +355,9 @@ export const useVmStore = create((set, get) => {
       return get().withAction(name, 'stop', () => vmApi.stopVM(name));
     },
     forceStopVM: async (name) => {
-      return get().withAction(name, 'force-stop', async () => awaitJob(JOB_KIND.VM_FORCE_STOP, await vmApi.forceStopVM(name)));
+      return get().withAction(name, 'force-stop', async () => awaitJob(useBackgroundJobsStore.getState().addJob({
+        ...await vmApi.forceStopVM(name), kind: JOB_KIND.VM_FORCE_STOP, subject: { type: 'vm', name },
+      })));
     },
     rebootVM: async (name) => {
       return get().withAction(name, 'reboot', () => vmApi.rebootVM(name));
@@ -367,8 +371,9 @@ export const useVmStore = create((set, get) => {
         sendAndAwaitTopic('vms', () => vmApi.resumeVM(name), listShowsLeft(name, 'paused')));
     },
     deleteVM: async (name, deleteDisks) => {
-      return get().withAction(name, 'delete', async () =>
-        awaitJob(JOB_KIND.VM_DELETE, await vmApi.deleteVM(name, deleteDisks)));
+      return get().withAction(name, 'delete', async () => awaitJob(useBackgroundJobsStore.getState().addJob({
+        ...await vmApi.deleteVM(name, deleteDisks), kind: JOB_KIND.VM_DELETE, subject: { type: 'vm', name },
+      })));
     },
   };
 });

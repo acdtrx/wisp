@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 
 import { useVmStore } from '../../store/vmStore.js';
-import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
-import { JOB_KIND } from '../../api/jobProgress.js';
+import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
+import { JOB_KIND } from '../../api/jobs.js';
 import { createVM, getHostBridges } from '../../api/vms.js';
 import GeneralSection from '../sections/GeneralSection.jsx';
 import DisksSection from '../sections/DisksSection.jsx';
@@ -57,16 +57,16 @@ const defaultForm = () => ({
 export default function CreateVMPanel() {
   const navigate = useNavigate();
   const fetchVMs = useVmStore((s) => s.fetchVMs);
-  const registerJob = useBackgroundJobsStore((s) => s.registerJob);
-  const createRow = useBackgroundJobsStore((s) => s.jobs);
+  const addJob = useBackgroundJobsStore((s) => s.addJob);
 
   const [form, setForm] = useState(defaultForm);
   const [bridges, setBridges] = useState([]);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
   const [createJobId, setCreateJobId] = useState(null);
+  const activeCreate = useBackgroundJobsStore((s) => (createJobId ? s.jobs[createJobId] : null));
 
-  /* The create job outlives this panel (it keeps running in the background-jobs
+  /* The create job outlives this panel (it keeps running in the jobs
    * tray), so its completion only opens the new workload while the user is
    * still here — never yanks them away from wherever they went meanwhile. */
   const mountedRef = useRef(false);
@@ -212,34 +212,21 @@ export default function CreateVMPanel() {
             : undefined,
       };
 
-      const { jobId, title } = await createVM(spec);
+      const jobId = addJob({ ...await createVM(spec), kind: JOB_KIND.VM_CREATE, subject: { type: 'vm', name } });
       setCreateJobId(jobId);
-      registerJob({
-        jobId,
-        kind: JOB_KIND.VM_CREATE,
-        title,
-        onTerminal: (data) => {
-          if (data.step === 'done' && data.name) {
-            setCreating(false);
-            setCreateJobId(null);
-            fetchVMs();
-            if (mountedRef.current) navigate(`/vm/${encodeURIComponent(data.name)}/overview`);
-          }
-          if (data.step === 'error') {
-            setCreateError(errorText(data));
-            setCreating(false);
-            setCreateJobId(null);
-          }
-        },
-      });
+      const result = await awaitJob(jobId);
+      setCreating(false);
+      setCreateJobId(null);
+      fetchVMs();
+      if (mountedRef.current) navigate(`/vm/${encodeURIComponent(result.name)}/overview`);
     } catch (err) {
       setCreateError(errorText(err));
       setCreating(false);
+      setCreateJobId(null);
     }
   };
 
   const config = vmConfig();
-  const activeCreate = createJobId ? createRow[createJobId] : null;
   const displayStep = activeCreate?.step ?? (creating ? 'validating' : null);
   const displayPercent = activeCreate?.percent ?? null;
 

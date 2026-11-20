@@ -37,7 +37,7 @@ export default function BackupModal({
   };
 
   // Auto-dismiss on success. Errors stay visible until the user closes —
-  // they need to read the message. The background-jobs indicator in the
+  // they need to read the message. The jobs tray in the
   // top bar still surfaces the completed job for ~5 minutes if anyone
   // wants to confirm.
   useEffect(() => {

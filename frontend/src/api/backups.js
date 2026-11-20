@@ -1,7 +1,7 @@
 import { api } from './client.js';
 
 /**
- * Start a backup job for a VM. Returns { jobId }; progress stream is GET /api/vms/backup-progress/:jobId (subscribed via background jobs).
+ * Start a backup job for a VM: answers { jobId, title } (follow with awaitJob).
  */
 export function startBackup(vmName, options = {}) {
   const body = options.destinationIds?.length
@@ -40,7 +40,7 @@ export function deleteBackup(target) {
 /* ── Container backups ──────────────────────────────────────────── */
 
 /**
- * Start a container backup job. Returns { jobId, title }; subscribe via JOB_KIND.CONTAINER_BACKUP.
+ * Start a container backup job: answers { jobId, title } (follow with awaitJob).
  */
 export function startContainerBackup(name, options = {}) {
   const body = options.destinationIds?.length
@@ -65,7 +65,7 @@ export function restoreContainerBackup(target, newName) {
 
 /**
  * Restore a backup over the live container it was taken from. Container must
- * be stopped. Returns { jobId, title }; subscribe via JOB_KIND.CONTAINER_RESTORE.
+ * be stopped. A job: answers { jobId, title } (follow with awaitJob).
  * @param {{ destinationId: string, name: string, timestamp: string }} target
  * @param {{ safetyBackup?: boolean }} [options] — back up current state first (default true)
  */

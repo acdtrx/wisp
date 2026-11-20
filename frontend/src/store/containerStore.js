@@ -2,12 +2,17 @@ import { create } from 'zustand';
 import * as containerApi from '../api/containers.js';
 import { createSSE } from '../api/sse.js';
 import { sendAndAwaitChange, sendAndAwaitTopic, subscribeChanges, subscribeTopic } from '../api/events.js';
-import { subscribeJobProgress, JOB_KIND } from '../api/jobProgress.js';
+import { JOB_KIND } from '../api/jobs.js';
 import {
   errorKey, withError, withoutError, withoutErrorsOfVanished, withErrorsRenamed, withBusy, anyActionInFlight,
 } from './workloadActions.js';
 import { awaitJob, useBackgroundJobsStore } from './backgroundJobsStore.js';
 import { errorText } from '../api/errors.js';
+
+/** Add a container job's row, the container its subject, and wait for its result. */
+function awaitContainerJob(accepted, kind, name) {
+  return awaitJob(useBackgroundJobsStore.getState().addJob({ ...accepted, kind, subject: { type: 'container', name } }));
+}
 
 /** Same scheduled restart (or both none)? Compared by value — list pushes carry fresh objects. */
 function sameScheduledRestart(a, b) {
@@ -179,8 +184,6 @@ export const useContainerStore = create((set, get) => {
     });
   }
 
-  let imageUpdateJobClose = null;
-
   return {
     containers: [],
     selectedContainer: null,
@@ -207,8 +210,8 @@ export const useContainerStore = create((set, get) => {
       imagesUpdated: 0,
       flaggedContainers: 0,
       lastError: null,
-      currentRef: null,
-      progress: null,
+      /** The check's job: its row in the jobs store holds the progress. */
+      jobId: null,
     },
 
     fetchContainers: async () => {
@@ -374,17 +377,17 @@ export const useContainerStore = create((set, get) => {
     },
 
     startContainer: async (name) => get().withAction(name, 'start', async () =>
-      awaitJob(JOB_KIND.CONTAINER_START, await containerApi.startContainerApi(name))),
+      awaitContainerJob(await containerApi.startContainerApi(name), JOB_KIND.CONTAINER_START, name)),
     stopContainer: async (name) => get().withAction(name, 'stop', async () =>
-      awaitJob(JOB_KIND.CONTAINER_STOP, await containerApi.stopContainerApi(name))),
+      awaitContainerJob(await containerApi.stopContainerApi(name), JOB_KIND.CONTAINER_STOP, name)),
     restartContainer: async (name) => get().withAction(name, 'restart', async () =>
-      awaitJob(JOB_KIND.CONTAINER_RESTART, await containerApi.restartContainerApi(name))),
+      awaitContainerJob(await containerApi.restartContainerApi(name), JOB_KIND.CONTAINER_RESTART, name)),
     /* Kill (SIGKILL) always ends the task: it stays busy until a `containers` frame
      * shows the container out of `running`. */
     killContainer: async (name) => get().withAction(name, 'kill', () =>
       sendAndAwaitTopic('containers', () => containerApi.killContainerApi(name), listShowsLeft(name, 'running'))),
     deleteContainer: async (name, deleteFiles) => get().withAction(name, 'delete', async () =>
-      awaitJob(JOB_KIND.CONTAINER_DELETE, await containerApi.deleteContainerApi(name, deleteFiles))),
+      awaitContainerJob(await containerApi.deleteContainerApi(name, deleteFiles), JOB_KIND.CONTAINER_DELETE, name)),
 
     refreshImageUpdateStatus: async () => {
       try {
@@ -405,90 +408,35 @@ export const useContainerStore = create((set, get) => {
       if (state.imageUpdateCheck.running) return;
 
       set((prev) => ({
-        imageUpdateCheck: {
-          ...prev.imageUpdateCheck,
-          running: true,
-          ref,
-          lastError: null,
-          currentRef: null,
-          progress: null,
-        },
+        imageUpdateCheck: { ...prev.imageUpdateCheck, running: true, ref, lastError: null, jobId: null },
       }));
 
-      let job;
       try {
-        job = await containerApi.checkContainerImageUpdates(ref);
+        const jobId = useBackgroundJobsStore.getState().addJob({
+          ...await containerApi.checkContainerImageUpdates(ref), kind: JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK,
+        });
+        set((prev) => ({ imageUpdateCheck: { ...prev.imageUpdateCheck, jobId } }));
+        const result = await awaitJob(jobId);
+        set((prev) => ({
+          imageUpdateCheck: {
+            ...prev.imageUpdateCheck,
+            running: false,
+            ref: null,
+            jobId: null,
+            lastCheckedAt: result.lastCheckedAt,
+            imagesChecked: result.checked,
+            imagesUpdated: result.updated,
+            flaggedContainers: result.flaggedContainers,
+          },
+        }));
+        // The backend writes the flagged containers' config after the check:
+        // the `containers` topic pushes the list, the open detail re-reads here.
+        get().refreshSelectedContainer();
       } catch (err) {
         set((prev) => ({
-          imageUpdateCheck: { ...prev.imageUpdateCheck, running: false, lastError: errorText(err) },
+          imageUpdateCheck: { ...prev.imageUpdateCheck, running: false, ref: null, jobId: null, lastError: errorText(err) },
         }));
-        return;
       }
-
-      // The tray holds every running job (and the update install reads it), so
-      // the check is shown there too; this store follows its progress itself.
-      useBackgroundJobsStore.getState().registerJob({
-        jobId: job.jobId,
-        kind: JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK,
-        title: job.title,
-      });
-
-      if (imageUpdateJobClose) {
-        imageUpdateJobClose();
-        imageUpdateJobClose = null;
-      }
-
-      imageUpdateJobClose = subscribeJobProgress(
-        JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK,
-        job.jobId,
-        (ev) => {
-          if (ev.step === 'checking') {
-            set((prev) => ({
-              imageUpdateCheck: {
-                ...prev.imageUpdateCheck,
-                currentRef: ev.ref,
-                progress: { index: ev.index, total: ev.total },
-              },
-            }));
-          } else if (ev.step === 'done') {
-            set((prev) => ({
-              imageUpdateCheck: {
-                ...prev.imageUpdateCheck,
-                running: false,
-                ref: null,
-                currentRef: null,
-                progress: null,
-                lastCheckedAt: ev.lastCheckedAt || new Date().toISOString(),
-                imagesChecked: ev.checked || 0,
-                imagesUpdated: ev.updated || 0,
-                flaggedContainers: ev.flaggedContainers || 0,
-              },
-            }));
-            if (imageUpdateJobClose) {
-              imageUpdateJobClose();
-              imageUpdateJobClose = null;
-            }
-            // Backend fires notifyContainerConfigWrite after the job completes
-            // → the `containers` topic pushes a fresh list automatically.
-            get().refreshSelectedContainer();
-          } else if (ev.step === 'error') {
-            set((prev) => ({
-              imageUpdateCheck: {
-                ...prev.imageUpdateCheck,
-                running: false,
-                ref: null,
-                currentRef: null,
-                progress: null,
-                lastError: errorText(ev),
-              },
-            }));
-            if (imageUpdateJobClose) {
-              imageUpdateJobClose();
-              imageUpdateJobClose = null;
-            }
-          }
-        },
-      );
     },
   };
 });

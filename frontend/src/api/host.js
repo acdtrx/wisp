@@ -12,7 +12,8 @@ export function getHostGpus() {
   return api('/api/host/gpus');
 }
 
-/** The check, a refresh and the upgrade are jobs: they answer `{ jobId, title }` (follow with awaitJob). */
+/** The check and the upgrade are jobs: they answer `{ jobId, title }` (follow with awaitJob). A check
+ *  started while one runs answers the running one. */
 export function checkForUpdates() {
   return api('/api/host/updates/check', { method: 'POST' });
 }
@@ -21,9 +22,9 @@ export function performUpgrade() {
   return api('/api/host/updates/upgrade', { method: 'POST' });
 }
 
-/** The cached list; with `refresh`, or no cache yet, the check job's `{ jobId, title }` instead. */
-export function listUpgradablePackages({ refresh = false } = {}) {
-  return api(`/api/host/updates/packages${refresh ? '?refresh=1' : ''}`);
+/** What the last check found: `{ packages, downloadBytes, checkedAt }`, `checkedAt` null before any check. */
+export function listUpgradablePackages() {
+  return api('/api/host/updates/packages');
 }
 
 export function listManagedNetworkBridges() {

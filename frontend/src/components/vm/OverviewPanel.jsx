@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Play, Square, Zap, RotateCcw, Pause, PlayCircle,
@@ -10,8 +10,10 @@ import { getVmIcon, getDefaultIconId } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
 import { updateVM } from '../../api/vms.js';
 import { getSettings } from '../../api/settings.js';
-import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
-import { JOB_KIND } from '../../api/jobProgress.js';
+import {
+  useBackgroundJobsStore, useWorkloadBusy, useWorkloadBackup, workloadBusyReason,
+} from '../../store/backgroundJobsStore.js';
+import { JOB_KIND } from '../../api/jobs.js';
 import { startBackup } from '../../api/backups.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import XMLModal from './XMLModal.jsx';
@@ -92,24 +94,16 @@ export default function OverviewPanel() {
   const suspendVM = useVmStore((s) => s.suspendVM);
   const resumeVM = useVmStore((s) => s.resumeVM);
   const deleteVM = useVmStore((s) => s.deleteVM);
-  const registerJob = useBackgroundJobsStore((s) => s.registerJob);
+  const addJob = useBackgroundJobsStore((s) => s.addJob);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
 
   const vmName = vmConfig?.name ?? '';
-  const backupTitleForVm = useMemo(() => (vmName ? `Backup ${vmName}` : ''), [vmName]);
-  // A backup job holds the backend's per-VM operation lock (start, delete and
+  // A job on this VM holds the backend's per-VM operation lock (start, delete and
   // every edit of the definition or disks → 409 VM_BUSY), so it blocks the
   // conflicting actions here and in every section editor below.
-  const vmOperationJob = useMemo(
-    () =>
-      vmName
-        ? Object.values(bgJobs).find(
-            (j) => j.status === 'running' && j.kind === JOB_KIND.BACKUP && j.title === `Backup ${vmName}`,
-          )
-        : undefined,
-    [bgJobs, vmName],
-  );
-  const busyHint = vmOperationJob ? 'Unavailable while a backup of this VM is in progress' : undefined;
+  const vmOperationJob = useWorkloadBusy({ type: 'vm', name: vmName });
+  const busyHint = workloadBusyReason(vmOperationJob);
+  const backupJob = useWorkloadBackup({ type: 'vm', name: vmName });
 
   const { tab } = useParams();
   const navigate = useNavigate();
@@ -192,13 +186,7 @@ export default function OverviewPanel() {
   const handleOpenBackup = () => {
     setBackupModalOpen(true);
     setBackupError(null);
-    const existing = Object.values(bgJobs).find(
-      (j) =>
-        j.kind === JOB_KIND.BACKUP &&
-        j.title === backupTitleForVm &&
-        j.status === 'running',
-    );
-    setBackupJobId(existing ? existing.jobId : null);
+    setBackupJobId(backupJob ? backupJob.jobId : null);
     setBackupSelectedIds(['local']);
     getSettings().then((s) => {
       const dests = [{ id: 'local', label: 'Local', path: s.backupLocalPath || '/var/lib/wisp/backups' }];
@@ -369,8 +357,8 @@ export default function OverviewPanel() {
       <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-5 space-y-5">
         {vmOperationJob && (
           <p className="flex items-center gap-1.5 rounded-md border border-status-warning/30 bg-status-warning-soft px-3 py-2 text-xs text-status-warning">
-            <Archive size={13} aria-hidden className="shrink-0" />
-            A backup of this VM is running — changes to its configuration, disks and cloud-init are unavailable until it finishes.
+            <Loader2 size={13} aria-hidden className="shrink-0 animate-spin" />
+            “{vmOperationJob.title}” is running — changes to this VM&rsquo;s configuration, disks and cloud-init are unavailable until it finishes.
           </p>
         )}
 
@@ -469,20 +457,15 @@ export default function OverviewPanel() {
               : null
           }
           error={
-            backupJobId && bgJobs[backupJobId]?.status === 'error'
+            backupJobId && bgJobs[backupJobId]?.error
               ? errorText(bgJobs[backupJobId].error)
               : backupError
           }
           onStart={async () => {
             setBackupError(null);
             try {
-              const { jobId, title } = await startBackup(name, { destinationIds: backupSelectedIds });
-              setBackupJobId(jobId);
-              registerJob({
-                jobId,
-                kind: JOB_KIND.BACKUP,
-                title,
-              });
+              const accepted = await startBackup(name, { destinationIds: backupSelectedIds });
+              setBackupJobId(addJob({ ...accepted, kind: JOB_KIND.VM_BACKUP, subject: { type: 'vm', name } }));
             } catch (err) {
               setBackupError(errorText(err));
               setBackupJobId(null);

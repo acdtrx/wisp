@@ -6,9 +6,10 @@ import { usePopover } from '../../lib/popover.js';
 import LoadHint from '../shared/LoadHint.jsx';
 import { errorText } from '../../api/errors.js';
 
+/** A finished row hydrated after a reload has no event yet: it shows no step until its replay brings one. */
 function formatStep(row) {
   if (row.status === 'done') return 'Done';
-  if (row.status === 'error') return errorText(row.error);
+  if (row.status === 'error') return row.error ? errorText(row.error) : null;
   if (row.step) return String(row.step);
   return 'Starting…';
 }

@@ -28,8 +28,10 @@ import {
   deleteContainerBackup,
 } from '../../api/backups.js';
 import { sendAndAwaitTopic, subscribeTopic } from '../../api/events.js';
-import { JOB_KIND } from '../../api/jobProgress.js';
-import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
+import { JOB_KIND } from '../../api/jobs.js';
+import {
+  useBackgroundJobsStore, awaitJob, workloadBusyJob, workloadBackupJob, workloadBusyReason,
+} from '../../store/backgroundJobsStore.js';
 import { useVmStore } from '../../store/vmStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
@@ -133,7 +135,7 @@ export default function BackupsPanel() {
   const vms = useVmStore((s) => s.vms);
   const containers = useContainerStore((s) => s.containers);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
-  const registerJob = useBackgroundJobsStore((s) => s.registerJob);
+  const addJob = useBackgroundJobsStore((s) => s.addJob);
 
   const [vmBackups, setVmBackups] = useState([]);
   const [ctBackups, setCtBackups] = useState([]);
@@ -267,16 +269,9 @@ export default function BackupsPanel() {
     });
   };
 
-  /** The running backup/restore job for a workload, if any (matched by kind and title, like the Overview panels). */
-  const activeJobFor = (group) => {
-    const kinds = group.kind === 'vm'
-      ? [JOB_KIND.BACKUP, JOB_KIND.VM_RESTORE]
-      : [JOB_KIND.CONTAINER_BACKUP, JOB_KIND.CONTAINER_RESTORE, JOB_KIND.CONTAINER_RESTORE_AS_NEW];
-    return Object.values(bgJobs).find(
-      (j) => j.status === 'running' && kinds.includes(j.kind)
-        && (j.title === `Backup ${group.name}` || j.title === `Restore ${group.name}`),
-    ) || null;
-  };
+  const subjectOf = (group) => ({ type: group.kind, name: group.name });
+  /** The running backup or restore-in-place of a workload: what the card shows. */
+  const activeJobFor = (group) => workloadBackupJob(bgJobs, subjectOf(group));
 
   const isWorkloadStopped = (group) => (
     group.kind === 'vm'
@@ -296,12 +291,9 @@ export default function BackupsPanel() {
   const handleOpenBackup = (group) => {
     setBackupError(null);
     setBackupSelectedIds(['local']);
-    const existing = Object.entries(bgJobs).find(
-      ([, j]) => j.status === 'running'
-        && j.kind === (group.kind === 'vm' ? JOB_KIND.BACKUP : JOB_KIND.CONTAINER_BACKUP)
-        && j.title === `Backup ${group.name}`,
-    );
-    setBackupJobId(existing ? existing[0] : null);
+    const running = activeJobFor(group);
+    const backupKind = group.kind === 'vm' ? JOB_KIND.VM_BACKUP : JOB_KIND.CONTAINER_BACKUP;
+    setBackupJobId(running?.kind === backupKind ? running.jobId : null);
     setBackupTarget(group);
   };
 
@@ -311,9 +303,12 @@ export default function BackupsPanel() {
     try {
       const isVm = backupTarget.kind === 'vm';
       const start = isVm ? startBackup : startContainerBackup;
-      const { jobId, title } = await start(backupTarget.name, { destinationIds: backupSelectedIds });
-      registerJob({ jobId, kind: isVm ? JOB_KIND.BACKUP : JOB_KIND.CONTAINER_BACKUP, title });
-      setBackupJobId(jobId);
+      const accepted = await start(backupTarget.name, { destinationIds: backupSelectedIds });
+      setBackupJobId(addJob({
+        ...accepted,
+        kind: isVm ? JOB_KIND.VM_BACKUP : JOB_KIND.CONTAINER_BACKUP,
+        subject: { type: backupTarget.kind, name: backupTarget.name },
+      }));
     } catch (err) {
       setBackupError(errorText(err));
     }
@@ -327,18 +322,19 @@ export default function BackupsPanel() {
     setRestoreSaving(true);
     try {
       const { backup } = restoreTarget;
+      const newName = restoreName.trim();
       if (backup.kind === 'container') {
         const job = await restoreContainerBackup(
           { destinationId: backup.destinationId, name: backup.name, timestamp: backup.timestamp },
-          restoreName.trim(),
+          newName,
         );
-        await awaitJob(JOB_KIND.CONTAINER_RESTORE_AS_NEW, job);
+        await awaitJob(addJob({ ...job, kind: JOB_KIND.CONTAINER_RESTORE_AS_NEW, subject: { type: 'container', name: newName } }));
       } else {
         const job = await restoreBackup(
           { destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp },
-          restoreName.trim(),
+          newName,
         );
-        await awaitJob(JOB_KIND.VM_RESTORE, job);
+        await awaitJob(addJob({ ...job, kind: JOB_KIND.VM_RESTORE, subject: { type: 'vm', name: newName } }));
       }
       setRestoreTarget(null);
       setRestoreName('');
@@ -370,8 +366,8 @@ export default function BackupsPanel() {
     setInPlaceSaving(true);
     try {
       const target = { destinationId: backup.destinationId, name: group.name, timestamp: backup.timestamp };
-      const { jobId, title } = await restoreContainerBackupInPlace(target, { safetyBackup: inPlaceSafety });
-      registerJob({ jobId, kind: JOB_KIND.CONTAINER_RESTORE, title });
+      const accepted = await restoreContainerBackupInPlace(target, { safetyBackup: inPlaceSafety });
+      addJob({ ...accepted, kind: JOB_KIND.CONTAINER_RESTORE, subject: { type: 'container', name: group.name } });
       setInPlaceTarget(null);
     } catch (err) {
       setInPlaceError(errorText(err));
@@ -405,14 +401,16 @@ export default function BackupsPanel() {
   const renderGroupCard = (group) => {
     const isOpen = expanded.has(group.key);
     const activeJob = activeJobFor(group);
+    /* Any job on the workload (a start, a delete…) holds it: its commands would be refused. */
+    const busyJob = workloadBusyJob(bgJobs, subjectOf(group));
     const stopped = isWorkloadStopped(group);
     const { dotClass, text: statusText } = groupStatusLine(group, !!schedule?.enabled);
-    const backupDisabled = !group.live || !!activeJob
+    const backupDisabled = !group.live || !!busyJob
       || (group.kind === 'vm' ? !stopped : (group.state === 'pausing' || group.state === 'unknown'));
     const backupDisabledTitle = !group.live
       ? 'Workload no longer exists'
-      : activeJob
-        ? 'A backup or restore is already running'
+      : busyJob
+        ? workloadBusyReason(busyJob)
         : group.kind === 'vm' && !stopped
           ? 'VM must be stopped to back up'
           : 'Back up now';
@@ -503,13 +501,13 @@ export default function BackupsPanel() {
                   <tbody>
                     {group.backups.map((b) => {
                       const iso = backupTsToIso(b.timestamp);
-                      const inPlaceDisabled = !group.live || !stopped || !!activeJob;
+                      const inPlaceDisabled = !group.live || !stopped || !!busyJob;
                       const inPlaceTitle = !group.live
                         ? 'Workload no longer exists — restore as new instead'
                         : !stopped
                           ? 'Stop the container first'
-                          : activeJob
-                            ? 'A backup or restore is already running'
+                          : busyJob
+                            ? workloadBusyReason(busyJob)
                             : 'Restore in place (overwrite current state)';
                       return (
                         <tr key={`${b.destinationId}:${b.timestamp}`} className={dataTableInteractiveRowClass}>
@@ -646,7 +644,7 @@ export default function BackupsPanel() {
             percent: bgJobs[backupJobId].percent,
             currentFile: bgJobs[backupJobId].detail,
           } : null}
-          error={backupError || (backupJobId && bgJobs[backupJobId]?.status === 'error' ? errorText(bgJobs[backupJobId].error) : null)}
+          error={backupError || (backupJobId && bgJobs[backupJobId]?.error ? errorText(bgJobs[backupJobId].error) : null)}
           onStart={handleStartBackup}
           onClose={() => { setBackupTarget(null); setBackupJobId(null); setBackupError(null); }}
         />
