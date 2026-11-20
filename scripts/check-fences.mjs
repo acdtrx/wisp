@@ -37,6 +37,12 @@
  *      lib/containerOperationLock.js. A command's lock is the job starter's or
  *      its operation module's (lib/vmOperations.js, lib/containerOperations.js).
  *
+ *   8. Outbound HTTP has one home (CODING-RULES §7): over the same files,
+ *      comments stripped, none outside lib/downloads/ calls the global fetch —
+ *      a `fetch(` that is no property's (`x.fetch(` is another object's), or
+ *      `globalThis.fetch` / `globalThis['fetch']`. undici is rule 1's fence.
+ *      A reviewed allowance is an EXCEPTIONS line with the specifier `fetch`.
+ *
  * A module's darwin stubs are its own files. Migrations are glue.
  * Specifiers inside comments (JSDoc type imports) are skipped: they load
  * nothing. A reviewed allowance is one line in EXCEPTIONS.
@@ -58,6 +64,9 @@
  * Known limits (a dumb scan, not a parser): a require function re-bound to
  * another name (`const s = r`) or called through `r.call(…)` / `r.apply(…)`
  * is not followed, nor is any property access other than `<object>.name(`.
+ * The global fetch taken as a value (`const { fetch } = globalThis`,
+ * `.then(fetch)`) is not seen, and a method named `fetch(` defined in an
+ * object or a class outside lib/downloads/ is reported.
  * A new import between two files already in CYCLE_GROUP can close another
  * cycle through an excepted edge and pass: such cycles go when the excepted
  * edges do, and the search without those edges still catches the rest.
@@ -89,6 +98,9 @@ const ROUTES = 'backend/src/routes/';
 /** Rule 7: the lock modules, which no route imports. */
 const LOCK_MODULES = [`${LIB}/vmOperationLock.js`, `${LIB}/containerOperationLock.js`];
 const CARVED = ['host', 'networking', 'mdns', 'storage'];
+/** Rule 8: the one home of outbound HTTP, and a call of the global fetch. */
+const FETCH_HOME = `${LIB}/downloads/`;
+const GLOBAL_FETCH = /(?<![\w$.])fetch\s*\(|(?<![\w$.])globalThis\s*(?:\.\s*fetch\b|\[\s*(['"`])fetch\1\s*\])/g;
 /** The carved modules a strict manager may import (CODING-RULES §7). */
 const MANAGER_CARVED = ['mdns', 'networking', 'storage'];
 
@@ -435,6 +447,12 @@ async function main() {
     const fileModule = moduleOf(fileRel);
     const source = await readFile(file, 'utf8');
     const code = stripComments(source);
+    if (!fileRel.startsWith(FETCH_HOME) && !EXCEPTIONS.some((e) => e.file === fileRel && e.specifier === 'fetch')) {
+      for (const m of code.matchAll(GLOBAL_FETCH)) {
+        const line = source.slice(0, m.index).split('\n').length;
+        violations.push(`${fileRel}:${line} fetch — outbound HTTP goes through lib/downloads: ssrfSafeFetch, or fetchOperatorEndpoint for an endpoint only the operator sets (CODING-RULES §7)`);
+      }
+    }
     for (const found of importsOf(code)) {
       const { index, clause } = found;
       const specifier = found.prefix ? prefixTarget(file, found.specifier, rel) : found.specifier;
@@ -538,11 +556,12 @@ async function main() {
   const summary = `${count} imports across ${files.length} files`;
   const cycleSummary = `no import cycle outside the ${CYCLE_EXCEPTIONS.length} listed, among the ${CYCLE_GROUP.length} files listed`;
   const runnerSummary = 'only the backend runs the state migrations';
+  const fetchSummary = 'no global fetch outside lib/downloads/';
   if (violations.length > 0) {
     console.error(`\n${violations.length} fence violation(s) (${summary}).`);
     process.exit(1);
   }
-  console.log(`OK — ${summary}, all inside their fences; ${cycleSummary}; ${runnerSummary}.`);
+  console.log(`OK — ${summary}, all inside their fences; ${fetchSummary}; ${cycleSummary}; ${runnerSummary}.`);
 }
 
 await main();
