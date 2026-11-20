@@ -204,7 +204,7 @@ restore() {
 }
 # undo: inside a section that must finish (step_hold): never cut short by a
 # stop (the session's KILL past setup's bound is the end of it). The step
-# fails either way, saying what the uplink holds.
+# fails either way, saying what the uplink holds (undo_fail).
 undo() {
   local addr outcome
   step_hold
@@ -212,10 +212,10 @@ undo() {
   if (( ! SWITCHED )); then
     # Before the switch the network is as it was: what the step wrote goes.
     rm -rf -- "$KEPT"
-    remove_dropin || fail "$BRIDGE was not applied ($WHY), before its switch: $NETPLAN_ORIGIN is as it was, but $DROPIN, which the step wrote, could not be removed: remove it."
-    fail "$BRIDGE was not applied ($WHY), before its switch: $NETPLAN_ORIGIN is as it was."
+    remove_dropin || undo_fail "$BRIDGE was not applied ($WHY), before its switch: $NETPLAN_ORIGIN is as it was, but $DROPIN, which the step wrote, could not be removed: remove it."
+    undo_fail "$BRIDGE was not applied ($WHY), before its switch: $NETPLAN_ORIGIN is as it was."
   fi
-  restore || fail "$BRIDGE was not applied ($WHY). Undoing it did not complete: the network may be half the bridge's, and the original stays kept in $KEPT. docs/specs/DEPLOYMENT.md (The bridge) says how to put it back at the console."
+  restore || undo_fail "$BRIDGE was not applied ($WHY). Undoing it did not complete: the network may be half the bridge's, and the original stays kept in $KEPT. docs/specs/DEPLOYMENT.md (The bridge) says how to put it back at the console."
   rm -rf -- "$KEPT"
   outcome="$NETPLAN_ORIGIN is back as it was"
   if uplink_back; then
@@ -224,9 +224,16 @@ undo() {
   else
     outcome+="; but $UPLINK holds [$(echo $UPLINK_HOLDS)] after ${NET_APPLY_SEC} s, where it held [$(echo $UPLINK_HELD)] before"
   fi
-  fail "$BRIDGE was not applied ($WHY). $outcome."
+  undo_fail "$BRIDGE was not applied ($WHY). $outcome."
 }
-undo_stopped() { WHY="the step was stopped"; undo; }
+# undo_fail <message>: the undo's end: exit 1, or 143 when the step was
+# stopped, as every stopped step ends (step_stop).
+UNDO_STATUS=1
+undo_fail() {
+  echo "ERROR: $*" >&2
+  exit "$UNDO_STATUS"
+}
+undo_stopped() { WHY="the step was stopped" UNDO_STATUS=143; undo; }
 
 STEP_ON_STOP=drop_kept
 keep_original || { drop_kept; fail "cannot keep $NETPLAN_ORIGIN in $KEPT_ROOT; the bridge step changed nothing"; }

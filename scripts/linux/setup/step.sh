@@ -31,7 +31,8 @@ step_begin() {
 # reaches a step run at a terminal) — the step
 # knows which of what it runs may be cut short. TERM to the rest of the step's
 # session (the command it waits for, what that started), then STEP_ON_STOP when
-# the step set one (the bridge step's undo), then exit 143; setup waits until
+# the step set one (the bridge step's undo, which ends the step itself, with
+# 143 too), then exit 143; setup waits until
 # the session is empty. A step runs no foreground command that can outlast
 # NET_CMD_SEC (anything longer goes through step_run), so a stop is acted on
 # within that. Inside a section that must finish (step_hold), the stop waits
