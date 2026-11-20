@@ -324,10 +324,6 @@ plan_bridge() {
     "$(awk -F'\t' -v k="bridges.$BRIDGE=" 'index($2, k) == 1 { print substr($2, length(k) + 1) }' "$NET_PLAN_DIR/netplan-set.args")" <<<"$merged")" \
     || net_fail "cannot read the staged netplan configuration back"
   [[ -z "$why" ]] || net_refuse NETPLAN_MERGED "with setup's edits, netplan's merged configuration is not what setup wrote: $why."
-  # The DUID drop-in attaches to the unit netplan renders for the bridge.
-  if [[ -s "$NET_PLAN_DIR/50-wisp-dhcp-identity.conf" && ! -f "$stage/run/systemd/network/10-netplan-$BRIDGE.network" ]]; then
-    net_refuse NETPLAN_NO_BRIDGE_UNIT "netplan renders no 10-netplan-$BRIDGE.network, which the drop-in that keeps the DHCP identity attaches to."
-  fi
   # What was checked is what goes live: the edited file, as the stage holds it.
   cp -a "$stage$NETPLAN_ORIGIN" "$NET_PLAN_DIR/netplan-origin.yaml" || net_fail "cannot keep the checked $NETPLAN_ORIGIN"
   rm -rf "$stage"

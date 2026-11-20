@@ -105,12 +105,15 @@ def plan(def_file, nid, uplink, mac, bridge, id_kind, origin_file, out, mtu):
         refuse(f'{uplink} has neither DHCPv4 nor a static IPv4 address in netplan')
 
     bridge_def = {k: d[k] for k in (MOVED | COPIED) if k in d}
-    # The uplink's MTU, on the bridge itself, so ports that join keep it.
+    # The uplink's MTU, on the bridge itself, so ports that join keep it. The
+    # renderer on the definition itself, whatever the file's: networkd renders
+    # the bridge's unit, which the DUID drop-in attaches to.
     bridge_def.update({
         'interfaces': [nid],
         'macaddress': mac,
         'mtu': int(mtu),
         'parameters': {'stp': False},
+        'renderer': 'networkd',
     })
     if dhcp and id_kind:
         bridge_def['dhcp-identifier'] = id_kind
@@ -158,7 +161,7 @@ def merged(nid, bridge, wanted):
     left = sorted(k for k in l3 & set(port) if port[k] not in (False, None, [], {}))
     want = json.loads(wanted)
     # netplan leaves out what has its default value.
-    defaults = {"dhcp-identifier": "duid"}
+    defaults = {"dhcp-identifier": "duid", "renderer": "networkd"}
     missing = sorted(k for k in want if k not in br and defaults.get(k) != want[k])
     if left:
         print(nid + " still has " + ", ".join(left))

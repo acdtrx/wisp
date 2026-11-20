@@ -103,6 +103,19 @@ class Plan(unittest.TestCase):
     def test_dhcp_is_planned(self):
         self.assertEqual(plan({'dhcp4': True}), (0, 'dhcp'))
 
+    def test_the_bridge_names_networkd_its_renderer(self):
+        edits = plan_with_edits({'dhcp4': True})[2]
+        self.assertEqual(json.loads(edits['bridges.br0'])['renderer'], 'networkd')
+
+    def test_a_renderer_netplan_leaves_out_as_its_default_is_as_setup_wrote_it(self):
+        net = {'network': {'ethernets': {'eth0': {'dhcp4': False}},
+                           'bridges': {'br0': {'interfaces': ['eth0'], 'macaddress': '52:54:00:12:34:56', 'dhcp4': True}}}}
+        want = {'interfaces': ['eth0'], 'macaddress': '52:54:00:12:34:56', 'dhcp4': True, 'renderer': 'networkd'}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), unittest.mock.patch('sys.stdin', io.StringIO(json.dumps(net))):
+            netplan.merged('eth0', 'br0', json.dumps(want))
+        self.assertEqual(out.getvalue().strip(), '')
+
 
 if __name__ == '__main__':
     unittest.main()

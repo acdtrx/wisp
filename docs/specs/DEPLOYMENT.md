@@ -52,7 +52,6 @@ When a refusal comes:
 | `NETPLAN_SHARED` | The definition's file shares a definition with another netplan file, which `netplan set` would write back merged | Make the bridge with netplan. |
 | `NETPLAN_MERGED` | With setup's edits, netplan's merged configuration is not what setup wrote (another file adds to the uplink or the bridge) | Make the bridge with netplan. |
 | `NETPLAN_DROPINS` | systemd-networkd runs the uplink from netplan's unit with drop-ins (`<unit>.d/*.conf`) | Put their settings in the netplan definition. |
-| `NETPLAN_NO_BRIDGE_UNIT` | On a DUID identity, netplan renders no `10-netplan-br0.network` for the drop-in that keeps it | Make the bridge with netplan. |
 | `NETWORKD_SECOND_FILE` | Another `.network` file, beside the one netplan renders, could take the uplink (settled 2026-11-19: exactly one definition, before as well as after). systemd-networkd runs a link from the first file by name that matches it, so a file whose name sorts after netplan's never takes it (an initrd's `zzzz-` catch-all) | Make it match only other interfaces, or remove it. |
 | `NETWORK_CHANGED_SINCE_ASKED` | The install's own plan, made again under the lock, would make another bridge — on another uplink or address — than the operator confirmed. Found by the install before it changes anything, or, when the network changes in between, by setup after its network plan, before any other step. | Run the install again. |
 | `NETWORK_CHANGED_SINCE_PLAN` | Something changed what the plan read — the default route, the uplink's addresses, hardware address or MTU, cloud-init's configuration, netplan's files (the container DNS stub's own aside, which setup writes in between), another definition that could take the uplink — while setup ran. | Run setup again. |
@@ -149,6 +148,7 @@ Afterwards the host has:
   - on a static address its addresses, routes, gateways, name servers and search domains.
 - The uplink becomes its port with no addressing of its own. Its link settings (MTU, offloads, wake-on-LAN) stay on it.
 - The bridge's definition sets the uplink's MTU on the bridge itself, so a port that joins at another MTU does not lower it (settled 2026-11-19).
+- The bridge's definition names its renderer, networkd, on itself, whatever its file's, so systemd-networkd runs it (settled 2026-11-20).
 - The bridge keeps the IPv4 address. Addresses the host gets by DHCPv6 or from router advertisements can change (settled 2026-11-19):
   - the DHCPv6 identity is pinned only when the DHCPv4 client identifier is a DUID (networkd's IAID, derived from the uplink's name, which the bridge would not have);
   - with a client identifier from the hardware address, the bridge's DHCPv6 identity is its own.
