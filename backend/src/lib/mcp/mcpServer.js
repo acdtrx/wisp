@@ -10,7 +10,8 @@
  * tokens to /mcp and passes the token scope in. Per-tool scope is enforced
  * here (tools/list hides what the token can't call; tools/call double-checks).
  */
-import { createAppError, errorBody } from '../appErrors.js';
+import { createAppError, errorBody, schemaValidationError } from '../appErrors.js';
+import { compileJsonValidator } from '../schemaValidation.js';
 import { getCurrentVersion } from '../wispUpdate.js';
 import { allTools } from './tools/index.js';
 
@@ -37,6 +38,11 @@ function rpcResult(id, result) {
 function rpcError(id, code, message) {
   return { jsonrpc: '2.0', id: id ?? null, error: { code, message } };
 }
+
+/* A call's arguments are checked against the tool's own inputSchema, as a
+   route's body is against its schema: unknown keys and wrong types are refused
+   before the handler runs. Compiled once, at load. */
+const argumentValidators = new Map(allTools.map((tool) => [tool.name, compileJsonValidator(tool.inputSchema)]));
 
 function toolsForScope(scope) {
   if (scope === 'admin') return allTools;
@@ -114,8 +120,13 @@ export async function handleMcpMessage(message, { scope, log }) {
       if (tool.scope !== 'read' && scope !== 'admin') {
         return { status: 200, body: toolError(id, createAppError('SCOPE_INSUFFICIENT', `Tool "${tool.name}" requires an admin-scoped API token`)) };
       }
+      const args = params?.arguments ?? {};
+      const invalid = argumentValidators.get(tool.name)(args);
+      if (invalid) {
+        return { status: 200, body: toolError(id, schemaValidationError('arguments', invalid)) };
+      }
       try {
-        const data = await tool.handler(params?.arguments ?? {}, { log });
+        const data = await tool.handler(args, { log });
         return { status: 200, body: toolResult(id, data) };
       } catch (err) {
         log?.warn({ err: err?.message, code: err?.code, raw: err?.raw, tool: tool.name }, 'MCP tool failed');

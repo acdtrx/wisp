@@ -374,3 +374,28 @@ test('a multipart upload passes the boundary: its route declares no JSON body', 
   });
   assert.notEqual(res.json().error, 'VALIDATION_FAILED');
 });
+
+/** One MCP tools/call with a read token; its tool result. */
+async function callTool(id, name, args) {
+  const res = await app.inject({
+    method: 'POST', url: '/mcp', headers: bearer(READ_TOKEN),
+    payload: { jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } },
+  });
+  return res.json().result;
+}
+
+test('an MCP tool called with an unknown or a wrong-typed argument answers VALIDATION_FAILED naming it', async () => {
+  const cases = [
+    ['get_job', { jobId: 'x', extra: 1 }, 'arguments: unknown key "extra"'],
+    ['get_container_logs', { name: 'web', lines: '5' }, 'arguments/lines must be integer'],
+    ['get_container_logs', { name: 'web', lines: 5000 }, 'arguments/lines must be <= 1000'],
+  ];
+  for (const [i, [tool, args, detail]] of cases.entries()) {
+    const result = await callTool(20 + i, tool, args);
+    assert.equal(result.isError, true, tool);
+    assert.deepEqual(result.structuredContent, { error: 'VALIDATION_FAILED', detail }, tool);
+  }
+  const vm = await callTool(30, 'get_vm', { name: '../etc' });
+  assert.equal(vm.structuredContent.error, 'VALIDATION_FAILED');
+  assert.match(vm.structuredContent.detail, /^arguments\/name must match pattern/);
+});

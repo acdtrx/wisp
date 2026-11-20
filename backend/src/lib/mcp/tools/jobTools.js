@@ -18,13 +18,12 @@ export const jobTools = [
       '"running"; a finished job stays readable for 5 minutes.',
     inputSchema: {
       type: 'object',
-      properties: { jobId: { type: 'string', description: 'The jobId a tool returned' } },
+      properties: { jobId: { type: 'string', minLength: 1, description: 'The jobId a tool returned' } },
       required: ['jobId'],
       additionalProperties: false,
     },
     scope: 'read',
     handler: async ({ jobId }) => {
-      if (typeof jobId !== 'string' || !jobId) throw createAppError('INVALID_REQUEST', 'jobId is required');
       const job = readJob(jobId);
       if (!job) {
         throw createAppError('JOB_NOT_FOUND', `No job with id "${jobId}"`, 'Unknown, or finished more than 5 minutes ago');

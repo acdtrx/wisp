@@ -1,4 +1,5 @@
 import { getVMConfig, getGuestNetwork } from '../../vmManager/index.js';
+import { vmNameSchema } from '../../validation.js';
 
 export const vmTools = [
   {
@@ -10,7 +11,7 @@ export const vmTools = [
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'VM name' },
+        name: { ...vmNameSchema, description: 'VM name' },
       },
       required: ['name'],
       additionalProperties: false,

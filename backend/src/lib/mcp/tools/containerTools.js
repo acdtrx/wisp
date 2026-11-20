@@ -8,7 +8,7 @@ import {
   getImageUpdateStatus,
 } from '../../containerManager/index.js';
 import { maskContainerConfigSecrets } from '../../containerApps/index.js';
-import { validateContainerName } from '../../validation.js';
+import { containerNameSchema, runIdSchema } from '../../validation.js';
 
 const LOG_LINES_DEFAULT = 100;
 const LOG_LINES_MAX = 1000;
@@ -26,14 +26,13 @@ export const containerTools = [
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Container name' },
+        name: { ...containerNameSchema, description: 'Container name' },
       },
       required: ['name'],
       additionalProperties: false,
     },
     scope: 'read',
     handler: async ({ name }) => {
-      validateContainerName(name);
       return await maskContainerConfigSecrets(await getContainerConfig(name));
     },
   },
@@ -49,14 +48,13 @@ export const containerTools = [
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Container name' },
+        name: { ...containerNameSchema, description: 'Container name' },
       },
       required: ['name'],
       additionalProperties: false,
     },
     scope: 'read',
     handler: async ({ name }) => {
-      validateContainerName(name);
       return getContainerMountUsage(name);
     },
   },
@@ -69,25 +67,24 @@ export const containerTools = [
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Container name' },
+        name: { ...containerNameSchema, description: 'Container name' },
         lines: {
           type: 'integer',
           minimum: 1,
           maximum: LOG_LINES_MAX,
+          default: LOG_LINES_DEFAULT,
           description: `How many trailing lines to return (default ${LOG_LINES_DEFAULT})`,
         },
-        runId: { type: 'string', description: 'Specific run id (default: newest run)' },
+        runId: { ...runIdSchema, description: 'Specific run id (default: newest run)' },
       },
       required: ['name'],
       additionalProperties: false,
     },
     scope: 'read',
     handler: async ({ name, lines, runId: requestedRunId }) => {
-      validateContainerName(name);
-      const count = Math.min(Math.max(Number.isInteger(lines) ? lines : LOG_LINES_DEFAULT, 1), LOG_LINES_MAX);
-      const runId = await resolveRunId(name, typeof requestedRunId === 'string' ? requestedRunId : null);
+      const runId = await resolveRunId(name, requestedRunId ?? null);
       if (!runId) return { runId: null, lines: [] };
-      const { lines: logLines } = await getContainerRunLogs(name, runId, count);
+      const { lines: logLines } = await getContainerRunLogs(name, runId, lines);
       return { runId, lines: logLines };
     },
   },

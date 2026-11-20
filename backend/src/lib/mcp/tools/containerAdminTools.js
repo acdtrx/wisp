@@ -11,7 +11,7 @@
  */
 import { getContainerConfig } from '../../containerManager/index.js';
 import { getAppModule, maskContainerConfigSecrets } from '../../containerApps/index.js';
-import { validateContainerName } from '../../validation.js';
+import { containerNameSchema } from '../../validation.js';
 import { createAppError } from '../../appErrors.js';
 import {
   startContainerDeployJob,
@@ -27,52 +27,25 @@ const JOB_NOTE = 'A job: returns { jobId, kind, title, subject } at once; read i
 
 const RESTART_POLICIES = ['never', 'on-failure', 'unless-stopped', 'always'];
 
-/* tools/call arguments arrive unvalidated (inputSchema is advisory to the
-   client), so every handler re-validates what it uses. Each command is the
-   container operation the REST routes call (lib/containerOperations.js), its
-   lock and follow-ups included — a busy container answers CONTAINER_BUSY. */
+/* The arguments have passed the tool's inputSchema (lib/mcp/mcpServer.js).
+   Each command is the container operation the REST routes call
+   (lib/containerOperations.js), its lock and follow-ups included — a busy
+   container answers CONTAINER_BUSY. */
+
+const nameArgument = (description) => ({ ...containerNameSchema, description });
 
 function buildEnv(env, secretEnv) {
   const out = {};
-  for (const [key, value] of Object.entries(env ?? {})) {
-    if (typeof value !== 'string') {
-      throw createAppError('INVALID_REQUEST', `env.${key} must be a string`);
-    }
-    out[key] = { value };
-  }
-  for (const [key, value] of Object.entries(secretEnv ?? {})) {
-    if (typeof value !== 'string') {
-      throw createAppError('INVALID_REQUEST', `secretEnv.${key} must be a string`);
-    }
-    out[key] = { value, secret: true };
-  }
+  for (const [key, value] of Object.entries(env ?? {})) out[key] = { value };
+  for (const [key, value] of Object.entries(secretEnv ?? {})) out[key] = { value, secret: true };
   return out;
 }
 
+const SETTINGS_ARGUMENTS = ['restartPolicy', 'autostart', 'autoBackup', 'localDns', 'cpuLimit', 'memoryLimitMiB'];
+
+/** The deploy's settings, applied as a configuration update after the create. */
 function buildSettingsChanges(args) {
-  const changes = {};
-  if (args.restartPolicy !== undefined) {
-    if (!RESTART_POLICIES.includes(args.restartPolicy)) {
-      throw createAppError('INVALID_REQUEST', `restartPolicy must be one of: ${RESTART_POLICIES.join(', ')}`);
-    }
-    changes.restartPolicy = args.restartPolicy;
-  }
-  if (args.autostart !== undefined) changes.autostart = args.autostart === true;
-  if (args.autoBackup !== undefined) changes.autoBackup = args.autoBackup === true;
-  if (args.localDns !== undefined) changes.localDns = args.localDns === true;
-  if (args.cpuLimit !== undefined) {
-    if (!(typeof args.cpuLimit === 'number' && args.cpuLimit > 0)) {
-      throw createAppError('INVALID_REQUEST', 'cpuLimit must be a positive number of cores');
-    }
-    changes.cpuLimit = args.cpuLimit;
-  }
-  if (args.memoryLimitMiB !== undefined) {
-    if (!(Number.isInteger(args.memoryLimitMiB) && args.memoryLimitMiB > 0)) {
-      throw createAppError('INVALID_REQUEST', 'memoryLimitMiB must be a positive integer');
-    }
-    changes.memoryLimitMiB = args.memoryLimitMiB;
-  }
-  return changes;
+  return Object.fromEntries(SETTINGS_ARGUMENTS.filter((key) => args[key] !== undefined).map((key) => [key, args[key]]));
 }
 
 export const containerAdminTools = [
@@ -89,8 +62,8 @@ export const containerAdminTools = [
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Container name (becomes <name>.local)' },
-        image: { type: 'string', description: 'Fully-qualified OCI image ref' },
+        name: nameArgument('Container name (becomes <name>.local)'),
+        image: { type: 'string', pattern: '\\S', description: 'Fully-qualified OCI image ref' },
         env: { type: 'object', additionalProperties: { type: 'string' }, description: 'Plain env vars' },
         secretEnv: { type: 'object', additionalProperties: { type: 'string' }, description: 'Secret env vars (write-only)' },
         restartPolicy: {
@@ -103,7 +76,7 @@ export const containerAdminTools = [
         autostart: { type: 'boolean', description: 'Start at host boot (default false)' },
         autoBackup: { type: 'boolean', description: 'Include in the daily scheduled backup (default false)' },
         localDns: { type: 'boolean', description: 'Register <name>.local via mDNS (default true)' },
-        cpuLimit: { type: 'number', minimum: 0, description: 'CPU cores cap' },
+        cpuLimit: { type: 'number', exclusiveMinimum: 0, description: 'CPU cores cap' },
         memoryLimitMiB: { type: 'integer', minimum: 1, description: 'Memory cap in MiB' },
       },
       required: ['name', 'image'],
@@ -112,14 +85,9 @@ export const containerAdminTools = [
     scope: 'admin',
     handler: async (args, { log } = {}) => {
       const { name, image } = args;
-      validateContainerName(name);
-      if (typeof image !== 'string' || !image.trim()) {
-        throw createAppError('INVALID_REQUEST', 'image is required');
-      }
-      const env = buildEnv(args.env, args.secretEnv);
-      const changes = buildSettingsChanges(args); // validate before creating anything
-
-      return startContainerDeployJob({ name, image: image.trim(), env, changes, log });
+      return startContainerDeployJob({
+        name, image: image.trim(), env: buildEnv(args.env, args.secretEnv), changes: buildSettingsChanges(args), log,
+      });
     },
   },
   {
@@ -133,7 +101,7 @@ export const containerAdminTools = [
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Container name' },
+        name: nameArgument('Container name'),
         image: { type: 'string', description: 'New image ref; omit to re-pull the current one' },
       },
       required: ['name'],
@@ -141,7 +109,6 @@ export const containerAdminTools = [
     },
     scope: 'admin',
     handler: async ({ name, image }, { log } = {}) => {
-      validateContainerName(name);
       return startContainerImageUpdateJob({ name, image, log });
     },
   },
@@ -151,13 +118,12 @@ export const containerAdminTools = [
     description: 'Start a stopped container (rootfs is re-prepared from its image; data in mounts persists). ' + JOB_NOTE,
     inputSchema: {
       type: 'object',
-      properties: { name: { type: 'string', description: 'Container name' } },
+      properties: { name: nameArgument('Container name') },
       required: ['name'],
       additionalProperties: false,
     },
     scope: 'admin',
     handler: async ({ name }, { log } = {}) => {
-      validateContainerName(name);
       return startContainerStartJob({ name, log });
     },
   },
@@ -169,13 +135,12 @@ export const containerAdminTools = [
       'identity provider) — stopping them takes down every service behind them. ' + JOB_NOTE,
     inputSchema: {
       type: 'object',
-      properties: { name: { type: 'string', description: 'Container name' } },
+      properties: { name: nameArgument('Container name') },
       required: ['name'],
       additionalProperties: false,
     },
     scope: 'admin',
     handler: async ({ name }, { log } = {}) => {
-      validateContainerName(name);
       return startContainerStopJob({ name, log });
     },
   },
@@ -185,13 +150,12 @@ export const containerAdminTools = [
     description: 'Restart a running container (applies pending image/env changes; rootfs rebuilt from image). ' + JOB_NOTE,
     inputSchema: {
       type: 'object',
-      properties: { name: { type: 'string', description: 'Container name' } },
+      properties: { name: nameArgument('Container name') },
       required: ['name'],
       additionalProperties: false,
     },
     scope: 'admin',
     handler: async ({ name }, { log } = {}) => {
-      validateContainerName(name);
       return startContainerRestartJob({ name, log });
     },
   },
@@ -208,7 +172,7 @@ export const containerAdminTools = [
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'App container name' },
+        name: nameArgument('App container name'),
         appConfig: {
           type: 'object',
           description: 'Partial appConfig — only agent-writable fields for that app',
@@ -220,10 +184,6 @@ export const containerAdminTools = [
     },
     scope: 'admin',
     handler: async ({ name, appConfig }) => {
-      validateContainerName(name);
-      if (!appConfig || typeof appConfig !== 'object' || Array.isArray(appConfig)) {
-        throw createAppError('INVALID_REQUEST', 'appConfig must be an object');
-      }
       // The merge builds on the config as read under the lock, so a
       // concurrent save can't slip between the read and the write.
       let appType;
