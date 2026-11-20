@@ -92,20 +92,26 @@ function embeddedIPv4(high, low) {
 /**
  * Whether an IPv6 address is one an outbound request must not reach. An
  * address that wraps an IPv4 one is judged by that address's rule: the
- * IPv4-mapped and IPv4-compatible forms, NAT64 and 6to4 all reach it. An
- * address that does not parse is refused.
+ * IPv4-mapped, IPv4-translated and IPv4-compatible forms, NAT64 and 6to4 all
+ * reach it. Teredo is refused outright: it is tunnelled through a relay to
+ * a client address it carries obfuscated, a path the guard does not judge.
+ * An address that does not parse is refused.
  */
 export function isPrivateIPv6(addr) {
   const g = ipv6Groups(addr);
   if (!g) return true;
   const zeros = (from, to) => g.slice(from, to).every((x) => x === 0);
   if (zeros(0, 5) && g[5] === 0xffff) return isPrivateIPv4(embeddedIPv4(g[6], g[7])); // ::ffff:0:0/96 (IPv4-mapped)
+  if (zeros(0, 4) && g[4] === 0xffff && g[5] === 0) {
+    return isPrivateIPv4(embeddedIPv4(g[6], g[7]));                    // ::ffff:0:0:0/96 (IPv4-translated)
+  }
   if (zeros(0, 6)) return isPrivateIPv4(embeddedIPv4(g[6], g[7]));     // ::/96 (IPv4-compatible; :: and ::1 among them)
   if (g[0] === 0x64 && g[1] === 0xff9b && zeros(2, 6)) {
     return isPrivateIPv4(embeddedIPv4(g[6], g[7]));                    // 64:ff9b::/96 (NAT64)
   }
   if (g[0] === 0x64 && g[1] === 0xff9b && g[2] === 1) return true;     // 64:ff9b:1::/48 (local-use NAT64)
   if (g[0] === 0x2002) return isPrivateIPv4(embeddedIPv4(g[1], g[2])); // 2002::/16 (6to4)
+  if (g[0] === 0x2001 && g[1] === 0) return true;                      // 2001::/32 (Teredo)
   if ((g[0] & 0xfe00) === 0xfc00) return true;                         // fc00::/7 (unique local)
   if ((g[0] & 0xffc0) === 0xfe80) return true;                         // fe80::/10 (link-local)
   if ((g[0] & 0xffc0) === 0xfec0) return true;                         // fec0::/10 (site-local, deprecated)

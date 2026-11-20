@@ -97,12 +97,13 @@ test('ssrfSafeFetch refuses the same loopback stub before sending a request', as
 test('an IPv6 address that wraps a private IPv4 one is private, by the IPv4 rule', () => {
   const wrapping = [
     '::ffff:127.0.0.1', '::ffff:7f00:1', // IPv4-mapped
+    '::ffff:0:127.0.0.1', '::ffff:0:c0a8:101', '0:0:0:0:ffff:0:10.0.0.1', // IPv4-translated
     '::127.0.0.1', '::7f00:1', '::10.0.0.1', // IPv4-compatible, ::/96
     '64:ff9b::127.0.0.1', '64:ff9b::a9fe:a9fe', '64:ff9b::192.168.1.1', // NAT64
     '2002:7f00:1::', '2002:c0a8:101::1', '2002:a00:1:0:0:0:0:1', // 6to4
   ];
   for (const addr of wrapping) assert.equal(isPrivateIPv6(addr), true, addr);
-  const publicWrapped = ['::ffff:8.8.8.8', '64:ff9b::8.8.8.8', '2002:808:808::1'];
+  const publicWrapped = ['::ffff:8.8.8.8', '::ffff:0:8.8.8.8', '::ffff:0:808:808', '64:ff9b::8.8.8.8', '2002:808:808::1'];
   for (const addr of publicWrapped) assert.equal(isPrivateIPv6(addr), false, addr);
 });
 
@@ -115,6 +116,13 @@ test('site-local, unique-local, link-local, multicast and local-use NAT64 IPv6 a
   }
 });
 
+test('a Teredo address is refused, whatever IPv4 address it carries', () => {
+  for (const addr of ['2001::1', '2001:0:4136:e378:8000:63bf:3fff:fdd2', '2001:0:ffff::', '2001:0:0:0:0:0:0:0']) {
+    assert.equal(isPrivateIPv6(addr), true, addr);
+  }
+  for (const addr of ['2001:1::1', '2001:4860:4860::8888']) assert.equal(isPrivateIPv6(addr), false, addr);
+});
+
 test('an IPv6 address that does not parse is refused', () => {
   for (const addr of ['1::2::3', '12345::', '1.2.3.4::', '::1.2.3.4:5', '1:2:3:4:5:6:7', 'g::1']) {
     assert.equal(isPrivateIPv6(addr), true, addr);
@@ -124,7 +132,7 @@ test('an IPv6 address that does not parse is refused', () => {
 
 test('ssrfSafeFetch refuses an IPv6 literal that wraps the loopback stub', async () => {
   const okHits = hits.ok;
-  for (const host of ['[::127.0.0.1]', '[::ffff:127.0.0.1]', '[64:ff9b::127.0.0.1]', '[2002:7f00:1::]', '[fec0::1]']) {
+  for (const host of ['[::127.0.0.1]', '[::ffff:127.0.0.1]', '[::ffff:0:127.0.0.1]', '[64:ff9b::127.0.0.1]', '[2002:7f00:1::]', '[fec0::1]']) {
     await assert.rejects(ssrfSafeFetch(`http://${host}:${port}/ok`), { code: 'SSRF_BLOCKED' }, host);
   }
   assert.equal(hits.ok, okHits);
