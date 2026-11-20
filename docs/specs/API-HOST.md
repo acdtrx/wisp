@@ -67,9 +67,9 @@ Create a managed VLAN bridge using netplan through the privileged `wisp-bridge` 
 - **Body:** `{ "baseBridge": "br0", "vlanId": 10 }`
 - **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ "name": "br0-vlan10", "baseBridge": "br0", "vlanId": 10, "vlanInterface": "br0.10", "present": true }`
 - **409:** `NETWORK_BRIDGE_EXISTS` — bridge already exists
-- **422:** `INVALID_NETWORK_BRIDGE_NAME`, `INVALID_NETWORK_BRIDGE_PARENT`, an invalid VLAN ID
+- **422:** `INVALID_NETWORK_BRIDGE_NAME`, `INVALID_NETWORK_BRIDGE_PARENT`, `INVALID_VLAN_ID`
 - **503:** `NETWORK_BRIDGE_UNAVAILABLE` — not supported on this platform
-- **Job errors:** helper missing, privilege failure, or `netplan apply` failed
+- **Job errors:** `NETWORK_BRIDGE_UNAVAILABLE` — helper missing; `NETWORK_BRIDGE_APPLY_FAILED` — privilege failure, or `netplan apply` failed
 
 ### DELETE /api/host/network-bridges/:name · `admin`
 
@@ -78,7 +78,7 @@ Delete a managed VLAN bridge by name (removes Wisp netplan file, tears down live
 - **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name }`
 - **404:** `NETWORK_BRIDGE_NOT_FOUND` — managed bridge not found
 - **409:** `NETWORK_BRIDGE_IN_USE` — bridge is referenced by VM/container config
-- **Job errors:** helper missing, privilege failure, or `netplan apply` failed
+- **Job errors:** `NETWORK_BRIDGE_UNAVAILABLE` — helper missing; `NETWORK_BRIDGE_APPLY_FAILED` — privilege failure, or `netplan apply` failed
 
 ### GET /api/host/firmware · `read`
 
@@ -179,7 +179,7 @@ Return the structured list of upgradable packages plus an estimated total downlo
 - **200:** `{ packages: [{ name: string, from: string|null, to: string }], downloadBytes: number }` — from the cache
 - **202:** `{ jobId, title }` — with `?refresh=1`, or no cache yet: the [check job](#post-apihostupdatescheck--admin) (started or joined); read the list again once it is done
 - **409:** `UPDATE_BUSY` — a refresh, or no cache yet, while an OS upgrade runs
-- **503:** `{ error, detail }` — update script not configured
+- **503:** `UPDATE_CHECK_UNAVAILABLE` — update script not configured
 
 ### POST /api/host/updates/upgrade · `admin`
 
@@ -200,14 +200,14 @@ Cached state of the Wisp self-update checker (hourly poll of GitHub Releases). S
 Force an immediate self-update check. Which release is considered follows `updateChannel` from `wisp-config.json`, read at check time — see [UPDATES.md → Update channels](UPDATES.md#update-channels).
 
 - **204:** checked; the new status (the `GET /api/updates/status` shape) follows on `{ kind: "wisp-update" }`, which every check announces — this one, a failed one and the hourly poll
-- **503:** `{ error, detail }` — GitHub unreachable, rate-limited, or response malformed; the failure is recorded in the status (`lastError`) and announced too
+- **503:** `UPDATE_CHECK_UNAVAILABLE` — GitHub unreachable, rate-limited, or response malformed; the failure is recorded in the status (`lastError`) and announced too
 
 ### POST /api/updates/install · `admin`
 
 A [job](API.md#job-routes): downloads + verifies + extracts the new release tarball (progress `{ step, percent? }`), writes the staging path to `/var/lib/wisp/updates/target`, reports `{ step: "restarting" }`, triggers `wisp-updater.service` via `sudo -n systemctl start --no-block` and ends with `done`: `{ targetVersion }`. The job's stream may end before `done` as the backend stops. The updater is a separate `Type=oneshot` systemd unit — it stops the backend as part of its first real step; the UI detects completion by polling `GET /api/host` for `wispVersion === targetVersion`. Updater progress is in journald (`journalctl -u wisp-updater.service`). `?force=1` overrides the active-jobs guard.
 
 - **202:** `{ jobId, title }`
-- **409:** `{ error, detail }` — no update available; other background jobs are running and `force=1` was not supplied; or an install is already in flight (`Update already in progress`, not bypassed by `force`)
+- **409:** `UPDATE_NOT_AVAILABLE` — no update available; `UPDATE_JOBS_ACTIVE` — other background jobs are running and `force=1` was not supplied; or `UPDATE_INSTALL_IN_PROGRESS` — an install is already in flight (not bypassed by `force`)
 - **Job errors:** download / verify / extract / unit-trigger failure
 
 ### GET /api/host/hardware · `read`
@@ -294,14 +294,14 @@ Each `disks[]` entry includes `rotational` (`true` = HDD, `false` = SSD-style, `
 Shut down the host. Requires `wisp-power` at `/usr/local/bin` (installed by setup) or `WISP_POWER_SCRIPT`, plus matching sudoers.
 
 - **204:** the shutdown was started
-- **503:** `{ error, detail }` — power script not configured or privilege error
+- **503:** `POWER_UNAVAILABLE` — power script not configured or privilege error
 
 ### POST /api/host/power/restart · `admin`
 
 Reboot the host. Same requirements as shutdown (`wisp-power reboot`).
 
 - **204:** the reboot was started
-- **503:** `{ error, detail }` — power script not configured or privilege error
+- **503:** `POWER_UNAVAILABLE` — power script not configured or privilege error
 
 ---
 
@@ -356,7 +356,7 @@ Update settings. Partial update — only include fields to change.
 - **204:** saved; the new settings reach every client as `{ kind: "settings" }` on the [`changes`](API.md#changes-topic-payload) topic ([Command responses](API.md))
 - **Validation:** Every field sent must be valid — nothing is coerced to a default. Paths must be absolute (start with `/`), `backupMountId` must name a configured mount (or be `null`/empty to clear), `updateChannel` must be `"stable"` or `"beta"` — else **422** `{ error, detail }` with code `INVALID_SETTINGS`. `advertisedUrl` must be a valid `http`/`https` URL of at most 251 bytes (mDNS TXT record limit), or `null`/empty to clear — else **422** with code `INVALID_URL`. Changing or clearing `backupMountId` drops the previous mount from `backupSchedule.destinationIds` in the same write (`["local"]` when nothing else remains).
 - **`backupSchedule`:** Object `{ enabled?, time?, destinationIds?, retainDays?, retainWeeks? }`, merged per-field. Any field the client actually sends must be valid — `time` matching `HH:MM` (24-hour), `retainDays` 1–365, `retainWeeks` 0–52, `destinationIds` a non-empty subset of `'local'` + the configured `backupMountId` (validated against the merged result, so swapping the mount and updating the schedule in one PATCH works) — else **422** with code `INVALID_BACKUP_SCHEDULE`. See [BACKUPS.md → Scheduled backups](BACKUPS.md#scheduled-backups).
-- **`oidc`:** Refused for every caller with **403** `{ error: "OIDC settings require a browser session", detail }` (code `OIDC_SESSION_ONLY`) — use `PATCH /api/settings/oidc`, which API tokens cannot reach.
+- **`oidc`:** Refused for every caller with **403** `OIDC_SESSION_ONLY` — use `PATCH /api/settings/oidc`, which API tokens cannot reach.
 - **Side effect:** A successful PATCH that changes `serverName`, `discoveryEnabled`, or `advertisedUrl` re-announces the instance's `_wisp._tcp` mDNS service (see [DISCOVERY.md](DISCOVERY.md)).
 - **`updateChannel`:** `"stable"` | `"beta"` — which releases self-update offers this host. No side effect: the next update check (hourly, or `POST /api/updates/check`) reads it. See [UPDATES.md → Update channels](UPDATES.md#update-channels).
 - **`containersPath`:** Optional; container storage root (same default as `config.js`; exposed for scripts — App Config UI does not edit it yet).
@@ -364,7 +364,7 @@ Update settings. Partial update — only include fields to change.
 
 ### PATCH /api/settings/oidc · `session`
 
-Update the OIDC / SSO configuration. Session-only: an API token of either scope gets **403 Session required** — a token able to repoint the issuer could log itself in as a browser session (see [AUTH.md](AUTH.md) § Denied surfaces).
+Update the OIDC / SSO configuration. Session-only: an API token of either scope gets **403** `SESSION_REQUIRED` — a token able to repoint the issuer could log itself in as a browser session (see [AUTH.md](AUTH.md) § Denied surfaces).
 
 - **Body:** `{ enabled?, issuer?, clientId?, clientSecret? }`, merged per field.
 - **204:** saved; announced like `PATCH /api/settings`.
@@ -389,13 +389,13 @@ Append one mount. **Body:** `{ type: "smb" | "disk", label?, mountPath, autoMoun
 
 Update one mount by **`id`**. **Body:** partial fields (`label`, `mountPath`, `autoMount`, and type-specific: `share`/`username`/`password` for SMB, `fsType`/`readOnly` for disk). An omitted or empty `password` preserves the stored password. `type` and `uuid` cannot be changed after creation.
 
-- **204:** saved; announced like `POST /api/host/mounts` | **404:** mount not found
+- **204:** saved; announced like `POST /api/host/mounts` | **404:** `MOUNT_NOT_FOUND`
 
 ### DELETE /api/host/mounts/:id · `admin`
 
 Remove one mount from settings, unmounting it first. If it was **`backupMountId`**, that field is cleared.
 
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ mounts }` — the mounts after removal | **404:** mount not found | **409:** in use by a container
+- **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ mounts }` — the mounts after removal | **404:** `MOUNT_NOT_FOUND` | **409:** `MOUNT_IN_USE` — in use by a container
 
 ### GET /api/host/mounts/status · `read`
 
@@ -410,17 +410,17 @@ Test an SMB connection for a saved mount or ad hoc credentials.
 - **Body:** `{ id?: string, share?: string, username?: string, password?: string }`
 - If `id` is provided, the referenced mount (must be `type: "smb"`) supplies `share`/`username`/`password`, and any of those fields present in the body overrides the stored value — the edit form sends its unsaved share/username and omits `password` when the field is empty, so the test uses the stored password. Without `id`, the provided `share`/`username`/`password` are used as-is.
 - **200:** `{ ok: true }`
-- **404:** SMB mount not found (when using `id`)
+- **404:** `MOUNT_NOT_FOUND` — SMB mount not found (when using `id`)
 
 ### POST /api/host/mounts/:id/mount · `admin`
 
 Mount an SMB share by settings id. Disk mounts are mounted automatically on device insertion and this endpoint currently returns **422** for `type: "disk"` — dedicated support lands with the disk monitor work.
 
 - **204:** mounted; the status arrives on `host-mounts`
-- **503:** Mount unavailable (platform/helper error)
+- **503:** `SMB_MOUNT_UNAVAILABLE` — mount unavailable (platform/helper error)
 
 ### POST /api/host/mounts/:id/unmount · `admin`
 
 Unmount a mount by settings id.
 
-- **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ id }` | **404:** mount not found | **409:** not mounted
+- **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ id }` | **404:** `MOUNT_NOT_FOUND` | **409:** `MOUNT_NOT_MOUNTED`

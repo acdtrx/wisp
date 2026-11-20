@@ -235,7 +235,7 @@ When `wisp-power` is available (`/usr/local/bin/wisp-power` installed by setup, 
 | `POST /api/host/power/shutdown` | Runs `wisp-power shutdown` (host shuts down) |
 | `POST /api/host/power/restart` | Runs `wisp-power reboot` (host reboots) |
 
-Same sudo pattern as wisp-os-update. Returns 503 if the script is not configured.
+Same sudo pattern as wisp-os-update. Returns 503 `POWER_UNAVAILABLE` if the script is not configured.
 
 ## OS Updates
 

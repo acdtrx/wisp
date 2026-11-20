@@ -28,16 +28,16 @@ Upload a file to the image library. Streaming multipart — not buffered in memo
 
 - **Body:** Multipart file upload
 - **204:** uploaded; the list follows on the `library` cue
-- **409:** File already exists
-- **422:** Invalid filename
+- **409:** `LIBRARY_FILE_EXISTS` — file already exists
+- **422:** `INVALID_FILENAME` — invalid filename
 
 ### DELETE /api/library/:filename · `admin`
 
 Delete a file from the library.
 
 - **204:** deleted; announced like an upload
-- **404:** File not found
-- **409:** File in use — referenced by one or more VMs (detail lists names)
+- **404:** `LIBRARY_FILE_NOT_FOUND` — file not found
+- **409:** `LIBRARY_FILE_IN_USE` — file in use, referenced by one or more VMs (detail lists names)
 
 ### PATCH /api/library/:filename · `admin`
 
@@ -45,8 +45,8 @@ Rename a file.
 
 - **Body:** `{ name: string }`
 - **204:** renamed; announced like an upload
-- **404:** File not found
-- **409:** New name already taken, or source file is referenced by one or more VMs
+- **404:** `LIBRARY_FILE_NOT_FOUND` — file not found
+- **409:** `LIBRARY_FILE_EXISTS` — new name already taken, or `LIBRARY_FILE_IN_USE` — source file is referenced by one or more VMs
 
 ### GET /api/library/check-url · `admin`
 
@@ -61,7 +61,7 @@ Start downloading a file from a URL. Returns job ID.
 
 - **Body:** `{ url: string }`
 - **202:** `{ jobId: string, title: string }` — a job; `title` matches the truncated URL display rule used in the UI. The finished download is announced like an upload
-- **422:** Invalid URL (only HTTP/HTTPS allowed)
+- **422:** `INVALID_URL` — invalid URL (only HTTP/HTTPS allowed)
 
 ### POST /api/library/download-ubuntu-cloud · `admin`
 

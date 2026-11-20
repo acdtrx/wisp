@@ -12,14 +12,14 @@ Wisp uses single-user JWT authentication carried in **HttpOnly cookies**. There 
    - **`wisp_session`** — the JWT itself. `HttpOnly` (JS cannot read it), `SameSite=Lax`, `Path=/`, `Max-Age=604800` (7 days, refreshed while in use — see § Token lifetime). `Secure` is set when the request scheme is HTTPS (derived from `request.protocol`, which honors `X-Forwarded-Proto` from loopback proxies via `trustProxy`). On plain-HTTP LAN deployments the flag is omitted — browsers silently discard `Secure` cookies received over HTTP for non-`localhost` origins, which would otherwise leave the user stuck on the login page.
    - **`wisp_csrf`** — a per-session random 32-byte token used for double-submit CSRF defence. Same attributes as the session cookie except **not** `HttpOnly` (JS reads it to echo on state-changing requests).
 6. Frontend has nothing to store; subsequent requests automatically carry both cookies.
-7. On failure, backend returns 401 with `{ error, detail }`.
+7. On failure, backend returns 401 `LOGIN_FAILED`.
 
 ## CSRF protection
 
 `SameSite=Lax` already blocks the simple cross-site form-submission CSRF cases, but Wisp also enforces double-submit:
 
 - Frontend reads the `wisp_csrf` cookie value (non-HttpOnly) and sends it as `X-CSRF-Token` on every **POST/PUT/PATCH/DELETE**.
-- Backend's auth hook compares the header to the cookie via `timingSafeEqual`; mismatch returns **403 CSRF check failed**.
+- Backend's auth hook compares the header to the cookie via `timingSafeEqual`; mismatch returns **403** `CSRF_FAILED`.
 - GETs (including SSE streams and the WebSocket upgrade handshake) skip the CSRF check — they don't mutate state, and `SameSite=Lax` keeps the session cookie from leaking to cross-site GETs in any meaningful way.
 
 ## Password Storage
@@ -33,7 +33,7 @@ If the file is missing, JWT signing fails until a password is set (`wispctl pass
 - `POST /api/auth/change-password` with `{ currentPassword, newPassword }`
 - On success, writes a new **scrypt hash** to `config/wisp-password` with mode `0600`
 - Returns 204 (no content). Changing the password invalidates all existing tokens because the signing secret is derived from the password (or the new hash).
-- A wrong `currentPassword` returns **422 `INVALID_PASSWORD`**, shown inline in the form, and counts against the per-IP failed-attempt window (§ Login Rate Limiting); once it is exhausted the route answers **429** before checking. Not 401: the session is valid, and a 401 would log every tab out (see § Frontend handling).
+- A wrong `currentPassword` returns **422 `INVALID_PASSWORD`**, shown inline in the form, and counts against the per-IP failed-attempt window (§ Login Rate Limiting); once it is exhausted the route answers **429** `RATE_LIMITED` before checking. Not 401: the session is valid, and a 401 would log every tab out (see § Frontend handling).
 
 ## JWT Implementation
 
@@ -75,9 +75,9 @@ There is no separate refresh token — the session cookie is its own refresh cre
 | Level | Who may call | Used for |
 |-------|--------------|----------|
 | `public` | anyone | `POST /api/auth/login`, the three OIDC routes, static assets + SPA shell |
-| `session` | browser session only — API tokens get **403 Session required** | the rest of `/api/auth/*` (logout, change-password, token management), `PATCH /api/settings/oidc`, the `/ws` consoles |
+| `session` | browser session only — API tokens get **403** `SESSION_REQUIRED` | the rest of `/api/auth/*` (logout, change-password, token management), `PATCH /api/settings/oidc`, the `/ws` consoles |
 | `read` | session, or an API token of either scope | GETs whose response carries no secret material (lists, masked details, stats/progress/log streams) |
-| `admin` | session, or an `admin`-scoped API token; a `read` token gets **403 Insufficient scope** | every mutation, plus GETs that return raw file content or make outbound requests |
+| `admin` | session, or an `admin`-scoped API token; a `read` token gets **403** `SCOPE_INSUFFICIENT` | every mutation, plus GETs that return raw file content or make outbound requests |
 | `mcp` | API token only (either scope) — cookies ignored; per-tool scope in the MCP layer | `/mcp` |
 
 CSRF double-submit is a property of cookie auth on state-changing methods, independent of the level (see § CSRF protection).
@@ -86,7 +86,7 @@ CSRF double-submit is a property of cookie auth on state-changing methods, indep
 
 **Startup check.** An `onRoute` hook records every route; once the app is ready, **development refuses to boot** while any route lacks a valid declaration, listing them. Production enforces such a route as `admin` and logs a warning per route. Third-party plugins that register their own routes — the dev CORS preflight and `@fastify/static` — are registered through `registerPluginWithPublicRoutes` in `index.js`, which marks the routes the plugin adds while it loads as `public` (pending plugins are flushed first, so nothing else falls in that window).
 
-**Unmatched requests.** A request that matches no route runs no handler, so the hook has nothing to authorize and the not-found handler answers: a JSON 404 for API-looking paths, the SPA shell otherwise (production). Because the decision is the matched route's declaration, percent-encoding cannot change it — `/%61pi/vms` dispatches to `/api/vms` and gets exactly its level.
+**Unmatched requests.** A request that matches no route runs no handler, so the hook has nothing to authorize and the not-found handler answers: a JSON 404 `ROUTE_NOT_FOUND` for API-looking paths, the SPA shell otherwise (production). Because the decision is the matched route's declaration, percent-encoding cannot change it — `/%61pi/vms` dispatches to `/api/vms` and gets exactly its level.
 
 **Rejected alternatives:**
 - An explicit `requireAuth()` call in each handler — a forgotten call leaves the route open.
@@ -104,13 +104,13 @@ When a request carries an `Authorization: Bearer …` header instead, the hook t
 If no token is found or the token is invalid/expired, the hook short-circuits the request with:
 
 ```json
-401 { "error": "Authentication required", "detail": "..." }
+401 { "error": "AUTH_REQUIRED", "detail": "..." }
 ```
 
 or:
 
 ```json
-401 { "error": "Authentication failed", "detail": "Invalid or expired token" }
+401 { "error": "AUTH_INVALID", "detail": "..." }
 ```
 
 ### Frontend handling
@@ -143,20 +143,20 @@ Scoped bearer tokens let non-interactive clients (coding agents, scripts, future
 
 | Scope | Allowed |
 |-------|---------|
-| `read` | `read` and `mcp` routes. `admin` routes → **403 Insufficient scope**. |
+| `read` | `read` and `mcp` routes. `admin` routes → **403** `SCOPE_INSUFFICIENT`. |
 | `admin` | `read`, `admin`, and `mcp` routes. |
 
 On **`/mcp`** both scopes pass the route (MCP is JSON-RPC over POST, so the method says nothing about mutation); scope is enforced **per tool** in the MCP layer instead — see [MCP.md](MCP.md).
 
 ### Denied surfaces (both scopes)
 
-`session` routes refuse every token with **403 Session required**, before the token is even verified:
+`session` routes refuse every token with **403** `SESSION_REQUIRED`, before the token is even verified:
 
 - **Consoles** (`/ws/console/:name/vnc`, `/ws/container-console/:name`) — a leaked token can never open a VM VNC session or a container shell.
 - **`/api/auth/*`** (except the `public` login/OIDC routes) — logout, change-password, and token management are interactive concerns. A token can never mint or revoke tokens.
 - **OIDC configuration** (`PATCH /api/settings/oidc`) **(settled 2026-10-16)** — whoever sets the issuer decides who can complete an SSO login, so a token that could repoint it to a provider it controls would mint itself a full browser session (consoles, tokens, password) that outlives the token's revocation. `PATCH /api/settings` refuses an `oidc` key from every caller with **403** `OIDC_SESSION_ONLY`, so the session route is the only write path. Rejected: a token check inside the shared settings handler — access would then depend on the body rather than being a property of the route.
 
-Conversely, **`mcp` is bearer-only**: session cookies are ignored there entirely (which also makes it CSRF-irrelevant); a request without a valid token gets **401** with `WWW-Authenticate: Bearer`.
+Conversely, **`mcp` is bearer-only**: session cookies are ignored there entirely (which also makes it CSRF-irrelevant); a request without a valid token gets **401** (`AUTH_REQUIRED`, or `AUTH_INVALID` for an unknown token) with `WWW-Authenticate: Bearer`.
 
 ### Semantics
 
@@ -173,7 +173,7 @@ Both console routes are `session`: the global `onRequest` auth hook validates th
 
 ## Login Rate Limiting
 
-Failed authentication attempts — wrong passwords on `POST /api/auth/login`, wrong current passwords on `POST /api/auth/change-password` *(settled 2026-11-12: a stolen session gets no unlimited guesses)* **and** invalid bearer API tokens — are tracked per source IP in a shared in-memory `Map` (`backend/src/lib/loginRateLimit.js`). The window is **60 s** with a maximum of **5 failed attempts per IP**; further attempts in the same window return **429**. The map is swept every 60 s for expired entries and capped at 10 000 distinct IPs to bound memory under flood conditions.
+Failed authentication attempts — wrong passwords on `POST /api/auth/login`, wrong current passwords on `POST /api/auth/change-password` *(settled 2026-11-12: a stolen session gets no unlimited guesses)* **and** invalid bearer API tokens — are tracked per source IP in a shared in-memory `Map` (`backend/src/lib/loginRateLimit.js`). The window is **60 s** with a maximum of **5 failed attempts per IP**; further attempts in the same window return **429** `RATE_LIMITED`. The map is swept every 60 s for expired entries and capped at 10 000 distinct IPs to bound memory under flood conditions.
 
 The IP used as the map key is **`request.ip`**. Backend Fastify is configured with `trustProxy: ['127.0.0.1', '::1', ...trustedProxies]` — loopback is always trusted, plus any entries from the `trustedProxies` config field. In production the backend serves the SPA itself and browsers connect to it directly, so with no proxy `request.ip` is the real peer address; the loopback allow-list covers an *optional* TLS-terminating reverse proxy (Caddy/nginx) running on the **same host** that can pass `X-Forwarded-For` / `X-Forwarded-Proto` so cookies pick the right `Secure` flag. When the proxy runs on a **different host/container**, add its IP or subnet to `trustedProxies` in `wisp-config.json` (read at boot; see [CONFIGURATION.md](CONFIGURATION.md) § Reverse proxy / HTTPS). Trust is intentionally narrow: only headers from trusted sources are honored, so an attacker connecting directly to the backend port over the LAN cannot forge `X-Forwarded-For` to bypass the rate limit — never set `trustProxy: true`.
 

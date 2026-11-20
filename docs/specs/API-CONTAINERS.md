@@ -26,7 +26,7 @@ Create a new container (async job with image pull). The container is **defined i
 
 Optional `iconId` selects a workload icon from the same set as VMs (persisted in `container.json`).
 
-Optional `app` is an app registry ID (e.g. `"caddy-reverse-proxy"`) — creates a custom app container with a dedicated config UI. If `app` is set without `appConfig`, the app module's default config is used. Unknown `app` values → **422**. See [CUSTOM-APPS.md](CUSTOM-APPS.md).
+Optional `app` is an app registry ID (e.g. `"caddy-reverse-proxy"`) — creates a custom app container with a dedicated config UI. If `app` is set without `appConfig`, the app module's default config is used. Unknown `app` values → **422** `UNKNOWN_APP_TYPE`. See [CUSTOM-APPS.md](CUSTOM-APPS.md).
 
 On create, the server writes defaults in `container.json` (empty `mounts`, bridge `network` with a generated MAC and the default container parent bridge, `localDns: true`, etc.). Use **PATCH** to change command, resources, env, mounts, and network before starting.
 
@@ -58,7 +58,7 @@ Remove an image from containerd. Query parameter **`ref`** (required): the image
 
 **409:** `CONTAINER_IMAGE_IN_USE` — at least one Wisp container’s `container.json` `image` is this name, verbatim or after reference normalization. Delete or reconfigure those containers first.
 
-**422:** `INVALID_CONTAINER_IMAGE_REF` — empty or missing `ref`.
+**400:** `VALIDATION_FAILED` — empty or missing `ref`.
 
 **503:** `NO_CONTAINERD`
 
@@ -82,7 +82,7 @@ SSE stream for the check-updates job. Events:
 - `{ step: "done", checked, updated, flaggedContainers, lastCheckedAt }` — terminal.
 - `{ step: "error", error, detail }` — terminal; unexpected failure (e.g. containerd disconnected mid-sweep). Single-image failures use `skipped` instead.
 
-**404:** job not found / expired (TTL 5 min after terminal).
+**404:** `JOB_NOT_FOUND` — job not found / expired (TTL 5 min after terminal).
 
 ### GET /api/containers/images/update-status · `read`
 
@@ -98,7 +98,7 @@ The **`env`** field uses a structured shape: `{ KEY: { value, secret?, isSet? } 
 
 Secret **file mounts** in **`mounts`** (a stored `secret: true`, or declared secret by the container's app module) carry `secret: true`, `isSet` (the file is non-empty) and `sizeBytes` (`null` when no file is on disk); their content is never part of any response. See CONTAINERS.md → *Secret file mounts*.
 
-**404:** `{ error, detail }` if container not found.
+**404:** `CONTAINER_NOT_FOUND` if container not found.
 
 ### GET /api/containers/:name/mounts/usage · `read`
 
@@ -110,7 +110,7 @@ Host-side disk usage of each bind mount. On-demand snapshot (not a live feed): e
 - `hostPath` / `sizeBytes`: `null` for `tmpfs` (no host backing) and `missing`.
 - `partial`: `true` when some entries were unreadable or vanished mid-walk, or the walk hit its **20 s** budget (settled 2026-11-13) — `sizeBytes` is an undercount.
 
-**404:** `{ error, detail }` if container not found.
+**404:** `CONTAINER_NOT_FOUND` if container not found.
 
 ### PATCH /api/containers/:name · `admin`
 
@@ -173,7 +173,7 @@ Restart a container (stop + start).
 
 Kill a container (SIGKILL). Same scheduled-restart handling as Stop.
 
-**204:** killed (or the scheduled restart cancelled); the state arrives on the `containers` topic | **409:** not running and nothing scheduled
+**204:** killed (or the scheduled restart cancelled); the state arrives on the `containers` topic | **409:** `CONTAINER_NOT_RUNNING` — not running and nothing scheduled
 
 ### GET /api/containers/:name/stats · `read`
 
@@ -182,7 +182,7 @@ SSE stream for per-container stats.
 - **Query:** `?intervalMs=` (default **3000**, min **2000**, max **60000**) — push interval in milliseconds for sampled metrics (CPU, memory, uptime).
 - **Event data:** `{ state, cpuPercent, memoryUsageMiB, memoryLimitMiB, uptime, pid, mdnsHostname, ip }` (and related fields from `getContainerStats`).
 - `mdnsHostname` (registered `<hostname>.local`, or `null`) and `ip` (CNI-assigned address, or `null`) are re-read from the live container config on every tick. Both only exist once the container is *running*, so they cannot ride the `GET /api/containers/:name` snapshot the client takes when it selects a workload — clients must read them from this stream, exactly as the VM stats stream carries `mdnsHostname`/`guestIp`.
-- **Errors:** `{ error, detail, code }` (same shape as other SSE error payloads).
+- **Errors:** `{ error, detail }` (same shape as other SSE error payloads); an error without a code arrives as `INTERNAL_ERROR`.
 
 Default interval is **3s** when `intervalMs` is omitted.
 
@@ -197,14 +197,14 @@ List log runs for a container. Each start creates a new run under `runs/<runId>.
 SSE stream for a single run's logs. Initial event: `{ type: "history", lines, runId }`. Subsequent: `{ type: "line", line }`.
 
 - **Query:** `?runId=<runId>` — optional. Omit (or pass an empty value) to stream the newest run (the currently-running one if any, else the most recent completed run). Runs that have ended are served from disk and then idle-tailed — the SSE connection stays open with no new lines until the client disconnects. The history is the last 500 complete lines; the live tail continues from the exact byte where the history ended, so every line arrives once, in order, never split — a line still being written arrives when its newline lands (or when the run ends). See CONTAINERS.md → *Live log stream*.
-- **Errors:** `CONTAINER_RUN_NOT_FOUND` (404) if a non-existent or malformed `runId` is requested. A history read failure after the stream opened sends one `{ error, detail, code }` event and ends the stream.
+- **Errors:** `CONTAINER_RUN_NOT_FOUND` (404) if a non-existent or malformed `runId` is requested. A history read failure after the stream opened sends one `{ error, detail }` event (`INTERNAL_ERROR` for an error without a code) and ends the stream.
 - **Empty state:** containers with no runs yet (never started) return a single history event with `lines: []` and `runId: null`.
 
 ### GET /api/containers/:name/runs/:runId/log · `read`
 
 Download one run's log file. Responds with `Content-Type: text/plain; charset=utf-8` and an RFC 5987 `Content-Disposition: attachment; filename*=UTF-8''<percent-encoded(name-runId.log)>` header. Streams the file directly from disk. `runId` must match `^[a-zA-Z0-9._-]+$`.
 
-**404:** `CONTAINER_RUN_NOT_FOUND` if the run does not exist. **422:** invalid `runId` format.
+**404:** `CONTAINER_RUN_NOT_FOUND` if the run does not exist. **400:** `VALIDATION_FAILED` — invalid `runId` format.
 
 ### POST /api/containers/:name/mounts · `admin`
 
@@ -216,7 +216,7 @@ Append one bind mount (row-scoped). **Body:** `{ type: "file"|"directory"|"tmpfs
 
 Update one mount by its current storage **`name`** (URL segment). **Body:** optional subset of `{ name, containerPath, readonly, sourceId, subPath, containerOwnerUid, containerOwnerGid, secret }` for file/directory mounts (`secret` on file mounts only), or `{ name, containerPath, sizeMiB }` for tmpfs mounts (other fields rejected on tmpfs). Renaming **`name`** moves `files/<oldName>` to `files/<newName>` on disk; tmpfs renames are config-only. **`secret: false`** on a secret mount empties its file first (write-only content can't be revealed by dropping the flag); a change of `secret` alone needs no restart (no `pendingRestart`).
 
-**204:** saved; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic; a running container gets `pendingRestart` when the change needs it | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** duplicate path/name, `INVALID_CONTAINER_MOUNTS`, `APP_CONFIG_ONLY` (mount of an app container — see CUSTOM-APPS.md § Mount content routes)
+**204:** saved; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic; a running container gets `pendingRestart` when the change needs it | **404:** `CONTAINER_MOUNT_NOT_FOUND` | **422:** `CONTAINER_MOUNT_DUPLICATE` — duplicate path/name, `INVALID_CONTAINER_MOUNTS`, `APP_CONFIG_ONLY` (mount of an app container — see CUSTOM-APPS.md § Mount content routes)
 
 ### DELETE /api/containers/:name/mounts/:mountName · `admin`
 
@@ -230,7 +230,7 @@ Multipart **file** upload: a single file part (field name typically **`file`**).
 
 The file part is streamed as it arrives — for a **file** mount into a temp file beside the mount's file in `files/` (renamed over it once the whole body has been read: an atomic replace, and the reply follows the upload at once), for a **zip** into a staging file inside the container directory (handed to the extract job) — so every rejection below leaves the mount untouched. The temp file is removed on any failure or abort; one a crash leaves behind carries the atomic-write suffix the boot cleanup sweeps (settled 2026-11-14). Field parts are ignored, before or after the file.
 
-**400:** `BAD_MULTIPART_TOO_MANY_FILES` if more than one file part (extra parts are read and discarded first) | plain `{ error, detail }` if no file part. **404:** container not found. **422:** `UPLOAD_TOO_LARGE` (`File too large`) past the multipart `fileSize` limit (50 GiB). An upload whose body sends nothing for **60 s** is dropped (settled 2026-11-13; also the PUT content body).
+**400:** `BAD_MULTIPART_TOO_MANY_FILES` if more than one file part (extra parts are read and discarded first) | `UPLOAD_NO_FILE` if no file part. **404:** `CONTAINER_NOT_FOUND` — container not found. **422:** `UPLOAD_TOO_LARGE` (`File too large`) past the multipart `fileSize` limit (50 GiB). An upload whose body sends nothing for **60 s** is dropped (settled 2026-11-13; also the PUT content body).
 
 (settled 2026-10-16: the file part is consumed while iterating, never held across later parts. busboy finishes a body only after every file stream has been read to its end, and `@fastify/multipart` ≥ 10.1 ends the parts iterator only when busboy finishes — holding the part to check for a second file hung every upload; on 10.0 it hung only once the body outgrew the stream buffers (observed between 70 and 200 KB). Staging rather than streaming straight into the mount keeps the one-file and size rejections from half-applying.)
 
@@ -262,7 +262,7 @@ Multipart: one file part. Mount must have **`type: "directory"`** (Local, not st
 
 Works on secret mounts (write-only); `{ "content": "" }` clears one.
 
-**204:** written; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **413:** request body too large | **422:** same family as GET for type/size/encoding, plus `APP_CONFIG_ONLY` for app-managed mounts (an app container's files are regenerated from `appConfig` on every save — configure the app, or eject it first)
+**204:** written; the container's new state reaches clients as `{ kind: "container", id }` on the [`changes`](API.md#changes-topic-payload) topic | **413:** `PAYLOAD_TOO_LARGE` — request body too large | **422:** same family as GET for type/size/encoding, plus `APP_CONFIG_ONLY` for app-managed mounts (an app container's files are regenerated from `appConfig` on every save — configure the app, or eject it first)
 
 ### POST /api/containers/:name/mounts/:mountName/init · `admin`
 

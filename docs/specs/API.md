@@ -27,7 +27,7 @@ Credentials:
 
 `npm run route-access` prints the level of every registered route. A path that matches no route answers 404 (JSON for API-looking paths, the SPA shell otherwise in production) without an auth check — no handler runs.
 
-All error responses return `{ error: string, detail: string }` — including request-schema violations, which answer **400** `{ error: "Invalid request body", detail: "body/<field> …" }` (or `… params` / `… querystring`), and other framework rejections such as malformed JSON (400) or an unsupported content type (415). See [ERROR-HANDLING.md](ERROR-HANDLING.md) for details.
+**Errors (settled 2026-11-20).** Every error answers `{ "error": "<CODE>", "detail": "<message>" }`: `error` is the stable code, always present, and `detail` the human-readable message. The status follows from the code, through the one table. The framework's own refusals answer the same way: a request that fails its schema is **400** `VALIDATION_FAILED` (`detail` naming the part and the field, `body/<field> …`), malformed JSON **400** `BAD_REQUEST`, an unknown route **404** `ROUTE_NOT_FOUND`, a body too large **413** `PAYLOAD_TOO_LARGE`, an unsupported content type **415** `UNSUPPORTED_MEDIA_TYPE`, a missing or expired session **401** `AUTH_REQUIRED` / `AUTH_INVALID`. The same body is a job's error event, a stream's error frame and an MCP tool error. Every code, its status and its meaning: [ERROR-HANDLING.md](ERROR-HANDLING.md#codes).
 
 **Short requests (settled 2026-11-13).** The web client gives up on a REST call after **45 s**, over the request and reading its body. Every route answers within that: an operation that can outlast it is a [job route](#job-routes), which answers 202 at once and reports through the job's stream.
 
@@ -70,7 +70,7 @@ In-memory job registry (server process only; no persistence across restart). Use
 - **Progress volume:** byte-driven progress (backup gzip / tar streams, library downloads, `qemu-img convert`) is emitted once per integer percent change — at most ~101 events per stream, whatever the size.
 - **Replay to a late or reconnecting stream:** live subscribers get every event, but the store keeps only the latest of consecutive events with the same `step` (progress ticks of one step replace each other). A stream that connects mid-job receives one event per step transition — the latest progress of each, plus milestones such as `destination-done` — then the live tail.
 - **Stream end:** the terminal event (`done` or `error`) is the last event of every progress SSE — the server ends the response right after it. A stream opened on an already-finished job gets the replay (ending with the terminal event) and is ended; it is never held open until the job expires. Clients stop on the terminal event and do not reconnect.
-- **Error event:** `{ step: "error", error, detail, code? }` — `code` is the error's code (e.g. `VM_ALREADY_RUNNING`, `UPDATE_BUSY`) when it has one.
+- **Error event:** `{ step: "error", error, detail }` — the [error body](ERROR-HANDLING.md#the-error-body): `error` the code (e.g. `VM_ALREADY_RUNNING`, `UPDATE_BUSY`), `detail` the message.
 
 ### Job routes
 
@@ -81,7 +81,7 @@ In-memory job registry (server process only; no persistence across restart). Use
 The progress SSE of a job started by a [job route](#job-routes) (the job store contract above).
 
 - **200:** `text/event-stream` — progress events, then `done` (the route's result) or `error`
-- **404:** unknown job (never started, or expired)
+- **404:** `JOB_NOT_FOUND` — unknown job (never started, or expired)
 
 ---
 
@@ -91,7 +91,7 @@ The progress SSE of a job started by a [job route](#job-routes) (the job store c
 
 The single always-on Server-Sent Events stream. Multiplexes every feed the UI needs continuously as `{ "topic": <name>, "data": <payload> }` frames over one connection — browsers cap plain-HTTP/1.1 connections at 6 per origin and each open SSE stream holds one, so dedicated per-topic streams exhausted the pool on direct `http://host:8080` access and queued all further requests indefinitely (behind an HTTP/2 proxy the cap never applies). Scoped streams (per-entity stats, container logs, host disks/usb, job progress) remain separate endpoints: they are transient and bounded well below the cap.
 
-Every topic sends a snapshot frame on connect (and after every client reconnect), then pushes on its own cadence. A topic that fails to gather sends its usual `{ error, detail, code? }` object as its `data`; the stream stays up and the other topics keep flowing.
+Every topic sends a snapshot frame on connect (and after every client reconnect), then pushes on its own cadence. A topic that fails to gather sends the error body `{ error, detail }` as its `data`; the stream stays up and the other topics keep flowing.
 
 - **Content-Type:** `text/event-stream`
 - **Frame:** `data: { "topic": "<name>", "data": <payload> }`
@@ -110,7 +110,7 @@ Every topic sends a snapshot frame on connect (and after every client reconnect)
 
 No topic uses a polling timer except the sampled `stats` metrics.
 
-Every topic except `discovery` (an in-memory list that can't fail) may carry an error frame instead of its payload — `{ error, detail, code? }` when that topic's gather fails (e.g. `stats` when a host read throws). Clients ignore error frames and keep the last good payload; nothing renders the error object as data.
+Every topic except `discovery` (an in-memory list that can't fail) may carry an error frame instead of its payload — the error body `{ error, detail }` when that topic's gather fails (e.g. `stats` when a host read throws). Clients ignore error frames and keep the last good payload; nothing renders the error object as data.
 
 #### `changes` topic payload
 

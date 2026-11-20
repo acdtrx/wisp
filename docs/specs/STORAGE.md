@@ -153,7 +153,7 @@ Storage mounts are designed to be referenced by other features. Current consumer
 - **Backup destinations** — `settings.backupMountId` can point at any storage mount; backup flows mount it on demand and write backup archives into it.
 - **Container directory mounts** — a container's `mounts[].sourceId` can reference a storage mount id; `mounts[].subPath` scopes to a sub-directory. See [CONTAINERS.md](CONTAINERS.md) §**Mount entry** for the full flow (validation, pre-start checks, zip-upload restriction to Local).
 
-`DELETE /api/host/mounts/:id` refuses with **409** when any container's `mounts[*].sourceId` still references the id (detail lists the container names). The operator must remove the bind from those containers before the storage mount can be deleted, otherwise the next start would silently bind a missing source. Mirrors `assertBridgeNotInUse` for managed bridges.
+`DELETE /api/host/mounts/:id` refuses with **409** `MOUNT_IN_USE` when any container's `mounts[*].sourceId` still references the id (detail lists the container names). The operator must remove the bind from those containers before the storage mount can be deleted, otherwise the next start would silently bind a missing source. Mirrors `assertBridgeNotInUse` for managed bridges.
 
 ## API
 
@@ -187,8 +187,8 @@ Mount state colour convention (shared with SMB):
 | `MOUNT_NOT_FOUND` | 404 | No mount with the given `id` |
 | `MOUNT_INVALID` | 422 | Missing/invalid fields in body |
 | `MOUNT_DUPLICATE` | 409 | `id` already exists |
-| `SMB_INVALID` | 503 | SMB helper rejected input (e.g. unreachable server) |
-| `SMB_MOUNT_UNAVAILABLE` | 503 | `wisp-mount` not installed or not runnable |
+| `SMB_INVALID` | 422 | Invalid SMB input (share, mountPath, credential fields) |
+| `SMB_MOUNT_UNAVAILABLE` | 503 | `wisp-mount` not installed or not runnable, or the share could not be mounted or reached (e.g. unreachable server) |
 | `DISK_MOUNT_INVALID` | 422 | Missing/invalid fields for disk mount |
 | `DISK_MOUNT_UNAVAILABLE` | 503 | `wisp-mount` not installed, UUID not present, or helper error |
 

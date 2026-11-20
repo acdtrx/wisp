@@ -37,7 +37,7 @@ The envelope is pushed on the `sections` topic of `GET /api/events`: a full snap
 
 This is the sidebar's live channel for grouping. It exists because sections are pure Wisp metadata — no libvirt or containerd event announces them — so without it a client that never reloads keeps the ordering it saw at mount: an iOS home-screen app resumed from the app switcher, or a desktop tab left open while another device reorders.
 
-- **Topic `data`:** The envelope above, or `{ error, detail, code? }` if the settings read fails. Clients keep their last good envelope on an error frame.
+- **Topic `data`:** The envelope above, or `{ error, detail }` if the settings read fails. Clients keep their last good envelope on an error frame.
 - `Main`'s `order` is `-Infinity`, which serialises to `null` in both the topic frames and `GET /api/sections`. Clients must take array order as authoritative, not the `order` field.
 
 ### POST /api/sections · `admin`
@@ -213,4 +213,4 @@ Remove a manual link along with its group placement and overrides.
 
 ### `home` topic (live channel)
 
-The envelope is pushed on the `home` topic of `GET /api/events`: a snapshot on connect, then again on every VM list change, container list change, and homepage write. No polling timer — every input to the derivation already has a change event. A failed build sends `{ error, detail, code? }` and clients keep their last good envelope.
+The envelope is pushed on the `home` topic of `GET /api/events`: a snapshot on connect, then again on every VM list change, container list change, and homepage write. No polling timer — every input to the derivation already has a change event. A failed build sends `{ error, detail }` and clients keep their last good envelope.

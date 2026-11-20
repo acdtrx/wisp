@@ -76,11 +76,14 @@ source refer to them.
   contract dictates another: `{ error, detail? }`, `error` the stable code, always
   present, and `detail` the human-readable message, where it adds value. Use the same
   shape on HTTP and streaming channels.
-  - Applied: in route handlers, map codes to HTTP status (404, 409, 422, 500, and 503
-    when libvirt or the backend is unreachable) and return `{ error, detail }`, `detail`
-    being `err.raw || err.message`. Send SSE errors in the same shape
-    (`{ error, detail, code? }`; job streams use `{ step: 'error', error, detail }`). See
-    [`specs/ERROR-HANDLING.md`](specs/ERROR-HANDLING.md).
+  - Applied: routes, hooks and jobs throw; one handler answers (`lib/appErrors.js`), the
+    status from the one table of codes (`lib/errorCodes.js`). Every channel sends the
+    same body, `{ error: <code>, detail }`, `detail` the message followed by the raw
+    cause, redacted where the body is built: HTTP answers, a job's
+    `{ step: 'error', error, detail }`, stream error frames and MCP tool errors. A new
+    code goes in the table and in
+    [`specs/ERROR-HANDLING.md`](specs/ERROR-HANDLING.md#codes) in the same change;
+    `npm run check` fails otherwise.
 - Prefer inspecting state up front and choosing the right path once, rather than
   try/catch/retry as control flow.
 - Comment every silent `catch {}` block with why the error is intentionally swallowed.
@@ -144,7 +147,7 @@ source refer to them.
     `{ createIfMissing }` / `{ removeSlot }`, so cloud-init's slot rides the public
     primitive while its orchestration stays in `lib/cloudInit.js`).
   - Applied: the other carved modules (`host/`, `networking/`, `mdns/`, `storage/`) may
-    import `createAppError` from `lib/routeErrors.js`; only the managers are strict.
+    import `createAppError` from `lib/appErrors.js`; only the managers are strict.
 - Prefer native/API access over shelling out to CLI tools. Exec a binary only when there
   is no practical programmatic alternative, and confirm first.
   - Applied — the exec allowlist: `qemu-img`, `cp --reflink=auto` (with a `copyFile`

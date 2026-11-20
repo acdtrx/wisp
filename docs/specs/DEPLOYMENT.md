@@ -312,7 +312,7 @@ Non-interactivity and the conffile policy are part of the OS Updates contract in
 | `wisp-os-update list` | Sync package DB, print `PKG<TAB>name<TAB>from<TAB>to` lines plus `TOTAL <bytes>` (the op the backend uses for check and list) |
 | `wisp-os-update upgrade` | Sync package DB and perform a full non-interactive upgrade |
 
-The backend invokes **`/usr/local/bin/wisp-os-update`** only. Setup's `helpers` step installs it and configures sudoers. If the file is missing, OS update APIs return 503.
+The backend invokes **`/usr/local/bin/wisp-os-update`** only. Setup's `helpers` step installs it and configures sudoers. If the file is missing, OS update APIs return 503 `UPDATE_CHECK_UNAVAILABLE`.
 
 #### Troubleshooting: OS update check not working
 

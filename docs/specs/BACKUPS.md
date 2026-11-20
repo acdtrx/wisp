@@ -103,7 +103,7 @@ At backend startup, `ensureMounts()` attempts to mount every configured SMB shar
 
 ## Creating a Backup
 
-1. Client sends `POST /api/vms/:name/backup` with `destinationIds` (e.g. `["local"]` or `["local", "<backupMountId>"]`); defaults to `["local"]` when omitted. Only `local` and the single configured `backupMountId` are accepted — any other id returns 422.
+1. Client sends `POST /api/vms/:name/backup` with `destinationIds` (e.g. `["local"]` or `["local", "<backupMountId>"]`); defaults to `["local"]` when omitted. Only `local` and the single configured `backupMountId` are accepted — any other id returns 422 `BACKUP_DEST_UNKNOWN`.
 2. Backend refuses a VM that is not stopped with **409** `VM_MUST_BE_OFFLINE` in the request itself — no job is created and no attempt is recorded (vmManager's `createBackup` re-checks inside the job, covering a VM started in between)
 3. Backend resolves paths from `backupLocalPath` and, when requested, the mount referenced by `backupMountId` (with mount check / auto-mount for SMB)
 4. The VM's [operation lock](#per-vm-operation-lock) is taken (**409** `VM_BUSY` if another locked operation on this VM — start, backup, delete, an edit — is running) and a background job is created (returns `jobId`)
@@ -262,7 +262,7 @@ Owner-only like every backup: directory `0700`, both files `0600` ([Backup file 
 
 ### Creating a container backup
 
-`POST /api/containers/:name/backup` with `{ destinationIds }` — same body shape as the VM backup route; both routes resolve ids via the shared `lib/backupDestinations.js` helper (`'local'` → `backupLocalPath`; the configured `backupMountId` → its mount path, auto-mounting SMB; unknown ids → 422, mount failure → 503). The job holds the container's [operation lock](CONTAINERS.md#per-container-operation-lock) until it settles: a second backup, or any other locked operation (start, stop, edit, restore, …), of the same container meanwhile returns **409** `CONTAINER_BUSY`, and the backup itself is refused with it while one of those runs.
+`POST /api/containers/:name/backup` with `{ destinationIds }` — same body shape as the VM backup route; both routes resolve ids via the shared `lib/backupDestinations.js` helper (`'local'` → `backupLocalPath`; the configured `backupMountId` → its mount path, auto-mounting SMB; unknown ids → 422 `BACKUP_DEST_UNKNOWN`, mount failure → 503 `BACKUP_MOUNT_FAILED`). The job holds the container's [operation lock](CONTAINERS.md#per-container-operation-lock) until it settles: a second backup, or any other locked operation (start, stop, edit, restore, …), of the same container meanwhile returns **409** `CONTAINER_BUSY`, and the backup itself is refused with it while one of those runs.
 
 The task state decides how the archive is taken (`freezeForBackup` in `containerManagerBackup.js`):
 

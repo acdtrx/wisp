@@ -12,7 +12,7 @@ Settings are split across the Host panel: **App Config** tab (application-wide c
 | Container storage path | string | Must start with `/` | Absolute root for container bundles (persisted in `wisp-config.json`; not edited in the App Config UI today). |
 | Backup local path | string | Must start with `/` | Absolute path for local backups. |
 | LAN discovery | boolean | — | Announce this server as a `_wisp._tcp` mDNS service and list other Wisp servers in the top bar. Default **on**. |
-| Advertised URL | string or null | Valid `http`/`https` URL, ≤ 251 bytes | Full URL browsers and other Wisp servers use to open this one (e.g. behind a reverse proxy); its origin is also the OIDC callback origin. Empty/null → announce `http://<hostname>.local:<port>`, and OIDC uses the request origin. Invalid URLs are rejected with 422. |
+| Advertised URL | string or null | Valid `http`/`https` URL, ≤ 251 bytes | Full URL browsers and other Wisp servers use to open this one (e.g. behind a reverse proxy); its origin is also the OIDC callback origin. Empty/null → announce `http://<hostname>.local:<port>`, and OIDC uses the request origin. Invalid URLs are rejected with 422 `INVALID_URL`. |
 
 Settings are persisted in `config/wisp-config.json`. The config file is updated with a mutex to prevent concurrent writes.
 

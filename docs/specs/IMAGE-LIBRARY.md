@@ -38,17 +38,17 @@ Files are uploaded via streaming multipart. The file data is piped directly from
 
 Filename validation: no path separators (`/`, `\`), no `..`, no leading dots. The filename must equal its own basename.
 
-If a file with the same name already exists, the upload is rejected (409 conflict).
+If a file with the same name already exists, the upload is rejected (409 `LIBRARY_FILE_EXISTS`).
 
-If the configured size limit is exceeded, the partial file is unlinked and the request returns **422**. Any other pipeline error also unlinks the partial file before responding 500. This prevents disk-fill from a truncated or aborted upload.
+If the configured size limit is exceeded, the partial file is unlinked and the request returns **422** `UPLOAD_TOO_LARGE`. Any other pipeline error also unlinks the partial file before responding 500 `LIBRARY_IO_FAILED`. This prevents disk-fill from a truncated or aborted upload.
 
 ### Delete
 
-Removes a file from the image directory. Returns 404 if the file doesn't exist. Returns **409** when the file is still referenced by any VM (any disk's `<source file="...">` matches the absolute path) — the response detail lists the VM names so the operator can detach first. This mirrors `assertBridgeNotInUse` for managed bridges.
+Removes a file from the image directory. Returns 404 `LIBRARY_FILE_NOT_FOUND` if the file doesn't exist. Returns **409** `LIBRARY_FILE_IN_USE` when the file is still referenced by any VM (any disk's `<source file="...">` matches the absolute path) — the response detail lists the VM names so the operator can detach first. This mirrors `assertBridgeNotInUse` for managed bridges.
 
 ### Rename
 
-Renames a file within the image directory. Validates both the old and new filenames. Returns 409 if the new name is already taken or if the source file is referenced by any VM.
+Renames a file within the image directory. Validates both the old and new filenames. Returns 409 `LIBRARY_FILE_EXISTS` if the new name is already taken, or `LIBRARY_FILE_IN_USE` if the source file is referenced by any VM.
 
 ### URL Download
 

@@ -9,7 +9,7 @@ VM and container backups: lists, restore, delete. Shared contracts (access level
 Start a backup job. Returns a job ID; monitor progress via SSE.
 
 - **Body:** `{ destinationIds?: ["local", "<mountId>"] }` (defaults to `["local"]`)
-- **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted (resolved by the shared `lib/backupDestinations.js` helper). Any other id returns **422**.
+- **`destinationIds`:** Only `local` and, if configured in settings, the single `backupMountId` value are accepted (resolved by the shared `lib/backupDestinations.js` helper). Any other id returns **422** `BACKUP_DEST_UNKNOWN`.
 - **202:** `{ jobId: string, title: string }` — a [job](API.md#job-routes); `title` is e.g. `Backup <vmName>`
 - **404:** `VM_NOT_FOUND`
 - **409:** `VM_MUST_BE_OFFLINE` — the VM is not stopped (checked before the job is created; the manager re-checks inside the job); `VM_BUSY` — another operation on this VM (start, backup, delete, an edit) is running
@@ -53,9 +53,9 @@ Restore a backup as a new VM — the only VM restore; there is no VM restore-in-
 
 - **Body:** `{ destinationId: string, vmName: string, timestamp: string, newVmName: string }` — `(destinationId, vmName, timestamp)` are typically copied from a `GET /api/backups` row.
 - **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name: string }`. The checks below, the archive's validation included, answer at once; the copy's failures are job errors (`BACKUP_RESTORE_FAILED`).
-- **404:** backup not found
+- **404:** `BACKUP_NOT_FOUND` — backup not found
 - **409:** `VM_EXISTS` / `VM_DIR_EXISTS` when `newVmName` is taken in libvirt or on disk (same rule as `POST /api/vms`)
-- **422:** unknown `destinationId`, invalid `vmName`/`newVmName`, or invalid `timestamp`; `BACKUP_INVALID` when the backup's `domain.xml` or payload fails [validation](BACKUPS.md#archive-validation-vm-backups) (the message names the rule) or a restored disk has a backing file
+- **422:** `BACKUP_INVALID` for an unknown `destinationId` or an invalid `timestamp`; `INVALID_VM_NAME` for an invalid `vmName`/`newVmName`; `BACKUP_INVALID` when the backup's `domain.xml` or payload fails [validation](BACKUPS.md#archive-validation-vm-backups) (the message names the rule) or a restored disk has a backing file
 
 ### DELETE /api/backups · `admin`
 
@@ -63,7 +63,7 @@ Delete a backup.
 
 - **Body:** `{ destinationId: string, vmName: string, timestamp: string }`
 - **204:** deleted; announced on the `backups` topic
-- **404:** backup not found
+- **404:** `BACKUP_NOT_FOUND` — backup not found
 - **422:** invalid input (`INVALID_VM_NAME`, `BACKUP_INVALID` — including a target that would resolve to a destination root; see [BACKUPS.md → Deleting a Backup](BACKUPS.md#deleting-a-backup))
 
 ### POST /api/containers/:name/backup · `admin`
@@ -115,7 +115,7 @@ Restore a container backup under a new name. The new name must be free both on d
 
 - **Body:** `{ destinationId: string, name: string, timestamp: string, newName: string }`
 - **202:** `{ jobId, title }` — a [job](API.md#job-routes); `done`: `{ name: string, sourceName: string, image: string | null }` — `sourceName` is the original container name from the manifest, useful when the user picked a backup whose folder name no longer matches. The job holds the new name's operation lock.
-- **404:** backup not found
+- **404:** `BACKUP_NOT_FOUND` — backup not found
 - **409:** `CONTAINER_EXISTS` if the new name is already in use; `CONTAINER_BUSY` while another operation holds the new name's [operation lock](CONTAINERS.md#per-container-operation-lock)
 - **422:** `INVALID_CONTAINER_NAME`, `BACKUP_INVALID` (unknown destination, invalid timestamp, or a missing/malformed manifest)
 - **503:** `NO_CONTAINERD` — containerd cannot be reached, so the new name was not checked; no job starts and nothing is written

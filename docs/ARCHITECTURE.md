@@ -234,7 +234,7 @@ consumer, and nothing has called for more).
 
 ## Repo layout & subsystem boundaries
 
-- `backend/` (the server: `src/index.js`, `src/routes/`, `src/lib/`; `scripts/` holds the
+- `backend/` (the server: `src/index.js` the start, `src/app.js` the app it builds, `src/routes/`, `src/lib/`; `scripts/` holds the
   privileged helpers and the updater; `migrations/` the state migrations, which
   `src/lib/stateMigrations.js` runs at the start), `frontend/` (the client), `scripts/`
   (install, setup, push, release), `systemd/` (unit templates), `config/` (examples).

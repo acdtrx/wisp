@@ -243,14 +243,6 @@ updates staged by a root-owned path).
 now respect (`-n standby`). **Revisit trigger:** disks on a host with `drivetemp` never
 reach standby.
 
-**Route errors carry the message, not a stable code.** `handleRouteError` answers
-`error: err.message`, while CODING-RULES §5 wants `error` to be the stable code and the
-message in `detail`; `specs/ERROR-HANDLING.md` describes the message form (found
-2026-11-12). The handlers also catch and call `handleRouteError` themselves (96 places),
-while TECH-STACK (restored 2026-11-15) wants one error handler to map every failure.
-**Revisit trigger:** a client needs to branch on a route error, or the next work on the
-error contract.
-
 **Cloud-init: no way to remove a password in the UI.** A blank password field on edit
 keeps the stored one (settled 2026-11-12), so the only way to drop a password is deleting
 the VM's cloud-init config. **Revisit trigger:** a password needs removing without
@@ -261,6 +253,15 @@ wiping cloud-init.
 `layoutUnchanged` test, and the app save path ORs its mount signature with the app
 module's hook (found 2026-11-12). **Revisit trigger:** the response and the badge are
 seen disagreeing again, or the next change to any of the three.
+
+**Specs that disagree with the code, found in the error sweep.** Three statements in the
+specs no longer match what the routes do (found 2026-11-20, while naming each error's
+code): API-VMS says a VLAN on a bridge NIC is refused with 422, but no VM code refuses it
+(create keeps `vlan`, PATCH strips it); API-HOST says `POST /api/host/mounts/:id/mount`
+answers 422 for a disk mount, but the route mounts disks; CONTAINERS.md says Stop and
+Kill answer 200 `{ ok, restartCancelled }`, while API-CONTAINERS has Stop as a 202 job
+and Kill as 204. Each needs the code or the spec settled with the user. **Revisit
+trigger:** the next work on VM NICs, host mounts or container lifecycle.
 
 **Deleting a VM leaves its `backup-status.json` entry.** Container deletes prune theirs
 (`forgetBackupStatus`, 2026-11-12); VM deletes don't. **Revisit trigger:** a stale VM
