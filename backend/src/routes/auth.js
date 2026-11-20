@@ -10,7 +10,7 @@ import { getRawOidcConfig, getSettings } from '../lib/settings.js';
 import { beginLogin, completeLogin } from '../lib/oidc.js';
 import { listApiTokens, createApiToken, revokeApiToken, API_TOKEN_SCOPES } from '../lib/apiTokens.js';
 import { isAuthRateLimited, recordFailedAuthAttempt, AUTH_RATE_WINDOW_SECONDS } from '../lib/loginRateLimit.js';
-import { asAppError, createAppError } from '../lib/appErrors.js';
+import { asAppError, createAppError, errorBody } from '../lib/appErrors.js';
 import { idParamsSchema, noContentSchema } from './schemas.js';
 
 const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback';
@@ -48,6 +48,18 @@ async function oidcRedirectUri(request) {
 // staged by setSessionCookies survive this — same mechanism the login route uses.
 function redirect(reply, location) {
   reply.code(302).header('Location', location).send();
+}
+
+/**
+ * The OIDC routes' error handler: they are browser navigations, so a refusal
+ * (a querystring that fails its schema, or anything else that escapes the
+ * handler) ends on the login page with `?sso=error`, never a JSON body
+ * (docs/specs/API-AUTH.md, OIDC / SSO login).
+ */
+function redirectOidcFailure(err, request, reply) {
+  const { error, detail } = errorBody(err);
+  request.log.warn({ code: error, detail }, 'OIDC request refused');
+  redirect(reply, '/login?sso=error');
 }
 
 export default async function authRoutes(fastify) {
@@ -252,6 +264,7 @@ export default async function authRoutes(fastify) {
   // form (and its "try SSO again" button) is shown instead of a dead end.
   fastify.get('/oidc/login', {
     config: { auth: 'public', answers: 'redirect' },
+    errorHandler: redirectOidcFailure,
     handler: async (request, reply) => {
       const config = await getRawOidcConfig();
       if (!config.enabled) {
@@ -284,6 +297,7 @@ export default async function authRoutes(fastify) {
   // there); any subject that authenticates is the single Wisp user.
   fastify.get('/oidc/callback', {
     config: { auth: 'public', answers: 'redirect' },
+    errorHandler: redirectOidcFailure,
     schema: {
       querystring: {
         type: 'object',

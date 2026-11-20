@@ -297,6 +297,28 @@ test('GET /api/host/updates/packages with a read token reads the last check and 
   assert.deepEqual(await jobs(), before);
 });
 
+/* ── OIDC: browser navigations ───────────────────────────────────────── */
+
+// SSO is not configured in this app: a request that passes lands on `?sso=disabled`.
+test('the OIDC login answers a refused querystring with the login page redirect, never JSON', async () => {
+  const res = await app.inject({ method: 'GET', url: '/api/auth/oidc/login?x=1' });
+  assert.equal(res.statusCode, 302);
+  assert.equal(res.headers.location, '/login?sso=error');
+  assert.equal(res.body, '');
+  const plain = await app.inject({ method: 'GET', url: '/api/auth/oidc/login' });
+  assert.equal(plain.statusCode, 302);
+  assert.equal(plain.headers.location, '/login?sso=disabled');
+});
+
+test('the OIDC callback takes the provider\'s own parameters, and redirects a refused query', async () => {
+  const extra = await app.inject({ method: 'GET', url: '/api/auth/oidc/callback?code=c&state=s&iss=https%3A%2F%2Fidp&session_state=x' });
+  assert.equal(extra.statusCode, 302);
+  assert.equal(extra.headers.location, '/login?sso=disabled');
+  const twice = await app.inject({ method: 'GET', url: '/api/auth/oidc/callback?code=a&code=b' });
+  assert.equal(twice.statusCode, 302);
+  assert.equal(twice.headers.location, '/login?sso=error');
+});
+
 /* ── Schemas at the boundary ─────────────────────────────────────────── */
 
 const admin = bearer(ADMIN_TOKEN);
