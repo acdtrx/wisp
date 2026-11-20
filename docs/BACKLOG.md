@@ -292,6 +292,14 @@ same by the code (`vmManagerBackup.js` lists `<root>/vms/<vmName>/`, and nothing
 **Revisit trigger:** a user who renamed a workload looking for its backups, or the next work
 on backups.
 
+**The Home Assistant OS preset download finds no image.** `getLatestHaosAsset` reads the
+latest release of `home-assistant/operating-system` and looks for a `haos_ova-*.qcow2.xz`
+or `haos_generic-x86-64-*.qcow2.xz` asset; on 2026-11-20 the latest release (18.5) lists 8
+assets and none of them is a disk image, so the preset answers `NO_ASSET` (seen running
+the lookup itself; the GET through the SSRF guard succeeds). Where the images are now
+published needs looking up before the fix. **Revisit trigger:** a user downloading Home
+Assistant OS, or the next work on the library presets.
+
 **Container sections take no busy reason.** While a job holds a container, its header
 actions are disabled with the job's title as the reason, but its sections (mounts, env,
 services, devices) keep their Save enabled and meet a 409 `CONTAINER_BUSY` instead; the VM
