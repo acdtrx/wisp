@@ -198,14 +198,29 @@ networkd_takers() {
   printf '%s\n' "takers none"
 }
 
+# netplan_stage <dir>: a copy of netplan's directories in <dir>, with the
+# container DNS stub's file as the plan rendered it (container-dns-plan.sh):
+# what netplan reads once the container-dns step has run, which goes live
+# before the bridge step.
+netplan_stage() {
+  local d
+  for d in "${NETPLAN_DIRS[@]}"; do
+    [[ -d "$d" ]] || continue
+    mkdir -p "$1$(dirname "$d")" && cp -a "$d" "$1$d" || net_fail "cannot stage $d"
+  done
+  mkdir -p "$1$(dirname "$DNS_STUB_NETPLAN_FILE")" \
+    && install -m 0600 "$NET_PLAN_DIR/$DNS_STUB_PLANNED" "$1$DNS_STUB_NETPLAN_FILE" \
+    || net_fail "cannot stage $DNS_STUB_NETPLAN_FILE"
+}
+
 # plan_bridge: the operator's file that defines the uplink, edited with
-# `netplan set` in a staged copy of /lib, /etc and /run/netplan and checked
-# whole by netplan (netplan.py does the reading); what was checked is kept in
-# the plan's directory as netplan-origin.yaml, the file the bridge step puts in
-# place. For a DUID identity, also networkd's drop-in on the unit netplan
-# renders for the bridge (netplan has no IAID key): 50-wisp-dhcp-identity.conf.
+# `netplan set` in a stage (netplan_stage) and checked whole by netplan
+# (netplan.py does the reading); what was checked is kept in the plan's
+# directory as netplan-origin.yaml, the file the bridge step puts in place. For
+# a DUID identity, also networkd's drop-in on the unit netplan renders for the
+# bridge (netplan has no IAID key): 50-wisp-dhcp-identity.conf.
 plan_bridge() {
-  local status def mode rc why stage d f hint kv merged dropins
+  local status def mode rc why stage f hint kv merged dropins d
   status="$(net_read netplan status "$UPLINK" --format json)" || exit 1
   UPLINK_NETPLAN_ID="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" status-id "$UPLINK" <<<"$status")" \
     || net_fail "cannot read netplan's status for $UPLINK"
@@ -255,25 +270,21 @@ plan_bridge() {
   fi
   why="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" shared "$NETPLAN_ORIGIN" "${NETPLAN_DIRS[@]}")" || net_fail "cannot read netplan's files"
   [[ -z "$why" ]] || net_refuse NETPLAN_SHARED "$why; setup would write that definition back merged."
-  # The edits made in a staged copy of /etc/netplan, generated, and the merged
-  # definitions read back: the interface must keep no layer 3, the bridge must
-  # be what setup wrote.
+  # The edits made in a stage, generated, and the merged definitions read back:
+  # the interface must keep no layer 3, the bridge must be what setup wrote.
   stage="$NET_PLAN_DIR/stage"
-  for d in "${NETPLAN_DIRS[@]}"; do
-    [[ ! -d "$d" ]] && continue
-    mkdir -p "$stage$(dirname "$d")" && cp -a "$d" "$stage$d" || net_fail "cannot stage $d"
-  done
+  netplan_stage "$stage"
   while IFS=$'\t' read -r hint kv; do
     net_read netplan set --root-dir "$stage" --origin-hint "$hint" "$kv" || exit 1
   done < "$NET_PLAN_DIR/netplan-set.args"
   # netplan set touches the origin file alone: every other file in the stage
-  # must still be its live one, and none new, so what is checked is what goes
-  # live.
+  # but the stub's must still be its live one, and none new, so what is
+  # checked is what goes live.
   for d in "${NETPLAN_DIRS[@]}"; do
     for f in "$d"/* "$stage$d"/*; do
       [[ -e "$f" || -L "$f" ]] || continue
       f="${f#"$stage"}"
-      [[ "$f" == "$NETPLAN_ORIGIN" ]] && continue
+      [[ "$f" != "$NETPLAN_ORIGIN" && "$f" != "$DNS_STUB_NETPLAN_FILE" ]] || continue
       if [[ -e "$f" && -e "$stage$f" ]]; then
         cmp -s "$f" "$stage$f" || net_fail "netplan set changed $f in the stage, beside $NETPLAN_ORIGIN"
       elif [[ -e "$stage$f" ]]; then

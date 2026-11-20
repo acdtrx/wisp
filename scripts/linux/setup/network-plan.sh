@@ -7,7 +7,8 @@
 # The bridge is the one carrying the uplink (the default route's interface), or
 # else `br0`, which the bridge step, setup's last change, makes on the uplink
 # through netplan. Either way netplan must run the uplink. Another DNS server on
-# the container DNS stub's port 53 is refused too.
+# the container DNS stub's port 53 is refused too, and so is a configuration
+# netplan rejects with the stub's definition in it.
 #
 # Usage: network-plan.sh <plan-dir> [--ask]
 #   Writes the plan's record and the bridge's configuration, worked out and
@@ -67,6 +68,11 @@ fi
 
 detect_uplink
 refuse_dns_port
+# The stub's netplan file, rendered once and checked with the host's files.
+dns_stub_render "$NET_PLAN_DIR/$DNS_STUB_PLANNED" || net_fail "cannot write the plan in $NET_PLAN_DIR"
+netplan_stage "$NET_PLAN_DIR/stub-stage"
+refuse_dns_stub "$NET_PLAN_DIR/stub-stage"
+rm -rf "$NET_PLAN_DIR/stub-stage"
 
 if [[ -d "/sys/class/net/$UPLINK/bridge" ]]; then
   BRIDGE="$UPLINK"

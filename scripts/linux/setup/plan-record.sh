@@ -23,9 +23,10 @@
 #   HOST_KVM          yes when the host can run VMs (/dev/kvm), else no
 #   NET_PLAN_JOURNAL  network-plan.sh --ask: what an earlier bridge step's
 #                     journal was found to be (bridge-journal.sh)
-# Beside it in the plan's directory, when the bridge is to be made: uplink.state
-# (what the uplink holds, net-state.sh), sources (what the plan read), and the
-# bridge's files (bridge-plan.sh, plan_bridge).
+# Beside it in the plan's directory: the container DNS stub's netplan file
+# (container-dns-plan.sh, DNS_STUB_PLANNED); and when the bridge is to be made,
+# uplink.state (what the uplink holds, net-state.sh), sources (what the plan
+# read), and the bridge's files (bridge-plan.sh, plan_bridge).
 PLAN_RECORD_VARS=(UPLINK UPLINK_ADDR BRIDGE BRIDGE_CREATE UPLINK_MAC UPLINK_MTU UPLINK_MODE UPLINK_NETFILE
   UPLINK_CLIENT_ID UPLINK_NETPLAN_ID NETPLAN_ORIGIN UPLINK_PERMADDR HOST_KVM NET_PLAN_JOURNAL)
 
