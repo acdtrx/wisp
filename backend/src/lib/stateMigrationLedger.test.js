@@ -7,17 +7,25 @@ import {
 
 const run = async () => {};
 
+/** Directory entries as `readdir` with `withFileTypes` gives them. */
+const files = (...names) => names.map((name) => ({ name, isFile: () => true }));
+const directory = (name) => ({ name, isFile: () => false });
+
 test('migration files are the .js names, in id order', () => {
   assert.deepEqual(
-    migrationFileNames(['0002-b.js', '.gitkeep', '0001-a-b.js', 'README.md', '0010-c.js']),
+    migrationFileNames(files('0002-b.js', '.gitkeep', '0001-a-b.js', 'README.md', '0010-c.js')),
     ['0001-a-b.js', '0002-b.js', '0010-c.js'],
   );
-  assert.deepEqual(migrationFileNames(['.gitkeep']), []);
+  assert.deepEqual(migrationFileNames(files('.gitkeep')), []);
+});
+
+test('a subdirectory is never a migration, the unit tests\' test/ among them', () => {
+  assert.deepEqual(migrationFileNames([...files('0001-a.js'), directory('test'), directory('0002-b.js'), directory('lib')]), ['0001-a.js']);
 });
 
 test('a .js file not named NNNN-short-name.js is a setup error', () => {
   for (const bad of ['1-a.js', '0001_a.js', '0001-A.js', '0001-.js', '0001-a--b.js', 'helper.js']) {
-    assert.throws(() => migrationFileNames(['0001-ok.js', bad]), (err) => {
+    assert.throws(() => migrationFileNames(files('0001-ok.js', bad)), (err) => {
       assert.equal(err.code, 'MIGRATION_SETUP');
       assert.match(err.message, new RegExp(bad.replace('.', '\\.')));
       return true;

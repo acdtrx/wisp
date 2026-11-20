@@ -56,7 +56,7 @@ async function loadMigrations() {
   } catch (err) {
     throw createAppError('MIGRATION_SETUP', `cannot read migrations directory ${MIGRATIONS_DIR}`, err.message);
   }
-  const files = migrationFileNames(entries.filter((e) => e.isFile()).map((e) => e.name));
+  const files = migrationFileNames(entries);
   const migrations = [];
   for (const file of files) {
     let mod;

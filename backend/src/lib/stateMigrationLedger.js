@@ -14,12 +14,14 @@ function setupError(message, raw) {
 }
 
 /**
- * The migration files among a directory's file names, in id order. Every `.js`
- * file is a migration, so one not named `NNNN-short-name.js` is an error rather
- * than skipped.
+ * The migration files among a directory's entries (`readdir` with
+ * `withFileTypes`), in id order. Only files count: a subdirectory — `test/`,
+ * the migrations' unit tests — is never a migration. Every `.js` file is one,
+ * so one not named `NNNN-short-name.js` is an error rather than skipped.
+ * @param {Array<{ name: string, isFile(): boolean }>} entries
  */
-export function migrationFileNames(fileNames) {
-  const files = fileNames.filter((name) => name.endsWith('.js')).sort();
+export function migrationFileNames(entries) {
+  const files = entries.filter((e) => e.isFile() && e.name.endsWith('.js')).map((e) => e.name).sort();
   const bad = files.find((name) => !MIGRATION_FILE_RE.test(name));
   if (bad) throw setupError(`${bad}: migration files are named NNNN-short-name.js`);
   return files;

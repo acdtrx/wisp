@@ -56,7 +56,10 @@
   2026-11-18).
 - **Unit tests on `node --test`**, Node's built-in runner, with no test framework or
   dependency, for code with no platform behind it; browser stand-ins in
-  `frontend/src/testing/`. Setup's Python has its unit tests the same way: `unittest`,
+  `frontend/src/testing/`; a migration's transform is tested in
+  `backend/migrations/test/`, a subdirectory the migration loader never reads, reached by
+  the root `test` script through rule 6's one allowance in `scripts/check-fences.mjs`
+  (settled 2026-11-20). Setup's Python has its unit tests the same way: `unittest`,
   the standard library's runner, over `scripts/linux/setup/*_test.py` beside the code
   they test (`npm run check`'s `setup-python`). Test files never ship:
   `scripts/stage-release.sh` leaves out `*.test.js` and `*_test.py` and fails a staged
