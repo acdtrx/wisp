@@ -2,23 +2,23 @@
   "route": "GET /api/host/updates/packages",
   "status": 200,
   "body": {
-    "checkedAt": "2026-11-20T12:39:41.162Z",
+    "checkedAt": "2026-01-14T13:00:05.000Z",
     "downloadBytes": 0,
     "packages": [
       {
-        "from": "14ubuntu6.2",
-        "name": "motd-news-config",
-        "to": "14ubuntu6.3"
+        "from": "1.0-1",
+        "name": "example-a",
+        "to": "1.0-2"
       },
       {
-        "from": "14ubuntu6.2",
-        "name": "base-files",
-        "to": "14ubuntu6.3"
+        "from": "2.3-4",
+        "name": "example-b",
+        "to": "2.3-5"
       },
       {
         "from": null,
-        "name": "linux-main-modules-zfs-7.0.0-44-generic",
-        "to": "7.0.0-44.44"
+        "name": "example-new",
+        "to": "1.0-1"
       }
     ]
   }

@@ -9,7 +9,7 @@
       "infinity"
     ],
     "cpuLimit": 0.5,
-    "createdAt": "2026-05-03T21:00:02.355Z",
+    "createdAt": "2026-01-03T10:00:00.000Z",
     "devices": [
       {
         "type": "gpu",
@@ -29,8 +29,8 @@
     },
     "exposedPorts": [],
     "image": "docker.io/library/ubuntu:latest",
-    "imageDigest": "sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7",
-    "imagePulledAt": "2026-10-15T23:16:11.471Z",
+    "imageDigest": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+    "imagePulledAt": "2026-01-08T11:00:00.000Z",
     "localDns": true,
     "mdnsHostname": "ct-b.local",
     "memoryLimitMiB": 512,
@@ -69,7 +69,7 @@
     "restartPolicy": "unless-stopped",
     "scheduledRestart": {
       "attempt": 2,
-      "at": 1795179558294
+      "at": 1768392000000
     },
     "state": "running",
     "type": "container",
@@ -78,7 +78,7 @@
     "uuid": "00000000-0000-4000-8000-000000000004",
     "iconId": "box",
     "pendingRestart": {
-      "since": "2026-11-20T12:00:00.000Z"
+      "since": "2026-01-14T12:00:00.000Z"
     },
     "services": [
       {
@@ -95,7 +95,7 @@
         "hosts": [
           {
             "subdomain": "a",
-            "target": "10.0.0.10:80"
+            "target": "192.0.2.20:80"
           }
         ],
         "tls": {

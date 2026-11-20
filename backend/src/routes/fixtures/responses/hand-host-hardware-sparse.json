@@ -4,7 +4,7 @@
   "note": "A hybrid CPU, a SMART read that failed, and the fields dmidecode and sysfs may leave out.",
   "body": {
     "cpu": {
-      "cacheKb": 6144,
+      "cacheKb": 8192,
       "coreTypes": {
         "performance": [
           0,
@@ -16,8 +16,8 @@
         ]
       },
       "cores": 4,
-      "mhz": 1205.197,
-      "model": "Intel(R) Core(TM) i5-6500T CPU @ 2.50GHz",
+      "mhz": 1800.25,
+      "model": "Example CPU 4000 @ 2.00GHz",
       "threads": 4
     },
     "disks": [
@@ -26,11 +26,11 @@
         "name": "sda",
         "pciAddress": null,
         "rotational": false,
-        "sizeBytes": 1024209543168,
+        "sizeBytes": 1000000000000,
         "smart": {
           "supported": false,
           "overall": "unknown",
-          "lastUpdated": "2026-11-20T13:03:08.618Z",
+          "lastUpdated": "2026-01-14T13:30:00.000Z",
           "error": "smartctl is not installed",
           "availableSpare": null,
           "availableSpareThreshold": null,
@@ -47,18 +47,18 @@
     ],
     "filesystems": [
       {
-        "availBytes": 904900993024,
+        "availBytes": 900000000000,
         "device": "/dev/sda2",
         "mount": "/",
-        "totalBytes": 1005867986944,
-        "usedBytes": 49796222976
+        "totalBytes": 980000000000,
+        "usedBytes": 80000000000
       },
       {
-        "availBytes": 1109028864,
+        "availBytes": 1000000000,
         "device": "/dev/sda1",
         "mount": "/boot/efi",
-        "totalBytes": 1124995072,
-        "usedBytes": 15966208
+        "totalBytes": 1050000000,
+        "usedBytes": 50000000
       }
     ],
     "memory": [
@@ -81,7 +81,7 @@
       },
       {
         "mac": "52:54:00:00:00:06",
-        "name": "enp0s31f6",
+        "name": "enp1s0",
         "speedMbps": 1000,
         "state": "up"
       },
@@ -98,9 +98,9 @@
         "classCode": "060000",
         "classId": "0600",
         "className": "Host bridge",
-        "device": "Xeon E3-1200 v5/E3-1500 v5/6th Gen Core Processor Host Bridge/DRAM Registers",
-        "deviceId": "191f",
-        "driver": "skl_uncore",
+        "device": "Example Host Bridge/DRAM Registers",
+        "deviceId": "0001",
+        "driver": "example_uncore",
         "vendor": "Intel Corporation",
         "vendorId": "8086"
       },
@@ -109,8 +109,8 @@
         "classCode": "030000",
         "classId": "0300",
         "className": "VGA controller",
-        "device": "Skylake-S GT2 [HD Graphics 530]",
-        "deviceId": "1912",
+        "device": "Example Integrated Graphics",
+        "deviceId": "0002",
         "driver": "i915",
         "vendor": "Intel Corporation",
         "vendorId": "8086"
@@ -120,19 +120,19 @@
         "classCode": "0c0330",
         "classId": "0c03",
         "className": "XHCI",
-        "device": "200 Series/Z370 Chipset Family USB 3.0 xHCI Controller",
-        "deviceId": "a2af",
+        "device": "Example USB 3.0 xHCI Controller",
+        "deviceId": "0003",
         "driver": "xhci_hcd",
         "vendor": "Intel Corporation",
         "vendorId": "8086"
       },
       {
-        "address": "0000:00:14.2",
+        "address": "0000:00:14.3",
         "classCode": "118000",
         "classId": "1180",
         "className": "Signal processing controller",
-        "device": "200 Series PCH Thermal Subsystem",
-        "deviceId": "a2b1",
+        "device": "Example Thermal Subsystem",
+        "deviceId": "0004",
         "driver": null,
         "vendor": "Intel Corporation",
         "vendorId": "8086"

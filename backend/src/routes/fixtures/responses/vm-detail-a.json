@@ -58,7 +58,7 @@
     "guestAgent": true,
     "iconId": null,
     "localDns": false,
-    "machineType": "pc-q35-10.2",
+    "machineType": "pc-q35-9.2",
     "memBalloon": true,
     "memoryMiB": 8192,
     "name": "vm-a",

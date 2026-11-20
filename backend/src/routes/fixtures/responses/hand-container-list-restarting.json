@@ -9,11 +9,11 @@
       "image": "docker.io/library/caddy:latest",
       "name": "ct-a",
       "pendingRestart": {
-        "since": "2026-11-20T12:00:00.000Z"
+        "since": "2026-01-14T12:00:00.000Z"
       },
       "scheduledRestart": {
         "attempt": 1,
-        "at": 1795179558294
+        "at": 1768392000000
       },
       "state": "stopped",
       "type": "container",

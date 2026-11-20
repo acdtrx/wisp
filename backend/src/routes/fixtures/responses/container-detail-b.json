@@ -8,13 +8,13 @@
       "infinity"
     ],
     "cpuLimit": null,
-    "createdAt": "2026-05-03T21:00:02.355Z",
+    "createdAt": "2026-01-03T10:00:00.000Z",
     "devices": [],
     "env": {},
     "exposedPorts": [],
     "image": "docker.io/library/ubuntu:latest",
-    "imageDigest": "sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7",
-    "imagePulledAt": "2026-10-15T23:16:11.471Z",
+    "imageDigest": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+    "imagePulledAt": "2026-01-08T11:00:00.000Z",
     "localDns": true,
     "mdnsHostname": null,
     "memoryLimitMiB": null,
@@ -22,8 +22,8 @@
     "name": "ct-b",
     "network": {
       "interface": "br0",
-      "ip": "10.0.0.125/24",
-      "ip6": "fd00::11/64",
+      "ip": "192.0.2.11/24",
+      "ip6": "2001:db8::11/64",
       "mac": "52:54:00:00:00:04",
       "type": "bridge"
     },

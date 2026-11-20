@@ -3,22 +3,22 @@
   "status": 200,
   "body": [
     {
-      "digest": "sha256:fea863d0cd9ec445985d9c75fc6ed64e38a1d2766cf0c250a33d553f4fc1b771",
-      "name": "docker.io/jellyfin/jellyfin:latest",
-      "size": 751045433,
-      "updated": "2026-10-26T21:31:56.470Z"
+      "digest": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+      "name": "docker.io/library/alpine:latest",
+      "size": 300000000,
+      "updated": "2026-01-10T10:00:00.000Z"
     },
     {
-      "digest": "sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b",
+      "digest": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4",
       "name": "docker.io/library/caddy:latest",
-      "size": 24800534,
-      "updated": "2026-11-17T00:08:59.346Z"
+      "size": 20000000,
+      "updated": "2026-01-12T10:00:00.000Z"
     },
     {
-      "digest": "sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db",
+      "digest": "sha256:e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5",
       "name": "docker.io/library/ubuntu:latest",
-      "size": 42171343,
-      "updated": "2026-11-16T01:23:00.554Z"
+      "size": 30000000,
+      "updated": "2026-01-11T10:00:00.000Z"
     }
   ]
 }

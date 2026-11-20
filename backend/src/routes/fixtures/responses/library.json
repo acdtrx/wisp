@@ -3,21 +3,21 @@
   "status": 200,
   "body": [
     {
-      "modified": "2026-05-04T07:47:45.391Z",
-      "name": "ubuntu-26.04-desktop-amd64.iso",
-      "size": 6518974464,
+      "modified": "2026-01-04T10:00:00.000Z",
+      "name": "example-desktop.iso",
+      "size": 5000000000,
       "type": "iso"
     },
     {
-      "modified": "2026-04-30T19:50:02.537Z",
-      "name": "ubuntu-26.04-server-cloudimg-amd64.img",
-      "size": 857114112,
+      "modified": "2026-01-02T10:00:00.000Z",
+      "name": "example-cloudimg.img",
+      "size": 600000000,
       "type": "disk"
     },
     {
-      "modified": "2026-05-04T08:02:41.596Z",
-      "name": "virtio-win-0.1.285.iso",
-      "size": 789645312,
+      "modified": "2026-01-04T11:00:00.000Z",
+      "name": "drivers.iso",
+      "size": 700000000,
       "type": "iso"
     }
   ]

@@ -5,7 +5,7 @@
     "gpus": [
       {
         "device": "/dev/dri/renderD128",
-        "model": "Skylake-S GT2 [HD Graphics 530]",
+        "model": "Example Integrated Graphics",
         "pciSlot": "0000:00:02.0",
         "vendor": "0x8086",
         "vendorName": "Intel"

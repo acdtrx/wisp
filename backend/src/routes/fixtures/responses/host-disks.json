@@ -9,7 +9,7 @@
       "model": "Disk Model 1TB",
       "mountedAt": "/boot/efi",
       "removable": false,
-      "sizeBytes": 1127219200,
+      "sizeBytes": 1073741824,
       "uuid": "ABCD-1234",
       "vendor": "ATA"
     },
@@ -20,7 +20,7 @@
       "model": "Disk Model 1TB",
       "mountedAt": "/",
       "removable": false,
-      "sizeBytes": 1023079874560,
+      "sizeBytes": 998000000000,
       "uuid": "00000000-0000-4000-8000-000000000005",
       "vendor": "ATA"
     }

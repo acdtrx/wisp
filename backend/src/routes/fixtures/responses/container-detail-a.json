@@ -5,7 +5,7 @@
     "autostart": false,
     "command": null,
     "cpuLimit": 1,
-    "createdAt": "2026-05-04T13:19:54.926Z",
+    "createdAt": "2026-01-05T10:00:00.000Z",
     "devices": [],
     "env": {},
     "exposedPorts": [
@@ -15,8 +15,8 @@
       "80/tcp"
     ],
     "image": "docker.io/library/caddy:latest",
-    "imageDigest": "sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af",
-    "imagePulledAt": "2026-10-15T21:54:52.754Z",
+    "imageDigest": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "imagePulledAt": "2026-01-08T10:00:00.000Z",
     "localDns": true,
     "mdnsHostname": null,
     "memoryLimitMiB": 1024,
@@ -45,8 +45,8 @@
     "name": "ct-a",
     "network": {
       "interface": "br0",
-      "ip": "10.0.0.250/24",
-      "ip6": "fd00::10/64",
+      "ip": "192.0.2.10/24",
+      "ip6": "2001:db8::10/64",
       "mac": "52:54:00:00:00:03",
       "type": "bridge"
     },

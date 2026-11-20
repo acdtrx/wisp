@@ -8,8 +8,8 @@
       "image": "docker.io/library/caddy:latest",
       "name": "ct-a",
       "origin": "manual",
-      "sizeBytes": 5772,
-      "timestamp": "2026-07-14T18-46-18"
+      "sizeBytes": 4200,
+      "timestamp": "2026-01-07T03-00-00"
     },
     {
       "destinationId": "local",
@@ -17,8 +17,8 @@
       "image": "docker.io/library/caddy:latest",
       "name": "ct-a",
       "origin": "manual",
-      "sizeBytes": 5769,
-      "timestamp": "2026-07-14T18-45-24"
+      "sizeBytes": 4100,
+      "timestamp": "2026-01-07T02-00-00"
     }
   ]
 }

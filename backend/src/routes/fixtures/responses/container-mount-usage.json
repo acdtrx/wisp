@@ -8,7 +8,7 @@
         "hostPath": "/var/lib/wisp/containers/ct-a/files/srv",
         "name": "srv",
         "partial": false,
-        "sizeBytes": 9079,
+        "sizeBytes": 8000,
         "source": "local",
         "type": "directory"
       },
@@ -17,7 +17,7 @@
         "hostPath": "/var/lib/wisp/containers/ct-a/files/Caddyfile",
         "name": "Caddyfile",
         "partial": false,
-        "sizeBytes": 39,
+        "sizeBytes": 64,
         "source": "local",
         "type": "file"
       }

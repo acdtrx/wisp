@@ -6,8 +6,8 @@
       "destinationId": "local",
       "destinationLabel": "Local",
       "origin": "manual",
-      "sizeBytes": 1752513242,
-      "timestamp": "2026-05-08T08-35-22",
+      "sizeBytes": 1500000000,
+      "timestamp": "2026-01-06T03-00-00",
       "vmName": "vm-b"
     }
   ]

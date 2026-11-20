@@ -10,7 +10,7 @@
       "name": "vm-a",
       "osCategory": "linux",
       "pendingRestart": {
-        "since": "2026-11-20T12:00:00.000Z"
+        "since": "2026-01-14T12:00:00.000Z"
       },
       "state": "running",
       "stateCode": 1,
@@ -18,7 +18,7 @@
       "vcpus": 2,
       "guestAgent": true,
       "staleBinary": true,
-      "startedAt": 1795179558294
+      "startedAt": 1768392000000
     },
     {
       "iconId": "debian",
