@@ -26,6 +26,7 @@
  */
 import dbus from 'dbus-next';
 
+import { createAppError } from '../../appErrors.js';
 import { sanitizeHostname, stripCidr } from '../hostname.js';
 import { startForwarder, stopForwarder } from './forwarder.js';
 
@@ -68,9 +69,7 @@ function bounded(promise, what) {
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => {
-      const err = new Error(`avahi ${what} did not answer within ${AVAHI_CALL_TIMEOUT_MS} ms`);
-      err.code = 'AVAHI_TIMEOUT';
-      reject(err);
+      reject(createAppError('AVAHI_TIMEOUT', `avahi ${what} did not answer within ${AVAHI_CALL_TIMEOUT_MS} ms`));
     }, AVAHI_CALL_TIMEOUT_MS);
     timer.unref?.();
   });

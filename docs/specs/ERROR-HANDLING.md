@@ -64,6 +64,14 @@ error.
 - **One table** maps each code to its status: `ERROR_STATUS` in `lib/errorCodes.js`. An
   error without a code from the table (a bug, a Node errno) answers **500**
   `INTERNAL_ERROR`, its message as the detail.
+- **Wisp's own words are the factories' mark** (settled 2026-11-20): an error is Wisp's,
+  its message shown whole and its `raw` the cause, when a factory built it
+  (`createAppError`, the managers' and the networking module's), which set the
+  `Symbol.for('wisp.error')` mark; `wrapAppError`, the managers' twins and the handler all
+  test the mark, never whether the code is in the table. An error built by hand with a
+  code is not Wisp's: its whole text is cause. A marked error whose code the table lacks
+  answers **500** `INTERNAL_ERROR`, its message kept (the code check keeps the table
+  complete, so this is a bug).
 - `npm run check` (`scripts/check-error-codes.mjs`) holds the code, the table and this
   document in step: it fails when the code throws a code the table lacks, when the table
   holds a code nothing throws, and when the table and the list below disagree.

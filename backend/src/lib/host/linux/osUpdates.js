@@ -129,7 +129,9 @@ function runUpdateScript(scriptPath, action, { idleMs, signal, onLine } = {}) {
       clearTimeout(killTimer);
       signal?.removeEventListener('abort', onAbort);
       if (signal?.aborted) {
-        reject(Object.assign(new Error('aborted'), { name: 'AbortError', code: 'ABORT_ERR' }));
+        const aborted = createAppError('ABORT_ERR', `OS update ${action} was stopped`);
+        aborted.name = 'AbortError';
+        reject(aborted);
       } else if (watchdog.fired) {
         reject(createAppError(UNAVAILABLE, `OS update ${action} printed nothing for ${stallMinutes(idleMs)} and was stopped`, stderr.trim().split('\n').slice(-5).join('\n')));
       } else if (code === 0) {

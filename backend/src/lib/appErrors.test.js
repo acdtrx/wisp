@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 import Fastify from 'fastify';
 
 import {
-  createAppError, errorBody, errorStatus, handleRequestError, isExpectedAppError, redactCause, wrapAppError,
+  createAppError, errorBody, errorStatus, handleRequestError, isAppError, isExpectedAppError, redactCause, wrapAppError,
 } from './appErrors.js';
 import { ERROR_STATUS } from './errorCodes.js';
 
@@ -29,6 +29,21 @@ test('an error without a code from the table is INTERNAL_ERROR, its message kept
   assert.deepEqual(errorBody(new TypeError('x is not a function')), { error: 'INTERNAL_ERROR', detail: 'x is not a function' });
   assert.deepEqual(errorBody('a string'), { error: 'INTERNAL_ERROR', detail: 'a string' });
   assert.equal(errorStatus('INTERNAL_ERROR'), 500);
+});
+
+test("Wisp's own words are the mark's, not the code's: a hand-built error with a table code is all cause", () => {
+  const byHand = Object.assign(new Error('blocked at /etc/hosts'), { code: 'SSRF_BLOCKED' });
+  assert.deepEqual(errorBody(byHand), { error: 'INTERNAL_ERROR', detail: 'blocked at <path>' });
+  assert.equal(isAppError(byHand), false);
+  assert.equal(isExpectedAppError(byHand), false);
+  assert.equal(wrapAppError('DOWNLOAD_FAILED', 'Download failed', byHand).raw, 'blocked at /etc/hosts');
+});
+
+test('a marked error whose code the table lacks answers 500 INTERNAL_ERROR, its message kept as Wisp\'s', () => {
+  const unknown = createAppError('NOT_IN_THE_TABLE', 'Wisp said /var/x', '/var/y failed');
+  assert.deepEqual(errorBody(unknown), { error: 'INTERNAL_ERROR', detail: 'Wisp said /var/x: <path> failed' });
+  assert.equal(isAppError(unknown), true);
+  assert.equal(errorStatus(errorBody(unknown).error), 500);
 });
 
 test('the cause is redacted where a path starts a token, and URLs and image refs pass', () => {

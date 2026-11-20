@@ -12,7 +12,9 @@ import { ERROR_STATUS } from './errorCodes.js';
  * The mark of an error a Wisp factory built, its message Wisp's own words:
  * createAppError's, and those of the managers' and the networking module's
  * private factories, which cannot import this module and set the same
- * registry symbol. Not enumerable: neither the log nor a body shows it.
+ * registry symbol. The one test of "Wisp's own words" (isAppError), set only
+ * by the factories: an error built by hand with a code is not one. Not
+ * enumerable: neither the log nor a body shows it.
  */
 const WISP_ERROR = Symbol.for('wisp.error');
 
@@ -64,17 +66,17 @@ export function errorStatus(code) {
  */
 export function isExpectedAppError(err) {
   const status = ERROR_STATUS[err?.code];
-  return status !== undefined && status < 500;
+  return isAppError(err) && status !== undefined && status < 500;
 }
 
-/** True for an error carrying a code from the table. */
+/** True for an error a Wisp factory built (the mark): its message is Wisp's own words. */
 export function isAppError(err) {
-  return typeof err?.code === 'string' && ERROR_STATUS[err.code] !== undefined;
+  return err?.[WISP_ERROR] === true;
 }
 
 /**
- * `err` when it carries a code from the table; otherwise an INTERNAL_ERROR
- * whose message says what failed, the original message as its cause.
+ * `err` when a Wisp factory built it; otherwise an INTERNAL_ERROR whose
+ * message says what failed, the original message as its cause.
  */
 export function asAppError(err, message) {
   return isAppError(err) ? err : createAppError('INTERNAL_ERROR', message, err?.message ?? String(err));
@@ -130,16 +132,20 @@ export function schemaValidationError(part, failure) {
 
 /**
  * The code, the message and the cause any thrown value answers with. An app
- * error keeps its code; its message is Wisp's own text, its `raw` the cause.
- * A framework refusal gets its code, its message Fastify's (built from Wisp's
- * schemas and limits). Anything else is INTERNAL_ERROR, and its text, which
- * Wisp did not write, is all cause.
+ * error (the mark) keeps its code, which the table maps to its status; its
+ * message is Wisp's own text, its `raw` the cause. A marked error whose code
+ * the table lacks (a bug `npm run check` catches) answers INTERNAL_ERROR, its
+ * message still Wisp's. A framework refusal gets its code, its message
+ * Fastify's (built from Wisp's schemas and limits). Anything else is
+ * INTERNAL_ERROR, and its text, which Wisp did not write, is all cause.
  * @returns {{ code: string, message: string, cause?: string }}
  */
 function classify(err) {
   const text = typeof err?.message === 'string' && err.message ? err.message : String(err ?? 'Unknown error');
   if (isAppError(err)) {
-    return { code: err.code, message: text, cause: typeof err.raw === 'string' && err.raw ? err.raw : undefined };
+    const cause = typeof err.raw === 'string' && err.raw ? err.raw : undefined;
+    const code = ERROR_STATUS[err.code] !== undefined ? err.code : 'INTERNAL_ERROR';
+    return { code, message: text, cause };
   }
   if (err?.validation) return { code: 'VALIDATION_FAILED', message: validationMessage(err) };
   if (typeof err?.code === 'string' && FRAMEWORK_CODES[err.code]) {

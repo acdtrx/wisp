@@ -93,7 +93,7 @@ export function isPrivateIP(addr) {
 function makePinnedLookup(pinnedAddrs) {
   return function pinnedLookup(_hostname, opts, cb) {
     if (!pinnedAddrs.length) {
-      return cb(Object.assign(new Error('No allowed addresses for host'), { code: 'SSRF_BLOCKED' }));
+      return cb(createAppError('SSRF_BLOCKED', 'No allowed addresses for host'));
     }
     if (opts && opts.all) {
       return cb(null, pinnedAddrs);

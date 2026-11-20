@@ -1,6 +1,8 @@
 import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 
+import { createAppError } from './appErrors.js';
+
 /**
  * Every WISP_* variable the backend reads, with its check (CODING-RULES §4). An
  * empty value means unset, as it does for the code that reads it. Other keys in
@@ -81,9 +83,7 @@ function checkFlag(v) {
 }
 
 function envInvalid(message) {
-  const err = new Error(message);
-  err.code = 'RUNTIME_ENV_INVALID';
-  return err;
+  return createAppError('RUNTIME_ENV_INVALID', message);
 }
 
 /**
