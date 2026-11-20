@@ -61,6 +61,8 @@ JOURNAL_ROOTS=(/etc/netplan /etc/systemd/network /etc/NetworkManager/system-conn
 # changes so that another release's setup would refuse or misread it (a key
 # added to the plan's record among them). A rollback's older setup can meet a
 # newer one's journal, and refuses it for what it is.
+# scripts/check-journal-format.mjs holds it to the plan record's keys and
+# uplink.state's fact kinds.
 JOURNAL_FORMAT=1
 
 # journal_root_ok <path>: whether the step may record (and change) <path>.
