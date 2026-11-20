@@ -381,6 +381,18 @@ containers on a Mac.
 whose install is lost is set up again by hand. **Revisit trigger:** a host's configuration
 is lost, or has to be rebuilt by hand.
 
+**Containers of the same name on two hosts get the same DHCP lease.** The backend passes
+the container's name as the CNI container ID (`containerManagerNetwork.js`, the `ADD`
+call), and the CNI `dhcp` plugin builds its DHCP client identifier from the container
+ID, the network's name (`wisp-bridge` on every host) and the interface name, not from
+the MAC. Two Wisp hosts on one LAN, each with a container of the same name, then
+present the same identifier, and the DHCP server hands both the same address
+(observed 2026-11-20: two test hosts' `np-alp` containers, different MACs, both got
+`10.79.1.136`). A per-host part in the ID (the host's name or machine ID) would keep
+them apart; the lease of each existing container would change once. Found while
+testing setup, not caused by it. **Revisit trigger:** a second Wisp host on the same
+LAN, or a container whose address clashes.
+
 **`cni-dhcp` keeps running the old plugin binary after a CNI plugin upgrade.** The CNI step
 replaces `/opt/cni/bin` but leaves `cni-dhcp.service` running: restarting it would forget
 the leases of the running containers, which would then not be renewed. The old daemon
