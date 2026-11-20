@@ -185,7 +185,9 @@ The IP used as the map key is **`request.ip`**. Backend Fastify is configured wi
 
 Optional single sign-on via **OpenID Connect** (e.g. [Pocket ID](https://pocket-id.org)). Wisp stays **single-user**: a successful OIDC login is treated exactly like a correct password — it yields the same `wisp_session` / `wisp_csrf` cookies, signed with the same password-derived secret. The password therefore **remains configured and works as a backup**, and OIDC cannot be used without a password on file (the session JWT secret is derived from it).
 
-No third-party OIDC/JWT library is used: discovery and token exchange go over `fetch`, and ID-token signatures are verified with `node:crypto` (`createPublicKey({ format: 'jwk' })`, RS256/ES256). Implementation in `backend/src/lib/oidc.js`; routes in `backend/src/routes/auth.js`.
+No third-party OIDC/JWT library is used: discovery, the JWKS and the token exchange are plain HTTP requests, and ID-token signatures are verified with `node:crypto` (`createPublicKey({ format: 'jwk' })`, RS256/ES256). Implementation in `backend/src/lib/oidc.js`; routes in `backend/src/routes/auth.js`.
+
+**Requests to the issuer go through the operator fetch (settled 2026-11-20).** The issuer and the endpoints its discovery names are fetched with `lib/downloads`' fetch for an endpoint only the operator sets, not the SSRF guard: private and loopback addresses are allowed, so a provider on the LAN (or on the host) works. That is safe because only a session can set the issuer (§ Denied surfaces). No redirect is followed: a 3xx fails the step like any other non-2xx answer, so the client secret reaches only the token endpoint the discovery named (an issuer that redirects would fail the `iss` check anyway). Each request is bounded at **10 s**, its body included.
 
 ### Access control
 

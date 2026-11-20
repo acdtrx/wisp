@@ -137,7 +137,7 @@ SSH keys can be imported from a GitHub user profile:
 
 1. User enters a GitHub username in the UI
 2. Frontend sends `GET /api/github/keys/:username`
-3. Backend fetches `https://github.com/<username>.keys` server-side (no direct browser-to-GitHub request — prevents CORS issues and SSRF from the frontend). The fetch sets `redirect: 'manual'` so a hostile/compromised upstream that ever 30x's into a private IP can't turn this auth-required proxy into an SSRF; a 3xx surfaces as **502** `GITHUB_KEYS_UNAVAILABLE`.
+3. Backend fetches `https://github.com/<username>.keys` server-side (no direct browser-to-GitHub request — prevents CORS issues and SSRF from the frontend), through the SSRF guard (`ssrfSafeFetch`, [IMAGE-LIBRARY.md → SSRF protection](IMAGE-LIBRARY.md#ssrf-protection)), so a hostile or compromised upstream cannot turn this proxy into a request to the LAN. **A redirect is followed (settled 2026-11-20)**, up to 5, each target re-resolved and refused when it is private or loopback; the last answer counts. A refused redirect, too many, or a lookup that fails answers **502** `GITHUB_KEYS_UNAVAILABLE`, the cause in its detail; an answer other than 2xx **404** `GITHUB_KEYS_NOT_FOUND`. Rejected: refusing every 3xx, the earlier rule — the guard's re-check of each target makes following one safe.
 4. Per-IP rate limit: 10 requests / 60 s (sweep every 60 s, max 10 000 entries). Excess hits return **429** `RATE_LIMITED`.
 5. Returns the list of SSH public keys
 6. User confirms which key(s) to use
@@ -166,4 +166,4 @@ During VM creation:
 
 ## Timeouts
 
-(settled 2026-11-12, CODING-RULES §6.) The GitHub keys lookup **10 s**; the password hash (`openssl passwd`) **10 s**; the seed ISO build **20 s** (settled 2026-11-13).
+(settled 2026-11-12, CODING-RULES §6.) The GitHub keys lookup **10 s**, its DNS lookups, redirects and body included; the password hash (`openssl passwd`) **10 s**; the seed ISO build **20 s** (settled 2026-11-13).

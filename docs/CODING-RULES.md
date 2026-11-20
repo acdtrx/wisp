@@ -135,11 +135,17 @@ source refer to them.
     its facade), Avahi's `dbus-next` only in `lib/mdns/linux/`, and `undici` only in
     `lib/downloads/` (settled 2026-11-12: one home for outbound HTTP's SSRF guard and
     its timeouts). Add a new operation as a new purpose-named facade export.
+  - Applied: outbound HTTP has one home, `lib/downloads/`: no backend file outside it
+    imports `undici` or calls the global `fetch` (settled 2026-11-20). It has two
+    fetches: `ssrfSafeFetch` for every URL from user input or a public source, and
+    `fetchOperatorEndpoint` for an endpoint only the operator sets, the OIDC issuer
+    (§9).
   - Applied — the lint is `npm run check-fences` (`scripts/check-fences.mjs`): the
     package fences, the facades (a module with an `index.js` is imported only through
     it), strict managers and carved modules, and routes that take no operation lock (a
-    workload command's lock is its operation module's, ARCHITECTURE.md, Repo layout). A
-    reviewed allowance is one line in its `EXCEPTIONS`.
+    workload command's lock is its operation module's, ARCHITECTURE.md, Repo layout), and
+    a global `fetch` outside `lib/downloads/`. A reviewed allowance is one line in its
+    `EXCEPTIONS`.
   - Applied — **strict managers**: give vmManager and containerManager **zero Wisp-glue
     imports**: stdlib, their own internals, and the carved cross-cutting modules
     (`mdns/`, `networking/`, `storage/`) only. Change them only for **generic
@@ -198,7 +204,14 @@ In projects with a web UI: `FRONTEND-RULES.md`.
   - Applied: mask SMB passwords.
 - Block requests to private/loopback addresses when the URL originates from user input
   (SSRF).
-  - Applied: user-supplied download URLs.
+  - Applied: every URL from user input goes through `ssrfSafeFetch` (`lib/downloads`):
+    the library's download URLs and the GitHub keys lookup, and with them the public
+    sources whose redirects Wisp does not control (the image mirrors, GitHub Releases).
+    The one exception is an endpoint only the operator sets, the OIDC issuer and the
+    endpoints its discovery names, fetched with `fetchOperatorEndpoint`, which allows
+    private and loopback addresses so an identity provider on the LAN works, and follows
+    no redirect (settled 2026-11-20). Setting the issuer is a session-only route
+    ([`specs/AUTH.md`](specs/AUTH.md)), so no request can aim it.
 - Never put auth tokens in URLs (`?token=...`): they get logged. Use cookies or
   `Authorization` headers.
 - Never log secrets, tokens, credentials or whole request bodies.
@@ -283,7 +296,7 @@ checks and the unit tests below for what they cover:
     parity: every name a platform facade takes is exported by its `linux/` and
     `darwin/` sides.
   - `check-fences`: the import fences (§7), no route importing an operation lock
-    among them; no import cycle in the backend beyond its listed exceptions; and only
+    among them and no global `fetch` outside `lib/downloads/`; no import cycle in the backend beyond its listed exceptions; and only
     the backend runs the state migrations (§16): outside
     `docs/` and Markdown, no file but those in `backend/src` names the runner, and none
     but the runner and the checks reaches for `backend/migrations`, comments aside.

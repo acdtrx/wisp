@@ -34,7 +34,9 @@
   allows `localhost:5173` in development only; in production the backend serves its own
   client, same origin.
 - **Logging: pino** — pino-pretty single-line in dev, plain JSON in production.
-- **`undici`** used directly for SSRF-hardened fetches — only in `lib/downloads/`;
+- **`undici`** for every outbound request, only in `lib/downloads/`, the one home of
+  outbound HTTP (no global `fetch` elsewhere in the backend): the SSRF-hardened fetch,
+  and the operator-endpoint fetch for the OIDC issuer;
   **`js-yaml`** for cloud-init YAML emission.
 - **Auth:** password login yielding `node:crypto`-signed session JWTs in cookies (no JWT
   library), optional library-less OIDC SSO layered on top (the password stays as backup —
@@ -141,7 +143,7 @@ alone, and nothing installs the root's packages there.
 | Proto loader | @grpc/proto-loader | ^0.8.0 | Dynamic protobuf definition loading for containerd proto files. |
 | Proto encoding | protobufjs | ^8.0.0 | Binary protobuf encoding for containerd Transfer API `Any` fields. Direct usage needed because `@grpc/proto-loader` only exposes descriptor objects, not encodable Type instances. |
 | Log pretty-print (dev only) | pino-pretty | ^13.1 | `devDependency`. Single-line, time-formatted log output when `NODE_ENV=development`. Production keeps Pino's default JSON output. |
-| HTTP client | undici | ^8.7 | Used directly for SSRF-hardened fetches: single-DNS-resolve + IP-pinned `Agent` + manual redirect re-validation. Node ships undici as the global `fetch`; we depend on it explicitly to import `Agent` / `fetch`. v8 negotiates HTTP/2 by default. |
+| HTTP client | undici | ^8.7 | Every outbound request, through `lib/downloads`' two fetches: the SSRF-hardened one (single-DNS-resolve + IP-pinned `Agent` + manual redirect re-validation) and the operator-endpoint one (private addresses allowed, no redirect followed). Node ships undici as the global `fetch`; we depend on it explicitly to import `Agent` / `fetch`, and the backend calls no global `fetch`. v8 negotiates HTTP/2 by default. |
 | YAML emitter | js-yaml | ^5.2 | `dump()` (named export; v5 has no default export) for cloud-init `user-data` / `meta-data`. Replaces hand-rolled template-literal YAML which was vulnerable to scalar-break injection from user-controlled fields. |
 
 #### Backend: not used

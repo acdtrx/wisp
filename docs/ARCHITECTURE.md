@@ -294,6 +294,10 @@ consumer, and nothing has called for more).
   library directory (upload, rename, delete, and the downloads, through `downloads`, that
   land a file there), checks the file names it is given and refuses to touch a file a VM
   uses, and announces each write ([`specs/IMAGE-LIBRARY.md`](specs/IMAGE-LIBRARY.md)).
+- `downloads` — every outbound HTTP request: the SSRF-guarded fetch for URLs from user
+  input and public sources, the fetch for an endpoint only the operator sets (the OIDC
+  issuer), and the image downloads built on them. No other backend file calls `fetch`
+  or imports `undici` (CODING-RULES §7, §9).
 - `mcp` — the MCP endpoint: tools over the same facades and glue as the routes, secrets
   masked ([`specs/MCP.md`](specs/MCP.md)).
 - App glue — the workload operations (`lib/vmOperations.js`, `lib/containerOperations.js`:
