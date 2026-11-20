@@ -93,6 +93,10 @@ export function refuseNewJobs() {
   refusingJobs = true;
 }
 
+function shuttingDownError() {
+  return createAppError('SHUTTING_DOWN', 'Wisp is shutting down: start this again once it is back');
+}
+
 /** Running jobs that must finish: every running job but the interruptible ones. */
 export function countJobsThatMustFinish() {
   let count = 0;
@@ -247,7 +251,8 @@ function assertStartArgs({ kind, title, subject, scope, check, log, run }) {
  * way a job is created.
  *
  * Once shutdown has begun (`refuseNewJobs`), every start, a shared one
- * included, is refused with SHUTTING_DOWN.
+ * included, is refused with SHUTTING_DOWN: one whose async check was still
+ * pending when it began too, once the check settles.
  *
  * The claim is decided in one synchronous step, so two starts in one tick
  * never both pass: a job with a subject claims its workload's operation lock
@@ -290,7 +295,7 @@ export async function startJob({
   kind, title, subject = null, shared = false, scope = null, interruptible = false, check, log, run,
 }) {
   assertStartArgs({ kind, title, subject, scope, check, log, run });
-  if (refusingJobs) throw createAppError('SHUTTING_DOWN', 'Wisp is shutting down: start this again once it is back');
+  if (refusingJobs) throw shuttingDownError();
 
   if (shared) {
     const running = runningJobCovering(kind, subject, scope);
@@ -309,6 +314,9 @@ export async function startJob({
           throw new Error(`A "${kind}" job without a subject needs a synchronous check`);
         }
         await pending;
+        // Shutdown may have begun during the await, after the interruptible
+        // jobs were cut: a job registered now would be killed by the exit.
+        if (refusingJobs) throw shuttingDownError();
       }
     } catch (err) {
       release();
