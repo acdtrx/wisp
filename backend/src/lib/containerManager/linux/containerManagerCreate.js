@@ -891,8 +891,7 @@ export async function deleteContainer(name, deleteFiles = true) {
   }
   /* Services (SRV/TXT) are deregistered here after the task is gone so we
    * never have a window where a service resolves to a tearing-down container.
-   * A-record (de)registration is owned by routes/containers.js, which calls
-   * unpublishContainer before invoking deleteContainer. */
+   * The A record is Wisp glue's to withdraw. */
   await deregisterServicesForContainer(name);
 
   // Tear down networking

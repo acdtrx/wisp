@@ -1,0 +1,590 @@
+/**
+ * Every command that changes a container (app glue): one purpose-named
+ * function per command, with its lock and its follow-ups, which the routes,
+ * the MCP tools and the backup scheduler call. A job takes the container's
+ * operation lock through the job starter (`subject`), for the whole job; an
+ * instant command through `withContainerOperationLock`, for the call — the
+ * mount content commands for as long as they write into the container's
+ * directory. No route takes a lock itself (docs/specs/CONTAINERS.md →
+ * Per-container operation lock).
+ *
+ * The follow-ups outside the container's own record — its section
+ * assignment, its last backup attempt and its `.local` name — are
+ * lib/workloadFollowUps.js's, the same as a VM's.
+ */
+import { randomBytes } from 'node:crypto';
+import { unlink } from 'node:fs/promises';
+import { join } from 'node:path';
+
+import {
+  getContainerDir,
+  assertContainerState,
+  assertContainerNameAvailable,
+  listContainers,
+  getContainerConfig,
+  createContainer,
+  startContainer,
+  stopContainer,
+  restartContainer,
+  killContainer,
+  deleteContainer,
+  renameContainer,
+  updateContainerConfig,
+  addContainerMount,
+  updateContainerMount,
+  removeContainerMount,
+  addContainerService,
+  updateContainerService,
+  removeContainerService,
+  planMountFileUpload,
+  commitMountFileUpload,
+  assertMountTakesZip,
+  planMountZipExtract,
+  extractMountZip,
+  assertMountOperation,
+  initMountContent,
+  deleteMountData,
+  deleteRemovedMountData,
+  putMountFileTextContent,
+  createContainerBackup,
+  planContainerBackupRestore,
+  restoreContainerBackup,
+  restoreContainerBackupInPlace,
+  pullImage,
+  getImageDigest,
+  resolveContainerImageRef,
+} from './containerManager/index.js';
+import {
+  createAppContainer,
+  applyAppConfig,
+  eject,
+  maskContainerConfigSecrets,
+  assertMountNotAppManaged,
+  assertMountListNotAppManaged,
+} from './containerApps/index.js';
+import {
+  startJob,
+  BACKGROUND_JOB_KIND,
+  titleForContainerCreate,
+  titleForContainerDeploy,
+  titleForContainerImageUpdate,
+  titleForContainerStart,
+  titleForContainerStop,
+  titleForContainerRestart,
+  titleForContainerDelete,
+  titleForContainerBackup,
+  titleForContainerRestore,
+  titleForContainerRestoreAsNew,
+  titleForContainerMountDelete,
+  titleForContainerMountDataDelete,
+  titleForZipExtract,
+} from './jobs/index.js';
+import { withContainerOperationLock } from './containerOperationLock.js';
+import { createAppError } from './appErrors.js';
+import { resolveBackupDestinations } from './backupDestinations.js';
+import { startWorkloadBackupJob, backUpWorkload } from './workloadBackup.js';
+import { followWorkloadConfigUpdate, followWorkloadDelete } from './workloadFollowUps.js';
+
+const container = (name) => ({ type: 'container', name });
+
+/** The container's own backup to one destination, for the backup orchestration. */
+function containerBackupTo(name, origin) {
+  return (dest, onProgress) => createContainerBackup(name, dest.path, { origin, onProgress });
+}
+
+/**
+ * Write `changes` to container.json, delete the data of the Local mounts it
+ * dropped, then the follow-ups. The caller holds the container's lock.
+ */
+async function applyContainerConfigChanges({ name, changes, previousName = null, log }) {
+  if (Object.keys(changes).length > 0) {
+    const { removedMounts } = await updateContainerConfig(name, changes);
+    // A Local mount dropped from `mounts` loses its data — the same contract as
+    // a mount delete. The manager only reports it; deleting is glue's decision
+    // (app flows decide their own, inside applyAppConfig).
+    for (const mountName of removedMounts) {
+      await deleteRemovedMountData(name, mountName);
+    }
+  }
+  await followWorkloadConfigUpdate({ type: 'container', name, previousName, localDns: changes.localDns, log });
+}
+
+// ── Create ──────────────────────────────────────────────────────────
+
+/**
+ * Create a container (`{ name, image, iconId?, app?, appConfig? }`; an app
+ * container through its recipe) as a job holding the new name's lock. It is
+ * defined, not started. `done`: `{ name }`.
+ */
+export function startContainerCreateJob({ spec, log }) {
+  const name = spec.name.trim();
+  return startJob({
+    kind: BACKGROUND_JOB_KIND.CONTAINER_CREATE,
+    title: titleForContainerCreate(name),
+    subject: container(name),
+    check: () => assertContainerNameAvailable(spec.name),
+    log,
+    run: async (report) => {
+      await (spec.app ? createAppContainer(spec, report) : createContainer(spec, report));
+      return { name };
+    },
+  });
+}
+
+/**
+ * Deploy a container (MCP `deploy_container`): create it from `image` with
+ * `env`, apply the settings `changes` as a configuration update — its
+ * follow-ups included — and start it, as one job holding the new name's lock.
+ * Its `.local` name is published once it runs, by the network-change event,
+ * as for any start. `done`: the container's config, secrets masked.
+ */
+export function startContainerDeployJob({ name, image, env, changes, log }) {
+  return startJob({
+    kind: BACKGROUND_JOB_KIND.CONTAINER_DEPLOY,
+    title: titleForContainerDeploy(name),
+    subject: container(name),
+    check: () => assertContainerNameAvailable(name),
+    log,
+    run: async (report) => {
+      await createContainer({ name, image, env }, report);
+      await applyContainerConfigChanges({ name, changes, log });
+      report({ step: 'starting' });
+      try {
+        await startContainer(name);
+      } catch (err) {
+        throw createAppError(
+          err.code || 'CONTAINERD_ERROR',
+          `Container "${name}" was created but failed to start; it exists in stopped state (check get_container_logs, or fix and start_container)`,
+          err.raw ? `${err.message}: ${err.raw}` : err.message,
+        );
+      }
+      return await maskContainerConfigSecrets(await getContainerConfig(name));
+    },
+  });
+}
+
+/**
+ * Point the container at `image` (or re-pull its own) and restart it when it
+ * runs, as one job: nothing changes the container between the pull and the
+ * restart. `done`: `{ name, image, restarted, applied, note }`.
+ */
+export async function startContainerImageUpdateJob({ name, image, log }) {
+  const cfg = await getContainerConfig(name);
+  const requested = typeof image === 'string' && image.trim() ? image.trim() : cfg.image;
+  // The ref create and PATCH store: an exact local name when containerd has
+  // one, else the normalized ref the pull stores the image under.
+  const { ref } = await resolveContainerImageRef(requested);
+  return startJob({
+    kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_UPDATE,
+    title: titleForContainerImageUpdate(name),
+    subject: container(name),
+    log,
+    run: async (report) => {
+      report({ step: 'pulling', detail: ref });
+      try {
+        await pullImage(ref);
+      } catch (err) {
+        // Locally-imported images have no registry to pull from — fine if present.
+        if (!(await getImageDigest(ref))) {
+          throw createAppError('IMAGE_PULL_FAILED', `Cannot pull "${ref}" and it is not present locally`, err.message);
+        }
+      }
+      const current = await getContainerConfig(name);
+      if (ref !== current.image) await applyContainerConfigChanges({ name, changes: { image: ref }, log });
+      const restarted = current.state === 'running';
+      if (restarted) await restartContainer(name);
+      return {
+        name,
+        image: ref,
+        restarted,
+        applied: restarted,
+        note: restarted ? 'Restarted on the updated image.' : 'Image updated; takes effect at the next start.',
+      };
+    },
+  });
+}
+
+// ── Lifecycle ───────────────────────────────────────────────────────
+
+/** Start a stopped container as a job. `done`: `{ name }`. */
+export function startContainerStartJob({ name, log }) {
+  return startJob({
+    kind: BACKGROUND_JOB_KIND.CONTAINER_START,
+    title: titleForContainerStart(name),
+    subject: container(name),
+    check: () => assertContainerState(name, 'start'),
+    log,
+    run: async () => {
+      await startContainer(name);
+      return { name };
+    },
+  });
+}
+
+/**
+ * The grace period of each stop job while it runs, by container: a kill sent
+ * meanwhile cuts it short instead of meeting the stop's lock (killContainerNow).
+ * @type {Map<string, AbortController>}
+ */
+const stopGraces = new Map();
+
+/**
+ * Stop the container (SIGTERM, then SIGKILL after its grace period) as a job,
+ * or cancel its scheduled restart. `done`: `{ name, restartCancelled }`.
+ */
+export function startContainerStopJob({ name, log }) {
+  const grace = new AbortController();
+  return startJob({
+    kind: BACKGROUND_JOB_KIND.CONTAINER_STOP,
+    title: titleForContainerStop(name),
+    subject: container(name),
+    check: async () => {
+      await assertContainerState(name, 'stop');
+      // Last in the check: once it passes, the job exists and its run removes it.
+      stopGraces.set(name, grace);
+    },
+    log,
+    run: async () => {
+      try {
+        const { restartCancelled } = await stopContainer(name, { graceSignal: grace.signal });
+        return { name, restartCancelled };
+      } finally {
+        stopGraces.delete(name);
+      }
+    },
+  });
+}
+
+/** Restart the container (stop, then start) as a job. `done`: `{ name }`. */
+export function startContainerRestartJob({ name, log }) {
+  return startJob({
+    kind: BACKGROUND_JOB_KIND.CONTAINER_RESTART,
+    title: titleForContainerRestart(name),
+    subject: container(name),
+    check: () => assertContainerState(name, 'exists'),
+    log,
+    run: async () => {
+      await restartContainer(name);
+      return { name };
+    },
+  });
+}
+
+/**
+ * Kill the container (SIGKILL), or cancel its scheduled restart. While a stop
+ * job waits out the grace period, the kill is that stop made immediate: the
+ * stop job, which holds the lock, kills the task at once and ends as it
+ * would — so a kill stays possible during a stop, as a VM's force stop does
+ * during a guest shutdown, and only one command acts on the task.
+ */
+export async function killContainerNow(name) {
+  const grace = stopGraces.get(name);
+  if (grace) {
+    grace.abort();
+    return;
+  }
+  await withContainerOperationLock(name, 'kill', () => killContainer(name));
+}
+
+/** Delete the container (its files too unless `deleteFiles` is false) as a job, then its follow-ups. `done`: `{ name }`. */
+export function startContainerDeleteJob({ name, deleteFiles = true, log }) {
+  return startJob({
+    kind: BACKGROUND_JOB_KIND.CONTAINER_DELETE,
+    title: titleForContainerDelete(name),
+    subject: container(name),
+    check: () => assertContainerState(name, 'exists'),
+    log,
+    run: async () => {
+      await deleteContainer(name, deleteFiles);
+      await followWorkloadDelete({ type: 'container', name, log });
+      return { name };
+    },
+  });
+}
+
+// ── Configuration ───────────────────────────────────────────────────
+
+/**
+ * Apply a configuration update (`PATCH /api/containers/:name` other than an
+ * `appConfig` save), a rename included, with its follow-ups. A body `name`
+ * other than `name` renames first, then applies the rest under the new name.
+ * Every branch writes container.json, so it holds the lock; a rename also
+ * holds the target name's, so nothing starts on it mid-move. An app
+ * container's env and mounts come from its appConfig: changing them here is
+ * refused before anything is written.
+ */
+export async function editContainerConfig({ name, changes, log }) {
+  const { name: requestedName, ...rest } = changes;
+  const renameTo = 'name' in changes && requestedName !== name ? requestedName : null;
+  const apply = async () => {
+    if ('env' in rest || 'envPatch' in rest || 'mounts' in rest) {
+      const config = await getContainerConfig(name);
+      if (config?.metadata?.app) {
+        throw createAppError('APP_CONFIG_ONLY', 'Use appConfig to configure app containers, or eject to generic first');
+      }
+    }
+    const current = renameTo ? (await renameContainer(name, renameTo)).name : name;
+    await applyContainerConfigChanges({ name: current, changes: rest, previousName: renameTo ? name : null, log });
+  };
+  if (!renameTo) {
+    await withContainerOperationLock(name, 'configuration change', apply);
+    return;
+  }
+  await withContainerOperationLock(name, 'rename', () => withContainerOperationLock(renameTo, 'rename', apply));
+}
+
+/**
+ * Save an app container's appConfig: validated by its app module, which
+ * regenerates the derived env, mounts and files (deleting a dropped mount's
+ * data) and live-reloads when it can. `appConfigFor(config)` answers the
+ * appConfig to save from the container's config as read under the lock, so
+ * a merge onto the stored one (MCP) cannot interleave with another save.
+ * Resolves `{ requiresRestart, reloaded? }`.
+ */
+export function saveContainerAppConfig(name, appConfigFor) {
+  return withContainerOperationLock(name, 'configuration change', async () => {
+    const appConfig = appConfigFor(await getContainerConfig(name));
+    return applyAppConfig(name, appConfig);
+  });
+}
+
+/** Turn an app container into a generic one, keeping its env, mounts and files (no-op on a generic container). */
+export function ejectContainerApp(name) {
+  return withContainerOperationLock(name, 'eject', () => eject(name));
+}
+
+/** Append one mount (row-scoped). */
+export function addContainerMountRow(name, mount) {
+  return withContainerOperationLock(name, 'configuration change', async () => {
+    assertMountListNotAppManaged(await getContainerConfig(name));
+    return addContainerMount(name, mount);
+  });
+}
+
+/** Edit one mount by its current name (row-scoped). */
+export function editContainerMountRow(name, mountName, changes) {
+  return withContainerOperationLock(name, 'configuration change', async () => {
+    assertMountNotAppManaged(await getContainerConfig(name), mountName);
+    return updateContainerMount(name, mountName, changes);
+  });
+}
+
+/** Remove one mount and its data as a job. Not found and app-managed are answered under the lock, before the job. `done`: `{ requiresRestart }`. */
+export function startContainerMountDeleteJob({ name, mountName, log }) {
+  return startJob({
+    kind: BACKGROUND_JOB_KIND.CONTAINER_MOUNT_DELETE,
+    title: titleForContainerMountDelete(name, mountName),
+    subject: container(name),
+    check: async () => {
+      assertMountNotAppManaged(await getContainerConfig(name), mountName);
+      await assertMountOperation(name, mountName, 'remove');
+    },
+    log,
+    run: () => removeContainerMount(name, mountName),
+  });
+}
+
+export function addContainerServiceRow(name, service) {
+  return withContainerOperationLock(name, 'configuration change', () => addContainerService(name, service));
+}
+
+export function editContainerServiceRow(name, port, changes) {
+  return withContainerOperationLock(name, 'configuration change', () => updateContainerService(name, port, changes));
+}
+
+export function removeContainerServiceRow(name, port) {
+  return withContainerOperationLock(name, 'configuration change', () => removeContainerService(name, port));
+}
+
+// ── Mount content ───────────────────────────────────────────────────
+
+/**
+ * Replace a file mount's content with an upload. `stage(tmpPath, mode)`
+ * writes the whole upload to `tmpPath` (beside the mount's file, in files/),
+ * which is then renamed over it: an atomic replace, and every refusal leaves
+ * the mount as it was. Locked from the first write to the rename; the temp
+ * file goes on any failure.
+ */
+export function writeContainerMountFile({ name, mountName, stage }) {
+  return withContainerOperationLock(name, 'file upload', async () => {
+    assertMountNotAppManaged(await getContainerConfig(name), mountName);
+    const plan = await planMountFileUpload(name, mountName);
+    let committed = false;
+    try {
+      await stage(plan.tmp, plan.mode);
+      await commitMountFileUpload(plan);
+      committed = true;
+    } finally {
+      if (!committed) await unlink(plan.tmp).catch(() => { /* never created, or already gone */ });
+    }
+  });
+}
+
+/**
+ * Receive a zip for a directory mount and extract it as a job. `stage(path)`
+ * writes the whole upload to a staging file inside the container's directory
+ * (on the mount data's disk, not a tmpfs /tmp), under the lock; the extract
+ * job then takes the lock and checks the mount and the archive again before
+ * the job exists, so no edit moves the mount between the check and the
+ * extract. The job owns the staging file; it goes on any failure before.
+ * `done`: `{ name, mount }`.
+ */
+export async function startContainerZipExtractJob({ name, mountName, stage, log }) {
+  const stagingPath = join(getContainerDir(name), `.wisp-upload-${randomBytes(8).toString('hex')}`);
+  let handedOff = false;
+  try {
+    await withContainerOperationLock(name, 'zip upload', async () => {
+      assertMountNotAppManaged(await getContainerConfig(name), mountName);
+      await assertMountTakesZip(name, mountName);
+      await stage(stagingPath);
+    });
+    let plan;
+    const ack = await startJob({
+      kind: BACKGROUND_JOB_KIND.CONTAINER_ZIP_EXTRACT,
+      title: titleForZipExtract(name, mountName),
+      subject: container(name),
+      check: async () => {
+        assertMountNotAppManaged(await getContainerConfig(name), mountName);
+        plan = await planMountZipExtract(name, mountName, stagingPath);
+      },
+      log,
+      run: async () => {
+        try {
+          await extractMountZip(plan);
+          return { name, mount: mountName };
+        } finally {
+          await unlink(stagingPath).catch(() => { /* already gone */ });
+        }
+      },
+    });
+    handedOff = true;
+    return ack;
+  } finally {
+    if (!handedOff) await unlink(stagingPath).catch(() => { /* never created, or already gone */ });
+  }
+}
+
+/** Replace a file mount's content with UTF-8 text. */
+export function putContainerMountContent(name, mountName, content) {
+  return withContainerOperationLock(name, 'mount content edit', async () => {
+    assertMountNotAppManaged(await getContainerConfig(name), mountName);
+    await putMountFileTextContent(name, mountName, content);
+  });
+}
+
+/** Create a mount's empty file or directory. */
+export function initContainerMountContent(name, mountName) {
+  return withContainerOperationLock(name, 'mount init', async () => {
+    assertMountNotAppManaged(await getContainerConfig(name), mountName);
+    await initMountContent(name, mountName);
+  });
+}
+
+/** Delete a mount's data (the row stays) as a job. `done`: `{ name, mount }`. */
+export function startContainerMountDataDeleteJob({ name, mountName, log }) {
+  return startJob({
+    kind: BACKGROUND_JOB_KIND.CONTAINER_MOUNT_DATA_DELETE,
+    title: titleForContainerMountDataDelete(name, mountName),
+    subject: container(name),
+    check: async () => {
+      assertMountNotAppManaged(await getContainerConfig(name), mountName);
+      await assertMountOperation(name, mountName, 'data');
+    },
+    log,
+    run: async () => {
+      await deleteMountData(name, mountName);
+      return { name, mount: mountName };
+    },
+  });
+}
+
+// ── Backup and restore ──────────────────────────────────────────────
+
+/**
+ * Back the container up (running ones are paused for the archive) through the
+ * one backup orchestration: `manual` from the API, `scheduled` from the
+ * scheduler, which prunes after each destination (`afterEach`). `done`:
+ * `{ timestamp }`.
+ */
+export function startContainerBackupJob({ name, origin, destinationIds, afterEach, log }) {
+  return startWorkloadBackupJob({
+    kind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP,
+    title: titleForContainerBackup(name),
+    subject: container(name),
+    origin,
+    destinationIds,
+    check: () => assertContainerState(name, 'exists'),
+    backupOne: containerBackupTo(name, origin),
+    afterEach,
+    log,
+  });
+}
+
+/**
+ * Restore the backup `timestamp` of destination `destinationId` over the live
+ * container it was taken from, as one job holding its lock: first, unless
+ * `safetyBackup` is false, a manual backup of its current state to the same
+ * destination through the backup orchestration (0–45% of the bar, steps
+ * prefixed `safety-`), whose failure ends the job before the container is
+ * touched; then the restore. The container must exist and be stopped,
+ * checked under the lock before the job exists. `done`: `{ name, image }`.
+ */
+export function startContainerRestoreJob({ name, destinationId, timestamp, safetyBackup, log }) {
+  let dest;
+  return startJob({
+    kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE,
+    title: titleForContainerRestore(name),
+    subject: container(name),
+    // The manager re-checks inside the job.
+    check: async () => {
+      const found = (await listContainers()).find((c) => c.name === name);
+      if (!found) {
+        throw createAppError('CONTAINER_NOT_FOUND', `Container "${name}" not found — restore the backup as a new container instead`);
+      }
+      if (found.state !== 'stopped' && found.state !== 'created') {
+        throw createAppError('CONTAINER_MUST_BE_STOPPED', `Container "${name}" must be stopped to restore in place`);
+      }
+      [dest] = await resolveBackupDestinations([destinationId]);
+    },
+    log,
+    run: async (report) => {
+      const scaled = (base, span, stepPrefix = '') => (ev) => {
+        report({
+          step: `${stepPrefix}${ev.step}`,
+          percent: ev.percent != null ? Math.min(100, Math.round(base + (ev.percent / 100) * span)) : undefined,
+          currentFile: ev.currentFile,
+        });
+      };
+      if (safetyBackup) {
+        await backUpWorkload({
+          subject: container(name),
+          origin: 'manual',
+          destinations: [dest],
+          backupOne: containerBackupTo(name, 'manual'),
+          report: scaled(0, 45, 'safety-'),
+        });
+      }
+      const backupPath = join(dest.path, 'containers', name, timestamp);
+      return restoreContainerBackupInPlace(backupPath, {
+        onProgress: scaled(safetyBackup ? 45 : 0, safetyBackup ? 55 : 100),
+      });
+    },
+  });
+}
+
+/**
+ * Restore the backup at `backupPath` as the new container `newName`, as a job
+ * holding the new name's lock; the backup is planned under it, before the job
+ * exists. `done`: `{ name, sourceName, image }`.
+ */
+export function startContainerRestoreAsNewJob({ backupPath, newName, log }) {
+  let plan;
+  return startJob({
+    kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE_AS_NEW,
+    title: titleForContainerRestoreAsNew(newName),
+    subject: container(newName),
+    check: async () => { plan = await planContainerBackupRestore(backupPath, newName); },
+    log,
+    run: () => restoreContainerBackup(plan),
+  });
+}

@@ -190,21 +190,42 @@ export async function assignWorkload({ type, name, sectionId }) {
 }
 
 /**
- * Move a workload's section assignment from oldName to newName when the
- * workload is renamed. Idempotent: a no-op when no assignment exists for
- * oldName. Used by `renameContainer` so a container in a custom section
- * doesn't silently fall back to Main after rename.
+ * `settings` with the `type:from` assignment under `type:to` (a rename): the
+ * renamed workload keeps its section, and never takes one `to` kept from an
+ * earlier workload of that name. Pure: `settings` itself when nothing changes.
  */
-export async function renameWorkloadAssignment(type, oldName, newName) {
-  if (!VALID_TYPES.has(type)) return;
-  if (typeof oldName !== 'string' || typeof newName !== 'string' || oldName === newName) return;
-  return commitSections((fromFile) => {
-    const assign = { ...(fromFile.assignments || {}) };
-    const oldKey = assignmentKey(type, oldName);
-    if (!(oldKey in assign)) return fromFile;
-    const sectionId = assign[oldKey];
-    delete assign[oldKey];
-    assign[assignmentKey(type, newName)] = sectionId;
-    return { ...fromFile, assignments: assign };
-  });
+export function assignmentsRenamed(settings, type, from, to) {
+  const assign = { ...(settings.assignments || {}) };
+  const fromKey = assignmentKey(type, from);
+  const toKey = assignmentKey(type, to);
+  if (!(fromKey in assign) && !(toKey in assign)) return settings;
+  const sectionId = assign[fromKey];
+  delete assign[fromKey];
+  if (sectionId) assign[toKey] = sectionId;
+  else delete assign[toKey];
+  return { ...settings, assignments: assign };
+}
+
+/** `settings` without the `type:name` assignment (a delete). Pure: `settings` itself when it has none. */
+export function assignmentsWithout(settings, type, name) {
+  const key = assignmentKey(type, name);
+  if (!(key in (settings.assignments || {}))) return settings;
+  const assign = { ...settings.assignments };
+  delete assign[key];
+  return { ...settings, assignments: assign };
+}
+
+/** Move a renamed workload's section assignment to its new name. The move reaches clients on the sections topic. */
+export async function renameWorkloadAssignment(type, from, to) {
+  await commitSections((fromFile) => unlessUnchanged(fromFile, assignmentsRenamed(fromFile, type, from, to)));
+}
+
+/** Drop a deleted workload's section assignment, so a later workload of that name starts in Main. */
+export async function removeWorkloadAssignment(type, name) {
+  await commitSections((fromFile) => unlessUnchanged(fromFile, assignmentsWithout(fromFile, type, name)));
+}
+
+/** A mutator's answer that writes nothing when it changed nothing (the settings write lock skips a null). */
+function unlessUnchanged(fromFile, next) {
+  return next === fromFile ? null : next;
 }

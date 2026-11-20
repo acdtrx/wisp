@@ -5,6 +5,7 @@ export const JOB_KIND = Object.freeze({
   VM_BACKUP: 'vm-backup',
   CONTAINER_BACKUP: 'container-backup',
   CONTAINER_RESTORE: 'container-restore',
+  CONTAINER_STOP: 'container-stop',
 });
 
 /**

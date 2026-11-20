@@ -2,32 +2,16 @@ import { join } from 'node:path';
 
 import {
   listBackups,
-  restoreBackup,
   deleteBackup,
   resolveVmBackupDir,
-  planBackupRestore,
 } from '../lib/vmManager/index.js';
-import { rebuildCloudInitISO } from '../lib/cloudInit.js';
-import { isPathInsideAllowedRoots } from '../lib/paths.js';
 import {
   listContainerBackups,
-  planContainerBackupRestore,
-  restoreContainerBackup,
-  restoreContainerBackupInPlace,
   deleteContainerBackup,
-  createContainerBackup,
-  listContainers,
 } from '../lib/containerManager/index.js';
-import { getSettings, getRawMounts, listConfiguredBackupRoots, listBackupDestinationsWithMountCheck } from '../lib/settings.js';
-import { resolveBackupDestinations } from '../lib/backupDestinations.js';
-import { recordBackupAttempt } from '../lib/backupStatus.js';
-import {
-  startJob,
-  BACKGROUND_JOB_KIND,
-  titleForContainerRestore,
-  titleForVmRestore,
-  titleForContainerRestoreAsNew,
-} from '../lib/jobs/index.js';
+import { getSettings, listConfiguredBackupRoots, listBackupDestinationsWithMountCheck } from '../lib/settings.js';
+import { startVmRestoreJob } from '../lib/vmOperations.js';
+import { startContainerRestoreJob, startContainerRestoreAsNewJob } from '../lib/containerOperations.js';
 import { createAppError } from '../lib/appErrors.js';
 import { validateVMName, validateContainerName } from '../lib/validation.js';
 import { jobAckSchema } from './schemas.js';
@@ -73,46 +57,6 @@ function resolveBackupRoot(settings, destinationId) {
 function stripPath(row) {
   const { path: _internal, ...rest } = row;
   return rest;
-}
-
-/**
- * A container in-place restore, run inside its job: an optional safety backup
- * of the current state first (0–45% of the bar), then the restore itself
- * (45–100%). The safety phase's step names are prefixed `safety-` so they read
- * as the safety backup. Resolves the restore's result.
- *
- * @param {object} opts
- * @param {string} opts.name - container name
- * @param {{ id: string, path: string }} opts.dest - resolved destination (safety backup target)
- * @param {boolean} opts.safetyBackup
- * @param {(onProgress: (ev: object) => void) => Promise<object>} opts.runSafetyBackup
- * @param {(onProgress: (ev: object) => void) => Promise<object>} opts.runRestore
- * @param {(event: object) => void} opts.report - the job's progress reporter
- */
-async function restoreContainerInPlace({ name, dest, safetyBackup, runSafetyBackup, runRestore, report }) {
-  const scaledProgress = (base, span, stepPrefix = '') => (ev) => {
-    report({
-      step: `${stepPrefix}${ev.step}`,
-      percent: ev.percent != null ? Math.min(100, Math.round(base + (ev.percent / 100) * span)) : undefined,
-      currentFile: ev.currentFile,
-    });
-  };
-
-  if (safetyBackup) {
-    try {
-      const res = await runSafetyBackup(scaledProgress(0, 45, 'safety-'));
-      await recordBackupAttempt({
-        kind: 'container', name, ok: true, origin: 'manual', destinationIds: [dest.id], timestamp: res?.timestamp,
-      });
-    } catch (err) {
-      await recordBackupAttempt({
-        kind: 'container', name, ok: false, origin: 'manual', destinationIds: [dest.id], error: err?.message,
-      });
-      /* Safety backup failed — abort before touching the live workload. */
-      throw err;
-    }
-  }
-  return runRestore(scaledProgress(safetyBackup ? 45 : 0, safetyBackup ? 55 : 100));
 }
 
 export default async function backupsRoutes(fastify) {
@@ -182,30 +126,7 @@ export default async function backupsRoutes(fastify) {
       const settings = await getSettings();
       const root = resolveBackupRoot(settings, destinationId);
       const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
-      let plan;
-      // The new VM's name is held for the restore, so nothing creates, starts
-      // or edits it while its directory is being populated.
-      const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.VM_RESTORE,
-        title: titleForVmRestore(newVmName),
-        subject: { type: 'vm', name: newVmName },
-        // A CD-ROM may keep a source outside the new VM directory only under
-        // the paths an attach would accept (the image library).
-        check: async () => {
-          plan = await planBackupRestore(backupPath, newVmName, {
-            isExternalSourceAllowed: (absPath) => isPathInsideAllowedRoots(absPath, newVmName),
-          });
-        },
-        log: request.log,
-        // Backups don't hold the cloud-init seed ISO; rebuild it from the
-        // restored cloud-init.json before the domain is defined.
-        run: async () => {
-          const result = await restoreBackup(plan, {
-            populateVMDir: (vmDir, { xml }) => rebuildCloudInitISO(newVmName, vmDir, xml),
-          });
-          return { name: result?.name ?? newVmName };
-        },
-      });
+      const job = await startVmRestoreJob({ backupPath, newName: newVmName, log: request.log });
       return reply.code(202).send(job);
     },
   });
@@ -311,17 +232,7 @@ export default async function backupsRoutes(fastify) {
       // route knows the layout because it owns the API contract; the
       // container manager keeps generic "absolute path in" semantics.
       const backupPath = join(root, 'containers', name, timestamp);
-      let plan;
-      // The new container's name is held for the restore, so nothing starts
-      // or edits it while its directory is being populated.
-      const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE_AS_NEW,
-        title: titleForContainerRestoreAsNew(newName),
-        subject: { type: 'container', name: newName },
-        check: async () => { plan = await planContainerBackupRestore(backupPath, newName); },
-        log: request.log,
-        run: () => restoreContainerBackup(plan),
-      });
+      const job = await startContainerRestoreAsNewJob({ backupPath, newName, log: request.log });
       return reply.code(202).send(job);
     },
   });
@@ -352,36 +263,8 @@ export default async function backupsRoutes(fastify) {
       validateContainerName(name);
       assertSafeTimestamp(timestamp);
 
-      const settings = await getSettings();
-      const rawMounts = await getRawMounts();
-      const [dest] = await resolveBackupDestinations(settings, rawMounts, [destinationId]);
-      const backupPath = join(dest.path, 'containers', name, timestamp);
-
-      // Held for the whole job (safety backup included): no start, backup,
-      // edit or second restore of the container while its files are replaced.
-      const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE,
-        title: titleForContainerRestore(name),
-        subject: { type: 'container', name },
-        // Fail fast in the request (the manager re-checks inside the job).
-        check: async () => {
-          const container = (await listContainers()).find((c) => c.name === name);
-          if (!container) {
-            throw createAppError('CONTAINER_NOT_FOUND', `Container "${name}" not found — restore the backup as a new container instead`);
-          }
-          if (container.state !== 'stopped' && container.state !== 'created') {
-            throw createAppError('CONTAINER_MUST_BE_STOPPED', `Container "${name}" must be stopped to restore in place`);
-          }
-        },
-        log: request.log,
-        run: (report) => restoreContainerInPlace({
-          name,
-          dest,
-          safetyBackup,
-          runSafetyBackup: (onProgress) => createContainerBackup(name, dest.path, { origin: 'manual', onProgress }),
-          runRestore: (onProgress) => restoreContainerBackupInPlace(backupPath, { onProgress }),
-          report,
-        }),
+      const job = await startContainerRestoreJob({
+        name, destinationId, timestamp, safetyBackup, log: request.log,
       });
       return reply.code(202).send(job);
     },

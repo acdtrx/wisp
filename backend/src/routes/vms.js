@@ -2,46 +2,30 @@ import {
   listVMs,
   getVMConfig,
   getVMXML,
-  updateVMConfig,
-  assertVMNameAvailable,
-  createVM,
-  assertVMState,
-  startVM,
-  stopVM,
-  forceStopVM,
-  rebootVM,
-  suspendVM,
-  resumeVM,
-  deleteVM,
   getVMStats,
-  attachDisk,
-  createAndAttachDisk,
-  detachDisk,
-  resizeDiskBySlot,
-  updateDiskBus,
-  attachISO,
-  ejectISO,
   getVMUSBDevices,
-  attachUSBDevice,
-  detachUSBDevice,
-  createBackup,
-  isOfflineState,
 } from '../lib/vmManager/index.js';
 import {
-  startJob,
-  BACKGROUND_JOB_KIND,
-  titleForVmCreate,
-  titleForVmBackup,
-  titleForVmStart,
-  titleForVmForceStop,
-  titleForVmDelete,
-} from '../lib/jobs/index.js';
-import { publishVm, unpublishVm } from '../lib/vmMdnsReconciler.js';
-import { generateCloudInit } from '../lib/cloudInit.js';
-import { getSettings, getRawMounts } from '../lib/settings.js';
-import { resolveBackupDestinations, backupToEachDestination } from '../lib/backupDestinations.js';
-import { recordBackupAttempt } from '../lib/backupStatus.js';
-import { withVmOperationLock } from '../lib/vmOperationLock.js';
+  startVmCreateJob,
+  startVmBackupJob,
+  startVmStartJob,
+  startVmForceStopJob,
+  startVmDeleteJob,
+  requestVmStop,
+  requestVmReboot,
+  requestVmSuspend,
+  requestVmResume,
+  editVmConfig,
+  attachVmDisk,
+  createVmDisk,
+  detachVmDisk,
+  resizeVmDisk,
+  changeVmDiskBus,
+  attachVmIso,
+  ejectVmIso,
+  attachVmUsb,
+  detachVmUsb,
+} from '../lib/vmOperations.js';
 import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { resolveLibraryPath, assertPathInsideAllowedRoots } from '../lib/paths.js';
 import { createAppError } from '../lib/appErrors.js';
@@ -195,38 +179,7 @@ export default async function vmsRoutes(fastify) {
           await assertPathInsideAllowedRoots(dspec.sourcePath, spec.name);
         }
       }
-      const vmName = spec.name;
-      const wantsCloudInit = !!(
-        spec.cloudInit
-        && spec.osType !== 'Windows'
-        && spec.cloudInit.enabled !== false
-      );
-      const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.VM_CREATE,
-        title: titleForVmCreate(vmName),
-        subject: { type: 'vm', name: vmName },
-        // Name must be free in libvirt and on disk before any artifact is built:
-        // cloud-init would otherwise write into an existing VM's directory.
-        check: () => assertVMNameAvailable(vmName),
-        log: request.log,
-        // The cloud-init seed ISO + cloud-init.json are built into the VM
-        // directory createVM has just created, so they share its rollback:
-        // any create failure removes the directory and everything in it.
-        run: async (report) => {
-          await createVM(spec, {
-            onStep(step, data) {
-              report({ step, ...data });
-            },
-            populateVMDir: wantsCloudInit
-              ? async () => {
-                report({ step: 'cloudinit' });
-                await generateCloudInit(vmName, spec.cloudInit);
-              }
-              : undefined,
-          });
-          return { name: vmName };
-        },
-      });
+      const job = await startVmCreateJob({ spec, log: request.log });
       return reply.code(202).send(job);
     },
   });
@@ -252,43 +205,8 @@ export default async function vmsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      const { name } = request.params;
-      const body = request.body || {};
-      let destinations;
-      const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.VM_BACKUP,
-        title: titleForVmBackup(name),
-        subject: { type: 'vm', name },
-        // Fail fast in the request (the manager re-checks inside the job).
-        check: async () => {
-          const vm = (await listVMs()).find((v) => v.name === name);
-          if (!vm) throw createAppError('VM_NOT_FOUND', `VM "${name}" not found`);
-          if (!isOfflineState(vm.stateCode)) {
-            throw createAppError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to create a backup`);
-          }
-          destinations = await resolveBackupDestinations(await getSettings(), await getRawMounts(), body.destinationIds);
-        },
-        log: request.log,
-        run: async (report) => {
-          const destinationIds = destinations.map((d) => d.id);
-          let lastResult;
-          try {
-            lastResult = await backupToEachDestination(destinations, {
-              push: report,
-              backupOne: (dest, onProgress) => createBackup(name, dest.path, { onProgress }),
-            });
-          } catch (err) {
-            await recordBackupAttempt({
-              kind: 'vm', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
-            });
-            throw err;
-          }
-          await recordBackupAttempt({
-            kind: 'vm', name, ok: true, origin: 'manual', destinationIds, timestamp: lastResult?.timestamp,
-          });
-          // The backup folder name only: its host path stays on the server.
-          return { timestamp: lastResult?.timestamp };
-        },
+      const job = await startVmBackupJob({
+        name: request.params.name, destinationIds: request.body?.destinationIds, log: request.log,
       });
       return reply.code(202).send(job);
     },
@@ -331,36 +249,22 @@ export default async function vmsRoutes(fastify) {
     // (404) or a busy one (409) is refused here; the outcome arrives over the
     // job's stream.
     handler: async (request, reply) => {
-      const { name } = request.params;
-      const deleteDisks = request.query.deleteDisks === 'true';
-      const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.VM_DELETE,
-        title: titleForVmDelete(name),
-        subject: { type: 'vm', name },
-        check: () => assertVMState(name, 'exists'),
-        log: request.log,
-        run: async () => {
-          await deleteVM(name, deleteDisks);
-          return { name };
-        },
+      const job = await startVmDeleteJob({
+        name: request.params.name, deleteDisks: request.query.deleteDisks === 'true', log: request.log,
       });
       return reply.code(202).send(job);
     },
   });
 
-  // Lifecycle actions — all POST /vms/:name/<action>
-  // Start and force-stop are jobs — starting a large VM, or waiting for QEMU
-  // to exit, can outlast a short request: the POST answers 202 with the job
-  // id, the outcome arrives over the job's stream. Each holds the VM's
-  // operation lock for the job. Stop, reboot, suspend and resume answer at
-  // once and take no lock: they apply to a running VM and change no
-  // definition or disk file, while every operation that holds the lock for
-  // long (backup) requires a stopped one.
+  // Lifecycle actions — all POST /vms/:name/<action>. Start and force-stop are
+  // jobs — starting a large VM, or waiting for QEMU to exit, can outlast a
+  // short request: the POST answers 202 with the job's ack. Stop, reboot,
+  // suspend and resume answer at once.
   const lifecycleJobs = [
-    { path: 'start', kind: BACKGROUND_JOB_KIND.VM_START, title: titleForVmStart, check: 'start', fn: startVM },
-    { path: 'force-stop', kind: BACKGROUND_JOB_KIND.VM_FORCE_STOP, title: titleForVmForceStop, check: 'running', fn: forceStopVM },
+    { path: 'start', start: startVmStartJob },
+    { path: 'force-stop', start: startVmForceStopJob },
   ];
-  for (const { path, kind, title, check, fn } of lifecycleJobs) {
+  for (const { path, start } of lifecycleJobs) {
     fastify.post(`/vms/:name/${path}`, {
       config: { auth: 'admin' },
       schema: {
@@ -372,31 +276,20 @@ export default async function vmsRoutes(fastify) {
         response: { 202: jobAckSchema },
       },
       handler: async (request, reply) => {
-        const { name } = request.params;
-        const job = await startJob({
-          kind,
-          title: title(name),
-          subject: { type: 'vm', name },
-          check: () => assertVMState(name, check), // not found, already running / not running: answered here
-          log: request.log,
-          run: async () => {
-            await fn(name);
-            return { name };
-          },
-        });
+        const job = await start({ name: request.params.name, log: request.log });
         return reply.code(202).send(job);
       },
     });
   }
 
   const lifecycleActions = [
-    { path: 'stop', fn: stopVM },
-    { path: 'reboot', fn: rebootVM },
-    { path: 'suspend', fn: suspendVM },
-    { path: 'resume', fn: resumeVM },
+    { path: 'stop', request: requestVmStop },
+    { path: 'reboot', request: requestVmReboot },
+    { path: 'suspend', request: requestVmSuspend },
+    { path: 'resume', request: requestVmResume },
   ];
 
-  for (const { path, fn } of lifecycleActions) {
+  for (const { path, request: send } of lifecycleActions) {
     fastify.post(`/vms/:name/${path}`, {
       config: { auth: 'admin' },
       schema: {
@@ -407,7 +300,7 @@ export default async function vmsRoutes(fastify) {
         },
       },
       handler: async (request, reply) => {
-        await fn(request.params.name);
+        await send(request.params.name);
         reply.code(204).send();
       },
     });
@@ -463,22 +356,7 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       if (request.body.name !== undefined) validateVMName(request.body.name);
-      // Every edit redefines the domain (a rename also moves the VM
-      // directory), so none may run under a backup reading the definition
-      // and disks. Rename reserves the target name inside the manager.
-      const renaming = request.body.name !== undefined && request.body.name !== request.params.name;
-      const result = await withVmOperationLock(
-        request.params.name,
-        renaming ? 'rename' : 'config edit',
-        () => updateVMConfig(request.params.name, request.body),
-      );
-      // mDNS toggle/rename: vmManager doesn't fire DomainEvent for metadata-only
-      // changes, so the publisher won't reconcile on its own. Nudge it here.
-      if (request.body.localDns === false) {
-        await unpublishVm(result.name).catch(() => { /* best effort */ });
-      } else if (request.body.localDns === true) {
-        await publishVm(result.name).catch(() => { /* best effort */ });
-      }
+      await editVmConfig({ name: request.params.name, changes: request.body, log: request.log });
       reply.code(204).send();
     },
   });
@@ -534,9 +412,9 @@ export default async function vmsRoutes(fastify) {
       if (hasPath) {
         const absPath = resolveLibraryPath(path);
         await assertPathInsideAllowedRoots(absPath, name);
-        await withVmOperationLock(name, 'disk change', () => attachDisk(name, slot, absPath, bus));
+        await attachVmDisk(name, slot, absPath, bus);
       } else {
-        await withVmOperationLock(name, 'disk change', () => createAndAttachDisk(name, slot, sizeGB, bus));
+        await createVmDisk(name, slot, sizeGB, bus);
       }
       reply.code(204).send();
     },
@@ -557,7 +435,7 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       const { name, slot } = request.params;
-      await withVmOperationLock(name, 'disk change', () => detachDisk(name, slot));
+      await detachVmDisk(name, slot);
       reply.code(204).send();
     },
   });
@@ -585,7 +463,7 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       const { name, slot } = request.params;
-      await withVmOperationLock(name, 'disk change', () => resizeDiskBySlot(name, slot, request.body.sizeGB));
+      await resizeVmDisk(name, slot, request.body.sizeGB);
       reply.code(204).send();
     },
   });
@@ -613,15 +491,12 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       const { name, slot } = request.params;
-      await withVmOperationLock(name, 'disk change', () => updateDiskBus(name, slot, request.body.bus));
+      await changeVmDiskBus(name, slot, request.body.bus);
       reply.code(204).send();
     },
   });
 
   // POST /vms/:name/cdrom/:slot — attach ISO
-  // CD-ROM and USB changes take the lock in every VM state: a hot-plug on a
-  // running VM writes the persistent definition too (LIVE + CONFIG), and the
-  // one long holder (backup) needs a stopped VM, so a running VM never waits.
   fastify.post('/vms/:name/cdrom/:slot', {
     config: { auth: 'admin' },
     schema: {
@@ -646,7 +521,7 @@ export default async function vmsRoutes(fastify) {
       const { name, slot } = request.params;
       const absPath = resolveLibraryPath(request.body.path);
       await assertPathInsideAllowedRoots(absPath, name);
-      await withVmOperationLock(name, 'CD-ROM change', () => attachISO(name, slot, absPath));
+      await attachVmIso(name, slot, absPath);
       reply.code(204).send();
     },
   });
@@ -666,7 +541,7 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       const { name, slot } = request.params;
-      await withVmOperationLock(name, 'CD-ROM change', () => ejectISO(name, slot));
+      await ejectVmIso(name, slot);
       reply.code(204).send();
     },
   });
@@ -720,7 +595,7 @@ export default async function vmsRoutes(fastify) {
     handler: async (request, reply) => {
       const { name } = request.params;
       const { vendorId, productId } = request.body;
-      await withVmOperationLock(name, 'USB change', () => attachUSBDevice(name, vendorId, productId));
+      await attachVmUsb(name, vendorId, productId);
       reply.code(204).send();
     },
   });
@@ -747,7 +622,7 @@ export default async function vmsRoutes(fastify) {
         throw createAppError('INVALID_USB_ID', 'Invalid USB device ID format');
       }
       const { name } = request.params;
-      await withVmOperationLock(name, 'USB change', () => detachUSBDevice(name, vendorId, productId));
+      await detachVmUsb(name, vendorId, productId);
       reply.code(204).send();
     },
   });

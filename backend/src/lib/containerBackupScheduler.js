@@ -13,28 +13,29 @@
  * waits for the next day. State (`lastTickAt`) is in-memory only — nothing
  * new is persisted, so the self-updater needs no changes.
  *
- * Each container's backup is a job started through the one job starter
- * (same kind and title as a manual container backup), so scheduled runs are
- * listed and followed like any other job. The job holds the container's
- * operation lock; a container busy with another operation (a manual backup,
- * a start, a restore, …) is skipped for this run.
+ * Each container's backup is the container backup operation
+ * (lib/containerOperations.js, through the one backup orchestration) with the
+ * `scheduled` origin — a job like a manual backup's, listed and followed like
+ * any other. The job holds the container's operation lock; a container busy
+ * with another operation (a manual backup, a start, a restore, …) or gone
+ * meanwhile is skipped for this run, and a backup that cannot start for any
+ * other reason (an unreachable destination) ends the run before the next
+ * container is touched.
  *
  * The run itself is `runScheduledBackups({ trigger })`, invocable on its own
  * (ARCHITECTURE.md, Backend: events); the minute tick is one trigger. Every run logs its
  * trigger, and at most one runs at a time whatever triggered it.
  */
-import { getSettings, getRawMounts, listConfiguredBackupRoots } from './settings.js';
-import { resolveBackupDestinations, backupToEachDestination } from './backupDestinations.js';
+import { getSettings, listConfiguredBackupRoots } from './settings.js';
 import { computeScheduledBackupPruneList } from './backupRetention.js';
 import {
   listContainers,
   getContainerConfig,
-  createContainerBackup,
   listContainerBackups,
   deleteContainerBackup,
 } from './containerManager/index.js';
-import { startJob, BACKGROUND_JOB_KIND, titleForContainerBackup } from './jobs/index.js';
-import { recordBackupAttempt } from './backupStatus.js';
+import { whenJobEnds } from './jobs/index.js';
+import { startContainerBackupJob } from './containerOperations.js';
 
 const TICK_MS = 60 * 1000;
 
@@ -108,17 +109,6 @@ export async function runScheduledBackups({ trigger = 'manual', log }) {
 async function backupAutoBackupContainers(trigger, log) {
   const settings = await getSettings();
   const schedule = settings.backupSchedule || {};
-  const rawMounts = await getRawMounts();
-
-  let destinations;
-  try {
-    destinations = await resolveBackupDestinations(settings, rawMounts, schedule.destinationIds);
-  } catch (err) {
-    /* Destination trouble (unmountable share, nothing configured) aborts the
-     * whole run — containers stay untouched; next boundary is tomorrow. */
-    log.warn({ trigger, err: err.message, detail: err.raw }, 'Backup scheduler: no usable destination, skipping run');
-    return;
-  }
 
   let list;
   try {
@@ -139,57 +129,37 @@ async function backupAutoBackupContainers(trigger, log) {
     log.info({ trigger }, 'Backup scheduler: fired, no containers with Auto Backup enabled');
     return;
   }
-  log.info({ trigger, containers: names, destinations: destinations.map((d) => d.id) }, 'Backup scheduler: run started');
+  log.info({ trigger, containers: names, destinations: schedule.destinationIds }, 'Backup scheduler: run started');
 
   const allowedRoots = listConfiguredBackupRoots(settings);
   let backedUp = 0;
   let failed = 0;
   let skipped = 0;
 
-  const destinationIds = destinations.map((d) => d.id);
   for (const name of names) {
-    // Settles with the backup's outcome: the containers are backed up one at a time.
-    const ended = Promise.withResolvers();
+    let ack;
     try {
-      await startJob({
-        kind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP,
-        title: titleForContainerBackup(name),
-        subject: { type: 'container', name },
+      ack = await startContainerBackupJob({
+        name,
+        origin: 'scheduled',
+        destinationIds: schedule.destinationIds,
+        afterEach: (dest) => pruneScheduledBackups(name, dest, allowedRoots, log),
         log,
-        run: async (report) => {
-          let ok = false;
-          try {
-            let lastResult;
-            try {
-              lastResult = await backupToEachDestination(destinations, {
-                push: report,
-                backupOne: (dest, onProgress) => createContainerBackup(name, dest.path, { origin: 'scheduled', onProgress }),
-                afterEach: (dest) => pruneScheduledBackups(name, dest, allowedRoots, log),
-              });
-            } catch (err) {
-              await recordBackupAttempt({
-                kind: 'container', name, ok: false, origin: 'scheduled', destinationIds, error: err?.message,
-              });
-              throw err;
-            }
-            await recordBackupAttempt({
-              kind: 'container', name, ok: true, origin: 'scheduled', destinationIds, timestamp: lastResult?.timestamp,
-            });
-            ok = true;
-            // The backup folder name only: its host path stays on the server.
-            return { timestamp: lastResult?.timestamp };
-          } finally {
-            ended.resolve(ok);
-          }
-        },
       });
     } catch (err) {
-      if (err?.code !== 'CONTAINER_BUSY') throw err;
-      log.warn({ container: name }, 'Backup scheduler: another operation on the container is in progress, skipping container');
-      skipped += 1;
-      continue;
+      if (err?.code === 'CONTAINER_BUSY' || err?.code === 'CONTAINER_NOT_FOUND') {
+        log.warn({ container: name, code: err.code }, 'Backup scheduler: container busy or gone, skipping container');
+        skipped += 1;
+        continue;
+      }
+      /* Destination trouble (unmountable share, nothing configured) refuses
+       * every container alike: the run ends before any is paused, and the
+       * next boundary is tomorrow. */
+      log.warn({ trigger, container: name, code: err?.code, err: err?.message, detail: err?.raw }, 'Backup scheduler: backup could not start, ending run');
+      break;
     }
-    if (await ended.promise) backedUp += 1;
+    // One container at a time: at most one is paused.
+    if (await whenJobEnds(ack.jobId) === 'done') backedUp += 1;
     else failed += 1;
   }
   log.info({ trigger, backedUp, failed, skipped }, 'Backup scheduler: run finished');

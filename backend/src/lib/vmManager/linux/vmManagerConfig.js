@@ -321,12 +321,8 @@ export async function updateVMConfig(name, changes) {
     }
   }
 
-  // mDNS publish/unpublish is the route's responsibility — see PATCH /vms/:name
-  // in routes/vms.js. The route reads body.localDns and calls publishVm or
-  // unpublishVm against the effective (post-rename) name. Rename requires VM
-  // offline (enforced above), so there's no live mDNS entry under the old name
-  // to clean up — when the VM starts again, the publisher's reconcile handles
-  // publishing under the new name.
+  // The .local name is Wisp glue's (lib/vmOperations.js), after this returns:
+  // a localDns change is metadata, so no DomainEvent follows it.
 
   return { ok: true, requiresRestart, name: effectiveName };
 }

@@ -1,24 +1,25 @@
 /**
- * Backup destination resolution shared by the VM/container backup routes and
- * the container backup scheduler. Turns client-facing destination ids
- * (`'local'` or the configured `backupMountId`) into absolute roots,
- * auto-mounting an unmounted SMB share on the way.
+ * Backup destinations for the one backup orchestration (lib/workloadBackup.js):
+ * turns client-facing destination ids (`'local'` or the configured
+ * `backupMountId`) into absolute roots, auto-mounting an unmounted SMB share
+ * on the way, and runs one backup per destination as a job's progress.
  */
 import { getMountStatus, mountSMB } from './storage/index.js';
 import { createAppError } from './appErrors.js';
+import { getSettings, getRawMounts } from './settings.js';
 
 /**
- * Resolve destination ids to backup roots.
+ * Resolve destination ids to backup roots, from the settings as they are now.
  *
- * @param {Awaited<ReturnType<import('./settings.js').getSettings>>} settings
- * @param {Array<object>} rawMounts - from getRawMounts() (carries SMB credentials)
- * @param {string[]} destinationIds - `'local'` and/or the configured backupMountId
+ * @param {string[] | undefined} destinationIds - `'local'` and/or the configured backupMountId; none means `['local']`
  * @returns {Promise<Array<{ id: string, path: string, label: string }>>}
  * @throws BACKUP_DEST_UNKNOWN (422) - id is neither 'local' nor the configured backup mount
  * @throws BACKUP_MOUNT_FAILED (503) - SMB share could not be mounted
  * @throws BACKUP_DEST_NONE (422) - nothing resolved to a usable root
  */
-export async function resolveBackupDestinations(settings, rawMounts, destinationIds) {
+export async function resolveBackupDestinations(destinationIds) {
+  const settings = await getSettings();
+  const rawMounts = await getRawMounts();
   const ids = Array.isArray(destinationIds) && destinationIds.length > 0 ? destinationIds : ['local'];
   const backupMountId = settings.backupMountId;
   const destinations = [];

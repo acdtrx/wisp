@@ -221,9 +221,8 @@ export async function renameContainer(oldName, newName) {
 
   /* Step 8: best-effort cleanup of stale services + netns under the old name.
    * SRV/TXT services are managed by containerManager — clean them defensively
-   * in case a previous stop crashed mid-flight. The A-record under oldName is
-   * dropped by routes/containers.js calling unpublishContainer after this
-   * function returns. */
+   * in case a previous stop crashed mid-flight. The A record under oldName is
+   * Wisp glue's to withdraw, after this returns. */
   try { await deregisterServicesForContainer(oldName); } catch { /* best effort */ }
   await bestEffortTeardownOldNetwork(oldName, config.network);
 

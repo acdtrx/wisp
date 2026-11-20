@@ -9,42 +9,28 @@
  * immediately), starts the job and returns its ack
  * `{ jobId, kind, title, subject }`; `get_job` reads it to the end.
  */
-import {
-  assertContainerNameAvailable,
-  createContainer,
-  getContainerConfig,
-  updateContainerConfig,
-  startContainer,
-  restartContainer,
-  pullImage,
-  getImageDigest,
-  resolveContainerImageRef,
-} from '../../containerManager/index.js';
-import {
-  getAppModule,
-  applyAppConfig,
-  maskContainerConfigSecrets,
-} from '../../containerApps/index.js';
+import { getContainerConfig } from '../../containerManager/index.js';
+import { getAppModule, maskContainerConfigSecrets } from '../../containerApps/index.js';
 import { validateContainerName } from '../../validation.js';
 import { createAppError } from '../../appErrors.js';
-import { withContainerOperationLock } from '../../containerOperationLock.js';
-import { startContainerLifecycleJob } from '../../containerJobs.js';
-import { startImageUpdateCheckJob } from '../../updateChecks.js';
 import {
-  startJob,
-  BACKGROUND_JOB_KIND,
-  titleForContainerDeploy,
-  titleForContainerImageUpdate,
-} from '../../jobs/index.js';
+  startContainerDeployJob,
+  startContainerImageUpdateJob,
+  startContainerStartJob,
+  startContainerStopJob,
+  startContainerRestartJob,
+  saveContainerAppConfig,
+} from '../../containerOperations.js';
+import { startImageUpdateCheckJob } from '../../updateChecks.js';
 
 const JOB_NOTE = 'A job: returns { jobId, kind, title, subject } at once; read it with get_job until it is done.';
 
 const RESTART_POLICIES = ['never', 'on-failure', 'unless-stopped', 'always'];
 
 /* tools/call arguments arrive unvalidated (inputSchema is advisory to the
-   client), so every handler re-validates what it uses. Operations on a
-   container hold its operation lock like the REST routes do — a busy
-   container answers CONTAINER_BUSY. */
+   client), so every handler re-validates what it uses. Each command is the
+   container operation the REST routes call (lib/containerOperations.js), its
+   lock and follow-ups included — a busy container answers CONTAINER_BUSY. */
 
 function buildEnv(env, secretEnv) {
   const out = {};
@@ -133,32 +119,7 @@ export const containerAdminTools = [
       const env = buildEnv(args.env, args.secretEnv);
       const changes = buildSettingsChanges(args); // validate before creating anything
 
-      // The new name's operation lock is held for the whole job (taken, or
-      // busy, answers at once), so nothing starts or edits it mid-deploy.
-      return startJob({
-        kind: BACKGROUND_JOB_KIND.CONTAINER_DEPLOY,
-        title: titleForContainerDeploy(name),
-        subject: { type: 'container', name },
-        check: () => assertContainerNameAvailable(name),
-        log,
-        run: async (report) => {
-          await createContainer({ name, image: image.trim(), env }, report);
-          if (Object.keys(changes).length) {
-            await updateContainerConfig(name, changes);
-          }
-          report({ step: 'starting' });
-          try {
-            await startContainer(name);
-          } catch (err) {
-            throw createAppError(
-              err.code || 'CONTAINERD_ERROR',
-              `Container "${name}" was created but failed to start; it exists in stopped state (check get_container_logs, or fix and start_container)`,
-              err.raw ? `${err.message}: ${err.raw}` : err.message,
-            );
-          }
-          return await maskContainerConfigSecrets(await getContainerConfig(name));
-        },
-      });
+      return startContainerDeployJob({ name, image: image.trim(), env, changes, log });
     },
   },
   {
@@ -181,47 +142,7 @@ export const containerAdminTools = [
     scope: 'admin',
     handler: async ({ name, image }, { log } = {}) => {
       validateContainerName(name);
-      const cfg = await getContainerConfig(name);
-      const requested = typeof image === 'string' && image.trim() ? image.trim() : cfg.image;
-      // The ref create and PATCH store: an exact local name when containerd has
-      // one, else the normalized ref the pull stores the image under.
-      const { ref } = await resolveContainerImageRef(requested);
-      // The container's operation lock is held for the whole job, pull
-      // included: busy answers at once, and nothing changes the container
-      // between the pull and the restart.
-      return startJob({
-        kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_UPDATE,
-        title: titleForContainerImageUpdate(name),
-        subject: { type: 'container', name },
-        log,
-        run: async (report) => {
-          report({ step: 'pulling', detail: ref });
-          try {
-            await pullImage(ref);
-          } catch (err) {
-            // Locally-imported images have no registry to pull from — fine if present.
-            if (!(await getImageDigest(ref))) {
-              throw createAppError('IMAGE_PULL_FAILED', `Cannot pull "${ref}" and it is not present locally`, err.message);
-            }
-          }
-          let restarted = false;
-          const current = await getContainerConfig(name);
-          if (ref !== current.image) {
-            await updateContainerConfig(name, { image: ref });
-          }
-          if (current.state === 'running') {
-            await restartContainer(name);
-            restarted = true;
-          }
-          return {
-            name,
-            image: ref,
-            restarted,
-            applied: restarted,
-            note: restarted ? 'Restarted on the updated image.' : 'Image updated; takes effect at the next start.',
-          };
-        },
-      });
+      return startContainerImageUpdateJob({ name, image, log });
     },
   },
   {
@@ -237,7 +158,7 @@ export const containerAdminTools = [
     scope: 'admin',
     handler: async ({ name }, { log } = {}) => {
       validateContainerName(name);
-      return startContainerLifecycleJob({ name, action: 'start', log });
+      return startContainerStartJob({ name, log });
     },
   },
   {
@@ -255,7 +176,7 @@ export const containerAdminTools = [
     scope: 'admin',
     handler: async ({ name }, { log } = {}) => {
       validateContainerName(name);
-      return startContainerLifecycleJob({ name, action: 'stop', log });
+      return startContainerStopJob({ name, log });
     },
   },
   {
@@ -271,7 +192,7 @@ export const containerAdminTools = [
     scope: 'admin',
     handler: async ({ name }, { log } = {}) => {
       validateContainerName(name);
-      return startContainerLifecycleJob({ name, action: 'restart', log });
+      return startContainerRestartJob({ name, log });
     },
   },
   {
@@ -303,16 +224,15 @@ export const containerAdminTools = [
       if (!appConfig || typeof appConfig !== 'object' || Array.isArray(appConfig)) {
         throw createAppError('INVALID_REQUEST', 'appConfig must be an object');
       }
-      // The read the merge builds on is inside the lock, so a concurrent save
-      // can't slip between it and the write.
-      return withContainerOperationLock(name, 'configuration change', async () => {
-        const cfg = await getContainerConfig(name);
-        const appType = cfg?.metadata?.app;
+      // The merge builds on the config as read under the lock, so a
+      // concurrent save can't slip between the read and the write.
+      let appType;
+      const result = await saveContainerAppConfig(name, (cfg) => {
+        appType = cfg?.metadata?.app;
         if (!appType) {
           throw createAppError('CONFIG_ERROR', `Container "${name}" is not an app container`);
         }
-        const appModule = getAppModule(appType);
-        const writable = appModule?.agentWritableAppConfigFields ?? [];
+        const writable = getAppModule(appType)?.agentWritableAppConfigFields ?? [];
         if (!writable.length) {
           throw createAppError('APP_CONFIG_ONLY', `The "${appType}" app is not agent-configurable — use the Wisp UI`);
         }
@@ -323,20 +243,19 @@ export const containerAdminTools = [
             `Field(s) not agent-writable for "${appType}": ${blocked.join(', ')}. Writable: ${writable.join(', ')}. Everything else is configured in the Wisp UI.`,
           );
         }
-        // Merge onto the RAW stored config (unmasked, server-side) so protected
+        // Merged onto the RAW stored config (unmasked, server-side) so protected
         // fields — secrets included — pass through the standard validate path
         // completely untouched by the agent's input.
-        const merged = { ...cfg.metadata.appConfig, ...appConfig };
-        const result = await applyAppConfig(name, merged);
-        const after = await maskContainerConfigSecrets(await getContainerConfig(name));
-        return {
-          name,
-          app: appType,
-          appliedFields: Object.keys(appConfig),
-          ...result,
-          appConfig: after.metadata?.appConfig ?? null,
-        };
+        return { ...cfg.metadata.appConfig, ...appConfig };
       });
+      const after = await maskContainerConfigSecrets(await getContainerConfig(name));
+      return {
+        name,
+        app: appType,
+        appliedFields: Object.keys(appConfig),
+        ...result,
+        appConfig: after.metadata?.appConfig ?? null,
+      };
     },
   },
   {

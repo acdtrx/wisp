@@ -7,18 +7,20 @@
  * workload of the most recent attempt in `config/backup-status.json`,
  * written on every manual/scheduled backup completion. It is a cache of
  * the last outcome, not history: self-healing and safe to delete (the
- * self-updater preserves it via RSYNC_EXCLUDES).
+ * self-updater preserves it via RSYNC_EXCLUDES). A record follows its
+ * workload: a rename moves it, a delete drops it.
  *
  * This module also carries the change signal for everything backup-shaped:
- * recordBackupAttempt() and notifyBackupsChanged() both poke subscribers,
- * and the `backups` topic on /api/events re-broadcasts the status snapshot
- * so open tabs know to refresh their backup lists.
+ * every write and notifyBackupsChanged() poke subscribers, and the `backups`
+ * topic on /api/events re-broadcasts the status snapshot so open tabs know to
+ * refresh their backup lists.
  */
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { writeJsonAtomic } from './atomicJson.js';
+import { errorBody } from './appErrors.js';
 import { subscribeVMBackupDeleted } from './vmManager/index.js';
 import { subscribeContainerBackupDeleted } from './containerManager/index.js';
 
@@ -30,6 +32,12 @@ const STATUS_PATH = resolve(__dirname, '../../../config/backup-status.json');
 let cache = null;
 let writeChain = Promise.resolve();
 const changeHandlers = new Set();
+
+/** @typedef {'vm' | 'container'} WorkloadType */
+
+function bucketOf(type) {
+  return type === 'vm' ? 'vms' : 'containers';
+}
 
 async function loadStatus() {
   if (cache) return cache;
@@ -47,60 +55,95 @@ async function loadStatus() {
 }
 
 /**
+ * Apply `change` (a pure `status → status`) to the current map, write it and
+ * announce it; a change that answers the map itself writes nothing. The
+ * change runs on the map as it is once loaded, in the same step that installs
+ * its result, so two writers never build on the same old map. A failed write
+ * is swallowed: the file is best-effort, and must never fail the backup,
+ * rename or delete that wrote it.
+ */
+async function changeStatus(change) {
+  await loadStatus();
+  const next = change(cache);
+  if (next === cache) return;
+  cache = next;
+  writeChain = writeChain
+    .then(() => writeJsonAtomic(STATUS_PATH, next))
+    .catch(() => { /* best-effort cache, see above */ });
+  await writeChain;
+  notifyBackupsChanged();
+}
+
+/**
  * @returns {Promise<{ vms: Record<string, object>, containers: Record<string, object> }>}
- * Entry shape: { at, ok, origin, destinationIds, timestamp?, error? }
+ * Entry shape: backupAttemptRecord's.
  */
 export async function getBackupStatus() {
   return loadStatus();
 }
 
 /**
- * Record the outcome of one backup attempt and notify subscribers.
+ * One attempt's record: `{ at, ok, origin, destinationIds }`, plus the backup
+ * folder name (`timestamp`) of a success, or the failure's error body
+ * (`error`, its code; `detail`, its text — lib/appErrors.js) — the key
+ * `error` always holds a code.
  *
- * @param {{ kind: 'vm' | 'container', name: string, ok: boolean,
- *           origin?: 'manual' | 'scheduled', destinationIds?: string[],
- *           timestamp?: string | null, error?: string | null }} attempt
+ * @param {{ ok: boolean, origin: 'manual' | 'scheduled', destinationIds: string[],
+ *           timestamp?: string | null, error?: unknown, at: string }} attempt
  */
-export async function recordBackupAttempt({ kind, name, ok, origin = 'manual', destinationIds = [], timestamp = null, error = null }) {
-  const bucket = kind === 'vm' ? 'vms' : 'containers';
-  const status = await loadStatus();
-  const entry = {
-    at: new Date().toISOString(),
-    ok: !!ok,
-    origin: origin === 'scheduled' ? 'scheduled' : 'manual',
-    destinationIds: Array.isArray(destinationIds) ? destinationIds : [],
-  };
-  if (ok && timestamp) entry.timestamp = timestamp;
-  if (!ok && error) entry.error = String(error);
-  status[bucket][name] = entry;
-  writeChain = writeChain
-    .then(() => writeJsonAtomic(STATUS_PATH, status))
-    .catch(() => {
-      /* status file is best-effort — a failed write must never fail the backup job */
-    });
-  await writeChain;
-  notifyBackupsChanged();
-  return entry;
+export function backupAttemptRecord({ ok, origin, destinationIds, timestamp = null, error, at }) {
+  const record = { at, ok, origin, destinationIds: [...destinationIds] };
+  if (ok) {
+    if (timestamp) record.timestamp = timestamp;
+    return record;
+  }
+  return { ...record, ...errorBody(error) };
 }
 
 /**
- * Drop a deleted workload's last-attempt record, so its row doesn't linger in
- * the backups panel. A no-op when there is none.
- *
- * @param {{ kind: 'vm' | 'container', name: string }} workload
+ * Record the outcome of one backup attempt and notify subscribers.
+ * @param {{ type: WorkloadType, name: string, ok: boolean, origin: 'manual' | 'scheduled',
+ *           destinationIds: string[], timestamp?: string | null, error?: unknown }} attempt
  */
-export async function forgetBackupStatus({ kind, name }) {
-  const bucket = kind === 'vm' ? 'vms' : 'containers';
-  const status = await loadStatus();
-  if (!(name in status[bucket])) return;
-  delete status[bucket][name];
-  writeChain = writeChain
-    .then(() => writeJsonAtomic(STATUS_PATH, status))
-    .catch(() => {
-      /* status file is best-effort — a failed write must never fail the delete */
-    });
-  await writeChain;
-  notifyBackupsChanged();
+export async function recordBackupAttempt({ type, name, ...attempt }) {
+  const record = backupAttemptRecord({ ...attempt, at: new Date().toISOString() });
+  const bucket = bucketOf(type);
+  await changeStatus((status) => ({ ...status, [bucket]: { ...status[bucket], [name]: record } }));
+}
+
+/**
+ * `status` with `from`'s record under `to` (a rename): the renamed workload's
+ * last attempt, never a record `to` kept from an earlier workload of that name.
+ * Pure: answers a new map, or `status` itself when nothing changes.
+ */
+export function statusMoved(status, type, from, to) {
+  const bucket = bucketOf(type);
+  const records = { ...status[bucket] };
+  if (!(from in records) && !(to in records)) return status;
+  const moved = records[from];
+  delete records[from];
+  if (moved) records[to] = moved;
+  else delete records[to];
+  return { ...status, [bucket]: records };
+}
+
+/** `status` without `name`'s record (a delete). Pure: `status` itself when it has none. */
+export function statusForgotten(status, type, name) {
+  const bucket = bucketOf(type);
+  if (!(name in status[bucket])) return status;
+  const records = { ...status[bucket] };
+  delete records[name];
+  return { ...status, [bucket]: records };
+}
+
+/** Move a renamed workload's last-attempt record to its new name. */
+export async function moveBackupStatus({ type, from, to }) {
+  await changeStatus((status) => statusMoved(status, type, from, to));
+}
+
+/** Drop a deleted workload's last-attempt record, so its row doesn't linger in the backups panel. */
+export async function forgetBackupStatus({ type, name }) {
+  await changeStatus((status) => statusForgotten(status, type, name));
 }
 
 /** Poke subscribers that backup state changed (new/pruned/deleted backups, attempt status). */

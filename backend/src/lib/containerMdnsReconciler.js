@@ -10,11 +10,11 @@
  * global IPv6.
  *
  * Mirrors `vmMdnsReconciler.js` — same single-flat-file shape, no platform
- * split, no own polling, no own writes. Routes call `publishContainer` /
- * `unpublishContainer` directly when `localDns` toggles, on rename, and on
- * delete (those are metadata flips, not network changes).
+ * split, no own polling, no own writes. The container's configuration update,
+ * rename and delete call `publishContainer` / `unpublishContainer` directly
+ * (lib/workloadFollowUps.js) — those are metadata flips, not network changes.
  *
- * Every operation for one container — event handling and the route calls —
+ * Every operation for one container — event handling and the direct calls —
  * runs on that container's promise chain, one at a time in arrival order.
  * Each handler awaits a config read before it acts, so without the chain a
  * "running" handler still reading could register after a later "stopped"
@@ -126,8 +126,8 @@ export function stopContainerMdnsReconciler() {
 }
 
 /**
- * Force a publish attempt for a single container (called by routes when the
- * user toggles localDns on, or after a rename). Publishes only a running
+ * Force a publish attempt for a single container (a localDns toggle on, or
+ * after a rename). Publishes only a running
  * container with `localDns: true` — container.json keeps the last addresses
  * after a stop, so they alone don't mean the container is reachable there.
  * A no-op otherwise; the network-change event publishes it once it runs.
@@ -146,10 +146,7 @@ export function publishContainer(name) {
   });
 }
 
-/**
- * Drop the container's mDNS entry. Used by routes when the user toggles
- * localDns off, on rename (old name), and before delete.
- */
+/** Drop the container's mDNS entry: a localDns toggle off, a rename (old name), a delete. */
 export function unpublishContainer(name) {
   return enqueue(name, async () => {
     await deregisterAddress(name);

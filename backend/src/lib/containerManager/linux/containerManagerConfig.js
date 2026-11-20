@@ -375,10 +375,9 @@ export async function updateContainerConfig(name, changes) {
     if (isRunning && RESTART_FIELDS.has(key)) requiresRestart = true;
   }
 
-  // A-record (de)registration is owned by routes/containers.js — it calls
-  // publishContainer/unpublishContainer on the reconciler after this function
-  // returns. We only handle SRV/TXT services here (still managed inside
-  // containerManager because they're tied to the container's service array).
+  // The A record is Wisp glue's (lib/containerOperations.js), after this
+  // returns. Only the SRV/TXT services are handled here: they are tied to the
+  // container's service array.
   if (changes.localDns === false) {
     await deregisterServicesForContainer(name);
   } else if (changes.localDns === true && isRunning && config.network?.ip) {

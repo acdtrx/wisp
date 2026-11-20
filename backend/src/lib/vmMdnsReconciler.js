@@ -6,11 +6,11 @@
  * libvirt/AgentEvent/safety-net plumbing lives inside vmManager — this file
  * carries no platform-specific code, so it stays a single flat module.
  *
- * Routes call `publishVm` / `unpublishVm` directly when the user toggles
- * `localDns`, renames a VM, or deletes one — those are metadata flips, not
- * network-state changes, so they bypass the event path.
+ * The VM's configuration update, rename and delete call `publishVm` /
+ * `unpublishVm` directly (lib/workloadFollowUps.js) — those are metadata
+ * flips, not network-state changes, so they bypass the event path.
  *
- * Every operation for one VM — event handling and the route calls — runs on
+ * Every operation for one VM — event handling and the direct calls — runs on
  * that VM's promise chain, one at a time in arrival order. A register awaits
  * avahi before it records the entry, so without the chain a stop arriving in
  * between found nothing to deregister and left a stopped VM published.
@@ -108,10 +108,9 @@ export function stopVmMdnsReconciler() {
 }
 
 /**
- * Force a publish attempt for a single VM (called by the config endpoint when
- * the user toggles localDns on, or after a rename). Reads the current IP via
- * the public vmManager facade. Safe to call when the VM isn't running — there
- * just won't be an IP to register.
+ * Force a publish attempt for a single VM (a localDns toggle on, or after a
+ * rename). Reads the current IP via the public vmManager facade. Safe to call
+ * when the VM isn't running — there just won't be an IP to register.
  */
 export function publishVm(name) {
   return enqueue(name, async () => {
@@ -122,10 +121,7 @@ export function publishVm(name) {
   });
 }
 
-/**
- * Drop the VM's mDNS entry. Used by the config endpoint when the user toggles
- * localDns off, on rename (old name), and on delete.
- */
+/** Drop the VM's mDNS entry: a localDns toggle off, a rename (old name), a delete. */
 export function unpublishVm(name) {
   return enqueue(name, async () => {
     await deregisterAddress(name);

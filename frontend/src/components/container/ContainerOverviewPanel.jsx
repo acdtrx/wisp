@@ -87,6 +87,9 @@ export default function ContainerOverviewPanel() {
   // blocks the conflicting actions here.
   const busyJob = useWorkloadBusy({ type: 'container', name: containerName });
   const busyHint = workloadBusyReason(busyJob) ?? null;
+  /* A kill during a stop is that stop made immediate (the server cuts its grace
+   * period), so Kill stays enabled while the busy job is a stop. */
+  const killHint = busyJob?.kind === JOB_KIND.CONTAINER_STOP ? null : busyHint;
   const backupJob = useWorkloadBackup({ type: 'container', name: containerName });
 
   // Auto-clear backupJobId once the job ends, but ONLY while the modal is
@@ -258,9 +261,9 @@ export default function ContainerOverviewPanel() {
           />
           <ActionButton
             icon={Zap}
-            label={busyHint || 'Kill'}
+            label={killHint || 'Kill'}
             onClick={() => killContainer(name)}
-            disabled={isStopped || !!busyHint}
+            disabled={isStopped || !!killHint}
             loading={actionLoading === 'kill'}
             variant="danger"
           />

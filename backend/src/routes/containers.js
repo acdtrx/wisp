@@ -1,74 +1,63 @@
 /**
  * Container API routes: CRUD, lifecycle, mount content, stats SSE, logs SSE.
  */
-import { randomBytes } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { unlink } from 'node:fs/promises';
-import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
 import {
-  getContainerDir, assertContainerState,
-  listContainers, getContainerConfig, getContainerMountUsage, assertContainerNameAvailable, createContainer, renameContainer,
-  createContainerBackup,
-  killContainer,
-  updateContainerConfig, addContainerMount, updateContainerMount, removeContainerMount,
-  addContainerService, updateContainerService, removeContainerService,
+  getContainerConfig, getContainerMountUsage,
   getContainerStats,
+  listContainers,
   listContainerRuns, readRunLogHistory, streamContainerRunLogs, resolveRunId,
   createRunLogReadStream,
-  planMountFileUpload, commitMountFileUpload, assertMountTakesZip, planMountZipExtract, extractMountZip,
-  initMountContent, assertMountOperation, deleteMountData, deleteRemovedMountData,
-  getMountFileTextContent, putMountFileTextContent,
+  getMountFileTextContent,
   listContainerImages, assertContainerImageDeletable, deleteContainerImage,
   getImageUpdateStatus,
 } from '../lib/containerManager/index.js';
 import {
   startJob,
   BACKGROUND_JOB_KIND,
-  titleForContainerCreate,
-  titleForContainerBackup,
-  titleForContainerMountDelete,
-  titleForContainerMountDataDelete,
   titleForContainerImageDelete,
-  titleForZipExtract,
 } from '../lib/jobs/index.js';
-import { startContainerLifecycleJob, startContainerDeleteJob } from '../lib/containerJobs.js';
+import {
+  startContainerCreateJob,
+  startContainerStartJob,
+  startContainerStopJob,
+  startContainerRestartJob,
+  killContainerNow,
+  startContainerDeleteJob,
+  startContainerBackupJob,
+  editContainerConfig,
+  saveContainerAppConfig,
+  ejectContainerApp,
+  addContainerMountRow,
+  editContainerMountRow,
+  startContainerMountDeleteJob,
+  writeContainerMountFile,
+  startContainerZipExtractJob,
+  putContainerMountContent,
+  initContainerMountContent,
+  startContainerMountDataDeleteJob,
+  addContainerServiceRow,
+  editContainerServiceRow,
+  removeContainerServiceRow,
+} from '../lib/containerOperations.js';
 import { startImageUpdateCheckJob } from '../lib/updateChecks.js';
 import { watchRequestBody, bodyWatchHooks } from '../lib/requestBodyWatch.js';
-import { getSettings, getRawMounts } from '../lib/settings.js';
-import { renameWorkloadAssignment } from '../lib/sections.js';
-import { publishContainer, unpublishContainer } from '../lib/containerMdnsReconciler.js';
-import { resolveBackupDestinations, backupToEachDestination } from '../lib/backupDestinations.js';
-import { recordBackupAttempt } from '../lib/backupStatus.js';
 import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { createAppError } from '../lib/appErrors.js';
 import { validateContainerName } from '../lib/validation.js';
 import {
-  acquireContainerOperationLock,
-  withContainerOperationLock,
-} from '../lib/containerOperationLock.js';
-import {
   isKnownApp,
-  createAppContainer,
-  applyAppConfig,
-  eject as ejectAppContainer,
   maskContainerConfigSecrets,
-  assertMountNotAppManaged,
-  assertMountListNotAppManaged,
   assertMountContentReadable,
 } from '../lib/containerApps/index.js';
 import { jobAckSchema } from './schemas.js';
 
-/** Staging file for one mount upload: inside the container dir, so on the same disk as the mount data (not a tmpfs /tmp). */
-function mountUploadStagingPath(containerName) {
-  return join(getContainerDir(containerName), `.wisp-upload-${randomBytes(8).toString('hex')}`);
-}
-
 /**
  * Stream the request's single file part to `stagingPath` while iterating the
- * parts; resolves whether a file part was present. The caller owns (and always
- * removes) the staging file.
+ * parts; a request without one answers UPLOAD_NO_FILE. The caller owns (and
+ * always removes) the staging file.
  *
  * The file must be consumed as it arrives. busboy finishes the multipart body
  * only after every file stream has been read to its end, and @fastify/multipart
@@ -83,7 +72,7 @@ function mountUploadStagingPath(containerName) {
  * multipart fileSize limit answers UPLOAD_TOO_LARGE — in each case before the
  * mount is touched.
  */
-async function stageSingleMultipartFile(request, stagingPath, { mode = 0o600 } = {}) {
+async function stageSingleMultipartFile(request, stagingPath, { mode = 0o600, what = 'file' } = {}) {
   let staged = false;
   let extraFiles = false;
   try {
@@ -109,7 +98,7 @@ async function stageSingleMultipartFile(request, stagingPath, { mode = 0o600 } =
       'Only one file upload is allowed per request',
     );
   }
-  return staged;
+  if (!staged) throw createAppError('UPLOAD_NO_FILE', `The request must include a ${what} upload`);
 }
 
 function uploadTooLargeError() {
@@ -175,18 +164,7 @@ export default async function containerRoutes(fastify) {
       throw createAppError('UNKNOWN_APP_TYPE', `App "${spec.app}" is not a known app type`);
     }
 
-    const newName = spec.name.trim();
-    const job = await startJob({
-      kind: BACKGROUND_JOB_KIND.CONTAINER_CREATE,
-      title: titleForContainerCreate(newName),
-      subject: { type: 'container', name: newName },
-      check: () => assertContainerNameAvailable(spec.name), // a taken name is a 409 here, not a failed job
-      log: request.log,
-      run: async (report) => {
-        await (spec.app ? createAppContainer(spec, report) : createContainer(spec, report));
-        return { name: newName };
-      },
-    });
+    const job = await startContainerCreateJob({ spec, log: request.log });
     return reply.code(202).send(job);
   });
 
@@ -302,92 +280,26 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Update ────────────────────────────────────────────────────────
-  // PATCH may rename the container (when `name` differs from the URL segment).
-  // In that case the rename runs first, and remaining fields are applied under
-  // the new name. The response carries the name actually in effect so clients
-  // can follow up with the new URL. The whole request holds the container's
-  // operation lock — every branch writes container.json — and a rename also
-  // holds the target name's, so nothing starts on it mid-move.
+  // An app container's appConfig save goes to its app module, which
+  // regenerates the env, mounts and files from it. Any other body is a
+  // configuration update, a rename included (a body `name` other than the
+  // URL's runs first, the rest applies under the new name).
   fastify.patch('/containers/:name', { config: { auth: 'admin' } }, async (request, reply) => {
-    const releaseLocks = [];
-    try {
-      const body = request.body && typeof request.body === 'object' ? request.body : {};
-      const { name: requestedName, ...rest } = body;
-      let workingName = request.params.name;
-      // A body name is validated as sent, never trimmed or skipped when empty:
-      // the name in effect is the one the client sent.
-      if ('name' in body) validateContainerName(requestedName);
-      const renameTo = 'name' in body && requestedName !== workingName ? requestedName : null;
-
-      releaseLocks.push(acquireContainerOperationLock(workingName, renameTo ? 'rename' : 'configuration change'));
-      if (renameTo) releaseLocks.push(acquireContainerOperationLock(renameTo, 'rename'));
-
-      if (renameTo) {
-        const oldName = workingName;
-        const renamed = await renameContainer(workingName, renameTo);
-        workingName = renamed.name;
-        // Carry any custom-section assignment over to the new name so the
-        // container keeps its sidebar section. Best-effort: assignments are
-        // pure UI metadata, and the move reaches clients on the sections topic.
-        try { await renameWorkloadAssignment('container', oldName, workingName); } catch { /* best effort */ }
-        // mDNS A-record follows the rename: drop old name, register new. Best
-        // effort — the reconciler will pick up the new name on the next event.
-        try { await unpublishContainer(oldName); } catch { /* best effort */ }
-        try { await publishContainer(workingName); } catch { /* best effort */ }
-      }
-
-      if (Object.keys(rest).length === 0) {
-        return reply.code(204).send();
-      }
-
-      // Dispatch to containerApps for app-driven flows; everything else goes
-      // through the generic manager. The manager itself has no app awareness.
-      const config = await getContainerConfig(workingName);
-      const isAppContainer = !!config?.metadata?.app;
-
-      if (rest.eject === true) {
-        if (isAppContainer) await ejectAppContainer(workingName);
-        return reply.code(204).send();
-      }
-
-      if (isAppContainer && 'appConfig' in rest) {
-        if ('env' in rest || 'envPatch' in rest || 'mounts' in rest || 'devices' in rest) {
-          throw createAppError(
-            'APP_CONFIG_ONLY',
-            'Use appConfig to configure app containers, or eject to generic first',
-          );
-        }
-        await applyAppConfig(workingName, rest.appConfig);
-        return reply.code(204).send();
-      }
-
-      if (isAppContainer && ('env' in rest || 'envPatch' in rest || 'mounts' in rest)) {
-        throw createAppError(
-          'APP_CONFIG_ONLY',
-          'Use appConfig to configure app containers, or eject to generic first',
-        );
-      }
-
-      const { removedMounts } = await updateContainerConfig(workingName, rest);
-      // A generic PATCH that drops a Local mount from `mounts` deletes its data —
-      // the same contract as DELETE /mounts/:name. The manager only reports it;
-      // deleting is this caller's explicit decision (app flows decide their own).
-      for (const mountName of removedMounts) {
-        await deleteRemovedMountData(workingName, mountName);
-      }
-      // Metadata-only flips don't fire a network-change event — call the
-      // reconciler imperatively when localDns toggles. Same shape as the VM
-      // PATCH handler in routes/vms.js.
-      if ('localDns' in rest) {
-        try {
-          if (rest.localDns === false) await unpublishContainer(workingName);
-          else if (rest.localDns === true) await publishContainer(workingName);
-        } catch { /* best effort */ }
-      }
+    const body = request.body && typeof request.body === 'object' ? request.body : {};
+    const { name } = request.params;
+    if (body.eject === true) {
+      await ejectContainerApp(name);
       return reply.code(204).send();
-    } finally {
-      for (const release of releaseLocks) release();
     }
+    if ('appConfig' in body) {
+      await saveContainerAppConfig(name, () => body.appConfig);
+      return reply.code(204).send();
+    }
+    // A body name is validated as sent, never trimmed or skipped when empty:
+    // the name in effect is the one the client sent.
+    if ('name' in body) validateContainerName(body.name);
+    await editContainerConfig({ name, changes: body, log: request.log });
+    return reply.code(204).send();
   });
 
   // ── Delete ────────────────────────────────────────────────────────
@@ -400,19 +312,22 @@ export default async function containerRoutes(fastify) {
   });
 
   // ── Lifecycle ─────────────────────────────────────────────────────
-  // Start, stop and restart are jobs holding the per-container operation
-  // lock; not found, busy and already running / not running are answered
-  // here. Kill answers at once.
-  for (const action of ['start', 'stop', 'restart']) {
-    fastify.post(`/containers/:name/${action}`, { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
-      const job = await startContainerLifecycleJob({ name: request.params.name, action, log: request.log });
+  // Start, stop and restart are jobs; not found, busy and already running /
+  // not running are answered here. Kill answers at once.
+  const lifecycleJobs = [
+    { path: 'start', start: startContainerStartJob },
+    { path: 'stop', start: startContainerStopJob },
+    { path: 'restart', start: startContainerRestartJob },
+  ];
+  for (const { path, start } of lifecycleJobs) {
+    fastify.post(`/containers/:name/${path}`, { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
+      const job = await start({ name: request.params.name, log: request.log });
       return reply.code(202).send(job);
     });
   }
 
   fastify.post('/containers/:name/kill', { config: { auth: 'admin' } }, async (request, reply) => {
-    const { name } = request.params;
-    await withContainerOperationLock(name, 'kill', () => killContainer(name));
+    await killContainerNow(request.params.name);
     return reply.code(204).send();
   });
 
@@ -436,40 +351,8 @@ export default async function containerRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      const { name } = request.params;
-      const body = request.body || {};
-      let destinations;
-      // The operation lock keeps a second backup (its pause/resume around the
-      // archive) and every other operation off the container for the whole job.
-      const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP,
-        title: titleForContainerBackup(name),
-        subject: { type: 'container', name },
-        check: async () => {
-          await assertContainerState(name, 'exists');
-          destinations = await resolveBackupDestinations(await getSettings(), await getRawMounts(), body.destinationIds);
-        },
-        log: request.log,
-        run: async (report) => {
-          const destinationIds = destinations.map((d) => d.id);
-          let lastResult;
-          try {
-            lastResult = await backupToEachDestination(destinations, {
-              push: report,
-              backupOne: (dest, onProgress) => createContainerBackup(name, dest.path, { origin: 'manual', onProgress }),
-            });
-          } catch (err) {
-            await recordBackupAttempt({
-              kind: 'container', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
-            });
-            throw err;
-          }
-          await recordBackupAttempt({
-            kind: 'container', name, ok: true, origin: 'manual', destinationIds, timestamp: lastResult?.timestamp,
-          });
-          // The backup folder name only: its host path stays on the server.
-          return { timestamp: lastResult?.timestamp };
-        },
+      const job = await startContainerBackupJob({
+        name: request.params.name, origin: 'manual', destinationIds: request.body?.destinationIds, log: request.log,
       });
       return reply.code(202).send(job);
     },
@@ -574,115 +457,66 @@ export default async function containerRoutes(fastify) {
     if (!body || typeof body !== 'object') {
       throw createAppError('VALIDATION_FAILED', 'body must be an object with type, name, containerPath and readonly');
     }
-    const { name } = request.params;
-    await withContainerOperationLock(name, 'configuration change', async () => {
-      assertMountListNotAppManaged(await getContainerConfig(name));
-      return addContainerMount(name, body);
-    });
+    await addContainerMountRow(request.params.name, body);
     return reply.code(204).send();
   });
 
   fastify.patch('/containers/:name/mounts/:mountName', { config: { auth: 'admin' } }, async (request, reply) => {
-    const { mountName } = request.params;
     const body = request.body && typeof request.body === 'object' ? request.body : {};
-    const { name } = request.params;
-    await withContainerOperationLock(name, 'configuration change', async () => {
-      assertMountNotAppManaged(await getContainerConfig(name), mountName);
-      return updateContainerMount(name, mountName, body);
-    });
+    await editContainerMountRow(request.params.name, request.params.mountName, body);
     return reply.code(204).send();
   });
 
   // A job: removing a Local mount deletes its data. Not found, app-managed
   // and busy are answered here; `done` is `{ requiresRestart }`.
   fastify.delete('/containers/:name/mounts/:mountName', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
-    const { mountName } = request.params;
-    const { name } = request.params;
-    const job = await startJob({
-      kind: BACKGROUND_JOB_KIND.CONTAINER_MOUNT_DELETE,
-      title: titleForContainerMountDelete(name, mountName),
-      subject: { type: 'container', name },
-      check: async () => {
-        assertMountNotAppManaged(await getContainerConfig(name), mountName);
-        await assertMountOperation(name, mountName, 'remove');
-      },
-      log: request.log,
-      run: () => removeContainerMount(name, mountName),
-    });
+    const { name, mountName } = request.params;
+    const job = await startContainerMountDeleteJob({ name, mountName, log: request.log });
     return reply.code(202).send(job);
   });
 
   // ── Mount backing store (files/<mountName>) ───────────────────────
-  // The file part streams into a temp file beside the mount's file and is
-  // renamed over it once the whole body is read: the reply comes right after
-  // the upload, the replace is atomic, and every rejection leaves the mount
-  // as it was. The temp file goes on any failure (boot cleanup sweeps one a
-  // crash leaves).
+  // The file part streams into a temp file beside the mount's file, renamed
+  // over it once the whole body is read (lib/containerOperations.js): the
+  // reply comes right after the upload, and every rejection leaves the mount
+  // as it was.
   fastify.post('/containers/:name/mounts/:mountName/file', { config: { auth: 'admin' } }, async (request, reply) => {
-    const containerName = request.params.name;
+    const { name, mountName } = request.params;
     const bodyWatch = watchRequestBody(request);
-    let plan = null;
-    let committed = false;
     try {
-      const { mountName } = request.params;
-      assertMountNotAppManaged(await getContainerConfig(containerName), mountName);
-      plan = await planMountFileUpload(containerName, mountName);
-      if (!(await stageSingleMultipartFile(request, plan.tmp, { mode: plan.mode }))) {
-        throw createAppError('UPLOAD_NO_FILE', 'The request must include a file upload');
-      }
-      bodyWatch.stop();
-      await commitMountFileUpload(plan);
-      committed = true;
+      await writeContainerMountFile({
+        name,
+        mountName,
+        stage: async (tmpPath, mode) => {
+          await stageSingleMultipartFile(request, tmpPath, { mode });
+          bodyWatch.stop();
+        },
+      });
       return reply.code(204).send();
     } finally {
       bodyWatch.stop();
-      if (plan && !committed) await unlink(plan.tmp).catch(() => { /* never created, or already gone */ });
     }
   });
 
   // The upload is received here; the extract that follows is a job (202).
   // Not found, app-managed, a mount that takes no zip, an invalid or unsafe
-  // archive and busy are answered here. The job owns the staged zip.
+  // archive and busy are answered here.
   fastify.post('/containers/:name/mounts/:mountName/zip', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
-    const containerName = request.params.name;
-    const stagingPath = mountUploadStagingPath(containerName);
+    const { name, mountName } = request.params;
     const bodyWatch = watchRequestBody(request);
-    let staged = true; // the finally removes it unless the job took it
     try {
-      const { mountName } = request.params;
-      // 404 / APP_CONFIG_ONLY / not a directory mount, before staging into the container dir.
-      assertMountNotAppManaged(await getContainerConfig(containerName), mountName);
-      await assertMountTakesZip(containerName, mountName);
-      if (!(await stageSingleMultipartFile(request, stagingPath))) {
-        throw createAppError('UPLOAD_NO_FILE', 'The request must include a zip upload');
-      }
-      bodyWatch.stop();
-      // Checked again under the lock the job then holds, so no edit can move
-      // the mount between the check and the extract.
-      let plan;
-      const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.CONTAINER_ZIP_EXTRACT,
-        title: titleForZipExtract(containerName, mountName),
-        subject: { type: 'container', name: containerName },
-        check: async () => {
-          assertMountNotAppManaged(await getContainerConfig(containerName), mountName);
-          plan = await planMountZipExtract(containerName, mountName, stagingPath);
+      const job = await startContainerZipExtractJob({
+        name,
+        mountName,
+        stage: async (stagingPath) => {
+          await stageSingleMultipartFile(request, stagingPath, { what: 'zip' });
+          bodyWatch.stop();
         },
         log: request.log,
-        run: async () => {
-          try {
-            await extractMountZip(plan);
-            return { name: containerName, mount: mountName };
-          } finally {
-            await unlink(stagingPath).catch(() => { /* already gone */ });
-          }
-        },
       });
-      staged = false;
       return reply.code(202).send(job);
     } finally {
       bodyWatch.stop();
-      if (staged) await unlink(stagingPath).catch(() => { /* never created, or already gone */ });
     }
   });
 
@@ -706,37 +540,20 @@ export default async function containerRoutes(fastify) {
     if (typeof content !== 'string') {
       throw createAppError('VALIDATION_FAILED', 'body/content must be a string');
     }
-    assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
-    await putMountFileTextContent(request.params.name, mountName, content);
+    await putContainerMountContent(request.params.name, mountName, content);
     return reply.code(204).send();
   });
 
   fastify.post('/containers/:name/mounts/:mountName/init', { config: { auth: 'admin' } }, async (request, reply) => {
-    const { mountName } = request.params;
-    assertMountNotAppManaged(await getContainerConfig(request.params.name), mountName);
-    await initMountContent(request.params.name, mountName);
+    await initContainerMountContent(request.params.name, request.params.mountName);
     return reply.code(204).send();
   });
 
   // A job: a large data directory takes a while to delete. Not found,
   // app-managed, a tmpfs mount and busy are answered here.
   fastify.delete('/containers/:name/mounts/:mountName/data', { config: { auth: 'admin' }, schema: { response: { 202: jobAckSchema } } }, async (request, reply) => {
-    const { mountName } = request.params;
-    const { name } = request.params;
-    const job = await startJob({
-      kind: BACKGROUND_JOB_KIND.CONTAINER_MOUNT_DATA_DELETE,
-      title: titleForContainerMountDataDelete(name, mountName),
-      subject: { type: 'container', name },
-      check: async () => {
-        assertMountNotAppManaged(await getContainerConfig(name), mountName);
-        await assertMountOperation(name, mountName, 'data');
-      },
-      log: request.log,
-      run: async () => {
-        await deleteMountData(name, mountName);
-        return { name, mount: mountName };
-      },
-    });
+    const { name, mountName } = request.params;
+    const job = await startContainerMountDataDeleteJob({ name, mountName, log: request.log });
     return reply.code(202).send(job);
   });
 
@@ -746,21 +563,20 @@ export default async function containerRoutes(fastify) {
     if (!body || typeof body !== 'object') {
       throw createAppError('VALIDATION_FAILED', 'body must be an object with port, type and an optional txt');
     }
-    const { name } = request.params;
-    await withContainerOperationLock(name, 'configuration change', () => addContainerService(name, body));
+    await addContainerServiceRow(request.params.name, body);
     return reply.code(204).send();
   });
 
   fastify.patch('/containers/:name/services/:port', { config: { auth: 'admin' } }, async (request, reply) => {
     const body = request.body && typeof request.body === 'object' ? request.body : {};
     const { name, port } = request.params;
-    await withContainerOperationLock(name, 'configuration change', () => updateContainerService(name, port, body));
+    await editContainerServiceRow(name, port, body);
     return reply.code(204).send();
   });
 
   fastify.delete('/containers/:name/services/:port', { config: { auth: 'admin' } }, async (request, reply) => {
     const { name, port } = request.params;
-    await withContainerOperationLock(name, 'configuration change', () => removeContainerService(name, port));
+    await removeContainerServiceRow(name, port);
     return reply.code(204).send();
   });
 }
