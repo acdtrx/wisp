@@ -18,8 +18,9 @@ of the bridge step is no longer recovered by the next run.
 - **A supported host's network is run by netplan**, rendered by systemd-networkd. This
   holds whether setup makes the bridge or finds one: a host run by another tool is
   refused before anything changes, bridge or not.
-- **Refused, each with its code and the remedy "run the uplink with netplan"**:
-  NetworkManager, plain systemd-networkd, ifupdown, and anything else.
+- **Refused with one code and one remedy**, "run the uplink with netplan (renderer
+  networkd)": NetworkManager, plain systemd-networkd, ifupdown, and anything else. The
+  message names what was found to run the uplink, where setup can tell.
 - **Everything of setup's that served only the two cut tools goes**: their plans, their
   bridge and undo paths, their refusals and rows, their Python and its tests, the
   NetworkManager variant of the container DNS stub. Nothing is kept "for later".
@@ -70,8 +71,13 @@ of the bridge step is no longer recovered by the next run.
 
 - A build from scratch for netplan alone: no dispatch by tool with one tool left, no
   parameter that only ever takes one value, no shared layer that exists for three.
-- The released versions never had the journal or the two cut tools' bridges, so nothing
-  migrates and nothing is cleaned up for them.
+- The released versions never had the journal, so nothing is cleaned up for it.
+- **Released hosts that are not netplan hosts stop updating** (corrected 2026-11-20: this
+  doc first said the releases never made the cut tools' bridges; they did). Up to
+  v2.8.0-beta.1, setup made `br0` with `nmcli`, or with systemd-networkd's files, on a
+  host without netplan. On such a host the next update is refused and rolls back, and the
+  host stays on its release until netplan runs its network. Nothing migrates such a
+  host: moving a network between tools is the operator's. The changelog says so.
 - The test host's limits are unchanged. It is a netplan host with a bridge: a deploy
   leaves its network record as it was.
 
