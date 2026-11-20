@@ -41,9 +41,8 @@
 # is part of the network being online, which wisp.service is ordered after:
 # the definition is not optional, so netplan's wait-online waits for it.
 # Applied with `netplan generate` and `networkctl reload`, never `netplan
-# apply`, which would reconfigure the bridge too. A host that holds the former
-# declaration, systemd-networkd's own files and a wait-online instance of its
-# own, has them taken back.
+# apply`. A host that holds the former declaration, systemd-networkd's own
+# files and a wait-online instance of its own, has them taken back.
 #
 # Does not touch systemd-resolved.
 #
@@ -117,25 +116,36 @@ network:
       link-local: []
       accept-ra: false
 EOF
+RENDER=0 MOVED=0
+for f in "${FORMER_FILES[@]}"; do
+  [[ ! -e "$f" ]] || MOVED=1
+done
 if write_if_changed "$DNS_STUB_NETPLAN_FILE" 0600 "$yaml"; then
   changed "$DNS_STUB_NETPLAN_FILE"
-  RELOAD=1
+  RENDER=1
+  # A move from the former declaration changes no setting; a change of the
+  # definition otherwise is applied.
+  (( MOVED )) || RELOAD=1
+fi
+(( ! MOVED )) || RENDER=1
+
+# Rendered by netplan, then the former files gone. systemd-networkd is
+# reloaded only when the device is not up or its settings changed: `netplan
+# generate` writes every unit netplan renders again, and a reload then
+# reconfigures each link it runs from one, the bridge and the uplink among
+# them (observed: br0's DHCP lease dropped and taken again). A device up from
+# the former files, with the same settings, keeps running; networkd runs it
+# from netplan's units from its next reload or boot. When the step reloads,
+# it waits until the device has its address.
+if (( RENDER )) || ! stub_up; then
+  step_run 0 timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" netplan generate || fail "netplan generate failed"
 fi
 for f in "${FORMER_FILES[@]}"; do
-  [[ ! -e "$f" ]] || RELOAD=1
+  [[ -e "$f" ]] || continue
+  remove_file "$f" || fail "cannot remove $f"
+  changed "removed $f (the stub is netplan's now)"
 done
-
-# Rendered by netplan, then the former files gone, then systemd-networkd
-# reloaded, which runs the device from netplan's units. On a change, or when
-# the address is not there (files written before networkd ran), the step waits
-# until the device has its address.
 if (( RELOAD )) || ! stub_up; then
-  step_run 0 timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" netplan generate || fail "netplan generate failed"
-  for f in "${FORMER_FILES[@]}"; do
-    [[ -e "$f" ]] || continue
-    remove_file "$f" || fail "cannot remove $f"
-    changed "removed $f (the stub is netplan's now)"
-  done
   net_call networkctl reload || fail "networkctl reload failed"
   step_run 0 timeout -k "$NET_KILL_SEC" "$(( NET_WAIT_SEC + NET_CMD_SEC ))" \
     /usr/lib/systemd/systemd-networkd-wait-online -i "${STUB_IFACE}:degraded" --timeout="$NET_WAIT_SEC" >/dev/null \
