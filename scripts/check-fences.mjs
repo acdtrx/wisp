@@ -38,7 +38,11 @@
  *      its operation module's (lib/vmOperations.js, lib/containerOperations.js).
  *
  *   8. Outbound HTTP has one home (CODING-RULES §7): over the same files,
- *      comments stripped, none outside lib/downloads/
+ *      comments stripped, none but the two files that implement its two
+ *      fetches (lib/downloads/downloadFromUrl.js for ssrfSafeFetch,
+ *      lib/downloads/operatorEndpoint.js for fetchOperatorEndpoint) — the rest
+ *      of lib/downloads/ included, since a public source goes through
+ *      ssrfSafeFetch like any other
  *      - calls the global fetch: a `fetch(` or `fetch?.(` that is no
  *        property's (`x.fetch(` is another object's), or the global object's
  *        `fetch` taken as a property (`globalThis.fetch`, `global?.fetch`,
@@ -48,7 +52,7 @@
  *        `require()`, other than a static import naming only `createServer` /
  *        `createSecureServer` (a stub server in a test is no client);
  *      - opens a WebSocket client: `new WebSocket(`, or `new x.WebSocket(`.
- *      undici is rule 1's fence. A reviewed allowance is an EXCEPTIONS line
+ *      undici is rule 1's fence, held to the same two files. A reviewed allowance is an EXCEPTIONS line
  *      with the specifier `fetch`, `WebSocket` or the module's specifier.
  *      Known limits — what it still cannot catch:
  *      - the global fetch taken as a value: `const { fetch } = globalThis`,
@@ -111,7 +115,8 @@ const PACKAGE_FENCES = {
   '@grpc/grpc-js': [`${LIB}/containerManager/linux/`],
   '@grpc/proto-loader': [`${LIB}/containerManager/linux/`],
   protobufjs: [`${LIB}/containerManager/linux/`],
-  undici: [`${LIB}/downloads/`],
+  // The two fetch helpers alone: every other request, inside lib/downloads/ too, goes through them.
+  undici: [`${LIB}/downloads/downloadFromUrl.js`, `${LIB}/downloads/operatorEndpoint.js`],
 };
 
 const STRICT_MANAGERS = ['vmManager', 'containerManager'];
@@ -119,8 +124,14 @@ const ROUTES = 'backend/src/routes/';
 /** Rule 7: the lock modules, which no route imports. */
 const LOCK_MODULES = [`${LIB}/vmOperationLock.js`, `${LIB}/containerOperationLock.js`];
 const CARVED = ['host', 'networking', 'mdns', 'storage'];
-/** Rule 8: the one home of outbound HTTP, a call of the global fetch, a WebSocket client and Node's HTTP clients. */
+/** Rules 8 and 9: the one home of outbound HTTP. */
 const FETCH_HOME = `${LIB}/downloads/`;
+/**
+ * Rule 8: inside that home, the two files that implement its two fetches —
+ * the only ones that may call the global fetch, open a WebSocket client or
+ * import an HTTP client.
+ */
+const FETCH_HELPERS = new Set([`${LIB}/downloads/downloadFromUrl.js`, `${LIB}/downloads/operatorEndpoint.js`]);
 const GLOBAL_FETCH = /(?<![\w$.])fetch\s*(?:\?\.\s*)?\(|(?<![\w$.])(?:globalThis|global)\s*(?:\?\.\s*|\.\s*)(?:fetch\b|\[\s*(['"`])fetch\1\s*\])|(?<![\w$.])(?:globalThis|global)\s*\[\s*(['"`])fetch\2\s*\]/g;
 const WEBSOCKET_CLIENT = /(?<![\w$.])new\s+(?:[\w$]+\s*(?:\?\.|\.)\s*)*WebSocket\s*\(/g;
 const HTTP_CLIENT_MODULES = new Set(['http', 'https', 'http2']);
@@ -141,6 +152,11 @@ const EXCEPTIONS = [
     file: 'backend/src/lib/stateMigrations.js',
     specifier: '<computed>',
     reason: 'loads each migration file from the migrations directory it lists',
+  },
+  {
+    file: 'backend/src/lib/downloads/ssrfSafeFetch.test.js',
+    specifier: 'undici',
+    reason: "the test of ssrfSafeFetch's per-hop Agent replaces undici with a module mock",
   },
 ];
 
@@ -478,13 +494,14 @@ async function main() {
     const isExcepted = (specifier) => EXCEPTIONS.some((e) => e.file === fileRel && e.specifier === specifier);
     const lineAt = (index) => source.slice(0, index).split('\n').length;
     const outsideFetchHome = !fileRel.startsWith(FETCH_HOME);
+    const notAFetchHelper = !FETCH_HELPERS.has(fileRel);
     const viaDownloads = 'outbound HTTP, which goes through lib/downloads: ssrfSafeFetch, or fetchOperatorEndpoint for an endpoint only the operator sets';
-    if (outsideFetchHome && !isExcepted('fetch')) {
+    if (notAFetchHelper && !isExcepted('fetch')) {
       for (const m of code.matchAll(GLOBAL_FETCH)) {
         violations.push(`${fileRel}:${lineAt(m.index)} fetch — the global fetch is ${viaDownloads} (CODING-RULES §7)`);
       }
     }
-    if (outsideFetchHome && !isExcepted('WebSocket')) {
+    if (notAFetchHelper && !isExcepted('WebSocket')) {
       for (const m of code.matchAll(WEBSOCKET_CLIENT)) {
         violations.push(`${fileRel}:${lineAt(m.index)} WebSocket — a WebSocket client is ${viaDownloads} (CODING-RULES §7)`);
       }
@@ -513,7 +530,7 @@ async function main() {
         continue;
       }
       if (!found.prefix && !specifier.startsWith('.')) {
-        if (outsideFetchHome && HTTP_CLIENT_MODULES.has(specifier.replace(/^node:/, ''))) {
+        if (notAFetchHelper && HTTP_CLIENT_MODULES.has(specifier.replace(/^node:/, ''))) {
           const names = /^\{([^}]*)\}$/.exec((clause ?? '').trim())?.[1]
             .split(',').map((n) => n.trim().split(/\s+as\s+/)[0]).filter(Boolean);
           if (!names?.length || !names.every((n) => HTTP_SERVER_NAMES.has(n))) {

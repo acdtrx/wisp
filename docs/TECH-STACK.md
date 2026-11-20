@@ -38,7 +38,7 @@
   allows `localhost:5173` in development only; in production the backend serves its own
   client, same origin.
 - **Logging: pino** — pino-pretty single-line in dev, plain JSON in production.
-- **`undici`** for every outbound request, only in `lib/downloads/`, the one home of
+- **`undici`** for every outbound request, only in the two fetch helpers of `lib/downloads/`, the one home of
   outbound HTTP (no global `fetch` elsewhere in the backend): the SSRF-hardened fetch,
   and the operator-endpoint fetch for the OIDC issuer;
   **`js-yaml`** for cloud-init YAML emission.
