@@ -30,11 +30,12 @@ beforeEach(() => {
   requests.length = 0;
 });
 
-test('the keys are the lines of the .keys answer, under a deadline', async () => {
+test('the keys are the lines of the .keys answer, under a deadline and a size bound', async () => {
   answer = () => new Response('ssh-ed25519 AAAA one\nssh-rsa BBBB two\n\n');
   assert.deepEqual(await fetchGithubKeys('octocat'), ['ssh-ed25519 AAAA one', 'ssh-rsa BBBB two']);
   assert.equal(requests[0].url, 'https://github.com/octocat.keys');
   assert.ok(requests[0].init.signal instanceof AbortSignal);
+  assert.ok(requests[0].init.maxBodyBytes > 0);
 });
 
 test('an answer other than 2xx is GITHUB_KEYS_NOT_FOUND', async () => {

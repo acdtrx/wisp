@@ -3,7 +3,8 @@
  * (node --test --experimental-test-module-mocks): the DNS lookup is mocked to
  * answer a public address, so the guard lets the request out, and each Agent
  * the fetch makes connects to the stub instead. Each Agent is closed, and the
- * last one only once the caller has read the body.
+ * last one only once the caller has read the body; a body is bounded when
+ * the caller asks.
  */
 import { after, before, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -98,6 +99,14 @@ test('each hop closes its Agent, and the last closes only after the body is read
   const body = await res.text();
   assert.equal(body.length, CHUNKS * CHUNK.length);
   await last.whenClosed;
+});
+
+test('a body past maxBodyBytes fails as it is read', async () => {
+  const res = await ssrfSafeFetch(`http://stub.test:${port}/slow`, { maxBodyBytes: 2500 });
+  assert.equal(res.status, 200);
+  await assert.rejects(res.text(), (err) => err.code === 'DOWNLOAD_FAILED' && /2500 bytes/.test(err.message));
+  const whole = await ssrfSafeFetch(`http://stub.test:${port}/slow`, { maxBodyBytes: CHUNKS * CHUNK.length });
+  assert.equal((await whole.text()).length, CHUNKS * CHUNK.length);
 });
 
 test('a request that fails closes its Agent too', async () => {

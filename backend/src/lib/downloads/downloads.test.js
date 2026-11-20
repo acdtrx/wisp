@@ -24,6 +24,14 @@ before(async () => {
       hits.redirect += 1;
       res.writeHead(302, { location: '/ok' });
       res.end();
+    } else if (req.url === '/declared-big') {
+      res.writeHead(200, { 'content-length': '5000' });
+      res.end('x'.repeat(5000));
+    } else if (req.url === '/chunked-big') {
+      // No Content-Length: the bound is met while reading.
+      res.writeHead(200);
+      for (let i = 0; i < 5; i += 1) res.write('x'.repeat(1000));
+      res.end();
     } else if (req.url === '/hang') {
       hits.hang += 1; // never answers: the caller's signal ends the wait
     } else {
@@ -62,6 +70,17 @@ test("the operator fetch ends at the caller's signal", async () => {
     (err) => err.name === 'TimeoutError',
   );
   assert.equal(hits.hang, 1);
+});
+
+test('the operator fetch fails a body past maxBodyBytes, declared or read, and reads one within it', async () => {
+  await assert.rejects(fetchOperatorEndpoint(`${base}/declared-big`, { maxBodyBytes: 4096 }), { code: 'DOWNLOAD_FAILED' });
+  const chunked = await fetchOperatorEndpoint(`${base}/chunked-big`, { maxBodyBytes: 4096 });
+  assert.equal(chunked.status, 200);
+  await assert.rejects(chunked.text(), (err) => err.code === 'DOWNLOAD_FAILED' && /4096 bytes/.test(err.message));
+  const within = await fetchOperatorEndpoint(`${base}/chunked-big`, { maxBodyBytes: 5000 });
+  assert.equal((await within.text()).length, 5000);
+  const json = await fetchOperatorEndpoint(`${base}/ok`, { maxBodyBytes: 100 });
+  assert.deepEqual(await json.json(), { hello: 'stub' });
 });
 
 test('the operator fetch refuses a URL that is not http or https', async () => {

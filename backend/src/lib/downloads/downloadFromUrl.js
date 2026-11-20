@@ -20,7 +20,7 @@ import { Agent, fetch as undiciFetch } from 'undici';
 import { ensureImageDir } from '../paths.js';
 import { detectType } from './fileTypes.js';
 import { createAppError, errorBody, isAppError, wrapAppError } from '../appErrors.js';
-import { streamResponseToFile, streamResponseToUniqueFile } from './downloadUtils.js';
+import { limitBody, streamResponseToFile, streamResponseToUniqueFile } from './downloadUtils.js';
 
 const MAX_REDIRECTS = 5;
 
@@ -285,10 +285,12 @@ function untilAborted(promise, signal) {
  * close is graceful, so the request in flight — its body, read by the caller
  * at its own pace — completes first, and the Agent's sockets go when it has.
  *
- * Pass `method` (`'GET'` / `'HEAD'`) and any standard fetch options. Returns
- * an undici Response object whose `body` (web ReadableStream) can be piped.
+ * Pass `method` (`'GET'` / `'HEAD'`) and any standard fetch options, and
+ * `maxBodyBytes` for an answer read whole: the body then fails with
+ * DOWNLOAD_FAILED past it (see `limitBody`). Returns a Response whose `body`
+ * (web ReadableStream) can be piped.
  */
-export async function ssrfSafeFetch(urlStr, init = {}) {
+export async function ssrfSafeFetch(urlStr, { maxBodyBytes, ...init } = {}) {
   let currentUrl = urlStr;
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
     // The caller's signal bounds the DNS lookup too, not only the request.
@@ -311,7 +313,7 @@ export async function ssrfSafeFetch(urlStr, init = {}) {
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get('location');
       if (!location) {
-        return res; // 3xx without Location — return as-is
+        return limitBody(res, maxBodyBytes); // 3xx without Location — the answer as is
       }
       const next = new URL(location, currentUrl).toString();
       // Drain the redirect response body so its Agent's close completes.
@@ -319,7 +321,7 @@ export async function ssrfSafeFetch(urlStr, init = {}) {
       currentUrl = next;
       continue;
     }
-    return res;
+    return limitBody(res, maxBodyBytes);
   }
   throw createAppError('SSRF_BLOCKED', `Exceeded redirect limit (${MAX_REDIRECTS})`);
 }

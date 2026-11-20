@@ -38,6 +38,8 @@ const execFile = promisify(execFileCb);
 const ISO_BUILD_TIMEOUT_MS = 20_000;
 /** One small text reply: 10 s over its DNS lookup, the request and the body. */
 const GITHUB_KEYS_TIMEOUT_MS = 10_000;
+/** A user's keys are a few KB; past 256 KiB the answer is not a key list. */
+const GITHUB_KEYS_MAX_BODY_BYTES = 256 * 1024;
 
 // ─── Password Hashing ───────────────────────────
 
@@ -438,7 +440,7 @@ export async function fetchGithubKeys(username) {
   const unavailable = (err) => wrapAppError('GITHUB_KEYS_UNAVAILABLE', 'Failed to fetch GitHub keys', err);
   let res;
   try {
-    res = await ssrfSafeFetch(`https://github.com/${username}.keys`, { signal });
+    res = await ssrfSafeFetch(`https://github.com/${username}.keys`, { signal, maxBodyBytes: GITHUB_KEYS_MAX_BODY_BYTES });
   } catch (err) {
     throw unavailable(err);
   }

@@ -64,6 +64,8 @@ before(async () => {
         stub.hits.token += 1;
         stub.tokenRequest = { authorization: req.headers.authorization, form: new URLSearchParams(raw) };
         json(res, stub.tokenAnswer.status, stub.tokenAnswer.body);
+      } else if (req.url === '/huge/.well-known/openid-configuration') {
+        json(res, 200, { issuer: `${base}/huge`, padding: 'x'.repeat(2 * 1024 * 1024) });
       } else if (req.url === '/moved/.well-known/openid-configuration') {
         res.writeHead(302, { location: '/idp/.well-known/openid-configuration' });
         res.end();
@@ -178,6 +180,13 @@ test('a discovery that redirects or is missing fails, the redirect not followed'
     { code: 'OIDC_DISCOVERY_FAILED' },
   );
   assert.equal(stub.hits.discovery, discoveries);
+});
+
+test('a discovery past the size bound fails, its body not read whole', async () => {
+  await assert.rejects(
+    beginLogin({ issuer: `${base}/huge`, clientId: CLIENT_ID, redirectUri: REDIRECT_URI }),
+    (err) => err.code === 'OIDC_PROVIDER_UNREACHABLE' && /larger than 1048576 bytes/.test(err.message),
+  );
 });
 
 test('an issuer that does not answer is unreachable', async () => {

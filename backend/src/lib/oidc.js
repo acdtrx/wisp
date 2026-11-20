@@ -29,6 +29,9 @@ const PENDING_SWEEP_MS = 60 * 1000;
 const PENDING_MAX_ENTRIES = 1000;
 // Small tolerance for clock skew between Wisp and the IdP when checking exp/nbf.
 const CLOCK_SKEW_SECONDS = 60;
+// A discovery document, a JWKS or a token answer is a few KB: past 1 MiB the
+// provider is not answering what Wisp asked.
+const MAX_BODY_BYTES = 1024 * 1024;
 
 function base64url(buf) {
   return Buffer.from(buf).toString('base64url');
@@ -44,6 +47,7 @@ async function fetchJson(url, options = {}) {
   try {
     res = await fetchOperatorEndpoint(url, {
       ...options,
+      maxBodyBytes: MAX_BODY_BYTES,
       headers: { Accept: 'application/json', ...(options.headers || {}) },
     });
     text = await res.text();
