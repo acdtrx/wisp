@@ -308,7 +308,8 @@ export default function OverviewPanel() {
           <ActionButton
             icon={Archive} label="Backup"
             onClick={handleOpenBackup}
-            disabled={!isStopped}
+            disabled={!isStopped || !!vmOperationJob}
+            hint={busyHint}
           />
           <ActionButton
             icon={Trash2} label="Delete"
