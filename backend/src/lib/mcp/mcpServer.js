@@ -51,7 +51,7 @@ function toolResult(id, data) {
 }
 
 /** A tool failure: the one error body (`{ error, detail }`), as JSON text and structured. */
-function toolError(id, err) {
+export function toolError(id, err) {
   const body = errorBody(err);
   return rpcResult(id, {
     content: [{ type: 'text', text: JSON.stringify(body, null, 2) }],

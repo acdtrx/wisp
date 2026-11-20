@@ -1,6 +1,7 @@
 /**
  * Server-Sent Events helpers for Fastify reply.
  */
+import { errorBody } from './appErrors.js';
 
 /** @type { Set<import('node:http').ServerResponse> } */
 const activeSseResponses = new Set();
@@ -57,6 +58,15 @@ export function setupSSE(reply) {
   // the client waiting for the response — and unable to tell 200 from a hang —
   // until the first event or keepalive.
   raw.flushHeaders();
+}
+
+/**
+ * A scoped stream's error frame: the one error body (`{ error, detail }`) as its
+ * `data:` line (docs/specs/ERROR-HANDLING.md, Every channel).
+ * @param {import('node:http').ServerResponse} raw
+ */
+export function writeSSEError(raw, err) {
+  raw.write(`data: ${JSON.stringify(errorBody(err))}\n\n`);
 }
 
 /**

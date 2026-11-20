@@ -45,8 +45,8 @@ import { renameWorkloadAssignment } from '../lib/sections.js';
 import { publishContainer, unpublishContainer } from '../lib/containerMdnsReconciler.js';
 import { resolveBackupDestinations, backupToEachDestination } from '../lib/backupDestinations.js';
 import { recordBackupAttempt } from '../lib/backupStatus.js';
-import { onSSEClose, setupSSE } from '../lib/sse.js';
-import { createAppError, errorBody, isExpectedAppError } from '../lib/appErrors.js';
+import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
+import { createAppError, isExpectedAppError } from '../lib/appErrors.js';
 import { validateContainerName } from '../lib/validation.js';
 import {
   acquireContainerOperationLock,
@@ -592,7 +592,7 @@ export default async function containerRoutes(fastify) {
         };
         reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
       } catch (err) {
-        reply.raw.write(`data: ${JSON.stringify(errorBody(err))}\n\n`);
+        writeSSEError(reply.raw, err);
       }
     };
 
@@ -632,7 +632,7 @@ export default async function containerRoutes(fastify) {
     try {
       history = await readRunLogHistory(name, runId, 500);
     } catch (err) {
-      reply.raw.write(`data: ${JSON.stringify(errorBody(err))}\n\n`);
+      writeSSEError(reply.raw, err);
       reply.raw.end();
       return;
     }

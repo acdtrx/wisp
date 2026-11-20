@@ -46,9 +46,9 @@ import { getSettings, getRawMounts } from '../lib/settings.js';
 import { resolveBackupDestinations, backupToEachDestination } from '../lib/backupDestinations.js';
 import { recordBackupAttempt } from '../lib/backupStatus.js';
 import { acquireVmOperationLock, withVmOperationLock } from '../lib/vmOperationLock.js';
-import { onSSEClose, setupSSE } from '../lib/sse.js';
+import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { resolveLibraryPath, assertPathInsideAllowedRoots } from '../lib/paths.js';
-import { createAppError, errorBody, isExpectedAppError } from '../lib/appErrors.js';
+import { createAppError, isExpectedAppError } from '../lib/appErrors.js';
 import { validateVMName } from '../lib/validation.js';
 
 /** The values Wisp writes into `<video><model type>` and `<graphics type>` (API-VMS.md). */
@@ -866,7 +866,7 @@ export default async function vmsRoutes(fastify) {
           const stats = await getVMStats(name);
           reply.raw.write(`data: ${JSON.stringify(stats)}\n\n`);
         } catch (err) {
-          reply.raw.write(`data: ${JSON.stringify(errorBody(err))}\n\n`);
+          writeSSEError(reply.raw, err);
         }
       }
 

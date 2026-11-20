@@ -28,8 +28,8 @@ import {
   getProfilerSoftwareOverview,
 } from '../lib/host/index.js';
 import { assertBridgeNotInUse } from '../lib/networkBridgeUsage.js';
-import { asAppError, createAppError, errorBody } from '../lib/appErrors.js';
-import { onSSEClose, setupSSE } from '../lib/sse.js';
+import { asAppError, createAppError } from '../lib/appErrors.js';
+import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/storage/index.js';
 import { getCurrentVersion } from '../lib/wispUpdate.js';
 import {
@@ -446,7 +446,7 @@ export default async function hostRoutes(fastify) {
           reply.raw.write(`data: ${JSON.stringify(devices)}\n\n`);
         } catch (err) {
           request.log.error({ err }, 'host/disks/stream write failed');
-          reply.raw.write(`data: ${JSON.stringify(errorBody(err))}\n\n`);
+          writeSSEError(reply.raw, err);
         }
       }
 
@@ -472,7 +472,7 @@ export default async function hostRoutes(fastify) {
           reply.raw.write(`data: ${JSON.stringify(devices)}\n\n`);
         } catch (err) {
           request.log.error({ err }, 'host/usb/stream write failed');
-          reply.raw.write(`data: ${JSON.stringify(errorBody(err))}\n\n`);
+          writeSSEError(reply.raw, err);
         }
       }
 

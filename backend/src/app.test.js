@@ -41,6 +41,13 @@ after(async () => {
 
 const bearer = (token) => ({ authorization: `Bearer ${token}` });
 
+/*
+ * Failed bearer attempts count against one per-address limit (lib/loginRateLimit.js),
+ * which then refuses that address's good tokens too. Every test that sends a bad token
+ * or a bad password sends it from an address of its own, so no test can push another
+ * into 429.
+ */
+
 test('an unknown API route answers 404 ROUTE_NOT_FOUND', async () => {
   const res = await app.inject({ method: 'GET', url: '/api/no-such-route' });
   assert.equal(res.statusCode, 404);
@@ -57,14 +64,28 @@ test('a request without credentials answers 401 AUTH_REQUIRED', async () => {
 // An invalid session cookie needs the password file (the session secret derives from
 // it), which the test does not write: verified on a host.
 test('an unknown token answers 401 AUTH_INVALID', async () => {
-  const token = await app.inject({ method: 'GET', url: '/api/settings', headers: bearer('wisp_read_unknown') });
+  const token = await app.inject({
+    method: 'GET', url: '/api/settings', headers: bearer('wisp_read_unknown'), remoteAddress: '10.0.0.1',
+  });
   assert.equal(token.statusCode, 401);
   assert.equal(token.json().error, 'AUTH_INVALID');
 });
 
+test('the sixth bad token from one address answers 429 RATE_LIMITED', async () => {
+  const attempt = () => app.inject({
+    method: 'GET', url: '/api/settings', headers: bearer('wisp_read_unknown'), remoteAddress: '10.0.0.3',
+  });
+  for (let i = 1; i <= 5; i += 1) assert.equal((await attempt()).json().error, 'AUTH_INVALID', `attempt ${i}`);
+  const res = await attempt();
+  assert.equal(res.statusCode, 429);
+  assert.equal(res.json().error, 'RATE_LIMITED');
+});
+
 test('/mcp answers both 401s with the bearer challenge', async () => {
   for (const headers of [{}, bearer('wisp_read_unknown')]) {
-    const res = await app.inject({ method: 'POST', url: '/mcp', headers, payload: { jsonrpc: '2.0', id: 1, method: 'ping' } });
+    const res = await app.inject({
+      method: 'POST', url: '/mcp', headers, payload: { jsonrpc: '2.0', id: 1, method: 'ping' }, remoteAddress: '10.0.0.2',
+    });
     assert.equal(res.statusCode, 401);
     assert.match(res.headers['www-authenticate'], /^Bearer /);
     assert.ok(['AUTH_REQUIRED', 'AUTH_INVALID'].includes(res.json().error));
@@ -107,6 +128,22 @@ test('malformed JSON, a body too large and an unsupported type answer their code
   });
   assert.equal(type.statusCode, 415);
   assert.equal(type.json().error, 'UNSUPPORTED_MEDIA_TYPE');
+});
+
+// Both are refused by the router before any handler or hook runs; the valid token
+// keeps an auth refusal from answering in their place.
+test('bad percent-encoding in the URL answers 400 MALFORMED_URL', async () => {
+  const res = await app.inject({ method: 'GET', url: '/api/vms/%zz', headers: bearer(READ_TOKEN) });
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.json().error, 'MALFORMED_URL');
+  assert.equal(typeof res.json().detail, 'string');
+});
+
+test('a route parameter over 100 characters answers 414 URI_TOO_LONG', async () => {
+  const res = await app.inject({ method: 'GET', url: `/api/vms/${'a'.repeat(101)}`, headers: bearer(READ_TOKEN) });
+  assert.equal(res.statusCode, 414);
+  assert.equal(res.json().error, 'URI_TOO_LONG');
+  assert.equal(typeof res.json().detail, 'string');
 });
 
 test('GET /mcp answers 405 METHOD_NOT_ALLOWED', async () => {

@@ -22,6 +22,29 @@ import { buildSectionsEnvelope } from './sections.js';
 const HOST_STATS_INTERVAL_MS = 5000;
 
 /**
+ * The sender of an event-driven topic: each call gathers the topic and passes
+ * `sendTopic(topic, data)` the payload, or, when the gather fails, the error
+ * body after `logFailure(err)`. Gathers can finish out of order (two writes
+ * close together), and a frame from a gather a later one overtook would bring
+ * back the older state, so only the latest gather started sends its frame, its
+ * error frame included.
+ */
+export function latestGatherSender(sendTopic, topic, gather, logFailure) {
+  let lastStarted = 0;
+  return async function send() {
+    const mine = ++lastStarted;
+    let data;
+    try {
+      data = await gather();
+    } catch (err) {
+      logFailure(err);
+      data = errorBody(err);
+    }
+    if (mine === lastStarted) sendTopic(topic, data);
+  };
+}
+
+/**
  * GET /events — the single always-on SSE stream. Multiplexes every topic the
  * app needs continuously (host stats, VM list, container list, sections,
  * discovered peers, backups, change references) as
@@ -65,46 +88,24 @@ export default async function eventsRoutes(fastify) {
         }
       }
 
-      /* An event-driven topic's gathers can finish out of order (two writes close
-       * together); a frame from a gather a later one overtook would bring back the
-       * older state. So only the latest gather started for a topic sends its frame,
-       * its error frame included. */
-      function latestGatherSender(topic, gather, describeFailure) {
-        let lastStarted = 0;
-        return async function send() {
-          const mine = ++lastStarted;
-          let data;
-          try {
-            data = await gather();
-          } catch (err) {
-            data = describeFailure(err);
-          }
-          if (mine === lastStarted) sendTopic(topic, data);
-        };
-      }
-
-      const sendVMs = latestGatherSender('vms', listVMs, (err) => {
+      const sendVMs = latestGatherSender(sendTopic, 'vms', listVMs, (err) => {
         request.log.warn({ err: err.message }, 'events: listVMs failed');
-        return errorBody(err);
       });
 
-      const sendContainers = latestGatherSender('containers', listContainers, (err) => {
+      const sendContainers = latestGatherSender(sendTopic, 'containers', listContainers, (err) => {
         request.log.warn({ err: err.message }, 'events: listContainers failed');
-        return errorBody(err);
       });
 
-      const sendSections = latestGatherSender('sections', buildSectionsEnvelope, (err) => {
+      const sendSections = latestGatherSender(sendTopic, 'sections', buildSectionsEnvelope, (err) => {
         request.log.warn({ err: err.message }, 'events: sections read failed');
-        return errorBody(err);
       });
 
       /* Home page launcher tiles. Recomputed from live workload state joined with
        * the persisted overlay — so a container starting, a Caddy host being added,
        * or a tile being renamed all reach the page on the event that caused them.
        * No timer: every input has a change event of its own. */
-      const sendHome = latestGatherSender('home', buildHomeEnvelope, (err) => {
+      const sendHome = latestGatherSender(sendTopic, 'home', buildHomeEnvelope, (err) => {
         request.log.warn({ err: err.message }, 'events: home tiles build failed');
-        return errorBody(err);
       });
 
       function sendDiscovery() {
@@ -114,9 +115,8 @@ export default async function eventsRoutes(fastify) {
       /* Per-workload last-backup-attempt map. Fires on every backup-shaped
        * change (attempt recorded, backup deleted/pruned) — consumers also use
        * the frame as their cue to refetch the backup lists. */
-      const sendBackups = latestGatherSender('backups', getBackupStatus, (err) => {
+      const sendBackups = latestGatherSender(sendTopic, 'backups', getBackupStatus, (err) => {
         request.log.warn({ err: err.message }, 'events: backup status read failed');
-        return errorBody(err);
       });
 
       /* References to changed records that no other topic carries in full: a client
