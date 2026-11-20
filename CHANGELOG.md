@@ -17,6 +17,7 @@
 - **MCP** — tool arguments are checked against each tool's schema (`VALIDATION_FAILED`; `lines` is refused, not clamped); `get_job` reads every job and returns `{ jobId, kind, title, subject, status, createdAt }` with `progress`, `result`, or `error` and `detail` (`startedAt` is gone); `check_image_updates` returns `{ checked, updated, flaggedContainers, lastCheckedAt }`; a scope refusal is `SCOPE_INSUFFICIENT`.
 - **Login and outbound requests** — a refused SSO login redirects to the login page; the discovery document must name the configured issuer, an `https` issuer's endpoints must be `https`, and an ID token needs `exp`. Requests for a URL typed by the user refuse more forms of private address and bound the answer's size. `WISP_CONFIG_PATH` is for development and tests: an installed Wisp started with it set refuses to start.
 - **One command checks the code** — `npm run check` runs every check, and the release workflow runs it, the shell syntax check and the frontend build before anything is published.
+- **VMs are no longer published by Wisp** — a guest announces its own `.local` name: cloud-init installs `avahi-daemon` by default, and Windows and macOS guests announce theirs. The VM's Local DNS setting is gone, and `localDns` leaves the VM API (a request that sends it answers 400) and MCP's answers, with a VM's `mdnsName` in the deployment overview.
 
 ### Bug Fixes
 - **A container mount named with `%`** can be edited and removed (it answered 500, or acted on another mount).
