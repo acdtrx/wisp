@@ -98,10 +98,10 @@ a delete.
 
 **The VM General section renders the list seed while the config loads.** On the VM
 detail page `GeneralSection` sits outside the `configLoading` skeleton (`OverviewPanel.jsx`),
-so until the select's `getVM` lands it shows the list item as the config: Local DNS and
-Auto Start read as off whatever they are. Predates command-acks (found in its milestone 3
-review, 2026-11-16). **Revisit trigger:** the next work on the VM detail page, or a user
-seeing those toggles flip on load.
+so until the select's `getVM` lands it shows the list item as the config: Auto Start
+reads as off whatever it is. Predates command-acks (found in its milestone 3 review,
+2026-11-16). **Revisit trigger:** the next work on the VM detail page, or a user
+seeing that toggle flip on load.
 
 **A stale `vms` frame can undo a same-tab VM rename.** After a rename, the renaming tab
 follows it at once (`followRename`, then `navigate`, in `OverviewPanel.jsx`). A `vms`
@@ -333,15 +333,7 @@ help text is needed on a phone or tablet.
 (settled 2026-11-12), a registration that times out leaves its entry unpublished;
 `reregisterAll` runs only when the daemon restarts, not when a hung one recovers, so a
 container stays unpublished until its next address change, a local DNS toggle or a
-restart (VMs recover on the 60 s probe). **Revisit trigger:** a workload is seen
-unpublished after avahi stalled.
-
-**A VM and a container of the same name share one mDNS entry.** Both reconcilers register
-and deregister under the bare workload name (`registerAddress(name, …)` in
-`lib/mdns/linux/avahi.js`), so a VM `web` stopping, renamed or deleted withdraws a
-container `web`'s `.local` record too, and the two would claim the same host name anyway
-(found 2026-11-20, while writing the delete follow-ups). **Revisit trigger:** a VM and a
-container are given the same name, or the next work on mDNS publishing.
+restart. **Revisit trigger:** a workload is seen unpublished after avahi stalled.
 
 **The 60 s container probe never reads the IPv4 address.** `discoverIpv4InNetnsOnce`
 (`containerManagerNetwork.js`) passes `{ maxAttempts: 1, sleepMs: 0 }`, so
