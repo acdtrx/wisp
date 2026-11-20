@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { Readable } from 'node:stream';
+
 import Fastify from 'fastify';
 
 import { createAppError, errorBody, errorStatus, handleRequestError, isExpectedAppError, redactDetail } from './appErrors.js';
@@ -67,6 +69,11 @@ async function appWithThrowingRoutes() {
   app.get('/fault', async () => {
     throw new Error('cannot read /var/lib/wisp/secret');
   });
+  app.get('/download', async (request, reply) => {
+    reply.header('Content-Type', 'text/plain; charset=utf-8').header('Content-Disposition', 'attachment; filename="a.log"');
+    const stream = new Readable({ read() { this.destroy(createAppError('CONTAINER_RUN_NOT_FOUND', 'No such run')); } });
+    return reply.send(stream);
+  });
   app.post('/typed', {
     schema: {
       body: { type: 'object', properties: { n: { type: 'number' } }, required: ['n'], additionalProperties: false },
@@ -90,6 +97,16 @@ test('an unexpected error answers 500 INTERNAL_ERROR with a redacted detail', as
   const res = await app.inject({ method: 'GET', url: '/fault' });
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.json(), { error: 'INTERNAL_ERROR', detail: 'cannot read <path>' });
+  await app.close();
+});
+
+test('a route that set download headers and then failed answers the error as JSON', async () => {
+  const app = await appWithThrowingRoutes();
+  const res = await app.inject({ method: 'GET', url: '/download' });
+  assert.equal(res.statusCode, 404);
+  assert.match(res.headers['content-type'], /^application\/json/);
+  assert.equal(res.headers['content-disposition'], undefined);
+  assert.deepEqual(res.json(), { error: 'CONTAINER_RUN_NOT_FOUND', detail: 'No such run' });
   await app.close();
 });
 

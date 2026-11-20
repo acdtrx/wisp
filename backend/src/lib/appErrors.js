@@ -146,6 +146,9 @@ export function errorAnswer(err) {
   return { status: errorStatus(body.error), body };
 }
 
+/** Headers that describe a success body, dropped when an error answers instead. */
+const SUCCESS_ONLY_HEADERS = ['content-type', 'content-disposition', 'content-length', 'content-encoding'];
+
 /**
  * Fastify's error handler (`setErrorHandler` and `frameworkErrors`): routes,
  * hooks and the framework throw; this answers. Faults are logged at error
@@ -159,5 +162,11 @@ export function handleRequestError(err, request, reply) {
   } else if (err?.raw) {
     request.log.warn({ err: err.message, code: body.error, raw: err.raw }, 'Request refused');
   }
-  reply.code(status).send(body);
+  // Once the headers are out (a download that failed mid-transfer), no answer
+  // can follow: Fastify ends the response and the client sees it cut short.
+  if (reply.raw.headersSent) return;
+  // A route that set the headers of its success (a download's type and file
+  // name) before it failed answers the error as JSON all the same.
+  for (const name of SUCCESS_ONLY_HEADERS) reply.removeHeader(name);
+  reply.code(status).type('application/json; charset=utf-8').send(body);
 }
