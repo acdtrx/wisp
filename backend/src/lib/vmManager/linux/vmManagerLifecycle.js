@@ -1,8 +1,51 @@
 /**
- * VM lifecycle: start, stop, force stop, reboot, suspend, resume.
+ * VM lifecycle: start, stop, force stop, reboot, suspend, resume, and the
+ * stop notification.
  */
-import { connectionState, resolveDomain, getDomainState, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
+import {
+  connectionState,
+  resolveDomain,
+  getDomainState,
+  getDomainObjAndIface,
+  unwrapVariant,
+  vmError,
+  subscribeDomainStopped,
+} from './vmManagerConnection.js';
 import { isOfflineState } from './libvirtConstants.js';
+
+const vmStoppedHandlers = new Set();
+
+/**
+ * Subscribe to VM stops: `handler(name)` once libvirt reports that a VM's QEMU
+ * process ended (shut down, force stopped, crashed), whoever stopped it; by
+ * then libvirt has removed the VM's tap devices. Only fires with event
+ * watching; no replay. Returns an unsubscribe function.
+ */
+export function subscribeVMStopped(handler) {
+  vmStoppedHandlers.add(handler);
+  return () => vmStoppedHandlers.delete(handler);
+}
+
+async function announceVMStopped(domainPath) {
+  let name;
+  try {
+    const { props } = await getDomainObjAndIface(domainPath);
+    name = String(unwrapVariant(await props.Get('org.libvirt.Domain', 'Name')));
+  } catch (err) {
+    // Gone with its process (a transient domain), or libvirt unreachable.
+    connectionState.logger?.warn?.({ domainPath, err: err?.message || err }, '[vmManager] stopped domain could not be named');
+    return;
+  }
+  for (const handler of vmStoppedHandlers) {
+    try {
+      handler(name);
+    } catch (err) {
+      connectionState.logger?.warn?.({ err: err?.message || err }, '[vmManager] vm-stopped handler threw');
+    }
+  }
+}
+
+subscribeDomainStopped((domainPath) => { announceVMStopped(domainPath); });
 
 /**
  * The checks a lifecycle call makes first, alone and quick, for a caller that

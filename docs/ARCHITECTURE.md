@@ -123,20 +123,25 @@ consumer, and nothing has called for more).
 - **Events are push, not pull**: subscribe-and-replay surfaces on each facade — they fire
   only on change, replay the current state to a new subscriber, and keep platform
   plumbing private. A new event surface follows the same pattern.
-- **Manager network events** feed the app glue that publishes `.local` names:
+- **Manager network events** feed the app glue that publishes `.local` names, and the
+  triggers of avahi's stuck-probe recovery:
   - `vmManager.subscribeVMNetworkChange(handler)` — `(name, snapshot)`, with
     `{ stateCode, ip, hostname }` while running and `null` when stopped.
   - `containerManager.subscribeContainerNetworkChange(handler)` — `(name, snapshot)`,
     with `{ state, ip, ip6 }` while running on a bridge and `null` when stopped or
     removed. The manager writes new addresses into `container.json` before firing: it
     owns the durable record, the glue only reacts.
-  - `containerManager.subscribeContainerNetnsRemoved(handler)` — `(name)` after Wisp
-    deleted a container's netns, with no replay; the glue re-publishes probing groups,
-    since avahi 0.8 strands entry groups probing on a removed interface.
   - Both network-change events replay on subscribe, so glue that starts after the
     managers still catches up. The macOS stubs never fire.
   - Every A-record registration lives in the reconcilers
     (`lib/{vm,container}MdnsReconciler.js`); the managers make none.
+  - The interfaces Wisp removes, with no replay:
+    `containerManager.subscribeContainerNetnsRemoved(handler)` — `(name)` after Wisp
+    deleted a container's netns, its veth with it — and
+    `vmManager.subscribeVMStopped(handler)` — `(name)` after libvirt reported that a
+    VM's QEMU process ended, its taps removed. On each, `lib/mdnsProbeRecovery.js`
+    re-publishes every entry group still probing, since avahi 0.8 strands a group
+    probing on a removed interface. The macOS stubs never fire.
 - **Record change cues** feed the `changes` topic (Transport). Unlike the surfaces
   above they fire per write, not per difference, and never replay: a cue to read the
   record again, not its state. A write that changed nothing still fires, and one

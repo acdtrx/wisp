@@ -14,12 +14,6 @@
  * that VM's promise chain, one at a time in arrival order. A register awaits
  * avahi before it records the entry, so without the chain a stop arriving in
  * between found nothing to deregister and left a stopped VM published.
- *
- * A VM leaving the running state also re-publishes entry groups left probing:
- * libvirt has removed the VM's tap by the time the stop is reported, and
- * avahi 0.8 strands any group that was probing on it (see
- * republishProbingGroups in the mdns module). Not on any VM's chain: it acts
- * on every Wisp group, and must run right after the stop.
  */
 import {
   subscribeVMNetworkChange,
@@ -27,7 +21,7 @@ import {
   getGuestNetwork,
 } from './vmManager/index.js';
 import {
-  deregisterAddress, registerAddress, republishProbingGroups, sanitizeHostname,
+  deregisterAddress, registerAddress, sanitizeHostname,
 } from './mdns/index.js';
 
 const registered = new Set();
@@ -92,7 +86,6 @@ export function startVmMdnsReconciler(log_) {
   if (unsubscribe) return; // already started
   logger = log_ || null;
   unsubscribe = subscribeVMNetworkChange((name, snapshot) => {
-    if (snapshot === null) republishProbingGroups({ event: 'vm-stopped', vm: name });
     enqueue(name, () => onNetworkChange(name, snapshot)).catch((err) => {
       log().warn?.({ err: err?.message || err, vm: name }, '[vmMdns] handler threw');
     });

@@ -32,6 +32,8 @@ export const connectionState = {
   disconnectHandlers: new Set(),
   /** Subscribers invoked with the domain path on a STARTED DomainEvent. */
   domainStartedHandlers: new Set(),
+  /** Subscribers invoked with the domain path on a STOPPED DomainEvent. */
+  domainStoppedHandlers: new Set(),
   /** Subscribers invoked after each successful (re)connect that watches events. */
   connectedHandlers: new Set(),
   /** Subscribers invoked on every libvirt AgentEvent (per-domain qemu-ga lifecycle). */
@@ -123,6 +125,16 @@ export function subscribeDomainChange(handler) {
 export function subscribeDomainStarted(handler) {
   connectionState.domainStartedHandlers.add(handler);
   return () => connectionState.domainStartedHandlers.delete(handler);
+}
+
+/**
+ * Subscribe to domain stops (its QEMU process ended): `handler(domainPath)` on
+ * every STOPPED DomainEvent. Only fires with `watchEvents`. Returns an
+ * unsubscribe function.
+ */
+export function subscribeDomainStopped(handler) {
+  connectionState.domainStoppedHandlers.add(handler);
+  return () => connectionState.domainStoppedHandlers.delete(handler);
 }
 
 /**
@@ -288,6 +300,8 @@ export async function connect(logger = null, opts = {}) {
     }
     // VIR_DOMAIN_EVENT_STARTED — a new QEMU process.
     if (event === 2) fireHandlers(connectionState.domainStartedHandlers, 'domain-started', domainPath);
+    // VIR_DOMAIN_EVENT_STOPPED — the QEMU process ended.
+    if (event === 5) fireHandlers(connectionState.domainStoppedHandlers, 'domain-stopped', domainPath);
     fireDomainChange();
   });
 

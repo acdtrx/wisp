@@ -50,7 +50,9 @@ export { subscribeVMChange } from './vmManagerChange.js';
 
 export { getGuestNetwork } from './vmManagerStats.js';
 
-export { assertVMState, startVM, stopVM, forceStopVM, rebootVM, suspendVM, resumeVM } from './vmManagerLifecycle.js';
+export {
+  assertVMState, startVM, stopVM, forceStopVM, rebootVM, suspendVM, resumeVM, subscribeVMStopped,
+} from './vmManagerLifecycle.js';
 
 export { getVMStats, getVMXML, getVNCPort } from './vmManagerStats.js';
 

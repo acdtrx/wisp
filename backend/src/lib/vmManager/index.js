@@ -33,6 +33,7 @@ export const forceStopVM = impl.forceStopVM;
 export const rebootVM = impl.rebootVM;
 export const suspendVM = impl.suspendVM;
 export const resumeVM = impl.resumeVM;
+export const subscribeVMStopped = impl.subscribeVMStopped;
 
 export const getVMStats = impl.getVMStats;
 export const getVMXML = impl.getVMXML;

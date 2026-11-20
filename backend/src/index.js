@@ -34,6 +34,7 @@ import { connect as connectMdns, disconnect as disconnectMdns } from './lib/mdns
 import { checkDefaultBridgeOverride, getDefaultContainerParentBridge } from './lib/networking/index.js';
 import { startVmMdnsReconciler, stopVmMdnsReconciler } from './lib/vmMdnsReconciler.js';
 import { startContainerMdnsReconciler, stopContainerMdnsReconciler } from './lib/containerMdnsReconciler.js';
+import { startMdnsProbeRecovery, stopMdnsProbeRecovery } from './lib/mdnsProbeRecovery.js';
 import { startWispDiscovery, stopWispDiscovery } from './lib/wispDiscovery.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -200,6 +201,7 @@ async function main() {
   // these start — no separate warm-up loop needed.
   startVmMdnsReconciler(app.log);
   startContainerMdnsReconciler(app.log);
+  startMdnsProbeRecovery();
 
   // Announce this instance and browse for peers (settings-gated, best-effort,
   // never rejects). Not awaited: a hung avahi/DBus must not delay app.listen.
@@ -263,6 +265,7 @@ async function shutdown(signal) {
   stopDiskMonitor();
   stopVmMdnsReconciler();
   stopContainerMdnsReconciler();
+  stopMdnsProbeRecovery();
   await stopWispDiscovery(); // needs the live bus — before disconnectMdns
   disconnectManagers();
   await disconnectMdns();
