@@ -245,21 +245,21 @@ netplan_stage_stub() {
     && install -m 0600 "$NET_PLAN_DIR/$DNS_STUB_PLANNED" "$1$DNS_STUB_NETPLAN_FILE" \
     || net_fail "cannot stage $DNS_STUB_NETPLAN_FILE"
 }
-# netplan_rejects <root>: whether netplan rejects the configuration under
-# <root> (netplan generate), NETPLAN_ERROR saying why on one line. A generate
-# that does not finish is a failure.
+# netplan_rejects <netplan args...>: whether netplan rejects what it is asked
+# (a generate of a stage, an edit set in one), NETPLAN_ERROR saying why on one
+# line. A call that does not finish is a failure.
 netplan_rejects() {
   local out rc=0
-  out="$(net_call netplan generate --root-dir "$1" 2>&1)" || rc=$?
+  out="$(net_call netplan "$@" 2>&1)" || rc=$?
   (( rc != 0 )) || return 1
-  (( rc != 124 && rc != 137 )) || net_fail "'netplan generate --root-dir $1' did not finish (exit $rc)"
+  (( rc != 124 && rc != 137 )) || net_fail "'netplan $*' did not finish (exit $rc)"
   NETPLAN_ERROR="$(tr -s '[:space:]' ' ' <<<"$out")"
   NETPLAN_ERROR="${NETPLAN_ERROR% }"
 }
 # refuse_netplan_rejected <stage>: netplan must accept the host's own
 # configuration (netplan_stage), before setup adds anything to it.
 refuse_netplan_rejected() {
-  netplan_rejects "$1" || return 0
+  netplan_rejects generate --root-dir "$1" || return 0
   refuse NETPLAN_REJECTED "netplan rejects this host's own configuration: ${NETPLAN_ERROR:-netplan generate failed, saying nothing}" \
     "Nothing was changed. Correct it, so that netplan generate accepts it, and run this again."
 }
@@ -329,7 +329,9 @@ plan_bridge() {
   netplan_stage "$stage"
   netplan_stage_stub "$stage"
   while IFS=$'\t' read -r hint kv; do
-    net_read netplan set --root-dir "$stage" --origin-hint "$hint" "$kv" || exit 1
+    if netplan_rejects set --root-dir "$stage" --origin-hint "$hint" "$kv"; then
+      net_refuse NETPLAN_MERGED "netplan rejects setup's edit of ${kv%%=*} for $BRIDGE: ${NETPLAN_ERROR:-netplan set failed, saying nothing}."
+    fi
   done < "$NET_PLAN_DIR/netplan-set.args"
   # netplan set touches the origin file alone: every other file in the stage
   # but the stub's must still be its live one, and none new, so what is
@@ -348,7 +350,7 @@ plan_bridge() {
       fi
     done
   done
-  if netplan_rejects "$stage"; then
+  if netplan_rejects generate --root-dir "$stage"; then
     net_refuse NETPLAN_MERGED "with setup's edits for $BRIDGE, netplan rejects its configuration, which it accepts without them: $NETPLAN_ERROR."
   fi
   merged="$(net_read netplan get --root-dir "$stage")" || exit 1

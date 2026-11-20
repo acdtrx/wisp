@@ -69,7 +69,7 @@ refuse_dns_stub() {
         "Nothing was changed. Remove it (ip link delete $DNS_STUB_IFACE) and any definition of it of your own, and run this again."
   fi
   netplan_stage_stub "$1"
-  netplan_rejects "$1" || return 0
+  netplan_rejects generate --root-dir "$1" || return 0
   refuse NETPLAN_DNS_STUB "netplan accepts this host's own configuration, but rejects it with Wisp's container DNS stub, a dummy device $DNS_STUB_IFACE in $DNS_STUB_NETPLAN_FILE, added: $NETPLAN_ERROR" \
     "Nothing was changed. Remove a definition of $DNS_STUB_IFACE of your own, or use a netplan that has" \
     "dummy-devices, and run this again."
