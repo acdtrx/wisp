@@ -324,9 +324,10 @@ sources_refusals() {
 # and MTU, cloud-init's say over the network, netplan's files by checksum, the
 # file networkd runs the uplink from, and who else could take it. Not among
 # them: the container DNS stub's own netplan file, which setup writes between
-# the plan and the bridge step; and what netplan renders under /run, which
-# follows from netplan's files (a netplan.io upgrade in the packages step
-# renders it again).
+# the plan and the bridge step, and setup's own stages of a file (lib.sh,
+# install_file), which a cut-short run leaves and the next removes; and what
+# netplan renders under /run, which follows from netplan's files (a netplan.io
+# upgrade in the packages step renders it again).
 plan_sources() {
   local out mac mtu d file dropins
   out="$(net_call ip -4 route show default)" || return 1
@@ -339,7 +340,7 @@ plan_sources() {
   echo "cloud-init $out"
   for d in "${NETPLAN_DIRS[@]}"; do
     [[ -d "$d" ]] || continue
-    find "$d" -type f ! -path "$DNS_STUB_NETPLAN_FILE" -print0 | sort -z | xargs -0 -r sha256sum || return 1
+    find "$d" -type f ! -path "$DNS_STUB_NETPLAN_FILE" ! -name '.*.wisp-new.*' -print0 | sort -z | xargs -0 -r sha256sum || return 1
   done
   file="$(networkd_json "$UPLINK" NetworkFile)" || return 1
   dropins="$(networkd_json "$UPLINK" NetworkFileDropins)" || return 1
