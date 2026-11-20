@@ -84,7 +84,7 @@ CSRF double-submit is a property of cookie auth on state-changing methods, indep
 
 `read` is a deliberate per-route choice, governed by the read-token contract in [MCP.md](MCP.md) § Authentication: a read token must not recover a secret. GETs stay `admin` when their response could carry one — `GET /api/containers/:name/mounts/:mountName/content` (raw file content) — or when they are actions rather than reads: `GET /api/library/check-url` and `GET /api/github/keys/:username` make outbound requests on demand. The `API-*.md` area files tag every endpoint with its level; `npm run route-access` prints the live table (method, URL, level), exiting non-zero if any route is undeclared.
 
-**Startup check.** An `onRoute` hook records every route; once the app is ready, **development refuses to boot** while any route lacks a valid declaration, listing them. Production enforces such a route as `admin` and logs a warning per route. Third-party plugins that register their own routes — the dev CORS preflight and `@fastify/static` — are registered through `registerPluginWithPublicRoutes` in `index.js`, which marks the routes the plugin adds while it loads as `public` (pending plugins are flushed first, so nothing else falls in that window).
+**Startup check.** An `onRoute` hook records every route; once the app is ready, **development refuses to boot** while any route lacks a valid declaration, listing them. Production enforces such a route as `admin` and logs a warning per route. Third-party plugins that register their own routes — the dev CORS preflight and `@fastify/static` — are registered through `registerPluginWithPublicRoutes` in `app.js`, which marks the routes the plugin adds while it loads as `public` (pending plugins are flushed first, so nothing else falls in that window).
 
 **Unmatched requests.** A request that matches no route runs no handler, so the hook has nothing to authorize and the not-found handler answers: a JSON 404 `ROUTE_NOT_FOUND` for API-looking paths, the SPA shell otherwise (production). Because the decision is the matched route's declaration, percent-encoding cannot change it — `/%61pi/vms` dispatches to `/api/vms` and gets exactly its level.
 
@@ -115,16 +115,20 @@ or:
 
 ### Frontend handling
 
-The frontend fetch wrapper sends `credentials: 'include'` on every request, reads the `wisp_csrf` cookie via `document.cookie`, and echoes it as `X-CSRF-Token` on state-changing methods. On a 401 response:
+The frontend fetch wrapper sends `credentials: 'include'` on every request, reads the `wisp_csrf` cookie via `document.cookie`, and echoes it as `X-CSRF-Token` on state-changing methods. It recognises a lost session by
+its code, `AUTH_REQUIRED` or `AUTH_INVALID` (both 401), on the REST calls, the uploads and
+the streams alike. On one:
 
 1. Writes a `wisp_logout` flag to localStorage so other tabs see the logout
-2. Redirects to `/login`
+2. Leaves the error's text for the login page, which shows it once
+3. Redirects to `/login`
 
-So **401 is reserved for "no or expired session"** on every route the client calls. A route that rejects the request itself while the session is fine answers with another status (change-password's wrong current password → 422). The login route's 401 for a wrong password is the exception that stays: the login page posts with a bare `fetch`, outside the shared client.
+A 401 with another code (none is sent today) does not log out. **401 is reserved for "no or
+expired session"** on every route the client calls. A route that rejects the request itself while the session is fine answers with another status (change-password's wrong current password → 422). The login route's 401 for a wrong password is the exception that stays: the login page posts with a bare `fetch`, outside the shared client.
 
 `POST /api/auth/logout` clears both cookies and returns 204. The frontend's `useAuthStore.logout` calls it before broadcasting the multi-tab signal, then the tab lands on **`/login?sso=signedout`** — the marker keeps the login page from auto-redirecting to the SSO provider, which with a live provider session would sign the user straight back in.
 
-**Multi-tab logout.** Logout in one tab calls `broadcastLogout('signedout')`, which writes a `wisp_logout` localStorage entry carrying the reason (`signedout` for a deliberate sign-out, `expired` for a 401). Every other open tab subscribes to the `storage` event and bounces on that key change — to `/login?sso=signedout` for a sign-out (so no tab SSO-signs back in), to plain `/login` for an expired session. A tab already on the login page stays put. The session cookie itself is shared across tabs (same browser profile, same origin), so any tab that tries an authenticated request after logout also gets 401 and redirects.
+**Multi-tab logout.** Logout in one tab calls `broadcastLogout('signedout')`, which writes a `wisp_logout` localStorage entry carrying the reason (`signedout` for a deliberate sign-out, `expired` for a lost session: `AUTH_REQUIRED` or `AUTH_INVALID`). Every other open tab subscribes to the `storage` event and bounces on that key change — to `/login?sso=signedout` for a sign-out (so no tab SSO-signs back in), to plain `/login` for an expired session. A tab already on the login page stays put. The session cookie itself is shared across tabs (same browser profile, same origin), so any tab that tries an authenticated request after logout also gets `AUTH_REQUIRED` and redirects.
 
 **Password change closes live connections.** `POST /api/auth/change-password` writes the new hash, calls `closeAllSSE()` + `closeAllWebSockets('password changed')`, then re-issues a fresh `wisp_session` and `wisp_csrf` against the new secret so the user who just changed their password isn't immediately bounced. Pre-rotation tokens can no longer keep streaming on connections that were authed before the secret changed.
 

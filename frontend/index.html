@@ -15,7 +15,7 @@
          constants from src/theme.js (the storage key, the dark surface-card the
          phone status bar takes, the media query); everything else — the OS
          listener, writes — the controller re-derives after hydration.
-         Its sha256 is pinned in the prod CSP (backend/src/index.js,
+         Its sha256 is pinned in the prod CSP (backend/src/app.js,
          THEME_INIT_SCRIPT_HASH) — editing this script means refreshing that. -->
     <script>
       (function () {

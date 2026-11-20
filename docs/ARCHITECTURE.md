@@ -216,7 +216,7 @@ consumer, and nothing has called for more).
   every 25 s; the client re-arms a 60 s read watchdog on every chunk and reconnects with
   backoff when it fires. A frozen page can't run its watchdog, so every stream also
   resyncs on `visibilitychange → visible` and on `online` when it has had no bytes for
-  longer than the keepalive. A 401 sends the user to sign in; a 404 (the stream's subject
+  longer than the keepalive. A lost session (`AUTH_REQUIRED` or `AUTH_INVALID`) sends the user to sign in; a 404 (the stream's subject
   is gone, e.g. a deleted container's logs) stops the stream instead of retrying.
 - **Commands answer once the work has started; the outcome comes through the stream.** A
   command responds as soon as its input is valid and the work is underway, never waiting
