@@ -17,19 +17,16 @@ NET_READ_CALLS=7
 
 # How long a stopped bridge step can take to end, worst case, every bound run
 # out (a call's bound is its limit and NET_KILL_SEC to die): the apply in
-# flight when the stop comes, which runs to its end (NetworkManager's: the
-# connections loaded, then brought up); then the longest undo,
-# NetworkManager's (journal_restore, undo_networkmanager): netplan's files
-# generated, the connections reloaded, the uplink connection looked up, its
-# copy loaded, its state read, it brought up; then the wait for the uplink to
-# hold what it held before, and its last read; and NET_LOCAL_SEC for the work
-# that is no network call (the journal's reads and syncs, install_file,
-# python, the waits' one-second sleeps). The bridge-journal step's commit or
-# undo is shorter.
+# flight when the stop comes, `netplan apply`, which runs to its end; then the
+# undo (journal_restore): the bridge deleted, `netplan apply` again; then the
+# wait for the uplink to hold what it held before, and its last read; and
+# NET_LOCAL_SEC for the work that is no network call (the journal's reads and
+# syncs, install_file, python, the waits' one-second sleeps). The
+# bridge-journal step's commit or undo is shorter.
 NET_LOCAL_SEC=30
 NET_CALL_BOUND=$(( NET_CMD_SEC + NET_KILL_SEC ))
 NET_APPLY_BOUND=$(( NET_APPLY_SEC + NET_KILL_SEC ))
-BRIDGE_STOP_SEC=$(( NET_CALL_BOUND + NET_APPLY_BOUND + 5 * NET_CALL_BOUND + NET_APPLY_BOUND + NET_APPLY_SEC + NET_READ_CALLS * NET_CALL_BOUND + NET_LOCAL_SEC ))
+BRIDGE_STOP_SEC=$(( NET_APPLY_BOUND + NET_CALL_BOUND + NET_APPLY_BOUND + NET_APPLY_SEC + NET_READ_CALLS * NET_CALL_BOUND + NET_LOCAL_SEC ))
 
 # A stopped step gets STEP_STOP_SEC to end — the longest a step takes to, the
 # bridge step's — and its session is then killed; SETUP_STOP_SEC is how long a
