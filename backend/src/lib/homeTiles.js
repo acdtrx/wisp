@@ -115,6 +115,8 @@ function buildWorkloadIndex(deployment) {
     };
     add(vm.name, workload);
     add(net.hostname, workload);
+    // The name the guest announces itself; Wisp publishes none for a VM.
+    if (net.hostname) add(`${net.hostname}.local`, workload);
     add(net.ip, workload);
   }
 

@@ -354,7 +354,7 @@ Tiles are links, not workloads — **a workload with no published URL gets no ti
 2. **Declared mDNS services** of type `_http._tcp` / `_https._tcp` on containers with Local DNS on → `http(s)://<hostname>.local:<port>`.
 3. **Manual links** the user added.
 
-Each derived link joins back to a workload by its **target** hostname (container name / `<name>.local` / running IP; VM name / guest hostname / IP) — that join is what gives the tile live state. A link whose target resolves to nothing (a Caddy host fronting another machine) renders as a **stateless external tile**. A link with no target at all — a Jellyfin `publishedUrl`, a zot `externalUrl`, an mDNS service — *is* its publisher's own address, so it joins to the publishing container. Manual links never join.
+Each derived link joins back to a workload by its **target** hostname (container name / `<name>.local` / running IP; VM name / guest hostname / `<guest hostname>.local`, the name the guest announces / IP) — that join is what gives the tile live state. A link whose target resolves to nothing (a Caddy host fronting another machine) renders as a **stateless external tile**. A link with no target at all — a Jellyfin `publishedUrl`, a zot `externalUrl`, an mDNS service — *is* its publisher's own address, so it joins to the publishing container. Manual links never join.
 
 Same-URL collisions keep one tile: app beats mDNS beats manual, and within a tier the link whose backing container **runs** wins. The losers appear on the winner's `conflicts` and are surfaced in edit mode; a duplicate raised by the *same* publisher (a Jellyfin container that both publishes a URL and advertises `_http._tcp` on that port) is one fact stated twice and is not reported.
 
