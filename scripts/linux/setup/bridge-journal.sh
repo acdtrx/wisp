@@ -14,6 +14,7 @@
 #   5. restore     anything else: undone.
 #
 # The journal directory, JOURNAL_DIR:
+#   version    its format, JOURNAL_FORMAT — the first file written in it
 #   plan       the plan's record (plan-record.sh), uplink.state, the check's
 #              reference, and (NetworkManager) uplink.nmconnection, the
 #              generated uplink connection rendered as a stored one — copied
@@ -56,6 +57,11 @@ JOURNAL_DIR=/var/lib/wisp/bridge-journal
 KEPT_DIR=/var/lib/wisp/network-before-bridge
 # Where the bridge step may change a file: each tool's own configuration.
 JOURNAL_ROOTS=(/etc/netplan /etc/systemd/network /etc/NetworkManager/system-connections)
+# The journal directory's format, as a whole: raised whenever anything it holds
+# changes so that another release's setup would refuse or misread it (a key
+# added to the plan's record among them). A rollback's older setup can meet a
+# newer one's journal, and refuses it for what it is.
+JOURNAL_FORMAT=1
 
 # journal_root_ok <path>: whether the step may record (and change) <path>.
 journal_root_ok() {
@@ -85,14 +91,15 @@ _journal_add() {
   printf '%s\n' "$1" >> "$f" && sync "$f"
 }
 
-# journal_begin <plan-dir>: before the first change. The plan and the check's
-# reference go in first, the journal last: a journal directory without its
-# journal file recorded no change.
+# journal_begin <plan-dir>: before the first change. The version goes in first,
+# then the plan and the check's reference, the journal last: a journal
+# directory without its journal file recorded no change.
 journal_begin() {
   local f
   [[ ! -e "$JOURNAL_DIR" ]] || return 1
   mkdir -p "$KEPT_DIR" && chmod 700 "$KEPT_DIR" || return 1
   mkdir -p "$JOURNAL_DIR/files" "$JOURNAL_DIR/kept" && chmod 700 "$JOURNAL_DIR" || return 1
+  echo "$JOURNAL_FORMAT" > "$JOURNAL_DIR/version" && sync "$JOURNAL_DIR/version" || return 1
   for f in plan uplink.state uplink.nmconnection; do
     [[ -e "$1/$f" ]] || continue
     cp "$1/$f" "$JOURNAL_DIR/$f" && sync "$JOURNAL_DIR/$f" || return 1
@@ -128,14 +135,37 @@ journal_connrm() { _journal_add "connrm"$'\t'"$1"; }
 # undo: it only leaves the next run to decide without it.
 journal_undo_mark() { [[ -d "$JOURNAL_DIR" ]] && _journal_add undo; }
 
+# _journal_format <dir>: J_FORMAT empty when <dir> is in this release's format,
+# or is a begin cut short before its version (then it holds no journal
+# either); else "other <why>" (another release of Wisp wrote it), "bad <why>"
+# (setup did not) or "fail <why>" (it cannot be read).
+_journal_format() {
+  local v
+  J_FORMAT=""
+  if [[ ! -e "$1/version" ]]; then
+    [[ ! -e "$1/journal" ]] || J_FORMAT="bad $1 holds a journal but no version: not one setup wrote"
+    return 0
+  fi
+  v="$(cat "$1/version")" || { J_FORMAT="fail cannot read $1/version"; return 0; }
+  [[ "$v" != "$JOURNAL_FORMAT" ]] || return 0
+  if [[ "$v" =~ ^[1-9][0-9]*$ ]]; then
+    J_FORMAT="other $1 was written by another release of Wisp (its format version $v; this setup reads version $JOURNAL_FORMAT)"
+  else
+    J_FORMAT="bad $1/version is not a version setup wrote"
+  fi
+}
+
 # _journal_read: the journal's entries into arrays; J_FILE_FINISH[i] and
 # J_CONNRM are the finish's. A last line cut short is dropped; a missing
-# journal reads as no entries (J_NONE=yes). Fails, naming the line in J_BAD, on
+# journal reads as no entries (J_NONE=yes). Fails on a directory in another
+# format (J_FORMAT, _journal_format), and, naming the line in J_BAD, on
 # anything else it does not expect.
 _journal_read() {
   J_NONE=no J_UNDO=no J_FINISH=no J_BAD=""
   J_FILES=() J_EXISTED=() J_ORIG=() J_WROTE=() J_LINES=() J_FILE_FINISH=() J_DIRS=() J_CONNRM=()
   local f="$JOURNAL_DIR/journal" n=0 total kind a b c d line
+  _journal_format "$JOURNAL_DIR"
+  [[ -z "$J_FORMAT" ]] || return 1
   [[ -e "$f" ]] || { J_NONE=yes; return 0; }
   total="$(grep -c '' "$f")" || total=0
   # A last line without its newline was cut short: its change never happened.
@@ -162,12 +192,12 @@ _journal_has_file() {
 }
 
 # journal_classify: J_CLASS, one of finished, untouched, restore,
-# "changed <paths>", "bad <why>" (not a journal setup wrote), "fail <why>" (the
-# host could not be read); with the journal's plan read (plan-record.sh), as the
-# commit and the undo need it.
+# "changed <paths>", "other <why>" (another release's), "bad <why>" (not a
+# journal setup wrote), "fail <why>" (the host could not be read); with the
+# journal's plan read (plan-record.sh), as the commit and the undo need it.
 journal_classify() {
   J_CLASS=""
-  _journal_read || { J_CLASS="bad $JOURNAL_DIR/journal is not a journal setup wrote (at its ${J_BAD:-start})"; return 0; }
+  _journal_read || { J_CLASS="${J_FORMAT:-bad $JOURNAL_DIR/journal is not a journal setup wrote (at its ${J_BAD:-start})}"; return 0; }
   if [[ "$J_NONE" == yes ]]; then J_CLASS=untouched; return 0; fi
   plan_record_read "$JOURNAL_DIR/plan" 2>/dev/null \
     || { J_CLASS="bad $JOURNAL_DIR/plan is not a plan setup wrote"; return 0; }
@@ -199,6 +229,7 @@ journal_classify() {
 # the host cannot be read, failed), naming what to do.
 journal_refuse_class() {
   case "$J_CLASS" in
+    other\ *) refuse JOURNAL_OTHER_RELEASE "${J_CLASS#other }. Run that release's setup, which decides on it; or recover the network at the console from the journal's lines (docs/specs/DEPLOYMENT.md, The bridge: when an undo does not complete); and run this again." ;;
     fail\ *) refuse JOURNAL_UNREADABLE "${J_CLASS#fail }: setup cannot tell what the bridge step that left its journal in $JOURNAL_DIR changed. Make it answer (for NetworkManager: systemctl status NetworkManager), and run this again." ;;
     bad\ *) refuse JOURNAL_NOT_SETUPS "${J_CLASS#bad }. Put the network as you want it, remove $JOURNAL_DIR (its files/ holds the originals of what the step changed), and run this again." ;;
     changed\ *) refuse JOURNAL_CHANGED "a bridge step that did not finish left its journal in $JOURNAL_DIR, and since then someone else changed${J_CLASS#changed}: setup does not undo over that. Put each back as the step wrote it or as it was (its files/ holds the originals), or remove $JOURNAL_DIR once the network is as you want it, and run this again." ;;
@@ -315,6 +346,14 @@ journal_cleanup() {
 journal_recover() {
   local rc p
   if [[ -d "$JOURNAL_DIR.done" ]]; then
+    # Committed: only its originals are left to keep, where its own release's
+    # format says.
+    _journal_format "$JOURNAL_DIR.done"
+    case "$J_FORMAT" in
+      other\ *) refuse JOURNAL_OTHER_RELEASE "${J_FORMAT#other }. Its bridge is committed, and only its originals (in files/ and kept/) are left to keep: run that release's setup, or move them where you want them and remove $JOURNAL_DIR.done, and run this again." ;;
+      bad\ *) refuse JOURNAL_NOT_SETUPS "${J_FORMAT#bad }. Move what it holds where you want it, remove $JOURNAL_DIR.done, and run this again." ;;
+      fail\ *) net_fail "${J_FORMAT#fail }" ;;
+    esac
     journal_cleanup || net_fail "$JOURNAL_KEEP_FAILED"
     changed "the originals of an earlier bridge step kept"
   fi

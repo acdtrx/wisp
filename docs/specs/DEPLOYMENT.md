@@ -72,6 +72,7 @@ When a refusal comes:
 | `NM_REJECTS` | NetworkManager does not accept the connection setup would add (`nmcli --offline` says why) | Make the bridge with the host's tool. |
 | `JOURNAL_CHANGED` | A bridge step that did not finish left a journal whose files or connections were changed since by someone else | Put each back as the step wrote it or as it was (the journal's `files/` holds the originals), or remove the journal once the network is as wanted. |
 | `JOURNAL_NOT_SETUPS` | A journal setup did not write | Put the network as wanted, and remove the journal. |
+| `JOURNAL_OTHER_RELEASE` | A journal, or a committed one whose originals are still to be kept, written by another release of Wisp: its format version is not this setup's | Run that release's setup; or recover at the console from the journal's lines (The bridge, when an undo does not complete). For a committed one, move its originals where wanted and remove it. |
 | `JOURNAL_UNREADABLE` | The host cannot be asked what a journal's changes are now (NetworkManager does not answer) | Make it answer (`systemctl status NetworkManager`). |
 | `NETWORK_CHANGED_SINCE_ASKED` | The install's own plan, made again under the lock, would make another bridge — on another uplink or address, or through another tool — than the operator confirmed. Found by the install before it changes anything, or, when the network changes in between, by setup after its bridge-journal step (which it says it ran). | Run the install again. |
 | `NETWORK_CHANGED_SINCE_PLAN` | Something changed what the plan read — the default route, the uplink's addresses, hardware address or MTU, cloud-init's configuration, the tool's files or connections, another definition that could take the uplink — while setup ran. | Run setup again. |
@@ -225,6 +226,7 @@ Only a failed check undoes the bridge.
 - Before its first change the bridge step puts the plan and the check's reference (what the uplink held) in a journal, `/var/lib/wisp/bridge-journal`, and records each change there before making it, synced.
 - If the check fails or the step is stopped, it marks the journal as undoing, undoes from it, in reverse, and fails saying so. It says whether the uplink then holds what it held before, as checked against the check's reference (and, on NetworkManager, when its generated connection is now a stored one).
 - A last entry cut short (a power loss, a full disk) is a change that never happened.
+- The journal directory holds its format version, in a `version` file written first and synced: a setup that meets a version it does not know, as a rollback's older setup can after a newer bridge step, refuses the journal as another release's (`JOURNAL_OTHER_RELEASE`) rather than misread it, and one holding a journal but no version is not setup's (settled 2026-11-20).
 - When the installer finds a journal, it asks its question from the journal's record, and its work undoes or commits it first.
 
 **A step that died leaves the journal**, and setup's first step decides from it before anything else, changing nothing while it decides, in this order (settled 2026-11-19):
