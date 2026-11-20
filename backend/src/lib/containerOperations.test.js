@@ -46,9 +46,9 @@ mockModule('./sections.js', ['renameWorkloadAssignment', 'removeWorkloadAssignme
 mockModule('./vmMdnsReconciler.js', ['publishVm', 'unpublishVm']);
 mockModule('./containerMdnsReconciler.js', ['publishContainer', 'unpublishContainer']);
 
-const { editContainerConfig, startContainerZipExtractJob } = await import('./containerOperations.js');
+const { editContainerConfig, startContainerDeployJob, startContainerZipExtractJob } = await import('./containerOperations.js');
 const { tryAcquireContainerOperationLock } = await import('./containerOperationLock.js');
-const { listJobs, whenJobEnds } = await import('./jobs/index.js');
+const { listJobs, readJob, whenJobEnds } = await import('./jobs/index.js');
 
 /** A container directory of its own, for the commands that write into it. */
 const containerDir = mkdtempSync(path.join(tmpdir(), 'wisp-container-ops-test-'));
@@ -162,4 +162,27 @@ test('a zip upload refused while it stages answers the error, with no job, no st
   assert.deepEqual(readdirSync(containerDir), []);
   assert.equal(names().includes('extractMountZip'), false);
   assertUnlocked('z');
+});
+
+test('a deploy whose start fails on an error with no table code answers INTERNAL_ERROR, saying the container exists', async () => {
+  impl.startContainer = async () => { throw Object.assign(new Error("EACCES: permission denied, open '/srv/x/runs/1.log'"), { code: 'EACCES' }); };
+  const { jobId } = await startContainerDeployJob({ name: 'd', image: 'nginx:1.27', env: {}, changes: {}, log });
+  assert.equal(await whenJobEnds(jobId), 'error');
+  assert.deepEqual(readJob(jobId), {
+    ...readJob(jobId),
+    error: 'INTERNAL_ERROR',
+    detail: 'Container "d" was created but failed to start; it exists in stopped state (check get_container_logs, or fix '
+      + "and start_container): EACCES: permission denied, open '<path>'",
+  });
+});
+
+test('a deploy whose settings fail keeps their code and says the container exists, stopped', async () => {
+  impl.updateContainerConfig = async () => { throw createAppError('CONFIG_ERROR', 'cpuLimit exceeds the host\'s 4 cores'); };
+  const { jobId } = await startContainerDeployJob({ name: 'd', image: 'nginx:1.27', env: {}, changes: { cpuLimit: 8 }, log });
+  assert.equal(await whenJobEnds(jobId), 'error');
+  const { error, detail } = readJob(jobId);
+  assert.equal(error, 'CONFIG_ERROR');
+  assert.equal(detail, 'Container "d" was created but its settings could not be applied; it exists in stopped state '
+    + "(fix it, then start_container): cpuLimit exceeds the host's 4 cores");
+  assert.equal(names().includes('startContainer'), false);
 });

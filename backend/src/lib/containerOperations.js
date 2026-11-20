@@ -81,7 +81,7 @@ import {
   titleForZipExtract,
 } from './jobs/index.js';
 import { withContainerOperationLock } from './containerOperationLock.js';
-import { createAppError, wrapAppError } from './appErrors.js';
+import { createAppError, isAppError, wrapAppError } from './appErrors.js';
 import { resolveBackupDestinations } from './backupDestinations.js';
 import { startWorkloadBackupJob, backUpWorkload } from './workloadBackup.js';
 import { followWorkloadConfigUpdate, followWorkloadDelete, followWorkloadRename } from './workloadFollowUps.js';
@@ -137,7 +137,9 @@ export function startContainerCreateJob({ spec, log }) {
  * `env`, apply the settings `changes` as a configuration update — its
  * follow-ups included — and start it, as one job holding the new name's lock.
  * Its `.local` name is published once it runs, by the network-change event,
- * as for any start. `done`: the container's config, secrets masked.
+ * as for any start. A failure after the create says the container now exists,
+ * stopped, and keeps the failure's code (INTERNAL_ERROR for one without a
+ * code from the table). `done`: the container's config, secrets masked.
  */
 export function startContainerDeployJob({ name, image, env, changes, log }) {
   return startJob({
@@ -148,16 +150,14 @@ export function startContainerDeployJob({ name, image, env, changes, log }) {
     log,
     run: async (report) => {
       await createContainer({ name, image, env }, report);
-      await applyContainerConfigChanges({ name, changes, log });
-      report({ step: 'starting' });
+      let failed = 'its settings could not be applied; it exists in stopped state (fix it, then start_container)';
       try {
+        await applyContainerConfigChanges({ name, changes, log });
+        report({ step: 'starting' });
+        failed = 'failed to start; it exists in stopped state (check get_container_logs, or fix and start_container)';
         await startContainer(name);
       } catch (err) {
-        throw wrapAppError(
-          err.code || 'CONTAINERD_ERROR',
-          `Container "${name}" was created but failed to start; it exists in stopped state (check get_container_logs, or fix and start_container)`,
-          err,
-        );
+        throw wrapAppError(isAppError(err) ? err.code : 'INTERNAL_ERROR', `Container "${name}" was created but ${failed}`, err);
       }
       return await maskContainerConfigSecrets(await getContainerConfig(name));
     },
