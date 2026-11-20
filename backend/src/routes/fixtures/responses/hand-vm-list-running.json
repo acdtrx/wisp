@@ -1,0 +1,39 @@
+{
+  "route": "GET /api/vms",
+  "status": 200,
+  "note": "A running VM, started, with a pending restart and a replaced qemu binary.",
+  "body": [
+    {
+      "iconId": null,
+      "localDns": false,
+      "memoryMiB": 8192,
+      "name": "vm-a",
+      "osCategory": "linux",
+      "pendingRestart": {
+        "since": "2026-11-20T12:00:00.000Z"
+      },
+      "state": "running",
+      "stateCode": 1,
+      "uuid": "00000000-0000-4000-8000-000000000001",
+      "vcpus": 2,
+      "guestAgent": true,
+      "staleBinary": true,
+      "startedAt": 1795179558294
+    },
+    {
+      "iconId": "debian",
+      "localDns": false,
+      "memoryMiB": 2048,
+      "name": "vm-b",
+      "osCategory": "linux",
+      "pendingRestart": null,
+      "state": "shutoff",
+      "stateCode": 5,
+      "uuid": "00000000-0000-4000-8000-000000000002",
+      "vcpus": 2,
+      "guestAgent": true,
+      "staleBinary": false,
+      "startedAt": null
+    }
+  ]
+}

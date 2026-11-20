@@ -16,7 +16,7 @@ const sectionSchema = {
   properties: {
     id: { type: 'string' },
     name: { type: 'string' },
-    order: { type: 'number' },
+    order: { type: ['number', 'null'] },
     builtin: { type: 'boolean' },
   },
   additionalProperties: false,

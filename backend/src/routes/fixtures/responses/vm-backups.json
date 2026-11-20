@@ -1,0 +1,14 @@
+{
+  "route": "GET /api/backups",
+  "status": 200,
+  "body": [
+    {
+      "destinationId": "local",
+      "destinationLabel": "Local",
+      "origin": "manual",
+      "sizeBytes": 1752513242,
+      "timestamp": "2026-05-08T08-35-22",
+      "vmName": "vm-b"
+    }
+  ]
+}

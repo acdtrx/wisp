@@ -1,0 +1,27 @@
+{
+  "route": "GET /api/containers/:name/mounts/usage",
+  "status": 200,
+  "body": {
+    "mounts": [
+      {
+        "containerPath": "/srv",
+        "hostPath": "/var/lib/wisp/containers/ct-a/files/srv",
+        "name": "srv",
+        "partial": false,
+        "sizeBytes": 9079,
+        "source": "local",
+        "type": "directory"
+      },
+      {
+        "containerPath": "/etc/caddy/Caddyfile",
+        "hostPath": "/var/lib/wisp/containers/ct-a/files/Caddyfile",
+        "name": "Caddyfile",
+        "partial": false,
+        "sizeBytes": 39,
+        "source": "local",
+        "type": "file"
+      }
+    ],
+    "name": "ct-a"
+  }
+}

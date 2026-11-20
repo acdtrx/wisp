@@ -1,0 +1,10 @@
+{
+  "route": "GET /api/host/updates/packages",
+  "status": 200,
+  "note": "No OS check has run since the start.",
+  "body": {
+    "packages": [],
+    "downloadBytes": 0,
+    "checkedAt": null
+  }
+}

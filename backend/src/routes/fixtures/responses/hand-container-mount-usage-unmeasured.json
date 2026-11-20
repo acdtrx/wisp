@@ -1,0 +1,19 @@
+{
+  "route": "GET /api/containers/:name/mounts/usage",
+  "status": 200,
+  "note": "A mount on a host mount that is not mounted: no host path, no size.",
+  "body": {
+    "name": "ct-a",
+    "mounts": [
+      {
+        "name": "conf",
+        "containerPath": "/etc/app.conf",
+        "type": "file",
+        "source": "mount-1",
+        "hostPath": null,
+        "sizeBytes": null,
+        "partial": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "route": "GET /api/containers/:name",
+  "status": 200,
+  "body": {
+    "autostart": false,
+    "command": null,
+    "cpuLimit": 1,
+    "createdAt": "2026-05-04T13:19:54.926Z",
+    "devices": [],
+    "env": {},
+    "exposedPorts": [
+      "2019/tcp",
+      "443/tcp",
+      "443/udp",
+      "80/tcp"
+    ],
+    "image": "docker.io/library/caddy:latest",
+    "imageDigest": "sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af",
+    "imagePulledAt": "2026-10-15T21:54:52.754Z",
+    "localDns": true,
+    "mdnsHostname": null,
+    "memoryLimitMiB": 1024,
+    "mounts": [
+      {
+        "containerOwnerGid": 0,
+        "containerOwnerUid": 0,
+        "containerPath": "/srv",
+        "name": "srv",
+        "readonly": true,
+        "sourceId": null,
+        "subPath": "",
+        "type": "directory"
+      },
+      {
+        "containerOwnerGid": 0,
+        "containerOwnerUid": 0,
+        "containerPath": "/etc/caddy/Caddyfile",
+        "name": "Caddyfile",
+        "readonly": true,
+        "sourceId": null,
+        "subPath": "",
+        "type": "file"
+      }
+    ],
+    "name": "ct-a",
+    "network": {
+      "interface": "br0",
+      "ip": "10.0.0.250/24",
+      "ip6": "fd00::10/64",
+      "mac": "52:54:00:00:00:03",
+      "type": "bridge"
+    },
+    "pid": 0,
+    "restartPolicy": "unless-stopped",
+    "scheduledRestart": null,
+    "state": "stopped",
+    "type": "container",
+    "updateAvailable": false,
+    "uptime": 0,
+    "uuid": "00000000-0000-4000-8000-000000000003"
+  }
+}

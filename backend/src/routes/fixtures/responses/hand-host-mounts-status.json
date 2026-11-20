@@ -1,0 +1,13 @@
+{
+  "route": "GET /api/host/mounts/status",
+  "status": 200,
+  "note": "A configured mount, not mounted.",
+  "body": [
+    {
+      "id": "mount-1",
+      "label": "NAS",
+      "mountPath": "/mnt/nas",
+      "mounted": false
+    }
+  ]
+}

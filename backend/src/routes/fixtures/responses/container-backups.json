@@ -1,0 +1,24 @@
+{
+  "route": "GET /api/container-backups",
+  "status": 200,
+  "body": [
+    {
+      "destinationId": "local",
+      "destinationLabel": "Local",
+      "image": "docker.io/library/caddy:latest",
+      "name": "ct-a",
+      "origin": "manual",
+      "sizeBytes": 5772,
+      "timestamp": "2026-07-14T18-46-18"
+    },
+    {
+      "destinationId": "local",
+      "destinationLabel": "Local",
+      "image": "docker.io/library/caddy:latest",
+      "name": "ct-a",
+      "origin": "manual",
+      "sizeBytes": 5769,
+      "timestamp": "2026-07-14T18-45-24"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "route": "GET /api/jobs",
+  "status": 200,
+  "body": {
+    "jobs": [
+      {
+        "createdAt": 1795179558294,
+        "jobId": "00000000-0000-4000-8000-000000000006",
+        "kind": "vm-delete",
+        "status": "done",
+        "subject": {
+          "name": "vm-c",
+          "type": "vm"
+        },
+        "title": "Delete vm-c"
+      }
+    ]
+  }
+}

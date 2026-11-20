@@ -13,7 +13,7 @@ User-defined groupings for the sidebar workload list. The synthetic **Main** sec
 ```json
 {
   "sections": [
-    { "id": "main", "name": "Main", "order": -Infinity, "builtin": true },
+    { "id": "main", "name": "Main", "order": null, "builtin": true },
     { "id": "9c12…", "name": "Web", "order": 0, "builtin": false }
   ],
   "assignments": {
@@ -22,6 +22,8 @@ User-defined groupings for the sidebar workload list. The synthetic **Main** sec
   }
 }
 ```
+
+Main's `order` is `null`: it sorts before every section (internally `-Infinity`, which JSON writes as `null`).
 
 `assignments` keys are `"<type>:<workload-name>"` (`<type>` is `vm` or `container`); values are section ids. Missing keys mean Main.
 

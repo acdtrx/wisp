@@ -1,0 +1,25 @@
+{
+  "route": "GET /api/host/updates/packages",
+  "status": 200,
+  "body": {
+    "checkedAt": "2026-11-20T12:39:41.162Z",
+    "downloadBytes": 0,
+    "packages": [
+      {
+        "from": "14ubuntu6.2",
+        "name": "motd-news-config",
+        "to": "14ubuntu6.3"
+      },
+      {
+        "from": "14ubuntu6.2",
+        "name": "base-files",
+        "to": "14ubuntu6.3"
+      },
+      {
+        "from": null,
+        "name": "linux-main-modules-zfs-7.0.0-44-generic",
+        "to": "7.0.0-44.44"
+      }
+    ]
+  }
+}

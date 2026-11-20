@@ -1,0 +1,15 @@
+{
+  "route": "GET /api/host/gpus",
+  "status": 200,
+  "body": {
+    "gpus": [
+      {
+        "device": "/dev/dri/renderD128",
+        "model": "Skylake-S GT2 [HD Graphics 530]",
+        "pciSlot": "0000:00:02.0",
+        "vendor": "0x8086",
+        "vendorName": "Intel"
+      }
+    ]
+  }
+}

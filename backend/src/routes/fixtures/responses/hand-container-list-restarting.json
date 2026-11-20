@@ -1,0 +1,36 @@
+{
+  "route": "GET /api/containers",
+  "status": 200,
+  "note": "A container with a restart scheduled and pending, an image update, and no uuid yet.",
+  "body": [
+    {
+      "autoBackup": false,
+      "iconId": "box",
+      "image": "docker.io/library/caddy:latest",
+      "name": "ct-a",
+      "pendingRestart": {
+        "since": "2026-11-20T12:00:00.000Z"
+      },
+      "scheduledRestart": {
+        "attempt": 1,
+        "at": 1795179558294
+      },
+      "state": "stopped",
+      "type": "container",
+      "updateAvailable": true,
+      "uuid": null
+    },
+    {
+      "autoBackup": false,
+      "iconId": null,
+      "image": "docker.io/library/ubuntu:latest",
+      "name": "ct-b",
+      "pendingRestart": null,
+      "scheduledRestart": null,
+      "state": "stopped",
+      "type": "container",
+      "updateAvailable": false,
+      "uuid": "00000000-0000-4000-8000-000000000004"
+    }
+  ]
+}

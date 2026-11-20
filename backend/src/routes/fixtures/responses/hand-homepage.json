@@ -1,0 +1,67 @@
+{
+  "route": "GET /api/homepage",
+  "status": 200,
+  "note": "A derived tile with conflicts, a hidden manual tile on no workload, and a group.",
+  "body": {
+    "tiles": [
+      {
+        "id": "https://a.example/",
+        "kind": "derived",
+        "source": "app",
+        "name": "a",
+        "url": "https://a.example/",
+        "host": "a.example",
+        "iconId": "globe",
+        "hidden": false,
+        "workload": {
+          "type": "container",
+          "name": "ct-a",
+          "state": "running",
+          "updateAvailable": false
+        },
+        "conflicts": [
+          {
+            "source": "mdns",
+            "publisher": "ct-b",
+            "manualTileId": null
+          },
+          {
+            "source": "manual",
+            "publisher": "manual",
+            "manualTileId": "tile-1"
+          }
+        ]
+      },
+      {
+        "id": "tile-2",
+        "kind": "manual",
+        "source": "manual",
+        "name": "Router",
+        "url": "http://10.0.0.1/",
+        "host": "10.0.0.1",
+        "iconId": "router",
+        "hidden": true,
+        "workload": null,
+        "conflicts": []
+      }
+    ],
+    "groups": [
+      {
+        "id": "ungrouped",
+        "name": "Ungrouped",
+        "builtin": true,
+        "tileIds": [
+          "https://a.example/"
+        ]
+      },
+      {
+        "id": "group-1",
+        "name": "Infra",
+        "builtin": false,
+        "tileIds": [
+          "tile-2"
+        ]
+      }
+    ]
+  }
+}

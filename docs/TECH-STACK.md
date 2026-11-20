@@ -29,7 +29,11 @@
   failure, validation errors included, with the failure shape and the status the one
   table of codes gives it (CODING-RULES §5). Route **response schemas are
   authoritative** for serialized output: add a new response field to the route schema in
-  the same edit, or Fastify strips it. Plugins: cors, multipart (streamed uploads),
+  the same edit, or Fastify strips it, and make a field nullable where the handler can
+  answer `null`, or Fastify turns it into `""`, `0`, `false` or `{}`. A unit test
+  (`routes/responseSchemas.test.js`) puts each route's answers, captured on a host and
+  written by hand for the states a capture misses (`routes/fixtures/responses/`), through
+  the route's own response schema and fails on any field dropped or value changed. Plugins: cors, multipart (streamed uploads),
   static (serves the SPA + vendored noVNC), websocket (VNC proxy, container shell). CORS
   allows `localhost:5173` in development only; in production the backend serves its own
   client, same origin.

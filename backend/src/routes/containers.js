@@ -238,7 +238,7 @@ const containerDetailSchema = {
       properties: {
         type: { type: 'string' },
         mac: { type: 'string' },
-        interface: { type: 'string' },
+        interface: { type: ['string', 'null'] },
         ip: { type: 'string' },
         ip6: { type: 'string' },
       },

@@ -1,0 +1,27 @@
+{
+  "route": "GET /api/host/mounts",
+  "status": 200,
+  "note": "An SMB share and a removable disk: each type with its own fields.",
+  "body": [
+    {
+      "id": "mount-1",
+      "type": "smb",
+      "label": "NAS",
+      "mountPath": "/mnt/nas",
+      "autoMount": true,
+      "share": "//nas/media",
+      "username": "user",
+      "hasPassword": true
+    },
+    {
+      "id": "mount-2",
+      "type": "disk",
+      "label": "",
+      "mountPath": "/mnt/usb",
+      "autoMount": false,
+      "uuid": "ABCD-1234",
+      "fsType": "vfat",
+      "readOnly": true
+    }
+  ]
+}

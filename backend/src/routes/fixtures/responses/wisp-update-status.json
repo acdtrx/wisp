@@ -1,0 +1,14 @@
+{
+  "route": "GET /api/updates/status",
+  "status": 200,
+  "body": {
+    "available": false,
+    "current": "2.8.0-beta.1",
+    "lastChecked": "2026-11-20T12:39:38.275Z",
+    "lastError": null,
+    "latest": "2.8.0-beta.1",
+    "notes": "Wisp v2.8.0-beta.1\n\n",
+    "publishedAt": "2026-11-17T09:25:01Z",
+    "repo": "user/wisp"
+  }
+}

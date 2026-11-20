@@ -1,0 +1,15 @@
+{
+  "route": "GET /api/homepage",
+  "status": 200,
+  "body": {
+    "groups": [
+      {
+        "builtin": true,
+        "id": "ungrouped",
+        "name": "Ungrouped",
+        "tileIds": []
+      }
+    ],
+    "tiles": []
+  }
+}

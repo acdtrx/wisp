@@ -1,0 +1,15 @@
+{
+  "route": "GET /api/updates/status",
+  "status": 200,
+  "note": "No check has run since the start.",
+  "body": {
+    "available": false,
+    "current": "2.8.0-beta.1",
+    "lastChecked": null,
+    "lastError": null,
+    "latest": null,
+    "notes": null,
+    "publishedAt": null,
+    "repo": "user/wisp"
+  }
+}

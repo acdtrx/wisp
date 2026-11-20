@@ -1,0 +1,10 @@
+{
+  "route": "GET /api/containers/images/update-status",
+  "status": 200,
+  "note": "No image check has run since the start.",
+  "body": {
+    "imagesChecked": 0,
+    "imagesUpdated": 0,
+    "lastCheckedAt": null
+  }
+}

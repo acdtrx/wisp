@@ -1,0 +1,19 @@
+{
+  "route": "GET /api/host",
+  "status": 200,
+  "body": {
+    "hostname": "host-a",
+    "kernel": "7.0.0-43-generic",
+    "libvirtVersion": "12.0.0",
+    "nodeVersion": "v24.22.1",
+    "osRelease": {
+      "id": "ubuntu",
+      "prettyName": "Ubuntu 26.04.1 LTS",
+      "versionId": "26.04"
+    },
+    "primaryAddress": "10.0.0.218",
+    "qemuVersion": "10.2.1",
+    "uptimeSeconds": 258919.83,
+    "wispVersion": "2.8.0-beta.1"
+  }
+}

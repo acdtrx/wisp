@@ -1,0 +1,153 @@
+{
+  "route": "GET /api/host/hardware",
+  "status": 200,
+  "note": "A hybrid CPU, a SMART read that failed, and the fields dmidecode and sysfs may leave out.",
+  "body": {
+    "cpu": {
+      "cacheKb": 6144,
+      "coreTypes": {
+        "performance": [
+          0,
+          1
+        ],
+        "efficiency": [
+          2,
+          3
+        ]
+      },
+      "cores": 4,
+      "mhz": 1205.197,
+      "model": "Intel(R) Core(TM) i5-6500T CPU @ 2.50GHz",
+      "threads": 4
+    },
+    "disks": [
+      {
+        "model": "Disk Model 1TB",
+        "name": "sda",
+        "pciAddress": null,
+        "rotational": false,
+        "sizeBytes": 1024209543168,
+        "smart": {
+          "supported": false,
+          "overall": "unknown",
+          "lastUpdated": "2026-11-20T13:03:08.618Z",
+          "error": "smartctl is not installed",
+          "availableSpare": null,
+          "availableSpareThreshold": null,
+          "criticalWarning": null,
+          "offlineUncorrectableSectors": null,
+          "pendingSectors": null,
+          "percentageUsed": null,
+          "powerOnHours": null,
+          "reallocatedSectors": null,
+          "ssdLifePercentRemaining": null,
+          "temperatureC": null
+        }
+      }
+    ],
+    "filesystems": [
+      {
+        "availBytes": 904900993024,
+        "device": "/dev/sda2",
+        "mount": "/",
+        "totalBytes": 1005867986944,
+        "usedBytes": 49796222976
+      },
+      {
+        "availBytes": 1109028864,
+        "device": "/dev/sda1",
+        "mount": "/boot/efi",
+        "totalBytes": 1124995072,
+        "usedBytes": 15966208
+      }
+    ],
+    "memory": [
+      {
+        "formFactor": null,
+        "manufacturer": null,
+        "sizeBytes": 17179869184,
+        "slot": "1",
+        "speedMts": null,
+        "type": "DDR4",
+        "voltage": null
+      }
+    ],
+    "network": [
+      {
+        "mac": null,
+        "name": "br0",
+        "speedMbps": null,
+        "state": "up"
+      },
+      {
+        "mac": "52:54:00:00:00:06",
+        "name": "enp0s31f6",
+        "speedMbps": 1000,
+        "state": "up"
+      },
+      {
+        "mac": "52:54:00:00:00:07",
+        "name": "wisp-dns0",
+        "speedMbps": null,
+        "state": "unknown"
+      }
+    ],
+    "pciDevices": [
+      {
+        "address": "0000:00:00.0",
+        "classCode": "060000",
+        "classId": "0600",
+        "className": "Host bridge",
+        "device": "Xeon E3-1200 v5/E3-1500 v5/6th Gen Core Processor Host Bridge/DRAM Registers",
+        "deviceId": "191f",
+        "driver": "skl_uncore",
+        "vendor": "Intel Corporation",
+        "vendorId": "8086"
+      },
+      {
+        "address": "0000:00:02.0",
+        "classCode": "030000",
+        "classId": "0300",
+        "className": "VGA controller",
+        "device": "Skylake-S GT2 [HD Graphics 530]",
+        "deviceId": "1912",
+        "driver": "i915",
+        "vendor": "Intel Corporation",
+        "vendorId": "8086"
+      },
+      {
+        "address": "0000:00:14.0",
+        "classCode": "0c0330",
+        "classId": "0c03",
+        "className": "XHCI",
+        "device": "200 Series/Z370 Chipset Family USB 3.0 xHCI Controller",
+        "deviceId": "a2af",
+        "driver": "xhci_hcd",
+        "vendor": "Intel Corporation",
+        "vendorId": "8086"
+      },
+      {
+        "address": "0000:00:14.2",
+        "classCode": "118000",
+        "classId": "1180",
+        "className": "Signal processing controller",
+        "device": "200 Series PCH Thermal Subsystem",
+        "deviceId": "a2b1",
+        "driver": null,
+        "vendor": "Intel Corporation",
+        "vendorId": "8086"
+      }
+    ],
+    "system": {
+      "biosDate": null,
+      "biosVendor": null,
+      "biosVersion": null,
+      "boardName": null,
+      "boardVendor": null,
+      "boardVersion": null,
+      "systemProduct": null,
+      "systemVendor": null,
+      "systemVersion": null
+    }
+  }
+}

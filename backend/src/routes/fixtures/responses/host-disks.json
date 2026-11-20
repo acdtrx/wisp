@@ -1,0 +1,28 @@
+{
+  "route": "GET /api/host/disks",
+  "status": 200,
+  "body": [
+    {
+      "devPath": "/dev/sda1",
+      "fsType": "vfat",
+      "label": "",
+      "model": "Disk Model 1TB",
+      "mountedAt": "/boot/efi",
+      "removable": false,
+      "sizeBytes": 1127219200,
+      "uuid": "ABCD-1234",
+      "vendor": "ATA"
+    },
+    {
+      "devPath": "/dev/sda2",
+      "fsType": "ext4",
+      "label": "",
+      "model": "Disk Model 1TB",
+      "mountedAt": "/",
+      "removable": false,
+      "sizeBytes": 1023079874560,
+      "uuid": "00000000-0000-4000-8000-000000000005",
+      "vendor": "ATA"
+    }
+  ]
+}

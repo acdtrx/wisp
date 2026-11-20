@@ -1,0 +1,30 @@
+{
+  "route": "GET /api/containers",
+  "status": 200,
+  "body": [
+    {
+      "autoBackup": false,
+      "iconId": null,
+      "image": "docker.io/library/caddy:latest",
+      "name": "ct-a",
+      "pendingRestart": null,
+      "scheduledRestart": null,
+      "state": "stopped",
+      "type": "container",
+      "updateAvailable": false,
+      "uuid": "00000000-0000-4000-8000-000000000003"
+    },
+    {
+      "autoBackup": false,
+      "iconId": null,
+      "image": "docker.io/library/ubuntu:latest",
+      "name": "ct-b",
+      "pendingRestart": null,
+      "scheduledRestart": null,
+      "state": "stopped",
+      "type": "container",
+      "updateAvailable": false,
+      "uuid": "00000000-0000-4000-8000-000000000004"
+    }
+  ]
+}

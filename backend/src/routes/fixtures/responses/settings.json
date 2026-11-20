@@ -1,0 +1,31 @@
+{
+  "route": "GET /api/settings",
+  "status": 200,
+  "body": {
+    "advertisedUrl": null,
+    "backupLocalPath": "/var/lib/wisp/backups",
+    "backupMountId": null,
+    "backupSchedule": {
+      "destinationIds": [
+        "local"
+      ],
+      "enabled": false,
+      "retainDays": 7,
+      "retainWeeks": 4,
+      "time": "03:00"
+    },
+    "containersPath": "/var/lib/wisp/containers",
+    "discoveryEnabled": true,
+    "imagePath": "/var/lib/wisp/images",
+    "mounts": [],
+    "oidc": {
+      "clientId": "",
+      "enabled": false,
+      "hasClientSecret": false,
+      "issuer": ""
+    },
+    "serverName": "host-a",
+    "updateChannel": "beta",
+    "vmsPath": "/var/lib/wisp/vms"
+  }
+}

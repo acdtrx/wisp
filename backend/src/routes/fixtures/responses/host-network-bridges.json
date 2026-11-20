@@ -1,0 +1,10 @@
+{
+  "route": "GET /api/host/network-bridges",
+  "status": 200,
+  "body": {
+    "eligibleParents": [
+      "br0"
+    ],
+    "managed": []
+  }
+}

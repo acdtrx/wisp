@@ -1,0 +1,28 @@
+{
+  "route": "GET /api/jobs",
+  "status": 200,
+  "note": "A job on no workload, and a failed one on a VM.",
+  "body": {
+    "jobs": [
+      {
+        "createdAt": 1795179558294,
+        "jobId": "00000000-0000-4000-8000-000000000090",
+        "kind": "os-update-check",
+        "status": "running",
+        "subject": null,
+        "title": "Check OS updates"
+      },
+      {
+        "createdAt": 1795179558295,
+        "jobId": "00000000-0000-4000-8000-000000000091",
+        "kind": "vm-backup",
+        "status": "error",
+        "subject": {
+          "type": "vm",
+          "name": "vm-a"
+        },
+        "title": "Back up vm-a"
+      }
+    ]
+  }
+}

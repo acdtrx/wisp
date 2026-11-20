@@ -1,0 +1,53 @@
+{
+  "route": "GET /api/settings",
+  "status": 200,
+  "note": "Settings with mounts, a backup mount, SSO on and an advertised URL.",
+  "body": {
+    "advertisedUrl": "https://wisp.example",
+    "backupLocalPath": "/var/lib/wisp/backups",
+    "backupMountId": "mount-1",
+    "backupSchedule": {
+      "destinationIds": [
+        "local"
+      ],
+      "enabled": false,
+      "retainDays": 7,
+      "retainWeeks": 4,
+      "time": "03:00"
+    },
+    "containersPath": "/var/lib/wisp/containers",
+    "discoveryEnabled": true,
+    "imagePath": "/var/lib/wisp/images",
+    "mounts": [
+      {
+        "id": "mount-1",
+        "type": "smb",
+        "label": "NAS",
+        "mountPath": "/mnt/nas",
+        "autoMount": true,
+        "share": "//nas/media",
+        "username": "user",
+        "hasPassword": true
+      },
+      {
+        "id": "mount-2",
+        "type": "disk",
+        "label": "",
+        "mountPath": "/mnt/usb",
+        "autoMount": false,
+        "uuid": "ABCD-1234",
+        "fsType": "vfat",
+        "readOnly": true
+      }
+    ],
+    "oidc": {
+      "enabled": true,
+      "issuer": "https://idp.example",
+      "clientId": "wisp",
+      "hasClientSecret": true
+    },
+    "serverName": "host-a",
+    "updateChannel": "beta",
+    "vmsPath": "/var/lib/wisp/vms"
+  }
+}

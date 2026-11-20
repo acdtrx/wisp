@@ -1,0 +1,7 @@
+{
+  "route": "GET /api/vms/:name/cloudinit",
+  "status": 200,
+  "body": {
+    "enabled": false
+  }
+}

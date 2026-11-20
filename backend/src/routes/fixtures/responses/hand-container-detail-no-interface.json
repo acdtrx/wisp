@@ -1,0 +1,107 @@
+{
+  "route": "GET /api/containers/:name",
+  "status": 200,
+  "note": "A running app container whose network has no interface (a PATCH may save null), with secrets, a tmpfs, a device, a service and its app config.",
+  "body": {
+    "autostart": false,
+    "command": [
+      "sleep",
+      "infinity"
+    ],
+    "cpuLimit": 0.5,
+    "createdAt": "2026-05-03T21:00:02.355Z",
+    "devices": [
+      {
+        "type": "gpu",
+        "device": "/dev/dri/renderD128"
+      }
+    ],
+    "env": {
+      "PLAIN": {
+        "value": "x",
+        "secret": false
+      },
+      "TOKEN": {
+        "value": null,
+        "secret": true,
+        "isSet": true
+      }
+    },
+    "exposedPorts": [],
+    "image": "docker.io/library/ubuntu:latest",
+    "imageDigest": "sha256:f144425ff09be612d6d9ad965196e9cdc23dae1f42110a8a11a3e9a8198759f7",
+    "imagePulledAt": "2026-10-15T23:16:11.471Z",
+    "localDns": true,
+    "mdnsHostname": "ct-b.local",
+    "memoryLimitMiB": 512,
+    "mounts": [
+      {
+        "type": "file",
+        "name": "conf",
+        "containerPath": "/etc/app.conf",
+        "readonly": false,
+        "sourceId": "mount-1",
+        "subPath": "app",
+        "containerOwnerUid": 1000,
+        "containerOwnerGid": 1000,
+        "secret": true,
+        "isSet": true
+      },
+      {
+        "type": "tmpfs",
+        "name": "tmp",
+        "containerPath": "/tmp",
+        "readonly": false,
+        "sizeMiB": 64,
+        "sourceId": null,
+        "subPath": "",
+        "containerOwnerUid": 0,
+        "containerOwnerGid": 0
+      }
+    ],
+    "name": "ct-b",
+    "network": {
+      "type": "bridge",
+      "mac": "52:54:00:00:00:09",
+      "interface": null
+    },
+    "pid": 4242,
+    "restartPolicy": "unless-stopped",
+    "scheduledRestart": {
+      "attempt": 2,
+      "at": 1795179558294
+    },
+    "state": "running",
+    "type": "container",
+    "updateAvailable": false,
+    "uptime": 12.5,
+    "uuid": "00000000-0000-4000-8000-000000000004",
+    "iconId": "box",
+    "pendingRestart": {
+      "since": "2026-11-20T12:00:00.000Z"
+    },
+    "services": [
+      {
+        "port": 80,
+        "type": "_http._tcp",
+        "txt": {
+          "path": "/"
+        }
+      }
+    ],
+    "metadata": {
+      "app": "caddy-reverse-proxy",
+      "appConfig": {
+        "hosts": [
+          {
+            "subdomain": "a",
+            "target": "10.0.0.10:80"
+          }
+        ],
+        "tls": {
+          "email": null
+        }
+      }
+    }
+  }
+}

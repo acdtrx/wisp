@@ -1,0 +1,20 @@
+{
+  "route": "GET /api/host/usb",
+  "status": 200,
+  "body": [
+    {
+      "bus": "001",
+      "device": "001",
+      "name": "xHCI Host Controller",
+      "productId": "0002",
+      "vendorId": "1d6b"
+    },
+    {
+      "bus": "002",
+      "device": "001",
+      "name": "xHCI Host Controller",
+      "productId": "0003",
+      "vendorId": "1d6b"
+    }
+  ]
+}
