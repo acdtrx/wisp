@@ -26,10 +26,11 @@ import { randomUUID } from 'node:crypto';
 import { createAppError, errorBody, isExpectedAppError } from '../appErrors.js';
 import { acquireVmOperationLock } from '../vmOperationLock.js';
 import { acquireContainerOperationLock } from '../containerOperationLock.js';
-import { BACKGROUND_JOB_KIND, SUBJECT_KINDS } from './backgroundJobKinds.js';
+import { JOB_KIND } from '../../../../shared/wireNames.js';
+import { SUBJECT_KINDS } from './jobSubjectKinds.js';
 
 const JOB_TTL_MS = 5 * 60 * 1000;
-const KNOWN_KINDS = new Set(Object.values(BACKGROUND_JOB_KIND));
+const KNOWN_KINDS = new Set(Object.values(JOB_KIND));
 
 /**
  * @typedef {{ type: 'vm' | 'container', name: string }} JobSubject
@@ -280,7 +281,7 @@ function assertStartArgs({ kind, title, subject, scope, check, log, run }) {
  *   the job with its error body.
  *
  * @param {object} opts
- * @param {string} opts.kind - a BACKGROUND_JOB_KIND value
+ * @param {string} opts.kind - a JOB_KIND value
  * @param {string} opts.title
  * @param {JobSubject} [opts.subject]
  * @param {boolean} [opts.shared]

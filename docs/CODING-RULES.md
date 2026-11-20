@@ -297,7 +297,7 @@ checks and the unit tests below for what they cover:
   pass (it needs `npm ci` at the root and in `frontend/`). It runs each check below and
   fails if any of them fails; the release workflow and `scripts/release.sh` run it too,
   so a failure blocks a release.
-  - `check-imports`: every relative import in the backend resolves, and every name one
+  - `check-imports`: every relative import in the backend and `shared/` resolves, and every name one
     backend file imports from another is exported there. The backend has no
     build step, so nothing else validates import paths — and a *dynamic* import only
     resolves when its code path runs, so a stale one boots fine and 500s a single route
@@ -306,11 +306,12 @@ checks and the unit tests below for what they cover:
     parity: every name a platform facade takes is exported by its `linux/` and
     `darwin/` sides.
   - `check-fences`: the import fences (§7), no route importing an operation lock
-    among them and no outbound HTTP outside `lib/downloads/`; no import cycle in the backend beyond its listed exceptions; and only
+    among them and no outbound HTTP outside `lib/downloads/`; `shared/` (the wire's
+    names) importing nothing; no import cycle in the backend beyond its listed exceptions; and only
     the backend runs the state migrations (§16): outside
     `docs/` and Markdown, no file but those in `backend/src` names the runner, and none
     but the runner and the checks reaches for `backend/migrations`, comments aside.
-  - `lint`: ESLint over `backend/` and `frontend/src/`, correctness rules only: a use
+  - `lint`: ESLint over `backend/`, `frontend/src/` and `shared/`, correctness rules only: a use
     of an undefined name, an unused import or variable, an unused parameter after the
     last used one, a duplicate object key, a hook called outside the rules of hooks.
     Inline ESLint comments (`eslint-disable`, `/* global */`) are not honoured, and

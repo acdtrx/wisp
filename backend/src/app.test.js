@@ -14,6 +14,8 @@ import path from 'node:path';
 
 import Fastify from 'fastify';
 
+import { JOB_KIND } from '../../shared/wireNames.js';
+
 const READ_TOKEN = 'wisp_read_test-read-token';
 const PASSWORD = 'test-login-password';
 const ADMIN_TOKEN = 'wisp_admin_test-admin-token';
@@ -253,12 +255,12 @@ test('GET /api/jobs lists a started job with its row', async () => {
   const start = await app.inject({ method: 'POST', url: '/api/containers/images/check-updates', headers: bearer(ADMIN_TOKEN), payload: {} });
   assert.equal(start.statusCode, 202);
   const { jobId, title } = start.json();
-  assert.deepEqual(start.json(), { jobId, kind: 'container-image-update-check', title, subject: null });
+  assert.deepEqual(start.json(), { jobId, kind: JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK, title, subject: null });
   const res = await app.inject({ method: 'GET', url: '/api/jobs', headers: bearer(READ_TOKEN) });
   assert.equal(res.statusCode, 200);
   const row = res.json().jobs.find((j) => j.jobId === jobId);
   assert.deepEqual(Object.keys(row).sort(), ['createdAt', 'jobId', 'kind', 'status', 'subject', 'title']);
-  assert.equal(row.kind, 'container-image-update-check');
+  assert.equal(row.kind, JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK);
   assert.equal(row.title, title);
   assert.equal(row.subject, null);
   assert.ok(['running', 'done', 'error'].includes(row.status));

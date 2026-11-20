@@ -18,7 +18,6 @@ import {
 } from '../lib/containerManager/index.js';
 import {
   startJob,
-  BACKGROUND_JOB_KIND,
   titleForContainerImageDelete,
 } from '../lib/jobs/index.js';
 import {
@@ -58,6 +57,7 @@ import {
 import {
   backupBodySchema, containerParamsSchema, jobAckSchema, noContentSchema, runIdSchema,
 } from './schemas.js';
+import { JOB_KIND } from '../../../shared/wireNames.js';
 
 /* ── Schemas ──────────────────────────────────────────────────────────── */
 
@@ -381,7 +381,7 @@ export default async function containerRoutes(fastify) {
     handler: async (request, reply) => {
       const imageName = await assertContainerImageDeletable(request.query.ref);
       const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_DELETE,
+        kind: JOB_KIND.CONTAINER_IMAGE_DELETE,
         title: titleForContainerImageDelete(imageName),
         log: request.log,
         run: async () => {

@@ -66,7 +66,6 @@ import {
 } from './containerApps/index.js';
 import {
   startJob,
-  BACKGROUND_JOB_KIND,
   titleForContainerCreate,
   titleForContainerDeploy,
   titleForContainerImageUpdate,
@@ -86,6 +85,7 @@ import { createAppError, isAppError, wrapAppError } from './appErrors.js';
 import { resolveBackupDestinations } from './backupDestinations.js';
 import { startWorkloadBackupJob, backUpWorkload } from './workloadBackup.js';
 import { followContainerConfigUpdate, followWorkloadDelete, followWorkloadRename } from './workloadFollowUps.js';
+import { JOB_KIND } from '../../../shared/wireNames.js';
 
 const container = (name) => ({ type: 'container', name });
 
@@ -121,7 +121,7 @@ async function applyContainerConfigChanges({ name, changes, log }) {
 export function startContainerCreateJob({ spec, log }) {
   const { name } = spec;
   return startJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_CREATE,
+    kind: JOB_KIND.CONTAINER_CREATE,
     title: titleForContainerCreate(name),
     subject: container(name),
     check: () => assertContainerNameAvailable(name),
@@ -144,7 +144,7 @@ export function startContainerCreateJob({ spec, log }) {
  */
 export function startContainerDeployJob({ name, image, env, changes, log }) {
   return startJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_DEPLOY,
+    kind: JOB_KIND.CONTAINER_DEPLOY,
     title: titleForContainerDeploy(name),
     subject: container(name),
     check: () => assertContainerNameAvailable(name),
@@ -177,7 +177,7 @@ export async function startContainerImageUpdateJob({ name, image, log }) {
   // one, else the normalized ref the pull stores the image under.
   const { ref } = await resolveContainerImageRef(requested);
   return startJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_UPDATE,
+    kind: JOB_KIND.CONTAINER_IMAGE_UPDATE,
     title: titleForContainerImageUpdate(name),
     subject: container(name),
     log,
@@ -211,7 +211,7 @@ export async function startContainerImageUpdateJob({ name, image, log }) {
 /** Start a stopped container as a job. `done`: `{ name }`. */
 export function startContainerStartJob({ name, log }) {
   return startJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_START,
+    kind: JOB_KIND.CONTAINER_START,
     title: titleForContainerStart(name),
     subject: container(name),
     check: () => assertContainerState(name, 'start'),
@@ -237,7 +237,7 @@ const stopGraces = new Map();
 export function startContainerStopJob({ name, log }) {
   const grace = new AbortController();
   return startJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_STOP,
+    kind: JOB_KIND.CONTAINER_STOP,
     title: titleForContainerStop(name),
     subject: container(name),
     check: async () => {
@@ -260,7 +260,7 @@ export function startContainerStopJob({ name, log }) {
 /** Restart the container (stop, then start) as a job. `done`: `{ name }`. */
 export function startContainerRestartJob({ name, log }) {
   return startJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_RESTART,
+    kind: JOB_KIND.CONTAINER_RESTART,
     title: titleForContainerRestart(name),
     subject: container(name),
     check: () => assertContainerState(name, 'exists'),
@@ -291,7 +291,7 @@ export async function killContainerNow(name) {
 /** Delete the container (its files too unless `deleteFiles` is false) as a job, then its follow-ups. `done`: `{ name }`. */
 export function startContainerDeleteJob({ name, deleteFiles = true, log }) {
   return startJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_DELETE,
+    kind: JOB_KIND.CONTAINER_DELETE,
     title: titleForContainerDelete(name),
     subject: container(name),
     check: () => assertContainerState(name, 'exists'),
@@ -379,7 +379,7 @@ export function editContainerMountRow(name, mountName, changes) {
 /** Remove one mount and its data as a job. Not found and app-managed are answered under the lock, before the job. `done`: `{ requiresRestart }`. */
 export function startContainerMountDeleteJob({ name, mountName, log }) {
   return startJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_MOUNT_DELETE,
+    kind: JOB_KIND.CONTAINER_MOUNT_DELETE,
     title: titleForContainerMountDelete(name, mountName),
     subject: container(name),
     check: async () => {
@@ -443,7 +443,7 @@ export function startContainerZipExtractJob({ name, mountName, stage, log }) {
   const stagingPath = join(getContainerDir(name), `.wisp-upload-${randomBytes(8).toString('hex')}`);
   let plan;
   return startJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_ZIP_EXTRACT,
+    kind: JOB_KIND.CONTAINER_ZIP_EXTRACT,
     title: titleForZipExtract(name, mountName),
     subject: container(name),
     check: async () => {
@@ -488,7 +488,7 @@ export function initContainerMountContent(name, mountName) {
 /** Delete a mount's data (the row stays) as a job. `done`: `{ name, mount }`. */
 export function startContainerMountDataDeleteJob({ name, mountName, log }) {
   return startJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_MOUNT_DATA_DELETE,
+    kind: JOB_KIND.CONTAINER_MOUNT_DATA_DELETE,
     title: titleForContainerMountDataDelete(name, mountName),
     subject: container(name),
     check: async () => {
@@ -513,7 +513,7 @@ export function startContainerMountDataDeleteJob({ name, mountName, log }) {
  */
 export function startContainerBackupJob({ name, origin, destinationIds, afterEach, log }) {
   return startWorkloadBackupJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_BACKUP,
+    kind: JOB_KIND.CONTAINER_BACKUP,
     title: titleForContainerBackup(name),
     subject: container(name),
     origin,
@@ -538,7 +538,7 @@ export function startContainerRestoreJob({ name, destinationId, timestamp, safet
   let dest;
   let backupPath;
   return startJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE,
+    kind: JOB_KIND.CONTAINER_RESTORE,
     title: titleForContainerRestore(name),
     subject: container(name),
     // The manager re-checks inside the job.
@@ -588,7 +588,7 @@ export function startContainerRestoreJob({ name, destinationId, timestamp, safet
 export function startContainerRestoreAsNewJob({ backupPath, newName, log }) {
   let plan;
   return startJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE_AS_NEW,
+    kind: JOB_KIND.CONTAINER_RESTORE_AS_NEW,
     title: titleForContainerRestoreAsNew(newName),
     subject: container(newName),
     check: async () => { plan = await planContainerBackupRestore(backupPath, newName); },

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Verify every relative import specifier under backend/src — plus the state
- * migrations (backend/migrations/) — resolves to a real file. Run with
- * `npm run check-imports` from the repo root.
+ * migrations (backend/migrations/) and the wire's names (shared/) — resolves to a
+ * real file. Run with `npm run check-imports` from the repo root.
  *
  * Why this exists: the backend is plain Node ESM with no build step and no test
  * suite, so nothing validates import paths ahead of runtime. Static imports at
@@ -70,7 +70,7 @@ import path from 'node:path';
 import { argumentValues, callArgument, stripComments } from './sourceScan.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
-const ROOTS = ['backend/src', 'backend/migrations'].map((dir) => path.join(REPO_ROOT, dir));
+const ROOTS = ['backend/src', 'backend/migrations', 'shared'].map((dir) => path.join(REPO_ROOT, dir));
 const SPECIFIER = /['"](\.\.?\/[^'"\n]*\.m?js)['"]/g;
 const DIRNAME_DEFINITION = /const __dirname = dirname\(fileURLToPath\(import\.meta\.url\)\)/;
 const DIRNAME_PATH = /\b(?:resolve|join)\(\s*__dirname((?:\s*,\s*'[^'\n]*')+)(\s*,[^)\n]*)?\)/g;

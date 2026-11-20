@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ensure install dir exists, remove app payload dirs, copy frontend/backend/scripts/systemd from source.
+# Ensure the install dir exists and put the release-shaped tree's entries in place of the installed ones.
 # Usage: copy.sh <source-dir> <install-dir>
 # Does not remove config/ (live config and optional runtime.env stay).
 set -euo pipefail
@@ -30,13 +30,6 @@ if [[ "$SOURCE_REAL" == "$INSTALL_REAL" ]]; then
   exit 0
 fi
 
-for name in frontend backend scripts systemd; do
-  if [[ ! -d "$SOURCE_DIR/$name" ]]; then
-    echo "ERROR: Missing $name/ in source tree: $SOURCE_DIR"
-    exit 1
-  fi
-done
-
 # Root package.json is the canonical version source — wispUpdate.js reads it
 # first; absence triggers a silent fallback to backend/package.json. Refuse to
 # install a tree that's missing it instead of leaving the install in a state
@@ -46,22 +39,17 @@ if [[ ! -f "$SOURCE_DIR/package.json" ]]; then
   exit 1
 fi
 
-rm -rf "$INSTALL_DIR/frontend" "$INSTALL_DIR/backend" "$INSTALL_DIR/scripts" "$INSTALL_DIR/systemd" "$INSTALL_DIR/docs"
-
-mkdir -p "$INSTALL_DIR"
-cp -a "$SOURCE_DIR/frontend" "$SOURCE_DIR/backend" "$SOURCE_DIR/scripts" "$SOURCE_DIR/systemd" "$INSTALL_DIR/"
-
-if [[ -d "$SOURCE_DIR/docs" ]]; then
-  cp -a "$SOURCE_DIR/docs" "$INSTALL_DIR/"
-fi
-
-# Top-level files. Mirrors the release tarball; package.json is required, the
-# rest are bundled for parity (self-update overwrites them on every release).
-for f in package.json RELEASE CHANGELOG.md LICENSE README.md AGENTS.md CLAUDE.md; do
-  if [[ -f "$SOURCE_DIR/$f" ]]; then
-    cp -a "$SOURCE_DIR/$f" "$INSTALL_DIR/$f"
-  fi
+# What the release-shaped tree holds is what is installed: scripts/stage-release.sh
+# decides it, and this copies each of its top-level entries in place of the one
+# installed, naming none. config/ is the exception, below: the live config stays.
+shopt -s dotglob nullglob
+for entry in "$SOURCE_DIR"/*; do
+  name="$(basename "$entry")"
+  [[ "$name" == config ]] && continue
+  rm -rf "${INSTALL_DIR:?}/$name"
+  cp -a "$entry" "$INSTALL_DIR/"
 done
+shopt -u dotglob nullglob
 
 if [[ -d "$SOURCE_DIR/config" ]]; then
   mkdir -p "$INSTALL_DIR/config"
@@ -73,4 +61,4 @@ if [[ -d "$SOURCE_DIR/config" ]]; then
   echo "  Updated config examples under $INSTALL_DIR/config/"
 fi
 
-echo "  Installed frontend, backend, scripts, systemd, docs, top-level files under $INSTALL_DIR"
+echo "  Installed the tree under $INSTALL_DIR"

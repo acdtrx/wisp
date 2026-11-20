@@ -2,12 +2,13 @@
   "name": "wisp",
   "version": "2.8.0-beta.1",
   "private": true,
+  "type": "module",
   "description": "Wisp — VM and container management",
   "scripts": {
     "release": "bash scripts/release.sh",
     "check": "node scripts/check.mjs",
     "test": "node --test --experimental-test-module-mocks --test-timeout=10000 'frontend/src/**/*.test.js' 'backend/src/**/*.test.js' 'backend/migrations/test/*.test.js'",
-    "lint": "eslint --max-warnings 0 backend frontend/src",
+    "lint": "eslint --max-warnings 0 backend frontend/src shared",
     "check-imports": "node scripts/check-imports.mjs",
     "check-fences": "node scripts/check-fences.mjs",
     "route-access": "WISP_ROUTE_ACCESS_REPORT=1 node backend/src/index.js"

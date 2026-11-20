@@ -3,7 +3,7 @@
  * Enforce the backend's import fences (docs/CODING-RULES.md §7). Run with
  * `npm run check-fences` from the repo root; exits 1 on any violation.
  *
- * Rules 1–5, checked over backend/src and backend/migrations:
+ * Rules 1–5, checked over backend/src and backend/migrations (and shared/, rule 10):
  *   1. Package fences — an external system's client library is imported only by
  *      the subsystem that owns it (PACKAGE_FENCES).
  *   2. Facades — a file outside a module that has an `index.js` facade imports
@@ -69,6 +69,10 @@
  *      reviewed EXCEPTIONS line with the specifier `fetchOperatorEndpoint`.
  *      Known limit: a computed property name (`d['fetch' + 'Operator…']`).
  *
+ *  10. shared/ holds only the names both packages must agree on (ARCHITECTURE.md,
+ *      Repo layout): checked in the same import scan, none of its files
+ *      imports anything, so the backend and the frontend can both load it.
+ *
  * A module's darwin stubs are its own files. Migrations are glue.
  * Specifiers inside comments (JSDoc type imports) are skipped: they load
  * nothing. A reviewed allowance is one line in EXCEPTIONS.
@@ -106,7 +110,7 @@ import path from 'node:path';
 import { argumentValues, callArgument, stripComments } from './sourceScan.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
-const ROOTS = ['backend/src', 'backend/migrations'];
+const ROOTS = ['backend/src', 'backend/migrations', 'shared'];
 const LIB = 'backend/src/lib';
 
 /** package → directories (repo-relative, trailing slash) allowed to import it. */
@@ -121,6 +125,8 @@ const PACKAGE_FENCES = {
 
 const STRICT_MANAGERS = ['vmManager', 'containerManager'];
 const ROUTES = 'backend/src/routes/';
+/** Rule 10: the folder of the wire's names, which imports nothing. */
+const SHARED = 'shared/';
 /** Rule 7: the lock modules, which no route imports. */
 const LOCK_MODULES = [`${LIB}/vmOperationLock.js`, `${LIB}/containerOperationLock.js`];
 const CARVED = ['host', 'networking', 'mdns', 'storage'];
@@ -525,6 +531,10 @@ async function main() {
         violations.push(`${fileRel}:${line} ${specifier} — ${why} (CODING-RULES §7)`);
       };
 
+      if (fileRel.startsWith(SHARED)) {
+        report("shared/ holds only the wire's names and imports nothing");
+        continue;
+      }
       if (specifier === '<computed>') {
         report('computed import specifier: the fence lint cannot check it');
         continue;

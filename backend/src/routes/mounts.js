@@ -12,10 +12,11 @@ import {
 } from '../lib/storage/index.js';
 import { findContainersUsingStorageMount } from '../lib/containerManager/index.js';
 import { asAppError, createAppError } from '../lib/appErrors.js';
-import { startJob, BACKGROUND_JOB_KIND, titleForUnmount, titleForMountDelete } from '../lib/jobs/index.js';
+import { startJob, titleForUnmount, titleForMountDelete } from '../lib/jobs/index.js';
 import {
   createdIdSchema, idParamsSchema, jobAckSchema, mountResponseSchema, noContentSchema,
 } from './schemas.js';
+import { JOB_KIND } from '../../../shared/wireNames.js';
 
 export default async function mountsRoutes(fastify) {
   fastify.get('/host/mounts', {
@@ -120,7 +121,7 @@ export default async function mountsRoutes(fastify) {
         throw createAppError('MOUNT_IN_USE', `Detach this mount from containers first: ${inUseBy.join(', ')}`);
       }
       const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.MOUNT_DELETE,
+        kind: JOB_KIND.MOUNT_DELETE,
         title: titleForMountDelete(d.label || d.mountPath),
         log: request.log,
         run: async () => {
@@ -280,7 +281,7 @@ export default async function mountsRoutes(fastify) {
         throw createAppError('MOUNT_NOT_MOUNTED', `"${d.label || d.mountPath}" is not mounted`);
       }
       const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.MOUNT_UNMOUNT,
+        kind: JOB_KIND.MOUNT_UNMOUNT,
         title: titleForUnmount(d.label || d.mountPath),
         log: request.log,
         run: async () => {

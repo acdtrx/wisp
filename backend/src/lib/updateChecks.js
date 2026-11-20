@@ -12,11 +12,11 @@ import { createAppError, errorBody } from './appErrors.js';
 import {
   startJob,
   isJobRunning,
-  BACKGROUND_JOB_KIND,
   TITLE_OS_UPDATE_CHECK,
   TITLE_IMAGE_UPDATE_CHECK_ALL,
   titleForImageUpdateCheckSingle,
 } from './jobs/index.js';
+import { JOB_KIND } from '../../../shared/wireNames.js';
 
 const HOURLY_MS = 60 * 60 * 1000;
 const OS_CHECK_FIRST_DELAY_MS = 30_000;
@@ -24,7 +24,7 @@ const IMAGE_CHECK_FIRST_DELAY_MS = 60_000;
 
 /** An upgrade runs, or its job was started and has not reached it yet. */
 export function isOsUpgradeRunning() {
-  return isUpgradeInProgress() || isJobRunning(BACKGROUND_JOB_KIND.OS_UPGRADE);
+  return isUpgradeInProgress() || isJobRunning(JOB_KIND.OS_UPGRADE);
 }
 
 /**
@@ -34,7 +34,7 @@ export function isOsUpgradeRunning() {
  */
 export function startOsUpdateCheckJob(log) {
   return startJob({
-    kind: BACKGROUND_JOB_KIND.OS_UPDATE_CHECK,
+    kind: JOB_KIND.OS_UPDATE_CHECK,
     title: TITLE_OS_UPDATE_CHECK,
     shared: true,
     interruptible: true,
@@ -70,7 +70,7 @@ function queueImageCheckRun(runCheck) {
  */
 export function startImageUpdateCheckJob({ ref = null, log }) {
   return startJob({
-    kind: BACKGROUND_JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK,
+    kind: JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK,
     title: ref ? titleForImageUpdateCheckSingle(ref) : TITLE_IMAGE_UPDATE_CHECK_ALL,
     shared: true,
     scope: ref,

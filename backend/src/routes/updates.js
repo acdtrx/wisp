@@ -6,10 +6,11 @@ import {
   claimUpdateInstall,
 } from '../lib/wispUpdate.js';
 import {
-  countJobsThatMustFinish, startJob, BACKGROUND_JOB_KIND, titleForSelfUpdate,
+  countJobsThatMustFinish, startJob, titleForSelfUpdate,
 } from '../lib/jobs/index.js';
 import { createAppError } from '../lib/appErrors.js';
 import { jobAckSchema, noContentSchema } from './schemas.js';
+import { JOB_KIND } from '../../../shared/wireNames.js';
 
 const STATUS_RESPONSE = {
   type: 'object',
@@ -84,7 +85,7 @@ export default async function updatesRoutes(fastify) {
        * before the restart — arrive over its stream; the client then waits for
        * Wisp to come back on the new version. */
       const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.SELF_UPDATE,
+        kind: JOB_KIND.SELF_UPDATE,
         title: titleForSelfUpdate(status.latest),
         // Claimed and counted in the starter's synchronous step; `force`
         // skips the count, never the claim. Interruptible jobs (the update

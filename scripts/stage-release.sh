@@ -39,14 +39,16 @@ echo "--- Frontend build ---"
 rm -rf "$STAGE" "$ARCHIVE"
 mkdir -p "$STAGE/frontend"
 
-# backend/ (without tests), scripts/, systemd/, config/ (the examples), docs/,
-# and the top-level files. The frontend ships only what the backend serves:
-# dist/ (the built SPA) and public/ (noVNC under vendor/, which the build fetches).
+# backend/ (without tests), shared/ (the wire's names, which the backend loads at
+# run time), scripts/, systemd/, config/ (the examples), docs/, and the top-level
+# files: package.json among them, whose "type" makes shared/ an ES module. The
+# frontend ships only what the backend serves: dist/ (the built SPA) and public/
+# (noVNC under vendor/, which the build fetches).
 cd "$ROOT"
 LIST="$(mktemp)"
 trap 'rm -f "$LIST"' EXIT
 git ls-files -z --cached -- \
-  backend scripts systemd config docs package.json CHANGELOG.md LICENSE README.md AGENTS.md CLAUDE.md > "$LIST"
+  backend shared scripts systemd config docs package.json CHANGELOG.md LICENSE README.md AGENTS.md CLAUDE.md > "$LIST"
 node - "$STAGE" "$LIST" <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');

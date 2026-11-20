@@ -4,7 +4,6 @@
  */
 import {
   startJob,
-  BACKGROUND_JOB_KIND,
   titleForLibraryDownloadUrl,
   TITLE_LIBRARY_ARCH_CLOUD,
   TITLE_LIBRARY_HAOS,
@@ -24,6 +23,7 @@ import {
 import { createAppError } from '../lib/appErrors.js';
 import { watchRequestBody } from '../lib/requestBodyWatch.js';
 import { jobAckSchema, noContentSchema } from './schemas.js';
+import { JOB_KIND } from '../../../shared/wireNames.js';
 
 /** `:filename` of a library file; lib/library checks it is one. */
 const filenameParams = {
@@ -158,7 +158,7 @@ export default async function libraryRoutes(fastify) {
         throw createAppError('INVALID_URL', 'Only HTTP and HTTPS URLs are allowed');
       }
       const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.LIBRARY_DOWNLOAD,
+        kind: JOB_KIND.LIBRARY_DOWNLOAD,
         title: titleForLibraryDownloadUrl(url),
         log: request.log,
         run: (report) => downloadUrlToLibrary(url, (percent, loaded, total) => {
@@ -175,7 +175,7 @@ export default async function libraryRoutes(fastify) {
     schema: { response: { 202: jobAckSchema } },
     handler: async (request, reply) => {
       const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.LIBRARY_DOWNLOAD,
+        kind: JOB_KIND.LIBRARY_DOWNLOAD,
         title: TITLE_LIBRARY_UBUNTU_CLOUD,
         log: request.log,
         run: (report) => downloadUbuntuCloudToLibrary(reportPercent(report), { log: request.log }),
@@ -189,7 +189,7 @@ export default async function libraryRoutes(fastify) {
     schema: { response: { 202: jobAckSchema } },
     handler: async (request, reply) => {
       const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.LIBRARY_DOWNLOAD,
+        kind: JOB_KIND.LIBRARY_DOWNLOAD,
         title: TITLE_LIBRARY_ARCH_CLOUD,
         log: request.log,
         run: (report) => downloadArchCloudToLibrary(reportPercent(report)),
@@ -203,7 +203,7 @@ export default async function libraryRoutes(fastify) {
     schema: { response: { 202: jobAckSchema } },
     handler: async (request, reply) => {
       const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.LIBRARY_DOWNLOAD,
+        kind: JOB_KIND.LIBRARY_DOWNLOAD,
         title: TITLE_LIBRARY_HAOS,
         log: request.log,
         run: (report) => downloadHaosToLibrary({

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { ERROR_STATUS } from '../errorCodes.js';
 import { acquireVmOperationLock } from '../vmOperationLock.js';
 import { listJobs, refuseNewJobs, startJob } from './jobStore.js';
+import { JOB_KIND } from '../../../../shared/wireNames.js';
 
 const log = { debug() {}, info() {}, warn() {}, error() {} };
 const refused = (err) => err.code === 'SHUTTING_DOWN' && ERROR_STATUS[err.code] === 503;
@@ -19,10 +20,10 @@ let startDuringCheck;
 let ranAfterCheck = false;
 
 before(async () => {
-  ack = await startJob({ kind: 'os-update-check', title: 'Check', shared: true, log, run: () => running.promise });
+  ack = await startJob({ kind: JOB_KIND.OS_UPDATE_CHECK, title: 'Check', shared: true, log, run: () => running.promise });
   // Claims b1's lock and awaits its check, which is still pending when shutdown begins.
   startDuringCheck = startJob({
-    kind: 'vm-start',
+    kind: JOB_KIND.VM_START,
     title: 'Start b1',
     subject: { type: 'vm', name: 'b1' },
     check: () => pendingCheck.promise,
@@ -35,9 +36,9 @@ before(async () => {
 test('once shutdown has begun, a start is refused with SHUTTING_DOWN and no job is created', async () => {
   let ran = false;
   await assert.rejects(startJob({
-    kind: 'vm-start', title: 'Start a1', subject: { type: 'vm', name: 'a1' }, log, run: async () => { ran = true; },
+    kind: JOB_KIND.VM_START, title: 'Start a1', subject: { type: 'vm', name: 'a1' }, log, run: async () => { ran = true; },
   }), refused);
-  await assert.rejects(startJob({ kind: 'os-update-check', title: 'Check', shared: true, log, run: async () => {} }), refused);
+  await assert.rejects(startJob({ kind: JOB_KIND.OS_UPDATE_CHECK, title: 'Check', shared: true, log, run: async () => {} }), refused);
   assert.equal(ran, false);
   assert.deepEqual(listJobs().map((j) => j.jobId), [ack.jobId]);
   assert.equal(listJobs()[0].status, 'running');
@@ -48,6 +49,6 @@ test('a start whose check was pending when shutdown began is refused once the ch
   pendingCheck.resolve();
   await assert.rejects(startDuringCheck, refused);
   assert.equal(ranAfterCheck, false);
-  assert.deepEqual(listJobs().filter((j) => j.kind === 'vm-start'), []);
+  assert.deepEqual(listJobs().filter((j) => j.kind === JOB_KIND.VM_START), []);
   acquireVmOperationLock('b1', 'start')();
 });

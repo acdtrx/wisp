@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { createAppError } from './appErrors.js';
+import { JOB_KIND } from '../../../shared/wireNames.js';
 
 const calls = [];
 const impl = {};
@@ -139,7 +140,7 @@ test('a zip upload holds the lock from its first byte to the end of its extract,
     },
     log,
   });
-  assert.equal(ack.kind, 'container-zip-extract');
+  assert.equal(ack.kind, JOB_KIND.CONTAINER_ZIP_EXTRACT);
   assert.equal(await whenJobEnds(ack.jobId), 'done');
   assert.deepEqual(held, [['stage', true], ['plan', true], ['extract', true, true]]);
   assert.deepEqual(readdirSync(containerDir), [], 'the staging file goes with the extract');

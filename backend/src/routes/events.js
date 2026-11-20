@@ -19,8 +19,23 @@ import { subscribeWispUpdateChange } from '../lib/wispUpdate.js';
 import { listJobs, subscribeJobsChange } from '../lib/jobs/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { buildSectionsEnvelope } from './sections.js';
+import { CHANGE_KIND, TOPIC } from '../../../shared/wireNames.js';
 
 const HOST_STATS_INTERVAL_MS = 5000;
+
+const TOPICS = new Set(Object.values(TOPIC));
+const CHANGE_KINDS = new Set(Object.values(CHANGE_KIND));
+
+/**
+ * One frame of the events stream, as written to it. A topic or a change kind the
+ * code passes in is checked against the wire's names (shared/wireNames.js), so a
+ * typo fails the first time it runs rather than sending a frame no client reads.
+ */
+export function eventFrame(topic, data) {
+  if (!TOPICS.has(topic)) throw new Error(`Unknown events topic: ${topic}`);
+  if (topic === TOPIC.CHANGES && !CHANGE_KINDS.has(data?.kind)) throw new Error(`Unknown change kind: ${data?.kind}`);
+  return `data: ${JSON.stringify({ topic, data })}\n\n`;
+}
 
 /**
  * The sender of an event-driven topic: each call gathers the topic and passes
@@ -31,6 +46,7 @@ const HOST_STATS_INTERVAL_MS = 5000;
  * error frame included.
  */
 export function latestGatherSender(sendTopic, topic, gather, logFailure) {
+  if (!TOPICS.has(topic)) throw new Error(`Unknown events topic: ${topic}`);
   let lastStarted = 0;
   return async function send() {
     const mine = ++lastStarted;
@@ -72,8 +88,9 @@ export default async function eventsRoutes(fastify) {
       setupSSE(reply);
 
       function sendTopic(topic, data) {
+        const frame = eventFrame(topic, data);
         try {
-          reply.raw.write(`data: ${JSON.stringify({ topic, data })}\n\n`);
+          reply.raw.write(frame);
         } catch {
           /* client gone — the close handler below tears everything down */
         }
@@ -81,22 +98,22 @@ export default async function eventsRoutes(fastify) {
 
       async function sendStats() {
         try {
-          sendTopic('stats', await buildHostStatsPayload());
+          sendTopic(TOPIC.STATS, await buildHostStatsPayload());
         } catch (err) {
           fastify.log.error({ err }, 'events: failed to gather host stats');
-          sendTopic('stats', errorBody(err));
+          sendTopic(TOPIC.STATS, errorBody(err));
         }
       }
 
-      const sendVMs = latestGatherSender(sendTopic, 'vms', listVMs, (err) => {
+      const sendVMs = latestGatherSender(sendTopic, TOPIC.VMS, listVMs, (err) => {
         request.log.warn({ err: err.message }, 'events: listVMs failed');
       });
 
-      const sendContainers = latestGatherSender(sendTopic, 'containers', listContainers, (err) => {
+      const sendContainers = latestGatherSender(sendTopic, TOPIC.CONTAINERS, listContainers, (err) => {
         request.log.warn({ err: err.message }, 'events: listContainers failed');
       });
 
-      const sendSections = latestGatherSender(sendTopic, 'sections', buildSectionsEnvelope, (err) => {
+      const sendSections = latestGatherSender(sendTopic, TOPIC.SECTIONS, buildSectionsEnvelope, (err) => {
         request.log.warn({ err: err.message }, 'events: sections read failed');
       });
 
@@ -104,25 +121,25 @@ export default async function eventsRoutes(fastify) {
        * the persisted overlay — so a container starting, a Caddy host being added,
        * or a tile being renamed all reach the page on the event that caused them.
        * No timer: every input has a change event of its own. */
-      const sendHome = latestGatherSender(sendTopic, 'home', buildHomeEnvelope, (err) => {
+      const sendHome = latestGatherSender(sendTopic, TOPIC.HOME, buildHomeEnvelope, (err) => {
         request.log.warn({ err: err.message }, 'events: home tiles build failed');
       });
 
       function sendDiscovery() {
-        sendTopic('discovery', getDiscoveredPeers());
+        sendTopic(TOPIC.DISCOVERY, getDiscoveredPeers());
       }
 
       /* The job list, as GET /api/jobs answers it: a frame per list change
        * (a job created, ended, expired), never per progress event — a job's
        * progress stays on its own stream. */
       function sendJobs() {
-        sendTopic('jobs', { jobs: listJobs() });
+        sendTopic(TOPIC.JOBS, { jobs: listJobs() });
       }
 
       /* Per-workload last-backup-attempt map. Fires on every backup-shaped
        * change (attempt recorded, backup deleted/pruned) — consumers also use
        * the frame as their cue to refetch the backup lists. */
-      const sendBackups = latestGatherSender(sendTopic, 'backups', getBackupStatus, (err) => {
+      const sendBackups = latestGatherSender(sendTopic, TOPIC.BACKUPS, getBackupStatus, (err) => {
         request.log.warn({ err: err.message }, 'events: backup status read failed');
       });
 
@@ -130,7 +147,7 @@ export default async function eventsRoutes(fastify) {
        * showing the record GETs it again. The connect snapshot is `{ kind: 'all' }` —
        * anything may have changed while this stream was down. */
       function sendChange(change) {
-        sendTopic('changes', change);
+        sendTopic(TOPIC.CHANGES, change);
       }
 
       await Promise.all([
@@ -138,7 +155,7 @@ export default async function eventsRoutes(fastify) {
       ]);
       sendDiscovery();
       sendJobs();
-      sendChange({ kind: 'all' });
+      sendChange({ kind: CHANGE_KIND.ALL });
 
       const statsTimer = setInterval(sendStats, HOST_STATS_INTERVAL_MS);
       const unsubscribes = [
@@ -149,17 +166,17 @@ export default async function eventsRoutes(fastify) {
         subscribeDiscoveredPeersChange(() => { sendDiscovery(); }),
         subscribeJobsChange(() => { sendJobs(); }),
         subscribeBackupEvents(() => { sendBackups(); }),
-        subscribeSettingsChange(() => { sendChange({ kind: 'settings' }); }),
-        subscribeVMChange((name) => { sendChange({ kind: 'vm', id: name }); }),
-        subscribeContainerChange((name) => { sendChange({ kind: 'container', id: name }); }),
-        subscribeCloudInitChange((name) => { sendChange({ kind: 'vm', id: name }); }),
-        subscribeApiTokensChange(() => { sendChange({ kind: 'tokens' }); }),
-        subscribeNetworkBridgesChange(() => { sendChange({ kind: 'network-bridges' }); }),
-        subscribeMountsChange(() => { sendChange({ kind: 'host-mounts' }); }),
-        subscribeMountStateChange(() => { sendChange({ kind: 'host-mounts' }); }),
-        subscribeImagesChange(() => { sendChange({ kind: 'images' }); }),
-        subscribeLibraryChange(() => { sendChange({ kind: 'library' }); }),
-        subscribeWispUpdateChange(() => { sendChange({ kind: 'wisp-update' }); }),
+        subscribeSettingsChange(() => { sendChange({ kind: CHANGE_KIND.SETTINGS }); }),
+        subscribeVMChange((name) => { sendChange({ kind: CHANGE_KIND.VM, id: name }); }),
+        subscribeContainerChange((name) => { sendChange({ kind: CHANGE_KIND.CONTAINER, id: name }); }),
+        subscribeCloudInitChange((name) => { sendChange({ kind: CHANGE_KIND.VM, id: name }); }),
+        subscribeApiTokensChange(() => { sendChange({ kind: CHANGE_KIND.TOKENS }); }),
+        subscribeNetworkBridgesChange(() => { sendChange({ kind: CHANGE_KIND.NETWORK_BRIDGES }); }),
+        subscribeMountsChange(() => { sendChange({ kind: CHANGE_KIND.HOST_MOUNTS }); }),
+        subscribeMountStateChange(() => { sendChange({ kind: CHANGE_KIND.HOST_MOUNTS }); }),
+        subscribeImagesChange(() => { sendChange({ kind: CHANGE_KIND.IMAGES }); }),
+        subscribeLibraryChange(() => { sendChange({ kind: CHANGE_KIND.LIBRARY }); }),
+        subscribeWispUpdateChange(() => { sendChange({ kind: CHANGE_KIND.WISP_UPDATE }); }),
       ];
 
       onSSEClose(reply, () => {

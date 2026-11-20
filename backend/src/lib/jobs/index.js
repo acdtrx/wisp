@@ -1,6 +1,6 @@
 /**
- * Jobs module facade: the one job store and its starter, the job kinds and
- * the job titles.
+ * Jobs module facade: the one job store and its starter, and the job titles
+ * (the job kinds are the wire's names, `shared/wireNames.js`).
  */
 export {
   startJob,
@@ -17,7 +17,6 @@ export {
   unregisterJobStream,
 } from './jobStore.js';
 
-export { BACKGROUND_JOB_KIND } from './backgroundJobKinds.js';
 export {
   titleForLibraryDownloadUrl,
   titleForVmCreate,

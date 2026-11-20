@@ -33,13 +33,13 @@ import { getCurrentVersion } from '../lib/wispUpdate.js';
 import {
   startJob,
   isJobRunning,
-  BACKGROUND_JOB_KIND,
   TITLE_OS_UPGRADE,
   titleForBridgeCreate,
   titleForBridgeDelete,
 } from '../lib/jobs/index.js';
 import { isOsUpgradeRunning, startOsUpdateCheckJob } from '../lib/updateChecks.js';
 import { jobAckSchema, noContentSchema } from './schemas.js';
+import { JOB_KIND } from '../../../shared/wireNames.js';
 
 function getOsRelease() {
   try {
@@ -163,10 +163,10 @@ export default async function hostRoutes(fastify) {
     schema: { response: { 202: jobAckSchema } },
     handler: async (request, reply) => {
       const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.OS_UPGRADE,
+        kind: JOB_KIND.OS_UPGRADE,
         title: TITLE_OS_UPGRADE,
         check: () => {
-          if (isUpdateOperationInProgress() || isOsUpgradeRunning() || isJobRunning(BACKGROUND_JOB_KIND.OS_UPDATE_CHECK)) {
+          if (isUpdateOperationInProgress() || isOsUpgradeRunning() || isJobRunning(JOB_KIND.OS_UPDATE_CHECK)) {
             throw createAppError('UPDATE_BUSY', 'Another OS update check or upgrade is in progress: wait for it to finish');
           }
         },
@@ -253,7 +253,7 @@ export default async function hostRoutes(fastify) {
     handler: async (request, reply) => {
       const plan = await planManagedNetworkBridgeCreate(request.body);
       const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_CREATE,
+        kind: JOB_KIND.NETWORK_BRIDGE_CREATE,
         title: titleForBridgeCreate(`${plan.baseBridge} VLAN ${plan.vlanId}`),
         log: request.log,
         run: async () => {
@@ -283,7 +283,7 @@ export default async function hostRoutes(fastify) {
     handler: async (request, reply) => {
       const target = await planManagedNetworkBridgeDelete(request.params.name, { assertNotInUse: assertBridgeNotInUse });
       const job = await startJob({
-        kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_DELETE,
+        kind: JOB_KIND.NETWORK_BRIDGE_DELETE,
         title: titleForBridgeDelete(target.bridgeName),
         log: request.log,
         run: () => deleteManagedNetworkBridge(target),

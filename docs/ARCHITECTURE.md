@@ -251,8 +251,11 @@ consumer, and nothing has called for more).
 - `backend/` (the server: `src/index.js` the start, `src/app.js` the app it builds, `src/routes/`, `src/lib/`; `scripts/` holds the
   privileged helpers and the updater; `migrations/` the state migrations, which
   `src/lib/stateMigrations.js` runs at the start), `frontend/` (the client), `scripts/`
-  (install, setup, push, release), `systemd/` (unit templates), `config/` (examples).
-  Each package has its own `package.json`.
+  (install, setup, push, release), `systemd/` (unit templates), `config/` (examples),
+  `shared/` (the wire's names both packages import: the events stream's topics, the
+  `changes` kinds, the job kinds; nothing else, and it imports nothing). Each package
+  has its own `package.json`; the root's marks the tree as ES modules, which is how
+  Node reads `shared/`, and the release tarball carries both.
 - Backend subsystems are named modules under `src/lib/`, each behind a facade `index.js`,
   with platform implementations under `<module>/linux/` and `<module>/darwin/`. App glue —
   Wisp's own orchestration — stays flat at the top of `src/lib/`, and routes do HTTP

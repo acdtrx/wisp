@@ -39,7 +39,6 @@ import {
 } from './vmManager/index.js';
 import {
   startJob,
-  BACKGROUND_JOB_KIND,
   titleForVmCreate,
   titleForVmBackup,
   titleForVmStart,
@@ -53,6 +52,7 @@ import { withVmOperationLock } from './vmOperationLock.js';
 import { createAppError } from './appErrors.js';
 import { startWorkloadBackupJob } from './workloadBackup.js';
 import { followWorkloadDelete, followWorkloadRename } from './workloadFollowUps.js';
+import { JOB_KIND } from '../../../shared/wireNames.js';
 
 const vm = (name) => ({ type: 'vm', name });
 
@@ -68,7 +68,7 @@ export function startVmCreateJob({ spec, log }) {
   const name = spec.name;
   const wantsCloudInit = !!(spec.cloudInit && spec.osType !== 'Windows' && spec.cloudInit.enabled !== false);
   return startJob({
-    kind: BACKGROUND_JOB_KIND.VM_CREATE,
+    kind: JOB_KIND.VM_CREATE,
     title: titleForVmCreate(name),
     subject: vm(name),
     // Free in libvirt and on disk before any artifact is built: cloud-init
@@ -95,7 +95,7 @@ export function startVmCreateJob({ spec, log }) {
 /** Back the VM up (it must be stopped) through the one backup orchestration. `done`: `{ timestamp }`. */
 export function startVmBackupJob({ name, destinationIds, log }) {
   return startWorkloadBackupJob({
-    kind: BACKGROUND_JOB_KIND.VM_BACKUP,
+    kind: JOB_KIND.VM_BACKUP,
     title: titleForVmBackup(name),
     subject: vm(name),
     origin: 'manual',
@@ -116,7 +116,7 @@ export function startVmBackupJob({ name, destinationIds, log }) {
 /** Start the VM as a job (a large VM can outlast a request). `done`: `{ name }`. */
 export function startVmStartJob({ name, log }) {
   return startJob({
-    kind: BACKGROUND_JOB_KIND.VM_START,
+    kind: JOB_KIND.VM_START,
     title: titleForVmStart(name),
     subject: vm(name),
     check: () => assertVMState(name, 'start'),
@@ -131,7 +131,7 @@ export function startVmStartJob({ name, log }) {
 /** Force-stop the VM as a job (waiting for QEMU to exit). `done`: `{ name }`. */
 export function startVmForceStopJob({ name, log }) {
   return startJob({
-    kind: BACKGROUND_JOB_KIND.VM_FORCE_STOP,
+    kind: JOB_KIND.VM_FORCE_STOP,
     title: titleForVmForceStop(name),
     subject: vm(name),
     check: () => assertVMState(name, 'running'),
@@ -146,7 +146,7 @@ export function startVmForceStopJob({ name, log }) {
 /** Delete the VM (its disks too when `deleteDisks`) as a job, then its follow-ups. `done`: `{ name }`. */
 export function startVmDeleteJob({ name, deleteDisks, log }) {
   return startJob({
-    kind: BACKGROUND_JOB_KIND.VM_DELETE,
+    kind: JOB_KIND.VM_DELETE,
     title: titleForVmDelete(name),
     subject: vm(name),
     check: () => assertVMState(name, 'exists'),
@@ -170,7 +170,7 @@ export function startVmDeleteJob({ name, deleteDisks, log }) {
 export function startVmRestoreJob({ backupPath, newName, log }) {
   let plan;
   return startJob({
-    kind: BACKGROUND_JOB_KIND.VM_RESTORE,
+    kind: JOB_KIND.VM_RESTORE,
     title: titleForVmRestore(newName),
     subject: vm(newName),
     check: async () => {

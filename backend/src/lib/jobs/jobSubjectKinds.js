@@ -1,39 +1,6 @@
-/**
- * Every job kind, listed once (the frontend's JOB_KIND names the same strings).
- */
-export const BACKGROUND_JOB_KIND = {
-  VM_CREATE: 'vm-create',
-  VM_BACKUP: 'vm-backup',
-  VM_START: 'vm-start',
-  VM_FORCE_STOP: 'vm-force-stop',
-  VM_DELETE: 'vm-delete',
-  VM_RESTORE: 'vm-restore',
-  CONTAINER_CREATE: 'container-create',
-  CONTAINER_BACKUP: 'container-backup',
-  CONTAINER_RESTORE: 'container-restore',
-  CONTAINER_RESTORE_AS_NEW: 'container-restore-new',
-  CONTAINER_START: 'container-start',
-  CONTAINER_STOP: 'container-stop',
-  CONTAINER_RESTART: 'container-restart',
-  CONTAINER_DELETE: 'container-delete',
-  CONTAINER_MOUNT_DELETE: 'container-mount-delete',
-  CONTAINER_MOUNT_DATA_DELETE: 'container-mount-data-delete',
-  CONTAINER_ZIP_EXTRACT: 'container-zip-extract',
-  CONTAINER_DEPLOY: 'container-deploy',
-  CONTAINER_IMAGE_UPDATE: 'container-image-update',
-  CONTAINER_IMAGE_UPDATE_CHECK: 'container-image-update-check',
-  CONTAINER_IMAGE_DELETE: 'container-image-delete',
-  LIBRARY_DOWNLOAD: 'library-download',
-  OS_UPDATE_CHECK: 'os-update-check',
-  OS_UPGRADE: 'os-upgrade',
-  NETWORK_BRIDGE_CREATE: 'network-bridge-create',
-  NETWORK_BRIDGE_DELETE: 'network-bridge-delete',
-  MOUNT_UNMOUNT: 'mount-unmount',
-  MOUNT_DELETE: 'mount-delete',
-  SELF_UPDATE: 'self-update',
-};
+import { JOB_KIND } from '../../../../shared/wireNames.js';
 
-const K = BACKGROUND_JOB_KIND;
+const K = JOB_KIND;
 
 /**
  * The kinds that act on a workload: the subject's type, and the label the job

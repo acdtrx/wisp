@@ -8,6 +8,7 @@ import {
   startJob, listJobs, readJob, isJobRunning, hasJob, registerJobStream,
   countJobsThatMustFinish, cancelInterruptibleJobs, subscribeJobsChange, sweepExpiredJobs, whenJobEnds,
 } from './jobStore.js';
+import { JOB_KIND } from '../../../../shared/wireNames.js';
 
 /** A logger that records each line as `[level, fields, message]`. */
 function fakeLog() {
@@ -45,15 +46,15 @@ const rowsFor = (name) => listJobs().filter((j) => j.subject?.name === name);
 test('a job is created with its row, and its result is the done event', async () => {
   const log = fakeLog();
   const ack = await startJob({
-    kind: 'vm-start', title: 'Start a1', subject: { type: 'vm', name: 'a1' }, log, run: async () => ({ name: 'a1' }),
+    kind: JOB_KIND.VM_START, title: 'Start a1', subject: { type: 'vm', name: 'a1' }, log, run: async () => ({ name: 'a1' }),
   });
   assert.match(ack.jobId, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-  assert.deepEqual(ack, { jobId: ack.jobId, kind: 'vm-start', title: 'Start a1', subject: { type: 'vm', name: 'a1' } });
+  assert.deepEqual(ack, { jobId: ack.jobId, kind: JOB_KIND.VM_START, title: 'Start a1', subject: { type: 'vm', name: 'a1' } });
   assert.ok(hasJob(ack.jobId));
   await settle();
   const [row] = rowsFor('a1');
   assert.deepEqual(row, {
-    jobId: ack.jobId, kind: 'vm-start', title: 'Start a1', subject: { type: 'vm', name: 'a1' }, status: 'done', createdAt: row.createdAt,
+    jobId: ack.jobId, kind: JOB_KIND.VM_START, title: 'Start a1', subject: { type: 'vm', name: 'a1' }, status: 'done', createdAt: row.createdAt,
   });
   assert.equal(typeof row.createdAt, 'number');
   const late = fakeStream();
@@ -71,7 +72,7 @@ test('a job is created with its row, and its result is the done event', async ()
 test("the subject's lock is held for the run and released before the terminal event", async () => {
   const run = deferred();
   const { jobId } = await startJob({
-    kind: 'vm-backup', title: 'Backup a2', subject: { type: 'vm', name: 'a2' }, log: fakeLog(), run: () => run.promise,
+    kind: JOB_KIND.VM_BACKUP, title: 'Backup a2', subject: { type: 'vm', name: 'a2' }, log: fakeLog(), run: () => run.promise,
   });
   assert.throws(() => acquireVmOperationLock('a2', 'start'), { code: 'VM_BUSY', message: /backup in progress/ });
   // A container of the same name is another workload.
@@ -100,7 +101,7 @@ test('a start on a held subject throws the busy code at once and creates no job'
   let ran = false;
   await assert.rejects(
     startJob({
-      kind: 'container-start', title: 'Start c3', subject: { type: 'container', name: 'c3' }, log: fakeLog(),
+      kind: JOB_KIND.CONTAINER_START, title: 'Start c3', subject: { type: 'container', name: 'c3' }, log: fakeLog(),
       check: () => { ran = true; },
       run: async () => ({}),
     }),
@@ -115,7 +116,7 @@ test("a failed check releases the lock, creates no job and is thrown to the call
   const before = listJobs().length;
   await assert.rejects(
     startJob({
-      kind: 'vm-delete', title: 'Delete a4', subject: { type: 'vm', name: 'a4' }, log: fakeLog(),
+      kind: JOB_KIND.VM_DELETE, title: 'Delete a4', subject: { type: 'vm', name: 'a4' }, log: fakeLog(),
       check: async () => { throw createAppError('VM_NOT_FOUND', 'VM "a4" not found'); },
       run: async () => ({}),
     }),
@@ -129,7 +130,7 @@ test('a shared start while one runs answers the running job and starts nothing',
   const run = deferred();
   let runs = 0;
   const start = (title) => startJob({
-    kind: 'os-update-check', title, shared: true, log: fakeLog(),
+    kind: JOB_KIND.OS_UPDATE_CHECK, title, shared: true, log: fakeLog(),
     run: () => { runs += 1; return run.promise; },
   });
   const first = await start('Check for OS updates');
@@ -137,10 +138,10 @@ test('a shared start while one runs answers the running job and starts nothing',
   assert.deepEqual(second, first);
   await settle();
   assert.equal(runs, 1);
-  assert.equal(isJobRunning('os-update-check'), true);
+  assert.equal(isJobRunning(JOB_KIND.OS_UPDATE_CHECK), true);
   run.resolve({ count: 2 });
   await settle();
-  assert.equal(isJobRunning('os-update-check'), false);
+  assert.equal(isJobRunning(JOB_KIND.OS_UPDATE_CHECK), false);
   const third = await start('Check for OS updates');
   assert.notEqual(third.jobId, first.jobId);
 });
@@ -148,7 +149,7 @@ test('a shared start while one runs answers the running job and starts nothing',
 test('a failed run ends with the error body, redacted, and an unexpected one logs its stack', async () => {
   const log = fakeLog();
   const { jobId } = await startJob({
-    kind: 'vm-create', title: 'Create a5', subject: { type: 'vm', name: 'a5' }, log,
+    kind: JOB_KIND.VM_CREATE, title: 'Create a5', subject: { type: 'vm', name: 'a5' }, log,
     run: async () => { throw createAppError('LIBVIRT_ERROR', 'Failed to define the VM', 'cannot write /etc/libvirt/qemu/a5.xml'); },
   });
   const stream = fakeStream();
@@ -164,7 +165,7 @@ test('a failed run ends with the error body, redacted, and an unexpected one log
 
   const expected = fakeLog();
   const busy = await startJob({
-    kind: 'vm-start', title: 'Start a5', subject: { type: 'vm', name: 'a5' }, log: expected,
+    kind: JOB_KIND.VM_START, title: 'Start a5', subject: { type: 'vm', name: 'a5' }, log: expected,
     run: async () => { throw createAppError('VM_ALREADY_RUNNING', 'VM "a5" is already running'); },
   });
   await settle();
@@ -174,7 +175,7 @@ test('a failed run ends with the error body, redacted, and an unexpected one log
 
 test('a thrown value without a code fails the job as INTERNAL_ERROR', async () => {
   const { jobId } = await startJob({
-    kind: 'library-download', title: 'x', log: fakeLog(), run: async () => { throw new Error('boom'); },
+    kind: JOB_KIND.LIBRARY_DOWNLOAD, title: 'x', log: fakeLog(), run: async () => { throw new Error('boom'); },
   });
   await settle();
   assert.deepEqual({ error: readJob(jobId).error, detail: readJob(jobId).detail }, { error: 'INTERNAL_ERROR', detail: 'boom' });
@@ -184,7 +185,7 @@ test('a running job reports its latest progress, and events after its end are dr
   const run = deferred();
   let report;
   const { jobId } = await startJob({
-    kind: 'container-backup', title: 'Backup c6', subject: { type: 'container', name: 'c6' }, log: fakeLog(),
+    kind: JOB_KIND.CONTAINER_BACKUP, title: 'Backup c6', subject: { type: 'container', name: 'c6' }, log: fakeLog(),
     run: (r) => { report = r; return run.promise; },
   });
   await settle();
@@ -203,32 +204,32 @@ test('a running job reports its latest progress, and events after its end are dr
 test('jobs are listed newest first, and the kind-running query reads kind and subject', async () => {
   const runs = [deferred(), deferred()];
   const a = await startJob({
-    kind: 'container-stop', title: 'Stop c7', subject: { type: 'container', name: 'c7' }, log: fakeLog(), run: () => runs[0].promise,
+    kind: JOB_KIND.CONTAINER_STOP, title: 'Stop c7', subject: { type: 'container', name: 'c7' }, log: fakeLog(), run: () => runs[0].promise,
   });
   const b = await startJob({
-    kind: 'container-start', title: 'Start c7b', subject: { type: 'container', name: 'c7b' }, log: fakeLog(), run: () => runs[1].promise,
+    kind: JOB_KIND.CONTAINER_START, title: 'Start c7b', subject: { type: 'container', name: 'c7b' }, log: fakeLog(), run: () => runs[1].promise,
   });
   const ids = listJobs().map((j) => j.jobId);
   assert.ok(ids.indexOf(b.jobId) < ids.indexOf(a.jobId));
   assert.equal(ids[0], b.jobId);
-  assert.equal(isJobRunning('container-stop', { type: 'container', name: 'c7' }), true);
-  assert.equal(isJobRunning('container-stop', { type: 'container', name: 'c7b' }), false);
-  assert.equal(isJobRunning('container-stop', { type: 'vm', name: 'c7' }), false);
-  assert.equal(isJobRunning('container-stop'), true);
+  assert.equal(isJobRunning(JOB_KIND.CONTAINER_STOP, { type: 'container', name: 'c7' }), true);
+  assert.equal(isJobRunning(JOB_KIND.CONTAINER_STOP, { type: 'container', name: 'c7b' }), false);
+  assert.equal(isJobRunning(JOB_KIND.CONTAINER_STOP, { type: 'vm', name: 'c7' }), false);
+  assert.equal(isJobRunning(JOB_KIND.CONTAINER_STOP), true);
   runs[0].resolve({ name: 'c7' });
   runs[1].resolve({ name: 'c7b' });
   await settle();
-  assert.equal(isJobRunning('container-stop'), false);
+  assert.equal(isJobRunning(JOB_KIND.CONTAINER_STOP), false);
 });
 
 test('a kind and its subject must match', async () => {
-  await assert.rejects(startJob({ kind: 'vm-start', title: 't', log: fakeLog(), run: async () => ({}) }), /acts on a vm/);
+  await assert.rejects(startJob({ kind: JOB_KIND.VM_START, title: 't', log: fakeLog(), run: async () => ({}) }), /acts on a vm/);
   await assert.rejects(
-    startJob({ kind: 'vm-start', title: 't', subject: { type: 'container', name: 'x' }, log: fakeLog(), run: async () => ({}) }),
+    startJob({ kind: JOB_KIND.VM_START, title: 't', subject: { type: 'container', name: 'x' }, log: fakeLog(), run: async () => ({}) }),
     /acts on a vm/,
   );
   await assert.rejects(
-    startJob({ kind: 'os-upgrade', title: 't', subject: { type: 'vm', name: 'x' }, log: fakeLog(), run: async () => ({}) }),
+    startJob({ kind: JOB_KIND.OS_UPGRADE, title: 't', subject: { type: 'vm', name: 'x' }, log: fakeLog(), run: async () => ({}) }),
     /has no subject/,
   );
   await assert.rejects(startJob({ kind: 'backup', title: 't', log: fakeLog(), run: async () => ({}) }), /Unknown job kind/);
@@ -237,7 +238,7 @@ test('a kind and its subject must match', async () => {
 test('a start with bad arguments throws before it takes a lock or creates a row', async () => {
   const before = listJobs().length;
   const start = (opts) => startJob({
-    kind: 'vm-backup', title: 'Backup a8', subject: { type: 'vm', name: 'a8' }, log: fakeLog(), run: async () => ({}), ...opts,
+    kind: JOB_KIND.VM_BACKUP, title: 'Backup a8', subject: { type: 'vm', name: 'a8' }, log: fakeLog(), run: async () => ({}), ...opts,
   });
   await assert.rejects(start({ log: undefined }), /needs a logger/);
   await assert.rejects(start({ log: { info() {} } }), /needs a logger/);
@@ -251,9 +252,9 @@ test('a start with bad arguments throws before it takes a lock or creates a row'
 test('two starts in one tick: the second answers its refusal, and one job exists', async () => {
   const run = deferred();
   const start = () => startJob({
-    kind: 'os-upgrade', title: 'Install OS updates', log: fakeLog(),
+    kind: JOB_KIND.OS_UPGRADE, title: 'Install OS updates', log: fakeLog(),
     check: () => {
-      if (isJobRunning('os-upgrade')) throw createAppError('UPDATE_BUSY', 'An OS upgrade is already in progress');
+      if (isJobRunning(JOB_KIND.OS_UPGRADE)) throw createAppError('UPDATE_BUSY', 'An OS upgrade is already in progress');
     },
     run: () => run.promise,
   });
@@ -261,7 +262,7 @@ test('two starts in one tick: the second answers its refusal, and one job exists
   assert.equal(first.status, 'fulfilled');
   assert.equal(second.status, 'rejected');
   assert.equal(second.reason.code, 'UPDATE_BUSY');
-  assert.equal(listJobs().filter((j) => j.kind === 'os-upgrade' && j.status === 'running').length, 1);
+  assert.equal(listJobs().filter((j) => j.kind === JOB_KIND.OS_UPGRADE && j.status === 'running').length, 1);
   run.resolve({ ok: true });
   await settle();
 });
@@ -269,7 +270,7 @@ test('two starts in one tick: the second answers its refusal, and one job exists
 test('a job without a subject is refused an async check: nothing holds its claim across an await', async () => {
   const before = listJobs().length;
   await assert.rejects(
-    startJob({ kind: 'os-upgrade', title: 't', log: fakeLog(), check: async () => {}, run: async () => ({}) }),
+    startJob({ kind: JOB_KIND.OS_UPGRADE, title: 't', log: fakeLog(), check: async () => {}, run: async () => ({}) }),
     /needs a synchronous check/,
   );
   assert.equal(listJobs().length, before);
@@ -280,17 +281,17 @@ test('two shared starts in one tick, each past its check, end with one job and b
   let checks = 0;
   let runs = 0;
   const start = () => startJob({
-    kind: 'os-update-check', title: 'Check for OS updates', shared: true, log: fakeLog(),
+    kind: JOB_KIND.OS_UPDATE_CHECK, title: 'Check for OS updates', shared: true, log: fakeLog(),
     check: () => { checks += 1; },
     run: () => { runs += 1; return run.promise; },
   });
   const [a, b] = await Promise.all([start(), start()]);
   assert.deepEqual(b, a);
-  assert.deepEqual(a, { jobId: a.jobId, kind: 'os-update-check', title: 'Check for OS updates', subject: null });
+  assert.deepEqual(a, { jobId: a.jobId, kind: JOB_KIND.OS_UPDATE_CHECK, title: 'Check for OS updates', subject: null });
   assert.equal(checks, 1);
   await settle();
   assert.equal(runs, 1);
-  assert.equal(listJobs().filter((j) => j.kind === 'os-update-check' && j.status === 'running').length, 1);
+  assert.equal(listJobs().filter((j) => j.kind === JOB_KIND.OS_UPDATE_CHECK && j.status === 'running').length, 1);
   run.resolve({ count: 0 });
   await settle();
 });
@@ -298,7 +299,7 @@ test('two shared starts in one tick, each past its check, end with one job and b
 test('a shared start joins only a running job that covers its scope', async () => {
   const runs = [];
   const start = (ref) => startJob({
-    kind: 'container-image-update-check', title: ref ? `Check ${ref}` : 'Check OCI image updates',
+    kind: JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK, title: ref ? `Check ${ref}` : 'Check OCI image updates',
     shared: true, scope: ref, log: fakeLog(),
     run: () => { const d = deferred(); runs.push(d); return d.promise; },
   });
@@ -325,13 +326,13 @@ test('a shared start joins only a running job that covers its scope', async () =
 test('an interruptible job cut ends cancelled, logged at info without a stack, and is not counted as must-finish', async () => {
   const log = fakeLog();
   const mustFinish = deferred();
-  await startJob({ kind: 'library-download', title: 'must finish', log: fakeLog(), run: (_report, signal) => {
+  await startJob({ kind: JOB_KIND.LIBRARY_DOWNLOAD, title: 'must finish', log: fakeLog(), run: (_report, signal) => {
     assert.equal(signal, undefined);
     return mustFinish.promise;
   } });
   const before = countJobsThatMustFinish();
   const { jobId } = await startJob({
-    kind: 'os-update-check', title: 'Check for OS updates', shared: true, interruptible: true, log,
+    kind: JOB_KIND.OS_UPDATE_CHECK, title: 'Check for OS updates', shared: true, interruptible: true, log,
     run: (_report, signal) => new Promise((_resolve, reject) => {
       signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
     }),
@@ -346,7 +347,7 @@ test('an interruptible job cut ends cancelled, logged at info without a stack, a
   const job = readJob(jobId);
   assert.equal(job.status, 'cancelled');
   assert.equal('error' in job, false);
-  assert.deepEqual(log.lines.at(-1), ['info', { jobId, kind: 'os-update-check', title: 'Check for OS updates', subject: null }, 'Background job cancelled']);
+  assert.deepEqual(log.lines.at(-1), ['info', { jobId, kind: JOB_KIND.OS_UPDATE_CHECK, title: 'Check for OS updates', subject: null }, 'Background job cancelled']);
   // The job that must finish was not cut.
   assert.equal(countJobsThatMustFinish(), before);
   mustFinish.resolve({});
@@ -355,7 +356,7 @@ test('an interruptible job cut ends cancelled, logged at info without a stack, a
 
 test('a cancel writes the terminal event to a registered stream, then ends it, before it settles', async () => {
   const { jobId } = await startJob({
-    kind: 'os-update-check', title: 'Check for OS updates', shared: true, interruptible: true, log: fakeLog(),
+    kind: JOB_KIND.OS_UPDATE_CHECK, title: 'Check for OS updates', shared: true, interruptible: true, log: fakeLog(),
     run: (_report, signal) => new Promise((_resolve, reject) => {
       signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
     }),
@@ -380,7 +381,7 @@ test('the store announces each list change — create, end, expiry — and no pr
   const run = deferred();
   let report;
   await startJob({
-    kind: 'container-backup', title: 'Backup c9', subject: { type: 'container', name: 'c9' }, log: fakeLog(),
+    kind: JOB_KIND.CONTAINER_BACKUP, title: 'Backup c9', subject: { type: 'container', name: 'c9' }, log: fakeLog(),
     run: (r) => { report = r; return run.promise; },
   });
   assert.equal(changes, 1);
@@ -403,7 +404,7 @@ test('the store announces each list change — create, end, expiry — and no pr
 test('a list change handler that throws is logged and the start still answers', async () => {
   const log = fakeLog();
   const unsubscribe = subscribeJobsChange(() => { throw new Error('handler broke'); });
-  const ack = await startJob({ kind: 'library-download', title: 'x', log, run: async () => ({}) });
+  const ack = await startJob({ kind: JOB_KIND.LIBRARY_DOWNLOAD, title: 'x', log, run: async () => ({}) });
   unsubscribe();
   assert.ok(hasJob(ack.jobId));
   assert.ok(log.lines.some(([level, , message]) => level === 'warn' && message === 'Job list change handler failed'));
@@ -413,7 +414,7 @@ test('a list change handler that throws is logged and the start still answers', 
 test('whenJobEnds settles with the end status, at once for an ended job, and null for an unknown one', async () => {
   const run = deferred();
   const { jobId } = await startJob({
-    kind: 'container-backup', title: 'Backup w1', subject: { type: 'container', name: 'w1' }, log: fakeLog(), run: () => run.promise,
+    kind: JOB_KIND.CONTAINER_BACKUP, title: 'Backup w1', subject: { type: 'container', name: 'w1' }, log: fakeLog(), run: () => run.promise,
   });
   let ended = null;
   const waiting = whenJobEnds(jobId).then((status) => { ended = status; });
@@ -424,7 +425,7 @@ test('whenJobEnds settles with the end status, at once for an ended job, and nul
   assert.equal(ended, 'error');
   assert.equal(await whenJobEnds(jobId), 'error');
 
-  const done = await startJob({ kind: 'vm-start', title: 'Start w2', subject: { type: 'vm', name: 'w2' }, log: fakeLog(), run: async () => null });
+  const done = await startJob({ kind: JOB_KIND.VM_START, title: 'Start w2', subject: { type: 'vm', name: 'w2' }, log: fakeLog(), run: async () => null });
   assert.equal(await whenJobEnds(done.jobId), 'done');
   assert.equal(await whenJobEnds('no-such-job'), null);
 });
