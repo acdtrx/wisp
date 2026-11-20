@@ -7,6 +7,7 @@ import { randomId } from '../../utils/randomId.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
+import { isErrorFrame } from '../../store/streamStore.js';
 
 const CLIENT_BUFFER_HARD_LIMIT = 5000;
 const CLIENT_BUFFER_TRIM_TO = 4000;
@@ -51,7 +52,7 @@ function nowClock() {
 
 export default function ContainerLogsSection({ containerName }) {
   const containerState = useContainerStore((s) => (
-    s.selectedContainer === containerName ? s.containerConfig?.state : null
+    s.selected === containerName ? s.config?.state : null
   ));
 
   const [runs, setRuns] = useState([]);
@@ -126,7 +127,7 @@ export default function ContainerLogsSection({ containerName }) {
     closeSseRef.current = openStream(
       `/api/containers/${encodeURIComponent(containerName)}/logs${q}`,
       (data) => {
-        if (data && data.error) {
+        if (isErrorFrame(data)) {
           setStreamState('error');
           setStreamError(errorText(data));
           return;

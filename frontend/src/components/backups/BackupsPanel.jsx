@@ -28,7 +28,6 @@ import {
   deleteContainerBackup,
 } from '../../api/backups.js';
 import { sendAndAwaitTopic, subscribeTopic } from '../../api/events.js';
-import { JOB_KIND } from '../../api/jobs.js';
 import {
   useBackgroundJobsStore, awaitJob, workloadBusyJob, workloadBackupJob, workloadBusyReason,
 } from '../../store/backgroundJobsStore.js';
@@ -37,6 +36,8 @@ import { useContainerStore } from '../../store/containerStore.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
 import { errorText } from '../../api/errors.js';
+import { JOB_KIND, TOPIC } from '../../../../shared/wireNames.js';
+import { useBackupsStore } from '../../store/backupsStore.js';
 
 /* Same stopped set as the VM Overview. `shutdown` is a guest shutdown still in
  * progress (qemu holds the disks) — the backend refuses a backup then. */
@@ -138,7 +139,14 @@ export default function BackupsPanel() {
 
   const [vmBackups, setVmBackups] = useState([]);
   const [ctBackups, setCtBackups] = useState([]);
-  const [status, setStatus] = useState(null);
+  const status = useBackupsStore((s) => s.data);
+  const statusError = useBackupsStore((s) => s.error);
+  const connectStatus = useBackupsStore((s) => s.connect);
+  const disconnectStatus = useBackupsStore((s) => s.disconnect);
+  useEffect(() => {
+    connectStatus();
+    return () => disconnectStatus();
+  }, [connectStatus, disconnectStatus]);
   const settings = useSettingsStore((s) => s.settings);
   const settingsError = useSettingsStore((s) => s.error);
   const schedule = settings?.backupSchedule || null;
@@ -208,12 +216,11 @@ export default function BackupsPanel() {
     fetchLists(true);
   }, [fetchLists]);
 
-  /* Status pushes on the multiplexed events stream; each frame doubles as the
-   * cue that the backup lists changed (scheduler run, job finished, delete). */
+  /* Each `backups` frame (the status, above) is also the cue that the backup lists
+   * changed (scheduler run, job finished, delete). */
   const firstFrameRef = useRef(true);
   useEffect(() => {
-    const unsubscribe = subscribeTopic('backups', (data) => {
-      if (data && !data.error) setStatus(data);
+    const unsubscribe = subscribeTopic(TOPIC.BACKUPS, () => {
       if (firstFrameRef.current) {
         firstFrameRef.current = false;
         return undefined;
@@ -379,7 +386,7 @@ export default function BackupsPanel() {
     try {
       const { backup } = deleteTarget;
       /* The delete answers 204; the lists re-read on the `backups` frame it announces. */
-      await sendAndAwaitTopic('backups', () => (backup.kind === 'container'
+      await sendAndAwaitTopic(TOPIC.BACKUPS, () => (backup.kind === 'container'
         ? deleteContainerBackup({ destinationId: backup.destinationId, name: backup.name, timestamp: backup.timestamp })
         : deleteBackup({ destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp })));
       setDeleteTarget(null);
@@ -604,6 +611,11 @@ export default function BackupsPanel() {
 
       <div className="flex-1 space-y-3 px-4 py-4 lg:px-6 lg:py-5">
         <SettingsRefreshNotice />
+        {statusError && (
+          <div className="rounded-md border border-status-stopped/30 bg-status-stopped-soft px-3 py-2 text-sm text-status-stopped" role="alert">
+            Couldn't load the last backup attempts: {statusError}
+          </div>
+        )}
         {error && (
           <div className="rounded-md border border-status-stopped/30 bg-status-stopped-soft px-3 py-2 text-sm text-status-stopped">
             {error}

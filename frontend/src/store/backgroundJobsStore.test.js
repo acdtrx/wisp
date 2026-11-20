@@ -2,13 +2,13 @@ import { test, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installBrowser, installFetch, respondWithStream, settle } from '../testing/fakeBrowser.js';
+import { JOB_KIND, TOPIC } from '../../../shared/wireNames.js';
 
 let net;
 let store;
 let awaitJob;
 let workloadBusyJob;
 let workloadBackupJob;
-let JOB_KIND;
 let ApiError;
 let loaded = 0;
 
@@ -18,7 +18,6 @@ beforeEach(async () => {
   mock.timers.enable({ apis: ['setTimeout', 'Date'] });
   loaded += 1;
   ({ useBackgroundJobsStore: store, awaitJob, workloadBusyJob, workloadBackupJob } = await import(`./backgroundJobsStore.js?test=${loaded}`));
-  ({ JOB_KIND } = await import('../api/jobs.js'));
   ({ ApiError } = await import('../api/errors.js'));
 });
 
@@ -36,13 +35,13 @@ async function connectTopic() {
   const stream = respondWithStream(await net.next('/api/events'));
   await settle();
   return async (jobs) => {
-    stream.frame({ topic: 'jobs', data: { jobs } });
+    stream.frame({ topic: TOPIC.JOBS, data: { jobs } });
     await settle();
   };
 }
 
 const row = (jobId, fields = {}) => ({
-  jobId, kind: 'vm-start', title: `Start ${jobId}`, subject: null, status: 'running', createdAt: 1000, ...fields,
+  jobId, kind: JOB_KIND.VM_START, title: `Start ${jobId}`, subject: null, status: 'running', createdAt: 1000, ...fields,
 });
 
 /** Wait for job `jobId` by its ack, without the topic: its outcome (`{ value }` or `{ error }`) and its progress request. */
@@ -63,7 +62,7 @@ test('topic frames are the list: rows appear with their subject, end, and leave 
   let { jobs } = store.getState();
   assert.deepEqual(
     { kind: jobs.j1.kind, title: jobs.j1.title, subject: jobs.j1.subject, status: jobs.j1.status, createdAt: jobs.j1.createdAt },
-    { kind: 'vm-backup', title: 'Backup web', subject: web, status: 'running', createdAt: 1000 },
+    { kind: JOB_KIND.VM_BACKUP, title: 'Backup web', subject: web, status: 'running', createdAt: 1000 },
   );
   assert.equal(jobs.j2.title, 'Something new');
   assert.equal(workloadBusyJob(jobs, web)?.jobId, 'j1');
@@ -143,7 +142,7 @@ test("a job's error event becomes an ApiError on its row, and awaitJob rejects w
 
 test('a cancelled job ends its row with no error, and awaitJob resolves with no result', async () => {
   const send = await connectTopic();
-  await send([row('c1', { kind: 'os-update-check' })]);
+  await send([row('c1', { kind: JOB_KIND.OS_UPDATE_CHECK })]);
   const outcome = awaitJob('c1').then((value) => ({ value }), (error) => ({ error }));
   const stream = respondWithStream(await net.nextExact(progressUrl('c1')));
   await settle();
@@ -207,7 +206,7 @@ test('a dismissed row leaves the tray and stays out until the server drops it', 
 test('a backup or restore-in-place job is a backup job; a start busies the workload but is none', async () => {
   const send = await connectTopic();
   await send([
-    row('s1', { kind: 'vm-start', subject: { type: 'vm', name: 'web' } }),
+    row('s1', { kind: JOB_KIND.VM_START, subject: { type: 'vm', name: 'web' } }),
     row('r1', { kind: JOB_KIND.CONTAINER_RESTORE, subject: { type: 'container', name: 'db' } }),
     row('k1', { kind: JOB_KIND.VM_BACKUP, subject: { type: 'vm', name: 'api' } }),
   ]);

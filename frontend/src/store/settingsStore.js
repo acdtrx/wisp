@@ -2,9 +2,10 @@ import { create } from 'zustand';
 import * as settingsApi from '../api/settings.js';
 import { subscribeChanges } from '../api/events.js';
 import { errorText } from '../api/errors.js';
+import { CHANGE_KIND } from '../../../shared/wireNames.js';
 
 /** Single subscriber, held at module scope (the store is a singleton) so
- *  stopSettingsSync can clean up after startSettingsSync. */
+ *  disconnect can clean up after connect. */
 let syncCloseFn = null;
 /** Each GET is numbered; a response is applied only when it is newer than the
  *  last one applied, so a slow older answer never overwrites a newer one and a
@@ -58,16 +59,16 @@ export const useSettingsStore = create((set, get) => ({
    * Load the settings, and again whenever the `changes` topic names them — a save
    * from any tab, or the reconnect after the stream was down.
    */
-  startSettingsSync: () => {
+  connect: () => {
     if (syncCloseFn) return;
     const { loadSettings } = get();
     /* Non-fatal: the store tracks the error; the app shell still renders */
     loadSettings().catch(() => {});
     /* The handler returns the load, so a command waiting on the frame waits for it. */
-    syncCloseFn = subscribeChanges(['settings'], () => loadSettings().catch(() => {}));
+    syncCloseFn = subscribeChanges([CHANGE_KIND.SETTINGS], () => loadSettings().catch(() => {}));
   },
 
-  stopSettingsSync: () => {
+  disconnect: () => {
     if (syncCloseFn) {
       syncCloseFn();
       syncCloseFn = null;

@@ -2,6 +2,7 @@ import { test, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installBrowser, installFetch, jsonResponse, respondWithStream, settle } from '../testing/fakeBrowser.js';
+import { TOPIC } from '../../../shared/wireNames.js';
 
 let net;
 let events;
@@ -295,6 +296,21 @@ test('a 4xx that is not Wisp\'s (a proxy\'s page) is a lost connection: subscrib
   assert.deepEqual(down, [undefined]);
   mock.timers.tick(1100);
   await settle();
+  assert.equal(net.made('/api/events').length, 2);
+  off();
+});
+
+test('reconnectEvents opens the stream anew after a refusal: the subscribers get its frames', async () => {
+  const frames = [];
+  const off = events.subscribeTopic(TOPIC.VMS, (d) => frames.push(d), () => {});
+  (await net.next('/api/events')).respond(jsonResponse({ error: 'SCOPE_INSUFFICIENT', detail: 'No' }, 403));
+  await settle();
+  events.reconnectEvents();
+  const stream = respondWithStream(await net.next('/api/events'));
+  await settle();
+  stream.frame({ topic: TOPIC.VMS, data: ['a'] });
+  await settle();
+  assert.deepEqual(frames, [['a']]);
   assert.equal(net.made('/api/events').length, 2);
   off();
 });

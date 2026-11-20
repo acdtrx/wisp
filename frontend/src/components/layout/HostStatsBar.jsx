@@ -5,7 +5,8 @@ import StatPill from '../shared/StatPill.jsx';
 import { formatDecimal } from '../../utils/formatters.js';
 
 export default function HostStatsBar({ embedded = false }) {
-  const { stats, connected, lastError, refusal, connect, disconnect } = useStatsStore();
+  const { data: stats, connected, error, refused, connect, disconnect } = useStatsStore();
+  const refusal = refused ? error : null;
 
   useEffect(() => {
     connect();
@@ -20,7 +21,7 @@ export default function HostStatsBar({ embedded = false }) {
       </span>
     ) : (
       <span className="text-xs text-text-muted whitespace-nowrap">
-        {lastError ? 'Stats unavailable' : connected ? 'Loading stats…' : 'Connecting…'}
+        {error ? 'Stats unavailable' : connected ? 'Loading stats…' : 'Connecting…'}
       </span>
     );
     if (embedded) {

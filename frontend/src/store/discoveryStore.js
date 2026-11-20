@@ -1,27 +1,9 @@
-import { create } from 'zustand';
-import { subscribeTopic } from '../api/events.js';
+import { TOPIC } from '../../../shared/wireNames.js';
+import { createStreamStore, topicSource } from './streamStore.js';
 
-export const useDiscoveryStore = create((set) => {
-  let unsubscribe = null;
-
-  return {
-    peers: [],
-
-    connect: () => {
-      if (unsubscribe) return;
-
-      unsubscribe = subscribeTopic(
-        'discovery',
-        (data) => set({ peers: Array.isArray(data) ? data : [] }),
-      );
-    },
-
-    disconnect: () => {
-      if (unsubscribe) {
-        unsubscribe();
-        unsubscribe = null;
-      }
-      set({ peers: [] });
-    },
-  };
+/** The Wisp peers on the LAN, from the `discovery` topic. */
+export const useDiscoveryStore = createStreamStore({
+  source: topicSource(TOPIC.DISCOVERY),
+  toData: (frame) => (Array.isArray(frame) ? frame : []),
+  empty: [],
 });

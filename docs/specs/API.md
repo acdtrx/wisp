@@ -127,7 +127,7 @@ Every topic sends a snapshot frame on connect (and after every client reconnect)
 
 No topic uses a polling timer except the sampled `stats` metrics.
 
-Every topic except `discovery` and `jobs` (in-memory lists that can't fail) may carry an error frame instead of its payload — the error body `{ error, detail }` when that topic's gather fails (e.g. `stats` when a host read throws). Clients ignore error frames and keep the last good payload; nothing renders the error object as data.
+Every topic except `discovery` and `jobs` (in-memory lists that can't fail) may carry an error frame instead of its payload — the error body `{ error, detail }` when that topic's gather fails (e.g. `stats` when a host read throws). Clients keep the last good payload and show the error's text beside it; nothing renders the error object as data.
 
 #### `changes` topic payload
 

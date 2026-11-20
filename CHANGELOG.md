@@ -26,6 +26,7 @@
 - **A page behind a proxy is not logged out by the proxy's own 401** — a lost session is recognised by Wisp's code, and a stream Wisp refuses ends with its error ("Live updates stopped" in the top bar) instead of retrying for ever.
 - **A VM with a long name can be assigned to a section** (names up to 128 characters).
 - **noVNC is pinned**, and a failed fetch of it fails the build.
+- **A failing or refused live feed shows, instead of going quiet** — the sidebar's sections, the job tray and the backups panel say when their feed fails, keeping what they showed. A refused events stream empties the workload list, the sections, the home page and the tray and shows the refusal in each, as it already did in the top bar; the list's Retry reconnects the stream.
 
 ## 2026-11-17
 

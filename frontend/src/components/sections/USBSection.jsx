@@ -19,13 +19,16 @@ import {
   dataTableEmptyCellClass,
 } from '../shared/DataTableChrome.jsx';
 import { errorText } from '../../api/errors.js';
+import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-2 lg:p-1.5 text-text-secondary hover:bg-surface hover:text-status-stopped transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
 
 export default function USBSection({ vmConfig, busyReason }) {
-  const hostDevices = useUsbStore((s) => s.devices);
-  const hostError = useUsbStore((s) => s.error);
+  const hostDevices = useUsbStore((s) => s.data);
+  const hostError = useUsbStore((s) => (s.connected === false && !s.refused
+    ? 'The USB device stream is not connected — retrying…'
+    : s.error));
   const connectUsb = useUsbStore((s) => s.connect);
   const disconnectUsb = useUsbStore((s) => s.disconnect);
 
@@ -73,7 +76,7 @@ export default function USBSection({ vmConfig, busyReason }) {
     return () => controller.abort();
   }, [fetchAttachedOnly]);
 
-  useChanges('vm', vmName, () => fetchAttachedOnly(abortRef.current?.signal));
+  useChanges(CHANGE_KIND.VM, vmName, () => fetchAttachedOnly(abortRef.current?.signal));
 
   const handleAttach = async (vendorId, productId) => {
     const key = `${vendorId}:${productId}`;

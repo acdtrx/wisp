@@ -13,10 +13,10 @@ import { errorText } from '../../api/errors.js';
  * press outside closes it).
  */
 export default function SectionPickerButton({ type, name, disabled }) {
-  const sections = useSectionsStore((s) => s.sections);
+  const sections = useSectionsStore((s) => s.data.sections);
   const assignWorkload = useSectionsStore((s) => s.assignWorkload);
   const createAndAssign = useSectionsStore((s) => s.createAndAssign);
-  const currentSectionId = useSectionsStore((s) => selectSectionId(s, type, name));
+  const currentSectionId = useSectionsStore((s) => selectSectionId(s.data, type, name));
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);

@@ -1,18 +1,19 @@
-import { create } from 'zustand';
 import * as sectionsApi from '../api/sections.js';
-import { sendAndAwaitTopic, subscribeTopic } from '../api/events.js';
+import { sendAndAwaitTopic } from '../api/events.js';
+import { TOPIC } from '../../../shared/wireNames.js';
+import { createStreamStore, topicSource } from './streamStore.js';
 
 export const MAIN_SECTION_ID = 'main';
 
 const DEFAULT_MAIN = { id: MAIN_SECTION_ID, name: 'Main', order: -Infinity, builtin: true };
 
-function applyEnvelope(set, response) {
-  const sections = response?.sections?.length ? response.sections : [DEFAULT_MAIN];
-  const assignments = response?.assignments && typeof response.assignments === 'object'
-    ? response.assignments
-    : {};
-  set({ sections, assignments });
-  return response;
+/** The envelope a frame carries, Main filled in; `undefined` for a frame that is not one. */
+function envelopeOf(frame) {
+  if (!frame || !Array.isArray(frame.sections)) return undefined;
+  return {
+    sections: frame.sections.length ? frame.sections : [DEFAULT_MAIN],
+    assignments: frame.assignments && typeof frame.assignments === 'object' ? frame.assignments : {},
+  };
 }
 
 /**
@@ -20,11 +21,11 @@ function applyEnvelope(set, response) {
  * map. Falls back to Main when no assignment exists or the assignment points
  * at a section that no longer exists.
  */
-export function selectSectionId(state, type, name) {
+export function selectSectionId({ sections, assignments }, type, name) {
   const key = `${type}:${name}`;
-  const id = state.assignments?.[key];
+  const id = assignments[key];
   if (!id) return MAIN_SECTION_ID;
-  const exists = state.sections.some((s) => s.id === id);
+  const exists = sections.some((s) => s.id === id);
   return exists ? id : MAIN_SECTION_ID;
 }
 
@@ -38,67 +39,49 @@ function uniqueDefaultName(sections) {
   return candidate;
 }
 
-/** Single subscriber: only one `sections` topic subscription is ever active. Held at
- *  module scope (the store is a singleton) so startSectionsSSE/stopSectionsSSE can
- *  clean up after it. */
-let sectionsCloseFn = null;
+const onSectionsTopic = (send) => sendAndAwaitTopic(TOPIC.SECTIONS, send);
 
-const onSectionsTopic = (send) => sendAndAwaitTopic('sections', send);
+/**
+ * The sidebar's sections, from the `sections` topic: `data` is the
+ * `{ sections, assignments }` envelope, which the server sends on connect and
+ * after every write, so a workload moved from another device lands here without
+ * a reload.
+ */
+export const useSectionsStore = createStreamStore({
+  source: topicSource(TOPIC.SECTIONS),
+  toData: envelopeOf,
+  empty: { sections: [DEFAULT_MAIN], assignments: {} },
+  extend: (set, get) => ({
+    /* Set after a section is created via the create-and-assign flow (ghost
+     * zone or picker "+ New section"); the matching SectionHeader reads this
+     * to auto-open its rename input on first render, then clears it. */
+    pendingRenameId: null,
 
-export const useSectionsStore = create((set, get) => ({
-  sections: [DEFAULT_MAIN],
-  assignments: {},
-  /* Set after a section is created via the create-and-assign flow (ghost
-   * zone or picker "+ New section"); the matching SectionHeader reads this
-   * to auto-open its rename input on first render, then clears it. */
-  pendingRenameId: null,
+    /* Writes answer with an ack; each resolves once the new envelope has arrived on
+     * the `sections` topic too. */
+    renameSection: (id, name) => onSectionsTopic(() => sectionsApi.renameSection(id, name)),
 
-  /**
-   * Subscribe to the `sections` topic on `/api/events`. The server sends the full
-   * `{ sections, assignments }` envelope on connect and again after every mutation, so
-   * this both seeds the store and keeps it live, its only source — a workload moved from another device
-   * (or while this client was suspended in the iOS app switcher) lands here without a
-   * reload.
-   */
-  startSectionsSSE: () => {
-    if (sectionsCloseFn) return;
-    sectionsCloseFn = subscribeTopic('sections', (data) => {
-      if (!data || !Array.isArray(data.sections)) return; // error frame; keep the last good envelope
-      applyEnvelope(set, data);
-    });
-  },
+    deleteSection: (id) => onSectionsTopic(() => sectionsApi.deleteSection(id)),
 
-  stopSectionsSSE: () => {
-    if (sectionsCloseFn) {
-      sectionsCloseFn();
-      sectionsCloseFn = null;
-    }
-  },
+    reorderSections: (orderedIds) => onSectionsTopic(() => sectionsApi.reorderSections(orderedIds)),
 
-  /* Writes answer with an ack; each resolves once the new envelope has arrived on
-   * the `sections` topic too. */
-  renameSection: (id, name) => onSectionsTopic(() => sectionsApi.renameSection(id, name)),
+    assignWorkload: ({ type, name, sectionId }) =>
+      onSectionsTopic(() => sectionsApi.assignWorkload({ type, name, sectionId })),
 
-  deleteSection: (id) => onSectionsTopic(() => sectionsApi.deleteSection(id)),
+    /**
+     * Create a new section with an auto-suffixed default name, assign the given
+     * workload to it, and flag the new section for auto-rename. Used by both
+     * the "Create section" ghost drop zone and the picker's "+ New section"
+     * option so the two flows stay in lockstep. The section header opens its
+     * rename input when it first renders, whenever the topic brings it.
+     */
+    createAndAssign: async ({ type, name }) => {
+      const defaultName = uniqueDefaultName(get().data.sections);
+      const { id } = await onSectionsTopic(() => sectionsApi.createSection(defaultName));
+      await onSectionsTopic(() => sectionsApi.assignWorkload({ type, name, sectionId: id }));
+      set({ pendingRenameId: id });
+    },
 
-  reorderSections: (orderedIds) => onSectionsTopic(() => sectionsApi.reorderSections(orderedIds)),
-
-  assignWorkload: ({ type, name, sectionId }) =>
-    onSectionsTopic(() => sectionsApi.assignWorkload({ type, name, sectionId })),
-
-  /**
-   * Create a new section with an auto-suffixed default name, assign the given
-   * workload to it, and flag the new section for auto-rename. Used by both
-   * the "Create section" ghost drop zone and the picker's "+ New section"
-   * option so the two flows stay in lockstep. The section header opens its
-   * rename input when it first renders, whenever the topic brings it.
-   */
-  createAndAssign: async ({ type, name }) => {
-    const defaultName = uniqueDefaultName(get().sections);
-    const { id } = await onSectionsTopic(() => sectionsApi.createSection(defaultName));
-    await onSectionsTopic(() => sectionsApi.assignWorkload({ type, name, sectionId: id }));
-    set({ pendingRenameId: id });
-  },
-
-  clearPendingRenameId: () => set({ pendingRenameId: null }),
-}));
+    clearPendingRenameId: () => set({ pendingRenameId: null }),
+  }),
+});

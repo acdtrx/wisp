@@ -1,7 +1,7 @@
-import { create } from 'zustand';
-import { subscribeTopic } from '../api/events.js';
-import { JOB_KIND, streamJobProgress } from '../api/jobs.js';
+import { streamJobProgress } from '../api/jobs.js';
 import { ApiError, CLIENT_CODES } from '../api/errors.js';
+import { JOB_KIND, TOPIC } from '../../../shared/wireNames.js';
+import { createStreamStore, topicSource } from './streamStore.js';
 
 /**
  * The server's jobs, as the `jobs` topic lists them, each with what its progress
@@ -93,12 +93,33 @@ function mergedJobs(rows, progress, dismissed) {
   return jobs;
 }
 
-export const useBackgroundJobsStore = create((set) => {
-  let unsubscribe = null;
+/** The topic's rows by jobId; `undefined` for a frame that is not the list. */
+function rowsOf(frame) {
+  if (!Array.isArray(frame?.jobs)) return undefined;
+  const rows = {};
+  for (const row of frame.jobs) rows[row.jobId] = row;
+  return rows;
+}
 
-  return {
-    /** The topic's rows, by jobId. @type {Record<string, { jobId: string, kind: string, title: string, subject: JobSubject | null, status: string, createdAt: number }>} */
-    rows: {},
+/** `data`: the topic's rows, by jobId (each frame is the whole list). */
+export const useBackgroundJobsStore = createStreamStore({
+  source: topicSource(TOPIC.JOBS),
+  toData: rowsOf,
+  empty: {},
+  onData: (rows, set) => {
+    set((s) => {
+      // A stream still open stays: an awaited job may be listed only in a later frame.
+      const progress = {};
+      for (const [jobId, p] of Object.entries(s.progress)) {
+        if (rows[jobId] || !p.end) progress[jobId] = p;
+      }
+      const dismissed = new Set([...s.dismissed].filter((jobId) => rows[jobId]));
+      return { progress, dismissed, jobs: mergedJobs(rows, progress, dismissed) };
+    });
+    // A finished row is followed too: its stream replays the result or the error.
+    for (const jobId of Object.keys(rows)) followJob(jobId);
+  },
+  extend: (set) => ({
     /** Each followed job's progress, by jobId: a job is followed while it is listed or awaited. @type {Record<string, JobProgress>} */
     progress: {},
     /** Finished rows this page hid from its tray, until the server drops them. @type {Set<string>} */
@@ -106,48 +127,19 @@ export const useBackgroundJobsStore = create((set) => {
     /** What the tray and busy state read: the listed rows not dismissed, with their progress. @type {Record<string, BackgroundJobRow>} */
     jobs: {},
 
-    /** Follow the `jobs` topic: each frame is the whole list. */
-    connect: () => {
-      if (unsubscribe) return;
-      unsubscribe = subscribeTopic('jobs', (data) => {
-        if (!Array.isArray(data?.jobs)) return;
-        const rows = {};
-        for (const row of data.jobs) rows[row.jobId] = row;
-        set((s) => {
-          // A stream still open stays: an awaited job may be listed only in a later frame.
-          const progress = {};
-          for (const [jobId, p] of Object.entries(s.progress)) {
-            if (rows[jobId] || !p.end) progress[jobId] = p;
-          }
-          const dismissed = new Set([...s.dismissed].filter((jobId) => rows[jobId]));
-          return { rows, progress, dismissed, jobs: mergedJobs(rows, progress, dismissed) };
-        });
-        // A finished row is followed too: its stream replays the result or the error.
-        for (const jobId of Object.keys(rows)) followJob(jobId);
-      });
-    },
-
-    disconnect: () => {
-      if (unsubscribe) {
-        unsubscribe();
-        unsubscribe = null;
-      }
-      set({ rows: {}, dismissed: new Set(), jobs: {} });
-    },
-
     /** Hide a finished row from this page's tray. */
     dismissJob: (jobId) => set((s) => {
       const dismissed = new Set(s.dismissed).add(jobId);
       const { [jobId]: _gone, ...jobs } = s.jobs;
       return { dismissed, jobs };
     }),
-  };
+  }),
 });
 
 function setProgress(jobId, update) {
   useBackgroundJobsStore.setState((s) => {
     const progress = { ...s.progress, [jobId]: update(s.progress[jobId] ?? NO_PROGRESS) };
-    const row = s.rows[jobId];
+    const row = s.data[jobId];
     const jobs = row && !s.dismissed.has(jobId)
       ? { ...s.jobs, [jobId]: mergeRow(row, progress[jobId]) }
       : s.jobs;

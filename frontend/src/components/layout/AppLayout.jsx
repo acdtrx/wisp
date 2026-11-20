@@ -6,8 +6,8 @@ import { useSettingsStore } from '../../store/settingsStore.js';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 
 export default function AppLayout() {
-  const startSettingsSync = useSettingsStore((s) => s.startSettingsSync);
-  const stopSettingsSync = useSettingsStore((s) => s.stopSettingsSync);
+  const connectSettings = useSettingsStore((s) => s.connect);
+  const disconnectSettings = useSettingsStore((s) => s.disconnect);
   const settings = useSettingsStore((s) => s.settings);
 
   useEffect(() => {
@@ -25,9 +25,9 @@ export default function AppLayout() {
   }, [settings]);
 
   useEffect(() => {
-    startSettingsSync();
-    return stopSettingsSync;
-  }, [startSettingsSync, stopSettingsSync]);
+    connectSettings();
+    return disconnectSettings;
+  }, [connectSettings, disconnectSettings]);
 
   /* The jobs topic feeds the tray and every workload's busy state. */
   const connectJobs = useBackgroundJobsStore((s) => s.connect);

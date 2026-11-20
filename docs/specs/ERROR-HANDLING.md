@@ -482,10 +482,10 @@ connecting, until the page subscribes afresh.
 
 ### Stream error frames
 
-On the `/api/events` topics an error frame is ignored and the store keeps its last good
-payload (host stats, VM/container lists, sections, home, backups status): consumers
-dereference the payload's fields, so storing the error object in its place would crash
-the render.
+On the `/api/events` topics (and the scoped streams) an error frame never replaces the
+data: the client keeps the last good payload (host stats, VM/container lists, sections,
+home, backups status, the job list), since consumers dereference its fields, and shows
+the error's text beside it until a good frame comes.
 
 ### Global 401 handling
 

@@ -34,7 +34,7 @@ async function runPackageCheck() {
 }
 
 export default function OsUpdateSection({ onRequestRestart }) {
-  const stats = useStatsStore((s) => s.stats);
+  const stats = useStatsStore((s) => s.data);
   const pendingUpdates = stats?.pendingUpdates ?? 0;
   const updatesLastChecked = stats?.updatesLastChecked ?? null;
   const updateOpInProgress = !!stats?.updateOperationInProgress;

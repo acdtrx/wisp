@@ -18,6 +18,7 @@ import {
   installWispUpdate,
 } from '../../api/updates.js';
 import { CLIENT_CODES, errorText } from '../../api/errors.js';
+import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 function formatRelativeTime(isoString) {
   if (!isoString) return null;
@@ -60,7 +61,7 @@ function NotesHtml({ markdown }) {
 export default function WispUpdateSection() {
   /* SSE-driven badge data (current/latest/available/lastChecked); hydrate on
    * first mount via /updates/status because the SSE may not have ticked yet. */
-  const wispUpdate = useStatsStore((s) => s.stats?.wispUpdate ?? null);
+  const wispUpdate = useStatsStore((s) => s.data?.wispUpdate ?? null);
   const [hydrated, setHydrated] = useState(null);
   const [notes, setNotes] = useState(null);
   const [publishedAt, setPublishedAt] = useState(null);
@@ -125,7 +126,7 @@ export default function WispUpdateSection() {
     refreshFromServer();
   }, [refreshFromServer]);
   /* A check from any tab, the hourly poll, or a reconnect re-reads the status. */
-  useKindChanges('wisp-update', refreshFromServer);
+  useKindChanges(CHANGE_KIND.WISP_UPDATE, refreshFromServer);
 
   /* The Software tab can be the first page opened, so the settings store may
    * still be empty — the channel select needs it. */
@@ -145,7 +146,7 @@ export default function WispUpdateSection() {
     setError(null);
     setChecking(true);
     try {
-      await sendAndAwaitKindChange('wisp-update', checkForWispUpdate);
+      await sendAndAwaitKindChange(CHANGE_KIND.WISP_UPDATE, checkForWispUpdate);
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -170,7 +171,7 @@ export default function WispUpdateSection() {
       return;
     }
     try {
-      await sendAndAwaitKindChange('wisp-update', checkForWispUpdate);
+      await sendAndAwaitKindChange(CHANGE_KIND.WISP_UPDATE, checkForWispUpdate);
     } catch (err) {
       setError(errorText(err));
     } finally {

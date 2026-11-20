@@ -45,7 +45,7 @@ The `discovery` topic of `GET /api/events` (SSE, cookie-authenticated like every
 
 `name` falls back to the mDNS instance name when TXT `name` is missing; `url` falls back to `http://<host>:<port>` from the SRV record; `version` may be `null` (non-Wisp or older announcer).
 
-Frontend: `store/discoveryStore.js` subscribes via `createSSE`; `components/layout/ServerSwitcher.jsx` (mounted in the top bar) owns the subscription lifecycle and renders the dropdown only when peers exist.
+Frontend: the peer list arrives on the `discovery` topic of the events stream; the top bar's server switcher follows it while it is mounted and renders the dropdown only when peers exist.
 
 ## Settings
 

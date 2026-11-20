@@ -26,7 +26,7 @@ function peerHostLabel(peer) {
 }
 export default function ServerSwitcher() {
   const serverName = useSettingsStore((s) => s.settings?.serverName ?? 'My Server');
-  const peers = useDiscoveryStore((s) => s.peers);
+  const peers = useDiscoveryStore((s) => s.data);
   const connect = useDiscoveryStore((s) => s.connect);
   const disconnect = useDiscoveryStore((s) => s.disconnect);
 

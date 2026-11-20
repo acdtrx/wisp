@@ -123,6 +123,19 @@ export function subscribeTopic(topic, onData, onStreamDown) {
 }
 
 /**
+ * Ask the server again: close the shared stream and open it anew, a stream Wisp
+ * refused included (the refusal is forgotten). Each topic's connect frame then
+ * brings its current state, gathered again. Nothing happens while no one follows
+ * the stream.
+ */
+export function reconnectEvents() {
+  if (!closeFn) return;
+  closeFn();
+  refusal = null;
+  closeFn = openStream('/api/events', dispatch, { onDown: streamDown });
+}
+
+/**
  * Follow the `changes` topic: references to records saved on the server
  * (`{ kind, id? }`). `onChange` runs for every frame whose kind is in `kinds`, and
  * for the `{ kind: 'all' }` each (re)connect opens with — anything may have changed

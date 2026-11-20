@@ -48,7 +48,7 @@ function TabButton({ id, label, active, badgeTitle, onClick }) {
 export default function HostPanel() {
   const { tab } = useParams();
   const navigate = useNavigate();
-  const stats = useStatsStore((s) => s.stats);
+  const stats = useStatsStore((s) => s.data);
   const pendingUpdates = stats?.pendingUpdates ?? 0;
   const wispUpdateAvailable = !!stats?.wispUpdate?.available;
   const rebootRequired = !!stats?.rebootRequired;

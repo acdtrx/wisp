@@ -41,6 +41,7 @@ import {
 } from '../../api/settings.js';
 import SettingsGate from '../shared/SettingsGate.jsx';
 import { errorText } from '../../api/errors.js';
+import { CHANGE_KIND } from '../../../../shared/wireNames.js';
 
 /* Same geometry as rowActionIconBtn but color-neutral, for tinted (mount/check) states. */
 const tintedActionBtnBase =
@@ -70,10 +71,12 @@ function shortUuid(u) {
 
 export default function HostStorage() {
   const settings = useSettingsStore((s) => s.settings);
-  const disks = useDiskStore((s) => s.disks);
+  const disks = useDiskStore((s) => s.data);
   const connectDisks = useDiskStore((s) => s.connect);
   const disconnectDisks = useDiskStore((s) => s.disconnect);
-  const diskStreamError = useDiskStore((s) => s.error);
+  const diskStreamError = useDiskStore((s) => (s.connected === false && !s.refused
+    ? 'The device stream is not connected — retrying…'
+    : s.error));
 
   useEffect(() => {
     connectDisks();
@@ -105,7 +108,7 @@ export default function HostStorage() {
   useEffect(() => { refreshStatus(); }, [refreshStatus]);
   /* A mount added, edited or removed, a mount or unmount — from any tab, the
    * auto-mount included — or a reconnect re-reads the status. */
-  useKindChanges('host-mounts', refreshStatus);
+  useKindChanges(CHANGE_KIND.HOST_MOUNTS, refreshStatus);
 
   const smbSaved = useMemo(() => (settings?.mounts || []).filter((m) => m.type === 'smb'), [settings]);
   const diskSaved = useMemo(() => (settings?.mounts || []).filter((m) => m.type === 'disk'), [settings]);
@@ -195,7 +198,7 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
     setMountActionId(id);
     const p = mounted
       ? unmountMount(id).then((job) => awaitJob(job.jobId))
-      : sendAndAwaitKindChange('host-mounts', () => mountMount(id));
+      : sendAndAwaitKindChange(CHANGE_KIND.HOST_MOUNTS, () => mountMount(id));
     p
       .catch((err) => onError(errorText(err)))
       .finally(() => setMountActionId(null));
@@ -416,7 +419,7 @@ function RemovableDrivesSection({
     setMountActionId(id);
     const p = mounted
       ? unmountMount(id).then((job) => awaitJob(job.jobId))
-      : sendAndAwaitKindChange('host-mounts', () => mountMount(id));
+      : sendAndAwaitKindChange(CHANGE_KIND.HOST_MOUNTS, () => mountMount(id));
     p
       .catch((err) => onError(errorText(err)))
       .finally(() => setMountActionId(null));

@@ -337,8 +337,8 @@ function CoreUsageGrid({ title, cores }) {
 
 export default function HostOverview() {
   const { hardware, hardwareError, fetchHardware } = useHostStore();
-  const stats = useStatsStore((s) => s.stats);
-  const statsError = useStatsStore((s) => s.lastError);
+  const stats = useStatsStore((s) => s.data);
+  const statsError = useStatsStore((s) => s.error);
 
   useEffect(() => {
     /* hardwareError in store handles display; swallow to avoid unhandled rejection */

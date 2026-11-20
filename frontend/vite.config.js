@@ -1,10 +1,18 @@
-import { defineConfig } from 'vite';
+import { fileURLToPath } from 'node:url';
+
+import { defineConfig, searchForWorkspaceRoot } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    // The client imports the wire's names from ../shared, outside this package. Named
+    // here rather than left to the dev server's allowance for files the module graph
+    // reached, which does not cover a file requested before it is imported.
+    fs: {
+      allow: [searchForWorkspaceRoot(process.cwd()), fileURLToPath(new URL('../shared', import.meta.url))],
+    },
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8080',

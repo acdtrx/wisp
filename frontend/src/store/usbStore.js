@@ -1,39 +1,10 @@
-import { create } from 'zustand';
-import { openStream } from '../api/sse.js';
-import { errorText } from '../api/errors.js';
+import { createStreamStore, streamSource } from './streamStore.js';
 
-export const useUsbStore = create((set) => {
-  let closeFn = null;
-
-  return {
-    /** @type { Array<{ bus: string, device: string, vendorId: string, productId: string, name: string }> | null } */
-    devices: null,
-    connected: false,
-    /** The stream's last failure (an error frame, or a connection that dropped); cleared by the next list. */
-    error: null,
-
-    connect: () => {
-      if (closeFn) return;
-
-      closeFn = openStream(
-        '/api/host/usb/stream',
-        (data) => {
-          if (Array.isArray(data)) {
-            set({ devices: data, connected: true, error: null });
-          } else if (data && data.error) {
-            set({ error: errorText(data) });
-          }
-        },
-        { onDown: (err) => set({ connected: false, error: err ? errorText(err) : 'The USB device stream is not connected — retrying…' }) },
-      );
-    },
-
-    disconnect: () => {
-      if (closeFn) {
-        closeFn();
-        closeFn = null;
-      }
-      set({ devices: null, connected: false, error: null });
-    },
-  };
+/**
+ * The host's USB devices, from their scoped stream: `data` is
+ * `[{ bus, device, vendorId, productId, name }]`.
+ */
+export const useUsbStore = createStreamStore({
+  source: streamSource(() => '/api/host/usb/stream'),
+  toData: (frame) => (Array.isArray(frame) ? frame : undefined),
 });

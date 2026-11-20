@@ -50,6 +50,7 @@ function JobProgressBar({ percent, status }) {
 
 export default function BackgroundJobsIndicator() {
   const jobs = useBackgroundJobsStore((s) => s.jobs);
+  const streamError = useBackgroundJobsStore((s) => s.error);
   const dismissJob = useBackgroundJobsStore((s) => s.dismissJob);
   const [open, setOpen] = useState(false);
   const anchorRef = useRef(null);
@@ -59,7 +60,8 @@ export default function BackgroundJobsIndicator() {
   const list = Object.values(jobs).sort((a, b) => b.createdAt - a.createdAt);
   const running = list.filter((j) => j.status === 'running').length;
 
-  const isEmpty = list.length === 0;
+  /* Nothing to open: no row, and no stream error to show. */
+  const isEmpty = list.length === 0 && !streamError;
   const popStyle = usePopover(open && !isEmpty, { anchorRef, popRef, onClose: close, align: 'end' });
   /* Emptied (last row dismissed): closed for good, so the next job doesn't
    * reopen the tray and pull focus to it. */
@@ -79,11 +81,14 @@ export default function BackgroundJobsIndicator() {
             ? 'cursor-default text-text-muted/60'
             : 'text-text-secondary hover:bg-surface hover:text-text-primary'
         }`}
-        title={isEmpty ? 'No background jobs' : 'Background jobs'}
+        title={isEmpty ? 'No background jobs' : streamError ? `Background jobs — couldn't load the job list: ${streamError}` : 'Background jobs'}
         aria-label="Background jobs"
         aria-expanded={open}
       >
         <ListTodo size={18} aria-hidden />
+        {streamError && running === 0 && (
+          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-status-stopped" aria-hidden />
+        )}
         {running > 0 && (
           <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-white">
             {running > 9 ? '9+' : running}
@@ -102,6 +107,11 @@ export default function BackgroundJobsIndicator() {
           <div className="border-b border-surface-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
             Background jobs
           </div>
+          {streamError && (
+            <p className="mx-3 my-2 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-2 py-1.5 text-xs text-status-stopped" role="alert">
+              Couldn't load the job list: {streamError}
+            </p>
+          )}
           <ul className="max-h-72 overflow-y-auto">
             {list.map((row) => (
               <li

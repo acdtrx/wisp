@@ -6,6 +6,8 @@ import AlertDialog from '../shared/AlertDialog.jsx';
 import { usePopover } from '../../lib/popover.js';
 import { errorText } from '../../api/errors.js';
 
+const NO_GROUPS = [];
+
 /**
  * Move-to-group popover for a tile in edit mode. Same interaction as the
  * sidebar's `SectionPickerButton`: anchored to its trigger (lib/popover.js:
@@ -13,7 +15,7 @@ import { errorText } from '../../api/errors.js';
  * at the bottom.
  */
 export default function TileGroupPicker({ tileId, currentGroupId, className = '' }) {
-  const groups = useHomeStore((s) => s.groups);
+  const groups = useHomeStore((s) => s.data?.groups ?? NO_GROUPS);
   const assignTile = useHomeStore((s) => s.assignTile);
   const createGroup = useHomeStore((s) => s.createGroup);
   const [open, setOpen] = useState(false);

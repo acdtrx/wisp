@@ -338,10 +338,11 @@ export default function LeftPanel() {
   const asideRef = useRef(null);
   const belowLg = useMediaQuery('(max-width: 1023.98px)');
   const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
-  const sections = useSectionsStore((s) => s.sections);
-  const assignments = useSectionsStore((s) => s.assignments);
-  const startSectionsSSE = useSectionsStore((s) => s.startSectionsSSE);
-  const stopSectionsSSE = useSectionsStore((s) => s.stopSectionsSSE);
+  const sections = useSectionsStore((s) => s.data.sections);
+  const assignments = useSectionsStore((s) => s.data.assignments);
+  const sectionsError = useSectionsStore((s) => s.error);
+  const connectSections = useSectionsStore((s) => s.connect);
+  const disconnectSections = useSectionsStore((s) => s.disconnect);
   const assignWorkload = useSectionsStore((s) => s.assignWorkload);
   const reorderSections = useSectionsStore((s) => s.reorderSections);
   const createAndAssign = useSectionsStore((s) => s.createAndAssign);
@@ -349,7 +350,7 @@ export default function LeftPanel() {
   const clearPendingRenameId = useSectionsStore((s) => s.clearPendingRenameId);
   const navigate = useNavigate();
   const location = useLocation();
-  const stats = useStatsStore((s) => s.stats);
+  const stats = useStatsStore((s) => s.data);
   const pendingUpdates = stats?.pendingUpdates ?? 0;
   const wispUpdateAvailable = !!stats?.wispUpdate?.available;
 
@@ -371,9 +372,9 @@ export default function LeftPanel() {
   }, [startContainerListSSE, stopContainerListSSE]);
 
   useEffect(() => {
-    startSectionsSSE();
-    return () => stopSectionsSSE();
-  }, [startSectionsSSE, stopSectionsSSE]);
+    connectSections();
+    return () => disconnectSections();
+  }, [connectSections, disconnectSections]);
 
   /* Exit organize mode when the user navigates away — stale "edit" state
    * shouldn't leak across views. Below lg the panel is a drawer; navigating
@@ -591,6 +592,11 @@ export default function LeftPanel() {
           <div className="mx-3 my-2 flex items-center gap-2 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-2 py-1.5 text-xs text-status-stopped" role="alert">
             <span className="min-w-0 flex-1 truncate" title={listError}>Couldn't load workloads: {listError}</span>
             <button type="button" onClick={retryLists} className="shrink-0 rounded px-2 py-1 font-medium hover:underline">Retry</button>
+          </div>
+        )}
+        {sectionsError && (
+          <div className="mx-3 my-2 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-2 py-1.5 text-xs text-status-stopped" role="alert">
+            <span className="block truncate" title={sectionsError}>Couldn't load the sections: {sectionsError}</span>
           </div>
         )}
         {!listsLoaded && totalCount === 0 ? (

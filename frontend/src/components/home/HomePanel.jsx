@@ -9,6 +9,8 @@ import ManualLinkModal from './ManualLinkModal.jsx';
 import { errorText } from '../../api/errors.js';
 
 const LIT_STATES = new Set(['running', 'blocked']);
+const NO_TILES = [];
+const NO_GROUPS = [];
 
 function greeting(hour) {
   if (hour < 12) return 'Good morning.';
@@ -32,12 +34,13 @@ const headerBtn =
  * No host-vitals strip: the top bar's stats already carry that.
  */
 export default function HomePanel() {
-  const tiles = useHomeStore((s) => s.tiles);
-  const groups = useHomeStore((s) => s.groups);
-  const loaded = useHomeStore((s) => s.loaded);
-  const loadError = useHomeStore((s) => s.loadError);
-  const startHomeSSE = useHomeStore((s) => s.startHomeSSE);
-  const stopHomeSSE = useHomeStore((s) => s.stopHomeSSE);
+  const home = useHomeStore((s) => s.data);
+  const tiles = home?.tiles ?? NO_TILES;
+  const groups = home?.groups ?? NO_GROUPS;
+  const loaded = home != null;
+  const loadError = useHomeStore((s) => s.error);
+  const connectHome = useHomeStore((s) => s.connect);
+  const disconnectHome = useHomeStore((s) => s.disconnect);
   const createGroup = useHomeStore((s) => s.createGroup);
   const reorderGroups = useHomeStore((s) => s.reorderGroups);
   const pendingRenameId = useHomeStore((s) => s.pendingRenameId);
@@ -51,9 +54,9 @@ export default function HomePanel() {
   const [groupsBusy, runGroupsCommand] = useBusyCommand();
 
   useEffect(() => {
-    startHomeSSE();
-    return () => stopHomeSSE();
-  }, [startHomeSSE, stopHomeSSE]);
+    connectHome();
+    return () => disconnectHome();
+  }, [connectHome, disconnectHome]);
 
   const tilesById = useMemo(() => new Map(tiles.map((t) => [t.id, t])), [tiles]);
 
