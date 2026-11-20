@@ -61,6 +61,10 @@
   they test (`npm run check`'s `setup-python`). Test files never ship:
   `scripts/stage-release.sh` leaves out `*.test.js` and `*_test.py` and fails a staged
   tree or tarball that holds one (settled 2026-11-18; the Python tests 2026-11-20).
+  The operation modules' tests (`lib/vmOperations.js`, `lib/containerOperations.js`)
+  stand the managers and the stores in with Node's module mocks (`mock.module`), so
+  the root `test` script runs with `--experimental-test-module-mocks`: the commands
+  are tested without a test seam in production code (settled 2026-11-20).
 - **ESLint**, a dev-only dependency of the repo root with its React hooks plugin and
   `globals`, for correctness rules only: `no-undef`, `no-unused-vars` (rest siblings
   ignored), `no-dupe-keys`, `react-hooks/rules-of-hooks`. No style rule;

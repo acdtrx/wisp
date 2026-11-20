@@ -500,7 +500,7 @@ Wisp checks every OCI image in the library for upstream changes and flags contai
 
 A container's name is its containerd container ID, the directory key under `containersPath`, the netns name, the published `<name>.local` mDNS host, and the URL/SSE channel key. containerd has no Rename API, so rename is implemented as **Containers.Delete(old) → Containers.Create(new) → fs.rename(old → new)**, with the rootfs snapshot dropped along the way. Because the rootfs is [ephemeral](#ephemeral-rootfs), the writable layer doesn't need to be preserved — the next start re-prepares the snapshot from the image under the new key.
 
-**Surface:** rename rides on `PATCH /api/containers/:name` — the user edits the **Name** field in the General section like any other field. When the request body's `name` differs from the URL segment, the route runs `renameContainer(oldName, newName)` first and then applies the rest of the patch under the new name, and answers 204; clients follow the new name as *Client effects* below says. There is no separate rename endpoint.
+**Surface:** rename rides on `PATCH /api/containers/:name` — the user edits the **Name** field in the General section like any other field. When the request body's `name` differs from the URL segment, the route runs `renameContainer(oldName, newName)` first and then applies the rest of the patch under the new name, and answers 204. The rename is a step of its own *(settled 2026-11-20)*: the rename, then its follow-ups (below), then the rest under the new name — a failure of the rest answers its error, while the rename and its follow-ups stand; clients follow the new name as *Client effects* below says. There is no separate rename endpoint.
 
 **Preconditions:**
 

@@ -1,0 +1,104 @@
+/*
+ * The container commands with the manager, the app modules and the
+ * follow-ups' stores mocked (node --test --experimental-test-module-mocks):
+ * the lock, the job starter and the follow-up orchestration are the real
+ * ones. Every mocked call is recorded in `calls`, in order; a test sets what
+ * a mocked function does in `impl`.
+ */
+import { beforeEach, mock, test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { createAppError } from './appErrors.js';
+
+const calls = [];
+const impl = {};
+
+/** Named exports that record each call and answer what `impl` says (undefined by default). */
+function recorded(names) {
+  return Object.fromEntries(names.map((name) => [name, (...args) => {
+    calls.push([name, ...args]);
+    return impl[name]?.(...args);
+  }]));
+}
+
+const mockModule = (path, names) => mock.module(new URL(path, import.meta.url).href, { namedExports: recorded(names) });
+
+mockModule('./containerManager/index.js', [
+  'getContainerDir', 'assertContainerState', 'assertContainerNameAvailable', 'listContainers', 'getContainerConfig',
+  'createContainer', 'startContainer', 'stopContainer', 'restartContainer', 'killContainer', 'deleteContainer',
+  'renameContainer', 'updateContainerConfig', 'addContainerMount', 'updateContainerMount', 'removeContainerMount',
+  'addContainerService', 'updateContainerService', 'removeContainerService', 'planMountFileUpload',
+  'commitMountFileUpload', 'assertMountTakesZip', 'planMountZipExtract', 'extractMountZip', 'assertMountOperation',
+  'initMountContent', 'deleteMountData', 'deleteRemovedMountData', 'putMountFileTextContent', 'createContainerBackup',
+  'planContainerBackupRestore', 'restoreContainerBackup', 'restoreContainerBackupInPlace', 'pullImage',
+  'getImageDigest', 'resolveContainerImageRef',
+]);
+mockModule('./containerApps/index.js', [
+  'createAppContainer', 'applyAppConfig', 'eject', 'maskContainerConfigSecrets', 'assertMountNotAppManaged',
+  'assertMountListNotAppManaged',
+]);
+mockModule('./backupDestinations.js', ['resolveBackupDestinations', 'backupToEachDestination']);
+mockModule('./backupStatus.js', ['recordBackupAttempt', 'moveBackupStatus', 'forgetBackupStatus']);
+mockModule('./sections.js', ['renameWorkloadAssignment', 'removeWorkloadAssignment']);
+mockModule('./vmMdnsReconciler.js', ['publishVm', 'unpublishVm']);
+mockModule('./containerMdnsReconciler.js', ['publishContainer', 'unpublishContainer']);
+
+const { editContainerConfig } = await import('./containerOperations.js');
+const { tryAcquireContainerOperationLock } = await import('./containerOperationLock.js');
+
+const log = { debug() {}, info() {}, warn() {}, error() {}, child() { return log; } };
+
+/** The recorded calls by function name, in order. */
+const names = () => calls.map(([name]) => name);
+
+/** Both names' locks are free again. */
+function assertUnlocked(...containerNames) {
+  for (const name of containerNames) {
+    const release = tryAcquireContainerOperationLock(name, 'test');
+    assert.ok(release, `the lock on "${name}" is free`);
+    release();
+  }
+}
+
+beforeEach(() => {
+  calls.length = 0;
+  for (const key of Object.keys(impl)) delete impl[key];
+  impl.getContainerConfig = async () => ({ metadata: {} });
+  impl.renameContainer = async (_from, to) => ({ name: to });
+  impl.updateContainerConfig = async () => ({ removedMounts: [] });
+});
+
+test('a rename sent with other changes renames, then its follow-ups, then the rest under the new name', async () => {
+  await editContainerConfig({ name: 'a', changes: { name: 'b', envPatch: { K: { value: 'v' } } }, log });
+  assert.deepEqual(calls.slice(1), [
+    ['renameContainer', 'a', 'b'],
+    ['renameWorkloadAssignment', 'container', 'a', 'b'],
+    ['moveBackupStatus', { type: 'container', from: 'a', to: 'b' }],
+    ['unpublishContainer', 'a'],
+    ['publishContainer', 'b'],
+    ['updateContainerConfig', 'b', { envPatch: { K: { value: 'v' } } }],
+  ]);
+  assertUnlocked('a', 'b');
+});
+
+test('a rename whose other changes fail answers their error, the rename and its follow-ups standing', async () => {
+  impl.updateContainerConfig = async () => { throw createAppError('CONFIG_ERROR', 'envPatch.K: a new secret needs a value'); };
+  await assert.rejects(
+    editContainerConfig({ name: 'a', changes: { name: 'b', envPatch: { K: { secret: true } } }, log }),
+    (err) => err.code === 'CONFIG_ERROR',
+  );
+  assert.deepEqual(names().slice(1), [
+    'renameContainer', 'renameWorkloadAssignment', 'moveBackupStatus', 'unpublishContainer', 'publishContainer',
+    'updateContainerConfig',
+  ]);
+  assertUnlocked('a', 'b');
+});
+
+test('a failed rename changes nothing else', async () => {
+  impl.renameContainer = async () => { throw createAppError('CONTAINER_MUST_BE_STOPPED', 'Stop it first'); };
+  await assert.rejects(
+    editContainerConfig({ name: 'a', changes: { name: 'b', autostart: true }, log }),
+    (err) => err.code === 'CONTAINER_MUST_BE_STOPPED',
+  );
+  assert.deepEqual(names(), ['renameContainer']);
+});

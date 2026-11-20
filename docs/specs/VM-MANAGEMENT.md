@@ -115,7 +115,7 @@ Rejected: probing with `qemu-img info` and accepting whatever qcow2/raw it repor
 
 ## Renaming
 
-A VM can be renamed when it is stopped (rename is the `name` field in `PATCH /api/vms/:name`). The rename (`editVmConfig`, `lib/vmOperations.js`) holds the VM's [operation lock](BACKUPS.md#per-vm-operation-lock) and the new name's for the whole rename, its follow-ups included, as a container rename does.
+A VM can be renamed when it is stopped (rename is the `name` field in `PATCH /api/vms/:name`). The rename (`editVmConfig`, `lib/vmOperations.js`) holds the VM's [operation lock](BACKUPS.md#per-vm-operation-lock) and the new name's for the whole rename, its follow-ups included, as a container rename does. The rename is a step of its own, as a container's is *(settled 2026-11-20)*: the rename, then its follow-ups (below), then the rest of the patch under the new name — a failure of the rest answers its error, while the rename and its follow-ups stand.
 
 1. Pre-check: VM offline; the new name passes `validateVMName`; no other VM already uses it.
 2. **Infer the source dir.** `findActualVmDir` walks every absolute path in the parsed domain XML (disk `<source file>`, NVRAM, loader) and picks the deepest directory under `<vmsPath>/`. This may not equal `<vmsPath>/<oldName>/` — legacy state from a pre-fix rename can leave files in a directory whose name no longer matches the libvirt domain name. The rename converges that state by moving from the *actual* dir, not the *expected* one.

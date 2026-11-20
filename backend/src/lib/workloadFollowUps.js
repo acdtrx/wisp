@@ -32,31 +32,37 @@ async function bestEffort(log, what, fields, fn) {
 }
 
 /**
- * After a configuration update of a workload, under its name in effect
- * (`name`; `previousName` when the update renamed it).
+ * After a rename of a workload from `from` to `to`: the section assignment
+ * and the last backup attempt move to the new name, the old `.local` name is
+ * withdrawn and the new one published — a no-op until it runs (a rename needs
+ * it stopped), after which the network-change event publishes it.
  *
- * - A rename moves the section assignment and the last backup attempt to the
- *   new name, and withdraws the old `.local` name.
- * - A `localDns` toggle (re)publishes or withdraws the `.local` name: it is
- *   metadata, so no network-change event follows it. A renamed workload is
- *   published under its new name too — a no-op until it runs (a rename needs
- *   it stopped), after which the network-change event publishes it.
- *
- * @param {{ type: WorkloadType, name: string, previousName?: string | null,
- *           localDns?: boolean, log: import('fastify').FastifyBaseLogger }} opts
+ * @param {{ type: WorkloadType, from: string, to: string,
+ *           log: import('fastify').FastifyBaseLogger }} opts
  */
-export async function followWorkloadConfigUpdate({ type, name, previousName = null, localDns, log }) {
+export async function followWorkloadRename({ type, from, to, log }) {
+  const { publish, unpublish } = LOCAL_NAME[type];
+  const fields = { type, name: to, previousName: from };
+  await bestEffort(log, 'section assignment move', fields, () => renameWorkloadAssignment(type, from, to));
+  await bestEffort(log, 'backup status move', fields, () => moveBackupStatus({ type, from, to }));
+  await bestEffort(log, '.local name withdrawal', fields, () => unpublish(from));
+  await bestEffort(log, '.local name publish', fields, () => publish(to));
+}
+
+/**
+ * After a configuration update of a workload: a `localDns` toggle
+ * (re)publishes or withdraws its `.local` name — it is metadata, so no
+ * network-change event follows it.
+ *
+ * @param {{ type: WorkloadType, name: string, localDns?: boolean,
+ *           log: import('fastify').FastifyBaseLogger }} opts
+ */
+export async function followWorkloadConfigUpdate({ type, name, localDns, log }) {
   const { publish, unpublish } = LOCAL_NAME[type];
   const fields = { type, name };
-  if (previousName) {
-    const renamed = { ...fields, previousName };
-    await bestEffort(log, 'section assignment move', renamed, () => renameWorkloadAssignment(type, previousName, name));
-    await bestEffort(log, 'backup status move', renamed, () => moveBackupStatus({ type, from: previousName, to: name }));
-    await bestEffort(log, '.local name withdrawal', renamed, () => unpublish(previousName));
-  }
   if (localDns === false) {
     await bestEffort(log, '.local name withdrawal', fields, () => unpublish(name));
-  } else if (localDns === true || previousName) {
+  } else if (localDns === true) {
     await bestEffort(log, '.local name publish', fields, () => publish(name));
   }
 }

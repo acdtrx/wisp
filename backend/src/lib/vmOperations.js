@@ -52,7 +52,7 @@ import { isPathInsideAllowedRoots } from './paths.js';
 import { withVmOperationLock } from './vmOperationLock.js';
 import { createAppError } from './appErrors.js';
 import { startWorkloadBackupJob } from './workloadBackup.js';
-import { followWorkloadConfigUpdate, followWorkloadDelete } from './workloadFollowUps.js';
+import { followWorkloadConfigUpdate, followWorkloadDelete, followWorkloadRename } from './workloadFollowUps.js';
 
 const vm = (name) => ({ type: 'vm', name });
 
@@ -213,17 +213,25 @@ export function requestVmResume(name) {
 
 /**
  * Apply a configuration edit (`PATCH /api/vms/:name`), a rename included, and
- * its follow-ups. Every edit redefines the domain, so each holds the lock; a
- * rename also holds the target name's, so nothing starts, edits or backs up
- * that name while the VM moves to it (the manager reserves its directory too).
+ * its follow-ups. A body `name` other than `name` is a step of its own: the
+ * rename and its follow-ups, then the rest under the new name — a failure of
+ * the rest leaves the rename, and its follow-ups, standing. Every edit
+ * redefines the domain, so each holds the lock; a rename also holds the
+ * target name's, so nothing starts, edits or backs up that name while the VM
+ * moves to it (the manager reserves its directory too).
  */
 export async function editVmConfig({ name, changes, log }) {
-  const renameTo = changes.name !== undefined && changes.name !== name ? changes.name : null;
+  const { name: requestedName, ...rest } = changes;
+  const renameTo = requestedName !== undefined && requestedName !== name ? requestedName : null;
   const apply = async () => {
-    const result = await updateVMConfig(name, changes);
-    await followWorkloadConfigUpdate({
-      type: 'vm', name: result.name, previousName: renameTo ? name : null, localDns: changes.localDns, log,
-    });
+    let current = name;
+    if (renameTo) {
+      current = (await updateVMConfig(name, { name: renameTo })).name;
+      await followWorkloadRename({ type: 'vm', from: name, to: current, log });
+      if (Object.keys(rest).length === 0) return;
+    }
+    await updateVMConfig(current, rest);
+    await followWorkloadConfigUpdate({ type: 'vm', name: current, localDns: rest.localDns, log });
   };
   if (!renameTo) {
     await withVmOperationLock(name, 'config edit', apply);

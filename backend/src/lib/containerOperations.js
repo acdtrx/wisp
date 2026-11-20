@@ -83,7 +83,7 @@ import { withContainerOperationLock } from './containerOperationLock.js';
 import { createAppError } from './appErrors.js';
 import { resolveBackupDestinations } from './backupDestinations.js';
 import { startWorkloadBackupJob, backUpWorkload } from './workloadBackup.js';
-import { followWorkloadConfigUpdate, followWorkloadDelete } from './workloadFollowUps.js';
+import { followWorkloadConfigUpdate, followWorkloadDelete, followWorkloadRename } from './workloadFollowUps.js';
 
 const container = (name) => ({ type: 'container', name });
 
@@ -96,7 +96,7 @@ function containerBackupTo(name, origin) {
  * Write `changes` to container.json, delete the data of the Local mounts it
  * dropped, then the follow-ups. The caller holds the container's lock.
  */
-async function applyContainerConfigChanges({ name, changes, previousName = null, log }) {
+async function applyContainerConfigChanges({ name, changes, log }) {
   if (Object.keys(changes).length > 0) {
     const { removedMounts } = await updateContainerConfig(name, changes);
     // A Local mount dropped from `mounts` loses its data — the same contract as
@@ -106,7 +106,7 @@ async function applyContainerConfigChanges({ name, changes, previousName = null,
       await deleteRemovedMountData(name, mountName);
     }
   }
-  await followWorkloadConfigUpdate({ type: 'container', name, previousName, localDns: changes.localDns, log });
+  await followWorkloadConfigUpdate({ type: 'container', name, localDns: changes.localDns, log });
 }
 
 // ── Create ──────────────────────────────────────────────────────────
@@ -307,11 +307,12 @@ export function startContainerDeleteJob({ name, deleteFiles = true, log }) {
 /**
  * Apply a configuration update (`PATCH /api/containers/:name` other than an
  * `appConfig` save), a rename included, with its follow-ups. A body `name`
- * other than `name` renames first, then applies the rest under the new name.
- * Every branch writes container.json, so it holds the lock; a rename also
- * holds the target name's, so nothing starts on it mid-move. An app
- * container's env and mounts come from its appConfig: changing them here is
- * refused before anything is written.
+ * other than `name` is a step of its own: the rename and its follow-ups, then
+ * the rest under the new name — a failure of the rest leaves the rename, and
+ * its follow-ups, standing. Every branch writes container.json, so it holds
+ * the lock; a rename also holds the target name's, so nothing starts on it
+ * mid-move. An app container's env and mounts come from its appConfig:
+ * changing them here is refused before anything is written.
  */
 export async function editContainerConfig({ name, changes, log }) {
   const { name: requestedName, ...rest } = changes;
@@ -323,8 +324,12 @@ export async function editContainerConfig({ name, changes, log }) {
         throw createAppError('APP_CONFIG_ONLY', 'Use appConfig to configure app containers, or eject to generic first');
       }
     }
-    const current = renameTo ? (await renameContainer(name, renameTo)).name : name;
-    await applyContainerConfigChanges({ name: current, changes: rest, previousName: renameTo ? name : null, log });
+    let current = name;
+    if (renameTo) {
+      current = (await renameContainer(name, renameTo)).name;
+      await followWorkloadRename({ type: 'container', from: name, to: current, log });
+    }
+    await applyContainerConfigChanges({ name: current, changes: rest, log });
   };
   if (!renameTo) {
     await withContainerOperationLock(name, 'configuration change', apply);
