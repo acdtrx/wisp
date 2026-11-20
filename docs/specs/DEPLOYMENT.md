@@ -133,7 +133,7 @@ Afterwards the host has:
 
 - The plan renders the file and has netplan check it in a staged copy of netplan's directories, with the bridge's edits when it makes the bridge, before anything changes (`NETPLAN_DNS_STUB`). The step installs what was checked, and runs `netplan generate` when the file is new or changed, the former files go, or the device is missing; never `netplan apply`.
 - The step decides from the host what brings the device to its settings, `169.254.53.53/32` alone as the kernel holds it, so a run cut short is finished by the next (settled 2026-11-20). A missing device gets a reload of systemd-networkd, the only one, as it reconfigures every link netplan renders, the bridge's DHCP lease dropped and taken again among it (observed on systemd 255). One netplan's unit runs without its settings gets `networkctl reconfigure wisp-dns0`. One another file runs (the former ones, deleted or not) keeps running with its settings, and gets a reload without them. Each ends holding them, or fails.
-- The former declaration, systemd-networkd's own `10-wisp-dns0.netdev` and `.network` and their wait-online instance, is taken back by the same step.
+- The former declaration, systemd-networkd's own `10-wisp-dns0.netdev` and `.network`, is taken back by the same step.
 
 [CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns).
 

@@ -42,8 +42,8 @@
 # the definition is not optional, so netplan's wait-online waits for it.
 # Rendered with `netplan generate`, never `netplan apply`, and brought to its
 # settings with the least systemd-networkd call the host needs (below). A host
-# that holds the former declaration, systemd-networkd's own files and a
-# wait-online instance of its own, has them taken back.
+# that holds the former declaration, systemd-networkd's own files, has them
+# taken back.
 #
 # Does not touch systemd-resolved.
 #
@@ -77,7 +77,6 @@ NETWORKD_DIR="/etc/systemd/network"
 OLD_DROPIN_NAME="wisp-mdns-stub.conf"
 # The former declaration, taken back.
 FORMER_FILES=("$NETWORKD_DIR/10-${STUB_IFACE}.netdev" "$NETWORKD_DIR/10-${STUB_IFACE}.network")
-FORMER_WAIT_UNIT="systemd-networkd-wait-online@${STUB_IFACE}:degraded.service"
 NETPLAN_STUB_UNIT="/run/systemd/network/10-netplan-${STUB_IFACE}.network"
 
 # 1. No `[Network] Address=` drop-in for the stub on br0's own .network unit:
@@ -146,10 +145,6 @@ fi
 if [[ -n "$how" ]]; then
   dns_stub_wait || fail "${STUB_IFACE} does not hold ${STUB_IP}/32 alone ${NET_WAIT_SEC} s after: $how"
   changed "$how: ${STUB_IFACE} holds ${STUB_IP}/32"
-fi
-if systemctl is-enabled --quiet "$FORMER_WAIT_UNIT" 2>/dev/null; then
-  systemd_call disable --quiet "$FORMER_WAIT_UNIT"
-  changed "$FORMER_WAIT_UNIT disabled (netplan's wait-online waits for ${STUB_IFACE})"
 fi
 
 # No copy of the stub IP on the bridge, where an earlier release held it: it
