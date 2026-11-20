@@ -1,5 +1,5 @@
-# Sourced by the network plan, the bridge journal and the container-dns step;
-# do not execute it. What an interface holds at layer 3, read from the kernel,
+# Sourced by the network plan, the bridge step and the container-dns step; do
+# not execute it. What an interface holds at layer 3, read from the kernel,
 # systemd-networkd and systemd-resolved, in one canonical form: the plan records
 # the uplink's before the bridge is made, and the bridge's check compares the
 # bridge's with it afterwards. And the readers both share.

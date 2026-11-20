@@ -1,4 +1,4 @@
-# Sourced by network-plan.sh, the bridge step and the journal, as root; do not
+# Sourced by network-plan.sh and the bridge step, as root; do not
 # execute it. The network plan's reads and refusals: the uplink, whether netplan
 # runs it, the bridge worked out as edits of the operator's netplan file and
 # checked by netplan, and what the plan read (plan_sources). Changes nothing.
@@ -198,6 +198,32 @@ networkd_takers() {
   printf '%s\n' "takers none"
 }
 
+# uplink_netplan_id: UPLINK_NETPLAN_ID, the id of netplan's definition of the
+# uplink, empty when it has none.
+uplink_netplan_id() {
+  local status
+  status="$(net_read netplan status "$UPLINK" --format json)" || exit 1
+  UPLINK_NETPLAN_ID="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" status-id "$UPLINK" <<<"$status")" \
+    || net_fail "cannot read netplan's status for $UPLINK"
+}
+# refuse_bridge_not_applied: refused when netplan's configuration already
+# defines BRIDGE holding the uplink's definition while the uplink is not
+# BRIDGE's port: the configuration is not live, as a bridge step cut short
+# after its switch leaves it. Setup applies nothing it did not check: the
+# operator brings it up, or puts back the original kept before the switch.
+refuse_bridge_not_applied() {
+  local holders master
+  [[ -n "$UPLINK_NETPLAN_ID" ]] || return 0
+  holders="$(net_read netplan get | "${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" dependents "$UPLINK_NETPLAN_ID")" \
+    || net_fail "cannot read netplan's configuration"
+  grep -qxF "bridges.$BRIDGE" <<<"$holders" || return 0
+  master="$(readlink "/sys/class/net/$UPLINK/master" 2>/dev/null || true)"
+  [[ "${master##*/}" != "$BRIDGE" ]] || return 0
+  refuse BRIDGE_NOT_APPLIED "netplan's configuration defines $BRIDGE on the uplink $UPLINK, but it is not live, as a bridge step cut short after its switch leaves it." \
+    "Bring it up with netplan apply (setup then uses it), or put back the original kept under" \
+    "/var/lib/wisp/network-before-bridge (docs/specs/DEPLOYMENT.md, The bridge), and run this again."
+}
+
 # netplan_stage <dir>: a copy of netplan's directories in <dir>, with the
 # container DNS stub's file as the plan rendered it (container-dns-plan.sh):
 # what netplan reads once the container-dns step has run, which goes live
@@ -218,12 +244,10 @@ netplan_stage() {
 # (netplan.py does the reading); what was checked is kept in the plan's
 # directory as netplan-origin.yaml, the file the bridge step puts in place. For
 # a DUID identity, also networkd's drop-in on the unit netplan renders for the
-# bridge (netplan has no IAID key): 50-wisp-dhcp-identity.conf.
+# bridge (netplan has no IAID key): 50-wisp-dhcp-identity.conf. Reads
+# UPLINK_NETPLAN_ID (uplink_netplan_id).
 plan_bridge() {
-  local status def mode rc why stage f hint kv merged dropins d
-  status="$(net_read netplan status "$UPLINK" --format json)" || exit 1
-  UPLINK_NETPLAN_ID="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" status-id "$UPLINK" <<<"$status")" \
-    || net_fail "cannot read netplan's status for $UPLINK"
+  local def mode rc why stage f hint kv merged dropins d
   [[ -n "$UPLINK_NETPLAN_ID" ]] || refuse NETPLAN_NO_DEFINITION "netplan has no definition for the uplink $UPLINK: define it in a file of your own under /etc/netplan, and run this again."
   # The file the definition comes from, as netplan's parser reads it.
   NETPLAN_ORIGIN="$(timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" "${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" origin "$UPLINK_NETPLAN_ID")" \

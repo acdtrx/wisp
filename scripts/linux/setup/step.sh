@@ -50,8 +50,8 @@ step_stop() {
   if [[ -n "$STEP_ON_STOP" ]]; then "$STEP_ON_STOP"; fi
   exit 143
 }
-# step_hold, step_release: a section that must finish (the bridge's apply
-# call, its finish and undo, the journal's restore). A stop meanwhile waits:
+# step_hold, step_release: a section that must finish (the bridge step's apply
+# call and its undo). A stop meanwhile waits:
 # the tools the section runs run to their end, each under its own bound, and
 # step_release then acts on it.
 step_hold() { STEP_HELD=1; }

@@ -141,7 +141,6 @@ run_step() {
 }
 
 echo "=== Wisp setup (deploy user: $DEPLOY_USER) ==="
-run_step bridge-journal bridge-recover.sh
 run_step network-plan network-plan.sh "$NET_PLAN_DIR"
 plan_record_read "$NET_PLAN_DIR/plan" || exit 1
 # The installer asked the operator about the bridge from its own plan
@@ -149,7 +148,7 @@ plan_record_read "$NET_PLAN_DIR/plan" || exit 1
 # lock, must be the same, or nothing more is changed.
 if [[ -n "${WISP_CONFIRMED_BRIDGE:-}" && "$(plan_confirmation)" != "$WISP_CONFIRMED_BRIDGE" ]]; then
   _planned="$(plan_confirmation)"
-  refuse NETWORK_CHANGED_SINCE_ASKED "the network changed since the install asked: it would now make ${_planned/#none/no bridge}, not ${WISP_CONFIRMED_BRIDGE/#none/no bridge}. Setup changed nothing after the bridge-journal step above. Run the install again."
+  refuse NETWORK_CHANGED_SINCE_ASKED "the network changed since the install asked: it would now make ${_planned/#none/no bridge}, not ${WISP_CONFIRMED_BRIDGE/#none/no bridge}. Setup changed nothing. Run the install again."
 fi
 
 run_step packages packages.sh

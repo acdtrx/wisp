@@ -25,7 +25,7 @@ Wisp runs directly on a Linux server as a single systemd service — never in a 
 When a refusal comes:
 
 - The plan's refusals come before the installer changes anything.
-- In setup they come before any step after `network-plan`. Setup's first step, `bridge-journal`, may first commit or undo a bridge step an earlier run left, and refuses with the `JOURNAL_*` codes.
+- In setup they come before any step after `network-plan`, its first.
 - The table's last two rows can come later, after setup's earlier steps but before the bridge step changes anything.
 
 | Id | Refused | What the operator does |
@@ -44,6 +44,7 @@ When a refusal comes:
 | `DHCP_CLIENT_ID_TYPE` | The lease's client identifier is neither the hardware address (type 1) nor a DUID (type 255) | Make the bridge with netplan. |
 | `DNS_PORT_TAKEN` | Another DNS server on port 53 of `169.254.53.53` or of every IPv4 address (`0.0.0.0`, `*`, or a wildcard bound to one device) | Bind it to the addresses it serves. `[::]:53` (IPv6 only) is no conflict. |
 | `NETPLAN_DNS_STUB` | netplan rejects its configuration with the container DNS stub's file (below) added, checked in a staged copy before the file goes live: a definition of `wisp-dns0` of the operator's of another kind, a netplan without `dummy-devices`. The message names netplan's error. | Remove that definition, or use a netplan that has `dummy-devices`. |
+| `BRIDGE_NOT_APPLIED` | The uplink is not a bridge, yet netplan's configuration defines `br0` holding its definition, and the uplink is not `br0`'s port: the configuration is not live, as a bridge step cut short after its switch leaves it (see [The bridge](#the-bridge)) | Bring it up with `netplan apply`, and setup uses it; or put back the original kept under `/var/lib/wisp/network-before-bridge`. |
 | `NETPLAN_NO_DEFINITION` | netplan has no definition for the uplink | Define the uplink in a file of your own under `/etc/netplan`. |
 | `NETPLAN_OUTSIDE_ETC` | netplan reads the uplink's definition from a file outside `/etc/netplan` (`/lib/netplan`, `/run/netplan`) | Define the uplink in a file of your own under `/etc/netplan`. |
 | `NETPLAN_LINK_FILE` | That file is a symbolic link, which the step would replace with a file | Make it the file itself. |
@@ -53,11 +54,7 @@ When a refusal comes:
 | `NETPLAN_DROPINS` | systemd-networkd runs the uplink from netplan's unit with drop-ins (`<unit>.d/*.conf`) | Put their settings in the netplan definition. |
 | `NETPLAN_NO_BRIDGE_UNIT` | On a DUID identity, netplan renders no `10-netplan-br0.network` for the drop-in that keeps it | Make the bridge with netplan. |
 | `NETWORKD_SECOND_FILE` | Another `.network` file, beside the one netplan renders, could take the uplink (settled 2026-11-19: exactly one definition, before as well as after). systemd-networkd runs a link from the first file by name that matches it, so a file whose name sorts after netplan's never takes it (an initrd's `zzzz-` catch-all) | Make it match only other interfaces, or remove it. |
-| `JOURNAL_CHANGED` | A bridge step that did not finish left a journal whose files were changed since by someone else | Put each back as the step wrote it or as it was (the journal's `files/` holds the originals), or remove the journal once the network is as wanted. |
-| `JOURNAL_NOT_SETUPS` | A journal setup did not write | Put the network as wanted, and remove the journal. |
-| `JOURNAL_OTHER_RELEASE` | A journal, or a committed one whose originals are still to be kept, written by another release of Wisp: its format version is not this setup's | Run that release's setup; or recover at the console as that release's DEPLOYMENT.md says (The bridge, when an undo does not complete). For a committed one, keep its originals as that release's DEPLOYMENT.md says (The bridge, the originals are kept), and remove it. |
-| `JOURNAL_UNREADABLE` | A file the journal records cannot be read | Make it readable. |
-| `NETWORK_CHANGED_SINCE_ASKED` | The install's own plan, made again under the lock, would make another bridge — on another uplink or address — than the operator confirmed. Found by the install before it changes anything, or, when the network changes in between, by setup after its bridge-journal step (which it says it ran). | Run the install again. |
+| `NETWORK_CHANGED_SINCE_ASKED` | The install's own plan, made again under the lock, would make another bridge — on another uplink or address — than the operator confirmed. Found by the install before it changes anything, or, when the network changes in between, by setup after its network plan, before any other step. | Run the install again. |
 | `NETWORK_CHANGED_SINCE_PLAN` | Something changed what the plan read — the default route, the uplink's addresses, hardware address or MTU, cloud-init's configuration, netplan's files (the container DNS stub's own aside, which setup writes in between), another definition that could take the uplink — while setup ran. | Run setup again. |
 
 ## Install
@@ -93,7 +90,6 @@ Then the install works to the end unattended, in a process of its own that ignor
 4. It starts Wisp, waiting until it is ready.
 
 - **The install has no rollback.** When setup fails, it says so, and that Wisp is stopped with the new tree in place, and to run the install again.
-- Declined while an earlier bridge step's journal is there, it also says that step's unfinished changes are still in place.
 - **The log.** The install writes to `/tmp/wisp-install.<id>.log`, which the installer follows: removed when the install succeeds, kept and named when it fails. A dropped connection or Ctrl-C stops only the following.
 
 One install, update or setup runs at a time: each takes `/run/wisp.lock` for its whole run.
@@ -108,12 +104,12 @@ The one list of steps the install and every update run, by path from the install
 
 - Every step checks first and changes only what is missing: a second run reports every step in place, starts no package manager and changes no file it owns.
 - A step that fails stops the run with a non-zero exit and its name.
-- The first two steps change nothing of their own: `bridge-journal` decides on a journal an earlier bridge step left (below), and `network-plan` works out the plan and makes the refusals above.
+- The first step, `network-plan`, changes nothing: it works out the plan and makes the refusals above.
 
 **A stop** (TERM, INT) (settled 2026-11-19: each layer owns its bound, and the step stops itself; this replaced setup's TERM to the step's whole session):
 
 - It goes to the running step alone, which knows what of its work may be cut short: it stops what it runs and ends.
-- A section that must finish runs to its end first, each tool in it under its own bound: the bridge step's apply call in flight and its undo; the bridge-journal step's commit or undo.
+- A section that must finish runs to its end first, each tool in it under its own bound: the bridge step's apply call in flight, and its undo.
 - Setup waits until the step's session is empty, kills what is left of it at its step stop bound, and ends. So setup ends within its own stop bound of a stop, whoever sent it.
 - So that a stop is acted on at once, a step runs nothing in the foreground that can outlast a network call's bound: apt, dpkg, npm, downloads, applies and service starts run in the background and are waited for, and those that show progress are stopped after a time without it.
 - The steps run without the install lock's descriptor: setup holds the lock, and nothing a step starts can.
@@ -136,14 +132,9 @@ Afterwards the host has:
 
 **The container DNS stub** (`wisp-dns0`, `169.254.53.53/32`) is a netplan definition in a file of Wisp's own, `/etc/netplan/90-wisp-dns0.yaml`, so it exists at every boot before Wisp starts, with nothing of Wisp's creating it; `wisp.service` has no `ExecStartPre` (settled 2026-11-20).
 
-- The network plan renders the file and has netplan check it in a staged copy of netplan's directories, beside the bridge's edits when it makes the bridge, before anything changes (`NETPLAN_DNS_STUB`); the step installs what was checked (settled 2026-11-20).
-- The step runs `netplan generate` when it writes the file, takes the former files back, or finds the device missing; never `netplan apply`.
-- What it then does is decided from the host, so a run cut short is finished by the next (settled 2026-11-20). The stub's settings are its address set, read from the kernel: `169.254.53.53/32` alone, no IPv6 address, no link-local one.
-  - The device missing: systemd-networkd reloaded. This is the one reload: it reconfigures every link netplan renders, the bridge's DHCP lease dropped and taken again among it (observed on systemd 255).
-  - Run from netplan's unit (`10-netplan-wisp-dns0.network`) without its settings: `networkctl reconfigure wisp-dns0`.
-  - Run from another file (the former ones, deleted or not) with its settings: nothing more; systemd-networkd runs it from netplan's unit from its next reload or boot. Without them: reloaded.
-  - Each ends with the device holding its settings, waited for, or fails.
-- A host that holds its former declaration, systemd-networkd's own `10-wisp-dns0.netdev` and `.network` and their wait-online instance, has them taken back by the same step.
+- The plan renders the file and has netplan check it in a staged copy of netplan's directories, with the bridge's edits when it makes the bridge, before anything changes (`NETPLAN_DNS_STUB`). The step installs what was checked, and runs `netplan generate` when the file is new or changed, the former files go, or the device is missing; never `netplan apply`.
+- The step decides from the host what brings the device to its settings, `169.254.53.53/32` alone as the kernel holds it, so a run cut short is finished by the next (settled 2026-11-20). A missing device gets a reload of systemd-networkd, the only one, as it reconfigures every link netplan renders, the bridge's DHCP lease dropped and taken again among it (observed on systemd 255). One netplan's unit runs without its settings gets `networkctl reconfigure wisp-dns0`. One another file runs (the former ones, deleted or not) keeps running with its settings, and gets a reload without them. Each ends holding them, or fails.
+- The former declaration, systemd-networkd's own `10-wisp-dns0.netdev` and `.network` and their wait-online instance, is taken back by the same step.
 
 [CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns).
 
@@ -183,52 +174,40 @@ Afterwards the host has:
 - A lease whose record or `CLIENTID=` is missing is refused (`DHCP_LEASE_RECORD`).
 - Rejected: raising the floor to systemd 257, which drops Ubuntu 24.04; parsing `networkctl status`'s text, which is no more an interface than the record.
 
-**Checked before, verified after, undone on failure.** The step's check, within 90 s after the apply:
+**Checked before, verified after, undone on failure.** Every change leaves a network that boots, old or new. The step's check, within 90 s after the apply:
 
 - The bridge must hold the uplink's hardware address, IPv4 addresses and default route; on DHCP also its client identifier and name servers; on a static address all its routes, name servers and search domains. Name servers and search domains are compared when systemd-resolved runs, which holds them.
 - The uplink must hold none of it.
 - systemd-networkd must run each from the unit netplan renders for it.
 
-Only a failed check undoes the bridge.
+Only a failed check undoes the bridge, and so does a stop.
 
-**The container DNS stub is waited for after the commit** (settled 2026-11-20: the stub is no part of the bridge's check).
+**The original is kept before the first change** (settled 2026-11-20).
 
-- From the commit, the step waits up to 30 s for the stub to hold its address, as the backend's start follows the step: an apply can drop it for a while (observed with netplan's on Debian 13: about 6 s).
+- The operator's netplan file the plan edits is copied into a directory of its own under `/var/lib/wisp/network-before-bridge`, named by the step's UTC time, the file under its own path in it (`<time>/etc/netplan/<file>`). The directory is made under a hidden name and renamed into place, so none is ever seen half made; the step says where. When it cannot be kept, the step changes nothing.
+- After a bridge that passed its check, it stays. After an undo, it goes.
+
+**The undo**, on a failed apply or check, or a stop, never cut short: the kept original put back by one rename, the DUID drop-in removed (and its directory, when the step made it), `ip link delete br0`, `netplan apply`, then the wait for the uplink to hold what it held before. The step fails saying whether it does. When the undo does not complete, the kept original stays, and the message names it.
+
+**The container DNS stub is waited for after the check** (settled 2026-11-20: the stub is no part of the bridge's check).
+
+- From the check that passed, the step waits up to 30 s for the stub to hold its address, as the backend's start follows the step: an apply can drop it for a while (observed with netplan's on Debian 13: about 6 s).
 - When it does not, the step fails saying that the bridge is in place and kept and what brings the stub back (`networkctl reconfigure wisp-dns0`), and undoes nothing.
-- A later run's bridge-journal step that finds a step finished commits it whatever the stub holds.
 
-**The journal.** Every step of the apply and of its undo leaves a network that boots, old or new.
+**A step that died** (a power cut, a kill) is not recovered (settled 2026-11-20). The next run plans from the host as it finds it:
 
-- Before its first change the bridge step puts the plan and the check's reference (what the uplink held) in a journal, `/var/lib/wisp/bridge-journal`, and records each change there before making it, synced.
-- If the check fails or the step is stopped, it marks the journal as undoing, undoes from it, in reverse, and fails saying so. It says whether the uplink then holds what it held before, as checked against the check's reference.
-- A last entry cut short (a power loss, a full disk) is a change that never happened. The journal's `version` file, written first and absent or whole, is the one thing every release's journal shares, and it is read first (settled 2026-11-20): a version that is another release's is refused (`JOURNAL_OTHER_RELEASE`) whether or not the directory holds a journal file; with this release's version, or with no version, and no journal file, the directory is a begin cut short and is dropped; a journal file with no version is not one setup wrote (`JOURNAL_NOT_SETUPS`).
-- The journal directory holds its format version, in a `version` file written first and synced: a setup that meets a version it does not know, as a rollback's older setup can after a newer bridge step, refuses the journal as another release's (`JOURNAL_OTHER_RELEASE`) rather than misread it, and one holding a journal but no version is not setup's (settled 2026-11-20).
-- When the installer finds a journal, it asks its question from the journal's record, and its work undoes or commits it first.
+- an uplink that is a bridge is used;
+- one that is not gets its bridge;
+- one that is not, while netplan's configuration already defines `br0` on it (the step died after its switch, before its apply), is refused (`BRIDGE_NOT_APPLIED`): setup applies nothing it did not check.
 
-**A step that died leaves the journal**, and setup's first step decides from it before anything else, changing nothing while it decides, in this order (settled 2026-11-19):
+A host left unreachable is fixed at the console, as root, from the newest directory under `/var/lib/wisp/network-before-bridge`:
 
-1. One whose files someone changed since is refused (see the table above).
-2. One whose undo had begun is undone again.
-3. One that changed nothing is dropped.
-4. One where every change of the apply is as the step made it and the bridge passes the step's own check now, waited for as in the step, is finished, and committed.
-5. Any other is undone.
+1. `cp -a /var/lib/wisp/network-before-bridge/<newest>/etc/netplan/<file> /etc/netplan/`
+2. `rm -f /etc/systemd/network/10-netplan-br0.network.d/50-wisp-dhcp-identity.conf`
+3. `ip link delete br0`
+4. `netplan apply`
 
-Rejected: deciding "finished" by the uplink's master alone, which committed a bridge whose check never ran.
-
-**When an undo does not complete** ("Undoing it did not complete: the journal stays in /var/lib/wisp/bridge-journal"), the network may be half the bridge's and half the old one's, and the host may be unreachable. At the console, as root:
-
-1. For each `file` line of `/var/lib/wisp/bridge-journal/journal`, in reverse, put back the original: kept as `files/<n>`, n the line's number, when the line says `yes`; remove the file when it says `no`.
-2. Remove each directory a `dir` line names, in reverse.
-3. Apply it: `ip link delete br0` and `netplan apply`.
-4. Remove `/var/lib/wisp/bridge-journal`.
-
-The next run of setup then finds the network as it was and makes the bridge again.
-
-**The originals are kept** (settled 2026-11-19).
-
-- What: the operator's network files the step was made from.
-- Where: a directory of their own per commit under `/var/lib/wisp/network-before-bridge`, named by the commit's time, each file named by its path. The step says where when it kept any.
-- They move there by renames, so a full disk cannot lose them. Until every one has moved, the committed journal stays as `/var/lib/wisp/bridge-journal.done`, and the next run of setup finishes the move.
+The next run of setup then makes the bridge again.
 
 **An update makes the bridge on a host that has none** — a host installed before setup made bridges — through the same step, from `wisp-updater.service`, so the update goes on while the address moves to the bridge, and completes and reports done.
 

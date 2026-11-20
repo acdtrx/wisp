@@ -8,7 +8,7 @@ NET_CMD_SEC=30     # a call that is not an apply
 NET_APPLY_SEC=90   # an apply, and the wait after it for the address or route
 NET_KILL_SEC=10    # what a call that ran past its bound gets to die after TERM
 NET_WAIT_SEC=30    # the wait for the DNS stub's address: in its step, and in the
-                   # bridge step after the commit (outside the stop bound: a
+                   # bridge step after its check (outside the stop bound: a
                    # stop ends that wait at once)
 
 # The most calls one read of an interface's state makes (net-state.sh,
@@ -18,11 +18,11 @@ NET_READ_CALLS=7
 # How long a stopped bridge step can take to end, worst case, every bound run
 # out (a call's bound is its limit and NET_KILL_SEC to die): the apply in
 # flight when the stop comes, `netplan apply`, which runs to its end; then the
-# undo (journal_restore): the bridge deleted, `netplan apply` again; then the
-# wait for the uplink to hold what it held before, and its last read; and
-# NET_LOCAL_SEC for the work that is no network call (the journal's reads and
-# syncs, install_file, python, the waits' one-second sleeps). The
-# bridge-journal step's commit or undo is shorter.
+# undo: the original back and the drop-in gone, the bridge deleted, `netplan
+# apply` again; then the wait for the uplink to hold what it held before, and
+# its last read; and NET_LOCAL_SEC for the work that is no network call
+# (install_file, python, the waits' one-second sleeps). A stop during the
+# check ends its read in flight at once.
 NET_LOCAL_SEC=30
 NET_CALL_BOUND=$(( NET_CMD_SEC + NET_KILL_SEC ))
 NET_APPLY_BOUND=$(( NET_APPLY_SEC + NET_KILL_SEC ))

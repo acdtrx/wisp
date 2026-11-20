@@ -44,7 +44,7 @@ if [[ "${1:-}" == --work ]]; then
 
   # Before any change: the plan made again from the tree to install, under the
   # lock this process holds (fd 8), as the operator was asked it.
-  "$SETUP_SRC/network-plan.sh" "$NET_PLAN_DIR" --ask 8>&-
+  "$SETUP_SRC/network-plan.sh" "$NET_PLAN_DIR" 8>&-
   plan_record_read "$NET_PLAN_DIR/plan"
   if [[ "$(plan_confirmation)" != "$WISP_CONFIRMED_BRIDGE" ]]; then
     planned="$(plan_confirmation)"
@@ -168,8 +168,8 @@ echo ""
 
 # shellcheck source=setup/distro.sh
 source "$SETUP_SRC/distro.sh"
-# shellcheck source=setup/bridge-journal.sh
-source "$SETUP_SRC/bridge-journal.sh"
+# shellcheck source=setup/plan-record.sh
+source "$SETUP_SRC/plan-record.sh"
 # shellcheck source=setup/install-state.sh
 source "$SETUP_SRC/install-state.sh"
 
@@ -178,21 +178,14 @@ trap 'rm -rf ${NET_PLAN_DIR:+"$NET_PLAN_DIR"} ${WISP_INSTALL_ANSWERS:+"$WISP_INS
 NET_PLAN_DIR="$(mktemp -d -t wisp-net-plan.XXXXXX)"
 WISP_INSTALL_ANSWERS="$(mktemp -d -t wisp-install-answers.XXXXXX)"
 export WISP_INSTALL_ANSWERS
-# The asking phase changes nothing: the plan only classifies a journal an
-# earlier bridge step left (--ask).
-# It runs without the lock's descriptor: nothing it leaves after a Ctrl-C
-# holds the lock.
-# Nor with stdin: with no terminal it holds the password's line, unread yet.
-"$SETUP_SRC/network-plan.sh" "$NET_PLAN_DIR" --ask 8>&- </dev/null
+# The plan changes nothing. It runs without the lock's descriptor: nothing it
+# leaves after a Ctrl-C holds the lock. Nor with stdin: with no terminal it
+# holds the password's line, unread yet.
+"$SETUP_SRC/network-plan.sh" "$NET_PLAN_DIR" 8>&- </dev/null
 plan_record_read "$NET_PLAN_DIR/plan"
 
 TERMINAL=0
 [[ -t 0 ]] && TERMINAL=1
-
-case "${NET_PLAN_JOURNAL:-}" in
-  restore) echo "A bridge step that did not finish left its journal in $JOURNAL_DIR: the install undoes it first."; echo "" ;;
-  finished) echo "A bridge step that did not record its end had finished: the install records it."; echo "" ;;
-esac
 
 if ! has_server_name "$INSTALL_DIR"; then
   DEFAULT_NAME="$(hostname)"
@@ -229,9 +222,6 @@ if [[ "$BRIDGE_CREATE" == yes ]]; then
     read -r -p "Create $BRIDGE on $UPLINK ($UPLINK_ADDR), keeping its address? The connection may pause while it is applied. [Y/n] " ans || ans=n
     if [[ "${ans:-Y}" =~ ^[nN] ]]; then
       echo "Wisp needs a bridge: make one on $UPLINK with netplan, or let setup make it. Nothing was changed."
-      if [[ "${NET_PLAN_JOURNAL:-}" == restore ]]; then
-        echo "An earlier bridge step's unfinished changes are still in place (its journal is $JOURNAL_DIR): the next install or setup undoes them first."
-      fi
       exit 1
     fi
   else

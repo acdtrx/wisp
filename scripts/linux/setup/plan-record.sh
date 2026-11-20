@@ -1,8 +1,7 @@
 # Sourced by setup, its network steps and the installer; do not execute it.
 # The network plan's record: what network-plan.sh found, one `KEY<TAB>value`
-# line each, in the plan's directory (NET_PLAN_DIR/plan). The bridge step
-# applies from it, and copies it into its journal before its first change, as
-# the reference its check compares against. Data: read, never sourced.
+# line each, in the plan's directory (NET_PLAN_DIR/plan). The steps after the
+# plan, the bridge step among them, work from it. Data: read, never sourced.
 #
 #   UPLINK            the default route's interface
 #   UPLINK_ADDR       its IPv4 address with prefix
@@ -21,23 +20,21 @@
 #   UPLINK_PERMADDR   the uplink's permanent hardware address, when it differs
 #                     from UPLINK_MAC
 #   HOST_KVM          yes when the host can run VMs (/dev/kvm), else no
-#   NET_PLAN_JOURNAL  network-plan.sh --ask: what an earlier bridge step's
-#                     journal was found to be (bridge-journal.sh)
 # Beside it in the plan's directory: the container DNS stub's netplan file
 # (container-dns-plan.sh, DNS_STUB_PLANNED); and when the bridge is to be made,
 # uplink.state (what the uplink holds, net-state.sh), sources (what the plan
 # read), and the bridge's files (bridge-plan.sh, plan_bridge).
 PLAN_RECORD_VARS=(UPLINK UPLINK_ADDR BRIDGE BRIDGE_CREATE UPLINK_MAC UPLINK_MTU UPLINK_MODE UPLINK_NETFILE
-  UPLINK_CLIENT_ID UPLINK_NETPLAN_ID NETPLAN_ORIGIN UPLINK_PERMADDR HOST_KVM NET_PLAN_JOURNAL)
+  UPLINK_CLIENT_ID UPLINK_NETPLAN_ID NETPLAN_ORIGIN UPLINK_PERMADDR HOST_KVM)
 
-# plan_record_write <file>: the record of the variables set now, synced.
+# plan_record_write <file>: the record of the variables set now.
 plan_record_write() {
   local v
   for v in "${PLAN_RECORD_VARS[@]}"; do
     [[ -n "${!v:-}" ]] || continue
     [[ "${!v}" != *[$'\t\n']* ]] || { echo "ERROR: $v holds a tab or a line break: '${!v}'" >&2; return 1; }
     printf '%s\t%s\n' "$v" "${!v}" || return 1
-  done > "$1" && sync "$1"
+  done > "$1"
 }
 
 # plan_record_read <file>: the record's variables set (and every other one of
