@@ -254,6 +254,13 @@ wiping cloud-init.
 module's hook (found 2026-11-12). **Revisit trigger:** the response and the badge are
 seen disagreeing again, or the next change to any of the three.
 
+**A run log that cannot be read answers `CONTAINERD_ERROR`.** containerManager's log
+reads (`containerManagerLogs.js`, four sites) code a file read failure on the run log
+(`EACCES`, `EIO`) as `CONTAINERD_ERROR`, a containerd fault it is not (seen on tini,
+2026-11-20, through MCP `get_container_logs` and the logs stream). The run-log download
+route lets the same failure through uncoded, as `INTERNAL_ERROR`: one failure, two codes.
+**Revisit trigger:** phase 5's work on containerManager, or a client that branches on it.
+
 **Specs that disagree with the code, found in the error sweep.** Three statements in the
 specs no longer match what the routes do (found 2026-11-20, while naming each error's
 code): API-VMS says a VLAN on a bridge NIC is refused with 422, but no VM code refuses it
