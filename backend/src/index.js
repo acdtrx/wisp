@@ -8,7 +8,7 @@ import { buildApp } from './app.js';
 import { routeSchemaProblems, routeSchemaSummary } from './routes/schemas.js';
 import { checkRouteAccess, AUTH_LEVELS, checkPasswordFile } from './lib/auth.js';
 import { createAppError } from './lib/appErrors.js';
-import { getConfigSync } from './lib/config.js';
+import { configPathOverrideProblem, getConfigSync, isInstalledTree } from './lib/config.js';
 import { configureManagers, connectManagers, disconnectManagers } from './lib/managerBootstrap.js';
 import { checkRuntimeEnvFile } from './lib/loadRuntimeEnv.js';
 import { migrateState } from './lib/stateMigrations.js';
@@ -114,6 +114,15 @@ function printRouteAccessReport(routes) {
 }
 
 /**
+ * WISP_CONFIG_PATH is for development and tests: an installed Wisp refuses it
+ * before the migrations, which read and write beside the config file.
+ */
+function checkConfigLocation() {
+  const problem = configPathOverrideProblem({ installed: isInstalledTree(), env: process.env });
+  if (problem) throw createAppError('CONFIG_PATH_NOT_ALLOWED', problem);
+}
+
+/**
  * The checks stored state must pass once the migrations have run (CODING-RULES
  * §4): runtime.env strictly, retired keys included; wisp-config.json through
  * the strict schema; the password file; WISP_DEFAULT_BRIDGE naming a host
@@ -148,6 +157,7 @@ async function main() {
     process.exit(printRouteAccessReport(routeAccess.list()));
   }
 
+  checkConfigLocation();
   await migrateState(log);
   await checkStoredConfig();
   // Before any route registers or any manager-internal code runs
@@ -275,7 +285,7 @@ process.on('uncaughtException', (err) => exitOnFatal('Uncaught exception', err))
 
 /** The start's own expected failures: one line naming the problem. */
 const START_FAILURE_CODES = new Set([
-  'RUNTIME_ENV_INVALID', 'CONFIG_INVALID', 'PASSWORD_FILE_UNREADABLE', 'PASSWORD_FILE_UNSUPPORTED_FORMAT',
+  'RUNTIME_ENV_INVALID', 'CONFIG_PATH_NOT_ALLOWED', 'CONFIG_INVALID', 'PASSWORD_FILE_UNREADABLE', 'PASSWORD_FILE_UNSUPPORTED_FORMAT',
   'DEFAULT_BRIDGE_INVALID', 'MIGRATION_SETUP', 'MIGRATION_FAILED', 'SYSTEMD_NOTIFY_FAILED',
   'DNS_FORWARDER_UNAVAILABLE',
 ]);

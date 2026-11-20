@@ -343,6 +343,7 @@ before the port opens.
 | `SMART_INVALID_JSON` | — | The same |
 | `SMART_NOT_INSTALLED` | — | The same |
 | `RUNTIME_ENV_INVALID` | — | The start: `config/runtime.env` fails its strict read |
+| `CONFIG_PATH_NOT_ALLOWED` | — | The start: an installed Wisp is given `WISP_CONFIG_PATH`, which is for development and tests ([CONFIGURATION.md → Password Storage](CONFIGURATION.md#password-storage)) |
 | `DEFAULT_BRIDGE_INVALID` | — | The start: `WISP_DEFAULT_BRIDGE` names no host bridge |
 | `MIGRATION_SETUP` | — | The start: a state migration file is malformed |
 | `MIGRATION_FAILED` | — | The start: a state migration failed |

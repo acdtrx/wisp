@@ -4,15 +4,41 @@
  * Both parse through configSchema.js, strictly: an invalid file throws CONFIG_INVALID
  * naming the key, here and at the startup read that gates boot (index.js).
  */
-import { readFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { defaultConfig, parseWispConfigText } from './configSchema.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const CONFIG_PATH = process.env.WISP_CONFIG_PATH || resolve(__dirname, '../../../config/wisp-config.json');
+const PROJECT_ROOT = resolve(__dirname, '../../..');
+const INSTALL_CONFIG_DIR = join(PROJECT_ROOT, 'config');
+
+const CONFIG_PATH = process.env.WISP_CONFIG_PATH || join(INSTALL_CONFIG_DIR, 'wisp-config.json');
+
+/**
+ * Whether this tree is an installed Wisp: it carries the RELEASE file that
+ * scripts/stage-release.sh writes into every tree it stages, which the
+ * installer and the updater install from and a git checkout never has.
+ */
+export function isInstalledTree(root = PROJECT_ROOT) {
+  return existsSync(join(root, 'RELEASE'));
+}
+
+/**
+ * Why the start must refuse `env`'s WISP_CONFIG_PATH, or null. The key is for
+ * development and tests: an installed Wisp keeps its configuration in its own
+ * config/, which the updater snapshots and restores on rollback
+ * (docs/specs/CONFIGURATION.md → Password Storage). An empty value is unset.
+ */
+export function configPathOverrideProblem({ installed, env, configDir = INSTALL_CONFIG_DIR }) {
+  const value = env.WISP_CONFIG_PATH;
+  if (!installed || value === undefined || value === '') return null;
+  return `WISP_CONFIG_PATH is set (${value}), but it is for development and tests: an installed Wisp `
+    + `keeps its configuration in ${configDir}/. Remove the key from ${join(configDir, 'runtime.env')} `
+    + 'or from the environment that starts Wisp';
+}
 
 /**
  * Read config synchronously. A missing file means defaults; an unreadable or
