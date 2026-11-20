@@ -4,7 +4,6 @@
 # applies from it, and copies it into its journal before its first change, as
 # the reference its check compares against. Data: read, never sourced.
 #
-#   NET_TOOL          netplan | networkd | networkmanager
 #   UPLINK            the default route's interface
 #   UPLINK_ADDR       its IPv4 address with prefix
 #   BRIDGE            the bridge Wisp uses
@@ -13,30 +12,22 @@
 #   UPLINK_MAC        the uplink's hardware address, which the bridge takes
 #   UPLINK_MTU        the uplink's MTU, which the bridge's definition sets
 #   UPLINK_MODE       dhcp (DHCPv4, with or without static addresses) | static
-#   UPLINK_NETFILE    netplan, networkd: the file systemd-networkd runs the uplink from
+#   UPLINK_NETFILE    the unit netplan renders for the uplink, which
+#                     systemd-networkd runs it from
 #   UPLINK_CLIENT_ID  on DHCP, its DHCPv4 client identifier (hex bytes,
 #                     colon-separated), which the bridge sends too
-#   UPLINK_NETPLAN_ID     netplan: the uplink's definition id
-#   NETPLAN_ORIGIN        netplan: the file that defines it
-#   NETWORKD_PORT_FILE    networkd: the uplink's own file under /etc (in place,
-#                         or overriding a vendor file), which becomes the port's
-#   UPLINK_CONNECTION     networkmanager: the uplink's connection (UUID), which
-#                         the bridge step deletes last
-#   UPLINK_PERMADDR       the uplink's permanent hardware address, when it
-#                         differs from UPLINK_MAC
-#   NM_PROFILE_FILE       networkmanager: the file that stores it, when it is
-#                         stored (kept as the original)
-#   NM_BRIDGE_UUID, NM_PORT_UUID, NM_BRIDGE_FILE, NM_PORT_FILE
-#                         networkmanager: the connections to add, and their keyfiles
+#   UPLINK_NETPLAN_ID the uplink's netplan definition id
+#   NETPLAN_ORIGIN    the operator's file that defines it, which the step edits
+#   UPLINK_PERMADDR   the uplink's permanent hardware address, when it differs
+#                     from UPLINK_MAC
 #   HOST_KVM          yes when the host can run VMs (/dev/kvm), else no
 #   NET_PLAN_JOURNAL  network-plan.sh --ask: what an earlier bridge step's
 #                     journal was found to be (bridge-journal.sh)
 # Beside it in the plan's directory, when the bridge is to be made: uplink.state
 # (what the uplink holds, net-state.sh), sources (what the plan read), and the
-# tool's files for the bridge (net-<tool>.sh).
-PLAN_RECORD_VARS=(NET_TOOL UPLINK UPLINK_ADDR BRIDGE BRIDGE_CREATE UPLINK_MAC UPLINK_MTU UPLINK_MODE
-  UPLINK_NETFILE UPLINK_CLIENT_ID UPLINK_NETPLAN_ID NETPLAN_ORIGIN NETWORKD_PORT_FILE UPLINK_CONNECTION
-  UPLINK_PERMADDR NM_PROFILE_FILE NM_BRIDGE_UUID NM_PORT_UUID NM_BRIDGE_FILE NM_PORT_FILE HOST_KVM NET_PLAN_JOURNAL)
+# bridge's files (bridge-plan.sh, plan_bridge).
+PLAN_RECORD_VARS=(UPLINK UPLINK_ADDR BRIDGE BRIDGE_CREATE UPLINK_MAC UPLINK_MTU UPLINK_MODE UPLINK_NETFILE
+  UPLINK_CLIENT_ID UPLINK_NETPLAN_ID NETPLAN_ORIGIN UPLINK_PERMADDR HOST_KVM NET_PLAN_JOURNAL)
 
 # plan_record_write <file>: the record of the variables set now, synced.
 plan_record_write() {
@@ -61,17 +52,17 @@ plan_record_read() {
       *) echo "ERROR: $1, line $n: not a network plan" >&2; return 1 ;;
     esac
   done < "$1"
-  [[ -n "${NET_TOOL:-}" && -n "${UPLINK:-}" && -n "${BRIDGE:-}" && -n "${BRIDGE_CREATE:-}" ]] \
+  [[ -n "${UPLINK:-}" && -n "${BRIDGE:-}" && -n "${BRIDGE_CREATE:-}" ]] \
     || { echo "ERROR: $1 is not a complete network plan" >&2; return 1; }
 }
 
 # plan_confirmation: what the installer asks the operator to confirm, from the
-# record read: "<bridge> on <uplink> (<address>), through <tool>", or "none"
+# record read: "<bridge> on <uplink> (<address>)", or "none"
 # when no bridge is to be made. Setup's plan must say the same, or it changes
 # nothing more.
 plan_confirmation() {
   if [[ "$BRIDGE_CREATE" == yes ]]; then
-    printf '%s on %s (%s), through %s' "$BRIDGE" "$UPLINK" "$UPLINK_ADDR" "$NET_TOOL"
+    printf '%s on %s (%s)' "$BRIDGE" "$UPLINK" "$UPLINK_ADDR"
   else
     printf none
   fi

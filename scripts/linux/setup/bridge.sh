@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Setup step, the last: the bridge Wisp's VMs and containers join. When the
 # uplink already is a bridge there is nothing to do; otherwise `br0`, worked out
-# and checked by network-plan.sh in this run, goes live through the tool that
-# runs the uplink — netplan, systemd-networkd or NetworkManager — in as few
-# steps as the tool allows, each one leaving a network that boots, old or new.
-# Run as root.
+# and checked by network-plan.sh in this run, goes live through netplan: for a
+# DUID identity, networkd's drop-in on netplan's unit for the bridge first
+# (harmless while no bridge exists), then the operator's file as the plan edited
+# and checked it, in one rename — the switch — and `netplan apply`. Each change
+# leaves a network that boots, old or new. Run as root.
 #
 # The bridge keeps the host's address: it takes the uplink's hardware address
 # and its whole layer 3, static or DHCP, with its DHCP identity, so the DHCP
@@ -57,6 +58,18 @@ put_file() {
   changed "$1"
 }
 
+# apply_bridge: the bridge's files in place, then netplan applies them.
+apply_bridge() {
+  local dropin_dir=/etc/systemd/network/10-netplan-$BRIDGE.network.d
+  if [[ -s "$NET_PLAN_DIR/50-wisp-dhcp-identity.conf" ]]; then
+    journal_dir "$dropin_dir" || { WHY="cannot make $dropin_dir"; return 1; }
+    put_file "$dropin_dir/50-wisp-dhcp-identity.conf" "$NET_PLAN_DIR/50-wisp-dhcp-identity.conf" 0644 || return 1
+  fi
+  put_file "$NETPLAN_ORIGIN" "$NET_PLAN_DIR/netplan-origin.yaml" 0600 || return 1
+  apply_notice
+  net_apply netplan apply
+}
+
 # undo: from the journal, inside a section that must finish; the step fails
 # either way, saying what was checked.
 undo() {
@@ -90,19 +103,16 @@ journal_begin "$NET_PLAN_DIR" || fail "cannot start the journal in $JOURNAL_DIR"
 STEP_ON_STOP=undo_stopped
 step_hold
 applied=0
-"apply_$NET_TOOL" && applied=1
+apply_bridge && applied=1
 step_release
 if (( applied )) && bridge_check "$NET_PLAN_DIR"; then
   # From the check that passed to the commit, a stop waits.
   step_hold
-  if ! "finish_$NET_TOOL"; then
-    undo
-  fi
   journal_commit || fail "$BRIDGE is up, but the journal could not be committed; the next run of setup decides from it first"
   STEP_ON_STOP=""
   changed "$BRIDGE created on $UPLINK"
-  # What the check compared: name servers and search domains only where the
-  # tool holds them (net-state.sh, l3_state).
+  # What the check compared: name servers and search domains only where
+  # systemd-resolved holds them (net-state.sh, l3_state).
   held="$(facts_of < "$NET_PLAN_DIR/uplink.state" | awk '{ print $1 }' | sort -u | tr '\n' ' ')"
   extra=""
   [[ " $held" != *" dns "* ]] || extra+=", name servers"
@@ -116,14 +126,8 @@ if (( applied )) && bridge_check "$NET_PLAN_DIR"; then
   step_done
   # A stop that waited for the commit ends the step now, its work done.
   step_release
-  if ! stub_back; then
-    case "$NET_TOOL" in
-      networkmanager) how="nmcli connection up $DNS_STUB_IFACE" ;;
-      *) how="networkctl reconfigure $DNS_STUB_IFACE" ;;
-    esac
-    fail "$BRIDGE is in place on $UPLINK and kept, but the container DNS stub $DNS_STUB_IFACE did not hold ${DNS_STUB_IP}/32 in the ${NET_WAIT_SEC} s waited after the bridge was committed: bring it back ($how), and run this again."
-  fi
+  stub_back || fail "$BRIDGE is in place on $UPLINK and kept, but the container DNS stub $DNS_STUB_IFACE did not hold ${DNS_STUB_IP}/32 in the ${NET_WAIT_SEC} s waited after the bridge was committed: bring it back (networkctl reconfigure $DNS_STUB_IFACE), and run this again."
   exit 0
 fi
-WHY="${WHY:-the $NET_TOOL apply failed}"
+WHY="${WHY:-netplan apply failed}"
 undo

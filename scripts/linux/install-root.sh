@@ -228,7 +228,7 @@ if [[ "$BRIDGE_CREATE" == yes ]]; then
     echo "Wisp's VMs and containers join the network through a bridge, and this host has none on its uplink."
     read -r -p "Create $BRIDGE on $UPLINK ($UPLINK_ADDR), keeping its address? The connection may pause while it is applied. [Y/n] " ans || ans=n
     if [[ "${ans:-Y}" =~ ^[nN] ]]; then
-      echo "Wisp needs a bridge: make one on $UPLINK with the host's network tool, or let setup make it. Nothing was changed."
+      echo "Wisp needs a bridge: make one on $UPLINK with netplan, or let setup make it. Nothing was changed."
       if [[ "${NET_PLAN_JOURNAL:-}" == restore ]]; then
         echo "An earlier bridge step's unfinished changes are still in place (its journal is $JOURNAL_DIR): the next install or setup undoes them first."
       fi

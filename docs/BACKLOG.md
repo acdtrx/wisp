@@ -381,14 +381,6 @@ containers on a Mac.
 whose install is lost is set up again by hand. **Revisit trigger:** a host's configuration
 is lost, or has to be rebuilt by hand.
 
-**Wisp does not re-attach workload ports a network tool dropped.** Re-activating an active
-NetworkManager bridge (`nmcli connection up br0`) detaches every port NetworkManager did
-not make: each container's veth and each VM's tap leave the bridge, and those workloads
-stay off the network until they are restarted (observed 2026-11-18 on an approximated
-NetworkManager host; `nmcli device reapply` and a NetworkManager restart keep them). Setup
-never re-activates a bridge that exists. **Revisit trigger:** a workload found off its
-bridge after the host's network was re-applied.
-
 **`cni-dhcp` keeps running the old plugin binary after a CNI plugin upgrade.** The CNI step
 replaces `/opt/cni/bin` but leaves `cni-dhcp.service` running: restarting it would forget
 the leases of the running containers, which would then not be renewed. The old daemon
@@ -435,23 +427,12 @@ report the capability (the host's API) and the UI show it where VMs are created 
 started. **Revisit trigger:** the first install on a host without KVM, or a user
 puzzled by a VM that will not start there.
 
-**VLAN bridges are netplan's only, and other hosts get no clean "unavailable".**
-`wisp-bridge` (Host Mgmt's VLAN bridges, `lib/networking/linux/managedBridges.js`)
-writes `/etc/netplan/91-wisp-vlan__*.yaml` (a VLAN with `link:` the parent bridge, no
-`renderer:`) and runs `netplan apply`; the backend offers every bridge with a non-VLAN
-member as a parent whatever tool runs the host. Read, not run (2026-11-20): on a
-systemd-networkd host and a Debian NetworkManager host (no netplan) the create fails with
-`NETWORK_BRIDGE_APPLY_FAILED`, detail "netplan is required"; on Ubuntu with
-NetworkManager (netplan installed, renderer NetworkManager) Wisp's `br0` is a keyfile,
-not a netplan definition, so netplan should reject the `link:` (an undefined interface)
-and `netplan apply` fail — leaving the file behind (the helper removes nothing on a
-failure), which then fails every later `netplan generate`, the boot's included, so the
-connections Ubuntu stores as `90-NM-*.yaml` (the `wisp-dns0` stub among them) are not
-rendered, until the bridge is deleted in the UI. The backend should report the feature
-unavailable off netplan-run hosts (or the helper make the VLAN through the host's tool),
-and the helper should take back its file when the apply fails. **Revisit trigger:** a
-VLAN bridge wanted on a NetworkManager or networkd host, or before the next release that
-ships setup's NetworkManager and networkd bridges.
+**A VLAN bridge whose `netplan apply` fails leaves its file behind.** `wisp-bridge` (Host
+Mgmt's VLAN bridges, `lib/networking/linux/managedBridges.js`) writes
+`/etc/netplan/91-wisp-vlan__*.yaml` and runs `netplan apply`; when the apply fails, the
+helper removes nothing, so the file stays and fails every later `netplan generate`, the
+boot's included, until the bridge is deleted in the UI. The helper should take back its file when the apply
+fails. **Revisit trigger:** a VLAN bridge create that fails at its apply.
 
 **The installer's follower can miss the install's last lines.** The work removes its
 log once the install succeeds, and the foreground follows it with `tail -f --pid`: once

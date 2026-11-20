@@ -34,23 +34,19 @@
 # in netplan is a third dead end: an `addresses:` entry alongside `dhcp4: true`
 # on a bridge sends networkd into a reconcile loop (docs/specs/CONTAINERS.md, Local DNS).
 #
-# Declared, not made: the interface and its address belong to the daemon that
-# runs this host's links — systemd-networkd, from two files of its own (also
-# where netplan renders to it), or NetworkManager, as a dummy connection. They
-# exist at every boot before the backend starts, with nothing of Wisp's
-# involved — wisp.service creates nothing. The address is part of the network
-# being online, which wisp.service is ordered after: on systemd-networkd an
-# instance of its own wait-online unit waits for wisp-dns0 (netplan limits the
-# plain wait-online to its own interfaces, so RequiredForOnline in the file
-# below would not reach it there); on NetworkManager it is a connection that
-# comes up by itself, and
-# NetworkManager's startup — what NetworkManager-wait-online waits for — ends
-# only once the devices it activates at startup are up.
+# Declared, not made: the interface and its address belong to systemd-networkd,
+# from two files of its own beside those netplan renders to it. They exist at
+# every boot before the backend starts, with nothing of Wisp's involved —
+# wisp.service creates nothing. The address is part of the network being
+# online, which wisp.service is ordered after: an instance of networkd's own
+# wait-online unit waits for wisp-dns0 (netplan limits the plain wait-online to
+# its own interfaces, so RequiredForOnline in the file below would not reach
+# it).
 #
 # Does not touch systemd-resolved.
 #
 # Must run as root.
-# Usage: container-dns.sh <netplan|networkd|networkmanager> <bridge>   (network-plan.sh's NET_TOOL and BRIDGE)
+# Usage: container-dns.sh <bridge>   (network-plan.sh's BRIDGE)
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -67,15 +63,10 @@ source "$SETUP_DIR/net-state.sh"
 # shellcheck source=container-dns-plan.sh
 source "$SETUP_DIR/container-dns-plan.sh"
 
-NET_TOOL="${1:-}"
-BRIDGE="${2:-}"
-case "$NET_TOOL" in
-  netplan | networkd | networkmanager) ;;
-  *) echo "Usage: $0 <netplan|networkd|networkmanager> <bridge>"; exit 1 ;;
-esac
-[[ -n "$BRIDGE" ]] || { echo "Usage: $0 <netplan|networkd|networkmanager> <bridge>"; exit 1; }
+BRIDGE="${1:-}"
+[[ -n "$BRIDGE" ]] || { echo "Usage: $0 <bridge>"; exit 1; }
 
-echo "--- Container DNS (stub IP + resolv.conf, through $NET_TOOL) ---"
+echo "--- Container DNS (stub IP + resolv.conf) ---"
 
 STUB_IP="$DNS_STUB_IP"
 STUB_IFACE="$DNS_STUB_IFACE"
@@ -162,48 +153,7 @@ EOF
   unit_on "systemd-networkd-wait-online@${STUB_IFACE}:degraded"
 }
 
-# NetworkManager: one dummy connection, connecting by itself.
-stub_networkmanager() {
-  local want have _has
-  local settings=(connection.interface-name "$STUB_IFACE" ipv4.method manual ipv4.addresses "${STUB_IP}/32"
-    ipv6.method disabled connection.autoconnect yes)
-  # Key by key, as nmcli prints them ("key:value"), sorted.
-  want="$(printf '%s\n' connection.autoconnect:yes connection.interface-name:"$STUB_IFACE" connection.type:dummy \
-    ipv4.addresses:"${STUB_IP}/32" ipv4.method:manual ipv6.method:disabled | sort)"
-  have=""
-  _has=0; nm_has "$STUB_IFACE" || _has=$?
-  case $_has in
-    0) ;;
-    1) have=none ;;
-    *) fail "NetworkManager cannot be asked about the connection $STUB_IFACE" ;;
-  esac
-  if [[ -z "$have" ]]; then
-    have="$(net_call nmcli -t -f connection.type,connection.interface-name,ipv4.method,ipv4.addresses,ipv6.method,connection.autoconnect \
-      connection show "$STUB_IFACE")" || fail "nmcli cannot read the connection $STUB_IFACE"
-    have="$(sort <<<"$have")"
-  fi
-  if [[ "$have" == none ]]; then
-    net_call nmcli connection add type dummy con-name "$STUB_IFACE" ifname "$STUB_IFACE" "${settings[@]}" >/dev/null \
-      || fail "NetworkManager refused the connection $STUB_IFACE"
-    changed "NetworkManager connection $STUB_IFACE (${STUB_IP}/32)"
-  elif [[ "$have" != "$want" ]]; then
-    net_call nmcli connection modify "$STUB_IFACE" "${settings[@]}" \
-      || fail "NetworkManager refused the settings of $STUB_IFACE"
-    changed "NetworkManager connection $STUB_IFACE set to ${STUB_IP}/32"
-    RELOAD=1
-  fi
-  if (( RELOAD )) || ! stub_up; then
-    step_run 0 timeout -k "$NET_KILL_SEC" "$(( NET_WAIT_SEC + NET_CMD_SEC ))" nmcli --wait "$NET_WAIT_SEC" connection up "$STUB_IFACE" >/dev/null \
-      || fail "NetworkManager did not bring up ${STUB_IFACE} within $NET_WAIT_SEC s"
-    stub_up || fail "${STUB_IFACE} has no ${STUB_IP} after NetworkManager brought it up"
-    changed "NetworkManager brought up ${STUB_IFACE} with ${STUB_IP}"
-  fi
-}
-
-case "$NET_TOOL" in
-  netplan | networkd) stub_networkd ;;
-  networkmanager) stub_networkmanager ;;
-esac
+stub_networkd
 
 # No copy of the stub IP on the bridge, where an earlier release held it: it
 # would answer alongside wisp-dns0 and can leave the bridge on a lone

@@ -6,7 +6,7 @@
  * code no script prints.
  *
  * A code in the scripts (scripts/linux/): the first argument of `refuse` or
- * `net_refuse` (scripts/linux/setup/lib.sh, net-uplink.sh), an `ERROR CODE:`
+ * `net_refuse` (scripts/linux/setup/lib.sh, bridge-plan.sh), an `ERROR CODE:`
  * written out, or the code a DHCP_ID_REFUSAL starts with. A code in the doc:
  * each code in backticks in the first cell of a table row.
  */

@@ -1,4 +1,4 @@
-# Sourced by the network plan (net-uplink.sh) and the container-dns step, as
+# Sourced by the network plan (bridge-plan.sh) and the container-dns step, as
 # root; do not execute it. The container DNS
 # stub's refusal, made before anything changes: Wisp's container DNS forwarder
 # binds port 53 on the stub address (container-dns.sh), and a backend that

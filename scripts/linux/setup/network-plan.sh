@@ -1,25 +1,13 @@
 #!/usr/bin/env bash
 # Setup's network plan, run as a step by setup and by the installer, as root.
-# Works out, changing nothing, how this host's network is run and which bridge
-# Wisp uses, and refuses a host setup cannot serve — before anything changes.
+# Works out, changing nothing, which bridge Wisp uses, and refuses a host setup
+# cannot serve — before anything changes (bridge-plan.sh says what is refused).
 #
 # A Wisp host needs a bridge: without one no VM or container has a network.
 # The bridge is the one carrying the uplink (the default route's interface), or
-# else `br0`, which the bridge step, setup's last change, creates on the uplink
-# through the tool that runs it, asked of the daemons: systemd-networkd from
-# netplan's files (netplan), systemd-networkd from its own files (networkd), or
-# NetworkManager. The stub interface is declared through it too.
-#
-# Setup makes the bridge only for the uplink shape it can do completely and
-# verify: a plain Ethernet interface, on DHCP or with a static address set
-# through the host's tool, with exactly one definition, its own (no wildcard or
-# multi-interface match, no second definition that could take it). Its whole
-# layer 3 moves to the bridge and leaves the interface, in the tool's own
-# files, edited through the tool; its link settings stay on it. Every other
-# shape, and every setting setup neither carries over nor keeps, is refused
-# here, naming what was found (each tool's file, net-<tool>.sh, says how). So is
-# a host none of the three tools runs, and another DNS server on the stub's
-# port 53.
+# else `br0`, which the bridge step, setup's last change, makes on the uplink
+# through netplan. Either way netplan must run the uplink. Another DNS server on
+# the container DNS stub's port 53 is refused too.
 #
 # Usage: network-plan.sh <plan-dir> [--ask]
 #   Writes the plan's record and the bridge's configuration, worked out and
@@ -45,13 +33,12 @@ NET_SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$NET_SETUP_DIR/step.sh"
 # shellcheck source=bridge-journal.sh
 source "$NET_SETUP_DIR/bridge-journal.sh"
-# shellcheck source=net-uplink.sh
-source "$NET_SETUP_DIR/net-uplink.sh"
+# shellcheck source=bridge-plan.sh
+source "$NET_SETUP_DIR/bridge-plan.sh"
 # shellcheck source=plan-record.sh
 source "$NET_SETUP_DIR/plan-record.sh"
 
 step_begin
-refuse_no_python
 # Whether the host can run VMs: a fact setup cannot change, read once, here.
 HOST_KVM_NOW=no
 [[ -e /dev/kvm ]] && HOST_KVM_NOW=yes
@@ -84,18 +71,18 @@ refuse_dns_port
 if [[ -d "/sys/class/net/$UPLINK/bridge" ]]; then
   BRIDGE="$UPLINK"
   BRIDGE_CREATE=no
-  echo "  $NET_TOOL; the uplink $UPLINK is a bridge, which Wisp uses"
+  echo "  netplan; the uplink $UPLINK is a bridge, which Wisp uses"
 else
   BRIDGE=br0
   BRIDGE_CREATE=yes
   # What follows matters only when setup makes the bridge.
   refuse_uplink_shape
-  "plan_$NET_TOOL"
+  plan_bridge
   # What the uplink holds now, which the bridge must hold after: the check's
   # reference.
-  l3_state "$UPLINK" "$NET_TOOL" > "$NET_PLAN_DIR/uplink.state" || net_fail "cannot read what $UPLINK holds"
+  l3_state "$UPLINK" > "$NET_PLAN_DIR/uplink.state" || net_fail "cannot read what $UPLINK holds"
   plan_sources > "$NET_PLAN_DIR/sources" || net_fail "cannot read what the plan was made from"
-  echo "  $NET_TOOL; $BRIDGE to be created on the uplink $UPLINK ($UPLINK_ADDR, $UPLINK_MODE)"
+  echo "  netplan; $BRIDGE to be created on the uplink $UPLINK ($UPLINK_ADDR, $UPLINK_MODE)"
 fi
 HOST_KVM="$HOST_KVM_NOW"
 plan_record_write "$NET_PLAN_DIR/plan" || net_fail "cannot write the plan in $NET_PLAN_DIR"

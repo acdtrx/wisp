@@ -13,9 +13,9 @@
  *
  * - JOURNAL_FORMAT: its `JOURNAL_FORMAT=<n>` line in bridge-journal.sh;
  * - the keys: PLAN_RECORD_VARS, evaluated by bash from plan-record.sh;
- * - the fact kinds: l3_state run by bash for each tool's branch, with net_call
- *   answering every read with lines each of its parsers takes (and systemctl's
- *   is-active with success, so the resolver's facts are read too). A kind read
+ * - the fact kinds: l3_state run by bash, with net_call answering every read
+ *   with lines each of its parsers takes (and systemctl's is-active with
+ *   success, so the resolver's facts are read too). A kind read
  *   from a new call shows here only when that call's parser takes those lines.
  */
 import { execFileSync } from 'node:child_process';
@@ -24,11 +24,10 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const PINNED = {
-  format: 1,
-  planKeys: ['NET_TOOL', 'UPLINK', 'UPLINK_ADDR', 'BRIDGE', 'BRIDGE_CREATE', 'UPLINK_MAC', 'UPLINK_MTU',
-    'UPLINK_MODE', 'UPLINK_NETFILE', 'UPLINK_CLIENT_ID', 'UPLINK_NETPLAN_ID', 'NETPLAN_ORIGIN',
-    'NETWORKD_PORT_FILE', 'UPLINK_CONNECTION', 'UPLINK_PERMADDR', 'NM_PROFILE_FILE', 'NM_BRIDGE_UUID',
-    'NM_PORT_UUID', 'NM_BRIDGE_FILE', 'NM_PORT_FILE', 'HOST_KVM', 'NET_PLAN_JOURNAL'],
+  format: 2,
+  planKeys: ['UPLINK', 'UPLINK_ADDR', 'BRIDGE', 'BRIDGE_CREATE', 'UPLINK_MAC', 'UPLINK_MTU', 'UPLINK_MODE',
+    'UPLINK_NETFILE', 'UPLINK_CLIENT_ID', 'UPLINK_NETPLAN_ID', 'NETPLAN_ORIGIN', 'UPLINK_PERMADDR', 'HOST_KVM',
+    'NET_PLAN_JOURNAL'],
   factKinds: ['addr4', 'addr6', 'dns', 'domain', 'route4', 'route6'],
 };
 
@@ -50,9 +49,9 @@ const factKinds = [...new Set(lines(bash(`
   source ${SETUP}/net-state.sh || exit 1
   net_call() {
     [[ "$1" != systemctl ]] || return 0
-    printf '%s\\n' '2: x inet 192.0.2.1/24 scope global' 'IP4.DNS[1]:192.0.2.53' 'IP4.DOMAIN[1]:example'
+    printf '%s\\n' '2: x inet 192.0.2.1/24 scope global'
   }
-  for tool in networkmanager networkd; do l3_state x "$tool" || exit 1; done
+  l3_state x
 `)).map((l) => l.split(' ')[0]))].sort();
 
 /** How <now> differs from <pinned>, or '' when they hold the same names. */

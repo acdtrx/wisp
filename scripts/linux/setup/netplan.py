@@ -1,4 +1,4 @@
-"""The netplan plan's reads and checks, for net-netplan.sh; run as root with
+"""The netplan plan's reads and checks, for bridge-plan.sh; run as root with
 lib.sh's SETUP_PYTHON. python3, its yaml module and netplan's own Python module are
 netplan's runtime, so a netplan host has them.
 
@@ -11,7 +11,7 @@ netplan's runtime, so a netplan host has them.
       the uplink's definition checked, what moves to the bridge worked out, and
       the edits written as `netplan set` arguments into <out-dir>; prints dhcp or
       static. On DHCP the bridge's dhcp-identifier is <id-kind> (mac or duid,
-      net-uplink.sh's dhcp_identity). Exit 3 with the reason printed: refused;
+      bridge-plan.sh's dhcp_identity). Exit 3 with the reason printed: refused;
       exit 5: refused, the reason naming the edit that lifts it.
   netplan.py shared <origin> <dir>...
       prints a definition <origin> shares with another netplan file, if any

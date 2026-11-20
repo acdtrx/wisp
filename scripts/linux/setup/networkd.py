@@ -1,22 +1,18 @@
-"""systemd-networkd's files, read for net-networkd.sh and net-netplan.sh; run as
-root with lib.sh's SETUP_PYTHON. A file is read as networkd reads it: sections, `Key=value`
-lines, `#` and `;` comments, a trailing backslash continuing a line.
+"""systemd-networkd's files and status, read for the network plan and the
+bridge's check; run as root with lib.sh's SETUP_PYTHON. A file is read as
+networkd reads it: sections, `Key=value` lines, `#` and `;` comments, a
+trailing backslash continuing a line.
 
   networkd.py json <path>
       reads `networkctl status <link> --json=short` on stdin; prints the value
       at <path> (keys joined by dots), nothing when it is not there: a string as
       it is, a list one item a line
   networkd.py takers <uplink> <mac> <permaddr> <driver> <own-file>
-      prints each .network file, but <own-file>, whose [Match] could take the
-      uplink — a second definition for it. networkd runs a link from the first
-      file, by name, that matches it: a file whose name sorts after <own-file>'s
-      (an initrd's catch-all fallback, zzzz-…) never takes the uplink, before
-      the bridge step or after, as the uplink's file keeps its name.
-  networkd.py port <file> <uplink> <mac> <permaddr> <out-dir>
-      the uplink's file split: what moves to the bridge (bridge.network.body),
-      what stays on the port (port.match, port.link); prints dhcp or static.
-      Exit 3 with the reason printed: refused; exit 4: refused, a link hangs
-      off the uplink; exit 5: refused, for how its [Match] matches.
+      prints each .network file, but <own-file> (the one netplan renders for
+      the uplink), whose [Match] could take the uplink — a second definition
+      for it. networkd runs a link from the first file, by name, that matches
+      it: a file whose name sorts after <own-file>'s (an initrd's catch-all
+      fallback, zzzz-…) never takes the uplink.
 """
 import fnmatch
 import json
@@ -30,10 +26,6 @@ DIRS = ("/etc/systemd/network", "/run/systemd/network", "/usr/local/lib/systemd/
 def refuse(why, code=3):
     print(why)
     sys.exit(code)
-
-
-def refuse_match(why):
-    refuse(why, 5)
 
 
 def parse(path):
@@ -125,112 +117,7 @@ def takers(uplink, mac, permaddr, driver, own):
             print(path)
 
 
-# The uplink's own file, split. What moves to the bridge: its layer 3 — the
-# sections below whole, and the [Network] settings in NETWORK_MOVED. What stays
-# on the port: [Match], [Link] (but what the boot waits for, which goes with the
-# address), and the layer-2 settings in NETWORK_PORT. Anything else is refused,
-# naming it.
-SECTIONS_MOVED = {'Address', 'Route', 'RoutingPolicyRule', 'NextHop', 'DHCP', 'DHCPv4', 'DHCPv6',
-                  'DHCPPrefixDelegation', 'IPv6AcceptRA', 'IPv6SendRA', 'IPv6Prefix', 'IPv6RoutePrefix',
-                  'DHCPServer', 'DHCPServerStaticLease', 'Neighbor', 'IPv6AddressLabel'}
-SECTIONS_PORT = {'Link', 'LLDP'}
-NETWORK_MOVED = {'Description', 'DHCP', 'Address', 'Gateway', 'DNS', 'Domains', 'DNSDefaultRoute', 'NTP',
-                 'LinkLocalAddressing', 'IPv6LinkLocalAddressGenerationMode', 'IPv6StableSecretAddress',
-                 'IPv4LLRoute', 'IPv4LLStartAddress', 'DefaultRouteOnDevice', 'IPv6AcceptRA',
-                 'IPv6PrivacyExtensions', 'IPv6DuplicateAddressDetection', 'IPv6HopLimit',
-                 'IPv6RetransmissionTimeSec', 'IPv4ProxyARP', 'IPv4ProxyARPPrivateVLAN', 'IPv6ProxyNDP',
-                 'IPv6ProxyNDPAddress', 'IPv4AcceptLocal', 'IPv4RouteLocalnet', 'IPForward', 'IPv4Forwarding',
-                 'IPv6Forwarding', 'IPMasquerade', 'IPv6SendRA', 'DHCPPrefixDelegation', 'DHCPServer',
-                 'LLMNR', 'MulticastDNS', 'DNSOverTLS', 'DNSSEC', 'DNSSECNegativeTrustAnchors',
-                 'ConfigureWithoutCarrier', 'IgnoreCarrierLoss', 'KeepConfiguration', 'IPv6MTUBytes',
-                 'IPv4ReversePathFilter', 'MulticastRouter'}
-NETWORK_PORT = {'LLDP', 'EmitLLDP'}
-# The [Network] keys that make another link on the uplink (systemd.network's
-# stacked netdevs): refused as such. A key that puts the uplink under another
-# device (Bond=, Bridge=, VRF=, BatmanAdvanced=) is refused as a setting.
-NETWORK_DEPENDENT = {'VLAN', 'MACVLAN', 'MACVTAP', 'IPVLAN', 'IPVTAP', 'VXLAN', 'Tunnel', 'Xfrm', 'IPoIB',
-                     'MACsec'}
-ONLINE = {'RequiredForOnline', 'RequiredFamilyForOnline'}
-
-
-def write_sections(path, lines):
-    """[((section, n), line)] written as sections: a header wherever the
-    section, or the instance of it, changes."""
-    with open(path, 'w') as f:
-        last = None
-        for sect, line in lines:
-            if sect != last:
-                f.write(f'\n[{sect[0]}]\n')
-                last = sect
-            f.write(line + '\n')
-
-
-def port(path, uplink, mac, permaddr, out):
-    body, link, match = [], [], []
-    by_name = by_mac = False
-    dhcp = ''
-    static4 = False
-    for sect, n, key, value in parse(path):
-        line = f'{key}={value}'
-        if sect == 'Match':
-            if key == 'Name':
-                if value != uplink:
-                    refuse_match(f'{path} matches the name "{value}", not {uplink} alone')
-                by_name = True
-            elif key in ('MACAddress', 'PermanentMACAddress'):
-                want = mac if key == 'MACAddress' else (permaddr or mac)
-                if value.lower() != want:
-                    refuse_match(f'{path} matches {key}={value}, not {uplink} ({want}) alone')
-                by_mac = by_mac or key == 'MACAddress'
-            else:
-                refuse_match(f'{path} matches by {key}')
-            match.append(line)
-            continue
-        if key == 'IAID':
-            refuse(f'{path} pins an IAID, which setup does not carry over')
-        if sect == 'Network':
-            if key in NETWORK_PORT:
-                link.append((('Network', n), line))
-                continue
-            if key in NETWORK_DEPENDENT:
-                print(f'{path} hangs {value} off {uplink} ({key}=)')
-                sys.exit(4)
-            if key not in NETWORK_MOVED:
-                refuse(f'{path} sets {key}= in [Network], which setup does not carry over to a bridge')
-            if key == 'DHCP':
-                dhcp = value
-            if key == 'Address' and ':' not in value:
-                static4 = True
-            body.append((('Network', n), line))
-        elif sect in SECTIONS_MOVED:
-            if sect == 'Address' and key == 'Address' and ':' not in value:
-                static4 = True
-            # The DHCP identity is the one the uplink had, pinned by the plan.
-            if sect in ('DHCP', 'DHCPv4') and key == 'ClientIdentifier':
-                continue
-            body.append(((sect, n), line))
-        elif sect in SECTIONS_PORT:
-            (body if key in ONLINE else link).append(((sect, n), line))
-        else:
-            refuse(f'{path} has a [{sect}] section, which setup does not carry over to a bridge')
-    # The bridge takes the uplink's hardware address: a match on it alone would
-    # take the bridge too.
-    if by_mac and not by_name:
-        refuse_match(f'{path} matches {uplink} by its hardware address alone, which the bridge takes too')
-
-    write_sections(os.path.join(out, 'bridge.network.body'), body)
-    write_sections(os.path.join(out, 'port.link'), link)
-    with open(os.path.join(out, 'port.match'), 'w') as f:
-        f.write(''.join(m + '\n' for m in match))
-    if dhcp.lower() in ('yes', 'true', 'on', '1', 'ipv4', 'both'):
-        print('dhcp')
-    elif static4:
-        print('static')
-    else:
-        refuse(f'{uplink} has neither DHCPv4 nor a static IPv4 address in {path}')
-
-
-COMMANDS = {'json': json_key, 'takers': takers, 'port': port}
+COMMANDS = {'json': json_key, 'takers': takers}
 
 if __name__ == '__main__':
     COMMANDS[sys.argv[1]](*sys.argv[2:])
