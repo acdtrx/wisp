@@ -28,7 +28,7 @@ The philosophy: direct flows and clear choices instead of exhaustive configurati
 ### Networking
 
 - Every workload — VM or container — sits on the host bridge as a first-class LAN citizen. No overlay networks, no NAT, no port mapping.
-- **Unified mDNS**: VMs and containers can have their IP registered under `.local` automatically via avahi. Containers can also **resolve** `.local` names, thanks to an in-process DNS stub that Wisp runs on the bridge.
+- **mDNS**: containers can have their IP registered under `.local` automatically via avahi; a VM announces its own name (cloud-init installs avahi in the guest by default). Containers can also **resolve** `.local` names, VMs' included, thanks to an in-process DNS stub that Wisp runs on the bridge.
 
 ### Host monitoring
 
@@ -40,7 +40,7 @@ The philosophy: direct flows and clear choices instead of exhaustive configurati
 ### Agents & automation
 
 - **Scoped API tokens** (read-only or admin) for non-interactive clients — created in the UI, shown once, revocable; the REST API becomes scriptable without the browser session dance.
-- **MCP endpoint** (`/mcp`) so coding agents can inspect the deployment: one tool call maps every VM and container with its LAN IP and mDNS name; others return per-workload config (secrets masked), logs, images, live host stats, and the hardware inventory.
+- **MCP endpoint** (`/mcp`) so coding agents can inspect the deployment: one tool call maps every VM and container with its LAN IP, and each container's mDNS name; others return per-workload config (secrets masked), logs, images, live host stats, and the hardware inventory.
 - **Agent deploys, guard-railed** — with an admin-scoped token, agents can deploy a container, update images, and manage lifecycle over MCP. It's a deliberate subset: no deletes, no mounts, no root, and app config writes are filtered per app (an agent can add a Caddy reverse-proxy host, never touch the TLS credentials).
 
 ## What it's not
