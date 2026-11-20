@@ -12,7 +12,7 @@ export function getHostGpus() {
   return api('/api/host/gpus');
 }
 
-/** The check and the upgrade are jobs: they answer `{ jobId, title }` (follow with awaitJob). A check
+/** The check and the upgrade are jobs: they answer `{ jobId, kind, title, subject }` (follow with awaitJob). A check
  *  started while one runs answers the running one. */
 export function checkForUpdates() {
   return api('/api/host/updates/check', { method: 'POST' });
@@ -31,7 +31,7 @@ export function listManagedNetworkBridges() {
   return api('/api/host/network-bridges');
 }
 
-/** Bridge create and delete are jobs: they answer `{ jobId, title }`. */
+/** Bridge create and delete are jobs: they answer `{ jobId, kind, title, subject }`. */
 export function createManagedNetworkBridge(baseBridge, vlanId) {
   return api('/api/host/network-bridges', {
     method: 'POST',

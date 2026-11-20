@@ -4,8 +4,7 @@ import UpdateCard from './UpdateCard.jsx';
 import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
 import { checkForUpdates, performUpgrade, listUpgradablePackages } from '../../api/host.js';
-import { JOB_KIND } from '../../api/jobs.js';
-import { awaitJob, useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
+import { awaitJob } from '../../store/backgroundJobsStore.js';
 import { errorText } from '../../api/errors.js';
 import { formatRelativeTime } from '../../utils/formatters.js';
 
@@ -28,9 +27,10 @@ function isBusyError(err) {
 
 const BUSY_MESSAGE = 'Another package manager operation is running on the host. Try again in a moment.';
 
-/** Run the package check (or join the one running) and resolve with its result, `{ count }`. */
+/** Run the package check (or join the one running) and resolve with its result, `{ count }`, or
+ *  with nothing when it was cancelled (cut at shutdown). */
 async function runPackageCheck() {
-  return awaitJob(useBackgroundJobsStore.getState().addJob({ ...await checkForUpdates(), kind: JOB_KIND.OS_UPDATE_CHECK }));
+  return awaitJob((await checkForUpdates()).jobId);
 }
 
 export default function OsUpdateSection({ onRequestRestart }) {
@@ -62,7 +62,9 @@ export default function OsUpdateSection({ onRequestRestart }) {
     setUpgradeSuccess(false);
     setChecking(true);
     try {
-      const { count: newCount } = await runPackageCheck();
+      const result = await runPackageCheck();
+      if (!result) return;
+      const { count: newCount } = result;
       /* Invalidate the locally-rendered package list only if the count
        * actually changed — otherwise the cached list is still accurate and
        * the modal can keep opening instantly. The backend cache is updated
@@ -89,7 +91,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
     setUpgradeSuccess(false);
     setUpgrading(true);
     try {
-      await awaitJob(useBackgroundJobsStore.getState().addJob({ ...await performUpgrade(), kind: JOB_KIND.OS_UPGRADE }));
+      await awaitJob((await performUpgrade()).jobId);
       setUpgradeSuccess(true);
       setManualCount(0);
       setPackages([]);

@@ -31,8 +31,7 @@ import { useSettingsStore } from '../../store/settingsStore.js';
 import { useKindChanges } from '../../hooks/useChanges.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
 import { useDiskStore } from '../../store/diskStore.js';
-import { awaitJob, useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
-import { JOB_KIND } from '../../api/jobs.js';
+import { awaitJob } from '../../store/backgroundJobsStore.js';
 import {
   deleteMount,
   getMountStatus,
@@ -183,7 +182,7 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
     setDeletingId(row.id);
     try {
       /* The removal reaches the list and the status on their cues. */
-      await awaitJob(useBackgroundJobsStore.getState().addJob({ ...await deleteMount(row.id), kind: JOB_KIND.MOUNT_DELETE }));
+      await awaitJob((await deleteMount(row.id)).jobId);
     } catch (err) {
       onError(errorText(err));
     } finally {
@@ -195,7 +194,7 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
     onError(null);
     setMountActionId(id);
     const p = mounted
-      ? unmountMount(id).then((job) => awaitJob(useBackgroundJobsStore.getState().addJob({ ...job, kind: JOB_KIND.MOUNT_UNMOUNT })))
+      ? unmountMount(id).then((job) => awaitJob(job.jobId))
       : sendAndAwaitKindChange('host-mounts', () => mountMount(id));
     p
       .catch((err) => onError(errorText(err)))
@@ -404,7 +403,7 @@ function RemovableDrivesSection({
     setDeletingId(row.id);
     try {
       /* The removal reaches the list and the status on their cues. */
-      await awaitJob(useBackgroundJobsStore.getState().addJob({ ...await deleteMount(row.id), kind: JOB_KIND.MOUNT_DELETE }));
+      await awaitJob((await deleteMount(row.id)).jobId);
     } catch (err) {
       onError(errorText(err));
     } finally {
@@ -416,7 +415,7 @@ function RemovableDrivesSection({
     onError(null);
     setMountActionId(id);
     const p = mounted
-      ? unmountMount(id).then((job) => awaitJob(useBackgroundJobsStore.getState().addJob({ ...job, kind: JOB_KIND.MOUNT_UNMOUNT })))
+      ? unmountMount(id).then((job) => awaitJob(job.jobId))
       : sendAndAwaitKindChange('host-mounts', () => mountMount(id));
     p
       .catch((err) => onError(errorText(err)))

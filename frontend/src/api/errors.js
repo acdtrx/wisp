@@ -2,7 +2,7 @@
  * The client's one error object (docs/specs/ERROR-HANDLING.md). The server
  * answers every failure, on every channel, as `{ error: <CODE>, detail }`;
  * the client turns it into an ApiError, and errors it makes itself (a
- * deadline, a stream that ended) are ApiErrors with their own code and no
+ * deadline, a job that is gone) are ApiErrors with their own code and no
  * status. Branch on `code`, show through `errorText`: never on message text.
  */
 /**
@@ -20,9 +20,7 @@ export const CLIENT_CODES = Object.freeze({
   UPLOAD_STALLED: 'UPLOAD_STALLED',
   /** The upload was cancelled. */
   UPLOAD_CANCELLED: 'UPLOAD_CANCELLED',
-  /** A job's progress stream ended before the job did. */
-  CONNECTION_LOST: 'CONNECTION_LOST',
-  /** The job is no longer followed (its row left the store). */
+  /** The server no longer knows the job a wait follows (it expired, or never existed). */
   JOB_GONE: 'JOB_GONE',
 });
 

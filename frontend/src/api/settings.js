@@ -27,7 +27,7 @@ export function mountMount(id) {
   return api(`/api/host/mounts/${encodeURIComponent(id)}/mount`, { method: 'POST' });
 }
 
-/** A job: answers `{ jobId, title }` (follow with awaitJob). */
+/** A job: answers `{ jobId, kind, title, subject }` (follow with awaitJob). */
 export function unmountMount(id) {
   return api(`/api/host/mounts/${encodeURIComponent(id)}/unmount`, { method: 'POST' });
 }
@@ -46,7 +46,7 @@ export function patchMount(id, body) {
   return api(`/api/host/mounts/${encodeURIComponent(id)}`, { method: 'PATCH', body });
 }
 
-/** A job: answers `{ jobId, title }` (follow with awaitJob). */
+/** A job: answers `{ jobId, kind, title, subject }` (follow with awaitJob). */
 export function deleteMount(id) {
   return api(`/api/host/mounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

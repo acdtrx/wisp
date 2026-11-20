@@ -66,7 +66,6 @@ export default function ContainerOverviewPanel() {
   const killContainer = useContainerStore((s) => s.killContainer);
   const restartContainer = useContainerStore((s) => s.restartContainer);
   const deleteContainer = useContainerStore((s) => s.deleteContainer);
-  const addJob = useBackgroundJobsStore((s) => s.addJob);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
 
   const { tab } = useParams();
@@ -193,8 +192,9 @@ export default function ContainerOverviewPanel() {
           <button
             type="button"
             onClick={() => setIconPickerOpen(true)}
-            className={`shrink-0 rounded-lg p-2 lg:p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 ${iconColorClass}`}
-            title="Change icon"
+            disabled={!!busyHint}
+            className={`shrink-0 rounded-lg p-2 lg:p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 disabled:cursor-not-allowed disabled:hover:bg-transparent ${iconColorClass}`}
+            title={busyHint || 'Change icon'}
           >
             <IconComp size={18} className={isRunning ? 'wisp-lit-glyph' : undefined} />
           </button>
@@ -403,8 +403,7 @@ export default function ContainerOverviewPanel() {
           onStart={async () => {
             setBackupError(null);
             try {
-              const accepted = await startContainerBackup(name, { destinationIds: backupSelectedIds });
-              addJob({ ...accepted, kind: JOB_KIND.CONTAINER_BACKUP, subject: { type: 'container', name } });
+              await startContainerBackup(name, { destinationIds: backupSelectedIds });
               /* Close the modal once the job is queued — progress is shown in
                * the jobs tray, and the toolbar Backup
                * button is disabled while a backup runs (so the user can't

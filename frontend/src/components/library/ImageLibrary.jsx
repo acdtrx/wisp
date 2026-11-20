@@ -14,7 +14,6 @@ import {
 } from '../../api/library.js';
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
-import { JOB_KIND } from '../../api/jobs.js';
 import { listContainerImages, deleteContainerImage } from '../../api/containers.js';
 import { useKindChanges } from '../../hooks/useChanges.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
@@ -276,7 +275,6 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     if (pickerKind === 'container') return FILTERS_PICKER_CONTAINER;
     return FILTERS_PICKER;
   }, [isPageLike, pickerKind]);
-  const addJob = useBackgroundJobsStore((s) => s.addJob);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
   const imageUpdateCheck = useContainerStore((s) => s.imageUpdateCheck);
   /* The check's progress is its job row's: the latest `checking` and `skipped` events. */
@@ -433,7 +431,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     try {
       if (deleteTarget.kind === 'oci') {
         /* The removal reaches the list on the `images` cue. */
-        await awaitJob(addJob({ ...await deleteContainerImage(deleteTarget.ref), kind: JOB_KIND.CONTAINER_IMAGE_DELETE }));
+        await awaitJob((await deleteContainerImage(deleteTarget.ref)).jobId);
       } else {
         await sendAndAwaitKindChange('library', () => deleteFile(deleteTarget.name));
       }
@@ -472,7 +470,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     if (!url) return;
     setUrlDownloadError(null);
     try {
-      const jobId = addJob({ ...await startDownloadFromUrl(url), kind: JOB_KIND.LIBRARY_DOWNLOAD });
+      const { jobId } = await startDownloadFromUrl(url);
       setUrlJobId(jobId);
       await awaitJob(jobId);
       setUrlModalOpen(false);
@@ -494,9 +492,8 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   };
 
   /* Only the download still shown applies its outcome: a newer one ignores it. */
-  const runPresetDownload = async (accepted) => {
+  const runPresetDownload = async ({ jobId }) => {
     setPresetError(null);
-    const jobId = addJob({ ...accepted, kind: JOB_KIND.LIBRARY_DOWNLOAD });
     setPresetJobId(jobId);
     let error = null;
     try {

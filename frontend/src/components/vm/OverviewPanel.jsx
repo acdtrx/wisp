@@ -13,7 +13,6 @@ import { getSettings } from '../../api/settings.js';
 import {
   useBackgroundJobsStore, useWorkloadBusy, useWorkloadBackup, workloadBusyReason,
 } from '../../store/backgroundJobsStore.js';
-import { JOB_KIND } from '../../api/jobs.js';
 import { startBackup } from '../../api/backups.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import XMLModal from './XMLModal.jsx';
@@ -94,7 +93,6 @@ export default function OverviewPanel() {
   const suspendVM = useVmStore((s) => s.suspendVM);
   const resumeVM = useVmStore((s) => s.resumeVM);
   const deleteVM = useVmStore((s) => s.deleteVM);
-  const addJob = useBackgroundJobsStore((s) => s.addJob);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
 
   const vmName = vmConfig?.name ?? '';
@@ -129,7 +127,7 @@ export default function OverviewPanel() {
     if (backupModalOpen) return;
     if (!backupJobId) return;
     const row = bgJobs[backupJobId];
-    if (row && (row.status === 'done' || row.status === 'error')) {
+    if (row && row.status !== 'running') {
       setBackupJobId(null);
     }
   }, [backupJobId, bgJobs, backupModalOpen]);
@@ -274,34 +272,38 @@ export default function OverviewPanel() {
           <ActionButton
             icon={Square} label="Stop"
             onClick={() => stopVM(name)}
-            disabled={isStopped}
+            disabled={isStopped || !!vmOperationJob}
+            hint={busyHint}
             loading={actionLoading === 'stop'}
           />
           <ActionButton
             icon={Zap} label="Force Stop"
             onClick={() => forceStopVM(name)}
-            disabled={isStopped}
+            disabled={isStopped || !!vmOperationJob}
+            hint={busyHint}
             loading={actionLoading === 'force-stop'}
             variant="danger"
           />
           <ActionButton
             icon={RotateCcw} label="Reboot"
             onClick={() => rebootVM(name)}
-            disabled={!isRunning}
+            disabled={!isRunning || !!vmOperationJob}
             loading={actionLoading === 'reboot'}
             badge={!!vmStats?.staleBinary}
-            hint={vmStats?.staleBinary ? 'Reboot (qemu binary updated since VM started)' : undefined}
+            hint={busyHint ?? (vmStats?.staleBinary ? 'Reboot (qemu binary updated since VM started)' : undefined)}
           />
           <ActionButton
             icon={Pause} label="Suspend"
             onClick={() => suspendVM(name)}
-            disabled={!isRunning}
+            disabled={!isRunning || !!vmOperationJob}
+            hint={busyHint}
             loading={actionLoading === 'suspend'}
           />
           <ActionButton
             icon={PlayCircle} label="Resume"
             onClick={() => resumeVM(name)}
-            disabled={!isPaused}
+            disabled={!isPaused || !!vmOperationJob}
+            hint={busyHint}
             loading={actionLoading === 'resume'}
           />
           <div className="mx-0.5 h-4 w-px shrink-0 bg-surface-border" />
@@ -449,11 +451,11 @@ export default function OverviewPanel() {
             );
           }}
           progress={
-            backupJobId && bgJobs[backupJobId]
+            backupJobId
               ? {
-                  step: bgJobs[backupJobId].step || 'starting',
-                  percent: bgJobs[backupJobId].percent,
-                  currentFile: bgJobs[backupJobId].detail,
+                  step: bgJobs[backupJobId]?.step || 'starting',
+                  percent: bgJobs[backupJobId]?.percent ?? null,
+                  currentFile: bgJobs[backupJobId]?.detail ?? null,
                 }
               : null
           }
@@ -465,8 +467,8 @@ export default function OverviewPanel() {
           onStart={async () => {
             setBackupError(null);
             try {
-              const accepted = await startBackup(name, { destinationIds: backupSelectedIds });
-              setBackupJobId(addJob({ ...accepted, kind: JOB_KIND.VM_BACKUP, subject: { type: 'vm', name } }));
+              const { jobId } = await startBackup(name, { destinationIds: backupSelectedIds });
+              setBackupJobId(jobId);
             } catch (err) {
               setBackupError(errorText(err));
               setBackupJobId(null);

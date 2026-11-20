@@ -359,7 +359,7 @@ Give a single-section view (e.g. **Image Library**) one **`SectionCard`** with t
 ### Row state and errors
 
 - **Per-row loading:** Disable or show a spinner on the row (or action) that triggered the request; avoid blocking unrelated rows unless the backend requires it.
-- **Workload busy** (a running job — a backup, a start, a delete, any kind — holds the workload's backend lock, so every mutation would 409): disable the mutating controls rather than letting them fail, with the reason as their `title`; tables reuse their lock note for the same text, and section **Save** buttons take it via `SectionCard`'s `saveDisabledReason`. Busy is derived from the jobs list by the job's `subject` (`useWorkloadBusy`: any running job whose subject is the workload), never by comparing a job's title (settled 2026-11-20); the reason names that job's title. The VM page passes it down as `busyReason`.
+- **Workload busy** (a running job — a backup, a start, a delete, any kind — holds the workload's backend lock, so every mutation would 409): disable the mutating controls rather than letting them fail, with the reason as their `title`; tables reuse their lock note for the same text, and section **Save** buttons take it too. A workload is busy while a running job on the `jobs` topic has it as its `subject`, never by comparing a job's title (settled 2026-11-20); the reason names that job's title.
 - **Errors:** Prefer row-scoped or action-scoped messages when a single row fails; use section-level error (e.g. `SectionCard` `error`) for load failures or cross-row validation that is not tied to one line.
 
 ### Variants

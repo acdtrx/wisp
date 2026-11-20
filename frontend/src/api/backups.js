@@ -1,7 +1,7 @@
 import { api } from './client.js';
 
 /**
- * Start a backup job for a VM: answers { jobId, title } (follow with awaitJob).
+ * Start a backup job for a VM: answers { jobId, kind, title, subject } (follow with awaitJob).
  */
 export function startBackup(vmName, options = {}) {
   const body = options.destinationIds?.length
@@ -19,7 +19,7 @@ export function listBackups(vmName = null) {
 }
 
 /**
- * Restore a backup as a new VM: starts a job and answers `{ jobId, title }`
+ * Restore a backup as a new VM: starts a job and answers `{ jobId, kind, title, subject }`
  * (follow it with awaitJob).
  * @param {{ destinationId: string, vmName: string, timestamp: string }} target — typically a row from listBackups()
  */
@@ -40,7 +40,7 @@ export function deleteBackup(target) {
 /* ── Container backups ──────────────────────────────────────────── */
 
 /**
- * Start a container backup job: answers { jobId, title } (follow with awaitJob).
+ * Start a container backup job: answers { jobId, kind, title, subject } (follow with awaitJob).
  */
 export function startContainerBackup(name, options = {}) {
   const body = options.destinationIds?.length
@@ -55,7 +55,7 @@ export function listContainerBackups(containerName = null) {
 }
 
 /**
- * Restore a container backup as a new container: a job, answers `{ jobId, title }`.
+ * Restore a container backup as a new container: a job, answers `{ jobId, kind, title, subject }`.
  * @param {{ destinationId: string, name: string, timestamp: string }} target
  */
 export function restoreContainerBackup(target, newName) {
@@ -65,7 +65,7 @@ export function restoreContainerBackup(target, newName) {
 
 /**
  * Restore a backup over the live container it was taken from. Container must
- * be stopped. A job: answers { jobId, title } (follow with awaitJob).
+ * be stopped. A job: answers { jobId, kind, title, subject } (follow with awaitJob).
  * @param {{ destinationId: string, name: string, timestamp: string }} target
  * @param {{ safetyBackup?: boolean }} [options] — back up current state first (default true)
  */

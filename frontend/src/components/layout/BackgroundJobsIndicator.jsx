@@ -3,12 +3,12 @@ import { createPortal } from 'react-dom';
 import { ListTodo } from 'lucide-react';
 import { useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
 import { usePopover } from '../../lib/popover.js';
-import LoadHint from '../shared/LoadHint.jsx';
 import { errorText } from '../../api/errors.js';
 
-/** A finished row hydrated after a reload has no event yet: it shows no step until its replay brings one. */
+/** A row the topic lists as failed shows no text until its stream's replay brings the error. */
 function formatStep(row) {
   if (row.status === 'done') return 'Done';
+  if (row.status === 'cancelled') return 'Cancelled';
   if (row.status === 'error') return row.error ? errorText(row.error) : null;
   if (row.step) return String(row.step);
   return 'Starting…';
@@ -51,18 +51,15 @@ function JobProgressBar({ percent, status }) {
 export default function BackgroundJobsIndicator() {
   const jobs = useBackgroundJobsStore((s) => s.jobs);
   const dismissJob = useBackgroundJobsStore((s) => s.dismissJob);
-  const hydrateFailed = useBackgroundJobsStore((s) => s.hydrateFailed);
-  const hydrate = useBackgroundJobsStore((s) => s.hydrate);
   const [open, setOpen] = useState(false);
   const anchorRef = useRef(null);
   const popRef = useRef(null);
   const close = useCallback(() => setOpen(false), []);
 
-  const list = Object.values(jobs).sort((a, b) => b.startedAt - a.startedAt);
+  const list = Object.values(jobs).sort((a, b) => b.createdAt - a.createdAt);
   const running = list.filter((j) => j.status === 'running').length;
 
-  // A failed reload of the server's jobs keeps the tray openable, to say so.
-  const isEmpty = list.length === 0 && !hydrateFailed;
+  const isEmpty = list.length === 0;
   const popStyle = usePopover(open && !isEmpty, { anchorRef, popRef, onClose: close, align: 'end' });
   /* Emptied (last row dismissed): closed for good, so the next job doesn't
    * reopen the tray and pull focus to it. */
@@ -105,14 +102,6 @@ export default function BackgroundJobsIndicator() {
           <div className="border-b border-surface-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-muted">
             Background jobs
           </div>
-          {hydrateFailed && (
-            <div className="flex items-center gap-2 px-3 py-2">
-              <LoadHint what="the running jobs after the reload; some may be missing" className="min-w-0 flex-1" />
-              <button type="button" onClick={hydrate} className="shrink-0 rounded-sm px-1.5 py-0.5 text-[11px] font-medium text-text-secondary hover:bg-surface">
-                Retry
-              </button>
-            </div>
-          )}
           <ul className="max-h-72 overflow-y-auto">
             {list.map((row) => (
               <li

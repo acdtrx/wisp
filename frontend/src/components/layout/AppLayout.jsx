@@ -29,10 +29,13 @@ export default function AppLayout() {
     return stopSettingsSync;
   }, [startSettingsSync, stopSettingsSync]);
 
+  /* The jobs topic feeds the tray and every workload's busy state. */
+  const connectJobs = useBackgroundJobsStore((s) => s.connect);
+  const disconnectJobs = useBackgroundJobsStore((s) => s.disconnect);
   useEffect(() => {
-    /* Non-fatal on failure: the tray says it may be missing jobs, with a retry. */
-    useBackgroundJobsStore.getState().hydrate();
-  }, []);
+    connectJobs();
+    return disconnectJobs;
+  }, [connectJobs, disconnectJobs]);
 
   /* px-safe keeps the shell out of the landscape notch, which viewport-fit=cover would
      otherwise let it slide under. The bottom inset is handled by the stats bars and the

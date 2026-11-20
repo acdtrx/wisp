@@ -135,7 +135,6 @@ export default function BackupsPanel() {
   const vms = useVmStore((s) => s.vms);
   const containers = useContainerStore((s) => s.containers);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
-  const addJob = useBackgroundJobsStore((s) => s.addJob);
 
   const [vmBackups, setVmBackups] = useState([]);
   const [ctBackups, setCtBackups] = useState([]);
@@ -303,12 +302,8 @@ export default function BackupsPanel() {
     try {
       const isVm = backupTarget.kind === 'vm';
       const start = isVm ? startBackup : startContainerBackup;
-      const accepted = await start(backupTarget.name, { destinationIds: backupSelectedIds });
-      setBackupJobId(addJob({
-        ...accepted,
-        kind: isVm ? JOB_KIND.VM_BACKUP : JOB_KIND.CONTAINER_BACKUP,
-        subject: { type: backupTarget.kind, name: backupTarget.name },
-      }));
+      const { jobId } = await start(backupTarget.name, { destinationIds: backupSelectedIds });
+      setBackupJobId(jobId);
     } catch (err) {
       setBackupError(errorText(err));
     }
@@ -328,13 +323,13 @@ export default function BackupsPanel() {
           { destinationId: backup.destinationId, name: backup.name, timestamp: backup.timestamp },
           newName,
         );
-        await awaitJob(addJob({ ...job, kind: JOB_KIND.CONTAINER_RESTORE_AS_NEW, subject: { type: 'container', name: newName } }));
+        await awaitJob(job.jobId);
       } else {
         const job = await restoreBackup(
           { destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp },
           newName,
         );
-        await awaitJob(addJob({ ...job, kind: JOB_KIND.VM_RESTORE, subject: { type: 'vm', name: newName } }));
+        await awaitJob(job.jobId);
       }
       setRestoreTarget(null);
       setRestoreName('');
@@ -366,8 +361,7 @@ export default function BackupsPanel() {
     setInPlaceSaving(true);
     try {
       const target = { destinationId: backup.destinationId, name: group.name, timestamp: backup.timestamp };
-      const accepted = await restoreContainerBackupInPlace(target, { safetyBackup: inPlaceSafety });
-      addJob({ ...accepted, kind: JOB_KIND.CONTAINER_RESTORE, subject: { type: 'container', name: group.name } });
+      await restoreContainerBackupInPlace(target, { safetyBackup: inPlaceSafety });
       setInPlaceTarget(null);
     } catch (err) {
       setInPlaceError(errorText(err));
@@ -639,10 +633,10 @@ export default function BackupsPanel() {
           onToggleDestination={(id) => setBackupSelectedIds((prev) => (
             prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
           ))}
-          progress={backupJobId && bgJobs[backupJobId] ? {
-            step: bgJobs[backupJobId].step || 'starting',
-            percent: bgJobs[backupJobId].percent,
-            currentFile: bgJobs[backupJobId].detail,
+          progress={backupJobId ? {
+            step: bgJobs[backupJobId]?.step || 'starting',
+            percent: bgJobs[backupJobId]?.percent ?? null,
+            currentFile: bgJobs[backupJobId]?.detail ?? null,
           } : null}
           error={backupError || (backupJobId && bgJobs[backupJobId]?.error ? errorText(bgJobs[backupJobId].error) : null)}
           onStart={handleStartBackup}

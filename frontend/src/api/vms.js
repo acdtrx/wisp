@@ -20,7 +20,7 @@ export function getVMXML(name) {
   return api(`/api/vms/${encodeURIComponent(name)}/xml`);
 }
 
-/** Starts a job (start, force-stop, delete): answers `{ jobId, title }`; follow it with awaitJob. */
+/** Starts a job (start, force-stop, delete): answers `{ jobId, kind, title, subject }`; follow it with awaitJob. */
 export function startVM(name) {
   return api(`/api/vms/${encodeURIComponent(name)}/start`, { method: 'POST' });
 }

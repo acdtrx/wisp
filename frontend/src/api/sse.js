@@ -50,16 +50,19 @@ function withJitterMs(baseMs) {
   return Math.round(baseMs * 0.95 + jitter);
 }
 
+/** A job's last event: the stream ends after it. */
+const JOB_TERMINAL_STEPS = new Set(['done', 'error', 'cancelled']);
+
 /**
  * One-shot job progress SSE. Auth flows via the wisp_session cookie (sent
  * automatically by the browser on same-origin fetches with credentials).
- * Reconnects with backoff until terminal `done`/`error` or job missing (404).
- * Server replays buffered events on reconnect.
+ * Reconnects with backoff after any drop, and the server replays the job's
+ * events, until its terminal event (`done`, `error` or `cancelled`) or a 404.
  *
  * @param {(ev: object) => void} onMessage
- * @param {(reason?: 'not_found') => void} [onConnectionLost] — 404 passes `not_found` (job expired / unknown)
+ * @param {() => void} [onGone] — a 404: the server no longer knows the job (it expired, or never existed)
  */
-export function createJobSSE(url, onMessage, onConnectionLost) {
+export function createJobSSE(url, onMessage, onGone) {
   let closed = false;
   let retryTimer = null;
   let retryDelay = SSE_INITIAL_RETRY_MS;
@@ -107,7 +110,7 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
 
       if (res.status === 404) {
         finish();
-        onConnectionLost?.('not_found');
+        onGone?.();
         return;
       }
 
@@ -140,7 +143,7 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
             try {
               const data = JSON.parse(line.slice(6));
               onMessage(data);
-              if (data.step === 'done' || data.step === 'error') {
+              if (JOB_TERMINAL_STEPS.has(data.step)) {
                 finish();
                 return;
               }

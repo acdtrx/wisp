@@ -42,8 +42,7 @@ import {
 import { formatSize } from '../../utils/formatters.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { getMountStatus } from '../../api/settings.js';
-import { JOB_KIND } from '../../api/jobs.js';
-import { awaitJob, useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
+import { awaitJob } from '../../store/backgroundJobsStore.js';
 import { runContainerCommand } from '../../store/containerStore.js';
 import { useChanges, useKindChanges } from '../../hooks/useChanges.js';
 import LoadHint from '../shared/LoadHint.jsx';
@@ -221,11 +220,7 @@ export default function ContainerMountsSection({ config }) {
     setDeletingRowName(row.name);
     try {
       await runContainerCommand(config.name, async () =>
-        awaitJob(useBackgroundJobsStore.getState().addJob({
-          ...await removeContainerMount(config.name, row.name),
-          kind: JOB_KIND.CONTAINER_MOUNT_DELETE,
-          subject: { type: 'container', name: config.name },
-        })));
+        awaitJob((await removeContainerMount(config.name, row.name)).jobId));
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -259,11 +254,7 @@ export default function ContainerMountsSection({ config }) {
     if (!file) return;
     if (row.type !== 'directory') return;
     // The upload answers once received; the extract is a job.
-    runUploadForRow(row, async (mn) => awaitJob(useBackgroundJobsStore.getState().addJob({
-      ...await uploadMountZip(config.name, mn, file),
-      kind: JOB_KIND.CONTAINER_ZIP_EXTRACT,
-      subject: { type: 'container', name: config.name },
-    })));
+    runUploadForRow(row, async (mn) => awaitJob((await uploadMountZip(config.name, mn, file)).jobId));
   };
 
   const headerAdds = (

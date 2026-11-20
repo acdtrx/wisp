@@ -1,233 +1,205 @@
 import { create } from 'zustand';
-import { JOB_KIND, listJobs, streamJobProgress } from '../api/jobs.js';
+import { subscribeTopic } from '../api/events.js';
+import { JOB_KIND, streamJobProgress } from '../api/jobs.js';
 import { ApiError, CLIENT_CODES } from '../api/errors.js';
 
-/** Same TTL as the server's job store, measured the same way: from completion.
- *  A finished row leaves the tray once it has been finished this long. */
-const DONE_UI_TTL_MS = 5 * 60 * 1000;
-
 /**
+ * The server's jobs, as the `jobs` topic lists them, each with what its progress
+ * stream brought. The topic is the only source of rows: it lists every job,
+ * whoever started it, and drops a finished one when the server expires it. A
+ * job's progress, result and error come from its own stream
+ * (`GET /api/jobs/:jobId/progress`), never from the topic.
+ *
  * @typedef {{ type: 'vm' | 'container', name: string }} JobSubject
  *
- * @typedef {Object} BackgroundJobRow
- * @property {string} jobId
- * @property {string} kind - a JOB_KIND, or a kind this client does not know (shown by its title)
- * @property {string} title
- * @property {JobSubject | null} subject - the workload the job acts on
+ * @typedef {Object} JobProgress - what a job's progress stream brought
  * @property {string | null} step
  * @property {number | null} percent
  * @property {string | null} detail
  * @property {Record<string, object>} events - the latest event of each step, with the kind's own fields
- * @property {'running' | 'done' | 'error'} status
- * @property {ApiError | null} error - the job's error event (`code`, `detail`), or why its stream ended
+ * @property {'done' | 'error' | 'cancelled' | 'gone' | null} end - the terminal event's step;
+ *   `gone`: the server no longer knows the job (404); null while the stream runs
+ * @property {ApiError | null} error - the job's error event
  * @property {unknown} result - the job's result, from its `done` event
- * @property {number} startedAt
- * @property {number | null} finishedAt - set by the terminal event (or the stream's end), never by hydration
+ *
+ * @typedef {Object} BackgroundJobRow - a topic row with its job's progress
+ * @property {string} jobId
+ * @property {string} kind - a kind of the server's, known to this client or not (shown by its title)
+ * @property {string} title
+ * @property {JobSubject | null} subject - the workload the job acts on
+ * @property {'running' | 'done' | 'error' | 'cancelled'} status - the terminal event's once it came, else the topic's
+ * @property {number} createdAt
+ * @property {string | null} step
+ * @property {number | null} percent
+ * @property {string | null} detail
+ * @property {Record<string, object>} events
+ * @property {ApiError | null} error
+ * @property {unknown} result
  */
 
-function applyEvent(row, ev) {
+/** @type {JobProgress} */
+const NO_PROGRESS = Object.freeze({
+  step: null, percent: null, detail: null, events: {}, end: null, error: null, result: null,
+});
+
+/** @returns {JobProgress} */
+function applyEvent(progress, ev) {
   const next = {
-    ...row,
-    step: ev.step ?? row.step,
-    percent: ev.percent != null ? ev.percent : row.percent,
-    detail: ev.detail ?? ev.currentFile ?? row.detail,
+    ...progress,
+    step: ev.step ?? progress.step,
+    percent: ev.percent != null ? ev.percent : progress.percent,
+    detail: ev.detail ?? ev.currentFile ?? progress.detail,
   };
   if (ev.step === 'error') {
-    next.status = 'error';
+    next.end = 'error';
     next.error = new ApiError({ code: ev.error, detail: ev.detail });
-    next.finishedAt = Date.now();
   } else if (ev.step === 'done') {
-    next.status = 'done';
+    next.end = 'done';
     next.result = ev.result;
-    next.finishedAt = Date.now();
+  } else if (ev.step === 'cancelled') {
+    next.end = 'cancelled';
   } else if (ev.step) {
-    next.events = { ...row.events, [ev.step]: ev };
+    next.events = { ...progress.events, [ev.step]: ev };
   }
   return next;
 }
 
-export const useBackgroundJobsStore = create((set, get) => ({
-  /** Loading the server's jobs (after a reload) failed: the tray may miss some. */
-  hydrateFailed: false,
+/** @returns {BackgroundJobRow} */
+function mergeRow(row, progress = NO_PROGRESS) {
+  // A terminal event can arrive before the frame that lists the job as ended: it
+  // decides, and an ended job never shows running again.
+  const ended = progress.end && progress.end !== 'gone';
+  return {
+    jobId: row.jobId,
+    kind: row.kind,
+    title: row.title,
+    subject: row.subject ?? null,
+    status: ended ? progress.end : row.status,
+    createdAt: row.createdAt,
+    step: progress.step,
+    percent: progress.percent,
+    detail: progress.detail,
+    events: progress.events,
+    error: progress.error,
+    result: progress.result,
+  };
+}
 
-  /** Add the server's jobs (after a page load); `hydrateFailed` says whether that worked. */
-  hydrate: async () => {
-    try {
-      const { jobs } = await listJobs();
-      for (const j of jobs) {
-        get().addJob({
-          jobId: j.jobId, kind: j.kind, title: j.title, subject: j.subject, status: j.status, startedAt: j.createdAt,
-        });
-      }
-      set({ hydrateFailed: false });
-    } catch {
-      set({ hydrateFailed: true });
-    }
-  },
-  /** @type {Record<string, BackgroundJobRow>} */
-  jobs: {},
-  /** @type {Record<string, () => void>} */
-  closeFns: {},
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  pruneTimer: null,
+function mergedJobs(rows, progress, dismissed) {
+  const jobs = {};
+  for (const [jobId, row] of Object.entries(rows)) {
+    if (!dismissed.has(jobId)) jobs[jobId] = mergeRow(row, progress[jobId]);
+  }
+  return jobs;
+}
 
-  /**
-   * Arm one timer for the earliest finished row's expiry; when it fires, drop
-   * every expired row and re-arm for the next one, so rows that finished later
-   * than the first still leave on time. Rows only finish later than the armed
-   * one, so an armed timer is never late and a new finish needn't re-arm it.
-   */
-  schedulePrune: () => {
-    const { pruneTimer, jobs } = get();
-    if (pruneTimer) return;
-    let earliest = Infinity;
-    for (const row of Object.values(jobs)) {
-      if (row.status === 'running') continue;
-      earliest = Math.min(earliest, row.finishedAt ?? row.startedAt);
-    }
-    if (earliest === Infinity) return;
-    const id = setTimeout(() => {
-      const now = Date.now();
-      const next = { ...get().jobs };
-      for (const [jid, row] of Object.entries(next)) {
-        if (row.status === 'running') continue;
-        const t = row.finishedAt ?? row.startedAt;
-        if (now - t >= DONE_UI_TTL_MS) delete next[jid];
-      }
-      set({ jobs: next, pruneTimer: null });
-      get().schedulePrune();
-    }, Math.max(0, earliest + DONE_UI_TTL_MS - Date.now()));
-    set({ pruneTimer: id });
-  },
+export const useBackgroundJobsStore = create((set) => {
+  let unsubscribe = null;
 
-  /**
-   * Add a job's row and follow its progress stream, with what the caller knows
-   * of it. Idempotent per jobId: a job already followed keeps its row.
-   * Returns the jobId, for `awaitJob`.
-   * @param {{ jobId: string, kind: string, title: string, subject?: JobSubject | null, status?: 'running' | 'done' | 'error', startedAt?: number }} job
-   * @returns {string}
-   */
-  addJob: ({ jobId, kind, title, subject = null, status = 'running', startedAt }) => {
-    if (!jobId || get().jobs[jobId]) return jobId;
+  return {
+    /** The topic's rows, by jobId. @type {Record<string, { jobId: string, kind: string, title: string, subject: JobSubject | null, status: string, createdAt: number }>} */
+    rows: {},
+    /** Each followed job's progress, by jobId: a job is followed while it is listed or awaited. @type {Record<string, JobProgress>} */
+    progress: {},
+    /** Finished rows this page hid from its tray, until the server drops them. @type {Set<string>} */
+    dismissed: new Set(),
+    /** What the tray and busy state read: the listed rows not dismissed, with their progress. @type {Record<string, BackgroundJobRow>} */
+    jobs: {},
 
-    set((s) => ({
-      jobs: {
-        ...s.jobs,
-        [jobId]: {
-          jobId,
-          kind,
-          title,
-          subject,
-          step: null,
-          percent: null,
-          detail: null,
-          events: {},
-          status,
-          error: null,
-          result: null,
-          startedAt: startedAt ?? Date.now(),
-          finishedAt: null,
-        },
-      },
-    }));
-
-    const forgetStream = () => set((s) => {
-      const { [jobId]: _c, ...rest } = s.closeFns;
-      return { closeFns: rest };
-    });
-
-    const close = streamJobProgress(
-      jobId,
-      (ev) => {
+    /** Follow the `jobs` topic: each frame is the whole list. */
+    connect: () => {
+      if (unsubscribe) return;
+      unsubscribe = subscribeTopic('jobs', (data) => {
+        if (!Array.isArray(data?.jobs)) return;
+        const rows = {};
+        for (const row of data.jobs) rows[row.jobId] = row;
         set((s) => {
-          const cur = s.jobs[jobId];
-          if (!cur) return s;
-          return { jobs: { ...s.jobs, [jobId]: applyEvent(cur, ev) } };
+          // A stream still open stays: an awaited job may be listed only in a later frame.
+          const progress = {};
+          for (const [jobId, p] of Object.entries(s.progress)) {
+            if (rows[jobId] || !p.end) progress[jobId] = p;
+          }
+          const dismissed = new Set([...s.dismissed].filter((jobId) => rows[jobId]));
+          return { rows, progress, dismissed, jobs: mergedJobs(rows, progress, dismissed) };
         });
+        // A finished row is followed too: its stream replays the result or the error.
+        for (const jobId of Object.keys(rows)) followJob(jobId);
+      });
+    },
 
-        if (ev.step === 'done' || ev.step === 'error') {
-          close();
-          forgetStream();
-          get().schedulePrune();
-        }
-      },
-      (reason) => {
-        if (reason === 'not_found') {
-          get().dismissJob(jobId);
-          return;
-        }
-        set((s) => {
-          const cur = s.jobs[jobId];
-          if (!cur || cur.status !== 'running') return s;
-          return {
-            jobs: {
-              ...s.jobs,
-              [jobId]: {
-                ...cur,
-                status: 'error',
-                error: new ApiError({ code: CLIENT_CODES.CONNECTION_LOST, detail: 'Connection lost' }),
-                step: 'error',
-                finishedAt: Date.now(),
-              },
-            },
-          };
-        });
-        forgetStream();
-        get().schedulePrune();
-      },
-    );
+    disconnect: () => {
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
+      }
+      set({ rows: {}, dismissed: new Set(), jobs: {} });
+    },
 
-    set((s) => ({ closeFns: { ...s.closeFns, [jobId]: close } }));
-    return jobId;
-  },
+    /** Hide a finished row from this page's tray. */
+    dismissJob: (jobId) => set((s) => {
+      const dismissed = new Set(s.dismissed).add(jobId);
+      const { [jobId]: _gone, ...jobs } = s.jobs;
+      return { dismissed, jobs };
+    }),
+  };
+});
 
-  dismissJob: (jobId) => {
-    const close = get().closeFns[jobId];
-    if (close) close();
-    set((s) => {
-      const { [jobId]: _j, ...jobs } = s.jobs;
-      const { [jobId]: _c, ...closeFns } = s.closeFns;
-      return { jobs, closeFns };
-    });
-  },
+function setProgress(jobId, update) {
+  useBackgroundJobsStore.setState((s) => {
+    const progress = { ...s.progress, [jobId]: update(s.progress[jobId] ?? NO_PROGRESS) };
+    const row = s.rows[jobId];
+    const jobs = row && !s.dismissed.has(jobId)
+      ? { ...s.jobs, [jobId]: mergeRow(row, progress[jobId]) }
+      : s.jobs;
+    return { progress, jobs };
+  });
+}
 
-  runningCount: () =>
-    Object.values(get().jobs).filter((j) => j.status === 'running').length,
-}));
+/** Open a job's progress stream, once per job: it reconnects and replays until the terminal event or a 404. */
+function followJob(jobId) {
+  if (useBackgroundJobsStore.getState().progress[jobId]) return;
+  setProgress(jobId, () => NO_PROGRESS);
+  streamJobProgress(
+    jobId,
+    (ev) => setProgress(jobId, (p) => applyEvent(p, ev)),
+    () => setProgress(jobId, (p) => ({ ...p, end: 'gone' })),
+  );
+}
 
 /**
- * Wait for a job whose row was added (`addJob`): resolve with its result, or
- * reject with its error, an ApiError as `api()` throws (`code` is
- * CONNECTION_LOST or JOB_GONE when the stream, not the job, ended it, or the
- * row is not in the store). The job runs on the server whether or not anyone
- * waits for it.
+ * Follow a job by the jobId its ack named, listed by the topic yet or not:
+ * resolve with its result, or reject with its error, an ApiError as `api()`
+ * throws (`JOB_GONE` when the server no longer knows the job). A cancelled job
+ * (an interruptible one, cut at shutdown) resolves with no result. The job runs
+ * on the server whether or not anyone waits for it.
  * @param {string} jobId
  * @returns {Promise<unknown>}
  */
 export function awaitJob(jobId) {
   const store = useBackgroundJobsStore;
+  followJob(jobId);
   return new Promise((resolve, reject) => {
-    const settle = (row) => {
-      if (!row) {
-        // Never added, dismissed, or unknown to the server (it restarted, or the job expired).
-        reject(new ApiError({ code: CLIENT_CODES.JOB_GONE, detail: 'The job is no longer followed' }));
-        return true;
+    const settle = (progress) => {
+      switch (progress?.end ?? null) {
+        case null:
+          return false;
+        case 'done':
+          resolve(progress.result);
+          return true;
+        case 'cancelled':
+          resolve(undefined);
+          return true;
+        case 'error':
+          reject(progress.error);
+          return true;
+        default:
+          reject(new ApiError({ code: CLIENT_CODES.JOB_GONE, detail: 'The server no longer knows this job' }));
+          return true;
       }
-      // A finished row hydrated after a reload settles once its replay brings the terminal event.
-      if (row.finishedAt == null) return false;
-      if (row.status === 'done') {
-        resolve(row.result);
-        return true;
-      }
-      if (row.status === 'error') {
-        reject(row.error);
-        return true;
-      }
-      return false;
     };
-    if (settle(store.getState().jobs[jobId])) return;
+    if (settle(store.getState().progress[jobId])) return;
     const unsubscribe = store.subscribe((state) => {
-      if (settle(state.jobs[jobId])) unsubscribe();
+      if (settle(state.progress[jobId])) unsubscribe();
     });
   });
 }

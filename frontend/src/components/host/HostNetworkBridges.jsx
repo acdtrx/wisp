@@ -15,8 +15,7 @@ import {
   rowActionIconBtn,
 } from '../shared/DataTableChrome.jsx';
 import BridgeCreateModal from './BridgeCreateModal.jsx';
-import { JOB_KIND } from '../../api/jobs.js';
-import { awaitJob, useBackgroundJobsStore } from '../../store/backgroundJobsStore.js';
+import { awaitJob } from '../../store/backgroundJobsStore.js';
 import { useKindChanges } from '../../hooks/useChanges.js';
 import {
   listManagedNetworkBridges,
@@ -66,9 +65,7 @@ export default function HostNetworkBridges({ onError }) {
     setDeletingName(name);
     reportError(null);
     try {
-      await awaitJob(useBackgroundJobsStore.getState().addJob({
-        ...await deleteManagedNetworkBridge(name), kind: JOB_KIND.NETWORK_BRIDGE_DELETE,
-      }));
+      await awaitJob((await deleteManagedNetworkBridge(name)).jobId);
     } catch (err) {
       reportError(errorText(err));
     } finally {

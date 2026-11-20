@@ -7,7 +7,6 @@ import UpdateDetailsModal from './UpdateDetailsModal.jsx';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { useStatsStore } from '../../store/statsStore.js';
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
-import { JOB_KIND } from '../../api/jobs.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { getHostInfo } from '../../api/host.js';
 import { updateSettings } from '../../api/settings.js';
@@ -74,12 +73,13 @@ export default function WispUpdateSection() {
    * backend restarts, and the version poll below waits for it. */
   const [restarting, setRestarting] = useState(false);
   const [installJobId, setInstallJobId] = useState(null);
-  /* The install job's row: once its step was `restarting`, the handover happened. */
-  const installStep = useBackgroundJobsStore((s) => (installJobId ? s.jobs[installJobId]?.step : null));
+  /* Once the install job's stream brought a `restarting` event, the handover happened
+   * (read from its progress, which the wait follows whether or not the topic lists the job). */
+  const handedOver = useBackgroundJobsStore((s) => (installJobId ? !!s.progress[installJobId]?.events.restarting : false));
   const handedOverRef = useRef(false);
   useEffect(() => {
-    if (installStep === 'restarting') handedOverRef.current = true;
-  }, [installStep]);
+    if (handedOver) handedOverRef.current = true;
+  }, [handedOver]);
   const [installSlow, setInstallSlow] = useState(false);
   const [installStuck, setInstallStuck] = useState(false);
   const [error, setError] = useState(null);
@@ -195,20 +195,18 @@ export default function WispUpdateSection() {
     try {
       /* The install is a job: it downloads and stages the release (progress in
        * the jobs tray), reports `restarting`, starts wisp-updater.service and
-       * ends. The updater then stops this backend, so the job's stream may end
-       * before its result arrives: after `restarting`, that too means the
-       * handover happened. Before it, a lost stream is a failure to show.
+       * ends. The updater then stops this backend, so the job's stream may drop
+       * before its result arrives; it reconnects, and the restarted backend no
+       * longer knows the job: after `restarting`, JOB_GONE means the handover
+       * happened. Before it, JOB_GONE is a failure to show.
        * Completion is detected below by polling /api/host wispVersion === target. */
       handedOverRef.current = false;
-      const jobId = useBackgroundJobsStore.getState().addJob({
-        ...await installWispUpdate({ force: confirmForce }), kind: JOB_KIND.SELF_UPDATE,
-      });
+      const { jobId } = await installWispUpdate({ force: confirmForce });
       setInstallJobId(jobId);
       try {
         await awaitJob(jobId);
       } catch (err) {
-        const streamEnded = err.code === CLIENT_CODES.CONNECTION_LOST || err.code === CLIENT_CODES.JOB_GONE;
-        if (!(streamEnded && handedOverRef.current)) throw err;
+        if (!(err.code === CLIENT_CODES.JOB_GONE && handedOverRef.current)) throw err;
       }
       setRestarting(true);
     } catch (err) {

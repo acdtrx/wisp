@@ -4,7 +4,6 @@ import { Loader2 } from 'lucide-react';
 
 import { useVmStore } from '../../store/vmStore.js';
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
-import { JOB_KIND } from '../../api/jobs.js';
 import { createVM, getHostBridges } from '../../api/vms.js';
 import GeneralSection from '../sections/GeneralSection.jsx';
 import DisksSection from '../sections/DisksSection.jsx';
@@ -57,7 +56,6 @@ const defaultForm = () => ({
 export default function CreateVMPanel() {
   const navigate = useNavigate();
   const fetchVMs = useVmStore((s) => s.fetchVMs);
-  const addJob = useBackgroundJobsStore((s) => s.addJob);
 
   const [form, setForm] = useState(defaultForm);
   const [bridges, setBridges] = useState([]);
@@ -212,7 +210,7 @@ export default function CreateVMPanel() {
             : undefined,
       };
 
-      const jobId = addJob({ ...await createVM(spec), kind: JOB_KIND.VM_CREATE, subject: { type: 'vm', name } });
+      const { jobId } = await createVM(spec);
       setCreateJobId(jobId);
       const result = await awaitJob(jobId);
       setCreating(false);

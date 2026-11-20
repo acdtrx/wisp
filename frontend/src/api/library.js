@@ -23,7 +23,7 @@ export async function checkDownloadUrl(url) {
   return api(`/api/library/check-url?${params}`);
 }
 
-/** A job: answers 202 `{ jobId, title }` (all four downloads). */
+/** A job: answers 202 `{ jobId, kind, title, subject }` (all four downloads). */
 export async function startDownloadFromUrl(url) {
   return api('/api/library/download', { method: 'POST', body: { url } });
 }

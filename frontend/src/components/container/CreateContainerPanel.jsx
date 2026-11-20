@@ -4,11 +4,10 @@ import { Loader2, ArrowLeft } from 'lucide-react';
 
 import { useContainerStore } from '../../store/containerStore.js';
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
-import { JOB_KIND } from '../../api/jobs.js';
 import { createContainer } from '../../api/containers.js';
 import ContainerGeneralSection from '../sections/ContainerGeneralSection.jsx';
 import { getAppList } from '../../apps/appRegistry.js';
-import { CLIENT_CODES, errorText } from '../../api/errors.js';
+import { errorText } from '../../api/errors.js';
 
 const STEP_LABELS = {
   validating: 'Validating…',
@@ -21,13 +20,9 @@ const STEP_LABELS = {
   error: 'Error',
 };
 
-const CONNECTION_LOST_DETAIL =
-  'The progress stream closed unexpectedly (e.g. proxy timeout). Check the server: journalctl -u wisp -n 50';
-
 export default function CreateContainerPanel() {
   const navigate = useNavigate();
   const fetchContainers = useContainerStore((s) => s.fetchContainers);
-  const addJob = useBackgroundJobsStore((s) => s.addJob);
 
   const [selectedApp, setSelectedApp] = useState(null);
   const [form, setForm] = useState({
@@ -39,7 +34,6 @@ export default function CreateContainerPanel() {
   const [createJobId, setCreateJobId] = useState(null);
   const row = useBackgroundJobsStore((s) => (createJobId ? s.jobs[createJobId] : null));
   const [createError, setCreateError] = useState(null);
-  const [createDetail, setCreateDetail] = useState(null);
 
   /* The create job outlives this panel (it keeps running in the jobs
    * tray), so its completion only opens the new workload while the user is
@@ -73,7 +67,6 @@ export default function CreateContainerPanel() {
   const handleCreate = async () => {
     setCreating(true);
     setCreateError(null);
-    setCreateDetail(null);
 
     const spec = {
       name: form.name.trim(),
@@ -82,9 +75,7 @@ export default function CreateContainerPanel() {
     if (selectedApp) spec.app = selectedApp;
 
     try {
-      const jobId = addJob({
-        ...await createContainer(spec), kind: JOB_KIND.CONTAINER_CREATE, subject: { type: 'container', name: spec.name },
-      });
+      const { jobId } = await createContainer(spec);
       setCreateJobId(jobId);
       await awaitJob(jobId);
       setCreating(false);
@@ -93,7 +84,6 @@ export default function CreateContainerPanel() {
       if (mountedRef.current) navigate(`/container/${encodeURIComponent(spec.name)}/overview`);
     } catch (err) {
       setCreateError(errorText(err));
-      setCreateDetail(err.code === CLIENT_CODES.CONNECTION_LOST ? CONNECTION_LOST_DETAIL : null);
       setCreating(false);
       setCreateJobId(null);
     }
@@ -154,7 +144,6 @@ export default function CreateContainerPanel() {
         {createError && (
           <div className="mt-4 rounded-md border border-status-stopped/30 bg-status-stopped-soft px-4 py-3">
             <p className="text-sm font-medium text-status-stopped">{createError}</p>
-            {createDetail && <p className="mt-1 text-xs text-status-stopped/80">{createDetail}</p>}
           </div>
         )}
 

@@ -2,17 +2,11 @@ import { create } from 'zustand';
 import * as containerApi from '../api/containers.js';
 import { createSSE } from '../api/sse.js';
 import { sendAndAwaitChange, sendAndAwaitTopic, subscribeChanges, subscribeTopic } from '../api/events.js';
-import { JOB_KIND } from '../api/jobs.js';
 import {
   errorKey, withError, withoutError, withoutErrorsOfVanished, withErrorsRenamed, withBusy, anyActionInFlight,
 } from './workloadActions.js';
-import { awaitJob, useBackgroundJobsStore } from './backgroundJobsStore.js';
+import { awaitJob } from './backgroundJobsStore.js';
 import { errorText } from '../api/errors.js';
-
-/** Add a container job's row, the container its subject, and wait for its result. */
-function awaitContainerJob(accepted, kind, name) {
-  return awaitJob(useBackgroundJobsStore.getState().addJob({ ...accepted, kind, subject: { type: 'container', name } }));
-}
 
 /** Same scheduled restart (or both none)? Compared by value — list pushes carry fresh objects. */
 function sameScheduledRestart(a, b) {
@@ -377,17 +371,17 @@ export const useContainerStore = create((set, get) => {
     },
 
     startContainer: async (name) => get().withAction(name, 'start', async () =>
-      awaitContainerJob(await containerApi.startContainerApi(name), JOB_KIND.CONTAINER_START, name)),
+      awaitJob((await containerApi.startContainerApi(name)).jobId)),
     stopContainer: async (name) => get().withAction(name, 'stop', async () =>
-      awaitContainerJob(await containerApi.stopContainerApi(name), JOB_KIND.CONTAINER_STOP, name)),
+      awaitJob((await containerApi.stopContainerApi(name)).jobId)),
     restartContainer: async (name) => get().withAction(name, 'restart', async () =>
-      awaitContainerJob(await containerApi.restartContainerApi(name), JOB_KIND.CONTAINER_RESTART, name)),
+      awaitJob((await containerApi.restartContainerApi(name)).jobId)),
     /* Kill (SIGKILL) always ends the task: it stays busy until a `containers` frame
      * shows the container out of `running`. */
     killContainer: async (name) => get().withAction(name, 'kill', () =>
       sendAndAwaitTopic('containers', () => containerApi.killContainerApi(name), listShowsLeft(name, 'running'))),
     deleteContainer: async (name, deleteFiles) => get().withAction(name, 'delete', async () =>
-      awaitContainerJob(await containerApi.deleteContainerApi(name, deleteFiles), JOB_KIND.CONTAINER_DELETE, name)),
+      awaitJob((await containerApi.deleteContainerApi(name, deleteFiles)).jobId)),
 
     refreshImageUpdateStatus: async () => {
       try {
@@ -412,11 +406,14 @@ export const useContainerStore = create((set, get) => {
       }));
 
       try {
-        const jobId = useBackgroundJobsStore.getState().addJob({
-          ...await containerApi.checkContainerImageUpdates(ref), kind: JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK,
-        });
+        const { jobId } = await containerApi.checkContainerImageUpdates(ref);
         set((prev) => ({ imageUpdateCheck: { ...prev.imageUpdateCheck, jobId } }));
         const result = await awaitJob(jobId);
+        if (!result) {
+          // Cancelled (cut at shutdown): the check ended with nothing to show.
+          set((prev) => ({ imageUpdateCheck: { ...prev.imageUpdateCheck, running: false, ref: null, jobId: null } }));
+          return;
+        }
         set((prev) => ({
           imageUpdateCheck: {
             ...prev.imageUpdateCheck,
