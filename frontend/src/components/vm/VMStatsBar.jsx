@@ -49,9 +49,6 @@ export default function VMStatsBar() {
         {vmStats.guestHostname ? (
           <StatPill label="Host" value={vmStats.guestHostname} />
         ) : null}
-        {vmStats.mdnsHostname ? (
-          <StatPill label="mDNS" value={vmStats.mdnsHostname} />
-        ) : null}
         {vmStats.guestIp ? (
           <StatPill label="IP" value={vmStats.guestIp} />
         ) : null}

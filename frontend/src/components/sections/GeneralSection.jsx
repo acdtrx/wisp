@@ -3,7 +3,6 @@ import { Cpu, MemoryStick } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
-import HelpIcon from '../shared/HelpIcon.jsx';
 import { LinuxIcon, WindowsIcon } from '../shared/vmIcons.jsx';
 import { errorText } from '../../api/errors.js';
 
@@ -26,7 +25,6 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
     name: vmConfig.name || '', osType: detectOSType(vmConfig),
     vcpus: vmConfig.vcpus || 1, memoryMiB: vmConfig.memoryMiB || 1024,
     memoryUnit: (vmConfig.memoryMiB || 1024) >= 1024 ? 'GB' : 'MB',
-    localDns: vmConfig.localDns === true,
     autostart: vmConfig.autostart || false,
   };
   const [form, setForm] = useState(defaults);
@@ -41,13 +39,12 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
       vcpus: vmConfig.vcpus || 1,
       memoryMiB: vmConfig.memoryMiB || 1024,
       memoryUnit: (vmConfig.memoryMiB || 1024) >= 1024 ? 'GB' : 'MB',
-      localDns: vmConfig.localDns === true,
       autostart: vmConfig.autostart || false,
     };
     setForm(data);
     setOriginal(data);
     setError(null);
-  }, [vmConfig?.name, vmConfig?.vcpus, vmConfig?.memoryMiB, vmConfig?.osCategory, vmConfig?.localDns, vmConfig?.autostart]);
+  }, [vmConfig?.name, vmConfig?.vcpus, vmConfig?.memoryMiB, vmConfig?.osCategory, vmConfig?.autostart]);
 
   // Overview: full reset when VM / server data changes. Create: avoid re-init on every
   // keystroke or CPU/RAM edit — that reset form+original and made Save flicker.
@@ -107,7 +104,6 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
       if (form.osType !== original.osType) changes.osType = form.osType;
       if (form.vcpus !== original.vcpus) changes.vcpus = form.vcpus;
       if (form.memoryMiB !== original.memoryMiB) changes.memoryMiB = form.memoryMiB;
-      if (form.localDns !== original.localDns) changes.localDns = form.localDns;
       if (form.autostart !== original.autostart) changes.autostart = form.autostart;
 
       await onSave(changes);
@@ -140,12 +136,6 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
               title={isRunning && !isCreating ? 'Stop the VM to rename it' : undefined}
               className="input-field"
             />
-          </Field>
-
-          <Field label="DNS" helpText="Local DNS — advertise this VM on the LAN as <name>.local via mDNS">
-            <div className="flex h-[34px] items-center">
-              <Toggle checked={form.localDns} onChange={(v) => updateField('localDns', v)} />
-            </div>
           </Field>
 
           <Field label="Auto Start">
@@ -207,13 +197,12 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
 }
 
 
-function Field({ label, icon: Icon, helpText, className, children }) {
+function Field({ label, icon: Icon, className, children }) {
   return (
     <div className={className}>
       <label className="flex items-center gap-1.5 text-xs font-medium text-text-secondary mb-1.5">
         {Icon && <Icon size={12} />}
         {label}
-        {helpText && <HelpIcon text={helpText} size={12} />}
       </label>
       {children}
     </div>

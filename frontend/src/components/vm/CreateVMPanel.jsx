@@ -42,7 +42,6 @@ const defaultForm = () => ({
   vtpm: false,
   virtioRng: true,
   nestedVirt: false,
-  localDns: true,
   nics: [{ type: 'bridge', source: '', model: 'virtio', mac: '' }],
   disk: { type: 'none', sizeGB: 32, bus: 'virtio', sourcePath: null, sourceName: null, resizeGB: null },
   disk2: { type: 'none', sizeGB: 32, bus: 'virtio', sourcePath: null, sourceName: null, resizeGB: null },
@@ -110,7 +109,6 @@ export default function CreateVMPanel() {
     vtpm: form.vtpm,
     virtioRng: form.virtioRng,
     nestedVirt: form.nestedVirt,
-    localDns: form.localDns,
     nics: form.nics,
     disks: [],
     features: form.osType === 'Windows' ? { hyperv: true } : {},
@@ -176,7 +174,6 @@ export default function CreateVMPanel() {
         vtpm: form.vtpm,
         virtioRng: form.virtioRng,
         nestedVirt: form.nestedVirt,
-        localDns: form.localDns,
         nics: form.nics.map((n) => ({
           type: n.type || 'bridge',
           source: n.source || bridges[0] || undefined,
