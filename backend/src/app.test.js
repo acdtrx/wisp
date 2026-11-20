@@ -15,6 +15,7 @@ import path from 'node:path';
 import Fastify from 'fastify';
 
 const READ_TOKEN = 'wisp_read_test-read-token';
+const PASSWORD = 'test-login-password';
 const ADMIN_TOKEN = 'wisp_admin_test-admin-token';
 
 const dir = mkdtempSync(path.join(tmpdir(), 'wisp-app-test-'));
@@ -30,6 +31,9 @@ process.env.WISP_CONFIG_PATH = path.join(dir, 'wisp-config.json');
 let app;
 
 before(async () => {
+  // wisp-password beside the config file, where lib/auth.js reads it.
+  const { setPassword } = await import('./lib/auth.js');
+  setPassword(PASSWORD);
   const { buildApp } = await import('./app.js');
   ({ app } = await buildApp(Fastify({ logger: { level: 'silent' } }).log));
 });
@@ -61,14 +65,51 @@ test('a request without credentials answers 401 AUTH_REQUIRED', async () => {
   assert.equal(res.json().error, 'AUTH_REQUIRED');
 });
 
-// An invalid session cookie needs the password file (the session secret derives from
-// it), which the test does not write: verified on a host.
 test('an unknown token answers 401 AUTH_INVALID', async () => {
   const token = await app.inject({
     method: 'GET', url: '/api/settings', headers: bearer('wisp_read_unknown'), remoteAddress: '10.0.0.1',
   });
   assert.equal(token.statusCode, 401);
   assert.equal(token.json().error, 'AUTH_INVALID');
+});
+
+/** A browser session: the token and CSRF value a password login sets, and their cookie header. */
+async function login(remoteAddress) {
+  const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { password: PASSWORD }, remoteAddress });
+  assert.equal(res.statusCode, 200);
+  const cookies = Object.fromEntries(res.cookies.map((c) => [c.name, c.value]));
+  assert.ok(cookies.wisp_session && cookies.wisp_csrf);
+  return {
+    token: cookies.wisp_session,
+    csrf: cookies.wisp_csrf,
+    cookie: `wisp_session=${cookies.wisp_session}; wisp_csrf=${cookies.wisp_csrf}`,
+  };
+}
+
+test('a garbage session cookie answers 401 AUTH_INVALID', async () => {
+  const [header, payload] = (await login('10.0.0.4')).token.split('.');
+  // Not a token at all, and one shaped like a token whose signature is not the secret's.
+  for (const value of ['garbage', `${header}.${payload}.${Buffer.from('forged').toString('base64url')}`]) {
+    const res = await app.inject({ method: 'GET', url: '/api/settings', headers: { cookie: `wisp_session=${value}` } });
+    assert.equal(res.statusCode, 401, value);
+    assert.equal(res.json().error, 'AUTH_INVALID', value);
+  }
+});
+
+// The PATCH body fails its schema, so the request that passes the auth hook changes nothing.
+test('a session write without the right X-CSRF-Token answers 403 CSRF_FAILED; with it, it passes', async () => {
+  const session = await login('10.0.0.5');
+  const patch = (headers) => app.inject({
+    method: 'PATCH', url: '/api/settings', headers: { cookie: session.cookie, ...headers }, payload: { updateChannel: 'nightly' },
+  });
+  for (const headers of [{}, { 'x-csrf-token': 'wrong' }]) {
+    const res = await patch(headers);
+    assert.equal(res.statusCode, 403);
+    assert.equal(res.json().error, 'CSRF_FAILED');
+  }
+  const res = await patch({ 'x-csrf-token': session.csrf });
+  assert.notEqual(res.statusCode, 403);
+  assert.equal(res.json().error, 'VALIDATION_FAILED');
 });
 
 test('the sixth bad token from one address answers 429 RATE_LIMITED', async () => {
