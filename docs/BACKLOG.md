@@ -261,6 +261,18 @@ a backup code: the managers' backup paths leave such failures uncoded (phase 5's
 containerManager work). **Revisit trigger:** the next work on VM create defaults or
 firmware edits, or a client that branches on a backup failure's code.
 
+**A rename leaves the workload's backups under its old name.** Backups live in per-name
+folders at each destination (`<root>/vms/<name>/<timestamp>/`,
+`<root>/containers/<name>/<timestamp>/`), and a rename moves neither folder: on each
+destination (local, and the SMB backup mount when one is configured) the old name's folder
+stays, its manifests naming the old name. The workload's page, which lists backups by the
+current name, then shows none, and the Backups view shows them as a workload of the old
+name that no longer exists; restoring one as new still works. The last-attempt status does
+move (milestone 3). Seen on tini for a container rename (2026-11-20); a VM rename does the
+same by the code (`vmManagerBackup.js` lists `<root>/vms/<vmName>/`, and nothing moves it).
+**Revisit trigger:** a user who renamed a workload looking for its backups, or the next work
+on backups.
+
 **Container sections take no busy reason.** While a job holds a container, its header
 actions are disabled with the job's title as the reason, but its sections (mounts, env,
 services, devices) keep their Save enabled and meet a 409 `CONTAINER_BUSY` instead; the VM
