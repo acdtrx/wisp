@@ -59,6 +59,12 @@ what each becomes.
 - **One kind per operation.** The image update check is one kind, whether started from the
   UI or through MCP.
 - **Every job is in the tray and readable through MCP**: `get_job` reads the one store.
+- **The job list is a topic on the event stream** (added 2026-11-20, from milestone 2's
+  review): an open page sees a job whoever started it (the scheduler, an hourly check,
+  MCP, another tab), in the tray and as its workload's busy state, without a reload.
+  `GET /api/jobs` stays for API clients.
+- **The ack names the job**: `{ jobId, kind, title, subject }`. The client never supplies
+  a kind or a subject of its own.
 - **`POST /api/host/updates/check` starts the package check**, as it does today, and is
   the one route that does (settled 2026-11-20: the feature first named a second route,
   `…/packages/refresh`, for what this one already did). `GET /api/host/updates/packages`
