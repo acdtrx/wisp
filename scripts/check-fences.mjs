@@ -38,10 +38,25 @@
  *      its operation module's (lib/vmOperations.js, lib/containerOperations.js).
  *
  *   8. Outbound HTTP has one home (CODING-RULES §7): over the same files,
- *      comments stripped, none outside lib/downloads/ calls the global fetch —
- *      a `fetch(` that is no property's (`x.fetch(` is another object's), or
- *      `globalThis.fetch` / `globalThis['fetch']`. undici is rule 1's fence.
- *      A reviewed allowance is an EXCEPTIONS line with the specifier `fetch`.
+ *      comments stripped, none outside lib/downloads/
+ *      - calls the global fetch: a `fetch(` or `fetch?.(` that is no
+ *        property's (`x.fetch(` is another object's), or the global object's
+ *        `fetch` taken as a property (`globalThis.fetch`, `global?.fetch`,
+ *        `globalThis['fetch']`, …);
+ *      - imports Node's HTTP clients, `node:http`, `node:https` or
+ *        `node:http2` (or their bare names), statically or by `import()` /
+ *        `require()`, other than a static import naming only `createServer` /
+ *        `createSecureServer` (a stub server in a test is no client);
+ *      - opens a WebSocket client: `new WebSocket(`, or `new x.WebSocket(`.
+ *      undici is rule 1's fence. A reviewed allowance is an EXCEPTIONS line
+ *      with the specifier `fetch`, `WebSocket` or the module's specifier.
+ *      Known limits — what it still cannot catch:
+ *      - the global fetch taken as a value: `const { fetch } = globalThis`,
+ *        `.then(fetch)`, `fetch.call(…)`, `Reflect.apply(fetch, …)`;
+ *      - the WebSocket class under another name (`const W = WebSocket`);
+ *      - HTTP spoken over a raw socket, `node:net` / `node:tls`, which the
+ *        backend uses for other protocols (the console's TCP leg, DNS);
+ *      - a child process that makes the request (curl, wget).
  *
  * A module's darwin stubs are its own files. Migrations are glue.
  * Specifiers inside comments (JSDoc type imports) are skipped: they load
@@ -64,9 +79,8 @@
  * Known limits (a dumb scan, not a parser): a require function re-bound to
  * another name (`const s = r`) or called through `r.call(…)` / `r.apply(…)`
  * is not followed, nor is any property access other than `<object>.name(`.
- * The global fetch taken as a value (`const { fetch } = globalThis`,
- * `.then(fetch)`) is not seen, and a method named `fetch(` defined in an
- * object or a class outside lib/downloads/ is reported.
+ * Rule 8's misses are listed with it; it also reports a method named `fetch(`
+ * defined in an object or a class outside lib/downloads/.
  * A new import between two files already in CYCLE_GROUP can close another
  * cycle through an excepted edge and pass: such cycles go when the excepted
  * edges do, and the search without those edges still catches the rest.
@@ -98,9 +112,13 @@ const ROUTES = 'backend/src/routes/';
 /** Rule 7: the lock modules, which no route imports. */
 const LOCK_MODULES = [`${LIB}/vmOperationLock.js`, `${LIB}/containerOperationLock.js`];
 const CARVED = ['host', 'networking', 'mdns', 'storage'];
-/** Rule 8: the one home of outbound HTTP, and a call of the global fetch. */
+/** Rule 8: the one home of outbound HTTP, a call of the global fetch, a WebSocket client and Node's HTTP clients. */
 const FETCH_HOME = `${LIB}/downloads/`;
-const GLOBAL_FETCH = /(?<![\w$.])fetch\s*\(|(?<![\w$.])globalThis\s*(?:\.\s*fetch\b|\[\s*(['"`])fetch\1\s*\])/g;
+const GLOBAL_FETCH = /(?<![\w$.])fetch\s*(?:\?\.\s*)?\(|(?<![\w$.])(?:globalThis|global)\s*(?:\?\.\s*|\.\s*)(?:fetch\b|\[\s*(['"`])fetch\1\s*\])|(?<![\w$.])(?:globalThis|global)\s*\[\s*(['"`])fetch\2\s*\]/g;
+const WEBSOCKET_CLIENT = /(?<![\w$.])new\s+(?:[\w$]+\s*(?:\?\.|\.)\s*)*WebSocket\s*\(/g;
+const HTTP_CLIENT_MODULES = new Set(['http', 'https', 'http2']);
+/** What a static import of an HTTP module may name: a server, never a client. */
+const HTTP_SERVER_NAMES = new Set(['createServer', 'createSecureServer']);
 /** The carved modules a strict manager may import (CODING-RULES §7). */
 const MANAGER_CARVED = ['mdns', 'networking', 'storage'];
 
@@ -447,10 +465,18 @@ async function main() {
     const fileModule = moduleOf(fileRel);
     const source = await readFile(file, 'utf8');
     const code = stripComments(source);
-    if (!fileRel.startsWith(FETCH_HOME) && !EXCEPTIONS.some((e) => e.file === fileRel && e.specifier === 'fetch')) {
+    const isExcepted = (specifier) => EXCEPTIONS.some((e) => e.file === fileRel && e.specifier === specifier);
+    const lineAt = (index) => source.slice(0, index).split('\n').length;
+    const outsideFetchHome = !fileRel.startsWith(FETCH_HOME);
+    const viaDownloads = 'outbound HTTP, which goes through lib/downloads: ssrfSafeFetch, or fetchOperatorEndpoint for an endpoint only the operator sets';
+    if (outsideFetchHome && !isExcepted('fetch')) {
       for (const m of code.matchAll(GLOBAL_FETCH)) {
-        const line = source.slice(0, m.index).split('\n').length;
-        violations.push(`${fileRel}:${line} fetch — outbound HTTP goes through lib/downloads: ssrfSafeFetch, or fetchOperatorEndpoint for an endpoint only the operator sets (CODING-RULES §7)`);
+        violations.push(`${fileRel}:${lineAt(m.index)} fetch — the global fetch is ${viaDownloads} (CODING-RULES §7)`);
+      }
+    }
+    if (outsideFetchHome && !isExcepted('WebSocket')) {
+      for (const m of code.matchAll(WEBSOCKET_CLIENT)) {
+        violations.push(`${fileRel}:${lineAt(m.index)} WebSocket — a WebSocket client is ${viaDownloads} (CODING-RULES §7)`);
       }
     }
     for (const found of importsOf(code)) {
@@ -472,6 +498,14 @@ async function main() {
         continue;
       }
       if (!found.prefix && !specifier.startsWith('.')) {
+        if (outsideFetchHome && HTTP_CLIENT_MODULES.has(specifier.replace(/^node:/, ''))) {
+          const names = /^\{([^}]*)\}$/.exec((clause ?? '').trim())?.[1]
+            .split(',').map((n) => n.trim().split(/\s+as\s+/)[0]).filter(Boolean);
+          if (!names?.length || !names.every((n) => HTTP_SERVER_NAMES.has(n))) {
+            report(`Node's HTTP client is ${viaDownloads}; outside it, import only createServer / createSecureServer`);
+          }
+          continue;
+        }
         if (BUILTINS.has(specifier)) continue;
         const pkg = packageName(specifier);
         const allowed = PACKAGE_FENCES[pkg];
@@ -556,7 +590,7 @@ async function main() {
   const summary = `${count} imports across ${files.length} files`;
   const cycleSummary = `no import cycle outside the ${CYCLE_EXCEPTIONS.length} listed, among the ${CYCLE_GROUP.length} files listed`;
   const runnerSummary = 'only the backend runs the state migrations';
-  const fetchSummary = 'no global fetch outside lib/downloads/';
+  const fetchSummary = 'no global fetch, HTTP client import or WebSocket client outside lib/downloads/';
   if (violations.length > 0) {
     console.error(`\n${violations.length} fence violation(s) (${summary}).`);
     process.exit(1);

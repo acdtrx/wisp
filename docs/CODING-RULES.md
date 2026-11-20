@@ -136,7 +136,9 @@ source refer to them.
     `lib/downloads/` (settled 2026-11-12: one home for outbound HTTP's SSRF guard and
     its timeouts). Add a new operation as a new purpose-named facade export.
   - Applied: outbound HTTP has one home, `lib/downloads/`: no backend file outside it
-    imports `undici` or calls the global `fetch` (settled 2026-11-20). It has two
+    imports `undici` or Node's HTTP clients (`node:http`, `node:https`, `node:http2`; a
+    server's `createServer` aside), calls the global `fetch` or opens a WebSocket client
+    (settled 2026-11-20). It has two
     fetches: `ssrfSafeFetch` for every URL from user input or a public source, and
     `fetchOperatorEndpoint` for an endpoint only the operator sets, the OIDC issuer
     (§9).
@@ -144,8 +146,9 @@ source refer to them.
     package fences, the facades (a module with an `index.js` is imported only through
     it), strict managers and carved modules, and routes that take no operation lock (a
     workload command's lock is its operation module's, ARCHITECTURE.md, Repo layout), and
-    a global `fetch` outside `lib/downloads/`. A reviewed allowance is one line in its
-    `EXCEPTIONS`.
+    outbound HTTP outside `lib/downloads/` (the global `fetch`, Node's HTTP clients, a
+    WebSocket client; its header lists what it cannot see). A reviewed allowance is one
+    line in its `EXCEPTIONS`.
   - Applied — **strict managers**: give vmManager and containerManager **zero Wisp-glue
     imports**: stdlib, their own internals, and the carved cross-cutting modules
     (`mdns/`, `networking/`, `storage/`) only. Change them only for **generic
@@ -296,7 +299,7 @@ checks and the unit tests below for what they cover:
     parity: every name a platform facade takes is exported by its `linux/` and
     `darwin/` sides.
   - `check-fences`: the import fences (§7), no route importing an operation lock
-    among them and no global `fetch` outside `lib/downloads/`; no import cycle in the backend beyond its listed exceptions; and only
+    among them and no outbound HTTP outside `lib/downloads/`; no import cycle in the backend beyond its listed exceptions; and only
     the backend runs the state migrations (§16): outside
     `docs/` and Markdown, no file but those in `backend/src` names the runner, and none
     but the runner and the checks reaches for `backend/migrations`, comments aside.
