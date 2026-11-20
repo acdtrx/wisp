@@ -244,6 +244,15 @@ wiping cloud-init.
 module's hook (found 2026-11-12). **Revisit trigger:** the response and the badge are
 seen disagreeing again, or the next change to any of the three.
 
+**Found on tini in milestone 3's run (2026-11-20), outside this feature.** A VM created
+through the API with its firmware left at the default (`bios`) from the Ubuntu 26.04 cloud
+image never boots (dracut emergency shell), while the UI's defaults (`uefi`) do; a `PATCH
+{"firmware":"uefi"}` on such a VM answers 500 `LIBVIRT_ERROR` "UEFI requires ACPI". And a
+backup that fails inside its run on a tool error (tar exit 2) records `INTERNAL_ERROR`, not
+a backup code: the managers' backup paths leave such failures uncoded (phase 5's
+containerManager work). **Revisit trigger:** the next work on VM create defaults or
+firmware edits, or a client that branches on a backup failure's code.
+
 **Container sections take no busy reason.** While a job holds a container, its header
 actions are disabled with the job's title as the reason, but its sections (mounts, env,
 services, devices) keep their Save enabled and meet a 409 `CONTAINER_BUSY` instead; the VM
