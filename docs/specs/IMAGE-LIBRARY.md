@@ -58,8 +58,8 @@ Renames a file within the image directory. Validates both the old and new filena
 
 `ssrfSafeFetch` enforces three layers (see `backend/src/lib/downloads/downloadFromUrl.js`):
 
-1. **Single DNS resolve.** `assertUrlNotPrivate` calls `dns.lookup` once and rejects if any returned address is private/loopback/CGNAT/multicast/reserved/IPv4-mapped-IPv6/etc. (full list in `isPrivateIPv4` / `isPrivateIPv6`).
-2. **DNS-pinned connection.** The resolved addresses are fed to an `undici.Agent` with a `connect.lookup` hook that pins the connection to those exact IPs. A second DNS lookup at connect time would otherwise enable a rebinding bypass.
+1. **Single DNS resolve.** `assertUrlNotPrivate` calls `dns.lookup` once and rejects if any returned address is private/loopback/CGNAT/multicast/reserved, or IPv6 unique-local/link-local/site-local (`fec0::/10`)/multicast (full list in `isPrivateIPv4` / `isPrivateIPv6`). An IPv6 address that wraps an IPv4 one — IPv4-mapped (`::ffff:0:0/96`), IPv4-compatible (`::/96`), NAT64 (`64:ff9b::/96`) or 6to4 (`2002::/16`) — is judged by the IPv4 address it carries; local-use NAT64 (`64:ff9b:1::/48`) and an address that does not parse are refused.
+2. **DNS-pinned connection.** The resolved addresses are fed to an `undici.Agent` with a `connect.lookup` hook that pins the connection to those exact IPs. A second DNS lookup at connect time would otherwise enable a rebinding bypass. One Agent per hop, closed gracefully once the hop's answer is in: its sockets go when the caller has read the body.
 3. **Manual redirect re-validation.** All fetches use `redirect: 'manual'`; each `Location` is re-resolved + re-pinned. Up to 5 redirects are followed.
 
 This applies to:

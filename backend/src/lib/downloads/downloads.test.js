@@ -7,7 +7,7 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
-import { fetchOperatorEndpoint, ssrfSafeFetch } from './index.js';
+import { fetchOperatorEndpoint, isPrivateIPv4, isPrivateIPv6, ssrfSafeFetch } from './index.js';
 
 const hits = { ok: 0, redirect: 0, hang: 0 };
 let server;
@@ -72,5 +72,41 @@ test('ssrfSafeFetch refuses the same loopback stub before sending a request', as
   const okHits = hits.ok;
   await assert.rejects(ssrfSafeFetch(`${base}/ok`), { code: 'SSRF_BLOCKED' });
   await assert.rejects(ssrfSafeFetch(`http://localhost:${port}/ok`), { code: 'SSRF_BLOCKED' });
+  assert.equal(hits.ok, okHits);
+});
+
+test('an IPv6 address that wraps a private IPv4 one is private, by the IPv4 rule', () => {
+  const wrapping = [
+    '::ffff:127.0.0.1', '::ffff:7f00:1', // IPv4-mapped
+    '::127.0.0.1', '::7f00:1', '::10.0.0.1', // IPv4-compatible, ::/96
+    '64:ff9b::127.0.0.1', '64:ff9b::a9fe:a9fe', '64:ff9b::192.168.1.1', // NAT64
+    '2002:7f00:1::', '2002:c0a8:101::1', '2002:a00:1:0:0:0:0:1', // 6to4
+  ];
+  for (const addr of wrapping) assert.equal(isPrivateIPv6(addr), true, addr);
+  const publicWrapped = ['::ffff:8.8.8.8', '64:ff9b::8.8.8.8', '2002:808:808::1'];
+  for (const addr of publicWrapped) assert.equal(isPrivateIPv6(addr), false, addr);
+});
+
+test('site-local, unique-local, link-local, multicast and local-use NAT64 IPv6 are private', () => {
+  for (const addr of ['fec0::1', 'feff::1', 'fc00::1', 'fd12:3456::1', 'fe80::1', 'febf::1', 'ff02::1', '64:ff9b:1::1', '::', '::1']) {
+    assert.equal(isPrivateIPv6(addr), true, addr);
+  }
+  for (const addr of ['2001:db8::1', '2606:4700:4700::1111', 'fe00::1', '2003::1', '64:ff9b:2::1']) {
+    assert.equal(isPrivateIPv6(addr), false, addr);
+  }
+});
+
+test('an IPv6 address that does not parse is refused', () => {
+  for (const addr of ['1::2::3', '12345::', '1.2.3.4::', '::1.2.3.4:5', '1:2:3:4:5:6:7', 'g::1']) {
+    assert.equal(isPrivateIPv6(addr), true, addr);
+  }
+  assert.equal(isPrivateIPv4('10.0.0.1'), true);
+});
+
+test('ssrfSafeFetch refuses an IPv6 literal that wraps the loopback stub', async () => {
+  const okHits = hits.ok;
+  for (const host of ['[::127.0.0.1]', '[::ffff:127.0.0.1]', '[64:ff9b::127.0.0.1]', '[2002:7f00:1::]', '[fec0::1]']) {
+    await assert.rejects(ssrfSafeFetch(`http://${host}:${port}/ok`), { code: 'SSRF_BLOCKED' }, host);
+  }
   assert.equal(hits.ok, okHits);
 });

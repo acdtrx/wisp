@@ -50,38 +50,66 @@ export function isPrivateIPv4(addr) {
   return false;
 }
 
-export function isPrivateIPv6(addr) {
-  const normalized = addr.toLowerCase();
-  if (normalized === '::1' || normalized === '::') return true;
-
-  // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d) in dotted form.
-  const ipv4MappedDotted = normalized.match(/^::ffff:([0-9.]+)$/);
-  if (ipv4MappedDotted) return isPrivateIPv4(ipv4MappedDotted[1]);
-  const ipv4CompatDotted = normalized.match(/^::([0-9.]+)$/);
-  if (ipv4CompatDotted && ipv4CompatDotted[1].includes('.')) return isPrivateIPv4(ipv4CompatDotted[1]);
-
-  // All-hex IPv4-mapped form: Node's URL parser normalises `::ffff:127.0.0.1`
-  // to `::ffff:7f00:1`. Decode the last 32 bits back into a.b.c.d and re-check.
-  const ipv4MappedHex = normalized.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-  if (ipv4MappedHex) {
-    const high = parseInt(ipv4MappedHex[1], 16);
-    const low = parseInt(ipv4MappedHex[2], 16);
-    const v4 = `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`;
-    return isPrivateIPv4(v4);
-  }
-
-  const segs = normalized.split(':').filter(Boolean);
-  if (segs.length === 0) return true;
-  const first = segs[0];
-  if (first.length >= 2) {
-    const high = parseInt(first.slice(0, 2), 16);
-    if (high >= 0xfc && high <= 0xfd) return true;           // fc00::/7 (unique local)
-    if (high === 0xfe) {
-      const second = parseInt(first.slice(0, 4).padEnd(4, '0').slice(2, 4), 16);
-      if (second >= 0x80 && second <= 0xbf) return true;     // fe80::/10 (link-local)
+/**
+ * The eight 16-bit groups of an IPv6 address (`::` expanded, a trailing dotted
+ * IPv4 part and a `%zone` accepted), or null when it is not one.
+ */
+function ipv6Groups(addr) {
+  const text = addr.toLowerCase().replace(/%.*$/, '');
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const parse = (half) => {
+    if (half === '') return [];
+    const parts = half.split(':');
+    const groups = [];
+    for (const [i, part] of parts.entries()) {
+      if (i === parts.length - 1 && part.includes('.')) {
+        const octets = ipv4Octets(part);
+        if (!octets) return null;
+        groups.push((octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3]);
+      } else if (/^[0-9a-f]{1,4}$/.test(part)) {
+        groups.push(parseInt(part, 16));
+      } else {
+        return null;
+      }
     }
-    if (high === 0xff) return true;                          // ff00::/8 (multicast)
+    return groups;
+  };
+  const head = parse(halves[0]);
+  const tail = halves.length === 2 ? parse(halves[1]) : [];
+  if (!head || !tail) return null;
+  if (halves.length === 1) return head.length === 8 ? head : null;
+  // A dotted IPv4 part only ends the address: `::1.2.3.4:5` is not one.
+  if (head.length + tail.length > 7 || halves[0].includes('.')) return null;
+  return [...head, ...new Array(8 - head.length - tail.length).fill(0), ...tail];
+}
+
+/** The IPv4 address two groups carry, as a.b.c.d. */
+function embeddedIPv4(high, low) {
+  return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+}
+
+/**
+ * Whether an IPv6 address is one an outbound request must not reach. An
+ * address that wraps an IPv4 one is judged by that address's rule: the
+ * IPv4-mapped and IPv4-compatible forms, NAT64 and 6to4 all reach it. An
+ * address that does not parse is refused.
+ */
+export function isPrivateIPv6(addr) {
+  const g = ipv6Groups(addr);
+  if (!g) return true;
+  const zeros = (from, to) => g.slice(from, to).every((x) => x === 0);
+  if (zeros(0, 5) && g[5] === 0xffff) return isPrivateIPv4(embeddedIPv4(g[6], g[7])); // ::ffff:0:0/96 (IPv4-mapped)
+  if (zeros(0, 6)) return isPrivateIPv4(embeddedIPv4(g[6], g[7]));     // ::/96 (IPv4-compatible; :: and ::1 among them)
+  if (g[0] === 0x64 && g[1] === 0xff9b && zeros(2, 6)) {
+    return isPrivateIPv4(embeddedIPv4(g[6], g[7]));                    // 64:ff9b::/96 (NAT64)
   }
+  if (g[0] === 0x64 && g[1] === 0xff9b && g[2] === 1) return true;     // 64:ff9b:1::/48 (local-use NAT64)
+  if (g[0] === 0x2002) return isPrivateIPv4(embeddedIPv4(g[1], g[2])); // 2002::/16 (6to4)
+  if ((g[0] & 0xfe00) === 0xfc00) return true;                         // fc00::/7 (unique local)
+  if ((g[0] & 0xffc0) === 0xfe80) return true;                         // fe80::/10 (link-local)
+  if ((g[0] & 0xffc0) === 0xfec0) return true;                         // fec0::/10 (site-local, deprecated)
+  if ((g[0] & 0xff00) === 0xff00) return true;                         // ff00::/8 (multicast)
   return false;
 }
 
@@ -249,8 +277,13 @@ function untilAborted(promise, signal) {
  * that resolves to a private or loopback address (SSRF_BLOCKED).
  *
  * Fetch with manual redirect handling. Each Location target is re-validated by
- * `assertUrlNotPrivate` and DNS-pinned to a fresh undici Agent. Up to
+ * `assertUrlNotPrivate` and DNS-pinned to a fresh undici Agent — one per hop,
+ * since its lookup answers that hop's addresses whatever the host. Up to
  * `MAX_REDIRECTS` redirects are followed.
+ *
+ * Each hop's Agent is closed as soon as its answer's headers are in: undici's
+ * close is graceful, so the request in flight — its body, read by the caller
+ * at its own pace — completes first, and the Agent's sockets go when it has.
  *
  * Pass `method` (`'GET'` / `'HEAD'`) and any standard fetch options. Returns
  * an undici Response object whose `body` (web ReadableStream) can be piped.
@@ -262,11 +295,18 @@ export async function ssrfSafeFetch(urlStr, init = {}) {
     const addrs = await untilAborted(assertUrlNotPrivate(currentUrl), init.signal);
     const dispatcher = makePrivateIPGuardAgent(addrs);
 
-    const res = await undiciFetch(currentUrl, {
-      ...init,
-      redirect: 'manual',
-      dispatcher,
-    });
+    let res;
+    try {
+      res = await undiciFetch(currentUrl, {
+        ...init,
+        redirect: 'manual',
+        dispatcher,
+      });
+    } finally {
+      dispatcher.close().catch(() => {
+        /* a close fails only on an Agent already destroyed: nothing is left to release */
+      });
+    }
 
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get('location');
@@ -274,8 +314,8 @@ export async function ssrfSafeFetch(urlStr, init = {}) {
         return res; // 3xx without Location — return as-is
       }
       const next = new URL(location, currentUrl).toString();
-      // Drain the redirect response body so the connection can be reused/closed.
-      try { await res.arrayBuffer(); } catch { /* ignore */ }
+      // Drain the redirect response body so its Agent's close completes.
+      try { await res.arrayBuffer(); } catch { /* the hop is abandoned either way */ }
       currentUrl = next;
       continue;
     }
