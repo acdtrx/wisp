@@ -255,6 +255,13 @@ same files.
 Next after phase 2 (moved up 2026-11-18). P-1 is a live defect, and its clean fix, like
 P-3's, is a design and not a patch.
 
+The first two features below, with `DEPLOYMENT.md` as their contract, are done
+2026-11-20, merged to `main` from `anchor/phase-7-start-up`. The later feature (the
+helpers) stays open. Not run: an update downloaded from a GitHub release, first observed
+at the next release; a failure of the RAPL step, which the test VMs lack. The
+NetworkManager and plain systemd-networkd hosts were Ubuntu and Debian VMs adapted to
+them. What the two features left for later is in `docs/BACKLOG.md`.
+
 - **Migrations at start (P-3).** The backend runs the pending state migrations every time
   it starts, before it serves a request or starts a workload. A failed migration stops
   the start and says why. The updater, the installer and `wispctl` no longer run them:
