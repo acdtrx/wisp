@@ -1,6 +1,7 @@
 import { getSettings, updateSettings, updateOidcSettings } from '../lib/settings.js';
 import { createAppError } from '../lib/appErrors.js';
 import { refreshWispAnnouncement } from '../lib/wispDiscovery.js';
+import { openOnPurpose } from '../lib/schemaValidation.js';
 import { mountResponseSchema, noContentSchema } from './schemas.js';
 
 const backupScheduleSchema = {
@@ -35,6 +36,7 @@ const settingsResponseProps = {
       clientId: { type: 'string' },
       hasClientSecret: { type: 'boolean' },
     },
+    additionalProperties: false,
   },
 };
 
@@ -46,6 +48,7 @@ export default async function settingsRoutes(fastify) {
         200: {
           type: 'object',
           properties: settingsResponseProps,
+          additionalProperties: false,
         },
       },
     },
@@ -72,7 +75,7 @@ export default async function settingsRoutes(fastify) {
           updateChannel: { type: 'string', enum: ['stable', 'beta'] },
           // Declared so the refusal names where OIDC is set (PATCH /settings/oidc,
           // a session only) rather than answering an unknown key.
-          oidc: {},
+          oidc: openOnPurpose(),
         },
         additionalProperties: false,
       },

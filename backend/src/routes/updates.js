@@ -23,6 +23,7 @@ const STATUS_RESPONSE = {
     lastError: { type: ['string', 'null'] },
     repo: { type: 'string' },
   },
+  additionalProperties: false,
 };
 
 export default async function updatesRoutes(fastify) {

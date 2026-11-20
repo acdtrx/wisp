@@ -48,6 +48,7 @@ import { startImageUpdateCheckJob } from '../lib/updateChecks.js';
 import { watchRequestBody, bodyWatchHooks } from '../lib/requestBodyWatch.js';
 import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { createAppError } from '../lib/appErrors.js';
+import { openOnPurpose } from '../lib/schemaValidation.js';
 import { containerNameSchema } from '../lib/validation.js';
 import {
   isKnownApp,
@@ -68,7 +69,7 @@ const serviceParams = containerParamsSchema({ port: servicePortSchema });
 const restartPolicySchema = { type: 'string', enum: ['never', 'on-failure', 'unless-stopped', 'always'] };
 const iconIdSchema = { type: ['string', 'null'] };
 /** An app's own configuration: its app module validates it (docs/specs/CUSTOM-APPS.md). */
-const appConfigSchema = { type: 'object', additionalProperties: true };
+const appConfigSchema = openOnPurpose({ type: 'object' });
 
 /** A mount entry: the name is a path segment and the semantic rules are the manager's (CONTAINERS.md, Mount entry). */
 const mountFields = {
@@ -90,7 +91,8 @@ const mountBodySchema = {
   additionalProperties: false,
 };
 
-const serviceTxtSchema = { type: 'object', additionalProperties: { type: 'string' } };
+/** An mDNS service's TXT records: any key, a string each. */
+const serviceTxtSchema = openOnPurpose({ type: 'object', additionalProperties: { type: 'string' } });
 
 /** One entry of an env delta: an upsert (`{ value?, secret? }`) or `null`, a removal. */
 const envPatchEntrySchema = {
@@ -130,9 +132,9 @@ const containerPatchSchema = {
       },
       additionalProperties: false,
     },
-    envPatch: { type: 'object', additionalProperties: envPatchEntrySchema },
+    envPatch: openOnPurpose({ type: 'object', additionalProperties: envPatchEntrySchema }),
     mounts: { type: 'array', items: mountBodySchema },
-    mountRenames: { type: 'object', additionalProperties: { type: 'string', minLength: 1 } },
+    mountRenames: openOnPurpose({ type: 'object', additionalProperties: { type: 'string', minLength: 1 } }),
     devices: {
       type: 'array',
       items: {
@@ -165,12 +167,15 @@ const containerListItemSchema = {
     scheduledRestart: {
       type: ['object', 'null'],
       properties: { attempt: { type: 'integer' }, at: { type: 'number' } },
+      additionalProperties: false,
     },
     pendingRestart: {
       type: ['object', 'null'],
       properties: { since: { type: 'string' } },
+      additionalProperties: false,
     },
   },
+  additionalProperties: false,
 };
 
 /**
@@ -192,7 +197,7 @@ const containerDetailSchema = {
     createdAt: { type: 'string' },
     imageDigest: { type: 'string' },
     imagePulledAt: { type: 'string' },
-    env: {
+    env: openOnPurpose({
       type: 'object',
       additionalProperties: {
         type: 'object',
@@ -201,8 +206,9 @@ const containerDetailSchema = {
           secret: { type: 'boolean' },
           isSet: { type: 'boolean' },
         },
+        additionalProperties: false,
       },
-    },
+    }),
     mounts: {
       type: 'array',
       items: {
@@ -212,17 +218,19 @@ const containerDetailSchema = {
           isSet: { type: 'boolean' },
           sizeBytes: { type: ['number', 'null'] },
         },
+        additionalProperties: false,
       },
     },
     devices: {
       type: 'array',
-      items: { type: 'object', properties: { type: { type: 'string' }, device: { type: 'string' } } },
+      items: { type: 'object', properties: { type: { type: 'string' }, device: { type: 'string' } }, additionalProperties: false },
     },
     services: {
       type: 'array',
       items: {
         type: 'object',
         properties: { port: { type: 'integer' }, type: { type: 'string' }, txt: serviceTxtSchema },
+        additionalProperties: false,
       },
     },
     network: {
@@ -234,16 +242,17 @@ const containerDetailSchema = {
         ip: { type: 'string' },
         ip6: { type: 'string' },
       },
+      additionalProperties: false,
     },
-    metadata: {
+    metadata: openOnPurpose({
       type: 'object',
       properties: { app: { type: 'string' }, appConfig: appConfigSchema },
-      additionalProperties: true,
-    },
+    }),
     mdnsHostname: { type: ['string', 'null'] },
     pid: { type: 'integer' },
     uptime: { type: 'number' },
   },
+  additionalProperties: false,
 };
 
 const imageRefSchema = { type: 'string', minLength: 1, pattern: '\\S' };
@@ -348,6 +357,7 @@ export default async function containerRoutes(fastify) {
               size: { type: 'number' },
               updated: { type: ['string', 'null'] },
             },
+            additionalProperties: false,
           },
         },
       },
@@ -414,6 +424,7 @@ export default async function containerRoutes(fastify) {
             imagesChecked: { type: 'integer' },
             imagesUpdated: { type: 'integer' },
           },
+          additionalProperties: false,
         },
       },
     },
@@ -451,9 +462,11 @@ export default async function containerRoutes(fastify) {
                   sizeBytes: { type: ['number', 'null'] },
                   partial: { type: 'boolean' },
                 },
+                additionalProperties: false,
               },
             },
           },
+          additionalProperties: false,
         },
       },
     },
@@ -617,9 +630,11 @@ export default async function containerRoutes(fastify) {
                   imageDigest: { type: ['string', 'null'] },
                   logSizeBytes: { type: 'integer' },
                 },
+                additionalProperties: false,
               },
             },
           },
+          additionalProperties: false,
         },
       },
     },
@@ -776,7 +791,7 @@ export default async function containerRoutes(fastify) {
     config: { auth: 'admin' },
     schema: {
       params: mountParams,
-      response: { 200: { type: 'object', properties: { content: { type: 'string' } } } },
+      response: { 200: { type: 'object', properties: { content: { type: 'string' } }, additionalProperties: false } },
     },
     handler: async (request) => {
       const { name, mountName } = request.params;

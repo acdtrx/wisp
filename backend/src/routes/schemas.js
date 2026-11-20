@@ -3,6 +3,7 @@
  * gets (`completeRouteSchema`), and the rules `npm run check` holds each
  * route's declaration to (`routeSchemaProblems`; docs/specs/API.md, Errors).
  */
+import { OPEN_ON_PURPOSE } from '../lib/schemaValidation.js';
 import { containerNameSchema, runIdSchema, vmNameSchema } from '../lib/validation.js';
 
 /** Every error answer, on every route (docs/specs/ERROR-HANDLING.md, The error body). */
@@ -12,6 +13,7 @@ export const errorBodySchema = {
     error: { type: 'string' },
     detail: { type: 'string' },
   },
+  additionalProperties: false,
 };
 
 /** A 204: no body. */
@@ -22,6 +24,7 @@ export const createdIdSchema = {
   type: 'object',
   required: ['id'],
   properties: { id: { type: 'string' } },
+  additionalProperties: false,
 };
 
 /** `:id` of a stored record (a section, a home-page group or tile, a host mount, an API token). */
@@ -63,6 +66,7 @@ export const jobSubjectSchema = {
     type: { type: 'string', enum: ['vm', 'container'] },
     name: { type: 'string' },
   },
+  additionalProperties: false,
 };
 
 /** A job route's 202 body: the job it started, or the running one it joined (docs/specs/API.md, Background jobs). */
@@ -75,6 +79,7 @@ export const jobAckSchema = {
     title: { type: 'string' },
     subject: jobSubjectSchema,
   },
+  additionalProperties: false,
 };
 
 /** A backup's body: the destinations to write (`local`, the backup mount's id); none means the defaults. */
@@ -134,6 +139,7 @@ export const mountResponseSchema = {
     fsType: { type: 'string' },
     readOnly: { type: 'boolean' },
   },
+  additionalProperties: false,
 };
 
 /**
@@ -174,25 +180,47 @@ function urlParams(url) {
   return url.includes('*') ? [...names, '*'] : names;
 }
 
-/** Paths in `schema` to an object schema that leaves `additionalProperties` unsaid. */
-function openObjects(schema, path) {
+/** Keywords that constrain a value without naming its `type`. */
+const TYPELESS_CONSTRAINTS = ['enum', 'const', 'anyOf', 'oneOf', 'allOf', 'not', '$ref'];
+
+/**
+ * What is wrong with each object in `schema`, by its path: an object that takes
+ * keys it does not list (`additionalProperties` other than `false`), or lists
+ * none (`properties` missing), unless it is marked open on purpose
+ * (`openOnPurpose`); a schema that lists `properties` without
+ * `type: 'object'`; a schema that says nothing at all of its value. A marked
+ * schema's own listed properties are still checked.
+ */
+function objectProblems(schema, path) {
   if (!schema || typeof schema !== 'object') return [];
   const found = [];
+  const at = path || '/';
   const types = [].concat(schema.type ?? []);
-  if (types.includes('object') && schema.additionalProperties === undefined) found.push(path || '/');
-  for (const [key, sub] of Object.entries(schema.properties ?? {})) found.push(...openObjects(sub, `${path}/${key}`));
-  if (typeof schema.additionalProperties === 'object') found.push(...openObjects(schema.additionalProperties, `${path}/*`));
-  if (schema.items) found.push(...openObjects(schema.items, `${path}/[]`));
+  const open = schema[OPEN_ON_PURPOSE] === true;
+  if (types.length === 0 && !open) {
+    if (schema.properties) found.push(`${at} lists properties without type 'object'`);
+    else if (!TYPELESS_CONSTRAINTS.some((k) => schema[k] !== undefined)) found.push(`${at} has no type`);
+  }
+  if (types.includes('object') && !open) {
+    if (schema.additionalProperties !== false) found.push(`${at} takes unlisted keys and is not marked openOnPurpose`);
+    else if (!schema.properties) found.push(`${at} lists no properties`);
+  }
+  for (const [key, sub] of Object.entries(schema.properties ?? {})) found.push(...objectProblems(sub, `${path}/${key}`));
+  if (typeof schema.additionalProperties === 'object') found.push(...objectProblems(schema.additionalProperties, `${path}/*`));
+  for (const [i, sub] of [].concat(schema.items ?? []).entries()) {
+    found.push(...objectProblems(sub, Array.isArray(schema.items) ? `${path}/[${i}]` : `${path}/[]`));
+  }
   for (const key of ['anyOf', 'oneOf', 'allOf']) {
-    for (const [i, sub] of (schema[key] ?? []).entries()) found.push(...openObjects(sub, `${path}/${key}[${i}]`));
+    for (const [i, sub] of (schema[key] ?? []).entries()) found.push(...objectProblems(sub, `${path}/${key}[${i}]`));
   }
   return found;
 }
 
 /**
  * A route's declared schemas as the report shows them, and what they lack:
- * params naming every URL param; querystring and body objects that say
- * whether they take other keys; a response schema for a 2xx, unless the route
+ * params naming every URL param; every object of its input and of its answers
+ * listing the keys it takes, unless marked open on purpose (`openOnPurpose`,
+ * lib/schemaValidation.js); a response schema for a 2xx, unless the route
  * answers a stream, a file, a redirect or MCP (`config.answers`).
  * @param {{ method: string, url: string, declaredSchema?: object, config?: object, websocket?: boolean }} route
  */
@@ -212,10 +240,11 @@ export function routeSchemaProblems({ url, declaredSchema, config, websocket }) 
     if (!schema.params) problems.push('no params schema');
     else if (missing.length > 0) problems.push(`params schema lacks ${missing.join(', ')}`);
   }
-  for (const part of ['querystring', 'body']) {
-    for (const path of openObjects(schema[part], '')) {
-      problems.push(`${part}${path === '/' ? '' : path} does not set additionalProperties`);
-    }
+  for (const part of ['params', 'querystring', 'body']) {
+    for (const problem of objectProblems(schema[part], '')) problems.push(`${part}${problem.startsWith('/ ') ? problem.slice(1) : problem}`);
+  }
+  for (const [code, response] of Object.entries(schema.response ?? {})) {
+    for (const problem of objectProblems(response, '')) problems.push(`response ${code}${problem.startsWith('/ ') ? problem.slice(1) : problem}`);
   }
   const successCodes = Object.keys(schema.response ?? {}).filter((code) => /^2/.test(code));
   if (answers === undefined && successCodes.length === 0) problems.push('no response schema for a 2xx');

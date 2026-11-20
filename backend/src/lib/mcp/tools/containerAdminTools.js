@@ -13,6 +13,7 @@ import { getContainerConfig } from '../../containerManager/index.js';
 import { getAppModule, maskContainerConfigSecrets } from '../../containerApps/index.js';
 import { containerNameSchema } from '../../validation.js';
 import { createAppError } from '../../appErrors.js';
+import { openOnPurpose } from '../../schemaValidation.js';
 import {
   startContainerDeployJob,
   startContainerImageUpdateJob,
@@ -173,11 +174,10 @@ export const containerAdminTools = [
       type: 'object',
       properties: {
         name: nameArgument('App container name'),
-        appConfig: {
+        appConfig: openOnPurpose({
           type: 'object',
           description: 'Partial appConfig — only agent-writable fields for that app',
-          additionalProperties: true,
-        },
+        }),
       },
       required: ['name', 'appConfig'],
       additionalProperties: false,

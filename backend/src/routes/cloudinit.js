@@ -80,7 +80,7 @@ export default async function cloudInitRoutes(fastify) {
         additionalProperties: false,
       },
       response: {
-        200: { type: 'object', properties: { keys: { type: 'array', items: { type: 'string' } } } },
+        200: { type: 'object', properties: { keys: { type: 'array', items: { type: 'string' } } }, additionalProperties: false },
       },
     },
     handler: async (request) => {

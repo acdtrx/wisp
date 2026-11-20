@@ -165,6 +165,7 @@ export default async function mountsRoutes(fastify) {
               mountPath: { type: 'string' },
               mounted: { type: 'boolean' },
             },
+            additionalProperties: false,
           },
         },
       },
@@ -197,7 +198,7 @@ export default async function mountsRoutes(fastify) {
         },
         additionalProperties: false,
       },
-      response: { 200: { type: 'object', properties: { ok: { type: 'boolean' } } } },
+      response: { 200: { type: 'object', properties: { ok: { type: 'boolean' } }, additionalProperties: false } },
     },
     handler: async (request) => {
       const body = request.body || {};

@@ -363,7 +363,12 @@ the detail naming the part and the first field that fails (above).
   duplicate, an id that names nothing, a path outside the allowed roots).
 - `npm run check` fails a route that lacks a schema it needs (the route report,
   `routeSchemaProblems` in `routes/schemas.js`): params for each URL param, a response
-  schema for a success, and every accepted object saying whether it takes other keys.
+  schema for a success, and every object, in the input and in the answers, listing its
+  keys and taking no others (`additionalProperties: false`). An object that takes keys it
+  does not list (an app's config, a map, the OIDC provider's callback parameters), or a
+  value any JSON may be (the MCP envelope), is marked open on purpose
+  (`openOnPurpose`, `lib/schemaValidation.js`); the check fails any other, and a schema
+  that names no type.
 
 ### Name validation
 

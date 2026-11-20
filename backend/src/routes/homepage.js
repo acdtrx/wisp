@@ -31,6 +31,7 @@ const tileSchema = {
         state: { type: 'string' },
         updateAvailable: { type: 'boolean' },
       },
+      additionalProperties: false,
     },
     conflicts: {
       type: 'array',
@@ -41,9 +42,11 @@ const tileSchema = {
           publisher: { type: 'string' },
           manualTileId: { type: ['string', 'null'] },
         },
+        additionalProperties: false,
       },
     },
   },
+  additionalProperties: false,
 };
 
 const groupSchema = {
@@ -54,6 +57,7 @@ const groupSchema = {
     builtin: { type: 'boolean' },
     tileIds: { type: 'array', items: { type: 'string' } },
   },
+  additionalProperties: false,
 };
 
 const responseSchema = {
@@ -62,6 +66,7 @@ const responseSchema = {
     tiles: { type: 'array', items: tileSchema },
     groups: { type: 'array', items: groupSchema },
   },
+  additionalProperties: false,
 };
 
 const nameProperty = { type: 'string', minLength: 1, maxLength: 64 };

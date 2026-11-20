@@ -10,8 +10,32 @@
  *   are coerced to the type their schema names.
  * - Strict: a schema ajv cannot read as written (an unknown keyword, a union
  *   type, `properties` without `type: 'object'`) fails at compile, so at boot.
+ * - An object that takes keys it does not list says so on purpose
+ *   (`openOnPurpose`); `npm run check` fails any other (routes/schemas.js,
+ *   `routeSchemaProblems`).
  */
 import Ajv from 'ajv';
+
+/**
+ * The annotation that marks a schema open on purpose: an object whose other
+ * keys are its owner's to check (an app's config, a provider's callback
+ * parameters), or a value any JSON may be (the MCP envelope, which its server
+ * answers in JSON-RPC's terms). It changes no validation.
+ */
+export const OPEN_ON_PURPOSE = 'openOnPurpose';
+
+/**
+ * `schema` marked open on purpose; an object schema that gives no
+ * `additionalProperties` takes any other key.
+ */
+export function openOnPurpose(schema = {}) {
+  const isObject = [].concat(schema.type ?? []).includes('object');
+  return {
+    ...schema,
+    ...(isObject && schema.additionalProperties === undefined ? { additionalProperties: true } : {}),
+    [OPEN_ON_PURPOSE]: true,
+  };
+}
 
 const COMMON_OPTIONS = {
   allErrors: false,
@@ -22,6 +46,7 @@ const COMMON_OPTIONS = {
 
 const jsonAjv = new Ajv({ ...COMMON_OPTIONS, coerceTypes: false });
 const stringPartAjv = new Ajv({ ...COMMON_OPTIONS, coerceTypes: 'array' });
+for (const ajv of [jsonAjv, stringPartAjv]) ajv.addKeyword({ keyword: OPEN_ON_PURPOSE, schemaType: 'boolean' });
 
 /** Fastify's validator compiler (`setValidatorCompiler`): the request part picks the instance. */
 export function compileRouteValidator({ schema, httpPart }) {

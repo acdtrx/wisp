@@ -7,6 +7,7 @@ import {
   reorderSections,
   getAssignments,
 } from '../lib/sections.js';
+import { openOnPurpose } from '../lib/schemaValidation.js';
 import { createdIdSchema, idParamsSchema, noContentSchema } from './schemas.js';
 
 const sectionSchema = {
@@ -17,17 +18,17 @@ const sectionSchema = {
     order: { type: 'number' },
     builtin: { type: 'boolean' },
   },
+  additionalProperties: false,
 };
 
 const responseSchema = {
   type: 'object',
   properties: {
     sections: { type: 'array', items: sectionSchema },
-    /* `assignments` is a freeform `{ "vm:foo": "section-id", ... }` map; we
-     * leave the value type loose because Fastify's response serializer would
-     * otherwise drop entries it doesn't recognise. */
-    assignments: { type: 'object', additionalProperties: { type: 'string' } },
+    /* `assignments` is a `{ "vm:foo": "section-id", ... }` map, whatever the keys. */
+    assignments: openOnPurpose({ type: 'object', additionalProperties: { type: 'string' } }),
   },
+  additionalProperties: false,
 };
 
 /** `{ sections, assignments }` — the envelope `GET /sections` returns, and the

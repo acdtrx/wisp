@@ -5,6 +5,7 @@
  * scope rides on request.user and gates which tools are listed/callable.
  */
 import { createAppError } from '../lib/appErrors.js';
+import { openOnPurpose } from '../lib/schemaValidation.js';
 import { handleMcpMessage } from '../lib/mcp/mcpServer.js';
 
 export default async function mcpRoutes(fastify) {
@@ -12,7 +13,7 @@ export default async function mcpRoutes(fastify) {
   // in JSON-RPC's own terms (an invalid request is a JSON-RPC error, not a 400).
   fastify.post('/mcp', {
     config: { auth: 'mcp', answers: 'mcp' },
-    schema: { body: {} },
+    schema: { body: openOnPurpose() },
     handler: async (request, reply) => {
       const { status, body } = await handleMcpMessage(request.body, {
         scope: request.user?.scope,

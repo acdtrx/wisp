@@ -11,6 +11,7 @@ import { beginLogin, completeLogin } from '../lib/oidc.js';
 import { listApiTokens, createApiToken, revokeApiToken, API_TOKEN_SCOPES } from '../lib/apiTokens.js';
 import { isAuthRateLimited, recordFailedAuthAttempt, AUTH_RATE_WINDOW_SECONDS } from '../lib/loginRateLimit.js';
 import { asAppError, createAppError, errorBody } from '../lib/appErrors.js';
+import { openOnPurpose } from '../lib/schemaValidation.js';
 import { idParamsSchema, noContentSchema } from './schemas.js';
 
 const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback';
@@ -80,6 +81,7 @@ export default async function authRoutes(fastify) {
           properties: {
             ok: { type: 'boolean' },
           },
+          additionalProperties: false,
         },
       },
     },
@@ -189,7 +191,7 @@ export default async function authRoutes(fastify) {
       response: {
         200: {
           type: 'array',
-          items: { type: 'object', properties: tokenResponseProps },
+          items: { type: 'object', properties: tokenResponseProps, additionalProperties: false },
         },
       },
     },
@@ -216,6 +218,7 @@ export default async function authRoutes(fastify) {
             // Plaintext, returned exactly once — only the hash is stored.
             token: { type: 'string' },
           },
+          additionalProperties: false,
         },
       },
     },
@@ -249,7 +252,7 @@ export default async function authRoutes(fastify) {
     config: { auth: 'public' },
     schema: {
       response: {
-        200: { type: 'object', properties: { enabled: { type: 'boolean' } } },
+        200: { type: 'object', properties: { enabled: { type: 'boolean' } }, additionalProperties: false },
       },
     },
     handler: async () => {
@@ -299,7 +302,8 @@ export default async function authRoutes(fastify) {
     config: { auth: 'public', answers: 'redirect' },
     errorHandler: redirectOidcFailure,
     schema: {
-      querystring: {
+      // The provider's parameters: it may add its own (iss, session_state, …).
+      querystring: openOnPurpose({
         type: 'object',
         properties: {
           code: { type: 'string' },
@@ -307,9 +311,7 @@ export default async function authRoutes(fastify) {
           error: { type: 'string' },
           error_description: { type: 'string' },
         },
-        // Providers may append extra params (iss, session_state, …).
-        additionalProperties: true,
-      },
+      }),
     },
     handler: async (request, reply) => {
       const { code, state, error } = request.query || {};

@@ -22,7 +22,7 @@
   2026-11-20). Two compilers, chosen by request part: JSON bodies (and tool arguments) are
   not coerced, the querystring and params, which arrive as strings, are coerced to their
   schema's type; both refuse unknown keys (`removeAdditional: false`,
-  `additionalProperties: false` on every accepted object) and are strict, so a schema ajv
+  `additionalProperties: false` on every object not marked `openOnPurpose`) and are strict, so a schema ajv
   cannot read as written — a union type, an unknown keyword — fails at boot. A route that
   declares no querystring or body takes none, and `npm run check` fails a route without
   the schemas it needs (the route report). Routes throw, and one error handler answers every

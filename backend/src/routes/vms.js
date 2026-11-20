@@ -65,7 +65,7 @@ const createDiskSchema = {
 
 const diskSlotParam = { slot: { type: 'string', minLength: 1 } };
 
-const pendingRestartSchema = { type: ['object', 'null'], properties: { since: { type: 'string' } } };
+const pendingRestartSchema = { type: ['object', 'null'], properties: { since: { type: 'string' } }, additionalProperties: false };
 
 /** GET /vms rows, the `vms` topic's array too. */
 const vmListItemSchema = {
@@ -85,6 +85,7 @@ const vmListItemSchema = {
     startedAt: { type: ['number', 'null'] },
     staleBinary: { type: 'boolean' },
   },
+  additionalProperties: false,
 };
 
 /** GET /vms/:name: the VM's saved configuration (its inactive domain XML) and its state. */
@@ -112,10 +113,11 @@ const vmDetailSchema = {
         cores: { type: 'integer' },
         threads: { type: 'integer' },
       },
+      additionalProperties: false,
     },
     cpuFeatures: {
       type: 'array',
-      items: { type: 'object', properties: { name: { type: 'string' }, policy: { type: 'string' } } },
+      items: { type: 'object', properties: { name: { type: 'string' }, policy: { type: 'string' } }, additionalProperties: false },
     },
     nestedVirt: { type: 'boolean' },
     bootOrder: { type: 'array', items: { type: 'string' } },
@@ -133,6 +135,7 @@ const vmDetailSchema = {
           readonly: { type: 'boolean' },
           sizeGiB: { type: 'integer' },
         },
+        additionalProperties: false,
       },
     },
     nics: {
@@ -146,6 +149,7 @@ const vmDetailSchema = {
           model: { type: ['string', 'null'] },
           target: { type: ['string', 'null'] },
         },
+        additionalProperties: false,
       },
     },
     graphics: {
@@ -156,9 +160,10 @@ const vmDetailSchema = {
         listen: { type: ['string', 'null'] },
         autoport: { type: ['string', 'null'] },
       },
+      additionalProperties: false,
     },
     videoModel: { type: ['string', 'null'] },
-    features: { type: 'object', properties: { hyperv: { type: 'boolean' } } },
+    features: { type: 'object', properties: { hyperv: { type: 'boolean' } }, additionalProperties: false },
     memBalloon: { type: 'boolean' },
     guestAgent: { type: 'boolean' },
     vtpm: { type: 'boolean' },
@@ -167,6 +172,7 @@ const vmDetailSchema = {
     localDns: { type: 'boolean' },
     pendingRestart: pendingRestartSchema,
   },
+  additionalProperties: false,
 };
 
 export default async function vmsRoutes(fastify) {
@@ -391,7 +397,7 @@ export default async function vmsRoutes(fastify) {
     config: { auth: 'read' },
     schema: {
       params: vmParamsSchema(),
-      response: { 200: { type: 'object', properties: { xml: { type: 'string' } } } },
+      response: { 200: { type: 'object', properties: { xml: { type: 'string' } }, additionalProperties: false } },
     },
     handler: async (request) => {
       const xml = await getVMXML(request.params.name);
@@ -549,6 +555,7 @@ export default async function vmsRoutes(fastify) {
               vendorId: { type: 'string' },
               productId: { type: 'string' },
             },
+            additionalProperties: false,
           },
         },
       },
