@@ -15,9 +15,10 @@ name may hold `.` or `_` or run to 128 characters, which the hostname schema (an
 (found 2026-11-20, with the 128-character VM names). **Revisit trigger:** a VM named
 with a dot, an underscore or past 63 characters gets cloud-init.
 
-**The test module mocks use `namedExports`, deprecated after Node 24.** Four test files
+**The test module mocks use `namedExports`, deprecated after Node 24.** Five test files
 (`backend/src/lib/containerOperations.test.js`, `vmOperations.test.js`,
-`containerBackupScheduler.test.js`, `cloudInit.test.js`) mock modules with
+`containerBackupScheduler.test.js`, `cloudInit.test.js`,
+`downloads/ssrfSafeFetch.test.js`) mock modules with
 `mock.module(…, { namedExports })`, which later Node releases replace with `exports`
 (found 2026-11-20). **Revisit trigger:** the runtime moves past Node 24, or the option
 warns or breaks in the test run.
