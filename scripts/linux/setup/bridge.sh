@@ -17,7 +17,8 @@
 # servers, on a static address all its routes, name servers and search domains
 # — the uplink none of it, and systemd-networkd must run each from the unit
 # netplan renders for it. Otherwise, or when the step is stopped, it puts the
-# kept original back, applies it, and fails saying so.
+# kept original back, applies it, and fails saying so; failing before its
+# switch, it takes back only what it wrote.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -55,7 +56,7 @@ planned_sources="$(cat "$NET_PLAN_DIR/sources")" || fail "no record of what the 
 KEPT_ROOT=/var/lib/wisp/network-before-bridge
 DROPIN_DIR="/etc/systemd/network/10-netplan-$BRIDGE.network.d"
 DROPIN="$DROPIN_DIR/50-wisp-dhcp-identity.conf"
-KEPT="" KEPT_STAGE="" DROPIN_DIR_MADE=0 WHY=""
+KEPT="" KEPT_STAGE="" DROPIN_DIR_MADE=0 SWITCHED=0 WHY=""
 
 # keep_original: NETPLAN_ORIGIN copied into KEPT, staged under a hidden name
 # and renamed into place, so no half-made one is ever seen; a stage a step cut
@@ -78,8 +79,8 @@ keep_original() {
 # drop_kept: a stop before the first change leaves nothing kept.
 drop_kept() { rm -rf -- ${KEPT_STAGE:+"$KEPT_STAGE"} ${KEPT:+"$KEPT"}; }
 
-# apply_bridge: the drop-in as this plan needs it, the switch, then netplan
-# applies them. Sets WHY when a part fails.
+# apply_bridge: the drop-in as this plan needs it, the switch (SWITCHED), then
+# netplan applies them. Sets WHY when a part fails.
 apply_bridge() {
   if [[ -s "$NET_PLAN_DIR/50-wisp-dhcp-identity.conf" ]]; then
     if [[ ! -d "$DROPIN_DIR" ]]; then
@@ -94,6 +95,7 @@ apply_bridge() {
     changed "removed $DROPIN"
   fi
   install_file "$NETPLAN_ORIGIN" "$NET_PLAN_DIR/netplan-origin.yaml" 0600 || { WHY="cannot write $NETPLAN_ORIGIN"; return 1; }
+  SWITCHED=1
   changed "$NETPLAN_ORIGIN"
   echo "  applying: $BRIDGE on $UPLINK (was $UPLINK_ADDR); an ssh session may pause"
   net_apply netplan apply || { WHY="netplan apply failed"; return 1; }
@@ -185,14 +187,18 @@ uplink_back() {
   done
 }
 
-# restore: the kept original back, the drop-in gone (and its directory, when
-# this step made it and it is empty), the bridge deleted, netplan applied.
-# Stops at the first part that fails.
+# remove_dropin: the drop-in gone, and its directory, when this step made it
+# and it is empty.
+remove_dropin() {
+  remove_file "$DROPIN" || return 1
+  (( ! DROPIN_DIR_MADE )) || rmdir "$DROPIN_DIR" 2>/dev/null || true
+}
+# restore: after the switch, the kept original back, the drop-in gone, the
+# bridge deleted, netplan applied. Stops at the first part that fails.
 restore() {
   local copy="$KEPT$NETPLAN_ORIGIN"
   install_file "$NETPLAN_ORIGIN" "$copy" "$(stat -c %a "$copy")" "$(stat -c %U:%G "$copy")" || return 1
-  remove_file "$DROPIN" || return 1
-  (( ! DROPIN_DIR_MADE )) || rmdir "$DROPIN_DIR" 2>/dev/null || true
+  remove_dropin || return 1
   [[ ! -e "/sys/class/net/$BRIDGE" ]] || net_call ip link delete "$BRIDGE" || return 1
   net_apply netplan apply
 }
@@ -202,8 +208,14 @@ restore() {
 undo() {
   local addr outcome
   step_hold
-  echo "  not applied: ${WHY:-stopped}; undoing it" >&2
-  restore || fail "$BRIDGE was not applied (${WHY:-the step was stopped}). Undoing it did not complete: the network may be half the bridge's, and the original stays kept in $KEPT. docs/specs/DEPLOYMENT.md (The bridge) says how to put it back at the console."
+  echo "  not applied: $WHY; undoing it" >&2
+  if (( ! SWITCHED )); then
+    # Before the switch the network is as it was: what the step wrote goes.
+    rm -rf -- "$KEPT"
+    remove_dropin || fail "$BRIDGE was not applied ($WHY), before its switch: $NETPLAN_ORIGIN is as it was, but $DROPIN, which the step wrote, could not be removed: remove it."
+    fail "$BRIDGE was not applied ($WHY), before its switch: $NETPLAN_ORIGIN is as it was."
+  fi
+  restore || fail "$BRIDGE was not applied ($WHY). Undoing it did not complete: the network may be half the bridge's, and the original stays kept in $KEPT. docs/specs/DEPLOYMENT.md (The bridge) says how to put it back at the console."
   rm -rf -- "$KEPT"
   outcome="$NETPLAN_ORIGIN is back as it was"
   if uplink_back; then
@@ -212,7 +224,7 @@ undo() {
   else
     outcome+="; but $UPLINK holds [$(echo $UPLINK_HOLDS)] after ${NET_APPLY_SEC} s, where it held [$(echo $UPLINK_HELD)] before"
   fi
-  fail "$BRIDGE was not applied (${WHY:-the step was stopped}). $outcome."
+  fail "$BRIDGE was not applied ($WHY). $outcome."
 }
 undo_stopped() { WHY="the step was stopped"; undo; }
 
