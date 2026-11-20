@@ -5,8 +5,11 @@
  * ones. Every mocked call is recorded in `calls`, in order; a test sets what
  * a mocked function does in `impl`.
  */
-import { beforeEach, mock, test } from 'node:test';
+import { after, beforeEach, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 import { createAppError } from './appErrors.js';
 
@@ -43,13 +46,25 @@ mockModule('./sections.js', ['renameWorkloadAssignment', 'removeWorkloadAssignme
 mockModule('./vmMdnsReconciler.js', ['publishVm', 'unpublishVm']);
 mockModule('./containerMdnsReconciler.js', ['publishContainer', 'unpublishContainer']);
 
-const { editContainerConfig } = await import('./containerOperations.js');
+const { editContainerConfig, startContainerZipExtractJob } = await import('./containerOperations.js');
 const { tryAcquireContainerOperationLock } = await import('./containerOperationLock.js');
+const { listJobs, whenJobEnds } = await import('./jobs/index.js');
+
+/** A container directory of its own, for the commands that write into it. */
+const containerDir = mkdtempSync(path.join(tmpdir(), 'wisp-container-ops-test-'));
+after(() => rmSync(containerDir, { recursive: true, force: true }));
 
 const log = { debug() {}, info() {}, warn() {}, error() {}, child() { return log; } };
 
 /** The recorded calls by function name, in order. */
 const names = () => calls.map(([name]) => name);
+
+/** True while a command holds `name`'s lock. */
+function isLocked(name) {
+  const release = tryAcquireContainerOperationLock(name, 'test');
+  release?.();
+  return !release;
+}
 
 /** Both names' locks are free again. */
 function assertUnlocked(...containerNames) {
@@ -66,6 +81,7 @@ beforeEach(() => {
   impl.getContainerConfig = async () => ({ metadata: {} });
   impl.renameContainer = async (_from, to) => ({ name: to });
   impl.updateContainerConfig = async () => ({ removedMounts: [] });
+  impl.getContainerDir = () => containerDir;
 });
 
 test('a rename sent with other changes renames, then its follow-ups, then the rest under the new name', async () => {
@@ -101,4 +117,49 @@ test('a failed rename changes nothing else', async () => {
     (err) => err.code === 'CONTAINER_MUST_BE_STOPPED',
   );
   assert.deepEqual(names(), ['renameContainer']);
+});
+
+test('a zip upload holds the lock from its first byte to the end of its extract, as one job', async () => {
+  const held = [];
+  impl.planMountZipExtract = async (_name, _mount, staged) => {
+    held.push(['plan', isLocked('z')]);
+    return { staged };
+  };
+  impl.extractMountZip = async ({ staged }) => {
+    held.push(['extract', isLocked('z'), existsSync(staged)]);
+  };
+  const ack = await startContainerZipExtractJob({
+    name: 'z',
+    mountName: 'data',
+    stage: async (stagingPath) => {
+      held.push(['stage', isLocked('z')]);
+      writeFileSync(stagingPath, 'PK');
+    },
+    log,
+  });
+  assert.equal(ack.kind, 'container-zip-extract');
+  assert.equal(await whenJobEnds(ack.jobId), 'done');
+  assert.deepEqual(held, [['stage', true], ['plan', true], ['extract', true, true]]);
+  assert.deepEqual(readdirSync(containerDir), [], 'the staging file goes with the extract');
+  assertUnlocked('z');
+});
+
+test('a zip upload refused while it stages answers the error, with no job, no staging file and the lock free', async () => {
+  const jobsBefore = listJobs().length;
+  await assert.rejects(
+    startContainerZipExtractJob({
+      name: 'z',
+      mountName: 'data',
+      stage: async (stagingPath) => {
+        writeFileSync(stagingPath, 'PK');
+        throw createAppError('UPLOAD_TOO_LARGE', 'File too large');
+      },
+      log,
+    }),
+    (err) => err.code === 'UPLOAD_TOO_LARGE',
+  );
+  assert.equal(listJobs().length, jobsBefore);
+  assert.deepEqual(readdirSync(containerDir), []);
+  assert.equal(names().includes('extractMountZip'), false);
+  assertUnlocked('z');
 });

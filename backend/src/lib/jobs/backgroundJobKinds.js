@@ -58,7 +58,7 @@ export const SUBJECT_KINDS = {
   [K.CONTAINER_DELETE]: { type: 'container', lock: 'delete' },
   [K.CONTAINER_MOUNT_DELETE]: { type: 'container', lock: 'configuration change' },
   [K.CONTAINER_MOUNT_DATA_DELETE]: { type: 'container', lock: 'mount data delete' },
-  [K.CONTAINER_ZIP_EXTRACT]: { type: 'container', lock: 'zip extract' },
+  [K.CONTAINER_ZIP_EXTRACT]: { type: 'container', lock: 'zip upload' },
   [K.CONTAINER_DEPLOY]: { type: 'container', lock: 'deploy' },
   [K.CONTAINER_IMAGE_UPDATE]: { type: 'container', lock: 'image update' },
 };

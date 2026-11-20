@@ -5,7 +5,8 @@
  * operation lock through the job starter (`subject`), for the whole job; an
  * instant command through `withContainerOperationLock`, for the call — the
  * mount content commands for as long as they write into the container's
- * directory. No route takes a lock itself (docs/specs/CONTAINERS.md →
+ * directory (the zip upload as a job, from its first byte to the end of its
+ * extract). No route takes a lock itself (docs/specs/CONTAINERS.md →
  * Per-container operation lock).
  *
  * The follow-ups outside the container's own record — its section
@@ -426,47 +427,45 @@ export function writeContainerMountFile({ name, mountName, stage }) {
 }
 
 /**
- * Receive a zip for a directory mount and extract it as a job. `stage(path)`
- * writes the whole upload to a staging file inside the container's directory
- * (on the mount data's disk, not a tmpfs /tmp), under the lock; the extract
- * job then takes the lock and checks the mount and the archive again before
- * the job exists, so no edit moves the mount between the check and the
- * extract. The job owns the staging file; it goes on any failure before.
- * `done`: `{ name, mount }`.
+ * Receive a zip for a directory mount and extract it, as one job holding the
+ * container's lock from the upload's first byte to the end of the extract:
+ * the job's check — under that lock, before the job exists — refuses an
+ * app-managed or non-directory mount, has `stage(path)` write the whole
+ * upload to a staging file inside the container's directory (on the mount
+ * data's disk, not a tmpfs /tmp), and plans the extract from it; the job's
+ * run extracts. So no rename, delete or edit lands between the staging and
+ * the extract, and what the check throws is the request's answer, never a
+ * failed job. The staging file goes when the extract ends, or with the check
+ * that failed. `done`: `{ name, mount }`.
  */
-export async function startContainerZipExtractJob({ name, mountName, stage, log }) {
+export function startContainerZipExtractJob({ name, mountName, stage, log }) {
   const stagingPath = join(getContainerDir(name), `.wisp-upload-${randomBytes(8).toString('hex')}`);
-  let handedOff = false;
-  try {
-    await withContainerOperationLock(name, 'zip upload', async () => {
-      assertMountNotAppManaged(await getContainerConfig(name), mountName);
-      await assertMountTakesZip(name, mountName);
-      await stage(stagingPath);
-    });
-    let plan;
-    const ack = await startJob({
-      kind: BACKGROUND_JOB_KIND.CONTAINER_ZIP_EXTRACT,
-      title: titleForZipExtract(name, mountName),
-      subject: container(name),
-      check: async () => {
+  let plan;
+  return startJob({
+    kind: BACKGROUND_JOB_KIND.CONTAINER_ZIP_EXTRACT,
+    title: titleForZipExtract(name, mountName),
+    subject: container(name),
+    check: async () => {
+      try {
         assertMountNotAppManaged(await getContainerConfig(name), mountName);
+        await assertMountTakesZip(name, mountName);
+        await stage(stagingPath);
         plan = await planMountZipExtract(name, mountName, stagingPath);
-      },
-      log,
-      run: async () => {
-        try {
-          await extractMountZip(plan);
-          return { name, mount: mountName };
-        } finally {
-          await unlink(stagingPath).catch(() => { /* already gone */ });
-        }
-      },
-    });
-    handedOff = true;
-    return ack;
-  } finally {
-    if (!handedOff) await unlink(stagingPath).catch(() => { /* never created, or already gone */ });
-  }
+      } catch (err) {
+        await unlink(stagingPath).catch(() => { /* never created, or already gone */ });
+        throw err;
+      }
+    },
+    log,
+    run: async () => {
+      try {
+        await extractMountZip(plan);
+        return { name, mount: mountName };
+      } finally {
+        await unlink(stagingPath).catch(() => { /* already gone */ });
+      }
+    },
+  });
 }
 
 /** Replace a file mount's content with UTF-8 text. */

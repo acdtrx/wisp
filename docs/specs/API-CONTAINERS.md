@@ -228,7 +228,7 @@ Remove one mount and delete its `files/<mountName>` backing store (tmpfs has no 
 
 Multipart **file** upload: a single file part (field name typically **`file`**). The mount must already exist in `container.json`.
 
-The file part is streamed as it arrives — for a **file** mount into a temp file beside the mount's file in `files/` (renamed over it once the whole body has been read: an atomic replace, and the reply follows the upload at once), for a **zip** into a staging file inside the container directory (handed to the extract job) — so every rejection below leaves the mount untouched. The temp file is removed on any failure or abort; one a crash leaves behind carries the atomic-write suffix the boot cleanup sweeps (settled 2026-11-14). Field parts are ignored, before or after the file.
+The file part is streamed as it arrives — for a **file** mount into a temp file beside the mount's file in `files/` (renamed over it once the whole body has been read: an atomic replace, and the reply follows the upload at once), for a **zip** into a staging file inside the container directory (extracted by the job that received it) — so every rejection below leaves the mount untouched. The temp file is removed on any failure or abort; one a crash leaves behind carries the atomic-write suffix the boot cleanup sweeps (settled 2026-11-14). Field parts are ignored, before or after the file.
 
 **400:** `BAD_MULTIPART_TOO_MANY_FILES` if more than one file part (extra parts are read and discarded first) | `UPLOAD_NO_FILE` if no file part. **404:** `CONTAINER_NOT_FOUND` — container not found. **413:** `UPLOAD_TOO_LARGE` (`File too large`) past the multipart `fileSize` limit (50 GiB). An upload whose body sends nothing for **60 s** is dropped (settled 2026-11-13; also the PUT content body).
 
@@ -242,9 +242,9 @@ Multipart: one file part. Mount must have **`type: "file"`**. Overwrites an exis
 
 ### POST /api/containers/:name/mounts/:mountName/zip · `admin`
 
-Multipart: one file part. Mount must have **`type: "directory"`** (Local, not storage-sourced). Once the upload is received and its entry paths pass the zip-slip check (**`unzip -Z1`**), the extract is a [job](API.md#job-routes): it clears `files/<mountName>/` and extracts the zip with the system **`unzip`** binary, holding the container's operation lock.
+Multipart: one file part. Mount must have **`type: "directory"`** (Local, not storage-sourced). Once the upload is received and its entry paths pass the zip-slip check (**`unzip -Z1`**), the extract is a [job](API.md#job-routes): it clears `files/<mountName>/` and extracts the zip with the system **`unzip`** binary. The upload and the extract hold the container's operation lock as one, from the upload's first byte to the end of the extract: the upload is received in the job's check, before the job exists.
 
-**202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name, mount }` | **409:** `CONTAINER_BUSY` — the upload holds the lock while it stages into the container directory, the extract job from its start | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged) | **Job errors:** `CONTAINER_ZIP_EXTRACT_TIMEOUT` (the extract made no progress for its bound), `CONTAINER_ZIP_INVALID` (unzip failed)
+**202:** `{ jobId, kind, title, subject }` — a [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; `done` result: `{ name, mount }` | **409:** `CONTAINER_BUSY` — another command holds the lock when the upload starts; while the upload and its extract run, other commands get it | **422:** `CONTAINER_ZIP_INVALID`, `CONTAINER_ZIP_UNSAFE`, `CONTAINER_MOUNT_TYPE_MISMATCH`, `APP_CONFIG_ONLY` on an app container's mount (checked before the upload is staged) | **Job errors:** `CONTAINER_ZIP_EXTRACT_TIMEOUT` (the extract made no progress for its bound), `CONTAINER_ZIP_INVALID` (unzip failed)
 
 ### GET /api/containers/:name/mounts/:mountName/content · `admin`
 
