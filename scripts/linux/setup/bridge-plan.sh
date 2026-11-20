@@ -303,8 +303,9 @@ plan_bridge() {
            5) refuse NETPLAN_SETTING "$mode; then run this again." ;;
          esac; net_fail "cannot work out the bridge for netplan: $mode"; }
   UPLINK_MODE="$mode"
-  # For a DUID identity, the IAID: networkd's drop-in on the unit netplan
-  # renders for the bridge pins it.
+  # On DHCP, an identity the bridge can send (dhcp_identity); for a DUID, the
+  # IAID, which networkd's drop-in on the unit netplan renders for the bridge
+  # pins.
   if [[ "$UPLINK_MODE" == dhcp ]]; then
     [[ -n "$UPLINK_CLIENT_ID" ]] \
       || refuse DHCP_NO_LEASE "$UPLINK is on DHCP but has no lease, whose identity the bridge must keep: let it get one (networkctl renew $UPLINK), and run this again."
