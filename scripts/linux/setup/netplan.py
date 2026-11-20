@@ -9,10 +9,15 @@ netplan's runtime, so a netplan host has them.
       the file netplan's parser reads the definition <id> from
   netplan.py plan <def-file> <id> <uplink> <mac> <bridge> <id-kind> <origin> <out-dir> <mtu>
       the uplink's definition checked, what moves to the bridge worked out, and
-      the edits written as `netplan set` arguments into <out-dir>; prints dhcp or
-      static. On DHCP the bridge's dhcp-identifier is <id-kind> (mac or duid,
-      bridge-plan.sh's dhcp_identity). Exit 3 with the reason printed: refused;
-      exit 5: refused, the reason naming the edit that lifts it.
+      the edits written as `netplan set` arguments into <out-dir>, with the IPv6
+      addresses the definition lists (addresses6); prints dhcp or static. On DHCP
+      the bridge's dhcp-identifier is <id-kind> (mac or duid, bridge-plan.sh's
+      dhcp_identity). Exit 3 with the reason printed: refused; exit 5: refused,
+      the reason naming the edit that lifts it.
+  netplan.py facts <dhcp|static|port> <addresses6>
+      reads net-state.sh's l3_state lines on stdin; prints the facts the
+      bridge's check compares, for the mode, or for the port: what it must not
+      hold
   netplan.py shared <origin> <dir>...
       prints a definition <origin> shares with another netplan file, if any
   netplan.py dependents <id>
@@ -28,8 +33,10 @@ netplan's runtime, so a netplan host has them.
       wrote it, if anything
 """
 import glob
+import ipaddress
 import json
 import os
+import re
 import sys
 
 import yaml
@@ -72,12 +79,17 @@ KEPT = {'match', 'set-name', 'wakeonlan', 'mtu', 'macaddress', 'emit-lldp', 'ren
         'large-receive-offload'}
 
 
+def listed(addrs):
+    """The addresses of an `addresses:` list, either form of entry."""
+    return [str(next(iter(a)) if isinstance(a, dict) else a) for a in addrs or []]
+
+
 def has_ipv4(addrs):
-    for a in addrs or []:
-        a = next(iter(a)) if isinstance(a, dict) else a
-        if ':' not in str(a):
-            return True
-    return False
+    return any(':' not in a for a in listed(addrs))
+
+
+def listed_ipv6(addrs):
+    return [i.with_prefixlen for i in map(ipaddress.ip_interface, listed(addrs)) if i.version == 6]
 
 
 def plan(def_file, nid, uplink, mac, bridge, id_kind, origin_file, out, mtu):
@@ -129,7 +141,44 @@ def plan(def_file, nid, uplink, mac, bridge, id_kind, origin_file, out, mtu):
             f.write(f'{hint}\tethernets.{nid}.{k}=null\n')
         f.write(f'{hint}\tethernets.{nid}.dhcp4=false\n')
         f.write(f'{hint}\tbridges.{bridge}={json.dumps(bridge_def, sort_keys=True)}\n')
+    with open(f'{out}/addresses6', 'w') as f:
+        f.writelines(a + '\n' for a in listed_ipv6(d.get('addresses')))
     print('dhcp' if dhcp else 'static')
+
+
+# The bridge's check compares IPv6 addresses only as the definition lists
+# them: an address the host learned (DHCPv6, a router advertisement) can
+# change, and one with an infinite lifetime looks to the kernel like one set.
+# On DHCP the default route is compared by its gateway: systemd-networkd sets
+# its metric and source per link, and an uplink may carry the same route twice
+# (once from the initramfs). Sorted here, whatever the locale.
+FACTS = {'static': ('addr4', 'route4', 'route6', 'dns', 'domain'),
+         'dhcp': ('addr4', 'route4', 'dns'),
+         'port': ('addr4', 'route4', 'route6')}
+
+
+def facts_of(kind, addresses6, lines):
+    wanted6 = {ipaddress.ip_interface(a) for a in addresses6}
+    out = set()
+    for line in lines:
+        key, _, value = line.strip().partition(' ')
+        if key == 'addr6':
+            if ipaddress.ip_interface(value) in wanted6:
+                out.add(f'addr6 {value}')
+        elif key in FACTS[kind]:
+            if kind == 'dhcp' and key == 'route4':
+                if not value.startswith('default '):
+                    continue
+                value = re.sub(r'^(default via \S+).*', r'\1', value)
+            out.add(f'{key} {value}')
+    return sorted(out)
+
+
+def facts(kind, addresses6_file):
+    with open(addresses6_file) as f:
+        addresses6 = f.read().split()
+    for line in facts_of(kind, addresses6, sys.stdin):
+        print(line)
 
 
 # netplan set writes the file back from its parsed state, merged lists
@@ -200,8 +249,8 @@ def defines(key):
         print(key)
 
 
-COMMANDS = {'status-id': status_id, 'origin': origin, 'plan': plan, 'shared': shared, 'merged': merged,
-            'dependents': dependents, 'defines': defines}
+COMMANDS = {'status-id': status_id, 'origin': origin, 'plan': plan, 'facts': facts, 'shared': shared,
+            'merged': merged, 'dependents': dependents, 'defines': defines}
 
 if __name__ == '__main__':
     COMMANDS[sys.argv[1]](*sys.argv[2:])

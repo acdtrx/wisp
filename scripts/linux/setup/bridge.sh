@@ -13,13 +13,13 @@
 # server hands it the same lease; link settings stay with the uplink, which
 # becomes its port with no addressing of its own. After the apply, within
 # NET_APPLY_SEC, the bridge must hold the uplink's hardware address, IPv4
-# addresses, configured IPv6 addresses and default route — and on DHCP its
-# client identifier and name servers, on a static address all its routes, name
-# servers and search domains — the uplink none of it, the uplink must be its
-# port and the bridge have carrier, and systemd-networkd must run each from the
-# unit netplan renders for it. Otherwise, or when the step is stopped, it puts the kept original back,
-# applies it, and fails saying so; failing before its switch, it takes back
-# only what it wrote.
+# addresses, the IPv6 addresses its netplan definition lists and default route
+# — and on DHCP its client identifier and name servers, on a static address
+# all its routes, name servers and search domains — the uplink none of it, the
+# uplink must be its port and the bridge have carrier, and systemd-networkd
+# must run each from the unit netplan renders for it. Otherwise, or when the
+# step is stopped, it puts the kept original back, applies it, and fails
+# saying so; failing before its switch, it takes back only what it wrote.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -104,17 +104,10 @@ apply_bridge() {
   net_apply netplan apply || { WHY="netplan apply failed"; return 1; }
 }
 
-# facts_of: the facts compared, from l3_state's lines: on DHCP too, every
-# configured address of either family. On DHCP the default route is compared
-# by its gateway: systemd-networkd sets its metric and source per link, and an
-# uplink may carry the same route twice (once from the initramfs).
-facts_of() {
-  if [[ "$UPLINK_MODE" == static ]]; then
-    grep -E '^(addr[46]|route[46]|dns|domain) ' || true
-  else
-    grep -E '^(addr[46]|route4 default|dns) ' | sed -E 's/^(route4 default via [^ ]+).*/\1/' | sort -u || true
-  fi
-}
+# facts_of <dhcp|static|port>: the facts the check compares, from l3_state's
+# lines (netplan.py facts): on either mode, the IPv6 addresses the uplink's
+# netplan definition lists, never one it learned.
+facts_of() { "${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" facts "$1" "$NET_PLAN_DIR/addresses6"; }
 # read_now: what the bridge and the uplink hold now, one part a file in the
 # step's now.*; a part that cannot be read (the bridge not there yet) is
 # marked so. Run through step_run, so a stop ends it at once.
@@ -125,8 +118,8 @@ read_now() {
   master="$(readlink "/sys/class/net/$UPLINK/master" 2>/dev/null)" || master=none
   echo "${master##*/}" > "$dir/now.master"
   cat "/sys/class/net/$BRIDGE/carrier" > "$dir/now.carrier" 2>/dev/null || echo unreadable > "$dir/now.carrier"
-  if state="$(l3_state "$BRIDGE" 2>/dev/null)"; then facts_of <<<"$state"; else echo unreadable; fi > "$dir/now.have"
-  if state="$(l3_state "$UPLINK" 2>/dev/null)"; then grep -E '^(addr[46]|route[46]) ' <<<"$state" || true; else echo unreadable; fi > "$dir/now.port"
+  if state="$(l3_state "$BRIDGE" 2>/dev/null)"; then facts_of "$UPLINK_MODE" <<<"$state"; else echo unreadable; fi > "$dir/now.have"
+  if state="$(l3_state "$UPLINK" 2>/dev/null)"; then facts_of port <<<"$state"; else echo unreadable; fi > "$dir/now.port"
   if [[ "$UPLINK_MODE" == dhcp ]]; then client_id "$BRIDGE" 2>/dev/null || echo unreadable; fi > "$dir/now.cid"
   networkd_json "$BRIDGE" NetworkFile > "$dir/now.bridge-unit" 2>/dev/null || echo unreadable > "$dir/now.bridge-unit"
   networkd_json "$UPLINK" NetworkFile > "$dir/now.uplink-unit" 2>/dev/null || echo unreadable > "$dir/now.uplink-unit"
@@ -143,7 +136,7 @@ now() { cat "$STEP_TMP_DIR/now.$1" 2>/dev/null || true; }
 bridge_check() {
   local deadline=$(( SECONDS + NET_APPLY_SEC )) bridge_unit="/run/systemd/network/10-netplan-$BRIDGE.network"
   local want mac master carrier have port cid bunit uunit
-  want="$(facts_of < "$NET_PLAN_DIR/uplink.state")"
+  want="$(facts_of "$UPLINK_MODE" < "$NET_PLAN_DIR/uplink.state")" || { WHY="cannot read what $UPLINK held"; return 1; }
   while :; do
     step_run 0 read_now || true
     mac="$(now mac)" master="$(now master)" carrier="$(now carrier)"
@@ -174,14 +167,14 @@ bridge_check() {
 # read_now reads.
 read_uplink() {
   local state
-  if state="$(l3_state "$UPLINK" 2>/dev/null)"; then facts_of <<<"$state"; else echo unreadable; fi > "$STEP_TMP_DIR/now.uplink"
+  if state="$(l3_state "$UPLINK" 2>/dev/null)"; then facts_of "$UPLINK_MODE" <<<"$state"; else echo unreadable; fi > "$STEP_TMP_DIR/now.uplink"
 }
 # uplink_back: after an undo, whether the uplink holds again what it held
 # before, waited for as the check waits. Sets UPLINK_HOLDS to what it holds,
 # and UPLINK_HELD to what it held, for the message.
 uplink_back() {
   local deadline=$(( SECONDS + NET_APPLY_SEC ))
-  UPLINK_HELD="$(facts_of < "$NET_PLAN_DIR/uplink.state")"
+  UPLINK_HELD="$(facts_of "$UPLINK_MODE" < "$NET_PLAN_DIR/uplink.state")" || return 1
   while :; do
     step_run 0 read_uplink || true
     UPLINK_HOLDS="$(now uplink)"

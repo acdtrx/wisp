@@ -63,7 +63,8 @@ class Defines(unittest.TestCase):
 
 def plan_with_edits(definition):
     """netplan.py plan on the uplink's definition: (exit code, what it printed,
-    the `netplan set` edits it wrote as {key: value})."""
+    the `netplan set` edits it wrote as {key: value}, with its addresses6 as a
+    list)."""
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, 'uplink.yaml')
         with open(path, 'w') as f:
@@ -76,6 +77,10 @@ def plan_with_edits(definition):
             except SystemExit as e:
                 code = e.code
         edits = {}
+        addresses6 = os.path.join(d, 'addresses6')
+        if os.path.exists(addresses6):
+            with open(addresses6) as f:
+                edits['addresses6'] = f.read().split()
         args = os.path.join(d, 'netplan-set.args')
         if os.path.exists(args):
             with open(args) as f:
@@ -130,6 +135,64 @@ class Plan(unittest.TestCase):
         with contextlib.redirect_stdout(out), unittest.mock.patch('sys.stdin', io.StringIO(json.dumps(net))):
             netplan.merged('eth0', 'br0', json.dumps(want))
         self.assertEqual(out.getvalue().strip(), '')
+
+    def test_the_ipv6_addresses_listed_are_kept_in_either_form_as_the_kernel_writes_them(self):
+        edits = plan_with_edits({'dhcp4': True, 'addresses': ['192.0.2.5/24', 'FD00:0:0::10/64',
+                                                              {'2001:db8::5/64': {'lifetime': 0}}]})[2]
+        self.assertEqual(edits['addresses6'], ['fd00::10/64', '2001:db8::5/64'])
+
+    def test_a_definition_listing_no_ipv6_address_keeps_none(self):
+        self.assertEqual(plan_with_edits({'dhcp4': True})[2]['addresses6'], [])
+
+
+# What an uplink holds, as net-state.sh's l3_state prints it.
+UPLINK_HELD = [
+    'addr4 192.0.2.5/24',
+    'addr6 2001:db8:1::77/64',
+    'addr6 fd00::10/64',
+    'dns 192.0.2.1',
+    'route4 192.0.2.0/24 proto kernel scope link src 192.0.2.5',
+    'route4 default via 192.0.2.1 proto dhcp src 192.0.2.5 metric 100',
+]
+
+
+class Facts(unittest.TestCase):
+    """What the bridge's check compares: the bridge's facts must equal what the
+    uplink held, and the port must hold none."""
+
+    def test_a_learned_address_the_definition_does_not_list_is_not_compared(self):
+        # 2001:db8:1::77 learned with an infinite lifetime, so no "dynamic";
+        # the bridge learns one of its own.
+        bridge = [f for f in UPLINK_HELD if '2001:db8:1::77' not in f] + ['addr6 2001:db8:1::99/64']
+        for mode in ('dhcp', 'static'):
+            self.assertEqual(netplan.facts_of(mode, ['fd00::10/64'], bridge),
+                             netplan.facts_of(mode, ['fd00::10/64'], UPLINK_HELD))
+
+    def test_a_listed_address_missing_on_the_bridge_is_a_difference(self):
+        bridge = [f for f in UPLINK_HELD if 'fd00::10' not in f]
+        for mode in ('dhcp', 'static'):
+            self.assertNotEqual(netplan.facts_of(mode, ['fd00::10/64'], bridge),
+                                netplan.facts_of(mode, ['fd00::10/64'], UPLINK_HELD))
+
+    def test_a_listed_address_matches_whatever_form_it_is_written_in(self):
+        self.assertIn('addr6 fd00::10/64', netplan.facts_of('static', ['fd00:0::10/64'], UPLINK_HELD))
+
+    def test_on_dhcp_the_default_route_is_compared_by_its_gateway(self):
+        bridge = [f.replace('metric 100', 'metric 1024') for f in UPLINK_HELD]
+        self.assertEqual(netplan.facts_of('dhcp', [], bridge), netplan.facts_of('dhcp', [], UPLINK_HELD))
+        self.assertIn('route4 default via 192.0.2.1', netplan.facts_of('dhcp', [], UPLINK_HELD))
+
+    def test_on_a_static_address_every_route_is_compared(self):
+        bridge = [f.replace('metric 100', 'metric 1024') for f in UPLINK_HELD]
+        self.assertNotEqual(netplan.facts_of('static', [], bridge), netplan.facts_of('static', [], UPLINK_HELD))
+
+    def test_a_port_left_a_learned_address_holds_none_of_it(self):
+        self.assertEqual(netplan.facts_of('port', ['fd00::10/64'], ['addr6 2001:db8:1::77/64']), [])
+
+    def test_a_port_holding_a_listed_address_or_a_route_is_named(self):
+        self.assertEqual(
+            netplan.facts_of('port', ['fd00::10/64'], ['addr6 fd00::10/64', 'route4 default via 192.0.2.1']),
+            ['addr6 fd00::10/64', 'route4 default via 192.0.2.1'])
 
 
 if __name__ == '__main__':

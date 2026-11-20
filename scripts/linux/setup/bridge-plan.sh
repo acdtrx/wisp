@@ -267,8 +267,9 @@ refuse_netplan_rejected() {
 # plan_bridge: the operator's file that defines the uplink, edited with
 # `netplan set` in a stage (netplan_stage) and checked whole by netplan
 # (netplan.py does the reading); what was checked is kept in the plan's
-# directory as netplan-origin.yaml, the file the bridge step puts in place. For
-# a DUID identity, also networkd's drop-in on the unit netplan renders for the
+# directory as netplan-origin.yaml, the file the bridge step puts in place,
+# beside addresses6, the IPv6 addresses the bridge's check compares. For a
+# DUID identity, also networkd's drop-in on the unit netplan renders for the
 # bridge (netplan has no IAID key): 50-wisp-dhcp-identity.conf. Reads
 # UPLINK_NETPLAN_ID (uplink_netplan_id) and UPLINK_DEPENDENTS
 # (refuse_netplan_not_applied).

@@ -139,7 +139,7 @@ Why the stub is declared so, on a device of its own: [CONTAINERS.md → Local DN
 - The uplink becomes its port with no addressing of its own. Its link settings (MTU, offloads, wake-on-LAN) stay on it.
 - The bridge's definition sets the uplink's MTU on the bridge itself, so a port that joins at another MTU does not lower it (settled 2026-11-19).
 - The bridge's definition names its renderer, networkd, on itself, whatever its file's, so systemd-networkd runs it (settled 2026-11-20).
-- The bridge keeps the IPv4 address and the addresses configured for the uplink. Addresses the host gets by DHCPv6 or from router advertisements can change (settled 2026-11-20):
+- The bridge keeps the IPv4 address and the IPv6 addresses the uplink's netplan definition lists. Addresses the host gets by DHCPv6 or from router advertisements can change (settled 2026-11-20):
   - the DHCPv6 identity is pinned only when the DHCPv4 client identifier is a DUID (networkd's IAID, derived from the uplink's name, which the bridge would not have);
   - with a client identifier from the hardware address, the bridge's DHCPv6 identity is its own.
 
