@@ -4,7 +4,7 @@
  * answer a public address, so the guard lets the request out, and each Agent
  * the fetch makes connects to the stub instead. Each Agent is closed, and the
  * last one only once the caller has read the body; a body is bounded when
- * the caller asks.
+ * the caller asks, and a redirect's is cancelled, never read.
  */
 import { after, before, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -52,12 +52,22 @@ const { ssrfSafeFetch } = await import('./downloadFromUrl.js');
 const CHUNKS = 5;
 const CHUNK = 'x'.repeat(1000);
 let server;
+/** Whether `/endless-redirect`'s body was cut before it ended. */
+const endlessRedirectCut = Promise.withResolvers();
 
 before(async () => {
   server = createServer((req, res) => {
     if (req.url === '/redirect') {
       res.writeHead(302, { location: '/slow' });
       res.end();
+    } else if (req.url === '/endless-redirect') {
+      // A redirect whose body never ends: read, it would hold the fetch until its time limit.
+      res.writeHead(302, { location: '/slow' });
+      const timer = setInterval(() => res.write(CHUNK), 5);
+      res.on('close', () => {
+        clearInterval(timer);
+        endlessRedirectCut.resolve(!res.writableFinished);
+      });
     } else if (req.url === '/slow') {
       res.writeHead(200);
       let sent = 0;
@@ -115,4 +125,14 @@ test('a request that fails closes its Agent too', async () => {
   assert.equal(agents.length, 1);
   assert.equal(agents[0].closeCalled, true);
   await agents[0].whenClosed;
+});
+
+test("a redirect's body is cancelled, not read, and its Agent closed", async () => {
+  agents.length = 0;
+  const res = await ssrfSafeFetch(`http://stub.test:${port}/endless-redirect`, { signal: AbortSignal.timeout(2000) });
+  assert.equal(res.status, 200);
+  assert.equal(await endlessRedirectCut.promise, true);
+  assert.equal(agents.length, 2);
+  await agents[0].whenClosed;
+  assert.equal((await res.text()).length, CHUNKS * CHUNK.length);
 });

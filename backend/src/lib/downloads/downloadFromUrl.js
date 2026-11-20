@@ -316,8 +316,9 @@ export async function ssrfSafeFetch(urlStr, { maxBodyBytes, ...init } = {}) {
         return limitBody(res, maxBodyBytes); // 3xx without Location — the answer as is
       }
       const next = new URL(location, currentUrl).toString();
-      // Drain the redirect response body so its Agent's close completes.
-      try { await res.arrayBuffer(); } catch { /* the hop is abandoned either way */ }
+      // Cancelled, never read: a redirect's body has no bound, and its
+      // Agent's close completes once the request is gone.
+      try { await res.body?.cancel(); } catch { /* the hop is abandoned either way */ }
       currentUrl = next;
       continue;
     }
