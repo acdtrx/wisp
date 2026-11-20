@@ -452,3 +452,11 @@ unavailable off netplan-run hosts (or the helper make the VLAN through the host'
 and the helper should take back its file when the apply fails. **Revisit trigger:** a
 VLAN bridge wanted on a NetworkManager or networkd host, or before the next release that
 ships setup's NetworkManager and networkd bridges.
+
+**The installer's follower can miss the install's last lines.** The work removes its
+log once the install succeeds, and the foreground follows it with `tail -f --pid`: once
+in five pushes (2026-11-20) the output stopped after "Install path:", without the
+"Access:" line, though the install succeeded (rc 0). The follower and the removal race;
+the work could leave the log to the follower to remove, or the follower read it to its
+end before the work removes it. **Revisit trigger:** an operator missing the access line,
+or a closing message that matters more being lost.
