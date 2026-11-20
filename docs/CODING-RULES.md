@@ -141,7 +141,7 @@ source refer to them.
     (settled 2026-11-20). It has two
     fetches: `ssrfSafeFetch` for every URL from user input or a public source, and
     `fetchOperatorEndpoint` for an endpoint only the operator sets, the OIDC issuer
-    (§9).
+    (§9), which no file but `lib/oidc.js` may name (the fence check holds it).
   - Applied — the lint is `npm run check-fences` (`scripts/check-fences.mjs`): the
     package fences, the facades (a module with an `index.js` is imported only through
     it), strict managers and carved modules, and routes that take no operation lock (a
