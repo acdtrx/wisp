@@ -183,6 +183,17 @@ test('a 404 on the progress stream rejects awaitJob with JOB_GONE', async () => 
   assert.equal(error.code, 'JOB_GONE');
 });
 
+test('another refusal of the progress stream rejects awaitJob with its error', async () => {
+  const { outcome, request } = await awaitAck('r1');
+  request.respond(new Response(JSON.stringify({ error: 'SCOPE_INSUFFICIENT', detail: 'Admin scope needed' }), { status: 403 }));
+  await settle();
+
+  const { error } = await outcome;
+  assert.ok(error instanceof ApiError);
+  assert.equal(error.code, 'SCOPE_INSUFFICIENT');
+  assert.equal(error.status, 403);
+});
+
 test('a dismissed row leaves the tray and stays out until the server drops it', async () => {
   const send = await connectTopic();
   await send([row('x1', { status: 'done' })]);

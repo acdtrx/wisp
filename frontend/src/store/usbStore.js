@@ -24,7 +24,7 @@ export const useUsbStore = create((set) => {
             set({ error: errorText(data) });
           }
         },
-        () => set({ connected: false, error: 'The USB device stream is not connected — retrying…' }),
+        (err) => set({ connected: false, error: err ? errorText(err) : 'The USB device stream is not connected — retrying…' }),
       );
     },
 

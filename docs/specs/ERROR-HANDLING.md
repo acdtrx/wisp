@@ -450,6 +450,14 @@ Red error text displayed within a section card. Used for per-section save failur
 For async operations (VM creation, backup, download), errors appear inline in the
 progress area, with a red indicator.
 
+### Stream refusals
+
+A stream (the events stream, a scoped stream, a job's progress) whose request is answered
+with a 4xx that is not a lost session ends there: the stream client hands the caller the
+ApiError and does not ask again, since asking again gets the same refusal. Only a lost
+connection or a 5xx reconnects (settled 2026-11-20). A job's progress stream answering
+404 is `JOB_GONE` to a wait; another refusal is the wait's error.
+
 ### Stream error frames
 
 On the `/api/events` topics an error frame is ignored and the store keeps its last good

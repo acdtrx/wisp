@@ -24,7 +24,7 @@ export const useDiskStore = create((set) => {
             set({ error: errorText(data) });
           }
         },
-        () => set({ connected: false, error: 'The device stream is not connected — retrying…' }),
+        (err) => set({ connected: false, error: err ? errorText(err) : 'The device stream is not connected — retrying…' }),
       );
     },
 

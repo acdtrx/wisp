@@ -50,19 +50,34 @@ function withJitterMs(baseMs) {
   return Math.round(baseMs * 0.95 + jitter);
 }
 
+/**
+ * What a stream's failed answer means, one rule for both stream clients: a
+ * lost session leaves for the login page; any other 4xx ends the stream with
+ * its error, since asking again gets the same refusal; a 5xx, or an answer
+ * with no body, is retried like a lost connection.
+ * @returns {Promise<{ err: import('./errors.js').ApiError, end: 'session' | 'refused' | 'retry' }>}
+ */
+async function failedAnswer(res) {
+  const err = errorFromBody(await res.json().catch(() => null), res.status);
+  if (isSessionLost(err)) return { err, end: 'session' };
+  return { err, end: res.status >= 400 && res.status < 500 ? 'refused' : 'retry' };
+}
+
 /** A job's last event: the stream ends after it. */
 const JOB_TERMINAL_STEPS = new Set(['done', 'error', 'cancelled']);
 
 /**
  * One-shot job progress SSE. Auth flows via the wisp_session cookie (sent
  * automatically by the browser on same-origin fetches with credentials).
- * Reconnects with backoff after any drop, and the server replays the job's
- * events, until its terminal event (`done`, `error` or `cancelled`) or a 404.
+ * Reconnects with backoff after a lost connection or a 5xx, and the server
+ * replays the job's events, until its terminal event (`done`, `error` or
+ * `cancelled`) or a refusal (`failedAnswer`).
  *
  * @param {(ev: object) => void} onMessage
- * @param {() => void} [onGone] — a 404: the server no longer knows the job (it expired, or never existed)
+ * @param {(err: import('./errors.js').ApiError) => void} [onRefused] — a 4xx ended the stream; a 404
+ *   means the server no longer knows the job (it expired, or never existed)
  */
-export function createJobSSE(url, onMessage, onGone) {
+export function createJobSSE(url, onMessage, onRefused) {
   let closed = false;
   let retryTimer = null;
   let retryDelay = SSE_INITIAL_RETRY_MS;
@@ -108,16 +123,15 @@ export function createJobSSE(url, onMessage, onGone) {
       const res = await fetch(url, { signal: myController.signal, credentials: 'include' });
       clearTimeout(tid);
 
-      if (res.status === 404) {
-        finish();
-        onGone?.();
-        return;
-      }
-
       if (!res.ok || !res.body) {
-        const err = errorFromBody(await res.json().catch(() => null), res.status);
-        if (isSessionLost(err)) {
+        const { err, end } = await failedAnswer(res);
+        if (end === 'session') {
           leaveForLogin(err);
+          return;
+        }
+        if (end === 'refused') {
+          finish();
+          onRefused?.(err);
           return;
         }
         throw err;
@@ -207,8 +221,10 @@ export function createJobSSE(url, onMessage, onGone) {
 
 /**
  * Live-data SSE: reconnects with backoff until closed. A lost session sends
- * the user to sign in; a 404 — the stream's subject is gone — stops it for good and calls
- * `onError('not_found')`. Every other failure calls `onError()` and retries.
+ * the user to sign in; any other 4xx (the stream's subject is gone, the request
+ * is refused) stops it for good and calls `onError(err)`, an ApiError. A lost
+ * connection or a 5xx calls `onError()`, with no error, and retries.
+ * @param {(err?: import('./errors.js').ApiError) => void} [onError]
  */
 export function createSSE(url, onMessage, onError) {
   let retryDelay = SSE_INITIAL_RETRY_MS;
@@ -247,20 +263,19 @@ export function createSSE(url, onMessage, onError) {
       const res = await fetch(url, { signal: myController.signal, credentials: 'include' });
       clearTimeout(tid);
 
-      // The stream's subject is gone (a deleted workload's logs): retrying can't
-      // bring it back. Stop, as job streams do, and say why.
-      if (res.status === 404) {
-        closed = true;
-        clearRetry();
-        detachResync();
-        onError?.('not_found');
-        return;
-      }
-
       if (!res.ok || !res.body) {
-        const err = errorFromBody(await res.json().catch(() => null), res.status);
-        if (isSessionLost(err)) {
+        const { err, end } = await failedAnswer(res);
+        if (end === 'session') {
           leaveForLogin(err);
+          return;
+        }
+        // Refused (a deleted workload's logs, a bad query): asking again gets
+        // the same answer. Stop, as job streams do, and say why.
+        if (end === 'refused') {
+          closed = true;
+          clearRetry();
+          detachResync();
+          onError?.(err);
           return;
         }
         throw err;

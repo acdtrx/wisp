@@ -6,12 +6,15 @@ import { installBrowser, installFetch, jsonResponse, respondWithStream, settle }
 let browser;
 let net;
 let createSSE;
+let createJobSSE;
+let ApiError;
 
 beforeEach(async () => {
   browser = installBrowser();
   net = installFetch();
   mock.timers.enable({ apis: ['setTimeout', 'Date'] });
-  ({ createSSE } = await import('./sse.js'));
+  ({ createSSE, createJobSSE } = await import('./sse.js'));
+  ({ ApiError } = await import('./errors.js'));
 });
 
 afterEach(() => {
@@ -101,14 +104,65 @@ test('a lost session logs out, goes to the login page and does not reconnect', a
   assert.deepEqual(errors, []);
 });
 
-test('a 404 stops the stream for good, with onError("not_found")', async () => {
+test('a 4xx stops the stream for good, its ApiError to onError: a 404 and a 400 alike', async () => {
+  for (const [status, body] of [
+    [404, { error: 'CONTAINER_RUN_NOT_FOUND', detail: 'No such run' }],
+    [400, { error: 'VALIDATION_FAILED', detail: 'querystring/runId must match pattern' }],
+  ]) {
+    const errors = [];
+    const close = createSSE(`/api/x${status}`, () => {}, (err) => errors.push(err));
+    const request = await net.next(`/api/x${status}`);
+    request.respond(jsonResponse(body, status));
+    await settle();
+    assert.equal(errors.length, 1, String(status));
+    assert.ok(errors[0] instanceof ApiError, String(status));
+    assert.deepEqual({ status: errors[0].status, code: errors[0].code, detail: errors[0].detail }, { status, code: body.error, detail: body.detail });
+    mock.timers.tick(120_000);
+    await settle();
+    assert.equal(net.made(`/api/x${status}`).length, 1, String(status));
+    close();
+  }
+});
+
+test('a 5xx is retried like a lost connection: onError with no error, then a reconnect', async () => {
   const errors = [];
-  createSSE('/api/x', () => {}, (reason) => errors.push(reason));
+  const close = createSSE('/api/x', () => {}, (err) => errors.push(err));
   const request = await net.next('/api/x');
-  request.respond(new Response(null, { status: 404 }));
+  request.respond(jsonResponse({ error: 'LIBVIRT_ERROR', detail: 'Failed' }, 500));
   await settle();
-  assert.deepEqual(errors, ['not_found']);
+  assert.deepEqual(errors, [undefined]);
+  mock.timers.tick(1100);
+  await settle();
+  assert.equal(net.made('/api/x').length, 2);
+  close();
+});
+
+/* ── The job progress stream: the same rule ─────────────────────────── */
+
+test('a job stream refused with a 4xx ends, its ApiError to onRefused; no reconnect', async () => {
+  const refused = [];
+  createJobSSE('/api/jobs/j1/progress', () => {}, (err) => refused.push(err));
+  const request = await net.next('/api/jobs/j1/progress');
+  request.respond(jsonResponse({ error: 'VALIDATION_FAILED', detail: 'params/jobId must match' }, 400));
+  await settle();
+  assert.equal(refused.length, 1);
+  assert.ok(refused[0] instanceof ApiError);
+  assert.equal(refused[0].code, 'VALIDATION_FAILED');
+  assert.equal(refused[0].status, 400);
   mock.timers.tick(120_000);
   await settle();
-  assert.equal(net.made('/api/x').length, 1);
+  assert.equal(net.made('/api/jobs/j1/progress').length, 1);
+});
+
+test('a job stream answered a 5xx reconnects, and is not refused', async () => {
+  const refused = [];
+  const close = createJobSSE('/api/jobs/j2/progress', () => {}, (err) => refused.push(err));
+  const request = await net.next('/api/jobs/j2/progress');
+  request.respond(jsonResponse({ error: 'INTERNAL_ERROR', detail: 'boom' }, 500));
+  await settle();
+  mock.timers.tick(1100);
+  await settle();
+  assert.equal(net.made('/api/jobs/j2/progress').length, 2);
+  assert.deepEqual(refused, []);
+  close();
 });

@@ -155,14 +155,18 @@ function setProgress(jobId, update) {
   });
 }
 
-/** Open a job's progress stream, once per job: it reconnects and replays until the terminal event or a 404. */
+/**
+ * Open a job's progress stream, once per job: it reconnects and replays until
+ * the terminal event or a refusal. A 404 means the job is gone; another
+ * refusal ends the wait with its error.
+ */
 function followJob(jobId) {
   if (useBackgroundJobsStore.getState().progress[jobId]) return;
   setProgress(jobId, () => NO_PROGRESS);
   streamJobProgress(
     jobId,
     (ev) => setProgress(jobId, (p) => applyEvent(p, ev)),
-    () => setProgress(jobId, (p) => ({ ...p, end: 'gone' })),
+    (err) => setProgress(jobId, (p) => (err.status === 404 ? { ...p, end: 'gone' } : { ...p, end: 'error', error: err })),
   );
 }
 

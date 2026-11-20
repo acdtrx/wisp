@@ -11,9 +11,10 @@ export const JOB_KIND = Object.freeze({
 /**
  * Stream a job's progress events, whatever its kind, to its last event.
  * @param {(ev: object) => void} onEvent
- * @param {() => void} onGone - the server no longer knows the job (404)
+ * @param {(err: import('./errors.js').ApiError) => void} onRefused - the stream answered a 4xx and ended;
+ *   a 404: the server no longer knows the job
  * @returns {() => void} close
  */
-export function streamJobProgress(jobId, onEvent, onGone) {
-  return createJobSSE(`/api/jobs/${encodeURIComponent(jobId)}/progress`, onEvent, onGone);
+export function streamJobProgress(jobId, onEvent, onRefused) {
+  return createJobSSE(`/api/jobs/${encodeURIComponent(jobId)}/progress`, onEvent, onRefused);
 }

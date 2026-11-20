@@ -143,10 +143,11 @@ export default function ContainerLogsSection({ containerName }) {
           });
         }
       },
-      (reason) => {
-        // createSSE reconnects on every failure but a 404 (the run is gone).
+      (err) => {
+        // An error: the stream was refused (the run is gone, a bad query) and has ended.
+        // None: the connection dropped, and createSSE reconnects.
         setStreamState('error');
-        setStreamError(reason === 'not_found' ? 'This run no longer exists' : 'The log stream was interrupted — reconnecting…');
+        setStreamError(err ? errorText(err) : 'The log stream was interrupted — reconnecting…');
       },
     );
 

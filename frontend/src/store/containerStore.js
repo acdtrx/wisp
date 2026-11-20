@@ -96,7 +96,7 @@ export const useContainerStore = create((set, get) => {
         });
       },
       () => {
-        /* Stream error; createSSE will reconnect — clear stale stats */
+        /* The stream dropped (createSSE reconnects) or was refused (it ended): clear stale stats */
         set({ containerStats: null });
       },
     );
