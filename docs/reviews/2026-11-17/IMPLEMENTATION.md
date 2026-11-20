@@ -258,9 +258,16 @@ P-3's, is a design and not a patch.
 The first two features below, with `DEPLOYMENT.md` as their contract, are done
 2026-11-20, merged to `main` from `anchor/phase-7-start-up`. The later feature (the
 helpers) stays open. Not run: an update downloaded from a GitHub release, first observed
-at the next release; a failure of the RAPL step, which the test VMs lack. The
-NetworkManager and plain systemd-networkd hosts were Ubuntu and Debian VMs adapted to
-them. What the two features left for later is in `docs/BACKLOG.md`.
+at the next release; a failure of the RAPL step, which the test VMs lack. What the two
+features left for later is in `docs/BACKLOG.md`.
+
+The setup path was then cut down, on the user's decision of 2026-11-20 (merged the same
+day from `anchor/setup-netplan-only`): the bridge is made on netplan hosts only, a host
+another tool runs is refused, and the bridge step keeps no journal and recovers no step
+that died. Setup went from 4,806 lines to 3,623 and from 55 refusal codes to 29.
+ifupdown, the next tool to support, is in the backlog. Not run: the refusal of an
+ifupdown host; a learned IPv6 address from a real DHCPv6 server or router advertisement
+(a hand-set one stood in).
 
 - **Migrations at start (P-3).** The backend runs the pending state migrations every time
   it starts, before it serves a request or starts a workload. A failed migration stops
