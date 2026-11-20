@@ -41,9 +41,11 @@ HOST_KVM=no
 
 detect_uplink
 refuse_dns_port
-# The stub's netplan file, rendered once and checked with the host's files.
-dns_stub_render "$NET_PLAN_DIR/$DNS_STUB_PLANNED" || net_fail "cannot write the plan in $NET_PLAN_DIR"
+# The host's own netplan configuration, then with the stub's file, rendered
+# once, added: each checked by netplan.
 netplan_stage "$NET_PLAN_DIR/stub-stage"
+refuse_netplan_rejected "$NET_PLAN_DIR/stub-stage"
+dns_stub_render "$NET_PLAN_DIR/$DNS_STUB_PLANNED" || net_fail "cannot write the plan in $NET_PLAN_DIR"
 refuse_dns_stub "$NET_PLAN_DIR/stub-stage"
 rm -rf "$NET_PLAN_DIR/stub-stage"
 

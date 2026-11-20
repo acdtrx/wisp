@@ -237,19 +237,41 @@ refuse_netplan_not_applied() {
       "${remedy[@]}"
 }
 
-# netplan_stage <dir>: a copy of netplan's directories in <dir>, with the
-# container DNS stub's file as the plan rendered it (container-dns-plan.sh):
-# what netplan reads once the container-dns step has run, which goes live
-# before the bridge step.
+# netplan_stage <dir>: a copy of netplan's directories in <dir>: the host's
+# own configuration, without the container DNS stub's file.
 netplan_stage() {
   local d
   for d in "${NETPLAN_DIRS[@]}"; do
     [[ -d "$d" ]] || continue
     mkdir -p "$1$(dirname "$d")" && cp -a "$d" "$1$d" || net_fail "cannot stage $d"
   done
+  rm -f "$1$DNS_STUB_NETPLAN_FILE" || net_fail "cannot stage netplan's directories in $1"
+}
+# netplan_stage_stub <dir>: the stub's file as the plan rendered it
+# (container-dns-plan.sh) added to a stage: what netplan reads once the
+# container-dns step has run, which goes live before the bridge step.
+netplan_stage_stub() {
   mkdir -p "$1$(dirname "$DNS_STUB_NETPLAN_FILE")" \
     && install -m 0600 "$NET_PLAN_DIR/$DNS_STUB_PLANNED" "$1$DNS_STUB_NETPLAN_FILE" \
     || net_fail "cannot stage $DNS_STUB_NETPLAN_FILE"
+}
+# netplan_rejects <root>: whether netplan rejects the configuration under
+# <root> (netplan generate), NETPLAN_ERROR saying why on one line. A generate
+# that does not finish is a failure.
+netplan_rejects() {
+  local out rc=0
+  out="$(net_call netplan generate --root-dir "$1" 2>&1)" || rc=$?
+  (( rc != 0 )) || return 1
+  (( rc != 124 && rc != 137 )) || net_fail "'netplan generate --root-dir $1' did not finish (exit $rc)"
+  NETPLAN_ERROR="$(tr -s '[:space:]' ' ' <<<"$out")"
+  NETPLAN_ERROR="${NETPLAN_ERROR% }"
+}
+# refuse_netplan_rejected <stage>: netplan must accept the host's own
+# configuration (netplan_stage), before setup adds anything to it.
+refuse_netplan_rejected() {
+  netplan_rejects "$1" || return 0
+  refuse NETPLAN_REJECTED "netplan rejects this host's own configuration: ${NETPLAN_ERROR:-netplan generate failed, saying nothing}" \
+    "Nothing was changed. Correct it, so that netplan generate accepts it, and run this again."
 }
 
 # plan_bridge: the operator's file that defines the uplink, edited with
@@ -310,6 +332,7 @@ plan_bridge() {
   # the interface must keep no layer 3, the bridge must be what setup wrote.
   stage="$NET_PLAN_DIR/stage"
   netplan_stage "$stage"
+  netplan_stage_stub "$stage"
   while IFS=$'\t' read -r hint kv; do
     net_read netplan set --root-dir "$stage" --origin-hint "$hint" "$kv" || exit 1
   done < "$NET_PLAN_DIR/netplan-set.args"
@@ -330,7 +353,9 @@ plan_bridge() {
       fi
     done
   done
-  net_read netplan generate --root-dir "$stage" >/dev/null || exit 1
+  if netplan_rejects "$stage"; then
+    net_refuse NETPLAN_MERGED "with setup's edits for $BRIDGE, netplan rejects its configuration, which it accepts without them: $NETPLAN_ERROR."
+  fi
   merged="$(net_read netplan get --root-dir "$stage")" || exit 1
   why="$("${SETUP_PYTHON[@]}" "$NET_SETUP_DIR/netplan.py" merged "$UPLINK_NETPLAN_ID" "$BRIDGE" \
     "$(awk -F'\t' -v k="bridges.$BRIDGE=" 'index($2, k) == 1 { print substr($2, length(k) + 1) }' "$NET_PLAN_DIR/netplan-set.args")" <<<"$merged")" \

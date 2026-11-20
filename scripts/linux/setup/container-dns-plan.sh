@@ -50,14 +50,14 @@ dns_stub_wait() {
   done
 }
 
-# refuse_dns_stub <stage>: netplan must accept the stub's definition beside the
-# host's own (it rejects one where an operator's wisp-dns0 is of another kind,
-# or a netplan without dummy-devices): once live, a definition it rejects fails
-# every later generate, and netplan's generator at boot, which then renders no
-# network at all. <stage> is a copy of netplan's directories with the stub's
-# file in place (bridge-plan.sh, netplan_stage).
+# refuse_dns_stub <stage>: netplan must accept the stub's definition added to
+# the host's own configuration, which it accepts (<stage>, bridge-plan.sh:
+# netplan_stage, refuse_netplan_rejected). It rejects one where an operator's
+# wisp-dns0 is of another kind, or a netplan without dummy-devices; once live,
+# a definition it rejects fails every later generate, and netplan's generator
+# at boot, which then renders no network at all.
 refuse_dns_stub() {
-  local out rc=0 kind
+  local out kind
   # A device of that name already there of another kind (an operator's, left
   # in the kernel after its definition went) is not taken over: systemd-networkd
   # keeps a device that exists, and the stub would never get its address.
@@ -68,10 +68,9 @@ refuse_dns_stub() {
       || refuse NETPLAN_DNS_STUB "a device $DNS_STUB_IFACE of kind ${kind:-physical} exists, where Wisp's container DNS stub is a dummy device of that name." \
         "Nothing was changed. Remove it (ip link delete $DNS_STUB_IFACE) and any definition of it of your own, and run this again."
   fi
-  out="$(net_call netplan generate --root-dir "$1" 2>&1)" || rc=$?
-  (( rc != 0 )) || return 0
-  (( rc != 124 && rc != 137 )) || net_fail "'netplan generate --root-dir $1' did not finish (exit $rc)"
-  refuse NETPLAN_DNS_STUB "netplan rejects its configuration with Wisp's container DNS stub, a dummy device $DNS_STUB_IFACE in $DNS_STUB_NETPLAN_FILE, added: $(echo $out)" \
+  netplan_stage_stub "$1"
+  netplan_rejects "$1" || return 0
+  refuse NETPLAN_DNS_STUB "netplan accepts this host's own configuration, but rejects it with Wisp's container DNS stub, a dummy device $DNS_STUB_IFACE in $DNS_STUB_NETPLAN_FILE, added: $NETPLAN_ERROR" \
     "Nothing was changed. Remove a definition of $DNS_STUB_IFACE of your own, or use a netplan that has" \
     "dummy-devices, and run this again."
 }
