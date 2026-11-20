@@ -22,6 +22,10 @@
 # User config (config/wisp-config.json, wisp-password, runtime.env), the backup
 # status cache (config/backup-status.json), the state-migration ledger
 # (config/migrations.json) and runtime scratch (.pids, .logs) survive the swap.
+# config/ is where the config file, wisp-password and the ledger live by
+# default: a WISP_CONFIG_PATH elsewhere puts the three outside the tree, where
+# the swap never reaches, and a config/wisp-password an earlier release left
+# there is kept for the new backend's migration 0010 to move.
 # A rollback restores all of config/ from the snapshot, the ledger included: a
 # migration the new backend ran may have changed config/, and the ledger must
 # revert with it, so every such migration runs again on the next update — safe

@@ -1,14 +1,15 @@
 import { createHmac, timingSafeEqual, scryptSync, randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { createAppError } from './appErrors.js';
+import { CONFIG_PATH } from './config.js';
 import { parseCookieHeader, appendSetCookie, buildSetCookie } from './cookies.js';
 import { verifyApiToken } from './apiTokens.js';
 import { isAuthRateLimited, recordFailedAuthAttempt, AUTH_RATE_WINDOW_SECONDS } from './loginRateLimit.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PASSWORD_FILE = resolve(__dirname, '../../../config/wisp-password');
+// Beside the config file, wherever WISP_CONFIG_PATH puts it, as the migration
+// ledger is (docs/specs/CONFIGURATION.md → Password Storage).
+const PASSWORD_FILE = join(dirname(CONFIG_PATH), 'wisp-password');
 const SCRYPT_KEYLEN = 64;
 const SCRYPT_SALT_LEN = 16;
 
@@ -20,7 +21,7 @@ export const SESSION_MAX_AGE_SECONDS = 7 * 86400;
 const SESSION_REFRESH_AFTER_SECONDS = 3600;
 
 /**
- * Read config/wisp-password content. Returns { salt, key } for hashed
+ * Read wisp-password content. Returns { salt, key } for hashed
  * (scrypt:salt_hex:key_hex). Returns null when the file is missing or empty
  * (not configured yet: login reports it). Throws when the file can't be read or
  * is not in the expected scrypt form — `checkPasswordFile` runs this at startup,
@@ -55,7 +56,7 @@ function readPasswordFile() {
   return { salt, key };
 }
 
-/** Startup check of config/wisp-password: throws when it exists but can't be used. */
+/** Startup check of wisp-password: throws when it exists but can't be used. */
 export function checkPasswordFile() {
   readPasswordFile();
 }
@@ -136,7 +137,7 @@ export function verifyPassword(input) {
 }
 
 /**
- * Write new password to config/wisp-password (mode 0o600). Used by change-password route.
+ * Write new password to wisp-password (mode 0o600). Used by change-password route.
  * Stores a scrypt hash so the password is not stored in plain text.
  */
 export function setPassword(newPassword) {
