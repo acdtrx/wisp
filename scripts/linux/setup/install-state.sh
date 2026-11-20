@@ -15,13 +15,9 @@ has_server_name() {
   return "$rc"
 }
 
-# has_password <install-dir>: wisp-password, beside the config file
-# (wisp_config_dir), holds a password. A WISP_CONFIG_PATH the backend would
-# refuse ends the caller, naming it.
+# has_password <install-dir>: config/wisp-password holds a password.
 has_password() {
-  local dir
-  dir="$(wisp_config_dir "$1")" || exit 1
-  [[ -s "$dir/wisp-password" ]]
+  [[ -s "$1/config/wisp-password" ]]
 }
 
 # password_ok <password>: one Wisp accepts.

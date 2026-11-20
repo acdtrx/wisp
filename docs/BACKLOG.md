@@ -7,13 +7,6 @@ trigger** — the observed condition that would make it worth building (features
 their place). Date rulings inline: `(ruled YYYY-MM-DD: wait to see if needed.)`.
 Group entries under headings as themes emerge.
 
-**Setup's server-name answer ignores `WISP_CONFIG_PATH`.** `config.sh`, `has_server_name`
-(`install-state.sh`) and the 0600 pass in `answers.sh` name `config/wisp-config.json`,
-while the backend reads the file `WISP_CONFIG_PATH` names; `wisp-password` follows it
-since 2026-11-20 (`wisp_config_dir`, `lib.sh`), the settings file in setup does not
-(found while moving the password, 2026-11-20). No Wisp tool writes the key. **Revisit
-trigger:** a host that sets `WISP_CONFIG_PATH` by hand and reinstalls.
-
 **The cloud-init edit falls back to the VM name as the hostname.** Opening the editor on
 a VM with no saved hostname fills `hostname: vmName`
 (`frontend/src/components/sections/CloudInitSection.jsx`, `startEditing`), but a VM

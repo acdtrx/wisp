@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Prompt for password, hash with scrypt, write to wisp-password beside the
-# config file (config/ unless WISP_CONFIG_PATH puts the config elsewhere).
+# Prompt for password, hash with scrypt, write to config/wisp-password.
 # Usage: password.sh <install-dir> [--force | --stdin]
 #   --force  ask and replace an existing password file (wispctl password --force)
 #   --stdin  take the password as one line on stdin, unasked (the installer's root
@@ -25,10 +24,10 @@ case "${2:-}" in
   *) echo "Usage: $0 <install-dir> [--force | --stdin]"; exit 1 ;;
 esac
 
-CONFIG_DIR="$(wisp_config_dir "$INSTALL_DIR")" || exit 1
+CONFIG_DIR="$INSTALL_DIR/config"
 PASSWORD_FILE="$CONFIG_DIR/wisp-password"
 
-echo "--- Password ($PASSWORD_FILE) ---"
+echo "--- Password (config/wisp-password) ---"
 
 mkdir -p "$CONFIG_DIR"
 
@@ -87,4 +86,4 @@ printf '%s' "$PASSWORD" | node -e '
   fs.fsyncSync(dfd);
   fs.closeSync(dfd);
 ' "$PASSWORD_FILE"
-echo "  Wrote hashed password to $PASSWORD_FILE"
+echo "  Wrote hashed password to config/wisp-password"
