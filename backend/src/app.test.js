@@ -376,6 +376,18 @@ test('a workload name is checked by its schema in the URL: no `..`, a leading le
   }
 });
 
+test('a section assignment takes a name by its kind\'s workload-name schema', async () => {
+  const assign = (payload) => app.inject({ method: 'PUT', url: '/api/sections/assign', headers: admin, payload });
+  const vm = await assign({ type: 'vm', name: 'v'.repeat(128), sectionId: null });
+  assert.notEqual(vm.json()?.error, 'VALIDATION_FAILED');
+  const longVm = await assign({ type: 'vm', name: 'v'.repeat(129), sectionId: null });
+  assert.deepEqual(longVm.json(), { error: 'VALIDATION_FAILED', detail: 'body/name must NOT have more than 128 characters' });
+  const container = await assign({ type: 'container', name: 'c'.repeat(64), sectionId: null });
+  assert.deepEqual(container.json(), { error: 'VALIDATION_FAILED', detail: 'body/name must NOT have more than 63 characters' });
+  const dots = await assign({ type: 'vm', name: 'a..b', sectionId: null });
+  assert.match(dots.json().detail, /^body\/name must match pattern/);
+});
+
 test('a malformed run id answers the same on the run-log download and the logs stream', async () => {
   const download = await app.inject({ method: 'GET', url: '/api/containers/web/runs/not-a-run/log', headers: bearer(READ_TOKEN) });
   const stream = await app.inject({ method: 'GET', url: '/api/containers/web/logs?runId=not-a-run', headers: bearer(READ_TOKEN) });

@@ -8,6 +8,7 @@ import {
   getAssignments,
 } from '../lib/sections.js';
 import { openOnPurpose } from '../lib/schemaValidation.js';
+import { containerNameSchema, vmNameSchema } from '../lib/validation.js';
 import { createdIdSchema, idParamsSchema, noContentSchema } from './schemas.js';
 
 const sectionSchema = {
@@ -114,15 +115,19 @@ export default async function sectionsRoutes(fastify) {
   fastify.put('/sections/assign', {
     config: { auth: 'admin' },
     schema: {
+      // The name is checked by its kind's workload-name schema.
       body: {
         type: 'object',
         required: ['type', 'name'],
         properties: {
           type: { type: 'string', enum: ['vm', 'container'] },
-          name: { type: 'string', minLength: 1, maxLength: 64 },
+          name: { type: 'string' },
           sectionId: { type: ['string', 'null'] },
         },
         additionalProperties: false,
+        if: { type: 'object', properties: { type: { const: 'container' } } },
+        then: { type: 'object', properties: { name: containerNameSchema } },
+        else: { type: 'object', properties: { name: vmNameSchema } },
       },
       response: { 204: noContentSchema },
     },

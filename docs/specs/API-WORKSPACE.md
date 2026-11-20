@@ -83,7 +83,7 @@ Move a workload to a section.
 - `sectionId === null` (or `"main"`) drops the explicit assignment — the workload returns to Main.
 - **204:** Assigned.
 - **404 (`SECTION_NOT_FOUND`):** Target sectionId doesn't exist.
-- **400 (`VALIDATION_FAILED`):** A `type` other than `vm` / `container`, an empty or too-long `name`, or an unknown key. **422 (`SECTION_INVALID`):** A `name` of whitespace only.
+- **400 (`VALIDATION_FAILED`):** A `type` other than `vm` / `container`, a `name` that breaks its kind's [name rules](ERROR-HANDLING.md#name-validation) (a VM's up to 128 characters, a container's up to 63), or an unknown key.
 
 The workload itself isn't validated — assignments are pure metadata, so referencing an unknown VM/container name is a no-op (the entry is ignored on the next list read).
 
