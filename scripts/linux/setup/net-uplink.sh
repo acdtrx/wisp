@@ -96,7 +96,7 @@ refuse_cloud_init_network() {
 # python3, the one thing it needs that the packages step does not install
 # first (netplan and cloud-init run on it too).
 refuse_no_python() {
-  command -v python3 >/dev/null \
+  command -v "${SETUP_PYTHON[0]}" >/dev/null \
     || refuse PYTHON_MISSING "setup reads the network's configuration with python3, which this host does not have: install it (apt install python3), and run this again."
 }
 
