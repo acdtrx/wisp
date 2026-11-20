@@ -444,8 +444,12 @@ export async function fetchGithubKeys(username) {
   } catch (err) {
     throw unavailable(err);
   }
-  if (!res.ok) {
+  // Only GitHub's own 404 says the user is unknown: a 429 or a 5xx says nothing about the user.
+  if (res.status === 404) {
     throw createAppError('GITHUB_KEYS_NOT_FOUND', `No keys found for "${username}"`);
+  }
+  if (!res.ok) {
+    throw createAppError('GITHUB_KEYS_UNAVAILABLE', `GitHub answered HTTP ${res.status}`, `HTTP ${res.status}`);
   }
   let text;
   try {

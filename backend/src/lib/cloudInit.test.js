@@ -38,9 +38,17 @@ test('the keys are the lines of the .keys answer, under a deadline and a size bo
   assert.ok(requests[0].init.maxBodyBytes > 0);
 });
 
-test('an answer other than 2xx is GITHUB_KEYS_NOT_FOUND', async () => {
+test("GitHub's 404 is GITHUB_KEYS_NOT_FOUND", async () => {
   answer = () => new Response('Not Found', { status: 404 });
   await assert.rejects(fetchGithubKeys('nobody'), { code: 'GITHUB_KEYS_NOT_FOUND' });
+});
+
+test('any other answer that is not 2xx is GITHUB_KEYS_UNAVAILABLE, the status in its cause', async () => {
+  for (const status of [429, 500, 503, 403, 302]) {
+    answer = () => new Response('', { status });
+    await assert.rejects(fetchGithubKeys('octocat'), (err) => err.code === 'GITHUB_KEYS_UNAVAILABLE'
+      && err.raw === `HTTP ${status}`, String(status));
+  }
 });
 
 test('a refused or failed request is GITHUB_KEYS_UNAVAILABLE, its cause kept', async () => {

@@ -351,5 +351,5 @@ Fetch SSH public keys for a GitHub user (server-side proxy to avoid CORS).
 
 - **Params:** username must match `^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$`
 - **200:** `{ keys: ["ssh-rsa ...", ...] }`
-- **404:** `GITHUB_KEYS_NOT_FOUND` — no keys found
-- **502:** `GITHUB_KEYS_UNAVAILABLE` — the lookup failed, or the SSRF guard refused a redirect ([CLOUD-INIT.md](CLOUD-INIT.md#github-ssh-key-import))
+- **404:** `GITHUB_KEYS_NOT_FOUND` — GitHub answered 404: no such user
+- **502:** `GITHUB_KEYS_UNAVAILABLE` — the lookup failed, GitHub answered anything else that is not 2xx (429, 5xx; the status in the detail), or the SSRF guard refused a redirect ([CLOUD-INIT.md](CLOUD-INIT.md#github-ssh-key-import))

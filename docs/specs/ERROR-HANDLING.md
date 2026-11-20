@@ -193,7 +193,7 @@ Each code a client can receive, with its status.
 | `SECTION_NOT_FOUND` | 404 | No sidebar section with that id |
 | `HOME_NOT_FOUND` | 404 | No home-page group or tile with that id |
 | `TOKEN_NOT_FOUND` | 404 | No API token with that id |
-| `GITHUB_KEYS_NOT_FOUND` | 404 | GitHub has no public keys for that user |
+| `GITHUB_KEYS_NOT_FOUND` | 404 | GitHub answered 404 for that user: no such user |
 | `METHOD_NOT_ALLOWED` | 405 | The path takes another method (`GET` or `DELETE /mcp`) |
 | `PAYLOAD_TOO_LARGE` | 413 | The body, or the multipart parts, exceed their limit |
 | `UPLOAD_TOO_LARGE` | 413 | The upload exceeds its size limit |
@@ -300,7 +300,7 @@ Each code a client can receive, with its status.
 | `LIBRARY_IO_FAILED` | 500 | A read or write in the image library failed |
 | `GITHUB_API` | 500 | GitHub's release API answered wrongly |
 | `NO_ASSET` | 500 | The release has no tarball asset |
-| `GITHUB_KEYS_UNAVAILABLE` | 502 | GitHub could not be asked for the user's keys |
+| `GITHUB_KEYS_UNAVAILABLE` | 502 | GitHub could not be asked for the user's keys, or answered neither 2xx nor 404 |
 | `NO_CONNECTION` | 503 | libvirt is not connected |
 | `NO_CONTAINERD` | 503 | containerd is not reachable |
 | `NO_PASSWORD_CONFIGURED` | 503 | `config/wisp-password` is missing |
