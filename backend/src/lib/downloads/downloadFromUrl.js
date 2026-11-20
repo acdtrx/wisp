@@ -243,6 +243,11 @@ function untilAborted(promise, signal) {
 }
 
 /**
+ * The fetch for every URL from user input, and for a public source whose
+ * redirects Wisp does not control; only an endpoint the operator sets (the
+ * OIDC issuer) goes through `fetchOperatorEndpoint` instead. Refuses a host
+ * that resolves to a private or loopback address (SSRF_BLOCKED).
+ *
  * Fetch with manual redirect handling. Each Location target is re-validated by
  * `assertUrlNotPrivate` and DNS-pinned to a fresh undici Agent. Up to
  * `MAX_REDIRECTS` redirects are followed.

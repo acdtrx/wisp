@@ -1,9 +1,13 @@
 /**
- * Downloads module facade. Bundles SSRF-safe URL downloads, the per-source helpers
- * (Ubuntu cloud, Arch cloud, HAOS), and the file-type detector.
+ * Downloads module facade: the one home for outbound HTTP. undici and the
+ * global `fetch` are fenced to this module (CODING-RULES §7).
  *
- * Consumers: `routes/library.js`, and `lib/wispUpdate.js` for the GitHub API and the
- * release tarball. undici is fenced to this module (CODING-RULES §7).
+ * Two fetches: `ssrfSafeFetch` for every URL from user input or a public
+ * source (private and loopback addresses refused, each redirect re-checked),
+ * and `fetchOperatorEndpoint` for an endpoint only the operator sets, the OIDC
+ * issuer (private addresses allowed, no redirect followed). On top of them: the
+ * URL downloads into the library, the per-source helpers (Ubuntu cloud, Arch
+ * cloud, HAOS) and the file-type detector.
  */
 export {
   isPrivateIPv4,
@@ -14,6 +18,8 @@ export {
   ssrfSafeFetch,
   downloadWithProgress,
 } from './downloadFromUrl.js';
+
+export { fetchOperatorEndpoint } from './operatorEndpoint.js';
 
 export {
   openUniqueFile,
