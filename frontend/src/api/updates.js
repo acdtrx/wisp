@@ -1,7 +1,7 @@
 import { api } from './client.js';
 
-export function getUpdateStatus() {
-  return api('/api/updates/status');
+export function getUpdateStatus({ signal } = {}) {
+  return api('/api/updates/status', { signal });
 }
 
 /** Answers 204 (or the check's error): the status follows on the `wisp-update` cue. */

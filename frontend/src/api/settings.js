@@ -1,7 +1,7 @@
 import { api } from './client.js';
 
-export function getSettings() {
-  return api('/api/settings');
+export function getSettings({ signal } = {}) {
+  return api('/api/settings', { signal });
 }
 
 /** Answers 204: the new settings arrive through the settings store's sync. */
@@ -14,12 +14,8 @@ export async function updateOidcSettings(body) {
   await api('/api/settings/oidc', { method: 'PATCH', body });
 }
 
-export function getMounts() {
-  return api('/api/host/mounts');
-}
-
-export function getMountStatus() {
-  return api('/api/host/mounts/status');
+export function getMountStatus({ signal } = {}) {
+  return api('/api/host/mounts/status', { signal });
 }
 
 /** Answers 204 once mounted: the status arrives on the `host-mounts` cue. */

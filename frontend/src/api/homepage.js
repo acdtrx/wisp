@@ -3,10 +3,6 @@ import { api } from './client.js';
 /* Writes answer with an ack (204, or `201 { id }` for a create); the new
  * `{ tiles, groups }` envelope arrives on the `home` topic. */
 
-export function getHomepage() {
-  return api('/api/homepage');
-}
-
 /** @returns {Promise<{ id: string }>} */
 export function createGroup(name) {
   return api('/api/homepage/groups', { method: 'POST', body: { name } });

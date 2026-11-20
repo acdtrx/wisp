@@ -4,16 +4,16 @@ export function createVM(spec) {
   return api('/api/vms', { method: 'POST', body: spec });
 }
 
-export function getVM(name) {
-  return api(`/api/vms/${encodeURIComponent(name)}`);
+export function getVM(name, { signal } = {}) {
+  return api(`/api/vms/${encodeURIComponent(name)}`, { signal });
 }
 
 export function updateVM(name, changes) {
   return api(`/api/vms/${encodeURIComponent(name)}`, { method: 'PATCH', body: changes });
 }
 
-export function getVMXML(name) {
-  return api(`/api/vms/${encodeURIComponent(name)}/xml`);
+export function getVMXML(name, { signal } = {}) {
+  return api(`/api/vms/${encodeURIComponent(name)}/xml`, { signal });
 }
 
 /** Starts a job (start, force-stop, delete): answers `{ jobId, kind, title, subject }`; follow it with awaitJob. */
@@ -76,8 +76,8 @@ export function ejectISO(name, slot) {
 }
 
 // USB operations
-export function getVMUSB(name) {
-  return api(`/api/vms/${encodeURIComponent(name)}/usb`);
+export function getVMUSB(name, { signal } = {}) {
+  return api(`/api/vms/${encodeURIComponent(name)}/usb`, { signal });
 }
 
 export function attachUSBToVM(name, vendorId, productId) {
@@ -89,13 +89,13 @@ export function detachUSBFromVM(name, vendorId, productId) {
 }
 
 // Host queries
-export function getHostBridges() {
-  return api('/api/host/bridges');
+export function getHostBridges({ signal } = {}) {
+  return api('/api/host/bridges', { signal });
 }
 
 // Cloud-Init
-export function getCloudInit(name) {
-  return api(`/api/vms/${encodeURIComponent(name)}/cloudinit`);
+export function getCloudInit(name, { signal } = {}) {
+  return api(`/api/vms/${encodeURIComponent(name)}/cloudinit`, { signal });
 }
 
 export function updateCloudInit(name, config) {
@@ -106,6 +106,6 @@ export function deleteCloudInit(name) {
   return api(`/api/vms/${encodeURIComponent(name)}/cloudinit`, { method: 'DELETE' });
 }
 
-export function fetchGithubKeys(username) {
-  return api(`/api/github/keys/${encodeURIComponent(username)}`);
+export function fetchGithubKeys(username, { signal } = {}) {
+  return api(`/api/github/keys/${encodeURIComponent(username)}`, { signal });
 }

@@ -10,12 +10,9 @@ export function startBackup(vmName, options = {}) {
   return api(`/api/vms/${encodeURIComponent(vmName)}/backup`, { method: 'POST', body });
 }
 
-/**
- * List backups from configured destinations. Optional vmName filter.
- */
-export function listBackups(vmName = null) {
-  const q = vmName != null && vmName !== '' ? `?vmName=${encodeURIComponent(vmName)}` : '';
-  return api(`/api/backups${q}`);
+/** Every VM backup, on every configured destination. */
+export function listBackups({ signal } = {}) {
+  return api('/api/backups', { signal });
 }
 
 /**
@@ -49,9 +46,9 @@ export function startContainerBackup(name, options = {}) {
   return api(`/api/containers/${encodeURIComponent(name)}/backup`, { method: 'POST', body });
 }
 
-export function listContainerBackups(containerName = null) {
-  const q = containerName != null && containerName !== '' ? `?containerName=${encodeURIComponent(containerName)}` : '';
-  return api(`/api/container-backups${q}`);
+/** Every container backup, on every configured destination. */
+export function listContainerBackups({ signal } = {}) {
+  return api('/api/container-backups', { signal });
 }
 
 /**

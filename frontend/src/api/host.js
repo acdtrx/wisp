@@ -1,15 +1,15 @@
 import { api } from './client.js';
 
-export function getHostInfo() {
-  return api('/api/host');
+export function getHostInfo({ signal } = {}) {
+  return api('/api/host', { signal });
 }
 
-export function getHostHardware() {
-  return api('/api/host/hardware');
+export function getHostHardware({ signal } = {}) {
+  return api('/api/host/hardware', { signal });
 }
 
-export function getHostGpus() {
-  return api('/api/host/gpus');
+export function getHostGpus({ signal } = {}) {
+  return api('/api/host/gpus', { signal });
 }
 
 /** The check and the upgrade are jobs: they answer `{ jobId, kind, title, subject }` (follow with awaitJob). A check
@@ -23,12 +23,12 @@ export function performUpgrade() {
 }
 
 /** What the last check found: `{ packages, downloadBytes, checkedAt }`, `checkedAt` null before any check. */
-export function listUpgradablePackages() {
-  return api('/api/host/updates/packages');
+export function listUpgradablePackages({ signal } = {}) {
+  return api('/api/host/updates/packages', { signal });
 }
 
-export function listManagedNetworkBridges() {
-  return api('/api/host/network-bridges');
+export function listManagedNetworkBridges({ signal } = {}) {
+  return api('/api/host/network-bridges', { signal });
 }
 
 /** Bridge create and delete are jobs: they answer `{ jobId, kind, title, subject }`. */

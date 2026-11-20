@@ -62,10 +62,10 @@ function dispatch(frame) {
   if (frame.topic !== TOPIC.CHANGES) lastFrames.set(frame.topic, frame.data);
   const handlers = topicHandlers.get(frame.topic);
   /* A handler that starts a re-read returns its promise: a command waiting on this
-   * frame waits for those to settle too. A re-read shows its own failure in its view
-   * (vmStore's error banner for the VM config, USBSection's and CloudInitSection's
-   * load errors), so the failure reaches the user once whether or not a command waits;
-   * the catch only keeps a stray rejection from going unhandled. */
+   * frame waits for those to settle too. A re-read shows its own failure as its
+   * record's error state (store/recordCache.js), so the failure reaches the user once
+   * whether or not a command waits; the catch only keeps a stray rejection from going
+   * unhandled. */
   const rereads = [];
   if (handlers) {
     for (const handler of handlers) {

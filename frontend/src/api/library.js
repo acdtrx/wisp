@@ -1,9 +1,9 @@
 import { api } from './client.js';
 import { postMultipartFile } from './upload.js';
 
-export async function listFiles(type) {
-  const params = type ? `?type=${encodeURIComponent(type)}` : '';
-  return api(`/api/library${params}`);
+/** Every library file; the views filter by `type` themselves. */
+export function listFiles({ signal } = {}) {
+  return api('/api/library', { signal });
 }
 
 /** Answers 204: the list follows on the `library` cue (also rename and upload). */
@@ -18,9 +18,9 @@ export async function renameFile(filename, newName) {
   });
 }
 
-export async function checkDownloadUrl(url) {
+export async function checkDownloadUrl(url, { signal } = {}) {
   const params = new URLSearchParams({ url });
-  return api(`/api/library/check-url?${params}`);
+  return api(`/api/library/check-url?${params}`, { signal });
 }
 
 /** A job: answers 202 `{ jobId, kind, title, subject }` (all four downloads). */

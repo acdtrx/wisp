@@ -2,8 +2,8 @@ import { api } from './client.js';
 import { postMultipartFile } from './upload.js';
 
 /** OCI images in containerd (wisp namespace). */
-export function listContainerImages() {
-  return api('/api/containers/images');
+export function listContainerImages({ signal } = {}) {
+  return api('/api/containers/images', { signal });
 }
 
 /** A job: answers `{ jobId, kind, title, subject }` (follow with awaitJob). */
@@ -23,16 +23,16 @@ export function checkContainerImageUpdates(ref = null) {
   });
 }
 
-export function getImageUpdateStatus() {
-  return api('/api/containers/images/update-status');
+export function getImageUpdateStatus({ signal } = {}) {
+  return api('/api/containers/images/update-status', { signal });
 }
 
 export function createContainer(spec) {
   return api('/api/containers', { method: 'POST', body: spec });
 }
 
-export function getContainer(name) {
-  return api(`/api/containers/${encodeURIComponent(name)}`);
+export function getContainer(name, { signal } = {}) {
+  return api(`/api/containers/${encodeURIComponent(name)}`, { signal });
 }
 
 export function updateContainer(name, changes) {
@@ -45,8 +45,8 @@ export function ejectContainerApp(name) {
 }
 
 /** On-demand host-side disk usage of each bind mount (can take seconds for large data dirs). */
-export function getContainerMountUsage(name) {
-  return api(`/api/containers/${encodeURIComponent(name)}/mounts/usage`);
+export function getContainerMountUsage(name, { signal } = {}) {
+  return api(`/api/containers/${encodeURIComponent(name)}/mounts/usage`, { signal });
 }
 
 /** Append one bind mount (row-scoped). */
@@ -129,9 +129,10 @@ export function uploadMountZip(containerName, mountName, file, options) {
   return postMultipartFile(url, file, options);
 }
 
-export function getMountFileContent(containerName, mountName) {
+export function getMountFileContent(containerName, mountName, { signal } = {}) {
   return api(
     `/api/containers/${encodeURIComponent(containerName)}/mounts/${encodeURIComponent(mountName)}/content`,
+    { signal },
   );
 }
 
@@ -142,7 +143,7 @@ export function putMountFileContent(containerName, mountName, content) {
   );
 }
 
-export function listContainerRuns(name) {
-  return api(`/api/containers/${encodeURIComponent(name)}/runs`);
+export function listContainerRuns(name, { signal } = {}) {
+  return api(`/api/containers/${encodeURIComponent(name)}/runs`, { signal });
 }
 

@@ -1,7 +1,7 @@
 import { api } from './client.js';
 
-export function listApiTokens() {
-  return api('/api/auth/tokens');
+export function listApiTokens({ signal } = {}) {
+  return api('/api/auth/tokens', { signal });
 }
 
 export function createApiToken(body) {
