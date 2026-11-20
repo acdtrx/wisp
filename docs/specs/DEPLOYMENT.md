@@ -134,7 +134,18 @@ Afterwards the host has:
 - the install's answers, with `config/` secrets at 0600;
 - the bridge, made last.
 
-**The container DNS stub** (`wisp-dns0`, `169.254.53.53/32`) is a netplan definition in a file of Wisp's own, `/etc/netplan/90-wisp-dns0.yaml`, so it exists at every boot before Wisp starts, with nothing of Wisp's creating it; `wisp.service` has no `ExecStartPre` (settled 2026-11-20). The network plan renders the file and has netplan check it in a staged copy of netplan's directories, beside the bridge's edits when it makes the bridge, before anything changes (`NETPLAN_DNS_STUB`); the step installs what was checked (settled 2026-11-20). The step renders it with `netplan generate`, never `netplan apply`, and reloads systemd-networkd only when the device is not up or its settings changed: the reload reconfigures every link netplan renders, the bridge's DHCP lease dropped and taken again among it (observed on systemd 255). A host that holds its former declaration, systemd-networkd's own `10-wisp-dns0.netdev` and `.network` and their wait-online instance, has them taken back once by the same step, with no reload: the settings are the same, and systemd-networkd runs the device from netplan's units from its next reload or boot. [CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns).
+**The container DNS stub** (`wisp-dns0`, `169.254.53.53/32`) is a netplan definition in a file of Wisp's own, `/etc/netplan/90-wisp-dns0.yaml`, so it exists at every boot before Wisp starts, with nothing of Wisp's creating it; `wisp.service` has no `ExecStartPre` (settled 2026-11-20).
+
+- The network plan renders the file and has netplan check it in a staged copy of netplan's directories, beside the bridge's edits when it makes the bridge, before anything changes (`NETPLAN_DNS_STUB`); the step installs what was checked (settled 2026-11-20).
+- The step runs `netplan generate` when it writes the file, takes the former files back, or finds the device missing; never `netplan apply`.
+- What it then does is decided from the host, so a run cut short is finished by the next (settled 2026-11-20). The stub's settings are its address set, read from the kernel: `169.254.53.53/32` alone, no IPv6 address, no link-local one.
+  - The device missing: systemd-networkd reloaded. This is the one reload: it reconfigures every link netplan renders, the bridge's DHCP lease dropped and taken again among it (observed on systemd 255).
+  - Run from netplan's unit (`10-netplan-wisp-dns0.network`) without its settings: `networkctl reconfigure wisp-dns0`.
+  - Run from another file (the former ones, deleted or not) with its settings: nothing more; systemd-networkd runs it from netplan's unit from its next reload or boot. Without them: reloaded.
+  - Each ends with the device holding its settings, waited for, or fails.
+- A host that holds its former declaration, systemd-networkd's own `10-wisp-dns0.netdev` and `.network` and their wait-online instance, has them taken back by the same step.
+
+[CONTAINERS.md → Local DNS](CONTAINERS.md#local-dns-mdns).
 
 ## The bridge
 

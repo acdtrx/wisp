@@ -80,21 +80,12 @@ undo() {
 }
 undo_stopped() { WHY="the step was stopped"; undo; }
 
-# stub_back: an apply can drop the container DNS stub's address for a while
-# (netplan's, on Debian 13: about 6 s), and the backend's start follows the
-# step: after the commit, the stub is waited for until it holds its address, up
-# to NET_WAIT_SEC.
-# Not part of the bridge or its check: the bridge stays whatever the stub
-# does. Outside a section that must finish, so a stop ends the wait at once.
-stub_back() {
-  local deadline=$(( SECONDS + NET_WAIT_SEC )) addrs
-  while :; do
-    addrs="$(net_call ip -4 -o addr show dev "$DNS_STUB_IFACE" 2>/dev/null || true)"
-    [[ "$addrs" != *" ${DNS_STUB_IP}/32 "* ]] || return 0
-    (( SECONDS < deadline )) || return 1
-    sleep 1
-  done
-}
+# An apply can drop the container DNS stub's address for a while (netplan's,
+# on Debian 13: about 6 s), and the backend's start follows the step: after the
+# commit, the stub is waited for until it holds its settings (dns_stub_wait,
+# container-dns-plan.sh). Not part of the bridge or its check: the bridge
+# stays whatever the stub does. Outside a section that must finish, so a stop
+# ends the wait at once.
 
 WHY=""
 journal_begin "$NET_PLAN_DIR" || fail "cannot start the journal in $JOURNAL_DIR"
@@ -126,7 +117,7 @@ if (( applied )) && bridge_check "$NET_PLAN_DIR"; then
   step_done
   # A stop that waited for the commit ends the step now, its work done.
   step_release
-  stub_back || fail "$BRIDGE is in place on $UPLINK and kept, but the container DNS stub $DNS_STUB_IFACE did not hold ${DNS_STUB_IP}/32 in the ${NET_WAIT_SEC} s waited after the bridge was committed: bring it back (networkctl reconfigure $DNS_STUB_IFACE), and run this again."
+  dns_stub_wait || fail "$BRIDGE is in place on $UPLINK and kept, but the container DNS stub $DNS_STUB_IFACE did not hold ${DNS_STUB_IP}/32 alone in the ${NET_WAIT_SEC} s waited after the bridge was committed: bring it back (networkctl reconfigure $DNS_STUB_IFACE), and run this again."
   exit 0
 fi
 WHY="${WHY:-netplan apply failed}"

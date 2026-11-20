@@ -40,9 +40,10 @@
 # nothing of Wisp's creating them — wisp.service creates nothing. The address
 # is part of the network being online, which wisp.service is ordered after:
 # the definition is not optional, so netplan's wait-online waits for it.
-# Applied with `netplan generate` and `networkctl reload`, never `netplan
-# apply`. A host that holds the former declaration, systemd-networkd's own
-# files and a wait-online instance of its own, has them taken back.
+# Rendered with `netplan generate`, never `netplan apply`, and brought to its
+# settings with the least systemd-networkd call the host needs (below). A host
+# that holds the former declaration, systemd-networkd's own files and a
+# wait-online instance of its own, has them taken back.
 #
 # Does not touch systemd-resolved.
 #
@@ -77,15 +78,15 @@ OLD_DROPIN_NAME="wisp-mdns-stub.conf"
 # The former declaration, taken back.
 FORMER_FILES=("$NETWORKD_DIR/10-${STUB_IFACE}.netdev" "$NETWORKD_DIR/10-${STUB_IFACE}.network")
 FORMER_WAIT_UNIT="systemd-networkd-wait-online@${STUB_IFACE}:degraded.service"
-RELOAD=0
+NETPLAN_STUB_UNIT="/run/systemd/network/10-netplan-${STUB_IFACE}.network"
 
 # 1. No `[Network] Address=` drop-in for the stub on br0's own .network unit:
-#    failure mode (2) above.
+#    failure mode (2) above. The address it put on the bridge goes below;
+#    systemd-networkd forgets the drop-in at its next reload or boot.
 shopt -s nullglob
 for stale in "$NETWORKD_DIR"/*.network.d/"$OLD_DROPIN_NAME"; do
   rm -f "$stale"
   changed "removed stale drop-in $stale (the stub IP no longer lives on the bridge)"
-  RELOAD=1
 done
 shopt -u nullglob
 
@@ -95,37 +96,22 @@ shopt -u nullglob
 #    169.254/16), which is fine: the forwarder binds it explicitly, so replies
 #    to containers never go through the kernel's source-address selection. The
 #    backend binds the address when it starts, so the step ends with it there.
-stub_up() {
-  local addrs
-  addrs="$(ip -4 addr show dev "$STUB_IFACE" 2>/dev/null || true)"
-  [[ "$addrs" == *"${STUB_IP}/32"* ]]
-}
 
-# The stub's file as the network plan rendered and checked it.
+# The stub's file as the network plan rendered and checked it; netplan renders
+# its units to /run when the file is new or changed, when the former files go,
+# and when the device is missing.
 yaml="$NET_PLAN_DIR/$DNS_STUB_PLANNED"
 [[ -s "$yaml" ]] || fail "no container DNS stub definition in the network plan ($yaml)"
-RENDER=0 MOVED=0
-for f in "${FORMER_FILES[@]}"; do
-  [[ ! -e "$f" ]] || MOVED=1
-done
+GENERATE=0
 if write_if_changed "$DNS_STUB_NETPLAN_FILE" 0600 "$yaml"; then
   changed "$DNS_STUB_NETPLAN_FILE"
-  RENDER=1
-  # A move from the former declaration changes no setting; a change of the
-  # definition otherwise is applied.
-  (( MOVED )) || RELOAD=1
+  GENERATE=1
 fi
-(( ! MOVED )) || RENDER=1
-
-# Rendered by netplan, then the former files gone. systemd-networkd is
-# reloaded only when the device is not up or its settings changed: `netplan
-# generate` writes every unit netplan renders again, and a reload then
-# reconfigures each link it runs from one, the bridge and the uplink among
-# them (observed: br0's DHCP lease dropped and taken again). A device up from
-# the former files, with the same settings, keeps running; networkd runs it
-# from netplan's units from its next reload or boot. When the step reloads,
-# it waits until the device has its address.
-if (( RENDER )) || ! stub_up; then
+for f in "${FORMER_FILES[@]}"; do
+  [[ ! -e "$f" ]] || GENERATE=1
+done
+[[ -e "/sys/class/net/$STUB_IFACE" ]] || GENERATE=1
+if (( GENERATE )); then
   step_run 0 timeout -k "$NET_KILL_SEC" "$NET_CMD_SEC" netplan generate || fail "netplan generate failed"
 fi
 for f in "${FORMER_FILES[@]}"; do
@@ -133,13 +119,33 @@ for f in "${FORMER_FILES[@]}"; do
   remove_file "$f" || fail "cannot remove $f"
   changed "removed $f (the stub is netplan's now)"
 done
-if (( RELOAD )) || ! stub_up; then
+
+# What brings the device to its settings is decided from the host, never from
+# what this run wrote, so a run cut short is finished by the next. A reload of
+# systemd-networkd reconfigures every link it runs from netplan's units, the
+# bridge among them (observed: br0's DHCP lease dropped and taken again), so it
+# is the last resort: a missing device, or one that runs from another file
+# (the former ones, deleted or not) without its settings. A device that holds
+# them from another file keeps running; systemd-networkd runs it from netplan's
+# unit from its next reload or boot. Each path ends with the device holding
+# them, or fails.
+how=""
+if [[ ! -e "/sys/class/net/$STUB_IFACE" ]]; then
   net_call networkctl reload || fail "networkctl reload failed"
-  step_run 0 timeout -k "$NET_KILL_SEC" "$(( NET_WAIT_SEC + NET_CMD_SEC ))" \
-    /usr/lib/systemd/systemd-networkd-wait-online -i "${STUB_IFACE}:degraded" --timeout="$NET_WAIT_SEC" >/dev/null \
-    || fail "${STUB_IFACE} did not get ${STUB_IP} from systemd-networkd within $NET_WAIT_SEC s"
-  stub_up || fail "${STUB_IFACE} has no ${STUB_IP} after the reload"
-  changed "systemd-networkd brought up ${STUB_IFACE} with ${STUB_IP}"
+  how="systemd-networkd reloaded"
+elif ! dns_stub_holds; then
+  runs_from="$(networkd_json "$STUB_IFACE" NetworkFile)" || fail "cannot read systemd-networkd's status of $STUB_IFACE"
+  if [[ "$runs_from" == "$NETPLAN_STUB_UNIT" ]]; then
+    net_call networkctl reconfigure "$STUB_IFACE" || fail "networkctl reconfigure $STUB_IFACE failed"
+    how="$STUB_IFACE reconfigured"
+  else
+    net_call networkctl reload || fail "networkctl reload failed"
+    how="systemd-networkd reloaded ($STUB_IFACE ran from '${runs_from}')"
+  fi
+fi
+if [[ -n "$how" ]]; then
+  dns_stub_wait || fail "${STUB_IFACE} does not hold ${STUB_IP}/32 alone ${NET_WAIT_SEC} s after: $how"
+  changed "$how: ${STUB_IFACE} holds ${STUB_IP}/32"
 fi
 if systemctl is-enabled --quiet "$FORMER_WAIT_UNIT" 2>/dev/null; then
   systemd_call disable --quiet "$FORMER_WAIT_UNIT"

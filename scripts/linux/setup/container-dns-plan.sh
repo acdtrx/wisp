@@ -32,6 +32,24 @@ network:
 EOF
 }
 
+# dns_stub_holds: whether the stub device holds its settings, read from the
+# kernel: DNS_STUB_IP/32 its one address, with no IPv6 address, link-local or
+# other.
+dns_stub_holds() {
+  local out
+  out="$(net_call ip -o addr show dev "$DNS_STUB_IFACE" 2>/dev/null)" || return 1
+  [[ "$(awk '{ print $3, $4 }' <<<"$out")" == "inet ${DNS_STUB_IP}/32" ]]
+}
+# dns_stub_wait: until the stub holds its settings, up to NET_WAIT_SEC. No
+# event says so: read once a second.
+dns_stub_wait() {
+  local deadline=$(( SECONDS + NET_WAIT_SEC ))
+  until dns_stub_holds; do
+    (( SECONDS < deadline )) || return 1
+    sleep 1
+  done
+}
+
 # refuse_dns_stub <stage>: netplan must accept the stub's definition beside the
 # host's own (it rejects one where an operator's wisp-dns0 is of another kind,
 # or a netplan without dummy-devices): once live, a definition it rejects fails
