@@ -22,7 +22,7 @@ NET_READ_CALLS=7
 # apply` again; then the wait for the uplink to hold what it held before, and
 # its last read; and NET_LOCAL_SEC for the work that is no network call
 # (install_file, python, the waits' one-second sleeps). A stop during the
-# check ends its read in flight at once.
+# check ends its read in flight at once: the check reads in the background.
 NET_LOCAL_SEC=30
 NET_CALL_BOUND=$(( NET_CMD_SEC + NET_KILL_SEC ))
 NET_APPLY_BOUND=$(( NET_APPLY_SEC + NET_KILL_SEC ))

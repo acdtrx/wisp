@@ -112,22 +112,9 @@ facts_of() {
     grep -E '^(addr4|route4 default|dns) ' | sed -E 's/^(route4 default via [^ ]+).*/\1/' | sort -u || true
   fi
 }
-# runs_from_netplan: whether systemd-networkd runs the bridge and the uplink
-# from the units netplan renders for them; CHECK_WHY says otherwise.
-runs_from_netplan() {
-  local link want got
-  for link in "$BRIDGE" "$UPLINK"; do
-    want="/run/systemd/network/10-netplan-$BRIDGE.network"
-    [[ "$link" == "$UPLINK" ]] && want="/run/systemd/network/10-netplan-$UPLINK_NETPLAN_ID.network"
-    got="$(networkd_json "$link" NetworkFile 2>/dev/null || true)"
-    if [[ "$got" != "$want" ]]; then
-      CHECK_WHY="systemd-networkd runs $link from '${got}', not $want"
-      return 1
-    fi
-  done
-}
-# read_now: what the bridge and the uplink hold now, into the step's now.*; a
-# part that cannot be read (the bridge not there yet) is marked so.
+# read_now: what the bridge and the uplink hold now, one part a file in the
+# step's now.*; a part that cannot be read (the bridge not there yet) is
+# marked so. Run through step_run, so a stop ends it at once.
 read_now() {
   local dir="$STEP_TMP_DIR" state
   rm -f "$dir"/now.*
@@ -135,25 +122,26 @@ read_now() {
   if state="$(l3_state "$BRIDGE" 2>/dev/null)"; then facts_of <<<"$state"; else echo unreadable; fi > "$dir/now.have"
   if state="$(l3_state "$UPLINK" 2>/dev/null)"; then grep -E '^(addr[46]|route[46]) ' <<<"$state" || true; else echo unreadable; fi > "$dir/now.port"
   if [[ "$UPLINK_MODE" == dhcp ]]; then client_id "$BRIDGE" 2>/dev/null || echo unreadable; fi > "$dir/now.cid"
+  networkd_json "$BRIDGE" NetworkFile > "$dir/now.bridge-unit" 2>/dev/null || echo unreadable > "$dir/now.bridge-unit"
+  networkd_json "$UPLINK" NetworkFile > "$dir/now.uplink-unit" 2>/dev/null || echo unreadable > "$dir/now.uplink-unit"
 }
+# now <part>: one part of the last read.
+now() { cat "$STEP_TMP_DIR/now.$1" 2>/dev/null || true; }
 # bridge_check: within NET_APPLY_SEC, the bridge holds what the uplink held
-# (the plan's uplink.state), the uplink none of it, each run from netplan's
-# unit. There is no one event to wait on: read once a second, each read in the
-# background and waited for, so a stop interrupts it at once. Sets WHY to what
-# differs.
+# (the plan's uplink.state), the uplink none of it, and systemd-networkd runs
+# each from the unit netplan renders for it. There is no one event to wait on:
+# read once a second. Sets WHY to what differs.
 bridge_check() {
-  local dir="$STEP_TMP_DIR" deadline=$(( SECONDS + NET_APPLY_SEC )) mac cid want have port
+  local deadline=$(( SECONDS + NET_APPLY_SEC )) bridge_unit="/run/systemd/network/10-netplan-$BRIDGE.network"
+  local want mac have port cid bunit uunit
   want="$(facts_of < "$NET_PLAN_DIR/uplink.state")"
   while :; do
-    read_now &
-    while kill -0 "$!" 2>/dev/null; do wait "$!" 2>/dev/null || true; done
-    mac="$(cat "$dir/now.mac" 2>/dev/null || true)"
-    have="$(cat "$dir/now.have" 2>/dev/null || true)"
-    port="$(cat "$dir/now.port" 2>/dev/null || true)"
-    cid="$(cat "$dir/now.cid" 2>/dev/null || true)"
-    if [[ "$mac" == "$UPLINK_MAC" && "$have" == "$want" && -z "$port" && "$cid" == "${UPLINK_CLIENT_ID:-}" ]] \
-      && runs_from_netplan; then
-      rm -f "$dir"/now.*
+    step_run 0 read_now || true
+    mac="$(now mac)" have="$(now have)" port="$(now port)" cid="$(now cid)"
+    bunit="$(now bridge-unit)" uunit="$(now uplink-unit)"
+    if [[ "$mac" == "$UPLINK_MAC" && "$have" == "$want" && -z "$port" && "$cid" == "${UPLINK_CLIENT_ID:-}" \
+      && "$bunit" == "$bridge_unit" && "$uunit" == "$UPLINK_NETFILE" ]]; then
+      rm -f "$STEP_TMP_DIR"/now.*
       return 0
     fi
     if (( SECONDS >= deadline )); then
@@ -162,24 +150,29 @@ bridge_check() {
       [[ "$cid" == "${UPLINK_CLIENT_ID:-}" ]] || WHY+=", $BRIDGE sends client identifier '${cid}' (was $UPLINK_CLIENT_ID)"
       [[ "$have" == "$want" ]] || WHY+=", $BRIDGE holds [$(echo $have)], $UPLINK held [$(echo $want)]"
       [[ -z "$port" ]] || WHY+=", $UPLINK still holds [$(echo $port)]"
-      runs_from_netplan || WHY+=", $CHECK_WHY"
-      rm -f "$dir"/now.*
+      [[ "$bunit" == "$bridge_unit" ]] || WHY+=", systemd-networkd runs $BRIDGE from '${bunit}', not $bridge_unit"
+      [[ "$uunit" == "$UPLINK_NETFILE" ]] || WHY+=", systemd-networkd runs $UPLINK from '${uunit}', not $UPLINK_NETFILE"
+      rm -f "$STEP_TMP_DIR"/now.*
       return 1
     fi
     sleep 1
   done
 }
+# read_uplink: the facts the uplink holds now, into the step's now.uplink, as
+# read_now reads.
+read_uplink() {
+  local state
+  if state="$(l3_state "$UPLINK" 2>/dev/null)"; then facts_of <<<"$state"; else echo unreadable; fi > "$STEP_TMP_DIR/now.uplink"
+}
 # uplink_back: after an undo, whether the uplink holds again what it held
 # before, waited for as the check waits. Sets UPLINK_HOLDS to what it holds,
 # and UPLINK_HELD to what it held, for the message.
 uplink_back() {
-  local deadline=$(( SECONDS + NET_APPLY_SEC )) state
+  local deadline=$(( SECONDS + NET_APPLY_SEC ))
   UPLINK_HELD="$(facts_of < "$NET_PLAN_DIR/uplink.state")"
   while :; do
-    ( if state="$(l3_state "$UPLINK" 2>/dev/null)"; then facts_of <<<"$state"; else echo unreadable; fi \
-      > "$STEP_TMP_DIR/now.uplink" ) &
-    while kill -0 "$!" 2>/dev/null; do wait "$!" 2>/dev/null || true; done
-    UPLINK_HOLDS="$(cat "$STEP_TMP_DIR/now.uplink" 2>/dev/null || true)"
+    step_run 0 read_uplink || true
+    UPLINK_HOLDS="$(now uplink)"
     rm -f "$STEP_TMP_DIR/now.uplink"
     [[ "$UPLINK_HOLDS" != "$UPLINK_HELD" ]] || return 0
     (( SECONDS < deadline )) || return 1
