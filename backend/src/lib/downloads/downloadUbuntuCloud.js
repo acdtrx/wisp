@@ -5,11 +5,13 @@
  */
 
 import { ensureImageDir } from '../paths.js';
-import { downloadToUniqueFile } from './downloadFromUrl.js';
+import { downloadToUniqueFile, ssrfSafeFetch } from './downloadFromUrl.js';
 
 const SIMPLESTREAMS_URL =
   'https://cloud-images.ubuntu.com/releases/streams/v1/com.ubuntu.cloud:released:download.json';
 const SIMPLESTREAMS_TIMEOUT_MS = 8000;
+/** The released-images stream lists every release and architecture: a few tens of MB. */
+const SIMPLESTREAMS_MAX_BYTES = 64 * 1024 * 1024;
 const BASE = 'https://cloud-images.ubuntu.com/releases';
 const FALLBACK_LTS = [
   { codename: 'noble', version: '24.04' },
@@ -51,7 +53,7 @@ async function fetchLatestLtsFromSimplestreams() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SIMPLESTREAMS_TIMEOUT_MS);
   try {
-    const res = await fetch(SIMPLESTREAMS_URL, { redirect: 'follow', signal: controller.signal });
+    const res = await ssrfSafeFetch(SIMPLESTREAMS_URL, { signal: controller.signal, maxBodyBytes: SIMPLESTREAMS_MAX_BYTES });
     if (!res.ok) return null;
     const data = await res.json();
     return extractLtsProducts(data.products)[0] ?? null;

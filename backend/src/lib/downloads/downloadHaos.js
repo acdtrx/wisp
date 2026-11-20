@@ -10,12 +10,14 @@ import { spawn } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
 import { ensureImageDir } from '../paths.js';
 import { openUniqueFile } from './downloadUtils.js';
-import { downloadWithProgress } from './downloadFromUrl.js';
+import { downloadWithProgress, ssrfSafeFetch } from './downloadFromUrl.js';
 import { createAppError } from '../appErrors.js';
 import { createStallWatchdog, stallMinutes } from '../storage/index.js';
 
 /** The release lookup is one small JSON reply (CODING-RULES §6). */
 const GITHUB_API_TIMEOUT_MS = 15_000;
+/** One release's JSON, its assets listed: well under a megabyte. */
+const GITHUB_RELEASE_MAX_BYTES = 4 * 1024 * 1024;
 /** xz runs as long as the image is big: killed only after this long without output. */
 const XZ_STALL_MS = 10 * 60_000;
 
@@ -33,7 +35,11 @@ export async function getLatestHaosAsset() {
   const token = process.env.GITHUB_TOKEN;
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(GITHUB_API, { headers, signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS) });
+  const res = await ssrfSafeFetch(GITHUB_API, {
+    headers,
+    signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
+    maxBodyBytes: GITHUB_RELEASE_MAX_BYTES,
+  });
   if (!res.ok) {
     throw createAppError('GITHUB_API', `GitHub API error: ${res.status}`, String(res.status));
   }
