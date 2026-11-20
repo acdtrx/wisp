@@ -56,6 +56,9 @@ refuse_no_python
 HOST_KVM_NOW=no
 [[ -e /dev/kvm ]] && HOST_KVM_NOW=yes
 
+# A committed journal in another format is refused here too, so the asking
+# phase refuses it before the install changes anything.
+[[ ! -d "$JOURNAL_DIR.done" ]] || journal_refuse_done_format
 NET_PLAN_JOURNAL=""
 if [[ -d "$JOURNAL_DIR" ]]; then
   [[ -n "$ASK" ]] || net_fail "a bridge step's journal is in $JOURNAL_DIR: setup's bridge-journal step decides on it before the plan."

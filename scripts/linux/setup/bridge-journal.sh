@@ -235,6 +235,19 @@ journal_refuse_class() {
   esac
 }
 
+# journal_refuse_done_format: a committed journal (JOURNAL_DIR.done) whose
+# originals setup cannot keep, as it is not in this release's format, is
+# refused (or, when it cannot be read, failed): only its own release's format
+# says where they are.
+journal_refuse_done_format() {
+  _journal_format "$JOURNAL_DIR.done"
+  case "$J_FORMAT" in
+    other\ *) refuse JOURNAL_OTHER_RELEASE "${J_FORMAT#other }. Its bridge is committed, and only its originals (in files/ and kept/) are left to keep: run that release's setup, or move them where you want them and remove $JOURNAL_DIR.done, and run this again." ;;
+    bad\ *) refuse JOURNAL_NOT_SETUPS "${J_FORMAT#bad }. Move what it holds where you want it, remove $JOURNAL_DIR.done, and run this again." ;;
+    fail\ *) net_fail "${J_FORMAT#fail }" ;;
+  esac
+}
+
 # journal_drop: an untouched journal goes, with the directories it made.
 journal_drop() {
   local i
@@ -345,14 +358,7 @@ journal_cleanup() {
 journal_recover() {
   local rc p
   if [[ -d "$JOURNAL_DIR.done" ]]; then
-    # Committed: only its originals are left to keep, where its own release's
-    # format says.
-    _journal_format "$JOURNAL_DIR.done"
-    case "$J_FORMAT" in
-      other\ *) refuse JOURNAL_OTHER_RELEASE "${J_FORMAT#other }. Its bridge is committed, and only its originals (in files/ and kept/) are left to keep: run that release's setup, or move them where you want them and remove $JOURNAL_DIR.done, and run this again." ;;
-      bad\ *) refuse JOURNAL_NOT_SETUPS "${J_FORMAT#bad }. Move what it holds where you want it, remove $JOURNAL_DIR.done, and run this again." ;;
-      fail\ *) net_fail "${J_FORMAT#fail }" ;;
-    esac
+    journal_refuse_done_format
     journal_cleanup || net_fail "$JOURNAL_KEEP_FAILED"
     changed "the originals of an earlier bridge step kept"
   fi
