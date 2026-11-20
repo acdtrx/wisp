@@ -459,7 +459,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       const result = await checkDownloadUrl(url);
       setUrlCheckResult(result);
     } catch (err) {
-      setUrlCheckResult({ ok: false, error: errorText(err) });
+      setUrlCheckResult({ ok: false, error: err.code, detail: errorText(err) });
     } finally {
       setUrlChecking(false);
     }
@@ -810,7 +810,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             <div className={`mb-3 rounded-sm px-3 py-2 text-xs ${urlCheckResult.ok ? 'bg-status-running-soft text-status-running' : 'bg-status-stopped-soft text-status-stopped'}`}>
               {urlCheckResult.ok
                 ? `OK${urlCheckResult.contentLength != null ? ` — ${(urlCheckResult.contentLength / 1024 / 1024).toFixed(1)} MB` : ''}`
-                : urlCheckResult.error}
+                : errorText(urlCheckResult)}
             </div>
           )}
           {urlDownloadError && (

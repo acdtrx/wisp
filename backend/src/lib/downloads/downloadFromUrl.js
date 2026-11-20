@@ -19,7 +19,7 @@ import { Agent, fetch as undiciFetch } from 'undici';
 
 import { ensureImageDir } from '../paths.js';
 import { detectType } from './fileTypes.js';
-import { createAppError } from '../appErrors.js';
+import { createAppError, errorBody, isAppError, wrapAppError } from '../appErrors.js';
 import { streamResponseToFile, streamResponseToUniqueFile } from './downloadUtils.js';
 
 const MAX_REDIRECTS = 5;
@@ -280,24 +280,24 @@ export async function ssrfSafeFetch(urlStr, init = {}) {
 }
 
 /**
- * Run a HEAD request and return { ok, contentLength, error }.
+ * A HEAD request to `urlStr`: `{ ok: true, contentLength }` (null without a
+ * usable Content-Length) when it answers 2xx, else `{ ok: false, error,
+ * detail }` — the error body of why not (an unusable URL, a blocked or
+ * unreachable host) — with the answer's `status` when it answered non-2xx.
  */
 export async function checkUrl(urlStr) {
-  if (!isAllowedUrl(urlStr)) {
-    return { ok: false, error: 'Only HTTP and HTTPS URLs are allowed' };
-  }
   try {
+    if (!isAllowedUrl(urlStr)) throw createAppError('INVALID_URL', 'Only HTTP and HTTPS URLs are allowed');
     const res = await ssrfSafeFetch(urlStr, { method: 'HEAD', signal: AbortSignal.timeout(CHECK_URL_TIMEOUT_MS) });
     if (!res.ok) {
-      return { ok: false, error: `HTTP ${res.status}`, status: res.status };
+      const answered = createAppError('DOWNLOAD_FAILED', `The URL answered HTTP ${res.status}`);
+      return { ok: false, ...errorBody(answered), status: res.status };
     }
-    const contentLength = res.headers.get('content-length');
-    return {
-      ok: true,
-      contentLength: contentLength ? parseInt(contentLength, 10) : null,
-    };
+    const contentLength = Number.parseInt(res.headers.get('content-length') ?? '', 10);
+    return { ok: true, contentLength: Number.isFinite(contentLength) ? contentLength : null };
   } catch (err) {
-    return { ok: false, error: err.message };
+    const why = isAppError(err) ? err : wrapAppError('DOWNLOAD_FAILED', 'The URL could not be reached', err);
+    return { ok: false, ...errorBody(why) };
   }
 }
 
