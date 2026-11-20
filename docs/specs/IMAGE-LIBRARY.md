@@ -40,7 +40,7 @@ Filename validation: no path separators (`/`, `\`), no `..`, no leading dots. Th
 
 If a file with the same name already exists, the upload is rejected (409 `LIBRARY_FILE_EXISTS`).
 
-If the configured size limit is exceeded, the partial file is unlinked and the request returns **422** `UPLOAD_TOO_LARGE`. Any other pipeline error also unlinks the partial file before responding 500 `LIBRARY_IO_FAILED`. This prevents disk-fill from a truncated or aborted upload.
+If the configured size limit is exceeded, the partial file is unlinked and the request returns **413** `UPLOAD_TOO_LARGE`. Any other pipeline error also unlinks the partial file before responding 500 `LIBRARY_IO_FAILED`. This prevents disk-fill from a truncated or aborted upload.
 
 ### Delete
 

@@ -13,7 +13,7 @@
  * (`const BUSY = 'UPDATE_BUSY'`) passed to a factory counts as its value. In
  * lib/appErrors.js, which turns the framework's refusals into codes, every
  * UPPER_SNAKE literal counts. A code in the doc: the backticked code in the
- * first cell of a row of its code tables, the status in the second (`—` for
+ * first cell of a row of the code tables under its `## Codes` section, the status in the second (`—` for
  * the internal codes, which never reach a client).
  */
 import { execFileSync } from 'node:child_process';
@@ -65,7 +65,16 @@ for (const file of files) {
 }
 
 const docRows = new Map(); // code → status text
-const docText = readFileSync(path.join(ROOT, DOC), 'utf8');
+const docFull = readFileSync(path.join(ROOT, DOC), 'utf8');
+// The code tables live under `## Codes`, up to the next section; other tables
+// (the client's own codes, the framework's refusals) name codes too.
+const codesStart = docFull.indexOf('\n## Codes\n');
+if (codesStart === -1) {
+  console.error(`${DOC} has no "## Codes" section.`);
+  process.exit(1);
+}
+const codesEnd = docFull.indexOf('\n## ', codesStart + 1);
+const docText = docFull.slice(codesStart, codesEnd === -1 ? undefined : codesEnd);
 for (const m of docText.matchAll(new RegExp(`^\\|\\s*\`(${CODE})\`\\s*\\|\\s*([^|]+?)\\s*\\|`, 'gm'))) {
   docRows.set(m[1], m[2]);
 }

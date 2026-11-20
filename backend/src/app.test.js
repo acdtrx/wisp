@@ -96,7 +96,7 @@ test('malformed JSON, a body too large and an unsupported type answer their code
   const json = { ...bearer(ADMIN_TOKEN), 'content-type': 'application/json' };
   const malformed = await app.inject({ method: 'PATCH', url: '/api/settings', headers: json, payload: '{"serverName":' });
   assert.equal(malformed.statusCode, 400);
-  assert.equal(malformed.json().error, 'BAD_REQUEST');
+  assert.equal(malformed.json().error, 'MALFORMED_JSON');
   const large = await app.inject({
     method: 'PATCH', url: '/api/settings', headers: json, payload: JSON.stringify({ serverName: 'x'.repeat(1024 * 1024 + 1) }),
   });

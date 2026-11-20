@@ -22,7 +22,7 @@ import {
 import { ensureImageDir, getImagePath } from '../lib/paths.js';
 import { findVMsUsingImage } from '../lib/vmManager/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
-import { createAppError, isExpectedAppError } from '../lib/appErrors.js';
+import { createAppError, isAppError, isExpectedAppError } from '../lib/appErrors.js';
 import { watchRequestBody } from '../lib/requestBodyWatch.js';
 
 function validateFilename(name) {
@@ -135,7 +135,7 @@ export default async function libraryRoutes(fastify) {
       if (err.code === 'EEXIST') {
         throw createAppError('LIBRARY_FILE_EXISTS', `A file named "${filename}" already exists in the library`);
       }
-      if (err.code === 'UPLOAD_TOO_LARGE') throw err;
+      if (isAppError(err)) throw err;
       throw createAppError('LIBRARY_IO_FAILED', `Failed to save the upload "${filename}"`, err.message);
     }
     reply.code(204).send();

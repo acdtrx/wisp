@@ -15,9 +15,11 @@ Every error a client receives is
 
 - **`error`** is the stable code: always there, always one of the [codes](#codes) below. A
   client branches on it, never on the text.
-- **`detail`** is the human-readable message, always there: the error's message, followed
-  by its raw cause when it has one that the message does not already say (`Failed to
-  resize disk: qemu-img: …`). There is no third key.
+- **`detail`** is the human-readable text, always there: Wisp's message, followed by the
+  error's raw cause when it has one that the message does not already say (`Failed to
+  resize disk: qemu-img: …`). The cause is redacted (below); the message is not. An error
+  with no code (a bug, a failure nothing turned into a code) has no message of Wisp's:
+  its whole text is cause, redacted. There is no third key.
 
 **Every channel** sends this body:
 
@@ -31,13 +33,20 @@ Every error a client receives is
 JSON-RPC protocol errors on `/mcp` (a malformed message, an unknown method or tool) keep
 JSON-RPC's own `{ code, message }`: that shape is the protocol's contract, not Wisp's.
 
-**Redaction happens in one place**, where the body is built, so it covers every channel:
-absolute filesystem paths become `<path>` and UUIDs `<uuid>`, and the detail is capped at
-500 characters. A path counts only where it starts a token (at the start, after
-whitespace, a quote, a bracket, `=` or `,`), so an image reference
-(`docker.io/library/nginx:1.27`), a URL or `body/field` passes untouched, and so do
-Wisp's own URL paths (`/api/…`, `/ws/…`, `/mcp`), which are not host layout. The server
-log keeps the unredacted error.
+**Redaction applies to the cause, in one place**, where the body is built, so it covers
+every channel (settled 2026-11-20). The message is Wisp's own text and names what the
+operator needs: a mount path they typed, a share (`//nas/media`), a backup destination, a
+duplicate container path. The cause is text from a tool or a library Wisp does not
+control (qemu-img's stderr, a Node errno message): in it absolute filesystem paths become
+`<path>` and UUIDs `<uuid>`. The detail is capped at 500 characters. A path counts only
+where it starts a token: at the start, after whitespace, a quote, a bracket, or one of
+`= , : ; < |` (so `file:/var/x`, `path</var/x>` and `see|/etc/x` are caught). Two slashes
+start a URL's host or an SMB share, not a path, and a slash inside a word is not one: an
+image reference (`docker.io/library/nginx:1.27`), a URL or `body/field` passes untouched,
+and so do Wisp's own URL paths (`/api/…`, `/ws/…`, `/mcp`), which are not host layout. An
+unquoted path that holds a space keeps what follows the space (`<path> VM/disk.qcow2`):
+nothing in the text marks where such a path ends. The server log keeps the unredacted
+error.
 
 ## Where errors come from
 
@@ -60,11 +69,20 @@ log keeps the unredacted error.
 | Refusal | Code |
 |---------|------|
 | A request that fails its schema (body, params, querystring) | **400** `VALIDATION_FAILED`, the detail naming the part and the field (`body/vlanId must be number`; an unknown key: `body: unknown key "foo"`) |
-| Malformed JSON, an empty JSON body, bad percent-encoding | **400** `BAD_REQUEST` |
+| Malformed JSON, an empty JSON body, a forbidden `__proto__` key | **400** `MALFORMED_JSON` |
+| Bad percent-encoding in the URL | **400** `MALFORMED_URL` |
+| A multipart body cut short, or with a forbidden field name | **400** `MALFORMED_MULTIPART` |
+| A body that does not match its `Content-Length` | **400** `BAD_CONTENT_LENGTH` |
 | No route for the method and path | **404** `ROUTE_NOT_FOUND` |
-| A body over its limit | **413** `PAYLOAD_TOO_LARGE`; an upload over the multipart file limit is **422** `UPLOAD_TOO_LARGE` |
-| An over-long URL or route parameter | **414** `URI_TOO_LONG` |
+| A body, or a multipart body's parts, files or fields, over its limit | **413** `PAYLOAD_TOO_LARGE` |
+| An upload over the multipart file size limit | **413** `UPLOAD_TOO_LARGE` |
+| A route parameter over its length limit | **414** `URI_TOO_LONG` |
 | An unsupported content type, or a multipart route sent something else | **415** `UNSUPPORTED_MEDIA_TYPE` |
+
+These are the framework's refusals that can occur in Wisp (`FRAMEWORK_CODES` in
+`lib/appErrors.js`). Fastify sets no request timeout here, so there is no 408. Any other
+4xx the framework might raise answers **400** `BAD_REQUEST`, and any 5xx **500**
+`INTERNAL_ERROR`.
 
 400 is deliberate, not 422: it is the framework's verdict on the request's shape, while
 422 stays for a well-formed request that cannot be carried out.
@@ -133,7 +151,11 @@ Each code a client can receive, with its status.
 | Code | Status | Meaning |
 |------|--------|---------|
 | `VALIDATION_FAILED` | 400 | The request fails its schema; the detail names the part and the field |
-| `BAD_REQUEST` | 400 | Malformed JSON, an empty JSON body, or a malformed URL |
+| `MALFORMED_JSON` | 400 | The JSON body is malformed or empty, or holds a forbidden `__proto__` key |
+| `MALFORMED_URL` | 400 | The URL's percent-encoding is malformed |
+| `MALFORMED_MULTIPART` | 400 | The multipart body was cut short, or has a forbidden field name |
+| `BAD_CONTENT_LENGTH` | 400 | The body does not match its `Content-Length` |
+| `BAD_REQUEST` | 400 | Another refusal of the framework's, none of the above |
 | `UPLOAD_NO_FILE` | 400 | An upload request carries no file part |
 | `BAD_MULTIPART_TOO_MANY_FILES` | 400 | More than one file part in a container mount upload |
 | `AUTH_REQUIRED` | 401 | No session cookie, or no bearer token on `/mcp` |
@@ -162,6 +184,7 @@ Each code a client can receive, with its status.
 | `GITHUB_KEYS_NOT_FOUND` | 404 | GitHub has no public keys for that user |
 | `METHOD_NOT_ALLOWED` | 405 | The path takes another method (`GET` or `DELETE /mcp`) |
 | `PAYLOAD_TOO_LARGE` | 413 | The body, or the multipart parts, exceed their limit |
+| `UPLOAD_TOO_LARGE` | 413 | The upload exceeds its size limit |
 | `URI_TOO_LONG` | 414 | The URL or a route parameter is too long |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | A content type the route does not take |
 | `VM_ALREADY_RUNNING` | 409 | The VM is already running |
@@ -218,7 +241,6 @@ Each code a client can receive, with its status.
 | `DNS_FAILED` | 422 | The URL's host does not resolve |
 | `DOWNLOAD_FAILED` | 422 | The download failed |
 | `NO_BODY` | 422 | The download answered without a body |
-| `UPLOAD_TOO_LARGE` | 422 | The upload exceeds its size limit |
 | `INVALID_FILENAME` | 422 | The file name breaks the [file name rules](#filename-validation) |
 | `PASSWORD_EMPTY` | 422 | The new password is empty |
 | `INVALID_PASSWORD` | 422 | The current password is wrong on change-password |
@@ -337,9 +359,8 @@ answers **422** `INVALID_FILENAME`.
 
 ## Backend Error Logging
 
-- Errors that answer 5xx are logged at `error` with the full, unredacted error by the one
-  handler; a 4xx whose raw cause the client sees only redacted is logged at `warn`. Other
-  4xx are not logged.
+- The one handler logs a 5xx at `error` with the whole error, and a 4xx that has a raw
+  cause at `warn` with it. Other 4xx are not logged.
 - Background job failures are logged by the job store at **warn** (`Background job
   failed` with the code, the message and the raw cause). The job's own failure path adds
   a `log.error()` with the full error/stack only for unexpected failures — not for codes
@@ -361,6 +382,21 @@ a job's error event becomes one on the job's row; client-side failures (a reques
 timeout, a lost job stream) are ApiErrors with codes of their own. Every component shows
 an error through `errorText(err)`, which takes the detail, and branches on `err.code`,
 never on the text.
+
+### Client codes
+
+The client gives the errors it makes itself codes of its own, never sent by the server
+(`CLIENT_CODES` in `frontend/src/api/errors.js`):
+
+| Code | Meaning |
+|------|---------|
+| `TIMEOUT` | A REST call, or an upload's reply, past its deadline |
+| `REQUEST_FAILED` | An error answer that is not the error body (a proxy's page, an empty body) |
+| `UPLOAD_FAILED` | The browser could not send the upload |
+| `UPLOAD_STALLED` | The upload made no progress for its idle bound |
+| `UPLOAD_CANCELLED` | The upload was cancelled |
+| `CONNECTION_LOST` | A job's progress stream ended before the job did |
+| `JOB_GONE` | The job is no longer followed (its row left the store) |
 
 ### Error bar
 

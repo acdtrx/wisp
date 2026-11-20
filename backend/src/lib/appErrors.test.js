@@ -5,7 +5,7 @@ import { Readable } from 'node:stream';
 
 import Fastify from 'fastify';
 
-import { createAppError, errorBody, errorStatus, handleRequestError, isExpectedAppError, redactDetail } from './appErrors.js';
+import { createAppError, errorBody, errorStatus, handleRequestError, isExpectedAppError, redactCause } from './appErrors.js';
 import { ERROR_STATUS } from './errorCodes.js';
 
 test('an app error becomes { error: code, detail: message }', () => {
@@ -29,22 +29,37 @@ test('an error without a code from the table is INTERNAL_ERROR, its message kept
   assert.equal(errorStatus('INTERNAL_ERROR'), 500);
 });
 
-test('paths and UUIDs are redacted where they start a token, and the detail is capped', () => {
-  assert.equal(redactDetail('cannot open /var/lib/wisp/vms/a/disk0.qcow2: busy'), 'cannot open <path>: busy');
-  assert.equal(redactDetail('mount "/mnt/wisp/smb/x" failed'), 'mount "<path>" failed');
-  assert.equal(redactDetail('domain 0f8fad5b-d9cb-469f-a165-70867728950e gone'), 'domain <uuid> gone');
-  assert.equal(redactDetail('pull docker.io/library/nginx:1.27 failed'), 'pull docker.io/library/nginx:1.27 failed');
-  assert.equal(redactDetail('fetch https://github.com/u.keys failed'), 'fetch https://github.com/u.keys failed');
-  assert.equal(redactDetail('body/vlanId must be number'), 'body/vlanId must be number');
-  assert.equal(redactDetail('No route for GET /api/nope'), 'No route for GET /api/nope');
-  assert.equal(redactDetail('send it to /mcp'), 'send it to /mcp');
-  assert.equal(redactDetail('see /apix/y'), 'see <path>');
-  assert.equal(redactDetail('x'.repeat(600)).length, 501);
+test('the cause is redacted where a path starts a token, and URLs and image refs pass', () => {
+  assert.equal(redactCause('cannot open /var/lib/wisp/vms/a/disk0.qcow2: busy'), 'cannot open <path>: busy');
+  assert.equal(redactCause('mount "/mnt/wisp/smb/x" failed'), 'mount "<path>" failed');
+  assert.equal(redactCause("open '/var/lib/x'"), "open '<path>'");
+  assert.equal(redactCause('file:/var/lib/x gone'), 'file:<path> gone');
+  assert.equal(redactCause('path</var/lib/x>'), 'path<<path>>');
+  assert.equal(redactCause('see|/etc/shadow'), 'see|<path>');
+  assert.equal(redactCause('domain 0f8fad5b-d9cb-469f-a165-70867728950e gone'), 'domain <uuid> gone');
+  assert.equal(redactCause('pull docker.io/library/nginx:1.27 failed'), 'pull docker.io/library/nginx:1.27 failed');
+  assert.equal(redactCause('fetch https://github.com/u.keys failed'), 'fetch https://github.com/u.keys failed');
+  assert.equal(redactCause('share //nas/media refused'), 'share //nas/media refused');
+  assert.equal(redactCause('body/vlanId must be number'), 'body/vlanId must be number');
+  assert.equal(redactCause('No route for GET /api/nope'), 'No route for GET /api/nope');
+  assert.equal(redactCause('see /apix/y'), 'see <path>');
+  // An unquoted path with a space keeps its tail: nothing marks its end.
+  assert.equal(redactCause('open /var/lib/My VM/disk.qcow2'), 'open <path> VM/disk.qcow2');
 });
 
-test('redaction applies to the message as well as the raw cause', () => {
-  const body = errorBody(createAppError('LIBVIRT_ERROR', 'Failed to define /etc/libvirt/qemu/a.xml', 'see /var/log/x'));
-  assert.equal(body.detail, 'Failed to define <path>: see <path>');
+test("the message, Wisp's own text, is shown whole; only the cause is redacted", () => {
+  assert.equal(errorBody(createAppError('CONTAINER_MOUNT_DUPLICATE', 'Duplicate container path "/config"')).detail,
+    'Duplicate container path "/config"');
+  assert.equal(errorBody(createAppError('BACKUP_DEST_NOT_WRITABLE', 'Backup destination not writable: /mnt/backups', 'EACCES: open /mnt/backups/x')).detail,
+    'Backup destination not writable: /mnt/backups: EACCES: open <path>');
+});
+
+test('an error with no code is all cause, redacted', () => {
+  assert.deepEqual(errorBody(new Error('cannot read /var/lib/wisp/secret')), { error: 'INTERNAL_ERROR', detail: 'cannot read <path>' });
+});
+
+test('the detail is capped at 500 characters', () => {
+  assert.equal(errorBody(createAppError('VM_NOT_FOUND', 'x'.repeat(600))).detail.length, 501);
 });
 
 test('a 4xx code is expected, a 5xx code and an unknown one are not', () => {
@@ -120,6 +135,6 @@ test('a schema refusal answers 400 VALIDATION_FAILED naming the field', async ()
     method: 'POST', url: '/typed', payload: '{"n":', headers: { 'content-type': 'application/json' },
   });
   assert.equal(malformed.statusCode, 400);
-  assert.equal(malformed.json().error, 'BAD_REQUEST');
+  assert.equal(malformed.json().error, 'MALFORMED_JSON');
   await app.close();
 });

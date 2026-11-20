@@ -67,8 +67,8 @@ function announcingSettled(write) {
  * file is removed — this call created it — to avoid a disk-fill DoS.
  *
  * Throws the open error as is (`code: 'EEXIST'` when the name is taken), the
- * stream's error, or `UPLOAD_TOO_LARGE` when multipart truncated the
- * file at its size limit. Announces once the name was reserved, however it ends:
+ * stream's error, or `UPLOAD_TOO_LARGE` when the file passed multipart's size
+ * limit (the stream failed with it, or multipart truncated the file). Announces once the name was reserved, however it ends:
  * the partial file was in the library meanwhile.
  *
  * @param {string} filename — already validated by the caller
@@ -82,6 +82,10 @@ async function saveUpload(filename, file) {
       await pipeline(file, handle.createWriteStream());
     } catch (err) {
       await unlink(destPath).catch(() => { /* best-effort cleanup */ });
+      // The multipart file limit ends the stream with its own error.
+      if (err?.code === 'FST_REQ_FILE_TOO_LARGE') {
+        throw createAppError('UPLOAD_TOO_LARGE', 'Upload exceeded the configured size limit');
+      }
       throw err;
     }
     if (file.truncated) {

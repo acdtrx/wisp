@@ -2,9 +2,9 @@
  * The one error path (docs/specs/ERROR-HANDLING.md). Code throws structured
  * errors (`createAppError`); every channel that carries one to a client — an
  * HTTP answer, a job's error event, a stream's error frame, an MCP tool error —
- * sends `errorBody(err)`: `{ error: <code>, detail: <message> }`, redacted
- * here and nowhere else. A code's HTTP status comes from the one table,
- * `errorCodes.js`.
+ * sends `errorBody(err)`: `{ error: <code>, detail }`, the detail built and
+ * its cause redacted here and nowhere else. A code's HTTP status comes from
+ * the one table, `errorCodes.js`.
  */
 import { ERROR_STATUS } from './errorCodes.js';
 
@@ -49,22 +49,28 @@ export function asAppError(err, message) {
   return isAppError(err) ? err : createAppError('INTERNAL_ERROR', message, err?.message ?? String(err));
 }
 
-/* Fastify's own refusals, by its error code; the rest by the status it chose. */
+/*
+ * The framework's refusals that can reach the handler in this app, by their
+ * error code (Fastify's and @fastify/multipart's). Fastify answers no request
+ * timeout here (`requestTimeout` is not set), so there is no 408. A 4xx not
+ * listed becomes BAD_REQUEST, a 5xx INTERNAL_ERROR.
+ */
 const FRAMEWORK_CODES = {
+  FST_ERR_CTP_INVALID_JSON_BODY: 'MALFORMED_JSON',
+  FST_ERR_CTP_EMPTY_JSON_BODY: 'MALFORMED_JSON',
+  FST_ERR_CTP_INVALID_CONTENT_LENGTH: 'BAD_CONTENT_LENGTH',
+  FST_ERR_BAD_URL: 'MALFORMED_URL',
+  FST_PROTO_VIOLATION: 'MALFORMED_MULTIPART',
+  FST_MP_PREMATURE_CLOSE: 'MALFORMED_MULTIPART',
   FST_ERR_CTP_BODY_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
-  FST_ERR_CTP_INVALID_MEDIA_TYPE: 'UNSUPPORTED_MEDIA_TYPE',
-  FST_INVALID_MULTIPART_CONTENT_TYPE: 'UNSUPPORTED_MEDIA_TYPE',
-  FST_REQ_FILE_TOO_LARGE: 'UPLOAD_TOO_LARGE',
   FST_PARTS_LIMIT: 'PAYLOAD_TOO_LARGE',
   FST_FILES_LIMIT: 'PAYLOAD_TOO_LARGE',
   FST_FIELDS_LIMIT: 'PAYLOAD_TOO_LARGE',
-};
-const FRAMEWORK_CODES_BY_STATUS = {
-  404: 'ROUTE_NOT_FOUND',
-  405: 'METHOD_NOT_ALLOWED',
-  413: 'PAYLOAD_TOO_LARGE',
-  414: 'URI_TOO_LONG',
-  415: 'UNSUPPORTED_MEDIA_TYPE',
+  FST_REQ_FILE_TOO_LARGE: 'UPLOAD_TOO_LARGE',
+  FST_ERR_MAX_PARAM_LENGTH: 'URI_TOO_LONG',
+  FST_ERR_CTP_INVALID_MEDIA_TYPE: 'UNSUPPORTED_MEDIA_TYPE',
+  FST_INVALID_MULTIPART_CONTENT_TYPE: 'UNSUPPORTED_MEDIA_TYPE',
+  FST_ERR_NOT_FOUND: 'ROUTE_NOT_FOUND',
 };
 
 /** `body/vlanId must be number`; an unknown key is named. */
@@ -80,64 +86,75 @@ function validationMessage(err) {
 }
 
 /**
- * The code and message any thrown value answers with. A code the table holds
- * is kept; Fastify's refusals get theirs; anything else is INTERNAL_ERROR.
- * @returns {{ code: string, message: string, raw?: string }}
+ * The code, the message and the cause any thrown value answers with. An app
+ * error keeps its code; its message is Wisp's own text, its `raw` the cause.
+ * A framework refusal gets its code, its message Fastify's (built from Wisp's
+ * schemas and limits). Anything else is INTERNAL_ERROR, and its text, which
+ * Wisp did not write, is all cause.
+ * @returns {{ code: string, message: string, cause?: string }}
  */
 function classify(err) {
-  const message = typeof err?.message === 'string' && err.message ? err.message : String(err ?? 'Unknown error');
+  const text = typeof err?.message === 'string' && err.message ? err.message : String(err ?? 'Unknown error');
   if (isAppError(err)) {
-    return { code: err.code, message, raw: typeof err.raw === 'string' ? err.raw : undefined };
+    return { code: err.code, message: text, cause: typeof err.raw === 'string' && err.raw ? err.raw : undefined };
   }
   if (err?.validation) return { code: 'VALIDATION_FAILED', message: validationMessage(err) };
   if (typeof err?.code === 'string' && FRAMEWORK_CODES[err.code]) {
-    return { code: FRAMEWORK_CODES[err.code], message };
+    return { code: FRAMEWORK_CODES[err.code], message: text };
   }
   const status = err?.statusCode;
-  if (Number.isInteger(status) && status >= 400 && status < 500) {
-    return { code: FRAMEWORK_CODES_BY_STATUS[status] ?? 'BAD_REQUEST', message };
-  }
-  return { code: 'INTERNAL_ERROR', message };
+  if (Number.isInteger(status) && status >= 400 && status < 500) return { code: 'BAD_REQUEST', message: text };
+  return { code: 'INTERNAL_ERROR', message: '', cause: text };
 }
 
 /*
  * An absolute path starts a token: at the start, after whitespace, a quote, a
- * bracket, `=` or `,`. A slash inside a word is not one: image refs
- * (`docker.io/library/nginx`), URLs, `body/field` and ratios pass untouched.
- * Punctuation that ends the sentence (`/x/y: busy`) is not part of the path.
- * Wisp's own URL space (`/api/…`, `/ws/…`, `/mcp`) is not host layout and
- * stays readable.
+ * bracket, or one of `= , : ; < |` — so `file:/var/x`, `path</var/x>` and
+ * `see|/etc/x` are caught. Two slashes start a URL's host or an SMB share, not
+ * a path, and a slash inside a word is not one: URLs, image refs
+ * (`docker.io/library/nginx`) and `body/field` pass untouched. Punctuation
+ * that ends the sentence (`/x/y: busy`) is not part of the path. Wisp's own URL
+ * space (`/api/…`, `/ws/…`, `/mcp`) is not host layout and stays readable. An
+ * unquoted path with a space keeps what follows the space: nothing marks where
+ * such a path ends.
  */
-const ABS_PATH_RE = /(^|[\s'"`(\[{=,])\/[^\s'"`)\]},]*[^\s'"`)\]},:;.!?]/g;
+const ABS_PATH_RE = /(^|[\s'"`(\[{=,:;<|])\/(?!\/)[^\s'"`)\]}>,|]*[^\s'"`)\]}>,|:;.!?]/g;
 const URL_SPACE_RE = /^\/(?:api|ws|mcp)(?:[/?#]|$)/;
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const DETAIL_MAX = 500;
 
 /**
- * Host layout (absolute paths) and libvirt UUIDs from toolchain output stay
- * in the server log; the client gets placeholders. Capped in length.
+ * Host layout (absolute paths) and libvirt UUIDs in a cause — text from a tool
+ * or a library Wisp does not control — stay in the server log; the client gets
+ * placeholders.
  */
-export function redactDetail(text) {
-  let s = String(text)
+export function redactCause(text) {
+  return String(text)
     .replace(ABS_PATH_RE, (match, lead) => (URL_SPACE_RE.test(match.slice(lead.length)) ? match : `${lead}<path>`))
     .replace(UUID_RE, '<uuid>');
+}
+
+/**
+ * The detail: Wisp's message, whole — it names what the operator needs (a
+ * mount path they typed, a share, a destination) — then the redacted cause
+ * when it says something the message doesn't. Capped in length.
+ */
+function detailText({ message, cause }) {
+  let s = message;
+  if (cause && cause !== message && !message.includes(cause)) {
+    s = message ? `${message}: ${redactCause(cause)}` : redactCause(cause);
+  }
   if (s.length > DETAIL_MAX) s = `${s.slice(0, DETAIL_MAX)}…`;
   return s;
 }
 
-/** The message, then the raw cause when it says something the message doesn't. */
-function detailText({ message, raw }) {
-  if (!raw || raw === message || message.includes(raw)) return message;
-  return `${message}: ${raw}`;
-}
-
 /**
- * The error as every channel sends it: `{ error: <code>, detail }`, redacted.
+ * The error as every channel sends it: `{ error: <code>, detail }`.
  * @returns {{ error: string, detail: string }}
  */
 export function errorBody(err) {
   const c = classify(err);
-  return { error: c.code, detail: redactDetail(detailText(c)) };
+  return { error: c.code, detail: detailText(c) };
 }
 
 /** `errorBody` with the HTTP status its code answers. */
@@ -151,9 +168,8 @@ const SUCCESS_ONLY_HEADERS = ['content-type', 'content-disposition', 'content-le
 
 /**
  * Fastify's error handler (`setErrorHandler` and `frameworkErrors`): routes,
- * hooks and the framework throw; this answers. Faults are logged at error
- * with the unredacted error; an expected error whose raw cause the client
- * sees only redacted is logged at warn.
+ * hooks and the framework throw; this answers. A 5xx is logged at `error` with
+ * the whole error, and a 4xx that has a raw cause at `warn` with it.
  */
 export function handleRequestError(err, request, reply) {
   const { status, body } = errorAnswer(err);

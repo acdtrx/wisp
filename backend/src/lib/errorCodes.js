@@ -8,6 +8,10 @@
 export const ERROR_STATUS = Object.freeze({
   // 400: the request itself is malformed (the framework's verdict).
   VALIDATION_FAILED: 400,
+  MALFORMED_JSON: 400,
+  MALFORMED_URL: 400,
+  MALFORMED_MULTIPART: 400,
+  BAD_CONTENT_LENGTH: 400,
   BAD_REQUEST: 400,
   UPLOAD_NO_FILE: 400,
   BAD_MULTIPART_TOO_MANY_FILES: 400,
@@ -43,6 +47,7 @@ export const ERROR_STATUS = Object.freeze({
   // 405 / 413 / 414 / 415: the framework refuses the request's form.
   METHOD_NOT_ALLOWED: 405,
   PAYLOAD_TOO_LARGE: 413,
+  UPLOAD_TOO_LARGE: 413,
   URI_TOO_LONG: 414,
   UNSUPPORTED_MEDIA_TYPE: 415,
 
@@ -103,7 +108,6 @@ export const ERROR_STATUS = Object.freeze({
   DNS_FAILED: 422,
   DOWNLOAD_FAILED: 422,
   NO_BODY: 422,
-  UPLOAD_TOO_LARGE: 422,
   INVALID_FILENAME: 422,
   PASSWORD_EMPTY: 422,
   INVALID_PASSWORD: 422,

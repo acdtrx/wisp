@@ -78,8 +78,9 @@ source refer to them.
   shape on HTTP and streaming channels.
   - Applied: routes, hooks and jobs throw; one handler answers (`lib/appErrors.js`), the
     status from the one table of codes (`lib/errorCodes.js`). Every channel sends the
-    same body, `{ error: <code>, detail }`, `detail` the message followed by the raw
-    cause, redacted where the body is built: HTTP answers, a job's
+    same body, `{ error: <code>, detail }`; here `detail` is always present: Wisp's
+    message, followed by the raw cause, which alone is redacted, where the body is
+    built. The channels: HTTP answers, a job's
     `{ step: 'error', error, detail }`, stream error frames and MCP tool errors. A new
     code goes in the table and in
     [`specs/ERROR-HANDLING.md`](specs/ERROR-HANDLING.md#codes) in the same change;
