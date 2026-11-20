@@ -22,8 +22,9 @@
   by a function this order calls, so nothing has read the state before the migrations
   have brought it up to date (settled 2026-11-18).
 - At startup the backend connects to libvirt and avahi over DBus and to containerd over
-  gRPC, and mounts the configured SMB mounts. On SIGTERM it stops accepting connections,
-  ends the open streams, disconnects the managers and exits within a bounded time. An
+  gRPC, and mounts the configured SMB mounts. On SIGTERM it stops what starts jobs (the
+  hourly checks, the backup scheduler), cuts the interruptible jobs, ends the open streams,
+  disconnects the managers and exits within a bounded time. An
   unhandled rejection or exception is logged and ends the process (settled 2026-11-15:
   restored from the template).
 

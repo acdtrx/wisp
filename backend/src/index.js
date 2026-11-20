@@ -230,9 +230,13 @@ async function shutdown(signal) {
     console.error(`Shutdown did not finish within ${SHUTDOWN_DEADLINE_MS / 1000} s, exiting`);
     process.exit(1);
   }, SHUTDOWN_DEADLINE_MS).unref();
-  // The update checks first, while their streams are open: a client following
-  // one gets its `cancelled`, not a stream that closed on a job that is gone.
-  // A run slow to honour its signal is bounded by the deadline above.
+  // What starts jobs stops first, so none starts while the rest shut down.
+  stopHourlyUpdateChecks();
+  stopWispUpdateChecker();
+  stopContainerBackupScheduler();
+  // Then the interruptible jobs, while their streams are open: a client
+  // following one gets its `cancelled`, not a stream that closed on a job that
+  // is gone. A run slow to honour its signal is bounded by the deadline above.
   await cancelInterruptibleJobs();
   closeAllSSE();
   if (unsubscribeMountHotplug) {
@@ -245,9 +249,6 @@ async function shutdown(signal) {
   }
   stopUsbMonitor();
   stopDiskMonitor();
-  stopHourlyUpdateChecks();
-  stopWispUpdateChecker();
-  stopContainerBackupScheduler();
   stopVmMdnsReconciler();
   stopContainerMdnsReconciler();
   await stopWispDiscovery(); // needs the live bus — before disconnectMdns
