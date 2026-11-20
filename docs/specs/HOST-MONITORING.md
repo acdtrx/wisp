@@ -144,7 +144,7 @@ How the per-tick cost was driven down:
 - `DomainLookupByName` is skipped via `getCachedDomainPath(name)` — paths are captured by `ListDomains` during cache population and are stable for the lifetime of the domain definition.
 - `GetState` is skipped — `getCachedStateCode(name)` is kept current by `DomainEvent` signals; the rare race (state changes between event and tick) is handled by the existing `try/catch` around `GetStats`.
 - `Introspect` is skipped — `getDomainObjAndIface` reads from `connectionState.domainProxyCache`, populated once per domain path and invalidated on disconnect / undefine.
-- `GetXMLDesc` is skipped — vCPU count, guest-agent presence, and `localDns` come from the `vmListCache` via `getCachedVcpus`/`getCachedGuestAgent`/`getCachedLocalDns`.
+- `GetXMLDesc` is skipped — vCPU count and guest-agent presence come from the `vmListCache` via `getCachedVcpus`/`getCachedGuestAgent`.
 - Guest-agent calls (`InterfaceAddresses`, `GetHostname`) are gated by `guestInfoCache` (TTL 30 s, dropped when state turns non-running) — these are the heaviest because libvirtd has to round-trip through virtio-serial to qemu-ga inside the guest, and the data they return (hostname, primary IP) is essentially static between DHCP renewals.
 
 ## Color Thresholds

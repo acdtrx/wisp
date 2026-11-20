@@ -359,6 +359,16 @@ check now rejects them (422 `PATH_NOT_ALLOWED`), but the picker still offers the
 lines verbatim to the UI and MCP; an app that prints a token in its error would surface it
 (unconfirmed). **Revisit trigger:** a reload error is seen carrying a secret value.
 
+**Cloud-init could keep a guest's avahi from renaming it `<host>-2`.** A Linux guest gets
+its `.local` name from the avahi-daemon cloud-init installs (`installAvahiDaemon`, on by
+default), and avahi 0.8 renames a host to `<host>-2` when an address is withdrawn while it
+probes its name ([avahi#117](https://github.com/avahi/avahi/issues/117); CONTAINERS.md →
+Host name conflicts on address churn). The host's setup sets `publish-aaaa-on-ipv4=no`
+for it; Wisp does not configure guests, so a guest keeps the stock config and can lose its
+name the same way. Cloud-init could write that line into the guest's `avahi-daemon.conf`
+(found 2026-11-20, while removing VM name publishing). **Revisit trigger:** a VM seen
+announcing `<name>-2.local`.
+
 **avahi `deny-interfaces` for `veth*` / `vnet*`.** Avahi publishes the host name on every
 container veth and VM tap; the forwarder already ignores those link-local answers
 (CONTAINERS.md § Local DNS, settled 2026-10-16), and stopping them at the source means

@@ -207,7 +207,7 @@ Installed by the server setup script:
 | libvirt-dbus | DBus interface for libvirt (required for dbus-next communication) |
 | ovmf | UEFI firmware for VMs |
 | swtpm | Software TPM for Windows VMs |
-| avahi-daemon | mDNS/DNS-SD daemon used for publishing VM/container `.local` hostnames when Local DNS is enabled |
+| avahi-daemon | mDNS/DNS-SD daemon used for publishing container `.local` hostnames when Local DNS is enabled |
 | cloud-image-utils | `cloud-localds` for cloud-init ISO generation |
 | genisoimage | Fallback ISO generation when `cloud-localds` is unavailable |
 | qemu-utils | `qemu-img` for disk operations (create, convert, resize, info) |
