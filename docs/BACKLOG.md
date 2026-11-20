@@ -460,3 +460,11 @@ in five pushes (2026-11-20) the output stopped after "Install path:", without th
 the work could leave the log to the follower to remove, or the follower read it to its
 end before the work removes it. **Revisit trigger:** an operator missing the access line,
 or a closing message that matters more being lost.
+
+**ifupdown hosts.** Setup makes the bridge only where netplan runs the network (ruled
+2026-11-20: netplan only for now). A Debian server installed with Debian's own installer
+runs it with ifupdown (`/etc/network/interfaces`) and is refused, with "run the uplink
+with netplan" as the remedy. ifupdown is the next tool to support, ahead of
+NetworkManager and plain systemd-networkd, because it is common across distributions.
+**Revisit trigger:** a Debian server install refused, or a first distribution beyond
+Debian and Ubuntu.
