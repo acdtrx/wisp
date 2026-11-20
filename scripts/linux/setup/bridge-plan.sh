@@ -62,8 +62,8 @@ detect_uplink() {
   refuse UPLINK_NOT_NETPLAN "netplan, rendered by systemd-networkd, does not run the uplink $UPLINK: $(uplink_runner)." \
     "Wisp runs where netplan runs the network, rendered by systemd-networkd. Nothing in the network was changed." \
     "Run the uplink with netplan, rendered by systemd-networkd (renderer networkd), and run this again." \
-    "On a host Wisp runs on already, an update stops here and rolls back: Wisp stays on its current release" \
-    "until netplan (renderer networkd) runs this host's network."
+    "On a host Wisp runs on already, Wisp stays on its current release until netplan (renderer networkd)" \
+    "runs this host's network."
 }
 # uplink_runner: what runs the uplink, as far as setup can tell, for the
 # refusal's message only.
