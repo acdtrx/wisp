@@ -4,7 +4,7 @@
 # checked by netplan, and what the plan read (plan_sources). Changes nothing.
 #
 # A Wisp host's network is run by netplan, rendered by systemd-networkd: a host
-# whose uplink another tool runs is refused, bridge or not. Setup makes the
+# whose uplink it does not run is refused, bridge or not. Setup makes the
 # bridge only for the uplink shape it can do completely and verify: a plain
 # Ethernet interface, on DHCP or with a static address, with exactly one
 # definition, its own. Its whole layer 3 moves to the bridge and leaves the

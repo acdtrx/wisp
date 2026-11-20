@@ -11,8 +11,8 @@
 # the journal's: the asking phase changes nothing on the host.
 
 # facts_of: the facts compared, from l3_state's lines. On DHCP the default
-# route is compared by its gateway: its metric and source are the lease's and
-# the tool's, and an uplink may carry the same route twice (once from the
+# route is compared by its gateway: systemd-networkd sets its metric and
+# source per link, and an uplink may carry the same route twice (once from the
 # initramfs).
 facts_of() {
   if [[ "$UPLINK_MODE" == static ]]; then

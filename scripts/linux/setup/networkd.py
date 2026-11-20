@@ -23,15 +23,9 @@ DIRS = ("/etc/systemd/network", "/run/systemd/network", "/usr/local/lib/systemd/
         "/usr/lib/systemd/network", "/lib/systemd/network")
 
 
-def refuse(why, code=3):
-    print(why)
-    sys.exit(code)
-
-
 def parse(path):
-    """[(section, n, key, value)], in the file's order; n numbers the section's
-    headers, as two [Route] sections are two routes."""
-    out, sect, n, pending = [], None, 0, ''
+    """[(section, key, value)], in the file's order."""
+    out, sect, pending = [], None, ''
     with open(path) as f:
         for raw in f:
             line = raw.rstrip('\n')
@@ -46,14 +40,13 @@ def parse(path):
                 continue
             if s.startswith('[') and s.endswith(']'):
                 sect = s[1:-1]
-                n += 1
                 continue
             if '=' not in s:
-                refuse(f'{path}: "{s}" is not a setting')
+                sys.exit(f'{path}: "{s}" is not a setting')
             if sect is None:
-                refuse(f'{path}: a setting outside any section')
+                sys.exit(f'{path}: a setting outside any section')
             key, value = s.split('=', 1)
-            out.append((sect, n, key.strip(), value.strip()))
+            out.append((sect, key.strip(), value.strip()))
     return out
 
 
@@ -107,7 +100,7 @@ def takers(uplink, mac, permaddr, driver, own):
         if name >= own_name:
             continue
         conds = {}
-        for sect, _, key, value in parse(path):
+        for sect, key, value in parse(path):
             if sect == 'Match':
                 conds[key] = (conds.get(key, '') + ' ' + value).strip() if value else ''
         # networkd ignores a file with no condition in [Match].
