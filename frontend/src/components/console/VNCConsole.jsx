@@ -65,20 +65,11 @@ function typeText(rfb, text) {
   }
 }
 
-/* Close codes from `routes/console.js`. The upgrade is authenticated before it
- * completes, so an expired session has no close code of its own — the browser
- * reports the refused upgrade as 1006. */
-const WS_CLOSE_REJECTED = 4000;
+/* The session and the name are checked before the upgrade completes, so a
+ * refused upgrade (an expired session's 401, a bad name's 400) has no close
+ * code of its own: the browser reports it as 1006. Every close code the server
+ * sends (`routes/console.js`: 4000 `vnc unavailable`) is transient. */
 const WS_CLOSE_ABNORMAL = 1006;
-
-/**
- * Only a 4000 `invalid name` is permanent. A 4000 `vnc unavailable` (the port
- * briefly reads -1 after start/resume, libvirt not connected) and everything
- * else is transient and retries.
- */
-function shouldRetryAfterWsClose(code, reason) {
-  return !(code === WS_CLOSE_REJECTED && reason === 'invalid name');
-}
 
 export default function VNCConsole({ vmName, vmRunning, viewportRef, apiRef, onConnect, onDisconnect }) {
   const rfbRef = useRef(null);
@@ -191,7 +182,7 @@ export default function VNCConsole({ vmName, vmRunning, viewportRef, apiRef, onC
         const ws = new WebSocket(wsUrl);
         closeIfNotOpenWithin(ws);
         ws.addEventListener('close', (e) => {
-          lastWsCloseRef.current = { code: e.code, reason: String(e.reason || '') };
+          lastWsCloseRef.current = { code: e.code };
         });
         const rfb = new RFBClass(viewportRef.current, ws, { shared: true });
         rfbRef.current = rfb;
@@ -218,10 +209,6 @@ export default function VNCConsole({ vmName, vmRunning, viewportRef, apiRef, onC
 
           const closeMeta = lastWsCloseRef.current;
           lastWsCloseRef.current = null;
-          if (closeMeta && !shouldRetryAfterWsClose(closeMeta.code, closeMeta.reason)) {
-            // Invalid name: no auto-retry; keep blank viewport + Reconnect in toolbar
-            return;
-          }
           if (closeMeta?.code === WS_CLOSE_ABNORMAL) {
             retryAfterAuthCheck();
             return;

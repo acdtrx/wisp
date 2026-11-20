@@ -32,8 +32,9 @@ The route also enforces a same-origin policy on the upgrade request. CORS does n
 
 Rejection responses:
 - HTTP `401` before the upgrade — missing or invalid session; `403` `SESSION_REQUIRED` for a bearer token
+- HTTP `400` `VALIDATION_FAILED` before the upgrade — a name that breaks the [name rules](ERROR-HANDLING.md#name-validation) (and, on the container console, a PTY size out of range); the browser sees only the socket close abnormally (`1006`)
 - Close code `1008` — Origin not allowed (or Origin header missing)
-- Close code `4000` — invalid VM name or VNC port not available
+- Close code `4000` — VNC port not available
 
 ## Console UI
 
@@ -70,7 +71,7 @@ The VNC console viewport fills the available space below the toolbar and above t
 
 **Console colours follow the theme** *(settled 2026-08-25)*. The terminal well is its own token pair, `--color-console` / `--color-console-text` in `index.css` — deliberately dark in **both** themes, because a terminal is dark; light keeps the slate the consoles have always used, dark drops to the Dusk input well so it stops reading as a blue-grey patch. `consoleTheme()` (`components/console/consoleTheme.js`) resolves them so the `bg-console` class on the viewport and the JS-configured palettes cannot drift apart. The container terminal repaints **live** on a theme flip (`terminal.options.theme`) — no reconnect, no lost scrollback. ANSI colours stay on xterm's defaults: they are tuned for a dark background and both backgrounds are dark, so nothing needs overriding and light stays byte-identical. The noVNC letterbox is recoloured in dark by a CSS rule on `[data-wisp-vnc-viewport] > div` (noVNC paints its screen element inline and gives it no class, so `!important` is the only hook); light keeps noVNC's own default. The remote framebuffer is whatever the guest renders.
 
-If the server closes the proxy before the VNC session is up with `4000` `vnc unavailable` (the VM has no VNC port yet — QEMU briefly reports `-1` after start/resume — or libvirt is not connected), the client treats it as transient and retries with backoff up to the attempt cap. Only `4000` `invalid name` is final (no auto-retry; the toolbar Reconnect stays available).
+If the server closes the proxy before the VNC session is up with `4000` `vnc unavailable` (the VM has no VNC port yet — QEMU briefly reports `-1` after start/resume — or libvirt is not connected), the client treats it as transient and retries with backoff up to the attempt cap. No close code the server sends is final. An upgrade refused with a `400` (a bad name, which a URL the client builds from the VM list does not have) reaches the client as a `1006` close, like any refused upgrade, and is handled as one (Auto-reconnect, below): the session check passes, so it retries with backoff until the attempt cap, then shows the lost-connection error with Retry.
 
 ## Connection Lifecycle
 
@@ -97,8 +98,8 @@ The container console (`ContainerConsole.jsx`) spawns a new `/bin/sh` for every 
 | Close | Meaning | Client |
 |-------|---------|--------|
 | `1000` `session ended` | The shell exited (`exit`, Ctrl-D, process killed) — the backend closes when exec stdout ends | **Session ended** with a Reconnect button. No new shell until the user asks for one |
-| `4000` | Invalid name, container not running, or exec failed (e.g. the image has no `/bin/sh`) | Final error with Retry — no retry loop |
-| `1006` | Abnormal close: a dropped network, the server restarting, **or** a refused upgrade. The session is checked before the upgrade, so an expired session never gets a close code of its own — the browser only sees `1006` | One authenticated `GET /api/host` first: a `401` takes the app's normal expired-session path (`api()` redirects to `/login` and signals the other tabs); otherwise retry with backoff |
+| `4000` `exec failed` | The exec failed: the container is not running, or the image has no `/bin/sh` | Final error with Retry — no retry loop |
+| `1006` | Abnormal close: a dropped network, the server restarting, **or** a refused upgrade. The session, the name and the PTY size are checked before the upgrade (`401`, or `400` `VALIDATION_FAILED`), so a refused upgrade never gets a close code of its own — the browser only sees `1006` | One authenticated `GET /api/host` first: a `401` takes the app's normal expired-session path (`api()` redirects to `/login` and signals the other tabs); otherwise retry with backoff, and once the budget is spent the lost-connection error with Retry |
 | anything else (`1005` server shutdown, `1008`, `1011`) | Transient | Retry with backoff |
 
 The retry budget (`MAX_RECONNECT_ATTEMPTS`, 12 attempts, 1 s doubling to a 30 s cap) belongs to one connect: retries keep the count, and only a fresh connect (toolbar Reconnect/Retry, the container starting, a visibility/`online` resume) or the session's **first output frame** resets it. The socket opening is not proof — the server accepts the upgrade before it tries the exec. When the budget runs out the console shows *"Console connection was lost after several attempts"* with Retry. A session that ended or failed its exec is held closed like a manual Disconnect: the visibility/`online` resume skips it. A dedicated `4001` auth close was rejected — sending it would mean accepting the upgrade of an unauthenticated request just to close it.

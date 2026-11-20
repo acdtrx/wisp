@@ -13,9 +13,10 @@ const MAX_RECONNECT_ATTEMPTS = 12;
 const INITIAL_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 30000;
 
-/* Close codes from `routes/containerConsole.js`. The upgrade is authenticated
- * before it completes, so an expired session never gets a close code of its
- * own — the browser reports the refused upgrade as 1006 (see onWsClose). */
+/* Close codes from `routes/containerConsole.js`. The session, the name and the
+ * PTY size are checked before the upgrade completes, so a refused upgrade (an
+ * expired session's 401, a bad name's 400) never gets a close code of its own:
+ * the browser reports it as 1006 (see onWsClose). */
 const WS_CLOSE_SESSION_ENDED = 1000;
 const WS_CLOSE_EXEC_FAILED = 4000;
 const WS_CLOSE_ABNORMAL = 1006;
