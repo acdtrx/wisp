@@ -13,7 +13,7 @@
 # server hands it the same lease; link settings stay with the uplink, which
 # becomes its port with no addressing of its own. After the apply, within
 # NET_APPLY_SEC, the bridge must hold the uplink's former hardware address, IPv4
-# addresses and default route — and on DHCP its client identifier and name
+# addresses, configured IPv6 addresses and default route — and on DHCP its client identifier and name
 # servers, on a static address all its routes, name servers and search domains
 # — the uplink none of it, the uplink must be its port and the bridge have
 # carrier, and systemd-networkd must run each from the unit netplan renders for
@@ -102,15 +102,16 @@ apply_bridge() {
   net_apply netplan apply || { WHY="netplan apply failed"; return 1; }
 }
 
-# facts_of: the facts compared, from l3_state's lines. On DHCP the default
-# route is compared by its gateway: systemd-networkd sets its metric and
+# facts_of: the facts compared, from l3_state's lines: on DHCP too, every
+# configured address of either family. On DHCP the default route is compared
+# by its gateway: systemd-networkd sets its metric and
 # source per link, and an uplink may carry the same route twice (once from the
 # initramfs).
 facts_of() {
   if [[ "$UPLINK_MODE" == static ]]; then
     grep -E '^(addr[46]|route[46]|dns|domain) ' || true
   else
-    grep -E '^(addr4|route4 default|dns) ' | sed -E 's/^(route4 default via [^ ]+).*/\1/' | sort -u || true
+    grep -E '^(addr[46]|route4 default|dns) ' | sed -E 's/^(route4 default via [^ ]+).*/\1/' | sort -u || true
   fi
 }
 # read_now: what the bridge and the uplink hold now, one part a file in the

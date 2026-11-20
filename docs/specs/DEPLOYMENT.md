@@ -177,7 +177,7 @@ Afterwards the host has:
 
 **Checked before, verified after, undone on failure.** Every change leaves a network that boots, old or new. The step's check, within 90 s after the apply:
 
-- The bridge must hold the uplink's hardware address, IPv4 addresses and default route; on DHCP also its client identifier and name servers; on a static address all its routes, name servers and search domains. Name servers and search domains are compared when systemd-resolved runs, which holds them.
+- The bridge must hold the uplink's hardware address, IPv4 addresses, the IPv6 addresses configured for it (not those it learned) and default route (settled 2026-11-20: on DHCP too); on DHCP also its client identifier and name servers; on a static address all its routes, name servers and search domains. Name servers and search domains are compared when systemd-resolved runs, which holds them.
 - The uplink must hold none of it.
 - systemd-networkd must run each from the unit netplan renders for it.
 
