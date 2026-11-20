@@ -57,7 +57,7 @@ planned_sources="$(cat "$NET_PLAN_DIR/sources")" || fail "no record of what the 
 KEPT_ROOT=/var/lib/wisp/network-before-bridge
 DROPIN_DIR="/etc/systemd/network/10-netplan-$BRIDGE.network.d"
 DROPIN="$DROPIN_DIR/50-wisp-dhcp-identity.conf"
-KEPT="" KEPT_STAGE="" DROPIN_DIR_MADE=0 SWITCHED=0 WHY=""
+KEPT="" KEPT_STAGE="" DROPIN_DIR_MADE=0 WHY=""
 
 # keep_original: NETPLAN_ORIGIN copied into KEPT, staged under a hidden name
 # and renamed into place, so no half-made one is ever seen; a stage a step cut
@@ -80,8 +80,8 @@ keep_original() {
 # drop_kept: a stop before the first change leaves nothing kept.
 drop_kept() { rm -rf -- ${KEPT_STAGE:+"$KEPT_STAGE"} ${KEPT:+"$KEPT"}; }
 
-# apply_bridge: the drop-in as this plan needs it, the switch (SWITCHED), then
-# netplan applies them. Sets WHY when a part fails.
+# apply_bridge: the drop-in as this plan needs it, the switch, then netplan
+# applies them. Sets WHY when a part fails.
 apply_bridge() {
   if [[ -s "$NET_PLAN_DIR/50-wisp-dhcp-identity.conf" ]]; then
     if [[ ! -d "$DROPIN_DIR" ]]; then
@@ -98,7 +98,6 @@ apply_bridge() {
     changed "removed $DROPIN"
   fi
   install_file "$NETPLAN_ORIGIN" "$NET_PLAN_DIR/netplan-origin.yaml" 0600 || { WHY="cannot write $NETPLAN_ORIGIN"; return 1; }
-  SWITCHED=1
   changed "$NETPLAN_ORIGIN"
   echo "  applying: $BRIDGE on $UPLINK (was $UPLINK_ADDR); an ssh session may pause"
   net_apply netplan apply || { WHY="netplan apply failed"; return 1; }
@@ -207,7 +206,10 @@ undo() {
   local addr outcome
   step_hold
   echo "  not applied: $WHY; undoing it" >&2
-  if (( ! SWITCHED )); then
+  # Switched or not is read from the file itself: install_file can fail after
+  # its rename, and only a live file that is the original lets the kept copy
+  # go.
+  if cmp -s "$NETPLAN_ORIGIN" "$KEPT$NETPLAN_ORIGIN"; then
     # Before the switch the network is as it was: what the step wrote goes.
     rm -rf -- "$KEPT"
     remove_dropin || undo_fail "$BRIDGE was not applied ($WHY), before its switch: $NETPLAN_ORIGIN is as it was, but $DROPIN, which the step wrote, could not be removed: remove it."
