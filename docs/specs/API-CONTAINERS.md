@@ -30,7 +30,7 @@ Optional `app` is an app registry ID (e.g. `"caddy-reverse-proxy"`) — creates 
 
 On create, the server writes defaults in `container.json` (empty `mounts`, bridge `network` with a generated MAC and the default container parent bridge, `localDns: true`, etc.). Use **PATCH** to change command, resources, env, mounts, and network before starting.
 
-**202:** `{ jobId: "uuid", title: string }` — `title` is e.g. `Create <name>`; `done` result: `{ name }` | **409:** `CONTAINER_EXISTS` — the name is taken in containerd or on disk; `CONTAINER_BUSY` while another job holds that name's lock | **422:** `INVALID_CONTAINER_NAME` | **503:** `NO_CONTAINERD` — containerd cannot be reached, so the name was not checked and nothing was created
+**202:** `{ jobId: "uuid", title: string }` — `title` is e.g. `Create <name>`; `done` result: `{ name }` | **409:** `CONTAINER_EXISTS` — the name is taken in containerd or on disk; `CONTAINER_BUSY` while another job holds that name's lock | **422:** `INVALID_CONTAINER_NAME` — a name with surrounding whitespace among them: the name is validated as sent, never trimmed | **503:** `NO_CONTAINERD` — containerd cannot be reached, so the name was not checked and nothing was created
 
 Progress events: `{ step: "validating"|"using-local"|"pulling"|"pulled"|"creating"|"created", ... }`, then `done` or `error`.
 

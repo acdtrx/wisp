@@ -118,12 +118,12 @@ async function applyContainerConfigChanges({ name, changes, log }) {
  * defined, not started. `done`: `{ name }`.
  */
 export function startContainerCreateJob({ spec, log }) {
-  const name = spec.name.trim();
+  const { name } = spec;
   return startJob({
     kind: BACKGROUND_JOB_KIND.CONTAINER_CREATE,
     title: titleForContainerCreate(name),
     subject: container(name),
-    check: () => assertContainerNameAvailable(spec.name),
+    check: () => assertContainerNameAvailable(name),
     log,
     run: async (report) => {
       await (spec.app ? createAppContainer(spec, report) : createContainer(spec, report));

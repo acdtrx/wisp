@@ -160,6 +160,8 @@ export default async function containerRoutes(fastify) {
     if (!spec.name || !spec.image) {
       throw createAppError('VALIDATION_FAILED', 'body/name and body/image are required');
     }
+    // The name is validated as sent, never trimmed: the name created is the one sent.
+    validateContainerName(spec.name);
     if (spec.app && !isKnownApp(spec.app)) {
       throw createAppError('UNKNOWN_APP_TYPE', `App "${spec.app}" is not a known app type`);
     }

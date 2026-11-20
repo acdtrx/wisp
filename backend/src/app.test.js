@@ -112,6 +112,14 @@ test('a session write without the right X-CSRF-Token answers 403 CSRF_FAILED; wi
   assert.equal(res.json().error, 'VALIDATION_FAILED');
 });
 
+test('a container name with surrounding whitespace is refused, never trimmed', async () => {
+  const res = await app.inject({
+    method: 'POST', url: '/api/containers', headers: bearer(ADMIN_TOKEN), payload: { name: ' web ', image: 'nginx:1.27' },
+  });
+  assert.equal(res.statusCode, 422);
+  assert.deepEqual(res.json(), { error: 'INVALID_CONTAINER_NAME', detail: 'Container name cannot start or end with whitespace' });
+});
+
 test('the sixth bad token from one address answers 429 RATE_LIMITED', async () => {
   const attempt = () => app.inject({
     method: 'GET', url: '/api/settings', headers: bearer('wisp_read_unknown'), remoteAddress: '10.0.0.3',
