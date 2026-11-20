@@ -230,9 +230,13 @@ export async function resumeStalePausedContainersAtBackendBoot(log) {
  * container waiting out its restart-policy backoff, Stop cancels that restart
  * and succeeds with `restartCancelled: true`; on a stopped container with
  * nothing scheduled it throws CONTAINER_NOT_RUNNING.
+ * @param {string} name
+ * @param {{ graceSignal?: AbortSignal }} [opts] - aborting it ends the grace
+ *   period at once: the task is killed, and the stop finishes as it would after
+ *   the 10 s
  * @returns {Promise<{ restartCancelled: boolean }>}
  */
-export async function stopContainer(name) {
+export async function stopContainer(name, { graceSignal } = {}) {
   const task = await getTaskState(name);
   // Before the not-running check: a Stop on a container waiting out its
   // restart-policy backoff cancels that restart.
@@ -252,15 +256,16 @@ export async function stopContainer(name) {
     // Task may have already exited
   }
 
-  // Wait for graceful exit (up to 10s), then force kill — exponential backoff, not fixed polling
+  // Wait for graceful exit (up to 10s, or until the grace is cut), then force
+  // kill — exponential backoff, not fixed polling
   const deadline = Date.now() + 10000;
   let sleepMs = 100;
-  while (Date.now() < deadline) {
+  while (Date.now() < deadline && !graceSignal?.aborted) {
     const current = await getTaskState(name);
     if (!current || current.status === 'STOPPED') break;
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
-    await new Promise((r) => setTimeout(r, Math.min(sleepMs, remaining)));
+    await sleepUnlessCut(Math.min(sleepMs, remaining), graceSignal);
     sleepMs = Math.min(sleepMs * 2, 2000);
   }
 
@@ -315,6 +320,19 @@ export async function restartContainer(name) {
     try { await stopContainer(name); } catch { /* may already be stopped */ }
   }
   await startContainer(name);
+}
+
+/** Sleep `ms`, or less when `signal` aborts meanwhile. */
+function sleepUnlessCut(ms, signal) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, ms);
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    }
+    signal?.addEventListener('abort', done, { once: true });
+  });
 }
 
 async function waitForStop(name, timeoutMs) {
