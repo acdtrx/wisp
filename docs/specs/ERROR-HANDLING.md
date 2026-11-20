@@ -319,6 +319,7 @@ Each code a client can receive, with its status.
 | `NETWORK_BRIDGE_UNAVAILABLE` | 503 | Managed bridges are not available on this host (no netplan, or the helper is missing) |
 | `NETWORK_BRIDGE_NONE` | 503 | The host has no bridge for a new VM's NIC: setup was never finished |
 | `NETWORK_BRIDGE_APPLY_FAILED` | 503 | netplan failed to apply the bridge change |
+| `SHUTTING_DOWN` | 503 | Wisp is shutting down: the job was not started; start it again once Wisp is back |
 
 ### Internal codes
 

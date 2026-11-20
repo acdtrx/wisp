@@ -26,7 +26,7 @@ import { ensureMounts, installMountHotplugHandlers, startAutoMountRetry } from '
 import { cleanPartialJsonArtifacts } from './lib/bootCleanup.js';
 import { start as startUsbMonitor, stop as stopUsbMonitor } from './lib/host/index.js';
 import { startHourlyUpdateChecks, stopHourlyUpdateChecks } from './lib/updateChecks.js';
-import { cancelInterruptibleJobs } from './lib/jobs/index.js';
+import { cancelInterruptibleJobs, refuseNewJobs } from './lib/jobs/index.js';
 import { startUpdateChecker as startWispUpdateChecker, stopUpdateChecker as stopWispUpdateChecker } from './lib/wispUpdate.js';
 import { closeAllSSE } from './lib/sse.js';
 import { start as startDiskMonitor, stop as stopDiskMonitor } from './lib/storage/index.js';
@@ -240,7 +240,9 @@ async function shutdown(signal) {
     console.error(`Shutdown did not finish within ${SHUTDOWN_DEADLINE_MS / 1000} s, exiting`);
     process.exit(1);
   }, SHUTDOWN_DEADLINE_MS).unref();
-  // What starts jobs stops first, so none starts while the rest shut down.
+  // No job starts from here on: the listener and `/mcp` take requests until
+  // app.close(), so the starter refuses them; then what starts jobs on its own stops.
+  refuseNewJobs();
   stopHourlyUpdateChecks();
   stopWispUpdateChecker();
   stopContainerBackupScheduler();

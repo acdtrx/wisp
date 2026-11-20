@@ -7,6 +7,7 @@ export {
   isJobRunning,
   countJobsThatMustFinish,
   cancelInterruptibleJobs,
+  refuseNewJobs,
   subscribeJobsChange,
   listJobs,
   readJob,

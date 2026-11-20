@@ -23,7 +23,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { errorBody, isExpectedAppError } from '../appErrors.js';
+import { createAppError, errorBody, isExpectedAppError } from '../appErrors.js';
 import { acquireVmOperationLock } from '../vmOperationLock.js';
 import { acquireContainerOperationLock } from '../containerOperationLock.js';
 import { BACKGROUND_JOB_KIND, SUBJECT_KINDS } from './backgroundJobKinds.js';
@@ -79,6 +79,18 @@ export function isJobRunning(kind, subject) {
     if (job.status === 'running' && job.kind === kind && (subject === undefined || sameSubject(job.subject, subject))) return true;
   }
   return false;
+}
+
+/** Set once shutdown begins: from then on the starter refuses every start. */
+let refusingJobs = false;
+
+/**
+ * Shutdown has begun: every later start is refused with SHUTTING_DOWN, so a
+ * request still reaching the listener or `/mcp` cannot start a job the exit
+ * would cut. Running jobs are left as they are.
+ */
+export function refuseNewJobs() {
+  refusingJobs = true;
 }
 
 /** Running jobs that must finish: every running job but the interruptible ones. */
@@ -234,6 +246,9 @@ function assertStartArgs({ kind, title, subject, scope, check, log, run }) {
  * Start a job and answer its ack `{ jobId, kind, title, subject }` — the only
  * way a job is created.
  *
+ * Once shutdown has begun (`refuseNewJobs`), every start, a shared one
+ * included, is refused with SHUTTING_DOWN.
+ *
  * The claim is decided in one synchronous step, so two starts in one tick
  * never both pass: a job with a subject claims its workload's operation lock
  * first (held: the busy error, `VM_BUSY` / `CONTAINER_BUSY`, and no job); a
@@ -275,6 +290,7 @@ export async function startJob({
   kind, title, subject = null, shared = false, scope = null, interruptible = false, check, log, run,
 }) {
   assertStartArgs({ kind, title, subject, scope, check, log, run });
+  if (refusingJobs) throw createAppError('SHUTTING_DOWN', 'Wisp is shutting down: start this again once it is back');
 
   if (shared) {
     const running = runningJobCovering(kind, subject, scope);
