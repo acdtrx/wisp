@@ -1,7 +1,7 @@
 import { basename, dirname, join, sep } from 'node:path';
 import { access, mkdir, realpath } from 'node:fs/promises';
 import { getConfigSync } from './config.js';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 
 /**
  * Base directory for a VM's files: <vmsPath>/<name>/

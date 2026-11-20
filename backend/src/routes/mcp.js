@@ -4,6 +4,7 @@
  * ignored entirely, which also makes the endpoint CSRF-irrelevant. The token's
  * scope rides on request.user and gates which tools are listed/callable.
  */
+import { createAppError } from '../lib/appErrors.js';
 import { handleMcpMessage } from '../lib/mcp/mcpServer.js';
 
 export default async function mcpRoutes(fastify) {
@@ -21,10 +22,8 @@ export default async function mcpRoutes(fastify) {
 
   // No SSE stream (GET) and no session teardown (DELETE) — stateless mode.
   const methodNotAllowed = async (request, reply) => {
-    reply
-      .code(405)
-      .header('Allow', 'POST')
-      .send({ error: 'Method not allowed', detail: 'The Wisp MCP endpoint is stateless: POST JSON-RPC messages to /mcp' });
+    reply.header('Allow', 'POST');
+    throw createAppError('METHOD_NOT_ALLOWED', 'The Wisp MCP endpoint is stateless: send JSON-RPC messages with POST');
   };
   fastify.get('/mcp', { schema: { hide: true }, config: { auth: 'mcp' } }, methodNotAllowed);
   fastify.delete('/mcp', { schema: { hide: true }, config: { auth: 'mcp' } }, methodNotAllowed);

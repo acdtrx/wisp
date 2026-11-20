@@ -14,7 +14,7 @@
  * Acquire is synchronous, so a route that acquires before its first `await`
  * after the check cannot race another request for the same VM.
  */
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 
 /**
  * @typedef {'start' | 'backup' | 'delete' | 'rename' | 'config edit' | 'disk change'

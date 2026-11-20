@@ -15,7 +15,7 @@ import {
   parseWispConfigText,
 } from './configSchema.js';
 import { getMountStatus } from './storage/index.js';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 import { writeJsonAtomic } from './atomicJson.js';
 
 export { MOUNT_ROOT, MAIN_SECTION_ID, UNGROUPED_GROUP_ID } from './configSchema.js';

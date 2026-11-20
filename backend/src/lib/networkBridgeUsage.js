@@ -5,7 +5,7 @@
  */
 import { listVMs, getVMConfig } from './vmManager/index.js';
 import { listContainers, getContainerConfig } from './containerManager/index.js';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 
 /**
  * Throw NETWORK_BRIDGE_IN_USE when any VM NIC or container network is attached

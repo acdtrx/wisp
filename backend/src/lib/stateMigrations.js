@@ -22,7 +22,7 @@ import { readTolerantConfig } from '../../migrations/lib/tolerantConfig.js';
 import { writeJsonAtomic } from './atomicJson.js';
 import { CONFIG_PATH } from './config.js';
 import { configureManagers, connectManagers, disconnectManagers } from './managerBootstrap.js';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 import {
   checkMigrationModule, ledgerEntry, migrationFileNames, parseLedger, pendingMigrations, recordRun,
 } from './stateMigrationLedger.js';

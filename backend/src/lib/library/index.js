@@ -14,7 +14,7 @@ import {
   downloadArchCloudImage as downloadArchCloud,
   downloadAndDecompressHaos as downloadHaos,
 } from '../downloads/index.js';
-import { createAppError } from '../routeErrors.js';
+import { createAppError } from '../appErrors.js';
 import { ensureImageDir, getImagePath } from '../paths.js';
 
 /** Notified after a file is uploaded, renamed, deleted or downloaded into the
@@ -67,7 +67,7 @@ function announcingSettled(write) {
  * file is removed — this call created it — to avoid a disk-fill DoS.
  *
  * Throws the open error as is (`code: 'EEXIST'` when the name is taken), the
- * stream's error, or `LIBRARY_UPLOAD_TOO_LARGE` when multipart truncated the
+ * stream's error, or `UPLOAD_TOO_LARGE` when multipart truncated the
  * file at its size limit. Announces once the name was reserved, however it ends:
  * the partial file was in the library meanwhile.
  *
@@ -86,7 +86,7 @@ async function saveUpload(filename, file) {
     }
     if (file.truncated) {
       await unlink(destPath).catch(() => { /* best-effort cleanup */ });
-      throw createAppError('LIBRARY_UPLOAD_TOO_LARGE', 'Upload exceeded the configured size limit');
+      throw createAppError('UPLOAD_TOO_LARGE', 'Upload exceeded the configured size limit');
     }
   } finally {
     announceLibraryChange();

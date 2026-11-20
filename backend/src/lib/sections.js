@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 import { validName } from './configSchema.js';
 import { withSettingsWriteLock, MAIN_SECTION_ID, getSettings } from './settings.js';
 

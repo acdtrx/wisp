@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual, scryptSync, randomBytes } from 'node:crypt
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 import { parseCookieHeader, appendSetCookie, buildSetCookie } from './cookies.js';
 import { verifyApiToken } from './apiTokens.js';
 import { isAuthRateLimited, recordFailedAuthAttempt, AUTH_RATE_WINDOW_SECONDS } from './loginRateLimit.js';
@@ -270,33 +270,27 @@ function timingSafeEqualString(a, b) {
  * Bearer requests skip the CSRF check on purpose: double-submit defends
  * against ambient cookie credentials, which a bearer request doesn't carry.
  */
+/** The challenge `/mcp` answers a missing or invalid token with (MCP.md, Authentication). */
+const MCP_AUTHENTICATE = 'Bearer realm="wisp"';
+
 async function handleBearerAuth(request, reply, token, level) {
   if (level === 'session') {
-    reply.code(403).send({ error: 'Session required', detail: 'API tokens cannot access this route; it requires a browser session' });
-    return;
+    throw createAppError('SESSION_REQUIRED', 'API tokens cannot access this route; it requires a browser session');
   }
   const ip = request.ip || 'unknown';
   if (isAuthRateLimited(ip)) {
-    reply.code(429).send({
-      error: 'Too many authentication attempts',
-      detail: `Try again after ${AUTH_RATE_WINDOW_SECONDS} seconds`,
-    });
-    return;
+    throw createAppError('RATE_LIMITED', `Too many authentication attempts — try again after ${AUTH_RATE_WINDOW_SECONDS} seconds`);
   }
   const info = await verifyApiToken(token);
   if (!info) {
     recordFailedAuthAttempt(ip);
-    reply.code(401).send({ error: 'Authentication failed', detail: 'Invalid API token' });
-    return;
+    if (level === 'mcp') reply.header('WWW-Authenticate', MCP_AUTHENTICATE);
+    throw createAppError('AUTH_INVALID', 'Invalid API token');
   }
   // `read` and `mcp` routes accept either scope — on /mcp the MCP layer gates
   // each tool by scope, since JSON-RPC over POST says nothing about mutation.
   if (level === 'admin' && info.scope !== 'admin') {
-    reply.code(403).send({
-      error: 'Insufficient scope',
-      detail: 'This route requires an admin-scoped token',
-    });
-    return;
+    throw createAppError('SCOPE_INSUFFICIENT', 'This route requires an admin-scoped token');
   }
   request.user = { via: 'token', tokenId: info.id, label: info.label, scope: info.scope };
 }
@@ -319,26 +313,17 @@ export function createAuthHook() {
     // `mcp` is bearer-only: cookies are ignored entirely (no ambient-credential
     // surface, no CSRF concern), so a missing bearer header ends here.
     if (level === 'mcp') {
-      reply
-        .code(401)
-        .header('WWW-Authenticate', 'Bearer realm="wisp"')
-        .send({ error: 'Authentication required', detail: 'The MCP endpoint requires an API token (Authorization: Bearer wisp_…)' });
-      return;
+      reply.header('WWW-Authenticate', MCP_AUTHENTICATE);
+      throw createAppError('AUTH_REQUIRED', 'The MCP endpoint requires an API token (Authorization: Bearer wisp_…)');
     }
 
     const cookies = parseCookieHeader(request.headers?.cookie);
     const token = cookies[SESSION_COOKIE] || null;
 
-    if (!token) {
-      reply.code(401).send({ error: 'Authentication required', detail: 'No session cookie' });
-      return;
-    }
+    if (!token) throw createAppError('AUTH_REQUIRED', 'No session: sign in');
 
     const payload = verifyJWT(token);
-    if (!payload) {
-      reply.code(401).send({ error: 'Authentication failed', detail: 'Invalid or expired session' });
-      return;
-    }
+    if (!payload) throw createAppError('AUTH_INVALID', 'The session is invalid or has expired: sign in again');
 
     // Double-submit CSRF: state-changing requests must echo the wisp_csrf
     // cookie value back as X-CSRF-Token. SameSite=Lax already stops most
@@ -352,8 +337,7 @@ export function createAuthHook() {
         typeof cookieToken !== 'string' ||
         !timingSafeEqualString(headerToken, cookieToken)
       ) {
-        reply.code(403).send({ error: 'CSRF check failed', detail: 'Missing or mismatched CSRF token' });
-        return;
+        throw createAppError('CSRF_FAILED', 'Missing or mismatched CSRF token');
       }
     }
 

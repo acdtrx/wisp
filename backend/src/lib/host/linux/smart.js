@@ -3,7 +3,7 @@ import { access } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { createAppError } from '../../routeErrors.js';
+import { createAppError } from '../../appErrors.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);

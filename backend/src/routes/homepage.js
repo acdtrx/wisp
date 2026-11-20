@@ -10,7 +10,6 @@ import {
   removeManualTile,
 } from '../lib/homepage.js';
 import { buildHomeEnvelope } from '../lib/homeTiles.js';
-import { handleRouteError } from '../lib/routeErrors.js';
 
 const tileSchema = {
   type: 'object',
@@ -100,12 +99,8 @@ export default async function homepageRoutes(fastify) {
       response: { 201: createdSchema },
     },
     handler: async (request, reply) => {
-      try {
-        const id = await createHomeGroup(request.body.name);
-        reply.code(201).send({ id });
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const id = await createHomeGroup(request.body.name);
+      reply.code(201).send({ id });
     },
   });
 
@@ -122,12 +117,8 @@ export default async function homepageRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        await renameHomeGroup(request.params.id, request.body.name);
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      await renameHomeGroup(request.params.id, request.body.name);
+      reply.code(204).send();
     },
   });
 
@@ -135,12 +126,8 @@ export default async function homepageRoutes(fastify) {
     config: { auth: 'admin' },
     schema: { params: idParams, response: { 204: { type: 'null' } } },
     handler: async (request, reply) => {
-      try {
-        await deleteHomeGroup(request.params.id);
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      await deleteHomeGroup(request.params.id);
+      reply.code(204).send();
     },
   });
 
@@ -156,12 +143,8 @@ export default async function homepageRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        await reorderHomeGroups(request.body.ids);
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      await reorderHomeGroups(request.body.ids);
+      reply.code(204).send();
     },
   });
 
@@ -181,13 +164,9 @@ export default async function homepageRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        const { tileId, groupId, index } = request.body;
-        await assignTileToGroup({ tileId, groupId: groupId ?? null, index: index ?? null });
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { tileId, groupId, index } = request.body;
+      await assignTileToGroup({ tileId, groupId: groupId ?? null, index: index ?? null });
+      reply.code(204).send();
     },
   });
 
@@ -208,12 +187,8 @@ export default async function homepageRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        await setTileOverride(request.body);
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      await setTileOverride(request.body);
+      reply.code(204).send();
     },
   });
 
@@ -233,12 +208,8 @@ export default async function homepageRoutes(fastify) {
       response: { 201: createdSchema },
     },
     handler: async (request, reply) => {
-      try {
-        const id = await addManualTile(request.body);
-        reply.code(201).send({ id });
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const id = await addManualTile(request.body);
+      reply.code(201).send({ id });
     },
   });
 
@@ -258,12 +229,8 @@ export default async function homepageRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        await updateManualTile(request.params.id, request.body);
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      await updateManualTile(request.params.id, request.body);
+      reply.code(204).send();
     },
   });
 
@@ -271,12 +238,8 @@ export default async function homepageRoutes(fastify) {
     config: { auth: 'admin' },
     schema: { params: idParams, response: { 204: { type: 'null' } } },
     handler: async (request, reply) => {
-      try {
-        await removeManualTile(request.params.id);
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      await removeManualTile(request.params.id);
+      reply.code(204).send();
     },
   });
 }

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
-import { createAppError } from '../../routeErrors.js';
+import { createAppError } from '../../appErrors.js';
 import { createStallWatchdog, stallMinutes } from '../../storage/index.js';
 
 const SCRIPT_PATH = '/usr/local/bin/wisp-os-update';

@@ -7,7 +7,6 @@ import {
   reorderSections,
   getAssignments,
 } from '../lib/sections.js';
-import { handleRouteError } from '../lib/routeErrors.js';
 
 const sectionSchema = {
   type: 'object',
@@ -62,12 +61,8 @@ export default async function sectionsRoutes(fastify) {
       response: { 201: createdSchema },
     },
     handler: async (request, reply) => {
-      try {
-        const id = await createSection(request.body.name);
-        reply.code(201).send({ id });
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const id = await createSection(request.body.name);
+      reply.code(201).send({ id });
     },
   });
 
@@ -84,12 +79,8 @@ export default async function sectionsRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        await renameSection(request.params.id, request.body.name);
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      await renameSection(request.params.id, request.body.name);
+      reply.code(204).send();
     },
   });
 
@@ -100,12 +91,8 @@ export default async function sectionsRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        await deleteSection(request.params.id);
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      await deleteSection(request.params.id);
+      reply.code(204).send();
     },
   });
 
@@ -123,12 +110,8 @@ export default async function sectionsRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        await reorderSections(request.body.ids);
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      await reorderSections(request.body.ids);
+      reply.code(204).send();
     },
   });
 
@@ -148,13 +131,9 @@ export default async function sectionsRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        const { type, name, sectionId } = request.body;
-        await assignWorkload({ type, name, sectionId: sectionId ?? null });
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { type, name, sectionId } = request.body;
+      await assignWorkload({ type, name, sectionId: sectionId ?? null });
+      reply.code(204).send();
     },
   });
 }

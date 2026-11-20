@@ -9,7 +9,7 @@
  * announces the change so the `home` topic on /api/events re-pushes.
  */
 import { randomUUID } from 'node:crypto';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 import { MAX_NAME, validName, validTileId, validTileUrl as validUrl } from './configSchema.js';
 import { withSettingsWriteLock, getRawHomepage, UNGROUPED_GROUP_ID } from './settings.js';
 

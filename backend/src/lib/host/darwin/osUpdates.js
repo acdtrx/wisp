@@ -1,7 +1,7 @@
 /**
  * wisp-os-update stub (macOS dev).
  */
-import { createAppError } from '../../routeErrors.js';
+import { createAppError } from '../../appErrors.js';
 
 const UNAVAILABLE = 'UPDATE_CHECK_UNAVAILABLE';
 

@@ -1,3 +1,4 @@
+import { createAppError } from '../lib/appErrors.js';
 import { listBackgroundJobs, operationJobStore } from '../lib/jobs/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 
@@ -39,7 +40,7 @@ export default async function backgroundJobsRoutes(fastify) {
     handler: async (request, reply) => {
       const { jobId } = request.params;
       if (!operationJobStore.getJob(jobId)) {
-        return reply.code(404).send({ error: 'Job not found', detail: jobId });
+        throw createAppError('JOB_NOT_FOUND', `No job with id "${jobId}": it never started, or ended more than 5 minutes ago`);
       }
       setupSSE(reply);
       if (!operationJobStore.registerStream(jobId, reply.raw)) {

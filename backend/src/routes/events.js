@@ -1,3 +1,4 @@
+import { errorBody } from '../lib/appErrors.js';
 import { buildHostStatsPayload } from '../lib/hostStatsSnapshot.js';
 import { listVMs, subscribeVMListChange, subscribeVMChange } from '../lib/vmManager/index.js';
 import {
@@ -37,7 +38,7 @@ const HOST_STATS_INTERVAL_MS = 5000;
  * Per-topic payloads and cadence are unchanged from the former dedicated
  * endpoints: stats on a 5s timer; vms/containers/sections/home/discovery pushed
  * on their change events; every topic replays a snapshot on connect. A topic
- * that fails to gather sends `{ error, detail, code }` as its `data` and the
+ * that fails to gather sends the error body `{ error, detail }` as its `data` and the
  * stream stays up for the others.
  */
 export default async function eventsRoutes(fastify) {
@@ -60,7 +61,7 @@ export default async function eventsRoutes(fastify) {
           sendTopic('stats', await buildHostStatsPayload());
         } catch (err) {
           fastify.log.error({ err }, 'events: failed to gather host stats');
-          sendTopic('stats', { error: 'Failed to gather stats', detail: err.raw || err.message, code: err.code });
+          sendTopic('stats', errorBody(err));
         }
       }
 
@@ -84,17 +85,17 @@ export default async function eventsRoutes(fastify) {
 
       const sendVMs = latestGatherSender('vms', listVMs, (err) => {
         request.log.warn({ err: err.message }, 'events: listVMs failed');
-        return { error: err.message, detail: err.raw || err.message, code: err.code };
+        return errorBody(err);
       });
 
       const sendContainers = latestGatherSender('containers', listContainers, (err) => {
         request.log.warn({ err: err.message }, 'events: listContainers failed');
-        return { error: 'Failed to list containers', detail: err.raw || err.message, code: err.code };
+        return errorBody(err);
       });
 
       const sendSections = latestGatherSender('sections', buildSectionsEnvelope, (err) => {
         request.log.warn({ err: err.message }, 'events: sections read failed');
-        return { error: err.message, detail: err.raw || err.message, code: err.code };
+        return errorBody(err);
       });
 
       /* Home page launcher tiles. Recomputed from live workload state joined with
@@ -103,7 +104,7 @@ export default async function eventsRoutes(fastify) {
        * No timer: every input has a change event of its own. */
       const sendHome = latestGatherSender('home', buildHomeEnvelope, (err) => {
         request.log.warn({ err: err.message }, 'events: home tiles build failed');
-        return { error: err.message, detail: err.raw || err.message, code: err.code };
+        return errorBody(err);
       });
 
       function sendDiscovery() {
@@ -115,7 +116,7 @@ export default async function eventsRoutes(fastify) {
        * the frame as their cue to refetch the backup lists. */
       const sendBackups = latestGatherSender('backups', getBackupStatus, (err) => {
         request.log.warn({ err: err.message }, 'events: backup status read failed');
-        return { error: err.message, detail: err.raw || err.message, code: err.code };
+        return errorBody(err);
       });
 
       /* References to changed records that no other topic carries in full: a client

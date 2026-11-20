@@ -31,7 +31,7 @@ import {
   titleForContainerRestoreAsNew,
 } from '../lib/jobs/index.js';
 import { startLockedContainerJob } from '../lib/containerJobs.js';
-import { createAppError, handleRouteError, isExpectedAppError } from '../lib/routeErrors.js';
+import { createAppError, isExpectedAppError } from '../lib/appErrors.js';
 import { validateVMName, validateContainerName } from '../lib/validation.js';
 import { acquireContainerOperationLock } from '../lib/containerOperationLock.js';
 
@@ -159,16 +159,12 @@ export default async function backupsRoutes(fastify) {
         },
       },
     },
-    handler: async (request, reply) => {
-      try {
-        const settings = await getSettings();
-        const destinations = await listBackupDestinationsWithMountCheck(settings);
-        const vmName = request.query?.vmName ?? null;
-        const list = await listBackups(destinations, vmName || undefined);
-        return list.map(stripPath);
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+    handler: async (request) => {
+      const settings = await getSettings();
+      const destinations = await listBackupDestinationsWithMountCheck(settings);
+      const vmName = request.query?.vmName ?? null;
+      const list = await listBackups(destinations, vmName || undefined);
+      return list.map(stripPath);
     },
   });
 
@@ -199,36 +195,32 @@ export default async function backupsRoutes(fastify) {
     // copy's outcome — the new VM's name, or the error — arrives over the job's
     // stream.
     handler: async (request, reply) => {
-      try {
-        const { destinationId, vmName, timestamp, newVmName } = request.body;
-        validateVMName(vmName);
-        validateVMName(newVmName);
-        assertSafeTimestamp(timestamp);
-        const settings = await getSettings();
-        const root = resolveBackupRoot(settings, destinationId);
-        const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
-        // A CD-ROM may keep a source outside the new VM directory only under
-        // the paths an attach would accept (the image library).
-        const plan = await planBackupRestore(backupPath, newVmName, {
-          isExternalSourceAllowed: (absPath) => isPathInsideAllowedRoots(absPath, newVmName),
-        });
-        const job = operationJobStore.startOperationJob({
-          kind: BACKGROUND_JOB_KIND.VM_RESTORE,
-          title: titleForVmRestore(newVmName),
-          log: request.log,
-          // Backups don't hold the cloud-init seed ISO; rebuild it from the
-          // restored cloud-init.json before the domain is defined.
-          run: async () => {
-            const result = await restoreBackup(plan, {
-              populateVMDir: (vmDir, { xml }) => rebuildCloudInitISO(newVmName, vmDir, xml),
-            });
-            return { name: result?.name ?? newVmName };
-          },
-        });
-        return reply.code(202).send(job);
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { destinationId, vmName, timestamp, newVmName } = request.body;
+      validateVMName(vmName);
+      validateVMName(newVmName);
+      assertSafeTimestamp(timestamp);
+      const settings = await getSettings();
+      const root = resolveBackupRoot(settings, destinationId);
+      const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
+      // A CD-ROM may keep a source outside the new VM directory only under
+      // the paths an attach would accept (the image library).
+      const plan = await planBackupRestore(backupPath, newVmName, {
+        isExternalSourceAllowed: (absPath) => isPathInsideAllowedRoots(absPath, newVmName),
+      });
+      const job = operationJobStore.startOperationJob({
+        kind: BACKGROUND_JOB_KIND.VM_RESTORE,
+        title: titleForVmRestore(newVmName),
+        log: request.log,
+        // Backups don't hold the cloud-init seed ISO; rebuild it from the
+        // restored cloud-init.json before the domain is defined.
+        run: async () => {
+          const result = await restoreBackup(plan, {
+            populateVMDir: (vmDir, { xml }) => rebuildCloudInitISO(newVmName, vmDir, xml),
+          });
+          return { name: result?.name ?? newVmName };
+        },
+      });
+      return reply.code(202).send(job);
     },
   });
 
@@ -249,19 +241,15 @@ export default async function backupsRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        const { destinationId, vmName, timestamp } = request.body;
-        validateVMName(vmName);
-        assertSafeTimestamp(timestamp);
-        const settings = await getSettings();
-        const root = resolveBackupRoot(settings, destinationId);
-        const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
-        const roots = listConfiguredBackupRoots(settings);
-        await deleteBackup(backupPath, roots);
-        return reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { destinationId, vmName, timestamp } = request.body;
+      validateVMName(vmName);
+      assertSafeTimestamp(timestamp);
+      const settings = await getSettings();
+      const root = resolveBackupRoot(settings, destinationId);
+      const backupPath = await resolveVmBackupDir(root, vmName, timestamp);
+      const roots = listConfiguredBackupRoots(settings);
+      await deleteBackup(backupPath, roots);
+      return reply.code(204).send();
     },
   });
 
@@ -296,16 +284,12 @@ export default async function backupsRoutes(fastify) {
         },
       },
     },
-    handler: async (request, reply) => {
-      try {
-        const settings = await getSettings();
-        const destinations = await listBackupDestinationsWithMountCheck(settings);
-        const containerName = request.query?.containerName ?? null;
-        const list = await listContainerBackups(destinations, containerName || undefined);
-        return list.map(stripPath);
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+    handler: async (request) => {
+      const settings = await getSettings();
+      const destinations = await listBackupDestinationsWithMountCheck(settings);
+      const containerName = request.query?.containerName ?? null;
+      const list = await listContainerBackups(destinations, containerName || undefined);
+      return list.map(stripPath);
     },
   });
 
@@ -334,33 +318,29 @@ export default async function backupsRoutes(fastify) {
     // checked here (names, destination, the new name free, the manifest);
     // `done` is `{ name, sourceName, image }`.
     handler: async (request, reply) => {
-      try {
-        const { destinationId, name, timestamp, newName } = request.body;
-        validateContainerName(name);
-        validateContainerName(newName);
-        assertSafeTimestamp(timestamp);
-        const settings = await getSettings();
-        const root = resolveBackupRoot(settings, destinationId);
-        // Containers live under <root>/containers/<name>/<timestamp>/. The
-        // route knows the layout because it owns the API contract; the
-        // container manager keeps generic "absolute path in" semantics.
-        const backupPath = join(root, 'containers', name, timestamp);
-        let plan;
-        // The new container's name is held for the restore, so nothing starts
-        // or edits it while its directory is being populated.
-        const job = await startLockedContainerJob({
-          name: newName,
-          operation: 'restore',
-          check: async () => { plan = await planContainerBackupRestore(backupPath, newName); },
-          kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE_AS_NEW,
-          title: titleForContainerRestoreAsNew(newName),
-          log: request.log,
-          run: () => restoreContainerBackup(plan),
-        });
-        return reply.code(202).send(job);
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { destinationId, name, timestamp, newName } = request.body;
+      validateContainerName(name);
+      validateContainerName(newName);
+      assertSafeTimestamp(timestamp);
+      const settings = await getSettings();
+      const root = resolveBackupRoot(settings, destinationId);
+      // Containers live under <root>/containers/<name>/<timestamp>/. The
+      // route knows the layout because it owns the API contract; the
+      // container manager keeps generic "absolute path in" semantics.
+      const backupPath = join(root, 'containers', name, timestamp);
+      let plan;
+      // The new container's name is held for the restore, so nothing starts
+      // or edits it while its directory is being populated.
+      const job = await startLockedContainerJob({
+        name: newName,
+        operation: 'restore',
+        check: async () => { plan = await planContainerBackupRestore(backupPath, newName); },
+        kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE_AS_NEW,
+        title: titleForContainerRestoreAsNew(newName),
+        log: request.log,
+        run: () => restoreContainerBackup(plan),
+      });
+      return reply.code(202).send(job);
     },
   });
 
@@ -392,49 +372,45 @@ export default async function backupsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        const { destinationId, name, timestamp, safetyBackup = true } = request.body;
-        validateContainerName(name);
-        assertSafeTimestamp(timestamp);
+      const { destinationId, name, timestamp, safetyBackup = true } = request.body;
+      validateContainerName(name);
+      assertSafeTimestamp(timestamp);
 
-        const settings = await getSettings();
-        const rawMounts = await getRawMounts();
-        const [dest] = await resolveBackupDestinations(settings, rawMounts, [destinationId]);
-        const backupPath = join(dest.path, 'containers', name, timestamp);
+      const settings = await getSettings();
+      const rawMounts = await getRawMounts();
+      const [dest] = await resolveBackupDestinations(settings, rawMounts, [destinationId]);
+      const backupPath = join(dest.path, 'containers', name, timestamp);
 
-        /* Fail fast in the request (the manager re-checks inside the job). */
-        const container = (await listContainers()).find((c) => c.name === name);
-        if (!container) {
-          throw createAppError('CONTAINER_NOT_FOUND', `Container "${name}" not found — restore the backup as a new container instead`);
-        }
-        if (container.state !== 'stopped' && container.state !== 'created') {
-          throw createAppError('CONTAINER_MUST_BE_STOPPED', `Container "${name}" must be stopped to restore in place`);
-        }
-
-        const title = titleForContainerRestore(name);
-        // Held for the whole job (safety backup included): no start, backup,
-        // edit or second restore of the container while its files are replaced.
-        // Acquired with no await before createJob, so the lock and the job
-        // appear together.
-        const releaseLock = acquireContainerOperationLock(name, 'restore');
-
-        const jobId = randomBytes(12).toString('hex');
-        backupJobStore.createJob(jobId, { kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE, title, log: request.log });
-        request.log.info({ jobId, kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE, title }, 'Background job started');
-        startContainerRestoreInPlaceJob({
-          jobId,
-          name,
-          dest,
-          safetyBackup,
-          runSafetyBackup: (onProgress) => createContainerBackup(name, dest.path, { origin: 'manual', onProgress }),
-          runRestore: (onProgress) => restoreContainerBackupInPlace(backupPath, { onProgress }),
-          releaseLock,
-          log: request.log,
-        });
-        return reply.code(202).send({ jobId, title });
-      } catch (err) {
-        handleRouteError(err, reply, request);
+      /* Fail fast in the request (the manager re-checks inside the job). */
+      const container = (await listContainers()).find((c) => c.name === name);
+      if (!container) {
+        throw createAppError('CONTAINER_NOT_FOUND', `Container "${name}" not found — restore the backup as a new container instead`);
       }
+      if (container.state !== 'stopped' && container.state !== 'created') {
+        throw createAppError('CONTAINER_MUST_BE_STOPPED', `Container "${name}" must be stopped to restore in place`);
+      }
+
+      const title = titleForContainerRestore(name);
+      // Held for the whole job (safety backup included): no start, backup,
+      // edit or second restore of the container while its files are replaced.
+      // Acquired with no await before createJob, so the lock and the job
+      // appear together.
+      const releaseLock = acquireContainerOperationLock(name, 'restore');
+
+      const jobId = randomBytes(12).toString('hex');
+      backupJobStore.createJob(jobId, { kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE, title, log: request.log });
+      request.log.info({ jobId, kind: BACKGROUND_JOB_KIND.CONTAINER_RESTORE, title }, 'Background job started');
+      startContainerRestoreInPlaceJob({
+        jobId,
+        name,
+        dest,
+        safetyBackup,
+        runSafetyBackup: (onProgress) => createContainerBackup(name, dest.path, { origin: 'manual', onProgress }),
+        runRestore: (onProgress) => restoreContainerBackupInPlace(backupPath, { onProgress }),
+        releaseLock,
+        log: request.log,
+      });
+      return reply.code(202).send({ jobId, title });
     },
   });
 
@@ -454,19 +430,15 @@ export default async function backupsRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        const { destinationId, name, timestamp } = request.body || {};
-        validateContainerName(name);
-        assertSafeTimestamp(timestamp);
-        const settings = await getSettings();
-        const root = resolveBackupRoot(settings, destinationId);
-        const backupPath = join(root, 'containers', name, timestamp);
-        const roots = listConfiguredBackupRoots(settings);
-        await deleteContainerBackup(backupPath, roots);
-        return reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { destinationId, name, timestamp } = request.body || {};
+      validateContainerName(name);
+      assertSafeTimestamp(timestamp);
+      const settings = await getSettings();
+      const root = resolveBackupRoot(settings, destinationId);
+      const backupPath = join(root, 'containers', name, timestamp);
+      const roots = listConfiguredBackupRoots(settings);
+      await deleteContainerBackup(backupPath, roots);
+      return reply.code(204).send();
     },
   });
 }

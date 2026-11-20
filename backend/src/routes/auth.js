@@ -10,7 +10,7 @@ import { getRawOidcConfig, getSettings } from '../lib/settings.js';
 import { beginLogin, completeLogin } from '../lib/oidc.js';
 import { listApiTokens, createApiToken, revokeApiToken, API_TOKEN_SCOPES } from '../lib/apiTokens.js';
 import { isAuthRateLimited, recordFailedAuthAttempt, AUTH_RATE_WINDOW_SECONDS } from '../lib/loginRateLimit.js';
-import { createAppError, handleRouteError } from '../lib/routeErrors.js';
+import { asAppError, createAppError } from '../lib/appErrors.js';
 
 const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback';
 
@@ -73,19 +73,14 @@ export default async function authRoutes(fastify) {
     handler: async (request, reply) => {
       const ip = request.ip || 'unknown';
       if (isAuthRateLimited(ip)) {
-        reply.code(429).send({
-          error: 'Too many login attempts',
-          detail: `Try again after ${AUTH_RATE_WINDOW_SECONDS} seconds`,
-        });
-        return;
+        throw createAppError('RATE_LIMITED', `Too many login attempts: try again after ${AUTH_RATE_WINDOW_SECONDS} seconds`);
       }
 
       const { password } = request.body;
 
       if (!verifyPassword(password)) {
         recordFailedAuthAttempt(ip);
-        reply.code(401).send({ error: 'Invalid password', detail: 'The provided password is incorrect' });
-        return;
+        throw createAppError('LOGIN_FAILED', 'The password is incorrect');
       }
 
       const token = signJWT({ role: 'admin' });
@@ -135,19 +130,14 @@ export default async function authRoutes(fastify) {
       // wrong current password counts against the same per-IP window as login.
       const ip = request.ip || 'unknown';
       if (isAuthRateLimited(ip)) {
-        reply.code(429).send({
-          error: 'Too many password attempts',
-          detail: `Try again after ${AUTH_RATE_WINDOW_SECONDS} seconds`,
-        });
-        return;
+        throw createAppError('RATE_LIMITED', `Too many password attempts: try again after ${AUTH_RATE_WINDOW_SECONDS} seconds`);
       }
 
       // 422, not 401: the session is valid — 401 means "no/expired session" and
       // makes the frontend log every tab out.
       if (!verifyPassword(currentPassword)) {
         recordFailedAuthAttempt(ip);
-        handleRouteError(createAppError('INVALID_PASSWORD', 'Current password is incorrect'), reply, request);
-        return;
+        throw createAppError('INVALID_PASSWORD', 'Current password is incorrect');
       }
 
       try {
@@ -164,11 +154,7 @@ export default async function authRoutes(fastify) {
         setSessionCookies(reply, request, newToken, newCsrf);
         reply.code(204).send();
       } catch (err) {
-        fastify.log.error({ err }, 'Failed to update password');
-        reply.code(500).send({
-          error: 'Failed to update password',
-          detail: err.message,
-        });
+        throw asAppError(err, 'Failed to update password');
       }
     },
   });
@@ -221,13 +207,9 @@ export default async function authRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        const created = await createApiToken(request.body.label, request.body.scope);
-        reply.code(201);
-        return created;
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const created = await createApiToken(request.body.label, request.body.scope);
+      reply.code(201);
+      return created;
     },
   });
 
@@ -242,12 +224,8 @@ export default async function authRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        await revokeApiToken(request.params.id);
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      await revokeApiToken(request.params.id);
+      reply.code(204).send();
     },
   });
 

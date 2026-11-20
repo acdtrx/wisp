@@ -15,7 +15,7 @@
  * flow uses PKCE in addition to the client secret.
  */
 import { createHash, createPublicKey, verify as cryptoVerify, randomBytes } from 'node:crypto';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 
 const HTTP_TIMEOUT_MS = 10_000;
 // Discovery + JWKS rarely change; cache to avoid a round-trip per login.

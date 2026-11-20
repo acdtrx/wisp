@@ -11,7 +11,7 @@ import {
   refresh as refreshDiskSnapshot, getDevices as getDiskDevices,
 } from '../lib/storage/index.js';
 import { findContainersUsingStorageMount } from '../lib/containerManager/index.js';
-import { handleRouteError, sendError } from '../lib/routeErrors.js';
+import { asAppError, createAppError } from '../lib/appErrors.js';
 import { operationJobStore, BACKGROUND_JOB_KIND, titleForUnmount, titleForMountDelete } from '../lib/jobs/index.js';
 
 const JOB_ACCEPTED = {
@@ -77,25 +77,21 @@ export default async function mountsRoutes(fastify) {
       response: { 201: { type: 'object', properties: { id: { type: 'string' } } } },
     },
     handler: async (request, reply) => {
-      try {
-        const result = await addMount(request.body || {});
-        const created = (result.mounts || []).find((m) => m.id === result.id);
-        if (created && created.type === 'disk' && created.autoMount !== false) {
-          const devices = getDiskDevices();
-          const present = devices.find((d) => d.uuid === created.uuid);
-          if (present && !present.mountedAt) {
-            try {
-              await mountDisk(created.uuid, created.mountPath, { fsType: created.fsType, readOnly: created.readOnly });
-              refreshDiskSnapshot();
-            } catch (err) {
-              request.log.warn({ err, id: created.id }, 'Auto-mount on adopt failed — settings saved, mount can be triggered manually');
-            }
+      const result = await addMount(request.body || {});
+      const created = (result.mounts || []).find((m) => m.id === result.id);
+      if (created && created.type === 'disk' && created.autoMount !== false) {
+        const devices = getDiskDevices();
+        const present = devices.find((d) => d.uuid === created.uuid);
+        if (present && !present.mountedAt) {
+          try {
+            await mountDisk(created.uuid, created.mountPath, { fsType: created.fsType, readOnly: created.readOnly });
+            refreshDiskSnapshot();
+          } catch (err) {
+            request.log.warn({ err, id: created.id }, 'Auto-mount on adopt failed — settings saved, mount can be triggered manually');
           }
         }
-        return reply.code(201).send({ id: result.id });
-      } catch (err) {
-        handleRouteError(err, reply, request);
       }
+      return reply.code(201).send({ id: result.id });
     },
   });
 
@@ -120,12 +116,8 @@ export default async function mountsRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        await updateMount(request.params.id, request.body || {});
-        return reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      await updateMount(request.params.id, request.body || {});
+      return reply.code(204).send();
     },
   });
 
@@ -139,54 +131,47 @@ export default async function mountsRoutes(fastify) {
       response: JOB_ACCEPTED,
     },
     handler: async (request, reply) => {
-      try {
-        const mounts = await getRawMounts();
-        const d = mounts.find((x) => x.id === request.params.id);
-        if (!d) {
-          return reply.code(404).send({ error: 'Mount not found', detail: request.params.id });
-        }
-        /* Refuse if any container's mounts[*].sourceId references this id —
-         * removing it would leave the container with a dangling source on
-         * next start. Mirrors assertBridgeNotInUse / findVMsUsingImage. */
-        const inUseBy = await findContainersUsingStorageMount(d.id);
-        if (inUseBy.length > 0) {
-          return reply.code(409).send({
-            error: 'Mount in use',
-            detail: `Detach this mount from containers first: ${inUseBy.join(', ')}`,
-          });
-        }
-        const job = operationJobStore.startOperationJob({
-          kind: BACKGROUND_JOB_KIND.MOUNT_DELETE,
-          title: titleForMountDelete(d.label || d.mountPath),
-          log: request.log,
-          run: async () => {
-            /* Best-effort unmount before we forget about it; both flavours also rmdir /mnt/wisp/<name>
-             * separately (delete-only cleanup — regular unmount leaves the dir in place). */
-            try {
-              if (d.type === 'disk') {
-                await unmountDisk(d.mountPath, { ignoreNotMounted: true });
-              } else {
-                await unmountSMB(d.mountPath, { ignoreNotMounted: true });
-              }
-            } catch (err) {
-              /* Log but continue with the delete — the user is telling us to forget this entry. */
-              request.log.warn({ err, id: d.id, mountPath: d.mountPath }, 'Unmount before delete failed; removing entry anyway');
-            }
-            try {
-              await rmdirMountpoint(d.mountPath);
-            } catch (err) {
-              /* Non-fatal — leaves a stale empty dir the user can clean up, but the config entry is gone. */
-              request.log.warn({ err, mountPath: d.mountPath }, 'Mount point rmdir failed on delete');
-            }
-            const result = await removeMount(d.id);
-            if (d.type === 'disk') refreshDiskSnapshot();
-            return { mounts: result.mounts || [] };
-          },
-        });
-        return reply.code(202).send(job);
-      } catch (err) {
-        handleRouteError(err, reply, request);
+      const mounts = await getRawMounts();
+      const d = mounts.find((x) => x.id === request.params.id);
+      if (!d) {
+        throw createAppError('MOUNT_NOT_FOUND', `No mount with id "${request.params.id}"`);
       }
+      /* Refuse if any container's mounts[*].sourceId references this id —
+       * removing it would leave the container with a dangling source on
+       * next start. Mirrors assertBridgeNotInUse / findVMsUsingImage. */
+      const inUseBy = await findContainersUsingStorageMount(d.id);
+      if (inUseBy.length > 0) {
+        throw createAppError('MOUNT_IN_USE', `Detach this mount from containers first: ${inUseBy.join(', ')}`);
+      }
+      const job = operationJobStore.startOperationJob({
+        kind: BACKGROUND_JOB_KIND.MOUNT_DELETE,
+        title: titleForMountDelete(d.label || d.mountPath),
+        log: request.log,
+        run: async () => {
+          /* Best-effort unmount before we forget about it; both flavours also rmdir /mnt/wisp/<name>
+           * separately (delete-only cleanup — regular unmount leaves the dir in place). */
+          try {
+            if (d.type === 'disk') {
+              await unmountDisk(d.mountPath, { ignoreNotMounted: true });
+            } else {
+              await unmountSMB(d.mountPath, { ignoreNotMounted: true });
+            }
+          } catch (err) {
+            /* Log but continue with the delete — the user is telling us to forget this entry. */
+            request.log.warn({ err, id: d.id, mountPath: d.mountPath }, 'Unmount before delete failed; removing entry anyway');
+          }
+          try {
+            await rmdirMountpoint(d.mountPath);
+          } catch (err) {
+            /* Non-fatal — leaves a stale empty dir the user can clean up, but the config entry is gone. */
+            request.log.warn({ err, mountPath: d.mountPath }, 'Mount point rmdir failed on delete');
+          }
+          const result = await removeMount(d.id);
+          if (d.type === 'disk') refreshDiskSnapshot();
+          return { mounts: result.mounts || [] };
+        },
+      });
+      return reply.code(202).send(job);
     },
   });
 
@@ -208,7 +193,7 @@ export default async function mountsRoutes(fastify) {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async () => {
       try {
         const mounts = await getRawMounts();
         const result = [];
@@ -218,8 +203,7 @@ export default async function mountsRoutes(fastify) {
         }
         return result;
       } catch (err) {
-        fastify.log.error({ err }, 'Mount status failed');
-        sendError(reply, 500, 'Failed to get mount status', err.message);
+        throw asAppError(err, 'Failed to get mount status');
       }
     },
   });
@@ -239,38 +223,33 @@ export default async function mountsRoutes(fastify) {
       },
       response: { 200: { type: 'object', properties: { ok: { type: 'boolean' } } } },
     },
-    handler: async (request, reply) => {
-      try {
-        const body = request.body || {};
-        let share = body.share;
-        let username = body.username;
-        let password = body.password;
-        /* With an id, the saved mount supplies the credentials and any field
-         * the body carries overrides it — an edit form tests its unsaved share
-         * or username against the stored password without ever reading it. */
-        if (body.id) {
-          const mounts = await getRawMounts();
-          const d = mounts.find((x) => x.id === body.id);
-          if (!d || d.type !== 'smb') {
-            return reply.code(404).send({ error: 'SMB mount not found', detail: body.id });
-          }
-          share = body.share ?? d.share;
-          username = body.username ?? d.username;
-          password = body.password ?? d.password;
+    handler: async (request) => {
+      const body = request.body || {};
+      let share = body.share;
+      let username = body.username;
+      let password = body.password;
+      /* With an id, the saved mount supplies the credentials and any field
+       * the body carries overrides it — an edit form tests its unsaved share
+       * or username against the stored password without ever reading it. */
+      if (body.id) {
+        const mounts = await getRawMounts();
+        const d = mounts.find((x) => x.id === body.id);
+        if (!d || d.type !== 'smb') {
+          throw createAppError('MOUNT_NOT_FOUND', `No SMB mount with id "${body.id}"`);
         }
-        if (!share || !share.trim()) {
-          return reply.code(400).send({ error: 'Share is required', detail: 'Provide share or id' });
-        }
-        await checkSMBConnection(share, { username, password });
-        return { ok: true };
-      } catch (err) {
-        if (err.code === 'SMB_INVALID' || err.code === 'SMB_MOUNT_UNAVAILABLE') {
-          return reply.code(503).send({ error: err.message, detail: err.raw || err.detail || err.message });
-        }
-        fastify.log.error({ err }, 'Mount check failed');
-        const detail = (err.stderr && String(err.stderr).trim()) || err.raw || err.detail || err.message;
-        sendError(reply, 500, 'Mount check failed', detail);
+        share = body.share ?? d.share;
+        username = body.username ?? d.username;
+        password = body.password ?? d.password;
       }
+      if (!share || !share.trim()) {
+        throw createAppError('VALIDATION_FAILED', 'body/share is required unless body/id names a saved SMB mount');
+      }
+      try {
+        await checkSMBConnection(share, { username, password });
+      } catch (err) {
+        throw asAppError(err, 'SMB connection check failed');
+      }
+      return { ok: true };
     },
   });
 
@@ -281,39 +260,28 @@ export default async function mountsRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
+      const mounts = await getRawMounts();
+      const d = mounts.find((x) => x.id === request.params.id);
+      if (!d) {
+        throw createAppError('MOUNT_NOT_FOUND', `No mount with id "${request.params.id}"`);
+      }
+      if (d.type !== 'smb' && d.type !== 'disk') {
+        throw createAppError('MOUNT_INVALID', `Unknown mount type "${d.type}"`);
+      }
       try {
-        const mounts = await getRawMounts();
-        const d = mounts.find((x) => x.id === request.params.id);
-        if (!d) {
-          return reply.code(404).send({ error: 'Mount not found', detail: request.params.id });
-        }
         if (d.type === 'smb') {
           const { backupMountId } = await getSettings();
           await mountSMB(d.share, d.mountPath, {
             username: d.username, password: d.password, ownerOnly: d.id === backupMountId,
           });
-          return reply.code(204).send();
-        }
-        if (d.type === 'disk') {
+        } else {
           await mountDisk(d.uuid, d.mountPath, { fsType: d.fsType, readOnly: d.readOnly });
           refreshDiskSnapshot();
-          return reply.code(204).send();
         }
-        return reply.code(422).send({ error: 'Unknown mount type', detail: d.type });
       } catch (err) {
-        if (
-          err.code === 'SMB_INVALID' ||
-          err.code === 'SMB_MOUNT_UNAVAILABLE' ||
-          err.code === 'DISK_MOUNT_UNAVAILABLE'
-        ) {
-          return reply.code(503).send({ error: err.message, detail: err.raw || err.detail || err.message });
-        }
-        if (err.code === 'DISK_MOUNT_INVALID') {
-          return reply.code(422).send({ error: err.message, detail: err.raw || err.detail || err.message });
-        }
-        fastify.log.error({ err }, 'Mount failed');
-        sendError(reply, 500, 'Mount failed', err.raw || err.detail || err.message);
+        throw asAppError(err, `Failed to mount "${d.label || d.mountPath}"`);
       }
+      return reply.code(204).send();
     },
   });
 
@@ -326,33 +294,29 @@ export default async function mountsRoutes(fastify) {
       response: JOB_ACCEPTED,
     },
     handler: async (request, reply) => {
-      try {
-        const mounts = await getRawMounts();
-        const d = mounts.find((x) => x.id === request.params.id);
-        if (!d) {
-          return reply.code(404).send({ error: 'Mount not found', detail: request.params.id });
-        }
-        if (!(await getMountStatus(d.mountPath)).mounted) {
-          return reply.code(409).send({ error: 'Not mounted', detail: d.mountPath });
-        }
-        const job = operationJobStore.startOperationJob({
-          kind: BACKGROUND_JOB_KIND.MOUNT_UNMOUNT,
-          title: titleForUnmount(d.label || d.mountPath),
-          log: request.log,
-          run: async () => {
-            if (d.type === 'disk') {
-              await unmountDisk(d.mountPath);
-              refreshDiskSnapshot();
-            } else {
-              await unmountSMB(d.mountPath);
-            }
-            return { id: d.id };
-          },
-        });
-        return reply.code(202).send(job);
-      } catch (err) {
-        handleRouteError(err, reply, request);
+      const mounts = await getRawMounts();
+      const d = mounts.find((x) => x.id === request.params.id);
+      if (!d) {
+        throw createAppError('MOUNT_NOT_FOUND', `No mount with id "${request.params.id}"`);
       }
+      if (!(await getMountStatus(d.mountPath)).mounted) {
+        throw createAppError('MOUNT_NOT_MOUNTED', `"${d.label || d.mountPath}" is not mounted`);
+      }
+      const job = operationJobStore.startOperationJob({
+        kind: BACKGROUND_JOB_KIND.MOUNT_UNMOUNT,
+        title: titleForUnmount(d.label || d.mountPath),
+        log: request.log,
+        run: async () => {
+          if (d.type === 'disk') {
+            await unmountDisk(d.mountPath);
+            refreshDiskSnapshot();
+          } else {
+            await unmountSMB(d.mountPath);
+          }
+          return { id: d.id };
+        },
+      });
+      return reply.code(202).send(job);
     },
   });
 }

@@ -2,7 +2,7 @@
  * Caddy Reverse Proxy app module.
  * Manages Caddyfile generation, Cloudflare DNS env var, and persistent data/config mounts.
  */
-import { createAppError as containerError } from '../routeErrors.js';
+import { createAppError as containerError } from '../appErrors.js';
 
 /**
  * Default appConfig for a new Caddy container.

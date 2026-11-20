@@ -48,7 +48,7 @@ import { recordBackupAttempt } from '../lib/backupStatus.js';
 import { acquireVmOperationLock, withVmOperationLock } from '../lib/vmOperationLock.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { resolveLibraryPath, assertPathInsideAllowedRoots } from '../lib/paths.js';
-import { createAppError, handleRouteError, isExpectedAppError } from '../lib/routeErrors.js';
+import { createAppError, errorBody, isExpectedAppError } from '../lib/appErrors.js';
 import { validateVMName } from '../lib/validation.js';
 
 /** The values Wisp writes into `<video><model type>` and `<graphics type>` (API-VMS.md). */
@@ -56,15 +56,9 @@ const VIDEO_DRIVERS = ['virtio', 'qxl', 'vga'];
 const GRAPHICS_TYPES = ['vnc', 'spice'];
 
 export default async function vmsRoutes(fastify) {
-  fastify.addHook('preHandler', async (request, reply) => {
+  fastify.addHook('preHandler', async (request) => {
     const name = request.params?.name;
-    if (name !== undefined) {
-      try {
-        validateVMName(name);
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
-    }
+    if (name !== undefined) validateVMName(name);
   });
 
   // GET /vms — list all VMs
@@ -96,13 +90,7 @@ export default async function vmsRoutes(fastify) {
         },
       },
     },
-    handler: async (_request, reply) => {
-      try {
-        return await listVMs();
-      } catch (err) {
-        handleRouteError(err, reply, _request);
-      }
-    },
+    handler: async () => listVMs(),
   });
 
   // POST /vms — create VM (async job, returns jobId)
@@ -198,31 +186,27 @@ export default async function vmsRoutes(fastify) {
     },
     handler: async (request, reply) => {
       const spec = request.body;
-      try {
-        validateVMName(spec?.name);
-        /* Resolve library-relative paths to absolute and run the security check
-           here, in Wisp glue, before vmManager touches them. vmManager itself
-           is policy-agnostic about which host paths are "allowed". */
-        if (spec.cdrom1Path) {
-          spec.cdrom1Path = resolveLibraryPath(spec.cdrom1Path);
-          await assertPathInsideAllowedRoots(spec.cdrom1Path, spec.name);
-        }
-        if (spec.cdrom2Path) {
-          spec.cdrom2Path = resolveLibraryPath(spec.cdrom2Path);
-          await assertPathInsideAllowedRoots(spec.cdrom2Path, spec.name);
-        }
-        for (const dspec of [spec.disk, spec.disk2]) {
-          if (dspec && dspec.type === 'existing' && dspec.sourcePath) {
-            dspec.sourcePath = resolveLibraryPath(dspec.sourcePath);
-            await assertPathInsideAllowedRoots(dspec.sourcePath, spec.name);
-          }
-        }
-        // Name must be free in libvirt and on disk before any artifact is built:
-        // cloud-init would otherwise write into an existing VM's directory.
-        await assertVMNameAvailable(spec.name);
-      } catch (err) {
-        return handleRouteError(err, reply, request);
+      validateVMName(spec?.name);
+      /* Resolve library-relative paths to absolute and run the security check
+         here, in Wisp glue, before vmManager touches them. vmManager itself
+         is policy-agnostic about which host paths are "allowed". */
+      if (spec.cdrom1Path) {
+        spec.cdrom1Path = resolveLibraryPath(spec.cdrom1Path);
+        await assertPathInsideAllowedRoots(spec.cdrom1Path, spec.name);
       }
+      if (spec.cdrom2Path) {
+        spec.cdrom2Path = resolveLibraryPath(spec.cdrom2Path);
+        await assertPathInsideAllowedRoots(spec.cdrom2Path, spec.name);
+      }
+      for (const dspec of [spec.disk, spec.disk2]) {
+        if (dspec && dspec.type === 'existing' && dspec.sourcePath) {
+          dspec.sourcePath = resolveLibraryPath(dspec.sourcePath);
+          await assertPathInsideAllowedRoots(dspec.sourcePath, spec.name);
+        }
+      }
+      // Name must be free in libvirt and on disk before any artifact is built:
+      // cloud-init would otherwise write into an existing VM's directory.
+      await assertVMNameAvailable(spec.name);
       const jobId = randomBytes(12).toString('hex');
       const vmName = spec.name;
       const title = titleForVmCreate(vmName);
@@ -278,7 +262,7 @@ export default async function vmsRoutes(fastify) {
       const { jobId } = request.params;
       const job = createJobStore.getJob(jobId);
       if (!job) {
-        return reply.code(404).send({ error: 'Job not found', detail: jobId });
+        throw createAppError('JOB_NOT_FOUND', `No job with id "${jobId}": it never started, or ended more than 5 minutes ago`);
       }
       setupSSE(reply);
       const ok = createJobStore.registerStream(jobId, reply.raw);
@@ -319,61 +303,57 @@ export default async function vmsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        const { name } = request.params;
-        const body = request.body || {};
+      const { name } = request.params;
+      const body = request.body || {};
 
-        /* Fail fast in the request (the manager re-checks inside the job). */
-        const vm = (await listVMs()).find((v) => v.name === name);
-        if (!vm) throw createAppError('VM_NOT_FOUND', `VM "${name}" not found`);
-        if (!isOfflineState(vm.stateCode)) {
-          throw createAppError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to create a backup`);
-        }
-
-        const settings = await getSettings();
-        const rawMounts = await getRawMounts();
-        const destinations = await resolveBackupDestinations(settings, rawMounts, body.destinationIds);
-        // Acquired with no await before createJob, so the lock and the job
-        // appear together; released when the job settles.
-        const releaseLock = acquireVmOperationLock(name, 'backup');
-        const jobId = randomBytes(12).toString('hex');
-        const title = titleForBackup(name);
-        backupJobStore.createJob(jobId, {
-          kind: BACKGROUND_JOB_KIND.BACKUP,
-          title,
-          log: request.log,
-        });
-        request.log.info(
-          { jobId, kind: BACKGROUND_JOB_KIND.BACKUP, title },
-          'Background job started',
-        );
-        const destinationIds = destinations.map((d) => d.id);
-        backupToEachDestination(destinations, {
-          push: (ev) => backupJobStore.pushEvent(jobId, ev),
-          backupOne: (dest, onProgress) => createBackup(name, dest.path, { onProgress }),
-        }).then(
-          async (lastResult) => {
-            // Free the VM before announcing completion, so an action the
-            // client takes on `done` never meets a stale VM_BUSY.
-            releaseLock();
-            backupJobStore.completeJob(jobId, lastResult);
-            await recordBackupAttempt({
-              kind: 'vm', name, ok: true, origin: 'manual', destinationIds, timestamp: lastResult?.timestamp,
-            });
-          },
-          async (err) => {
-            releaseLock();
-            backupJobStore.failJob(jobId, err);
-            if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background backup job failed');
-            await recordBackupAttempt({
-              kind: 'vm', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
-            });
-          },
-        );
-        return reply.code(202).send({ jobId, title });
-      } catch (err) {
-        handleRouteError(err, reply, request);
+      /* Fail fast in the request (the manager re-checks inside the job). */
+      const vm = (await listVMs()).find((v) => v.name === name);
+      if (!vm) throw createAppError('VM_NOT_FOUND', `VM "${name}" not found`);
+      if (!isOfflineState(vm.stateCode)) {
+        throw createAppError('VM_MUST_BE_OFFLINE', `VM "${name}" must be stopped to create a backup`);
       }
+
+      const settings = await getSettings();
+      const rawMounts = await getRawMounts();
+      const destinations = await resolveBackupDestinations(settings, rawMounts, body.destinationIds);
+      // Acquired with no await before createJob, so the lock and the job
+      // appear together; released when the job settles.
+      const releaseLock = acquireVmOperationLock(name, 'backup');
+      const jobId = randomBytes(12).toString('hex');
+      const title = titleForBackup(name);
+      backupJobStore.createJob(jobId, {
+        kind: BACKGROUND_JOB_KIND.BACKUP,
+        title,
+        log: request.log,
+      });
+      request.log.info(
+        { jobId, kind: BACKGROUND_JOB_KIND.BACKUP, title },
+        'Background job started',
+      );
+      const destinationIds = destinations.map((d) => d.id);
+      backupToEachDestination(destinations, {
+        push: (ev) => backupJobStore.pushEvent(jobId, ev),
+        backupOne: (dest, onProgress) => createBackup(name, dest.path, { onProgress }),
+      }).then(
+        async (lastResult) => {
+          // Free the VM before announcing completion, so an action the
+          // client takes on `done` never meets a stale VM_BUSY.
+          releaseLock();
+          backupJobStore.completeJob(jobId, lastResult);
+          await recordBackupAttempt({
+            kind: 'vm', name, ok: true, origin: 'manual', destinationIds, timestamp: lastResult?.timestamp,
+          });
+        },
+        async (err) => {
+          releaseLock();
+          backupJobStore.failJob(jobId, err);
+          if (!isExpectedAppError(err)) request.log.error({ err, jobId }, 'Background backup job failed');
+          await recordBackupAttempt({
+            kind: 'vm', name, ok: false, origin: 'manual', destinationIds, error: err?.message,
+          });
+        },
+      );
+      return reply.code(202).send({ jobId, title });
     },
   });
 
@@ -385,7 +365,7 @@ export default async function vmsRoutes(fastify) {
       const { jobId } = request.params;
       const job = backupJobStore.getJob(jobId);
       if (!job) {
-        return reply.code(404).send({ error: 'Job not found', detail: jobId });
+        throw createAppError('JOB_NOT_FOUND', `No job with id "${jobId}": it never started, or ended more than 5 minutes ago`);
       }
       setupSSE(reply);
       const ok = backupJobStore.registerStream(jobId, reply.raw);
@@ -409,12 +389,8 @@ export default async function vmsRoutes(fastify) {
         properties: { name: { type: 'string' } },
       },
     },
-    handler: async (request, reply) => {
-      try {
-        return await getVMConfig(request.params.name);
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+    handler: async (request) => {
+      return await getVMConfig(request.params.name);
     },
   });
 
@@ -439,33 +415,29 @@ export default async function vmsRoutes(fastify) {
     // (404) or a busy one (409) is refused here; the outcome arrives over the
     // job's stream.
     handler: async (request, reply) => {
+      const { name } = request.params;
+      const deleteDisks = request.query.deleteDisks === 'true';
+      const release = acquireVmOperationLock(name, 'delete');
       try {
-        const { name } = request.params;
-        const deleteDisks = request.query.deleteDisks === 'true';
-        const release = acquireVmOperationLock(name, 'delete');
-        try {
-          await assertVMState(name, 'exists');
-        } catch (err) {
-          release();
-          throw err;
-        }
-        const job = operationJobStore.startOperationJob({
-          kind: BACKGROUND_JOB_KIND.VM_DELETE,
-          title: titleForVmDelete(name),
-          log: request.log,
-          run: async () => {
-            try {
-              await deleteVM(name, deleteDisks);
-              return { name };
-            } finally {
-              release();
-            }
-          },
-        });
-        return reply.code(202).send(job);
+        await assertVMState(name, 'exists');
       } catch (err) {
-        handleRouteError(err, reply, request);
+        release();
+        throw err;
       }
+      const job = operationJobStore.startOperationJob({
+        kind: BACKGROUND_JOB_KIND.VM_DELETE,
+        title: titleForVmDelete(name),
+        log: request.log,
+        run: async () => {
+          try {
+            await deleteVM(name, deleteDisks);
+            return { name };
+          } finally {
+            release();
+          }
+        },
+      });
+      return reply.code(202).send(job);
     },
   });
 
@@ -491,32 +463,28 @@ export default async function vmsRoutes(fastify) {
         },
       },
       handler: async (request, reply) => {
+        const { name } = request.params;
+        const release = lock ? acquireVmOperationLock(name, lock) : () => {};
         try {
-          const { name } = request.params;
-          const release = lock ? acquireVmOperationLock(name, lock) : () => {};
-          try {
-            await assertVMState(name, check); // not found, already running / not running: answered here
-          } catch (err) {
-            release();
-            throw err;
-          }
-          const job = operationJobStore.startOperationJob({
-            kind,
-            title: title(name),
-            log: request.log,
-            run: async () => {
-              try {
-                await fn(name);
-                return { name };
-              } finally {
-                release();
-              }
-            },
-          });
-          return reply.code(202).send(job);
+          await assertVMState(name, check); // not found, already running / not running: answered here
         } catch (err) {
-          handleRouteError(err, reply, request);
+          release();
+          throw err;
         }
+        const job = operationJobStore.startOperationJob({
+          kind,
+          title: title(name),
+          log: request.log,
+          run: async () => {
+            try {
+              await fn(name);
+              return { name };
+            } finally {
+              release();
+            }
+          },
+        });
+        return reply.code(202).send(job);
       },
     });
   }
@@ -539,13 +507,8 @@ export default async function vmsRoutes(fastify) {
         },
       },
       handler: async (request, reply) => {
-        try {
-          await fn(request.params.name);
-          reply.code(204).send();
-        } catch (err) {
-          request.log.warn({ err: err.message, code: err.code, detail: err.raw }, 'VM action failed');
-          handleRouteError(err, reply, request);
-        }
+        await fn(request.params.name);
+        reply.code(204).send();
       },
     });
   }
@@ -599,28 +562,24 @@ export default async function vmsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        if (request.body.name !== undefined) validateVMName(request.body.name);
-        // Every edit redefines the domain (a rename also moves the VM
-        // directory), so none may run under a backup reading the definition
-        // and disks. Rename reserves the target name inside the manager.
-        const renaming = request.body.name !== undefined && request.body.name !== request.params.name;
-        const result = await withVmOperationLock(
-          request.params.name,
-          renaming ? 'rename' : 'config edit',
-          () => updateVMConfig(request.params.name, request.body),
-        );
-        // mDNS toggle/rename: vmManager doesn't fire DomainEvent for metadata-only
-        // changes, so the publisher won't reconcile on its own. Nudge it here.
-        if (request.body.localDns === false) {
-          await unpublishVm(result.name).catch(() => { /* best effort */ });
-        } else if (request.body.localDns === true) {
-          await publishVm(result.name).catch(() => { /* best effort */ });
-        }
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
+      if (request.body.name !== undefined) validateVMName(request.body.name);
+      // Every edit redefines the domain (a rename also moves the VM
+      // directory), so none may run under a backup reading the definition
+      // and disks. Rename reserves the target name inside the manager.
+      const renaming = request.body.name !== undefined && request.body.name !== request.params.name;
+      const result = await withVmOperationLock(
+        request.params.name,
+        renaming ? 'rename' : 'config edit',
+        () => updateVMConfig(request.params.name, request.body),
+      );
+      // mDNS toggle/rename: vmManager doesn't fire DomainEvent for metadata-only
+      // changes, so the publisher won't reconcile on its own. Nudge it here.
+      if (request.body.localDns === false) {
+        await unpublishVm(result.name).catch(() => { /* best effort */ });
+      } else if (request.body.localDns === true) {
+        await publishVm(result.name).catch(() => { /* best effort */ });
       }
+      reply.code(204).send();
     },
   });
 
@@ -634,13 +593,9 @@ export default async function vmsRoutes(fastify) {
         properties: { name: { type: 'string' } },
       },
     },
-    handler: async (request, reply) => {
-      try {
-        const xml = await getVMXML(request.params.name);
-        return { xml };
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+    handler: async (request) => {
+      const xml = await getVMXML(request.params.name);
+      return { xml };
     },
   });
 
@@ -666,28 +621,24 @@ export default async function vmsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        const { slot, path, sizeGB, bus } = request.body;
-        const hasPath = path != null && path !== '';
-        const hasSize = sizeGB != null && sizeGB > 0;
-        if (hasPath && hasSize) {
-          return reply.code(422).send({ error: 'Invalid request', detail: 'Provide either path (attach existing) or sizeGB (create new), not both' });
-        }
-        if (!hasPath && !hasSize) {
-          return reply.code(422).send({ error: 'Invalid request', detail: 'Provide path (attach existing) or sizeGB (create new)' });
-        }
-        const { name } = request.params;
-        if (hasPath) {
-          const absPath = resolveLibraryPath(path);
-          await assertPathInsideAllowedRoots(absPath, name);
-          await withVmOperationLock(name, 'disk change', () => attachDisk(name, slot, absPath, bus));
-        } else {
-          await withVmOperationLock(name, 'disk change', () => createAndAttachDisk(name, slot, sizeGB, bus));
-        }
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
+      const { slot, path, sizeGB, bus } = request.body;
+      const hasPath = path != null && path !== '';
+      const hasSize = sizeGB != null && sizeGB > 0;
+      if (hasPath && hasSize) {
+        throw createAppError('INVALID_REQUEST', 'Provide either path (attach existing) or sizeGB (create new), not both');
       }
+      if (!hasPath && !hasSize) {
+        throw createAppError('INVALID_REQUEST', 'Provide path (attach existing) or sizeGB (create new)');
+      }
+      const { name } = request.params;
+      if (hasPath) {
+        const absPath = resolveLibraryPath(path);
+        await assertPathInsideAllowedRoots(absPath, name);
+        await withVmOperationLock(name, 'disk change', () => attachDisk(name, slot, absPath, bus));
+      } else {
+        await withVmOperationLock(name, 'disk change', () => createAndAttachDisk(name, slot, sizeGB, bus));
+      }
+      reply.code(204).send();
     },
   });
 
@@ -705,13 +656,9 @@ export default async function vmsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        const { name, slot } = request.params;
-        await withVmOperationLock(name, 'disk change', () => detachDisk(name, slot));
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { name, slot } = request.params;
+      await withVmOperationLock(name, 'disk change', () => detachDisk(name, slot));
+      reply.code(204).send();
     },
   });
 
@@ -737,13 +684,9 @@ export default async function vmsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        const { name, slot } = request.params;
-        await withVmOperationLock(name, 'disk change', () => resizeDiskBySlot(name, slot, request.body.sizeGB));
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { name, slot } = request.params;
+      await withVmOperationLock(name, 'disk change', () => resizeDiskBySlot(name, slot, request.body.sizeGB));
+      reply.code(204).send();
     },
   });
 
@@ -769,13 +712,9 @@ export default async function vmsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        const { name, slot } = request.params;
-        await withVmOperationLock(name, 'disk change', () => updateDiskBus(name, slot, request.body.bus));
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { name, slot } = request.params;
+      await withVmOperationLock(name, 'disk change', () => updateDiskBus(name, slot, request.body.bus));
+      reply.code(204).send();
     },
   });
 
@@ -804,15 +743,11 @@ export default async function vmsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        const { name, slot } = request.params;
-        const absPath = resolveLibraryPath(request.body.path);
-        await assertPathInsideAllowedRoots(absPath, name);
-        await withVmOperationLock(name, 'CD-ROM change', () => attachISO(name, slot, absPath));
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { name, slot } = request.params;
+      const absPath = resolveLibraryPath(request.body.path);
+      await assertPathInsideAllowedRoots(absPath, name);
+      await withVmOperationLock(name, 'CD-ROM change', () => attachISO(name, slot, absPath));
+      reply.code(204).send();
     },
   });
 
@@ -830,13 +765,9 @@ export default async function vmsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        const { name, slot } = request.params;
-        await withVmOperationLock(name, 'CD-ROM change', () => ejectISO(name, slot));
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { name, slot } = request.params;
+      await withVmOperationLock(name, 'CD-ROM change', () => ejectISO(name, slot));
+      reply.code(204).send();
     },
   });
 
@@ -862,12 +793,8 @@ export default async function vmsRoutes(fastify) {
         },
       },
     },
-    handler: async (request, reply) => {
-      try {
-        return await getVMUSBDevices(request.params.name);
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+    handler: async (request) => {
+      return await getVMUSBDevices(request.params.name);
     },
   });
 
@@ -891,14 +818,10 @@ export default async function vmsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        const { name } = request.params;
-        const { vendorId, productId } = request.body;
-        await withVmOperationLock(name, 'USB change', () => attachUSBDevice(name, vendorId, productId));
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { name } = request.params;
+      const { vendorId, productId } = request.body;
+      await withVmOperationLock(name, 'USB change', () => attachUSBDevice(name, vendorId, productId));
+      reply.code(204).send();
     },
   });
 
@@ -916,20 +839,16 @@ export default async function vmsRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        const [vendorId, productId] = request.params.id.split(':');
-        if (!vendorId || !productId) {
-          throw createAppError('INVALID_USB_ID', 'Invalid USB device ID format, expected vendorId:productId');
-        }
-        if (!/^[0-9a-fA-F]{4}$/.test(vendorId) || !/^[0-9a-fA-F]{4}$/.test(productId)) {
-          throw createAppError('INVALID_USB_ID', 'Invalid USB device ID format');
-        }
-        const { name } = request.params;
-        await withVmOperationLock(name, 'USB change', () => detachUSBDevice(name, vendorId, productId));
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
+      const [vendorId, productId] = request.params.id.split(':');
+      if (!vendorId || !productId) {
+        throw createAppError('INVALID_USB_ID', 'Invalid USB device ID format, expected vendorId:productId');
       }
+      if (!/^[0-9a-fA-F]{4}$/.test(vendorId) || !/^[0-9a-fA-F]{4}$/.test(productId)) {
+        throw createAppError('INVALID_USB_ID', 'Invalid USB device ID format');
+      }
+      const { name } = request.params;
+      await withVmOperationLock(name, 'USB change', () => detachUSBDevice(name, vendorId, productId));
+      reply.code(204).send();
     },
   });
 
@@ -947,8 +866,7 @@ export default async function vmsRoutes(fastify) {
           const stats = await getVMStats(name);
           reply.raw.write(`data: ${JSON.stringify(stats)}\n\n`);
         } catch (err) {
-          const payload = { error: err.message, detail: err.raw || err.message, code: err.code };
-          reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+          reply.raw.write(`data: ${JSON.stringify(errorBody(err))}\n\n`);
         }
       }
 

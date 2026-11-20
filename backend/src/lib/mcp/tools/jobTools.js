@@ -4,7 +4,7 @@
  * error. A finished job stays readable for 5 minutes, like on the REST API.
  */
 import { operationJobStore } from '../../jobs/index.js';
-import { createAppError } from '../../routeErrors.js';
+import { createAppError } from '../../appErrors.js';
 
 export const jobTools = [
   {
@@ -13,7 +13,7 @@ export const jobTools = [
     description:
       'Read a job a tool started (deploy_container, update_container_image, start/stop/restart_container, ' +
       'check_image_updates) — or any Wisp operation job by id. Returns status "running" with the latest ' +
-      'progress, or "done" with the result, or "error" with the error and its code. Poll it until the ' +
+      'progress, or "done" with the result, or "error" with the error code (error) and its message (detail). Poll it until the ' +
       'status is no longer "running"; a finished job stays readable for 5 minutes.',
     inputSchema: {
       type: 'object',
@@ -32,7 +32,7 @@ export const jobTools = [
       const base = { jobId, kind: job.kind, title: job.title, startedAt: new Date(job.createdAt).toISOString() };
       if (!job.done) return { ...base, status: 'running', progress: last };
       if (last?.step === 'error') {
-        return { ...base, status: 'error', error: { message: last.error, detail: last.detail, ...(last.code ? { code: last.code } : {}) } };
+        return { ...base, status: 'error', error: last.error, detail: last.detail };
       }
       const { step: _step, ...result } = last ?? {};
       return { ...base, status: 'done', result };

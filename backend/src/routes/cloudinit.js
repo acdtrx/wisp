@@ -3,20 +3,14 @@ import {
   updateCloudInit,
   detachCloudInitDisk,
 } from '../lib/cloudInit.js';
-import { handleRouteError, sendError } from '../lib/routeErrors.js';
+import { createAppError } from '../lib/appErrors.js';
 import { validateVMName } from '../lib/validation.js';
 import { withVmOperationLock } from '../lib/vmOperationLock.js';
 
 export default async function cloudInitRoutes(fastify) {
-  fastify.addHook('preHandler', async (request, reply) => {
+  fastify.addHook('preHandler', async (request) => {
     const name = request.params?.name;
-    if (name !== undefined) {
-      try {
-        validateVMName(name);
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
-    }
+    if (name !== undefined) validateVMName(name);
   });
 
   // GET /vms/:name/cloudinit — returns sanitized cloud-init config
@@ -29,13 +23,9 @@ export default async function cloudInitRoutes(fastify) {
         properties: { name: { type: 'string' } },
       },
     },
-    handler: async (request, reply) => {
-      try {
-        const config = await getCloudInitConfig(request.params.name);
-        return config || { enabled: false };
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+    handler: async (request) => {
+      const config = await getCloudInitConfig(request.params.name);
+      return config || { enabled: false };
     },
   });
 
@@ -69,16 +59,12 @@ export default async function cloudInitRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        // Rewrites cloud-init.json + the seed ISO in the VM directory and
-        // redefines the sde slot — the per-VM operation lock keeps it out of
-        // a running backup.
-        const { name } = request.params;
-        await withVmOperationLock(name, 'cloud-init change', () => updateCloudInit(name, request.body, request.log));
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      // Rewrites cloud-init.json + the seed ISO in the VM directory and
+      // redefines the sde slot — the per-VM operation lock keeps it out of
+      // a running backup.
+      const { name } = request.params;
+      await withVmOperationLock(name, 'cloud-init change', () => updateCloudInit(name, request.body, request.log));
+      reply.code(204).send();
     },
   });
 
@@ -93,13 +79,9 @@ export default async function cloudInitRoutes(fastify) {
       },
     },
     handler: async (request, reply) => {
-      try {
-        const { name } = request.params;
-        await withVmOperationLock(name, 'cloud-init change', () => detachCloudInitDisk(name));
-        reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const { name } = request.params;
+      await withVmOperationLock(name, 'cloud-init change', () => detachCloudInitDisk(name));
+      reply.code(204).send();
     },
   });
 
@@ -143,26 +125,29 @@ export default async function cloudInitRoutes(fastify) {
         properties: { username: { type: 'string', pattern: '^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$' } },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request) => {
       if (!recordGithubKeysHit(request.ip || 'unknown')) {
-        return sendError(reply, 429, 'Too many requests', `Try again after ${Math.ceil(GITHUB_KEYS_RATE_WINDOW_MS / 1000)} seconds`);
+        throw createAppError(
+          'RATE_LIMITED',
+          `Too many GitHub key lookups: try again after ${Math.ceil(GITHUB_KEYS_RATE_WINDOW_MS / 1000)} seconds`,
+        );
       }
       const { username } = request.params;
-      try {
-        // One small text reply: 10 s bounds the request handler (CODING-RULES §6).
-        const resp = await fetch(`https://github.com/${username}.keys`, { redirect: 'manual', signal: AbortSignal.timeout(10_000) });
-        if (resp.status >= 300 && resp.status < 400) {
-          return sendError(reply, 502, 'Unexpected redirect from GitHub', 'GitHub returned a redirect for a .keys lookup');
-        }
-        if (!resp.ok) {
-          return sendError(reply, 404, `No keys found for "${username}"`, `No keys found for "${username}"`);
-        }
-        const text = await resp.text();
-        const keys = text.trim().split('\n').filter(Boolean);
-        return { keys };
-      } catch (err) {
-        return sendError(reply, 502, 'Failed to fetch GitHub keys', err.message);
+      const fetchFailed = (err) => {
+        throw createAppError('GITHUB_KEYS_UNAVAILABLE', 'Failed to fetch GitHub keys', err.message);
+      };
+      // One small text reply: 10 s bounds the request handler (CODING-RULES §6).
+      const resp = await fetch(`https://github.com/${username}.keys`, { redirect: 'manual', signal: AbortSignal.timeout(10_000) })
+        .catch(fetchFailed);
+      if (resp.status >= 300 && resp.status < 400) {
+        throw createAppError('GITHUB_KEYS_UNAVAILABLE', 'GitHub answered the .keys lookup with a redirect');
       }
+      if (!resp.ok) {
+        throw createAppError('GITHUB_KEYS_NOT_FOUND', `No keys found for "${username}"`);
+      }
+      const text = await resp.text().catch(fetchFailed);
+      const keys = text.trim().split('\n').filter(Boolean);
+      return { keys };
     },
   });
 }

@@ -1,3 +1,5 @@
+import { errorBody } from '../appErrors.js';
+
 /**
  * @typedef {object} BackgroundJobMeta
  * @property {string} kind
@@ -157,21 +159,14 @@ export function createJobStore(formatResult) {
     job.done = true;
     job.finishedAt = Date.now();
     job.error = err;
-    const errMessage =
-      err && typeof err === 'object' && 'message' in err ? err.message : String(err);
-    const errRaw = err && typeof err === 'object' && 'raw' in err ? err.raw : errMessage;
+    const body = errorBody(err);
     if (job.log) {
       job.log.warn(
-        { jobId, kind: job.kind, title: job.title, code: err?.code, err: errMessage },
+        { jobId, kind: job.kind, title: job.title, code: body.error, err: err?.message ?? String(err), raw: err?.raw },
         'Background job failed',
       );
     }
-    pushEvent(jobId, {
-      step: 'error',
-      error: errMessage,
-      detail: errRaw || errMessage,
-      ...(typeof err?.code === 'string' ? { code: err.code } : {}),
-    });
+    pushEvent(jobId, { step: 'error', ...body });
     const streams = job.streams;
     job.streams = [];
     for (const stream of streams) endStream(stream);
@@ -219,10 +214,13 @@ export function createJobStore(formatResult) {
     }
     if (earliest === Infinity) return;
     const delay = Math.max(0, earliest + JOB_TTL_MS - Date.now());
+    // A sweeper never holds a process open: with nothing else running there is
+    // no one left to read the expired jobs.
     sweepTimer = setTimeout(() => {
       sweepTimer = null;
       sweepExpired('ttl');
     }, delay);
+    sweepTimer.unref();
   }
 
   /**

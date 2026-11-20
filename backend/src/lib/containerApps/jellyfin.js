@@ -10,7 +10,7 @@
  */
 import { basename } from 'node:path';
 
-import { createAppError as containerError } from '../routeErrors.js';
+import { createAppError as containerError } from '../appErrors.js';
 import { getRawMounts } from '../settings.js';
 import { listHostGpus } from '../host/index.js';
 

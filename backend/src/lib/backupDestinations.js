@@ -5,7 +5,7 @@
  * auto-mounting an unmounted SMB share on the way.
  */
 import { getMountStatus, mountSMB } from './storage/index.js';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 
 /**
  * Resolve destination ids to backup roots.

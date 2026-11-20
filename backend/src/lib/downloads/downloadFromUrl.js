@@ -19,7 +19,7 @@ import { Agent, fetch as undiciFetch } from 'undici';
 
 import { ensureImageDir } from '../paths.js';
 import { detectType } from './fileTypes.js';
-import { createAppError } from '../routeErrors.js';
+import { createAppError } from '../appErrors.js';
 import { streamResponseToFile, streamResponseToUniqueFile } from './downloadUtils.js';
 
 const MAX_REDIRECTS = 5;

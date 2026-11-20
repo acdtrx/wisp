@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { access } from 'node:fs/promises';
-import { createAppError } from '../../routeErrors.js';
+import { createAppError } from '../../appErrors.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);

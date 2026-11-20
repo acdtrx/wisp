@@ -29,7 +29,7 @@ import {
   maskContainerConfigSecrets,
 } from '../../containerApps/index.js';
 import { validateContainerName } from '../../validation.js';
-import { createAppError } from '../../routeErrors.js';
+import { createAppError } from '../../appErrors.js';
 import { withContainerOperationLock } from '../../containerOperationLock.js';
 import { startContainerLifecycleJob, startLockedContainerJob } from '../../containerJobs.js';
 import {

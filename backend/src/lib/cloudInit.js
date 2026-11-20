@@ -22,7 +22,7 @@ import { createHash } from 'node:crypto';
 import { dump as yamlDump } from 'js-yaml';
 
 import { getVMBasePath } from './paths.js';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 import { writeJsonAtomic } from './atomicJson.js';
 import {
   attachISO,

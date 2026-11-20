@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 import { getRawApiTokens, withSettingsWriteLock } from './settings.js';
 
 export const API_TOKEN_SCOPES = ['read', 'admin'];

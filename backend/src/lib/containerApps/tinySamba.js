@@ -10,7 +10,7 @@
  * restarting smbd. Server-level changes (workgroup, netbiosName, dataUid) need a
  * task restart — `requiresRestartForChange` reports those.
  */
-import { createAppError as containerError } from '../routeErrors.js';
+import { createAppError as containerError } from '../appErrors.js';
 
 const VALID_PROTOCOLS = ['SMB1', 'SMB2', 'SMB3'];
 // Workgroup / NetBIOS name: Samba accepts up to 15 chars, alnum + underscore/hyphen.

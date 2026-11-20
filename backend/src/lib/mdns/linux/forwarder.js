@@ -32,7 +32,7 @@ import net from 'node:net';
 import os from 'node:os';
 import { readFileSync } from 'node:fs';
 
-import { createAppError } from '../../routeErrors.js';
+import { createAppError } from '../../appErrors.js';
 
 const STUB_IP = '169.254.53.53';
 const PORT = 53;

@@ -39,7 +39,7 @@ import {
 } from './containerManager/index.js';
 import { backupJobStore, BACKGROUND_JOB_KIND, titleForContainerBackup } from './jobs/index.js';
 import { recordBackupAttempt } from './backupStatus.js';
-import { isExpectedAppError } from './routeErrors.js';
+import { isExpectedAppError } from './appErrors.js';
 import { tryAcquireContainerOperationLock } from './containerOperationLock.js';
 
 const TICK_MS = 60 * 1000;

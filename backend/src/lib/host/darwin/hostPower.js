@@ -1,7 +1,7 @@
 /**
  * Host power stub (macOS dev).
  */
-import { createAppError } from '../../routeErrors.js';
+import { createAppError } from '../../appErrors.js';
 
 const POWER_UNAVAILABLE = 'POWER_UNAVAILABLE';
 

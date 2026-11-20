@@ -23,7 +23,7 @@ import {
   getMountFileSize,
   execCommandInContainer,
 } from '../containerManager/index.js';
-import { createAppError } from '../routeErrors.js';
+import { createAppError } from '../appErrors.js';
 
 import {
   APP_REGISTRY,

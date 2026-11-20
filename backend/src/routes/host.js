@@ -28,7 +28,7 @@ import {
   getProfilerSoftwareOverview,
 } from '../lib/host/index.js';
 import { assertBridgeNotInUse } from '../lib/networkBridgeUsage.js';
-import { createAppError, handleRouteError, isExpectedAppError, sendError } from '../lib/routeErrors.js';
+import { asAppError, createAppError, errorBody } from '../lib/appErrors.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
 import { getDevices as getHostDisksCached, onChange as onHostDiskChange } from '../lib/storage/index.js';
 import { getCurrentVersion } from '../lib/wispUpdate.js';
@@ -118,7 +118,7 @@ export default async function hostRoutes(fastify) {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request) => {
       try {
         const info = await getHostInfo();
         info.wispVersion = getCurrentVersion();
@@ -138,34 +138,17 @@ export default async function hostRoutes(fastify) {
 
         return info;
       } catch (err) {
-        request.log.error({ err }, 'GET /host failed');
-        sendError(reply, 500, 'Failed to get host info', err.message);
+        throw asAppError(err, 'Failed to get host info');
       }
     },
   });
-
-  /* Map osUpdates error codes to HTTP status:
-   *   UPDATE_BUSY            → 409 (transient: another op is running, retry later)
-   *   UPDATE_CHECK_UNAVAILABLE → 503 (script missing, sudo refused, parser error)
-   *   anything else          → 500 */
-  function osUpdateErrorStatus(err) {
-    if (err.code === 'UPDATE_BUSY') return 409;
-    if (err.code === 'UPDATE_CHECK_UNAVAILABLE') return 503;
-    return 500;
-  }
 
   // A job (it refreshes the package index): 202 with the job id; the count
   // arrives as the job's `done` payload.
   fastify.post('/host/updates/check', {
     config: { auth: 'admin' },
     schema: { response: JOB_ACCEPTED },
-    handler: async (request, reply) => {
-      try {
-        return reply.code(202).send(startOsUpdateCheckJob(request.log));
-      } catch (err) {
-        return reply.code(osUpdateErrorStatus(err)).send({ error: err.message, detail: err.raw || err.message, code: err.code });
-      }
-    },
+    handler: async (request, reply) => reply.code(202).send(startOsUpdateCheckJob(request.log)),
   });
 
   fastify.get('/host/updates/packages', {
@@ -205,20 +188,9 @@ export default async function hostRoutes(fastify) {
        * cache yet, the same. */
       const refresh = request.query?.refresh;
       const wantFresh = refresh === '1' || refresh === 1 || refresh === true || refresh === 'true';
-      try {
-        const cached = wantFresh ? null : await listUpgradablePackages(undefined, { useCache: true, cacheOnly: true });
-        if (!cached) return reply.code(202).send(startOsUpdateCheckJob(request.log));
-        return cached;
-      } catch (err) {
-        // UPDATE_BUSY (an upgrade running) is an expected 409, not a server fault.
-        if (isExpectedAppError(err)) request.log.info({ code: err.code }, 'GET /host/updates/packages refused');
-        else request.log.error({ err }, 'GET /host/updates/packages failed');
-        reply.code(osUpdateErrorStatus(err)).send({
-          error: err.message || 'Package list failed',
-          detail: err.raw || err.detail || err.message,
-          code: err.code,
-        });
-      }
+      const cached = wantFresh ? null : await listUpgradablePackages(undefined, { useCache: true, cacheOnly: true });
+      if (!cached) return reply.code(202).send(startOsUpdateCheckJob(request.log));
+      return cached;
     },
   });
 
@@ -231,11 +203,7 @@ export default async function hostRoutes(fastify) {
     handler: async (request, reply) => {
       if (isUpdateOperationInProgress() || upgradeRunning()
         || operationJobStore.findRunningJob(BACKGROUND_JOB_KIND.OS_UPDATE_CHECK, TITLE_OS_UPDATE_CHECK)) {
-        return reply.code(409).send({
-          error: 'Another OS update operation is in progress',
-          detail: 'Wait for the running check or upgrade to finish',
-          code: 'UPDATE_BUSY',
-        });
+        throw createAppError('UPDATE_BUSY', 'Another OS update check or upgrade is in progress: wait for it to finish');
       }
       const job = operationJobStore.startOperationJob({
         kind: BACKGROUND_JOB_KIND.OS_UPGRADE,
@@ -254,12 +222,11 @@ export default async function hostRoutes(fastify) {
         200: { type: 'array', items: { type: 'string' } },
       },
     },
-    handler: async (request, reply) => {
+    handler: async () => {
       try {
         return await listHostBridges();
       } catch (err) {
-        request.log.error({ err }, 'GET /host/bridges failed');
-        sendError(reply, 500, 'Failed to list bridges', err.message);
+        throw asAppError(err, 'Failed to list bridges');
       }
     },
   });
@@ -293,16 +260,12 @@ export default async function hostRoutes(fastify) {
         },
       },
     },
-    handler: async (request, reply) => {
-      try {
-        const [managed, eligibleParents] = await Promise.all([
-          listManagedNetworkBridges(),
-          listEligibleParentBridges(),
-        ]);
-        return { managed, eligibleParents };
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+    handler: async () => {
+      const [managed, eligibleParents] = await Promise.all([
+        listManagedNetworkBridges(),
+        listEligibleParentBridges(),
+      ]);
+      return { managed, eligibleParents };
     },
   });
 
@@ -323,21 +286,17 @@ export default async function hostRoutes(fastify) {
     // (format, VLAN range, parent, an existing bridge); the created bridge is
     // the job's `done` payload.
     handler: async (request, reply) => {
-      try {
-        const plan = await planManagedNetworkBridgeCreate(request.body);
-        const job = operationJobStore.startOperationJob({
-          kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_CREATE,
-          title: titleForBridgeCreate(`${plan.baseBridge} VLAN ${plan.vlanId}`),
-          log: request.log,
-          run: async () => {
-            const b = await createManagedNetworkBridge(plan);
-            return { name: b.name, baseBridge: b.baseBridge, vlanId: b.vlanId, vlanInterface: b.vlanInterface, present: b.present };
-          },
-        });
-        return reply.code(202).send(job);
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const plan = await planManagedNetworkBridgeCreate(request.body);
+      const job = operationJobStore.startOperationJob({
+        kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_CREATE,
+        title: titleForBridgeCreate(`${plan.baseBridge} VLAN ${plan.vlanId}`),
+        log: request.log,
+        run: async () => {
+          const b = await createManagedNetworkBridge(plan);
+          return { name: b.name, baseBridge: b.baseBridge, vlanId: b.vlanId, vlanInterface: b.vlanInterface, present: b.present };
+        },
+      });
+      return reply.code(202).send(job);
     },
   });
 
@@ -356,18 +315,14 @@ export default async function hostRoutes(fastify) {
     // A job, like create: removing the bridge applies netplan. Not found and
     // in use are answered here.
     handler: async (request, reply) => {
-      try {
-        const target = await planManagedNetworkBridgeDelete(request.params.name, { assertNotInUse: assertBridgeNotInUse });
-        const job = operationJobStore.startOperationJob({
-          kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_DELETE,
-          title: titleForBridgeDelete(target.bridgeName),
-          log: request.log,
-          run: () => deleteManagedNetworkBridge(target),
-        });
-        return reply.code(202).send(job);
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      const target = await planManagedNetworkBridgeDelete(request.params.name, { assertNotInUse: assertBridgeNotInUse });
+      const job = operationJobStore.startOperationJob({
+        kind: BACKGROUND_JOB_KIND.NETWORK_BRIDGE_DELETE,
+        title: titleForBridgeDelete(target.bridgeName),
+        log: request.log,
+        run: () => deleteManagedNetworkBridge(target),
+      });
+      return reply.code(202).send(job);
     },
   });
 
@@ -378,12 +333,11 @@ export default async function hostRoutes(fastify) {
         200: { type: 'array', items: { type: 'string' } },
       },
     },
-    handler: async (request, reply) => {
+    handler: async () => {
       try {
         return await listHostFirmware();
       } catch (err) {
-        request.log.error({ err }, 'GET /host/firmware failed');
-        sendError(reply, 500, 'Failed to list firmware', err.message);
+        throw asAppError(err, 'Failed to list firmware');
       }
     },
   });
@@ -412,13 +366,12 @@ export default async function hostRoutes(fastify) {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async () => {
       try {
         const gpus = await listHostGpus();
         return { gpus };
       } catch (err) {
-        request.log.error({ err }, 'GET /host/gpus failed');
-        sendError(reply, 500, 'Failed to list GPUs', err.message);
+        throw asAppError(err, 'Failed to list GPUs');
       }
     },
   });
@@ -442,12 +395,11 @@ export default async function hostRoutes(fastify) {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async () => {
       try {
         return getHostUSBDevicesCached();
       } catch (err) {
-        request.log.error({ err }, 'GET /host/usb failed');
-        sendError(reply, 500, 'Failed to list USB devices', err.message);
+        throw asAppError(err, 'Failed to list USB devices');
       }
     },
   });
@@ -472,12 +424,11 @@ export default async function hostRoutes(fastify) {
     schema: {
       response: { 200: { type: 'array', items: diskResponseItem } },
     },
-    handler: async (request, reply) => {
+    handler: async () => {
       try {
         return getHostDisksCached();
       } catch (err) {
-        request.log.error({ err }, 'GET /host/disks failed');
-        sendError(reply, 500, 'Failed to list disks', err.message);
+        throw asAppError(err, 'Failed to list disks');
       }
     },
   });
@@ -495,8 +446,7 @@ export default async function hostRoutes(fastify) {
           reply.raw.write(`data: ${JSON.stringify(devices)}\n\n`);
         } catch (err) {
           request.log.error({ err }, 'host/disks/stream write failed');
-          const payload = { error: 'Failed to list disks', detail: err.message };
-          reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+          reply.raw.write(`data: ${JSON.stringify(errorBody(err))}\n\n`);
         }
       }
 
@@ -522,8 +472,7 @@ export default async function hostRoutes(fastify) {
           reply.raw.write(`data: ${JSON.stringify(devices)}\n\n`);
         } catch (err) {
           request.log.error({ err }, 'host/usb/stream write failed');
-          const payload = { error: 'Failed to list USB devices', detail: err.message };
-          reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+          reply.raw.write(`data: ${JSON.stringify(errorBody(err))}\n\n`);
         }
       }
 
@@ -670,12 +619,11 @@ export default async function hostRoutes(fastify) {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async () => {
       try {
         return await getHostHardwareInfo();
       } catch (err) {
-        request.log.error({ err }, 'GET /host/hardware failed');
-        sendError(reply, 500, 'Failed to get host hardware', err.message);
+        throw asAppError(err, 'Failed to get host hardware');
       }
     },
   });
@@ -686,17 +634,8 @@ export default async function hostRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        await hostShutdown();
-        return reply.code(204).send();
-      } catch (err) {
-        request.log.error({ err }, 'POST /host/power/shutdown failed');
-        const code = err.code === 'POWER_UNAVAILABLE' ? 503 : 500;
-        reply.code(code).send({
-          error: err.message || 'Shutdown failed',
-          detail: err.raw || err.detail || err.message,
-        });
-      }
+      await hostShutdown();
+      return reply.code(204).send();
     },
   });
 
@@ -706,17 +645,8 @@ export default async function hostRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        await hostReboot();
-        return reply.code(204).send();
-      } catch (err) {
-        request.log.error({ err }, 'POST /host/power/restart failed');
-        const code = err.code === 'POWER_UNAVAILABLE' ? 503 : 500;
-        reply.code(code).send({
-          error: err.message || 'Reboot failed',
-          detail: err.raw || err.detail || err.message,
-        });
-      }
+      await hostReboot();
+      return reply.code(204).send();
     },
   });
 }

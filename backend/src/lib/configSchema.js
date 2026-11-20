@@ -16,7 +16,7 @@
  */
 import { isIP } from 'node:net';
 import path from 'node:path';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 
 // Storage mounts must live under this prefix. Constraining the mountPath stops
 // an authenticated admin from mounting a hostile share over /etc, /usr, /home,

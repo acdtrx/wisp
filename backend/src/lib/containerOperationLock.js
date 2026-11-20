@@ -19,7 +19,7 @@
  * Acquire is synchronous, so a caller that acquires before its first `await`
  * after the check cannot race another request for the same container.
  */
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 
 /** @type {Map<string, string>} container name → operation label holding the lock */
 const held = new Map();

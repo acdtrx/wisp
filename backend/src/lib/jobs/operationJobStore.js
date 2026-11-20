@@ -11,7 +11,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { isExpectedAppError } from '../routeErrors.js';
+import { isExpectedAppError } from '../appErrors.js';
 import { createJobStore as createJobStoreFactory } from './jobStore.js';
 
 const store = createJobStoreFactory((result) => (result && typeof result === 'object' ? result : {}));

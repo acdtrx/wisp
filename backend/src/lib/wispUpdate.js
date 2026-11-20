@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { execFile as execFileCb, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 import { getSettings } from './settings.js';
 import { ssrfSafeFetch, writeResponseToFile } from './downloads/index.js';
 import { createStallWatchdog, stallMinutes, killProcessGroup } from './storage/index.js';

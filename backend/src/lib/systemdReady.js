@@ -10,7 +10,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 
 const execFileAsync = promisify(execFile);
 

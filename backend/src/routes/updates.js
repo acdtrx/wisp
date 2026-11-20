@@ -8,7 +8,7 @@ import {
 import {
   listBackgroundJobs, operationJobStore, BACKGROUND_JOB_KIND, titleForSelfUpdate,
 } from '../lib/jobs/index.js';
-import { handleRouteError } from '../lib/routeErrors.js';
+import { createAppError } from '../lib/appErrors.js';
 
 function activeOtherJobs() {
   return listBackgroundJobs().filter((j) => !j.done);
@@ -41,12 +41,8 @@ export default async function updatesRoutes(fastify) {
     config: { auth: 'admin' },
     schema: { response: { 204: { type: 'null' } } },
     handler: async (request, reply) => {
-      try {
-        await checkForUpdate();
-        return reply.code(204).send();
-      } catch (err) {
-        handleRouteError(err, reply, request);
-      }
+      await checkForUpdate();
+      return reply.code(204).send();
     },
   });
 
@@ -81,29 +77,29 @@ export default async function updatesRoutes(fastify) {
     handler: async (request, reply) => {
       const status = getCachedStatus();
       if (!status.available) {
-        return reply.code(409).send({
-          error: 'No update available',
-          detail: status.latest ? `Already on ${status.current}` : 'Run check first',
-        });
+        throw createAppError(
+          'UPDATE_NOT_AVAILABLE',
+          status.latest ? `No update available: already on ${status.current}` : 'No update available: run a check first',
+        );
       }
       const force = request.query?.force === '1' || request.query?.force === 'true';
       if (!force) {
         const others = activeOtherJobs();
         if (others.length > 0) {
-          return reply.code(409).send({
-            error: 'Other background jobs are active',
-            detail: `${others.length} job(s) running — pass force=1 to override`,
-          });
+          throw createAppError(
+            'UPDATE_JOBS_ACTIVE',
+            `${others.length} other background job(s) are running: pass force=1 to install anyway`,
+          );
         }
       }
 
       // Claimed before the first await; `force` doesn't bypass it.
       const releaseInstall = claimUpdateInstall();
       if (!releaseInstall) {
-        return reply.code(409).send({
-          error: 'Update already in progress',
-          detail: 'An install was already started — wait for Wisp to restart on the new version',
-        });
+        throw createAppError(
+          'UPDATE_INSTALL_IN_PROGRESS',
+          'An update install is already in progress: wait for Wisp to restart on the new version',
+        );
       }
 
       /* A job: download, verify and extract, then hand off to the privileged

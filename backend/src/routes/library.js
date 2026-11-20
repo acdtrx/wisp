@@ -22,7 +22,7 @@ import {
 import { ensureImageDir, getImagePath } from '../lib/paths.js';
 import { findVMsUsingImage } from '../lib/vmManager/index.js';
 import { onSSEClose, setupSSE } from '../lib/sse.js';
-import { isExpectedAppError, sendError } from '../lib/routeErrors.js';
+import { createAppError, isExpectedAppError } from '../lib/appErrors.js';
 import { watchRequestBody } from '../lib/requestBodyWatch.js';
 
 function validateFilename(name) {
@@ -60,7 +60,7 @@ export default async function libraryRoutes(fastify) {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request) => {
       const dir = await ensureImageDir();
       const typeFilter = request.query.type;
 
@@ -68,7 +68,7 @@ export default async function libraryRoutes(fastify) {
       try {
         entries = await readdir(dir);
       } catch (err) {
-        return sendError(reply, 500, 'Failed to read image directory', err.message);
+        throw createAppError('LIBRARY_IO_FAILED', 'Failed to read the image library', err.message);
       }
 
       const files = [];
@@ -119,14 +119,12 @@ export default async function libraryRoutes(fastify) {
     const data = await request.file();
 
     if (!data) {
-      reply.code(400).send({ error: 'No file provided', detail: 'Request must include a file upload' });
-      return;
+      throw createAppError('UPLOAD_NO_FILE', 'The request must include a file upload');
     }
 
     const filename = basename(data.filename);
     if (!validateFilename(filename)) {
-      reply.code(422).send({ error: 'Invalid filename', detail: 'Filename contains invalid characters' });
-      return;
+      throw createAppError('INVALID_FILENAME', `Filename "${filename}" contains invalid characters`);
     }
 
     // fastify-multipart sets `data.file.truncated` when the configured fileSize
@@ -135,15 +133,10 @@ export default async function libraryRoutes(fastify) {
       await saveLibraryUpload(filename, data.file);
     } catch (err) {
       if (err.code === 'EEXIST') {
-        reply.code(409).send({ error: 'File already exists', detail: `A file named "${filename}" already exists in the library` });
-        return;
+        throw createAppError('LIBRARY_FILE_EXISTS', `A file named "${filename}" already exists in the library`);
       }
-      if (err.code === 'LIBRARY_UPLOAD_TOO_LARGE') {
-        reply.code(422).send({ error: 'File too large', detail: 'Upload exceeded the configured size limit' });
-        return;
-      }
-      reply.code(500).send({ error: 'Upload failed', detail: err.message });
-      return;
+      if (err.code === 'UPLOAD_TOO_LARGE') throw err;
+      throw createAppError('LIBRARY_IO_FAILED', `Failed to save the upload "${filename}"`, err.message);
     }
     reply.code(204).send();
   }
@@ -164,8 +157,7 @@ export default async function libraryRoutes(fastify) {
       const { filename } = request.params;
 
       if (!validateFilename(filename)) {
-        reply.code(422).send({ error: 'Invalid filename', detail: 'Filename contains invalid characters' });
-        return;
+        throw createAppError('INVALID_FILENAME', `Filename "${filename}" contains invalid characters`);
       }
 
       const dir = getImagePath();
@@ -175,8 +167,7 @@ export default async function libraryRoutes(fastify) {
         await access(filePath);
       } catch {
         /* ENOENT or unreadable */
-        reply.code(404).send({ error: 'File not found', detail: `"${filename}" does not exist in the library` });
-        return;
+        throw createAppError('LIBRARY_FILE_NOT_FOUND', `"${filename}" does not exist in the library`);
       }
 
       // Refuse to remove a library file that's still referenced by any VM —
@@ -185,18 +176,13 @@ export default async function libraryRoutes(fastify) {
       // assertBridgeNotInUse for managed bridges.
       const inUseBy = await findVMsUsingImage(filePath);
       if (inUseBy.length > 0) {
-        reply.code(409).send({
-          error: 'File in use',
-          detail: `Detach "${filename}" from these VMs first: ${inUseBy.join(', ')}`,
-        });
-        return;
+        throw createAppError('LIBRARY_FILE_IN_USE', `Detach "${filename}" from these VMs first: ${inUseBy.join(', ')}`);
       }
 
       try {
         await deleteLibraryFile(filename);
       } catch (err) {
-        reply.code(500).send({ error: 'Delete failed', detail: err.message });
-        return;
+        throw createAppError('LIBRARY_IO_FAILED', `Failed to delete "${filename}"`, err.message);
       }
 
       reply.code(204).send();
@@ -225,10 +211,10 @@ export default async function libraryRoutes(fastify) {
         },
       },
     },
-    handler: async (request, reply) => {
+    handler: async (request) => {
       const { url } = request.query;
       if (!url || typeof url !== 'string') {
-        return reply.code(400).send({ error: 'Missing url', detail: 'Query parameter url is required' });
+        throw createAppError('VALIDATION_FAILED', 'querystring/url is required');
       }
       const result = await checkUrl(url);
       return result;
@@ -258,10 +244,10 @@ export default async function libraryRoutes(fastify) {
     handler: async (request, reply) => {
       const { url } = request.body;
       if (!url || typeof url !== 'string') {
-        return reply.code(400).send({ error: 'Missing url', detail: 'Request body must include url' });
+        throw createAppError('VALIDATION_FAILED', 'body/url is required');
       }
       if (!isAllowedUrl(url)) {
-        return reply.code(422).send({ error: 'Invalid URL', detail: 'Only HTTP and HTTPS URLs are allowed' });
+        throw createAppError('INVALID_URL', 'Only HTTP and HTTPS URLs are allowed');
       }
       const jobId = randomBytes(12).toString('hex');
       const title = titleForLibraryDownloadUrl(url);
@@ -444,7 +430,7 @@ export default async function libraryRoutes(fastify) {
       const { jobId } = request.params;
       const job = downloadJobStore.getJob(jobId);
       if (!job) {
-        return reply.code(404).send({ error: 'Job not found', detail: jobId });
+        throw createAppError('JOB_NOT_FOUND', `No job with id "${jobId}": it never started, or ended more than 5 minutes ago`);
       }
       setupSSE(reply);
       const ok = downloadJobStore.registerStream(jobId, reply.raw);
@@ -483,13 +469,11 @@ export default async function libraryRoutes(fastify) {
       const { name: newName } = request.body;
 
       if (!validateFilename(filename)) {
-        reply.code(422).send({ error: 'Invalid filename', detail: 'Current filename contains invalid characters' });
-        return;
+        throw createAppError('INVALID_FILENAME', `Filename "${filename}" contains invalid characters`);
       }
 
       if (!validateFilename(newName)) {
-        reply.code(422).send({ error: 'Invalid new name', detail: 'New filename contains invalid characters' });
-        return;
+        throw createAppError('INVALID_FILENAME', `New filename "${newName}" contains invalid characters`);
       }
 
       const dir = getImagePath();
@@ -500,17 +484,13 @@ export default async function libraryRoutes(fastify) {
         await access(oldPath);
       } catch {
         /* source missing */
-        reply.code(404).send({ error: 'File not found', detail: `"${filename}" does not exist in the library` });
-        return;
+        throw createAppError('LIBRARY_FILE_NOT_FOUND', `"${filename}" does not exist in the library`);
       }
 
       if (filename !== newName) {
-        try {
-          await access(newPath);
-          reply.code(409).send({ error: 'Name already taken', detail: `A file named "${newName}" already exists` });
-          return;
-        } catch {
-          /* target name free — proceed with rename */
+        const taken = await access(newPath).then(() => true, () => false);
+        if (taken) {
+          throw createAppError('LIBRARY_FILE_EXISTS', `A file named "${newName}" already exists in the library`);
         }
       }
 
@@ -520,19 +500,14 @@ export default async function libraryRoutes(fastify) {
       if (filename !== newName) {
         const inUseBy = await findVMsUsingImage(oldPath);
         if (inUseBy.length > 0) {
-          reply.code(409).send({
-            error: 'File in use',
-            detail: `Detach "${filename}" from these VMs first: ${inUseBy.join(', ')}`,
-          });
-          return;
+          throw createAppError('LIBRARY_FILE_IN_USE', `Detach "${filename}" from these VMs first: ${inUseBy.join(', ')}`);
         }
       }
 
       try {
         await renameLibraryFile(filename, newName);
       } catch (err) {
-        reply.code(500).send({ error: 'Rename failed', detail: err.message });
-        return;
+        throw createAppError('LIBRARY_IO_FAILED', `Failed to rename "${filename}" to "${newName}"`, err.message);
       }
 
       reply.code(204).send();

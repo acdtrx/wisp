@@ -12,7 +12,7 @@
  *      builtins, npm packages, their own files and the mdns, networking and
  *      storage facades (never lib/host).
  *   4. Carved modules — host, networking, mdns and storage import their own
- *      files, each other's facades and `createAppError` from lib/routeErrors.js,
+ *      files, each other's facades and `createAppError` from lib/appErrors.js,
  *      and nothing else of Wisp's glue.
  *   5. No import cycles (docs/ARCHITECTURE.md, Repo layout) — over static
  *      imports and the literal values of `import()` / `require()` calls, a
@@ -464,10 +464,10 @@ async function main() {
         if (targetModule === fileModule) continue;
         const isCarved = CARVED.includes(fileModule);
         if (targetModule && (isCarved ? CARVED : MANAGER_CARVED).includes(targetModule)) continue;
-        if (isCarved && targetRel === `${LIB}/routeErrors.js`) {
+        if (isCarved && targetRel === `${LIB}/appErrors.js`) {
           const names = (clause || '').replace(/[{}\s]/g, '').split(',').filter(Boolean);
           if (names.length > 0 && names.every((n) => n === 'createAppError')) continue;
-          report('carved modules may import only createAppError from lib/routeErrors.js');
+          report('carved modules may import only createAppError from lib/appErrors.js');
           continue;
         }
         report(isCarved

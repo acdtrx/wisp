@@ -4,7 +4,7 @@
 import { access, writeFile, unlink, rm, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAppError } from '../../routeErrors.js';
+import { createAppError } from '../../appErrors.js';
 import { execHelper } from './helperExec.js';
 
 /** The helper's own unmount bound (60 s + 5 s grace) ends inside this — long enough to flush after a large backup. */

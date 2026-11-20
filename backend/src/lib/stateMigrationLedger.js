@@ -4,7 +4,7 @@
  * ledger's shape, and which migrations are pending. lib/stateMigrations.js does
  * the reading, importing, running and writing around them.
  */
-import { createAppError } from './routeErrors.js';
+import { createAppError } from './appErrors.js';
 
 const MIGRATION_FILE_RE = /^\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.js$/;
 

@@ -1,7 +1,7 @@
 /**
  * SMB mount stub (macOS dev).
  */
-import { createAppError } from '../../routeErrors.js';
+import { createAppError } from '../../appErrors.js';
 
 const UNAVAILABLE = 'SMB_MOUNT_UNAVAILABLE';
 

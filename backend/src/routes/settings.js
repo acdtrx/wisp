@@ -1,5 +1,5 @@
 import { getSettings, updateSettings, updateOidcSettings } from '../lib/settings.js';
-import { sendError, handleRouteError, createAppError } from '../lib/routeErrors.js';
+import { createAppError } from '../lib/appErrors.js';
 import { refreshWispAnnouncement } from '../lib/wispDiscovery.js';
 import { mountResponseSchema } from './mounts.js';
 
@@ -82,42 +82,26 @@ export default async function settingsRoutes(fastify) {
     handler: async (request, reply) => {
       const body = request.body || {};
       if (body.oidc !== undefined) {
-        handleRouteError(
-          createAppError(
-            'OIDC_SESSION_ONLY',
-            'OIDC settings require a browser session',
-            // No paths here: handleRouteError redacts anything path-shaped.
-            'The oidc key is not accepted here; configure single sign-on from a browser session (Host → App Config → Single sign-on)',
-          ),
-          reply,
-          request,
+        throw createAppError(
+          'OIDC_SESSION_ONLY',
+          'OIDC settings require a browser session',
+          // No paths here: the detail is redacted, and anything path-shaped with it.
+          'The oidc key is not accepted here; configure single sign-on from a browser session (Host → App Config → Single sign-on)',
         );
-        return;
       }
-      try {
-        await updateSettings(body);
-        // Re-announce on the LAN when a discovery-relevant field changed —
-        // not on every save: re-registering is a goodbye+announce on the
-        // wire, so peers would see this server flicker in their dropdowns.
-        // Fire-and-forget: PATCH latency must not depend on DBus.
-        if (
-          body.serverName !== undefined ||
-          body.discoveryEnabled !== undefined ||
-          body.advertisedUrl !== undefined
-        ) {
-          refreshWispAnnouncement().catch(() => {});
-        }
-        reply.code(204).send();
-      } catch (err) {
-        // Only the validation codes take the 422 path — Node fs errors also
-        // carry a truthy `code` (EACCES, ENOSPC) and must keep the generic 500.
-        if (['INVALID_URL', 'INVALID_BACKUP_SCHEDULE', 'INVALID_SETTINGS'].includes(err?.code)) {
-          handleRouteError(err, reply, request);
-          return;
-        }
-        fastify.log.error({ err }, 'Failed to update settings');
-        sendError(reply, 500, 'Failed to save settings', err.message);
+      await updateSettings(body);
+      // Re-announce on the LAN when a discovery-relevant field changed —
+      // not on every save: re-registering is a goodbye+announce on the
+      // wire, so peers would see this server flicker in their dropdowns.
+      // Fire-and-forget: PATCH latency must not depend on DBus.
+      if (
+        body.serverName !== undefined ||
+        body.discoveryEnabled !== undefined ||
+        body.advertisedUrl !== undefined
+      ) {
+        refreshWispAnnouncement().catch(() => {});
       }
+      reply.code(204).send();
     },
   });
 
@@ -142,17 +126,8 @@ export default async function settingsRoutes(fastify) {
       response: { 204: { type: 'null' } },
     },
     handler: async (request, reply) => {
-      try {
-        await updateOidcSettings(request.body || {});
-        reply.code(204).send();
-      } catch (err) {
-        if (err?.code === 'INVALID_OIDC') {
-          handleRouteError(err, reply, request);
-          return;
-        }
-        fastify.log.error({ err }, 'Failed to update OIDC settings');
-        sendError(reply, 500, 'Failed to save OIDC settings', err.message);
-      }
+      await updateOidcSettings(request.body || {});
+      reply.code(204).send();
     },
   });
 }

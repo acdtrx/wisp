@@ -11,7 +11,7 @@ import { pipeline } from 'node:stream/promises';
 import { ensureImageDir } from '../paths.js';
 import { openUniqueFile } from './downloadUtils.js';
 import { downloadWithProgress } from './downloadFromUrl.js';
-import { createAppError } from '../routeErrors.js';
+import { createAppError } from '../appErrors.js';
 import { createStallWatchdog, stallMinutes } from '../storage/index.js';
 
 /** The release lookup is one small JSON reply (CODING-RULES §6). */

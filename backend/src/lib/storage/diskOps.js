@@ -4,7 +4,7 @@ import { access, constants, open } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { createInterface } from 'node:readline';
 
-import { createAppError } from '../routeErrors.js';
+import { createAppError } from '../appErrors.js';
 import { createStallWatchdog, fileBlocksProbe, processReadProbe, stallMinutes } from './stallWatchdog.js';
 
 const execFile = promisify(execFileCb);

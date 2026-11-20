@@ -15,7 +15,7 @@
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 
-import { createAppError as containerError } from '../routeErrors.js';
+import { createAppError as containerError } from '../appErrors.js';
 
 const CONFIG_PATH = '/etc/zot/config.json';
 const HTPASSWD_PATH = '/etc/zot/htpasswd';

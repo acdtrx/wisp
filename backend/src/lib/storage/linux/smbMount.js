@@ -4,7 +4,7 @@
 import { access, writeFile, unlink, rm, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAppError } from '../../routeErrors.js';
+import { createAppError } from '../../appErrors.js';
 import { execHelper } from './helperExec.js';
 import { isMountPoint } from '../mountTable.js';
 
@@ -85,6 +85,12 @@ async function getScriptPath() {
   }
 }
 
+/** A failed helper run as SMB_MOUNT_UNAVAILABLE, mount.cifs's stderr as the cause, credentials masked. */
+function helperFailure(message, err) {
+  if (err?.code === UNAVAILABLE) return err;
+  return createAppError(UNAVAILABLE, message, sanitizeStderr(String(err?.stderr || '').trim() || err?.message));
+}
+
 async function runHelper(args, { timeout = 30000 } = {}) {
   return execHelper(await getScriptPath(), args, { timeout });
 }
@@ -138,6 +144,8 @@ async function _mountSMB(share, mountPath, { username, password, ownerOnly } = {
 
   try {
     await runHelper(['smb', 'mount', configPath]);
+  } catch (err) {
+    throw helperFailure(`Failed to mount ${share}`, err);
   } finally {
     await unlink(configPath).catch(() => {});
     await unlink(credentialsPath).catch(() => {});
@@ -183,6 +191,8 @@ export async function checkSMBConnection(share, { username, password } = {}) {
   );
   try {
     await runHelper(['smb', 'check', configPath]);
+  } catch (err) {
+    throw helperFailure(`Could not connect to ${trimmedShare}`, err);
   } finally {
     await unlink(configPath).catch(() => {});
     await unlink(credentialsPath).catch(() => {});

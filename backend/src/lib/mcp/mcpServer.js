@@ -10,6 +10,7 @@
  * tokens to /mcp and passes the token scope in. Per-tool scope is enforced
  * here (tools/list hides what the token can't call; tools/call double-checks).
  */
+import { createAppError, errorBody } from '../appErrors.js';
 import { getCurrentVersion } from '../wispUpdate.js';
 import { allTools } from './tools/index.js';
 
@@ -49,14 +50,12 @@ function toolResult(id, data) {
   });
 }
 
+/** A tool failure: the one error body (`{ error, detail }`), as JSON text and structured. */
 function toolError(id, err) {
-  const payload = {
-    error: err?.message ?? 'Tool failed',
-    detail: err?.raw ?? err?.message ?? 'Unknown error',
-    ...(err?.code ? { code: err.code } : {}),
-  };
+  const body = errorBody(err);
   return rpcResult(id, {
-    content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }],
+    content: [{ type: 'text', text: JSON.stringify(body, null, 2) }],
+    structuredContent: body,
     isError: true,
   });
 }
@@ -113,13 +112,13 @@ export async function handleMcpMessage(message, { scope, log }) {
         return { status: 200, body: rpcError(id, INVALID_PARAMS, `Unknown tool: ${String(name)}`) };
       }
       if (tool.scope !== 'read' && scope !== 'admin') {
-        return { status: 200, body: toolError(id, { message: 'Insufficient scope', raw: `Tool "${tool.name}" requires an admin-scoped API token` }) };
+        return { status: 200, body: toolError(id, createAppError('SCOPE_INSUFFICIENT', `Tool "${tool.name}" requires an admin-scoped API token`)) };
       }
       try {
         const data = await tool.handler(params?.arguments ?? {}, { log });
         return { status: 200, body: toolResult(id, data) };
       } catch (err) {
-        log?.warn({ err: err.message, code: err.code, tool: tool.name }, 'MCP tool failed');
+        log?.warn({ err: err?.message, code: err?.code, raw: err?.raw, tool: tool.name }, 'MCP tool failed');
         return { status: 200, body: toolError(id, err) };
       }
     }
