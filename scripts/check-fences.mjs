@@ -30,6 +30,12 @@
  *      (lib/stateMigrations.js, lib/stateMigrationLedger.js), and none but the
  *      runner and the checks reaches for the migrations directory.
  *
+ *   7. Routes take no operation lock (CODING-RULES §7; ARCHITECTURE.md, Repo
+ *      layout), checked in the same import scan as rules 1–5: no file under
+ *      backend/src/routes imports lib/vmOperationLock.js or
+ *      lib/containerOperationLock.js. A command's lock is the job starter's or
+ *      its operation module's (lib/vmOperations.js, lib/containerOperations.js).
+ *
  * A module's darwin stubs are its own files. Migrations are glue.
  * Specifiers inside comments (JSDoc type imports) are skipped: they load
  * nothing. A reviewed allowance is one line in EXCEPTIONS.
@@ -78,6 +84,9 @@ const PACKAGE_FENCES = {
 };
 
 const STRICT_MANAGERS = ['vmManager', 'containerManager'];
+const ROUTES = 'backend/src/routes/';
+/** Rule 7: the lock modules, which no route imports. */
+const LOCK_MODULES = [`${LIB}/vmOperationLock.js`, `${LIB}/containerOperationLock.js`];
 const CARVED = ['host', 'networking', 'mdns', 'storage'];
 /** The carved modules a strict manager may import (CODING-RULES §7). */
 const MANAGER_CARVED = ['mdns', 'networking', 'storage'];
@@ -453,6 +462,11 @@ async function main() {
       // `/`: reaching inside a module's folder counts as reaching into the module).
       const targetRel = found.prefix ? specifier : rel(path.resolve(path.dirname(file), specifier));
       const targetModule = moduleOf(targetRel);
+
+      if (fileRel.startsWith(ROUTES) && LOCK_MODULES.includes(targetRel)) {
+        report('a route takes no operation lock: call the command in lib/vmOperations.js or lib/containerOperations.js');
+        continue;
+      }
 
       if (targetModule && targetModule !== fileModule && facaded.has(targetModule)
         && targetRel !== `${LIB}/${targetModule}/index.js`) {
