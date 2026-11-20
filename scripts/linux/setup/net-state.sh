@@ -67,8 +67,9 @@ client_id() {
 #   addr4 <cidr>    every global IPv4 address
 #   addr6 <cidr>    every global IPv6 address that is configured, not learned
 #                   (no "dynamic": SLAAC and DHCPv6 addresses follow the link)
-#   route4 <route>  every IPv4 route through the interface, as `ip route` puts it
-#   route6 <route>  every configured IPv6 route (proto static)
+#   route4 <route>  every IPv4 route through the interface, as `ip route` puts it:
+#                   `linkdown` with it when the interface has no carrier
+#   route6 <route>  every configured IPv6 route (proto static), the same way
 #   dns <server>, domain <name>   the interface's name servers and search
 #                   domains, as systemd-resolved holds them (none when it
 #                   does not run: systemd-networkd's take effect through it)
@@ -80,9 +81,9 @@ l3_state() {
   out="$(net_call ip -6 -o addr show dev "$dev" scope global)" || return 1
   facts+="$(awk 'NF && !/ dynamic/ { print "addr6 " $4 }' <<<"$out")"$'\n'
   out="$(net_call ip -4 route show dev "$dev")" || return 1
-  facts+="$(sed -E '/^$/d; s/ +linkdown//; s/ +$//; s/^/route4 /' <<<"$out")"$'\n'
+  facts+="$(sed -E '/^$/d; s/ +$//; s/^/route4 /' <<<"$out")"$'\n'
   out="$(net_call ip -6 route show dev "$dev" proto static)" || return 1
-  facts+="$(sed -E '/^$/d; s/ +linkdown//; s/ +(pref medium|expires [^ ]+)//g; s/ +$//; s/^/route6 /' <<<"$out")"$'\n'
+  facts+="$(sed -E '/^$/d; s/ +(pref medium|expires [^ ]+)//g; s/ +$//; s/^/route6 /' <<<"$out")"$'\n'
   if net_call systemctl is-active --quiet systemd-resolved; then
     out="$(net_call resolvectl dns "$dev")" || return 1
     for line in ${out#*:}; do facts+="dns $line"$'\n'; done

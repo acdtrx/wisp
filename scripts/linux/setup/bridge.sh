@@ -15,10 +15,11 @@
 # NET_APPLY_SEC, the bridge must hold the uplink's former hardware address, IPv4
 # addresses and default route — and on DHCP its client identifier and name
 # servers, on a static address all its routes, name servers and search domains
-# — the uplink none of it, and systemd-networkd must run each from the unit
-# netplan renders for it. Otherwise, or when the step is stopped, it puts the
-# kept original back, applies it, and fails saying so; failing before its
-# switch, it takes back only what it wrote.
+# — the uplink none of it, the uplink must be its port and the bridge have
+# carrier, and systemd-networkd must run each from the unit netplan renders for
+# it. Otherwise, or when the step is stopped, it puts the kept original back,
+# applies it, and fails saying so; failing before its switch, it takes back
+# only what it wrote.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -116,9 +117,12 @@ facts_of() {
 # step's now.*; a part that cannot be read (the bridge not there yet) is
 # marked so. Run through step_run, so a stop ends it at once.
 read_now() {
-  local dir="$STEP_TMP_DIR" state
+  local dir="$STEP_TMP_DIR" state master
   rm -f "$dir"/now.*
   cat "/sys/class/net/$BRIDGE/address" > "$dir/now.mac" 2>/dev/null || echo unreadable > "$dir/now.mac"
+  master="$(readlink "/sys/class/net/$UPLINK/master" 2>/dev/null)" || master=none
+  echo "${master##*/}" > "$dir/now.master"
+  cat "/sys/class/net/$BRIDGE/carrier" > "$dir/now.carrier" 2>/dev/null || echo unreadable > "$dir/now.carrier"
   if state="$(l3_state "$BRIDGE" 2>/dev/null)"; then facts_of <<<"$state"; else echo unreadable; fi > "$dir/now.have"
   if state="$(l3_state "$UPLINK" 2>/dev/null)"; then grep -E '^(addr[46]|route[46]) ' <<<"$state" || true; else echo unreadable; fi > "$dir/now.port"
   if [[ "$UPLINK_MODE" == dhcp ]]; then client_id "$BRIDGE" 2>/dev/null || echo unreadable; fi > "$dir/now.cid"
@@ -127,25 +131,31 @@ read_now() {
 }
 # now <part>: one part of the last read.
 now() { cat "$STEP_TMP_DIR/now.$1" 2>/dev/null || true; }
-# bridge_check: within NET_APPLY_SEC, the bridge holds what the uplink held
-# (the plan's uplink.state), the uplink none of it, and systemd-networkd runs
-# each from the unit netplan renders for it. There is no one event to wait on:
-# read once a second. Sets WHY to what differs.
+# bridge_check: within NET_APPLY_SEC, the uplink is the bridge's port and the
+# bridge has carrier, the bridge holds what the uplink held (the plan's
+# uplink.state), the uplink none of it, and systemd-networkd runs each from the
+# unit netplan renders for it. A bridge without its port can hold static
+# addresses and their routes all the same (netplan configures a bridge without
+# carrier). There is no one event to wait on: read once a second. Sets WHY to
+# what differs.
 bridge_check() {
   local deadline=$(( SECONDS + NET_APPLY_SEC )) bridge_unit="/run/systemd/network/10-netplan-$BRIDGE.network"
-  local want mac have port cid bunit uunit
+  local want mac master carrier have port cid bunit uunit
   want="$(facts_of < "$NET_PLAN_DIR/uplink.state")"
   while :; do
     step_run 0 read_now || true
-    mac="$(now mac)" have="$(now have)" port="$(now port)" cid="$(now cid)"
+    mac="$(now mac)" master="$(now master)" carrier="$(now carrier)"
+    have="$(now have)" port="$(now port)" cid="$(now cid)"
     bunit="$(now bridge-unit)" uunit="$(now uplink-unit)"
-    if [[ "$mac" == "$UPLINK_MAC" && "$have" == "$want" && -z "$port" && "$cid" == "${UPLINK_CLIENT_ID:-}" \
+    if [[ "$mac" == "$UPLINK_MAC" && "$master" == "$BRIDGE" && "$carrier" == 1 && "$have" == "$want" && -z "$port" && "$cid" == "${UPLINK_CLIENT_ID:-}" \
       && "$bunit" == "$bridge_unit" && "$uunit" == "$UPLINK_NETFILE" ]]; then
       rm -f "$STEP_TMP_DIR"/now.*
       return 0
     fi
     if (( SECONDS >= deadline )); then
       WHY="after ${NET_APPLY_SEC} s"
+      [[ "$master" == "$BRIDGE" ]] || WHY+=", $UPLINK is not $BRIDGE's port (its master: '${master}')"
+      [[ "$carrier" == 1 ]] || WHY+=", $BRIDGE has no carrier"
       [[ "$mac" == "$UPLINK_MAC" ]] || WHY+=", $BRIDGE has hardware address '${mac}' (was $UPLINK_MAC)"
       [[ "$cid" == "${UPLINK_CLIENT_ID:-}" ]] || WHY+=", $BRIDGE sends client identifier '${cid}' (was $UPLINK_CLIENT_ID)"
       [[ "$have" == "$want" ]] || WHY+=", $BRIDGE holds [$(echo $have)], $UPLINK held [$(echo $want)]"
