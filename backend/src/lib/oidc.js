@@ -8,16 +8,18 @@
  * accepts any subject that authenticates, but still fully validates the ID
  * token (issuer, audience, expiry, nonce, and JWKS signature).
  *
- * No third-party OIDC/JWT library — discovery + token exchange go over
- * `fetch`, and ID-token signatures are verified with `node:crypto` (RS256 /
+ * No third-party OIDC/JWT library — discovery, JWKS and the token exchange go
+ * through the operator fetch of lib/downloads (the issuer may be on the LAN),
+ * and ID-token signatures are verified with `node:crypto` (RS256 /
  * ES256 via `createPublicKey({ format: 'jwk' })`), matching the project's
  * "no JWT library / minimize dependencies" rules. The confidential-client
  * flow uses PKCE in addition to the client secret.
  */
 import { createHash, createPublicKey, verify as cryptoVerify, randomBytes } from 'node:crypto';
-import { createAppError } from './appErrors.js';
 
-const HTTP_TIMEOUT_MS = 10_000;
+import { createAppError, wrapAppError } from './appErrors.js';
+import { fetchOperatorEndpoint } from './downloads/index.js';
+
 // Discovery + JWKS rarely change; cache to avoid a round-trip per login.
 const DISCOVERY_TTL_MS = 60 * 60 * 1000; // 1h
 const JWKS_TTL_MS = 60 * 60 * 1000; // 1h
@@ -38,16 +40,16 @@ function decodeJwtSegment(seg) {
 
 async function fetchJson(url, options = {}) {
   let res;
+  let text;
   try {
-    res = await fetch(url, {
+    res = await fetchOperatorEndpoint(url, {
       ...options,
-      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
       headers: { Accept: 'application/json', ...(options.headers || {}) },
     });
+    text = await res.text();
   } catch (err) {
-    throw createAppError('OIDC_PROVIDER_UNREACHABLE', 'Could not reach identity provider', err.message);
+    throw wrapAppError('OIDC_PROVIDER_UNREACHABLE', 'Could not reach identity provider', err);
   }
-  const text = await res.text();
   let body = null;
   if (text) {
     try {
