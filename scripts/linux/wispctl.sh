@@ -164,7 +164,7 @@ case "${1:-help}" in
   help|*)
     echo "Usage: $0 {password|local|svc}"
     echo ""
-    echo "  password [--force]    Set or reset config/wisp-password"
+    echo "  password [--force]    Set or reset the login password (wisp-password, beside the config file)"
     echo "  local start|stop|restart|status|logs|tail"
     echo "  svc uninstall|start|stop|restart|logs   (setup renders and enables the unit)"
     ;;
