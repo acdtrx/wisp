@@ -242,7 +242,7 @@ Each code a client can receive, with its status.
 | `USB_ATTACH_FAILED` | 422 | The USB device could not be attached |
 | `USB_DETACH_FAILED` | 422 | The USB device could not be detached |
 | `INVALID_VM_NAME` | 422 | A VM name that reached the VM manager breaks the [name rules](#name-validation) |
-| `PATH_NOT_ALLOWED` | 422 | The path resolves outside the image library and the VM's directory, or a name or a timestamp would lead a path out of the directory it is joined into |
+| `PATH_NOT_ALLOWED` | 422 | The path resolves outside the image library and the VM's directory, or a name or a timestamp is not one path segment of the directory it is joined into |
 | `BACKUP_INVALID` | 422 | The backup archive or manifest fails validation |
 | `BACKUP_DEST_UNKNOWN` | 422 | An unknown backup destination id |
 | `BACKUP_DEST_NONE` | 422 | No backup destination was given or configured |
@@ -389,8 +389,9 @@ rename, a backup's and a restore's names) and an MCP tool's arguments, so a name
 breaks it is **400** `VALIDATION_FAILED`. The managers check a name they are given again
 (`INVALID_VM_NAME`, `INVALID_CONTAINER_NAME`, 422), for callers that reach them without a
 schema, and every path a manager builds from a name or a backup's timestamp is checked
-where it is built to stay below the directory it is joined into (`pathUnder` in each
-manager's paths module; **422** `PATH_NOT_ALLOWED`).
+where it is built: each name and timestamp is one path segment (not empty, `.` or `..`,
+no `/` or NUL), and the path stays below the directory it is joined into (`pathUnder` in
+each manager's paths module; **422** `PATH_NOT_ALLOWED`).
 
 ### Path policy for VM disks / ISOs
 

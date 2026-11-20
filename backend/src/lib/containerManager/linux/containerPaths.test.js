@@ -15,3 +15,19 @@ test('a segment that leaves the root is refused: .., an absolute path, a separat
     assert.throws(() => pathUnder(ROOT, ...segments), (err) => err.code === 'PATH_NOT_ALLOWED', JSON.stringify(segments));
   }
 });
+
+test('each segment is one path segment: a climb to a sibling, an empty or a dot segment, a NUL are refused', () => {
+  const ts = '2026-05-08T08-35-22';
+  const cases = [
+    ['containers', '../vms/vm-a', ts],
+    ['containers', '', ''],
+    ['containers', 'x/..', '.'],
+    ['containers', '..', 'containers'],
+    ['containers', '.'],
+    ['containers', 'a/b'],
+    ['containers', 'a\0b'],
+  ];
+  for (const segments of cases) {
+    assert.throws(() => pathUnder(ROOT, ...segments), (err) => err.code === 'PATH_NOT_ALLOWED', JSON.stringify(segments));
+  }
+});

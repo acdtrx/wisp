@@ -37,13 +37,20 @@ export function getContainersPath() {
 }
 
 /**
- * `root` joined with `segments` (a name, a timestamp, a file name), checked
- * to stay below `root`: a segment that is absolute, holds a separator that
- * climbs out, or is `..` is refused (PATH_NOT_ALLOWED). Every path this
+ * `root` joined with `segments` (a name, a timestamp, a file name), each one
+ * path segment: an empty one, `.`, `..`, or one holding `/` or NUL is refused
+ * (PATH_NOT_ALLOWED), and so is a result not below `root`. Every path this
  * manager builds from a name it was given goes through here, so a caller
- * that skips the route's schema (the scheduler, MCP) cannot leave the root.
+ * that skips the route's schema (the scheduler, MCP) cannot leave the
+ * directory a segment is joined into, nor land in a sibling's.
  */
 export function pathUnder(root, ...segments) {
+  for (const segment of segments) {
+    if (typeof segment !== 'string' || segment === '' || segment === '.' || segment === '..'
+      || segment.includes('/') || segment.includes('\0')) {
+      throw containerError('PATH_NOT_ALLOWED', `${JSON.stringify(segment)} is not one path segment`);
+    }
+  }
   const base = resolve(root);
   const full = resolve(base, ...segments);
   if (!full.startsWith(base + sep)) {
