@@ -15,7 +15,9 @@ Cloud-init provides automated VM provisioning: setting hostname, creating users,
 | `growPartition` | boolean | Whether to grow the root partition to fill the disk |
 | `packageUpgrade` | boolean | Whether to run `apt upgrade` (or equivalent) on first boot |
 | `installQemuGuestAgent` | boolean | Whether to install `qemu-guest-agent` on first boot (default true) |
-| `installAvahiDaemon` | boolean | Whether to install `avahi-daemon` on first boot (default true) |
+| `installAvahiDaemon` | boolean | Whether to install `avahi-daemon` on first boot (default true): the way a Linux guest gets its `.local` name, which it then announces itself — see below |
+
+**`installAvahiDaemon` is how a guest announces itself** *(settled 2026-11-20)*. Wisp publishes no `.local` name for a VM ([VM-MANAGEMENT.md → Local DNS](VM-MANAGEMENT.md#local-dns-mdns)): a Linux guest gets one by running avahi-daemon, which announces the guest's own hostname (the `hostname` above) on the LAN. So the option stays on by default. A guest made without it installs avahi itself; Windows and macOS guests announce their own names.
 
 ## Seed ISO Generation
 

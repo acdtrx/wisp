@@ -23,7 +23,6 @@ List all VMs with summary info.
     "memoryMiB": 4096,
     "osCategory": "linux",
     "iconId": null,
-    "localDns": false,
     "guestAgent": true,
     "pendingRestart": null,
     "startedAt": 1730000000000,
@@ -64,7 +63,6 @@ Create a new VM. A [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; 
   "bootMenu": false,
   "memBalloon": true,
   "guestAgent": true,
-  "localDns": true,
   "vtpm": false,
   "virtioRng": true,
   "nestedVirt": false,
@@ -117,7 +115,7 @@ Create a new VM. A [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; 
 
 Full VM configuration parsed from domain XML.
 
-- **200:** Full VM config object, read from the VM's saved (inactive) definition: `name`, `uuid`, `state`, `stateCode`, `autostart`, `vcpus`, `memoryMiB`, `osType`, `osCategory`, `arch`, `machineType`, `firmware`, `cpuMode`, `cpuTopology`, `cpuFeatures`, `nestedVirt`, `bootOrder`, `bootMenu`, `disks[]` (`slot`, `device`, `bus`, `source`, `driverType`, `readonly`, `sizeGiB`), `nics[]` (`type`, `mac`, `source`, `model`, `target`), `graphics` (`type`, `port`, `listen`, `autoport`), `videoModel`, `features` (`hyperv`), `memBalloon`, `guestAgent`, `vtpm`, `virtioRng`, `iconId`, `localDns`, `pendingRestart` — `pendingRestart` as on the list payload. USB attachments are `GET /api/vms/:name/usb`.
+- **200:** Full VM config object, read from the VM's saved (inactive) definition: `name`, `uuid`, `state`, `stateCode`, `autostart`, `vcpus`, `memoryMiB`, `osType`, `osCategory`, `arch`, `machineType`, `firmware`, `cpuMode`, `cpuTopology`, `cpuFeatures`, `nestedVirt`, `bootOrder`, `bootMenu`, `disks[]` (`slot`, `device`, `bus`, `source`, `driverType`, `readonly`, `sizeGiB`), `nics[]` (`type`, `mac`, `source`, `model`, `target`), `graphics` (`type`, `port`, `listen`, `autoport`), `videoModel`, `features` (`hyperv`), `memBalloon`, `guestAgent`, `vtpm`, `virtioRng`, `iconId`, `pendingRestart` — `pendingRestart` as on the list payload. USB attachments are `GET /api/vms/:name/usb`.
 
 Each `disks[]` entry may include **`sizeGiB`** (integer, virtual size in GiB, rounded) for **`device: "disk"`** entries with a file `source`, when `qemu-img info` succeeds. Omitted if the image is missing or size read fails.
 
@@ -125,12 +123,10 @@ Each `disks[]` entry may include **`sizeGiB`** (integer, virtual size in GiB, ro
 
 Update VM configuration.
 
-- **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `machineType`, `firmware`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `localDns`, `autostart`. Any other key, here or in a `nics[]` entry, is refused: **400** `VALIDATION_FAILED` naming it. `videoDriver` and `graphicsType` take the values listed under create; any other → **400** `VALIDATION_FAILED`, as is a `name` that breaks the [name rules](ERROR-HANDLING.md#name-validation).
-- **204:** saved; the VM's new state reaches clients as `{ kind: "vm", id: <name> }` on the [`changes`](API.md#changes-topic-payload) topic, under the new name after a rename. When the VM is running and the patch changed its domain definition (anything but icon, local DNS and autostart), its `pendingRestart` flag is set
+- **Body:** Partial config object. Allowed fields: `name`, `memoryMiB`, `vcpus`, `cpuMode`, `nestedVirt`, `machineType`, `firmware`, `bootOrder`, `bootMenu`, `osType`, `nics`, `videoDriver`, `graphicsType`, `memBalloon`, `vtpm`, `virtioRng`, `guestAgent`, `iconId`, `autostart`. Any other key, here or in a `nics[]` entry, is refused: **400** `VALIDATION_FAILED` naming it. `videoDriver` and `graphicsType` take the values listed under create; any other → **400** `VALIDATION_FAILED`, as is a `name` that breaks the [name rules](ERROR-HANDLING.md#name-validation).
+- **204:** saved; the VM's new state reaches clients as `{ kind: "vm", id: <name> }` on the [`changes`](API.md#changes-topic-payload) topic, under the new name after a rename. When the VM is running and the patch changed its domain definition (anything but icon and autostart), its `pendingRestart` flag is set
 - **409:** `{ error, detail }` — e.g. `VM_MUST_BE_OFFLINE` when renaming while the VM is running; `VM_EXISTS` / `VM_DIR_EXISTS` when the new name belongs to another VM or `<vmsPath>/<name>/` already exists (the rename reserves that directory first, so a concurrent rename or create to the same name gets this, see [VM-MANAGEMENT.md → Renaming](VM-MANAGEMENT.md#renaming)); `VM_BUSY` while another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock) — every PATCH takes it, rename or not, and a rename also takes the new name's (`VM_BUSY` while a job holds that name)
 - A NIC takes no VLAN: `vlan` in a `nics[]` entry is an unknown key, **400** `VALIDATION_FAILED`; use a VLAN-specific bridge (for example `br0-vlan22`) instead
-
-`localDns` is supported in PATCH and controls VM mDNS registration behavior.
 
 ### DELETE /api/vms/:name · `admin`
 
@@ -204,12 +200,11 @@ SSE stream of per-VM statistics. Pushes every 5 seconds.
   "uptime": 15780,
   "guestHostname": "myvm",
   "guestIp": "192.168.1.10",
-  "mdnsHostname": "myvm.local",
   "staleBinary": false
 }
 ```
 
-`guestHostname` and `guestIp` are present only when the guest agent is enabled and the backend successfully queried them. `mdnsHostname` is present when Local DNS is enabled for the VM and registration succeeded.
+`guestHostname` and `guestIp` are present only when the guest agent is enabled and the backend successfully queried them.
 
 `staleBinary` is `true` when the VM's qemu process is still using a binary that was replaced on disk (typically after a qemu/libvirt upgrade) — the VM needs to be restarted. Detected from `/proc/<pid>/exe` reporting a ` (deleted)` suffix; PID sourced from `/var/run/libvirt/qemu/<name>.pid`. Always `false` in the stopped payload.
 
