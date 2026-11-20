@@ -11,6 +11,7 @@ import DisksSection from '../sections/DisksSection.jsx';
 import AdvancedSection from '../sections/AdvancedSection.jsx';
 import VmNetworkInterfacesSection from '../sections/VmNetworkInterfacesSection.jsx';
 import CloudInitSection from '../sections/CloudInitSection.jsx';
+import { errorText } from '../../api/errors.js';
 
 const STEP_LABELS = {
   validating: 'Validating…',
@@ -63,8 +64,6 @@ export default function CreateVMPanel() {
   const [bridges, setBridges] = useState([]);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
-  const [createDetail, setCreateDetail] = useState(null);
-  const [errorOpen, setErrorOpen] = useState(false);
   const [createJobId, setCreateJobId] = useState(null);
 
   /* The create job outlives this panel (it keeps running in the background-jobs
@@ -145,23 +144,19 @@ export default function CreateVMPanel() {
     const name = (form.name || '').trim();
     if (!name) {
       setCreateError('VM name is required');
-      setErrorOpen(true);
       return;
     }
     if (form.disk?.type === 'existing' && !form.disk?.sourcePath) {
       setCreateError('Please select an existing disk image');
-      setErrorOpen(true);
       return;
     }
     if (form.disk2?.type === 'existing' && !form.disk2?.sourcePath) {
       setCreateError('Please select an existing disk image for the second disk');
-      setErrorOpen(true);
       return;
     }
 
     setCreating(true);
     setCreateError(null);
-    setCreateDetail(null);
 
     try {
       const spec = {
@@ -231,16 +226,14 @@ export default function CreateVMPanel() {
             if (mountedRef.current) navigate(`/vm/${encodeURIComponent(data.name)}/overview`);
           }
           if (data.step === 'error') {
-            setCreateError(data.error || 'Create failed');
-            setCreateDetail(data.detail);
+            setCreateError(errorText(data));
             setCreating(false);
             setCreateJobId(null);
           }
         },
       });
     } catch (err) {
-      setCreateError(err.message || 'Failed to start create');
-      setCreateDetail(err.detail || err.message);
+      setCreateError(errorText(err));
       setCreating(false);
     }
   };
@@ -304,16 +297,6 @@ export default function CreateVMPanel() {
         {createError && (
           <div className="mt-4 rounded-lg border border-status-stopped/30 bg-status-stopped-soft p-4">
             <p className="text-sm font-medium text-status-stopped">{createError}</p>
-            {createDetail && (
-              <button
-                type="button"
-                onClick={() => setErrorOpen((o) => !o)}
-                className="mt-1 text-xs text-text-muted hover:text-text-secondary"
-              >
-                {errorOpen ? 'Hide details' : 'Show details'}
-              </button>
-            )}
-            {errorOpen && createDetail && <pre className="mt-2 overflow-auto rounded-sm bg-surface-card/50 p-2 text-[11px] text-text-secondary">{createDetail}</pre>}
           </div>
         )}
 

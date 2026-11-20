@@ -18,6 +18,7 @@ import { autoFocusField } from '../../lib/focus.js';
 import { useLayer, focusIntoLayer } from '../../lib/layers.js';
 import { useMediaQuery } from '../../hooks/useMediaQuery.js';
 import { useBusyCommand } from '../../hooks/useBusyCommand.js';
+import { errorText } from '../../api/errors.js';
 
 const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -69,7 +70,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
       await renameSection(section.id, name);
       setEditing(false);
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -81,7 +82,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
     try {
       await deleteSection(section.id);
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -455,7 +456,7 @@ export default function LeftPanel() {
     try {
       await runSectionsCommand(() => reorderSections(next.map((s) => s.id)));
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(errorText(err));
     }
   };
 
@@ -463,7 +464,7 @@ export default function LeftPanel() {
     try {
       await runSectionsCommand(() => createAndAssign({ type, name }));
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(errorText(err));
     }
   };
 

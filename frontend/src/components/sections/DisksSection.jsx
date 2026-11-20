@@ -33,6 +33,7 @@ import {
   attachISO,
   ejectISO,
 } from '../../api/vms.js';
+import { errorText } from '../../api/errors.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -143,7 +144,7 @@ export default function DisksSection({
       await runVMCommand(vmName, fn);
       if (typeof afterSuccess === 'function') afterSuccess();
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
     } finally {
       setLoading(null);
     }

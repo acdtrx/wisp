@@ -17,6 +17,7 @@ import {
 } from '../../api/containers.js';
 import { runContainerCommand } from '../../store/containerStore.js';
 import LoadHint from '../shared/LoadHint.jsx';
+import { errorText } from '../../api/errors.js';
 
 function serviceProto(type) {
   return typeof type === 'string' && type.endsWith('._udp') ? 'udp' : 'tcp';
@@ -207,7 +208,7 @@ export default function ContainerNetworkSection({
         : addContainerService(config.name, { port, type, txt })));
       setStrip(null);
     } catch (err) {
-      setStrip((s) => (s ? { ...s, saving: false, error: err.message } : s));
+      setStrip((s) => (s ? { ...s, saving: false, error: errorText(err) } : s));
     }
   };
 
@@ -218,7 +219,7 @@ export default function ContainerNetworkSection({
       await runContainerCommand(config.name, () => removeContainerService(config.name, strip.port));
       setStrip(null);
     } catch (err) {
-      setStrip((s) => (s ? { ...s, saving: false, error: err.message } : s));
+      setStrip((s) => (s ? { ...s, saving: false, error: errorText(err) } : s));
     }
   };
 
@@ -304,7 +305,7 @@ export default function ContainerNetworkSection({
       setOriginalMac(macDraft.trim());
       setOriginalInterface(interfaceDraft.trim());
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

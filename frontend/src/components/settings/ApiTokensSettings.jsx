@@ -18,6 +18,7 @@ import { listApiTokens, createApiToken, deleteApiToken } from '../../api/authTok
 import { autoFocusField } from '../../lib/focus.js';
 import { useKindChanges } from '../../hooks/useChanges.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
+import { errorText } from '../../api/errors.js';
 
 const HELP =
   'Bearer tokens for non-interactive clients (coding agents, scripts). Read-only tokens can ' +
@@ -55,7 +56,7 @@ export default function ApiTokensSettings() {
       setLoadError(null);
     } catch (err) {
       if (request !== loadsSent.current) return;
-      setLoadError(err.detail || err.message || 'Failed to load API tokens');
+      setLoadError(errorText(err));
     }
   }, []);
 
@@ -87,7 +88,7 @@ export default function ApiTokensSettings() {
       setAdding(false);
       setNewLabel('');
     } catch (err) {
-      setError(err.detail || err.message || 'Failed to create API token');
+      setError(errorText(err));
     } finally {
       setCreating(false);
     }
@@ -101,7 +102,7 @@ export default function ApiTokensSettings() {
       await sendAndAwaitKindChange('tokens', () => deleteApiToken(deleteTarget.id));
       setDeleteTarget(null);
     } catch (err) {
-      setError(err.detail || err.message || 'Failed to revoke API token');
+      setError(errorText(err));
     } finally {
       setDeleting(false);
     }

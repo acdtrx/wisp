@@ -4,6 +4,7 @@ import { Lock } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
+import { errorText } from '../../api/errors.js';
 
 const FIRMWARE_OPTIONS = [
   { value: 'bios', label: 'BIOS' },
@@ -139,7 +140,7 @@ export default function AdvancedSection({ vmConfig, isCreating, onSave, onFormCh
       await onSave(changes);
       if (Object.keys(changes).length > 0) setOriginal(form);
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

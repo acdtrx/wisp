@@ -11,6 +11,7 @@ import Software from './Software.jsx';
 import HomePanel from '../home/HomePanel.jsx';
 import BackupsPanel from '../backups/BackupsPanel.jsx';
 import { hostShutdown, hostReboot } from '../../api/host.js';
+import { errorText } from '../../api/errors.js';
 
 const TABS = [
   { id: 'home', label: 'Home' },
@@ -82,7 +83,7 @@ export default function HostPanel() {
       setPowerOffOpen(false);
     } catch (err) {
       setPowerOffOpen(false);
-      setPowerError({ title: 'Power off failed', message: err.detail || err.message || 'Power off failed' });
+      setPowerError({ title: 'Power off failed', message: errorText(err) });
     } finally {
       setPowerLoading(null);
     }
@@ -95,7 +96,7 @@ export default function HostPanel() {
       setRestartOpen(false);
     } catch (err) {
       setRestartOpen(false);
-      setPowerError({ title: 'Restart failed', message: err.detail || err.message || 'Restart failed' });
+      setPowerError({ title: 'Restart failed', message: errorText(err) });
     } finally {
       setPowerLoading(null);
     }

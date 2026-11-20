@@ -1,4 +1,5 @@
-import { broadcastLogout } from './client.js';
+import { leaveForLogin } from './client.js';
+import { errorFromBody, isSessionLost } from './errors.js';
 
 /** Long-lived SSE (`createSSE`): reconnect delays */
 const SSE_INITIAL_RETRY_MS = 1000;
@@ -104,12 +105,6 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
       const res = await fetch(url, { signal: myController.signal, credentials: 'include' });
       clearTimeout(tid);
 
-      if (res.status === 401) {
-        broadcastLogout();
-        window.location.href = '/login';
-        return;
-      }
-
       if (res.status === 404) {
         finish();
         onConnectionLost?.('not_found');
@@ -117,7 +112,12 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
       }
 
       if (!res.ok || !res.body) {
-        throw new Error(`Job SSE failed: ${res.status}`);
+        const err = errorFromBody(await res.json().catch(() => null), res.status);
+        if (isSessionLost(err)) {
+          leaveForLogin();
+          return;
+        }
+        throw err;
       }
 
       retryDelay = SSE_INITIAL_RETRY_MS;
@@ -203,8 +203,8 @@ export function createJobSSE(url, onMessage, onConnectionLost) {
 }
 
 /**
- * Live-data SSE: reconnects with backoff until closed. A 401 sends the user to
- * sign in; a 404 — the stream's subject is gone — stops it for good and calls
+ * Live-data SSE: reconnects with backoff until closed. A lost session sends
+ * the user to sign in; a 404 — the stream's subject is gone — stops it for good and calls
  * `onError('not_found')`. Every other failure calls `onError()` and retries.
  */
 export function createSSE(url, onMessage, onError) {
@@ -244,12 +244,6 @@ export function createSSE(url, onMessage, onError) {
       const res = await fetch(url, { signal: myController.signal, credentials: 'include' });
       clearTimeout(tid);
 
-      if (res.status === 401) {
-        broadcastLogout();
-        window.location.href = '/login';
-        return;
-      }
-
       // The stream's subject is gone (a deleted workload's logs): retrying can't
       // bring it back. Stop, as job streams do, and say why.
       if (res.status === 404) {
@@ -261,7 +255,12 @@ export function createSSE(url, onMessage, onError) {
       }
 
       if (!res.ok || !res.body) {
-        throw new Error(`SSE request failed: ${res.status}`);
+        const err = errorFromBody(await res.json().catch(() => null), res.status);
+        if (isSessionLost(err)) {
+          leaveForLogin();
+          return;
+        }
+        throw err;
       }
 
       retryDelay = SSE_INITIAL_RETRY_MS;

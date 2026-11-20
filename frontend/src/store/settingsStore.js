@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as settingsApi from '../api/settings.js';
 import { subscribeChanges } from '../api/events.js';
+import { errorText } from '../api/errors.js';
 
 /** Single subscriber, held at module scope (the store is a singleton) so
  *  stopSettingsSync can clean up after startSettingsSync. */
@@ -21,7 +22,6 @@ export const useSettingsStore = create((set, get) => ({
   /** A load's failure, shown until the user dismisses it. While `settings` is set
    *  it is a failed refresh: the last good settings stay. */
   error: null,
-  errorDetail: null,
   /** The error came from a load before any settings had loaded (SettingsGate showed it). */
   errorBeforeFirstLoad: false,
 
@@ -43,7 +43,7 @@ export const useSettingsStore = create((set, get) => ({
     } catch (err) {
       /* A newer GET already sent supersedes this one: show only the newest failure. */
       if (request === lastSent && request > lastApplied) {
-        set({ error: err.message, errorDetail: err.detail ?? null, errorBeforeFirstLoad: get().settings == null });
+        set({ error: errorText(err), errorBeforeFirstLoad: get().settings == null });
       }
       throw err;
     } finally {
@@ -52,7 +52,7 @@ export const useSettingsStore = create((set, get) => ({
     }
   },
 
-  dismissError: () => set({ error: null, errorDetail: null, errorBeforeFirstLoad: false }),
+  dismissError: () => set({ error: null, errorBeforeFirstLoad: false }),
 
   /**
    * Load the settings, and again whenever the `changes` topic names them — a save

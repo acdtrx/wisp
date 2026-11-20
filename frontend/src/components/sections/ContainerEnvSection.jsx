@@ -15,6 +15,7 @@ import {
   rowActionIconBtn,
 } from '../shared/DataTableChrome.jsx';
 import EnvVarEditorModal from './EnvVarEditorModal.jsx';
+import { errorText } from '../../api/errors.js';
 
 const MASK = '••••••••';
 
@@ -68,7 +69,7 @@ export default function ContainerEnvSection({ config, onSave }) {
     try {
       await onSave({ envPatch: { [row.key]: null } });
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
     } finally {
       setDeletingKey(null);
     }

@@ -6,6 +6,7 @@ import AlertDialog from '../shared/AlertDialog.jsx';
 import HomeMotes from './HomeMotes.jsx';
 import HomeGroup from './HomeGroup.jsx';
 import ManualLinkModal from './ManualLinkModal.jsx';
+import { errorText } from '../../api/errors.js';
 
 const LIT_STATES = new Set(['running', 'blocked']);
 
@@ -80,7 +81,7 @@ export default function HomePanel() {
     try {
       await runGroupsCommand(() => reorderGroups(next.map((g) => g.id)));
     } catch (err) {
-      setErrorMsg(err.detail || err.message);
+      setErrorMsg(errorText(err));
     }
   };
 
@@ -88,7 +89,7 @@ export default function HomePanel() {
     try {
       await runGroupsCommand(createGroup);
     } catch (err) {
-      setErrorMsg(err.detail || err.message);
+      setErrorMsg(errorText(err));
     }
   };
 

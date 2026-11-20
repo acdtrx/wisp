@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, isAuthenticated, broadcastLogout, isNetworkError, NETWORK_ERROR_MESSAGE, API_TIMEOUT_MS } from '../api/client';
+import { errorFromBody, errorText } from '../api/errors.js';
 
 export const useAuthStore = create((set) => ({
   // Cookie-based session — the HttpOnly session cookie is invisible to JS.
@@ -20,8 +21,7 @@ export const useAuthStore = create((set) => ({
       });
 
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'Login failed');
+        throw errorFromBody(await res.json().catch(() => null), res.status);
       }
 
       // Cookies are now set by the response (HttpOnly session + CSRF).
@@ -29,8 +29,9 @@ export const useAuthStore = create((set) => ({
       return true;
     } catch (err) {
       // A dead VPN surfaces here as fetch's bare "Load failed" — name the actual cause.
+      // TimeoutError is the platform's name for AbortSignal.timeout firing.
       const timedOut = err?.name === 'TimeoutError';
-      set({ error: isNetworkError(err) || timedOut ? NETWORK_ERROR_MESSAGE : err.message, loading: false });
+      set({ error: isNetworkError(err) || timedOut ? NETWORK_ERROR_MESSAGE : errorText(err), loading: false });
       return false;
     }
   },

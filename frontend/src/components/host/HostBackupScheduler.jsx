@@ -6,6 +6,7 @@ import Toggle from '../shared/Toggle.jsx';
 import { useSettingsForm } from '../../hooks/useSettingsForm.js';
 import { updateSettings } from '../../api/settings.js';
 import SettingsGate from '../shared/SettingsGate.jsx';
+import { errorText } from '../../api/errors.js';
 
 const DEFAULT_SCHEDULE = {
   enabled: false,
@@ -82,7 +83,7 @@ export default function HostBackupScheduler() {
         },
       }));
     } catch (err) {
-      setError(err.message || 'Failed to save backup schedule');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

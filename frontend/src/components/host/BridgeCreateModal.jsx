@@ -12,6 +12,7 @@ import { createManagedNetworkBridge } from '../../api/host.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
 import { autoFocusField } from '../../lib/focus.js';
+import { errorText } from '../../api/errors.js';
 
 const FORM_ID = 'bridge-create-form';
 
@@ -54,7 +55,7 @@ export default function BridgeCreateModal({ open, eligibleParents, onClose }) {
       await awaitJob(JOB_KIND.NETWORK_BRIDGE_CREATE, await createManagedNetworkBridge(baseBridge, Number(vlanId)));
       onClose();
     } catch (err) {
-      setError(err.detail || err.message || 'Failed to create bridge');
+      setError(errorText(err));
     } finally {
       setSubmitting(false);
     }

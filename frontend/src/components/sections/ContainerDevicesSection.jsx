@@ -3,6 +3,7 @@ import { Cpu, Check, X, Loader2, AlertTriangle } from 'lucide-react';
 
 import SectionCard from '../shared/SectionCard.jsx';
 import { getHostGpus } from '../../api/host.js';
+import { errorText } from '../../api/errors.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-2 lg:p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -34,7 +35,7 @@ export default function ContainerDevicesSection({ config, onSave }) {
       const res = await getHostGpus();
       setHostGpus(Array.isArray(res?.gpus) ? res.gpus : []);
     } catch (err) {
-      setLoadError(err?.message || 'Failed to query host GPUs');
+      setLoadError(errorText(err));
       setHostGpus(null);
     }
   }, []);
@@ -55,7 +56,7 @@ export default function ContainerDevicesSection({ config, onSave }) {
       setPicking(false);
       setPickValue('');
     } catch (err) {
-      setError(err?.detail || err?.message || 'Failed to add device');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }
@@ -67,7 +68,7 @@ export default function ContainerDevicesSection({ config, onSave }) {
     try {
       await onSave({ devices: [] });
     } catch (err) {
-      setError(err?.detail || err?.message || 'Failed to remove device');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

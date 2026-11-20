@@ -34,6 +34,7 @@ import { useVmStore } from '../../store/vmStore.js';
 import { useContainerStore } from '../../store/containerStore.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
+import { errorText } from '../../api/errors.js';
 
 /* Same stopped set as the VM Overview. `shutdown` is a guest shutdown still in
  * progress (qemu holds the disks) — the backend refuses a backup then. */
@@ -196,7 +197,7 @@ export default function BackupsPanel() {
         if (ctRes.status === 'fulfilled') setCtBackups(Array.isArray(ctRes.value) ? ctRes.value : []);
         const errs = [vmRes, ctRes]
           .filter((r) => r.status === 'rejected')
-          .map((r) => r.reason?.message || 'Failed to load backups');
+          .map((r) => errorText(r.reason));
         if (errs.length) setError(errs.join('; '));
       })
       .finally(() => { if (initial) setLoading(false); });
@@ -314,7 +315,7 @@ export default function BackupsPanel() {
       registerJob({ jobId, kind: isVm ? JOB_KIND.BACKUP : JOB_KIND.CONTAINER_BACKUP, title });
       setBackupJobId(jobId);
     } catch (err) {
-      setBackupError(err.message || 'Backup failed to start');
+      setBackupError(errorText(err));
     }
   };
 
@@ -343,7 +344,7 @@ export default function BackupsPanel() {
       setRestoreName('');
       fetchLists();
     } catch (err) {
-      setRestoreError(err.message || 'Restore failed');
+      setRestoreError(errorText(err));
     } finally {
       setRestoreSaving(false);
     }
@@ -373,7 +374,7 @@ export default function BackupsPanel() {
       registerJob({ jobId, kind: JOB_KIND.CONTAINER_RESTORE, title });
       setInPlaceTarget(null);
     } catch (err) {
-      setInPlaceError(err.message || 'Restore failed to start');
+      setInPlaceError(errorText(err));
     } finally {
       setInPlaceSaving(false);
     }
@@ -393,7 +394,7 @@ export default function BackupsPanel() {
         : deleteBackup({ destinationId: backup.destinationId, vmName: backup.name, timestamp: backup.timestamp })));
       setDeleteTarget(null);
     } catch (err) {
-      setDeleteError(err.message || 'Delete failed');
+      setDeleteError(errorText(err));
     } finally {
       setDeleteSaving(false);
     }
@@ -645,7 +646,7 @@ export default function BackupsPanel() {
             percent: bgJobs[backupJobId].percent,
             currentFile: bgJobs[backupJobId].detail,
           } : null}
-          error={backupError || (backupJobId && bgJobs[backupJobId]?.status === 'error' ? bgJobs[backupJobId].error : null)}
+          error={backupError || (backupJobId && bgJobs[backupJobId]?.status === 'error' ? errorText(bgJobs[backupJobId].error) : null)}
           onStart={handleStartBackup}
           onClose={() => { setBackupTarget(null); setBackupJobId(null); setBackupError(null); }}
         />

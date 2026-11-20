@@ -33,6 +33,7 @@ import {
 } from '../shared/DataTableChrome.jsx';
 import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
 import { focusField } from '../../lib/focus.js';
+import { errorText } from '../../api/errors.js';
 
 const FILTERS_PAGE = [
   { key: 'all', label: 'All' },
@@ -366,7 +367,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       }
     } catch (err) {
       if (seq !== fetchSeqRef.current) return;
-      setError(err.message);
+      setError(errorText(err));
     } finally {
       if (seq === fetchSeqRef.current) setLoading(false);
     }
@@ -409,7 +410,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       /* Done once the list holds the file: it arrives on the `library` cue. */
       await sendAndAwaitKindChange('library', () => uploadFile(file, setUploadProgress));
     } catch (err) {
-      setUploadError(err.message);
+      setUploadError(errorText(err));
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -433,7 +434,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       }
       setDeleteTarget(null);
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
       setDeleteTarget(null);
     }
   };
@@ -442,7 +443,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     try {
       await sendAndAwaitKindChange('library', () => renameFile(oldName, newName));
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
     }
   };
 
@@ -455,7 +456,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       const result = await checkDownloadUrl(url);
       setUrlCheckResult(result);
     } catch (err) {
-      setUrlCheckResult({ ok: false, error: err.message });
+      setUrlCheckResult({ ok: false, error: errorText(err) });
     } finally {
       setUrlChecking(false);
     }
@@ -480,13 +481,13 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             setUrlCheckResult(null);
           }
           if (data.step === 'error') {
-            setUrlDownloadError(data.error || 'Download failed');
+            setUrlDownloadError(errorText(data));
             setUrlJobId(null);
           }
         },
       });
     } catch (err) {
-      setUrlDownloadError(err.message);
+      setUrlDownloadError(errorText(err));
       setUrlJobId(null);
     }
   };
@@ -513,7 +514,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
             return null;
           }
           if (data.step === 'error') {
-            queueMicrotask(() => setPresetError(data.error || 'Download failed'));
+            queueMicrotask(() => setPresetError(errorText(data)));
             return null;
           }
           return current;
@@ -532,7 +533,7 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
       const { jobId, title } = result;
       runPresetDownload(jobId, title);
     } catch (err) {
-      setPresetError(err.message);
+      setPresetError(errorText(err));
     }
   };
 

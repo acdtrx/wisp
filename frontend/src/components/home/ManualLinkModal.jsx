@@ -11,6 +11,7 @@ import IconPickerModal from '../shared/IconPickerModal.jsx';
 import { getVmIcon } from '../shared/vmIcons.jsx';
 import { useHomeStore } from '../../store/homeStore.js';
 import { autoFocusField } from '../../lib/focus.js';
+import { errorText } from '../../api/errors.js';
 
 const DEFAULT_ICON_ID = 'globe';
 
@@ -48,7 +49,7 @@ export default function ManualLinkModal({ open, tile, onClose }) {
       else await addManualTile({ name: trimmedName, url: trimmedUrl, iconId });
       onClose();
     } catch (err) {
-      setError(err.detail || err.message);
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

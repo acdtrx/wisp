@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import Modal from '../shared/Modal.jsx';
 import { getMountFileContent, putMountFileContent } from '../../api/containers.js';
 import { runContainerCommand } from '../../store/containerStore.js';
+import { errorText } from '../../api/errors.js';
 
 export default function MountFileEditorModal({
   open,
@@ -32,7 +33,7 @@ export default function MountFileEditorModal({
         setText(typeof data?.content === 'string' ? data.content : '');
       })
       .catch((err) => {
-        setLoadError(err.message || 'Failed to load file');
+        setLoadError(errorText(err));
       })
       .finally(() => setLoading(false));
   }, [open, containerName, mountName]);
@@ -45,7 +46,7 @@ export default function MountFileEditorModal({
       await runContainerCommand(containerName, () => putMountFileContent(containerName, mountName, text));
       onClose();
     } catch (err) {
-      setSaveError(err.message || 'Failed to save');
+      setSaveError(errorText(err));
     } finally {
       setSaving(false);
     }

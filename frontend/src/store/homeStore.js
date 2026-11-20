@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as homeApi from '../api/homepage.js';
 import { sendAndAwaitTopic, subscribeTopic } from '../api/events.js';
+import { errorText } from '../api/errors.js';
 
 export const UNGROUPED_GROUP_ID = 'ungrouped';
 
@@ -49,7 +50,7 @@ export const useHomeStore = create((set, get) => ({
     if (homeCloseFn) return;
     homeCloseFn = subscribeTopic('home', (data) => {
       if (data && data.error) {
-        set({ loadError: data.detail || data.error }); // keep the last good envelope
+        set({ loadError: errorText(data) }); // keep the last good envelope
         return;
       }
       if (!data || !Array.isArray(data.tiles)) return;

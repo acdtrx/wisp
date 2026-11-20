@@ -18,6 +18,7 @@ import {
   checkForWispUpdate,
   installWispUpdate,
 } from '../../api/updates.js';
+import { errorText } from '../../api/errors.js';
 
 function formatRelativeTime(isoString) {
   if (!isoString) return null;
@@ -109,7 +110,7 @@ export default function WispUpdateSection() {
       const status = await getUpdateStatus();
       if (request === statusReadsSent.current) applyStatus(status);
     } catch (err) {
-      if (request === statusReadsSent.current) setError(err.detail || err.message || 'Failed to load status');
+      if (request === statusReadsSent.current) setError(errorText(err));
     }
   }, [applyStatus]);
 
@@ -124,7 +125,7 @@ export default function WispUpdateSection() {
   useEffect(() => {
     if (settingsLoaded) return;
     loadSettings().catch((err) => {
-      setError(err.detail || err.message || 'Failed to load update channel');
+      setError(errorText(err));
     });
   }, [settingsLoaded, loadSettings]);
 
@@ -139,7 +140,7 @@ export default function WispUpdateSection() {
     try {
       await sendAndAwaitKindChange('wisp-update', checkForWispUpdate);
     } catch (err) {
-      setError(err.detail || err.message || 'Check failed');
+      setError(errorText(err));
     } finally {
       setChecking(false);
     }
@@ -157,14 +158,14 @@ export default function WispUpdateSection() {
       await updateSettings({ updateChannel: next });
     } catch (err) {
       setPendingChannel(null);
-      setError(err.detail || err.message || 'Failed to switch update channel');
+      setError(errorText(err));
       setChecking(false);
       return;
     }
     try {
       await sendAndAwaitKindChange('wisp-update', checkForWispUpdate);
     } catch (err) {
-      setError(err.detail || err.message || 'Check failed');
+      setError(errorText(err));
     } finally {
       setChecking(false);
     }
@@ -208,7 +209,7 @@ export default function WispUpdateSection() {
     } catch (err) {
       setInstalling(false);
       setInstallTarget(null);
-      setError(err.detail || err.message || 'Install failed');
+      setError(errorText(err));
     }
   }, [confirmForce, latest]);
 

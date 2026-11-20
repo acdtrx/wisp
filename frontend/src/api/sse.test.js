@@ -1,7 +1,7 @@
 import { test, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { installBrowser, installFetch, respondWithStream, settle } from '../testing/fakeBrowser.js';
+import { installBrowser, installFetch, jsonResponse, respondWithStream, settle } from '../testing/fakeBrowser.js';
 
 let browser;
 let net;
@@ -87,11 +87,11 @@ test('closing an open stream aborts its request and stops it, with no onError', 
   assert.deepEqual(errors, []);
 });
 
-test('a 401 logs the session out, goes to the login page and does not reconnect', async () => {
+test('a lost session logs out, goes to the login page and does not reconnect', async () => {
   const errors = [];
   createSSE('/api/x', () => {}, (reason) => errors.push(reason));
   const request = await net.next('/api/x');
-  request.respond(new Response(null, { status: 401 }));
+  request.respond(jsonResponse({ error: 'AUTH_INVALID', detail: 'Session expired' }, 401));
   await settle();
   assert.match(browser.localStorage.getItem('wisp_logout'), /^expired:\d+$/);
   assert.equal(browser.window.location.href, '/login');

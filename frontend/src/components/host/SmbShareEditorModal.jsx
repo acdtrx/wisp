@@ -12,6 +12,7 @@ import { randomId } from '../../utils/randomId.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
 import { addMount, patchMount, checkMountConnection } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
+import { errorText } from '../../api/errors.js';
 
 const FORM_ID = 'smb-share-editor-form';
 
@@ -91,7 +92,7 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
       : { share: trimmedShare, username: form.username.trim(), password: newPw };
     checkMountConnection(body)
       .then(() => setCheck({ ok: true }))
-      .catch((err) => setCheck({ error: err.detail || err.message || 'Failed' }))
+      .catch((err) => setCheck({ error: errorText(err) }))
       .finally(() => setChecking(false));
   };
 
@@ -126,7 +127,7 @@ export default function SmbShareEditorModal({ open, share, onClose, onSaved }) {
       await onSaved?.();
       onClose();
     } catch (err) {
-      setError(err.message || 'Failed to save');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

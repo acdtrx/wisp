@@ -47,6 +47,7 @@ import { awaitJob } from '../../store/backgroundJobsStore.js';
 import { runContainerCommand } from '../../store/containerStore.js';
 import { useChanges, useKindChanges } from '../../hooks/useChanges.js';
 import LoadHint from '../shared/LoadHint.jsx';
+import { errorText } from '../../api/errors.js';
 
 const addBtn =
   'inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150';
@@ -222,7 +223,7 @@ export default function ContainerMountsSection({ config }) {
       await runContainerCommand(config.name, async () =>
         awaitJob(JOB_KIND.CONTAINER_MOUNT_DELETE, await removeContainerMount(config.name, row.name)));
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
     } finally {
       setDeletingRowName(null);
     }
@@ -234,7 +235,7 @@ export default function ContainerMountsSection({ config }) {
     try {
       await runContainerCommand(config.name, () => uploadFn(row.name));
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
     } finally {
       setBusyRowName(null);
     }

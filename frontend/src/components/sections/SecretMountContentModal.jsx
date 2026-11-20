@@ -13,6 +13,7 @@ import { putMountFileContent } from '../../api/containers.js';
 import { runContainerCommand } from '../../store/containerStore.js';
 import { formatSize } from '../../utils/formatters.js';
 import { autoFocusField } from '../../lib/focus.js';
+import { errorText } from '../../api/errors.js';
 
 const FORM_ID = 'secret-mount-content-form';
 
@@ -44,7 +45,7 @@ export default function SecretMountContentModal({ open, containerName, mount, on
       await runContainerCommand(containerName, () => putMountFileContent(containerName, mount.name, content));
       onClose();
     } catch (err) {
-      setError(err.message || 'Failed to save');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

@@ -12,6 +12,7 @@ import {
 import { addContainerMount, updateContainerMount } from '../../api/containers.js';
 import { runContainerCommand } from '../../store/containerStore.js';
 import { autoFocusField } from '../../lib/focus.js';
+import { errorText } from '../../api/errors.js';
 
 const FORM_ID = 'container-mount-editor-form';
 
@@ -253,7 +254,7 @@ export default function ContainerMountEditorModal({
       await onSaved?.();
       onClose();
     } catch (err) {
-      setError(err.message || 'Failed to save');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

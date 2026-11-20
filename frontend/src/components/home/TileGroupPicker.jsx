@@ -4,6 +4,7 @@ import { FolderInput, Check, FolderPlus } from 'lucide-react';
 import { useHomeStore, UNGROUPED_GROUP_ID } from '../../store/homeStore.js';
 import AlertDialog from '../shared/AlertDialog.jsx';
 import { usePopover } from '../../lib/popover.js';
+import { errorText } from '../../api/errors.js';
 
 /**
  * Move-to-group popover for a tile in edit mode. Same interaction as the
@@ -30,7 +31,7 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
       await assignTile({ tileId, groupId });
       setOpen(false);
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -46,7 +47,7 @@ export default function TileGroupPicker({ tileId, currentGroupId, className = ''
       await assignTile({ tileId, groupId });
       setOpen(false);
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(errorText(err));
     } finally {
       setBusy(false);
     }

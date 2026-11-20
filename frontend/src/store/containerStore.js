@@ -7,6 +7,7 @@ import {
   errorKey, withError, withoutError, withoutErrorsOfVanished, withErrorsRenamed, withBusy, anyActionInFlight,
 } from './workloadActions.js';
 import { awaitJob, useBackgroundJobsStore } from './backgroundJobsStore.js';
+import { errorText } from '../api/errors.js';
 
 /** Same scheduled restart (or both none)? Compared by value — list pushes carry fresh objects. */
 function sameScheduledRestart(a, b) {
@@ -62,7 +63,7 @@ export const useContainerStore = create((set, get) => {
 
   function noteFailedRead(seq, read, err) {
     if (newestFailedRead && newestFailedRead.seq === seq && newestFailedRead.read > read) return;
-    newestFailedRead = { seq, read, message: err.detail || err.message };
+    newestFailedRead = { seq, read, message: errorText(err) };
   }
 
   /** Apply read `read`'s config to container `name`: it replaces a select error page,
@@ -217,7 +218,7 @@ export const useContainerStore = create((set, get) => {
         deselectIfGone(containers);
         applyList(containers);
       } catch (err) {
-        set((prev) => ({ errors: withError(prev.errors, 'list', null, err.message), listError: err.detail || err.message }));
+        set((prev) => ({ errors: withError(prev.errors, 'list', null, errorText(err)), listError: errorText(err) }));
       }
     },
 
@@ -234,7 +235,7 @@ export const useContainerStore = create((set, get) => {
         'containers',
         (data) => {
           if (data && !Array.isArray(data) && data.error) {
-            set({ listError: data.detail || data.error });
+            set({ listError: errorText(data) });
             return;
           }
           if (!Array.isArray(data)) return;
@@ -299,7 +300,7 @@ export const useContainerStore = create((set, get) => {
          * loading until it settles. Otherwise the seed lacks env, mounts and network, so
          * the panel shows the error page rather than empty sections. */
         if (read !== configReadsSent || read <= configReadsApplied) return;
-        set((prev) => ({ containerConfig: null, loading: false, errors: withError(prev.errors, 'select', name, err.message) }));
+        set((prev) => ({ containerConfig: null, loading: false, errors: withError(prev.errors, 'select', name, errorText(err)) }));
       }
     },
 
@@ -343,10 +344,10 @@ export const useContainerStore = create((set, get) => {
         noteFailedRead(seq, read, err);
         if (read !== configReadsSent || read <= configReadsApplied) return;
         if (get().loading || !get().containerConfig) {
-          set((prev) => ({ containerConfig: null, loading: false, errors: withError(prev.errors, 'select', selectedContainer, err.message) }));
+          set((prev) => ({ containerConfig: null, loading: false, errors: withError(prev.errors, 'select', selectedContainer, errorText(err)) }));
           return;
         }
-        set((prev) => ({ errors: withError(prev.errors, 'refresh', selectedContainer, `Couldn't refresh this container: ${err.detail || err.message}`) }));
+        set((prev) => ({ errors: withError(prev.errors, 'refresh', selectedContainer, `Couldn't refresh this container: ${errorText(err)}`) }));
         return;
       }
       if (seq !== selectionSeq || read <= configReadsApplied) return;
@@ -367,7 +368,7 @@ export const useContainerStore = create((set, get) => {
         if (actionName === 'delete' && get().selectedContainer === name) get().deselectContainer();
         return true;
       } catch (err) {
-        set((s) => ({ actions: withBusy(s.actions, name, null), errors: withError(s.errors, 'action', name, err.message) }));
+        set((s) => ({ actions: withBusy(s.actions, name, null), errors: withError(s.errors, 'action', name, errorText(err)) }));
         return false;
       }
     },
@@ -419,7 +420,7 @@ export const useContainerStore = create((set, get) => {
         job = await containerApi.checkContainerImageUpdates(ref);
       } catch (err) {
         set((prev) => ({
-          imageUpdateCheck: { ...prev.imageUpdateCheck, running: false, lastError: err.message },
+          imageUpdateCheck: { ...prev.imageUpdateCheck, running: false, lastError: errorText(err) },
         }));
         return;
       }
@@ -478,7 +479,7 @@ export const useContainerStore = create((set, get) => {
                 ref: null,
                 currentRef: null,
                 progress: null,
-                lastError: ev.error || 'Image update check failed',
+                lastError: errorText(ev),
               },
             }));
             if (imageUpdateJobClose) {

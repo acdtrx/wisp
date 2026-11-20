@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Copy, Check, Loader2 } from 'lucide-react';
 import Modal from '../shared/Modal.jsx';
 import { getVMXML } from '../../api/vms.js';
+import { errorText } from '../../api/errors.js';
 
 function highlightXml(xml) {
   if (!xml) return null;
@@ -73,7 +74,7 @@ export default function XMLModal({ open, vmName, onClose }) {
     setLoadError(null);
     getVMXML(vmName)
       .then((data) => setXml(data.xml || ''))
-      .catch((err) => { setXml(''); setLoadError(err?.detail || err?.message || 'unknown error'); })
+      .catch((err) => { setXml(''); setLoadError(errorText(err)); })
       .finally(() => setLoading(false));
   }, [open, vmName]);
 

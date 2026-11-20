@@ -20,6 +20,7 @@ import {
 import NicEditorModal from './NicEditorModal.jsx';
 import NicModelPills from './NicModelPills.jsx';
 import LoadHint from '../shared/LoadHint.jsx';
+import { errorText } from '../../api/errors.js';
 
 /** Compact icon button for the create-flow draft rows (desktop-only layout). */
 const draftIconBtn =
@@ -138,7 +139,7 @@ export default function VmNetworkInterfacesSection({ vmConfig, isCreating, onSav
       await onSave({ nics: normalizeNicsForApi(next) });
       setNics(next);
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
     } finally {
       setRemovingIdx(null);
     }

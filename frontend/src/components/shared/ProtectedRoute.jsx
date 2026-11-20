@@ -5,6 +5,7 @@ import { useAuthStore } from '../../store/authStore';
 import { api, isNetworkError } from '../../api/client';
 import FullScreenSpinner from './FullScreenSpinner.jsx';
 import ServerUnreachable from './ServerUnreachable.jsx';
+import { isSessionLost } from '../../api/errors.js';
 
 // Reconnect backoff for the boot probe. Not a race workaround: the server is
 // genuinely absent (VPN down, service restarting) and we wait for it to come back.
@@ -72,8 +73,8 @@ export default function ProtectedRoute({ children }) {
         delay = RETRY_INITIAL_DELAY_MS;
         setStatus('ready');
       } catch (err) {
-        // api() already redirected to /login on 401.
-        if (cancelled || err.message === 'Session expired') return;
+        // api() already sent a lost session to /login.
+        if (cancelled || isSessionLost(err)) return;
         // A timeout and a refused connection tell the user the same story: the
         // request never reached a healthy Wisp. Only a real HTTP error is 'server'.
         const neverAnswered = err.name === 'AbortError' || isNetworkError(err);

@@ -14,6 +14,7 @@ import { useHostStore } from '../../store/hostStore.js';
 import { useStatsStore } from '../../store/statsStore.js';
 import { getHostInfo } from '../../api/host.js';
 import { formatDecimal } from '../../utils/formatters.js';
+import { errorText } from '../../api/errors.js';
 
 function formatBytes(bytes) {
   if (bytes >= 1024 ** 4) return `${formatDecimal(bytes / 1024 ** 4)} TB`;
@@ -891,7 +892,7 @@ function HostSoftwareBlock() {
   const [hostInfoError, setHostInfoError] = useState(null);
   const load = useCallback(() => {
     setHostInfoError(null);
-    getHostInfo().then(setHostInfo).catch((err) => setHostInfoError(err.detail || err.message || 'Failed to load host information'));
+    getHostInfo().then(setHostInfo).catch((err) => setHostInfoError(errorText(err)));
   }, []);
   useEffect(() => { load(); }, [load]);
 

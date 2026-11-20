@@ -41,6 +41,7 @@ import {
   checkMountConnection,
 } from '../../api/settings.js';
 import SettingsGate from '../shared/SettingsGate.jsx';
+import { errorText } from '../../api/errors.js';
 
 /* Same geometry as rowActionIconBtn but color-neutral, for tinted (mount/check) states. */
 const tintedActionBtnBase =
@@ -98,7 +99,7 @@ export default function HostStorage() {
       .catch((err) => {
         if (request !== statusReadsSent.current) return;
         setMountStatus([]);
-        setMountStatusError(err.detail || err.message || 'failed');
+        setMountStatusError(errorText(err));
       });
   }, []);
 
@@ -184,7 +185,7 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
       /* The removal reaches the list and the status on their cues. */
       await awaitJob(JOB_KIND.MOUNT_DELETE, await deleteMount(row.id));
     } catch (err) {
-      onError(err.message || 'Failed to remove mount');
+      onError(errorText(err));
     } finally {
       setDeletingId(null);
     }
@@ -197,7 +198,7 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
       ? unmountMount(id).then((job) => awaitJob(JOB_KIND.MOUNT_UNMOUNT, job))
       : sendAndAwaitKindChange('host-mounts', () => mountMount(id));
     p
-      .catch((err) => onError(err.detail || err.message || 'Mount toggle failed'))
+      .catch((err) => onError(errorText(err)))
       .finally(() => setMountActionId(null));
   };
 
@@ -212,7 +213,7 @@ function SmbMountsSection({ smbSaved, mountStatus, onError }) {
       .then(() => setCheckByRow((o) => ({ ...o, [id]: { ok: true } })))
       .catch((err) => setCheckByRow((o) => ({
         ...o,
-        [id]: { error: err.detail || err.message || 'Failed' },
+        [id]: { error: errorText(err) },
       })))
       .finally(() => setCheckId(null));
   };
@@ -405,7 +406,7 @@ function RemovableDrivesSection({
       /* The removal reaches the list and the status on their cues. */
       await awaitJob(JOB_KIND.MOUNT_DELETE, await deleteMount(row.id));
     } catch (err) {
-      onError(err.message || 'Failed to remove');
+      onError(errorText(err));
     } finally {
       setDeletingId(null);
     }
@@ -418,7 +419,7 @@ function RemovableDrivesSection({
       ? unmountMount(id).then((job) => awaitJob(JOB_KIND.MOUNT_UNMOUNT, job))
       : sendAndAwaitKindChange('host-mounts', () => mountMount(id));
     p
-      .catch((err) => onError(err.detail || err.message || 'Mount toggle failed'))
+      .catch((err) => onError(errorText(err)))
       .finally(() => setMountActionId(null));
   };
 

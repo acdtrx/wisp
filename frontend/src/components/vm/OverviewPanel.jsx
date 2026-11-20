@@ -22,6 +22,7 @@ import USBSection from '../sections/USBSection.jsx';
 import AdvancedSection from '../sections/AdvancedSection.jsx';
 import VmNetworkInterfacesSection from '../sections/VmNetworkInterfacesSection.jsx';
 import CloudInitSection from '../sections/CloudInitSection.jsx';
+import { errorText } from '../../api/errors.js';
 
 const ConsolePanel = lazy(() => import('../console/ConsolePanel.jsx'));
 
@@ -469,7 +470,7 @@ export default function OverviewPanel() {
           }
           error={
             backupJobId && bgJobs[backupJobId]?.status === 'error'
-              ? bgJobs[backupJobId].error
+              ? errorText(bgJobs[backupJobId].error)
               : backupError
           }
           onStart={async () => {
@@ -483,7 +484,7 @@ export default function OverviewPanel() {
                 title,
               });
             } catch (err) {
-              setBackupError(err.message || 'Failed to start backup');
+              setBackupError(errorText(err));
               setBackupJobId(null);
             }
           }}
@@ -506,7 +507,7 @@ export default function OverviewPanel() {
           try {
             await runVMCommand(name, () => updateVM(name, { iconId: selectedIconId }));
           } catch (err) {
-            reportActionError(name, err.message || 'Failed to change the icon');
+            reportActionError(name, errorText(err));
           }
         }}
         onClose={() => setIconPickerOpen(false)}

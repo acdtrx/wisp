@@ -5,6 +5,7 @@ import SectionCard from '../shared/SectionCard.jsx';
 import { useSettingsForm } from '../../hooks/useSettingsForm.js';
 import { updateSettings } from '../../api/settings.js';
 import SettingsGate from '../shared/SettingsGate.jsx';
+import { errorText } from '../../api/errors.js';
 
 export default function HostBackup() {
   const [backupLocalPath, setBackupLocalPath] = useState('');
@@ -32,7 +33,7 @@ export default function HostBackup() {
         backupMountId: backupMountId ? backupMountId : null,
       }));
     } catch (err) {
-      setError(err.message || 'Failed to save backup settings');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

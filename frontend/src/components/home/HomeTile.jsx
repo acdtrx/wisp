@@ -12,6 +12,7 @@ import { useHomeStore, UNGROUPED_GROUP_ID } from '../../store/homeStore.js';
 import { useBusyCommand } from '../../hooks/useBusyCommand.js';
 import TileGroupPicker from './TileGroupPicker.jsx';
 import { autoFocusField } from '../../lib/focus.js';
+import { errorText } from '../../api/errors.js';
 
 const LIT_STATES = new Set(['running', 'blocked']);
 
@@ -51,7 +52,7 @@ export default function HomeTile({ tile, editing, groupId, canMoveLeft, canMoveR
     try {
       await runCommand(action);
     } catch (err) {
-      setErrorMsg(err.detail || err.message);
+      setErrorMsg(errorText(err));
     }
   };
 

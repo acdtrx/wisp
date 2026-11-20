@@ -6,6 +6,7 @@ import { useStatsStore } from '../../store/statsStore.js';
 import { checkForUpdates, performUpgrade, listUpgradablePackages } from '../../api/host.js';
 import { JOB_KIND } from '../../api/jobProgress.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
+import { errorText } from '../../api/errors.js';
 
 function formatBytes(b) {
   if (!b || b <= 0) return null;
@@ -16,13 +17,12 @@ function formatBytes(b) {
 }
 
 /**
- * Backend may surface a transient "another package manager op is running"
- * condition either via 409 + code 'UPDATE_BUSY' (apt held by another process,
- * or our own in-flight op blocking a different op type). The UI treats this
- * as a soft "try again later" status, not a red error.
+ * UPDATE_BUSY — apt held by another process, or our own in-flight op blocking
+ * a different op type — arrives as a 409 or as a job's error. The UI treats
+ * it as a soft "try again later" status, not a red error.
  */
 function isBusyError(err) {
-  return err?.status === 409 || err?.code === 'UPDATE_BUSY';
+  return err?.code === 'UPDATE_BUSY';
 }
 
 const BUSY_MESSAGE = 'Another package manager operation is running on the host. Try again in a moment.';
@@ -70,9 +70,9 @@ export default function OsUpdateSection({ onRequestRestart }) {
       setManualCount(newCount);
     } catch (err) {
       if (isBusyError(err)) {
-        setBusyMessage(err.detail ? `${BUSY_MESSAGE} (${err.detail})` : BUSY_MESSAGE);
+        setBusyMessage(`${BUSY_MESSAGE} (${errorText(err)})`);
       } else {
-        setUpdateError(err.detail || err.message || 'Update check failed');
+        setUpdateError(errorText(err));
       }
     } finally {
       setChecking(false);
@@ -93,9 +93,9 @@ export default function OsUpdateSection({ onRequestRestart }) {
       setPackagesCached(false);
     } catch (err) {
       if (isBusyError(err)) {
-        setBusyMessage(err.detail ? `${BUSY_MESSAGE} (${err.detail})` : BUSY_MESSAGE);
+        setBusyMessage(`${BUSY_MESSAGE} (${errorText(err)})`);
       } else {
-        setUpgradeError(err.detail || err.message || 'Upgrade failed');
+        setUpgradeError(errorText(err));
       }
     } finally {
       setUpgrading(false);
@@ -122,7 +122,7 @@ export default function OsUpdateSection({ onRequestRestart }) {
       if (isBusyError(err)) {
         setPackagesError(BUSY_MESSAGE);
       } else {
-        setPackagesError(err.detail || err.message || 'Failed to load package list');
+        setPackagesError(errorText(err));
       }
     } finally {
       setPackagesLoading(false);

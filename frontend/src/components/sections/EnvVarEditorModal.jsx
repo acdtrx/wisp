@@ -11,6 +11,7 @@ import {
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { autoFocusField } from '../../lib/focus.js';
+import { errorText } from '../../api/errors.js';
 
 const FORM_ID = 'env-var-editor-form';
 
@@ -133,7 +134,7 @@ export default function EnvVarEditorModal({ open, row, existingKeys = [], onSubm
       await onSubmit({ envPatch: patch });
       onClose();
     } catch (err) {
-      setError(err.message || 'Failed to save');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

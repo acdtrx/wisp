@@ -6,6 +6,7 @@ import { useContainerStore } from '../../store/containerStore.js';
 import { randomId } from '../../utils/randomId.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import { autoFocusField } from '../../lib/focus.js';
+import { errorText } from '../../api/errors.js';
 
 const CLIENT_BUFFER_HARD_LIMIT = 5000;
 const CLIENT_BUFFER_TRIM_TO = 4000;
@@ -80,7 +81,7 @@ export default function ContainerLogsSection({ containerName }) {
     try {
       ({ runs: next } = await listContainerRuns(containerName));
     } catch (err) {
-      failure = err.detail || err.message || 'Failed to load runs';
+      failure = errorText(err);
     }
     if (seq !== runsSeqRef.current) return;
     // A failed refetch keeps the runs already shown.
@@ -127,7 +128,7 @@ export default function ContainerLogsSection({ containerName }) {
       (data) => {
         if (data && data.error) {
           setStreamState('error');
-          setStreamError(data.detail || data.error);
+          setStreamError(errorText(data));
           return;
         }
         setStreamState('ready');

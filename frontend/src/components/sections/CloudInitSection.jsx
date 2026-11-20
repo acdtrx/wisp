@@ -6,6 +6,7 @@ import Toggle from '../shared/Toggle.jsx';
 import { getCloudInit, updateCloudInit, deleteCloudInit, fetchGithubKeys } from '../../api/vms.js';
 import { runVMCommand } from '../../store/vmStore.js';
 import { useChanges } from '../../hooks/useChanges.js';
+import { errorText } from '../../api/errors.js';
 
 /** API returns `{ enabled: false }` when no cloud-init.json exists. */
 function isBareCloudInitPlaceholder(data) {
@@ -87,7 +88,7 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
       setLoadError(null);
     } catch (err) {
       if (read <= reads.applied) return;
-      setLoadError(err.detail || err.message || 'Failed to load cloud-init');
+      setLoadError(errorText(err));
     } finally {
       setLoading(false);
     }
@@ -173,7 +174,7 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
       await runVMCommand(vmName, () => updateCloudInit(vmName, { ...form, password }));
       setEditing(false);
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }
@@ -186,7 +187,7 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
       await runVMCommand(vmName, () => deleteCloudInit(vmName));
       setEditing(false);
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }
@@ -205,7 +206,7 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
         updateField('sshKeySource', `github:${ghUsername.trim()}`);
       }
     } catch (err) {
-      setError(`GitHub keys: ${err.message}`);
+      setError(`GitHub keys: ${errorText(err)}`);
     } finally {
       setFetchingKeys(false);
     }

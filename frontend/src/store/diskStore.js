@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { createSSE } from '../api/sse.js';
+import { errorText } from '../api/errors.js';
 
 export const useDiskStore = create((set) => {
   let closeFn = null;
@@ -20,7 +21,7 @@ export const useDiskStore = create((set) => {
           if (Array.isArray(data)) {
             set({ disks: data, connected: true, error: null });
           } else if (data && data.error) {
-            set({ error: data.detail || data.error });
+            set({ error: errorText(data) });
           }
         },
         () => set({ connected: false, error: 'The device stream is not connected — retrying…' }),

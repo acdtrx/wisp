@@ -5,6 +5,7 @@ import Toggle from '../shared/Toggle.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
 import HelpIcon from '../shared/HelpIcon.jsx';
 import { LinuxIcon, WindowsIcon } from '../shared/vmIcons.jsx';
+import { errorText } from '../../api/errors.js';
 
 const OS_ICONS = { Linux: LinuxIcon, Windows: WindowsIcon };
 
@@ -111,7 +112,7 @@ export default function GeneralSection({ vmConfig, isCreating, onSave, onFormCha
 
       await onSave(changes);
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

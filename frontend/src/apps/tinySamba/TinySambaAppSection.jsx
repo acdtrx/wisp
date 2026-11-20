@@ -42,6 +42,7 @@ import {
 import { randomId } from '../../utils/randomId.js';
 import { useSettingsStore } from '../../store/settingsStore.js';
 import SettingsGate from '../../components/shared/SettingsGate.jsx';
+import { errorText } from '../../api/errors.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -321,7 +322,7 @@ export default function TinySambaAppSection({ config, onSave }) {
     try {
       await onSave(appConfig);
     } catch (err) {
-      setError(err?.detail || err?.message || 'Save failed');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }
@@ -332,7 +333,7 @@ export default function TinySambaAppSection({ config, onSave }) {
     try {
       appConfig = buildAppConfig();
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
       return;
     }
     const names = sharesLosingData(original, form);

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Loader2, Key } from 'lucide-react';
 import { changePassword } from '../../api/auth.js';
+import { errorText } from '../../api/errors.js';
 
 export default function PasswordChangeForm() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -30,7 +31,7 @@ export default function PasswordChangeForm() {
       setNewPassword('');
       setConfirmPassword('');
     } catch (err) {
-      setError(err.message || 'Failed to change password');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { closeIfNotOpenWithin, consoleWsUrl } from '../../api/console.js';
 import { getHostInfo } from '../../api/host.js';
+import { errorText, isSessionLost } from '../../api/errors.js';
 
 let RFBClass = null;
 const rfbUrl = `${(import.meta.env.BASE_URL || '/').replace(/\/?$/, '')}/vendor/novnc/core/rfb.js`;
@@ -163,13 +164,13 @@ export default function VNCConsole({ vmName, vmRunning, viewportRef, apiRef, onC
     }
 
     /** A refused upgrade (expired session) and a dropped network both close as 1006.
-     *  An authenticated GET tells them apart: on 401 `api()` sends the user to the
-     *  sign-in page; anything else retries. */
+     *  An authenticated GET tells them apart: on a lost session `api()` sends the
+     *  user to the sign-in page; anything else retries. */
     function retryAfterAuthCheck() {
       getHostInfo().then(
         () => scheduleRetry(),
         (err) => {
-          if (err?.message === 'Session expired') return;
+          if (isSessionLost(err)) return;
           scheduleRetry();
         },
       );
@@ -233,7 +234,7 @@ export default function VNCConsole({ vmName, vmRunning, viewportRef, apiRef, onC
         });
         rfb.scaleViewport = true;
       } catch (err) {
-        setError(err.message || 'Failed to connect');
+        setError(errorText(err));
       }
     }
 

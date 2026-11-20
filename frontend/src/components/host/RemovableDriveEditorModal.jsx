@@ -13,6 +13,7 @@ import { randomId } from '../../utils/randomId.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
 import { addMount, patchMount } from '../../api/settings.js';
 import { autoFocusField } from '../../lib/focus.js';
+import { errorText } from '../../api/errors.js';
 
 const FORM_ID = 'removable-drive-editor-form';
 
@@ -112,7 +113,7 @@ export default function RemovableDriveEditorModal({ open, drive, adoptDisk, onCl
       await onSaved?.();
       onClose();
     } catch (err) {
-      setError(err.message || 'Failed to save');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

@@ -11,6 +11,7 @@ import {
 import NicModelPills from './NicModelPills.jsx';
 import { randomMac } from '../../utils/randomMac.js';
 import { autoFocusField } from '../../lib/focus.js';
+import { errorText } from '../../api/errors.js';
 
 const FORM_ID = 'nic-editor-form';
 
@@ -63,7 +64,7 @@ export default function NicEditorModal({ open, nic, index, bridges = [], onSubmi
       await onSubmit({ source: form.source, model: form.model, mac: form.mac });
       onClose();
     } catch (err) {
-      setError(err.message || 'Failed to save');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

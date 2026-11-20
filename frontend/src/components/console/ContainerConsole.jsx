@@ -7,6 +7,7 @@ import { closeIfNotOpenWithin, consoleWsUrl } from '../../api/console.js';
 import { getHostInfo } from '../../api/host.js';
 import { useThemeStore } from '../../store/themeStore.js';
 import { consoleTheme } from './consoleTheme.js';
+import { errorText, isSessionLost } from '../../api/errors.js';
 
 const MAX_RECONNECT_ATTEMPTS = 12;
 const INITIAL_BACKOFF_MS = 1000;
@@ -150,13 +151,13 @@ export default function ContainerConsole({
     }
 
     /** A refused upgrade (expired session) and a dropped network both close as 1006.
-     *  An authenticated GET tells them apart: on 401 `api()` sends the user to the
-     *  sign-in page; anything else retries. */
+     *  An authenticated GET tells them apart: on a lost session `api()` sends the
+     *  user to the sign-in page; anything else retries. */
     function retryAfterAuthCheck() {
       getHostInfo().then(
         () => scheduleRetry(),
         (err) => {
-          if (err?.message === 'Session expired') return;
+          if (isSessionLost(err)) return;
           scheduleRetry();
         },
       );
@@ -190,7 +191,7 @@ export default function ContainerConsole({
         ws.binaryType = 'arraybuffer';
         closeIfNotOpenWithin(ws);
       } catch (err) {
-        setNotice({ kind: 'error', message: err?.message || 'Failed to open WebSocket' });
+        setNotice({ kind: 'error', message: errorText(err) });
         disposeTerminal();
         return;
       }

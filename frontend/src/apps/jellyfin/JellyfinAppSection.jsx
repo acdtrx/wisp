@@ -14,6 +14,7 @@ import { useSettingsStore } from '../../store/settingsStore.js';
 import { getHostGpus } from '../../api/host.js';
 import JellyfinLibraryEditorModal from './JellyfinLibraryEditorModal.jsx';
 import SettingsGate from '../../components/shared/SettingsGate.jsx';
+import { errorText } from '../../api/errors.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -98,7 +99,7 @@ export default function JellyfinAppSection({ config, onSave }) {
     let cancelled = false;
     getHostGpus()
       .then((res) => { if (!cancelled) setHostGpus(Array.isArray(res?.gpus) ? res.gpus : []); })
-      .catch((err) => { if (!cancelled) { setHostGpus([]); setGpuError(err.detail || err.message || 'failed'); } });
+      .catch((err) => { if (!cancelled) { setHostGpus([]); setGpuError(errorText(err)); } });
     return () => { cancelled = true; };
   }, []);
 
@@ -193,7 +194,7 @@ export default function JellyfinAppSection({ config, onSave }) {
       await onSave(appConfig);
       setOriginal(form);
     } catch (err) {
-      setError(err?.detail || err?.message || 'Failed to save');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

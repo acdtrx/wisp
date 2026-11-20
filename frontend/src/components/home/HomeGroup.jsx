@@ -5,6 +5,7 @@ import AlertDialog from '../shared/AlertDialog.jsx';
 import { useHomeStore } from '../../store/homeStore.js';
 import HomeTile from './HomeTile.jsx';
 import { autoFocusField } from '../../lib/focus.js';
+import { errorText } from '../../api/errors.js';
 
 const headerBtn =
   'rounded-sm p-0.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-30 disabled:hover:bg-transparent';
@@ -47,7 +48,7 @@ export default function HomeGroup({ group, tiles, editing, hideLabel, autoEdit, 
       await renameGroup(group.id, name);
       setRenaming(false);
     } catch (err) {
-      setErrorMsg(err.detail || err.message);
+      setErrorMsg(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -59,7 +60,7 @@ export default function HomeGroup({ group, tiles, editing, hideLabel, autoEdit, 
     try {
       await deleteGroup(group.id);
     } catch (err) {
-      setErrorMsg(err.detail || err.message);
+      setErrorMsg(errorText(err));
     } finally {
       setBusy(false);
     }

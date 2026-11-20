@@ -4,6 +4,7 @@ import { FolderInput, Check, FolderPlus } from 'lucide-react';
 import { useSectionsStore, MAIN_SECTION_ID, selectSectionId } from '../../store/sectionsStore.js';
 import AlertDialog from '../shared/AlertDialog.jsx';
 import { usePopover } from '../../lib/popover.js';
+import { errorText } from '../../api/errors.js';
 
 /**
  * Tiny popover trigger used inside a workload row in organize mode.
@@ -31,7 +32,7 @@ export default function SectionPickerButton({ type, name, disabled }) {
       await assignWorkload({ type, name, sectionId });
       setOpen(false);
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -44,7 +45,7 @@ export default function SectionPickerButton({ type, name, disabled }) {
       await createAndAssign({ type, name });
       setOpen(false);
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(errorText(err));
     } finally {
       setBusy(false);
     }

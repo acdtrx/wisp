@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { subscribeTopic } from '../api/events.js';
+import { errorText } from '../api/errors.js';
 
 export const useStatsStore = create((set) => {
   let unsubscribe = null;
@@ -20,7 +21,7 @@ export const useStatsStore = create((set) => {
           // failed. Keep the last good stats — every consumer dereferences
           // stats.cpu / stats.memory, so storing the error object crashes the render.
           if (!data || data.error) {
-            set({ connected: true, lastError: data?.detail || data?.error || 'Stats unavailable' });
+            set({ connected: true, lastError: data ? errorText(data) : 'Stats unavailable' });
             return;
           }
           set({ stats: data, connected: true, lastError: null });

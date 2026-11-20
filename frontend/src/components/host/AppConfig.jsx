@@ -8,6 +8,7 @@ import { useSettingsForm } from '../../hooks/useSettingsForm.js';
 import { updateSettings } from '../../api/settings.js';
 import SettingsGate from '../shared/SettingsGate.jsx';
 import SettingsRefreshNotice from '../shared/SettingsRefreshNotice.jsx';
+import { errorText } from '../../api/errors.js';
 
 function formFromSettings(settings) {
   return {
@@ -54,7 +55,7 @@ export default function AppConfig() {
         advertisedUrl: advertisedUrl.trim() || null,
       }));
     } catch (err) {
-      setError(err.message || 'Failed to save settings');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

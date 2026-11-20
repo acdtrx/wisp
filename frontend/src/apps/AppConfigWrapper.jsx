@@ -6,6 +6,7 @@ import { Unplug } from 'lucide-react';
 import AlertDialog from '../components/shared/AlertDialog.jsx';
 import ConfirmDialog from '../components/shared/ConfirmDialog.jsx';
 import { getAppEntry } from './appRegistry.js';
+import { errorText } from '../api/errors.js';
 
 export default function AppConfigWrapper({ config, onSave }) {
   const [ejectOpen, setEjectOpen] = useState(false);
@@ -23,7 +24,7 @@ export default function AppConfigWrapper({ config, onSave }) {
     try {
       await onSave({ eject: true });
     } catch (err) {
-      setEjectError(err.detail || err.message || 'Eject failed');
+      setEjectError(errorText(err));
     }
   };
 

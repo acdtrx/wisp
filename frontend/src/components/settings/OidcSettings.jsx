@@ -5,6 +5,7 @@ import Toggle from '../shared/Toggle.jsx';
 import { useSettingsForm } from '../../hooks/useSettingsForm.js';
 import { updateOidcSettings } from '../../api/settings.js';
 import SettingsGate from '../shared/SettingsGate.jsx';
+import { errorText } from '../../api/errors.js';
 
 const HELP =
   'Single sign-on via OpenID Connect (e.g. Pocket ID). Wisp stays single-user — a ' +
@@ -93,7 +94,7 @@ export default function OidcSettings() {
         setClientSecret('');
       }
     } catch (err) {
-      setError(err.detail || err.message || 'Failed to save SSO settings');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

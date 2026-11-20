@@ -8,6 +8,7 @@ import { JOB_KIND } from '../../api/jobProgress.js';
 import { createContainer } from '../../api/containers.js';
 import ContainerGeneralSection from '../sections/ContainerGeneralSection.jsx';
 import { getAppList } from '../../apps/appRegistry.js';
+import { errorText } from '../../api/errors.js';
 
 const STEP_LABELS = {
   validating: 'Validating…',
@@ -95,18 +96,15 @@ export default function CreateContainerPanel() {
             if (mountedRef.current) navigate(`/container/${encodeURIComponent(spec.name)}/overview`);
           }
           if (ev.step === 'error') {
-            setCreateError(ev.error || 'Creation failed');
-            setCreateDetail(
-              ev.error === 'Connection lost' ? CONNECTION_LOST_DETAIL : (ev.detail || null),
-            );
+            setCreateError(errorText(ev));
+            setCreateDetail(ev.error === 'CONNECTION_LOST' ? CONNECTION_LOST_DETAIL : null);
             setCreating(false);
             setCreateJobId(null);
           }
         },
       });
     } catch (err) {
-      setCreateError(err.message || 'Failed to create container');
-      setCreateDetail(err.detail || null);
+      setCreateError(errorText(err));
       setCreating(false);
       setCreateJobId(null);
     }

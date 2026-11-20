@@ -20,6 +20,7 @@ import {
   dataTableEmptyCellClass,
 } from '../../components/shared/DataTableChrome.jsx';
 import { randomId } from '../../utils/randomId.js';
+import { errorText } from '../../api/errors.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -114,7 +115,7 @@ export default function CaddyAppSection({ config, onSave }) {
       }
       await onSave(appConfig);
     } catch (err) {
-      setError(err?.detail || err?.message || 'Save failed');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

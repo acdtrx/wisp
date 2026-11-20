@@ -19,6 +19,7 @@ import {
 import { formatSize } from '../../utils/formatters.js';
 import { runVMCommand } from '../../store/vmStore.js';
 import { autoFocusField } from '../../lib/focus.js';
+import { errorText } from '../../api/errors.js';
 
 const FORM_ID = 'disk-editor-form';
 
@@ -107,7 +108,7 @@ export default function DiskEditorModal({
       .catch((err) => {
         if (!cancelled) {
           setImages([]);
-          setError(err.message || 'Failed to load the image library');
+          setError(errorText(err));
         }
       })
       .finally(() => {
@@ -157,7 +158,7 @@ export default function DiskEditorModal({
       }
       onClose();
     } catch (err) {
-      setError(err.message || 'Failed to save');
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

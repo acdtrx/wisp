@@ -18,6 +18,7 @@ import {
   DataTableTd,
   dataTableEmptyCellClass,
 } from '../shared/DataTableChrome.jsx';
+import { errorText } from '../../api/errors.js';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-2 lg:p-1.5 text-text-secondary hover:bg-surface hover:text-status-stopped transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
@@ -59,7 +60,7 @@ export default function USBSection({ vmConfig, busyReason }) {
     } catch (err) {
       if (signal?.aborted || read <= reads.applied) return;
       // A failure is not "nothing attached": keep what was shown and say so.
-      setAttachedError(err.detail || err.message || 'Failed to load attached devices');
+      setAttachedError(errorText(err));
       setLoading(false);
     }
   }, [vmName]);
@@ -82,7 +83,7 @@ export default function USBSection({ vmConfig, busyReason }) {
       await runVMCommand(vmName, () => attachUSBToVM(vmName, vendorId, productId));
       setAttachModalOpen(false);
     } catch (err) {
-      setError(err.message || 'Failed to attach USB device');
+      setError(errorText(err));
     } finally {
       setActionLoading(null);
     }
@@ -95,7 +96,7 @@ export default function USBSection({ vmConfig, busyReason }) {
     try {
       await runVMCommand(vmName, () => detachUSBFromVM(vmName, vendorId, productId));
     } catch (err) {
-      setError(err.message || 'Failed to detach USB device');
+      setError(errorText(err));
     } finally {
       setActionLoading(null);
     }

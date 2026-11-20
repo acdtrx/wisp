@@ -26,6 +26,7 @@ import { CONTAINER_STATE_ICON_COLOR } from '../../utils/containerConstants.js';
 import ScheduledRestartBadge from './ScheduledRestartBadge.jsx';
 import { getAppEntry } from '../../apps/appRegistry.js';
 import AppConfigWrapper from '../../apps/AppConfigWrapper.jsx';
+import { errorText } from '../../api/errors.js';
 
 const ContainerConsolePanel = lazy(() => import('../console/ContainerConsolePanel.jsx'));
 
@@ -393,7 +394,7 @@ export default function ContainerOverviewPanel() {
           try {
             await runContainerCommand(name, () => updateContainer(name, { iconId: selectedIconId }));
           } catch (err) {
-            reportActionError(name, err.message || 'Failed to change the icon');
+            reportActionError(name, errorText(err));
           }
         }}
         onClose={() => setIconPickerOpen(false)}
@@ -422,7 +423,7 @@ export default function ContainerOverviewPanel() {
           }
           error={
             backupJobId && bgJobs[backupJobId]?.status === 'error'
-              ? bgJobs[backupJobId].error
+              ? errorText(bgJobs[backupJobId].error)
               : backupError
           }
           onStart={async () => {
@@ -442,7 +443,7 @@ export default function ContainerOverviewPanel() {
               setBackupJobId(null);
               setBackupSelectedIds(['local']);
             } catch (err) {
-              setBackupError(err.message || 'Failed to start backup');
+              setBackupError(errorText(err));
               setBackupJobId(null);
             }
           }}

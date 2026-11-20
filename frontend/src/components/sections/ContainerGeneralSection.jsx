@@ -6,6 +6,7 @@ import Toggle from '../shared/Toggle.jsx';
 import HelpIcon from '../shared/HelpIcon.jsx';
 import ImageLibraryModal from '../shared/ImageLibraryModal.jsx';
 import { formatCommandLine, parseCommandLine } from '../../utils/commandLine.js';
+import { errorText } from '../../api/errors.js';
 
 /** Same control pattern as AdvancedSection (machine type, CPU model). */
 const RESTART_OPTIONS = [
@@ -140,7 +141,7 @@ export default function ContainerGeneralSection({ config, isCreating, onSave, on
       setForm(canonical);
       setOriginal(canonical);
     } catch (err) {
-      setError(err.message);
+      setError(errorText(err));
     } finally {
       setSaving(false);
     }

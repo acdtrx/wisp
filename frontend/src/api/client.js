@@ -1,10 +1,12 @@
+import { ApiError, errorFromBody, isSessionLost } from './errors.js';
+
 // Cookie-based session — the JWT lives in an HttpOnly cookie (`wisp_session`)
 // the backend sets on /api/auth/login. JS never reads or stores it. The
 // non-HttpOnly `wisp_csrf` cookie holds the per-session CSRF token; we read
 // it here and echo it as `X-CSRF-Token` on state-changing requests
-// (double-submit). On 401 we treat the session as gone and redirect to
-// /login. Multi-tab sync is done via a localStorage `wisp_logout` flag the
-// authStore writes on logout.
+// (double-submit). On a lost session (AUTH_REQUIRED / AUTH_INVALID) we
+// redirect to /login. Multi-tab sync is done via a localStorage `wisp_logout`
+// flag the authStore writes on logout.
 const CSRF_COOKIE = 'wisp_csrf';
 const CSRF_HEADER = 'X-CSRF-Token';
 const LOGOUT_SIGNAL_KEY = 'wisp_logout';
@@ -105,10 +107,13 @@ export function anySignal(signals) {
 
 /** The error for a call that hit its own deadline (not the caller's abort). */
 function timeoutError(timeoutMs) {
-  const err = new Error(`Wisp did not answer within ${Math.round(timeoutMs / 1000)} s`);
-  err.name = 'TimeoutError';
-  err.code = 'TIMEOUT';
-  return err;
+  return new ApiError({ code: 'TIMEOUT', detail: `Wisp did not answer within ${Math.round(timeoutMs / 1000)} s` });
+}
+
+/** The session is gone: tell the other tabs and go sign in. */
+export function leaveForLogin() {
+  broadcastLogout();
+  window.location.href = '/login';
 }
 
 export async function api(path, options = {}) {
@@ -137,20 +142,11 @@ export async function api(path, options = {}) {
     throw ownDeadline(err);
   }
 
-  if (res.status === 401) {
-    broadcastLogout();
-    window.location.href = '/login';
-    throw new Error('Session expired');
-  }
-
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
+    const data = await res.json().catch(() => null);
     if (deadline.aborted && !callerSignal?.aborted) throw timeoutError(timeoutMs);
-    const msg = data.error || data.message || `Request failed: ${res.status}`;
-    const err = new Error(msg);
-    err.status = res.status;
-    err.code = data.code;
-    err.detail = data.detail;
+    const err = errorFromBody(data, res.status);
+    if (isSessionLost(err)) leaveForLogin();
     throw err;
   }
 

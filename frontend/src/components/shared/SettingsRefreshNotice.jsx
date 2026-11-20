@@ -9,11 +9,9 @@ import { useSettingsStore } from '../../store/settingsStore.js';
 export default function SettingsRefreshNotice() {
   const hasSettings = useSettingsStore((s) => s.settings != null);
   const error = useSettingsStore((s) => s.error);
-  const errorDetail = useSettingsStore((s) => s.errorDetail);
   const errorBeforeFirstLoad = useSettingsStore((s) => s.errorBeforeFirstLoad);
   const dismissError = useSettingsStore((s) => s.dismissError);
   if (!hasSettings || !error) return null;
-  const detail = errorDetail && errorDetail !== error ? `${error}: ${errorDetail}` : error;
   return (
     <div
       role="alert"
@@ -21,8 +19,8 @@ export default function SettingsRefreshNotice() {
     >
       <span className="min-w-0 flex-1">
         {errorBeforeFirstLoad
-          ? `Settings failed to load at first (${detail}); they have loaded since.`
-          : `Couldn't refresh settings — ${detail}`}
+          ? `Settings failed to load at first (${error}); they have loaded since.`
+          : `Couldn't refresh settings — ${error}`}
       </span>
       <button
         type="button"

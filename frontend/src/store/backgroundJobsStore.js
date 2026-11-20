@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { subscribeJobProgress } from '../api/jobProgress.js';
 import { fetchBackgroundJobs } from '../api/backgroundJobs.js';
+import { ApiError } from '../api/errors.js';
 
 /** Same TTL as the server's job store, measured the same way: from completion.
  *  A finished row leaves the tray once it has been finished this long. */
@@ -15,9 +16,7 @@ const DONE_UI_TTL_MS = 5 * 60 * 1000;
  * @property {number | null} percent
  * @property {string | null} detail
  * @property {'running' | 'done' | 'error'} status
- * @property {string | null} error
- * @property {string | null} [errorDetail]
- * @property {string | null} [errorCode]
+ * @property {ApiError | null} error - the job's error event (`code`, `detail`), or why its stream ended
  * @property {object | null} [result] - the `done` event (the job's result)
  * @property {number} startedAt
  * @property {number | null} [finishedAt]
@@ -32,9 +31,7 @@ function applyEvent(row, ev) {
   };
   if (ev.step === 'error') {
     next.status = 'error';
-    next.error = ev.error || ev.detail || 'Failed';
-    next.errorDetail = ev.detail ?? null;
-    next.errorCode = ev.code ?? null;
+    next.error = new ApiError({ code: ev.error, detail: ev.detail });
     next.finishedAt = Date.now();
   }
   if (ev.step === 'done') {
@@ -151,6 +148,7 @@ export const useBackgroundJobsStore = create((set, get) => ({
           get().dismissJob(jobId);
           return;
         }
+        const lost = { step: 'error', error: 'CONNECTION_LOST', detail: 'Connection lost' };
         set((s) => {
           const cur = s.jobs[jobId];
           if (!cur) return s;
@@ -161,8 +159,7 @@ export const useBackgroundJobsStore = create((set, get) => ({
               [jobId]: {
                 ...cur,
                 status: 'error',
-                error: 'Connection lost',
-                errorCode: 'CONNECTION_LOST',
+                error: new ApiError({ code: lost.error, detail: lost.detail }),
                 step: 'error',
                 finishedAt: Date.now(),
               },
@@ -173,7 +170,7 @@ export const useBackgroundJobsStore = create((set, get) => ({
           const { [jobId]: _c, ...rest } = s.closeFns;
           return { closeFns: rest };
         });
-        onTerminal?.({ step: 'error', error: 'Connection lost' });
+        onTerminal?.(lost);
         get().schedulePrune();
       },
     );
@@ -198,8 +195,8 @@ export const useBackgroundJobsStore = create((set, get) => ({
 /**
  * Follow a job the server accepted (the `{ jobId, title }` its route answered):
  * show it in the tray, and resolve with its `done` event or reject with its
- * error (`message`, `detail`, `code`, as `api()` throws; `code` is
- * CONNECTION_LOST or JOB_GONE when the stream, not the job, ended it). The job runs on the
+ * error, an ApiError as `api()` throws (`code` is CONNECTION_LOST or JOB_GONE
+ * when the stream, not the job, ended it). The job runs on the
  * server whether or not anyone follows it; this works whether or not the tray
  * already holds the job (the tray's hydration may have registered it first).
  * @param {string} kind - a JOB_KIND
@@ -213,9 +210,7 @@ export function awaitJob(kind, { jobId, title }) {
     const settle = (row) => {
       if (!row) {
         // Dismissed, or unknown to the server (it restarted, or the job expired).
-        const err = new Error('The job is no longer followed');
-        err.code = 'JOB_GONE';
-        reject(err);
+        reject(new ApiError({ code: 'JOB_GONE', detail: 'The job is no longer followed' }));
         return true;
       }
       if (row.status === 'done') {
@@ -223,10 +218,7 @@ export function awaitJob(kind, { jobId, title }) {
         return true;
       }
       if (row.status === 'error') {
-        const err = new Error(row.error || 'Failed');
-        err.detail = row.errorDetail ?? undefined;
-        err.code = row.errorCode ?? undefined;
-        reject(err);
+        reject(row.error);
         return true;
       }
       return false;

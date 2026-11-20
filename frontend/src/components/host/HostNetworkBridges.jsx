@@ -22,6 +22,7 @@ import {
   listManagedNetworkBridges,
   deleteManagedNetworkBridge,
 } from '../../api/host.js';
+import { errorText } from '../../api/errors.js';
 
 export default function HostNetworkBridges({ onError }) {
   const [loading, setLoading] = useState(true);
@@ -48,7 +49,7 @@ export default function HostNetworkBridges({ onError }) {
     } catch (err) {
       if (request !== readsSent.current) return;
       setLoadFailed(true); // the error shows on the card; the list shown stays
-      reportError(err.detail || err.message || 'Failed to load network bridges');
+      reportError(errorText(err));
     } finally {
       if (request === readsSent.current) setLoading(false);
     }
@@ -67,7 +68,7 @@ export default function HostNetworkBridges({ onError }) {
     try {
       await awaitJob(JOB_KIND.NETWORK_BRIDGE_DELETE, await deleteManagedNetworkBridge(name));
     } catch (err) {
-      reportError(err.detail || err.message || `Failed to delete bridge ${name}`);
+      reportError(errorText(err));
     } finally {
       setDeletingName(null);
     }

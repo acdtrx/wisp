@@ -7,6 +7,7 @@ import {
   errorKey, withError, withoutError, withoutErrorsOfVanished, withErrorsRenamed, withBusy, anyActionInFlight,
 } from './workloadActions.js';
 import { JOB_KIND } from '../api/jobProgress.js';
+import { errorText } from '../api/errors.js';
 
 /**
  * The list feed refreshes on every libvirt domain event, so it carries the
@@ -55,7 +56,7 @@ export const useVmStore = create((set, get) => {
 
   function noteFailedRead(seq, read, err) {
     if (newestFailedRead && newestFailedRead.seq === seq && newestFailedRead.read > read) return;
-    newestFailedRead = { seq, read, message: err.detail || err.message };
+    newestFailedRead = { seq, read, message: errorText(err) };
   }
 
   /** Apply read `read`'s config to VM `name`. A config is on screen now, so a select
@@ -173,7 +174,7 @@ export const useVmStore = create((set, get) => {
           if (merged) set({ vmConfig: merged });
         }
       } catch (err) {
-        set((prev) => ({ errors: withError(prev.errors, 'list', null, err.message), listError: err.detail || err.message }));
+        set((prev) => ({ errors: withError(prev.errors, 'list', null, errorText(err)), listError: errorText(err) }));
       }
     },
 
@@ -189,7 +190,7 @@ export const useVmStore = create((set, get) => {
         'vms',
         (data) => {
           if (data && !Array.isArray(data) && data.error) {
-            set({ listError: data.detail || data.error });
+            set({ listError: errorText(data) });
             return;
           }
           if (!Array.isArray(data)) return;
@@ -267,7 +268,7 @@ export const useVmStore = create((set, get) => {
         /* A newer read already applied, or still on its way, has the say: the view stays
          * loading (no section renders the list seed as the config) until it settles. */
         if (read !== configReadsSent || read <= configReadsApplied) return;
-        set((prev) => ({ vmConfig: null, configLoading: false, errors: withError(prev.errors, 'select', name, err.message) }));
+        set((prev) => ({ vmConfig: null, configLoading: false, errors: withError(prev.errors, 'select', name, errorText(err)) }));
       }
     },
 
@@ -311,10 +312,10 @@ export const useVmStore = create((set, get) => {
         if (read !== configReadsSent || read <= configReadsApplied) return;
         if (get().configLoading || !get().vmConfig) {
           // No config on screen (a select still loading, or its error page): the error page.
-          set((prev) => ({ vmConfig: null, configLoading: false, errors: withError(prev.errors, 'select', selectedVM, err.message) }));
+          set((prev) => ({ vmConfig: null, configLoading: false, errors: withError(prev.errors, 'select', selectedVM, errorText(err)) }));
           return;
         }
-        set((prev) => ({ errors: withError(prev.errors, 'refresh', selectedVM, `Couldn't refresh this VM: ${err.detail || err.message}`) }));
+        set((prev) => ({ errors: withError(prev.errors, 'refresh', selectedVM, `Couldn't refresh this VM: ${errorText(err)}`) }));
         return;
       }
       if (seq !== selectionSeq || read <= configReadsApplied) return;
@@ -336,7 +337,7 @@ export const useVmStore = create((set, get) => {
         if (actionName === 'delete' && get().selectedVM === name) get().deselectVM();
         return true;
       } catch (err) {
-        set((s) => ({ actions: withBusy(s.actions, name, null), errors: withError(s.errors, 'action', name, err.message) }));
+        set((s) => ({ actions: withBusy(s.actions, name, null), errors: withError(s.errors, 'action', name, errorText(err)) }));
         return false;
       }
     },

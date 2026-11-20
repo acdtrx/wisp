@@ -1,4 +1,5 @@
-import { API_TIMEOUT_MS, broadcastLogout, readCsrfToken } from './client.js';
+import { API_TIMEOUT_MS, leaveForLogin, readCsrfToken } from './client.js';
+import { ApiError, errorFromBody, isSessionLost } from './errors.js';
 
 /*
  * CODING-RULES §6: no total cap while sending — a large file on a slow link
@@ -11,7 +12,7 @@ const REPLY_TIMEOUT_MS = API_TIMEOUT_MS;
 
 /**
  * POST a single file as multipart field `file` with optional upload progress (0–100).
- * Parses JSON success body; on failure sets `err.detail` from server when present.
+ * Parses JSON success body; fails with an ApiError, as `api()` does.
  */
 export function postMultipartFile(url, file, options = {}) {
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : undefined;
@@ -56,12 +57,6 @@ export function postMultipartFile(url, file, options = {}) {
     });
 
     xhr.addEventListener('load', () => {
-      if (xhr.status === 401) {
-        broadcastLogout();
-        window.location.href = '/login';
-        reject(new Error('Session expired'));
-        return;
-      }
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           resolve(JSON.parse(xhr.responseText || '{}'));
@@ -71,26 +66,22 @@ export function postMultipartFile(url, file, options = {}) {
         }
         return;
       }
-      let msg = `Upload failed (${xhr.status})`;
-      let detail;
+      let data = null;
       try {
-        const data = JSON.parse(xhr.responseText || '{}');
-        if (data.error) msg = data.error;
-        detail = data.detail;
+        data = JSON.parse(xhr.responseText || 'null');
       } catch {
-        /* Error body not JSON — use HTTP status text */
-        msg = xhr.statusText || msg;
+        /* Error body not JSON — errorFromBody names the status */
       }
-      const err = new Error(msg);
-      if (detail) err.detail = detail;
+      const err = errorFromBody(data, xhr.status);
+      if (isSessionLost(err)) leaveForLogin();
       reject(err);
     });
 
-    xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+    xhr.addEventListener('error', () => reject(new ApiError({ code: 'UPLOAD_FAILED', detail: 'Upload failed' })));
     xhr.addEventListener('abort', () => {
-      if (stalled) reject(new Error(`Upload stalled: no progress for ${UPLOAD_IDLE_MS / 1000} s`));
-      else if (replyTimedOut) reject(new Error('The server did not answer after the upload'));
-      else reject(new Error('Upload cancelled'));
+      if (stalled) reject(new ApiError({ code: 'UPLOAD_STALLED', detail: `Upload stalled: no progress for ${UPLOAD_IDLE_MS / 1000} s` }));
+      else if (replyTimedOut) reject(new ApiError({ code: 'TIMEOUT', detail: 'The server did not answer after the upload' }));
+      else reject(new ApiError({ code: 'UPLOAD_CANCELLED', detail: 'Upload cancelled' }));
     });
 
     armIdle();
