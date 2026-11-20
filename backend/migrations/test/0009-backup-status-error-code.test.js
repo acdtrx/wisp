@@ -88,13 +88,20 @@ test('successful and already-migrated records are left alone, and nothing is wri
   assert.deepEqual(changes, []);
 });
 
-test('a failed record without a message is left alone', async () => {
-  const status = { vms: { web: failed({}) }, containers: { db: failed({ error: null }) } };
-  install(status);
+test('a failed record without a message gets INTERNAL_ERROR, its detail saying the cause was not recorded', async () => {
+  install({ vms: { web: failed({}) }, containers: { db: failed({ error: null }), app: failed({ error: '' }) } });
   const { ctx, changes } = context();
   await run(ctx);
-  assert.deepEqual(readStatus(), status);
-  assert.deepEqual(changes, []);
+  const noCause = { error: 'INTERNAL_ERROR', detail: 'The backup failed; its cause was not recorded' };
+  assert.deepEqual(readStatus(), {
+    vms: { web: failed(noCause) },
+    containers: { db: failed(noCause), app: failed(noCause) },
+  });
+  assert.deepEqual(changes, [
+    'backup-status.json vms.web: no message → error INTERNAL_ERROR, cause not recorded',
+    'backup-status.json containers.db: no message → error INTERNAL_ERROR, cause not recorded',
+    'backup-status.json containers.app: no message → error INTERNAL_ERROR, cause not recorded',
+  ]);
 });
 
 test('a missing file is no attempt recorded: nothing is written', async () => {
@@ -117,7 +124,7 @@ test('a file that is not a JSON object is left for the backend to replace, with 
 });
 
 test('a second run changes nothing', async () => {
-  install({ vms: { web: failed({ error: 'Backup failed: disk full' }) }, containers: {} });
+  install({ vms: { web: failed({ error: 'Backup failed: disk full' }) }, containers: { db: failed({}) } });
   await run(context().ctx);
   const once = readFileSync(statusPath(), 'utf8');
   const { ctx, changes } = context();
