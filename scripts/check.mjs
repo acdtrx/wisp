@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
 
 /**
- * `needs`: the package directory (`.` for the repo root) whose installed
+ * `needs`: the package directories (`.` for the repo root) whose installed
  * dependencies the check runs on.
  * `timeoutMs`: a bound on the whole step. The test runner ends a test that runs
  * too long, but a test file whose test left a timer or stream open never exits,
@@ -21,13 +21,14 @@ const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url));
 const CHECKS = [
   { name: 'imports', command: ['node', 'scripts/check-imports.mjs'] },
   { name: 'fences', command: ['node', 'scripts/check-fences.mjs'] },
-  { name: 'lint', command: ['npm', 'run', 'lint', '--silent'], needs: '.' },
+  { name: 'lint', command: ['npm', 'run', 'lint', '--silent'], needs: ['.'] },
   { name: 'shell', command: ['node', 'scripts/check-shell.mjs'] },
   { name: 'bounds', command: ['node', 'scripts/check-bounds.mjs'] },
   { name: 'refusals', command: ['node', 'scripts/check-refusals.mjs'] },
+  { name: 'error-codes', command: ['node', 'scripts/check-error-codes.mjs'] },
   // Setup's Python, which reads the network tools' files: its unit tests.
   { name: 'setup-python', command: ['python3', '-I', '-B', '-m', 'unittest', 'discover', '-s', 'scripts/linux/setup', '-p', '*_test.py'], timeoutMs: 60_000 },
-  { name: 'test', command: ['npm', 'test', '--silent'], needs: 'frontend', timeoutMs: 120_000 },
+  { name: 'test', command: ['npm', 'test', '--silent'], needs: ['frontend', 'backend'], timeoutMs: 120_000 },
 ];
 
 /** The running step's process group, ended with the runner. */
@@ -68,9 +69,12 @@ function runStep(command, timeoutMs) {
 const failed = [];
 for (const { name, command, needs, timeoutMs } of CHECKS) {
   console.log(`\n── ${name} ──`);
-  if (needs && !existsSync(path.join(REPO_ROOT, needs, 'node_modules'))) {
-    const where = needs === '.' ? 'at the repo root' : `in ${needs}/`;
-    console.error(`${needs === '.' ? '' : `${needs}/`}node_modules is missing: run \`npm ci\` ${where} first.`);
+  const missing = (needs ?? []).filter((dir) => !existsSync(path.join(REPO_ROOT, dir, 'node_modules')));
+  if (missing.length > 0) {
+    for (const dir of missing) {
+      const where = dir === '.' ? 'at the repo root' : `in ${dir}/`;
+      console.error(`${dir === '.' ? '' : `${dir}/`}node_modules is missing: run \`npm ci\` ${where} first.`);
+    }
     failed.push(name);
     continue;
   }

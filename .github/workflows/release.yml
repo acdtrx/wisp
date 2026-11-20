@@ -49,12 +49,14 @@ jobs:
           done
           echo "All package.json versions match $VERSION"
 
-      # The root's dev tools (ESLint) and the frontend's packages (the unit tests and
-      # the build); the backend's are installed on the host by wisp-updater.
+      # The root's dev tools (ESLint), the frontend's packages (its unit tests and the
+      # build) and the backend's (its unit tests build the app). The tarball carries
+      # none of them: a host installs the backend's itself.
       - name: Install dependencies
         run: |
           npm ci
-          cd frontend && npm ci
+          (cd frontend && npm ci)
+          (cd backend && npm ci)
 
       # The gate: nothing is built, staged or published unless every check passes.
       - name: Check
