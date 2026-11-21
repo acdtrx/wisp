@@ -44,3 +44,28 @@ export function failSave(state) {
 export function isDirty(state) {
   return keyOf(state.form) !== keyOf(state.saved);
 }
+
+/**
+ * A form's save, by construction: run its command (`send`, resolving whether it
+ * succeeded), then read the form's own record again — a new read, sent after the
+ * command ended, whatever the events stream does — and only then follow the record.
+ * A failed command, or a failed re-read (the record's error state shows it), leaves
+ * the form as typed. `update` applies a state step (`beginSave`, `endSave`, `failSave`).
+ *
+ * @param {() => Promise<boolean>} send
+ * @param {() => Promise<boolean>} reread
+ * @param {(step: (state: any) => any) => void} update
+ * @returns {Promise<boolean>} whether the command succeeded
+ */
+export async function saveForm(send, reread, update) {
+  update(beginSave);
+  let ok = false;
+  try {
+    ok = await send();
+  } finally {
+    if (!ok) update(failSave);
+  }
+  if (!ok) return false;
+  update((await reread()) ? endSave : failSave);
+  return true;
+}

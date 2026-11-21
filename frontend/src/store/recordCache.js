@@ -85,8 +85,10 @@ export function createRecordCache(kinds) {
     for (const listener of entry.listeners) listener();
   }
 
+  /** Read the entry once; resolves `true` when the read answered (applied or not, or the
+   *  record is gone), `false` when it failed or was aborted. */
   function read(entry) {
-    if (!entry.live) return Promise.resolve();
+    if (!entry.live) return Promise.resolve(false);
     const n = ++entry.sent;
     const controller = new AbortController();
     const settled = () => {
@@ -97,27 +99,32 @@ export function createRecordCache(kinds) {
     publish(entry);
     const promise = entry.spec.fetch(entry.id, { signal: controller.signal })
       .then((data) => {
-        if (!entry.live || n <= entry.applied) return;
+        if (!entry.live || n <= entry.applied) return true;
         entry.applied = n;
         entry.gone = false;
         if (!entry.hasData || !sameValue(entry.data, data)) entry.data = data;
         entry.hasData = true;
         if (n > entry.failedAt) entry.error = null;
+        return true;
       }, (err) => {
-        if (!entry.live || controller.signal.aborted || n !== entry.sent) return;
+        if (!entry.live || controller.signal.aborted) return false;
+        /* Replaced by a newer read: that read's outcome is this one's, settled or not. */
+        if (n !== entry.sent) return entry.newest;
         if (entry.spec.goneCodes?.includes(err?.code)) {
           entry.applied = n;
           entry.gone = true;
           entry.hasData = false;
           entry.data = null;
           entry.error = null;
-        } else {
-          entry.failedAt = n;
-          entry.error = err;
+          return true;
         }
+        entry.failedAt = n;
+        entry.error = err;
+        return false;
       })
       .finally(settled);
     entry.inflight.set(controller, promise);
+    entry.newest = promise;
     return promise;
   }
 
@@ -221,10 +228,11 @@ export function createRecordCache(kinds) {
     },
 
     /** A command's re-read: a read sent now, after the command's change, whatever is on
-     *  its way; resolves when it settles. Nothing is read for a record no view shows. */
+     *  its way; resolves when it settles, `true` when it answered (`false`: it failed).
+     *  Nothing is read for a record no view shows. */
     reread(kind, id) {
       const entry = entryOf(kind, id);
-      return entry?.live ? read(entry) : Promise.resolve();
+      return entry?.live ? read(entry) : Promise.resolve(true);
     },
 
     /** Dismiss the record's error while its data is shown. */

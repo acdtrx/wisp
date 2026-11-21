@@ -7,7 +7,7 @@ const unsubscribed = () => noop;
 
 /**
  * A record from the server, read while this view shows it (store/records.js):
- * `{ data, status, error, reading, reload, dismiss }`, `status` one of `loading`,
+ * `{ data, status, error, reading, reload, reread, dismiss }`, `status` one of `loading`,
  * `ready`, `error` (the data, if any, is still the last good one), `gone` (the server
  * answered the kind's not-found) or `idle` (no `id`: nothing is read); `reading` while
  * a read is on its way. Every view showing the same record shares one read.
@@ -32,6 +32,8 @@ export function useRecord(kind, id) {
   return useMemo(() => ({
     ...snapshot,
     reload: () => records.reload(kind, JSON.parse(idKey)),
+    /** A new read, sent now (a command's, or a form's after its save): resolves whether it answered. */
+    reread: () => (kind == null ? Promise.resolve(true) : records.reread(kind, JSON.parse(idKey))),
     dismiss: () => records.dismiss(kind, JSON.parse(idKey)),
   }), [snapshot, kind, idKey]);
 }

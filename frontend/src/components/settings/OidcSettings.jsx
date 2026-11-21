@@ -27,7 +27,7 @@ const formFromSettings = (settings) => ({
 export default function OidcSettings() {
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const settings = settingsRecord.data;
-  const { form, saved, setField, dirty, save } = useForm(settings, formFromSettings);
+  const { form, saved, setField, dirty, save } = useForm(settingsRecord, formFromSettings);
   const hasSecret = !!settings?.oidc?.hasClientSecret;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -81,7 +81,10 @@ export default function OidcSettings() {
       // long as issuer and client ID are unchanged.
       if (clientSecret) oidcUpdate.clientSecret = clientSecret;
 
-      await save(() => sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => updateOidcSettings(oidcUpdate)));
+      await save(async () => {
+        await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => updateOidcSettings(oidcUpdate));
+        return true;
+      });
     } catch (err) {
       setError(errorText(err));
     } finally {

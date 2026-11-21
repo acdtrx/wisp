@@ -21,7 +21,7 @@ export default function MountFileEditorModal({
 }) {
   /* The file's content is read while the editor is open; the text follows it by value. */
   const content = useRecord(RECORD.MOUNT_FILE_CONTENT, open && containerName && mountName ? [containerName, mountName] : null);
-  const { form: text, setForm } = useForm(content.data, contentText);
+  const { form: text, setForm } = useForm(content, contentText);
   const setText = (value) => setForm(() => value);
   /* Save only over the file as read: not while it loads, after a failed read, or once
    * the mount (or its container) is gone. */

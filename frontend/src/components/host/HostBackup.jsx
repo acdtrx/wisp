@@ -19,7 +19,7 @@ const formFromSettings = (settings) => ({
 export default function HostBackup() {
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const settings = settingsRecord.data;
-  const { form, setField, dirty, save } = useForm(settings, formFromSettings);
+  const { form, setField, dirty, save } = useForm(settingsRecord, formFromSettings);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -27,10 +27,13 @@ export default function HostBackup() {
     setError(null);
     setSaving(true);
     try {
-      await save((sent) => sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => updateSettings({
-        backupLocalPath: sent.backupLocalPath.trim(),
-        backupMountId: sent.backupMountId ? sent.backupMountId : null,
-      })));
+      await save(async (sent) => {
+        await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => updateSettings({
+          backupLocalPath: sent.backupLocalPath.trim(),
+          backupMountId: sent.backupMountId ? sent.backupMountId : null,
+        }));
+        return true;
+      });
     } catch (err) {
       setError(errorText(err));
     } finally {

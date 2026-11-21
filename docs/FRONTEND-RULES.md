@@ -46,8 +46,10 @@ holds the UI library's rules.
     elsewhere in the record leaves it be), and `dirty` is computed by value. While its
     own save is in flight the form does not follow its record; when the save's command
     ends — which is after the re-read of what it changed has landed — the form follows
-    the record as it then is. A failed save leaves the form as typed, dirty. A save
-    whose command ends before its record's re-read is a bug in the command.
+    the record as it then is. A failed save leaves the form as typed, dirty. The save is
+    the form hook's own: the command, then a new read of the form's record, sent after
+    the command ended whatever the events stream does; the form follows the record once
+    that read has landed, and a failed read leaves it as typed.
   - Applied (settled 2026-11-15): a command's control stays busy until the stream brings
     its new state (its topic's next frame, or the `changes` reference and the re-read it
     triggers), so a section or modal closes onto fresh data; a command error ends it at

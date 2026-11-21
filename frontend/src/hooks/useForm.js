@@ -1,19 +1,21 @@
 import { useState } from 'react';
 
-import { beginSave, endSave, failSave, followRecord, initialFormState, isDirty } from './formState.js';
+import { followRecord, initialFormState, isDirty, saveForm } from './formState.js';
 
 /**
  * A form that stages edits behind a Save or a confirm (docs/FRONTEND-RULES.md, Data),
  * following its record by value (formState.js).
  *
  * @template F
- * @param {unknown} record — the saved record (null before it loads: `form` is null)
+ * @param {{ data: unknown, reread?: () => Promise<boolean> }} record — the saved record, as
+ *   `useRecord` answers it (`data` null before it loads: `form` is null); a create
+ *   form's draft is `{ data: draft }`, with no save
  * @param {(record: any) => F} toForm — the record's values as this form shows them
  * @returns {{ form: F, saved: F, setForm: (update: (form: F) => F) => void, setField: (key: string, value: unknown) => void,
- *   dirty: boolean, reset: () => void, save: <T>(send: (form: F) => Promise<T>) => Promise<T> }}
+ *   dirty: boolean, saving: boolean, reset: () => void, save: (send: (form: F) => Promise<boolean>) => Promise<boolean> }}
  */
 export function useForm(record, toForm) {
-  const values = record == null ? null : toForm(record);
+  const values = record.data == null ? null : toForm(record.data);
   const [state, setState] = useState(() => initialFormState(values));
   /* Following the record is state derived while rendering, not an effect: the form
    * never paints a frame with the old values. */
@@ -27,18 +29,12 @@ export function useForm(record, toForm) {
     setForm: (update) => setState((s) => ({ ...s, form: update(s.form) })),
     setField: (key, value) => setState((s) => ({ ...s, form: { ...s.form, [key]: value } })),
     dirty: isDirty(current),
+    /** From the command until its re-read has landed: what a Save control shows. */
+    saving: current.saving,
     reset: () => setState((s) => ({ ...s, form: s.saved })),
-    /** Run the save's command with the form; the form follows its record again when it ends. Rejects with its error. */
-    save: async (send) => {
-      setState(beginSave);
-      try {
-        const result = await send(current.form);
-        setState(endSave);
-        return result;
-      } catch (err) {
-        setState(failSave);
-        throw err;
-      }
-    },
+    /** Save: run the command with the form (`send` resolves whether it succeeded, as
+     *  the command hook's `run` does), then read the record again; the form follows it
+     *  only once that read has landed (formState.js, `saveForm`). */
+    save: (send) => saveForm(() => send(current.form), record.reread, setState),
   };
 }

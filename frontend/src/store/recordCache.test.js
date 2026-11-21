@@ -93,6 +93,56 @@ test('a failed read that a newer read has replaced shows nothing', async () => {
   v.off();
 });
 
+/** Two reads of one record, settled in `order`; resolves what each read's promise answered. */
+async function twoReads(order) {
+  const { cache, reads } = cacheWith();
+  const v = follow(cache);
+  reads.calls[0].resolve({ v: 0 });
+  await settle();
+  const older = cache.reread('thing', 'a');
+  const newer = cache.reread('thing', 'a');
+  const outcomes = [];
+  older.then((ok) => outcomes.push(['older', ok]));
+  newer.then((ok) => outcomes.push(['newer', ok]));
+  const fail = new ApiError({ status: 503, code: 'X', detail: 'down' });
+  for (const step of order) {
+    const [which, how] = step.split(' ');
+    const call = reads.calls[which === 'older' ? 1 : 2];
+    if (how === 'ok') call.resolve({ v: which });
+    else call.reject(fail);
+    await settle();
+  }
+  const result = { older: await older, newer: await newer, reading: v.now().reading };
+  v.off();
+  return result;
+}
+
+test('a replaced read that fails takes the newest read\'s outcome, in every order', async () => {
+  assert.deepEqual(await twoReads(['newer ok', 'older fail']), { older: true, newer: true, reading: false });
+  assert.deepEqual(await twoReads(['older fail', 'newer ok']), { older: true, newer: true, reading: false });
+  assert.deepEqual(await twoReads(['newer fail', 'older fail']), { older: false, newer: false, reading: false });
+  assert.deepEqual(await twoReads(['older fail', 'newer fail']), { older: false, newer: false, reading: false });
+});
+
+test('a Retry after a replaced failure settles, and a command waiting on it ends', async () => {
+  const { cache, reads } = cacheWith();
+  const v = follow(cache);
+  reads.calls[0].resolve({ v: 0 });
+  await settle();
+  const older = cache.reread('thing', 'a');
+  cache.reread('thing', 'a');
+  reads.calls[2].resolve({ v: 2 });
+  await settle();
+  reads.calls[1].reject(new ApiError({ status: 503, code: 'X', detail: 'down' }));
+  assert.equal(await older, true);
+  await settle();
+  assert.equal(v.now().reading, false);
+  const retry = cache.reload('thing', 'a');
+  reads.calls[3].resolve({ v: 3 });
+  assert.equal(await retry, true);
+  v.off();
+});
+
 test('the newest read failing keeps the data shown, and an older answer landing after it keeps the error', async () => {
   const { cache, reads } = cacheWith();
   const v = follow(cache);

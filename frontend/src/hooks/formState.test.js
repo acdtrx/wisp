@@ -42,3 +42,34 @@ test('after the save ends the form follows by value again', () => {
   s = edit(s, { a: 3 });
   assert.equal(followRecord(s, { a: 2 }), s);
 });
+
+test('a save re-reads its record after the command, with no stream: the form shows the re-read record', async () => {
+  const { saveForm } = await import('./formState.js');
+  let state = edit(initialFormState({ a: 1 }), { a: 2 });
+  const update = (step) => { state = step(state); };
+  const order = [];
+  let record = { a: 1 };
+  /* The events stream is refused: no frame comes. Only the save's own re-read moves the record. */
+  const ok = await saveForm(async () => { order.push('command'); return true; },
+    async () => { order.push('reread'); record = { a: 2 }; return true; }, update);
+  state = followRecord(state, record);
+  assert.equal(ok, true);
+  assert.deepEqual(order, ['command', 'reread']);
+  assert.deepEqual(state.form, { a: 2 });
+  assert.equal(isDirty(state), false);
+});
+
+test('a failed re-read after the save leaves the form as typed; a failed command reads nothing', async () => {
+  const { saveForm } = await import('./formState.js');
+  let state = edit(initialFormState({ a: 1 }), { a: 2 });
+  const update = (step) => { state = step(state); };
+  await saveForm(async () => true, async () => false, update);
+  state = followRecord(state, { a: 1 });
+  assert.deepEqual(state.form, { a: 2 });
+  assert.equal(isDirty(state), true);
+  let reread = false;
+  const ok = await saveForm(async () => false, async () => { reread = true; return true; }, update);
+  assert.equal(ok, false);
+  assert.equal(reread, false);
+  assert.deepEqual(followRecord(state, { a: 1 }).form, { a: 2 });
+});

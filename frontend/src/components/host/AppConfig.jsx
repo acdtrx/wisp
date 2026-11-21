@@ -26,7 +26,7 @@ function formFromSettings(settings) {
 
 export default function AppConfig() {
   const settingsRecord = useRecord(RECORD.SETTINGS);
-  const { form, setField, dirty, save } = useForm(settingsRecord.data, formFromSettings);
+  const { form, setField, dirty, save } = useForm(settingsRecord, formFromSettings);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -34,14 +34,17 @@ export default function AppConfig() {
     setError(null);
     setSaving(true);
     try {
-      await save((sent) => sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => updateSettings({
-        serverName: sent.serverName.trim() || undefined,
-        vmsPath: sent.vmsPath.trim(),
-        imagePath: sent.imagePath.trim(),
-        discoveryEnabled: sent.discoveryEnabled,
-        // explicit null clears back to the default announcement
-        advertisedUrl: sent.advertisedUrl.trim() || null,
-      })));
+      await save(async (sent) => {
+        await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => updateSettings({
+          serverName: sent.serverName.trim() || undefined,
+          vmsPath: sent.vmsPath.trim(),
+          imagePath: sent.imagePath.trim(),
+          discoveryEnabled: sent.discoveryEnabled,
+          // explicit null clears back to the default announcement
+          advertisedUrl: sent.advertisedUrl.trim() || null,
+        }));
+        return true;
+      });
     } catch (err) {
       setError(errorText(err));
     } finally {

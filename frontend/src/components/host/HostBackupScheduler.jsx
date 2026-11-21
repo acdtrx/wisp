@@ -43,7 +43,7 @@ function clampInt(value, min, max, fallback) {
 export default function HostBackupScheduler() {
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const settings = settingsRecord.data;
-  const { form, setForm, dirty, save } = useForm(settings, fromSettings);
+  const { form, setForm, dirty, save } = useForm(settingsRecord, fromSettings);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -68,15 +68,18 @@ export default function HostBackupScheduler() {
     setError(null);
     setSaving(true);
     try {
-      await save((sent) => sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => updateSettings({
-        backupSchedule: {
-          enabled: sent.enabled,
-          time: sent.time,
-          destinationIds: sent.destinationIds,
-          retainDays: clampInt(sent.retainDays, 1, 365, DEFAULT_SCHEDULE.retainDays),
-          retainWeeks: clampInt(sent.retainWeeks, 0, 52, DEFAULT_SCHEDULE.retainWeeks),
-        },
-      })));
+      await save(async (sent) => {
+        await sendAndAwaitKindChange(CHANGE_KIND.SETTINGS, () => updateSettings({
+          backupSchedule: {
+            enabled: sent.enabled,
+            time: sent.time,
+            destinationIds: sent.destinationIds,
+            retainDays: clampInt(sent.retainDays, 1, 365, DEFAULT_SCHEDULE.retainDays),
+            retainWeeks: clampInt(sent.retainWeeks, 0, 52, DEFAULT_SCHEDULE.retainWeeks),
+          },
+        }));
+        return true;
+      });
     } catch (err) {
       setError(errorText(err));
     } finally {
