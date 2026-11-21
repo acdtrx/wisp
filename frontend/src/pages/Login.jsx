@@ -7,6 +7,8 @@ import { LOGIN_NOTICE_KEY } from '../api/client';
 import FullScreenSpinner from '../components/shared/FullScreenSpinner.jsx';
 import WispGlyph from '../components/shared/WispGlyph.jsx';
 import { autoFocusField } from '../lib/focus.js';
+import { useCommand } from '../hooks/useCommand.js';
+import ErrorBanner from '../components/shared/ErrorBanner.jsx';
 
 // Messages shown when the browser returns from an SSO attempt or a sign-out.
 // The presence of the `?sso=` marker is also what stops the auto-redirect
@@ -30,7 +32,9 @@ function takeSessionNotice() {
 
 export default function Login() {
   const [password, setPassword] = useState('');
-  const { login, loading, error } = useAuthStore();
+  const login = useAuthStore((s) => s.login);
+  const signIn = useCommand();
+  const loading = signIn.busy;
   const navigate = useNavigate();
 
   // `checking` gates the first paint: while true we may still redirect to the
@@ -64,10 +68,9 @@ export default function Login() {
     return () => controller.abort();
   }, []);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    const ok = await login(password);
-    if (ok) navigate('/', { replace: true });
+    signIn.run(() => login(password), { onDone: () => navigate('/', { replace: true }) });
   };
 
   if (checking) {
@@ -110,9 +113,7 @@ export default function Login() {
               className="input-field rounded-lg placeholder:text-text-muted focus:ring-1 focus:ring-accent"
             />
 
-            {error && (
-              <p className="mt-2 text-sm text-status-stopped">{error}</p>
-            )}
+            <ErrorBanner className="mt-2" error={signIn.error} onDismiss={signIn.dismiss} />
 
             <button
               type="submit"

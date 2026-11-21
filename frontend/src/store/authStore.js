@@ -1,17 +1,16 @@
 import { create } from 'zustand';
 import { api, isAuthenticated, broadcastLogout, isNetworkError, NETWORK_ERROR_MESSAGE, API_TIMEOUT_MS } from '../api/client';
-import { errorFromBody, errorText } from '../api/errors.js';
+import { errorFromBody } from '../api/errors.js';
 import { records } from './records.js';
 
 export const useAuthStore = create((set) => ({
   // Cookie-based session — the HttpOnly session cookie is invisible to JS.
   // We track auth status via the (non-HttpOnly) wisp_csrf cookie's presence.
   authenticated: isAuthenticated(),
-  error: null,
-  loading: false,
 
+  /** Sign in with the password: resolves once the session cookies are set, rejects
+   *  with the reason (the login page's command hook holds busy and the error). */
   login: async (password) => {
-    set({ loading: true, error: null });
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
@@ -26,14 +25,13 @@ export const useAuthStore = create((set) => ({
       }
 
       // Cookies are now set by the response (HttpOnly session + CSRF).
-      set({ authenticated: true, loading: false });
-      return true;
+      set({ authenticated: true });
     } catch (err) {
       // A dead VPN surfaces here as fetch's bare "Load failed" — name the actual cause.
       // TimeoutError is the platform's name for AbortSignal.timeout firing.
       const timedOut = err?.name === 'TimeoutError';
-      set({ error: isNetworkError(err) || timedOut ? NETWORK_ERROR_MESSAGE : errorText(err), loading: false });
-      return false;
+      if (isNetworkError(err) || timedOut) throw new Error(NETWORK_ERROR_MESSAGE, { cause: err });
+      throw err;
     }
   },
 
