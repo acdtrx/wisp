@@ -40,7 +40,7 @@ import {
 } from '../../api/containers.js';
 import { formatSize } from '../../utils/formatters.js';
 import { awaitJob } from '../../store/backgroundJobsStore.js';
-import { runContainerCommand } from '../../store/containerStore.js';
+import { awaitContainerChange } from '../../store/containerStore.js';
 import RecordError from '../shared/RecordError.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
@@ -174,7 +174,7 @@ export default function ContainerMountsSection({ config }) {
     setError(null);
     setDeletingRowName(row.name);
     try {
-      await runContainerCommand(config.name, async () =>
+      await awaitContainerChange(config.name, async () =>
         awaitJob((await removeContainerMount(config.name, row.name)).jobId));
     } catch (err) {
       setError(errorText(err));
@@ -187,7 +187,7 @@ export default function ContainerMountsSection({ config }) {
     setBusyRowName(row.name);
     setError(null);
     try {
-      await runContainerCommand(config.name, () => uploadFn(row.name));
+      await awaitContainerChange(config.name, () => uploadFn(row.name));
     } catch (err) {
       setError(errorText(err));
     } finally {

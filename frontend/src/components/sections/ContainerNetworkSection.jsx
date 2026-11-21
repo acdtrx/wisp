@@ -14,7 +14,7 @@ import {
 import {
   addContainerService, updateContainerService, removeContainerService,
 } from '../../api/containers.js';
-import { runContainerCommand } from '../../store/containerStore.js';
+import { awaitContainerChange } from '../../store/containerStore.js';
 import RecordError from '../shared/RecordError.jsx';
 import { bridgeChoice } from '../shared/bridgeChoice.js';
 import { errorText } from '../../api/errors.js';
@@ -208,7 +208,7 @@ export default function ContainerNetworkSection({
     }
     setStrip({ ...strip, saving: true, error: null });
     try {
-      await runContainerCommand(config.name, () => (strip.hasExisting
+      await awaitContainerChange(config.name, () => (strip.hasExisting
         ? updateContainerService(config.name, port, { type, txt })
         : addContainerService(config.name, { port, type, txt })));
       setStrip(null);
@@ -221,7 +221,7 @@ export default function ContainerNetworkSection({
     if (!strip || !strip.hasExisting || strip.port == null) return;
     setStrip({ ...strip, saving: true, error: null });
     try {
-      await runContainerCommand(config.name, () => removeContainerService(config.name, strip.port));
+      await awaitContainerChange(config.name, () => removeContainerService(config.name, strip.port));
       setStrip(null);
     } catch (err) {
       setStrip((s) => (s ? { ...s, saving: false, error: errorText(err) } : s));

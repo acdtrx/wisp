@@ -6,7 +6,7 @@ import {
   Play, Square, Zap, RotateCcw, Trash2, Archive, Loader2,
 } from 'lucide-react';
 
-import { useContainer, useContainerStore, runContainerCommand } from '../../store/containerStore.js';
+import { useContainer, useContainerStore, awaitContainerChange } from '../../store/containerStore.js';
 import { useWorkloadBusy, useWorkloadBackup, workloadBusyReason } from '../../store/backgroundJobsStore.js';
 import { updateContainer, ejectContainerApp } from '../../api/containers.js';
 import { startContainerBackup } from '../../api/backups.js';
@@ -25,7 +25,6 @@ import { CONTAINER_STATE_ICON_COLOR } from '../../utils/containerConstants.js';
 import ScheduledRestartBadge from './ScheduledRestartBadge.jsx';
 import { getAppEntry } from '../../apps/appRegistry.js';
 import AppConfigWrapper from '../../apps/AppConfigWrapper.jsx';
-import { errorText } from '../../api/errors.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
@@ -68,9 +67,10 @@ export default function ContainerOverviewPanel({ name: routeName }) {
   const { record, config: loadedConfig, seed } = useContainer(routeName);
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const actionLoading = useContainerStore((s) => s.actions[routeName] ?? null);
-  const errors = useContainerStore((s) => s.errors);
-  const dismissError = useContainerStore((s) => s.dismissError);
-  const reportActionError = useContainerStore((s) => s.reportActionError);
+  const actionError = useContainerStore((s) => s.errors[routeName] ?? null);
+  const iconChanging = useContainerStore((s) => !!s.iconChanges[routeName]);
+  const dismissActionError = useContainerStore((s) => s.dismissActionError);
+  const setContainerIcon = useContainerStore((s) => s.setContainerIcon);
   const startContainer = useContainerStore((s) => s.startContainer);
   const stopContainer = useContainerStore((s) => s.stopContainer);
   const killContainer = useContainerStore((s) => s.killContainer);
@@ -132,8 +132,6 @@ export default function ContainerOverviewPanel({ name: routeName }) {
   const iconId = config.iconId || getDefaultContainerIconId();
   const IconComp = getVmIcon(iconId).component;
 
-  /* The bar: this container's action error, and a failed re-read of its config. */
-  const actionError = errors[`action:${name}`] ?? null;
 
   const handleDelete = async () => {
     setDeleteDialogOpen(false);
@@ -148,7 +146,7 @@ export default function ContainerOverviewPanel({ name: routeName }) {
   const handleSectionSave = async (changes) => {
     const renamed = typeof changes.name === 'string' && changes.name !== '' && changes.name !== name;
     const target = renamed ? changes.name : name;
-    await runContainerCommand(target, () => updateContainer(name, changes));
+    await awaitContainerChange(target, () => updateContainer(name, changes));
     if (!renamed) return;
     useContainerStore.getState().followRename(name, target);
     /* The page follows only if it still shows this container: the user may have moved on. */
@@ -165,11 +163,11 @@ export default function ContainerOverviewPanel({ name: routeName }) {
           <button
             type="button"
             onClick={() => setIconPickerOpen(true)}
-            disabled={!!busyHint}
+            disabled={!!busyHint || iconChanging}
             className={`shrink-0 rounded-lg p-2 lg:p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 disabled:cursor-not-allowed disabled:hover:bg-transparent ${iconColorClass}`}
             title={busyHint || 'Change icon'}
           >
-            <IconComp size={18} className={isRunning ? 'wisp-lit-glyph' : undefined} />
+            {iconChanging ? <Loader2 size={18} className="animate-spin" /> : <IconComp size={18} className={isRunning ? 'wisp-lit-glyph' : undefined} />}
           </button>
           <span className="truncate text-sm font-semibold text-text-primary">{name}</span>
           <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-medium text-text-muted shrink-0">container</span>
@@ -265,7 +263,7 @@ export default function ContainerOverviewPanel({ name: routeName }) {
 
       {/* Each error stays until dismissed */}
       {actionError && (
-        <ErrorBanner className="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-2" error={actionError.message} onDismiss={() => dismissError('action', name)} />
+        <ErrorBanner className="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-2" error={actionError} onDismiss={() => dismissActionError(name)} />
       )}
       {record.data != null && (
         <RecordError className="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-2" record={record} what="container" />
@@ -314,7 +312,7 @@ export default function ContainerOverviewPanel({ name: routeName }) {
             <AppConfigWrapper
               config={config}
               onSave={handleSectionSave}
-              onEject={() => runContainerCommand(name, () => ejectContainerApp(name))}
+              onEject={() => awaitContainerChange(name, () => ejectContainerApp(name))}
             />
           ) : (
             <>
@@ -353,13 +351,7 @@ export default function ContainerOverviewPanel({ name: routeName }) {
       <IconPickerModal
         open={iconPickerOpen}
         currentIconId={config.iconId || getDefaultContainerIconId()}
-        onSelect={async (selectedIconId) => {
-          try {
-            await runContainerCommand(name, () => updateContainer(name, { iconId: selectedIconId }));
-          } catch (err) {
-            reportActionError(name, errorText(err));
-          }
-        }}
+        onSelect={(selectedIconId) => setContainerIcon(name, selectedIconId)}
         onClose={() => setIconPickerOpen(false)}
       />
 

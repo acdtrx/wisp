@@ -1,54 +1,41 @@
 /**
  * Per-workload busy and error state for the VM and container stores (one model for
- * both detail views).
+ * both detail views), pure so it can be tested.
  *
- * Busy and errors are kept apart. `actions[name]` is the action in flight on workload
- * `name` ('start', 'delete', …), nothing else. `errors` holds what the detail view
- * shows, each until the user dismisses it, keyed by owner and workload: an `action`'s
- * failure (cleared when the next action on that workload begins), a failed `refresh`
- * of the config, and the `select` read that left no config (the error page). An entry
- * is `{ owner, vm, message }`, `vm` naming the workload.
+ * Busy and errors are kept apart. `actions[name]` is the header action in flight on
+ * workload `name` ('start', 'delete', …); `iconChanges[name]` the icon change in flight,
+ * which is its own control's. `errors[name]` is the workload's one action error (an
+ * icon change's included), shown until the user dismisses it and cleared when any of
+ * its actions begins.
  */
 
-export function errorKey(owner, vm) {
-  return `${owner}:${vm ?? ''}`;
+export function withError(errors, name, message) {
+  return { ...errors, [name]: message };
 }
 
-export function withError(errors, owner, vm, message) {
-  return { ...errors, [errorKey(owner, vm)]: { owner, vm: vm ?? null, message } };
-}
-
-export function withoutError(errors, owner, vm) {
-  const key = errorKey(owner, vm);
-  if (!(key in errors)) return errors;
+export function withoutError(errors, name) {
+  if (!(name in errors)) return errors;
   const next = { ...errors };
-  delete next[key];
+  delete next[name];
   return next;
 }
 
-/** The errors without those of workloads no longer listed (deleted). A `select` error
- *  stays: it is the error page of a workload that may never have been listed, up until
- *  the user leaves the view (the store's select and deselect clear it). */
+/** The errors without those of workloads no longer listed (deleted). */
 export function withoutErrorsOfVanished(errors, names) {
   let next = null;
-  for (const [key, entry] of Object.entries(errors)) {
-    if (entry.vm == null || entry.owner === 'select' || names.has(entry.vm)) continue;
+  for (const name of Object.keys(errors)) {
+    if (names.has(name)) continue;
     next ??= { ...errors };
-    delete next[key];
+    delete next[name];
   }
   return next ?? errors;
 }
 
-/** The errors with workload `from`'s action and refresh errors moved to `to` (a rename:
- *  the workload still exists, so its undismissed errors stay with it). */
+/** The errors with workload `from`'s moved to `to` (a rename: the workload still
+ *  exists, so its undismissed error stays with it). */
 export function withErrorsRenamed(errors, from, to) {
-  let next = errors;
-  for (const owner of ['action', 'refresh']) {
-    const entry = errors[errorKey(owner, from)];
-    if (!entry) continue;
-    next = withError(withoutError(next, owner, from), owner, to, entry.message);
-  }
-  return next;
+  if (!(from in errors) || from === to) return errors;
+  return withError(withoutError(errors, from), to, errors[from]);
 }
 
 /**
@@ -68,11 +55,10 @@ export function renamesBetween(previous, list) {
   return renames;
 }
 
-export function withBusy(actions, name, action) {
-  const next = { ...actions };
-  if (action) next[name] = action;
+/** `slot` with `name` set to `value` (or removed, for null). */
+export function withEntry(slot, name, value) {
+  const next = { ...slot };
+  if (value != null) next[name] = value;
   else delete next[name];
   return next;
 }
-
-export const anyActionInFlight = (actions) => Object.keys(actions).length > 0;

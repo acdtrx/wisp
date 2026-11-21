@@ -5,10 +5,10 @@ import {
 } from '../api/events.js';
 import { errorText } from '../api/errors.js';
 import { useRecord } from '../hooks/useRecord.js';
-import { awaitJob } from './backgroundJobsStore.js';
+import { runCommand } from './commands.js';
 import { createStreamStore, liveData, streamSource, topicSource } from './streamStore.js';
 import {
-  renamesBetween, withError, withoutError, withoutErrorsOfVanished, withErrorsRenamed, withBusy,
+  renamesBetween, withEntry, withError, withErrorsRenamed, withoutError, withoutErrorsOfVanished,
 } from './workloadActions.js';
 
 /** A list frame matcher: the list shows workload `name` out of `state`, the one it was
@@ -50,11 +50,8 @@ export function liveConfig(config, item, fields, liveState) {
  * @param {string[]} spec.listFields — the config fields the list keeps current
  * @param {(name: string) => string} spec.statsUrl — a workload's stats stream
  * @param {(command: object) => object} spec.commands — the kind's commands, built from
- *   `command`: `{ job(name, action, start), atAck(name, action, send),
- *   untilListLeaves(name, action, fromState, send) }`
- * @param {(set: Function, get: Function) => object} [spec.extend] — state and actions
- *   only one kind has
- */
+ *   `command`: `{ job(name, action, start, rereads?), icon(name, send), atAck(name, action, send), untilListLeaves(name, action, fromState, send) }`
+*/
 export function createWorkloadStore(spec) {
   assertTopic(spec.listTopic);
   assertChangeKind(spec.changeKind);
@@ -68,7 +65,7 @@ export function createWorkloadStore(spec) {
   const useStore = createStreamStore({
     source: topicSource(spec.listTopic),
     toData: (frame) => (Array.isArray(frame) ? frame : undefined),
-    /* A renamed workload's errors follow it to its new name; a deleted one's go. */
+    /* A renamed workload's error follows it to its new name; a deleted one's goes. */
     onData: (list, set) => {
       if (!list) return;
       const previous = lastList;
@@ -79,26 +76,45 @@ export function createWorkloadStore(spec) {
         return { errors: withoutErrorsOfVanished(errors, new Set(list.map((w) => w.name))) };
       });
     },
-    extend: (set, get) => {
-      /** Run one action on workload `name`, busy in `actions[name]` while it runs.
-       *  Resolves whether it succeeded. Its error slot is cleared when it begins, and
-       *  holds its failure. */
-      async function withAction(name, action, fn) {
-        set((s) => ({ actions: withBusy(s.actions, name, action), errors: withoutError(s.errors, 'action', name) }));
+    extend: (set) => {
+      /** Each slot's own run: an action's end clears a busy slot only while it still
+       *  holds that run (a later action may have taken it). */
+      let runs = 0;
+      const owners = new Map();
+
+      /** Run one action on workload `name`, busy in `slot[name]` (`actions`, or
+       *  `iconChanges` for the icon) while it runs. Resolves whether it succeeded. The
+       *  workload's one error slot is cleared when it begins, and holds its failure. */
+      async function withAction(name, action, fn, slot = 'actions') {
+        const run = ++runs;
+        const owner = `${slot}:${name}`;
+        owners.set(owner, run);
+        set((s) => ({ [slot]: withEntry(s[slot], name, action), errors: withoutError(s.errors, name) }));
+        const mine = () => owners.get(owner) === run;
         /* The new state arrives on the list topic and the stats stream: no follow-up GET. */
         try {
           await fn();
-          set((s) => ({ actions: withBusy(s.actions, name, null) }));
+          set((s) => (mine() ? { [slot]: withEntry(s[slot], name, null) } : {}));
           return true;
         } catch (err) {
-          set((s) => ({ actions: withBusy(s.actions, name, null), errors: withError(s.errors, 'action', name, errorText(err)) }));
+          set((s) => ({
+            ...(mine() ? { [slot]: withEntry(s[slot], name, null) } : {}),
+            errors: withError(s.errors, name, errorText(err)),
+          }));
           return false;
+        } finally {
+          if (mine()) owners.delete(owner);
         }
       }
 
       const command = {
-        /** A command that runs as a job: busy until the job ends. */
-        job: (name, action, start) => withAction(name, action, async () => awaitJob((await start()).jobId)),
+        /** A command that runs as a job: busy until the job ended and the records it
+         *  changes (by default the workload's config), read again after it, have
+         *  landed (store/commands.js). */
+        job: (name, action, start, rereads = [[spec.record, name]]) => withAction(name, action, () =>
+          runCommand(start, { job: true, rereads })),
+        /** The icon change: busy in its own control's slot, failing into the workload's error. */
+        icon: (name, send) => withAction(name, 'icon', () => sendAndAwaitChange(spec.changeKind, name, send), 'iconChanges'),
         /** A request the workload may ignore: busy until the ack. */
         atAck: (name, action, send) => withAction(name, action, send),
         /** Busy until a list frame shows the workload out of `fromState`. */
@@ -109,9 +125,11 @@ export function createWorkloadStore(spec) {
       return {
         /** The workload a page shows, while it shows it. */
         selected: null,
-        /** `{ [name]: action }`: the action in flight on each workload. */
+        /** `{ [name]: action }`: the header action in flight on each workload. */
         actions: {},
-        /** `{ [key]: { owner, vm, message } }`: each workload's action error, shown until dismissed. */
+        /** `{ [name]: 'icon' }`: an icon change in flight (its own control's busy state). */
+        iconChanges: {},
+        /** `{ [name]: message }`: each workload's action error, shown until dismissed. */
         errors: {},
 
         /** A page shows workload `name`: its stats stream opens. */
@@ -126,16 +144,14 @@ export function createWorkloadStore(spec) {
           set({ selected: null });
         },
 
-        /** Workload `from` is named `to` now: its undismissed errors go with it. */
+        /** Workload `from` is named `to` now (renamed from this page): its undismissed
+         *  error goes with it. */
         followRename: (from, to) => set((prev) => ({ errors: withErrorsRenamed(prev.errors, from, to) })),
 
-        /** Dismiss one error (`owner`, `vm`): never touches an action in flight. */
-        dismissError: (owner, vm) => set((s) => ({ errors: withoutError(s.errors, owner, vm) })),
-        /** Show a command's failure as workload `name`'s action error (the detail view's banner). */
-        reportActionError: (name, message) => set((s) => ({ errors: withError(s.errors, 'action', name, message) })),
+        /** Dismiss workload `name`'s action error: never touches an action in flight. */
+        dismissActionError: (name) => set((s) => ({ errors: withoutError(s.errors, name) })),
 
         ...spec.commands(command),
-        ...spec.extend?.(set, get),
       };
     },
   });
@@ -158,20 +174,11 @@ export function createWorkloadStore(spec) {
   }
 
   /**
-   * Send a command that changes workload `name` (its name after a rename) and resolve
-   * with its ack once the client holds the new state: the `changes` frame naming it has
-   * arrived and every re-read the open view started for it has settled (or 30 s
-   * passed). The control that sent it stays busy until then. A command error rejects; a
-   * failed re-read doesn't, since the ack succeeded, and shows in its own view.
-   *
-   * @template T
-   * @param {string} name
-   * @param {() => Promise<T>} send
-   * @returns {Promise<T>}
+   * Send a command that changes workload `name` (a section's save, a row's action):
+   * resolves once the `changes` topic names it and the re-reads that starts have
+   * landed, rejects with its error. The section's command hook holds its busy flag.
    */
-  function runCommand(name, send) {
-    return sendAndAwaitChange(spec.changeKind, name, send);
-  }
+  const awaitChange = (name, send) => sendAndAwaitChange(spec.changeKind, name, send);
 
-  return { useStore, useStatsStore, useWorkload, runCommand };
+  return { useStore, useStatsStore, useWorkload, awaitChange };
 }

@@ -10,7 +10,7 @@ import {
   formModalPrimaryBtn,
 } from '../shared/FormModalChrome.jsx';
 import { addContainerMount, updateContainerMount } from '../../api/containers.js';
-import { runContainerCommand } from '../../store/containerStore.js';
+import { awaitContainerChange } from '../../store/containerStore.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
 
@@ -246,10 +246,10 @@ export default function ContainerMountEditorModal({
     try {
       if (isEdit) {
         if (Object.keys(patch).length > 0) {
-          await runContainerCommand(containerName, () => updateContainerMount(containerName, mount.name, patch));
+          await awaitContainerChange(containerName, () => updateContainerMount(containerName, mount.name, patch));
         }
       } else {
-        await runContainerCommand(containerName, () => addContainerMount(containerName, buildCreatePayload(form)));
+        await awaitContainerChange(containerName, () => addContainerMount(containerName, buildCreatePayload(form)));
       }
       await onSaved?.();
       onClose();

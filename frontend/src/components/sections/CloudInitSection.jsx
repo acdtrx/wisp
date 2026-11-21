@@ -4,7 +4,7 @@ import { Cloud, AtSign, RefreshCw, Trash2, Loader2, Eye, EyeOff, KeyRound } from
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import { updateCloudInit, deleteCloudInit, fetchGithubKeys } from '../../api/vms.js';
-import { runVMCommand } from '../../store/vmStore.js';
+import { awaitVmChange } from '../../store/vmStore.js';
 import { errorText } from '../../api/errors.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
@@ -147,7 +147,7 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
       // A blank password keeps the one on file ("Leave blank to keep
       // unchanged"): the API reads '' as no password and 'set' as keep.
       const password = form.password || (config?.password === 'set' ? 'set' : '');
-      await runVMCommand(vmName, () => updateCloudInit(vmName, { ...form, password }));
+      await awaitVmChange(vmName, () => updateCloudInit(vmName, { ...form, password }));
       setEditing(false);
     } catch (err) {
       setError(errorText(err));
@@ -160,7 +160,7 @@ export default function CloudInitSection({ vmConfig, isCreating, initialCloudIni
     setSaving(true);
     setError(null);
     try {
-      await runVMCommand(vmName, () => deleteCloudInit(vmName));
+      await awaitVmChange(vmName, () => deleteCloudInit(vmName));
       setEditing(false);
     } catch (err) {
       setError(errorText(err));

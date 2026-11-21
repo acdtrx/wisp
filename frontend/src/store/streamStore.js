@@ -68,6 +68,7 @@ export function liveData(state) {
  */
 export function createStreamStore({ source, toData = (frame) => frame, empty = null, onData, extend }) {
   return create((set, get) => {
+    const own = extend?.(set, get) ?? {};
     let close = null;
     let openedWith = [];
     const cleared = { data: empty, connection: CONNECTION.CONNECTING, error: null };
@@ -106,9 +107,8 @@ export function createStreamStore({ source, toData = (frame) => frame, empty = n
       closing?.();
     }
 
-    return {
+    const base = {
       ...cleared,
-      ...extend?.(set, get),
 
       connect: (...args) => {
         if (close) return;
@@ -133,5 +133,10 @@ export function createStreamStore({ source, toData = (frame) => frame, empty = n
         open(openedWith);
       },
     };
+    /* The base owns its names: a store's own state or action may not replace one. */
+    for (const name of Object.keys(own)) {
+      if (name in base) throw new Error(`A stream store's extend may not redefine "${name}"`);
+    }
+    return { ...base, ...own };
   });
 }

@@ -53,14 +53,14 @@ test("an action's error is cleared when the next action on that VM begins, and l
   const failing = store.getState().rebootVM('a');
   (await net.nextExact('/api/vms/a/reboot')).respond(jsonResponse({ error: 'VM_NOT_RUNNING', detail: 'Not running' }, 409));
   assert.equal(await failing, false);
-  assert.equal(store.getState().errors['action:a'].message, 'Not running');
+  assert.equal(store.getState().errors.a, 'Not running');
   const next = store.getState().rebootVM('a');
-  assert.equal(store.getState().errors['action:a'], undefined);
+  assert.equal(store.getState().errors.a, undefined);
   (await net.nextExact('/api/vms/a/reboot')).respond(jsonResponse({ error: 'VM_NOT_RUNNING', detail: 'Still not' }, 409));
   assert.equal(await next, false);
   stream.frame({ topic: TOPIC.VMS, data: [] });
   await settle();
-  assert.equal(store.getState().errors['action:a'], undefined);
+  assert.equal(store.getState().errors.a, undefined);
 });
 
 test('selecting a VM opens its stats stream; deselecting closes it', async () => {
@@ -91,6 +91,19 @@ test('a workload store over a name that is not on the wire is refused when it is
   assert.throws(() => createWorkloadStore({ listTopic: TOPIC.VMS, changeKind: notATopic }), /Unknown change kind: vmz/);
 });
 
+test("dismissing a VM's action error clears that error, never the list's", async () => {
+  const stream = await startList();
+  stream.frame({ topic: TOPIC.VMS, data: [{ name: 'a', state: 'running' }] });
+  stream.frame({ topic: TOPIC.VMS, data: { error: 'LIBVIRT_ERROR', detail: 'Failed to list VMs' } });
+  await settle();
+  const failing = store.getState().rebootVM('a');
+  (await net.nextExact('/api/vms/a/reboot')).respond(jsonResponse({ error: 'VM_NOT_RUNNING', detail: 'Not running' }, 409));
+  await failing;
+  store.getState().dismissActionError('a');
+  assert.equal(store.getState().errors.a, undefined);
+  assert.equal(store.getState().error, 'Failed to list VMs');
+});
+
 test("a rename on the list moves the VM's undismissed error to its new name", async () => {
   const stream = await startList();
   stream.frame({ topic: TOPIC.VMS, data: [{ name: 'a', uuid: 'u1', state: 'running' }] });
@@ -100,8 +113,39 @@ test("a rename on the list moves the VM's undismissed error to its new name", as
   await failing;
   stream.frame({ topic: TOPIC.VMS, data: [{ name: 'b', uuid: 'u1', state: 'running' }] });
   await settle();
-  assert.equal(store.getState().errors['action:a'], undefined);
-  assert.equal(store.getState().errors['action:b'].message, 'Not running');
+  assert.deepEqual(store.getState().errors, { b: 'Not running' });
+});
+
+test("the icon change is busy in its own slot, fails into the VM's error slot, and leaves the header actions alone", async () => {
+  const stream = await startList();
+  stream.frame({ topic: TOPIC.VMS, data: [{ name: 'a', state: 'running' }] });
+  await settle();
+  const reboot = store.getState().rebootVM('a');
+  const icon = store.getState().setVmIcon('a', 'p4-icon');
+  assert.deepEqual(store.getState().actions, { a: 'reboot' });
+  assert.deepEqual(store.getState().iconChanges, { a: 'icon' });
+  (await net.nextExact('/api/vms/a')).respond(jsonResponse({ error: 'VALIDATION_FAILED', detail: 'Bad icon' }, 400));
+  assert.equal(await icon, false);
+  assert.deepEqual(store.getState().actions, { a: 'reboot' });
+  assert.deepEqual(store.getState().iconChanges, {});
+  assert.equal(store.getState().errors.a, 'Bad icon');
+  (await net.nextExact('/api/vms/a/reboot')).respond(new Response(null, { status: 204 }));
+  await reboot;
+});
+
+test("an action's end clears the busy slot only while the slot is still its own run", async () => {
+  const stream = await startList();
+  stream.frame({ topic: TOPIC.VMS, data: [{ name: 'a', state: 'running' }] });
+  await settle();
+  const first = store.getState().rebootVM('a');
+  const second = store.getState().stopVM('a');
+  assert.deepEqual(store.getState().actions, { a: 'stop' });
+  (await net.nextExact('/api/vms/a/reboot')).respond(new Response(null, { status: 204 }));
+  await first;
+  assert.deepEqual(store.getState().actions, { a: 'stop' });
+  (await net.nextExact('/api/vms/a/stop')).respond(new Response(null, { status: 204 }));
+  await second;
+  assert.deepEqual(store.getState().actions, {});
 });
 
 test("a rename seen across a refused stream still moves the VM's error: the refusal is no list", async () => {
@@ -115,13 +159,13 @@ test("a rename seen across a refused stream still moves the VM's error: the refu
   store.getState().retry();
   (await net.next('/api/events')).respond(jsonResponse({ error: 'FORBIDDEN', detail: 'No' }, 403));
   await settle();
-  assert.equal(store.getState().errors['action:a'].message, 'Not running');
+  assert.equal(store.getState().connection, 'refused');
+  assert.deepEqual(store.getState().errors, { a: 'Not running' });
   // Asked again, the next list has the VM renamed: its error follows it.
   store.getState().retry();
   const again = respondWithStream(await net.next('/api/events'));
   await settle();
   again.frame({ topic: TOPIC.VMS, data: [{ name: 'b', uuid: 'u1', state: 'running' }] });
   await settle();
-  assert.equal(store.getState().errors['action:a'], undefined);
-  assert.equal(store.getState().errors['action:b'].message, 'Not running');
+  assert.deepEqual(store.getState().errors, { b: 'Not running' });
 });

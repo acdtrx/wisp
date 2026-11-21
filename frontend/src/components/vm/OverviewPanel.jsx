@@ -5,7 +5,7 @@ import {
   Trash2, Loader2, Code2, Archive,
 } from 'lucide-react';
 
-import { useVm, useVmStore, useVmStatsStore, runVMCommand } from '../../store/vmStore.js';
+import { useVm, useVmStore, useVmStatsStore, awaitVmChange } from '../../store/vmStore.js';
 import { getVmIcon, getDefaultIconId } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
 import { updateVM } from '../../api/vms.js';
@@ -20,7 +20,6 @@ import USBSection from '../sections/USBSection.jsx';
 import AdvancedSection from '../sections/AdvancedSection.jsx';
 import VmNetworkInterfacesSection from '../sections/VmNetworkInterfacesSection.jsx';
 import CloudInitSection from '../sections/CloudInitSection.jsx';
-import { errorText } from '../../api/errors.js';
 import { liveData } from '../../store/streamStore.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
@@ -94,9 +93,10 @@ export default function OverviewPanel({ name: routeName }) {
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const vmStats = useVmStatsStore(liveData);
   const actionLoading = useVmStore((s) => s.actions[routeName] ?? null);
-  const errors = useVmStore((s) => s.errors);
-  const dismissError = useVmStore((s) => s.dismissError);
-  const reportActionError = useVmStore((s) => s.reportActionError);
+  const actionError = useVmStore((s) => s.errors[routeName] ?? null);
+  const iconChanging = useVmStore((s) => !!s.iconChanges[routeName]);
+  const dismissActionError = useVmStore((s) => s.dismissActionError);
+  const setVmIcon = useVmStore((s) => s.setVmIcon);
   const startVM = useVmStore((s) => s.startVM);
   const stopVM = useVmStore((s) => s.stopVM);
   const forceStopVM = useVmStore((s) => s.forceStopVM);
@@ -155,8 +155,6 @@ export default function OverviewPanel({ name: routeName }) {
   const iconColorClass = STATE_ICON_COLOR[state] || STATE_ICON_COLOR.nostate;
   const name = routeName;
 
-  /* The bar: this VM's action error, and a failed re-read of its config. */
-  const actionError = errors[`action:${name}`] ?? null;
 
   const handleDelete = async () => {
     setDeleteDialogOpen(false);
@@ -171,7 +169,7 @@ export default function OverviewPanel({ name: routeName }) {
   const handleSectionSave = async (changes) => {
     const renamed = typeof changes.name === 'string' && changes.name !== name;
     const target = renamed ? changes.name : name;
-    await runVMCommand(target, () => updateVM(name, changes));
+    await awaitVmChange(target, () => updateVM(name, changes));
     if (!renamed) return;
     useVmStore.getState().followRename(name, target);
     /* The page follows only if it still shows this VM: the user may have moved on. */
@@ -190,11 +188,11 @@ export default function OverviewPanel({ name: routeName }) {
         <div className="flex min-w-0 items-center gap-3">
           <button
             onClick={() => setIconPickerOpen(true)}
-            disabled={!!vmOperationJob}
+            disabled={!!vmOperationJob || iconChanging}
             className={`shrink-0 rounded-lg p-1 transition-colors duration-150 hover:bg-surface hover:opacity-90 disabled:cursor-not-allowed disabled:hover:bg-transparent ${iconColorClass}`}
             title={busyHint ?? 'Change icon'}
           >
-            <IconComp size={18} className={isRunning ? 'wisp-lit-glyph' : undefined} />
+            {iconChanging ? <Loader2 size={18} className="animate-spin" /> : <IconComp size={18} className={isRunning ? 'wisp-lit-glyph' : undefined} />}
           </button>
           <span className="truncate text-sm font-semibold text-text-primary">{name}</span>
           <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-medium text-text-muted shrink-0">vm</span>
@@ -304,7 +302,7 @@ export default function OverviewPanel({ name: routeName }) {
 
       {/* Error display - visible in both tabs; each error stays until dismissed */}
       {actionError && (
-        <ErrorBanner className="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-2" error={actionError.message} onDismiss={() => dismissError('action', name)} />
+        <ErrorBanner className="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-2" error={actionError} onDismiss={() => dismissActionError(name)} />
       )}
       {record.data != null && (
         <RecordError className="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-2" record={record} what="VM" />
@@ -417,13 +415,7 @@ export default function OverviewPanel({ name: routeName }) {
       <IconPickerModal
         open={iconPickerOpen}
         currentIconId={shown.iconId || getDefaultIconId(shown.osCategory)}
-        onSelect={async (selectedIconId) => {
-          try {
-            await runVMCommand(name, () => updateVM(name, { iconId: selectedIconId }));
-          } catch (err) {
-            reportActionError(name, errorText(err));
-          }
-        }}
+        onSelect={(selectedIconId) => setVmIcon(name, selectedIconId)}
         onClose={() => setIconPickerOpen(false)}
       />
     </div>

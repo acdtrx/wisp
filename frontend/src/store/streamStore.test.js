@@ -147,3 +147,12 @@ test('a topic store keeps its data when it disconnects: the next connect is answ
   assert.deepEqual(store.getState().data, [{ name: 'peer' }]);
   assert.equal(store.getState().connection, 'connecting');
 });
+
+test("a store's own state and actions may not replace the base's", async () => {
+  const fresh = await import(`./streamStore.js?test=${Math.random()}`);
+  const { TOPIC } = await import('../../../shared/wireNames.js');
+  assert.throws(() => fresh.createStreamStore({ source: fresh.topicSource(TOPIC.VMS), extend: () => ({ retry: () => {} }) }).getState(),
+    /may not redefine "retry"/);
+  assert.throws(() => fresh.createStreamStore({ source: fresh.topicSource(TOPIC.VMS), extend: () => ({ data: [] }) }).getState(),
+    /may not redefine "data"/);
+});

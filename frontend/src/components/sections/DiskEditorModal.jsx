@@ -17,7 +17,7 @@ import {
   updateDiskBus,
 } from '../../api/vms.js';
 import { formatSize } from '../../utils/formatters.js';
-import { runVMCommand } from '../../store/vmStore.js';
+import { awaitVmChange } from '../../store/vmStore.js';
 import { autoFocusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
 import { RECORD } from '../../store/records.js';
@@ -152,7 +152,7 @@ export default function DiskEditorModal({
     setSaving(true);
     setError(null);
     try {
-      const command = (send) => runVMCommand(vmName, send);
+      const command = (send) => awaitVmChange(vmName, send);
       if (isEdit) {
         if (busChanged) await command(() => updateDiskBus(vmName, slot, form.bus));
         if (sizeChanged) await command(() => resizeDisk(vmName, slot, sizeValue));

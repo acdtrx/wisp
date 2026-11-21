@@ -16,7 +16,7 @@ const vms = createWorkloadStore({
    * refresh that observes the new QEMU). */
   listFields: ['state', 'pendingRestart'],
   statsUrl: (name) => `/api/vms/${encodeURIComponent(name)}/stats`,
-  commands: ({ job, atAck, untilListLeaves }) => ({
+  commands: ({ job, icon, atAck, untilListLeaves }) => ({
     startVM: (name) => job(name, 'start', () => vmApi.startVM(name)),
     /* Stop (an ACPI shutdown) and reboot are requests the guest may ignore, so they
      * end at the ack: the list shows the VM stopping when it does. */
@@ -26,7 +26,10 @@ const vms = createWorkloadStore({
     /* Suspend and resume stay busy until the list shows the VM out of the state it was in. */
     suspendVM: (name) => untilListLeaves(name, 'suspend', 'running', () => vmApi.suspendVM(name)),
     resumeVM: (name) => untilListLeaves(name, 'resume', 'paused', () => vmApi.resumeVM(name)),
-    deleteVM: (name, deleteDisks) => job(name, 'delete', () => vmApi.deleteVM(name, deleteDisks)),
+    /* A delete's new state is the list without the VM: no record to read again. */
+    deleteVM: (name, deleteDisks) => job(name, 'delete', () => vmApi.deleteVM(name, deleteDisks), []),
+    /* The header's icon: one of the header's actions, sharing its error slot. */
+    setVmIcon: (name, iconId) => icon(name, () => vmApi.updateVM(name, { iconId })),
   }),
 });
 
@@ -39,5 +42,6 @@ export const useVm = vms.useWorkload;
 /** The selected VM's stats, from its scoped stream. */
 export const useVmStatsStore = vms.useStatsStore;
 
-/** Send a command that changes VM `name` and resolve once its new state is shown (workloadStore.js). */
-export const runVMCommand = vms.runCommand;
+/** Send a command that changes VM `name`: resolves once its change is on screen. */
+export const awaitVmChange = vms.awaitChange;
+

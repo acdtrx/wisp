@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import Modal from '../shared/Modal.jsx';
 import { putMountFileContent } from '../../api/containers.js';
-import { runContainerCommand } from '../../store/containerStore.js';
+import { awaitContainerChange } from '../../store/containerStore.js';
 import { errorText } from '../../api/errors.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
@@ -42,7 +42,7 @@ export default function MountFileEditorModal({
     setSaving(true);
     setSaveError(null);
     try {
-      await runContainerCommand(containerName, () => putMountFileContent(containerName, mountName, text));
+      await awaitContainerChange(containerName, () => putMountFileContent(containerName, mountName, text));
       onClose();
     } catch (err) {
       setSaveError(errorText(err));

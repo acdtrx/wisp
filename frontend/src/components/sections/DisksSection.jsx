@@ -27,7 +27,7 @@ import {
   rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
 import DiskEditorModal, { libraryImagePath } from './DiskEditorModal.jsx';
-import { runVMCommand } from '../../store/vmStore.js';
+import { awaitVmChange } from '../../store/vmStore.js';
 import {
   detachDiskFromVM,
   attachISO,
@@ -141,7 +141,7 @@ export default function DisksSection({
     setLoading(actionName);
     setError(null);
     try {
-      await runVMCommand(vmName, fn);
+      await awaitVmChange(vmName, fn);
       if (typeof afterSuccess === 'function') afterSuccess();
     } catch (err) {
       setError(errorText(err));
