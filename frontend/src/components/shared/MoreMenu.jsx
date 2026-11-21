@@ -18,6 +18,24 @@ export default function MoreMenu({ items, triggerClassName }) {
   const popStyle = usePopover(open, { anchorRef, popRef, onClose: close, align: 'end' });
   const sections = items.filter((section) => section.length > 0);
 
+  /* The menu by keyboard: the arrows move between the enabled items (wrapping), Home and
+   * End go to the first and the last; Enter and Space are the items' own (buttons), and
+   * Escape and Tab close it through the layer stack (lib/popover.js). */
+  const onKeyDown = (e) => {
+    const enabled = [...(popRef.current?.querySelectorAll('[role="menuitem"]:not(:disabled)') ?? [])];
+    if (enabled.length === 0) return;
+    const at = enabled.indexOf(document.activeElement);
+    const next = {
+      ArrowDown: (at + 1) % enabled.length,
+      ArrowUp: (at - 1 + enabled.length) % enabled.length,
+      Home: 0,
+      End: enabled.length - 1,
+    }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    enabled[next].focus();
+  };
+
   return (
     <>
       <button
@@ -38,6 +56,7 @@ export default function MoreMenu({ items, triggerClassName }) {
           role="menu"
           tabIndex={-1}
           style={popStyle}
+          onKeyDown={onKeyDown}
           className="z-[60] min-w-52 overflow-y-auto rounded-md border border-surface-border bg-surface-card py-1 shadow-popover outline-hidden"
         >
           {sections.map((section, i) => (
@@ -50,7 +69,12 @@ export default function MoreMenu({ items, triggerClassName }) {
                   role="menuitem"
                   disabled={!!reason}
                   title={reason}
-                  onClick={() => { close(); onClick(); }}
+                  onClick={() => {
+                    /* Back on the trigger first: a dialog the item opens returns focus there. */
+                    anchorRef.current?.focus();
+                    close();
+                    onClick();
+                  }}
                   className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 lg:py-2 ${danger ? 'text-status-stopped hoverable:hover:bg-status-stopped-soft' : 'text-text-primary hoverable:hover:bg-surface'}`}
                 >
                   <Icon size={15} aria-hidden className={danger ? '' : 'text-text-secondary'} />
