@@ -37,6 +37,9 @@ export const MAX_SSH_KEY_LENGTH = 8192;
 export const MAX_SSH_KEY_NAME = 64;
 /** The list's length: far past anyone's keys, and a bound on the file. */
 export const MAX_SSH_KEYS = 100;
+/** A VM's own keys (its first boot setup's `sshKey`, one per line), at most: it bounds
+ *  the seed ISO's user-data. The page checks against the same number (sshKeyChoice.js). */
+export const MAX_VM_SSH_KEY_TEXT = 16384;
 
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 

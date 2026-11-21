@@ -16,7 +16,7 @@ import RecordGate from '../shared/RecordGate.jsx';
 import ValueRows from '../shared/ValueRows.jsx';
 import SshKeyPicker from './SshKeyPicker.jsx';
 import { extrasText, setupForm, setupProblem, setupSent, storedSetup } from './firstBootSetup.js';
-import { defaultKeys, keysText, sshKeyText, vmKeyLines } from './sshKeyChoice.js';
+import { defaultKeys, keysProblem, keysText, sshKeyText, vmKeyLines } from './sshKeyChoice.js';
 
 const REMOVE_ABOUT = "Couldn't remove the first boot setup";
 const NO_KEYS = [];
@@ -100,8 +100,9 @@ function SetupEditor({ vmName, stored, onClose }) {
   const [own] = useState(() => vmKeyLines(stored?.sshKey));
   const [picked, setPicked] = useState(() => (stored ? own : null));
   const chosen = picked ?? defaultKeys(keyList);
+  const [paste, setPaste] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const problem = setupProblem(form, vmName);
+  const problem = setupProblem(form, vmName) ?? keysProblem(chosen, keyList, paste);
 
   return (
     <FormModal
@@ -147,6 +148,8 @@ function SetupEditor({ vmName, stored, onClose }) {
         idPrefix="fb"
         chosen={chosen}
         own={own}
+        paste={paste}
+        onPaste={setPaste}
         onChange={(update) => setPicked((p) => update(p ?? defaultKeys(keyList)))}
       />
       <div className="grid gap-2 sm:grid-cols-2">

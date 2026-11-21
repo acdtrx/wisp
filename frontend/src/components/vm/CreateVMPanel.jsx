@@ -13,7 +13,7 @@ import ErrorBanner from '../shared/ErrorBanner.jsx';
 import { FormField, formModalNeutralBtn, formModalPrimaryBtn } from '../shared/FormModalChrome.jsx';
 import RecordError from '../shared/RecordError.jsx';
 import SshKeyPicker from './SshKeyPicker.jsx';
-import { defaultKeys, sshKeyText } from './sshKeyChoice.js';
+import { defaultKeys, keysProblem, sshKeyText } from './sshKeyChoice.js';
 import { CUSTOM_SIZE, SIZE_PRESETS, coresText, memoryText, withPreset } from './vmForms.js';
 import {
   RUNS, createVmBody, defaultVmDraft, driverIso, hostnameFromName, imagesFor, vmDraftProblems, withRuns,
@@ -84,6 +84,7 @@ export default function CreateVMPanel() {
     : draft;
   /* The keys picked; until the user picks, the list's defaults, also when it loads late. */
   const chosenKeys = draft.sshKeys ?? defaultKeys(keyList);
+  const [keyPaste, setKeyPaste] = useState('');
 
   const create = useCommand();
   const creating = create.busy;
@@ -96,7 +97,8 @@ export default function CreateVMPanel() {
   }, []);
 
   const problems = vmDraftProblems(effective, library);
-  const blocked = Object.values(problems)[0] ?? null;
+  const blocked = Object.values(problems)[0]
+    ?? (effective.runs === 'linux-image' ? keysProblem(chosenKeys, keyList, keyPaste) : null);
   const images = imagesFor(effective.runs, library);
   const isos = library.filter((f) => f.type === 'iso');
   const linuxImage = effective.runs === 'linux-image';
@@ -241,6 +243,8 @@ export default function CreateVMPanel() {
               <SshKeyPicker
                 idPrefix="new-vm"
                 chosen={chosenKeys}
+                paste={keyPaste}
+                onPaste={setKeyPaste}
                 disabled={creating}
                 onChange={(update) => setDraft((d) => ({ ...d, sshKeys: update(d.sshKeys ?? defaultKeys(keyList)) }))}
               />

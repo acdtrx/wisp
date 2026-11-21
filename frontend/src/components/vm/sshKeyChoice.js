@@ -6,6 +6,10 @@
  * list's order (docs/specs/UI-VM.md, First boot setup).
  */
 
+/** The most key text one VM takes (its `sshKey`): the server's cap, the same number
+ *  (backend/src/lib/sshKeys.js, MAX_VM_SSH_KEY_TEXT; a test holds the two equal). */
+export const MAX_VM_SSH_KEY_TEXT = 16384;
+
 /** A key's type and data: what two copies of the same key share. Null for no key. */
 export function keyIdentity(text) {
   const [type, data] = String(text ?? '').trim().split(/\s+/);
@@ -55,6 +59,14 @@ export function sshKeyText(chosen, list) {
   const listed = (list ?? []).flatMap((k) => chosen.filter((t) => keyIdentity(t) === keyIdentity(k.key)).slice(0, 1));
   const others = chosen.filter((t) => !listedKey(list, t));
   return [...listed, ...others].join('\n');
+}
+
+/** Why the keys picked cannot be sent, or null: more key text than one VM takes, or a
+ *  paste in the picker's field that was not added (it would be left out). */
+export function keysProblem(chosen, list, paste) {
+  if (String(paste ?? '').trim()) return 'Add the pasted key, or clear the field.';
+  if (sshKeyText(chosen, list).length > MAX_VM_SSH_KEY_TEXT) return 'Too many keys for one VM: pick fewer.';
+  return null;
 }
 
 /** A VM's keys as the page names them: the list's by name, then how many others. */

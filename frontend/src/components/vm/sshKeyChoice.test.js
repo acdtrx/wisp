@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  defaultKeys, keyIdentity, keysText, listedKey, otherKeyName, otherKeys, picks, sshKeyText, tidyKey, toggled, vmKeyLines,
+  MAX_VM_SSH_KEY_TEXT, defaultKeys, keyIdentity, keysProblem, keysText, listedKey, otherKeyName, otherKeys, picks, sshKeyText,
+  tidyKey, toggled, vmKeyLines,
 } from './sshKeyChoice.js';
+import { MAX_VM_SSH_KEY_TEXT as SERVER_CAP } from '../../../../backend/src/lib/sshKeys.js';
 
 const LIST = [
   { id: 'a', name: 'laptop', key: 'ssh-ed25519 AAAA1 me@laptop', default: true },
@@ -41,4 +43,14 @@ test('picking and unpicking by identity; the VM’s own keys outside the list st
   assert.deepEqual(toggled(chosen, 'ssh-rsa BBBB2', true), ['ssh-rsa BBBB2']);
   assert.equal(otherKeyName('ssh-ed25519 OWN1 vm only'), 'vm only');
   assert.equal(otherKeyName('ssh-ed25519 OWN1'), 'A key not in Wisp’s list');
+});
+
+test('a paste not added, or more key text than one VM takes, blocks the form', () => {
+  assert.equal(MAX_VM_SSH_KEY_TEXT, SERVER_CAP);
+  const chosen = defaultKeys(LIST);
+  assert.equal(keysProblem(chosen, LIST, ''), null);
+  assert.equal(keysProblem(chosen, LIST, '  '), null);
+  assert.equal(keysProblem(chosen, LIST, 'ssh-ed25519 AAAA'), 'Add the pasted key, or clear the field.');
+  const big = Array.from({ length: 30 }, (_, i) => `ssh-rsa ${String(i).padStart(4, '0')}${'A'.repeat(560)} k${i}`);
+  assert.match(keysProblem(big, LIST, ''), /Too many keys for one VM/);
 });

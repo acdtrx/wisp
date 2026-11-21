@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Loader2, Plus } from 'lucide-react';
 
 import { addSshKey } from '../../api/settings.js';
@@ -29,13 +28,14 @@ function KeyChoice({ name, detail, checked, onChange, disabled }) {
  * VM's own keys the list does not hold (`own`), and a field to paste a key, which is
  * added to the list at once and then shows picked. `chosen` is the texts picked;
  * `onChange` takes an update of them (`(chosen) => chosen`), so a paste that answers
- * late does not undo a pick made meanwhile.
+ * late does not undo a pick made meanwhile. The paste field's text is the form's
+ * (`paste`, `onPaste`): a form does not send while it holds a key not added
+ * (`keysProblem`).
  */
-export default function SshKeyPicker({ idPrefix, chosen, onChange, own = NO_KEYS, disabled = false }) {
+export default function SshKeyPicker({ idPrefix, chosen, onChange, paste, onPaste, own = NO_KEYS, disabled = false }) {
   const settings = useRecord(RECORD.SETTINGS);
   const list = settings.data?.sshKeys ?? NO_KEYS;
   const others = otherKeys(list, own, chosen);
-  const [paste, setPaste] = useState('');
   const add = useCommand();
 
   const pick = (text) => (e) => {
@@ -49,13 +49,13 @@ export default function SshKeyPicker({ idPrefix, chosen, onChange, own = NO_KEYS
     const listed = listedKey(list, text);
     if (listed) {
       onChange((c) => toggled(c, listed.key, true));
-      setPaste('');
+      onPaste('');
       return;
     }
     add.run(() => addSshKey({ key: text }), {
       onDone: () => {
         onChange((c) => toggled(c, text, true));
-        setPaste('');
+        onPaste('');
       },
     });
   };
@@ -97,7 +97,7 @@ export default function SshKeyPicker({ idPrefix, chosen, onChange, own = NO_KEYS
           id={`${idPrefix}-paste`}
           type="text"
           value={paste}
-          onChange={(e) => { setPaste(e.target.value); if (add.error) add.dismiss(); }}
+          onChange={(e) => { onPaste(e.target.value); if (add.error) add.dismiss(); }}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPasted(); } }}
           placeholder="Paste a public key: ssh-ed25519 AAAA… name"
           aria-label="Paste an SSH public key to add it to Wisp’s list"

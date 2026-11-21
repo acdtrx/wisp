@@ -5,6 +5,7 @@
  */
 import { OPEN_ON_PURPOSE } from '../lib/schemaValidation.js';
 import { containerNameSchema, runIdSchema, vmNameSchema } from '../lib/validation.js';
+import { MAX_VM_SSH_KEY_TEXT } from '../lib/sshKeys.js';
 
 /** Every error answer, on every route (docs/specs/ERROR-HANDLING.md, The error body). */
 export const errorBodySchema = {
@@ -103,8 +104,8 @@ const cloudInitFields = {
   username: { type: 'string', maxLength: 32, pattern: '^[a-z][a-z0-9_-]{0,31}$' },
   // Password is opaque to validation (we hash it). Forbid CR/LF so user input cannot extend the cloud-init document mid-scalar (defense in depth — js-yaml escaping already handles it). Empty string allowed; '***' / 'set' are placeholders.
   password: { type: 'string', maxLength: 256, pattern: '^[^\\r\\n]*$' },
-  // SSH key may be one or more lines (e.g. several keys joined by \n). Length-cap to keep the user-data ISO bounded.
-  sshKey: { type: 'string', maxLength: 16384 },
+  // The VM's keys, one per line. Length-capped to keep the user-data ISO bounded.
+  sshKey: { type: 'string', maxLength: MAX_VM_SSH_KEY_TEXT },
   growPartition: { type: 'boolean' },
   packageUpgrade: { type: 'boolean' },
   installQemuGuestAgent: { type: 'boolean' },
