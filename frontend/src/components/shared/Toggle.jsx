@@ -1,11 +1,14 @@
 /**
- * Checkbox-style toggle switch. Use for boolean options.
+ * Checkbox-style toggle switch. Use for boolean options. `label` names it for a screen
+ * reader when no visible label is tied to it; `title` says why it is off.
  */
-export default function Toggle({ checked, onChange, disabled = false }) {
+export default function Toggle({ checked, onChange, disabled = false, label, title }) {
   return (
-    <label className={`relative inline-flex items-center ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}>
+    <label title={title} className={`relative inline-flex shrink-0 items-center ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}>
       <input
         type="checkbox"
+        role="switch"
+        aria-label={label}
         checked={checked}
         onChange={(e) => !disabled && onChange(e.target.checked)}
         disabled={disabled}
