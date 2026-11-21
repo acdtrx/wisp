@@ -26,7 +26,6 @@ import { errorText } from '../../api/errors.js';
 import { liveData } from '../../store/streamStore.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
-import { backupDestinations } from '../../utils/backupDestinations.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import WorkloadGone from '../shared/WorkloadGone.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
@@ -436,7 +435,7 @@ export default function OverviewPanel({ name: routeName }) {
           name={name}
           subjectLabel="VM"
           backupStarted={!!backupJobId}
-          destinations={backupDestinations(settingsRecord)}
+          settingsRecord={settingsRecord}
           selectedIds={backupSelectedIds}
           onToggleDestination={(id) => {
             setBackupSelectedIds((prev) =>

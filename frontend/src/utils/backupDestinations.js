@@ -1,19 +1,13 @@
 const LOCAL_DEFAULT = '/var/lib/wisp/backups';
 
 /**
- * Where a workload's backup can go, from the settings record: Local, and the backup
- * mount when one is set. Before the settings load, none; when they failed to load,
- * Local at its default path, flagged as a fallback.
+ * Where a workload's backup can go, from the settings: Local, and the backup mount
+ * when one is set (labelled `Network` when it has no label). The one list every
+ * destination picker shows; a picker waits for the settings to load.
  */
-export function backupDestinations(settingsRecord) {
-  const settings = settingsRecord.data;
-  if (!settings) {
-    return settingsRecord.status === 'error' ? [{ id: 'local', label: 'Local', path: LOCAL_DEFAULT, fallback: true }] : [];
-  }
+export function backupDestinations(settings) {
   const dests = [{ id: 'local', label: 'Local', path: settings.backupLocalPath || LOCAL_DEFAULT }];
-  if (settings.backupMountId) {
-    const m = (settings.mounts || []).find((x) => x.id === settings.backupMountId);
-    if (m?.mountPath) dests.push({ id: m.id, label: m.label || 'Network', path: m.mountPath });
-  }
+  const mount = settings.backupMountId ? (settings.mounts || []).find((m) => m.id === settings.backupMountId) : null;
+  if (mount?.mountPath) dests.push({ id: mount.id, label: mount.label?.trim() || 'Network', path: mount.mountPath });
   return dests;
 }

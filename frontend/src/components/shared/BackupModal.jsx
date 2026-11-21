@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Modal from './Modal.jsx';
-import LoadHint from './LoadHint.jsx';
+import RecordGate from './RecordGate.jsx';
+import { backupDestinations } from '../../utils/backupDestinations.js';
 
 // How long to keep showing "Backup complete." before the modal auto-dismisses.
 // Long enough to be a clear "did it succeed?" signal, short enough that the
@@ -11,12 +12,14 @@ const AUTO_CLOSE_DELAY_MS = 1200;
  * Workload-agnostic backup modal. Shared by VM Overview and Container
  * Overview — `name` is the VM/container name, `subjectLabel` controls the
  * "<subject> must be stopped" copy ("VM" or "Container", default "VM").
+ * `settingsRecord` is the settings record the destinations come from: until it has
+ * data the modal shows its loading line, or its error with a Retry.
  */
 export default function BackupModal({
   name,
   subjectLabel = 'VM',
   backupStarted = false,
-  destinations,
+  settingsRecord,
   selectedIds,
   onToggleDestination,
   progress,
@@ -46,12 +49,14 @@ export default function BackupModal({
     return () => clearTimeout(t);
   }, [isDone, onClose]);
 
-  if (!destinations?.length) {
+  if (settingsRecord.data == null) {
     return (
       <Modal open={!!onClose} onClose={onClose} size="sm" bodyPadding="none" ariaLabel={`Backup ${name}`}>
         <div className="p-6">
           <h3 className="text-sm font-semibold text-text-primary">Backup {subjectLabel}</h3>
-          <p className="mt-2 text-xs text-text-muted">Loading destinations…</p>
+          <div className="mt-2">
+            <RecordGate record={settingsRecord} what="backup destinations">{() => null}</RecordGate>
+          </div>
           <button onClick={onClose} className="mt-4 rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium">Cancel</button>
         </div>
       </Modal>
@@ -69,10 +74,7 @@ export default function BackupModal({
         </p>
 
         <div className={`mt-4 space-y-2 ${inProgress ? 'opacity-60' : ''}`}>
-          {destinations.some((d) => d.fallback) && (
-            <LoadHint what="the backup destinations; only Local is offered" />
-          )}
-          {destinations.map((d) => (
+          {backupDestinations(settingsRecord.data).map((d) => (
             <label key={d.id} className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"

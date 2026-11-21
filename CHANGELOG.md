@@ -36,6 +36,7 @@
 - **A failed refresh keeps what was shown** — every view shows its read's error over the data it already had (dismissible), or as its error state with a Retry; a record shown in several places is read once.
 - **An open mount file editor shows the file as read again** when the page's live connection to Wisp comes back and the file changed, replacing unsaved edits.
 - **Settings forms keep their unsaved edits through another section's save** — each follows its own values only.
+- **Backup destination pickers wait for the settings** — they show a loading line, or the settings' error with a Retry, instead of offering Local alone; an unlabelled backup mount is called Network everywhere.
 - **A settings Save stays busy until the saved settings are on screen**, then shows them as the server stored them; a failed save keeps what was typed.
 
 ## 2026-11-17

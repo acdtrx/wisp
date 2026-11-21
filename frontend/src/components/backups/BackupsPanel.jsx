@@ -155,20 +155,7 @@ export default function BackupsPanel() {
   }, [connectStatus, disconnectStatus]);
   const settingsRecord = useRecord(RECORD.SETTINGS);
   const settings = settingsRecord.data;
-  const settingsError = settingsRecord.error;
   const schedule = settings?.backupSchedule || null;
-  const destinations = useMemo(() => {
-    if (!settings) {
-      /* settings unavailable — the Local default keeps Back up now usable, flagged as a fallback once the load failed */
-      return [{ id: 'local', label: 'Local', path: '/var/lib/wisp/backups', ...(settingsError ? { fallback: true } : {}) }];
-    }
-    const dests = [{ id: 'local', label: 'Local', path: settings.backupLocalPath || '/var/lib/wisp/backups' }];
-    if (settings.backupMountId) {
-      const m = (settings.mounts || []).find((x) => x.id === settings.backupMountId);
-      if (m?.mountPath) dests.push({ id: m.id, label: m.label || 'Mount', path: m.mountPath });
-    }
-    return dests;
-  }, [settings, settingsError]);
   const [expanded, setExpanded] = useState(() => new Set());
 
   /* Back up now (BackupModal) */
@@ -600,7 +587,7 @@ export default function BackupsPanel() {
           name={backupTarget.name}
           subjectLabel={backupTarget.kind === 'vm' ? 'VM' : 'Container'}
           backupStarted={!!backupJobId}
-          destinations={destinations}
+          settingsRecord={settingsRecord}
           selectedIds={backupSelectedIds}
           onToggleDestination={(id) => setBackupSelectedIds((prev) => (
             prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]

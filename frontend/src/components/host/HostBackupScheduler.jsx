@@ -8,6 +8,7 @@ import RecordGate from '../shared/RecordGate.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { useForm } from '../../hooks/useForm.js';
+import { backupDestinations } from '../../utils/backupDestinations.js';
 import { errorText } from '../../api/errors.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
 import { CHANGE_KIND } from '../../../../shared/wireNames.js';
@@ -47,15 +48,7 @@ export default function HostBackupScheduler() {
   const [error, setError] = useState(null);
 
   /* Local, plus the mount chosen in the Backup section above (when set). */
-  const backupMount = settings?.backupMountId
-    ? (settings?.mounts || []).find((m) => m.id === settings.backupMountId)
-    : null;
-  const destinationOptions = [
-    { id: 'local', label: 'Local' },
-    ...(backupMount
-      ? [{ id: backupMount.id, label: backupMount.label?.trim() || 'Network' }]
-      : []),
-  ];
+  const destinationOptions = settings ? backupDestinations(settings) : [];
 
   const toggleDestination = (id) => {
     setForm((prev) => {

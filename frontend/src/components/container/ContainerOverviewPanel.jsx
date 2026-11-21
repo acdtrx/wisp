@@ -30,7 +30,6 @@ import AppConfigWrapper from '../../apps/AppConfigWrapper.jsx';
 import { errorText } from '../../api/errors.js';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
-import { backupDestinations } from '../../utils/backupDestinations.js';
 import ErrorBanner from '../shared/ErrorBanner.jsx';
 import WorkloadGone from '../shared/WorkloadGone.jsx';
 import RecordGate from '../shared/RecordGate.jsx';
@@ -394,7 +393,7 @@ export default function ContainerOverviewPanel({ name: routeName }) {
           name={name}
           subjectLabel="Container"
           backupStarted={!!backupJobId}
-          destinations={backupDestinations(settingsRecord)}
+          settingsRecord={settingsRecord}
           selectedIds={backupSelectedIds}
           onToggleDestination={(id) => {
             setBackupSelectedIds((prev) => (
