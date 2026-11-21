@@ -212,9 +212,7 @@ session and agreed by the user, never by the builder; a review looks for defects
 would hit, not for wording or commit history; a case that needs two tabs is not solved
 unless the user asks for it.
 
-The user is reconsidering phase 6 as a redesign of the workload pages (one way to view,
-one way to edit; the operating system picks a VM's technical settings), in discussion
-since 2026-11-21.
+Phase 6 was then replaced by a redesign of the pages (see there).
 
 - One `useRecord` hook for "read on mount, numbered reads, follow a cue", replacing 11
   components and 3 store copies (D-1).
@@ -277,6 +275,11 @@ test host.
   Node's filesystem calls".
 
 ### 6. Frontend components — M–L, mechanical
+
+Replaced on 2026-11-21 by `features/workload-pages.md` (view, edit, act: the workload
+pages, the create forms, VM profiles, SSH keys in settings, then the settings forms), on
+the user's decision, and run next, before phase 5. The list below is kept for what a
+later pass over the rest of the app may take from it.
 
 Why here: "workable", low risk, large in files touched. After phase 4, which edits the
 same files.
