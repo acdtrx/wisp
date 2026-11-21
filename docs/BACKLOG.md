@@ -30,16 +30,6 @@ cloud-init starts it off (`CLOUD_INIT_DEFAULTS` in
 the user's pick (found 2026-11-21). **Revisit trigger:** a guest configured with package
 upgrades off, or on, that the user did not expect.
 
-**Commands end two ways.** A command that runs as a job re-reads the records it names
-when the job ends; a command that ends at its ack waits on a stream frame for its new
-state, up to 30 s when the stream is silent; among them the secret file content Save,
-the service editor's "Remove advertisement", API token create, Home link Add, NIC and
-env removes, device toggles (FRONTEND-RULES § Data, settled 2026-11-15). One shape — every command
-names its records and re-reads them — would remove the frame waits; it changes a rule
-the user settled, so it is the user's call (found in the frontend data flow milestone 4
-run, 2026-11-21). **Revisit trigger:** a command seen busy for its 30 s on a quiet
-stream.
-
 **The backend's VM rename check is narrower than its spec.** `updateVMConfig`
 (`backend/src/lib/vmManager/linux/vmManagerConfig.js`, `isRunning`) refuses a rename
 only while the domain runs, is blocked or is paused (state codes 1 to 3), where
@@ -88,25 +78,6 @@ single ordering shared by every consumer. **Revisit trigger:** the existing sort
 demonstrably fight a real workflow — repeatedly hunting for a workload the sort keeps
 burying.
 
-**A command's busy wait can end on a frame it didn't cause.** `sendAndAwaitTopic` and
-`sendAndAwaitChange` end on the topic's (or the VM's) next frame, which may come from
-another tab, a gather that started before the write, or a second frame of the same change
-(found in the command-acks milestone 3 review, 2026-11-15). Two seen in review: a
-reconnect's `{ kind: "all" }` landing during a VM PATCH releases it onto the config before
-the save, and cloud-init's own cue for the VM releases a USB attach sent just after. The
-window is narrow; closing it needs frames that name the command they answer. (The opposite
-case, a wait that never ends because its frame never comes, is bounded since 2026-11-16: a
-wait ends after 30 s.) **Revisit trigger:** a control seen re-enabled on stale state.
-
-**A save whose values only normalise to the stored ones waits out the deadline.** A
-command whose write the backend finds unchanged (e.g. a mount PATCH that only
-re-normalises its fields, the `layoutUnchanged` return in `containerManagerMountCrud.js`)
-writes nothing and so fires no change cue: the busy wait runs the full 30 s. The forms skip
-the request when they can see nothing changed (container General, an unchanged service);
-the rest needs the client to normalise like the server, or the ack to say nothing was
-written (found in the command-acks milestone 4 review, 2026-11-16). **Revisit trigger:** a
-user seeing a save spin for 30 s.
-
 **Restore in place can't repair a container whose `container.json` is missing or corrupt.**
 The restore route checks the container against `listContainers`, which skips a directory
 without a readable `container.json`, so it answers 404; and the safety backup taken before
@@ -138,23 +109,6 @@ check never shows it. Carrying `flaggedContainers` in `GET /api/containers/image
 would let every view show it: a wire change (found in the frontend data flow
 milestone 3 run, 2026-11-21). **Revisit trigger:** a user missing the flagged count
 after a reload or a scheduled check.
-
-**A list frame out of step with a page's record misleads its rename follow.** A workload
-page follows a rename from a list frame newer than the uuid its record gave
-(`renameStep` in `store/renameFollow.js`, run by `VmRoute.jsx` and `ContainerRoute.jsx`),
-and "newer" is the frame's arrival, not when its list was computed. Two cases:
-- After a rename in this tab, the new name's page has its record; a stale frame (a list
-  computed before the rename, arriving after the record) lists the old name and not the
-  new, so the page follows the uuid back to the old name, whose read answers 404: it
-  shows "No VM named …" (or container), and stays there, since the old name's page has
-  no uuid left to follow.
-- A first read answered before another client's rename but landing after the list frame
-  that shows it takes that frame as older than its uuid: the page does not follow, and
-  shows "No VM named …" once its re-read answers 404, until the next list frame.
-Both need a list refresh that spans the rename: plausible, rare (found in the
-command-acks milestone 3 review, 2026-11-16; the second in the frontend data flow
-review, 2026-11-21). A frame or read sequence number would order them. **Revisit
-trigger:** a rename seen to land on "not found".
 
 **A workload list answers an empty list when its manager is down.** Outside the start's
 migrations, `listVMs` answers `[]` while libvirt is not connected

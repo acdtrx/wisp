@@ -31,18 +31,18 @@
 - **A workload's error bar clears when its next action begins**, as the error-handling spec says; an action that fails again shows its new error.
 - **The open VM page no longer closes on an empty VM list**, which is what an unreachable libvirt answers; the container page already stayed open.
 - **A VM or container that is gone says so** — deleted elsewhere or never there, its page shows "No VM named …" with a way back, instead of spinning or closing.
-- **After a rename, the page follows the new name only while it still shows the workload.**
+- **After a rename saved from its page, the page goes to the new name** on the tab it then shows, only while it still shows the workload. A rename made in another tab is not followed: the page shows the workload as gone, with its link back.
 - **Bridge pickers show a bridge made or removed elsewhere** without a reload.
 - **A failed refresh keeps what was shown** — every view shows its read's error over the data it already had (dismissible), or as its error state with a Retry; a record shown in several places is read once.
-- **Settings forms keep their unsaved edits through another section's save** — each follows its own values only.
-- **An open mount file editor shows the file as read again** when its container changes or the page's live connection to Wisp comes back, replacing unsaved edits only when the file itself changed; its Save needs a change.
+- **A form shows the server's values while it is not edited; once edited it keeps your values** until Save succeeds or the edit is undone, whatever is saved elsewhere meanwhile (the last save wins). Save is on after any change to the values the form started from.
+- **An open mount file editor shows the file as read again** when its container changes or the page's live connection to Wisp comes back, while it holds no unsaved edit; its Save needs a change.
 - **The Software page shows a failed settings read**, with a Retry before they loaded; the update card shows only its own status read's failure.
 - **Backup destination pickers wait for the settings** — they show a loading line, or the settings' error with a Retry, instead of offering Local alone; an unlabelled backup mount is called Network everywhere.
 - **The container backup dialog shows the backup's progress** like the VM's, instead of closing once it started; it follows a backup already running when it opens.
 - **A job cut short (cancelled) is a failure for every command that runs as one**, shown with its message, not as done.
 - **The image update check's flagged containers show as that check's result** ("Your check flagged …") beside the status line, which shows the stored status only; a check running when the page opens is followed to its end. A check that ended while the page was away shows only in the stored status: how many containers it flagged needs the server to keep it (backlog).
 - **Section, modal and feed errors use one banner, which can be dismissed** over data already shown; a feed with nothing shown offers a Retry. A dropped device, USB or log stream shows as a status line while it reconnects, not as an error.
-- **A host command that runs as a job stays busy until its result is on screen** — a host mount's removal or unmount, a bridge's create or delete, an image download or delete, the package check and upgrade, a mount's removal or zip upload, and a workload's start, stop and restart: each waits for the job and then for the re-read of what it changed.
+- **A command is busy until the server answers** — until its ack, or for one that runs as a job until the job ends (a host mount's removal or unmount, a bridge's create or delete, an image download or delete, the package check and upgrade, a mount's removal or zip upload, a workload's start, stop and restart). It no longer waits for the screen to show the change, which follows on the live connection a moment later.
 - **A confirm closes when accepted and the row or button shows the command running** — a backup's delete and in-place restore, the host's power off and restart, and an API token's revoke used to wait in the dialog. A library file's rename and delete, and an image's delete, show on their row.
 - **Every inline error stays until it is dismissed or its command runs again**; a re-read of other data or opening an editor no longer clears it. Commands on different rows run side by side, each failure in its own banner.
 - **Every control of a row is disabled while a command on that row runs** — an SMB share's mount, test, edit and remove, a drive's, a container mount's edit while it uploads, an environment variable's edit while it is removed, an image's check and delete, a backup's restores and delete (an in-place restore shows busy from the confirm on). Removing a NIC disables every NIC's edit and remove until it lands: each re-sends the whole list.
@@ -51,15 +51,13 @@
 - **An install that does not finish can be dismissed**, which stops waiting for the backend.
 - **A Retry shows its read on its way** ("Retrying…").
 - **A cloud-init hostname can be cleared**: left empty, it means the VM's name as it is now, which the field's placeholder shows and Save or Create stores.
-- **The backup schedule saves Local first, then the network mount**: a backup writes them in that order, so a failing mount never skips Local; ticking a destination off and on again is no change.
+- **The backup schedule saves Local first, then the network mount**: a backup writes them in that order, so a failing mount never skips Local.
 - **Clearing the server name in App Config restores the default name**, instead of being ignored.
 - **SSO's Save is off, with its reason, while a changed issuer or client ID waits for the client secret** (it was on, and said so only when clicked).
-- **A VM's or container's section keeps its unsaved edits when another section is saved**, here or in another tab, and resets when its own values are saved elsewhere; after its own save it shows the values as stored. The app sections (Caddy, Jellyfin, Tiny Samba, Zot) and cloud-init's edit form follow the same rule.
 - **The VLAN bridge dialog takes the first parent bridge** even when it is opened before the bridges have loaded (Create stayed disabled).
-- **A NIC's MAC is saved trimmed and in lower case**; changing only its case is no change.
+- **A NIC's MAC is saved trimmed and in lower case.**
 - **The RAM unit you chose is kept** while the size is the one you typed: 0.5 GB stays 0.5 GB after a save (it showed 512 MB).
 - **A container's name and network (MAC, interface) are editable only when it is stopped**: now locked also while it is created or of unknown state.
-- **A value already stored never blocks a save**: a disk whose size cannot be read takes a bus change, and a mount, a share or a library row whose stored value fails the editor's check saves its other fields.
 - **Tiny Samba and Jellyfin say what keeps Save off**: a share with no user with access, or a library row with a problem, shows it under the row, with Save off and the reason (Tiny Samba said so only when Save was clicked; Jellyfin hid Save).
 - **A VM's CPU and RAM show a value the server refuses under the field**, cleared or below 1 CPU or 128 MB, with Save (creating, Create) off and the reason (a cleared field was sent as 1 CPU or 0 MB).
 - **A Cloudflare token or a Zot OIDC client secret typed and cleared again keeps the stored one**, instead of saving it empty.
@@ -67,7 +65,7 @@
 - **Tiny Samba's Data UID, cleared, blocks Save with its reason** under the field (it was saved as 0).
 - **The mDNS service editor's Save needs a valid port and type**: what is missing shows as it is typed, and Save is off while nothing changed.
 - **A container's RAM limit must be a whole positive number of MiB** (1.5 was cut to 1).
-- **A Save — a section's, a settings form's, a modal editor's — stays busy until the saved values are on screen**, then shows them as the server stored them; a failed save keeps what was typed. A modal editor shows a change saved elsewhere to what it edits, and says so when it was removed.
+- **A Save — a section's, a settings form's, a modal editor's — is busy until the server answers**; a failed save keeps what was typed. A modal editor takes what it edits when it opens: a change saved elsewhere meanwhile is not shown in it.
 - **A VM's settings that need it offline are editable only when it is shut off**: its name, CPU, RAM and the Advanced offline-only fields are now locked also while it is paused, shutting down, crashed, suspended, has no state or is of unknown state; its disks and NICs also while it has no state. CD-ROM changes still work on a running VM.
 
 ## 2026-11-17
