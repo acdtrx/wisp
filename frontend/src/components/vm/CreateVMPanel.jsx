@@ -89,13 +89,13 @@ export default function CreateVMPanel() {
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex flex-1 flex-col overflow-y-auto px-6 py-5">
         <div className="space-y-5">
-          <GeneralSection vmConfig={config} isCreating draft={draft.general} onDraft={onGeneral} />
-          <DisksSection vmConfig={config} isCreating draft={draft.disks} onDraft={part('disks')} />
+          <GeneralSection draft={draft.general} onDraft={onGeneral} />
+          <DisksSection draft={draft.disks} onDraft={part('disks')} />
           {takesCloudInit(draft) && (
-            <CloudInitSection vmConfig={config} isCreating draft={draft.cloudInit} onDraft={part('cloudInit')} />
+            <CloudInitSection vmConfig={config} draft={draft.cloudInit} onDraft={part('cloudInit')} />
           )}
-          <VmNetworkInterfacesSection vmConfig={config} isCreating draft={draft.nics} onDraft={part('nics')} />
-          <AdvancedSection vmConfig={config} isCreating draft={draft.advanced} onDraft={part('advanced')} />
+          <VmNetworkInterfacesSection draft={draft.nics} onDraft={part('nics')} />
+          <AdvancedSection vmConfig={config} draft={draft.advanced} onDraft={part('advanced')} />
         </div>
 
         <ErrorBanner className="mt-4" error={create.error} onDismiss={create.dismiss} />

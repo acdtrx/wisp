@@ -5,11 +5,8 @@ import {
   CircleX,
   Plus,
   Minus,
-  Loader2,
   Check,
   FileImage,
-  Pencil,
-  Lock,
 } from 'lucide-react';
 import SectionCard from '../shared/SectionCard.jsx';
 import ImageLibraryModal from '../shared/ImageLibraryModal.jsx';
@@ -23,51 +20,12 @@ import {
   DataTableTh,
   DataTableTd,
   dataTableCellPadX,
-  rowActionIconBtn,
   rowActionIconBtnPrimary,
 } from '../shared/DataTableChrome.jsx';
-import DiskEditorModal, { libraryImagePath } from './DiskEditorModal.jsx';
-import { vmLocked } from '../../utils/workloadLocks.js';
-import { useCommand } from '../../hooks/useCommand.js';
-import {
-  detachDiskFromVM,
-  attachISO,
-  ejectISO,
-} from '../../api/vms.js';
+import { libraryImagePath } from './DiskEditorModal.jsx';
 
 const iconBtn =
   'inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none';
-
-/* Caps the phone-only stacked lines so the two-column table never scrolls
-   sideways; the desktop columns size themselves as before. */
-const phoneLineClamp = 'block max-w-[60vw] truncate sm:max-w-none';
-
-function formatSource(source) {
-  if (!source) return null;
-  const parts = source.split('/');
-  return parts[parts.length - 1];
-}
-
-function formatDriverLabel(disk) {
-  if (!disk) return null;
-  if (disk.bus) {
-    if (disk.bus === 'virtio') return 'VirtIO';
-    if (disk.bus === 'scsi') return 'VirtIO SCSI';
-    return disk.bus.toUpperCase();
-  }
-  return disk.driverType || null;
-}
-
-/** Driver / format for Image type column (qcow2, raw, ISO, …). */
-function formatImageType(disk) {
-  if (!disk) return '—';
-  if (disk.slot === 'sde') return 'cloud-init';
-  if (disk.device === 'cdrom') {
-    if (disk.source && /\.iso$/i.test(disk.source)) return 'ISO';
-    return disk.driverType || 'raw';
-  }
-  return disk.driverType || '—';
-}
 
 function guessImageTypeFromFileName(name) {
   if (!name || typeof name !== 'string') return '—';
@@ -81,22 +39,11 @@ function guessImageTypeFromFileName(name) {
 /** Narrow filename column — keeps the table balanced vs Size. */
 const imageColClass = 'min-w-0 max-w-28 w-28';
 
-const DISK_VERBS = { detach: 'unmount', eject: 'eject the ISO from', iso: 'attach the ISO to' };
-/** A row command's error, named by what it did to which slot (`detach-sdb`). */
-const diskErrorPrefix = (key) => {
-  const [verb, slot] = String(key).split('-');
-  return `Couldn't ${DISK_VERBS[verb] ?? verb} ${slot}`;
-};
-
-export default function DisksSection({
-  vmConfig,
-  isCreating,
-  draft,
-  onDraft,
-  busyReason,
-}) {
-  /* Creating, the panel's draft (`draft`: `disk`, `disk2`, the CD-ROM paths) is the only
-   * state; every write goes through `onDraft(update)`. */
+/**
+ * The Create VM panel's disks and ISOs: the panel's draft (`draft`: `disk`, `disk2`, the
+ * CD-ROM paths) is the only state; every write goes through `onDraft(update)`.
+ */
+export default function DisksSection({ draft, onDraft }) {
   const setCreateSlot = (slot, update) => onDraft((d) => ({ ...d, [slot]: update(d[slot]) }));
   const setCdrom = (slot, path, name) => onDraft((d) => ({
     ...d,
@@ -105,35 +52,11 @@ export default function DisksSection({
   }));
   const cdrom1Path = draft?.cdrom1Path ?? null;
   const cdrom2Path = draft?.cdrom2Path ?? null;
-  const isStopped = isCreating || !vmLocked(vmConfig.state);
-  /* Another operation on this VM (a backup) holds the backend's per-VM lock:
-   * every disk / CD-ROM change would be refused with 409 VM_BUSY. */
-  const vmBusy = !!busyReason;
-  const vmName = vmConfig.name;
-
-  /* The row commands, named by action and slot (`detach-sdb`, `iso-sdc`), each with its
-   * error. They take the VM's lock, so one runs at a time: the rows disable the others
-   * while it runs (`loading`, the one in flight), and the header's Add and Attach too:
-   * the server takes one change to a VM's disks at a time (409 VM_BUSY). */
-  const op = useCommand();
-  const loading = op.running[0] ?? null;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerContext, setPickerContext] = useState(null);
-  /* The disk editor: its slot, and whether it edits the disk there (picked when it
-   * opens) or adds one. */
-  const [editor, setEditor] = useState({ open: false, slot: 'sdb', editing: false });
   /* The new disk row open in create mode: its slot and starting values. The row is an
    * input to adding a disk to the draft: it keeps its own values until confirmed. */
   const [newDiskRow, setNewDiskRow] = useState(null);
-
-  const localDisks = (vmConfig.disks || []).filter((d) => d.device === 'disk');
-  const cdroms = (vmConfig.disks || []).filter((d) => d.device === 'cdrom');
-
-  const sda = localDisks.find((d) => d.slot === 'sda');
-  const sdb = localDisks.find((d) => d.slot === 'sdb');
-  const sdc = cdroms.find((d) => d.slot === 'sdc');
-  const sdd = cdroms.find((d) => d.slot === 'sdd');
-  const sde = cdroms.find((d) => d.slot === 'sde');
 
   const disk =
     draft?.disk || {
@@ -154,10 +77,6 @@ export default function DisksSection({
       resizeGB: null,
     };
 
-  function executeDiskOperation(actionName, fn, afterSuccess) {
-    op.run(fn, { key: actionName, onDone: afterSuccess });
-  }
-
   function openPicker(context) {
     setPickerContext(context);
     setPickerOpen(true);
@@ -169,7 +88,7 @@ export default function DisksSection({
     setPickerOpen(false);
     setPickerContext(null);
 
-    if (isCreating && ctx) {
+    if (ctx) {
       if (ctx.type === 'disk') {
         if (ctx.defer) {
           const bus =
@@ -190,43 +109,12 @@ export default function DisksSection({
       } else if (ctx.type === 'cdrom' && ctx.slot) {
         setCdrom(ctx.slot, imagePath, file.name);
       }
-      return;
-    }
-    /* Non-create: the only picker context left is the ISO slots — block disks
-     * are added and edited in DiskEditorModal. */
-    if (ctx?.type === 'cdrom') {
-      executeDiskOperation(`iso-${ctx.slot}`, () => attachISO(vmName, ctx.slot, imagePath));
     }
   }
-
-  function openDiskEditor(slot) {
-    const existing = slot === 'sda' ? sda : sdb;
-    setEditor({ open: true, slot, editing: !!existing });
-  }
-
-  function handlePlusCdrom() {
-    if (!sdc?.source) {
-      openPicker({ type: 'cdrom', slot: 'sdc' });
-      return;
-    }
-    if (!sdd?.source) {
-      openPicker({ type: 'cdrom', slot: 'sdd' });
-    }
-  }
-
-  function canAddAnotherCdrom() {
-    return !sdc?.source || !sdd?.source;
-  }
-
-  /* The first free block-disk slot — sda on a VM created without disks (or
-   * whose sda was unmounted), else sdb. The button is disabled (not hidden)
-   * while the VM is not shut off. */
-  const freeDiskSlot = !sda ? 'sda' : !sdb ? 'sdb' : null;
 
   const canAddFirstCreateDisk =
-    !!isCreating && disk.type === 'none' && !newDiskRow;
+    disk.type === 'none' && !newDiskRow;
   const canAddSecondCreateDisk =
-    !!isCreating &&
     disk.type !== 'none' &&
     disk2.type === 'none' &&
     !newDiskRow;
@@ -305,8 +193,7 @@ export default function DisksSection({
     }
   }
 
-  const headerActions = isCreating
-    ? (
+  const headerActions = (
         <div className="flex items-center gap-1.5">
           {canAddFirstCreateDisk && (
             <>
@@ -386,37 +273,9 @@ export default function DisksSection({
             </button>
           )}
         </div>
-      )
-    : (
-        <div className="flex items-center gap-1.5">
-          {freeDiskSlot && (
-            <button
-              type="button"
-              onClick={() => openDiskEditor(freeDiskSlot)}
-              disabled={!isStopped || vmBusy || !!loading}
-              className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
-              title={busyReason || (isStopped ? `Add a disk as ${freeDiskSlot} (new or from the library)` : 'Stop the VM to add a disk')}
-              aria-label="Add disk"
-            >
-              <Plus size={14} aria-hidden />
-              <HardDrive size={14} aria-hidden />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={handlePlusCdrom}
-            disabled={!canAddAnotherCdrom() || vmBusy || !!loading}
-            className="inline-flex items-center gap-0.5 rounded-md bg-accent px-2 py-1.5 text-white hover:bg-accent-hover transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
-            title={busyReason || 'Attach ISO (opens image library)'}
-            aria-label="Attach ISO"
-          >
-            <Plus size={14} aria-hidden />
-            <Disc size={14} aria-hidden />
-          </button>
-        </div>
-      );
+  );
 
-  if (isCreating) {
+  {
     const showCreateEmptyHint =
       disk.type === 'none' &&
       disk2.type === 'none' &&
@@ -426,8 +285,6 @@ export default function DisksSection({
         title="Disks"
         titleIcon={<HardDrive size={14} strokeWidth={2} />}
         helpText="Add disks or attach an ISO from the header. Original images are never modified — copies are created for new VMs."
-        commands={[op]}
-        errorPrefix={diskErrorPrefix}
         headerAction={headerActions}
       >
         <DataTableScroll>
@@ -524,271 +381,8 @@ export default function DisksSection({
     );
   }
 
-  return (
-    <SectionCard
-      title="Disks"
-      titleIcon={<HardDrive size={14} strokeWidth={2} />}
-      helpText="Add or edit a block disk in a form — the VM must be stopped to add, resize, re-bus, or detach one. ISO attach, change, and eject work while it runs."
-      commands={[op]}
-        errorPrefix={diskErrorPrefix}
-      headerAction={headerActions}
-    >
-      <DataTableScroll>
-        <DataTable>
-          <thead>
-            <tr className={dataTableHeadRowClass}>
-              <DataTableTh dense className="sm:w-14">
-                Disk
-              </DataTableTh>
-              <DataTableTh dense className="hidden w-24 sm:table-cell">
-                Size
-              </DataTableTh>
-              <DataTableTh dense className="hidden max-w-28 w-28 sm:table-cell">
-                Image
-              </DataTableTh>
-              <DataTableTh dense className="hidden w-20 sm:table-cell">
-                Image type
-              </DataTableTh>
-              <DataTableTh dense className="hidden w-32 sm:table-cell">
-                Bus
-              </DataTableTh>
-              <DataTableTh dense align="right" className="sm:w-36">
-                Actions
-              </DataTableTh>
-            </tr>
-          </thead>
-          <tbody>
-            <BlockDiskRow
-              slot="sda"
-              disk={sda}
-              isStopped={isStopped}
-              busyReason={busyReason}
-              loading={loading}
-              onEdit={() => openDiskEditor('sda')}
-              onDetach={() => executeDiskOperation('detach-sda', () => detachDiskFromVM(vmName, 'sda'))}
-            />
-
-            {sdb && (
-              <BlockDiskRow
-                slot="sdb"
-                disk={sdb}
-                isStopped={isStopped}
-                busyReason={busyReason}
-                loading={loading}
-                onEdit={() => openDiskEditor('sdb')}
-                onDetach={() => executeDiskOperation('detach-sdb', () => detachDiskFromVM(vmName, 'sdb'))}
-              />
-            )}
-
-            {sdc?.source && (
-              <CdromRow
-                slot="sdc"
-                disk={sdc}
-                busyReason={busyReason}
-                loading={loading}
-                onSwap={() => openPicker({ type: 'cdrom', slot: 'sdc' })}
-                onEject={() => executeDiskOperation('eject-sdc', () => ejectISO(vmName, 'sdc'))}
-              />
-            )}
-
-            {sdd?.source && (
-              <CdromRow
-                slot="sdd"
-                disk={sdd}
-                busyReason={busyReason}
-                loading={loading}
-                onSwap={() => openPicker({ type: 'cdrom', slot: 'sdd' })}
-                onEject={() => executeDiskOperation('eject-sdd', () => ejectISO(vmName, 'sdd'))}
-              />
-            )}
-
-            {sde && <CdromRow slot="sde" disk={sde} loading={loading} />}
-          </tbody>
-        </DataTable>
-      </DataTableScroll>
-
-      {(vmBusy || !isStopped) && (
-        <p className="mt-2 flex items-center gap-1 text-[11px] text-text-muted">
-          <Lock size={11} aria-hidden />
-          {vmBusy ? busyReason : 'Stop the VM to add, resize, re-bus, or detach block disks.'}
-        </p>
-      )}
-
-      <DiskEditorModal
-        open={editor.open}
-        vmName={vmName}
-        slot={editor.slot}
-        editing={editor.editing}
-        disk={editor.editing ? localDisks.find((d) => d.slot === editor.slot) ?? null : null}
-        defaultBus={sda?.bus || 'virtio'}
-        onClose={() => setEditor({ open: false, slot: 'sdb', editing: false })}
-      />
-
-      <ImageLibraryModal
-        open={pickerOpen}
-        onClose={() => {
-          setPickerOpen(false);
-          setPickerContext(null);
-        }}
-        onSelect={handlePickerSelect}
-        defaultFilter={pickerContext?.type === 'cdrom' ? 'iso' : 'disk'}
-      />
-    </SectionCard>
-  );
 }
 
-/**
- * Detail-page block disk row (sda / sdb) — read-only cells; Size, Image, Image
- * type, and Bus collapse into stacked lines under the slot label below `sm`.
- */
-function BlockDiskRow({ slot, disk, isStopped, busyReason, loading, onEdit, onDetach }) {
-  const sizeText = disk?.sizeGiB != null ? `${disk.sizeGiB} GB` : '—';
-  const busText = formatDriverLabel(disk) || '—';
-  const imageName = formatSource(disk?.source) || '—';
-
-  return (
-    <tr className={dataTableInteractiveRowClass}>
-      <DataTableTd dense valign="top" className="min-w-0 sm:w-14 sm:align-middle">
-        <span className="block text-xs font-semibold text-text-secondary">{slot}</span>
-        {/* The columns hidden below `sm` stack here instead. */}
-        <span className={`${phoneLineClamp} mt-0.5 text-xs text-text-primary sm:hidden`} title={disk?.source || ''}>
-          {imageName}
-        </span>
-        <span className={`${phoneLineClamp} text-[11px] text-text-muted sm:hidden`}>
-          {`${sizeText} · ${busText} · ${formatImageType(disk)}`}
-        </span>
-      </DataTableTd>
-      <DataTableTd dense className="hidden w-24 sm:table-cell">
-        <span className="text-xs text-text-primary tabular-nums">{sizeText}</span>
-      </DataTableTd>
-      <DataTableTd dense className={`hidden sm:table-cell ${imageColClass}`}>
-        <span className="truncate text-xs text-text-primary block" title={disk?.source || ''}>
-          {imageName}
-        </span>
-      </DataTableTd>
-      <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">
-        {formatImageType(disk)}
-      </DataTableTd>
-      <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{busText}</DataTableTd>
-      <DataTableTd dense align="right">
-        <DiskRowActions
-          slot={slot}
-          disk={disk}
-          isStopped={isStopped}
-          busyReason={busyReason}
-          loading={loading}
-          onEdit={onEdit}
-          onDetach={onDetach}
-        />
-      </DataTableTd>
-    </tr>
-  );
-}
-
-/**
- * Detail-page CDROM row (sdc / sdd, and the read-only cloud-init seed sde,
- * which passes no handlers and so renders an empty Actions cell).
- */
-function CdromRow({ slot, disk, busyReason, loading, onSwap, onEject }) {
-  const imageName = formatSource(disk?.source) || '—';
-  const busText = formatDriverLabel(disk) || (slot === 'sde' ? 'SATA' : '—');
-  const interactive = !!onSwap || !!onEject;
-
-  return (
-    <tr className={interactive ? dataTableInteractiveRowClass : dataTableBodyRowClass}>
-      <DataTableTd dense valign="top" className="min-w-0 sm:w-14 sm:align-middle">
-        <span className="block text-xs font-semibold text-text-secondary">{slot}</span>
-        {/* The columns hidden below `sm` stack here instead. */}
-        <span className={`${phoneLineClamp} mt-0.5 text-xs text-text-primary sm:hidden`} title={disk?.source || ''}>
-          {imageName}
-        </span>
-        <span className={`${phoneLineClamp} text-[11px] text-text-muted sm:hidden`}>
-          {`${busText} · ${formatImageType(disk)}`}
-        </span>
-      </DataTableTd>
-      <DataTableTd dense className="hidden w-24 text-xs text-text-muted sm:table-cell">—</DataTableTd>
-      <DataTableTd dense className={`hidden sm:table-cell ${imageColClass}`}>
-        <span className="truncate text-xs text-text-primary block" title={disk?.source || ''}>
-          {imageName}
-        </span>
-      </DataTableTd>
-      <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">
-        {formatImageType(disk)}
-      </DataTableTd>
-      <DataTableTd dense className="hidden text-xs text-text-muted sm:table-cell">{busText}</DataTableTd>
-      <DataTableTd dense align="right">
-        {interactive && (
-          <CdromRowActions slot={slot} busyReason={busyReason} loading={loading} onSwap={onSwap} onEject={onEject} />
-        )}
-      </DataTableTd>
-    </tr>
-  );
-}
-
-/** Row actions for a block disk: edit (modal) and detach, both offline-only. */
-function DiskRowActions({ slot, disk, isStopped, busyReason, loading, onEdit, onDetach }) {
-  const isDetaching = loading === `detach-${slot}`;
-  const busy = !!loading || !!busyReason;
-
-  if (!disk?.source) return null;
-
-  return (
-    <DataTableRowActions forceVisible={isDetaching}>
-      <button
-        type="button"
-        onClick={onEdit}
-        disabled={busy || !isStopped}
-        className={rowActionIconBtn}
-        title={busyReason || (isStopped ? 'Edit size and bus' : 'Stop the VM to change size or bus')}
-        aria-label={`Edit ${slot}`}
-      >
-        <Pencil size={14} aria-hidden />
-      </button>
-      <button
-        type="button"
-        onClick={onDetach}
-        disabled={busy || !isStopped}
-        className={`${rowActionIconBtn} hover:bg-status-stopped-soft hover:text-status-stopped`}
-        title={busyReason || (isStopped ? 'Unmount disk' : 'Stop the VM to unmount disks')}
-        aria-label={`Unmount ${slot}`}
-      >
-        {isDetaching ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Minus size={14} aria-hidden />}
-      </button>
-    </DataTableRowActions>
-  );
-}
-
-function CdromRowActions({ slot, busyReason, loading, onSwap, onEject }) {
-  const isLoading = loading?.includes(slot);
-  const disabled = !!loading || !!busyReason;
-  return (
-    <DataTableRowActions forceVisible={isLoading}>
-      <button
-        type="button"
-        onClick={onSwap}
-        disabled={disabled}
-        className={rowActionIconBtn}
-        title={busyReason || 'Change ISO'}
-        aria-label={`Change ISO in ${slot}`}
-      >
-        <FileImage size={14} aria-hidden />
-      </button>
-      <button
-        type="button"
-        onClick={onEject}
-        disabled={disabled}
-        className={`${rowActionIconBtn} hover:bg-status-warning-soft`}
-        title={busyReason || 'Eject ISO'}
-        aria-label={`Eject ISO from ${slot}`}
-      >
-        {isLoading ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <CircleX size={14} aria-hidden />}
-      </button>
-    </DataTableRowActions>
-  );
-}
-
-/** Create VM: confirm/cancel row after choosing New or picking an image (defer). Its
- *  values are an input to adding the disk: the row's own, handed to `onConfirm`. */
 function NewDiskRow({ initial, onConfirm, onCancel }) {
   const [values, setValues] = useState(initial);
   const slot = values.slot;

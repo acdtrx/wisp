@@ -1,15 +1,7 @@
 import { useState } from 'react';
-import { Lock } from 'lucide-react';
-
 import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
-import { useCommand } from '../../hooks/useCommand.js';
-import { useForm } from '../../hooks/useForm.js';
-import { changedFields } from '../../hooks/formState.js';
-import { useRecord } from '../../hooks/useRecord.js';
-import { RECORD } from '../../store/records.js';
-import { vmLocked } from '../../utils/workloadLocks.js';
 
 const FIRMWARE_OPTIONS = [
   { value: 'bios', label: 'BIOS' },
@@ -45,44 +37,16 @@ const BOOT_DEVICES = [
   { value: 'network', label: 'Network' },
 ];
 
-function advancedFormFromVmConfig(vmConfig) {
-  const machineRaw = vmConfig.machineType || '';
-  const machineValue = machineRaw.includes('q35') ? 'q35' : machineRaw.includes('440') ? 'pc-i440fx' : machineRaw || 'q35';
-  return {
-    firmware: vmConfig.firmware || 'bios',
-    machineType: machineValue,
-    cpuMode: vmConfig.cpuMode || 'host-passthrough',
-    videoDriver: vmConfig.videoModel || 'virtio',
-    graphicsType: vmConfig.graphics?.type || 'vnc',
-    bootOrder: vmConfig.bootOrder?.length ? [...vmConfig.bootOrder] : ['hd'],
-    bootMenu: vmConfig.bootMenu || false,
-    memBalloon: vmConfig.memBalloon ?? true,
-    guestAgent: vmConfig.guestAgent ?? true,
-    vtpm: vmConfig.vtpm || false,
-    virtioRng: vmConfig.virtioRng ?? true,
-    nestedVirt: vmConfig.nestedVirt || false,
-  };
-}
-
 /**
- * The VM's firmware, machine, CPU model, devices and boot order. Editing a VM, the
- * form follows its config record; creating, the panel's draft (`draft`, written
- * through `onDraft(update)`) is the only state.
+ * The Create VM panel's firmware, machine, CPU model, devices and boot order: the
+ * panel's draft (`draft`, written through `onDraft(update)`) is the only state.
  */
-export default function AdvancedSection({ vmConfig, isCreating, draft, onDraft, onSave, busyReason }) {
-  const offlineOnly = !isCreating && vmLocked(vmConfig.state);
-
+export default function AdvancedSection({ vmConfig, draft, onDraft }) {
   const [collapsed, setCollapsed] = useState(true);
-
-  const record = useRecord(isCreating ? null : RECORD.VM, vmConfig.name);
-  const edit = useForm(record, advancedFormFromVmConfig);
-  const form = isCreating ? draft : edit.form;
-  const save = useCommand();
+  const form = draft;
 
   /* A field's write as a functional update of the value it replaces. */
-  const updateWith = (key, update) => (isCreating
-    ? onDraft((d) => ({ ...d, [key]: update(d[key]) }))
-    : edit.setForm((f) => ({ ...f, [key]: update(f[key]) })));
+  const updateWith = (key, update) => onDraft((d) => ({ ...d, [key]: update(d[key]) }));
   const updateField = (key, value) => updateWith(key, () => value);
 
   const hasHyperv = vmConfig.features?.hyperv;
@@ -99,46 +63,35 @@ export default function AdvancedSection({ vmConfig, isCreating, draft, onDraft, 
     return order;
   });
 
-  const handleSave = () => edit.save((values, saved) => save.run(() => onSave(changedFields(values, saved))));
-
   return (
     <SectionCard
       title="Advanced"
-      isDirty={isCreating ? false : edit.dirty}
-      onSave={isCreating ? undefined : handleSave}
-      saveDisabledReason={isCreating ? undefined : busyReason}
-      saving={edit.saving}
-      requiresRestart={!!vmConfig.pendingRestart}
       collapsible
       collapsed={collapsed}
       onToggleCollapse={() => setCollapsed(!collapsed)}
-      commands={[save]}
     >
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
           <div className="flex flex-wrap items-start gap-x-8 gap-y-4 min-w-0 content-start">
-            <FieldRow label="Machine Type" offlineOnly={offlineOnly}>
+            <FieldRow label="Machine Type">
               <RadioPills
                 options={MACHINE_OPTIONS}
                 value={form.machineType}
                 onChange={(v) => updateField('machineType', v)}
-                disabled={offlineOnly}
               />
             </FieldRow>
-            <FieldRow label="CPU Model" offlineOnly={offlineOnly}>
+            <FieldRow label="CPU Model">
               <RadioPills
                 options={CPU_MODELS}
                 value={form.cpuMode}
                 onChange={(v) => updateField('cpuMode', v)}
-                disabled={offlineOnly}
               />
             </FieldRow>
-            <FieldRow label="Firmware" offlineOnly={offlineOnly}>
+            <FieldRow label="Firmware">
               <RadioPills
                 options={FIRMWARE_OPTIONS}
                 value={form.firmware}
                 onChange={(v) => updateField('firmware', v)}
-                disabled={offlineOnly}
               />
             </FieldRow>
             <FieldRow label="Video Driver">
@@ -187,8 +140,8 @@ export default function AdvancedSection({ vmConfig, isCreating, draft, onDraft, 
               </FieldRow>
             </div>
             <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
-              <FieldRow label="Nested V" offlineOnly={offlineOnly}>
-                <Toggle checked={form.nestedVirt} onChange={(v) => updateField('nestedVirt', v)} disabled={offlineOnly} />
+              <FieldRow label="Nested V">
+                <Toggle checked={form.nestedVirt} onChange={(v) => updateField('nestedVirt', v)} />
               </FieldRow>
               <FieldRow label="Guest Agent">
                 <Toggle checked={form.guestAgent} onChange={(v) => updateField('guestAgent', v)} />
@@ -196,8 +149,8 @@ export default function AdvancedSection({ vmConfig, isCreating, draft, onDraft, 
               <FieldRow label="Mem Balloon">
                 <Toggle checked={form.memBalloon} onChange={(v) => updateField('memBalloon', v)} />
               </FieldRow>
-              <FieldRow label="vTPM" offlineOnly={offlineOnly}>
-                <Toggle checked={form.vtpm} onChange={(v) => updateField('vtpm', v)} disabled={offlineOnly} />
+              <FieldRow label="vTPM">
+                <Toggle checked={form.vtpm} onChange={(v) => updateField('vtpm', v)} />
               </FieldRow>
               <FieldRow label="VirtIO RNG">
                 <Toggle checked={form.virtioRng} onChange={(v) => updateField('virtioRng', v)} />
@@ -218,12 +171,11 @@ export default function AdvancedSection({ vmConfig, isCreating, draft, onDraft, 
   );
 }
 
-function FieldRow({ label, offlineOnly, className = '', children }) {
+function FieldRow({ label, className = '', children }) {
   return (
     <div className={className}>
       <label className="flex items-center gap-1.5 text-xs font-medium text-text-secondary mb-1.5">
         {label}
-        {offlineOnly && <Lock size={10} className="text-text-muted" />}
       </label>
       {children}
     </div>

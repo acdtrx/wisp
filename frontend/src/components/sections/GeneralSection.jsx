@@ -4,12 +4,6 @@ import SectionCard from '../shared/SectionCard.jsx';
 import Toggle from '../shared/Toggle.jsx';
 import RadioPills from '../shared/RadioPills.jsx';
 import { LinuxIcon, WindowsIcon } from '../shared/vmIcons.jsx';
-import { useCommand } from '../../hooks/useCommand.js';
-import { useForm } from '../../hooks/useForm.js';
-import { changedFields } from '../../hooks/formState.js';
-import { useRecord } from '../../hooks/useRecord.js';
-import { RECORD } from '../../store/records.js';
-import { vmLocked } from '../../utils/workloadLocks.js';
 import { generalProblems } from '../vm/vmDraft.js';
 
 const OS_ICONS = { Linux: LinuxIcon, Windows: WindowsIcon };
@@ -19,54 +13,25 @@ const OS_TYPES = [
   { value: 'Windows', label: 'Windows' },
 ];
 
-function detectOSType(config) {
-  if (config.osCategory === 'windows') return 'Windows';
-  return 'Linux';
-}
-
-/** The section's values from a VM's config. */
-function generalForm(vm) {
-  return {
-    name: vm.name || '',
-    osType: detectOSType(vm),
-    vcpus: vm.vcpus || 1,
-    memoryMiB: vm.memoryMiB || 1024,
-    autostart: vm.autostart || false,
-  };
-}
-
 const unitFor = (memoryMiB) => ((memoryMiB ?? 1024) >= 1024 ? 'GB' : 'MB');
 
-/** What Save sends for the values: the name trimmed. */
-const generalSent = (f) => ({ ...f, name: (f.name ?? '').trim() });
-
 /**
- * The VM's name, CPU, RAM, OS type and autostart. Editing a VM, the form follows its
- * config record; creating, the panel's draft (`draft`, written through
- * `onDraft(update)`) is the only state.
+ * The Create VM panel's name, CPU, RAM, OS type and autostart: the panel's draft
+ * (`draft`, written through `onDraft(update)`) is the only state.
  */
-export default function GeneralSection({ vmConfig, isCreating, draft, onDraft, onSave, onRenamed, busyReason }) {
-  /* The name, CPU and RAM are editable only when the VM is shut off (workloadLocks.js). */
-  const locked = !isCreating && vmLocked(vmConfig.state);
-
-  const record = useRecord(isCreating ? null : RECORD.VM, vmConfig.name);
-  const edit = useForm(record, generalForm, generalSent);
-  const form = isCreating ? draft : edit.form;
-  const save = useCommand();
+export default function GeneralSection({ draft, onDraft }) {
+  const form = draft;
   /* How RAM is typed is the view's, not a value: the unit the user chose, kept while the
-   * size is the one typed in it; a size set otherwise (a record's, an OS's default)
-   * shows in the unit its size suggests. */
+   * size is the one typed in it; a size set otherwise (an OS's default) shows in the
+   * unit its size suggests. */
   const [unitChoice, setUnitChoice] = useState(null);
-  const memoryUnit = unitChoice != null && unitChoice.mib === form?.memoryMiB ? unitChoice.unit : unitFor(form?.memoryMiB);
+  const memoryUnit = unitChoice != null && unitChoice.mib === form.memoryMiB ? unitChoice.unit : unitFor(form.memoryMiB);
 
-  const updateField = (key, value) => (isCreating
-    ? onDraft((d) => ({ ...d, [key]: value }))
-    : edit.setField(key, value));
+  const updateField = (key, value) => onDraft((d) => ({ ...d, [key]: value }));
 
   /* CPU and RAM as typed: a cleared field is '' and, like a number the server refuses,
-   * shows its problem under it and blocks Save (creating, Create) with its reason. */
-  const problems = form == null ? {} : generalProblems(form);
-  const blocked = isCreating ? null : Object.values(problems)[0] ?? null;
+   * shows its problem under it and keeps Create off with its reason. */
+  const problems = generalProblems(form);
 
   const memoryDisplay = form.memoryMiB === ''
     ? ''
@@ -81,28 +46,8 @@ export default function GeneralSection({ vmConfig, isCreating, draft, onDraft, o
 
   const toggleUnit = () => setUnitChoice({ unit: memoryUnit === 'GB' ? 'MB' : 'GB', mib: form.memoryMiB });
 
-  /* A save that renames the VM ends at its ack and the page follows to the new name,
-   * whose page reads its record like any page: this form goes with the old one. */
-  const handleSave = () => {
-    if (blocked) return;
-    const changes = changedFields(generalSent(edit.form), generalSent(edit.start));
-    if (changes.name != null && changes.name !== vmConfig.name) {
-      save.run(() => onSave(changes)).then((ok) => { if (ok) onRenamed?.(changes.name); });
-      return;
-    }
-    edit.save((values, saved) => save.run(() => onSave(changedFields(values, saved))));
-  };
-
   return (
-    <SectionCard
-      title="General"
-      isDirty={isCreating ? false : edit.dirty}
-      onSave={isCreating ? undefined : handleSave}
-      saveDisabledReason={isCreating ? undefined : blocked ?? busyReason}
-      saving={edit.saving || save.busy}
-      requiresRestart={!!vmConfig.pendingRestart}
-      commands={[save]}
-    >
+    <SectionCard title="General">
       <div className="space-y-0">
         <div className="flex items-end gap-4 flex-wrap">
           {/* Phones: Name grows to fill line one; its floor keeps CPU from joining the line. */}
@@ -111,8 +56,6 @@ export default function GeneralSection({ vmConfig, isCreating, draft, onDraft, o
               type="text"
               value={form.name}
               onChange={(e) => updateField('name', e.target.value)}
-              disabled={locked}
-              title={locked ? 'Stop the VM to rename it' : undefined}
               className="input-field"
             />
           </Field>
@@ -133,7 +76,6 @@ export default function GeneralSection({ vmConfig, isCreating, draft, onDraft, o
               max={128}
               value={form.vcpus}
               onChange={(e) => updateField('vcpus', e.target.value === '' ? '' : Number(e.target.value))}
-              disabled={locked}
               className="input-field input-field-no-spinner w-full text-right text-sm"
             />
           </Field>
@@ -146,8 +88,7 @@ export default function GeneralSection({ vmConfig, isCreating, draft, onDraft, o
                 step={memoryUnit === 'GB' ? 0.5 : 128}
                 value={memoryDisplay}
                 onChange={(e) => setMemoryDisplay(e.target.value)}
-                disabled={locked}
-                className="input-field input-field-no-spinner flex-1 text-right text-sm min-w-0"
+                  className="input-field input-field-no-spinner flex-1 text-right text-sm min-w-0"
               />
               <button
                 onClick={toggleUnit}
