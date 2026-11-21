@@ -360,6 +360,9 @@ Each item is the user's call and is brought as a decision when the phase is reac
   "Split CONTAINERS.md and UI.md by area", which would move them unchanged.
 - One home per fact (O-3); the 12 contradictions (O-4); `DEPLOYMENT.md` (P-8); README,
   screenshots, `web/`, the 2026-04-28 plans (O-6).
+- Asked by the user on 2026-11-22, to be done here, before the next release is cut:
+  `README.md` brought up to date, and all seven screenshots in `screenshots/` taken again
+  (the VM, container and host pages changed with the view, edit, act redesign).
 - Sweep the rule sections never swept (§1, §2, §5, §10, §11, §15, §16; FRONTEND-RULES
   Design, Files, UI patterns) against the result.
 - Check each of the seven rules written as met (X-8) is now met.
