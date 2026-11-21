@@ -9,9 +9,7 @@ import { useVm, useVmStore, useVmStatsStore, runVMCommand } from '../../store/vm
 import { getVmIcon, getDefaultIconId } from '../shared/vmIcons.jsx';
 import IconPickerModal from '../shared/IconPickerModal.jsx';
 import { updateVM } from '../../api/vms.js';
-import {
-  useBackgroundJobsStore, useWorkloadBusy, useWorkloadBackup, workloadBusyReason,
-} from '../../store/backgroundJobsStore.js';
+import { useWorkloadBusy, useWorkloadBackup, workloadBusyReason } from '../../store/backgroundJobsStore.js';
 import { startBackup } from '../../api/backups.js';
 import ConfirmDialog from '../shared/ConfirmDialog.jsx';
 import XMLModal from './XMLModal.jsx';
@@ -106,7 +104,6 @@ export default function OverviewPanel({ name: routeName }) {
   const suspendVM = useVmStore((s) => s.suspendVM);
   const resumeVM = useVmStore((s) => s.resumeVM);
   const deleteVM = useVmStore((s) => s.deleteVM);
-  const bgJobs = useBackgroundJobsStore((s) => s.jobs);
 
   const vmName = routeName;
   // A job on this VM holds the backend's per-VM operation lock (start, delete and
@@ -125,28 +122,8 @@ export default function OverviewPanel({ name: routeName }) {
   const [xmlModalOpen, setXmlModalOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [backupModalOpen, setBackupModalOpen] = useState(false);
-  const [backupSelectedIds, setBackupSelectedIds] = useState(['local']);
-  const [backupJobId, setBackupJobId] = useState(null);
-  const [backupError, setBackupError] = useState(null);
-
-  // Auto-clear backupJobId once the job ends, but ONLY while the modal is
-  // closed. Clearing while it is open would blank `progress` and revert the
-  // dialog to its initial Cancel/Start state — the user would never see the
-  // "Backup complete." confirmation. With the gate, jobId is cleared at the
-  // earliest of: modal close (handled in onClose), or this effect firing
-  // after the modal is already gone.
-  useEffect(() => {
-    if (backupModalOpen) return;
-    if (!backupJobId) return;
-    const row = bgJobs[backupJobId];
-    if (row && row.status !== 'running') {
-      setBackupJobId(null);
-    }
-  }, [backupJobId, bgJobs, backupModalOpen]);
 
   useEffect(() => {
-    setBackupJobId(null);
-    setBackupError(null);
     setBackupModalOpen(false);
   }, [vmName]);
 
@@ -187,12 +164,7 @@ export default function OverviewPanel({ name: routeName }) {
     // Do not reset deleteDisks here so the checkbox stays selected if delete fails and user retries
   };
 
-  const handleOpenBackup = () => {
-    setBackupModalOpen(true);
-    setBackupError(null);
-    setBackupJobId(backupJob ? backupJob.jobId : null);
-    setBackupSelectedIds(['local']);
-  };
+  const handleOpenBackup = () => setBackupModalOpen(true);
 
   /* A rename is followed from the request: the server takes the name exactly as
    * sent, and announces the change under it. */
@@ -434,46 +406,10 @@ export default function OverviewPanel({ name: routeName }) {
         <BackupModal
           name={name}
           subjectLabel="VM"
-          backupStarted={!!backupJobId}
           settingsRecord={settingsRecord}
-          selectedIds={backupSelectedIds}
-          onToggleDestination={(id) => {
-            setBackupSelectedIds((prev) =>
-              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-            );
-          }}
-          progress={
-            backupJobId
-              ? {
-                  step: bgJobs[backupJobId]?.step || 'starting',
-                  percent: bgJobs[backupJobId]?.percent ?? null,
-                  currentFile: bgJobs[backupJobId]?.detail ?? null,
-                }
-              : null
-          }
-          error={
-            backupJobId && bgJobs[backupJobId]?.error
-              ? errorText(bgJobs[backupJobId].error)
-              : backupError
-          }
-          onStart={async () => {
-            setBackupError(null);
-            try {
-              const { jobId } = await startBackup(name, { destinationIds: backupSelectedIds });
-              setBackupJobId(jobId);
-            } catch (err) {
-              setBackupError(errorText(err));
-              setBackupJobId(null);
-            }
-          }}
-          onClose={() => {
-            setBackupModalOpen(false);
-            const row = backupJobId ? bgJobs[backupJobId] : null;
-            if (!row || row.status !== 'running') {
-              setBackupJobId(null);
-              setBackupError(null);
-            }
-          }}
+          runningJobId={backupJob?.jobId ?? null}
+          start={(destinationIds) => startBackup(name, { destinationIds })}
+          onClose={() => setBackupModalOpen(false)}
         />
       )}
 

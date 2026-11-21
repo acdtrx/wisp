@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import Modal from './Modal.jsx';
 import RecordGate from './RecordGate.jsx';
+import ErrorBanner from './ErrorBanner.jsx';
 import { backupDestinations } from '../../utils/backupDestinations.js';
+import { useCommand } from '../../hooks/useCommand.js';
+import { useJobProgress } from '../../hooks/useJobProgress.js';
+import { useFollowJob } from '../../hooks/useFollowJob.js';
+import { RECORD } from '../../store/records.js';
 
 // How long to keep showing "Backup complete." before the modal auto-dismisses.
 // Long enough to be a clear "did it succeed?" signal, short enough that the
@@ -9,45 +14,49 @@ import { backupDestinations } from '../../utils/backupDestinations.js';
 const AUTO_CLOSE_DELAY_MS = 1200;
 
 /**
- * Workload-agnostic backup modal. Shared by VM Overview and Container
- * Overview — `name` is the VM/container name, `subjectLabel` controls the
+ * Workload-agnostic backup modal. Shared by VM Overview, Container Overview and the
+ * Backups panel — `name` is the VM/container name, `subjectLabel` controls the
  * "<subject> must be stopped" copy ("VM" or "Container", default "VM").
+ *
+ * The backup is the modal's command (`start(destinationIds)` sends it): busy until
+ * its job ends, its error held until dismissed or the backup is started again. Opened
+ * while a backup of this workload runs (`runningJobId`), the modal follows that job.
  * `settingsRecord` is the settings record the destinations come from: until it has
  * data the modal shows its loading line, or its error with a Retry.
  */
 export default function BackupModal({
   name,
   subjectLabel = 'VM',
-  backupStarted = false,
   settingsRecord,
-  selectedIds,
-  onToggleDestination,
-  progress,
-  error,
-  onStart,
+  runningJobId = null,
+  start,
   onClose,
 }) {
-  const [starting, setStarting] = useState(false);
-  const isDone = progress?.step === 'done';
-  const isError = !!error;
-  const inProgress = backupStarted && progress && !isDone && !isError;
+  const backup = useCommand();
+  const [selectedIds, setSelectedIds] = useState(['local']);
+  const [jobId, setJobId] = useState(null);
+  const [done, setDone] = useState(false);
+  const progress = useJobProgress(jobId);
 
-  const handleStart = () => {
-    if (selectedIds.length === 0) return;
-    setStarting(true);
-    onStart();
-    setStarting(false);
+  /* The backup changes the backup lists: they are read again once it ended. */
+  const followOptions = {
+    rereads: [[RECORD.VM_BACKUPS], [RECORD.CONTAINER_BACKUPS]],
+    onAck: (ack) => setJobId(ack.jobId),
+    onDone: () => setDone(true),
   };
+  /* Opened on a backup already running: follow it to its end, like one started here. */
+  useFollowJob(backup, runningJobId, followOptions);
+  const startBackup = () => backup.run(() => start(selectedIds), { ...followOptions, job: true });
 
   // Auto-dismiss on success. Errors stay visible until the user closes —
   // they need to read the message. The jobs tray in the
   // top bar still surfaces the completed job for ~5 minutes if anyone
   // wants to confirm.
   useEffect(() => {
-    if (!isDone) return;
+    if (!done) return undefined;
     const t = setTimeout(() => onClose?.(), AUTO_CLOSE_DELAY_MS);
     return () => clearTimeout(t);
-  }, [isDone, onClose]);
+  }, [done, onClose]);
 
   if (settingsRecord.data == null) {
     return (
@@ -62,6 +71,11 @@ export default function BackupModal({
       </Modal>
     );
   }
+
+  const inProgress = backup.busy;
+  const toggleDestination = (id) => setSelectedIds((prev) => (
+    prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+  ));
 
   return (
     <Modal open={!!onClose} onClose={onClose} size="md" bodyPadding="none" ariaLabel={`Backup ${name}`}>
@@ -79,7 +93,7 @@ export default function BackupModal({
               <input
                 type="checkbox"
                 checked={selectedIds.includes(d.id)}
-                onChange={() => onToggleDestination(d.id)}
+                onChange={() => toggleDestination(d.id)}
                 className="rounded-sm border-surface-border"
                 disabled={inProgress}
               />
@@ -89,19 +103,19 @@ export default function BackupModal({
           ))}
         </div>
 
-        {progress && (
+        {(inProgress || done) && (
           <div className="mt-4 rounded-md border border-surface-border bg-surface px-3 py-2 text-xs">
-            {progress.step === 'done' ? (
+            {done ? (
               <p className="text-status-running">Backup complete.</p>
-            ) : progress.step === 'error' ? null : (
+            ) : (
               <>
                 <p className="text-text-secondary">
-                  {progress.currentFile || progress.step}
-                  {typeof progress.percent === 'number' && (
+                  {progress?.detail || progress?.step || 'starting'}
+                  {typeof progress?.percent === 'number' && (
                     <span className="ml-1.5 text-text-muted font-mono">{Math.round(progress.percent)}%</span>
                   )}
                 </p>
-                {typeof progress.percent === 'number' && (
+                {typeof progress?.percent === 'number' && (
                   <div className="mt-1 h-1.5 w-full rounded-full bg-surface-border overflow-hidden">
                     <div className="h-full bg-accent rounded-full transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, progress.percent))}%` }} />
                   </div>
@@ -117,9 +131,7 @@ export default function BackupModal({
           </p>
         )}
 
-        {error && (
-          <p className="mt-2 text-xs text-status-stopped">{error}</p>
-        )}
+        <ErrorBanner className="mt-2" error={backup.error} onDismiss={backup.dismiss} />
 
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           {inProgress ? (
@@ -137,13 +149,13 @@ export default function BackupModal({
                 onClick={onClose}
                 className="rounded-md border border-surface-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface"
               >
-                {isDone ? 'Close' : 'Cancel'}
+                {done ? 'Close' : 'Cancel'}
               </button>
-              {!isDone && !isError && (
+              {!done && (
                 <button
                   type="button"
-                  onClick={handleStart}
-                  disabled={selectedIds.length === 0 || starting}
+                  onClick={startBackup}
+                  disabled={selectedIds.length === 0}
                   className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
                 >
                   Start backup

@@ -7,9 +7,7 @@ import {
 } from 'lucide-react';
 
 import { useContainer, useContainerStore, runContainerCommand } from '../../store/containerStore.js';
-import {
-  useBackgroundJobsStore, useWorkloadBusy, useWorkloadBackup, workloadBusyReason,
-} from '../../store/backgroundJobsStore.js';
+import { useWorkloadBusy, useWorkloadBackup, workloadBusyReason } from '../../store/backgroundJobsStore.js';
 import { updateContainer, ejectContainerApp } from '../../api/containers.js';
 import { startContainerBackup } from '../../api/backups.js';
 import { JOB_KIND } from '../../../../shared/wireNames.js';
@@ -78,7 +76,6 @@ export default function ContainerOverviewPanel({ name: routeName }) {
   const killContainer = useContainerStore((s) => s.killContainer);
   const restartContainer = useContainerStore((s) => s.restartContainer);
   const deleteContainer = useContainerStore((s) => s.deleteContainer);
-  const bgJobs = useBackgroundJobsStore((s) => s.jobs);
 
   const { tab } = useParams();
   const navigate = useNavigate();
@@ -88,9 +85,6 @@ export default function ContainerOverviewPanel({ name: routeName }) {
   const [deleteFiles, setDeleteFiles] = useState(true);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [backupModalOpen, setBackupModalOpen] = useState(false);
-  const [backupSelectedIds, setBackupSelectedIds] = useState(['local']);
-  const [backupJobId, setBackupJobId] = useState(null);
-  const [backupError, setBackupError] = useState(null);
 
   const containerName = routeName;
   // A job on this container holds the backend's per-container operation lock
@@ -103,21 +97,7 @@ export default function ContainerOverviewPanel({ name: routeName }) {
   const killHint = busyJob?.kind === JOB_KIND.CONTAINER_STOP ? null : busyHint;
   const backupJob = useWorkloadBackup({ type: 'container', name: containerName });
 
-  // Auto-clear backupJobId once the job ends, but ONLY while the modal is
-  // closed. Clearing while it is open would blank `progress` and revert the
-  // dialog to its initial Cancel/Start state. See sibling logic in vm/OverviewPanel.jsx.
   useEffect(() => {
-    if (backupModalOpen) return;
-    if (!backupJobId) return;
-    const row = bgJobs[backupJobId];
-    if (row && (row.status === 'done' || row.status === 'error')) {
-      setBackupJobId(null);
-    }
-  }, [backupJobId, bgJobs, backupModalOpen]);
-
-  useEffect(() => {
-    setBackupJobId(null);
-    setBackupError(null);
     setBackupModalOpen(false);
   }, [containerName]);
 
@@ -160,12 +140,7 @@ export default function ContainerOverviewPanel({ name: routeName }) {
     if (await deleteContainer(name, deleteFiles)) navigate('/host/overview');
   };
 
-  const handleOpenBackup = () => {
-    setBackupModalOpen(true);
-    setBackupError(null);
-    setBackupJobId(backupJob?.kind === JOB_KIND.CONTAINER_BACKUP ? backupJob.jobId : null);
-    setBackupSelectedIds(['local']);
-  };
+  const handleOpenBackup = () => setBackupModalOpen(true);
 
   /* A rename is followed from the request: the server takes the name as sent (after
    * validation) and announces the change under it. The section assignment moves with
@@ -392,52 +367,10 @@ export default function ContainerOverviewPanel({ name: routeName }) {
         <BackupModal
           name={name}
           subjectLabel="Container"
-          backupStarted={!!backupJobId}
           settingsRecord={settingsRecord}
-          selectedIds={backupSelectedIds}
-          onToggleDestination={(id) => {
-            setBackupSelectedIds((prev) => (
-              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-            ));
-          }}
-          progress={
-            backupJobId && bgJobs[backupJobId]
-              ? {
-                step: bgJobs[backupJobId].step || 'starting',
-                percent: bgJobs[backupJobId].percent,
-                currentFile: bgJobs[backupJobId].detail,
-              }
-              : null
-          }
-          error={
-            backupJobId && bgJobs[backupJobId]?.error
-              ? errorText(bgJobs[backupJobId].error)
-              : backupError
-          }
-          onStart={async () => {
-            setBackupError(null);
-            try {
-              await startContainerBackup(name, { destinationIds: backupSelectedIds });
-              /* Close the modal once the job is queued — progress is shown in
-               * the jobs tray, and the toolbar Backup
-               * button is disabled while a backup runs (so the user can't
-               * reopen this modal mid-backup anyway). */
-              setBackupModalOpen(false);
-              setBackupJobId(null);
-              setBackupSelectedIds(['local']);
-            } catch (err) {
-              setBackupError(errorText(err));
-              setBackupJobId(null);
-            }
-          }}
-          onClose={() => {
-            setBackupModalOpen(false);
-            const row = backupJobId ? bgJobs[backupJobId] : null;
-            if (!row || row.status !== 'running') {
-              setBackupJobId(null);
-              setBackupError(null);
-            }
-          }}
+          runningJobId={backupJob?.kind === JOB_KIND.CONTAINER_BACKUP ? backupJob.jobId : null}
+          start={(destinationIds) => startContainerBackup(name, { destinationIds })}
+          onClose={() => setBackupModalOpen(false)}
         />
       )}
     </div>

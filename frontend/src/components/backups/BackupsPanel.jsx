@@ -160,9 +160,6 @@ export default function BackupsPanel() {
 
   /* Back up now (BackupModal) */
   const [backupTarget, setBackupTarget] = useState(null);
-  const [backupSelectedIds, setBackupSelectedIds] = useState(['local']);
-  const [backupJobId, setBackupJobId] = useState(null);
-  const [backupError, setBackupError] = useState(null);
 
   /* Restore as new (inline strip) */
   const [restoreTarget, setRestoreTarget] = useState(null);
@@ -245,26 +242,13 @@ export default function BackupsPanel() {
 
   /* ── Back up now ── */
 
-  const handleOpenBackup = (group) => {
-    setBackupError(null);
-    setBackupSelectedIds(['local']);
+  const handleOpenBackup = (group) => setBackupTarget(group);
+
+  /** The backup of `group` running now, for the dialog to follow. */
+  const runningBackupOf = (group) => {
     const running = activeJobFor(group);
     const backupKind = group.kind === 'vm' ? JOB_KIND.VM_BACKUP : JOB_KIND.CONTAINER_BACKUP;
-    setBackupJobId(running?.kind === backupKind ? running.jobId : null);
-    setBackupTarget(group);
-  };
-
-  const handleStartBackup = async () => {
-    if (!backupTarget) return;
-    setBackupError(null);
-    try {
-      const isVm = backupTarget.kind === 'vm';
-      const start = isVm ? startBackup : startContainerBackup;
-      const { jobId } = await start(backupTarget.name, { destinationIds: backupSelectedIds });
-      setBackupJobId(jobId);
-    } catch (err) {
-      setBackupError(errorText(err));
-    }
+    return running?.kind === backupKind ? running.jobId : null;
   };
 
   /* ── Restore as new ── */
@@ -586,20 +570,12 @@ export default function BackupsPanel() {
         <BackupModal
           name={backupTarget.name}
           subjectLabel={backupTarget.kind === 'vm' ? 'VM' : 'Container'}
-          backupStarted={!!backupJobId}
           settingsRecord={settingsRecord}
-          selectedIds={backupSelectedIds}
-          onToggleDestination={(id) => setBackupSelectedIds((prev) => (
-            prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-          ))}
-          progress={backupJobId ? {
-            step: bgJobs[backupJobId]?.step || 'starting',
-            percent: bgJobs[backupJobId]?.percent ?? null,
-            currentFile: bgJobs[backupJobId]?.detail ?? null,
-          } : null}
-          error={backupError || (backupJobId && bgJobs[backupJobId]?.error ? errorText(bgJobs[backupJobId].error) : null)}
-          onStart={handleStartBackup}
-          onClose={() => { setBackupTarget(null); setBackupJobId(null); setBackupError(null); }}
+          runningJobId={runningBackupOf(backupTarget)}
+          start={(destinationIds) => (backupTarget.kind === 'vm' ? startBackup : startContainerBackup)(
+            backupTarget.name, { destinationIds },
+          )}
+          onClose={() => setBackupTarget(null)}
         />
       )}
 
