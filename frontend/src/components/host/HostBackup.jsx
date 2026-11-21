@@ -37,7 +37,7 @@ export default function HostBackup() {
                   { label: 'Second destination', value: second ? `${mountText(second)} · ${second.mountPath}` : 'None' },
                 ]}
               />
-              <p className="pb-1 text-[11px] text-text-muted">Backups go under the workload’s name, then the time. Both destinations are offered in each backup dialog.</p>
+              <p className="pb-1 text-[11px] text-text-muted">Backups go under the workload’s name, then the time. Each backup dialog offers these destinations.</p>
               {editing && (
                 <SettingsEditor
                   title="Backup"
