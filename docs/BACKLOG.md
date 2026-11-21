@@ -89,6 +89,15 @@ answers 409 or 404. Closing it means waiting for the cue's re-read as well as th
 (found in the command-acks milestone 5 review, 2026-11-16). **Revisit trigger:** a user
 seeing that 409 or 404 after a delete or unmount.
 
+**The image update status could carry the containers the last check flagged.** The
+image library's status line reads the update status record (`lastCheckedAt`,
+`imagesUpdated`); how many containers a check flagged reaches only the tab that ran the
+check, from its job's result (`ImageLibrary.jsx`), so another tab, a reload or the hourly
+check never shows it. Carrying `flaggedContainers` in `GET /api/containers/image-updates`
+would let every view show it: a wire change (found in the frontend data flow
+milestone 3 run, 2026-11-21). **Revisit trigger:** a user missing the flagged count
+after a reload or a scheduled check.
+
 **A stale `vms` frame can undo a same-tab VM rename.** After a rename, the renaming tab
 follows it at once (`followRename`, then `navigate`, in `OverviewPanel.jsx`). A `vms`
 frame whose list was computed before libvirt's rename, arriving after that, shows the old

@@ -12,8 +12,12 @@ import {
   startDownloadArchCloud,
 } from '../../api/library.js';
 import { useBackgroundJobsStore, awaitJob } from '../../store/backgroundJobsStore.js';
-import { useContainerStore } from '../../store/containerStore.js';
-import { deleteContainerImage } from '../../api/containers.js';
+import { checkContainerImageUpdates, deleteContainerImage } from '../../api/containers.js';
+import { useCommand } from '../../hooks/useCommand.js';
+import { useJobProgress } from '../../hooks/useJobProgress.js';
+import { useFollowJob, useRunningJob } from '../../hooks/useFollowJob.js';
+import ErrorBanner from '../shared/ErrorBanner.jsx';
+import RecordError from '../shared/RecordError.jsx';
 import { RECORD } from '../../store/records.js';
 import { useRecord } from '../../hooks/useRecord.js';
 import { sendAndAwaitKindChange } from '../../api/events.js';
@@ -33,7 +37,7 @@ import {
 import { formatSize, formatRelativeTime } from '../../utils/formatters.js';
 import { focusField } from '../../lib/focus.js';
 import { errorText } from '../../api/errors.js';
-import { CHANGE_KIND } from '../../../../shared/wireNames.js';
+import { CHANGE_KIND, JOB_KIND } from '../../../../shared/wireNames.js';
 
 const NO_ROWS = [];
 
@@ -279,13 +283,26 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
     return FILTERS_PICKER;
   }, [isPageLike, pickerKind]);
   const bgJobs = useBackgroundJobsStore((s) => s.jobs);
-  const imageUpdateCheck = useContainerStore((s) => s.imageUpdateCheck);
-  /* The check's progress is its job row's: the latest `checking` and `skipped` events. */
-  const checkEvents = imageUpdateCheck.jobId ? bgJobs[imageUpdateCheck.jobId]?.events : null;
+  /* The image update check: a job, busy until it ended and the update status and the
+   * images, read again after it, have landed. Its progress (the latest `checking` and
+   * `skipped` events) shows on the status line; its result names the containers it
+   * flagged. */
+  const check = useCommand();
+  const [checkJob, setCheckJob] = useState({ jobId: null, ref: null });
+  const [flaggedContainers, setFlaggedContainers] = useState(null);
+  const checkEvents = useJobProgress(check.busy ? checkJob.jobId : null)?.events;
   const checking = checkEvents?.checking ?? null;
   const skipped = checkEvents?.skipped ?? null;
-  const checkState = { running: imageUpdateCheck.running, currentRef: checking?.ref ?? null };
-  const startImageUpdateCheck = useContainerStore((s) => s.startImageUpdateCheck);
+  const checkState = { running: check.busy, currentRef: checking?.ref ?? null };
+  const checkOptions = (ref) => ({
+    rereads: [[RECORD.IMAGE_UPDATE_STATUS], [RECORD.CONTAINER_IMAGES]],
+    onAck: ({ jobId }) => setCheckJob({ jobId, ref }),
+    onDone: (result) => setFlaggedContainers(result.flaggedContainers),
+  });
+  const startImageUpdateCheck = (ref = null) => check.run(() => checkContainerImageUpdates(ref), { ...checkOptions(ref), job: true });
+  /* A check already running (started from another tab, the hourly check, or this page
+   * before it was left) is taken up the same way, to its end. */
+  useFollowJob(check, useRunningJob((job) => job.kind === JOB_KIND.CONTAINER_IMAGE_UPDATE_CHECK), checkOptions(null));
   const [filter, setFilter] = useState(() => {
     if (mode === 'picker' && pickerKind === 'container') return 'container';
     if (mode === 'picker' && defaultFilter === 'container') return 'all';
@@ -299,7 +316,8 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
   const needImages = filter === 'container' || (isPageLike && filter === 'all');
   const library = useRecord(needFiles ? RECORD.LIBRARY : null);
   const images = useRecord(needImages ? RECORD.CONTAINER_IMAGES : null);
-  const updateStatus = useRecord(isPageLike ? RECORD.IMAGE_UPDATE_STATUS : null).data;
+  const updateStatusRecord = useRecord(isPageLike ? RECORD.IMAGE_UPDATE_STATUS : null);
+  const updateStatus = updateStatusRecord.data;
   const files = useMemo(() => {
     const all = needFiles ? library.data ?? NO_ROWS : NO_ROWS;
     return filter === 'iso' || filter === 'disk' ? all.filter((f) => f.type === filter) : all;
@@ -502,12 +520,12 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
           <button
             type="button"
             onClick={() => startImageUpdateCheck(null)}
-            disabled={imageUpdateCheck.running}
+            disabled={check.busy}
             className="inline-flex items-center justify-center rounded-md border border-surface-border p-1.5 text-text-secondary hover:bg-surface hover:text-text-primary transition-colors duration-150 disabled:opacity-50"
             title="Check all OCI images for updates"
             aria-label="Check all OCI images for updates"
           >
-            {imageUpdateCheck.running && !imageUpdateCheck.ref
+            {check.busy && !checkJob.ref
               ? <Loader2 size={14} className="animate-spin" aria-hidden />
               : <RefreshCw size={14} aria-hidden />}
           </button>
@@ -585,9 +603,12 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
           )}
 
           {isPageLike && isOciView && (
+            <RecordError record={updateStatusRecord} what="image update status" className="mb-2" />
+          )}
+          {isPageLike && isOciView && (
             <div className="mb-3 flex items-center justify-between text-xs text-text-muted">
               <span>
-                {imageUpdateCheck.running ? (
+                {check.busy ? (
                   <>
                     Checking
                     {checking ? ` ${shortDigest(checking.ref)}` : '…'}
@@ -598,18 +619,21 @@ export default function ImageLibrary({ mode = 'page', pickerKind = 'vm', onSelec
                   <>
                     Checked {formatRelativeTime(updateStatus.lastCheckedAt)}
                     {` · ${updateStatus.imagesUpdated || 0} update${updateStatus.imagesUpdated === 1 ? '' : 's'} found`}
-                    {imageUpdateCheck.flaggedContainers > 0
-                      ? ` · ${imageUpdateCheck.flaggedContainers} container${imageUpdateCheck.flaggedContainers === 1 ? '' : 's'} flagged`
-                      : ''}
                   </>
                 ) : (
                   <>Never checked for updates</>
                 )}
               </span>
-              {imageUpdateCheck.lastError && (
-                <span className="text-status-stopped">{imageUpdateCheck.lastError}</span>
+              {/* The result of the check run from this page. */}
+              {!check.busy && flaggedContainers > 0 && (
+                <span>
+                  Your check flagged {flaggedContainers} container{flaggedContainers === 1 ? '' : 's'}
+                </span>
               )}
             </div>
+          )}
+          {isPageLike && isOciView && (
+            <ErrorBanner className="mb-3" error={check.error} prefix="Update check" onDismiss={check.dismiss} />
           )}
           {loading ? (
           <p className="py-8 text-center text-sm text-text-muted">Loading…</p>

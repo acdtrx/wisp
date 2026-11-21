@@ -39,6 +39,7 @@
 - **The Software page shows a failed settings read**, with a Retry before they loaded; the update card shows only its own status read's failure.
 - **Backup destination pickers wait for the settings** — they show a loading line, or the settings' error with a Retry, instead of offering Local alone; an unlabelled backup mount is called Network everywhere.
 - **The container backup dialog shows the backup's progress** like the VM's, instead of closing once it started; it follows a backup already running when it opens, and a backup cut short (cancelled) is shown as not done.
+- **The image update check's flagged containers show as that check's result** ("Your check flagged …") beside the status line, which shows the stored status only; a check running when the page opens is followed to its end. A check that ended while the page was away shows only in the stored status: how many containers it flagged needs the server to keep it (backlog).
 - **A settings Save stays busy until the saved settings are on screen**, then shows them as the server stored them; a failed save keeps what was typed.
 
 ## 2026-11-17
