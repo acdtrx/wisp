@@ -7,13 +7,54 @@ trigger** — the observed condition that would make it worth building (features
 their place). Date rulings inline: `(ruled YYYY-MM-DD: wait to see if needed.)`.
 Group entries under headings as themes emerge.
 
-**The cloud-init edit falls back to the VM name as the hostname.** Opening the editor on
-a VM with no saved hostname fills `hostname: vmName`
-(`frontend/src/components/sections/CloudInitSection.jsx`, `startEditing`), but a VM
-name may hold `.` or `_` or run to 128 characters, which the hostname schema (an RFC
+**The cloud-init hostname falls back to the VM name.** An empty hostname field means the
+VM's name, and Save or Create sends it (`cloudInitSent` in
+`frontend/src/components/sections/CloudInitSection.jsx`, `createVmBody` in
+`frontend/src/components/vm/vmDraft.js`), but a VM name may hold `.` or `_` or run to
+128 characters, which the hostname schema (an RFC
 1123 label, at most 63) refuses, so saving answers 400 until the user edits the field
 (found 2026-11-20, with the 128-character VM names). **Revisit trigger:** a VM named
 with a dot, an underscore or past 63 characters gets cloud-init.
+
+**No check refuses a duplicate JSX prop.** A component given the same prop twice keeps
+the last one silently: that is how a doubled `saveDisabledReason` on the VM General card
+let its Save on while its CPU or RAM had a problem (found in the frontend data flow
+milestone 4 run, 2026-11-21). ESLint's core rules have none for JSX, and no React plugin
+is installed (`eslint-plugin-react`'s `jsx-no-duplicate-props` would be one, a new dev
+dependency). **Revisit trigger:** another duplicate prop found in review or as a bug.
+
+**The cloud-init form's `packageUpgrade` default differs by path.** Configuring a VM's
+cloud-init starts it off (`CLOUD_INIT_DEFAULTS` in
+`frontend/src/components/sections/CloudInitSection.jsx`); creating a VM starts it on
+(`defaultVmDraft` in `frontend/src/components/vm/vmDraft.js`). One default would be
+the user's pick (found 2026-11-21). **Revisit trigger:** a guest configured with package
+upgrades off, or on, that the user did not expect.
+
+**Commands end two ways.** A command that runs as a job re-reads the records it names
+when the job ends; a command that ends at its ack waits on a stream frame for its new
+state, up to 30 s when the stream is silent; among them the secret file content Save,
+the service editor's "Remove advertisement", API token create, Home link Add, NIC and
+env removes, device toggles (FRONTEND-RULES § Data, settled 2026-11-15). One shape — every command
+names its records and re-reads them — would remove the frame waits; it changes a rule
+the user settled, so it is the user's call (found in the frontend data flow milestone 4
+run, 2026-11-21). **Revisit trigger:** a command seen busy for its 30 s on a quiet
+stream.
+
+**The backend's VM rename check is narrower than its spec.** `updateVMConfig`
+(`backend/src/lib/vmManager/linux/vmManagerConfig.js`, `isRunning`) refuses a rename
+only while the domain runs, is blocked or is paused (state codes 1 to 3), where
+VM-MANAGEMENT.md (Renaming; "Stopped means `shutoff`") says a VM is renamed only stopped,
+and stopped is `shutoff` alone: a VM shutting down, crashed or suspended is renamed. The
+UI locks the name unless the VM is shut off. It should use the offline test,
+`isOfflineState` (phase 5; found in the frontend data flow review, 2026-11-21).
+**Revisit trigger:** phase 5, or a rename seen on a VM that is not shut off.
+
+**A VM rename does not rebuild its cloud-init seed.** The seed ISO keeps the hostname it
+was built with, so a VM renamed after its cloud-init was set keeps the old name until
+the seed is rebuilt; and a VM whose stored cloud-init has no hostname (one written
+through the API) takes the VM's current name each time the seed is built, so an
+unrelated cloud-init save renames the guest. The manager's side (phase 5). **Revisit
+trigger:** phase 5, or a guest found named other than its VM.
 
 **The test module mocks use `namedExports`, deprecated after Node 24.** Five test files
 (`backend/src/lib/containerOperations.test.js`, `vmOperations.test.js`,
@@ -98,13 +139,22 @@ would let every view show it: a wire change (found in the frontend data flow
 milestone 3 run, 2026-11-21). **Revisit trigger:** a user missing the flagged count
 after a reload or a scheduled check.
 
-**A stale `vms` frame can undo a same-tab VM rename.** After a rename, the renaming tab
-follows it at once (`followRename`, then `navigate`, in `OverviewPanel.jsx`). A `vms`
-frame whose list was computed before libvirt's rename, arriving after that, shows the old
-name and not the new, and `migrateSelectionIfRenamed` follows the uuid back to the old name;
-the user lands on "not found" for a VM that exists under the new one. It needs a server
-list refresh that spans the rename: plausible, rare (found in the command-acks milestone 3
-review, 2026-11-16). **Revisit trigger:** a rename seen to land on "not found".
+**A list frame out of step with a page's record misleads its rename follow.** A workload
+page follows a rename from a list frame newer than the uuid its record gave
+(`renameStep` in `store/renameFollow.js`, run by `VmRoute.jsx` and `ContainerRoute.jsx`),
+and "newer" is the frame's arrival, not when its list was computed. Two cases:
+- After a rename in this tab, the new name's page has its record; a stale frame (a list
+  computed before the rename, arriving after the record) lists the old name and not the
+  new, so the page follows the uuid back to the old name, whose read answers 404: it
+  shows "No VM named …" (or container), and stays there, since the old name's page has
+  no uuid left to follow.
+- A first read answered before another client's rename but landing after the list frame
+  that shows it takes that frame as older than its uuid: the page does not follow, and
+  shows "No VM named …" once its re-read answers 404, until the next list frame.
+Both need a list refresh that spans the rename: plausible, rare (found in the
+command-acks milestone 3 review, 2026-11-16; the second in the frontend data flow
+review, 2026-11-21). A frame or read sequence number would order them. **Revisit
+trigger:** a rename seen to land on "not found".
 
 **A workload list answers an empty list when its manager is down.** Outside the start's
 migrations, `listVMs` answers `[]` while libvirt is not connected
