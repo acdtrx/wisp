@@ -1,4 +1,4 @@
-import { api } from './client.js';
+import { anySignal, api } from './client.js';
 
 export function changePassword(currentPassword, newPassword) {
   return api('/api/auth/change-password', {
@@ -10,9 +10,10 @@ export function changePassword(currentPassword, newPassword) {
 // Public endpoint — tells the login page whether SSO is configured. Uses a bare
 // fetch (not `api`) so it works before any session exists and never triggers the
 // 401 → /login redirect in the shared client.
-export async function getOidcStatus() {
+export async function getOidcStatus({ signal } = {}) {
   try {
-    const res = await fetch('/api/auth/oidc/status', { credentials: 'include', signal: AbortSignal.timeout(15_000) }); // CODING-RULES §6
+    const deadline = AbortSignal.timeout(15_000); // CODING-RULES §6
+    const res = await fetch('/api/auth/oidc/status', { credentials: 'include', signal: signal ? anySignal([signal, deadline]) : deadline });
     if (!res.ok) return { enabled: false };
     return await res.json();
   } catch {

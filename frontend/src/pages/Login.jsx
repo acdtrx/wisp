@@ -46,9 +46,10 @@ export default function Login() {
     const sso = new URLSearchParams(window.location.search).get('sso');
     if (sso && SSO_NOTICES[sso]) setSsoNotice(SSO_NOTICES[sso]);
 
-    let cancelled = false;
-    getOidcStatus().then((status) => {
-      if (cancelled) return;
+    /* Before a session exists, so not a record (FRONTEND-RULES, Data): aborted on unmount. */
+    const controller = new AbortController();
+    getOidcStatus({ signal: controller.signal }).then((status) => {
+      if (controller.signal.aborted) return;
       const enabled = !!status.enabled;
       // Happy path: SSO configured and we're not returning from a failed/cancelled
       // attempt → bounce straight to the provider. Keep `checking` true so the
@@ -60,7 +61,7 @@ export default function Login() {
       setOidcEnabled(enabled);
       setChecking(false);
     });
-    return () => { cancelled = true; };
+    return () => controller.abort();
   }, []);
 
   const handleSubmit = async (e) => {

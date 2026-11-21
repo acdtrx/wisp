@@ -16,6 +16,7 @@ export default function RecordError({ record, what, className }) {
       error={record.error}
       prefix={hasData ? `Couldn't refresh the ${what}` : `Couldn't load the ${what}`}
       onRetry={hasData ? undefined : record.reload}
+      retrying={record.reading}
       onDismiss={hasData ? record.dismiss : undefined}
     />
   );

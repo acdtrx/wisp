@@ -9,7 +9,8 @@ import * as vmsApi from '../api/vms.js';
 import { CHANGE_KIND, JOB_KIND, TOPIC } from '../../../shared/wireNames.js';
 import { createRecordCache } from './recordCache.js';
 
-/** The record kinds (`useRecord(RECORD.X, id)`). */
+/** The record kinds (`useRecord(RECORD.X, id)`): client names, not wire names, so none
+ *  may spell a hyphenated change kind (the lint refuses those anywhere). */
 export const RECORD = Object.freeze({
   VM: 'vm',
   VM_USB: 'vm-usb',
@@ -36,6 +37,9 @@ export const RECORD = Object.freeze({
   CONTAINER_BACKUPS: 'container-backups',
 });
 
+const VM_GONE = ['VM_NOT_FOUND'];
+const CONTAINER_GONE = ['CONTAINER_NOT_FOUND'];
+
 const listed = (list, name) => (Array.isArray(list) ? list.some((w) => w.name === name) : undefined);
 const changeOf = (change) => ({ change, byId: true });
 const kindChange = (change) => ({ change });
@@ -55,31 +59,38 @@ function newestFinishedImageCheck(frame) {
  * (docs/specs/API.md, `changes` topic payload). Each is also read again when the
  * events stream reconnects.
  */
-const RECORD_KINDS = {
+export const RECORD_KINDS = {
   [RECORD.VM]: {
     fetch: (name, o) => vmsApi.getVM(name, o),
+    goneCodes: VM_GONE,
     // A delete sends no `vm` change: the list stops listing it, and the read answers 404.
     cues: [changeOf(CHANGE_KIND.VM), { topic: TOPIC.VMS, key: listed }],
   },
-  [RECORD.VM_USB]: { fetch: (name, o) => vmsApi.getVMUSB(name, o), cues: [changeOf(CHANGE_KIND.VM)] },
-  [RECORD.VM_CLOUD_INIT]: { fetch: (name, o) => vmsApi.getCloudInit(name, o), cues: [changeOf(CHANGE_KIND.VM)] },
-  [RECORD.VM_XML]: { fetch: (name, o) => vmsApi.getVMXML(name, o), cues: [changeOf(CHANGE_KIND.VM)] },
+  [RECORD.VM_USB]: { fetch: (name, o) => vmsApi.getVMUSB(name, o), goneCodes: VM_GONE, cues: [changeOf(CHANGE_KIND.VM)] },
+  [RECORD.VM_CLOUD_INIT]: { fetch: (name, o) => vmsApi.getCloudInit(name, o), goneCodes: VM_GONE, cues: [changeOf(CHANGE_KIND.VM)] },
+  [RECORD.VM_XML]: { fetch: (name, o) => vmsApi.getVMXML(name, o), goneCodes: VM_GONE, cues: [changeOf(CHANGE_KIND.VM)] },
   [RECORD.CONTAINER]: {
     fetch: (name, o) => containersApi.getContainer(name, o),
+    goneCodes: CONTAINER_GONE,
     cues: [changeOf(CHANGE_KIND.CONTAINER), { topic: TOPIC.CONTAINERS, key: listed }],
   },
   [RECORD.CONTAINER_MOUNT_USAGE]: {
     fetch: (name, o) => containersApi.getContainerMountUsage(name, o),
+    goneCodes: CONTAINER_GONE,
+    // A figure derived from the mounts, slow to gather: no command waits for it.
+    awaited: false,
     cues: [changeOf(CHANGE_KIND.CONTAINER)],
   },
   [RECORD.CONTAINER_RUNS]: {
     fetch: (name, o) => containersApi.listContainerRuns(name, o),
+    goneCodes: CONTAINER_GONE,
     // A run starts and ends with the container's state, which the list carries.
     cues: [{ topic: TOPIC.CONTAINERS, key: (list, name) => (Array.isArray(list) ? list.find((c) => c.name === name)?.state ?? null : undefined) }],
   },
   /* `[container, mount]`; read while its editor is open, never under the user's edit. */
   [RECORD.MOUNT_FILE_CONTENT]: {
     fetch: ([container, mount], o) => containersApi.getMountFileContent(container, mount, o),
+    goneCodes: ['CONTAINER_MOUNT_NOT_FOUND', 'CONTAINER_NOT_FOUND'],
     cues: [],
   },
   [RECORD.SETTINGS]: { singleton: true, fetch: (_, o) => settingsApi.getSettings(o), cues: [kindChange(CHANGE_KIND.SETTINGS)] },

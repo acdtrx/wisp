@@ -12,33 +12,38 @@ import { isErrorFrame } from './streamStore.js';
  *
  * @typedef {Object} RecordKind
  * @property {(id: any, options: { signal: AbortSignal }) => Promise<unknown>} fetch
- * @property {boolean} [singleton] - one record of the kind: it takes no id
+ * @property {boolean} [singleton] - one record of the kind: it takes no id, and its
+ *   last data is kept for the session (a returning view shows it while it is read again)
  * @property {RecordCue[]} cues
+ * @property {string[]} [goneCodes] - the error codes that mean the record does not exist
+ *   (its subject's own not-found): such an answer is "gone"; any other is an error
+ * @property {boolean} [awaited] - false for a best-effort figure derived from a record
+ *   (a mount's disk usage): a command waiting on a cue does not wait for its re-read
  *
  * @typedef {'idle' | 'loading' | 'ready' | 'error' | 'gone'} RecordStatus
- * @typedef {{ data: any, status: RecordStatus, error: import('../api/errors.js').ApiError | null, reads: number }} RecordSnapshot
- *   `reads` counts the answers applied, an equal one included: a form knows from it
- *   that a read landed after its save (hooks/formState.js)
+ * @typedef {{ data: any, status: RecordStatus, error: import('../api/errors.js').ApiError | null, reading: boolean }} RecordSnapshot
+ *   `reading`: a read is on its way (a Retry shows it busy)
  */
 
-const IDLE = Object.freeze({ data: null, status: 'idle', error: null, reads: 0 });
-const LOADING = Object.freeze({ data: null, status: 'loading', error: null, reads: 0 });
+const IDLE = Object.freeze({ data: null, status: 'idle', error: null, reading: false });
+const LOADING = Object.freeze({ data: null, status: 'loading', error: null, reading: true });
 
 const sameValue = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
  * The records the views show, read from the server (docs/FRONTEND-RULES.md, Data):
  * a record is read while something shows it, once for everyone showing it, again on
- * its cues and when the events stream reconnects, and the read is aborted when
- * nothing shows it any more.
+ * its cues and when the events stream (re)connects — a page load therefore reads each
+ * record twice, its first read and the connect frame's — and the read is aborted when
+ * nothing shows it any more. A keyed record is then dropped; a singleton keeps its last
+ * data for the session, until `clear()` (sign-out).
  *
  * The one guard against a stale answer (docs/specs/ERROR-HANDLING.md, Stale
  * responses): every read is numbered. An answer is applied only when it is newer than
  * the last one applied, so a view never shows an older answer after a newer one. A
  * failure counts only when it is the newest read sent: a failed read that a newer
  * read has replaced shows nothing. A failure keeps the data already shown, and
- * stays until a read sent after it succeeds or the user dismisses it. A 404 is
- * "gone", not an error.
+ * stays until a read sent after it succeeds or the user dismisses it.
  *
  * @param {Record<string, RecordKind>} kinds
  */
@@ -63,34 +68,44 @@ export function createRecordCache(kinds) {
     return spec;
   }
 
+  function entryOf(kind, id) {
+    const spec = kindOf(kind);
+    return entries.get(keyOf(kind, spec.singleton ? null : id));
+  }
+
   function publish(entry) {
     let status;
     if (entry.gone) status = 'gone';
     else if (entry.error) status = 'error';
     else if (entry.hasData) status = 'ready';
     else status = 'loading';
-    entry.snapshot = { data: entry.hasData ? entry.data : null, status, error: entry.error, reads: entry.reads };
+    entry.snapshot = {
+      data: entry.hasData ? entry.data : null, status, error: entry.error, reading: entry.inflight.size > 0,
+    };
     for (const listener of entry.listeners) listener();
   }
 
   function read(entry) {
-    if (entry.stopped) return Promise.resolve();
+    if (!entry.live) return Promise.resolve();
     const n = ++entry.sent;
     const controller = new AbortController();
-    entry.inflight.add(controller);
-    return entry.spec.fetch(entry.id, { signal: controller.signal })
+    const settled = () => {
+      entry.inflight.delete(controller);
+      if (entry.live) publish(entry);
+    };
+    entry.inflight.set(controller, null);
+    publish(entry);
+    const promise = entry.spec.fetch(entry.id, { signal: controller.signal })
       .then((data) => {
-        if (entry.stopped || n <= entry.applied) return;
+        if (!entry.live || n <= entry.applied) return;
         entry.applied = n;
-        entry.reads += 1;
         entry.gone = false;
         if (!entry.hasData || !sameValue(entry.data, data)) entry.data = data;
         entry.hasData = true;
         if (n > entry.failedAt) entry.error = null;
-        publish(entry);
       }, (err) => {
-        if (entry.stopped || controller.signal.aborted || n !== entry.sent) return;
-        if (err?.status === 404) {
+        if (!entry.live || controller.signal.aborted || n !== entry.sent) return;
+        if (entry.spec.goneCodes?.includes(err?.code)) {
           entry.applied = n;
           entry.gone = true;
           entry.hasData = false;
@@ -100,23 +115,31 @@ export function createRecordCache(kinds) {
           entry.failedAt = n;
           entry.error = err;
         }
-        publish(entry);
       })
-      .finally(() => entry.inflight.delete(controller));
+      .finally(settled);
+    entry.inflight.set(controller, promise);
+    return promise;
   }
 
+  /** What a cue's handler returns: the read, for a command waiting on the frame, unless
+   *  the kind is a best-effort figure no command waits for. */
+  const cued = (entry) => {
+    const promise = read(entry);
+    return entry.spec.awaited === false ? undefined : promise;
+  };
+
   function start(entry) {
+    entry.live = true;
     read(entry);
     const { cues } = entry.spec;
     const changeKinds = cues.filter((c) => c.change).map((c) => c.change);
     /* Every record follows the connect frame `{ kind: 'all' }`: anything may have
-     * changed while the stream was down. Each handler returns its read, so a command
-     * waiting on the frame waits for it too. */
+     * changed while the stream was down. */
     entry.offs.push(subscribeChanges(changeKinds, (change) => {
-      if (change.kind === CHANGE_KIND.ALL) return read(entry);
+      if (change.kind === CHANGE_KIND.ALL) return cued(entry);
       const cue = cues.find((c) => c.change === change.kind);
       if (cue?.byId && change.id !== entry.id) return undefined;
-      return read(entry);
+      return cued(entry);
     }));
     for (const cue of cues.filter((c) => c.topic)) {
       let seen = false;
@@ -128,23 +151,32 @@ export function createRecordCache(kinds) {
           const changed = seen && !sameValue(key, lastKey);
           seen = true;
           lastKey = key;
-          return changed ? read(entry) : undefined;
+          return changed ? cued(entry) : undefined;
         }
         /* The first frame is the topic's state as the record is read: no news. */
         if (!seen) {
           seen = true;
           return undefined;
         }
-        return read(entry);
+        return cued(entry);
       }));
     }
   }
 
   function stop(entry) {
-    entry.stopped = true;
+    entry.live = false;
     for (const off of entry.offs) off();
-    for (const controller of entry.inflight) controller.abort();
-    entries.delete(entry.key);
+    entry.offs = [];
+    for (const controller of entry.inflight.keys()) controller.abort();
+    entry.inflight.clear();
+    if (!entry.spec.singleton) {
+      entries.delete(entry.key);
+      return;
+    }
+    // Kept for the session: what a returning view shows while it reads again.
+    entry.gone = false;
+    entry.error = null;
+    entry.snapshot = { ...entry.snapshot, status: entry.hasData ? 'ready' : 'loading', error: null, reading: false };
   }
 
   return {
@@ -161,42 +193,56 @@ export function createRecordCache(kinds) {
       let entry = entries.get(key);
       if (!entry) {
         entry = {
-          key, spec, id: spec.singleton ? null : id, listeners: new Set(), offs: [], inflight: new Set(),
-          sent: 0, applied: 0, failedAt: 0, reads: 0, hasData: false, data: null, error: null, gone: false,
-          stopped: false, snapshot: LOADING,
+          key, spec, id: spec.singleton ? null : id, listeners: new Set(), offs: [], inflight: new Map(),
+          sent: 0, applied: 0, failedAt: 0, hasData: false, data: null, error: null, gone: false,
+          live: false, snapshot: LOADING,
         };
         entries.set(key, entry);
-        entry.listeners.add(listener);
-        start(entry);
-      } else {
-        entry.listeners.add(listener);
       }
+      entry.listeners.add(listener);
+      if (!entry.live) start(entry);
       return () => {
         entry.listeners.delete(listener);
-        if (entry.listeners.size === 0 && !entry.stopped) stop(entry);
+        if (entry.listeners.size === 0 && entry.live) stop(entry);
       };
     },
 
     /** @returns {RecordSnapshot} */
     get(kind, id) {
-      const spec = kindOf(kind);
-      return entries.get(keyOf(kind, spec.singleton ? null : id))?.snapshot ?? LOADING;
+      return entryOf(kind, id)?.snapshot ?? LOADING;
     },
 
-    /** Read the record again (a Retry); resolves when the read settles. */
+    /** A Retry: read the record again, or join the read already on its way. */
     reload(kind, id) {
-      const spec = kindOf(kind);
-      const entry = entries.get(keyOf(kind, spec.singleton ? null : id));
-      return entry ? read(entry) : Promise.resolve();
+      const entry = entryOf(kind, id);
+      if (!entry?.live) return Promise.resolve();
+      const pending = [...entry.inflight.values()].at(-1);
+      return pending ?? read(entry);
+    },
+
+    /** A command's re-read: a read sent now, after the command's change, whatever is on
+     *  its way; resolves when it settles. Nothing is read for a record no view shows. */
+    reread(kind, id) {
+      const entry = entryOf(kind, id);
+      return entry?.live ? read(entry) : Promise.resolve();
     },
 
     /** Dismiss the record's error while its data is shown. */
     dismiss(kind, id) {
-      const spec = kindOf(kind);
-      const entry = entries.get(keyOf(kind, spec.singleton ? null : id));
+      const entry = entryOf(kind, id);
       if (!entry || !entry.error || !entry.hasData) return;
       entry.error = null;
       publish(entry);
+    },
+
+    /** Forget every record (sign-out). */
+    clear() {
+      for (const entry of entries.values()) {
+        entry.live = false;
+        for (const off of entry.offs) off();
+        for (const controller of entry.inflight.keys()) controller.abort();
+      }
+      entries.clear();
     },
   };
 }

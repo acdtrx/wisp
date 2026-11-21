@@ -7,10 +7,10 @@ const unsubscribed = () => noop;
 
 /**
  * A record from the server, read while this view shows it (store/records.js):
- * `{ data, status, error, reload, dismiss }`, `status` one of `loading`, `ready`,
- * `error` (the data, if any, is still the last good one), `gone` (the server answered
- * 404) or `idle` (no `id`: nothing is read). Every view showing the same record shares
- * one read.
+ * `{ data, status, error, reading, reload, dismiss }`, `status` one of `loading`,
+ * `ready`, `error` (the data, if any, is still the last good one), `gone` (the server
+ * answered the kind's not-found) or `idle` (no `id`: nothing is read); `reading` while
+ * a read is on its way. Every view showing the same record shares one read.
  *
  * @param {string | null} kind — a `RECORD` kind; none while the view shows no record
  * @param {unknown} [id] — the record's id (none for a kind with one record); an array

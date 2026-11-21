@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { api, isAuthenticated, broadcastLogout, isNetworkError, NETWORK_ERROR_MESSAGE, API_TIMEOUT_MS } from '../api/client';
 import { errorFromBody, errorText } from '../api/errors.js';
+import { records } from './records.js';
 
 export const useAuthStore = create((set) => ({
   // Cookie-based session — the HttpOnly session cookie is invisible to JS.
@@ -43,6 +44,7 @@ export const useAuthStore = create((set) => ({
       /* logout is best-effort — even on failure clear local state */
     }
     broadcastLogout('signedout');
+    records.clear();
     set({ authenticated: false });
   },
 }));

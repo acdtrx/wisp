@@ -7,6 +7,7 @@ import { CHANGE_KIND, TOPIC } from '../../../shared/wireNames.js';
 
 let net;
 let createRecordCache;
+let sendAndAwaitChange;
 let loaded = 0;
 
 beforeEach(async () => {
@@ -15,6 +16,7 @@ beforeEach(async () => {
   mock.timers.enable({ apis: ['setTimeout', 'Date'] });
   loaded += 1;
   ({ createRecordCache } = await import(`./recordCache.js?test=${loaded}`));
+  ({ sendAndAwaitChange } = await import('../api/events.js'));
 });
 
 afterEach(() => {
@@ -30,10 +32,10 @@ function handFetch() {
   return { calls, fetch };
 }
 
-/** A cache over one kind `thing` (id'd) with `cues`, its reads answered by hand. */
-function cacheWith(cues = []) {
+/** A cache over one kind `thing` (id'd, gone on `THING_NOT_FOUND`) with `cues`, its reads answered by hand. */
+function cacheWith(cues = [], spec = {}) {
   const reads = handFetch();
-  const cache = createRecordCache({ thing: { fetch: reads.fetch, cues } });
+  const cache = createRecordCache({ thing: { fetch: reads.fetch, goneCodes: ['THING_NOT_FOUND'], cues, ...spec } });
   return { cache, reads };
 }
 
@@ -59,7 +61,7 @@ test('a record is read once for everyone who shows it, and loading until it answ
   assert.equal(a.now().status, 'loading');
   reads.calls[0].resolve({ v: 1 });
   await settle();
-  assert.deepEqual(a.now(), { data: { v: 1 }, status: 'ready', error: null, reads: 1 });
+  assert.deepEqual(a.now(), { data: { v: 1 }, status: 'ready', error: null, reading: false });
   assert.equal(b.now(), a.now());
   a.off();
   b.off();
@@ -69,7 +71,7 @@ test('a record is read once for everyone who shows it, and loading until it answ
 test('an older answer that lands after a newer one is not shown', async () => {
   const { cache, reads } = cacheWith();
   const v = follow(cache);
-  cache.reload('thing', 'a');
+  cache.reread('thing', 'a');
   reads.calls[1].resolve({ v: 2 });
   await settle();
   reads.calls[0].resolve({ v: 1 });
@@ -81,13 +83,13 @@ test('an older answer that lands after a newer one is not shown', async () => {
 test('a failed read that a newer read has replaced shows nothing', async () => {
   const { cache, reads } = cacheWith();
   const v = follow(cache);
-  cache.reload('thing', 'a');
+  cache.reread('thing', 'a');
   reads.calls[0].reject(new ApiError({ status: 500, code: 'X', detail: 'old failure' }));
   await settle();
   assert.equal(v.now().status, 'loading');
   reads.calls[1].resolve({ v: 2 });
   await settle();
-  assert.deepEqual(v.now(), { data: { v: 2 }, status: 'ready', error: null, reads: 1 });
+  assert.deepEqual(v.now(), { data: { v: 2 }, status: 'ready', error: null, reading: false });
   v.off();
 });
 
@@ -96,17 +98,18 @@ test('the newest read failing keeps the data shown, and an older answer landing 
   const v = follow(cache);
   reads.calls[0].resolve({ v: 1 });
   await settle();
-  cache.reload('thing', 'a');
-  cache.reload('thing', 'a');
+  cache.reread('thing', 'a');
+  cache.reread('thing', 'a');
   const failure = new ApiError({ status: 503, code: 'NO_CONNECTION', detail: 'libvirt is down' });
   reads.calls[2].reject(failure);
   await settle();
-  assert.deepEqual(v.now(), { data: { v: 1 }, status: 'error', error: failure, reads: 1 });
+  // The older read is still on its way.
+  assert.deepEqual(v.now(), { data: { v: 1 }, status: 'error', error: failure, reading: true });
   reads.calls[1].resolve({ v: 2 });
   await settle();
-  assert.deepEqual(v.now(), { data: { v: 2 }, status: 'error', error: failure, reads: 2 });
+  assert.deepEqual(v.now(), { data: { v: 2 }, status: 'error', error: failure, reading: false });
   cache.dismiss('thing', 'a');
-  assert.deepEqual(v.now(), { data: { v: 2 }, status: 'ready', error: null, reads: 2 });
+  assert.deepEqual(v.now(), { data: { v: 2 }, status: 'ready', error: null, reading: false });
   v.off();
 });
 
@@ -120,11 +123,11 @@ test('a read sent after a failure clears it when it succeeds', async () => {
   cache.reload('thing', 'a');
   reads.calls[1].resolve({ v: 1 });
   await settle();
-  assert.deepEqual(v.now(), { data: { v: 1 }, status: 'ready', error: null, reads: 1 });
+  assert.deepEqual(v.now(), { data: { v: 1 }, status: 'ready', error: null, reading: false });
   v.off();
 });
 
-test('a 404 is gone, not an error; an answer equal to the shown one keeps its object', async () => {
+test("the kind's own not-found is gone, not an error; an answer equal to the shown one keeps its object", async () => {
   const { cache, reads } = cacheWith();
   const v = follow(cache);
   reads.calls[0].resolve({ v: 1 });
@@ -134,15 +137,87 @@ test('a 404 is gone, not an error; an answer equal to the shown one keeps its ob
   reads.calls[1].resolve({ v: 1 });
   await settle();
   assert.equal(v.now().data, shown);
-  assert.equal(v.now().reads, 2);
   cache.reload('thing', 'a');
-  reads.calls[2].reject(new ApiError({ status: 404, code: 'VM_NOT_FOUND', detail: 'No VM named a' }));
+  reads.calls[2].reject(new ApiError({ status: 404, code: 'THING_NOT_FOUND', detail: 'No thing named a' }));
   await settle();
-  assert.deepEqual(v.now(), { data: null, status: 'gone', error: null, reads: 2 });
+  assert.deepEqual(v.now(), { data: null, status: 'gone', error: null, reading: false });
   v.off();
 });
 
-test('when nothing shows the record any more, its reads are aborted and nothing is kept', async () => {
+test('any other 404 is an error, and a kind with no not-found code is never gone', async () => {
+  const { cache, reads } = cacheWith();
+  const v = follow(cache);
+  const other = new ApiError({ status: 404, code: 'OTHER_NOT_FOUND', detail: 'No route' });
+  reads.calls[0].reject(other);
+  await settle();
+  assert.deepEqual(v.now(), { data: null, status: 'error', error: other, reading: false });
+  v.off();
+  const plain = cacheWith([], { goneCodes: undefined });
+  const w = follow(plain.cache);
+  plain.reads.calls[0].reject(new ApiError({ status: 404, code: 'THING_NOT_FOUND', detail: 'x' }));
+  await settle();
+  assert.equal(w.now().status, 'error');
+  w.off();
+});
+
+test('a Retry joins the read on its way, and shows it busy; a command\'s re-read is always a new read', async () => {
+  const { cache, reads } = cacheWith();
+  const v = follow(cache);
+  assert.equal(v.now().reading, true);
+  const joined = cache.reload('thing', 'a');
+  assert.equal(reads.calls.length, 1);
+  reads.calls[0].resolve({ v: 1 });
+  await joined;
+  assert.equal(v.now().reading, false);
+  cache.reload('thing', 'a');
+  assert.equal(reads.calls.length, 2);
+  cache.reread('thing', 'a');
+  assert.equal(reads.calls.length, 3);
+  reads.calls[1].resolve({ v: 1 });
+  reads.calls[2].resolve({ v: 2 });
+  await settle();
+  assert.deepEqual(v.now().data, { v: 2 });
+  v.off();
+});
+
+test('a record without an id keeps its last data for the session; sign-out drops it', async () => {
+  const reads = handFetch();
+  const cache = createRecordCache({ one: { fetch: reads.fetch, singleton: true, cues: [] } });
+  const first = cache.subscribe('one', undefined, () => {});
+  reads.calls[0].resolve({ v: 1 });
+  await settle();
+  first();
+  assert.deepEqual(cache.get('one'), { data: { v: 1 }, status: 'ready', error: null, reading: false });
+  const again = cache.subscribe('one', undefined, () => {});
+  assert.equal(reads.calls.length, 2);
+  assert.deepEqual(cache.get('one').data, { v: 1 });
+  assert.equal(cache.get('one').reading, true);
+  cache.clear();
+  assert.equal(reads.calls[1].signal.aborted, true);
+  assert.equal(cache.get('one').status, 'loading');
+  assert.equal(cache.get('one').data, null);
+  again();
+});
+
+test('a cue of a kind no command waits for gives the frame nothing to wait on', async () => {
+  const { cache, reads } = cacheWith([{ change: CHANGE_KIND.CONTAINER, byId: true }], { awaited: false });
+  const v = follow(cache);
+  reads.calls[0].resolve({ v: 1 });
+  const stream = await events();
+  let done = false;
+  sendAndAwaitChange(CHANGE_KIND.CONTAINER, 'a', async () => ({ ok: true })).then(() => { done = true; });
+  await settle();
+  stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.CONTAINER, id: 'a' } });
+  await settle();
+  // The re-read is on its way, unanswered, and the command has ended.
+  assert.equal(reads.calls.length, 2);
+  assert.equal(done, true);
+  reads.calls[1].resolve({ v: 1 });
+  v.off();
+  stream.end();
+});
+
+test('when nothing shows a keyed record any more, its reads are aborted and nothing is kept', async () => {
   const { cache, reads } = cacheWith();
   const v = follow(cache);
   v.off();
@@ -158,17 +233,28 @@ test('when nothing shows the record any more, its reads are aborted and nothing 
 test('a change naming the record reads it again, and the reconnect frame reads every record; the frame waits for the read', async () => {
   const { cache, reads } = cacheWith([{ change: CHANGE_KIND.VM, byId: true }]);
   const v = follow(cache, 'a');
+  reads.calls[0].resolve({ v: 1 });
   const stream = await events();
   stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.VM, id: 'b' } });
   await settle();
   assert.equal(reads.calls.length, 1);
+  let done = false;
+  sendAndAwaitChange(CHANGE_KIND.VM, 'a', async () => ({ ok: true })).then(() => { done = true; });
+  await settle();
   stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.VM, id: 'a' } });
   await settle();
   assert.equal(reads.calls.length, 2);
+  // The command waits for the re-read its frame started.
+  assert.equal(done, false);
+  reads.calls[1].resolve({ v: 2 });
+  await settle();
+  assert.equal(done, true);
   stream.frame({ topic: TOPIC.CHANGES, data: { kind: CHANGE_KIND.ALL } });
   await settle();
   assert.equal(reads.calls.length, 3);
+  reads.calls[2].resolve({ v: 2 });
   v.off();
+  stream.end();
 });
 
 test('a topic cue with a key reads again only when the key changes; error frames are skipped', async () => {

@@ -24,13 +24,23 @@ holds the UI library's rules.
     and the functions that take one refuse a name not in it.
   - Applied: read a record through `useRecord(kind, id)` (`hooks/useRecord.js`) and the
     one table of record kinds (`store/records.js`), which says once per kind how it is
-    read and the cues it is read again on (a `changes` kind, or a topic). A record is
-    read while something shows it, once for everyone showing it, again on its cues and
-    when the events stream reconnects, and aborted when nothing shows it; every read
-    wrapper in `api/` takes a `signal`. The hook answers `{ data, status, error,
-    reload, dismiss }`, `status` one of loading, ready, error, gone (a 404 is gone, not
-    an error); the stale-answer guard is the cache's alone
-    (`specs/ERROR-HANDLING.md`, Stale responses).
+    read, the cues it is read again on (a `changes` kind, or a topic), the error codes
+    that mean it is gone (its subject's own not-found: any other 404 is an error), and
+    whether a command waits for its re-read (all do but a mount's disk usage, a
+    best-effort figure). A record is read while something shows it, once for everyone
+    showing it, again on its cues and when the events stream (re)connects — so a page
+    load reads each record twice, its first read and the connect frame's — and the read
+    is aborted when nothing shows it. A record named by an id is then dropped; one
+    without keeps its last data for the session (a returning view shows it while it
+    reads again), until sign-out. Every read wrapper in `api/` takes a `signal`. The
+    hook answers `{ data, status, error, reading, reload, dismiss }`, `status` one of
+    loading, ready, error, gone; a Retry joins the read on its way and shows it busy.
+    The stale-answer guard is the cache's alone (`specs/ERROR-HANDLING.md`, Stale
+    responses).
+    Three reads are not records, each read once where it is used: the login page's
+    SSO status (there is no session yet; aborted on unmount), a console's host-info
+    probe (does the server answer, before reconnecting), and the self-update's poll
+    of the version (it waits out the backend's restart).
   - Applied (settled 2026-11-21): stage edits behind a Save with `useForm(record,
     toForm)` (`hooks/useForm.js`): the form follows its record by value (a write
     elsewhere in the record leaves it be), and `dirty` is computed by value. While its

@@ -5,9 +5,10 @@ import { errorText } from '../../api/errors.js';
 /**
  * The one way an error is shown inline: a tinted line with the error's text, a
  * dismiss when the error may be put away (`onDismiss`), and a Retry when asking again
- * may help (`onRetry`). `error` is an ApiError, an Error or a text.
+ * may help (`onRetry`; `retrying` shows the retry on its way). `error` is an ApiError,
+ * an Error or a text.
  */
-export default function ErrorBanner({ error, prefix, onDismiss, onRetry, className = '' }) {
+export default function ErrorBanner({ error, prefix, onDismiss, onRetry, retrying = false, className = '' }) {
   if (!error) return null;
   const text = typeof error === 'string' ? error : errorText(error);
   return (
@@ -20,9 +21,10 @@ export default function ErrorBanner({ error, prefix, onDismiss, onRetry, classNa
         <button
           type="button"
           onClick={onRetry}
-          className="inline-flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 font-medium hover:underline"
+          disabled={retrying}
+          className="inline-flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 font-medium hover:underline disabled:opacity-60 disabled:no-underline"
         >
-          <RefreshCw size={12} aria-hidden /> Retry
+          <RefreshCw size={12} className={retrying ? 'animate-spin' : ''} aria-hidden /> {retrying ? 'Retrying…' : 'Retry'}
         </button>
       )}
       {onDismiss && (
