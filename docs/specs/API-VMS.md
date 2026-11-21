@@ -21,7 +21,7 @@ List all VMs with summary info.
     "stateCode": 1,
     "vcpus": 4,
     "memoryMiB": 4096,
-    "osCategory": "linux",
+    "profile": "linux",
     "iconId": null,
     "guestAgent": true,
     "pendingRestart": null,
@@ -48,9 +48,8 @@ Create a new VM. A [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; 
 ```json
 {
   "name": "string (required, 1-128 chars; starts with a letter or digit, then alphanumeric, dot, hyphen, underscore; no surrounding whitespace, no .. or path separators)",
-  "template": "ubuntu-server | ubuntu-desktop | windows-11 | haos | custom",
-  "osType": "linux | windows | other",
-  "osVariant": "ubuntu24.04 | ubuntu22.04 | debian12 | archlinux | win11 | win10 | generic",
+  "profile": "linux | windows-11 | other (required: what the VM runs; it sets every setting below that the request leaves out, see VM-MANAGEMENT.md, Profiles)",
+  "osType": "Linux | Windows (the Windows tuning; set by the profile)",
   "vcpus": 4,
   "memoryMiB": 4096,
   "autostart": false,
@@ -103,19 +102,20 @@ Create a new VM. A [job](API.md#job-routes) on `GET /api/jobs/:jobId/progress`; 
 
 - **`videoDriver` / `graphicsType`:** one of `virtio`, `qxl`, `vga` / `vnc`, `spice` (schema enums, on create and `PATCH`); any other value → **400** `VALIDATION_FAILED` (settled 2026-11-12).
 
+- **`cloudInit`** is taken only for a profile with first boot setup (`linux`); with another profile the create answers **422** `INVALID_REQUEST`, and so does `PUT /api/vms/:name/cloudinit` for such a VM or one with no profile (settled 2026-11-21).
 - **`cloudInit.enabled`:** Optional; default is on. If `false`, cloud-init is skipped during create (no seed ISO, no `sde`, no `cloud-init.json`).
 
 - **202:** `{ jobId: string, title: string }` — `title` is the display label for the background job (e.g. `Create <name>`)
 - **Progress events:** `{ step, ... }` — `step` includes `validating`, `copying` (may include `percent`), `resizing`, `creating-disk`, `cloudinit`, `defining`.
 - **`done` result:** `{ name }` — the new VM's name
 - **409:** `{ error, detail }` — `VM_EXISTS` when a VM with that name is defined; `VM_DIR_EXISTS` when `<vmsPath>/<name>/` already exists (e.g. left by *Delete VM, keep disks*); `detail` says so, the path redacted (`<path>`); `VM_BUSY` while another job holds that name's lock (e.g. a create or restore as new to the same name). Checked before the job starts; nothing is created.
-- **400:** `VALIDATION_FAILED` — the body fails its schema: a name that breaks the [name rules](ERROR-HANDLING.md#name-validation), a wrong type, a missing `name`, or an unknown key at any level (in `nics[]`, `disk`, `disk2` and `cloudInit` too). A NIC takes no VLAN (`vlan` is an unknown key): use a VLAN-specific bridge (for example `br0-vlan22`) instead
+- **400:** `VALIDATION_FAILED` — the body fails its schema: a name that breaks the [name rules](ERROR-HANDLING.md#name-validation), a wrong type, a missing `name` or `profile`, or an unknown key at any level (in `nics[]`, `disk`, `disk2` and `cloudInit` too). A NIC takes no VLAN (`vlan` is an unknown key): use a VLAN-specific bridge (for example `br0-vlan22`) instead
 
 ### GET /api/vms/:name · `read`
 
 Full VM configuration parsed from domain XML.
 
-- **200:** Full VM config object, read from the VM's saved (inactive) definition: `name`, `uuid`, `state`, `stateCode`, `autostart`, `vcpus`, `memoryMiB`, `osType`, `osCategory`, `arch`, `machineType`, `firmware`, `cpuMode`, `cpuTopology`, `cpuFeatures`, `nestedVirt`, `bootOrder`, `bootMenu`, `disks[]` (`slot`, `device`, `bus`, `source`, `driverType`, `readonly`, `sizeGiB`), `nics[]` (`type`, `mac`, `source`, `model`, `target`), `graphics` (`type`, `port`, `listen`, `autoport`), `videoModel`, `features` (`hyperv`), `memBalloon`, `guestAgent`, `vtpm`, `virtioRng`, `iconId`, `pendingRestart` — `pendingRestart` as on the list payload. USB attachments are `GET /api/vms/:name/usb`.
+- **200:** Full VM config object, read from the VM's saved (inactive) definition: `name`, `uuid`, `state`, `stateCode`, `autostart`, `vcpus`, `memoryMiB`, `osType`, `profile` (`null` for a domain Wisp neither created nor migrated), `arch`, `machineType`, `firmware`, `cpuMode`, `cpuTopology`, `cpuFeatures`, `nestedVirt`, `bootOrder`, `bootMenu`, `disks[]` (`slot`, `device`, `bus`, `source`, `driverType`, `readonly`, `sizeGiB`), `nics[]` (`type`, `mac`, `source`, `model`, `target`), `graphics` (`type`, `port`, `listen`, `autoport`), `videoModel`, `features` (`hyperv`), `memBalloon`, `guestAgent`, `vtpm`, `virtioRng`, `iconId`, `pendingRestart` — `pendingRestart` as on the list payload. USB attachments are `GET /api/vms/:name/usb`.
 
 Each `disks[]` entry may include **`sizeGiB`** (integer, virtual size in GiB, rounded) for **`device: "disk"`** entries with a file `source`, when `qemu-img info` succeeds. Omitted if the image is missing or size read fails.
 

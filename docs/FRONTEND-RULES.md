@@ -395,7 +395,6 @@ Give a single-section view (e.g. **Image Library**) one **`SectionCard`** with t
 
 | Variant | Behaviour | Examples |
 |---------|-----------|----------|
-| **Editable rows** | Inline fields after **Edit** where applicable; per-row save; row-scoped API when the backend supports it. For 3+ fields or mobile-required flows prefer the **Modal form editor** variant below. | Create-flow draft rows only ([VmNetworkInterfacesSection.jsx](../frontend/src/components/sections/VmNetworkInterfacesSection.jsx) and [DisksSection.jsx](../frontend/src/components/sections/DisksSection.jsx) under `isCreating`) — the detail-page editors have moved to the **Modal form editor** variant |
 | **Action table** | Read-only cells; row actions **on row hover** (shared interactive row + `DataTableRowActions`) | Backups |
 | **Library / assets** | Per-entity API; **upload/download in page header** (icon-only); optional confirm for destructive ops; rename/delete **on row hover** | Image Library |
 | **Read-only inventory** | No mutations; optional grouping rows | Host Overview → Hardware table |

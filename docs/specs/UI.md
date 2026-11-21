@@ -192,35 +192,9 @@ The VM page: [UI-VM.md](UI-VM.md). Its Console tab: [CONSOLE.md](CONSOLE.md).
 
 ---
 
-## Create VM Panel
+## New VM
 
-Replaces the center panel when "+ New VM" is clicked. No Console tab, no VM stats bar.
-
-### Template selector
-
-5 compact cards in a horizontal row at the top: Ubuntu Server, Ubuntu Desktop, Windows 11, Home Assistant OS, Custom. Defaults to Ubuntu Server. Selecting a template silently pre-fills all fields.
-
-### Sections
-
-Uses the same section components as Overview with `isCreating=true`:
-
-- **General** — same fields as Overview, name field prominent
-- **Disks** — same table layout as the overview Disks section (including **Image type** after **Image**), but **desktop-oriented inline draft rows** instead of the modal editor. Block disks start empty; the user adds **sda** then **sdb** via **+ New disk** / **+ Select image**, with a draft row to confirm size, bus, and optional resize for existing images. Committed rows support **Remove disk** (minus), image pick/clear for existing images, and the same helper text about copies. **Second disk** appears only after the first is configured.
-  - **CD-ROM:** Header **+ CD-ROM** opens the image library; a row for `sdc` or `sdd` appears only after an ISO is selected. Remove ISO clears the row.
-- **Network interfaces** — same NIC table as Overview (`isCreating`)
-- **Advanced** — same as Overview (grid only, no NICs), collapsed by default
-- **Cloud-Init** — visible only for Existing Image + non-Windows/HAOS. Full editable form laid out in three rows:
-  - **Row 1 (3 columns):** Hostname | Username | Password (with show/hide toggle)
-  - **Row 2 (flex):** SSH Public Key single-line input (flex-1, monospace) | GitHub Username input (fixed width) | Fetch button. When GitHub returns multiple keys, a key-selector list appears below this row.
-  - **Row 3 (5 columns on wide viewports):** **Cloud Init** (master toggle, default on) | Grow Partition | Package Upgrade | QEMU Guest Agent | Avahi Daemon. When Cloud Init is off, the other fields are disabled and creation skips the seed ISO.
-
-### Create button
-
-Sticky at the bottom of the center panel, always visible without scrolling. Shows spinner when creating. Inline progress text reflects the current step: Validating…, Copying image…, Creating disk…, Resizing disk…, Generating cloud-init ISO…, Defining VM…, Done ✓ (or Error on failure).
-
-On error: red inline error card above button, with optional expandable raw detail.
-
-On success the panel opens the new VM's overview — only if the user is still on the create panel. The job keeps running in the background-jobs tray after they leave, and its completion never navigates them away from wherever they went.
+The New VM form: [UI-VM.md](UI-VM.md), New VM.
 
 ---
 

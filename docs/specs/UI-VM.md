@@ -34,7 +34,7 @@ shut off, with a small lock by its title; the disabled action says "stop the VM 
 | **First boot setup** (a VM whose profile has it) | Host name, user, whether a password is set, the SSH keys by name, the options; "Off" for a stored setup that is switched off, "Not set up." for none | Edit (which turns it on); Remove, which asks first | `PUT` and `DELETE /api/vms/:name/cloudinit` |
 | **USB devices** | The devices passed through | Attach, Detach, at any time | The USB routes |
 | **Start-up** | — | A switch: start with the host | `PATCH` `{ autostart }` |
-| **System** | The profile, and in one line what it set | Expert settings *(needs shut off)*; View XML, at any time | `PATCH` with the settings changed |
+| **System** | The profile ("Unknown" for a VM Wisp neither created nor migrated), and in one line what it set | Expert settings *(needs shut off)*; View XML, at any time | `PATCH` with the settings changed |
 
 - **Rename** *(needs shut off)* asks for the new name in a small dialog and sends
   `PATCH` `{ name }`; the page then moves to the new name.
@@ -70,7 +70,11 @@ One form, its own page:
 | Image | A cloud image or an ISO from the library, by what "Runs" needs |
 | Size | Small (2 cores, 2 GB), Medium (2, 4), Large (4, 8), or custom |
 | Disk | Size in GB |
-| User, SSH keys | For a Linux image. The default keys are preselected |
+| Drivers | For Windows 11: an ISO attached as a second CD, preselected with the library's `virtio-win` file, and it can be cleared |
+| User, password, SSH key | For a Linux image |
+
+A Linux image gets first boot setup with the host name derived from the VM's name and
+package update off; both can be changed on the page afterwards.
 
 Create sends `POST /api/vms` with the profile's name and these values; the server fills
 in the rest from the profile ([VM-MANAGEMENT.md](VM-MANAGEMENT.md)). On success the page

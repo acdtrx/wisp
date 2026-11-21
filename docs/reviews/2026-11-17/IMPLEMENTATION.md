@@ -231,6 +231,10 @@ Phase 6 was then replaced by a redesign of the pages (see there).
 
 ### 5. Manager internals — L
 
+Ruled by the user on 2026-11-21, for the question this phase was holding: a backup in an
+older shape may be refused at restore. No code is kept to read an older shape; the user
+makes the backup again.
+
 Why here: graded "workable", and the riskiest to touch: every step is checked on the
 test host.
 

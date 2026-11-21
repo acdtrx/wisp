@@ -65,17 +65,25 @@ A domain whose name predates the leading-alphanumeric rule (e.g. `_test`) fails 
 
 ## VM Creation
 
-### Templates
+### Profiles
 
-Five predefined templates provide default configurations:
+A VM has a profile: what it runs (settled 2026-11-21). The server holds the profiles in
+one table; a create names one, takes its settings from it, and anything the request also
+sends wins.
 
-| Template | OS Type | OS Variant | Firmware | Special |
-|----------|---------|-----------|----------|---------|
-| Ubuntu Server | Linux | ubuntu24.04 | UEFI | Cloud-init enabled by default |
-| Ubuntu Desktop | Linux | ubuntu24.04 | UEFI | Cloud-init enabled by default |
-| Windows 11 | Windows | win11 | UEFI + SecureBoot | vTPM enabled, Windows optimizations applied, cloud-init hidden |
-| Home Assistant OS | Other | generic | UEFI | Cloud-init hidden, no ISO needed, existing image picker |
-| Custom | Other | generic | BIOS | No pre-fills |
+| Profile | Firmware | Disk bus | Also set | First boot setup |
+|---|---|---|---|---|
+| `linux` | UEFI | VirtIO | — | Yes, for a cloud image |
+| `windows-11` | UEFI with Secure Boot | SCSI | vTPM, the Windows tuning (`osType: Windows`) | No |
+| `other` | UEFI | VirtIO | — | No |
+
+Every profile: Q35, the host's CPU model, VirtIO video, VNC, boot from disk then CD then
+network with the boot menu on, guest agent, memory balloon and random number device on,
+one VirtIO adapter on the host's default bridge.
+
+The VM remembers its profile ([Wisp metadata](#wisp-metadata-wispprefs)); the page shows
+it. A domain Wisp neither created nor migrated has none. First boot setup is refused, at
+create and afterwards, for a VM whose profile has none.
 
 ### Creation flow
 
@@ -143,7 +151,7 @@ Renames performed outside Wisp (`virsh domrename`, hand-edited domain XML, etc.)
 
 ### Reading config
 
-`getVMConfig(name)` resolves the domain via DBus, reads its **inactive** (persistent) XML with `GetXMLDesc(2)`, and parses it into a structured object containing: name, uuid, state, vcpus, memoryMiB, disks, nics, firmware, machineType, cpuMode, videoDriver, graphicsType, bootOrder, bootMenu, memBalloon, guestAgent, vtpm, virtioRng, nestedVirt, osCategory, osVariant, autostart, iconId, and `pendingRestart`. Each file-backed **disk** (`device: disk`) entry may include **`sizeGiB`** (virtual size via `qemu-img info` when the image is readable). Reading inactive XML ensures saved config edits (e.g. boot menu, firmware, video driver) are reflected immediately on running VMs — `DomainDefineXML` writes there, and active XML on a running VM does not pick up such changes until the next start. The only consumer of active XML in vmManager is `getVNCPort`, which needs the runtime-allocated VNC port.
+`getVMConfig(name)` resolves the domain via DBus, reads its **inactive** (persistent) XML with `GetXMLDesc(2)`, and parses it into a structured object containing: name, uuid, state, vcpus, memoryMiB, disks, nics, firmware, machineType, cpuMode, videoDriver, graphicsType, bootOrder, bootMenu, memBalloon, guestAgent, vtpm, virtioRng, nestedVirt, profile, autostart, iconId, and `pendingRestart`. Each file-backed **disk** (`device: disk`) entry may include **`sizeGiB`** (virtual size via `qemu-img info` when the image is readable). Reading inactive XML ensures saved config edits (e.g. boot menu, firmware, video driver) are reflected immediately on running VMs — `DomainDefineXML` writes there, and active XML on a running VM does not pick up such changes until the next start. The only consumer of active XML in vmManager is `getVNCPort`, which needs the runtime-allocated VNC port.
 
 ### Updating config
 
@@ -242,7 +250,7 @@ For UEFI with Secure Boot, a different firmware file is used (typically `OVMF_CO
 
 ### Windows optimizations
 
-Windows VMs (templates `windows-11`, `win10`) include additional XML blocks:
+Windows VMs (the `windows-11` profile, or `osType: Windows` set in Expert settings) include additional XML blocks:
 
 - **Hyper-V enlightenments:** `<hyperv>` block with relaxed, vapic, spinlocks, vpindex, runtime, synic, stimer, reset, frequencies, reenlightenment, tlbflush, ipi
 - **Clock adjustments:** Windows-specific clock configuration with hypervclock timer
@@ -281,6 +289,7 @@ Wisp app-level VM metadata is stored in domain XML metadata under the `https://w
 
 - `icon` — workload icon id for the UI
 - `pendingRestart` — ISO time the change awaiting a restart was saved; omitted otherwise (see [Restart-required flag](#restart-required-flag))
+- `profile` — what the VM runs (`linux`, `windows-11`, `other`): written at create, and by migration `0012` for the VMs that predate it
 
 Each writer sets or removes only its own children of the existing `wisp:prefs` element, so one pref never drops another. The backend writes and reads children with the `wisp:` prefix (`wisp:icon`, `wisp:pendingRestart`) to match what libvirt returns after its own XML round-trip. `DomainDefineXML` writes to the **inactive** (persistent) config, while `GetXMLDesc(0)` returns the **active** (live) XML for running VMs — which does not reflect changes (metadata or otherwise) until restart. Both the VM list and the detail view (`getVMConfig`) read inactive XML so saved edits show immediately; runtime fields like the live VNC port have their own dedicated active-XML readers (`getVNCPort`).
 
@@ -335,7 +344,7 @@ The shared parser keeps every text node and attribute as the exact string libvir
 
 ### vmManagerList.js
 
-- **VM list cache** — in-memory cache of the VM list, populated on connect and refreshed automatically on any `DomainEvent` signal (defined, undefined, started, stopped, suspended, resumed) and on any qemu binary replacement detected by `watchQemuBinaries` (apt/dnf upgrade of `qemu-system-*`). `createVM` and `deleteVM` also call `refreshVMListCache()` directly after the libvirt mutation succeeds — libvirt-dbus DEFINED events have proven unreliable enough that new VMs would otherwise miss the LeftBar until a manual page refresh; the explicit refresh is a deterministic local trigger (mirrors `containerManager`'s `subscribeContainerConfigWrite`), idempotent against the event-driven path. `listVMs()` returns the cache when populated, avoiding per-call libvirt queries. The cache is invalidated on disconnect or bus error. Each cached entry holds: `name`, `uuid`, `domainPath`, `state`, `stateCode`, `vcpus`, `memoryMiB`, `osCategory`, `iconId`, `pendingRestart`, `startedAt`, `guestAgent`, `staleBinary`. `startedAt` is the QEMU process start time (epoch ms, null when stopped or unreadable), read from `/proc` on every refresh: it drives the restart-required rule and the stats `uptime`, both correct across Wisp restarts (the in-memory first-tick time is only the fallback when `/proc` can't tell). Setting the restart-required flag and every `updateVMConfig` save (a rename included) also call `refreshVMListCache()`, so the `vms` topic carries the change without waiting on a DEFINED event.
+- **VM list cache** — in-memory cache of the VM list, populated on connect and refreshed automatically on any `DomainEvent` signal (defined, undefined, started, stopped, suspended, resumed) and on any qemu binary replacement detected by `watchQemuBinaries` (apt/dnf upgrade of `qemu-system-*`). `createVM` and `deleteVM` also call `refreshVMListCache()` directly after the libvirt mutation succeeds — libvirt-dbus DEFINED events have proven unreliable enough that new VMs would otherwise miss the LeftBar until a manual page refresh; the explicit refresh is a deterministic local trigger (mirrors `containerManager`'s `subscribeContainerConfigWrite`), idempotent against the event-driven path. `listVMs()` returns the cache when populated, avoiding per-call libvirt queries. The cache is invalidated on disconnect or bus error. Each cached entry holds: `name`, `uuid`, `domainPath`, `state`, `stateCode`, `vcpus`, `memoryMiB`, `profile`, `iconId`, `pendingRestart`, `startedAt`, `guestAgent`, `staleBinary`. `startedAt` is the QEMU process start time (epoch ms, null when stopped or unreadable), read from `/proc` on every refresh: it drives the restart-required rule and the stats `uptime`, both correct across Wisp restarts (the in-memory first-tick time is only the fallback when `/proc` can't tell). Setting the restart-required flag and every `updateVMConfig` save (a rename included) also call `refreshVMListCache()`, so the `vms` topic carries the change without waiting on a DEFINED event.
 - `listVMs()` — returns cached VM list (sub-millisecond); falls back to a live libvirt query on first call before cache populates. Connected with `watchEvents: false` (the start's state migrations) there is no cache: every call queries libvirt and returns every VM or throws (`NO_CONNECTION`, `LIBVIRT_ERROR` naming the unreadable domains) — [UPDATES.md → Runner](UPDATES.md#runner).
 - `getRunningVMAllocations()` — sums `vcpus` and `memoryMiB` across cached entries with `stateCode === 1` (running). Powers the host stats SSE allocation totals without per-tick libvirt traffic; updates piggyback on the same DomainEvent-driven cache refresh used by `listVMs()`.
 - `getVMConfig(name)` — full VM configuration parsed from XML
@@ -359,7 +368,7 @@ Purpose-named lifecycle functions: `startVM`, `stopVM`, `forceStopVM`, `rebootVM
 
 ### vmManagerCreate.js
 
-- `createVM(spec, callbacks)` — full creation flow with template defaults
+- `createVM(spec, callbacks)` — full creation flow, with the profile's settings
 - `deleteVM(name, deleteDisks)` — destruction flow
 - `getWindowsFeatures()`, `getWindowsClock()`, `getLinuxFeatures()` — return fast-xml-parser-compatible objects for features and clock blocks
 

@@ -150,7 +150,7 @@ SSH keys can be imported from a GitHub user profile:
 ### By OS type
 
 - **Linux VMs** — Cloud-init section is always visible
-- **Windows VMs** — Cloud-init section is hidden (Windows does not use cloud-init)
+- **By profile** — whether a VM takes first boot setup is its profile's ([VM-MANAGEMENT.md](VM-MANAGEMENT.md), Profiles): only `linux` does. The page shows the group for those VMs only, and the server refuses a setup for the others
 - **HAOS (Home Assistant OS)** — Cloud-init section is hidden during creation
 
 ### By disk type (Create VM only)
@@ -163,7 +163,7 @@ During VM creation:
 
 | Context | Behavior |
 |---------|----------|
-| **Create VM** (`isCreating=true`) | Full editable form: a **Cloud Init** master toggle (first in the toggle row, default on) gates whether cloud-init runs for this VM; when off, other fields are disabled and creation skips the seed ISO. |
+| **New VM** | For a Linux image the form asks for the user, a password and an SSH key. The host name is derived from the VM's name and package update is off; the other options are on ([UI-VM.md](UI-VM.md), New VM). |
 | **The VM page** | The First boot setup group ([UI-VM.md](UI-VM.md)): its values as text, an Edit that saves with the setup on, and a Remove that asks first (same as `DELETE`). The page has no on/off: a stored setup that is switched off shows "Off" until it is saved again (settled 2026-11-21). |
 
 ## Timeouts

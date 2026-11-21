@@ -59,7 +59,7 @@ Rejected: refusing to back up while any disk has a backing chain — a VM on an 
 
 A VM backup holds the files above and nothing else. Outside it:
 
-- **vTPM state.** A VM with a vTPM (the Windows 11 template enables one) keeps its TPM in libvirt's swtpm state directory (`/var/lib/libvirt/swtpm/<uuid>/`, root-owned), keyed by the domain UUID — not in the VM directory, and not copied. Consequences on restore:
+- **vTPM state.** A VM with a vTPM (the Windows 11 profile enables one) keeps its TPM in libvirt's swtpm state directory (`/var/lib/libvirt/swtpm/<uuid>/`, root-owned), keyed by the domain UUID — not in the VM directory, and not copied. Consequences on restore:
   - **Restore** (always as a new VM) gets a new UUID and therefore a fresh, empty TPM. Anything the guest sealed to its TPM is gone: **BitLocker asks for its recovery key** on first boot, and Windows Hello PINs / biometrics, TPM-backed certificates and similar keys must be set up again. Have the BitLocker recovery key before relying on such a backup.
   - Deleting a VM lets libvirt remove its TPM state, so once the original VM is gone no restore gets its TPM back.
 - **Snapshots made outside Wisp.** libvirt snapshot metadata is not part of a backup: a backup holds the disks' *current* state only, and a restored VM has no snapshot metadata. Internal qcow2 snapshots travel inside a disk copied as-is, but a flattened disk (above) carries only the active content; a snapshot's memory file is never copied.
@@ -141,6 +141,8 @@ A configured network backup path that is not mounted is omitted from the scan (s
 6. Define the new domain with `DomainDefineXML`
 
 Any failure in steps 4–6 (gunzip error, a restored disk with a backing file, ISO rebuild failure, define failure) removes the new VM's directory, so a failed restore leaves nothing behind; a failure in steps 1–3 happens before it exists.
+
+A backup made before VMs had a profile is refused at restore with `BACKUP_INVALID`, before anything is created (settled 2026-11-21, on the user's decision: an older backup is made again, and no code reads an older shape).
 
 ### Archive validation (VM backups)
 
