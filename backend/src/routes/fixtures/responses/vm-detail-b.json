@@ -78,7 +78,6 @@
         "type": "bridge"
       }
     ],
-    "osCategory": "linux",
     "osType": "hvm",
     "pendingRestart": null,
     "state": "shutoff",
@@ -87,6 +86,7 @@
     "vcpus": 2,
     "videoModel": "virtio",
     "virtioRng": true,
-    "vtpm": false
+    "vtpm": false,
+    "profile": "linux"
   }
 }

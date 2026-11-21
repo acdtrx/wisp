@@ -47,14 +47,15 @@ export function domainNameFromParsed(dom) {
 /** Extract Wisp prefs from domain metadata (wisp:prefs). */
 function parseWispPrefs(dom) {
   const metadata = dom?.metadata;
-  const none = { iconId: null, pendingRestart: null };
+  const none = { iconId: null, pendingRestart: null, profile: null };
   if (!metadata || typeof metadata !== 'object') return none;
   const prefs = metadata[WISP_PREFS_KEY];
   if (!prefs || typeof prefs !== 'object') return none;
   const iconText = wispPrefText(prefs, 'wisp:icon');
   const since = wispPrefText(prefs, 'wisp:pendingRestart');
   const pendingRestart = since ? { since } : null;
-  return { iconId: iconText || null, pendingRestart };
+  const profile = wispPrefText(prefs, 'wisp:profile');
+  return { iconId: iconText || null, pendingRestart, profile: profile || null };
 }
 
 /**
@@ -90,6 +91,30 @@ export function setWispIcon(dom, iconId) {
   if (nextIcon) prefs['wisp:icon'] = nextIcon;
   else delete prefs['wisp:icon'];
   pruneWispPrefs(dom);
+}
+
+/**
+ * Set the profile pref on a parsed domain object (mutates dom): what the VM was made
+ * as (`linux`, `windows-11`, `other`), stored as `<wisp:profile>`. Other prefs are
+ * left as they are.
+ */
+export function setWispProfile(dom, profile) {
+  if (!dom) return;
+  ensureWispPrefs(dom)['wisp:profile'] = profile;
+}
+
+/** The profile a parsed domain stores, or null. */
+export function getWispProfile(dom) {
+  return parseWispPrefs(dom).profile;
+}
+
+/**
+ * The profile of a definition made before profiles (one a migration or a restore meets
+ * without one): `windows-11` when it carries the Hyper-V features the Windows profile
+ * sets, `linux` otherwise.
+ */
+export function profileFromDefinition(dom) {
+  return dom?.features?.hyperv ? 'windows-11' : 'linux';
 }
 
 /**
@@ -310,14 +335,8 @@ export function parseVMFromXML(xmlString) {
     _hostdevs: hostdevs,
     iconId: prefs.iconId,
     pendingRestart: prefs.pendingRestart,
+    profile: prefs.profile,
   };
-}
-
-export function detectOSCategory(config) {
-  if (config.features?.hyperv) return 'windows';
-  const name = (config.name || '').toLowerCase();
-  if (name.includes('win')) return 'windows';
-  return 'linux';
 }
 
 export function buildXml(obj) {

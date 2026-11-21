@@ -12,7 +12,7 @@ import {
   subscribeDomainChange,
   subscribeDisconnect,
 } from './vmManagerConnection.js';
-import { parseVMFromXML, detectOSCategory } from './vmManagerXml.js';
+import { parseVMFromXML } from './vmManagerXml.js';
 import { isVMBinaryStale, getQemuStartTimeMs } from './vmManagerProc.js';
 import { pendingRestartInForce } from './vmManagerPendingRestartRule.js';
 import { STATE_NAMES, isOfflineState } from './libvirtConstants.js';
@@ -63,7 +63,7 @@ async function fetchVMListFromLibvirt({ complete = false } = {}) {
         stateCode,
         vcpus: config.vcpus,
         memoryMiB: config.memoryMiB,
-        osCategory: detectOSCategory(config),
+        profile: config.profile,
         iconId: config.iconId ?? null,
         pendingRestart,
         startedAt,
@@ -320,7 +320,6 @@ export async function getVMConfig(name) {
     disks,
     state: STATE_NAMES[stateCode] ?? 'unknown',
     stateCode,
-    osCategory: detectOSCategory(config),
     autostart,
   };
 }

@@ -47,6 +47,7 @@ export const setVMPendingRestart = impl.setVMPendingRestart;
 export const getGraphicsListen = impl.getGraphicsListen;
 export const setGraphicsListen = impl.setGraphicsListen;
 export const removeVMPref = impl.removeVMPref;
+export const setMissingVMProfile = impl.setMissingVMProfile;
 
 export const getVMUSBDevices = impl.getVMUSBDevices;
 export const attachUSBDevice = impl.attachUSBDevice;

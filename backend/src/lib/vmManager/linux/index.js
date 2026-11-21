@@ -8,6 +8,7 @@ import {
   updateVMConfig as updateVMConfigImpl,
   setGraphicsListen as setGraphicsListenImpl,
   removeVMPref as removeVMPrefImpl,
+  setMissingVMProfile as setMissingVMProfileImpl,
 } from './vmManagerConfig.js';
 import { setVMPendingRestart as setVMPendingRestartImpl } from './vmManagerPendingRestart.js';
 import { attachUSBDevice as attachUSBDeviceImpl, detachUSBDevice as detachUSBDeviceImpl } from './vmManagerUsb.js';
@@ -73,6 +74,11 @@ export const setGraphicsListen = announcingVMChange(
 
 export const removeVMPref = announcingVMChange(
   removeVMPrefImpl,
+  ([name], result) => (result.changed ? name : null),
+);
+
+export const setMissingVMProfile = announcingVMChange(
+  setMissingVMProfileImpl,
   ([name], result) => (result.changed ? name : null),
 );
 

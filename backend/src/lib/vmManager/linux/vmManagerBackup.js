@@ -18,7 +18,9 @@ import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError, generateMAC } from './vmManagerConnection.js';
 import { wrapVmError } from '../vmManagerShared.js';
-import { parseVMFromXML, parseDomainRaw, buildXml } from './vmManagerXml.js';
+import {
+  parseVMFromXML, parseDomainRaw, buildXml, getWispProfile, setWispProfile, profileFromDefinition,
+} from './vmManagerXml.js';
 import { getVMBasePath, pathUnder, VMS_BACKUP_DIRNAME } from './vmManagerPaths.js';
 import { isOfflineState } from './libvirtConstants.js';
 import { copyNvram } from './vmManagerNvram.js';
@@ -740,6 +742,10 @@ async function restoredDomainXml(xml, { newVmName, manifest, config, diskPlan, n
   dom.uuid = randomUUID();
 
   rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping: diskPlan, newBase });
+  /* Every VM Wisp defines has a profile: a backup made before profiles gets the one
+   * its definition reads as, by the same rule as the migration that gave the existing
+   * VMs theirs. */
+  if (!getWispProfile(dom)) setWispProfile(dom, profileFromDefinition(dom));
 
   const ifaces = dom.devices?.interface;
   if (Array.isArray(ifaces)) {

@@ -30,6 +30,7 @@ import { onSSEClose, setupSSE, writeSSEError } from '../lib/sse.js';
 import { resolveLibraryPath, assertPathInsideAllowedRoots } from '../lib/paths.js';
 import { createAppError } from '../lib/appErrors.js';
 import { vmNameSchema } from '../lib/validation.js';
+import { PROFILE_NAMES } from '../lib/vmProfiles.js';
 import {
   backupBodySchema, cloudInitSchema, jobAckSchema, noContentSchema, vmParamsSchema,
 } from './schemas.js';
@@ -77,7 +78,7 @@ const vmListItemSchema = {
     stateCode: { type: 'integer' },
     vcpus: { type: 'integer' },
     memoryMiB: { type: 'integer' },
-    osCategory: { type: 'string' },
+    profile: { type: ['string', 'null'] },
     iconId: { type: ['string', 'null'] },
     guestAgent: { type: 'boolean' },
     pendingRestart: pendingRestartSchema,
@@ -99,7 +100,7 @@ const vmDetailSchema = {
     vcpus: { type: 'integer' },
     memoryMiB: { type: 'integer' },
     osType: { type: 'string' },
-    osCategory: { type: 'string' },
+    profile: { type: ['string', 'null'] },
     arch: { type: ['string', 'null'] },
     machineType: { type: ['string', 'null'] },
     firmware: { type: 'string' },
@@ -194,12 +195,11 @@ export default async function vmsRoutes(fastify) {
     schema: {
       body: {
         type: 'object',
-        required: ['name'],
+        required: ['name', 'profile'],
         properties: {
           name: vmNameSchema,
-          template: { type: 'string' },
+          profile: { type: 'string', enum: PROFILE_NAMES },
           osType: { type: 'string' },
-          osVariant: { type: 'string' },
           vcpus: { type: 'integer', minimum: 1 },
           memoryMiB: { type: 'integer', minimum: 128 },
           autostart: { type: 'boolean' },

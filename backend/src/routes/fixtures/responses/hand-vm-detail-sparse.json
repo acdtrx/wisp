@@ -69,7 +69,6 @@
         "type": "bridge"
       }
     ],
-    "osCategory": "linux",
     "osType": "hvm",
     "pendingRestart": {
       "since": "2026-01-14T12:00:00.000Z"
@@ -80,6 +79,7 @@
     "vcpus": 2,
     "videoModel": "virtio",
     "virtioRng": true,
-    "vtpm": false
+    "vtpm": false,
+    "profile": null
   }
 }

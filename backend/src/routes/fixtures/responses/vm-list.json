@@ -6,7 +6,6 @@
       "iconId": null,
       "memoryMiB": 8192,
       "name": "vm-a",
-      "osCategory": "linux",
       "pendingRestart": null,
       "state": "shutoff",
       "stateCode": 5,
@@ -14,13 +13,13 @@
       "vcpus": 2,
       "guestAgent": true,
       "staleBinary": false,
-      "startedAt": null
+      "startedAt": null,
+      "profile": "linux"
     },
     {
       "iconId": "debian",
       "memoryMiB": 2048,
       "name": "vm-b",
-      "osCategory": "linux",
       "pendingRestart": null,
       "state": "shutoff",
       "stateCode": 5,
@@ -28,7 +27,8 @@
       "vcpus": 2,
       "guestAgent": true,
       "staleBinary": false,
-      "startedAt": null
+      "startedAt": null,
+      "profile": "linux"
     }
   ]
 }

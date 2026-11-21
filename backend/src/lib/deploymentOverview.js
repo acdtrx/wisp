@@ -120,7 +120,7 @@ export async function buildDeploymentOverview() {
     state: vm.state,
     vcpus: vm.vcpus,
     memoryMiB: vm.memoryMiB,
-    osCategory: vm.osCategory ?? null,
+    profile: vm.profile ?? null,
     ip: net.ip ?? null,
     guestHostname: net.hostname ?? null,
   }));

@@ -11,7 +11,7 @@ import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
 import {
   parseVMFromXML, parseDomainRaw, buildXml, setWispIcon, setWispPendingRestart, removeWispPref, domainDefinitionSignature,
-  domainNameFromParsed,
+  domainNameFromParsed, getWispProfile, setWispProfile, profileFromDefinition,
 } from './vmManagerXml.js';
 import { getWindowsFeatures, getWindowsClock, getLinuxFeatures, createOwnVMDir } from './vmManagerCreate.js';
 import { moveVmDirectory, rewriteDomainPaths, findActualVmDir, pathExists } from './vmManagerRename.js';
@@ -337,6 +337,29 @@ export async function removeVMPref(name, key) {
     throw vmError('LIBVIRT_ERROR', `Failed to remove the ${key} pref of VM "${name}"`, err.message);
   }
   return { changed: true };
+}
+
+/**
+ * Give a VM defined before profiles the one its definition reads as
+ * (`profileFromDefinition`), leaving the rest of the XML as libvirt returned it: for
+ * a state migration. Metadata only, so a running VM needs no restart. Defines only
+ * when the VM has no profile. Returns `{ changed, profile }`.
+ */
+export async function setMissingVMProfile(name) {
+  if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
+  const domPath = await resolveDomain(name);
+  const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true }));
+  if (!parsed.domain) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
+  const stored = getWispProfile(parsed.domain);
+  if (stored) return { changed: false, profile: stored };
+  const profile = profileFromDefinition(parsed.domain);
+  setWispProfile(parsed.domain, profile);
+  try {
+    await connectionState.connectIface.DomainDefineXML(buildXml(parsed));
+  } catch (err) {
+    throw vmError('LIBVIRT_ERROR', `Failed to set the profile of VM "${name}"`, err.message);
+  }
+  return { changed: true, profile };
 }
 
 /**

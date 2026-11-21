@@ -6,7 +6,7 @@ export const vmTools = [
     name: 'get_vm',
     title: 'VM detail',
     description:
-      'Full configuration and state of one virtual machine: vCPUs, memory, disks, NICs, firmware, ' +
+      'Full configuration and state of one virtual machine: its profile (what it was made as: linux, windows-11 or other), vCPUs, memory, disks, NICs, firmware, ' +
       'plus the guest network (IP/hostname via qemu-guest-agent, null when the agent is absent).',
     inputSchema: {
       type: 'object',

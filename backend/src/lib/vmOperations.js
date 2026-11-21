@@ -52,6 +52,7 @@ import { withVmOperationLock } from './vmOperationLock.js';
 import { createAppError } from './appErrors.js';
 import { startWorkloadBackupJob } from './workloadBackup.js';
 import { followWorkloadDelete, followWorkloadRename } from './workloadFollowUps.js';
+import { createSpecForProfile } from './vmProfiles.js';
 import { JOB_KIND } from '../../../shared/wireNames.js';
 
 const vm = (name) => ({ type: 'vm', name });
@@ -64,7 +65,9 @@ const vm = (name) => ({ type: 'vm', name });
  * seed ISO and cloud-init.json are built into the directory createVM has just
  * created, so they share its rollback. `done`: `{ name }`.
  */
-export function startVmCreateJob({ spec, log }) {
+export function startVmCreateJob({ spec: request, log }) {
+  /* The profile's settings, the request's own values over them (lib/vmProfiles.js). */
+  const spec = createSpecForProfile(request);
   const name = spec.name;
   const wantsCloudInit = !!(spec.cloudInit && spec.osType !== 'Windows' && spec.cloudInit.enabled !== false);
   return startJob({

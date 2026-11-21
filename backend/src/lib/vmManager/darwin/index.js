@@ -167,6 +167,10 @@ export async function removeVMPref() {
   throw noConn();
 }
 
+export async function setMissingVMProfile() {
+  throw noConn();
+}
+
 export async function setGraphicsListen() {
   throw noConn();
 }

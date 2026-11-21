@@ -1,5 +1,5 @@
 /**
- * VM create, delete; domain XML building and template helpers.
+ * VM create, delete; domain XML building.
  */
 import { mkdir, rm, lstat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import dbus from 'dbus-next';
 
 import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, getLibvirtInterface, vmError, generateMAC } from './vmManagerConnection.js';
-import { parseDomainRaw, buildXml } from './vmManagerXml.js';
+import { parseDomainRaw, buildXml, setWispProfile } from './vmManagerXml.js';
 import { validateVMName } from './vmManagerValidation.js';
 import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
 import {
@@ -22,43 +22,6 @@ import { refreshVMListCache } from './vmManagerList.js';
 import { isOfflineState } from './libvirtConstants.js';
 
 const execFile = promisify(execFileCb);
-
-const TEMPLATE_DEFAULTS = {
-  'ubuntu-server': {
-    osType: 'Linux',
-    osVariant: 'ubuntu24.04',
-    firmware: 'uefi',
-    machineType: 'q35',
-    cloudInit: { enabled: true, hostname: '', username: 'wisp', growPartition: true, packageUpgrade: true, installQemuGuestAgent: true, installAvahiDaemon: true },
-  },
-  'ubuntu-desktop': {
-    osType: 'Linux',
-    osVariant: 'ubuntu24.04',
-    firmware: 'uefi',
-    machineType: 'q35',
-    cloudInit: { enabled: true, hostname: '', username: 'wisp', growPartition: true, packageUpgrade: true, installQemuGuestAgent: true, installAvahiDaemon: true },
-  },
-  'windows-11': {
-    osType: 'Windows',
-    osVariant: 'win11',
-    firmware: 'uefi-secure',
-    machineType: 'q35',
-    vtpm: true,
-    windowsOptimisations: true,
-    cloudInit: null,
-  },
-  'custom': {},
-};
-
-function applyTemplateDefaults(spec) {
-  const template = (spec.template || 'custom').toLowerCase().replace(/\s+/g, '-');
-  const defaults = TEMPLATE_DEFAULTS[template] || TEMPLATE_DEFAULTS.custom;
-  const merged = { ...defaults, ...spec, name: spec.name };
-  if (merged.osType === 'Windows' && merged.vtpm !== false) {
-    merged.vtpm = true;
-  }
-  return merged;
-}
 
 function pickUEFIFirmware(firmwareList, secureBoot) {
   const codePath = firmwareList.find(p => {
@@ -149,9 +112,10 @@ function buildDomainXML(spec, blockDisks, cdrom1Path, cdrom2Path, sdePath, { loa
     os.nvram = nvramPath ? { '#text': nvramPath } : { '@_template': 'yes' };
   }
 
+  const isWindows = spec.osType === 'Windows';
   let features = null;
   if (isUEFI) features = getLinuxFeatures();
-  if (spec.windowsOptimisations || spec.osType === 'Windows') features = getWindowsFeatures();
+  if (isWindows) features = getWindowsFeatures();
 
   const cpu = {
     '@_mode': cpuMode,
@@ -233,8 +197,6 @@ function buildDomainXML(spec, blockDisks, cdrom1Path, cdrom2Path, sdePath, { loa
   if (vtpm) devices.tpm = [{ '@_model': 'tpm-tis', backend: { '@_type': 'emulator', '@_version': '2.0' } }];
   if (virtioRng) devices.rng = [{ '@_model': 'virtio', backend: { '@_model': 'random', '#text': '/dev/urandom' } }];
 
-  const isWindows = spec.windowsOptimisations || spec.osType === 'Windows';
-
   const dom = {
     '@_type': 'kvm',
     name,
@@ -248,6 +210,8 @@ function buildDomainXML(spec, blockDisks, cdrom1Path, cdrom2Path, sdePath, { loa
     ...(isWindows ? { clock: getWindowsClock() } : {}),
     devices,
   };
+  /* What the VM was made as, which the page shows and a later edit leaves alone. */
+  if (spec.profile) setWispProfile(dom, spec.profile);
   return buildXml({ domain: dom });
 }
 
@@ -329,7 +293,7 @@ export async function createVM(spec, { onStep, populateVMDir } = {}) {
   const emit = (step, data) => { if (onStep) onStep(step, data); };
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
 
-  const s = applyTemplateDefaults(spec);
+  const s = spec;
   const name = s.name;
   validateVMName(name);
 
@@ -434,8 +398,7 @@ async function provisionAndDefineVM(s, vmBasePath, { emit, populateVMDir, primar
   // The cloud-init ISO is built by the caller (Wisp glue) through populateVMDir.
   // We just record the expected path so buildDomainXML can wire up the sde slot.
   let sdePath = null;
-  const osCategory = s.osType === 'Windows' ? 'windows' : 'linux';
-  if (s.cloudInit && osCategory !== 'windows' && s.cloudInit.enabled !== false) {
+  if (s.cloudInit && s.osType !== 'Windows' && s.cloudInit.enabled !== false) {
     emit('cloudinit');
     sdePath = join(vmBasePath, 'cloud-init.iso');
   }
