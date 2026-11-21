@@ -11,7 +11,6 @@ Cloud-init provides automated VM provisioning: setting hostname, creating users,
 | `username` | string | User account to create in the guest |
 | `password` | string | User password (hashed before writing to ISO) |
 | `sshKey` | string | SSH public key(s) to authorize for the user |
-| `sshKeySource` | string | How the key was obtained (e.g. `github:username` or `manual`) |
 | `growPartition` | boolean | Whether to grow the root partition to fill the disk |
 | `packageUpgrade` | boolean | Whether to run `apt upgrade` (or equivalent) on first boot |
 | `installQemuGuestAgent` | boolean | Whether to install `qemu-guest-agent` on first boot (default true) |
@@ -47,7 +46,6 @@ Every file holding the hash gets the same treatment: `cloud-init.json` is writte
 | `username` | `^[a-z][a-z0-9_-]{0,31}$` |
 | `password` | `^[^\r\n]*$`, ≤ 256 chars (CR/LF rejected) |
 | `sshKey` | ≤ 16384 chars; split on newlines into individual key entries |
-| `sshKeySource` | `^[a-zA-Z0-9:_-]*$` |
 
 ### ISO creation tools
 
@@ -133,17 +131,14 @@ A backup restore (always as a new VM) rebuilds the ISO the same way, from the re
 
 The generator unlinks any existing `cloud-init.iso` before invoking `cloud-localds` / `genisoimage`. libvirt's `dynamic_ownership` chowns the file to `libvirt-qemu:kvm` on VM start and only chowns it back on a clean stop, so without the unlink a regenerate after the VM has run (especially after a force-stop or crash) hits `EACCES` trying to truncate a file the wisp user no longer owns. Per-VM directories are `wisp:libvirt 0775`, which grants unlink regardless of file ownership; the freshly created ISO is owned by the wisp user and libvirt re-chowns it on the next start.
 
-## GitHub SSH Key Import
+## SSH keys
 
-SSH keys can be imported from a GitHub user profile:
-
-1. User enters a GitHub username in the UI
-2. Frontend sends `GET /api/github/keys/:username`
-3. Backend fetches `https://github.com/<username>.keys` server-side (no direct browser-to-GitHub request — prevents CORS issues and SSRF from the frontend), through the SSRF guard (`ssrfSafeFetch`, [IMAGE-LIBRARY.md → SSRF protection](IMAGE-LIBRARY.md#ssrf-protection)), so a hostile or compromised upstream cannot turn this proxy into a request to the LAN. **A redirect is followed (settled 2026-11-20)**, up to 5, each target re-resolved and refused when it is private or loopback; the last answer counts. Only GitHub's own **404** answers **404** `GITHUB_KEYS_NOT_FOUND`. A refused redirect, too many, a lookup that fails, or any other answer that is not 2xx (a 429, a 5xx, a 3xx without `Location`) answers **502** `GITHUB_KEYS_UNAVAILABLE`, the cause (its HTTP status, for an answer) in its detail: GitHub being unwell says nothing about the user. Rejected: refusing every 3xx, the earlier rule — the guard's re-check of each target makes following one safe. The lookup is bounded at 10 s, its body included, and its body at 256 KiB: a key list is a few KB, and an answer past the bound is 502 `GITHUB_KEYS_UNAVAILABLE`.
-4. Per-IP rate limit: 10 requests / 60 s (sweep every 60 s, max 10 000 entries). Excess hits return **429** `RATE_LIMITED`.
-5. Returns the list of SSH public keys
-6. User confirms which key(s) to use
-7. Selected key is written to the `sshKey` field with `sshKeySource: "github:<username>"`
+A VM's first boot setup holds its own copy of its public keys, in `sshKey`, one per line.
+They are picked from Wisp's list of keys ([SETTINGS.md](SETTINGS.md), SSH keys), where a
+GitHub user's keys are imported too; a key pasted in the setup is added to that list. A
+VM takes at most 16384 characters of keys. The
+setup does not record where a key came from (settled 2026-11-21: `sshKeySource` left the
+stored shape, by migration `0013`).
 
 ## Visibility Rules
 
@@ -163,9 +158,9 @@ During VM creation:
 
 | Context | Behavior |
 |---------|----------|
-| **New VM** | For a Linux image the form asks for the user, a password and an SSH key. The host name is derived from the VM's name and package update is off; the other options are on ([UI-VM.md](UI-VM.md), New VM). |
+| **New VM** | For a Linux image the form asks for the user, a password and the SSH keys, picked from Wisp's list with the default ones preselected. The host name is derived from the VM's name and package update is off; the other options are on ([UI-VM.md](UI-VM.md), New VM). |
 | **The VM page** | The First boot setup group ([UI-VM.md](UI-VM.md)): its values as text, an Edit that saves with the setup on, and a Remove that asks first (same as `DELETE`). The page has no on/off: a stored setup that is switched off shows "Off" until it is saved again (settled 2026-11-21). |
 
 ## Timeouts
 
-(settled 2026-11-12, CODING-RULES §6.) The GitHub keys lookup **10 s**, its DNS lookups, redirects and body included; the password hash (`openssl passwd`) **10 s**; the seed ISO build **20 s** (settled 2026-11-13).
+(settled 2026-11-12, CODING-RULES §6.) The GitHub keys lookup ([SETTINGS.md](SETTINGS.md), SSH keys) **10 s**, its DNS lookups, redirects and body included; the password hash (`openssl passwd`) **10 s**; the seed ISO build **20 s** (settled 2026-11-13).

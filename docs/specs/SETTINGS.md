@@ -22,6 +22,28 @@ Settings are persisted in `config/wisp-config.json`. The config file is updated 
 
 Configured in **Host → App Config → Single sign-on** (issuer URL, client ID, client secret, enable toggle). Saved through `PATCH /api/settings/oidc`, which requires a browser session — API tokens cannot change SSO (settled 2026-10-16, see [AUTH.md](AUTH.md) § Denied surfaces). The client secret is write-only: the field stays blank with a "saved" placeholder, and leaving it blank keeps the saved secret. Changing the issuer or client ID marks the secret required — the saved one is never reused for a different provider. Behavior and validation: [AUTH.md](AUTH.md) § OIDC.
 
+## SSH keys (`sshKeys`)
+
+Wisp keeps a list of SSH public keys, for the VMs it sets up (settled 2026-11-21). A key
+has a name, its text, and whether it is a default for new VMs; several may be. The list
+shows on App Config, each key with its type and fingerprint.
+
+- **Add**: paste one public key, with an optional name. Without one the name is the key's
+  own comment, or a generic one. The same key (its type and data, whatever its comment)
+  is not stored twice. A key is taken only whole: a cut, wrapped or doubled paste is
+  refused, and a private key is refused with a message of its own.
+- **Import from GitHub**: the keys of one GitHub user, fetched by the server through the
+  SSRF guard ([IMAGE-LIBRARY.md](IMAGE-LIBRARY.md#ssrf-protection)), rate-limited to 10
+  requests a minute per IP. Keys already in the list, and keys of a type Wisp does not take, are skipped and
+  counted.
+- **Rename, mark default, remove.** Remove asks first.
+- **A VM keeps its own copy** of the keys it was given ([CLOUD-INIT.md](CLOUD-INIT.md)):
+  removing or renaming a key in the list changes no VM. New VM preselects the default
+  keys; a VM's first boot setup picks from the list, and a key pasted there is added to
+  it.
+
+The routes: [API-HOST.md](API-HOST.md), Settings.
+
 ## Storage (`mounts`)
 
 Configured in **Host → Host Mgmt → Storage**. Each entry has a `type` discriminator (`smb` or `disk`) and common fields (id, label, mount path, autoMount).

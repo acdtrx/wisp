@@ -43,7 +43,8 @@ shut off, with a small lock by its title; the disabled action says "stop the VM 
 - **First boot setup**: its form also holds the options (grow the disk, install the guest
   agent, announce a local name, update packages). An empty host name means the VM's name as it is now. SSH keys are
   picked from Wisp's list ([SETTINGS.md](SETTINGS.md)); a key pasted here is added to
-  that list. The password field is empty and keeps the stored one unless typed.
+  that list. A key the VM holds that is not in the list shows as a row of its own, and
+  stays unless it is unchecked. The password field is empty and keeps the stored one unless typed.
 - **Expert settings** holds, grouped: boot (order, menu); firmware and machine (firmware,
   machine type, CPU model, nested virtualisation); display (video, console protocol);
   integration (guest agent, memory balloon, random number device, TPM); and the
@@ -71,7 +72,7 @@ One form, its own page:
 | Size | Small (2 cores, 2 GB), Medium (2, 4), Large (4, 8), or custom |
 | Disk | Size in GB |
 | Drivers | For Windows 11: an ISO attached as a second CD, preselected with the library's `virtio-win` file, and it can be cleared |
-| User, password, SSH key | For a Linux image |
+| User, password, SSH keys | For a Linux image. The keys are picked from Wisp's list, the default ones preselected; a key can be pasted, which adds it to the list |
 
 A Linux image gets first boot setup with the host name derived from the VM's name and
 package update off; both can be changed on the page afterwards.

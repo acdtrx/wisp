@@ -340,7 +340,8 @@ Get application settings.
   "discoveryEnabled": true,
   "advertisedUrl": null,
   "updateChannel": "stable",
-  "oidc": { "enabled": false, "issuer": "", "clientId": "", "hasClientSecret": false }
+  "oidc": { "enabled": false, "issuer": "", "clientId": "", "hasClientSecret": false },
+  "sshKeys": [{ "id": "…", "name": "alex@laptop", "key": "ssh-ed25519 AAAA… alex@laptop", "default": true, "type": "ssh-ed25519", "fingerprint": "SHA256:…" }]
 }
 ```
 
@@ -359,6 +360,25 @@ Update settings. Partial update — only include fields to change.
 - **`updateChannel`:** `"stable"` | `"beta"` — which releases self-update offers this host. No side effect: the next update check (hourly, or `POST /api/updates/check`) reads it. See [UPDATES.md → Update channels](UPDATES.md#update-channels).
 - **`containersPath`:** Optional; container storage root (same default as `config.js`; exposed for scripts — App Config UI does not edit it yet).
 - **Mount CRUD:** Not available via PATCH /api/settings. Use `/api/host/mounts` endpoints below.
+- **SSH keys:** Not available via PATCH /api/settings. Use the `/api/settings/ssh-keys` routes below.
+
+### SSH keys · `admin`
+
+The list in the settings record ([SETTINGS.md](SETTINGS.md), SSH keys). `type` and
+`fingerprint` in the `GET /api/settings` answer are derived, never stored. Every write
+is announced like `PATCH /api/settings`.
+
+- **`POST /api/settings/ssh-keys`** `{ key, name? }` → **201** `{ id }`. **422**
+  `SSH_KEY_INVALID`: the text is not one public key. **409** `SSH_KEY_DUPLICATE`: the key
+  is already in the list (the detail names it).
+- **`POST /api/settings/ssh-keys/github`** `{ user }` → **201** `{ added: [id…],
+  alreadyListed: n, skipped: n }` (`skipped`: lines GitHub listed that are unreadable or of a
+  type Wisp does not take). **404** `GITHUB_KEYS_NOT_FOUND`, **502** `GITHUB_KEYS_UNAVAILABLE`,
+  **429** `RATE_LIMITED`.
+- **`PATCH /api/settings/ssh-keys/:id`** `{ name?, default? }` (at least one) → **204**.
+  **404** `SSH_KEY_NOT_FOUND`.
+- **`DELETE /api/settings/ssh-keys/:id`** → **204**. **404** `SSH_KEY_NOT_FOUND`. It
+  changes no VM.
 
 ### PATCH /api/settings/oidc · `session`
 

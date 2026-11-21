@@ -303,7 +303,7 @@ Detach a USB device. `id` format: `vendorId:productId` (e.g. `046d:c077`). Both 
 
 Get the cloud-init configuration for a VM.
 
-- **200:** Full stored object when `cloud-init.json` exists: `{ enabled: boolean, hostname?, username?, password?: "set" | "", sshKey?, sshKeySource?, growPartition?, packageUpgrade?, installQemuGuestAgent?, installAvahiDaemon? }` (including `enabled: false` after a soft-disable). If there is no config file, `{ enabled: false }` only.
+- **200:** Full stored object when `cloud-init.json` exists: `{ enabled: boolean, hostname?, username?, password?: "set" | "", sshKey? (one public key per line), growPartition?, packageUpgrade?, installQemuGuestAgent?, installAvahiDaemon? }` (including `enabled: false` after a soft-disable). If there is no config file, `{ enabled: false }` only.
 
 ### PUT /api/vms/:name/cloudinit · `admin`
 
@@ -321,7 +321,6 @@ Update cloud-init settings.
   "username": "string",
   "password": "string",
   "sshKey": "string",
-  "sshKeySource": "github:username | manual",
   "growPartition": true,
   "packageUpgrade": true,
   "installQemuGuestAgent": true,
@@ -339,12 +338,3 @@ Remove cloud-init completely: detach `sde`, delete `cloud-init.iso` and `cloud-i
 
 - **204:** done; the VM's new state reaches clients as `{ kind: "vm", id }` on the `changes` topic
 - **409:** `VM_BUSY` — another operation on this VM (e.g. a backup) holds the [per-VM operation lock](BACKUPS.md#per-vm-operation-lock)
-
-### GET /api/github/keys/:username · `admin`
-
-Fetch SSH public keys for a GitHub user (server-side proxy to avoid CORS).
-
-- **Params:** username must match `^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$`
-- **200:** `{ keys: ["ssh-rsa ...", ...] }`
-- **404:** `GITHUB_KEYS_NOT_FOUND` — GitHub answered 404: no such user
-- **502:** `GITHUB_KEYS_UNAVAILABLE` — the lookup failed, GitHub answered anything else that is not 2xx (429, 5xx; the status in the detail), or the SSRF guard refused a redirect ([CLOUD-INIT.md](CLOUD-INIT.md#github-ssh-key-import))
