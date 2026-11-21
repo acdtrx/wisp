@@ -47,12 +47,10 @@ The desktop shell above applies at `lg` and up. Below 1024px (phones, portrait t
 - **Host Mgmt is fully manageable on phones** — SMB shares, removable drives, and bridges create/edit through modal form editors (`SmbShareEditorModal`, `RemovableDriveEditorModal`, `BridgeCreateModal` — see `docs/FRONTEND-RULES.md` § Modal form editor); row actions expand under the row on tap below `sm`. The Backup form (path + network-mount select) reflows inline.
 - **Cloud-init is view-only on phones** — the VM detail Cloud-Init section shows its summary below `sm` but hides the Regenerate / Remove / Configure buttons, so the edit form (a desktop-oriented multi-field layout) is never reached on mobile.
 - **Touch devices render form controls at ≥16px** *(settled 2026-08-25)* — iOS Safari auto-zooms the page whenever a focused `input` / `select` / `textarea` computes below 16px, and never zooms back out, so a `(hover: none) and (pointer: coarse)` block in `index.css` floors every text-entry control at `max(16px, 1em)` and floors `input-field`'s height at 34px (the dense `h-7` / `h-8` row variants otherwise clip the taller text). Pointer devices keep the designed `text-sm` / `text-xs` sizes exactly. Deliberately a pointer query, not a `max-sm:` variant — an iPad in landscape is wider than `sm` and still touch. The `maximum-scale=1` viewport meta was rejected: it stops the zoom by disabling pinch-zoom for everyone. The block is unlayered because Tailwind's size utilities live in the utilities layer and would win over `@layer base`; components must not try to opt out with a smaller `text-*` class.
-- **Safe-area insets keep chrome off the iOS home indicator.** `index.html` sets `viewport-fit=cover`, which is what makes `env(safe-area-inset-*)` report real values; the `pt-safe` / `pb-safe` / `px-safe` utilities (`index.css`) then apply them. This matters most for the VM/container stats bars: launched from the home screen the app renders edge-to-edge, and a horizontally-scrollable strip sitting in the bottom gesture band gets its swipes taken by the iOS app switcher instead of scrolling. Each bar wraps its `h-11` scroll row in a `pb-safe` element that carries the border and card background, so the pills sit above the band and the card colour still paints the indicator strip. Same treatment on the drawer's Organize footer. `px-safe` on the app shell and the drawer keeps them out of the landscape notch; `pt-safe` on the top bar means the shell never slides under the status bar, and the drawer's top offset is written against it. All inert where the insets are `0` (desktop, Android, notch-less phones, and iOS's default opaque status bar).
-- **VM/container detail sections are fully manageable on phones** — all four collection editors (Env, NICs, Disks, Mounts) create/edit through modal form editors, with rows read-only at every breakpoint:
-  - **Container Env** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `EnvVarEditorModal` (see `docs/FRONTEND-RULES.md` § Modal form editor). Below `sm` the value stacks under the key and the Value column is hidden; header **Add** and the two row actions (Edit, Remove) stay visible — the set fits without the tap-to-expand strip.
+- **Safe-area insets keep chrome off the iOS home indicator.** `index.html` sets `viewport-fit=cover`, which is what makes `env(safe-area-inset-*)` report real values; the `pt-safe` / `pb-safe` / `px-safe` utilities (`index.css`) then apply them. This matters most for the VM stats bar: launched from the home screen the app renders edge-to-edge, and a horizontally-scrollable strip sitting in the bottom gesture band gets its swipes taken by the iOS app switcher instead of scrolling. Each bar wraps its `h-11` scroll row in a `pb-safe` element that carries the border and card background, so the pills sit above the band and the card colour still paints the indicator strip. Same treatment on the drawer's Organize footer. `px-safe` on the app shell and the drawer keeps them out of the landscape notch; `pt-safe` on the top bar means the shell never slides under the status bar, and the drawer's top offset is written against it. All inert where the insets are `0` (desktop, Android, notch-less phones, and iOS's default opaque status bar).
+- **VM detail sections are fully manageable on phones**: both collection editors (NICs, Disks) create and edit through modal form editors, with rows read-only at every breakpoint (the container page: [UI-CONTAINER.md](UI-CONTAINER.md)):
   - **VM Network interfaces** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `NicEditorModal` (see `docs/FRONTEND-RULES.md` § Modal form editor). Below `sm` the Model and MAC columns are hidden and stack as `model · mac` under the bridge; header **Add** and the two row actions (Edit, Remove) stay visible. Unless the VM is shut off those three controls render **disabled** (their `title` says to stop the VM) and the lock note below the table is visible at every width. The create flow keeps its desktop-oriented draft rows.
   - **VM Disks** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `DiskEditorModal` (see `docs/FRONTEND-RULES.md` § Modal form editor). Below `sm` the Size, Image, Image type, and Bus columns are hidden and stack under the slot label (image filename, then `size · bus · image type`); the header **Add disk** / **Attach ISO** buttons and the two row actions per row (Edit, Unmount for block disks; Change ISO, Eject for CD-ROMs) stay visible — the set fits without the tap-to-expand strip. Unless the VM is shut off, add / edit / unmount render **disabled** (their `title` says to stop the VM) and the lock note below the table is visible at every width; ISO actions stay live. The create flow keeps its desktop-oriented draft rows.
-  - **Container Mounts** — fully manageable on phones: rows are read-only at every breakpoint and add/edit go through `ContainerMountEditorModal` (see `docs/FRONTEND-RULES.md` § Modal form editor); all three header **Add** buttons (file / folder / tmpfs) stay visible. Below `sm` every column except the type icon and container path is hidden and stacks under the path (mount name on one line, then source / size / read-only / owner uid:gid), so the widest table loses its horizontal scroll; the five row actions (Edit file, Upload, Zip upload, Edit, Remove) move into the tap-to-expand strip.
 - **USB devices** — the ID column is hidden below `sm` (Name gets the room), and the bus/device cell shows bare numbers (`<bus> · <device>`) under the "Bus / device" header on all screen sizes instead of repeating the `Bus …`/`Device …` labels.
 - **PWA-lite:** `manifest.webmanifest` (standalone display, teal theme color) + apple-touch-icon, so Wisp can be pinned to a phone home screen. No service worker/offline support.
 
@@ -135,7 +133,7 @@ The center panel content is controlled by the URL. `AppLayout` is a shell that r
 | `/` | Redirects to `/host/home` |
 | `/host/:tab` | Host panel (`tab` ∈ `home`, `overview`, `host-mgmt`, `software`, `backups`, `app-config`) |
 | `/vm/:name/:tab?` | Overview panel + VM Stats Bar (`tab` ∈ `overview`, `console`; default `overview`) |
-| `/container/:name/:tab?` | Container Overview panel + Container Stats Bar (`tab` ∈ `overview`, `logs`, `console`; default `overview`) |
+| `/container/:name/:tab?` | The container page, [UI-CONTAINER.md](UI-CONTAINER.md) (`tab` ∈ `overview`, `logs`, `console`; default `overview`) |
 | `/create/vm` | Create VM panel |
 | `/create/container` | Create Container panel |
 | `/login` | Login page |
@@ -497,7 +495,7 @@ All buttons: disabled state at 40% opacity, not-allowed cursor.
 
 ### Modals
 
-- Overlay: `fixed inset-0 z-50 flex items-center justify-center`
+- Overlay: `fixed inset-0 z-50`, the card centred; below `sm` every modal is a sheet from the bottom, full width (settled 2026-11-21)
 - Backdrop: `absolute inset-0 bg-black/30`
 - Content: `relative z-10 rounded-card bg-surface-card shadow-lg`
 - Close via Escape key
@@ -569,68 +567,6 @@ Containers share the same unified list in the left panel as VMs. They use the **
 - **Subtitle**: shortened OCI image reference
 - **Hover actions**: Start (if stopped), Stop (if running, or stopped with a scheduled restart — cancels it), Restart (if running)
 
-### Container Overview Panel
+### The container page
 
-Header bar with:
-- **Icon** — clickable, opens the Icon Picker (same set as VMs), colored by state; default matches **Box**
-- Container name + **container** badge (muted pill)
-- Tabs: **Overview** | **Logs** | **Console**
-- **Restart required** amber badge (left of the actions) while `config.pendingRestart` is set
-- **Restarting in N s** amber badge (left of the actions, counting down each second) while the restart policy has a restart scheduled; **Stop** stays enabled then and cancels it (label: *Stop (cancel the scheduled restart)*)
-- Action buttons: Start, Stop, Kill, Restart, (divider), Backup, Delete. **Backup** opens the shared backup modal and works in any settled state — a running container is paused for the duration of the archive and resumed automatically (the sidebar shows `paused` for that window). While any job on the container runs (a running job whose `subject` is the container — a backup, an in-place restore, a start, …), **Start**, **Stop**, **Kill**, **Restart**, **Backup** and **Delete** are disabled (labels name the job) — the job holds the backend's [per-container operation lock](CONTAINERS.md#per-container-operation-lock), which refuses them with 409 `CONTAINER_BUSY` anyway; **Kill** stays enabled while the job is a stop, which a kill makes immediate; Backup is also disabled during transient states (`pausing`/`unknown`).
-
-When `config.updateAvailable` is `true`, an orange banner sits above the tab content: "New image version available. Restart to apply." The message has no button of its own — the user restarts via the primary **Restart** action button in the header row just above. `startExistingContainer` detects the digest drift and re-prepares the snapshot from the new image layers (see CONTAINERS.md → *Image updates*). `updateAvailable` is a derived backend field — it's only ever `true` when the container is running (or paused) with a digest older than the library's current one; stopped containers always read as `false`.
-
-#### Overview tab
-
-Sections (each in a SectionCard):
-
-1. **General** — mirrors the VM General layout. First row: Name (editable when stopped), **DNS** toggle (Local DNS — advertise `<name>.local` via mDNS; help icon), then (divider) **CPU**, **RAM (MiB)** (compact VM-style number fields, no unit switch — empty = unlimited `∞`), then (divider) Image (flexes to fill, with library picker button). Second row: **Command Override** (flexes to fill; the stored argv shown as one shell-quoted line — see [CONTAINERS.md](CONTAINERS.md) § Command override), **Run as Root**, **Restart Policy** (radio pills), then (divider) **Auto Start**, **Auto Backup** (`Toggle` + help icon — opts the container into the daily scheduled backup, see Host Mgmt → Backup Scheduler) at the right end. In create mode only Name and Image render.
-2. **Environment Variables** — **Table** (DataTable chrome) of **read-only** rows; header **`Plus`+braces** and row **`Pencil`** open **[EnvVarEditorModal.jsx](../../frontend/src/components/sections/EnvVarEditorModal.jsx)** (modal form editor: Key, Value, **Secret** checkbox); row **`Trash2`** removes without a confirm; **no section Save**. The key is editable on edit — a rename removes the old key and writes the new one. Secrets are write-only: the field starts empty and "leave empty to keep the stored secret"; unchecking **Secret** clears the stored value. With **Secret** checked a **`Dices`** button beside the value field opens a confirm dialog with a client-generated random value (32-byte hex) shown once in a copyable "New secret" field; **Apply** fills the field and the modal **Save** commits — old value unrecoverable after save. While that dialog is open the editor sets `closeOnEscape={false}`, so Escape closes only the top layer. Persistence: [FRONTEND-RULES.md](../FRONTEND-RULES.md) (**Container environment** — `envPatch` against the full **`env`** map, documented exception).
-3. **Mounts** — Section header: **Plus + File** / **Plus + Folder** / **Plus + MemoryStick** (add a file, folder, or tmpfs mount). **Table:** **read-only** rows — type icon, container path, mount name, **Source**, **Sub-path**, **Size**, read-only flag, owner uid:gid (only when **Run as Root**), actions. Add and row **`Pencil`** open **[ContainerMountEditorModal.jsx](../../frontend/src/components/sections/ContainerMountEditorModal.jsx)** (modal form editor, one component with two entry points: create with the tapped kind, or edit the row). Its fields follow the kind: container path + mount name always; **Size** for tmpfs; **Source** (and **Sub-path** once a Storage source is picked) for folder mounts; **Read-only** for file/folder; **Owner uid:gid** for Local file/folder mounts when the container runs as root. **Secret** checkbox for file mounts (content becomes write-only; unchecking on edit empties the stored file — same model as secret env vars). Row **`Trash2`** removes without a confirm; **Edit file** (`SquarePen`, file mounts), **Upload**, and **Zip upload** stay row actions. A **secret** file mount shows `secret · set` / `secret · not set` after its name and never fetches its content: **Edit file** becomes **`KeyRound`** (*Replace secret content*), opening [SecretMountContentModal.jsx](../../frontend/src/components/sections/SecretMountContentModal.jsx) (paste new content and Save, or **Clear** after a confirm); see [CONTAINERS.md](CONTAINERS.md) § Secret file mounts. **Size** shows the host-side disk usage of each mount's data (one on-demand `GET /api/containers/:name/mounts/usage` per mounts change — not polled; `…` while sizing, `—` for tmpfs, a trailing `+` with tooltip when the size is an undercount from unreadable entries; hover shows the host path). Source is `Local` by default; for **directory** mounts the dropdown also lists configured **Storage** mounts (from Host Mgmt → Storage). Sub-path is relative (empty = mount root; leading `/` and `..` rejected). File mounts are always Local (Source column shows a static "Local" label). Rows whose Source references a missing or not-currently-mounted Storage entry surface an **`AlertCircle`** icon with hover tooltip. Zip upload is disabled for Storage-sourced rows with tooltip "Zip upload is available on Local mounts only". Mutations use **row-scoped** container mount APIs (add / update / delete / upload); see [FRONTEND-RULES.md](../FRONTEND-RULES.md) and [CONTAINERS.md](CONTAINERS.md). **Hover-reveal** actions at `lg`+; below `sm` the Actions column is hidden and the buttons expand under the row on tap.
-4. **Network** — **interface selector** (host bridge list), Type, **IP** (from CNI/DHCP; shows "—" until known), **MAC** (persisted; **Stop** required to edit — input + **Save**, shuffle button to randomize like VM Advanced NICs), **Status** (**Up** / **Down**). The Local DNS toggle lives in **General**. Section header shows the offline-only lock unless the container is stopped (settled 2026-11-21: one rule for a container's name and network).
-
-   **Exposed Ports** subsection (rendered below the network fields when the container has exposed ports or any configured services): pill-row of ports; a pill opens a modal for per-port mDNS service editing.
-
-   - **Pills:** one per port. EXPOSE-derived ports use a solid border; user-added ports (configured service on a port not in EXPOSE) use a dashed border. A small `Radio` icon appears inside the pill when a service is configured (no color encoding — icon presence is the state). Tooltip shows the service type when configured.
-   - **`+` pill:** trailing dashed pill — clicking opens the editor modal in *add* mode with an empty Port input so users can advertise on a port the image did not declare.
-   - **Service editor modal:** clicking a pill (or `+`) opens a `Modal` titled for the port (or *Advertise new service*); it can't be dismissed while a save is in flight. Layout: type dropdown sourced from the built-in catalog (SMB, HTTP, HTTPS, SSH, SFTP, FTP, IPP, IPPS, WebDAV, AFP, NFS, RDP, VNC) plus a **Custom…** option that reveals a free-text type input. Selecting a known type pre-fills sensible TXT defaults (e.g. `path=/` for HTTP, `rp=ipp/print` for IPP). TXT records are an editable list of key/value pairs with **+ add TXT** and per-row remove. Footer: **Remove advertisement** (when editing existing) on the left; **Cancel** / **Save** on the right.
-   - **Local DNS gating:** when `localDns` is off, pills render inert (no hover, no `+`, no editor) with a small helper line "Enable Local DNS (General section) to advertise services". Toggle Local DNS on in **General** (and **Save** that section) to activate the per-pill editor.
-   - **Persistence:** mutations use the row-scoped service endpoints (`POST` / `PATCH` / `DELETE` `/api/containers/:name/services[/:port]`); no section Save button. Container is refreshed after each mutation.
-
-#### Logs tab
-
-Full-height log viewer:
-- Filter input for searching log lines
-- Auto-scroll toggle button
-- Line count indicator
-- SSE-streamed live log data
-
-#### Console tab
-
-Lazy-loaded (`ContainerConsolePanel`). **xterm.js** terminal + toolbar (Paste, Fullscreen, Disconnect/Reconnect). Connects to **`/ws/container-console/:name`**, authenticated by the `wisp_session` cookie on the upgrade; live I/O is WebSocket binary frames (see [API.md](API.md)). When the container is **not** running, shows a short message to start the container first (no shell session). Reconnect behavior (backoff, resume on visibility/`online`, a manual Disconnect stays disconnected) matches the VM console; the shell exiting shows **Session ended** with Reconnect instead of spawning a new shell, and a failed exec is a final error — see [CONSOLE.md](CONSOLE.md) § Container console sessions.
-
-### Create Container Panel
-
-- Back button to return to default view
-- Short explanation: new containers stay **stopped** after create so settings can be configured on the overview before **Start**
-- **App selector**: dropdown in the General section header (right). Options: "Generic Container" (default) plus each registered app (e.g. "Caddy Reverse Proxy"). Selecting an app prefills the image field with the app's default image (editable when `allowCustomImage` is true).
-- **General** section: **Name** and **Image** only (same SectionCard as overview, create mode)
-- Create button with progress (validating → pulling → creating → done); no env/network/app config on this screen — configure on the container overview after creation
-- On success opens the new container's overview — only if the user is still on the create panel (same rule as Create VM)
-
-### Custom App Container Overview
-
-When `config.metadata?.app` is set and recognized:
-- **Overview tab** replaces ContainerEnvSection + ContainerMountsSection with the app's dedicated component (e.g. CaddyAppSection) wrapped in AppConfigWrapper
-- ContainerGeneralSection and ContainerNetworkSection remain unchanged
-- **pendingRestart badge** in the header (visible across all tabs) when `config.pendingRestart` is set
-- **Eject button** below the app component — converts to generic container (one-way, with confirmation dialog). See [CUSTOM-APPS.md](CUSTOM-APPS.md).
-
-### Container Stats Bar
-
-Bottom bar (same position as VM stats bar):
-- CPU%, Memory (used / limit), Uptime, **IP** (LAN address when known — same idea as VM guest IP), PID
-- Optional **mDNS** pill (`<hostname>.local`) when Local DNS is enabled and registration is active
-- **IP** and **mDNS** come from the per-container stats SSE, not from the container config the panel loaded on select — both are assigned after the container starts, so a config snapshot would leave the pills missing until the user switched workloads or reloaded. Config seeds only the first paint, before the stream's first frame.
-- Shows "Stopped" or "Paused" when not running
+The container page and New container: [UI-CONTAINER.md](UI-CONTAINER.md).

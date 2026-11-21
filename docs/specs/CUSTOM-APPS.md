@@ -9,7 +9,7 @@ Custom App Containers are containers created from hardcoded app templates that p
 - User picks an app template (or "Generic Container") when creating a container
 - containerApps validates the choice, computes derived env/mounts/devices/files, and writes them by calling containerManager primitives
 - App identity lives in `container.json.metadata.app` (string id) and `container.json.metadata.appConfig` (object)
-- The frontend renders a dedicated component instead of the Env and Mounts sections when `config.metadata?.app` is set
+- The frontend shows the app's own groups, first on the page, instead of Environment and Storage when `config.metadata?.app` is set ([UI-CONTAINER.md](UI-CONTAINER.md), App containers)
 - Users can "eject" an app container to a generic container — clears `metadata.app`/`metadata.appConfig`, leaves env/mounts/devices/files in place
 
 ## Data Model
@@ -115,21 +115,19 @@ The trade-off of declaring secrets (rather than refusing every app file) is that
 
 App selector buttons above the name/image form. Selecting an app prefills the image (editable if `allowCustomImage`). The `app` field is included in the POST spec.
 
-### Overview Flow — ContainerOverviewPanel
+### The app's groups on the container page
 
-When `config.metadata?.app` is set, renders `AppConfigWrapper` (which loads the app's dedicated component) instead of ContainerEnvSection + ContainerMountsSection. Network and General sections remain unchanged.
+When `config.metadata?.app` is set, the container page shows the app's own groups first
+and neither Environment nor Storage; Eject is in the header's More menu
+([UI-CONTAINER.md](UI-CONTAINER.md), App containers).
 
-### AppConfigWrapper
+### App group contract
 
-Renders the app component and an "Eject to generic container" button with confirmation dialog.
-
-### App Component Contract
-
-Each app's frontend component receives:
-- `config` — full container config (with masked secrets in `appConfig`)
-- `onSave(appConfig)` — saves the appConfig via PATCH
-
-Components use SectionCard for consistent styling, handle their own dirty tracking, and follow the secret-field pattern (omit unchanged secrets from the patch).
+Each app's frontend gives the page its groups: values as text, lists with a form per
+row, switches. It receives the container's config (secrets masked in `appConfig`) and a
+way to save. Every save sends the whole `appConfig`, read from the record at the moment
+of the save, with the one row or group changed; an unchanged secret is sent back the
+keep-stored way.
 
 ## Live Reload
 
@@ -338,5 +336,5 @@ The redirect URI to register with the provider is `<externalUrl>/zot/auth/callba
   - `share-<name>` (directory → `/shares/<name>`, owner uid:gid = `server.dataUid`) — one per declared share, optionally backed by a storage mount via `source: { sourceId, subPath }`
 - **config.yaml:** Generated YAML — `server` block with snake_case fields, `users` list, `shares` map (each with `path`, optional `comment`, `guest: true` OR `access` map)
 - **passwords.yaml:** `name: password` map (passwords double-quoted; plaintext or `$NT$` hash passes through). Declared secret (`getSecretMountNames` → `tiny-samba-passwords`); `config.yaml` holds no secret and is readable.
-- **UI:** removing a saved Local share from the form only stages it; **Save** then opens a `ConfirmDialog` ("Delete share data?") naming exactly the Local shares whose files the save deletes — removed, or switched to a storage mount (by its saved name, also when renamed in the same save), and in either case its name not taken over by a Local share — with **Delete and save** / **Cancel**. Local → Local renames and Storage-backed removals save without a prompt.
+- **UI:** removing a saved Local share asks first ("Delete share data?"), naming the share; so does saving a share's form when the edit switches it to a storage mount. A Local → Local rename and the removal of a storage-backed share do not ask (settled 2026-11-21, replacing the confirm at the section's Save).
 - **Reload:** `tiny-samba reload` — applies live for users, passwords, shares, access, min protocol. Server-level changes (`workgroup`, `netbiosName`, `dataUid`) flip `requiresRestartForChange` and the badge stays until restart.

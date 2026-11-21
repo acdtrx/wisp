@@ -85,8 +85,7 @@
   `globals`, for correctness rules only: `no-undef`, `no-unused-vars` (rest siblings
   ignored), `no-dupe-keys`, `react-hooks/rules-of-hooks`, and for the frontend
   `no-shadow` and `react-hooks/exhaustive-deps` (settled 2026-11-21: every effect
-  states its dependencies; the form hook owns what the sections' effects kept by
-  hand). No style rule. A hand-written scan was rejected: an undefined name needs scope
+  states its dependencies). No style rule. A hand-written scan was rejected: an undefined name needs scope
   analysis (settled 2026-11-18).
 - **The other checks are Node scripts** in `scripts/` (`check-imports`, `check-fences`,
   the shell check): dependency-free scans for what ESLint does not see (the fences,
