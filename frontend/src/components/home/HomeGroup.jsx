@@ -32,7 +32,7 @@ export default function HomeGroup({ group, tiles, editing, hideLabel, autoEdit, 
       setRenaming(true);
       onAutoEditConsumed?.();
     }
-  }, [autoEdit]);
+  }, [autoEdit, renaming, group.name, onAutoEditConsumed]);
 
   useEffect(() => {
     if (!renaming) setDraftName(group.name);

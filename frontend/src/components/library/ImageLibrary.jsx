@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Upload, Trash2, Pencil, Check, X, HardDrive, Disc, FileQuestion, Link, Loader2, Package, Images, RefreshCw } from 'lucide-react';
 
 import {
@@ -175,14 +175,13 @@ function TypeBadge({ type }) {
 function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename, busy = false }) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(file.name);
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    if (editing && inputRef.current && focusField(inputRef.current)) {
-      const dotIdx = editValue.lastIndexOf('.');
-      inputRef.current.setSelectionRange(0, dotIdx > 0 ? dotIdx : editValue.length);
-    }
-  }, [editing]);
+  /* The rename field mounts when editing starts: focus it then, with the name before
+   * its extension selected. */
+  const focusOnMount = useCallback((el) => {
+    if (!el || !focusField(el)) return;
+    const dotIdx = el.value.lastIndexOf('.');
+    el.setSelectionRange(0, dotIdx > 0 ? dotIdx : el.value.length);
+  }, []);
 
   const commitRename = () => {
     const trimmed = editValue.trim();
@@ -203,7 +202,7 @@ function FileRow({ file, mode, compactPicker, onSelect, onDelete, onRename, busy
         {editing ? (
           <div className="flex items-center gap-1.5">
             <input
-              ref={inputRef}
+              ref={focusOnMount}
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
               onKeyDown={(e) => {

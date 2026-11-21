@@ -52,7 +52,7 @@ function SectionHeader({ section, organizeMode, autoEdit, onAutoEditConsumed, ca
       setEditing(true);
       onAutoEditConsumed?.();
     }
-  }, [autoEdit]);
+  }, [autoEdit, editing, section.name, onAutoEditConsumed]);
 
   useEffect(() => {
     if (!editing) setDraftName(section.name);
@@ -368,13 +368,14 @@ export default function LeftPanel() {
     return () => disconnectSections();
   }, [connectSections, disconnectSections]);
 
-  /* Exit organize mode when the user navigates away — stale "edit" state
-   * shouldn't leak across views. Below lg the panel is a drawer; navigating
-   * to a workload/host view should also dismiss it. */
+  /* Exit organize mode when the user navigates away, and when the panel mounts (after a
+   * sign-in: the mode lives in the UI store) — stale "edit" state shouldn't leak across
+   * views. Below lg the panel is a drawer; navigating to a workload/host view should
+   * also dismiss it. */
   useEffect(() => {
-    if (organizeMode) setOrganizeMode(false);
+    setOrganizeMode(false);
     setSidebarOpen(false);
-  }, [location.pathname]);
+  }, [location.pathname, setOrganizeMode, setSidebarOpen]);
 
   /* Below lg the open panel is a drawer: a layer (Escape closes it, Tab stays
    * in it, the page beside it is inert, focus returns to the menu button). At

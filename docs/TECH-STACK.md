@@ -83,9 +83,10 @@
   are tested without a test seam in production code (settled 2026-11-20).
 - **ESLint**, a dev-only dependency of the repo root with its React hooks plugin and
   `globals`, for correctness rules only: `no-undef`, `no-unused-vars` (rest siblings
-  ignored), `no-dupe-keys`, `react-hooks/rules-of-hooks`. No style rule;
-  `react-hooks/exhaustive-deps` stays off until the hooks that own the dependency
-  arrays exist. A hand-written scan was rejected: an undefined name needs scope
+  ignored), `no-dupe-keys`, `react-hooks/rules-of-hooks`, and for the frontend
+  `no-shadow` and `react-hooks/exhaustive-deps` (settled 2026-11-21: every effect
+  states its dependencies; the form hook owns what the sections' effects kept by
+  hand). No style rule. A hand-written scan was rejected: an undefined name needs scope
   analysis (settled 2026-11-18).
 - **The other checks are dependency-free Node scripts** in `scripts/` (`check-imports`,
   `check-fences`, the shell check): dumb scans for what ESLint does not see (the

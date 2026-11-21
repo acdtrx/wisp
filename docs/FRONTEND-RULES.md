@@ -525,7 +525,12 @@ Never call native `window.alert()` or `window.confirm()`: use these dialogs for 
 
 ## React
 
-- Keep effect dependencies **stable**: primitive values or serialised representations,
-  not object references that change identity every render.
+- Keep effect dependencies **stable**: primitive values or references that keep their
+  identity while their value does (the record cache keeps an equal answer's object),
+  not objects rebuilt every render.
+  - Applied (settled 2026-11-21): `react-hooks/exhaustive-deps` is an error. An effect
+    that cannot state its dependencies honestly is wrong and is rewritten: state derived
+    while rendering, a callback ref, a remount (a modal editor mounts when it opens),
+    or the form hook.
 - Memoise callbacks passed to effects or child components.
   - Applied: use `useCallback` for handlers passed to effects or children.

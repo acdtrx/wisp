@@ -142,13 +142,15 @@ export function useLayer(open, { kind, ref, onEscape, inertTargets, returnFocusT
       listening = true;
     }
     syncInert();
+    /* The layer's node as it opened: by cleanup the ref may already point elsewhere. */
+    const node = ref.current;
     return () => {
       const i = stack.indexOf(layer);
       if (i >= 0) stack.splice(i, 1);
       syncInert();
       // Back to what opened it — unless focus has already moved somewhere real.
       const active = document.activeElement;
-      const lostFocus = !active || active === document.body || ref.current?.contains(active) || !active.isConnected;
+      const lostFocus = !active || active === document.body || node?.contains(active) || !active.isConnected;
       if (lostFocus && opener && opener !== document.body && opener.isConnected) {
         focusElement(opener, { preventScroll: true });
       }

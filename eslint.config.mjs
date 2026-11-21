@@ -2,7 +2,8 @@
  * ESLint, a dev-only tool of the repo root, run by `npm run lint` and `npm run
  * check`, over backend/, frontend/src/ and shared/. Correctness rules only
  * (docs/TECH-STACK.md, Testing & lint): no style rule. `react-hooks/exhaustive-deps`
- * stays off until the hooks that own the dependency arrays exist.
+ * is an error: every effect states its dependencies honestly, and one that cannot is
+ * rewritten (the form hook owns what the sections' effects used to keep by hand).
  *
  * Inline config (`eslint-disable`, `/* global *\/`, `/* eslint … *\/`) is not
  * honoured, and `npm run lint` fails on the warning it leaves: an allowance, if
@@ -121,7 +122,12 @@ export default [
     },
     /* A name that shadows another hides it: a row's variable named like a hook above it
      * reads the row's value where the hook's was meant. */
-    rules: { ...correctness, 'no-shadow': 'error', 'react-hooks/rules-of-hooks': 'error' },
+    rules: {
+      ...correctness,
+      'no-shadow': 'error',
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'error',
+    },
   },
   {
     // The unit tests and their browser stand-ins run under Node.
