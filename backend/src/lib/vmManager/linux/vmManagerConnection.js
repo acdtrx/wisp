@@ -372,9 +372,14 @@ export async function getDomainState(path) {
   return { code, name: STATE_NAMES[code] ?? 'unknown' };
 }
 
-export async function getDomainXML(path, { inactive = false } = {}) {
+/**
+ * The domain's XML. `inactive`: the persistent definition (VIR_DOMAIN_XML_INACTIVE);
+ * `secure`: with what libvirt otherwise leaves out, a graphics password among them
+ * (VIR_DOMAIN_XML_SECURE) — for XML defined back as it was read.
+ */
+export async function getDomainXML(path, { inactive = false, secure = false } = {}) {
   const { iface } = await getDomainObjAndIface(path);
-  return iface.GetXMLDesc(inactive ? 2 : 0);
+  return iface.GetXMLDesc((inactive ? 2 : 0) | (secure ? 1 : 0));
 }
 
 /**

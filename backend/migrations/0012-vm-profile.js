@@ -2,7 +2,8 @@
  * A VM remembers its profile since 2026-11-21 (`wisp:profile` in its prefs): this gives
  * every VM defined before then the one its definition reads as, through
  * `vmManager.setMissingVMProfile` — `windows-11` when it carries the Hyper-V features,
- * `linux` otherwise. Metadata only, so no VM gets the restart flag.
+ * `linux` otherwise. Metadata only, so no VM gets the restart flag. A transient domain
+ * is left without one: defining it would make it persistent.
  *
  * Backward-compatible: the previous release ignores the pref. Idempotent: a VM with a
  * profile is left alone.

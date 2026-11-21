@@ -8,7 +8,9 @@ import dbus from 'dbus-next';
 
 import { validateVMName } from './vmManagerValidation.js';
 import { getVMBasePath, getVmsPath } from './vmManagerPaths.js';
-import { connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, vmError } from './vmManagerConnection.js';
+import {
+  connectionState, resolveDomain, getDomainState, getDomainXML, getDomainObjAndIface, unwrapVariant, vmError,
+} from './vmManagerConnection.js';
 import {
   parseVMFromXML, parseDomainRaw, buildXml, setWispIcon, setWispPendingRestart, removeWispPref, domainDefinitionSignature,
   domainNameFromParsed, getWispProfile, setWispProfile, profileFromDefinition,
@@ -341,14 +343,25 @@ export async function removeVMPref(name, key) {
 
 /**
  * Give a VM defined before profiles the one its definition reads as
- * (`profileFromDefinition`), leaving the rest of the XML as libvirt returned it: for
- * a state migration. Metadata only, so a running VM needs no restart. Defines only
- * when the VM has no profile. Returns `{ changed, profile }`.
+ * (`profileFromDefinition`), leaving the rest of the XML as libvirt returned it (read
+ * with the secure flag, so a graphics password set outside Wisp survives): for a state
+ * migration. Metadata only, so a running VM needs no restart. Defines only when the VM
+ * has no profile, and never a transient domain, which a define would make persistent:
+ * that one stays without a profile. Returns `{ changed, profile }`, `profile` null for
+ * a transient domain.
  */
 export async function setMissingVMProfile(name) {
   if (!connectionState.connectIface) throw vmError('NO_CONNECTION', 'Not connected to libvirt');
   const domPath = await resolveDomain(name);
-  const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true }));
+  const { props } = await getDomainObjAndIface(domPath);
+  let persistent;
+  try {
+    persistent = !!unwrapVariant(await props.Get('org.libvirt.Domain', 'Persistent'));
+  } catch (err) {
+    throw vmError('LIBVIRT_ERROR', `Failed to read whether VM "${name}" is persistent`, err.message);
+  }
+  if (!persistent) return { changed: false, profile: null };
+  const parsed = parseDomainRaw(await getDomainXML(domPath, { inactive: true, secure: true }));
   if (!parsed.domain) throw vmError('PARSE_ERROR', 'Failed to parse domain XML');
   const stored = getWispProfile(parsed.domain);
   if (stored) return { changed: false, profile: stored };
