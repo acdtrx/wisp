@@ -135,7 +135,12 @@ six and queue every further request until a stream closes. Seen once during the
 command-acks milestone 1 check (2026-11-15): a GET queued 15–30 s in the second tab right
 after a navigation in the first. Confirmed on tini (2026-11-16): two tabs on one VM's
 detail page (each holds `/api/events`, the VM's stats and the host USB stream) left the
-second tab's USB section on "Loading USB devices…". ARCHITECTURE § Transport counts on the
+second tab's USB section on "Loading USB devices…". One tab reaches it too: a page left
+by a full load (typed URL, link, not in-app navigation) goes to Chrome's back-forward
+cache with its streams still holding their connections — seen on tini (2026-11-21, a
+headless walk loading pages one after the other; `pagehide` reported `persisted`): after
+three loads of container pages a GET waited over 15 s. Closing the streams on a persisted
+`pagehide` and opening them on `pageshow` would free them. ARCHITECTURE § Transport counts on the
 scoped streams staying few enough. Behind an HTTP/2 proxy it can't happen. **Revisit
 trigger:** a request seen stalled in DevTools ("Stalled"/"Queueing") with two tabs open
 over plain HTTP.
