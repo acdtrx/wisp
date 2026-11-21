@@ -3,6 +3,11 @@
 ## 2026-11-20
 
 ### New Features
+- **The settings pages show their values as text, each group with one Edit**: This server, Storage paths, Password, Single sign-on on App Config; Backup and Scheduled backups on Host Mgmt. A form saves only what changed. LAN discovery, single sign-on and scheduled backups are switches that act at once; the SSO switch waits for the issuer, client ID and secret.
+- **A backup's second destination can be any mount**, an adopted drive as well as an SMB share.
+- **The schedule refuses a retention out of range** instead of quietly changing it.
+- **A mount file's editor holds the file as it was read when it opened**, and saves only a change.
+- **The Host pages' cards look like the workload pages' groups.**
 - **Wisp keeps a list of SSH keys** (Host, App Config, SSH keys): add one by pasting it, import a GitHub user's keys, rename one, mark the defaults for new VMs, remove one. A VM keeps its own copy of the keys it was given, so removing a key from the list changes no VM.
 - **First boot setup and New VM take several SSH keys, picked from the list**: New VM preselects the defaults, a key pasted there is added to the list, and the VM page names a VM's keys by the list's names ("1 other key" for the rest). The GitHub import moves from first boot setup to the settings page.
 - **API: `GET /api/settings` carries `sshKeys`** (each with its name, key, default, type and fingerprint), written by `POST /api/settings/ssh-keys`, `POST /api/settings/ssh-keys/github`, `PATCH` and `DELETE /api/settings/ssh-keys/:id`. `GET /api/github/keys/:username` is gone, and a first boot setup no longer takes `sshKeySource` (migration `0013` removes it from stored setups).
