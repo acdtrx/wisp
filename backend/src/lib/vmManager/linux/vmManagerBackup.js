@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto';
 import { connectionState, resolveDomain, getDomainState, getDomainXML, vmError, generateMAC } from './vmManagerConnection.js';
 import { wrapVmError } from '../vmManagerShared.js';
 import {
-  parseVMFromXML, parseDomainRaw, buildXml, getWispProfile, setWispProfile, profileFromDefinition,
+  parseVMFromXML, parseDomainRaw, buildXml,
 } from './vmManagerXml.js';
 import { getVMBasePath, pathUnder, VMS_BACKUP_DIRNAME } from './vmManagerPaths.js';
 import { isOfflineState } from './libvirtConstants.js';
@@ -742,10 +742,6 @@ async function restoredDomainXml(xml, { newVmName, manifest, config, diskPlan, n
   dom.uuid = randomUUID();
 
   rewriteRestoredDomainPaths(dom, { manifest, config, diskMapping: diskPlan, newBase });
-  /* Every VM Wisp defines has a profile: a backup made before profiles gets the one
-   * its definition reads as, by the same rule as the migration that gave the existing
-   * VMs theirs. */
-  if (!getWispProfile(dom)) setWispProfile(dom, profileFromDefinition(dom));
 
   const ifaces = dom.devices?.interface;
   if (Array.isArray(ifaces)) {
@@ -893,6 +889,11 @@ export async function planBackupRestore(backupPath, newVmName, { isExternalSourc
   const { xml, manifest } = await readBackupDomain(backupPath);
   const config = parseVMFromXML(xml);
   if (!config) throw vmError('PARSE_ERROR', 'Failed to parse backup domain.xml');
+  /* Every VM Wisp defines has a profile, and a backup made before profiles holds none:
+   * it is refused, not given one (settled 2026-11-21). */
+  if (!config.profile) {
+    throw vmError('BACKUP_INVALID', 'This backup was made before VM profiles and can\'t be restored: back the VM up again');
+  }
 
   const newBase = normalizeBasePath(getVMBasePath(newVmName));
   const diskPlan = planRestoredDisks(config, newBase);
