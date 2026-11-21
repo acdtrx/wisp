@@ -7,6 +7,15 @@ trigger** — the observed condition that would make it worth building (features
 their place). Date rulings inline: `(ruled YYYY-MM-DD: wait to see if needed.)`.
 Group entries under headings as themes emerge.
 
+**VM edits define back XML read without the secure flag.** Every change the manager
+saves by reading the inactive definition and defining it again (`updateVMConfig`, the
+Wisp prefs, disks, CDs, USB and the restart flag in `backend/src/lib/vmManager/linux/`)
+reads it without `VIR_DOMAIN_XML_SECURE`, so a graphics password set outside Wisp is
+dropped at the first edit. Migration 0012 reads it with the flag
+(`getDomainXML(…, { secure: true })`, found in the workload pages milestone 3 review,
+2026-11-21). **Revisit trigger:** a VM with a console password set outside Wisp, or
+Wisp setting one itself.
+
 **No check refuses a duplicate JSX prop.** A component given the same prop twice keeps
 the last one silently: that is how a doubled `saveDisabledReason` on the VM General card
 let its Save on while its CPU or RAM had a problem (found in the frontend data flow
