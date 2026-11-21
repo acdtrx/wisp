@@ -280,10 +280,25 @@ test host.
 
 ### 6. Frontend components — M–L, mechanical
 
-Replaced on 2026-11-21 by `features/workload-pages.md` (view, edit, act: the workload
-pages, the create forms, VM profiles, SSH keys in settings, then the settings forms), on
-the user's decision, and run next, before phase 5. The list below is kept for what a
-later pass over the rest of the app may take from it.
+Replaced on 2026-11-21, on the user's decision, by a redesign run before phase 5: view,
+edit, act. Done 2026-11-22, merged to `main` from `anchor/workload-pages`, in five
+milestones, each built after its open points were settled and reviewed once for defects
+a user would hit:
+
+1. The container page as groups (values as text, one Edit per group, switches that act
+   at once); New container as its own form; every modal a bottom sheet on a phone.
+2. The VM page the same way; the Advanced section became Expert settings.
+3. VM profiles on the server (`linux`, `windows-11`, `other`), stored on the VM
+   (migration `0012`), and New VM as its own form.
+4. SSH keys in Wisp's settings, picked by first boot setup and New VM (migration `0013`).
+5. The four settings forms as groups; the form hook from phase 4 deleted. The frontend
+   has three mechanisms for server state: a record to view, an editor to edit, a
+   command to act.
+
+`specs/UI.md` was split: `UI-VM.md`, `UI-CONTAINER.md` and `UI-HOST.md` hold their areas.
+Not done, and for a later pass if wanted: the primitives and renames listed below, and
+moving the remaining Host cards (storage, bridges, tokens, updates, the image library)
+onto the group pieces; they share one look already.
 
 Why here: "workable", low risk, large in files touched. After phase 4, which edits the
 same files.
