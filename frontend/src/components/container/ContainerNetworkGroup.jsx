@@ -76,24 +76,26 @@ export default function ContainerNetworkGroup({ config, busy, locked, act, updat
         {services.length === 0 && (
           <p className="py-1 text-sm text-text-muted">{localName ? 'None.' : 'None. Turn on the local name to announce one.'}</p>
         )}
-        {[...services].sort((a, b) => a.port - b.port).map((s) => {
-          const removing = act.isBusy(`service:${s.port}`);
-          return (
-            <GroupItem
-              key={s.port}
-              title={`${serviceTypeText(s.type)} on port ${s.port}`}
-              detail={Object.keys(s.txt ?? {}).length > 0
-                ? `${s.type} · ${Object.entries(s.txt).map(([k, v]) => `${k}=${v}`).join(', ')}`
-                : s.type}
-              actions={(
-                <>
-                  <GroupAction icon={Pencil} label={`Edit the service on port ${s.port}`} reason={busy ?? localNameOff} disabled={removing} onClick={() => setService(s)} />
-                  <GroupAction icon={Trash2} variant="danger" label={`Remove the service on port ${s.port}`} reason={busy} busy={removing} onClick={() => removeService(s)} />
-                </>
-              )}
-            />
-          );
-        })}
+        <div>
+          {[...services].sort((a, b) => a.port - b.port).map((s) => {
+            const removing = act.isBusy(`service:${s.port}`);
+            return (
+              <GroupItem
+                key={s.port}
+                title={`${serviceTypeText(s.type)} on port ${s.port}`}
+                detail={Object.keys(s.txt ?? {}).length > 0
+                  ? `${s.type} · ${Object.entries(s.txt).map(([k, v]) => `${k}=${v}`).join(', ')}`
+                  : s.type}
+                actions={(
+                  <>
+                    <GroupAction icon={Pencil} label={`Edit the service on port ${s.port}`} reason={busy ?? localNameOff} disabled={removing} onClick={() => setService(s)} />
+                    <GroupAction icon={Trash2} variant="danger" label={`Remove the service on port ${s.port}`} reason={busy} busy={removing} onClick={() => removeService(s)} />
+                  </>
+                )}
+              />
+            );
+          })}
+        </div>
       </div>
 
       {editing && <NetworkEditor config={config} update={update} onClose={() => setEditing(false)} />}

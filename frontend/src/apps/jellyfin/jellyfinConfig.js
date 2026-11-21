@@ -10,7 +10,7 @@ const RESERVED_LABELS = new Set(['config', 'cache']);
 const libraryKey = (lib) => lib.label;
 
 /** The config as the PATCH takes it. */
-export function jellyfinSendable(ac = {}) {
+function jellyfinSendable(ac = {}) {
   return {
     libraries: (ac.libraries ?? []).filter(Boolean).map((l) => ({ label: l.label ?? '', sourceId: l.sourceId ?? '', subPath: l.subPath ?? '' })),
     gpuEnabled: ac.gpuEnabled === true,

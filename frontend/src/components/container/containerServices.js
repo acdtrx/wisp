@@ -24,7 +24,7 @@ export function unannouncedPorts(exposedPorts, services) {
 }
 
 /** TXT records as the editor's rows, each with an id of its own (never sent). */
-export const txtRows = (txt) => Object.entries(txt ?? {}).map(([k, v]) => ({ id: rowId(), k, v: String(v) }));
+const txtRows = (txt) => Object.entries(txt ?? {}).map(([k, v]) => ({ id: rowId(), k, v: String(v) }));
 
 /** A type's choice in the editor, and its TXT records: a known type pre-fills its defaults. */
 function typeChoice(type) {

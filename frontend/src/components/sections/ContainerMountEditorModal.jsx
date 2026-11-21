@@ -36,7 +36,7 @@ const KIND_META = {
   },
 };
 
-export function normalizeMountType(t) {
+function normalizeMountType(t) {
   if (t === 'directory' || t === 'tmpfs') return t;
   return 'file';
 }
@@ -61,7 +61,7 @@ function isValidOwnerId(value) {
   return Number.isInteger(n) && n >= 0 && n <= 65535;
 }
 
-export function normalizeOwnerId(value) {
+function normalizeOwnerId(value) {
   if (value === '' || value === null || value === undefined) return 0;
   const n = typeof value === 'string' ? Number(value) : value;
   return Number.isInteger(n) && n >= 0 && n <= 65535 ? n : 0;
@@ -73,7 +73,7 @@ function isValidTmpfsSize(value) {
   return Number.isInteger(n) && n >= 1 && n <= TMPFS_MAX_SIZE_MIB;
 }
 
-export function normalizeTmpfsSize(value) {
+function normalizeTmpfsSize(value) {
   if (value === '' || value === null || value === undefined) return TMPFS_DEFAULT_SIZE_MIB;
   const n = typeof value === 'string' ? Number(value) : value;
   return Number.isInteger(n) && n >= 1 && n <= TMPFS_MAX_SIZE_MIB ? n : TMPFS_DEFAULT_SIZE_MIB;

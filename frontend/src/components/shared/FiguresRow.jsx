@@ -6,7 +6,7 @@
  */
 export default function FiguresRow({ facts = [], meters = [], stoppedText }) {
   if (stoppedText) {
-    return <p className="px-0.5 text-sm text-text-muted">{stoppedText}</p>;
+    return <p className="px-0.5 text-center text-sm text-text-muted sm:text-left">{stoppedText}</p>;
   }
   return (
     <dl className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-0">

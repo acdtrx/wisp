@@ -26,7 +26,7 @@ export default function ContainerLimitsGroup({ config, busy, update }) {
         rows={[
           { label: 'CPU limit', value: config.cpuLimit == null ? 'None' : cores(config.cpuLimit) },
           { label: 'Memory limit', value: config.memoryLimitMiB == null ? 'None' : `${config.memoryLimitMiB} MiB` },
-          { label: 'When it stops', value: `Restart: ${restartPolicyText(config.restartPolicy).toLowerCase()}` },
+          { label: 'Restart', value: restartPolicyText(config.restartPolicy) },
         ]}
       />
       {editing && <LimitsEditor config={config} update={update} onClose={() => setEditing(false)} />}

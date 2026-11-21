@@ -8,7 +8,7 @@ import { keyTaken, withRow, withoutRow } from '../appConfigRows.js';
  */
 
 export const USERNAME_CLAIMS = ['preferred_username', 'email', 'sub', 'name'];
-export const DEFAULT_SCOPES = ['openid', 'profile', 'email'];
+const DEFAULT_SCOPES = ['openid', 'profile', 'email'];
 
 const userKey = (u) => u.username;
 

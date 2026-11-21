@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Archive } from 'lucide-react';
 
 import { useRecord } from '../../hooks/useRecord.js';
@@ -25,7 +26,16 @@ function lastBackupText(attempt, settings) {
  * switches that act at once, and Back up now (`onBackUp` opens the backup dialog).
  */
 export default function ContainerStartupGroup({ config, busy, backupReason, act, update, onBackUp }) {
+  /* The last attempt of each workload, from the `backups` topic, followed while the page
+   * shows it (the Backups panel follows it the same way; the two are never on screen
+   * together). */
   const attempt = useBackupsStore((s) => s.data?.containers?.[config.name] ?? null);
+  const connect = useBackupsStore((s) => s.connect);
+  const disconnect = useBackupsStore((s) => s.disconnect);
+  useEffect(() => {
+    connect();
+    return () => disconnect();
+  }, [connect, disconnect]);
   const settings = useRecord(RECORD.SETTINGS).data;
 
   const toggle = (field, on, what) => act.run(() => update({ [field]: on }), {
